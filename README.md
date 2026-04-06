@@ -402,7 +402,10 @@ Each skill follows a consistent pattern:
 
 ## Credits
 
-- **QRSPI methodology** from [Human Layer](https://humanlayer.dev), based on Dex Horthy's "Everything We Got Wrong About RPI" (Coding Agents Summit, 2026). The original framework covers Goals, Questions, Research, Structure, Plan, and Implement as a methodology for steering coding agents.
+- **QRSPI methodology** from [HumanLayer](https://humanlayer.dev) by Dex Horthy. The original framework covers Goals, Questions, Research, Structure, Plan, and Implement as a methodology for steering coding agents.
+  - [No Vibes Allowed: Solving Hard Problems in Complex Codebases](https://www.youtube.com/watch?v=rmvDxxNubIg) — the original RPI talk (AI Engineer World's Fair)
+  - [Everything We Got Wrong About RPI](https://www.youtube.com/watch?v=YwZR6tc7qYg) — the follow-up introducing QRSPI
+  - [Advanced Context Engineering for Coding Agents](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents) — methodology docs and reference
 
 - **Extended pipeline** -- qrspi-plus adds Design (interactive architecture discussion with vertical slicing), Worktree (parallelized execution with git worktrees), Integrate (cross-task and CI verification), Test (acceptance testing with phase routing), and Replan (between-phase replanning with severity classification and backward loops). The review system (8 specialized reviewers in correctness/thoroughness tiers, three canonical review patterns) and the fix-task routing loops are also additions.
 
