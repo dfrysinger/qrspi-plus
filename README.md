@@ -9,19 +9,26 @@ qrspi-plus is a Claude Code plugin that implements QRSPI — a methodology for a
 ## Pipeline Overview
 
 ```mermaid
-flowchart LR
-    G[Goals] --> Q[Questions]
-    Q --> R[Research]
-    R --> D[Design]
-    D --> S[Structure]
-    S --> P[Plan]
-    P --> W[Worktree]
-    W --> I[Implement]
-    I --> Int[Integrate]
-    Int --> T[Test]
-    T -->|more phases| Re[Replan]
-    Re -->|next phase| W
-    T -->|final phase| PR((PR))
+flowchart TD
+    subgraph alignment["Alignment (Goals through Plan)"]
+        Goals[Goals] --> Questions[Questions]
+        Questions --> Research[Research]
+        Research --> Design[Design]
+        Design --> Structure[Structure]
+        Structure --> Plan[Plan]
+    end
+    subgraph execution["Execution (Worktree through Test)"]
+        Worktree[Worktree] --> Implement[Implement]
+        Implement --> Integrate[Integrate]
+        Integrate --> Test[Test]
+        Test -->|more phases| Replan[Replan]
+        Replan -->|next phase| Worktree
+    end
+    Plan --> Worktree
+    Test -->|last phase| PR((PR))
+    Integrate -.->|fix tasks| Worktree
+    Test -.->|fix tasks full| Worktree
+    Test -.->|fix tasks quick| Implement
 ```
 
 The pipeline has two route variants:
@@ -39,6 +46,16 @@ Goals -> Questions -> Research -> Plan -> Implement -> Test
 ```
 
 Quick fix skips Design, Structure, Worktree, and Integrate. Plan produces a single task. The pipeline is shorter but still runs through the same approval gates.
+
+```mermaid
+flowchart LR
+    A[Goals] --> B[Questions]
+    B --> C[Research]
+    C --> D[Plan]
+    D --> E[Implement]
+    E --> F[Test]
+    F --> G((PR))
+```
 
 A third variant, **Full + UX**, inserts a wireframing step between Design and Structure when the `qrspi:ux` skill is installed. This is offered during pipeline mode selection in Goals.
 
@@ -108,11 +125,81 @@ Breaks the structure into ordered tasks with detailed specs. Each task spec incl
 
 Analyzes the task dependency graph for the current phase and determines the execution mode: sequential (chain dependencies), parallel (independent tasks on different files), or hybrid (mixed). Creates git worktrees forked from the feature branch, runs baseline tests, and dispatches tasks to Implement. Three execution modes ensure tasks run with maximum parallelism while respecting dependencies. If baseline tests fail, the user can auto-fix (inject a task-00), proceed with known failures, or stop.
 
+```mermaid
+flowchart TD
+    A[Verify plan.md approved, read config.md] --> B[Identify current phase tasks]
+    B --> C[Analyze dependencies]
+    C --> D[Determine execution mode]
+    D --> E[Present parallelization plan]
+    E --> F{User approves plan?}
+    F -->|no| G[Revise plan]
+    G --> E
+    F -->|yes| H[Create worktrees]
+    H --> I[Run baseline tests per worktree]
+    I --> J{Baseline passes?}
+    J -->|no| K[Present failures to user]
+    K -->|Auto-fix| N[Inject baseline fix task-00]
+    N --> L
+    K -->|Proceed anyway| O[Log to baseline-failures.md]
+    O --> L
+    K -->|Stop| M[Pipeline halted]
+    J -->|yes| L((Dispatch tasks to Implement))
+```
+
+Example parallelization plan:
+
+```mermaid
+flowchart LR
+    subgraph parallel1["Parallel Group 1"]
+        T1[Task 1: Auth + profiles\nworktree: task-01]
+        T2[Task 2: Box CRUD\nworktree: task-02]
+    end
+    subgraph sequential["Sequential"]
+        T3[Task 3: Invitations\nworktree: task-03]
+    end
+    T1 --> T3
+    T2 --> T3
+```
+
 **Artifact:** `parallelization.md`
 
 ### Step 8: Implement
 
 TDD execution per task in an isolated worktree. The iron law: no production code without a failing test first. Write failing tests from the task spec's test expectations, verify they fail, write minimal implementation, verify they pass, self-review and commit. After implementation, 8 reviewers run in two tiers: 4 correctness reviewers (spec-reviewer, code-quality-reviewer, silent-failure-hunter, security-reviewer) always run; 4 thoroughness reviewers (goal-traceability, test-coverage, type-design-analyzer, code-simplifier) run in deep mode only. Review depth is configurable per phase.
+
+```mermaid
+flowchart TD
+    A[Read test expectations from task spec] --> B[Write failing tests]
+    B --> C[Run tests — VERIFY FAIL]
+    C --> D{Tests fail as expected?}
+    D -->|no — tests pass| E[STOP — test is vacuous, fix it]
+    E --> B
+    D -->|yes| F[Write minimal implementation]
+    F --> G[Run tests — verify pass]
+    G --> H{All tests pass?}
+    H -->|no| I[Fix implementation — not the test]
+    I --> G
+    H -->|yes| J[Self-review and commit]
+    J --> K[Proceed to reviews]
+```
+
+After implementation, the review fix loop runs:
+
+```mermaid
+flowchart TD
+    A[Run reviewer groups] --> B{Issues found?}
+    B -->|no| C((Task clean))
+    B -->|yes| D[Converge: re-run on same code]
+    D --> E{New findings?}
+    E -->|yes, under 3 rounds| D
+    E -->|no or 3 rounds hit| F[Complete issue list]
+    F --> G[Implementer fixes all issues]
+    G --> H[Re-run reviewers on fixed code]
+    H --> I{Issues found?}
+    I -->|no| C
+    I -->|yes, under 3 fix cycles| D
+    I -->|yes, 3+ fix cycles| J((Task unresolved — flag at batch gate))
+```
 
 **Reviewers:**
 
@@ -133,17 +220,101 @@ TDD execution per task in an isolated worktree. The iron law: no production code
 
 Merges worktree branches into the feature branch and runs cross-task reviews. Two reviewers check integration: an integration-reviewer verifies components work together, and a security-integration-reviewer checks cross-task security boundaries. After review, pushes the branch and triggers CI. Both integration review failures and CI failures generate fix tasks that route back through the pipeline (Worktree -> Implement -> Integrate). The user is in the loop at every decision point -- dispatch fixes, re-run reviews, accept, or stop.
 
+```mermaid
+flowchart TD
+    A[Merge worktree branches into feature branch] --> B{Merge conflicts?}
+    B -->|yes| C[STOP — present conflicts to user]
+    B -->|no| D[Run integration + security reviewers]
+    D --> D2{Issues found?}
+    D2 -->|no| D3[Present clean result to user]
+    D3 --> D4{User decision}
+    D4 -->|re-run reviews| D
+    D4 -->|continue| M{CI exists?}
+    D4 -->|stop| N[Pipeline halted]
+    D2 -->|yes| E[Converge: re-run on same code, up to 3 rounds]
+    E --> G[Present issue list to user]
+    G --> H{User decision}
+    H -->|dispatch fixes| I[Write fix tasks]
+    I --> J[Route to Worktree → Implement → Integrate]
+    J --> D
+    H -->|re-run reviews| D
+    H -->|accept and continue| M
+    H -->|stop| N
+    M -->|no CI| O((Integration complete))
+    M -->|yes| P[Push branch, trigger CI]
+    P --> Q{CI passes?}
+    Q -->|yes| O
+    Q -->|no| R[Present CI failures to user]
+    R --> S{User decision}
+    S -->|dispatch fixes| T[Write fix tasks with specific CI check]
+    T --> U[Route to Worktree → Implement → Integrate]
+    U --> P
+    S -->|accept| O
+    S -->|stop| N
+```
+
 **Artifact:** `reviews/integration/round-NN-review.md`, `reviews/ci/round-NN-review.md`
 
 ### Step 9: Test
 
 Acceptance testing against the original goals. A test-writer subagent maps every acceptance criterion from `goals.md` to tests (acceptance, integration, E2E, boundary). Test code goes through its own review round. The tester can only write test files -- when tests fail, it outputs fix task descriptions, not code fixes. Fixes route back through the full pipeline so all production code changes go through reviews. Phase routing happens after acceptance: if this is the final phase, prepare a PR; if more phases remain, invoke Replan.
 
+```mermaid
+flowchart TD
+    A[Run full existing test suite] --> B[Write tests using coverage criteria]
+    B --> C[Review test code — Pattern 1]
+    C --> C1{First pass clean?}
+    C1 -->|yes| CV[Present coverage to user]
+    C1 -->|no| C2[Converge and fix, up to 3 cycles]
+    C2 --> CV
+    CV --> CV2{User approves coverage?}
+    CV2 -->|add more tests| B
+    CV2 -->|approved| D[Run approved test suite]
+    D --> E{Test failures?}
+    E -->|no| G[Present pass list to user]
+    E -->|yes| F[Present pass/fail list to user]
+    F --> H{User decision}
+    G --> G2{User decision}
+    G2 -->|approved| Q
+    H -->|dispatch fixes| K[Write fix tasks]
+    H -->|accept| Q
+    H -->|stop| L[Pipeline halted]
+    K -->|full pipeline| M[Route to Worktree → Implement → Integrate → Test]
+    K -->|quick fix| N[Route to Implement → Test]
+    M --> D
+    N --> D
+    Q{Last phase?}
+    Q -->|yes| R[Prepare PR]
+    R --> T((Create PR))
+    Q -->|no| V((Invoke Replan))
+```
+
 **Artifact:** `reviews/test/round-NN-review.md`
 
 ### Step 9.5: Replan
 
 Runs between phases only. A subagent analyzes the completed phase for patterns, framework quirks, and architectural adjustments. Each proposed change gets a severity classification: minor changes (task spec wording, LOC estimates, add/split/merge tasks) are updated in place with a lightweight re-approval cycle. Major changes (new files, interface changes, technology switches, phase boundary changes) trigger fire-and-forget backward loops to the earliest affected artifact (Design or Structure). Replan writes a feedback file and resets downstream artifact statuses, then invokes the loop-back target -- the normal pipeline cascades forward from there.
+
+```mermaid
+flowchart TD
+    A[Analyze completed phase] --> B[Identify patterns, quirks, adjustments]
+    B --> C[Propose updates + severity classification]
+    C --> D[Review round]
+    D --> E[Present changes + severity to user]
+    E --> F{User approves?}
+    F -->|no| G[Revise proposals]
+    G --> D
+    F -->|yes, minor| H[Update tasks and plan in place]
+    H --> I[Present diffs for re-approval]
+    I --> J{User re-approves?}
+    J -->|no| G
+    J -->|yes| K[Set status: approved, commit]
+    K --> M((Invoke Worktree for next phase))
+    F -->|yes, major| N[Identify loop-back target]
+    N --> N2[Write feedback file]
+    N2 --> N3[Reset target + downstream to draft]
+    N3 --> O((Invoke loop-back target — pipeline resumes))
+```
 
 **Artifact:** `reviews/replan-review.md`, `feedback/replan-phase-NN-round-MM.md`
 
@@ -175,11 +346,78 @@ The gating chain builds cumulatively:
 
 Three canonical review patterns are used across the pipeline. Every review loop must use one of these -- no ad-hoc variations.
 
-**Pattern 1: Inner Loop** -- Autonomous per-task reviews with a batch gate at the end. Used by Implement (per-task reviews) and Test (test code reviews). Reviewers converge on unchanged code (up to 3 rounds) to build a complete issue list, the implementer fixes all issues, reviewers re-run on fixed code. Up to 3 fix cycles; if unresolved, the task is flagged and the user decides at the batch gate.
+**Pattern 1: Inner Loop** -- Autonomous per-task reviews with a batch gate at the end. Used by Implement (per-task reviews) and Test (test code reviews).
 
-**Pattern 2: Outer Loop** -- User-confirmed reviews for non-deterministic reviewers. Used by integration reviews. Reviewers converge, then results are always presented to the user. The user chooses: dispatch fixes, re-run reviews, accept, or stop. No cycle counting -- the user is in the loop each time.
+```mermaid
+flowchart TD
+    A[Run reviewers] --> B{Issues found?}
+    B -->|no| C((Task clean))
+    B -->|yes| D[Converge: re-run on same code]
+    D --> E{New findings?}
+    E -->|yes, under 3 rounds| D
+    E -->|no or 3 rounds hit| F[Complete issue list]
+    F --> G[Fix all issues]
+    G --> H[Re-run reviewers on fixed code]
+    H --> I{Issues found?}
+    I -->|no| C
+    I -->|yes, under 3 fix cycles| D
+    I -->|yes, 3+ fix cycles| J((Unresolved — flag at batch gate))
+```
 
-**Pattern 3: Deterministic Results** -- For tests and CI where results don't change on re-run. Run once, present pass/fail to user. Fix tasks include the specific test or CI check that must pass. After fixes return, re-run. The user decides the next action each time.
+After all tasks complete, the batch gate presents results to the user:
+
+```mermaid
+flowchart TD
+    A[Present batch summary to user] --> B{User decision}
+    B -->|fix remaining + re-run reviews| C[Re-run fix cycles for unresolved tasks]
+    C --> A
+    B -->|re-run all reviews| D[Re-run reviewers on all tasks]
+    D --> A
+    B -->|continue to next step| E((Proceed))
+    B -->|stop| F[Pipeline halted]
+```
+
+**Pattern 2: Outer Loop** -- User-confirmed reviews for non-deterministic reviewers. Used by integration reviews.
+
+```mermaid
+flowchart TD
+    A[Run reviewers] --> B{Issues found?}
+    B -->|no| C[Present clean result to user]
+    B -->|yes| D[Converge: re-run on same code]
+    D --> E{New findings?}
+    E -->|yes, under 3 rounds| D
+    E -->|no or 3 rounds hit| F[Present issue list to user]
+    F --> G{User decision}
+    C --> C2{User decision}
+    C2 -->|re-run reviews| A
+    C2 -->|continue| H((Proceed))
+    C2 -->|stop| I[Pipeline halted]
+    G -->|dispatch fixes| J[Write fix tasks, route through pipeline]
+    G -->|re-run reviews| A
+    G -->|accept| H
+    G -->|stop| I
+    J --> K[Fixes return]
+    K --> A
+```
+
+**Pattern 3: Deterministic Results** -- For tests and CI where results don't change on re-run.
+
+```mermaid
+flowchart TD
+    A[Run tests/CI] --> B{Pass?}
+    B -->|yes| C[Present results to user]
+    B -->|no| D[Present failures to user]
+    C --> C2{User decision}
+    C2 -->|continue| E((Proceed))
+    C2 -->|add more tests| F[Back to test writing]
+    D --> G{User decision}
+    G -->|dispatch fixes| H[Write fix tasks with specific check to pass]
+    H --> I[Route through pipeline]
+    I --> A
+    G -->|add more tests| F
+    G -->|accept| E
+    G -->|stop| J[Pipeline halted]
+```
 
 ### Route-Based Routing
 
