@@ -21,11 +21,12 @@ flowchart TD
         Worktree[Worktree] --> Implement[Implement]
         Implement --> Integrate[Integrate]
         Integrate --> Test[Test]
-        Test -->|more phases| Replan[Replan]
+        Test --> PR[Create PR]
+        PR -->|more phases| Replan[Replan]
         Replan -->|next phase| Worktree
     end
     Plan --> Worktree
-    Test -->|last phase| PR((PR))
+    PR -->|last phase| Done((Done))
     Integrate -.->|fix tasks| Worktree
     Test -.->|fix tasks full| Worktree
     Test -.->|fix tasks quick| Implement
@@ -46,9 +47,10 @@ flowchart LR
     W --> I[Implement]
     I --> Int[Integrate]
     Int --> T[Test]
-    T -->|more phases| Re[Replan]
+    T --> PR[PR]
+    PR -->|more phases| Re[Replan]
     Re --> W
-    T -->|final| PR((PR))
+    PR -->|final| Done((Done))
 ```
 
 **Quick fix** -- for targeted bug fixes, small changes, and 1-3 file modifications. Skips Design, Structure, Worktree, and Integrate. Plan produces a single task.
@@ -60,7 +62,8 @@ flowchart LR
     R --> P[Plan]
     P --> I[Implement]
     I --> T[Test]
-    T --> PR((PR))
+    T --> PR[PR]
+    PR --> Done((Done))
 ```
 
 A third variant, **Full + UX**, inserts a wireframing step between Design and Structure when the `qrspi:ux` skill is installed. This is offered during pipeline mode selection in Goals.
@@ -263,7 +266,7 @@ flowchart TD
 
 ### Step 9: Test
 
-Acceptance testing against the original goals. A test-writer subagent maps every acceptance criterion from `goals.md` to tests (acceptance, integration, E2E, boundary). Test code goes through its own review round. The tester can only write test files -- when tests fail, it outputs fix task descriptions, not code fixes. Fixes route back through the full pipeline so all production code changes go through reviews. Phase routing happens after acceptance: if this is the final phase, prepare a PR; if more phases remain, invoke Replan.
+Acceptance testing against the original goals. A test-writer subagent maps every acceptance criterion from `goals.md` to tests (acceptance, integration, E2E, boundary). Test code goes through its own review round. The tester can only write test files -- when tests fail, it outputs fix task descriptions, not code fixes. Fixes route back through the full pipeline so all production code changes go through reviews. Every phase produces a PR after acceptance testing passes. Phase routing happens after the PR: if this is the final phase, the pipeline is complete; if more phases remain, invoke Replan.
 
 ```mermaid
 flowchart TD
@@ -289,10 +292,14 @@ flowchart TD
     K -->|quick fix| N[Route to Implement → Test]
     M --> D
     N --> D
-    Q{Last phase?}
-    Q -->|yes| R[Prepare PR]
-    R --> T((Create PR))
-    Q -->|no| V((Invoke Replan))
+    Q[Prepare PR for current phase]
+    Q --> R{User confirms PR?}
+    R -->|yes| S[Create PR via gh pr create]
+    R -->|no| S2[Skip PR]
+    S --> T{Last phase?}
+    S2 --> T
+    T -->|yes| U((Pipeline complete))
+    T -->|no| V[Invoke Replan]
 ```
 
 **Artifact:** `reviews/test/round-NN-review.md`

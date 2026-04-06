@@ -41,7 +41,7 @@ Goals → Questions → Research → Plan → Implement → Test
 | **Worktree** | 7 | Analyze parallelization, create worktrees, dispatch | `parallelization.md` |
 | **Implement** | 8 | TDD execution per task, tiered review loops | Working code |
 | **Integrate** | 8.5 | Merge worktrees, cross-task integration + security review, CI gate | Integration report |
-| **Test** | 9 | Acceptance testing, phase routing, replan gates | Test results + PR (final phase) |
+| **Test** | 9 | Acceptance testing, PR creation, phase routing | Test results + PR (every phase) |
 | **Replan** | 9.5 | Between phases — update remaining tasks based on learnings | Updated `plan.md` + `tasks/*.md` |
 
 > **Availability:** Steps 1-9.5 are implemented (Goals through Replan). All pipeline steps are available.

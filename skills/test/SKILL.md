@@ -106,12 +106,14 @@ flowchart TD
     K -->|quick fix| N[Route to Implement → Test]
     M --> D
     N --> D
-    Q{Last phase?}
-    Q -->|yes| R[Prepare PR]
-    R --> S{User confirms PR?}
-    S -->|yes| T((Create PR via gh pr create))
-    S -->|no| U((Pipeline complete - no PR))
-    Q -->|no| V((Invoke Replan))
+    Q[Prepare PR for current phase]
+    Q --> R{User confirms PR?}
+    R -->|yes| S[Create PR via gh pr create]
+    R -->|no| S2[Skip PR — code stays on feature branch]
+    S --> T{Last phase?}
+    S2 --> T
+    T -->|yes| U((Pipeline complete))
+    T -->|no| V[Invoke Replan]
 ```
 
 ## Process Steps
@@ -196,7 +198,9 @@ Present test results to the user: which acceptance criteria passed, which failed
 
 ## Terminal State — Phase Routing
 
-- **Last phase?** → Prepare PR: draft title, summary referencing all artifacts in `docs/qrspi/YYYY-MM-DD-{slug}/`. Show user for confirmation. On confirmation, create PR via `gh pr create`. Pipeline complete. If user declines PR (e.g., wants to review locally first), announce completion without creating PR — code is committed and ready on the feature branch.
+**Every phase gets a PR.** After acceptance testing passes, prepare a PR for the current phase: draft title (including phase number for multi-phase projects), summary referencing artifacts in `docs/qrspi/YYYY-MM-DD-{slug}/`. Show user for confirmation. On confirmation, create PR via `gh pr create`. If user declines (e.g., wants to review locally first), skip PR creation — code stays on the feature branch.
+
+- **Last phase?** → Pipeline complete. Announce completion.
 - **More phases?** → Write `replan-pending.md` to the artifact directory (marker for resume detection: contains current phase number and timestamp), then invoke `qrspi:replan` to update remaining tasks based on phase learnings before starting the next phase.
 
 Recommend compaction before phase routing: "Test complete. This is a good point to compact context before the next step (`/compact`)."
