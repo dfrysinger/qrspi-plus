@@ -412,21 +412,37 @@ Each skill follows a consistent pattern:
 
 ### What qrspi-plus Adds
 
-The original QRSPI methodology defines Goals, Questions, Research, Structure, Plan, and Implement. qrspi-plus extends this with:
+The original QRSPI methodology defines 7 steps: Questions, Research, Design, Structure, Plan, Worktree, and Implement (→ PR). See our [deep-dive notes](docs/qrspi-reference.md) from Dex's talk for the full breakdown. qrspi-plus extends this in three areas:
+
+**New pipeline steps:**
+
+| Step | What it adds | Original QRSPI equivalent |
+|------|-------------|--------------------------|
+| **Goals** | Explicit intent capture with testable acceptance criteria, pipeline mode selection (quick fix vs full), `config.md` creation | The original uses a ticket/issue as input; Goals formalizes this as a reviewable artifact |
+| **Integrate** | Cross-task integration review + security integration review after merging worktrees, CI pipeline gate with fix-task routing | Not in original -- Implement goes straight to PR |
+| **Test** | Acceptance testing against original goals, per-failure quick/full classification, phase routing (PR on final phase, Replan on intermediate) | Not in original -- PR review was the verification step |
+| **Replan** | Between-phase replanning with 8-type severity classification, fire-and-forget backward loops to Design or Structure | Not in original -- single-phase execution only |
+
+**Extended existing steps:**
+
+| Step | What qrspi-plus adds beyond the original |
+|------|------------------------------------------|
+| **Design** | Vertical slice enforcement (anti-pattern examples), phase definitions with replan gates, test strategy, Mermaid system diagrams |
+| **Structure** | Interface definitions (function/class signatures), create vs modify tracking, CI pipeline structure for greenfield projects |
+| **Plan** | Sub-subagent dispatch for large plans, merge/split lifecycle, quick-fix single-task mode, `pipeline` field on task files |
+| **Worktree** | Dependency graph analysis, parallel/sequential/hybrid execution modes, baseline test verification with auto-fix, batch gate after all tasks |
+| **Implement** | TDD iron law (no code without failing test), 8 specialized reviewers in correctness/thoroughness tiers, configurable review depth per phase |
+
+**Infrastructure additions:**
 
 | Addition | What it adds |
 |----------|-------------|
-| **Design step** | Interactive architecture discussion with vertical slice decomposition, phase definitions with replan gates, and test strategy -- inserted between Research and Structure |
-| **Worktree step** | Dependency analysis, parallel/sequential/hybrid execution modes, git worktree isolation per task, baseline test verification |
-| **Integrate step** | Cross-task integration review + security integration review after merging worktrees, CI pipeline gate with fix-task routing |
-| **Test step** | Acceptance testing against original goals, per-failure quick/full classification, phase routing (PR on final phase, Replan on intermediate) |
-| **Replan step** | Between-phase replanning with 8-type severity classification, fire-and-forget backward loops to Design or Structure |
-| **8 specialized reviewers** | 4 correctness (spec, code quality, silent failures, security) + 4 thoroughness (goal traceability, test coverage, type design, simplification), configurable per phase |
-| **3 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once) -- every review in the pipeline uses one of these |
-| **Route-based routing** | `config.md` with route field as single source of truth for pipeline progression, replacing hardcoded skill-to-skill invocations |
-| **Quick fix mode** | Shortened pipeline (Goals -> Questions -> Research -> Plan -> Implement -> Test) for targeted fixes, with single-task plans |
-| **Fix-task routing loops** | Three outer loops (integration, CI, test) that route failures back through Worktree -> Implement with full TDD and reviews |
-| **Artifact gating** | Structural enforcement -- each step checks prerequisites exist and are approved before proceeding, no bypass possible |
+| **8 specialized reviewers** | 4 correctness (spec, code quality, silent failures, security) + 4 thoroughness (goal traceability, test coverage, type design, simplification) |
+| **3 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once) |
+| **Route-based routing** | `config.md` with route field as single source of truth, replacing hardcoded skill-to-skill invocations |
+| **Quick fix mode** | Shortened pipeline (Goals -> Questions -> Research -> Plan -> Implement -> Test) for targeted fixes |
+| **Fix-task routing loops** | Three outer loops (integration, CI, test) that route failures back through the pipeline with full TDD and reviews |
+| **Artifact gating** | Structural enforcement -- each step checks prerequisites exist and are approved before proceeding |
 | **Feedback-driven re-generation** | Rejected artifacts capture user feedback + rejected snapshot, new subagent receives full rejection history |
 | **Durable resume detection** | `replan-pending.md` marker + mid-pipeline entry via artifact scanning for crash recovery |
 
