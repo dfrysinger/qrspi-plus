@@ -35,26 +35,32 @@ The pipeline has two route variants:
 
 **Full pipeline** -- for features, new products, and anything requiring architectural design:
 
-```
-Goals -> Questions -> Research -> Design -> Structure -> Plan -> Worktree -> Implement -> Integrate -> Test -> Replan (loop)
+```mermaid
+flowchart LR
+    G[Goals] --> Q[Questions]
+    Q --> R[Research]
+    R --> D[Design]
+    D --> S[Structure]
+    S --> P[Plan]
+    P --> W[Worktree]
+    W --> I[Implement]
+    I --> Int[Integrate]
+    Int --> T[Test]
+    T -->|more phases| Re[Replan]
+    Re --> W
+    T -->|final| PR((PR))
 ```
 
-**Quick fix** -- for targeted bug fixes, small changes, and 1-3 file modifications:
-
-```
-Goals -> Questions -> Research -> Plan -> Implement -> Test
-```
-
-Quick fix skips Design, Structure, Worktree, and Integrate. Plan produces a single task. The pipeline is shorter but still runs through the same approval gates.
+**Quick fix** -- for targeted bug fixes, small changes, and 1-3 file modifications. Skips Design, Structure, Worktree, and Integrate. Plan produces a single task.
 
 ```mermaid
 flowchart LR
-    A[Goals] --> B[Questions]
-    B --> C[Research]
-    C --> D[Plan]
-    D --> E[Implement]
-    E --> F[Test]
-    F --> G((PR))
+    G[Goals] --> Q[Questions]
+    Q --> R[Research]
+    R --> P[Plan]
+    P --> I[Implement]
+    I --> T[Test]
+    T --> PR((PR))
 ```
 
 A third variant, **Full + UX**, inserts a wireframing step between Design and Structure when the `qrspi:ux` skill is installed. This is offered during pipeline mode selection in Goals.
