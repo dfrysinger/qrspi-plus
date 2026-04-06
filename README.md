@@ -408,9 +408,27 @@ Each skill follows a consistent pattern:
   - [Slide deck](https://docs.google.com/presentation/d/1mnp0CzrRS02Y0t0vGvqX-_M5IbYPjFoZ/mobilepresent?slide=id.g3bef903f3c9_0_435) — QRSPI talk starts at slide 291
   - [Advanced Context Engineering for Coding Agents](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents) — methodology docs and reference
 
-- **Extended pipeline** -- qrspi-plus adds Design (interactive architecture discussion with vertical slicing), Worktree (parallelized execution with git worktrees), Integrate (cross-task and CI verification), Test (acceptance testing with phase routing), and Replan (between-phase replanning with severity classification and backward loops). The review system (8 specialized reviewers in correctness/thoroughness tiers, three canonical review patterns) and the fix-task routing loops are also additions.
-
 - **Built as a Claude Code plugin** using the skills, hooks, and agent conventions of the Claude Code plugin system.
+
+### What qrspi-plus Adds
+
+The original QRSPI methodology defines Goals, Questions, Research, Structure, Plan, and Implement. qrspi-plus extends this with:
+
+| Addition | What it adds |
+|----------|-------------|
+| **Design step** | Interactive architecture discussion with vertical slice decomposition, phase definitions with replan gates, and test strategy -- inserted between Research and Structure |
+| **Worktree step** | Dependency analysis, parallel/sequential/hybrid execution modes, git worktree isolation per task, baseline test verification |
+| **Integrate step** | Cross-task integration review + security integration review after merging worktrees, CI pipeline gate with fix-task routing |
+| **Test step** | Acceptance testing against original goals, per-failure quick/full classification, phase routing (PR on final phase, Replan on intermediate) |
+| **Replan step** | Between-phase replanning with 8-type severity classification, fire-and-forget backward loops to Design or Structure |
+| **8 specialized reviewers** | 4 correctness (spec, code quality, silent failures, security) + 4 thoroughness (goal traceability, test coverage, type design, simplification), configurable per phase |
+| **3 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once) -- every review in the pipeline uses one of these |
+| **Route-based routing** | `config.md` with route field as single source of truth for pipeline progression, replacing hardcoded skill-to-skill invocations |
+| **Quick fix mode** | Shortened pipeline (Goals -> Questions -> Research -> Plan -> Implement -> Test) for targeted fixes, with single-task plans |
+| **Fix-task routing loops** | Three outer loops (integration, CI, test) that route failures back through Worktree -> Implement with full TDD and reviews |
+| **Artifact gating** | Structural enforcement -- each step checks prerequisites exist and are approved before proceeding, no bypass possible |
+| **Feedback-driven re-generation** | Rejected artifacts capture user feedback + rejected snapshot, new subagent receives full rejection history |
+| **Durable resume detection** | `replan-pending.md` marker + mid-pipeline entry via artifact scanning for crash recovery |
 
 ---
 
