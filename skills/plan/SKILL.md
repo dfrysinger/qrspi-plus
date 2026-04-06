@@ -1,0 +1,333 @@
+---
+name: plan
+description: Use when prior artifacts are approved and the QRSPI pipeline needs detailed task specs — breaks structure into ordered tasks with test expectations, dependencies, and LOC estimates (full pipeline requires design+structure; quick fix requires only goals+research)
+---
+
+# Plan (QRSPI Step 6)
+
+**Announce at start:** "I'm using the QRSPI Plan skill to create detailed task specs."
+
+## Overview
+
+Break the structure into ordered, self-contained tasks following vertical slices and phases from the design. Each task spec includes exact file paths, descriptions, test expectations, dependencies, and LOC estimates. For large plans (6+ tasks), individual task specs are farmed out to sub-subagents.
+
+## Artifact Gating
+
+Read `config.md` to determine pipeline mode. If `config.md` doesn't exist or has no `route` field, refuse to proceed and tell the user to re-run Goals to set the pipeline mode. The `route` field is authoritative; `pipeline` is informational (see using-qrspi Config File section).
+
+**Full pipeline (`pipeline: full`) — required inputs:**
+- `goals.md` with `status: approved`
+- `research/summary.md` with `status: approved`
+- `design.md` with `status: approved`
+- `structure.md` with `status: approved`
+
+**Quick fix (`pipeline: quick`) — required inputs:**
+- `goals.md` with `status: approved`
+- `research/summary.md` with `status: approved`
+
+Note: Design and Structure are not in the quick fix route, so `design.md` and `structure.md` don't exist.
+
+If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
+
+Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. If `config.md` doesn't exist, default to `codex_reviews: false`.
+
+<HARD-GATE>
+Do NOT produce plan.md without all required artifacts approved (full: goals + research + design + structure; quick: goals + research).
+Do NOT use placeholder content in task specs: no TBD, TODO, "similar to Task N", "add appropriate handling".
+Every task spec must be self-contained — an implementation agent reading only that task must have everything it needs.
+</HARD-GATE>
+
+## Execution Model
+
+**Subagent** produces `plan.md` overview. For large plans (6+ tasks), individual task specs are farmed out to sub-subagents (one per task or related group) to keep context manageable. Iterative with human feedback.
+
+## Process
+
+The graph below shows the large-plan path with sub-subagents. For small plans (<6 tasks), the overview subagent writes merged `plan.md` directly, skipping the Farm/Merge nodes.
+
+```dot
+digraph plan {
+    "Verify required artifacts approved" [shape=box];
+    "Launch plan overview subagent" [shape=box];
+    "Farm task specs to sub-subagents" [shape=box];
+    "Merge tasks into plan.md" [shape=box];
+    "Review round (Claude + Codex if enabled)" [shape=box];
+    "Fix issues found" [shape=box];
+    "Ask: 1) Present  2) Loop until clean (recommended)" [shape=diamond];
+    "Review round N (max 10)" [shape=box];
+    "Round clean?" [shape=diamond];
+    "Present merged plan.md to user\n(state review status)" [shape=box];
+    "User approves?" [shape=diamond];
+    "Re-generate with feedback" [shape=box];
+    "Reviews passed clean?" [shape=diamond];
+    "Offer post-approval review loop" [shape=box];
+    "Recommend compaction before split" [shape=box];
+    "Split tasks, reduce plan.md" [shape=box];
+    "Write approval marker" [shape=box];
+    "Invoke next skill in route" [shape=doublecircle];
+
+    "Verify required artifacts approved" -> "Launch plan overview subagent";
+    "Launch plan overview subagent" -> "Farm task specs to sub-subagents";
+    "Farm task specs to sub-subagents" -> "Merge tasks into plan.md";
+    "Merge tasks into plan.md" -> "Review round (Claude + Codex if enabled)";
+    "Review round (Claude + Codex if enabled)" -> "Fix issues found";
+    "Fix issues found" -> "Ask: 1) Present  2) Loop until clean (recommended)";
+    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Present merged plan.md to user\n(state review status)" [label="1"];
+    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Review round N (max 10)" [label="2 (recommended)"];
+    "Review round N (max 10)" -> "Round clean?";
+    "Round clean?" -> "Present merged plan.md to user\n(state review status)" [label="yes or cap hit"];
+    "Round clean?" -> "Fix issues found" [label="no, fix and loop"];
+    "Present merged plan.md to user\n(state review status)" -> "User approves?";
+    "User approves?" -> "Re-generate with feedback" [label="no"];
+    "Re-generate with feedback" -> "Launch plan overview subagent";
+    "User approves?" -> "Reviews passed clean?" [label="yes"];
+    "Reviews passed clean?" -> "Recommend compaction before split" [label="yes"];
+    "Reviews passed clean?" -> "Offer post-approval review loop" [label="no"];
+    "Offer post-approval review loop" -> "Review round N (max 10)" [label="user agrees"];
+    "Offer post-approval review loop" -> "Recommend compaction before split" [label="user declines"];
+    "Recommend compaction before split" -> "Split tasks, reduce plan.md";
+    "Split tasks, reduce plan.md" -> "Write approval marker";
+    "Write approval marker" -> "Invoke next skill in route";
+}
+```
+
+### Plan Overview Subagent
+
+**Inputs:**
+- `goals.md`
+- `research/summary.md`
+- `design.md`
+- `structure.md`
+- Any prior feedback files
+
+**Task:** Break the structure into ordered tasks following vertical slices and phases.
+
+1. Break structure into ordered tasks following vertical slices and phases from `design.md`
+2. Each task spec includes:
+   - Exact file paths to create/modify
+   - Description of what the task accomplishes
+   - Test expectations in plain language (behaviors, inputs/outputs, edge cases, error conditions)
+   - Dependencies on other tasks
+   - LOC estimate
+3. No placeholders, no TBDs, no "similar to Task N" — each spec is self-contained
+
+**For small plans (<6 tasks):** The overview subagent writes the full merged `plan.md` directly (overview + task specs in one document).
+
+**For large plans (6+ tasks):** The overview subagent writes `plan.md` with only the overview section (phase structure, task ordering, dependency graph). Individual task specs are dispatched to sub-subagents.
+
+### Quick-Fix Plan Behavior
+
+When `config.md` has `pipeline: quick`:
+
+1. The plan subagent receives `goals.md` and `research/summary.md` only (no design.md or structure.md)
+2. Produces a **single-task plan** directly — no sub-subagent dispatch, no merge/split lifecycle
+3. The task spec derives file paths and test expectations from the research findings and goals
+4. The merged `plan.md` contains both the overview and the single task spec
+5. After approval, the single task is written to `tasks/task-01.md` and `plan.md` is reduced to overview-only (same mechanics as full pipeline, but always exactly one task)
+
+The review round, human gate, and approval process are identical to full pipeline mode.
+
+### Sub-Subagent Dispatch (Large Plans Only)
+
+For large plans, farm task spec writing to sub-subagents:
+
+**Sub-subagent inputs:**
+- `plan.md` overview
+- Relevant sections of `structure.md`
+- `design.md` (for test strategy and vertical slice context)
+
+Each sub-subagent writes `tasks/task-NN.md`. After all complete, the Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files — creating a single document as the only source of truth during review.
+
+### Plan Document Structure (During Review)
+
+```markdown
+---
+status: draft
+---
+
+# Implementation Plan
+
+## Overview
+{Phase structure, task ordering, dependency graph}
+
+## Phase 1: {name}
+{Tasks in this phase, ordering rationale}
+
+## Phase 2: {name}
+{Tasks in this phase, ordering rationale}
+
+---
+
+## Task Specs
+
+### Task 1: {name}
+- **Phase:** 1
+- **Files:** {exact paths, create/modify}
+- **Dependencies:** none
+- **LOC estimate:** ~{N}
+- **Description:** {what this task accomplishes}
+- **Test expectations:**
+  - {behavior 1}
+  - {edge case 1}
+  - {error condition 1}
+
+### Task 2: {name}
+...
+```
+
+### Review Round
+
+After the merged `plan.md` is ready, run one review round:
+
+1. **Claude review subagent** — launch with `plan.md` (merged), `goals.md`, `research/summary.md`, and (full pipeline only) `design.md`, `structure.md` to check:
+   - Does every goal/acceptance criterion map to test expectations in at least one task?
+   - Are edge cases and error conditions identified in test expectations?
+   - Is the test strategy from `design.md` reflected in the task test expectations?
+   - Are dependencies between tasks correct?
+   - Does the task ordering make sense (bottom-up through the stack)?
+   - Any TBD/TODO/placeholder content? (forbidden)
+   - Are task specs specific enough for an implementation agent to execute without guessing?
+   - Are LOC estimates reasonable?
+   
+   The subagent returns structured findings. The orchestrating skill writes them to `reviews/plan-review.md`.
+
+2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`plan.md`), input artifacts (`goals.md`, `research/summary.md`, and (full pipeline only) `design.md`, `structure.md`) for cross-reference, and the same review criteria. The orchestrating skill appends Codex findings to `reviews/plan-review.md`.
+
+3. Fix any issues found in both reviews.
+
+4. Ask the user ONCE: `1) Present for review  2) Loop until clean (recommended)`
+   - **1:** Proceed to human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The plan may still have issues." The user can still approve, but they make an informed choice.
+   - **2:** Loop autonomously — run review → fix → review → fix without re-prompting. Stop ONLY when a round is clean ("Reviews passed clean") or 10 rounds reached ("Hit 10-round review cap — presenting for your review."). Then proceed to human gate. **Do not re-ask between rounds.**
+   
+   **Default recommendation is always option 2.** Clean reviews before human review are important because the human cannot feasibly verify cross-file consistency, forward dependencies, or migration ordering across 10+ task specs by hand — that's what the automated reviews catch.
+
+### Human Gate
+
+Present merged `plan.md` to the user — overview for approval, task details for spot-checking. **Always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified."
+
+**On approval:**
+
+1. **If reviews have NOT passed clean** (the user chose option 1 earlier, or backward loops introduced changes after the last clean round): Ask the user before proceeding: "Reviews haven't passed clean yet. Would you like me to run a review loop to clean before splitting? This is strongly recommended — the review cycle catches cross-file inconsistencies that are hard to spot manually." If the user agrees, run the review loop (same as option 2 above), then continue. If they decline, proceed.
+
+2. **Recommend compaction before splitting:** "Plan approved. This is a good point to compact context (`/compact`) before I split tasks into individual files — the split is mechanical and doesn't need the full conversation history." Wait for the user to compact (or decline), then proceed.
+
+3. **Split:** Split task sections into individual `tasks/task-NN.md` files, then reduce `plan.md` to overview-only, then write `status: approved` in `plan.md` frontmatter. This ensures `tasks/*.md` files exist before `plan.md` is marked approved, avoiding a transient state where downstream skills see an approved plan but no task files.
+
+**On rejection:** Write the user's feedback and the rejected artifact snapshot to `feedback/plan-round-{NN}.md` (using the standard feedback file format from `using-qrspi`), then launch a new subagent with original inputs + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts from the beginning (the "loop until clean" choice applies to the new round).
+
+### Merge/Split Mechanics
+
+- **Before review:** For large plans (6+ tasks), sub-subagents write `tasks/task-NN.md` files → Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files → single document is the only source of truth during review. For small plans (<6 tasks), the plan subagent writes the merged `plan.md` directly.
+- **During review:** All changes happen in the single `plan.md` — `tasks/` directory is empty, no dual source of truth.
+- **After approval:** Plan skill splits each `### Task N` section back into `tasks/task-NN.md` files, then reduces `plan.md` to overview-only (removing the appended task specs). No duplication.
+
+**Split task file format** (`tasks/task-NN.md`):
+
+```markdown
+---
+status: approved
+task: NN
+phase: {phase number}
+pipeline: full
+---
+
+# Task NN: {name}
+
+- **Files:** {exact paths, create/modify}
+- **Dependencies:** {task numbers or "none"}
+- **LOC estimate:** ~{N}
+- **Description:** {what this task accomplishes}
+- **Test expectations:**
+  - {behavior 1}
+  - {edge case 1}
+  - {error condition 1}
+```
+
+The `pipeline` field is copied from `config.md`'s `pipeline` value at plan time. Implement reads `pipeline` from the task file — it never checks `config.md` for routing.
+
+**Who writes the pipeline field:**
+- **Plan skill** — copies from `config.md` onto every `tasks/task-NN.md` at plan time
+- **Test skill** — classifies per failure (quick or full) on fix tasks
+- **Integrate skill** — always `full` on integration/CI fix tasks
+- **Worktree baseline fix** — always `full` on task-00
+
+**Fix task files** also include a `fix_type` field (not present on regular tasks):
+- `fix_type: integration` — written by Integrate for cross-task integration fixes
+- `fix_type: ci` — written by Integrate for CI pipeline fix tasks
+- `fix_type: test` — written by Test for acceptance test fix tasks
+
+Fix tasks are stored in `fixes/{type}-round-NN/` and follow the same format as regular tasks so Worktree and Implement can process them identically.
+
+### Artifacts
+
+- `plan.md` — complete plan with overview + all task specs (review artifact), overview-only after approval
+- `tasks/task-NN.md` — individual task specs split out after approval (implementation artifacts)
+
+### Terminal State
+
+Commit the approved `plan.md`, all `tasks/task-NN.md` files, and `reviews/plan-review.md` to git.
+
+**REQUIRED:** Invoke the next skill in the `config.md` route after `plan`.
+
+If compaction was not done before splitting (user declined), recommend it now: "This is a good point to compact context before the next step (`/compact`)."
+
+## Red Flags — STOP
+
+- A task spec contains "TBD", "TODO", "implement later", or "fill in details"
+- A task says "similar to Task N" instead of repeating the full spec
+- Test expectations say "write tests" without specifying what behaviors to test
+- A task references a type, function, or file not defined in any task
+- A task depends on a later task (forward dependency)
+- LOC estimate is missing or wildly unrealistic (e.g., 10 LOC for a full CRUD implementation)
+- A task touches files from a different vertical slice without justification
+- Phase boundaries don't align with the design's phase definitions
+- Quick-fix plan has more than one task (quick fix = single task by definition)
+
+## Common Rationalizations — STOP
+
+| Rationalization | Reality |
+|----------------|---------|
+| "The implementation agent will figure out the details" | No. The plan is the contract. Vague specs produce wrong implementations. |
+| "This task is similar to Task N, I'll just reference it" | Each task must be self-contained. The agent may read tasks out of order. |
+| "Test expectations are implied by the description" | Write them explicitly. The Test skill uses them to generate acceptance tests. |
+| "LOC estimates don't matter" | They signal scope. Unrealistic estimates mean the task is misunderstood. |
+| "We can split this task during implementation" | Split now. The plan is where decomposition happens, not implementation. |
+| "Quick fix doesn't need a plan" | Quick fix mode still produces a plan — it's just a single-task plan. The plan ensures the fix is reviewed before implementation. |
+
+## Worked Example
+
+**Good task spec:**
+
+```markdown
+### Task 3: Rate limit middleware
+
+- **Phase:** 1
+- **Files:** create `src/middleware/rate-limiter.ts`, modify `src/app.ts:34-40`
+- **Dependencies:** Task 1 (Redis client), Task 2 (rate limit types)
+- **LOC estimate:** ~60
+- **Description:** Express middleware that checks the client's request count against the rate limit using the Redis client from Task 1. If exceeded, returns 429 with Retry-After header. If under limit, increments the counter and calls next().
+- **Test expectations:**
+  - Returns 429 when client exceeds 100 requests/minute
+  - Returns Retry-After header with seconds until window resets
+  - Calls next() when client is under limit
+  - Increments Redis counter on each allowed request
+  - Extracts client ID from X-Forwarded-For header
+  - Returns 429 (not 500) when Redis is unreachable (fail closed)
+  - Handles missing X-Forwarded-For gracefully (use IP as fallback)
+```
+
+**Bad task spec (vague, placeholders):**
+
+```markdown
+### Task 3: Rate limiting
+
+- **Files:** TBD
+- **Dependencies:** none
+- **LOC estimate:** ~200
+- **Description:** Add rate limiting middleware. Similar to Task 2 but for the middleware layer.
+- **Test expectations:**
+  - Rate limiting works correctly
+  - Edge cases are handled
+```
+
+The bad example has TBD files, no dependencies (but clearly needs the Redis client), unrealistic LOC, references "similar to Task 2", and test expectations that can't be verified ("works correctly", "are handled").

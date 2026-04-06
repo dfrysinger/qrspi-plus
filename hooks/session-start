@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# SessionStart hook for QRSPI plugin
+# Reads using-qrspi skill and injects it into conversation context
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Read using-qrspi skill content
+SKILL_PATH="${PLUGIN_ROOT}/skills/using-qrspi/SKILL.md"
+if [ ! -f "$SKILL_PATH" ]; then
+    echo "session-start: ERROR: SKILL.md not found at ${SKILL_PATH}" >&2
+    exit 1
+fi
+if ! using_qrspi_content=$(cat "$SKILL_PATH"); then
+    echo "session-start: ERROR: failed to read ${SKILL_PATH}" >&2
+    exit 1
+fi
+if [ -z "$using_qrspi_content" ]; then
+    echo "session-start: ERROR: SKILL.md is empty at ${SKILL_PATH}" >&2
+    exit 1
+fi
+
+# Escape string for JSON embedding using bash parameter substitution.
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+using_qrspi_escaped=$(escape_for_json "$using_qrspi_content")
+session_context="<EXTREMELY_IMPORTANT>\nYou have the QRSPI workflow available.\n\n**Below is the full content of your 'qrspi:using-qrspi' skill — your introduction to the QRSPI pipeline. For all other skills, use the 'Skill' tool:**\n\n${using_qrspi_escaped}\n</EXTREMELY_IMPORTANT>"
+
+# Output context injection as JSON.
+# Cursor hooks expect additional_context.
+# Claude Code hooks expect hookSpecificOutput.additionalContext.
+# Claude Code reads BOTH fields without deduplication, so we must only
+# emit the field consumed by the current platform to avoid double injection.
+#
+# Uses printf instead of heredoc (cat <<EOF) to work around a bash 5.3+
+# bug where heredoc variable expansion hangs when content exceeds ~512 bytes.
+# See: https://github.com/obra/superpowers/issues/571
+if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then
+  # Cursor sets CURSOR_PLUGIN_ROOT (may also set CLAUDE_PLUGIN_ROOT) — emit additional_context
+  printf '{\n  "additional_context": "%s"\n}\n' "$session_context"
+elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  # Claude Code sets CLAUDE_PLUGIN_ROOT — emit only hookSpecificOutput
+  printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$session_context"
+else
+  # Unknown platform — warn and emit additional_context as fallback
+  echo "session-start: WARNING: Neither CURSOR_PLUGIN_ROOT nor CLAUDE_PLUGIN_ROOT is set. Using generic output format." >&2
+  printf '{\n  "additional_context": "%s"\n}\n' "$session_context"
+fi

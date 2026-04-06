@@ -1,0 +1,19 @@
+{
+  "name": "qrspi",
+  "description": "QRSPI workflow plugin for agentic software development — Goals, Questions, Research, Design, Structure, Plan, Worktree, Implement, Test",
+  "version": "0.1.0",
+  "author": {
+    "name": "Daniel Frysinger"
+  },
+  "license": "MIT",
+  "keywords": [
+    "qrspi",
+    "workflow",
+    "agentic",
+    "tdd",
+    "research",
+    "design",
+    "planning",
+    "implementation"
+  ]
+}
