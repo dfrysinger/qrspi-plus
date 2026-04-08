@@ -134,24 +134,28 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   └── test-round-01/
 ├── feedback/
 │   └── ...
-└── reviews/
-    ├── goals-review.md
-    ├── questions-review.md
-    ├── research-review.md
-    ├── design-review.md
-    ├── structure-review.md
-    ├── plan-review.md
-    ├── replan-review.md
-    ├── baseline-failures.md       (Worktree baseline)
-    ├── tasks/
-    │   └── ...
-    ├── integration/
-    │   └── round-NN-review.md
-    ├── ci/
-    │   └── round-NN-review.md
-    └── test/
-        ├── round-NN-review.md
-        └── baseline-failures.md   (Test baseline)
+├── reviews/
+│   ├── goals-review.md
+│   ├── questions-review.md
+│   ├── research-review.md
+│   ├── design-review.md
+│   ├── structure-review.md
+│   ├── plan-review.md
+│   ├── replan-review.md
+│   ├── baseline-failures.md       (Worktree baseline)
+│   ├── tasks/
+│   │   └── ...
+│   ├── integration/
+│   │   └── round-NN-review.md
+│   ├── ci/
+│   │   └── round-NN-review.md
+│   └── test/
+│       ├── round-NN-review.md
+│       └── baseline-failures.md   (Test baseline)
+└── .qrspi/                        (hook-managed, do not edit manually)
+    ├── state.json                 (pipeline state cache)
+    ├── task-NN-runtime.json       (per-task runtime overrides — user mid-task decisions)
+    └── audit-task-NN.jsonl        (per-task audit logs)
 ```
 
 The slug is generated during the Goals step: take the user's first description, extract 2-4 key words, convert to lowercase kebab-case (e.g., "user-auth", "product-search-api").
@@ -185,7 +189,20 @@ status: approved
 
 **Status values:** `draft` (initial), `approved` (user-approved), `replan-draft` (transient — used during Replan's minor path re-approval cycle; artifact gating treats this the same as `draft`, so downstream skills correctly refuse to proceed until re-approval completes).
 
+**Writing `status: approved` is sufficient.** The PostToolUse hook detects the frontmatter change and updates `state.json` automatically. Skills do not need to perform any explicit state update after writing the approval marker.
+
 **Commit after approval.** Every approved artifact (and its review file) should be committed to git immediately after the approval marker is written. This preserves the approved state as a checkpoint the user can return to. Use a descriptive commit message like `docs(qrspi): approve {step} for {project-slug}`. Do not batch approvals across steps — commit each step's approval separately.
+
+## Hook-Managed State (`.qrspi/`)
+
+The `.qrspi/` directory inside each artifact directory is created and maintained entirely by hooks:
+
+- **SessionStart hook** — initializes `state.json` at the start of each session by reconciling it against artifact frontmatter on disk (handles interrupted sessions and out-of-sync state)
+- **PostToolUse hook** — keeps `state.json` in sync whenever an artifact's frontmatter changes
+
+Skills do not need to create, read, or update any file in `.qrspi/`. State is always current when a skill needs it because the hooks maintain it continuously.
+
+**Pipeline enforcement:** PreToolUse hooks enforce pipeline step ordering. Attempting to write a downstream artifact (e.g., `design.md`) before its prerequisites are approved will be blocked by the hook. Pipeline progression is code-enforced, not just prompt-enforced.
 
 ## Rejection Behavior
 

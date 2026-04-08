@@ -229,6 +229,10 @@ status: approved
 task: NN
 phase: {phase number}
 pipeline: full
+# Optional Phase 4 enforcement fields (deferred to T24 for full schema):
+# enforcement: strict
+# allowed_files: [...]
+# constraints: [...]
 ---
 
 # Task NN: {name}
@@ -262,6 +266,23 @@ Fix tasks are stored in `fixes/{type}-round-NN/` and follow the same format as r
 
 - `plan.md` — complete plan with overview + all task specs (review artifact), overview-only after approval
 - `tasks/task-NN.md` — individual task specs split out after approval (implementation artifacts)
+
+### `.qrspi/` Directory
+
+The artifact directory contains a `.qrspi/` subdirectory managed by hooks (not by this skill):
+
+- `state.json` — pipeline state cache (current step, approved artifacts, `phase_start_commit`)
+- `task-NN-runtime.json` — per-task runtime overrides: user mid-task decisions like approved extra files and enforcement mode switches (written by hooks during implementation)
+- `audit-task-NN.jsonl` — per-task audit logs (written by hooks during implementation)
+
+**This directory is created and managed by hooks.** The Plan skill does not need to create, update, or read files in `.qrspi/`.
+
+**State management is deterministic and hook-driven:**
+- The SessionStart hook initializes and reconciles `state.json` from artifact frontmatter at the start of each session
+- The PostToolUse hook syncs `state.json` automatically whenever artifact frontmatter changes (e.g., when `status: approved` is written)
+- Skills do NOT need to update `state.json` when artifacts are approved — the hook handles this
+
+**Exception — `phase_start_commit`:** The Plan skill writes `phase_start_commit` directly to `state.json` when `plan.md` is approved. This records the current HEAD hash as the diff boundary for post-integration reviews. The Plan skill is the only skill that writes to state directly; all other state updates are hook-driven.
 
 ### Terminal State
 
