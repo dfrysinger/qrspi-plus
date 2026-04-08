@@ -1,6 +1,16 @@
 {
   "version": 1,
   "hooks": {
+    "preToolUse": [
+      {
+        "command": "./hooks/pre-tool-use"
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "./hooks/post-tool-use"
+      }
+    ],
     "sessionStart": [
       {
         "command": "./hooks/session-start"

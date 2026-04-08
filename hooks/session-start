@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # SessionStart hook for QRSPI plugin
-# Reads using-qrspi skill and injects it into conversation context
+# Injects the using-qrspi skill content into conversation context.
+#
+# This hook does NOT initialize state or validate artifacts — that is the
+# responsibility of pipeline skills (which know which project they're working
+# on). Skills create state via state_init_or_reconcile; hooks only read it.
 
 set -euo pipefail
 
