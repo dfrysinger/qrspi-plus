@@ -66,15 +66,12 @@ flowchart LR
     PR --> Done((Done))
 ```
 
-A third variant, **Full + UX**, inserts a wireframing step between Design and Structure when the `qrspi:ux` skill is installed. This is offered during pipeline mode selection in Goals.
-
 ### Route Changes
 
 Route changes are allowed before Plan executes:
 
 - **Full to Quick Fix:** Drop Design, Structure, Worktree, Integrate from the route.
 - **Quick Fix to Full:** Insert Design, Structure before Plan, and Worktree, Integrate after Plan.
-- **Add/remove UX step:** Allowed before Structure.
 
 After Plan is approved, the route is locked. Changing it after that point requires a backward loop to re-run Plan.
 
@@ -82,13 +79,25 @@ After Plan is approved, the route is locked. Changing it after that point requir
 
 ## How It Works
 
-**Reviewable artifacts, not code dumps.** Each step produces a focused artifact (~200 lines) that humans review. You review a goals document, a research summary, a design spec, and a plan -- not 2000 lines of generated code.
+**Tiered human review at every stage.** Each step produces a focused artifact that humans review, but the review depth varies by artifact type:
+
+- **Goals, Questions, Research, Design** -- closely reviewed by the human. These are the alignment artifacts that determine whether the right thing gets built.
+- **Structure, Plan, Tasks** -- spot-checked by the human. The detail is too dense to read line by line, but the human reviews the overall approach and catches structural issues.
+- **Code** -- reviewed by the human during the Test step before the PR is created. The pipeline produces heavily commented, well-structured code designed to be reviewable in a standard code review.
 
 **Human approval gates between steps.** Every artifact is presented to the user for approval before the pipeline advances. Rejection captures feedback and re-generates the artifact in a fresh subagent with the feedback included. No artifact is silently mutated.
 
 **Fresh subagent per step.** Each step runs in a clean subagent with only its declared inputs. No context accumulation, no "dumb zone." Subagent boundaries are compaction boundaries -- every step gets clean context, guaranteed.
 
 **Structural enforcement over instructional discipline.** Where possible, constraints are enforced architecturally. Research agents never see the goals document (prevents confirmation bias). Implement cannot write production code without a failing test. Review patterns are codified, not suggested.
+
+**Hook-based deterministic enforcement.** Pipeline rules that were previously prompt-instructed are now code-enforced via Claude Code hooks that run on every tool call:
+
+- **Pipeline step ordering:** The PreToolUse hook blocks artifact writes that skip prerequisites. You cannot write `design.md` before `goals.md` is approved -- the hook rejects the tool call with an actionable error message.
+- **Task boundary enforcement:** In strict mode, the PreToolUse hook blocks file writes outside the active task's allowlist, preventing scope creep during implementation.
+- **Audit logging:** The PostToolUse hook logs all Write, Edit, and Bash calls to per-task JSONL files for traceability.
+- **Fail-closed security model:** All error paths in the hooks block with actionable messages rather than silently allowing violations.
+- **State management:** `.qrspi/state.json` tracks pipeline progress, artifact map, and active task. `.qrspi/task-NN-runtime.json` files capture mid-task user decisions as runtime overrides.
 
 ---
 
@@ -100,11 +109,47 @@ Captures user intent, constraints, and acceptance criteria through interactive d
 
 **Artifact:** `goals.md`
 
+```mermaid
+flowchart TD
+    A[Subagent produces artifact] --> B[Review round: Claude + optional Codex]
+    B --> C[Fix issues found]
+    C --> D{Ask user: Present or Loop?}
+    D -->|Present| E[Human gate]
+    D -->|Loop until clean| F[Review round N]
+    F --> G{Clean or 10 rounds?}
+    G -->|clean or cap hit| E
+    G -->|issues found| H[Fix and re-review]
+    H --> F
+    E --> I{User approves?}
+    I -->|yes| J[Write status: approved, commit]
+    I -->|no| K[Capture feedback]
+    K --> L[Re-generate with new subagent + all feedback]
+    L --> B
+```
+
 ### Step 2: Questions
 
 Generates tagged research questions from the approved goals. Each question is tagged with a research type (`codebase`, `web`, or `hybrid`) to dispatch the right specialist agent. Questions must not leak goals or intent -- they are neutral inquiries about how things work, not what the user wants to change. This goal leakage prevention is enforced by the review subagent, which flags any question where a researcher could infer the planned changes.
 
 **Artifact:** `questions.md`
+
+```mermaid
+flowchart TD
+    A[Subagent produces artifact] --> B[Review round: Claude + optional Codex]
+    B --> C[Fix issues found]
+    C --> D{Ask user: Present or Loop?}
+    D -->|Present| E[Human gate]
+    D -->|Loop until clean| F[Review round N]
+    F --> G{Clean or 10 rounds?}
+    G -->|clean or cap hit| E
+    G -->|issues found| H[Fix and re-review]
+    H --> F
+    E --> I{User approves?}
+    I -->|yes| J[Write status: approved, commit]
+    I -->|no| K[Capture feedback]
+    K --> L[Re-generate with new subagent + all feedback]
+    L --> B
+```
 
 ### Step 3: Research
 
@@ -112,11 +157,47 @@ Dispatches parallel specialist subagents per question. Codebase researchers read
 
 **Artifact:** `research/summary.md` (plus per-question `research/q*.md` files)
 
+```mermaid
+flowchart TD
+    A[Subagent produces artifact] --> B[Review round: Claude + optional Codex]
+    B --> C[Fix issues found]
+    C --> D{Ask user: Present or Loop?}
+    D -->|Present| E[Human gate]
+    D -->|Loop until clean| F[Review round N]
+    F --> G{Clean or 10 rounds?}
+    G -->|clean or cap hit| E
+    G -->|issues found| H[Fix and re-review]
+    H --> F
+    E --> I{User approves?}
+    I -->|yes| J[Write status: approved, commit]
+    I -->|no| K[Capture feedback]
+    K --> L[Re-generate with new subagent + all feedback]
+    L --> B
+```
+
 ### Step 4: Design
 
 Interactive design discussion in the main conversation. The agent proposes 2-3 approaches with trade-offs and a recommendation. The user and agent converge on an approach, then a subagent synthesizes the artifact. Design enforces vertical slice decomposition -- end-to-end feature slices, not horizontal layers. Phases are defined with replan gates between them. Phase 1 is always the PoC that proves the full stack works. Includes test strategy and a high-level Mermaid system diagram.
 
 **Artifact:** `design.md`
+
+```mermaid
+flowchart TD
+    A[Subagent produces artifact] --> B[Review round: Claude + optional Codex]
+    B --> C[Fix issues found]
+    C --> D{Ask user: Present or Loop?}
+    D -->|Present| E[Human gate]
+    D -->|Loop until clean| F[Review round N]
+    F --> G{Clean or 10 rounds?}
+    G -->|clean or cap hit| E
+    G -->|issues found| H[Fix and re-review]
+    H --> F
+    E --> I{User approves?}
+    I -->|yes| J[Write status: approved, commit]
+    I -->|no| K[Capture feedback]
+    K --> L[Re-generate with new subagent + all feedback]
+    L --> B
+```
 
 ### Step 5: Structure
 
@@ -124,11 +205,47 @@ Maps each vertical slice from the design to specific files and components. Defin
 
 **Artifact:** `structure.md`
 
+```mermaid
+flowchart TD
+    A[Subagent produces artifact] --> B[Review round: Claude + optional Codex]
+    B --> C[Fix issues found]
+    C --> D{Ask user: Present or Loop?}
+    D -->|Present| E[Human gate]
+    D -->|Loop until clean| F[Review round N]
+    F --> G{Clean or 10 rounds?}
+    G -->|clean or cap hit| E
+    G -->|issues found| H[Fix and re-review]
+    H --> F
+    E --> I{User approves?}
+    I -->|yes| J[Write status: approved, commit]
+    I -->|no| K[Capture feedback]
+    K --> L[Re-generate with new subagent + all feedback]
+    L --> B
+```
+
 ### Step 6: Plan
 
 Breaks the structure into ordered tasks with detailed specs. Each task spec includes exact file paths, a description, test expectations in plain language (behaviors, edge cases, error conditions), dependencies, and LOC estimates. No placeholders, no TBDs, no "similar to Task N." For large plans (6+ tasks), task spec writing is farmed to sub-subagents. In quick fix mode, Plan produces a single task directly from research (no design or structure). The plan is reviewed as a single merged document, then split into individual task files after approval.
 
 **Artifact:** `plan.md` + `tasks/task-NN.md`
+
+```mermaid
+flowchart TD
+    A[Subagent produces artifact] --> B[Review round: Claude + optional Codex]
+    B --> C[Fix issues found]
+    C --> D{Ask user: Present or Loop?}
+    D -->|Present| E[Human gate]
+    D -->|Loop until clean| F[Review round N]
+    F --> G{Clean or 10 rounds?}
+    G -->|clean or cap hit| E
+    G -->|issues found| H[Fix and re-review]
+    H --> F
+    E --> I{User approves?}
+    I -->|yes| J[Write status: approved, commit]
+    I -->|no| K[Capture feedback]
+    K --> L[Re-generate with new subagent + all feedback]
+    L --> B
+```
 
 ### Step 7: Worktree
 
@@ -557,9 +674,28 @@ qrspi-plus/
 │   ├── plugin.json                 # Plugin metadata
 │   └── marketplace.json            # Marketplace listing
 ├── hooks/
-│   ├── hooks.json                  # SessionStart hook registration
+│   ├── hooks.json                  # Hook registration (SessionStart, PreToolUse, PostToolUse)
 │   ├── run-hook.cmd                # Cross-platform polyglot wrapper
-│   └── session-start               # Loads using-qrspi at session start
+│   ├── session-start               # Loads using-qrspi + injects skill content at session start
+│   ├── pre-tool-use                # Pipeline step ordering + L1 task boundary enforcement (blocking)
+│   ├── post-tool-use               # Artifact state sync + audit logging (non-blocking)
+│   ├── setup-project-hooks.sh      # Workaround for Claude Code bug #17688
+│   └── lib/                        # Shared hook library modules
+│       ├── artifact.sh             # Artifact path resolution and type detection
+│       ├── audit.sh                # Per-task JSONL audit logging
+│       ├── bash-detect.sh          # Cross-platform bash detection
+│       ├── enforcement.sh          # Pipeline ordering enforcement logic
+│       ├── frontmatter.sh          # YAML frontmatter parsing
+│       ├── pipeline.sh             # Pipeline step definitions and ordering
+│       ├── protected.sh            # Protected path detection
+│       ├── state.sh                # .qrspi/state.json read/write
+│       ├── task.sh                 # Active task detection and allowlist
+│       ├── validate.sh             # Input validation utilities
+│       └── worktree.sh             # Worktree path resolution
+├── tests/
+│   ├── unit/                       # 204 unit tests (bats-core)
+│   ├── acceptance/                 # 69 acceptance tests (bats-core)
+│   └── fixtures/                   # Test fixtures and mock data
 ├── skills/
 │   ├── using-qrspi/
 │   │   └── SKILL.md                # Entry point — pipeline overview, routing
@@ -696,6 +832,8 @@ The original QRSPI methodology defines 7 steps: Questions, Research, Design, Str
 | **Artifact gating** | Structural enforcement -- each step checks prerequisites exist and are approved before proceeding |
 | **Feedback-driven re-generation** | Rejected artifacts capture user feedback + rejected snapshot, new subagent receives full rejection history |
 | **Durable resume detection** | `replan-pending.md` marker + mid-pipeline entry via artifact scanning for crash recovery |
+| **Hook-based enforcement** | PreToolUse/PostToolUse hooks enforce pipeline ordering, task boundaries, and audit logging deterministically on every tool call -- 11 library modules, fail-closed security model, `.qrspi/state.json` state tracking |
+| **273 hook tests** | 204 unit + 69 acceptance tests using bats-core, covering all enforcement paths and library modules |
 
 ---
 
