@@ -120,12 +120,15 @@ Before dispatching any implementation subagent, write `.claude/settings.json` in
 {
   "permissions": {
     "allow": [
-      "Edit",
-      "Write",
+      "Edit(**)",
+      "Write(**)",
       "Bash(git *)",
       "Bash(npm *)",
+      "Bash(npx *)",
       "Bash(node *)",
       "Bash(python *)",
+      "Bash(pip *)",
+      "Bash(pytest *)",
       "Bash(python3 *)",
       "Bash(cargo *)",
       "Bash(go *)",
