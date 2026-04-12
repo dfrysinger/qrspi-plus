@@ -30,6 +30,10 @@ Do NOT proceed to Structure without user approval of the design.
 
 **Interactive in main conversation** (like Goals). User and Claude discuss approaches. Subagent synthesizes `design.md` per round. Each rejection round launches a new subagent with original inputs + all prior feedback files.
 
+## Phase-Scoped Content Rules
+
+design.md contains ONLY current-phase design entries. Each entry is keyed by `### {GOAL_ID} — {name}`. Entries for goals not in the current phase (per roadmap.md) belong in `future-design.md`, not design.md. When the Design skill creates or updates design.md, it must: (1) verify every goal ID in the document exists in goals.md, (2) move entries for out-of-scope goals to future-design.md, (3) check future-design.md for existing entries on current-phase goals and pull them into design.md.
+
 ## Process
 
 ```dot

@@ -31,6 +31,10 @@ Do NOT proceed to Plan without user approval of the structure.
 
 **Subagent per round** (iterative with human feedback). Each round is a fresh subagent with declared inputs + any feedback from prior rounds.
 
+## Phase-Scoped Content Rules
+
+structure.md contains ONLY current-phase file maps and interfaces. Entries must be tagged with goal IDs. File maps for goals not in the current phase (per roadmap.md) must not appear. When the Structure skill generates structure.md, it must verify every goal ID in the file map exists in goals.md.
+
 ## Process
 
 ```dot

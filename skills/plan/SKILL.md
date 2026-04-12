@@ -95,6 +95,10 @@ Every task spec must be self-contained — an implementation agent reading only 
 
 **Subagent** produces `plan.md` overview. For large plans (6+ tasks), individual task specs are farmed out to sub-subagents (one per task or related group) to keep context manageable. Iterative with human feedback.
 
+## Phase-Scoped Content Rules
+
+plan.md contains ONLY current-phase tasks. Each task must reference a goal ID that exists in goals.md. Tasks for goals not in the current phase must not appear. The `goal_id` field in task frontmatter must match a goal in goals.md.
+
 ## Process
 
 The graph below shows the large-plan path with sub-subagents. For small plans (<6 tasks), the overview subagent writes merged `plan.md` directly, skipping the Farm/Merge nodes.
