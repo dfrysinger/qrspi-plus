@@ -94,6 +94,8 @@ flowchart TD
 
 NO `goals.md` directly — the subagent reads the plan and design which already incorporate goals. (The review subagent reads `goals.md` directly for consistency checking — that is a separate subagent with different inputs.)
 
+**Amendment handling:** When mapping amendment items to existing goals, verify the goal's acceptance criterion text actually describes the amendment's scope. If the goal text covers only part of the amendment, either expand the goal text or create a separate goal for the uncovered item. Never map an amendment to a goal whose criterion text doesn't describe it.
+
 **Task:**
 
 1. Analyze patterns, framework quirks, architectural adjustments discovered during phase
