@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Source state.sh (which transitively sources frontmatter.sh)
+# Source state.sh (which transitively sources frontmatter.sh and artifact-map.sh)
 _pipeline_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_pipeline_script_dir/state.sh"
 
@@ -32,17 +32,12 @@ _pipeline_get_step_index() {
 _pipeline_get_artifact_file() {
   local step="$1"
   local artifact_dir="$2"
-  case "$step" in
-    goals) echo "$artifact_dir/goals.md" ;;
-    questions) echo "$artifact_dir/questions.md" ;;
-    research) echo "$artifact_dir/research/summary.md" ;;
-    design) echo "$artifact_dir/design.md" ;;
-    structure) echo "$artifact_dir/structure.md" ;;
-    plan) echo "$artifact_dir/plan.md" ;;
-    implement) echo "" ;;
-    test) echo "" ;;
-    *) echo "" ;;
-  esac
+  local rel_path
+  if rel_path=$(artifact_map_get "$step" 2>/dev/null); then
+    echo "$artifact_dir/$rel_path"
+  else
+    echo ""
+  fi
 }
 
 # pipeline_check_prerequisites <step> <artifact_dir>

@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Source pipeline library (which transitively sources state.sh and frontmatter.sh)
+# Source pipeline library (which transitively sources state.sh, frontmatter.sh, artifact-map.sh)
 source "$PLUGIN_ROOT/hooks/lib/pipeline.sh"
 
 # Source enforcement and supporting libraries
@@ -91,23 +91,9 @@ fi
 
 # ── Pipeline ordering check (Write/Edit only) ────────────────────────────────
 if [[ $is_bash_tool -eq 0 ]]; then
-  # Map file_path suffix to pipeline step
-  # (order matters: research/summary.md before *.md)
+  # Map file_path suffix to pipeline step via canonical reverse lookup
   artifact_step=""
-
-  if [[ "$file_path" == */research/summary.md ]]; then
-    artifact_step="research"
-  elif [[ "$file_path" == */goals.md ]]; then
-    artifact_step="goals"
-  elif [[ "$file_path" == */questions.md ]]; then
-    artifact_step="questions"
-  elif [[ "$file_path" == */design.md ]]; then
-    artifact_step="design"
-  elif [[ "$file_path" == */structure.md ]]; then
-    artifact_step="structure"
-  elif [[ "$file_path" == */plan.md ]]; then
-    artifact_step="plan"
-  fi
+  artifact_step=$(artifact_map_get_step "$file_path" 2>/dev/null) || true
 
   if [[ -n "$artifact_step" ]]; then
     # Read state for pipeline check.
