@@ -76,7 +76,15 @@ if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" ]]; then
 elif [[ "$tool_name" == "Bash" ]]; then
   is_bash_tool=1
 else
-  # Not a tool we enforce
+  # Not a tool we enforce — warn on unknown tool names
+  # Known tools: Write, Edit, Bash, Read, Glob, Grep, Skill, ToolSearch, Agent, TodoRead, TodoWrite, WebFetch, WebSearch
+  case "$tool_name" in
+    Read|Glob|Grep|Skill|ToolSearch|Agent|TodoRead|TodoWrite|WebFetch|WebSearch|NotebookEdit)
+      ;;
+    *)
+      echo "pre-tool-use: WARNING: unknown tool_name '${tool_name}' — not enforced" >&2
+      ;;
+  esac
   printf '{}\n'
   exit 0
 fi
@@ -109,6 +117,7 @@ if [[ $is_bash_tool -eq 0 ]]; then
     # If state file EXISTS but is unreadable/corrupted, BLOCK — that's an
     # error, not a bootstrap condition.
     if [[ ! -f ".qrspi/state.json" ]]; then
+      echo "pre-tool-use: WARNING: no state file found — pipeline ordering not enforced for ${artifact_step}" >&2
       printf '{}\n'
       exit 0
     fi
@@ -152,7 +161,12 @@ else
     state_json_for_task=$(state_read 2>/dev/null) || {
       block_with_reason "Cannot read state file for task enforcement. Check .qrspi/state.json permissions or delete to reinitialize."
     }
-    task_id=$(printf '%s' "$state_json_for_task" | jq -r '.active_task.id // empty' 2>/dev/null) || true
+    task_id=$(printf '%s' "$state_json_for_task" | jq -r '.active_task.id // empty' 2>/dev/null) || {
+      block_with_reason "ERROR: failed to parse active_task.id from state — state file may be corrupted. Check .qrspi/state.json or delete to reinitialize."
+    }
+    if [[ -z "$task_id" ]]; then
+      echo "pre-tool-use: WARNING: no task ID resolved from state — enforcement checks skipped for this call" >&2
+    fi
   fi
   # No task_id outside a worktree is normal (e.g., during Goals/Questions steps
   # before implementation). Enforcement checks below only run when task_id is set.
@@ -215,10 +229,12 @@ if [[ $is_bash_tool -eq 0 ]]; then
 fi
 
 # ── Bash file-write target enforcement ───────────────────────────────────────
-if [[ $is_bash_tool -eq 1 && -n "$task_id" ]]; then
-  bash_command=$(printf '%s' "$stdin_json" | jq -r '.tool_input.command // empty' 2>/dev/null) || true
+if [[ $is_bash_tool -eq 1 ]]; then
+  bash_command=$(printf '%s' "$stdin_json" | jq -r '.tool_input.command // empty' 2>/dev/null) || {
+    block_with_reason "ERROR: failed to parse Bash command from tool_input. Malformed JSON in tool_input."
+  }
 
-  if [[ -n "${bash_command:-}" ]]; then
+  if [[ -n "${bash_command:-}" && -n "$task_id" ]]; then
     # Need artifact_dir — read state if not already available
     if [[ -z "${artifact_dir:-}" ]]; then
       state_for_bash=$(state_read 2>/dev/null) || {
@@ -234,7 +250,9 @@ if [[ $is_bash_tool -eq 1 && -n "$task_id" ]]; then
       block_with_reason "Cannot verify bash file-write targets: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
     fi
 
-    targets=$(bash_detect_file_writes "$bash_command" 2>/dev/null) || true
+    targets=$(bash_detect_file_writes "$bash_command" 2>/dev/null) || {
+      block_with_reason "ERROR: bash_detect_file_writes failed — cannot determine file-write targets for enforcement. Command may be too complex for static analysis."
+    }
 
     if [[ -n "${targets:-}" ]]; then
       while IFS= read -r target; do
@@ -244,6 +262,12 @@ if [[ $is_bash_tool -eq 1 && -n "$task_id" ]]; then
           block_with_reason "$reason"
         fi
       done <<< "$targets"
+    fi
+  elif [[ -n "${bash_command:-}" && -z "$task_id" ]]; then
+    # Check if the command has file-write targets even without a task ID
+    targets_check=$(bash_detect_file_writes "$bash_command" 2>/dev/null) || true
+    if [[ -n "${targets_check:-}" ]]; then
+      echo "pre-tool-use: WARNING: Bash file-write targets detected but no active task ID — allowlist check skipped" >&2
     fi
   fi
 fi
