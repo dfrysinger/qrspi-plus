@@ -222,21 +222,31 @@ status: draft
 ...
 ```
 
+### Plan Reviewer Templates
+
+Five reviewer templates run in parallel as part of the review round. All five run always — neither quick-fix nor full-pipeline mode gates any template. Templates that require `design.md` or `structure.md` emit "NOT APPLICABLE — quick-fix route" for those checks when those files are absent.
+
+| Template | File | Focus | Run Condition |
+|----------|------|-------|---------------|
+| Spec Reviewer | `templates/spec-reviewer.md` | Completeness, scope, interpretation, test coverage mapping, placeholder detection | Always |
+| Security Reviewer | `templates/security-reviewer.md` | Fail-closed requirements, input validation, auth/authz, no insecure defaults | Always |
+| Silent Failure Hunter | `templates/silent-failure-hunter.md` | Swallowed errors, silent fallbacks, partial state on failure, log-and-continue | Always |
+| Goal Traceability Reviewer | `templates/goal-traceability-reviewer.md` | Forward trace, backward trace, gap analysis, spec-to-design fidelity | Always |
+| Test Coverage Reviewer | `templates/test-coverage-reviewer.md` | Behavioral coverage, edge cases, error conditions, test expectation quality, missing design scenarios | Always |
+
 ### Review Round
 
 After the merged `plan.md` is ready, run one review round:
 
-1. **Claude review subagent** — launch with `plan.md` (merged), `goals.md`, `research/summary.md`, and (full pipeline only) `design.md`, `structure.md` to check:
-   - Does every goal/acceptance criterion map to test expectations in at least one task?
-   - Are edge cases and error conditions identified in test expectations?
-   - Is the test strategy from `design.md` reflected in the task test expectations?
-   - Are dependencies between tasks correct?
-   - Does the task ordering make sense (bottom-up through the stack)?
-   - Any TBD/TODO/placeholder content? (forbidden)
-   - Are task specs specific enough for an implementation agent to execute without guessing?
-   - Are LOC estimates reasonable?
-   
-   The subagent returns structured findings. The orchestrating skill writes them to `reviews/plan-review.md`.
+1. **Claude review subagent** — launch a subagent that runs all five reviewer templates from `skills/plan/templates/` in parallel. Provide the subagent with:
+   - `plan.md` (merged)
+   - `goals.md`
+   - `research/summary.md`
+   - (full pipeline only) `design.md` and `structure.md`
+
+   Each reviewer template is a standalone prompt document — the subagent fills in the artifact content and runs each template as a separate review pass. The five reviews run concurrently; the subagent collects all findings and returns them as a single structured report.
+
+   The orchestrating skill writes the combined findings to `reviews/plan-review.md`.
 
 2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`plan.md`), input artifacts (`goals.md`, `research/summary.md`, and (full pipeline only) `design.md`, `structure.md`) for cross-reference, and the same review criteria. The orchestrating skill appends Codex findings to `reviews/plan-review.md`.
 
