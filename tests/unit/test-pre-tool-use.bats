@@ -174,3 +174,188 @@ init_state() {
   [[ "$output" == *"goals"* ]]
   [[ "$output" == *"design"* ]]
 }
+
+# ──────────────────────────────────────────────────────────────
+# [T03-U1] Unknown tool "Memoize" → exit 0, stdout {}, stderr WARNING
+# ──────────────────────────────────────────────────────────────
+@test "[T03-U1] Unknown tool name emits warning to stderr and exits 0" {
+  local json='{"tool_name":"Memoize","tool_input":{}}'
+
+  run --separate-stderr "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "{}" ]]
+  [[ "$stderr" == *"WARNING"* ]]
+  [[ "$stderr" == *"unknown tool_name"* ]]
+  [[ "$stderr" == *"Memoize"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T03-U2] Write to goals.md with no state file → exit 0, stderr WARNING
+# ──────────────────────────────────────────────────────────────
+@test "[T03-U2] Write to goals.md with no state file emits warning and exits 0" {
+  # WORK_DIR has no .qrspi/state.json
+  local json
+  json='{"tool_name":"Write","tool_input":{"file_path":"'"$ARTIFACT_DIR/goals.md"'","content":"x"}}'
+
+  run --separate-stderr "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "{}" ]]
+  [[ "$stderr" == *"WARNING"* ]]
+  [[ "$stderr" == *"no state file"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T03-U3] State with malformed active_task → exit 2, deny JSON, stderr ERROR
+# ──────────────────────────────────────────────────────────────
+@test "[T03-U3] State with malformed active_task blocks with deny JSON" {
+  # Create state where active_task is a string, not an object
+  mkdir -p "$WORK_DIR/.qrspi"
+  printf '{"version":1,"current_step":"implement","artifact_dir":"%s","artifacts":{},"active_task":"not-an-object"}' \
+    "$ARTIFACT_DIR" > "$WORK_DIR/.qrspi/state.json"
+
+  local json
+  json='{"tool_name":"Write","tool_input":{"file_path":"/tmp/somefile.txt","content":"x"}}'
+
+  run --separate-stderr "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *"ERROR"* ]]
+  [[ "$stderr" == *"failed to parse active_task.id"* ]]
+  # stdout should be deny JSON
+  local decision
+  decision=$(printf '%s' "$output" | jq -r '.decision')
+  [[ "$decision" == "block" ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T03-U4] State with active_task:null, Bash with targets → exit 0, stderr WARNING
+# ──────────────────────────────────────────────────────────────
+@test "[T03-U4] Bash with file-write targets but no active task emits warning" {
+  mkdir -p "$WORK_DIR/.qrspi"
+  printf '{"version":1,"current_step":"implement","artifact_dir":"%s","artifacts":{},"active_task":null}' \
+    "$ARTIFACT_DIR" > "$WORK_DIR/.qrspi/state.json"
+
+  local json='{"tool_name":"Bash","tool_input":{"command":"echo hi > /tmp/out.txt"}}'
+
+  run --separate-stderr "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "{}" ]]
+  [[ "$stderr" == *"WARNING"* ]]
+  [[ "$stderr" == *"Bash file-write targets detected but no active task ID"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T03-U5] bash_detect_file_writes fails during active task → exit 2, deny JSON
+# ──────────────────────────────────────────────────────────────
+@test "[T03-U5] bash_detect_file_writes failure during active task blocks" {
+  # Create state with active task
+  mkdir -p "$WORK_DIR/.qrspi"
+  mkdir -p "$ARTIFACT_DIR/tasks"
+  printf -- '---\nstatus: approved\ntask: 1\nphase: 1\nenforcement: monitored\nallowed_files:\n  - action: create\n    path: src/main.sh\nconstraints: []\n---\n\n# Task 1\n' \
+    > "$ARTIFACT_DIR/tasks/task-01.md"
+  printf '{"version":1,"current_step":"implement","artifact_dir":"%s","artifacts":{},"active_task":{"id":1}}' \
+    "$ARTIFACT_DIR" > "$WORK_DIR/.qrspi/state.json"
+
+  # Inject a broken bash_detect_file_writes by temporarily replacing the lib file.
+  # Save original, replace with broken version, run hook, restore.
+  local lib_dir
+  lib_dir="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib"
+  cp "$lib_dir/bash-detect.sh" "$WORK_DIR/bash-detect-orig.sh"
+  printf '#!/usr/bin/env bash\nset -euo pipefail\nbash_detect_file_writes() { return 1; }\n' > "$lib_dir/bash-detect.sh"
+
+  local json='{"tool_name":"Bash","tool_input":{"command":"echo hi > /tmp/out.txt"}}'
+
+  run --separate-stderr "$HOOK" <<< "$json"
+
+  # Restore original immediately
+  cp "$WORK_DIR/bash-detect-orig.sh" "$lib_dir/bash-detect.sh"
+
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *"ERROR"* ]]
+  [[ "$stderr" == *"bash_detect_file_writes failed"* ]]
+  local decision
+  decision=$(printf '%s' "$output" | jq -r '.decision')
+  [[ "$decision" == "block" ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T03-U6] Bash tool_input not an object → exit 2, deny JSON, stderr ERROR
+# ──────────────────────────────────────────────────────────────
+@test "[T03-U6] Bash tool_input not an object blocks with deny JSON" {
+  local json='{"tool_name":"Bash","tool_input":"not-an-object"}'
+
+  run --separate-stderr "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *"ERROR"* ]]
+  [[ "$stderr" == *"failed to parse Bash command"* ]]
+  local decision
+  decision=$(printf '%s' "$output" | jq -r '.decision')
+  [[ "$decision" == "block" ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# Post-tool-use tests (T03-U7 through T03-U9)
+# ──────────────────────────────────────────────────────────────
+
+# [T03-U7] post-tool-use unknown tool "Memoize" → exit 0, stderr WARNING
+@test "[T03-U7] post-tool-use unknown tool emits warning to stderr" {
+  export POST_HOOK
+  POST_HOOK="$(dirname "$BATS_TEST_FILENAME")/../../hooks/post-tool-use"
+  local json='{"tool_name":"Memoize","tool_input":{}}'
+
+  run --separate-stderr "$POST_HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"WARNING"* ]]
+  [[ "$stderr" == *"unrecognized tool_name"* ]]
+  [[ "$stderr" == *"Memoize"* ]]
+}
+
+# [T03-U8] post-tool-use Write with no task ID, state present → exit 0, stderr WARNING
+@test "[T03-U8] post-tool-use Write with no task ID and state present emits warning" {
+  export POST_HOOK
+  POST_HOOK="$(dirname "$BATS_TEST_FILENAME")/../../hooks/post-tool-use"
+
+  mkdir -p "$WORK_DIR/.qrspi"
+  printf '{"version":1,"current_step":"implement","artifact_dir":"%s","artifacts":{},"active_task":null}' \
+    "$ARTIFACT_DIR" > "$WORK_DIR/.qrspi/state.json"
+
+  local json='{"tool_name":"Write","tool_input":{"file_path":"/tmp/somefile.txt","content":"x"}}'
+
+  run --separate-stderr "$POST_HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+  # Warning should appear in stderr or in audit log
+  [[ "$stderr" == *"WARNING"* ]] || [[ "$stderr" == *"no task ID"* ]]
+  [[ "$stderr" == *"no task ID resolved"* ]]
+}
+
+# [T03-U9] post-tool-use artifact_is_known returns 2 → exit 0, stderr WARNING
+@test "[T03-U9] post-tool-use artifact_is_known error emits warning" {
+  export POST_HOOK
+  POST_HOOK="$(dirname "$BATS_TEST_FILENAME")/../../hooks/post-tool-use"
+
+  mkdir -p "$WORK_DIR/.qrspi"
+  printf '{"version":1,"current_step":"implement","artifact_dir":"%s","artifacts":{},"active_task":{"id":1}}' \
+    "$ARTIFACT_DIR" > "$WORK_DIR/.qrspi/state.json"
+
+  # Inject a broken artifact_is_known by temporarily replacing the lib file
+  local lib_dir
+  lib_dir="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib"
+  cp "$lib_dir/artifact.sh" "$WORK_DIR/artifact-orig.sh"
+
+  # Write a broken artifact.sh that sources pipeline.sh but overrides artifact_is_known
+  printf '#!/usr/bin/env bash\nset -euo pipefail\n' > "$lib_dir/artifact.sh"
+  printf '_artifact_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"\n' >> "$lib_dir/artifact.sh"
+  printf 'source "$_artifact_script_dir/pipeline.sh"\n' >> "$lib_dir/artifact.sh"
+  printf 'artifact_is_known() { return 2; }\n' >> "$lib_dir/artifact.sh"
+  printf 'artifact_sync_state() { return 0; }\n' >> "$lib_dir/artifact.sh"
+
+  local json='{"tool_name":"Write","tool_input":{"file_path":"'"$ARTIFACT_DIR/goals.md"'","content":"x"}}'
+
+  run --separate-stderr "$POST_HOOK" <<< "$json"
+
+  # Restore original immediately
+  cp "$WORK_DIR/artifact-orig.sh" "$lib_dir/artifact.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"WARNING"* ]]
+  [[ "$stderr" == *"artifact_is_known returned error"* ]]
+}

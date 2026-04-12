@@ -60,6 +60,14 @@ fi
 
 # Only process Write, Edit, Bash — other tools don't need audit or state sync
 if [[ "$tool_name" != "Write" && "$tool_name" != "Edit" && "$tool_name" != "Bash" ]]; then
+  # Warn on unrecognized tool names
+  case "$tool_name" in
+    Read|Glob|Grep|Skill|ToolSearch|Agent|TodoRead|TodoWrite|WebFetch|WebSearch|NotebookEdit)
+      ;;
+    *)
+      echo "post-tool-use: WARNING: unrecognized tool_name '${tool_name}' — not audited" >&2
+      ;;
+  esac
   exit 0
 fi
 
@@ -114,7 +122,11 @@ fi
 
 # --- 1. Artifact state sync (Write/Edit only) ---
 if [[ -n "$file_path" ]]; then
-  step_name=$(artifact_is_known "$file_path" "$artifact_dir" 2>/dev/null) || true
+  artifact_exit=0
+  step_name=$(artifact_is_known "$file_path" "$artifact_dir" 2>/dev/null) || artifact_exit=$?
+  if [[ $artifact_exit -eq 2 ]]; then
+    log_error "WARNING: artifact_is_known returned error for ${file_path} — artifact sync skipped"
+  fi
   if [[ -n "$step_name" ]]; then
     if ! artifact_sync_state "$file_path" "$artifact_dir" 2>/dev/null; then
       log_error "ERROR: artifact_sync_state failed for ${step_name} (${file_path}) — state.json may be stale"
@@ -185,9 +197,12 @@ if [[ -n "$task_id" ]]; then
 elif [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "Bash" ]]; then
   # We have a Write/Edit/Bash call but no task ID — this is normal during
   # non-implementation steps (Goals, Questions, etc.). Not an error, but
-  # worth noting if we're in a worktree (where task ID should always exist).
+  # worth noting if we're in a worktree (where task ID should always exist)
+  # or if state is present (which means a QRSPI project is active).
   if worktree_detect "$PWD" 2>/dev/null; then
     log_error "WARNING: in worktree but no task ID resolved — ${tool_name} call not audited"
+  elif [[ -f ".qrspi/state.json" ]]; then
+    log_error "WARNING: no task ID resolved — ${tool_name} call not audited"
   fi
 fi
 

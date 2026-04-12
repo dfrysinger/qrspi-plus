@@ -445,3 +445,88 @@ bash_json() {
 
   rm -rf "$test_artifact_dir"
 }
+
+# ── T03 Fail-Closed Acceptance Tests ────────────────────────────────────────
+
+# [T03-A1] Full pre-tool-use with unknown tool → exit 0, stdout {}, stderr warning
+@test "[T03-A1] Full pre-tool-use with unknown tool exits 0 with warning" {
+  local json='{"tool_name":"FooTool","tool_input":{}}'
+
+  run --separate-stderr "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "{}" ]]
+  [[ "$stderr" == *"WARNING"* ]]
+  [[ "$stderr" == *"unknown tool_name"* ]]
+}
+
+# [T03-A2] Full pre-tool-use: Write goals.md, no state → exit 0, stdout {}, stderr warning
+@test "[T03-A2] Write to goals.md with no state exits 0 with warning" {
+  # No .qrspi/state.json in WORK_DIR
+  local json
+  json='{"tool_name":"Write","tool_input":{"file_path":"'"$ARTIFACT_DIR/goals.md"'","content":"x"}}'
+
+  run --separate-stderr "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "{}" ]]
+  [[ "$stderr" == *"WARNING"* ]]
+}
+
+# [T03-A3] Full pre-tool-use: Write with corrupted state JSON → exit 2, stdout deny JSON
+@test "[T03-A3] Write with corrupted state JSON exits 2 with deny" {
+  mkdir -p "$WORK_DIR/.qrspi"
+  printf 'this is not json at all' > "$WORK_DIR/.qrspi/state.json"
+
+  local json
+  json='{"tool_name":"Write","tool_input":{"file_path":"'"$ARTIFACT_DIR/goals.md"'","content":"x"}}'
+
+  run --separate-stderr "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  local decision
+  decision=$(printf '%s' "${lines[-1]}" | jq -r '.decision')
+  [[ "$decision" == "block" ]]
+}
+
+# [T03-A4] Full pre-tool-use: Bash during task, bash_detect fails → exit 2, stdout deny JSON
+@test "[T03-A4] Bash with broken bash_detect during active task exits 2" {
+  mkdir -p "$WORK_DIR/.qrspi"
+  mkdir -p "$ARTIFACT_DIR/tasks"
+  printf -- '---\nstatus: approved\ntask: 1\nphase: 1\nenforcement: monitored\nallowed_files:\n  - action: create\n    path: src/main.sh\nconstraints: []\n---\n\n# Task 1\n' \
+    > "$ARTIFACT_DIR/tasks/task-01.md"
+  printf '{"version":1,"current_step":"implement","artifact_dir":"%s","artifacts":{},"active_task":{"id":1}}' \
+    "$ARTIFACT_DIR" > "$WORK_DIR/.qrspi/state.json"
+
+  # Inject a broken bash_detect_file_writes by temporarily replacing the lib file
+  local lib_dir
+  lib_dir="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib"
+  cp "$lib_dir/bash-detect.sh" "$WORK_DIR/bash-detect-orig.sh"
+  printf '#!/usr/bin/env bash\nset -euo pipefail\nbash_detect_file_writes() { return 1; }\n' > "$lib_dir/bash-detect.sh"
+
+  local json='{"tool_name":"Bash","tool_input":{"command":"echo hello > out.txt"}}'
+
+  run --separate-stderr "$HOOK" <<< "$json"
+
+  # Restore original immediately
+  cp "$WORK_DIR/bash-detect-orig.sh" "$lib_dir/bash-detect.sh"
+
+  [ "$status" -eq 2 ]
+  local decision
+  decision=$(printf '%s' "${lines[-1]}" | jq -r '.decision')
+  [[ "$decision" == "block" ]]
+}
+
+# [T03-A5] Full post-tool-use: Write, state present, active_task null → exit 0, stderr warning
+@test "[T03-A5] post-tool-use Write with null active_task warns about no task ID" {
+  local POST_HOOK
+  POST_HOOK="$(dirname "$BATS_TEST_FILENAME")/../../hooks/post-tool-use"
+
+  mkdir -p "$WORK_DIR/.qrspi"
+  printf '{"version":1,"current_step":"implement","artifact_dir":"%s","artifacts":{},"active_task":null}' \
+    "$ARTIFACT_DIR" > "$WORK_DIR/.qrspi/state.json"
+
+  local json='{"tool_name":"Write","tool_input":{"file_path":"/tmp/somefile.txt","content":"x"}}'
+
+  run --separate-stderr "$POST_HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"WARNING"* ]]
+  [[ "$stderr" == *"no task ID resolved"* ]]
+}
