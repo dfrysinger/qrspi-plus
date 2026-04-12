@@ -134,22 +134,23 @@ When handling fix tasks from integration, CI, or test failures, read from `fixes
 
 ## Human Gate
 
-Present parallelization plan as a Mermaid dependency graph. Example:
+Write the Mermaid dependency graph to `parallelization.md` — do not paste the diagram inline in the terminal. Tell the user: "Parallelization plan written to parallelization.md — open it to view the dependency graph."
 
-```mermaid
-flowchart LR
-    subgraph parallel1["Parallel Group 1"]
-        T1[Task 1: Auth + profiles\nworktree: task-01]
-        T2[Task 2: Box CRUD\nworktree: task-02]
-    end
-    subgraph sequential["Sequential"]
-        T3[Task 3: Invitations\nworktree: task-03]
-    end
-    T1 --> T3
-    T2 --> T3
+In the terminal, present the branch map and execution mode as plain text:
+
+```
+Execution mode: Hybrid
+
+Branch map:
+  task-01  →  qrspi/{slug}/task-01
+  task-02  →  qrspi/{slug}/task-02
+  task-03  →  qrspi/{slug}/task-03
+
+Parallel Group 1: task-01, task-02 (no file overlap)
+Sequential after G1: task-03 (depends on task-01, task-02)
 ```
 
-Below the graph, include branch map and execution mode summary. On approval, write `status: approved` in frontmatter and commit.
+On approval, write `status: approved` in frontmatter and commit.
 
 ## Batch Gate (After All Tasks)
 
@@ -193,7 +194,7 @@ Create granular tasks for each step:
 3. Present parallelization plan
 4. Create worktrees
 5. Run baseline tests
-6. Dispatch tasks to Implement
+6. For each parallel group, create a separate TodoWrite task (e.g., "G1: T01, T12, T13 — dispatch"). Mark in_progress at dispatch; mark completed when all tasks in that group return. This allows the user to track dispatch progress at group granularity.
 
 Mark each task in_progress when starting, completed when done.
 
@@ -206,6 +207,7 @@ Mark each task in_progress when starting, completed when done.
 - Re-asking review depth/mode during fix-task dispatch (reuse from config.md)
 - Proceeding after BLOCKED status without changing approach
 - Dispatching a task whose dependencies haven't completed
+- Using a single TodoWrite task for all Implement dispatches — create one task per parallel group so the user can track progress
 
 ## Common Rationalizations — STOP
 
@@ -276,3 +278,13 @@ All tasks run in parallel.
 - No file overlap check — Tasks 1 and 3 both modify `src/routes/auth.ts`
 - No rationale for execution mode choice
 - Missing worktree assignments per task
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Complete every step before moving on: Every process step in this skill exists for a reason. Execute each step fully. If a step seems redundant given the current state, state why and ask the user — do not silently skip it.
+
+D3 — Resist time-pressure shortcuts: If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
+</BEHAVIORAL-DIRECTIVES>

@@ -97,16 +97,17 @@ flowchart TD
     F --> H{User decision}
     G --> G2{User decision}
     G2 -->|add more tests| B
-    G2 -->|approved| Q
+    G2 -->|approved| CR
     H -->|add more tests| B
     H -->|dispatch fixes| K[Write fix tasks to fixes/test-round-NN/]
-    H -->|accept| Q
+    H -->|accept| CR
     H -->|stop| L[Pipeline halted]
     K -->|full pipeline| M[Route to Worktree → Implement → Integrate → Test]
     K -->|quick fix| N[Route to Implement → Test]
     M --> D
     N --> D
-    Q[Prepare PR for current phase]
+    CR[Code review checkpoint]
+    CR --> Q[Prepare PR for current phase]
     Q --> R{User confirms PR?}
     R -->|yes| S[Create PR via gh pr create]
     R -->|no| S2[Skip PR — code stays on feature branch]
@@ -196,6 +197,22 @@ fix_type: test
 
 Present test results to the user: which acceptance criteria passed, which failed, overall test suite status. User approves test results before phase routing proceeds. On rejection, write feedback to `feedback/test-round-{NN}.md` and re-run the test fix loop.
 
+## Code Review Checkpoint (Before PR)
+
+After all acceptance tests pass and the user has approved the test results, present a code review window before creating the PR:
+
+```
+All acceptance tests passed. Before creating the PR, take time to review the implementation code.
+
+Review options:
+1. Local file review — here are all changed files:
+   {list each changed file with absolute path}
+2. Full phase diff — run: git diff main...HEAD
+3. Skip review and continue to PR
+```
+
+Wait for the user to choose. Proceed to PR creation only after the user selects an option (including option 3 to skip).
+
 ## Terminal State — Phase Routing
 
 **Every phase gets a PR.** After acceptance testing passes, prepare a PR for the current phase: draft title (including phase number for multi-phase projects), summary referencing artifacts in `docs/qrspi/YYYY-MM-DD-{slug}/`. Show user for confirmation. On confirmation, create PR via `gh pr create`. If user declines (e.g., wants to review locally first), skip PR creation — code stays on the feature branch.
@@ -237,6 +254,7 @@ Sub-tasks for Test:
 - Classifying all failures as "quick fix" to avoid the Worktree → Implement → Integrate round trip
 - Creating a PR without user confirmation
 - Skipping phase routing (invoking Replan) when more phases exist
+- Proceeding to PR creation without offering a code review window after tests pass
 
 ## Common Rationalizations — STOP
 
@@ -295,3 +313,13 @@ Test-writer produces:
 - Doesn't map to any acceptance criterion
 - No boundary testing (at-limit, over-limit, reset)
 - Assertion is tautological — can't fail meaningfully
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Complete every step before moving on: Every process step in this skill exists for a reason. Execute each step fully. If a step seems redundant given the current state, state why and ask the user — do not silently skip it.
+
+D3 — Resist time-pressure shortcuts: If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
+</BEHAVIORAL-DIRECTIVES>
