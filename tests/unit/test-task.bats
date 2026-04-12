@@ -202,6 +202,65 @@ constraints:
 }
 
 # ============================================================================
+# T05: task_get_spec_path validation tests
+# ============================================================================
+
+@test "[T05-T1] task_get_spec_path: empty task_id returns 1 with 'task_id is empty'" {
+  run task_get_spec_path "" "/some/dir"
+  [[ $status == 1 ]]
+  [[ "$output" == *"task_id is empty"* ]]
+}
+
+@test "[T05-T2] task_get_spec_path: non-numeric task_id returns 1 with 'not a positive integer'" {
+  run task_get_spec_path "abc" "/some/dir"
+  [[ $status == 1 ]]
+  [[ "$output" == *"not a positive integer"* ]]
+}
+
+@test "[T05-T3] task_get_spec_path: empty artifact_dir returns 1 with 'artifact_dir is empty'" {
+  run task_get_spec_path "3" ""
+  [[ $status == 1 ]]
+  [[ "$output" == *"artifact_dir is empty"* ]]
+}
+
+# ============================================================================
+# T05: task_read_runtime_overrides validation tests
+# ============================================================================
+
+@test "[T05-T4] task_read_runtime_overrides: invalid JSON content returns 1 with 'invalid JSON'" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .qrspi
+  printf "not-json-content" > ".qrspi/task-09-runtime.json"
+
+  run task_read_runtime_overrides 9
+  [[ $status == 1 ]]
+  [[ "$output" == *"invalid JSON"* ]]
+}
+
+@test "[T05-T5] task_read_runtime_overrides: empty file returns 1 with 'invalid JSON'" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .qrspi
+  printf "" > ".qrspi/task-10-runtime.json"
+
+  run task_read_runtime_overrides 10
+  [[ $status == 1 ]]
+  [[ "$output" == *"invalid JSON"* ]]
+}
+
+# ============================================================================
+# T05: task_write_runtime_overrides validation tests
+# ============================================================================
+
+@test "[T05-T6] task_write_runtime_overrides: non-JSON input returns 1 with 'not valid JSON', file not created" {
+  cd "$TEST_TEMP_DIR"
+
+  run task_write_runtime_overrides "3" "not-json"
+  [[ $status == 1 ]]
+  [[ "$output" == *"not valid JSON"* ]]
+  [[ ! -f ".qrspi/task-03-runtime.json" ]]
+}
+
+# ============================================================================
 # Library quality tests
 # ============================================================================
 
