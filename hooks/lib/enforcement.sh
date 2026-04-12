@@ -46,7 +46,7 @@ enforcement_get_mode() {
 # In monitored mode: always returns 0.
 # In strict mode: returns 0 if file is in allowed_files or overrides user_approved_files,
 #                 returns 2 if not (also writes three-option message to stderr).
-# Path matching: strips working directory prefix from file_path to get relative path.
+# Path matching: uses direct string comparison against pre-resolved absolute paths from task_resolve_allowlist_paths.
 enforcement_check_allowlist() {
   local file_path="$1"
   local task_id="$2"
