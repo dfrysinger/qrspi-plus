@@ -482,3 +482,43 @@ _t14_create_all_approved() {
   [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
 }
+
+# ============================================================================
+# [T15] Cascade vs skip-cascade verification tests
+# ============================================================================
+
+@test "[T15-P1] pipeline_cascade_reset structure (no flag) -> resets structure through test, leaves goals/questions/research/design" {
+  _t14_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  pipeline_cascade_reset "structure" "$ARTIFACT_DIR"
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T15-P2] pipeline_cascade_reset structure --skip-cascade -> resets only structure" {
+  _t14_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  pipeline_cascade_reset "structure" "$ARTIFACT_DIR" --skip-cascade
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
