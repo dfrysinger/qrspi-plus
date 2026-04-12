@@ -164,12 +164,9 @@ if [[ -n "$task_id" ]]; then
       # Use first target as primary
       primary_target=$(printf '%s' "$targets" | head -1)
 
-      # Check in_scope for primary target
-      if enforcement_check_allowlist "$primary_target" "$task_id" "$artifact_dir" >/dev/null 2>&1; then
-        in_scope="true"
-      else
-        in_scope="false"
-      fi
+      # Check in_scope for primary target — capture stdout ("true"/"false"),
+      # not exit code (which is 0 for both in-scope and monitored-out-of-scope)
+      in_scope=$(enforcement_check_allowlist "$primary_target" "$task_id" "$artifact_dir" 2>/dev/null) || in_scope="false"
     else
       targets_json='[]'
       primary_target=""
@@ -183,12 +180,9 @@ if [[ -n "$task_id" ]]; then
     # Write/Edit
     targets_json=$(jq -cn --arg p "$file_path" '[$p]')
 
-    # Check in_scope
-    if enforcement_check_allowlist "$file_path" "$task_id" "$artifact_dir" >/dev/null 2>&1; then
-      in_scope="true"
-    else
-      in_scope="false"
-    fi
+    # Check in_scope — capture stdout ("true"/"false"),
+    # not exit code (which is 0 for both in-scope and monitored-out-of-scope)
+    in_scope=$(enforcement_check_allowlist "$file_path" "$task_id" "$artifact_dir" 2>/dev/null) || in_scope="false"
 
     if ! audit_log_operation "$task_id" "$timestamp" "$tool_name" "$file_path" "$targets_json" "null" "$in_scope" "$enforcement" "$user_approved" "null"; then
       log_error "ERROR: audit_log_operation failed for ${tool_name} ${file_path} — audit trail has a gap"

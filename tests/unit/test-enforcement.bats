@@ -366,10 +366,10 @@ constraints: []
 
   [ "$exit_code" -eq 0 ]
   [[ "$stdout_result" == "strict" ]]
-  # Should have a warning on stderr about corrupted overrides
+  # Should have a warning on stderr about invalid JSON from task_read_runtime_overrides
   local stderr_content
   stderr_content=$(cat "$stderr_file")
-  [[ "$stderr_content" == *"enforcement_get_mode: corrupted runtime overrides"* ]]
+  [[ "$stderr_content" == *"invalid JSON"* ]]
 }
 
 @test "[T04-E2] enforcement_get_mode: unrecognized mode strikt returns exit 1 with stderr diagnostic" {

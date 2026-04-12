@@ -15,7 +15,7 @@ enforcement_get_mode() {
 
   # Check runtime overrides first (user mid-task decisions take precedence)
   local overrides_json
-  if overrides_json=$(task_read_runtime_overrides "$task_id" 2>/dev/null); then
+  if overrides_json=$(task_read_runtime_overrides "$task_id"); then
     local overrides_mode
     if overrides_mode=$(echo "$overrides_json" | jq -r '.enforcement // empty' 2>/dev/null); then
       if [[ -n "$overrides_mode" && "$overrides_mode" != "null" ]]; then

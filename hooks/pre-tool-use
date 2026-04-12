@@ -102,31 +102,32 @@ if [[ $is_bash_tool -eq 0 ]]; then
     # (Goals, using-qrspi) when they initialize the artifact directory.
     # If state file EXISTS but is unreadable/corrupted, BLOCK — that's an
     # error, not a bootstrap condition.
+    # NOTE: Even when skipping pipeline ordering, we fall through to
+    # worktree containment, protected path, and L1 allowlist checks below.
     if [[ ! -f ".qrspi/state.json" ]]; then
       echo "pre-tool-use: WARNING: no state file found — pipeline ordering not enforced for ${artifact_step}" >&2
-      printf '{}\n'
-      exit 0
+    else
+      state_json=$(state_read 2>/dev/null) || {
+        block_with_reason "Cannot verify pipeline ordering: state file exists but is unreadable. Check .qrspi/state.json permissions or delete to reinitialize."
+      }
+
+      # Extract artifact_dir from state — FAIL-CLOSED if corrupted
+      artifact_dir=$(printf '%s' "$state_json" | jq -r '.artifact_dir // empty' 2>/dev/null) || {
+        block_with_reason "Cannot verify pipeline ordering: state file corrupted. Run SessionStart or /compact to reinitialize."
+      }
+
+      if [[ -z "$artifact_dir" ]]; then
+        block_with_reason "Cannot verify pipeline ordering: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
+      fi
+
+      missing_step=$(pipeline_check_prerequisites "$artifact_step" "$artifact_dir") || {
+        # pipeline_check_prerequisites returned non-zero — missing_step is set on stdout
+        artifact_basename=$(basename "$file_path")
+
+        reason="Complete and approve ${missing_step} before writing ${artifact_basename}"
+        block_with_reason "$reason"
+      }
     fi
-    state_json=$(state_read 2>/dev/null) || {
-      block_with_reason "Cannot verify pipeline ordering: state file exists but is unreadable. Check .qrspi/state.json permissions or delete to reinitialize."
-    }
-
-    # Extract artifact_dir from state — FAIL-CLOSED if corrupted
-    artifact_dir=$(printf '%s' "$state_json" | jq -r '.artifact_dir // empty' 2>/dev/null) || {
-      block_with_reason "Cannot verify pipeline ordering: state file corrupted. Run SessionStart or /compact to reinitialize."
-    }
-
-    if [[ -z "$artifact_dir" ]]; then
-      block_with_reason "Cannot verify pipeline ordering: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
-    fi
-
-    missing_step=$(pipeline_check_prerequisites "$artifact_step" "$artifact_dir") || {
-      # pipeline_check_prerequisites returned non-zero — missing_step is set on stdout
-      artifact_basename=$(basename "$file_path")
-
-      reason="Complete and approve ${missing_step} before writing ${artifact_basename}"
-      block_with_reason "$reason"
-    }
   fi
 fi
 

@@ -298,8 +298,9 @@ audit_file_for_task() {
   [ "$(echo "$record" | jq '.in_scope')" = "false" ]
 }
 
-# AC2 — Monitored mode: write to any file → in_scope=true in log
-@test "[AC2][audit] Monitored mode write → in_scope=true in log" {
+# AC2 — Monitored mode: write to file NOT in allowlist → in_scope=false in log
+# U13 fix: in_scope reflects allowlist membership, not enforcement decision
+@test "[AC2][audit] Monitored mode write to non-allowed file → in_scope=false in log" {
   create_task_spec 16 "monitored"
   init_state_with_task 16
 
@@ -307,6 +308,18 @@ audit_file_for_task() {
 
   local record
   record=$(head -1 "$(audit_file_for_task 16)")
+  [ "$(echo "$record" | jq '.in_scope')" = "false" ]
+}
+
+# AC2 — Monitored mode: write to file IN allowlist → in_scope=true in log
+@test "[AC2][audit] Monitored mode write to allowed file → in_scope=true in log" {
+  create_task_spec 24 "monitored" "src/allowed.sh"
+  init_state_with_task 24
+
+  "$HOOK" <<< "$(write_json "$WORK_DIR/src/allowed.sh")"
+
+  local record
+  record=$(head -1 "$(audit_file_for_task 24)")
   [ "$(echo "$record" | jq '.in_scope')" = "true" ]
 }
 
