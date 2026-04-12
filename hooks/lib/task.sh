@@ -59,6 +59,68 @@ task_read_runtime_overrides() {
   echo "$content"
 }
 
+# task_resolve_allowlist_paths <allowed_files_json> <base_dir>
+# Resolves each path in an allowed_files JSON array to its absolute canonical form.
+# Relative paths are resolved relative to base_dir. Already-absolute paths pass through.
+# Tilde expansion is handled via bash parameter expansion.
+# Uses realpath --no-symlinks if available, falls back to readlink -f.
+# Writes the resolved array to .qrspi/resolved-allowlist-paths.json (runtime sidecar).
+# Outputs the updated JSON array on stdout.
+task_resolve_allowlist_paths() {
+  local allowed_files_json="$1"
+  local base_dir="$2"
+
+  local resolved_json
+  resolved_json="[]"
+
+  local count
+  count=$(printf "%s" "$allowed_files_json" | jq 'length')
+
+  local i=0
+  while [[ $i -lt $count ]]; do
+    local entry
+    entry=$(printf "%s" "$allowed_files_json" | jq --argjson idx "$i" '.[$idx]')
+
+    local raw_path
+    raw_path=$(printf "%s" "$entry" | jq -r '.path')
+
+    # Tilde expansion
+    if [[ "$raw_path" == "~/"* ]]; then
+      raw_path="${HOME}/${raw_path#"~/"}"
+    elif [[ "$raw_path" == "~" ]]; then
+      raw_path="$HOME"
+    fi
+
+    # Resolve to absolute path
+    local abs_path
+    if [[ "$raw_path" != /* ]]; then
+      # Relative path — resolve against base_dir
+      local candidate="${base_dir}/${raw_path}"
+      if realpath --no-symlinks "$candidate" > /dev/null 2>&1; then
+        abs_path=$(realpath --no-symlinks "$candidate")
+      elif readlink -f "$candidate" > /dev/null 2>&1; then
+        abs_path=$(readlink -f "$candidate")
+      else
+        abs_path="$candidate"
+      fi
+    else
+      abs_path="$raw_path"
+    fi
+
+    local resolved_entry
+    resolved_entry=$(printf "%s" "$entry" | jq --arg p "$abs_path" '.path = $p')
+    resolved_json=$(printf "%s" "$resolved_json" | jq --argjson e "$resolved_entry" '. + [$e]')
+
+    i=$((i + 1))
+  done
+
+  # Write sidecar
+  mkdir -p .qrspi
+  printf "%s" "$resolved_json" > ".qrspi/resolved-allowlist-paths.json"
+
+  printf "%s" "$resolved_json"
+}
+
 # task_write_runtime_overrides <task_id> <json_string>
 # Writes the runtime overrides file (.qrspi/task-{NN}-runtime.json)
 # atomically (temp file + mv). Creates .qrspi/ if needed.

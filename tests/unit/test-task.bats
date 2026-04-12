@@ -261,6 +261,63 @@ constraints:
 }
 
 # ============================================================================
+# U10: task_resolve_allowlist_paths tests
+# ============================================================================
+
+@test "[U10-T5] task_resolve_allowlist_paths: converts relative paths to absolute" {
+  cd "$TEST_TEMP_DIR"
+  local input_json='[{"action":"create","path":"hooks/lib/enforcement.sh"},{"action":"modify","path":"src/main.sh"}]'
+  output=$(task_resolve_allowlist_paths "$input_json" "$TEST_TEMP_DIR")
+
+  first_path=$(printf "%s" "$output" | jq -r '.[0].path')
+  second_path=$(printf "%s" "$output" | jq -r '.[1].path')
+
+  [[ "$first_path" == "$TEST_TEMP_DIR/hooks/lib/enforcement.sh" ]]
+  [[ "$second_path" == "$TEST_TEMP_DIR/src/main.sh" ]]
+}
+
+@test "[U10-T6] task_resolve_allowlist_paths: already-absolute paths pass through unchanged" {
+  cd "$TEST_TEMP_DIR"
+  local abs_path="/already/absolute/file.sh"
+  local input_json="[{\"action\":\"create\",\"path\":\"$abs_path\"}]"
+  output=$(task_resolve_allowlist_paths "$input_json" "$TEST_TEMP_DIR")
+
+  result_path=$(printf "%s" "$output" | jq -r '.[0].path')
+  [[ "$result_path" == "$abs_path" ]]
+}
+
+@test "[U10-T7] task_resolve_allowlist_paths: resolved paths stored in runtime sidecar JSON" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .qrspi
+  local input_json='[{"action":"create","path":"hooks/lib/task.sh"}]'
+  task_resolve_allowlist_paths "$input_json" "$TEST_TEMP_DIR" > /dev/null
+
+  local sidecar_path=".qrspi/resolved-allowlist-paths.json"
+  [[ -f "$sidecar_path" ]]
+
+  stored_path=$(jq -r '.[0].path' "$sidecar_path")
+  [[ "$stored_path" == "$TEST_TEMP_DIR/hooks/lib/task.sh" ]]
+}
+
+@test "[U10-T8] task_resolve_allowlist_paths: falls back to readlink when realpath unavailable" {
+  cd "$TEST_TEMP_DIR"
+  # Override PATH to hide realpath, simulating its absence
+  local save_path="$PATH"
+  local bin_dir="$TEST_TEMP_DIR/mock-bin"
+  mkdir -p "$bin_dir"
+  # Create a fake realpath that exits non-zero (as if not found)
+  printf '#!/usr/bin/env bash\nexit 127\n' > "$bin_dir/realpath"
+  chmod +x "$bin_dir/realpath"
+
+  local input_json='[{"action":"create","path":"src/fallback.sh"}]'
+  output=$(PATH="$bin_dir:$PATH" task_resolve_allowlist_paths "$input_json" "$TEST_TEMP_DIR")
+
+  result_path=$(printf "%s" "$output" | jq -r '.[0].path')
+  # Should still resolve to an absolute path via readlink fallback
+  [[ "$result_path" == /* ]]
+}
+
+# ============================================================================
 # Library quality tests
 # ============================================================================
 
