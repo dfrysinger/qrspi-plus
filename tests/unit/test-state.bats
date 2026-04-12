@@ -312,3 +312,76 @@ EOF
   # research is draft, so it should be current_step
   [[ "$json" == *'"current_step":"research"'* ]]
 }
+
+# ============================================================================
+# [T04] Fail-closed error handling tests
+# ============================================================================
+
+@test "[T04-S1] state_init_or_reconcile: jq failure returns exit 1 with stderr diagnostic" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Sabotage jq by putting a fake jq first in PATH
+  local fake_bin="$TEST_DIR/fake-bin"
+  mkdir -p "$fake_bin"
+  printf '#!/bin/sh\nexit 1\n' > "$fake_bin/jq"
+  chmod +x "$fake_bin/jq"
+
+  PATH="$fake_bin:$PATH" run state_init_or_reconcile "$artifact_dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"jq failed"* ]]
+}
+
+@test "[T04-S2] state_write_atomic: no-write .qrspi/ returns exit 1 with stderr diagnostic" {
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  mkdir -p "$TEST_DIR/.qrspi"
+  chmod 555 "$TEST_DIR/.qrspi"
+
+  run state_write_atomic '{"version":1}'
+  chmod 755 "$TEST_DIR/.qrspi" 2>/dev/null || true
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"failed"* ]]
+}
+
+@test "[T04-S3] state_init_or_reconcile: binary goals.md defaults to draft with stderr WARNING" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  # Write binary content to goals.md
+  printf '\x00\x01\x02\x03' > "$artifact_dir/goals.md"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  local stderr_file="$TEST_DIR/stderr.txt"
+  state_init_or_reconcile "$artifact_dir" 2>"$stderr_file"
+  local exit_code=$?
+
+  [ "$exit_code" -eq 0 ]
+
+  local json
+  json=$(state_read)
+  [[ "$json" == *'"goals":"draft"'* ]]
+
+  local stderr_content
+  stderr_content=$(cat "$stderr_file")
+  [[ "$stderr_content" == *"WARNING"* ]]
+  [[ "$stderr_content" == *"cannot read status"* ]]
+}
+
+@test "[T04-S4] state_init_or_reconcile: no-write .qrspi/ returns exit 1 with stderr diagnostic" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  mkdir -p "$TEST_DIR/.qrspi"
+  chmod 555 "$TEST_DIR/.qrspi"
+
+  run state_init_or_reconcile "$artifact_dir"
+  chmod 755 "$TEST_DIR/.qrspi" 2>/dev/null || true
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"state_write_atomic failed"* ]]
+}

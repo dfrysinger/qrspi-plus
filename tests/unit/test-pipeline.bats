@@ -341,3 +341,42 @@ teardown() {
   lib_content=$(head -2 "$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/pipeline.sh")
   [[ "$lib_content" == *"set -euo pipefail"* ]]
 }
+
+# ============================================================================
+# [T04] Fail-closed error handling tests
+# ============================================================================
+
+@test "[T04-P1] pipeline_check_prerequisites: unreadable state returns exit 1, stdout state-unavailable, stderr diagnostic" {
+  # Create artifact files with approved goals so we actually need state
+  mkdir -p "$ARTIFACT_DIR/research"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/goals.md"
+  echo -e "---\nstatus: draft\n---" > "$ARTIFACT_DIR/questions.md"
+
+  # Remove .qrspi entirely so state_read returns 1 (no state file)
+  rm -rf "$WORK_DIR/.qrspi"
+  # Also remove artifact_dir goals so state_init_or_reconcile will fail
+  # Actually: we need state_read to fail AND no fallback — simplest: make .qrspi
+  # directory exist but state.json not exist, AND artifact_dir not exist for init fallback
+  # The function tries state_read first (fails), then we need it to NOT have a fallback
+  # Actually pipeline_check_prerequisites just calls state_read, doesn't init.
+  # So if no .qrspi/state.json, state_read returns 1 → we get state-unavailable
+
+  run pipeline_check_prerequisites "questions" "$ARTIFACT_DIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"<state-unavailable>"* ]]
+}
+
+@test "[T04-P2] pipeline_cascade_reset: invalid artifact_dir returns exit 1 with stderr diagnostic" {
+  # Don't create any state or artifact dir — cascade_reset should fail
+  # when it can't init state from a nonexistent artifact_dir
+  run pipeline_cascade_reset "design" "/nonexistent/artifact/dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"cannot perform cascade reset"* ]]
+}
+
+@test "[T04-P3] pipeline_check_prerequisites: step deploy returns exit 1, stdout unknown-step, stderr diagnostic" {
+  run pipeline_check_prerequisites "deploy" "$ARTIFACT_DIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"<unknown-step>"* ]]
+  [[ "$output" == *"unrecognized step"* ]]
+}

@@ -17,10 +17,18 @@ enforcement_get_mode() {
   local overrides_json
   if overrides_json=$(task_read_runtime_overrides "$task_id" 2>/dev/null); then
     local overrides_mode
-    overrides_mode=$(echo "$overrides_json" | jq -r '.enforcement // empty' 2>/dev/null || true)
-    if [[ -n "$overrides_mode" && "$overrides_mode" != "null" ]]; then
-      echo "$overrides_mode"
-      return 0
+    if overrides_mode=$(echo "$overrides_json" | jq -r '.enforcement // empty' 2>/dev/null); then
+      if [[ -n "$overrides_mode" && "$overrides_mode" != "null" ]]; then
+        # Validate mode value
+        if [[ "$overrides_mode" != "strict" && "$overrides_mode" != "monitored" ]]; then
+          echo "enforcement_get_mode: unrecognized mode '$overrides_mode' in runtime overrides for task $task_id" >&2
+          return 1
+        fi
+        echo "$overrides_mode"
+        return 0
+      fi
+    else
+      echo "enforcement_get_mode: corrupted runtime overrides for task $task_id, falling through to spec" >&2
     fi
   fi
 
@@ -34,9 +42,18 @@ enforcement_get_mode() {
   fi
 
   local frontmatter_json
-  frontmatter_json=$(frontmatter_get "$spec_path")
+  if ! frontmatter_json=$(frontmatter_get "$spec_path"); then
+    echo "strict"
+    return 0
+  fi
   local mode
   mode=$(echo "$frontmatter_json" | jq -r '.enforcement // "strict"')
+
+  # Validate mode
+  if [[ "$mode" != "strict" && "$mode" != "monitored" ]]; then
+    echo "enforcement_get_mode: unrecognized mode '$mode' for task $task_id" >&2
+    return 1
+  fi
 
   echo "$mode"
 }
@@ -54,12 +71,9 @@ enforcement_check_allowlist() {
 
   # Get enforcement mode
   local mode
-  mode=$(enforcement_get_mode "$task_id" "$artifact_dir")
-
-  # Validate mode — unrecognized values fail closed
-  if [[ "$mode" != "strict" && "$mode" != "monitored" ]]; then
-    echo "enforcement_check_allowlist: unrecognized mode '$mode' for task $task_id — defaulting to strict" >&2
-    mode="strict"
+  if ! mode=$(enforcement_get_mode "$task_id" "$artifact_dir"); then
+    echo "enforcement_check_allowlist: enforcement_get_mode failed for task $task_id" >&2
+    return 1
   fi
 
   # Monitored mode: always allow
@@ -87,9 +101,15 @@ enforcement_check_allowlist() {
   local spec_path
   spec_path=$(task_get_spec_path "$task_id" "$artifact_dir")
   local frontmatter_json
-  frontmatter_json=$(frontmatter_get "$spec_path")
+  if ! frontmatter_json=$(frontmatter_get "$spec_path"); then
+    echo "enforcement_check_allowlist: cannot read task spec frontmatter for task $task_id" >&2
+    return 1
+  fi
   local spec_allowed
-  spec_allowed=$(echo "$frontmatter_json" | jq -r '.allowed_files[].path' 2>/dev/null || true)
+  if ! spec_allowed=$(echo "$frontmatter_json" | jq -r '.allowed_files[]?.path // empty' 2>/dev/null); then
+    echo "enforcement_check_allowlist: failed to parse allowed_files from spec — denying" >&2
+    return 1
+  fi
 
   # Check spec allowed_files
   while IFS= read -r allowed_path; do

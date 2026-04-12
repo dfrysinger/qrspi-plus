@@ -35,9 +35,22 @@ audit_log_operation() {
   # Create .qrspi directory if it doesn't exist
   mkdir -p .qrspi
 
-  # Convert task_id to zero-padded format (e.g., 3 -> 03, 15 -> 15)
-  local padded_task_id=$(printf "%02d" "$task_id")
-  local audit_file=".qrspi/audit-task-${padded_task_id}.jsonl"
+  # Route empty or zero task_id to generic audit file
+  local audit_file
+  if [[ -z "$task_id" || "$task_id" == "0" ]]; then
+    audit_file=".qrspi/audit.jsonl"
+  else
+    local padded_task_id
+    padded_task_id=$(printf "%02d" "$task_id" 2>/dev/null) || {
+      echo "audit_log_operation: cannot pad task_id '${task_id}' — routing to general audit" >&2
+      padded_task_id=""
+    }
+    if [[ -n "$padded_task_id" ]]; then
+      audit_file=".qrspi/audit-task-${padded_task_id}.jsonl"
+    else
+      audit_file=".qrspi/audit.jsonl"
+    fi
+  fi
 
   # Sanitize boolean inputs: ensure they are exactly "true" or "false"
   # so jq's --argjson can parse them as JSON booleans (not strings).
@@ -48,7 +61,7 @@ audit_log_operation() {
   # Build the JSON record using jq with proper escaping
   local json_record
   if [ "$command" = "null" ] && [ "$destructive_flag" = "null" ]; then
-    json_record=$(jq -cn \
+    if ! json_record=$(jq -cn \
       --arg timestamp "$timestamp" \
       --arg tool "$tool" \
       --arg target "$target" \
@@ -56,9 +69,12 @@ audit_log_operation() {
       --arg enforcement "$enforcement" \
       --argjson in_scope "$in_scope_bool" \
       --argjson user_approved "$user_approved_bool" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: null, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: null}')
+      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: null, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: null}'); then
+      echo "audit_log_operation: jq failed to build audit record" >&2
+      return 1
+    fi
   elif [ "$command" = "null" ]; then
-    json_record=$(jq -cn \
+    if ! json_record=$(jq -cn \
       --arg timestamp "$timestamp" \
       --arg tool "$tool" \
       --arg target "$target" \
@@ -67,9 +83,12 @@ audit_log_operation() {
       --argjson in_scope "$in_scope_bool" \
       --argjson user_approved "$user_approved_bool" \
       --arg destructive_flag "$destructive_flag" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: null, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: $destructive_flag}')
+      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: null, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: $destructive_flag}'); then
+      echo "audit_log_operation: jq failed to build audit record" >&2
+      return 1
+    fi
   elif [ "$destructive_flag" = "null" ]; then
-    json_record=$(jq -cn \
+    if ! json_record=$(jq -cn \
       --arg timestamp "$timestamp" \
       --arg tool "$tool" \
       --arg target "$target" \
@@ -78,9 +97,12 @@ audit_log_operation() {
       --arg enforcement "$enforcement" \
       --argjson in_scope "$in_scope_bool" \
       --argjson user_approved "$user_approved_bool" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: $command, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: null}')
+      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: $command, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: null}'); then
+      echo "audit_log_operation: jq failed to build audit record" >&2
+      return 1
+    fi
   else
-    json_record=$(jq -cn \
+    if ! json_record=$(jq -cn \
       --arg timestamp "$timestamp" \
       --arg tool "$tool" \
       --arg target "$target" \
@@ -90,9 +112,20 @@ audit_log_operation() {
       --argjson in_scope "$in_scope_bool" \
       --argjson user_approved "$user_approved_bool" \
       --arg destructive_flag "$destructive_flag" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: $command, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: $destructive_flag}')
+      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: $command, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: $destructive_flag}'); then
+      echo "audit_log_operation: jq failed to build audit record" >&2
+      return 1
+    fi
+  fi
+
+  if [[ -z "$json_record" ]]; then
+    echo "audit_log_operation: jq failed — empty output" >&2
+    return 1
   fi
 
   # Append to file
-  echo "$json_record" >> "$audit_file"
+  if ! echo "$json_record" >> "$audit_file"; then
+    echo "audit_log_operation: failed to append to $audit_file" >&2
+    return 1
+  fi
 }
