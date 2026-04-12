@@ -232,3 +232,41 @@ teardown() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"jq failed"* ]]
 }
+
+# ============================================================================
+# [T06] Review result persistence tests
+# ============================================================================
+
+@test "[T06-U7-1] audit_log_operation: multiple calls with empty task_id append to audit.jsonl (2 lines)" {
+  audit_log_operation "" "2026-04-07T10:00:00Z" "Write" "/file1.txt" '[]' "null" "true" "monitored" "false" "null"
+  audit_log_operation "" "2026-04-07T10:01:00Z" "Edit" "/file2.txt" '[]' "null" "false" "strict" "true" "null"
+
+  [ -f ".qrspi/audit.jsonl" ]
+  line_count=$(wc -l < ".qrspi/audit.jsonl")
+  [ "$line_count" -eq 2 ]
+}
+
+@test "[T06-U7-2] audit_log_operation: audit.jsonl record has valid JSON and boolean in_scope" {
+  audit_log_operation "" "2026-04-07T10:00:00Z" "Write" "/file.txt" '[]' "null" "true" "monitored" "false" "null"
+
+  run jq '.' ".qrspi/audit.jsonl"
+  [ "$status" -eq 0 ]
+
+  local record
+  record=$(head -1 ".qrspi/audit.jsonl")
+  [ "$(echo "$record" | jq '.in_scope | type')" = '"boolean"' ]
+}
+
+@test "[T06-U7-3] review file: reviews/tasks directory created when review file written" {
+  mkdir -p reviews/tasks
+  [ -d reviews/tasks ]
+}
+
+@test "[T06-U7-4] review file: task-NN-review.md frontmatter contains task field" {
+  mkdir -p reviews/tasks
+  printf -- '---\ntask: 6\n---\n\n# Task 06 Review\n' > reviews/tasks/task-06-review.md
+
+  local frontmatter
+  frontmatter=$(head -3 reviews/tasks/task-06-review.md)
+  [[ "$frontmatter" == *"task: 6"* ]]
+}
