@@ -273,3 +273,13 @@ Some things need to change for Phase 2. The notification system should probably 
 - No loop-back identified for the WebSocket change — interface and architecture changes require backward loops
 - No phase learnings or rationale — "some things need to change" provides no reasoning for the proposals
 - No feedback file written for the major change — the backward loop has no input to work from
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Never suggest skipping steps for speed. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+
+D3 — There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency, acknowledge the constraint and offer the fastest compliant path — never a non-compliant shortcut.
+</BEHAVIORAL-DIRECTIVES>
