@@ -141,6 +141,15 @@ flowchart TD
    - **Accept/Approve:** Proceed to phase routing
    - **Stop:** Halt pipeline
 
+6a. **Update goals.md checkboxes** (runs only when user chooses "Approve" — not during fix-task dispatch):
+   - For each criterion in the coverage table where Status=Written and ALL mapped tests passed:
+     - Find the matching line in `goals.md`
+     - Change `- [ ]` to `- [x]`
+     - Match by: (1) bold criterion ID (e.g., `**M24`), or (2) exact criterion text substring
+   - Do NOT modify criteria with any failing mapped tests
+   - Do NOT modify criteria marked as gaps
+   - Display summary: "Updated N/M criteria checkboxes in goals.md"
+
 ## Test Fix Loop
 
 **Classify each failure** (full pipeline mode only) as quick fix or full pipeline:
