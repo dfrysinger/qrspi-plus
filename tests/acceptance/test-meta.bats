@@ -26,8 +26,7 @@ unit_test_dir() {
   [ "$count" -eq 12 ]
 }
 
-# AC8 — Across all 12 unit test files, there are exactly 228 @test definitions
-# (219 baseline + 9 T03 fail-closed tests)
+# AC8 — test count placeholder, will be set by T21 after all merges
 @test "[AC8] Unit test suite has exactly 228 @test definitions (baseline)" {
   local dir
   dir="$(unit_test_dir)"

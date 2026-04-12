@@ -10,6 +10,21 @@ task_get_spec_path() {
   local task_id="$1"
   local artifact_dir="$2"
 
+  if [[ -z "$task_id" ]]; then
+    echo "task_id is empty" >&2
+    return 1
+  fi
+
+  if [[ ! "$task_id" =~ ^[0-9]+$ ]]; then
+    echo "task_id is not a positive integer" >&2
+    return 1
+  fi
+
+  if [[ -z "$artifact_dir" ]]; then
+    echo "artifact_dir is empty" >&2
+    return 1
+  fi
+
   local padded_id
   padded_id=$(printf "%02d" "$task_id")
 
@@ -20,7 +35,7 @@ task_get_spec_path() {
 # Reads the runtime overrides file (.qrspi/task-{NN}-runtime.json).
 # This file holds mid-task user decisions: approved extra files,
 # enforcement mode switches. See enforcement.sh for how it's consumed.
-# Returns 1 if not found.
+# Returns 1 if not found or content is invalid JSON.
 task_read_runtime_overrides() {
   local task_id="$1"
 
@@ -33,7 +48,15 @@ task_read_runtime_overrides() {
     return 1
   fi
 
-  cat "$overrides_path"
+  local content
+  content=$(cat "$overrides_path") || { echo "failed to read $overrides_path" >&2; return 1; }
+
+  if [[ -z "$content" ]] || ! echo "$content" | jq empty 2>/dev/null; then
+    echo "invalid JSON in $overrides_path" >&2
+    return 1
+  fi
+
+  echo "$content"
 }
 
 # task_write_runtime_overrides <task_id> <json_string>
@@ -42,6 +65,11 @@ task_read_runtime_overrides() {
 task_write_runtime_overrides() {
   local task_id="$1"
   local json_string="$2"
+
+  if ! echo "$json_string" | jq empty 2>/dev/null; then
+    echo "json_string is not valid JSON" >&2
+    return 1
+  fi
 
   local padded_id
   padded_id=$(printf "%02d" "$task_id")
@@ -53,8 +81,17 @@ task_write_runtime_overrides() {
   # Write to temp file on the same filesystem so mv is atomic
   # (cross-filesystem mv degrades to copy+delete, not atomic)
   local temp_file
-  temp_file=$(mktemp ".qrspi/.task-${padded_id}-runtime.json.XXXXXX")
+  temp_file=$(mktemp ".qrspi/.task-${padded_id}-runtime.json.XXXXXX") || { echo "failed to create temp file" >&2; return 1; }
 
-  printf "%s" "$json_string" > "$temp_file"
-  mv "$temp_file" "$overrides_path"
+  if ! printf "%s" "$json_string" > "$temp_file"; then
+    echo "failed to write to temp file $temp_file" >&2
+    rm -f "$temp_file"
+    return 1
+  fi
+
+  if ! mv "$temp_file" "$overrides_path"; then
+    echo "failed to move temp file to $overrides_path" >&2
+    rm -f "$temp_file"
+    return 1
+  fi
 }
