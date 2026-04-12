@@ -74,6 +74,9 @@ Compare the plan's task structure against design.md's vertical slices and phases
 
 Flag any mismatch between what the design specified and what the plan delivers.
 
+### 5. Decomposition Check
+For each goal, verify that every amendment item mapped to it (from the design.md Amendments section) is decomposable from the goal's text. Flag goals that have amendment items whose work is not described by the goal's criterion text.
+
 ## Report Format
 
 If no issues found:
