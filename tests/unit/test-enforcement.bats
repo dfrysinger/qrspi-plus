@@ -273,3 +273,65 @@ constraints: []
   # Verify frontmatter_get is available after sourcing enforcement.sh (via task.sh)
   declare -f frontmatter_get > /dev/null
 }
+
+# ============================================================================
+# [T04] Fail-closed error handling tests
+# ============================================================================
+
+@test "[T04-E1] enforcement_get_mode: corrupted runtime JSON returns strict from spec with stderr warning" {
+  local task_file="$ARTIFACT_DIR/tasks/task-20.md"
+  create_task_spec "$task_file" "---
+enforcement: strict
+allowed_files: []
+constraints: []
+---
+
+# Task 20
+"
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .qrspi
+  # Write corrupted (non-JSON) runtime overrides
+  printf 'NOT-VALID-JSON{{{' > ".qrspi/task-20-runtime.json"
+
+  local stderr_file="$TEST_TEMP_DIR/stderr.txt"
+  local stdout_result
+  stdout_result=$(enforcement_get_mode 20 "$ARTIFACT_DIR" 2>"$stderr_file")
+  local exit_code=$?
+
+  [ "$exit_code" -eq 0 ]
+  [[ "$stdout_result" == "strict" ]]
+  # Should have a warning on stderr about corrupted overrides
+  local stderr_content
+  stderr_content=$(cat "$stderr_file")
+  [[ "$stderr_content" == *"WARNING"* ]]
+}
+
+@test "[T04-E2] enforcement_get_mode: unrecognized mode strikt returns exit 1 with stderr diagnostic" {
+  local task_file="$ARTIFACT_DIR/tasks/task-21.md"
+  create_task_spec "$task_file" "---
+enforcement: strikt
+allowed_files: []
+constraints: []
+---
+
+# Task 21
+"
+  cd "$TEST_TEMP_DIR"
+
+  run enforcement_get_mode 21 "$ARTIFACT_DIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unrecognized"* ]]
+}
+
+@test "[T04-E3] enforcement_check_allowlist: binary task spec returns exit 1 with stderr diagnostic" {
+  local task_file="$ARTIFACT_DIR/tasks/task-22.md"
+  mkdir -p "$(dirname "$task_file")"
+  # Write binary content (non-text)
+  printf '\x00\x01\x02\x03\x04\x05' > "$task_file"
+
+  cd "$TEST_TEMP_DIR"
+
+  run enforcement_check_allowlist "some/file.sh" 22 "$ARTIFACT_DIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"cannot read task spec frontmatter"* ]]
+}

@@ -61,6 +61,8 @@ pipeline_check_prerequisites() {
   local step_idx
   step_idx=$(_pipeline_get_step_index "$step")
   if [[ $step_idx -eq -1 ]]; then
+    echo "<unknown-step>"
+    echo "pipeline_check_prerequisites: unrecognized step '$step'" >&2
     return 1
   fi
 
@@ -72,6 +74,8 @@ pipeline_check_prerequisites() {
   # Read state.json
   local state
   if ! state=$(state_read 2>/dev/null); then
+    echo "<state-unavailable>"
+    echo "pipeline_check_prerequisites: state_read failed" >&2
     return 1
   fi
 
@@ -135,8 +139,14 @@ pipeline_cascade_reset() {
   local state
   if ! state=$(state_read 2>/dev/null); then
     # No state file yet, create one
-    state_init_or_reconcile "$artifact_dir"
-    state=$(state_read)
+    if ! state_init_or_reconcile "$artifact_dir"; then
+      echo "pipeline_cascade_reset: cannot perform cascade reset — state_init_or_reconcile failed" >&2
+      return 1
+    fi
+    if ! state=$(state_read); then
+      echo "pipeline_cascade_reset: cannot perform cascade reset — state_read failed after init" >&2
+      return 1
+    fi
   fi
 
   # Find the index of the step
@@ -165,5 +175,8 @@ pipeline_cascade_reset() {
   done
 
   # Write atomically
-  state_write_atomic "$state"
+  if ! state_write_atomic "$state"; then
+    echo "pipeline_cascade_reset: cannot perform cascade reset — state_write_atomic failed" >&2
+    return 1
+  fi
 }

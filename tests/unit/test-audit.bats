@@ -208,3 +208,27 @@ teardown() {
   local target=$(echo "$record" | jq -r '.target')
   [ "$target" = "$path" ]
 }
+
+# ============================================================================
+# [T04] Fail-closed error handling tests
+# ============================================================================
+
+@test "[T04-A1] audit_log_operation: empty task_id writes to audit.jsonl not audit-task-00.jsonl" {
+  run audit_log_operation "" "2026-04-07T10:00:00Z" "Write" "/file.txt" '[]' "null" "true" "monitored" "false" "null"
+  [ "$status" -eq 0 ]
+  [ -f ".qrspi/audit.jsonl" ]
+  [ ! -f ".qrspi/audit-task-00.jsonl" ]
+}
+
+@test "[T04-A2] audit_log_operation: task_id 0 writes to audit.jsonl not audit-task-00.jsonl" {
+  run audit_log_operation "0" "2026-04-07T10:00:00Z" "Write" "/file.txt" '[]' "null" "true" "monitored" "false" "null"
+  [ "$status" -eq 0 ]
+  [ -f ".qrspi/audit.jsonl" ]
+  [ ! -f ".qrspi/audit-task-00.jsonl" ]
+}
+
+@test "[T04-A3] audit_log_operation: invalid targets_json returns exit 1 with stderr diagnostic" {
+  run audit_log_operation "30" "2026-04-07T10:00:00Z" "Write" "/file.txt" 'NOT-JSON' "null" "true" "monitored" "false" "null"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"jq failed"* ]]
+}
