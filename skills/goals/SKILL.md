@@ -269,6 +269,30 @@ Recommend compaction: "Goals approved. This is a good point to compact context b
 | "The scope is obvious" | Obvious scope is where scope creep hides. Write it down. |
 | "Let me just start the research first" | Research without approved goals means you don't know what you're looking for. |
 
+## Goal Specificity
+
+**Goal specificity rule:** Each goal must be independently scopeable — it can be moved between phases without surgery on other goals. A goal that bundles multiple distinct deliverables should be split into separate goals with their own IDs.
+
+**Late splitting:** When a goal proves too coarse during downstream work (Design, Structure, Plan), it can be split. Late splitting is classified like any amendment:
+
+| Split type | When | Process |
+|---|---|---|
+| Clarifying | Design section already has distinct sub-items; re-label headings, no new content | W2 (no cascade) |
+| Additive | Design needs new content per sub-goal; structure/plan need re-assignment | W3 (lightweight cascade) |
+| Architectural | Design needs substantial rewrite; structure/plan change significantly | W4 (full backward loop) |
+
+Present each split as a before/after diff. The skill recommends a classification; the user decides the process. After the split, update roadmap.md with new goal IDs.
+
+### Red Flag
+
+A goal whose acceptance criterion text describes 3+ distinct deliverables that could be independently phased.
+
+### Common Rationalization
+
+| Rationalization | Reality |
+|----------------|---------|
+| "These items are related so they should be one goal" | Related ≠ coupled. If they can be independently scoped and phased, they should be separate goals. |
+
 ## Worked Example
 
 ### Good goals.md — "Rate Limiter for Public API"
