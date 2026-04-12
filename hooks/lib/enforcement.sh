@@ -34,7 +34,7 @@ enforcement_get_mode() {
   fi
 
   local frontmatter_json
-  frontmatter_json=$(task_read_frontmatter "$spec_path")
+  frontmatter_json=$(frontmatter_get "$spec_path")
   local mode
   mode=$(echo "$frontmatter_json" | jq -r '.enforcement // "strict"')
 
@@ -87,7 +87,7 @@ enforcement_check_allowlist() {
   local spec_path
   spec_path=$(task_get_spec_path "$task_id" "$artifact_dir")
   local frontmatter_json
-  frontmatter_json=$(task_read_frontmatter "$spec_path")
+  frontmatter_json=$(frontmatter_get "$spec_path")
   local spec_allowed
   spec_allowed=$(echo "$frontmatter_json" | jq -r '.allowed_files[].path' 2>/dev/null || true)
 

@@ -119,8 +119,8 @@ frontmatter_get() {
         in_list=1
       fi
 
-    # Simple list item: "- value" (exactly "- " at start)
-    elif [[ $in_list -eq 1 && "$fm_line" =~ ^-\ (.+)$ ]]; then
+    # Simple list item: "- value" (optionally indented)
+    elif [[ $in_list -eq 1 && "$fm_line" =~ ^[[:space:]]*-\ (.+)$ ]]; then
       local item_val="${BASH_REMATCH[1]}"
 
       # Check if this is a nested key:value item like "- action: create"
