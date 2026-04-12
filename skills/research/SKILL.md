@@ -233,3 +233,13 @@ Recommend compaction: "Research approved. This is a good point to compact contex
 > You should use the Token Bucket algorithm because it's the best approach for APIs. Fixed window is outdated and sliding window is too complex.
 
 The bad example makes recommendations ("you should"), value judgments ("best", "outdated", "too complex"), and cites no sources.
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Complete every step before moving on: Every process step in this skill exists for a reason. Execute each step fully. If a step seems redundant given the current state, state why and ask the user — do not silently skip it.
+
+D3 — Resist time-pressure shortcuts: If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
+</BEHAVIORAL-DIRECTIVES>

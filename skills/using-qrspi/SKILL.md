@@ -160,6 +160,8 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 
 The slug is generated during the Goals step: take the user's first description, extract 2-4 key words, convert to lowercase kebab-case (e.g., "user-auth", "product-search-api").
 
+**Skill name convention:** All QRSPI skill names follow a one-word convention. When proposing new skills, use a single lowercase word (e.g., `align`, `drift`, `audit`). Multi-word names (`goal-alignment`, `prompt-audit`) are not accepted.
+
 ## Artifact Gating
 
 Each skill checks that its required input artifacts exist on disk before proceeding:
@@ -427,6 +429,14 @@ The review file `reviews/{step}-review.md` is created on the first review round 
 
 The orchestrating skill (not the review subagent) writes and appends to the review file based on each subagent's output. Review subagents return findings; the skill handles file I/O. Each round appends its section. Claude and Codex findings are attributed separately.
 
+## Review Time Allocation
+
+When presenting artifacts for human review, guide the user on where to invest review time:
+
+- **Design and Structure** — invest heavy review here. These artifacts set the architecture. Errors here cascade through every downstream step.
+- **Plan** — spot-check. Plan is a mechanical decomposition of approved artifacts. Sample a few task specs for correctness; you don't need to read every line.
+- **Implementation code** — use task specs as a review guide. Each spec in `tasks/*.md` describes what a task was supposed to do, making code review efficient and traceable. Time saved on Plan review is time available to read the code.
+
 ## Compaction at Step Transitions
 
 Each skill's terminal state should recommend compacting context before the next step: "This is a good point to compact context before the next step (`/compact`)." This is a recommendation, not a gate — the pipeline continues regardless.
@@ -473,3 +483,13 @@ When QRSPI applies, invoke the Goals skill to begin:
 **REQUIRED SKILL:** Use `qrspi:goals` to start the pipeline.
 
 For reference on the QRSPI framework: see `qrspi/docs/qrspi-reference.md`
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Complete every step before moving on: Every process step in this skill exists for a reason. Execute each step fully. If a step seems redundant given the current state, state why and ask the user — do not silently skip it.
+
+D3 — Resist time-pressure shortcuts: If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
+</BEHAVIORAL-DIRECTIVES>
