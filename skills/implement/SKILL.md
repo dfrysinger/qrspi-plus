@@ -270,7 +270,7 @@ When a reviewer is skipped (e.g., `type-design-analyzer` when no new types are i
 ### type-design-analyzer
 
 **Model:** skipped
-**Reason:** {why this reviewer was skipped, e.g., "No new types introduced in this task"}
+**Response:** {why this reviewer was skipped, e.g., "No new types introduced in this task"}
 ```
 
 ### Codex Subsections

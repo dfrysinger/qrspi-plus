@@ -155,6 +155,7 @@ teardown() {
 @test "audit_log_operation correct file path for task-03" {
   audit_log_operation "3" "2026-04-07T10:00:00Z" "Write" "/file.txt" '[]' "null" "true" "monitored" "false" "null"
   [ -f ".qrspi/audit-task-03.jsonl" ]
+  [ ! -f ".qrspi/audit.jsonl" ]
 }
 
 # Test 18: Correct file path for task ID 15
