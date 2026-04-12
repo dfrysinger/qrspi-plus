@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Source pipeline.sh from the same directory
+# Source pipeline.sh from the same directory (transitively sources artifact-map.sh)
 _artifact_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_artifact_script_dir/pipeline.sh"
 
-# ARTIFACT_FILES — array of 6 known artifact paths
-declare -a ARTIFACT_FILES=(
-  "goals.md"
-  "questions.md"
-  "research/summary.md"
-  "design.md"
-  "structure.md"
-  "plan.md"
-)
+# ARTIFACT_FILES — array of 6 known artifact paths (built from canonical map)
+ARTIFACT_FILES=()
+for _af_step in goals questions research design structure plan; do
+  ARTIFACT_FILES+=("$(artifact_map_get "$_af_step")")
+done
+unset _af_step
 
 # artifact_is_known <file_path> <artifact_dir>
 # Checks if file_path matches a known artifact by comparing path suffix.
@@ -44,36 +41,8 @@ artifact_is_known() {
   # Strip artifact_dir prefix to get relative path
   local rel_path="${abs_file_path#"$artifact_dir/"}"
 
-  # Map known artifacts to step names
-  case "$rel_path" in
-    "goals.md")
-      echo "goals"
-      return 0
-      ;;
-    "questions.md")
-      echo "questions"
-      return 0
-      ;;
-    "research/summary.md")
-      echo "research"
-      return 0
-      ;;
-    "design.md")
-      echo "design"
-      return 0
-      ;;
-    "structure.md")
-      echo "structure"
-      return 0
-      ;;
-    "plan.md")
-      echo "plan"
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  # Map known artifacts to step names via canonical lookup
+  artifact_map_get_step "$rel_path" || return 1
 }
 
 # artifact_sync_state <file_path> <artifact_dir> [--skip-cascade]

@@ -42,24 +42,14 @@ EOF
 
 # Test 1: ARTIFACT_FILES has exactly 6 entries
 @test "ARTIFACT_FILES has exactly 6 entries" {
-  # Check in the library file
-  local lib_file
-  lib_file="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/artifact.sh"
-
-  # Verify the array contains all 6 paths
-  local content
-  content=$(sed -n '/^declare -a ARTIFACT_FILES=/,/^)/p' "$lib_file")
-  [[ "$content" == *"goals.md"* ]]
-  [[ "$content" == *"questions.md"* ]]
-  [[ "$content" == *"research/summary.md"* ]]
-  [[ "$content" == *"design.md"* ]]
-  [[ "$content" == *"structure.md"* ]]
-  [[ "$content" == *"plan.md"* ]]
-
-  # Count lines with .md entries to verify exactly 6
-  local line_count
-  line_count=$(echo "$content" | grep -c '\.md' || echo 0)
-  [[ "$line_count" -eq 6 ]]
+  # Verify the runtime array contains exactly 6 entries with correct values
+  [[ "${#ARTIFACT_FILES[@]}" -eq 6 ]]
+  [[ "${ARTIFACT_FILES[0]}" == "goals.md" ]]
+  [[ "${ARTIFACT_FILES[1]}" == "questions.md" ]]
+  [[ "${ARTIFACT_FILES[2]}" == "research/summary.md" ]]
+  [[ "${ARTIFACT_FILES[3]}" == "design.md" ]]
+  [[ "${ARTIFACT_FILES[4]}" == "structure.md" ]]
+  [[ "${ARTIFACT_FILES[5]}" == "plan.md" ]]
 }
 
 # Test 2: Library uses set -euo pipefail

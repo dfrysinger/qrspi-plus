@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Source frontmatter.sh from the same directory
+# Source frontmatter.sh and artifact-map.sh from the same directory
 # Use a more robust method that works in all contexts
 _state_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_state_script_dir/frontmatter.sh"
+source "$_state_script_dir/artifact-map.sh"
 
 # state_init_or_reconcile <artifact_dir>
 # Scans artifact files in the given directory, reads their frontmatter status,
@@ -25,53 +26,19 @@ state_init_or_reconcile() {
   local implement_status="draft"
   local test_status="draft"
 
-  # Check goals.md
-  if [[ -f "$artifact_dir/goals.md" ]]; then
-    if ! goals_status=$(frontmatter_get_status "$artifact_dir/goals.md"); then
-      echo "WARNING: cannot read status from $artifact_dir/goals.md, defaulting to draft" >&2
-      goals_status="draft"
+  # Check each artifact file using canonical mapping
+  local _step _artifact_file
+  for _step in goals questions research design structure plan; do
+    _artifact_file="$artifact_dir/$(artifact_map_get "$_step")"
+    if [[ -f "$_artifact_file" ]]; then
+      local _read_status
+      if ! _read_status=$(frontmatter_get_status "$_artifact_file"); then
+        echo "WARNING: cannot read status from $_artifact_file, defaulting to draft" >&2
+        _read_status="draft"
+      fi
+      eval "${_step}_status=\$_read_status"
     fi
-  fi
-
-  # Check questions.md
-  if [[ -f "$artifact_dir/questions.md" ]]; then
-    if ! questions_status=$(frontmatter_get_status "$artifact_dir/questions.md"); then
-      echo "WARNING: cannot read status from $artifact_dir/questions.md, defaulting to draft" >&2
-      questions_status="draft"
-    fi
-  fi
-
-  # Check research/summary.md
-  if [[ -f "$artifact_dir/research/summary.md" ]]; then
-    if ! research_status=$(frontmatter_get_status "$artifact_dir/research/summary.md"); then
-      echo "WARNING: cannot read status from $artifact_dir/research/summary.md, defaulting to draft" >&2
-      research_status="draft"
-    fi
-  fi
-
-  # Check design.md
-  if [[ -f "$artifact_dir/design.md" ]]; then
-    if ! design_status=$(frontmatter_get_status "$artifact_dir/design.md"); then
-      echo "WARNING: cannot read status from $artifact_dir/design.md, defaulting to draft" >&2
-      design_status="draft"
-    fi
-  fi
-
-  # Check structure.md
-  if [[ -f "$artifact_dir/structure.md" ]]; then
-    if ! structure_status=$(frontmatter_get_status "$artifact_dir/structure.md"); then
-      echo "WARNING: cannot read status from $artifact_dir/structure.md, defaulting to draft" >&2
-      structure_status="draft"
-    fi
-  fi
-
-  # Check plan.md
-  if [[ -f "$artifact_dir/plan.md" ]]; then
-    if ! plan_status=$(frontmatter_get_status "$artifact_dir/plan.md"); then
-      echo "WARNING: cannot read status from $artifact_dir/plan.md, defaulting to draft" >&2
-      plan_status="draft"
-    fi
-  fi
+  done
 
   # implement and test are never read from files, always draft unless inferred
   # (but for now we keep them as draft)
