@@ -492,3 +492,151 @@ _t15_create_all_approved() {
   run artifact_sync_state "$ARTIFACT_DIR/design.md" "$ARTIFACT_DIR" --bogus-flag
   [ "$status" -ne 0 ]
 }
+
+# ============================================================================
+# [T16] artifact_snapshot_phase and artifact_promote_next_phase tests
+# ============================================================================
+
+# Helper to set up a full artifact directory for snapshot tests
+_t16_setup_artifact_dir() {
+  mkdir -p "$ARTIFACT_DIR/research"
+  mkdir -p "$ARTIFACT_DIR/tasks"
+  mkdir -p "$ARTIFACT_DIR/reviews"
+  mkdir -p "$ARTIFACT_DIR/fixes"
+  mkdir -p "$ARTIFACT_DIR/feedback"
+  mkdir -p "$ARTIFACT_DIR/.qrspi"
+
+  create_artifact_file "$ARTIFACT_DIR/goals.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/questions.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/research/summary.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/design.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/structure.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/plan.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/tasks/task-01.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/tasks/task-02.md" "approved"
+  echo "slice: alpha" > "$ARTIFACT_DIR/tasks/parallelization.md"
+  echo "review notes" > "$ARTIFACT_DIR/reviews/review-01.md"
+  echo "fix notes" > "$ARTIFACT_DIR/fixes/fix-01.md"
+  echo "feedback notes" > "$ARTIFACT_DIR/feedback/replan-phase-01-round-01.md"
+  echo '{"phase":1}' > "$ARTIFACT_DIR/.qrspi/state.json"
+  echo "codex_reviews: false" > "$ARTIFACT_DIR/config.md"
+}
+
+@test "[T16-1] artifact_snapshot_phase creates phases/phase-01/ with goals.md, design.md, research/summary.md" {
+  _t16_setup_artifact_dir
+
+  run artifact_snapshot_phase "$ARTIFACT_DIR" 1
+
+  [ "$status" -eq 0 ]
+  [ -f "$ARTIFACT_DIR/phases/phase-01/goals.md" ]
+  [ -f "$ARTIFACT_DIR/phases/phase-01/design.md" ]
+  [ -f "$ARTIFACT_DIR/phases/phase-01/research/summary.md" ]
+}
+
+@test "[T16-2] snapshot files retain original status: approved frontmatter" {
+  _t16_setup_artifact_dir
+
+  artifact_snapshot_phase "$ARTIFACT_DIR" 1
+
+  local snapshot_status
+  snapshot_status=$(frontmatter_get "$ARTIFACT_DIR/phases/phase-01/goals.md" "status")
+  [ "$snapshot_status" = "approved" ]
+
+  snapshot_status=$(frontmatter_get "$ARTIFACT_DIR/phases/phase-01/design.md" "status")
+  [ "$snapshot_status" = "approved" ]
+}
+
+@test "[T16-3] snapshot copies tasks/task-NN.md files" {
+  _t16_setup_artifact_dir
+
+  artifact_snapshot_phase "$ARTIFACT_DIR" 1
+
+  [ -f "$ARTIFACT_DIR/phases/phase-01/tasks/task-01.md" ]
+  [ -f "$ARTIFACT_DIR/phases/phase-01/tasks/task-02.md" ]
+}
+
+@test "[T16-4] snapshot does NOT copy reviews/, fixes/, feedback/, config.md" {
+  _t16_setup_artifact_dir
+
+  artifact_snapshot_phase "$ARTIFACT_DIR" 1
+
+  [ ! -d "$ARTIFACT_DIR/phases/phase-01/reviews" ]
+  [ ! -d "$ARTIFACT_DIR/phases/phase-01/fixes" ]
+  [ ! -d "$ARTIFACT_DIR/phases/phase-01/feedback" ]
+  [ ! -f "$ARTIFACT_DIR/phases/phase-01/config.md" ]
+  [ ! -d "$ARTIFACT_DIR/phases/phase-01/.qrspi" ]
+  [ ! -d "$ARTIFACT_DIR/phases/phase-01/phases" ]
+}
+
+@test "[T16-5] snapshot on non-existent artifact_dir returns non-zero" {
+  run artifact_snapshot_phase "/tmp/nonexistent-dir-$RANDOM" 1
+
+  [ "$status" -ne 0 ]
+}
+
+@test "[T16-6] artifact_promote_next_phase deletes structure.md, plan.md, tasks/" {
+  _t16_setup_artifact_dir
+
+  artifact_promote_next_phase "$ARTIFACT_DIR" 1
+
+  [ ! -f "$ARTIFACT_DIR/structure.md" ]
+  [ ! -f "$ARTIFACT_DIR/plan.md" ]
+  [ ! -d "$ARTIFACT_DIR/tasks" ]
+}
+
+@test "[T16-7] artifact_promote_next_phase resets design.md frontmatter to draft" {
+  _t16_setup_artifact_dir
+
+  artifact_promote_next_phase "$ARTIFACT_DIR" 1
+
+  local design_status
+  design_status=$(frontmatter_get "$ARTIFACT_DIR/design.md" "status")
+  [ "$design_status" = "draft" ]
+}
+
+@test "[T16-8] artifact_promote_next_phase leaves goals.md, questions.md, research/summary.md intact" {
+  _t16_setup_artifact_dir
+
+  artifact_promote_next_phase "$ARTIFACT_DIR" 1
+
+  [ -f "$ARTIFACT_DIR/goals.md" ]
+  [ -f "$ARTIFACT_DIR/questions.md" ]
+  [ -f "$ARTIFACT_DIR/research/summary.md" ]
+
+  local goals_status
+  goals_status=$(frontmatter_get "$ARTIFACT_DIR/goals.md" "status")
+  [ "$goals_status" = "draft" ]
+}
+
+@test "[T16-9] artifact_promote_next_phase deletes reviews/, feedback/, .qrspi/" {
+  _t16_setup_artifact_dir
+
+  artifact_promote_next_phase "$ARTIFACT_DIR" 1
+
+  [ ! -d "$ARTIFACT_DIR/reviews" ]
+  [ ! -d "$ARTIFACT_DIR/feedback" ]
+  [ ! -d "$ARTIFACT_DIR/.qrspi" ]
+}
+
+@test "[T16-10] snapshot copies parallelization.md when present" {
+  _t16_setup_artifact_dir
+
+  artifact_snapshot_phase "$ARTIFACT_DIR" 1
+
+  [ -f "$ARTIFACT_DIR/phases/phase-01/tasks/parallelization.md" ]
+}
+
+@test "[T16-11] snapshot with phase 12 creates phases/phase-12/" {
+  _t16_setup_artifact_dir
+
+  artifact_snapshot_phase "$ARTIFACT_DIR" 12
+
+  [ -d "$ARTIFACT_DIR/phases/phase-12" ]
+  [ -f "$ARTIFACT_DIR/phases/phase-12/goals.md" ]
+}
+
+@test "[T16-12] artifact_promote_next_phase on non-existent dir returns non-zero" {
+  run artifact_promote_next_phase "/tmp/nonexistent-dir-$RANDOM" 1
+
+  [ "$status" -ne 0 ]
+}

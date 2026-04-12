@@ -27,12 +27,12 @@ unit_test_dir() {
 }
 
 # AC8 — test count placeholder, will be set by T21 after all merges
-@test "[AC8] Unit test suite has exactly 243 @test definitions (baseline)" {
+@test "[AC8] Unit test suite has exactly 259 @test definitions (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 243 ]
+  [ "$count" -eq 259 ]
 }
 
 # AC8 — Every expected unit test file is present by name
