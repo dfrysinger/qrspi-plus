@@ -152,6 +152,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   └── test/
 │       ├── round-NN-review.md
 │       └── baseline-failures.md   (Test baseline)
+├── future-goals.md                (optional — captured future ideas, deferred scope)
 └── .qrspi/                        (hook-managed, do not edit manually)
     ├── state.json                 (pipeline state cache)
     ├── task-NN-runtime.json       (per-task runtime overrides — user mid-task decisions)
@@ -234,7 +235,33 @@ When a later step surfaces new requirements or contradictions — e.g., Figma wi
 
 Users can enter mid-pipeline if they already have artifacts from prior work. As long as the required input files exist with `status: approved`, any step can run. This is an escape hatch, not the default path.
 
-**State bootstrap:** Before checking artifact status, call `state_init_or_reconcile <artifact_dir>` to bootstrap or reconcile `.qrspi/state.json`. If it fails, stop and report.
+### Validation and Repair
+
+Before checking artifact status, run these three validation checks in order:
+
+**1. State schema validation (fail-closed)**
+
+Call `state_init_or_reconcile <artifact_dir>` to bootstrap or reconcile `.qrspi/state.json`. If the state file is missing, it is created from artifact frontmatter. If the version field is absent (v0), it is migrated to v1. If any required v1 fields are missing (`wireframe_requested`, `active_task`, `artifacts`), each is added with a safe default and a repair message is emitted to stdout. If `state_init_or_reconcile` returns non-zero or if JSON is unparseable, **stop immediately** — do not proceed, do not silently pass. Emit a diagnostic:
+
+```
+ERROR: state.json is corrupted and could not be repaired. Run `state_init_or_reconcile <artifact_dir>` manually or delete .qrspi/state.json to rebuild.
+```
+
+This is fail-closed behavior: a corrupt state is worse than a stopped run.
+
+**2. Config validation (defer to M22 numbered-options flow)**
+
+Do not silently patch `config.md`. If `config.md` is missing or has no `route:` field, stop and tell the user:
+
+```
+Cannot continue — `config.md` is missing or has no route field. Re-run Goals to set the pipeline mode.
+```
+
+If `enforcement_default` is absent from the frontmatter, do not auto-add it here. That field is added during the M22 numbered-options selection flow (T07's work). Silently patching it during pipeline entry would bypass the user's explicit configuration choice.
+
+**3. Task spec scan (advisory, non-blocking)**
+
+After state and config are valid, scan `tasks/task-*.md` for missing Phase 4 fields (`enforcement`, `allowed_files`, `constraints`). Output any warnings to stdout and continue — this is advisory only. Missing fields in task specs do not block the pipeline at entry.
 
 **Run selection for mid-pipeline entry:** When entering mid-pipeline, glob for `docs/qrspi/*/goals.md` directories. If multiple exist, present the list and ask the user which run to resume. Load `config.md` from the chosen directory to read the `route` list. Scan for approved artifacts, then invoke the first step in the route list that is not yet complete.
 

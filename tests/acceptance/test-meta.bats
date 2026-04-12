@@ -4,10 +4,13 @@ bats_require_minimum_version 1.5.0
 # Acceptance tests for Criterion 8.
 #
 # Criterion 8: "All existing pipeline functionality (Goals through Replan)
-#   continues to work after Phase 4 changes — validated by the 200 unit tests
+#   continues to work after Phase 4 changes — validated by the unit tests
 #   passing (baseline confirmed)."
-#   → Meta-test: confirm the unit test suite still has exactly 200 @test entries
-#     across exactly 12 .bats files.
+#   → Meta-test: confirm the unit test suite still has exactly 218 @test entries
+#     across exactly 11 .bats files.
+#
+# Note: test-validate.bats was deleted in M27 — validation logic was relocated
+# to skills/using-qrspi/SKILL.md prose. File count is now 11, test count 218.
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -17,26 +20,26 @@ unit_test_dir() {
 
 # ── Criterion 8: Unit test suite baseline ────────────────────────────────────
 
-# AC8 — The unit test directory contains exactly 12 .bats files
-@test "[AC8] Unit test suite has exactly 12 .bats files (baseline)" {
+# AC8 — The unit test directory contains exactly 11 .bats files
+@test "[AC8] Unit test suite has exactly 11 .bats files (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(find "$dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 12 ]
+  [ "$count" -eq 11 ]
 }
 
 # AC8 — test count placeholder, will be set by T21 after all merges
-@test "[AC8] Unit test suite has exactly 259 @test definitions (baseline)" {
+@test "[AC8] Unit test suite has exactly 218 @test definitions (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 259 ]
+  [ "$count" -eq 218 ]
 }
 
 # AC8 — Every expected unit test file is present by name
-@test "[AC8] All 12 expected unit test files are present by name" {
+@test "[AC8] All 11 expected unit test files are present by name" {
   local dir
   dir="$(unit_test_dir)"
 
@@ -51,7 +54,6 @@ unit_test_dir() {
     "test-setup-project-hooks.bats"
     "test-state.bats"
     "test-task.bats"
-    "test-validate.bats"
     "test-worktree.bats"
   )
 

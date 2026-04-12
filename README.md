@@ -690,7 +690,6 @@ qrspi-plus/
 │       ├── protected.sh            # Protected path detection
 │       ├── state.sh                # .qrspi/state.json read/write
 │       ├── task.sh                 # Active task detection and allowlist
-│       ├── validate.sh             # Input validation utilities
 │       └── worktree.sh             # Worktree path resolution
 ├── tests/
 │   ├── unit/                       # 204 unit tests (bats-core)

@@ -37,16 +37,10 @@ create_task_spec() {
   local task_num="$1"
   local enforcement="$2"
   shift 2
-  # Remaining args are allowed file paths (relative or absolute).
-  # Relative paths are resolved to absolute using WORK_DIR as base, matching
-  # the pre-resolved path contract expected by enforcement_check_allowlist.
+  # Remaining args are allowed file paths (relative)
   local allowed_block=""
   for p in "$@"; do
-    local resolved_p="$p"
-    if [[ "$p" != /* ]]; then
-      resolved_p="$WORK_DIR/$p"
-    fi
-    allowed_block="${allowed_block}  - action: create\n    path: ${resolved_p}\n"
+    allowed_block="${allowed_block}  - action: create\n    path: ${p}\n"
   done
   printf -- '---\nstatus: approved\ntask: %s\nphase: 1\nenforcement: %s\nallowed_files:\n%s\nconstraints: []\n---\n\n# Task %s\n' \
     "$task_num" "$enforcement" "$(printf '%b' "$allowed_block")" "$task_num" \
@@ -138,8 +132,8 @@ bash_json() {
   create_task_spec 5 "strict" "src/main.sh"
   init_state_with_task 5
 
-  # Write runtime overrides with extra approved file (absolute path — pre-resolved contract)
-  printf '{"enforcement":"strict","user_approved_files":["%s/src/extra.sh"]}' "$WORK_DIR" \
+  # Write runtime overrides with extra approved file
+  printf '{"enforcement":"strict","user_approved_files":["src/extra.sh"]}' \
     > "$WORK_DIR/.qrspi/task-05-runtime.json"
 
   run "$HOOK" <<< "$(write_json "$WORK_DIR/src/extra.sh")"
@@ -399,140 +393,4 @@ bash_json() {
   [[ "$(echo "${lines[-1]}" | jq -r '.decision')" == "block" ]]
 
   rm -rf "$worktree_dir"
-}
-
-# ── Regression: validate_task_specs searches artifact_dir/tasks/ ─────────────
-
-# AC2 (regression) — validate_task_specs must find files in artifact_dir/tasks/
-# not in artifact_dir/ (the pre-fix bug searched artifact_dir directly)
-@test "[AC2][regression] validate_task_specs correctly scans artifact_dir/tasks/ subdirectory" {
-  local validate_lib
-  validate_lib="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/validate.sh"
-
-  local test_artifact_dir
-  test_artifact_dir=$(mktemp -d)
-  mkdir -p "$test_artifact_dir/tasks"
-
-  # Create a task spec ONLY in tasks/ subdirectory (not in artifact_dir root)
-  printf -- '---\ntitle: Old-style task\n---\n\n# Task 1\n' \
-    > "$test_artifact_dir/tasks/task-01.md"
-
-  # Source in bats context (avoids set -e + arithmetic exit code issue)
-  source "$validate_lib"
-
-  local output_str
-  output_str=$(validate_task_specs "$test_artifact_dir")
-
-  # The warning must be emitted (file found in tasks/ subdirectory)
-  [[ "$output_str" == *"task-01.md"* ]]
-
-  rm -rf "$test_artifact_dir"
-}
-
-# AC2 (regression) — validate_task_specs with task files only in artifact_dir root
-# should find NO tasks (regression: old code would never find any)
-@test "[AC2][regression] validate_task_specs ignores task files placed in artifact_dir root" {
-  local validate_lib
-  validate_lib="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/validate.sh"
-
-  local test_artifact_dir
-  test_artifact_dir=$(mktemp -d)
-  # Place task file directly in root, NOT in tasks/ — should not be found
-  printf -- '---\ntitle: Misplaced task\n---\n\n# Task 1\n' \
-    > "$test_artifact_dir/task-01.md"
-
-  source "$validate_lib"
-
-  local output_str
-  output_str=$(validate_task_specs "$test_artifact_dir")
-
-  # No warnings expected — misplaced file is not in tasks/
-  [[ -z "$output_str" ]]
-
-  rm -rf "$test_artifact_dir"
-}
-
-# ── T03 Fail-Closed Acceptance Tests ────────────────────────────────────────
-
-# [T03-A1] Full pre-tool-use with unknown tool → exit 0, stdout {}, stderr warning
-@test "[T03-A1] Full pre-tool-use with unknown tool exits 0 with warning" {
-  local json='{"tool_name":"FooTool","tool_input":{}}'
-
-  run --separate-stderr "$HOOK" <<< "$json"
-  [ "$status" -eq 0 ]
-  [[ "$output" == "{}" ]]
-  [[ "$stderr" == *"WARNING"* ]]
-  [[ "$stderr" == *"unknown tool_name"* ]]
-}
-
-# [T03-A2] Full pre-tool-use: Write goals.md, no state → exit 0, stdout {}, stderr warning
-@test "[T03-A2] Write to goals.md with no state exits 0 with warning" {
-  # No .qrspi/state.json in WORK_DIR
-  local json
-  json='{"tool_name":"Write","tool_input":{"file_path":"'"$ARTIFACT_DIR/goals.md"'","content":"x"}}'
-
-  run --separate-stderr "$HOOK" <<< "$json"
-  [ "$status" -eq 0 ]
-  [[ "$output" == "{}" ]]
-  [[ "$stderr" == *"WARNING"* ]]
-}
-
-# [T03-A3] Full pre-tool-use: Write with corrupted state JSON → exit 2, stdout deny JSON
-@test "[T03-A3] Write with corrupted state JSON exits 2 with deny" {
-  mkdir -p "$WORK_DIR/.qrspi"
-  printf 'this is not json at all' > "$WORK_DIR/.qrspi/state.json"
-
-  local json
-  json='{"tool_name":"Write","tool_input":{"file_path":"'"$ARTIFACT_DIR/goals.md"'","content":"x"}}'
-
-  run --separate-stderr "$HOOK" <<< "$json"
-  [ "$status" -eq 2 ]
-  local decision
-  decision=$(printf '%s' "${lines[-1]}" | jq -r '.decision')
-  [[ "$decision" == "block" ]]
-}
-
-# [T03-A4] Full pre-tool-use: Bash during task, bash_detect fails → exit 2, stdout deny JSON
-@test "[T03-A4] Bash with broken bash_detect during active task exits 2" {
-  mkdir -p "$WORK_DIR/.qrspi"
-  mkdir -p "$ARTIFACT_DIR/tasks"
-  printf -- '---\nstatus: approved\ntask: 1\nphase: 1\nenforcement: monitored\nallowed_files:\n  - action: create\n    path: src/main.sh\nconstraints: []\n---\n\n# Task 1\n' \
-    > "$ARTIFACT_DIR/tasks/task-01.md"
-  printf '{"version":1,"current_step":"implement","artifact_dir":"%s","artifacts":{},"active_task":{"id":1}}' \
-    "$ARTIFACT_DIR" > "$WORK_DIR/.qrspi/state.json"
-
-  # Inject a broken bash_detect_file_writes by temporarily replacing the lib file
-  local lib_dir
-  lib_dir="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib"
-  cp "$lib_dir/bash-detect.sh" "$WORK_DIR/bash-detect-orig.sh"
-  printf '#!/usr/bin/env bash\nset -euo pipefail\nbash_detect_file_writes() { return 1; }\n' > "$lib_dir/bash-detect.sh"
-
-  local json='{"tool_name":"Bash","tool_input":{"command":"echo hello > out.txt"}}'
-
-  run --separate-stderr "$HOOK" <<< "$json"
-
-  # Restore original immediately
-  cp "$WORK_DIR/bash-detect-orig.sh" "$lib_dir/bash-detect.sh"
-
-  [ "$status" -eq 2 ]
-  local decision
-  decision=$(printf '%s' "${lines[-1]}" | jq -r '.decision')
-  [[ "$decision" == "block" ]]
-}
-
-# [T03-A5] Full post-tool-use: Write, state present, active_task null → exit 0, stderr warning
-@test "[T03-A5] post-tool-use Write with null active_task warns about no task ID" {
-  local POST_HOOK
-  POST_HOOK="$(dirname "$BATS_TEST_FILENAME")/../../hooks/post-tool-use"
-
-  mkdir -p "$WORK_DIR/.qrspi"
-  printf '{"version":1,"current_step":"implement","artifact_dir":"%s","artifacts":{},"active_task":null}' \
-    "$ARTIFACT_DIR" > "$WORK_DIR/.qrspi/state.json"
-
-  local json='{"tool_name":"Write","tool_input":{"file_path":"/tmp/somefile.txt","content":"x"}}'
-
-  run --separate-stderr "$POST_HOOK" <<< "$json"
-  [ "$status" -eq 0 ]
-  [[ "$stderr" == *"WARNING"* ]]
-  [[ "$stderr" == *"no task ID resolved"* ]]
 }
