@@ -26,13 +26,13 @@ unit_test_dir() {
   [ "$count" -eq 12 ]
 }
 
-# AC8 — Across all 12 unit test files, there are exactly 236 @test definitions
-@test "[AC8] Unit test suite has exactly 236 @test definitions (baseline)" {
+# AC8 — Across all 12 unit test files, there are exactly 243 @test definitions
+@test "[AC8] Unit test suite has exactly 243 @test definitions (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 236 ]
+  [ "$count" -eq 243 ]
 }
 
 # AC8 — Every expected unit test file is present by name

@@ -335,3 +335,95 @@ constraints: []
   [ "$status" -eq 1 ]
   [[ "$output" == *"cannot read task spec frontmatter"* ]]
 }
+
+# ============================================================================
+# [U13] Monitored-mode in_scope fix tests
+# ============================================================================
+
+@test "[U13-1] enforcement_check_allowlist: monitored-mode write outside allowlist returns in_scope=false on stdout" {
+  local task_file="$ARTIFACT_DIR/tasks/task-30.md"
+  create_task_spec "$task_file" "---
+enforcement: monitored
+allowed_files:
+  - action: create
+    path: hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 30
+"
+  cd "$TEST_TEMP_DIR"
+  local result
+  result=$(enforcement_check_allowlist "some/other/file.sh" 30 "$ARTIFACT_DIR")
+  [ "$result" = "false" ]
+}
+
+@test "[U13-2] enforcement_check_allowlist: monitored-mode write inside allowlist returns in_scope=true on stdout" {
+  local task_file="$ARTIFACT_DIR/tasks/task-31.md"
+  create_task_spec "$task_file" "---
+enforcement: monitored
+allowed_files:
+  - action: create
+    path: hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 31
+"
+  cd "$TEST_TEMP_DIR"
+  local result
+  result=$(enforcement_check_allowlist "hooks/lib/enforcement.sh" 31 "$ARTIFACT_DIR")
+  [ "$result" = "true" ]
+}
+
+@test "[U13-3] enforcement_check_allowlist: strict-mode write outside allowlist returns in_scope=false and exit 2" {
+  local task_file="$ARTIFACT_DIR/tasks/task-32.md"
+  create_task_spec "$task_file" "---
+enforcement: strict
+allowed_files:
+  - action: create
+    path: hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 32
+"
+  cd "$TEST_TEMP_DIR"
+  local stdout_file="$TEST_TEMP_DIR/stdout32.txt"
+  local exit_code=0
+  enforcement_check_allowlist "some/other/file.sh" 32 "$ARTIFACT_DIR" >"$stdout_file" 2>/dev/null && exit_code=0 || exit_code=$?
+  [ "$exit_code" -eq 2 ]
+  local stdout_content
+  stdout_content=$(cat "$stdout_file")
+  [ "$stdout_content" = "false" ]
+}
+
+@test "[U13-4] enforcement_check_allowlist: in_scope value is same regardless of enforcement mode" {
+  local task_file_strict="$ARTIFACT_DIR/tasks/task-33.md"
+  local task_file_monitored="$ARTIFACT_DIR/tasks/task-34.md"
+  create_task_spec "$task_file_strict" "---
+enforcement: strict
+allowed_files:
+  - action: create
+    path: hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 33
+"
+  create_task_spec "$task_file_monitored" "---
+enforcement: monitored
+allowed_files:
+  - action: create
+    path: hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 34
+"
+  cd "$TEST_TEMP_DIR"
+  local result_strict result_monitored
+  result_strict=$(enforcement_check_allowlist "hooks/lib/enforcement.sh" 33 "$ARTIFACT_DIR" 2>/dev/null || true)
+  result_monitored=$(enforcement_check_allowlist "hooks/lib/enforcement.sh" 34 "$ARTIFACT_DIR" 2>/dev/null || true)
+  [ "$result_strict" = "$result_monitored" ]
+}

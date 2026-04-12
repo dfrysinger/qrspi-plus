@@ -270,3 +270,40 @@ teardown() {
   frontmatter=$(head -3 reviews/tasks/task-06-review.md)
   [[ "$frontmatter" == *"task: 6"* ]]
 }
+
+# ============================================================================
+# [U9] Raw blob preservation tests
+# ============================================================================
+
+@test "[U9-1] audit_log_stdin: malformed JSON input produces JSONL record with raw_input field" {
+  local raw='NOT VALID JSON {{{ garbage'
+  run audit_log_stdin "42" "$raw"
+  [ "$status" -eq 0 ]
+  [ -f ".qrspi/audit-task-42.jsonl" ]
+  local record
+  record=$(tail -1 ".qrspi/audit-task-42.jsonl")
+  [ "$(printf '%s' "$record" | jq 'has("raw_input")')" = "true" ]
+  [ "$(printf '%s' "$record" | jq -r '.raw_input')" = "$raw" ]
+}
+
+@test "[U9-2] audit_log_stdin: well-formed JSON input produces structured fields and no raw_input" {
+  local raw
+  raw='{"tool_name":"Write","tool_input":{"file_path":"src/foo.sh"}}'
+  run audit_log_stdin "43" "$raw"
+  [ "$status" -eq 0 ]
+  [ -f ".qrspi/audit-task-43.jsonl" ]
+  local record
+  record=$(tail -1 ".qrspi/audit-task-43.jsonl")
+  [ "$(printf '%s' "$record" | jq 'has("raw_input")')" = "false" ]
+  [ "$(printf '%s' "$record" | jq -r '.tool_name')" = "Write" ]
+}
+
+@test "[U9-3] audit_log_stdin: empty stdin produces JSONL record with raw_input as empty string" {
+  run audit_log_stdin "44" ""
+  [ "$status" -eq 0 ]
+  [ -f ".qrspi/audit-task-44.jsonl" ]
+  local record
+  record=$(tail -1 ".qrspi/audit-task-44.jsonl")
+  [ "$(printf '%s' "$record" | jq 'has("raw_input")')" = "true" ]
+  [ "$(printf '%s' "$record" | jq -r '.raw_input')" = "" ]
+}
