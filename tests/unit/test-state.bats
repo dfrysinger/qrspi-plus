@@ -385,3 +385,108 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"state_write_atomic failed"* ]]
 }
+
+# ============================================================================
+# [T14] State bootstrap and cascade reset tests
+# ============================================================================
+
+@test "[T14-S1] state_init_or_reconcile: approved goals + draft questions + no state.json -> creates state" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+  create_artifact "$artifact_dir/questions.md" "draft"
+
+  # Ensure no state.json exists
+  [ ! -f "$TEST_DIR/.qrspi/state.json" ]
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+  run state_init_or_reconcile "$artifact_dir"
+
+  [ "$status" -eq 0 ]
+
+  local json
+  json=$(state_read)
+  [[ "$json" == *'"current_step":"questions"'* ]]
+  [[ "$json" == *'"goals":"approved"'* ]]
+  [[ "$json" == *'"questions":"draft"'* ]]
+}
+
+@test "[T14-S2] state_init_or_reconcile: existing state with goals=approved but goals.md now draft -> reconciles to goals=draft" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # First init: goals=approved
+  state_init_or_reconcile "$artifact_dir"
+  local json
+  json=$(state_read)
+  [[ "$json" == *'"goals":"approved"'* ]]
+
+  # Now change goals.md frontmatter to draft
+  create_artifact "$artifact_dir/goals.md" "draft"
+
+  # Re-reconcile
+  state_init_or_reconcile "$artifact_dir"
+
+  json=$(state_read)
+  [[ "$json" == *'"goals":"draft"'* ]]
+  [[ "$json" == *'"current_step":"goals"'* ]]
+}
+
+@test "[T14-S3] state_init_or_reconcile: called twice -> identical result (idempotency)" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir/research"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+  create_artifact "$artifact_dir/questions.md" "approved"
+  create_artifact "$artifact_dir/research/summary.md" "draft"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  state_init_or_reconcile "$artifact_dir"
+  local json1
+  json1=$(state_read)
+
+  state_init_or_reconcile "$artifact_dir"
+  local json2
+  json2=$(state_read)
+
+  # Compare key fields (artifact_dir may differ in whitespace but content should match)
+  local step1 step2 goals1 goals2 questions1 questions2 research1 research2
+  step1=$(echo "$json1" | jq -r '.current_step')
+  step2=$(echo "$json2" | jq -r '.current_step')
+  goals1=$(echo "$json1" | jq -r '.artifacts.goals')
+  goals2=$(echo "$json2" | jq -r '.artifacts.goals')
+  questions1=$(echo "$json1" | jq -r '.artifacts.questions')
+  questions2=$(echo "$json2" | jq -r '.artifacts.questions')
+  research1=$(echo "$json1" | jq -r '.artifacts.research')
+  research2=$(echo "$json2" | jq -r '.artifacts.research')
+
+  [[ "$step1" == "$step2" ]]
+  [[ "$goals1" == "$goals2" ]]
+  [[ "$questions1" == "$questions2" ]]
+  [[ "$research1" == "$research2" ]]
+}
+
+@test "[T14-S4] state_init_or_reconcile: jq produces invalid JSON -> returns non-zero, no state written" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Sabotage jq to output invalid JSON (non-empty but not valid)
+  local fake_bin="$TEST_DIR/fake-bin"
+  mkdir -p "$fake_bin"
+  printf '#!/bin/sh\necho "not-valid-json{"\nexit 0\n' > "$fake_bin/jq"
+  chmod +x "$fake_bin/jq"
+
+  PATH="$fake_bin:$PATH" run state_init_or_reconcile "$artifact_dir"
+  [ "$status" -ne 0 ]
+
+  # No state file should have been written (or if one existed, it should not be valid)
+  [ ! -f "$TEST_DIR/.qrspi/state.json" ]
+}

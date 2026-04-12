@@ -143,6 +143,19 @@ state_init_or_reconcile() {
     return 1
   fi
 
+  # Validate output is well-formed JSON before writing (basic structural check)
+  # Check starts with { and ends with }, and contains required "version" key
+  local trimmed
+  trimmed="${json#"${json%%[![:space:]]*}"}"
+  if [[ "${trimmed:0:1}" != "{" ]] || [[ "${trimmed: -1}" != "}" ]]; then
+    echo "state_init_or_reconcile: jq produced invalid JSON" >&2
+    return 1
+  fi
+  if [[ "$json" != *'"version"'* ]]; then
+    echo "state_init_or_reconcile: jq produced JSON missing required fields" >&2
+    return 1
+  fi
+
   # Write the state file atomically
   if ! state_write_atomic "$json"; then
     echo "state_init_or_reconcile: state_write_atomic failed" >&2

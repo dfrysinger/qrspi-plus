@@ -125,15 +125,30 @@ pipeline_check_prerequisites() {
   return 0
 }
 
-# pipeline_cascade_reset <step> <artifact_dir>
+# pipeline_cascade_reset <step> <artifact_dir> [--skip-cascade]
 # Resets the given step and all downstream steps to "draft" in state.json.
+# With --skip-cascade: resets only the given step, leaves downstream untouched.
 # Does NOT modify artifact files on disk.
 # Uses state_write_atomic().
-# If step is "goals", resets all 8.
+# If step is "goals", resets all 8 (unless --skip-cascade).
 # If step is "test", resets only test.
+# Rejects unknown flags with return 1.
 pipeline_cascade_reset() {
   local step="$1"
   local artifact_dir="$2"
+  shift 2
+
+  # Parse optional flags
+  local skip_cascade=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --skip-cascade) skip_cascade=true; shift ;;
+      *)
+        echo "pipeline_cascade_reset: unknown flag '$1'" >&2
+        return 1
+        ;;
+    esac
+  done
 
   # Read current state
   local state
@@ -156,9 +171,15 @@ pipeline_cascade_reset() {
     return 1
   fi
 
-  # Reset from start_idx to end to "draft"
+  # Determine end index
+  local end_idx=8
+  if [[ "$skip_cascade" == "true" ]]; then
+    end_idx=$((start_idx + 1))
+  fi
+
+  # Reset from start_idx to end_idx to "draft"
   local i
-  for (( i = start_idx; i < 8; i++ )); do
+  for (( i = start_idx; i < end_idx; i++ )); do
     local reset_step
     case "$i" in
       0) reset_step="goals" ;;
