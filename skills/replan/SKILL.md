@@ -115,6 +115,10 @@ NO `goals.md` directly — the subagent reads the plan and design which already 
 3. Classify each change using severity table
 4. If any major change, identify the loop-back target
 
+### Roadmap Usage
+
+During phase transitions, Replan reads `roadmap.md` to determine which goals belong to the next phase. Goals for the next phase are promoted from `future-goals.md` (Formal section) into a fresh `goals.md`. The roadmap's current phase pointer is advanced. Each downstream skill checks `future-design.md` and `future-research/` for pre-existing work on promoted goals (pull model, not push).
+
 ## Review Round
 
 - **Claude review subagent:** verify proposed changes are consistent with goals (read `goals.md` for this check), don't introduce contradictions, severity classification is correct

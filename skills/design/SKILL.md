@@ -34,6 +34,10 @@ Do NOT proceed to Structure without user approval of the design.
 
 design.md contains ONLY current-phase design entries. Each entry is keyed by `### {GOAL_ID} — {name}`. Entries for goals not in the current phase (per roadmap.md) belong in `future-design.md`, not design.md. When the Design skill creates or updates design.md, it must: (1) verify every goal ID in the document exists in goals.md, (2) move entries for out-of-scope goals to future-design.md, (3) check future-design.md for existing entries on current-phase goals and pull them into design.md.
 
+### Roadmap Maintenance
+
+When the Design skill creates or updates roadmap.md: (1) every goal ID must exist in either `goals.md` (current phase) or `future-goals.md` (Formal section), (2) the table contains ONLY goal ID, phase, and slice columns — no notes, no design content, (3) flag any goal IDs in roadmap.md that don't exist in either file as orphans for user review.
+
 ## Process
 
 ```dot
