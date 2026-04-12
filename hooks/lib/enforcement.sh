@@ -28,7 +28,7 @@ enforcement_get_mode() {
         return 0
       fi
     else
-      echo "WARNING: corrupted runtime overrides for task $task_id, falling through to spec" >&2
+      echo "enforcement_get_mode: corrupted runtime overrides for task $task_id, falling through to spec" >&2
     fi
   fi
 
@@ -106,7 +106,10 @@ enforcement_check_allowlist() {
     return 1
   fi
   local spec_allowed
-  spec_allowed=$(echo "$frontmatter_json" | jq -r '.allowed_files[].path' 2>/dev/null || true)
+  if ! spec_allowed=$(echo "$frontmatter_json" | jq -r '.allowed_files[]?.path // empty' 2>/dev/null); then
+    echo "enforcement_check_allowlist: failed to parse allowed_files from spec — denying" >&2
+    return 1
+  fi
 
   # Check spec allowed_files
   while IFS= read -r allowed_path; do

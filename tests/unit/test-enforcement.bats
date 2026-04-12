@@ -303,7 +303,7 @@ constraints: []
   # Should have a warning on stderr about corrupted overrides
   local stderr_content
   stderr_content=$(cat "$stderr_file")
-  [[ "$stderr_content" == *"WARNING"* ]]
+  [[ "$stderr_content" == *"enforcement_get_mode: corrupted runtime overrides"* ]]
 }
 
 @test "[T04-E2] enforcement_get_mode: unrecognized mode strikt returns exit 1 with stderr diagnostic" {

@@ -41,8 +41,15 @@ audit_log_operation() {
     audit_file=".qrspi/audit.jsonl"
   else
     local padded_task_id
-    padded_task_id=$(printf "%02d" "$task_id")
-    audit_file=".qrspi/audit-task-${padded_task_id}.jsonl"
+    padded_task_id=$(printf "%02d" "$task_id" 2>/dev/null) || {
+      echo "audit_log_operation: cannot pad task_id '${task_id}' — routing to general audit" >&2
+      padded_task_id=""
+    }
+    if [[ -n "$padded_task_id" ]]; then
+      audit_file=".qrspi/audit-task-${padded_task_id}.jsonl"
+    else
+      audit_file=".qrspi/audit.jsonl"
+    fi
   fi
 
   # Sanitize boolean inputs: ensure they are exactly "true" or "false"
