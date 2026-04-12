@@ -59,45 +59,45 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-# ===== protected_is_blocked tests =====
+# ===== is_protected_path tests =====
 
-@test "protected_is_blocked: tasks/task-05.md in worktree is blocked" {
-  run protected_is_blocked "tasks/task-05.md" 0
+@test "is_protected_path: tasks/task-05.md in worktree is blocked" {
+  run is_protected_path "tasks/task-05.md" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: .qrspi/state.json in worktree is blocked" {
-  run protected_is_blocked ".qrspi/state.json" 0
+@test "is_protected_path: .qrspi/state.json in worktree is blocked" {
+  run is_protected_path ".qrspi/state.json" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: .qrspi/task-03-runtime.json in worktree is blocked" {
-  run protected_is_blocked ".qrspi/task-03-runtime.json" 0
+@test "is_protected_path: .qrspi/task-03-runtime.json in worktree is blocked" {
+  run is_protected_path ".qrspi/task-03-runtime.json" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: config.md in worktree is blocked" {
-  run protected_is_blocked "config.md" 0
+@test "is_protected_path: config.md in worktree is blocked" {
+  run is_protected_path "config.md" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: .qrspi/audit-task-03.jsonl in worktree is blocked" {
-  run protected_is_blocked ".qrspi/audit-task-03.jsonl" 0
+@test "is_protected_path: .qrspi/audit-task-03.jsonl in worktree is blocked" {
+  run is_protected_path ".qrspi/audit-task-03.jsonl" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: reviews/alignment/report.md in worktree is blocked" {
-  run protected_is_blocked "reviews/alignment/report.md" 0
+@test "is_protected_path: reviews/alignment/report.md in worktree is blocked" {
+  run is_protected_path "reviews/alignment/report.md" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: hooks/lib/task.sh in worktree is not blocked" {
-  run protected_is_blocked "hooks/lib/task.sh" 0
+@test "is_protected_path: hooks/lib/task.sh in worktree is not blocked" {
+  run is_protected_path "hooks/lib/task.sh" 0
   [ "$status" -ne 0 ]
 }
 
-@test "protected_is_blocked: any path not in worktree is not blocked" {
-  run protected_is_blocked "tasks/task-05.md" 1
+@test "is_protected_path: any path not in worktree is not blocked" {
+  run is_protected_path "tasks/task-05.md" 1
   [ "$status" -ne 0 ]
 }
 
