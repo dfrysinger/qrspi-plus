@@ -6,11 +6,11 @@ bats_require_minimum_version 1.5.0
 # Criterion 8: "All existing pipeline functionality (Goals through Replan)
 #   continues to work after Phase 4 changes — validated by the unit tests
 #   passing (baseline confirmed)."
-#   → Meta-test: confirm the unit test suite still has exactly 218 @test entries
-#     across exactly 11 .bats files.
+#   → Meta-test: confirm the unit test suite still has exactly 287 @test entries
+#     across exactly 12 .bats files.
 #
-# Note: test-validate.bats was deleted in M27 — validation logic was relocated
-# to skills/using-qrspi/SKILL.md prose. File count is now 11, test count 218.
+# Phase 4 changes: test-validate.bats deleted (M27), test-artifact-map.bats
+# added (U8). File count stays at 12, test count updated to 287.
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,30 +20,31 @@ unit_test_dir() {
 
 # ── Criterion 8: Unit test suite baseline ────────────────────────────────────
 
-# AC8 — The unit test directory contains exactly 11 .bats files
-@test "[AC8] Unit test suite has exactly 11 .bats files (baseline)" {
+# AC8 — The unit test directory contains exactly 12 .bats files
+@test "[AC8] Unit test suite has exactly 12 .bats files (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(find "$dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 11 ]
+  [ "$count" -eq 12 ]
 }
 
-# AC8 — test count placeholder, will be set by T21 after all merges
-@test "[AC8] Unit test suite has exactly 218 @test definitions (baseline)" {
+# AC8 — Across all 12 unit test files, there are exactly 287 @test definitions
+@test "[AC8] Unit test suite has exactly 287 @test definitions (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 218 ]
+  [ "$count" -eq 287 ]
 }
 
 # AC8 — Every expected unit test file is present by name
-@test "[AC8] All 11 expected unit test files are present by name" {
+@test "[AC8] All 12 expected unit test files are present by name" {
   local dir
   dir="$(unit_test_dir)"
 
   local expected_files=(
+    "test-artifact-map.bats"
     "test-artifact.bats"
     "test-audit.bats"
     "test-bash-detect.bats"
