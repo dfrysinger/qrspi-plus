@@ -450,3 +450,115 @@ EOF
 @test "validate.sh: has 'set -euo pipefail' as early line" {
   head -2 "$BATS_TEST_DIRNAME/../../hooks/lib/validate.sh" | tail -1 | grep -q '^set -euo pipefail'
 }
+
+# ---------------------------------------------------------------------------
+# Config field validation via validate-config-field.sh fixture
+# ---------------------------------------------------------------------------
+
+FIXTURE="$BATS_TEST_DIRNAME/../fixtures/validate-config-field.sh"
+
+# 1. Missing config.md entirely
+@test "validate-config-field: missing config.md -> output contains 'config.md not found' and '1) Re-run Goals'" {
+  local artifact_dir="$TEST_DIR/no-config"
+  mkdir -p "$artifact_dir"
+
+  run "$FIXTURE" route "$artifact_dir"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"config.md not found"* ]]
+  [[ "$output" == *"1) Re-run Goals"* ]]
+}
+
+# 2. Missing route field
+@test "validate-config-field: missing route field -> output contains 'config.md has no \`route\` field' and numbered options 1-3" {
+  local artifact_dir="$TEST_DIR/no-route"
+  mkdir -p "$artifact_dir"
+  printf -- '---\npipeline: full\ncodex_reviews: false\n---\n' > "$artifact_dir/config.md"
+
+  run "$FIXTURE" route "$artifact_dir"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"config.md has no"*"route"* ]]
+  [[ "$output" == *"1)"* ]]
+  [[ "$output" == *"2)"* ]]
+  [[ "$output" == *"3)"* ]]
+}
+
+# 3. Missing pipeline field
+@test "validate-config-field: missing pipeline field -> output contains 'config.md has no \`pipeline\` field' and at least option 1" {
+  local artifact_dir="$TEST_DIR/no-pipeline"
+  mkdir -p "$artifact_dir"
+  printf -- '---\ncodex_reviews: false\nroute:\n  - goals\n---\n' > "$artifact_dir/config.md"
+
+  run "$FIXTURE" pipeline "$artifact_dir"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"config.md has no"*"pipeline"* ]]
+  [[ "$output" == *"1)"* ]]
+}
+
+# 4. Invalid pipeline value "strikt"
+@test "validate-config-field: invalid pipeline 'strikt' -> output names bad value and shows 'full' and 'quick' and options 1-3" {
+  local artifact_dir="$TEST_DIR/bad-pipeline"
+  mkdir -p "$artifact_dir"
+  printf -- '---\npipeline: strikt\ncodex_reviews: false\nroute:\n  - goals\n---\n' > "$artifact_dir/config.md"
+
+  run "$FIXTURE" pipeline "$artifact_dir"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"strikt"* ]]
+  [[ "$output" == *"full"* ]]
+  [[ "$output" == *"quick"* ]]
+  [[ "$output" == *"1)"* ]]
+  [[ "$output" == *"2)"* ]]
+  [[ "$output" == *"3)"* ]]
+}
+
+# 5. Missing codex_reviews field
+@test "validate-config-field: missing codex_reviews -> output contains 'config.md has no \`codex_reviews\` field' and options 1-4" {
+  local artifact_dir="$TEST_DIR/no-codex"
+  mkdir -p "$artifact_dir"
+  printf -- '---\npipeline: full\nroute:\n  - goals\n---\n' > "$artifact_dir/config.md"
+
+  run "$FIXTURE" codex_reviews "$artifact_dir"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"config.md has no"*"codex_reviews"* ]]
+  [[ "$output" == *"1)"* ]]
+  [[ "$output" == *"2)"* ]]
+  [[ "$output" == *"3)"* ]]
+  [[ "$output" == *"4)"* ]]
+}
+
+# 6. Invalid codex_reviews value "maybe"
+@test "validate-config-field: invalid codex_reviews 'maybe' -> output names bad value and shows 'true' and 'false'" {
+  local artifact_dir="$TEST_DIR/bad-codex"
+  mkdir -p "$artifact_dir"
+  printf -- '---\npipeline: full\ncodex_reviews: maybe\nroute:\n  - goals\n---\n' > "$artifact_dir/config.md"
+
+  run "$FIXTURE" codex_reviews "$artifact_dir"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"maybe"* ]]
+  [[ "$output" == *"true"* ]]
+  [[ "$output" == *"false"* ]]
+}
+
+# 7. Valid config.md with all required fields -> exit 0, no output
+@test "validate-config-field: valid config with all required fields -> exit 0, no output" {
+  local artifact_dir="$TEST_DIR/valid-config"
+  mkdir -p "$artifact_dir"
+  printf -- '---\npipeline: full\ncodex_reviews: true\nroute:\n  - goals\n  - questions\n  - research\n  - plan\n  - implement\n  - test\n---\n' > "$artifact_dir/config.md"
+
+  run "$FIXTURE" pipeline "$artifact_dir"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+
+  run "$FIXTURE" codex_reviews "$artifact_dir"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+
+  run "$FIXTURE" route "$artifact_dir"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}

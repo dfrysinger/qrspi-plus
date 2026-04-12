@@ -26,6 +26,35 @@ Do NOT synthesize goals.md until the pipeline mode is selected and config.md is 
 The user must explicitly choose quick fix or full pipeline before synthesis begins.
 </HARD-GATE>
 
+### Config Validation (when config.md exists)
+
+If `config.md` already exists (resuming a run), validate these fields before proceeding:
+
+**If `route` is missing:**
+
+  config.md has no `route` field.
+
+  1) Re-run Goals to regenerate config.md with the correct route
+  2) Manually add a `route:` list to config.md
+  3) Abort
+
+**If `pipeline` is missing:**
+
+  config.md has no `pipeline` field.
+
+  1) Re-run Goals to regenerate config.md with the pipeline field set
+  2) Manually add `pipeline: full` or `pipeline: quick` to config.md
+  3) Abort
+
+**If `pipeline` has an invalid value (not `full` or `quick`):**
+
+  config.md has an invalid value for `pipeline`: {value}
+  Expected: `full` or `quick`
+
+  1) Edit config.md and set `pipeline: full` or `pipeline: quick`
+  2) Re-run Goals to regenerate config.md
+  3) Abort
+
 ## Process
 
 ```dot

@@ -40,6 +40,25 @@ Required inputs:
 
 If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
 
+### Config Validation
+
+Before reading `route` from `config.md`, validate the following:
+
+**If `config.md` is missing:**
+
+  config.md not found in the artifact directory.
+
+  1) Re-run Goals to create config.md and set the pipeline mode
+  2) Abort
+
+**If `route` is missing:**
+
+  config.md has no `route` field.
+
+  1) Re-run Goals to regenerate config.md with the correct route
+  2) Manually add a `route:` list to config.md
+  3) Abort
+
 <HARD-GATE>
 Do NOT push to CI or approve integration without running integration and security reviews on the merged code.
 Do NOT push to CI without user approval of integration review results.

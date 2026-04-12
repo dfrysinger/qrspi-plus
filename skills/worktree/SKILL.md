@@ -19,7 +19,7 @@ NO TASK DISPATCH WITHOUT AN APPROVED PARALLELIZATION PLAN
 
 ## Artifact Gating
 
-Read `config.md` to determine pipeline mode. Required inputs:
+Required inputs:
 
 - `plan.md` with `status: approved`
 - `tasks/*.md` (current phase) or `fixes/{type}-round-NN/*.md` (for fix task routing)
@@ -27,6 +27,34 @@ Read `config.md` to determine pipeline mode. Required inputs:
 - `config.md`
 
 If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
+
+### Config Validation
+
+Before reading any field from `config.md`, validate the following:
+
+**If `config.md` is missing:**
+
+  config.md not found in the artifact directory.
+
+  1) Re-run Goals to create config.md and set the pipeline mode
+  2) Abort
+
+**If `pipeline` is missing:**
+
+  config.md has no `pipeline` field.
+
+  1) Re-run Goals to regenerate config.md with the pipeline field set
+  2) Manually add `pipeline: full` or `pipeline: quick` to config.md
+  3) Abort
+
+**If `pipeline` has an invalid value (not `full` or `quick`):**
+
+  config.md has an invalid value for `pipeline`: {value}
+  Expected: `full` or `quick`
+
+  1) Edit config.md and set `pipeline: full` or `pipeline: quick`
+  2) Re-run Goals to regenerate config.md
+  3) Abort
 
 <HARD-GATE>
 Do NOT dispatch implementation subagents without an approved parallelization plan.

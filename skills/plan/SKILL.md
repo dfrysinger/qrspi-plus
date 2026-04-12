@@ -29,7 +29,54 @@ Note: Design and Structure are not in the quick fix route, so `design.md` and `s
 
 If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
 
-Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. If `config.md` doesn't exist, default to `codex_reviews: false`.
+Read `config.md` from the artifact directory to determine whether Codex reviews are enabled.
+
+### Config Validation
+
+Before using any config field, validate the following:
+
+**If `pipeline` is missing:**
+
+  config.md has no `pipeline` field.
+
+  1) Re-run Goals to regenerate config.md with the pipeline field set
+  2) Manually add `pipeline: full` or `pipeline: quick` to config.md
+  3) Abort
+
+**If `pipeline` has an invalid value (not `full` or `quick`):**
+
+  config.md has an invalid value for `pipeline`: {value}
+  Expected: `full` or `quick`
+
+  1) Edit config.md and set `pipeline: full` or `pipeline: quick`
+  2) Re-run Goals to regenerate config.md
+  3) Abort
+
+**If `route` is missing:**
+
+  config.md has no `route` field.
+
+  1) Re-run Goals to regenerate config.md with the correct route
+  2) Manually add a `route:` list to config.md
+  3) Abort
+
+**If `codex_reviews` is missing:**
+
+  config.md has no `codex_reviews` field.
+
+  1) Add `codex_reviews: true` to config.md (Codex second reviews enabled)
+  2) Add `codex_reviews: false` to config.md (Codex second reviews disabled)
+  3) Re-run Goals to regenerate config.md
+  4) Abort
+
+**If `codex_reviews` has an invalid value (not `true` or `false`):**
+
+  config.md has an invalid value for `codex_reviews`: {value}
+  Expected: `true` or `false`
+
+  1) Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
+  2) Re-run Goals to regenerate config.md
+  3) Abort
 
 <HARD-GATE>
 Do NOT produce plan.md without all required artifacts approved (full: goals + research + design + structure; quick: goals + research).

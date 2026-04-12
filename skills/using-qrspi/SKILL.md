@@ -333,7 +333,55 @@ review_mode: loop   # or: single — added by Worktree/Implement at phase start
 
 > Use Codex for second reviews this run? (yes/no)
 
-**No legacy fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing OR exists but has no `route:` field (pre-Phase 3 runs), refuse to proceed and tell the user: "Cannot continue — `config.md` is missing or has no route field. Re-run Goals to set the pipeline mode." There is no automatic derivation of the route — this avoids conditional branches in every skill. Existing runs can be migrated by manually adding `pipeline` and `route` fields to their config.md.
+**No legacy fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing or has missing/invalid fields, apply the **Config Validation Procedure** (see below). Skills do not silently default any field that affects pipeline behavior. There is no automatic derivation of the route — this avoids conditional branches in every skill. Existing runs can be migrated by manually adding `pipeline` and `route` fields to their config.md.
+
+## Config Validation Procedure
+
+Every skill that reads config.md applies this procedure before using any field.
+
+### When config.md is missing entirely
+
+Stop and present:
+
+  config.md not found in the artifact directory.
+
+  1) Re-run Goals to create config.md and set the pipeline mode
+  2) Abort
+
+### When a required field is missing or empty
+
+Stop and present a numbered menu. The exact options depend on which field is missing — see each skill's Artifact Gating section for the field-specific menus.
+
+### When a field has an invalid value
+
+Stop and name the invalid value and the expected values. Present numbered options. The exact options depend on which field is invalid — see each skill's Artifact Gating section for the field-specific menus.
+
+### No silent defaults
+
+Skills must not:
+- Assume `pipeline: full` when `pipeline` is missing
+- Assume `codex_reviews: false` when `codex_reviews` is missing
+- Attempt to derive `route` from `pipeline` when `route` is missing
+- Proceed with a guessed or inferred field value
+
+The only exception: fields that do not affect pipeline behavior may have defaults.
+Fields that DO affect behavior (route, pipeline, codex_reviews, review_depth, review_mode) must be present and valid before the skill proceeds.
+
+### Fields that affect pipeline behavior (must be validated)
+
+| Field | Skills that validate it | Valid values |
+|-------|------------------------|--------------|
+| `route` | Goals, Plan, Worktree, Integrate, using-qrspi | ordered list of skill names (see Route Templates) |
+| `pipeline` | Goals, Plan, Worktree | `full` or `quick` |
+| `codex_reviews` | Goals, Plan | `true` or `false` |
+| `review_depth` | Worktree, Implement (validated at dispatch time, set by Worktree) | `quick` or `deep` |
+| `review_mode` | Worktree, Implement (validated at dispatch time, set by Worktree) | `single` or `loop` |
+
+### Fields that do NOT require validation (informational only)
+
+| Field | Note |
+|-------|------|
+| `created` | ISO date, informational only — missing is not an error |
 
 ### Review Round Flow
 
