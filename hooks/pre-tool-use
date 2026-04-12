@@ -134,7 +134,7 @@ if [[ $is_bash_tool -eq 0 ]]; then
       block_with_reason "Cannot verify pipeline ordering: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
     fi
 
-    missing_step=$(pipeline_check_prerequisites "$artifact_step" "$artifact_dir" 2>/dev/null) || {
+    missing_step=$(pipeline_check_prerequisites "$artifact_step" "$artifact_dir") || {
       # pipeline_check_prerequisites returned non-zero — missing_step is set on stdout
       artifact_basename=$(basename "$file_path")
 
@@ -199,7 +199,7 @@ if [[ $is_bash_tool -eq 0 ]]; then
     fi
   fi
 
-  if protected_is_blocked "$rel_file_path" "$is_worktree_flag"; then
+  if is_protected_path "$rel_file_path" "$is_worktree_flag"; then
     block_with_reason "Protected path: ${rel_file_path} cannot be modified from a worktree"
   fi
 
@@ -220,7 +220,7 @@ if [[ $is_bash_tool -eq 0 ]]; then
       block_with_reason "Cannot verify file allowlist: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
     fi
 
-    if ! enforcement_check_allowlist "$file_path" "$task_id" "$artifact_dir" 2>/dev/null; then
+    if ! enforcement_check_allowlist "$file_path" "$task_id" "$artifact_dir"; then
       reason="File not in allowlist for task ${task_id}. Options: 1) Ask user to approve 2) Switch to monitored 3) Find alternative"
       block_with_reason "$reason"
     fi
@@ -257,7 +257,7 @@ if [[ $is_bash_tool -eq 1 ]]; then
     if [[ -n "${targets:-}" ]]; then
       while IFS= read -r target; do
         [[ -z "$target" ]] && continue
-        if ! enforcement_check_allowlist "$target" "$task_id" "$artifact_dir" 2>/dev/null; then
+        if ! enforcement_check_allowlist "$target" "$task_id" "$artifact_dir"; then
           reason="File not in allowlist for task ${task_id}: ${target}. Options: 1) Ask user to approve 2) Switch to monitored 3) Find alternative"
           block_with_reason "$reason"
         fi
