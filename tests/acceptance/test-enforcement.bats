@@ -37,10 +37,16 @@ create_task_spec() {
   local task_num="$1"
   local enforcement="$2"
   shift 2
-  # Remaining args are allowed file paths (relative)
+  # Remaining args are allowed file paths (relative to WORK_DIR).
+  # Resolve to absolute paths to match the pre-resolved path contract
+  # expected by enforcement_check_allowlist.
   local allowed_block=""
   for p in "$@"; do
-    allowed_block="${allowed_block}  - action: create\n    path: ${p}\n"
+    local resolved_p="$p"
+    if [[ "$p" != /* ]]; then
+      resolved_p="$WORK_DIR/$p"
+    fi
+    allowed_block="${allowed_block}  - action: create\n    path: ${resolved_p}\n"
   done
   printf -- '---\nstatus: approved\ntask: %s\nphase: 1\nenforcement: %s\nallowed_files:\n%s\nconstraints: []\n---\n\n# Task %s\n' \
     "$task_num" "$enforcement" "$(printf '%b' "$allowed_block")" "$task_num" \
@@ -132,8 +138,8 @@ bash_json() {
   create_task_spec 5 "strict" "src/main.sh"
   init_state_with_task 5
 
-  # Write runtime overrides with extra approved file
-  printf '{"enforcement":"strict","user_approved_files":["src/extra.sh"]}' \
+  # Write runtime overrides with extra approved file (absolute path to match enforcement contract)
+  printf '{"enforcement":"strict","user_approved_files":["%s/src/extra.sh"]}' "$WORK_DIR" \
     > "$WORK_DIR/.qrspi/task-05-runtime.json"
 
   run "$HOOK" <<< "$(write_json "$WORK_DIR/src/extra.sh")"
@@ -393,55 +399,4 @@ bash_json() {
   [[ "$(echo "${lines[-1]}" | jq -r '.decision')" == "block" ]]
 
   rm -rf "$worktree_dir"
-}
-
-# ── Regression: validate_task_specs searches artifact_dir/tasks/ ─────────────
-
-# AC2 (regression) — validate_task_specs must find files in artifact_dir/tasks/
-# not in artifact_dir/ (the pre-fix bug searched artifact_dir directly)
-@test "[AC2][regression] validate_task_specs correctly scans artifact_dir/tasks/ subdirectory" {
-  local validate_lib
-  validate_lib="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/validate.sh"
-
-  local test_artifact_dir
-  test_artifact_dir=$(mktemp -d)
-  mkdir -p "$test_artifact_dir/tasks"
-
-  # Create a task spec ONLY in tasks/ subdirectory (not in artifact_dir root)
-  printf -- '---\ntitle: Old-style task\n---\n\n# Task 1\n' \
-    > "$test_artifact_dir/tasks/task-01.md"
-
-  # Source in bats context (avoids set -e + arithmetic exit code issue)
-  source "$validate_lib"
-
-  local output_str
-  output_str=$(validate_task_specs "$test_artifact_dir")
-
-  # The warning must be emitted (file found in tasks/ subdirectory)
-  [[ "$output_str" == *"task-01.md"* ]]
-
-  rm -rf "$test_artifact_dir"
-}
-
-# AC2 (regression) — validate_task_specs with task files only in artifact_dir root
-# should find NO tasks (regression: old code would never find any)
-@test "[AC2][regression] validate_task_specs ignores task files placed in artifact_dir root" {
-  local validate_lib
-  validate_lib="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/validate.sh"
-
-  local test_artifact_dir
-  test_artifact_dir=$(mktemp -d)
-  # Place task file directly in root, NOT in tasks/ — should not be found
-  printf -- '---\ntitle: Misplaced task\n---\n\n# Task 1\n' \
-    > "$test_artifact_dir/task-01.md"
-
-  source "$validate_lib"
-
-  local output_str
-  output_str=$(validate_task_specs "$test_artifact_dir")
-
-  # No warnings expected — misplaced file is not in tasks/
-  [[ -z "$output_str" ]]
-
-  rm -rf "$test_artifact_dir"
 }

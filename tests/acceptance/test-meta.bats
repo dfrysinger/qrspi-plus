@@ -4,10 +4,13 @@ bats_require_minimum_version 1.5.0
 # Acceptance tests for Criterion 8.
 #
 # Criterion 8: "All existing pipeline functionality (Goals through Replan)
-#   continues to work after Phase 4 changes — validated by the 200 unit tests
+#   continues to work after Phase 4 changes — validated by the unit tests
 #   passing (baseline confirmed)."
-#   → Meta-test: confirm the unit test suite still has exactly 200 @test entries
+#   → Meta-test: confirm the unit test suite still has exactly 287 @test entries
 #     across exactly 12 .bats files.
+#
+# Phase 4 changes: test-validate.bats deleted (M27), test-artifact-map.bats
+# added (U8). File count stays at 12, test count updated to 287.
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -26,13 +29,13 @@ unit_test_dir() {
   [ "$count" -eq 12 ]
 }
 
-# AC8 — Across all 12 unit test files, there are exactly 204 @test definitions
-@test "[AC8] Unit test suite has exactly 204 @test definitions (baseline)" {
+# AC8 — Across all 12 unit test files, there are exactly 287 @test definitions
+@test "[AC8] Unit test suite has exactly 287 @test definitions (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 204 ]
+  [ "$count" -eq 287 ]
 }
 
 # AC8 — Every expected unit test file is present by name
@@ -41,6 +44,7 @@ unit_test_dir() {
   dir="$(unit_test_dir)"
 
   local expected_files=(
+    "test-artifact-map.bats"
     "test-artifact.bats"
     "test-audit.bats"
     "test-bash-detect.bats"
@@ -51,7 +55,6 @@ unit_test_dir() {
     "test-setup-project-hooks.bats"
     "test-state.bats"
     "test-task.bats"
-    "test-validate.bats"
     "test-worktree.bats"
   )
 

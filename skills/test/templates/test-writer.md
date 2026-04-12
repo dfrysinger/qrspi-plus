@@ -42,11 +42,13 @@ After writing tests, produce both tables:
 ```markdown
 ## Coverage Analysis
 
-| Acceptance Criterion | Test Type(s) | Test File(s) | Status |
-|---------------------|--------------|-------------|--------|
-| {criterion text} | Acceptance, Boundary | {test file} | Written |
-| {criterion text} | Acceptance, Integration, E2E | {test file} | Written |
-| {criterion text} | — | — | Gap: {reason hard to test} |
+| Criterion ID | Acceptance Criterion | Test Type(s) | Test File(s) | Status |
+|-------------|---------------------|--------------|-------------|--------|
+| M24 | Test checks off criteria | Acceptance, Boundary | tests/acceptance/test-m24.bats | Written |
+| U1 | Fail-closed with diagnostics | Acceptance | tests/acceptance/test-u1.bats | Written |
+| {text only} | {full criterion text} | — | — | Gap: {reason} |
+
+Criterion ID is the bold label from goals.md (e.g., `M24`, `U1`, `SC5`) or the full criterion text when no ID label exists.
 
 ## Regression Tests
 | Bug | Fix Round | Test File | Behavior Verified |

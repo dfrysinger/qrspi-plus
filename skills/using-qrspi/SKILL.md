@@ -152,6 +152,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   └── test/
 │       ├── round-NN-review.md
 │       └── baseline-failures.md   (Test baseline)
+├── future-goals.md                (optional — captured future ideas, deferred scope)
 └── .qrspi/                        (hook-managed, do not edit manually)
     ├── state.json                 (pipeline state cache)
     ├── task-NN-runtime.json       (per-task runtime overrides — user mid-task decisions)
@@ -159,6 +160,8 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 ```
 
 The slug is generated during the Goals step: take the user's first description, extract 2-4 key words, convert to lowercase kebab-case (e.g., "user-auth", "product-search-api").
+
+**Skill name convention:** All QRSPI skill names follow a one-word convention. When proposing new skills, use a single lowercase word (e.g., `align`, `drift`, `audit`). Multi-word names (`goal-alignment`, `prompt-audit`) are not accepted.
 
 ## Artifact Gating
 
@@ -231,6 +234,34 @@ When a later step surfaces new requirements or contradictions — e.g., Figma wi
 ## Mid-Pipeline Entry
 
 Users can enter mid-pipeline if they already have artifacts from prior work. As long as the required input files exist with `status: approved`, any step can run. This is an escape hatch, not the default path.
+
+### Validation and Repair
+
+Before checking artifact status, run these three validation checks in order:
+
+**1. State schema validation (fail-closed)**
+
+Call `state_init_or_reconcile <artifact_dir>` to bootstrap or reconcile `.qrspi/state.json`. If the state file is missing, it is created from artifact frontmatter. If the version field is absent (v0), it is migrated to v1. If any required v1 fields are missing (`wireframe_requested`, `active_task`, `artifacts`), each is added with a safe default and a repair message is emitted to stdout. If `state_init_or_reconcile` returns non-zero or if JSON is unparseable, **stop immediately** — do not proceed, do not silently pass. Emit a diagnostic:
+
+```
+ERROR: state.json is corrupted and could not be repaired. Run `state_init_or_reconcile <artifact_dir>` manually or delete .qrspi/state.json to rebuild.
+```
+
+This is fail-closed behavior: a corrupt state is worse than a stopped run.
+
+**2. Config validation (defer to M22 numbered-options flow)**
+
+Do not silently patch `config.md`. If `config.md` is missing or has no `route:` field, stop and tell the user:
+
+```
+Cannot continue — `config.md` is missing or has no route field. Re-run Goals to set the pipeline mode.
+```
+
+If `enforcement_default` is absent from the frontmatter, do not auto-add it here. That field is added during the M22 numbered-options selection flow (T07's work). Silently patching it during pipeline entry would bypass the user's explicit configuration choice.
+
+**3. Task spec scan (advisory, non-blocking)**
+
+After state and config are valid, scan `tasks/task-*.md` for missing Phase 4 fields (`enforcement`, `allowed_files`, `constraints`). Output any warnings to stdout and continue — this is advisory only. Missing fields in task specs do not block the pipeline at entry.
 
 **Run selection for mid-pipeline entry:** When entering mid-pipeline, glob for `docs/qrspi/*/goals.md` directories. If multiple exist, present the list and ask the user which run to resume. Load `config.md` from the chosen directory to read the `route` list. Scan for approved artifacts, then invoke the first step in the route list that is not yet complete.
 
@@ -331,9 +362,59 @@ review_mode: loop   # or: single — added by Worktree/Implement at phase start
 
 **Codex detection:** Check if `codex:rescue` is available by globbing for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`. If the file doesn't exist, skip the Codex question silently and write `codex_reviews: false`. If available, ask:
 
-> Use Codex for second reviews this run? (yes/no)
+> Codex reviews:
+> 1) No Codex reviews
+> 2) Use Codex for second reviews
 
-**No legacy fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing OR exists but has no `route:` field (pre-Phase 3 runs), refuse to proceed and tell the user: "Cannot continue — `config.md` is missing or has no route field. Re-run Goals to set the pipeline mode." There is no automatic derivation of the route — this avoids conditional branches in every skill. Existing runs can be migrated by manually adding `pipeline` and `route` fields to their config.md.
+**No legacy fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing or has missing/invalid fields, apply the **Config Validation Procedure** (see below). Skills do not silently default any field that affects pipeline behavior. There is no automatic derivation of the route — this avoids conditional branches in every skill. Existing runs can be migrated by manually adding `pipeline` and `route` fields to their config.md.
+
+## Config Validation Procedure
+
+Every skill that reads config.md applies this procedure before using any field.
+
+### When config.md is missing entirely
+
+Stop and present:
+
+  config.md not found in the artifact directory.
+
+  1) Re-run Goals to create config.md and set the pipeline mode
+  2) Abort
+
+### When a required field is missing or empty
+
+Stop and present a numbered menu. The exact options depend on which field is missing — see each skill's Artifact Gating section for the field-specific menus.
+
+### When a field has an invalid value
+
+Stop and name the invalid value and the expected values. Present numbered options. The exact options depend on which field is invalid — see each skill's Artifact Gating section for the field-specific menus.
+
+### No silent defaults
+
+Skills must not:
+- Assume `pipeline: full` when `pipeline` is missing
+- Assume `codex_reviews: false` when `codex_reviews` is missing
+- Attempt to derive `route` from `pipeline` when `route` is missing
+- Proceed with a guessed or inferred field value
+
+The only exception: fields that do not affect pipeline behavior may have defaults.
+Fields that DO affect behavior (route, pipeline, codex_reviews, review_depth, review_mode) must be present and valid before the skill proceeds.
+
+### Fields that affect pipeline behavior (must be validated)
+
+| Field | Skills that validate it | Valid values |
+|-------|------------------------|--------------|
+| `route` | Goals, Plan, Worktree, Integrate, using-qrspi | ordered list of skill names (see Route Templates) |
+| `pipeline` | Goals, Plan, Worktree | `full` or `quick` |
+| `codex_reviews` | Goals, Plan | `true` or `false` |
+| `review_depth` | Worktree, Implement (validated at dispatch time, set by Worktree) | `quick` or `deep` |
+| `review_mode` | Worktree, Implement (validated at dispatch time, set by Worktree) | `single` or `loop` |
+
+### Fields that do NOT require validation (informational only)
+
+| Field | Note |
+|-------|------|
+| `created` | ISO date, informational only — missing is not an error |
 
 ### Review Round Flow
 
@@ -378,6 +459,14 @@ The review file `reviews/{step}-review.md` is created on the first review round 
 ```
 
 The orchestrating skill (not the review subagent) writes and appends to the review file based on each subagent's output. Review subagents return findings; the skill handles file I/O. Each round appends its section. Claude and Codex findings are attributed separately.
+
+## Review Time Allocation
+
+When presenting artifacts for human review, guide the user on where to invest review time:
+
+- **Design and Structure** — invest heavy review here. These artifacts set the architecture. Errors here cascade through every downstream step.
+- **Plan** — spot-check. Plan is a mechanical decomposition of approved artifacts. Sample a few task specs for correctness; you don't need to read every line.
+- **Implementation code** — use task specs as a review guide. Each spec in `tasks/*.md` describes what a task was supposed to do, making code review efficient and traceable. Time saved on Plan review is time available to read the code.
 
 ## Compaction at Step Transitions
 
@@ -425,3 +514,13 @@ When QRSPI applies, invoke the Goals skill to begin:
 **REQUIRED SKILL:** Use `qrspi:goals` to start the pipeline.
 
 For reference on the QRSPI framework: see `qrspi/docs/qrspi-reference.md`
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Never suggest skipping steps for speed: Every step in the QRSPI pipeline exists for a reason. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+
+D3 — Resist time-pressure shortcuts: There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
+</BEHAVIORAL-DIRECTIVES>

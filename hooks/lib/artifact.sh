@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Source pipeline.sh from the same directory
+# Source pipeline.sh from the same directory (transitively sources artifact-map.sh)
 _artifact_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_artifact_script_dir/pipeline.sh"
 
-# ARTIFACT_FILES — array of 6 known artifact paths
-declare -a ARTIFACT_FILES=(
-  "goals.md"
-  "questions.md"
-  "research/summary.md"
-  "design.md"
-  "structure.md"
-  "plan.md"
-)
+# ARTIFACT_FILES — array of 6 known artifact paths (built from canonical map)
+ARTIFACT_FILES=()
+for _af_step in goals questions research design structure plan; do
+  ARTIFACT_FILES+=("$(artifact_map_get "$_af_step")")
+done
+unset _af_step
 
 # artifact_is_known <file_path> <artifact_dir>
 # Checks if file_path matches a known artifact by comparing path suffix.
@@ -44,47 +41,34 @@ artifact_is_known() {
   # Strip artifact_dir prefix to get relative path
   local rel_path="${abs_file_path#"$artifact_dir/"}"
 
-  # Map known artifacts to step names
-  case "$rel_path" in
-    "goals.md")
-      echo "goals"
-      return 0
-      ;;
-    "questions.md")
-      echo "questions"
-      return 0
-      ;;
-    "research/summary.md")
-      echo "research"
-      return 0
-      ;;
-    "design.md")
-      echo "design"
-      return 0
-      ;;
-    "structure.md")
-      echo "structure"
-      return 0
-      ;;
-    "plan.md")
-      echo "plan"
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  # Map known artifacts to step names via canonical lookup
+  artifact_map_get_step "$rel_path" || return 1
 }
 
-# artifact_sync_state <file_path> <artifact_dir>
+# artifact_sync_state <file_path> <artifact_dir> [--skip-cascade]
 # Called after a known artifact is written:
-# - Reads frontmatter status via frontmatter_get_status
+# - Reads frontmatter status via frontmatter_get
 # - If status: approved → update state.json artifacts map to set that step = "approved"
 # - If status: draft → call pipeline_cascade_reset to reset that step and all downstream
+#   (with --skip-cascade: resets only that step, leaves downstream untouched)
 # - For design.md specifically: also read wireframe_requested field and sync to state.json
+# Rejects unknown flags with return 1.
 artifact_sync_state() {
   local file_path="$1"
   local artifact_dir="$2"
+  shift 2
+
+  # Parse optional flags
+  local cascade_flag=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --skip-cascade) cascade_flag="--skip-cascade"; shift ;;
+      *)
+        echo "artifact_sync_state: unknown flag '$1'" >&2
+        return 1
+        ;;
+    esac
+  done
 
   # Get the step name for this artifact
   local step
@@ -92,7 +76,10 @@ artifact_sync_state() {
 
   # Read frontmatter status
   local fm_status
-  fm_status=$(frontmatter_get_status "$file_path") || return 1
+  fm_status=$(frontmatter_get "$file_path" "status") || return 1
+  # frontmatter_get returns exit 0 with empty string when field is absent;
+  # treat that like the old frontmatter_get_status behavior (return 1)
+  [[ -n "$fm_status" ]] || return 1
 
   # Read current state
   local state
@@ -112,49 +99,28 @@ artifact_sync_state() {
     state=$(echo "$state" | jq -c ".artifacts.$step = \"approved\"")
     state_changed=true
   elif [[ "$fm_status" == "draft" ]]; then
-    # Cascade reset from this step onwards
-    pipeline_cascade_reset "$step" "$artifact_dir"
+    # Cascade reset from this step onwards (pass --skip-cascade if set)
+    if [[ -n "$cascade_flag" ]]; then
+      pipeline_cascade_reset "$step" "$artifact_dir" "$cascade_flag"
+    else
+      pipeline_cascade_reset "$step" "$artifact_dir"
+    fi
     state=$(state_read)
     state_changed=true
   fi
 
   # For design.md specifically: sync wireframe_requested field
   if [[ "$step" == "design" ]]; then
-    # Read the design.md file and extract wireframe_requested from frontmatter
-    # Look for "wireframe_requested: true" or "wireframe_requested: false"
-    local wireframe_str_value="false"
-
-    # Read first 10 lines to find wireframe_requested
-    local line_num=0
-    local in_frontmatter=0
-    while IFS= read -r line && [[ $line_num -lt 10 ]]; do
-      line_num=$((line_num + 1))
-
-      # Line 1: must be opening ---
-      if [[ $line_num -eq 1 ]]; then
-        if [[ "$line" == "---" ]]; then
-          in_frontmatter=1
-        else
-          break
-        fi
-        continue
+    local wireframe_str_value
+    wireframe_str_value=$(frontmatter_get "$file_path" "wireframe_requested") || {
+      local _ec=$?
+      if [[ $_ec -eq 1 ]]; then
+        echo "artifact_sync_state: WARNING: design.md not found at ${file_path} — treating wireframe_requested as false" >&2
       fi
-
-      # Lines 2+: look for closing --- or wireframe_requested field
-      if [[ $in_frontmatter -eq 1 ]]; then
-        if [[ "$line" == "---" ]]; then
-          break
-        fi
-
-        # Check for wireframe_requested field
-        if [[ "$line" =~ ^wireframe_requested: ]]; then
-          local value="${line#wireframe_requested:}"
-          value="${value#"${value%%[![:space:]]*}"}"  # trim leading whitespace
-          value="${value%"${value##*[![:space:]]}"}"  # trim trailing whitespace
-          wireframe_str_value="$value"
-        fi
-      fi
-    done < "$file_path"
+      wireframe_str_value="false"
+    }
+    # Default to "false" when field is absent (frontmatter_get returns empty)
+    wireframe_str_value="${wireframe_str_value:-false}"
 
     # Convert string to JSON boolean value
     local wireframe_json_value="false"
@@ -175,4 +141,85 @@ artifact_sync_state() {
   if [[ "$state_changed" == true ]]; then
     state_write_atomic "$state"
   fi
+}
+
+# artifact_snapshot_phase <artifact_dir> <phase_number>
+# Creates a read-only snapshot of the current phase's artifacts.
+# Copies core artifacts and task files; excludes reviews/, fixes/, feedback/,
+# phases/, future-goals.md, future-design.md, future-research/, config.md, .qrspi/.
+# Returns 0 on success, 1 if artifact_dir doesn't exist or copy fails.
+artifact_snapshot_phase() {
+  local artifact_dir="$1"
+  local phase_number="$2"
+
+  # Validate artifact_dir exists
+  [[ -d "$artifact_dir" ]] || return 1
+
+  # Build zero-padded phase directory name
+  local phase_label
+  phase_label="phase-$(printf '%02d' "$phase_number")"
+  local snapshot_dir="$artifact_dir/phases/$phase_label"
+
+  mkdir -p "$snapshot_dir" || return 1
+
+  # Copy core artifact files if they exist
+  local core_files=("goals.md" "questions.md" "design.md" "structure.md" "plan.md")
+  local f
+  for f in "${core_files[@]}"; do
+    if [[ -f "$artifact_dir/$f" ]]; then
+      cp "$artifact_dir/$f" "$snapshot_dir/$f" || return 1
+    fi
+  done
+
+  # Copy research/summary.md if it exists
+  if [[ -f "$artifact_dir/research/summary.md" ]]; then
+    mkdir -p "$snapshot_dir/research" || return 1
+    cp "$artifact_dir/research/summary.md" "$snapshot_dir/research/summary.md" || return 1
+  fi
+
+  # Copy tasks/ directory contents if present
+  if [[ -d "$artifact_dir/tasks" ]]; then
+    mkdir -p "$snapshot_dir/tasks" || return 1
+    # Copy task-NN.md files and parallelization.md
+    for f in "$artifact_dir/tasks/"*; do
+      [[ -f "$f" ]] || continue
+      cp "$f" "$snapshot_dir/tasks/" || return 1
+    done
+  fi
+
+  return 0
+}
+
+# artifact_promote_next_phase <artifact_dir> <completed_phase_number>
+# Cleans up phase-scoped files after snapshot, preparing for the next phase.
+# Deletes: structure.md, plan.md, tasks/, reviews/, feedback/, .qrspi/
+# Resets frontmatter status to "draft" on remaining files (goals.md, design.md,
+# questions.md, research/summary.md).
+# Returns 0 on success, 1 on failure.
+artifact_promote_next_phase() {
+  local artifact_dir="$1"
+  local completed_phase_number="$2"
+
+  # Validate artifact_dir exists
+  [[ -d "$artifact_dir" ]] || return 1
+
+  # Delete phase-scoped files and directories
+  rm -f "$artifact_dir/structure.md"
+  rm -f "$artifact_dir/plan.md"
+  rm -rf "$artifact_dir/tasks"
+  rm -rf "$artifact_dir/reviews"
+  rm -rf "$artifact_dir/feedback"
+  rm -rf "$artifact_dir/.qrspi"
+
+  # Reset frontmatter status to draft on remaining files
+  local reset_files=("goals.md" "questions.md" "design.md" "research/summary.md")
+  local f
+  for f in "${reset_files[@]}"; do
+    if [[ -f "$artifact_dir/$f" ]]; then
+      # Replace status: <anything> with status: draft in frontmatter
+      sed -i '' 's/^status: .*/status: draft/' "$artifact_dir/$f" || return 1
+    fi
+  done
+
+  return 0
 }

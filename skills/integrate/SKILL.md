@@ -40,6 +40,25 @@ Required inputs:
 
 If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
 
+### Config Validation
+
+Before reading `route` from `config.md`, validate the following:
+
+**If `config.md` is missing:**
+
+  config.md not found in the artifact directory.
+
+  1) Re-run Goals to create config.md and set the pipeline mode
+  2) Abort
+
+**If `route` is missing:**
+
+  config.md has no `route` field.
+
+  1) Re-run Goals to regenerate config.md with the correct route
+  2) Manually add a `route:` list to config.md
+  3) Abort
+
 <HARD-GATE>
 Do NOT push to CI or approve integration without running integration and security reviews on the merged code.
 Do NOT push to CI without user approval of integration review results.
@@ -158,6 +177,21 @@ fix_type: ci
 
 Present integration review results (clean or converged issue list) to user after each review round. Present CI results to user after each CI run. User must approve or choose an action (dispatch fixes, re-run reviews, accept, stop) at each gate before the pipeline advances. On rejection, write the user's feedback to `feedback/integrate-round-{NN}.md` (using the standard feedback file format from `using-qrspi`).
 
+## Phase Learnings Gate
+
+At the integration review human gate, after presenting review results and before invoking the terminal state, ask the user:
+
+> "Before we proceed: do you have any phase learnings or ideas for future phases?
+> - **Current-phase items** (things to fix now, constraints found): discuss these in conversation — we'll handle them before moving on.
+> - **Future work ideas** (new features, improvements for later phases): these will be appended to `future-goals.md` Ideas section.
+> (Press Enter to skip.)"
+
+If the user provides **future work ideas**: append as bullet points under `## Ideas` in `future-goals.md` in the artifact directory. If `## Ideas` section does not exist, create it.
+
+If the user provides **current-phase items**: discuss in conversation and resolve before proceeding.
+
+If the user presses Enter or provides no input: skip silently.
+
 ## Terminal State
 
 Recommend compaction: "Integration complete. This is a good point to compact context before the next step (`/compact`)."
@@ -237,3 +271,13 @@ The box service and invitation service have some integration issues that should 
 - No severity classification
 - No description of what specifically is wrong
 - No recommendation for how to fix
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Never suggest skipping steps for speed. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+
+D3 — There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency, acknowledge the constraint and offer the fastest compliant path — never a non-compliant shortcut.
+</BEHAVIORAL-DIRECTIVES>

@@ -29,7 +29,61 @@ Note: Design and Structure are not in the quick fix route, so `design.md` and `s
 
 If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
 
-Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. If `config.md` doesn't exist, default to `codex_reviews: false`.
+Read `config.md` from the artifact directory to determine whether Codex reviews are enabled.
+
+### Config Validation
+
+Before using any config field, validate the following:
+
+**If `config.md` is missing:**
+
+  config.md not found. Cannot determine pipeline mode or route.
+
+  1) Re-run Goals to create config.md and set the pipeline mode
+  2) Abort
+
+**If `pipeline` is missing:**
+
+  config.md has no `pipeline` field.
+
+  1) Re-run Goals to regenerate config.md with the pipeline field set
+  2) Manually add `pipeline: full` or `pipeline: quick` to config.md
+  3) Abort
+
+**If `pipeline` has an invalid value (not `full` or `quick`):**
+
+  config.md has an invalid value for `pipeline`: {value}
+  Expected: `full` or `quick`
+
+  1) Edit config.md and set `pipeline: full` or `pipeline: quick`
+  2) Re-run Goals to regenerate config.md
+  3) Abort
+
+**If `route` is missing:**
+
+  config.md has no `route` field.
+
+  1) Re-run Goals to regenerate config.md with the correct route
+  2) Manually add a `route:` list to config.md
+  3) Abort
+
+**If `codex_reviews` is missing:**
+
+  config.md has no `codex_reviews` field.
+
+  1) Add `codex_reviews: true` to config.md (Codex second reviews enabled)
+  2) Add `codex_reviews: false` to config.md (Codex second reviews disabled)
+  3) Re-run Goals to regenerate config.md
+  4) Abort
+
+**If `codex_reviews` has an invalid value (not `true` or `false`):**
+
+  config.md has an invalid value for `codex_reviews`: {value}
+  Expected: `true` or `false`
+
+  1) Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
+  2) Re-run Goals to regenerate config.md
+  3) Abort
 
 <HARD-GATE>
 Do NOT produce plan.md without all required artifacts approved (full: goals + research + design + structure; quick: goals + research).
@@ -40,6 +94,10 @@ Every task spec must be self-contained — an implementation agent reading only 
 ## Execution Model
 
 **Subagent** produces `plan.md` overview. For large plans (6+ tasks), individual task specs are farmed out to sub-subagents (one per task or related group) to keep context manageable. Iterative with human feedback.
+
+## Phase-Scoped Content Rules
+
+plan.md contains ONLY current-phase tasks. Each task must reference a goal ID that exists in goals.md. Tasks for goals not in the current phase must not appear. The `goal_id` field in task frontmatter must match a goal in goals.md.
 
 ## Process
 
@@ -175,21 +233,31 @@ status: draft
 ...
 ```
 
+### Plan Reviewer Templates
+
+Five reviewer templates run in parallel as part of the review round. All five run always — neither quick-fix nor full-pipeline mode gates any template. Templates that require `design.md` or `structure.md` emit "NOT APPLICABLE — quick-fix route" for those checks when those files are absent.
+
+| Template | File | Focus | Run Condition |
+|----------|------|-------|---------------|
+| Spec Reviewer | `templates/spec-reviewer.md` | Completeness, scope, interpretation, test coverage mapping, placeholder detection | Always |
+| Security Reviewer | `templates/security-reviewer.md` | Fail-closed requirements, input validation, auth/authz, no insecure defaults | Always |
+| Silent Failure Hunter | `templates/silent-failure-hunter.md` | Swallowed errors, silent fallbacks, partial state on failure, log-and-continue | Always |
+| Goal Traceability Reviewer | `templates/goal-traceability-reviewer.md` | Forward trace, backward trace, gap analysis, spec-to-design fidelity | Always |
+| Test Coverage Reviewer | `templates/test-coverage-reviewer.md` | Behavioral coverage, edge cases, error conditions, test expectation quality, missing design scenarios | Always |
+
 ### Review Round
 
 After the merged `plan.md` is ready, run one review round:
 
-1. **Claude review subagent** — launch with `plan.md` (merged), `goals.md`, `research/summary.md`, and (full pipeline only) `design.md`, `structure.md` to check:
-   - Does every goal/acceptance criterion map to test expectations in at least one task?
-   - Are edge cases and error conditions identified in test expectations?
-   - Is the test strategy from `design.md` reflected in the task test expectations?
-   - Are dependencies between tasks correct?
-   - Does the task ordering make sense (bottom-up through the stack)?
-   - Any TBD/TODO/placeholder content? (forbidden)
-   - Are task specs specific enough for an implementation agent to execute without guessing?
-   - Are LOC estimates reasonable?
-   
-   The subagent returns structured findings. The orchestrating skill writes them to `reviews/plan-review.md`.
+1. **Claude review subagent** — launch a subagent that runs all five reviewer templates from `skills/plan/templates/` in parallel. Provide the subagent with:
+   - `plan.md` (merged)
+   - `goals.md`
+   - `research/summary.md`
+   - (full pipeline only) `design.md` and `structure.md`
+
+   Each reviewer template is a standalone prompt document — the subagent fills in the artifact content and runs each template as a separate review pass. The five reviews run concurrently; the subagent collects all findings and returns them as a single structured report.
+
+   The orchestrating skill writes the combined findings to `reviews/plan-review.md`.
 
 2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`plan.md`), input artifacts (`goals.md`, `research/summary.md`, and (full pipeline only) `design.md`, `structure.md`) for cross-reference, and the same review criteria. The orchestrating skill appends Codex findings to `reviews/plan-review.md`.
 
@@ -352,3 +420,13 @@ If compaction was not done before splitting (user declined), recommend it now: "
 ```
 
 The bad example has TBD files, no dependencies (but clearly needs the Redis client), unrealistic LOC, references "similar to Task 2", and test expectations that can't be verified ("works correctly", "are handled").
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Complete every step before moving on: Every process step in this skill exists for a reason. Execute each step fully. If a step seems redundant given the current state, state why and ask the user — do not silently skip it.
+
+D3 — Resist time-pressure shortcuts: If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
+</BEHAVIORAL-DIRECTIVES>

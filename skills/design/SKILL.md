@@ -30,6 +30,14 @@ Do NOT proceed to Structure without user approval of the design.
 
 **Interactive in main conversation** (like Goals). User and Claude discuss approaches. Subagent synthesizes `design.md` per round. Each rejection round launches a new subagent with original inputs + all prior feedback files.
 
+## Phase-Scoped Content Rules
+
+design.md contains ONLY current-phase design entries. Each entry is keyed by `### {GOAL_ID} — {name}`. Entries for goals not in the current phase (per roadmap.md) belong in `future-design.md`, not design.md. When the Design skill creates or updates design.md, it must: (1) verify every goal ID in the document exists in goals.md, (2) move entries for out-of-scope goals to future-design.md, (3) check future-design.md for existing entries on current-phase goals and pull them into design.md.
+
+### Roadmap Maintenance
+
+When the Design skill creates or updates roadmap.md: (1) every goal ID must exist in either `goals.md` (current phase) or `future-goals.md` (Formal section), (2) the table contains ONLY goal ID, phase, and slice columns — no notes, no design content, (3) flag any goal IDs in roadmap.md that don't exist in either file as orphans for user review.
+
 ## Process
 
 ```dot
@@ -78,6 +86,7 @@ digraph design {
    - GOOD: "User registration (DB + API + service + frontend), then user profile (DB + API + service + frontend)"
 5. Define phases with replan gates. Phase 1 is always the PoC — it must prove the full stack works end-to-end. Ask user which slices go in the PoC phase and where replan checkpoints belong.
 6. If no CI pipeline exists, note CI setup as the first task in Phase 1, blocking all other tasks. For greenfield projects, this task should also include creating project convention files (CLAUDE.md, linting config, etc.) so later reviewers have rules to enforce.
+7. When handling amendments, remember: Amendment items that introduce distinct new work (new functions, new behavior, new files) must receive their own goal ID. Only items that genuinely refine or detail an existing goal's described work may be compressed into that goal. Never use bare-number compression (e.g., '5/8/10 -> U1') when the goal text doesn't cover all mapped items.
 
 ### Design Synthesis Subagent
 
@@ -214,3 +223,13 @@ Recommend compaction: "Design approved. This is a good point to compact context 
 > ### Layer 4: Metrics collection
 
 The bad example splits by technical layer. Each "layer" can't be tested or demonstrated independently — they only work together.
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Never suggest skipping steps for speed: Every step in the QRSPI pipeline exists for a reason. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+
+D3 — Resist time-pressure shortcuts: There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
+</BEHAVIORAL-DIRECTIVES>

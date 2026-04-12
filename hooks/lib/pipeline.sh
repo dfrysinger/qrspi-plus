@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Source state.sh (which transitively sources frontmatter.sh)
+# Source state.sh (which transitively sources frontmatter.sh and artifact-map.sh)
 _pipeline_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_pipeline_script_dir/state.sh"
 
@@ -32,17 +32,12 @@ _pipeline_get_step_index() {
 _pipeline_get_artifact_file() {
   local step="$1"
   local artifact_dir="$2"
-  case "$step" in
-    goals) echo "$artifact_dir/goals.md" ;;
-    questions) echo "$artifact_dir/questions.md" ;;
-    research) echo "$artifact_dir/research/summary.md" ;;
-    design) echo "$artifact_dir/design.md" ;;
-    structure) echo "$artifact_dir/structure.md" ;;
-    plan) echo "$artifact_dir/plan.md" ;;
-    implement) echo "" ;;
-    test) echo "" ;;
-    *) echo "" ;;
-  esac
+  local rel_path
+  if rel_path=$(artifact_map_get "$step" 2>/dev/null); then
+    echo "$artifact_dir/$rel_path"
+  else
+    echo ""
+  fi
 }
 
 # pipeline_check_prerequisites <step> <artifact_dir>
@@ -61,6 +56,8 @@ pipeline_check_prerequisites() {
   local step_idx
   step_idx=$(_pipeline_get_step_index "$step")
   if [[ $step_idx -eq -1 ]]; then
+    echo "<unknown-step>"
+    echo "pipeline_check_prerequisites: unrecognized step '$step'" >&2
     return 1
   fi
 
@@ -72,6 +69,8 @@ pipeline_check_prerequisites() {
   # Read state.json
   local state
   if ! state=$(state_read 2>/dev/null); then
+    echo "<state-unavailable>"
+    echo "pipeline_check_prerequisites: state_read failed" >&2
     return 1
   fi
 
@@ -121,22 +120,43 @@ pipeline_check_prerequisites() {
   return 0
 }
 
-# pipeline_cascade_reset <step> <artifact_dir>
+# pipeline_cascade_reset <step> <artifact_dir> [--skip-cascade]
 # Resets the given step and all downstream steps to "draft" in state.json.
+# With --skip-cascade: resets only the given step, leaves downstream untouched.
 # Does NOT modify artifact files on disk.
 # Uses state_write_atomic().
-# If step is "goals", resets all 8.
+# If step is "goals", resets all 8 (unless --skip-cascade).
 # If step is "test", resets only test.
+# Rejects unknown flags with return 1.
 pipeline_cascade_reset() {
   local step="$1"
   local artifact_dir="$2"
+  shift 2
+
+  # Parse optional flags
+  local skip_cascade=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --skip-cascade) skip_cascade=true; shift ;;
+      *)
+        echo "pipeline_cascade_reset: unknown flag '$1'" >&2
+        return 1
+        ;;
+    esac
+  done
 
   # Read current state
   local state
   if ! state=$(state_read 2>/dev/null); then
     # No state file yet, create one
-    state_init_or_reconcile "$artifact_dir"
-    state=$(state_read)
+    if ! state_init_or_reconcile "$artifact_dir"; then
+      echo "pipeline_cascade_reset: cannot perform cascade reset — state_init_or_reconcile failed" >&2
+      return 1
+    fi
+    if ! state=$(state_read); then
+      echo "pipeline_cascade_reset: cannot perform cascade reset — state_read failed after init" >&2
+      return 1
+    fi
   fi
 
   # Find the index of the step
@@ -146,9 +166,15 @@ pipeline_cascade_reset() {
     return 1
   fi
 
-  # Reset from start_idx to end to "draft"
+  # Determine end index
+  local end_idx=8
+  if [[ "$skip_cascade" == "true" ]]; then
+    end_idx=$((start_idx + 1))
+  fi
+
+  # Reset from start_idx to end_idx to "draft"
   local i
-  for (( i = start_idx; i < 8; i++ )); do
+  for (( i = start_idx; i < end_idx; i++ )); do
     local reset_step
     case "$i" in
       0) reset_step="goals" ;;
@@ -165,5 +191,8 @@ pipeline_cascade_reset() {
   done
 
   # Write atomically
-  state_write_atomic "$state"
+  if ! state_write_atomic "$state"; then
+    echo "pipeline_cascade_reset: cannot perform cascade reset — state_write_atomic failed" >&2
+    return 1
+  fi
 }

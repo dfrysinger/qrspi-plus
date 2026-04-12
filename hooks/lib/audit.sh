@@ -35,9 +35,22 @@ audit_log_operation() {
   # Create .qrspi directory if it doesn't exist
   mkdir -p .qrspi
 
-  # Convert task_id to zero-padded format (e.g., 3 -> 03, 15 -> 15)
-  local padded_task_id=$(printf "%02d" "$task_id")
-  local audit_file=".qrspi/audit-task-${padded_task_id}.jsonl"
+  # Route empty or zero task_id to generic audit file
+  local audit_file
+  if [[ -z "$task_id" || "$task_id" == "0" ]]; then
+    audit_file=".qrspi/audit.jsonl"
+  else
+    local padded_task_id
+    padded_task_id=$(printf "%02d" "$task_id" 2>/dev/null) || {
+      echo "audit_log_operation: cannot pad task_id '${task_id}' — routing to general audit" >&2
+      padded_task_id=""
+    }
+    if [[ -n "$padded_task_id" ]]; then
+      audit_file=".qrspi/audit-task-${padded_task_id}.jsonl"
+    else
+      audit_file=".qrspi/audit.jsonl"
+    fi
+  fi
 
   # Sanitize boolean inputs: ensure they are exactly "true" or "false"
   # so jq's --argjson can parse them as JSON booleans (not strings).
@@ -48,7 +61,7 @@ audit_log_operation() {
   # Build the JSON record using jq with proper escaping
   local json_record
   if [ "$command" = "null" ] && [ "$destructive_flag" = "null" ]; then
-    json_record=$(jq -cn \
+    if ! json_record=$(jq -cn \
       --arg timestamp "$timestamp" \
       --arg tool "$tool" \
       --arg target "$target" \
@@ -56,9 +69,12 @@ audit_log_operation() {
       --arg enforcement "$enforcement" \
       --argjson in_scope "$in_scope_bool" \
       --argjson user_approved "$user_approved_bool" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: null, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: null}')
+      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: null, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: null}'); then
+      echo "audit_log_operation: jq failed to build audit record" >&2
+      return 1
+    fi
   elif [ "$command" = "null" ]; then
-    json_record=$(jq -cn \
+    if ! json_record=$(jq -cn \
       --arg timestamp "$timestamp" \
       --arg tool "$tool" \
       --arg target "$target" \
@@ -67,9 +83,12 @@ audit_log_operation() {
       --argjson in_scope "$in_scope_bool" \
       --argjson user_approved "$user_approved_bool" \
       --arg destructive_flag "$destructive_flag" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: null, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: $destructive_flag}')
+      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: null, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: $destructive_flag}'); then
+      echo "audit_log_operation: jq failed to build audit record" >&2
+      return 1
+    fi
   elif [ "$destructive_flag" = "null" ]; then
-    json_record=$(jq -cn \
+    if ! json_record=$(jq -cn \
       --arg timestamp "$timestamp" \
       --arg tool "$tool" \
       --arg target "$target" \
@@ -78,9 +97,12 @@ audit_log_operation() {
       --arg enforcement "$enforcement" \
       --argjson in_scope "$in_scope_bool" \
       --argjson user_approved "$user_approved_bool" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: $command, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: null}')
+      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: $command, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: null}'); then
+      echo "audit_log_operation: jq failed to build audit record" >&2
+      return 1
+    fi
   else
-    json_record=$(jq -cn \
+    if ! json_record=$(jq -cn \
       --arg timestamp "$timestamp" \
       --arg tool "$tool" \
       --arg target "$target" \
@@ -90,9 +112,70 @@ audit_log_operation() {
       --argjson in_scope "$in_scope_bool" \
       --argjson user_approved "$user_approved_bool" \
       --arg destructive_flag "$destructive_flag" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: $command, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: $destructive_flag}')
+      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: $command, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: $destructive_flag}'); then
+      echo "audit_log_operation: jq failed to build audit record" >&2
+      return 1
+    fi
+  fi
+
+  if [[ -z "$json_record" ]]; then
+    echo "audit_log_operation: jq failed — empty output" >&2
+    return 1
   fi
 
   # Append to file
-  echo "$json_record" >> "$audit_file"
+  if ! echo "$json_record" >> "$audit_file"; then
+    echo "audit_log_operation: failed to append to $audit_file" >&2
+    return 1
+  fi
+}
+
+# audit_log_stdin <task_id> <raw_input>
+#
+# Logs a JSONL record from a raw hook stdin blob. If the blob parses as JSON,
+# structured fields are extracted and written. If jq extraction fails (malformed
+# JSON, unexpected schema) or the input is empty, a fallback record is written
+# with the raw bytes stored in a `raw_input` field so no input is silently lost.
+#
+# Arguments:
+#   task_id   - Task ID (e.g., 3, 15); empty or "0" routes to audit.jsonl
+#   raw_input - Raw stdin string from the hook (may be empty or malformed JSON)
+#
+audit_log_stdin() {
+  local task_id="$1"
+  local raw_input="$2"
+
+  # Create .qrspi directory if it doesn't exist
+  mkdir -p .qrspi
+
+  # Determine audit file path
+  local audit_file
+  if [[ -z "$task_id" || "$task_id" == "0" ]]; then
+    audit_file=".qrspi/audit.jsonl"
+  else
+    local padded_task_id
+    padded_task_id=$(printf "%02d" "$task_id")
+    audit_file=".qrspi/audit-task-${padded_task_id}.jsonl"
+  fi
+
+  # Attempt structured extraction via jq
+  local json_record
+  if [[ -n "$raw_input" ]] && json_record=$(printf '%s' "$raw_input" | jq -c '.' 2>/dev/null); then
+    # jq parsed successfully — structured record, no raw_input field
+    if ! printf '%s\n' "$json_record" >> "$audit_file"; then
+      echo "audit_log_stdin: failed to append structured record to $audit_file" >&2
+      return 1
+    fi
+  else
+    # jq failed or input was empty — preserve raw bytes in raw_input field
+    local fallback_record
+    if ! fallback_record=$(jq -cn --arg raw "$raw_input" '{raw_input: $raw}'); then
+      echo "audit_log_stdin: jq failed to build fallback raw_input record" >&2
+      return 1
+    fi
+    if ! printf '%s\n' "$fallback_record" >> "$audit_file"; then
+      echo "audit_log_stdin: failed to append fallback record to $audit_file" >&2
+      return 1
+    fi
+  fi
 }

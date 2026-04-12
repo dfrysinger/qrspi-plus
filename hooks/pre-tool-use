@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Source pipeline library (which transitively sources state.sh and frontmatter.sh)
+# Source pipeline library (which transitively sources state.sh, frontmatter.sh, artifact-map.sh)
 source "$PLUGIN_ROOT/hooks/lib/pipeline.sh"
 
 # Source enforcement and supporting libraries
@@ -76,30 +76,24 @@ if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" ]]; then
 elif [[ "$tool_name" == "Bash" ]]; then
   is_bash_tool=1
 else
-  # Not a tool we enforce
+  # Not a tool we enforce — warn on unknown tool names
+  # Known tools: Write, Edit, Bash, Read, Glob, Grep, Skill, ToolSearch, Agent, TodoRead, TodoWrite, WebFetch, WebSearch
+  case "$tool_name" in
+    Read|Glob|Grep|Skill|ToolSearch|Agent|TodoRead|TodoWrite|WebFetch|WebSearch|NotebookEdit)
+      ;;
+    *)
+      echo "pre-tool-use: WARNING: unknown tool_name '${tool_name}' — not enforced" >&2
+      ;;
+  esac
   printf '{}\n'
   exit 0
 fi
 
 # ── Pipeline ordering check (Write/Edit only) ────────────────────────────────
 if [[ $is_bash_tool -eq 0 ]]; then
-  # Map file_path suffix to pipeline step
-  # (order matters: research/summary.md before *.md)
+  # Map file_path suffix to pipeline step via canonical reverse lookup
   artifact_step=""
-
-  if [[ "$file_path" == */research/summary.md ]]; then
-    artifact_step="research"
-  elif [[ "$file_path" == */goals.md ]]; then
-    artifact_step="goals"
-  elif [[ "$file_path" == */questions.md ]]; then
-    artifact_step="questions"
-  elif [[ "$file_path" == */design.md ]]; then
-    artifact_step="design"
-  elif [[ "$file_path" == */structure.md ]]; then
-    artifact_step="structure"
-  elif [[ "$file_path" == */plan.md ]]; then
-    artifact_step="plan"
-  fi
+  artifact_step=$(artifact_map_get_step "$file_path" 2>/dev/null) || true
 
   if [[ -n "$artifact_step" ]]; then
     # Read state for pipeline check.
@@ -108,30 +102,32 @@ if [[ $is_bash_tool -eq 0 ]]; then
     # (Goals, using-qrspi) when they initialize the artifact directory.
     # If state file EXISTS but is unreadable/corrupted, BLOCK — that's an
     # error, not a bootstrap condition.
+    # NOTE: Even when skipping pipeline ordering, we fall through to
+    # worktree containment, protected path, and L1 allowlist checks below.
     if [[ ! -f ".qrspi/state.json" ]]; then
-      printf '{}\n'
-      exit 0
+      echo "pre-tool-use: WARNING: no state file found — pipeline ordering not enforced for ${artifact_step}" >&2
+    else
+      state_json=$(state_read 2>/dev/null) || {
+        block_with_reason "Cannot verify pipeline ordering: state file exists but is unreadable. Check .qrspi/state.json permissions or delete to reinitialize."
+      }
+
+      # Extract artifact_dir from state — FAIL-CLOSED if corrupted
+      artifact_dir=$(printf '%s' "$state_json" | jq -r '.artifact_dir // empty' 2>/dev/null) || {
+        block_with_reason "Cannot verify pipeline ordering: state file corrupted. Run SessionStart or /compact to reinitialize."
+      }
+
+      if [[ -z "$artifact_dir" ]]; then
+        block_with_reason "Cannot verify pipeline ordering: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
+      fi
+
+      missing_step=$(pipeline_check_prerequisites "$artifact_step" "$artifact_dir") || {
+        # pipeline_check_prerequisites returned non-zero — missing_step is set on stdout
+        artifact_basename=$(basename "$file_path")
+
+        reason="Complete and approve ${missing_step} before writing ${artifact_basename}"
+        block_with_reason "$reason"
+      }
     fi
-    state_json=$(state_read 2>/dev/null) || {
-      block_with_reason "Cannot verify pipeline ordering: state file exists but is unreadable. Check .qrspi/state.json permissions or delete to reinitialize."
-    }
-
-    # Extract artifact_dir from state — FAIL-CLOSED if corrupted
-    artifact_dir=$(printf '%s' "$state_json" | jq -r '.artifact_dir // empty' 2>/dev/null) || {
-      block_with_reason "Cannot verify pipeline ordering: state file corrupted. Run SessionStart or /compact to reinitialize."
-    }
-
-    if [[ -z "$artifact_dir" ]]; then
-      block_with_reason "Cannot verify pipeline ordering: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
-    fi
-
-    missing_step=$(pipeline_check_prerequisites "$artifact_step" "$artifact_dir" 2>/dev/null) || {
-      # pipeline_check_prerequisites returned non-zero — missing_step is set on stdout
-      artifact_basename=$(basename "$file_path")
-
-      reason="Complete and approve ${missing_step} before writing ${artifact_basename}"
-      block_with_reason "$reason"
-    }
   fi
 fi
 
@@ -152,7 +148,12 @@ else
     state_json_for_task=$(state_read 2>/dev/null) || {
       block_with_reason "Cannot read state file for task enforcement. Check .qrspi/state.json permissions or delete to reinitialize."
     }
-    task_id=$(printf '%s' "$state_json_for_task" | jq -r '.active_task.id // empty' 2>/dev/null) || true
+    task_id=$(printf '%s' "$state_json_for_task" | jq -r '.active_task.id // empty' 2>/dev/null) || {
+      block_with_reason "ERROR: failed to parse active_task.id from state — state file may be corrupted. Check .qrspi/state.json or delete to reinitialize."
+    }
+    if [[ -z "$task_id" ]]; then
+      echo "pre-tool-use: WARNING: no task ID resolved from state — enforcement checks skipped for this call" >&2
+    fi
   fi
   # No task_id outside a worktree is normal (e.g., during Goals/Questions steps
   # before implementation). Enforcement checks below only run when task_id is set.
@@ -185,7 +186,7 @@ if [[ $is_bash_tool -eq 0 ]]; then
     fi
   fi
 
-  if protected_is_blocked "$rel_file_path" "$is_worktree_flag"; then
+  if is_protected_path "$rel_file_path" "$is_worktree_flag"; then
     block_with_reason "Protected path: ${rel_file_path} cannot be modified from a worktree"
   fi
 
@@ -206,7 +207,7 @@ if [[ $is_bash_tool -eq 0 ]]; then
       block_with_reason "Cannot verify file allowlist: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
     fi
 
-    if ! enforcement_check_allowlist "$file_path" "$task_id" "$artifact_dir" 2>/dev/null; then
+    if ! enforcement_check_allowlist "$file_path" "$task_id" "$artifact_dir"; then
       reason="File not in allowlist for task ${task_id}. Options: 1) Ask user to approve 2) Switch to monitored 3) Find alternative"
       block_with_reason "$reason"
     fi
@@ -215,10 +216,12 @@ if [[ $is_bash_tool -eq 0 ]]; then
 fi
 
 # ── Bash file-write target enforcement ───────────────────────────────────────
-if [[ $is_bash_tool -eq 1 && -n "$task_id" ]]; then
-  bash_command=$(printf '%s' "$stdin_json" | jq -r '.tool_input.command // empty' 2>/dev/null) || true
+if [[ $is_bash_tool -eq 1 ]]; then
+  bash_command=$(printf '%s' "$stdin_json" | jq -r '.tool_input.command // empty' 2>/dev/null) || {
+    block_with_reason "ERROR: failed to parse Bash command from tool_input. Malformed JSON in tool_input."
+  }
 
-  if [[ -n "${bash_command:-}" ]]; then
+  if [[ -n "${bash_command:-}" && -n "$task_id" ]]; then
     # Need artifact_dir — read state if not already available
     if [[ -z "${artifact_dir:-}" ]]; then
       state_for_bash=$(state_read 2>/dev/null) || {
@@ -234,16 +237,29 @@ if [[ $is_bash_tool -eq 1 && -n "$task_id" ]]; then
       block_with_reason "Cannot verify bash file-write targets: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
     fi
 
-    targets=$(bash_detect_file_writes "$bash_command" 2>/dev/null) || true
+    targets=$(bash_detect_file_writes "$bash_command" 2>/dev/null) || {
+      block_with_reason "ERROR: bash_detect_file_writes failed — cannot determine file-write targets for enforcement. Command may be too complex for static analysis."
+    }
 
     if [[ -n "${targets:-}" ]]; then
       while IFS= read -r target; do
         [[ -z "$target" ]] && continue
-        if ! enforcement_check_allowlist "$target" "$task_id" "$artifact_dir" 2>/dev/null; then
+        # Resolve relative paths to absolute before enforcement check
+        abs_target="$target"
+        if [[ "$target" != /* ]]; then
+          abs_target="${PWD}/${target}"
+        fi
+        if ! enforcement_check_allowlist "$abs_target" "$task_id" "$artifact_dir"; then
           reason="File not in allowlist for task ${task_id}: ${target}. Options: 1) Ask user to approve 2) Switch to monitored 3) Find alternative"
           block_with_reason "$reason"
         fi
       done <<< "$targets"
+    fi
+  elif [[ -n "${bash_command:-}" && -z "$task_id" ]]; then
+    # Check if the command has file-write targets even without a task ID
+    targets_check=$(bash_detect_file_writes "$bash_command" 2>/dev/null) || true
+    if [[ -n "${targets_check:-}" ]]; then
+      echo "pre-tool-use: WARNING: Bash file-write targets detected but no active task ID — allowlist check skipped" >&2
     fi
   fi
 fi

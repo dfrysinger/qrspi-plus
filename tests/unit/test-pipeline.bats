@@ -341,3 +341,184 @@ teardown() {
   lib_content=$(head -2 "$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/pipeline.sh")
   [[ "$lib_content" == *"set -euo pipefail"* ]]
 }
+
+# ============================================================================
+# [T04] Fail-closed error handling tests
+# ============================================================================
+
+@test "[T04-P1] pipeline_check_prerequisites: unreadable state returns exit 1, stdout state-unavailable, stderr diagnostic" {
+  # Create artifact files with approved goals so we actually need state
+  mkdir -p "$ARTIFACT_DIR/research"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/goals.md"
+  echo -e "---\nstatus: draft\n---" > "$ARTIFACT_DIR/questions.md"
+
+  # Remove .qrspi entirely so state_read returns 1 (no state file)
+  rm -rf "$WORK_DIR/.qrspi"
+  # Also remove artifact_dir goals so state_init_or_reconcile will fail
+  # Actually: we need state_read to fail AND no fallback — simplest: make .qrspi
+  # directory exist but state.json not exist, AND artifact_dir not exist for init fallback
+  # The function tries state_read first (fails), then we need it to NOT have a fallback
+  # Actually pipeline_check_prerequisites just calls state_read, doesn't init.
+  # So if no .qrspi/state.json, state_read returns 1 → we get state-unavailable
+
+  run pipeline_check_prerequisites "questions" "$ARTIFACT_DIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"<state-unavailable>"* ]]
+}
+
+@test "[T04-P2] pipeline_cascade_reset: invalid artifact_dir returns exit 1 with stderr diagnostic" {
+  # Don't create any state or artifact dir — cascade_reset should fail
+  # when it can't init state from a nonexistent artifact_dir
+  run pipeline_cascade_reset "design" "/nonexistent/artifact/dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"cannot perform cascade reset"* ]]
+}
+
+@test "[T04-P3] pipeline_check_prerequisites: step deploy returns exit 1, stdout unknown-step, stderr diagnostic" {
+  run pipeline_check_prerequisites "deploy" "$ARTIFACT_DIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"<unknown-step>"* ]]
+  [[ "$output" == *"unrecognized step"* ]]
+}
+
+# ============================================================================
+# [T14] State bootstrap and cascade reset tests
+# ============================================================================
+
+# Helper to create all artifacts with a given status
+_t14_create_all_approved() {
+  mkdir -p "$ARTIFACT_DIR/research"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/goals.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/questions.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/research/summary.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/design.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/structure.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/plan.md"
+}
+
+@test "[T14-P1] pipeline_cascade_reset goals -> all 8 steps reset to draft" {
+  _t14_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # Mark implement and test as approved in state
+  local state
+  state=$(state_read)
+  state=$(echo "$state" | jq '.artifacts.implement = "approved"')
+  state=$(echo "$state" | jq '.artifacts.test = "approved"')
+  state_write_atomic "$state"
+
+  pipeline_cascade_reset "goals" "$ARTIFACT_DIR"
+
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T14-P2] pipeline_cascade_reset design -> resets design through test, leaves goals/questions/research" {
+  _t14_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  pipeline_cascade_reset "design" "$ARTIFACT_DIR"
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T14-P3b] pipeline_cascade_reset design --skip-cascade -> resets only design, downstream unchanged" {
+  _t14_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  pipeline_cascade_reset "design" "$ARTIFACT_DIR" --skip-cascade
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T14-P4] pipeline_cascade_reset with --unknown flag -> returns non-zero" {
+  _t14_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  run pipeline_cascade_reset "design" "$ARTIFACT_DIR" --unknown
+  [ "$status" -eq 1 ]
+}
+
+@test "[T14-P5] pipeline_cascade_reset when no state.json -> calls init then resets" {
+  _t14_create_all_approved
+
+  # Ensure no state.json exists
+  rm -rf "$WORK_DIR/.qrspi"
+
+  pipeline_cascade_reset "design" "$ARTIFACT_DIR"
+
+  # State should exist now, with design through test reset
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+}
+
+# ============================================================================
+# [T15] Cascade vs skip-cascade verification tests
+# ============================================================================
+
+@test "[T15-P1] pipeline_cascade_reset structure (no flag) -> resets structure through test, leaves goals/questions/research/design" {
+  _t14_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  pipeline_cascade_reset "structure" "$ARTIFACT_DIR"
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T15-P2] pipeline_cascade_reset structure --skip-cascade -> resets only structure" {
+  _t14_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  pipeline_cascade_reset "structure" "$ARTIFACT_DIR" --skip-cascade
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}

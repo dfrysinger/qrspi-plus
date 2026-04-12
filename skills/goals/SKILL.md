@@ -15,6 +15,8 @@ Capture what the user wants — intent, constraints, success criteria, acceptanc
 
 **Required inputs:** None (this is the first step)
 
+**State bootstrap:** If `.qrspi/state.json` does not exist or `state_read` returns non-zero, call `state_init_or_reconcile <artifact_dir>`.
+
 **Before starting:**
 1. Create the artifact directory: `docs/qrspi/YYYY-MM-DD-{slug}/` (relative to the project root, not the plugin directory)
    - **Slug generation:** Take the user's first description of what they want to build, extract 2-4 key words, convert to lowercase kebab-case. Examples: "I want to add user authentication" → `user-auth`, "Build a search API for products" → `product-search-api`. If ambiguous, ask the user to confirm.
@@ -25,6 +27,35 @@ Capture what the user wants — intent, constraints, success criteria, acceptanc
 Do NOT synthesize goals.md until the pipeline mode is selected and config.md is written.
 The user must explicitly choose quick fix or full pipeline before synthesis begins.
 </HARD-GATE>
+
+### Config Validation (when config.md exists)
+
+If `config.md` already exists (resuming a run), validate these fields before proceeding:
+
+**If `route` is missing:**
+
+  config.md has no `route` field.
+
+  1) Re-run Goals to regenerate config.md with the correct route
+  2) Manually add a `route:` list to config.md
+  3) Abort
+
+**If `pipeline` is missing:**
+
+  config.md has no `pipeline` field.
+
+  1) Re-run Goals to regenerate config.md with the pipeline field set
+  2) Manually add `pipeline: full` or `pipeline: quick` to config.md
+  3) Abort
+
+**If `pipeline` has an invalid value (not `full` or `quick`):**
+
+  config.md has an invalid value for `pipeline`: {value}
+  Expected: `full` or `quick`
+
+  1) Edit config.md and set `pipeline: full` or `pipeline: quick`
+  2) Re-run Goals to regenerate config.md
+  3) Abort
 
 ## Process
 
@@ -90,15 +121,23 @@ Questions to cover (not necessarily in order — follow the conversation):
 
 ### Pipeline Mode Selection
 
-After intent capture (the interactive dialogue above) but before synthesizing `goals.md`, determine the pipeline configuration. Ask three questions — one at a time:
+After intent capture (the interactive dialogue above) but before synthesizing `goals.md`, determine the pipeline configuration. Ask these questions — one at a time, using numbered choices:
 
-1. **Pipeline mode:** "Quick fix or full pipeline?"
-   - **Quick:** goals → questions → research → plan → implement → test
-   - **Full:** goals → questions → research → design → structure → plan → worktree → implement → integrate → test
+**Pipeline mode:**
+1. Quick fix (goals → questions → research → plan → implement → test)
+2. Full pipeline (goals → questions → research → design → structure → plan → worktree → implement → integrate → test)
 
-2. **UX step** (only ask if `qrspi:ux` skill exists — glob for `~/.claude/plugins/cache/*/qrspi/*/skills/ux/` — skip silently if not found): "Include a UX/wireframing step after design?"
+**UX step** (only ask if `qrspi:ux` skill exists — glob for `~/.claude/plugins/cache/*/qrspi/*/skills/ux/` — skip silently if not found):
+1. No UX step
+2. Include UX/wireframing step after Design
 
-3. **Codex reviews** (only ask if `codex:rescue` is available — glob for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs` — skip silently if not found): "Use Codex for second reviews this run? (yes/no)"
+**Review depth** (only ask when full pipeline is selected):
+1. Quick (4 correctness reviewers)
+2. Deep (correctness + thoroughness, all 8 reviewers)
+
+**Codex reviews** (only ask if `codex:rescue` is available — glob for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs` — skip silently if not found):
+1. No Codex reviews
+2. Use Codex for second reviews this run
 
 Once you have answers, write `config.md` in the artifact directory:
 
@@ -192,7 +231,15 @@ Present the synthesized `goals.md` to the user. **Always state the review status
 
 They can:
 - **Approve** → if reviews have not passed clean, note this and ask if they'd like a review loop before finalizing. Then write `status: approved` in frontmatter.
-- **Request changes** → write the user's feedback to `feedback/goals-round-{NN}.md` (see using-qrspi Feedback File Format), then continue the conversation and re-synthesize with a new subagent that receives the original inputs + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts.
+- **Request changes** → write the user's feedback to `feedback/goals-round-{NN}.md` (see using-qrspi Feedback File Format), then continue the conversation and re-synthesize with a new subagent that receives the original inputs + **all** prior feedback files (not just the latest round). After re-generation and the review cycle completes, present:
+
+  > Feedback applied. How would you like to proceed?
+  > 1. More feedback (I have additional changes)
+  > 2. Single review round (run Claude + Codex once, see findings)
+  > 3. Loop until clean (autonomous review cycles)
+  > 4. Approve (I'm satisfied, skip reviews)
+
+  Omit option 2 if Codex is disabled in config.md. Omit the "fix issues" options (options 2 and 3) if there are no issues to fix.
 
 ### Terminal State
 
@@ -221,6 +268,30 @@ Recommend compaction: "Goals approved. This is a good point to compact context b
 | "I can infer the acceptance criteria" | Inferred criteria lead to "that's not what I meant." Make them explicit and get approval. |
 | "The scope is obvious" | Obvious scope is where scope creep hides. Write it down. |
 | "Let me just start the research first" | Research without approved goals means you don't know what you're looking for. |
+
+## Goal Specificity
+
+**Goal specificity rule:** Each goal must be independently scopeable — it can be moved between phases without surgery on other goals. A goal that bundles multiple distinct deliverables should be split into separate goals with their own IDs.
+
+**Late splitting:** When a goal proves too coarse during downstream work (Design, Structure, Plan), it can be split. Late splitting is classified like any amendment:
+
+| Split type | When | Process |
+|---|---|---|
+| Clarifying | Design section already has distinct sub-items; re-label headings, no new content | W2 (no cascade) |
+| Additive | Design needs new content per sub-goal; structure/plan need re-assignment | W3 (lightweight cascade) |
+| Architectural | Design needs substantial rewrite; structure/plan change significantly | W4 (full backward loop) |
+
+Present each split as a before/after diff. The skill recommends a classification; the user decides the process. After the split, update roadmap.md with new goal IDs.
+
+### Red Flag
+
+A goal whose acceptance criterion text describes 3+ distinct deliverables that could be independently phased.
+
+### Common Rationalization
+
+| Rationalization | Reality |
+|----------------|---------|
+| "These items are related so they should be one goal" | Related ≠ coupled. If they can be independently scoped and phased, they should be separate goals. |
 
 ## Worked Example
 
@@ -297,3 +368,13 @@ Add rate limiting so the API doesn't get abused.
 - **Out of scope is empty** — without explicit exclusions, downstream agents will make assumptions. One agent might scope in per-endpoint limits, another might add an admin UI. Scope creep enters here.
 - **No X-Forwarded-For mention** — a real production requirement that will be discovered mid-implementation and trigger a backward loop.
 - The bad goals.md will cause Questions to ask vague questions, Research to gather irrelevant material, and Design to propose an architecture the user didn't want.
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Never suggest skipping steps for speed: Every step in the QRSPI pipeline exists for a reason. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+
+D3 — Resist time-pressure shortcuts: There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
+</BEHAVIORAL-DIRECTIVES>

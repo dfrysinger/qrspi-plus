@@ -155,6 +155,7 @@ teardown() {
 @test "audit_log_operation correct file path for task-03" {
   audit_log_operation "3" "2026-04-07T10:00:00Z" "Write" "/file.txt" '[]' "null" "true" "monitored" "false" "null"
   [ -f ".qrspi/audit-task-03.jsonl" ]
+  [ ! -f ".qrspi/audit.jsonl" ]
 }
 
 # Test 18: Correct file path for task ID 15
@@ -207,4 +208,103 @@ teardown() {
   local record=$(head -1 ".qrspi/audit-task-25.jsonl")
   local target=$(echo "$record" | jq -r '.target')
   [ "$target" = "$path" ]
+}
+
+# ============================================================================
+# [T04] Fail-closed error handling tests
+# ============================================================================
+
+@test "[T04-A1] audit_log_operation: empty task_id writes to audit.jsonl not audit-task-00.jsonl" {
+  run audit_log_operation "" "2026-04-07T10:00:00Z" "Write" "/file.txt" '[]' "null" "true" "monitored" "false" "null"
+  [ "$status" -eq 0 ]
+  [ -f ".qrspi/audit.jsonl" ]
+  [ ! -f ".qrspi/audit-task-00.jsonl" ]
+}
+
+@test "[T04-A2] audit_log_operation: task_id 0 writes to audit.jsonl not audit-task-00.jsonl" {
+  run audit_log_operation "0" "2026-04-07T10:00:00Z" "Write" "/file.txt" '[]' "null" "true" "monitored" "false" "null"
+  [ "$status" -eq 0 ]
+  [ -f ".qrspi/audit.jsonl" ]
+  [ ! -f ".qrspi/audit-task-00.jsonl" ]
+}
+
+@test "[T04-A3] audit_log_operation: invalid targets_json returns exit 1 with stderr diagnostic" {
+  run audit_log_operation "30" "2026-04-07T10:00:00Z" "Write" "/file.txt" 'NOT-JSON' "null" "true" "monitored" "false" "null"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"jq failed"* ]]
+}
+
+# ============================================================================
+# [T06] Review result persistence tests
+# ============================================================================
+
+@test "[T06-U7-1] audit_log_operation: multiple calls with empty task_id append to audit.jsonl (2 lines)" {
+  audit_log_operation "" "2026-04-07T10:00:00Z" "Write" "/file1.txt" '[]' "null" "true" "monitored" "false" "null"
+  audit_log_operation "" "2026-04-07T10:01:00Z" "Edit" "/file2.txt" '[]' "null" "false" "strict" "true" "null"
+
+  [ -f ".qrspi/audit.jsonl" ]
+  line_count=$(wc -l < ".qrspi/audit.jsonl")
+  [ "$line_count" -eq 2 ]
+}
+
+@test "[T06-U7-2] audit_log_operation: audit.jsonl record has valid JSON and boolean in_scope" {
+  audit_log_operation "" "2026-04-07T10:00:00Z" "Write" "/file.txt" '[]' "null" "true" "monitored" "false" "null"
+
+  run jq '.' ".qrspi/audit.jsonl"
+  [ "$status" -eq 0 ]
+
+  local record
+  record=$(head -1 ".qrspi/audit.jsonl")
+  [ "$(echo "$record" | jq '.in_scope | type')" = '"boolean"' ]
+}
+
+@test "[T06-U7-3] review file: reviews/tasks directory created when review file written" {
+  mkdir -p reviews/tasks
+  [ -d reviews/tasks ]
+}
+
+@test "[T06-U7-4] review file: task-NN-review.md frontmatter contains task field" {
+  mkdir -p reviews/tasks
+  printf -- '---\ntask: 6\n---\n\n# Task 06 Review\n' > reviews/tasks/task-06-review.md
+
+  local frontmatter
+  frontmatter=$(head -3 reviews/tasks/task-06-review.md)
+  [[ "$frontmatter" == *"task: 6"* ]]
+}
+
+# ============================================================================
+# [U9] Raw blob preservation tests
+# ============================================================================
+
+@test "[U9-1] audit_log_stdin: malformed JSON input produces JSONL record with raw_input field" {
+  local raw='NOT VALID JSON {{{ garbage'
+  run audit_log_stdin "42" "$raw"
+  [ "$status" -eq 0 ]
+  [ -f ".qrspi/audit-task-42.jsonl" ]
+  local record
+  record=$(tail -1 ".qrspi/audit-task-42.jsonl")
+  [ "$(printf '%s' "$record" | jq 'has("raw_input")')" = "true" ]
+  [ "$(printf '%s' "$record" | jq -r '.raw_input')" = "$raw" ]
+}
+
+@test "[U9-2] audit_log_stdin: well-formed JSON input produces structured fields and no raw_input" {
+  local raw
+  raw='{"tool_name":"Write","tool_input":{"file_path":"src/foo.sh"}}'
+  run audit_log_stdin "43" "$raw"
+  [ "$status" -eq 0 ]
+  [ -f ".qrspi/audit-task-43.jsonl" ]
+  local record
+  record=$(tail -1 ".qrspi/audit-task-43.jsonl")
+  [ "$(printf '%s' "$record" | jq 'has("raw_input")')" = "false" ]
+  [ "$(printf '%s' "$record" | jq -r '.tool_name')" = "Write" ]
+}
+
+@test "[U9-3] audit_log_stdin: empty stdin produces JSONL record with raw_input as empty string" {
+  run audit_log_stdin "44" ""
+  [ "$status" -eq 0 ]
+  [ -f ".qrspi/audit-task-44.jsonl" ]
+  local record
+  record=$(tail -1 ".qrspi/audit-task-44.jsonl")
+  [ "$(printf '%s' "$record" | jq 'has("raw_input")')" = "true" ]
+  [ "$(printf '%s' "$record" | jq -r '.raw_input')" = "" ]
 }

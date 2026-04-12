@@ -31,6 +31,10 @@ Do NOT proceed to Plan without user approval of the structure.
 
 **Subagent per round** (iterative with human feedback). Each round is a fresh subagent with declared inputs + any feedback from prior rounds.
 
+## Phase-Scoped Content Rules
+
+structure.md contains ONLY current-phase file maps and interfaces. Entries must be tagged with goal IDs. File maps for goals not in the current phase (per roadmap.md) must not appear. When the Structure skill generates structure.md, it must verify every goal ID in the file map exists in goals.md.
+
 ## Process
 
 ```dot
@@ -149,6 +153,8 @@ After the structure subagent completes, run one review round:
 
 Present `structure.md` to the user — "hammer on it" review point alongside Design. **Always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified."
 
+When presenting Mermaid diagrams (dependency graphs, architectural diagrams, parallelization plans), write the diagram to the artifact file (e.g., `structure.md` for architecture diagrams, `parallelization.md` for dependency graphs) and direct the user to open the file. Do not paste raw Mermaid syntax into terminal output — it renders as unreadable text in the terminal. Tell the user: "The architecture diagram is in `structure.md` — open it to view the rendered diagram."
+
 On approval, if reviews have not passed clean, note this and ask if they'd like a review loop before finalizing. Then write `status: approved` in frontmatter.
 
 On rejection, write the user's feedback and the rejected artifact snapshot to `feedback/structure-round-{NN}.md` (using the standard feedback file format from `using-qrspi`), then launch a new subagent with original inputs + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts.
@@ -175,6 +181,7 @@ Recommend compaction: "Structure approved. This is a good point to compact conte
 - Missing Mermaid architectural diagram
 - CI pipeline structure is needed (greenfield or no existing CI) but not defined
 - Interfaces use placeholder types ("any", "object", "TBD")
+- Pasting Mermaid diagram syntax directly into terminal output (user cannot read it)
 
 ## Common Rationalizations — STOP
 
@@ -207,3 +214,13 @@ Recommend compaction: "Structure approved. This is a good point to compact conte
 > | Various | Modify | Update as needed |
 
 The bad example uses directory paths instead of files, and "various" is not an action plan.
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Complete every step before moving on: Every process step in this skill exists for a reason. Execute each step fully. If a step seems redundant given the current state, state why and ask the user — do not silently skip it.
+
+D3 — Resist time-pressure shortcuts: If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
+</BEHAVIORAL-DIRECTIVES>

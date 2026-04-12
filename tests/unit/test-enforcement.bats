@@ -242,7 +242,7 @@ constraints: []
   [[ $status -eq 0 ]]
 }
 
-@test "enforcement_check_allowlist: absolute path matched against relative path in allowlist" {
+@test "enforcement_check_allowlist: absolute file path does NOT match relative allowlist entry (pre-resolve required)" {
   local task_file="$ARTIFACT_DIR/tasks/task-13.md"
   create_task_spec "$task_file" "---
 enforcement: strict
@@ -255,8 +255,74 @@ constraints: []
 # Task 13
 "
   cd "$TEST_TEMP_DIR"
-  # Pass an absolute path — should strip working dir prefix and match the relative path
+  # Allowlist has relative path but we pass absolute path — no match expected.
+  # Paths must be pre-resolved to absolute via task_resolve_allowlist_paths before
+  # enforcement_check_allowlist is called; direct string comparison is used.
   run enforcement_check_allowlist "$TEST_TEMP_DIR/hooks/lib/enforcement.sh" 13 "$ARTIFACT_DIR"
+  [[ $status -eq 2 ]]
+}
+
+# ============================================================================
+# U10: Pre-resolved absolute path matching tests
+# ============================================================================
+
+@test "[U10-T1] enforcement_check_allowlist: pre-resolved absolute path matches allowlist entry" {
+  local task_file="$ARTIFACT_DIR/tasks/task-14.md"
+  local abs_path="/resolved/absolute/hooks/lib/enforcement.sh"
+  create_task_spec "$task_file" "---
+enforcement: strict
+allowed_files:
+  - action: create
+    path: /resolved/absolute/hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 14
+"
+  cd "$TEST_TEMP_DIR"
+  run enforcement_check_allowlist "$abs_path" 14 "$ARTIFACT_DIR"
+  [[ $status -eq 0 ]]
+}
+
+@test "[U10-T2] enforcement_check_allowlist: pre-resolved absolute path not in allowlist returns 2" {
+  local task_file="$ARTIFACT_DIR/tasks/task-15.md"
+  create_task_spec "$task_file" "---
+enforcement: strict
+allowed_files:
+  - action: create
+    path: /resolved/absolute/hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 15
+"
+  cd "$TEST_TEMP_DIR"
+  run enforcement_check_allowlist "/some/other/absolute/path.sh" 15 "$ARTIFACT_DIR"
+  [[ $status -eq 2 ]]
+}
+
+@test "[U10-T3] enforcement_check_allowlist does not contain realpath/readlink/pwd path-resolution logic" {
+  local script_path="$BATS_TEST_DIRNAME/../../hooks/lib/enforcement.sh"
+  # None of these path-resolution commands should appear in enforcement_check_allowlist
+  # (they should only be in task.sh now)
+  ! grep -q "realpath\|readlink\|cwd=\$(pwd)" "$script_path"
+}
+
+@test "[U10-T4] enforcement_check_allowlist: direct string comparison matches identical absolute paths" {
+  local task_file="$ARTIFACT_DIR/tasks/task-16.md"
+  local abs_path="/absolute/path/to/file.sh"
+  create_task_spec "$task_file" "---
+enforcement: strict
+allowed_files:
+  - action: modify
+    path: /absolute/path/to/file.sh
+constraints: []
+---
+
+# Task 16
+"
+  cd "$TEST_TEMP_DIR"
+  run enforcement_check_allowlist "$abs_path" 16 "$ARTIFACT_DIR"
   [[ $status -eq 0 ]]
 }
 
@@ -270,6 +336,160 @@ constraints: []
 }
 
 @test "enforcement.sh sources task.sh" {
-  # Verify task_read_frontmatter is available after sourcing enforcement.sh
-  declare -f task_read_frontmatter > /dev/null
+  # Verify frontmatter_get is available after sourcing enforcement.sh (via task.sh)
+  declare -f frontmatter_get > /dev/null
+}
+
+# ============================================================================
+# [T04] Fail-closed error handling tests
+# ============================================================================
+
+@test "[T04-E1] enforcement_get_mode: corrupted runtime JSON returns strict from spec with stderr warning" {
+  local task_file="$ARTIFACT_DIR/tasks/task-20.md"
+  create_task_spec "$task_file" "---
+enforcement: strict
+allowed_files: []
+constraints: []
+---
+
+# Task 20
+"
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .qrspi
+  # Write corrupted (non-JSON) runtime overrides
+  printf 'NOT-VALID-JSON{{{' > ".qrspi/task-20-runtime.json"
+
+  local stderr_file="$TEST_TEMP_DIR/stderr.txt"
+  local stdout_result
+  stdout_result=$(enforcement_get_mode 20 "$ARTIFACT_DIR" 2>"$stderr_file")
+  local exit_code=$?
+
+  [ "$exit_code" -eq 0 ]
+  [[ "$stdout_result" == "strict" ]]
+  # Should have a warning on stderr about invalid JSON from task_read_runtime_overrides
+  local stderr_content
+  stderr_content=$(cat "$stderr_file")
+  [[ "$stderr_content" == *"invalid JSON"* ]]
+}
+
+@test "[T04-E2] enforcement_get_mode: unrecognized mode strikt returns exit 1 with stderr diagnostic" {
+  local task_file="$ARTIFACT_DIR/tasks/task-21.md"
+  create_task_spec "$task_file" "---
+enforcement: strikt
+allowed_files: []
+constraints: []
+---
+
+# Task 21
+"
+  cd "$TEST_TEMP_DIR"
+
+  run enforcement_get_mode 21 "$ARTIFACT_DIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unrecognized"* ]]
+}
+
+@test "[T04-E3] enforcement_check_allowlist: binary task spec returns exit 1 with stderr diagnostic" {
+  local task_file="$ARTIFACT_DIR/tasks/task-22.md"
+  mkdir -p "$(dirname "$task_file")"
+  # Write binary content (non-text)
+  printf '\x00\x01\x02\x03\x04\x05' > "$task_file"
+
+  cd "$TEST_TEMP_DIR"
+
+  run enforcement_check_allowlist "some/file.sh" 22 "$ARTIFACT_DIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"cannot read task spec frontmatter"* ]]
+}
+
+# ============================================================================
+# [U13] Monitored-mode in_scope fix tests
+# ============================================================================
+
+@test "[U13-1] enforcement_check_allowlist: monitored-mode write outside allowlist returns in_scope=false on stdout" {
+  local task_file="$ARTIFACT_DIR/tasks/task-30.md"
+  create_task_spec "$task_file" "---
+enforcement: monitored
+allowed_files:
+  - action: create
+    path: hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 30
+"
+  cd "$TEST_TEMP_DIR"
+  local result
+  result=$(enforcement_check_allowlist "some/other/file.sh" 30 "$ARTIFACT_DIR")
+  [ "$result" = "false" ]
+}
+
+@test "[U13-2] enforcement_check_allowlist: monitored-mode write inside allowlist returns in_scope=true on stdout" {
+  local task_file="$ARTIFACT_DIR/tasks/task-31.md"
+  create_task_spec "$task_file" "---
+enforcement: monitored
+allowed_files:
+  - action: create
+    path: hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 31
+"
+  cd "$TEST_TEMP_DIR"
+  local result
+  result=$(enforcement_check_allowlist "hooks/lib/enforcement.sh" 31 "$ARTIFACT_DIR")
+  [ "$result" = "true" ]
+}
+
+@test "[U13-3] enforcement_check_allowlist: strict-mode write outside allowlist returns in_scope=false and exit 2" {
+  local task_file="$ARTIFACT_DIR/tasks/task-32.md"
+  create_task_spec "$task_file" "---
+enforcement: strict
+allowed_files:
+  - action: create
+    path: hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 32
+"
+  cd "$TEST_TEMP_DIR"
+  local stdout_file="$TEST_TEMP_DIR/stdout32.txt"
+  local exit_code=0
+  enforcement_check_allowlist "some/other/file.sh" 32 "$ARTIFACT_DIR" >"$stdout_file" 2>/dev/null && exit_code=0 || exit_code=$?
+  [ "$exit_code" -eq 2 ]
+  local stdout_content
+  stdout_content=$(cat "$stdout_file")
+  [ "$stdout_content" = "false" ]
+}
+
+@test "[U13-4] enforcement_check_allowlist: in_scope value is same regardless of enforcement mode" {
+  local task_file_strict="$ARTIFACT_DIR/tasks/task-33.md"
+  local task_file_monitored="$ARTIFACT_DIR/tasks/task-34.md"
+  create_task_spec "$task_file_strict" "---
+enforcement: strict
+allowed_files:
+  - action: create
+    path: hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 33
+"
+  create_task_spec "$task_file_monitored" "---
+enforcement: monitored
+allowed_files:
+  - action: create
+    path: hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 34
+"
+  cd "$TEST_TEMP_DIR"
+  local result_strict result_monitored
+  result_strict=$(enforcement_check_allowlist "hooks/lib/enforcement.sh" 33 "$ARTIFACT_DIR" 2>/dev/null || true)
+  result_monitored=$(enforcement_check_allowlist "hooks/lib/enforcement.sh" 34 "$ARTIFACT_DIR" 2>/dev/null || true)
+  [ "$result_strict" = "$result_monitored" ]
 }

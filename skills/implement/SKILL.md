@@ -96,6 +96,10 @@ flowchart TD
 5. **Run tests — verify pass.** If they fail, fix the implementation (not the test)
 6. **Self-review and commit**
 
+## Code Quality
+
+Comment aggressively. Every function gets a header comment explaining: purpose, inputs, outputs, and failure behavior. Every conditional block that handles an edge case, security decision, or non-obvious flow gets an inline comment explaining *why*. Assume the code reviewer is proficient in software engineering but unfamiliar with the specific language.
+
 ## Implementer Subagent Status Reporting
 
 | Status | Action |
@@ -156,48 +160,191 @@ flowchart TD
 
 ## Artifact
 
-`reviews/tasks/task-NN-review.md` — per-task review results. Format:
+`reviews/tasks/task-NN-review.md` — per-task review results.
+
+### File Path
+
+`reviews/tasks/task-NN-review.md` where `NN` is the zero-padded task number (e.g., `task-03-review.md`, `task-15-review.md`).
+
+### Format
 
 ```markdown
+---
+task: NN
+---
+
 # Task NN Review
 
 ## Round 1 — Correctness
 
 ### spec-reviewer
-{findings or "No issues found"}
+
+**Model:** {actual model identifier, e.g., claude-opus-4-5}
+**Prompt:**
+{verbatim prompt sent to this reviewer}
+
+**Response:**
+{verbatim response received from this reviewer}
 
 ### code-quality-reviewer
-{findings or "No issues found"}
+
+**Model:** {actual model identifier}
+**Prompt:**
+{verbatim prompt sent to this reviewer}
+
+**Response:**
+{verbatim response received from this reviewer}
 
 ### silent-failure-hunter
-{findings or "No issues found"}
+
+**Model:** {actual model identifier}
+**Prompt:**
+{verbatim prompt sent to this reviewer}
+
+**Response:**
+{verbatim response received from this reviewer}
 
 ### security-reviewer
-{findings or "No issues found"}
+
+**Model:** {actual model identifier}
+**Prompt:**
+{verbatim prompt sent to this reviewer}
+
+**Response:**
+{verbatim response received from this reviewer}
 
 ## Round 1 — Thoroughness (deep only)
 
 ### goal-traceability-reviewer
-{findings or "No issues found"}
+
+**Model:** {actual model identifier}
+**Prompt:**
+{verbatim prompt sent to this reviewer}
+
+**Response:**
+{verbatim response received from this reviewer}
 
 ### test-coverage-reviewer
-{findings or "No issues found"}
+
+**Model:** {actual model identifier}
+**Prompt:**
+{verbatim prompt sent to this reviewer}
+
+**Response:**
+{verbatim response received from this reviewer}
 
 ### type-design-analyzer
-{findings or "No issues found"}
+
+**Model:** {actual model identifier}
+**Prompt:**
+{verbatim prompt sent to this reviewer}
+
+**Response:**
+{verbatim response received from this reviewer}
 
 ### code-simplifier
-{findings or "No issues found"}
+
+**Model:** {actual model identifier}
+**Prompt:**
+{verbatim prompt sent to this reviewer}
+
+**Response:**
+{verbatim response received from this reviewer}
 
 ## Post-review fixes (round 1)
 - {what was changed and why}
+
+## Round 2 — Correctness
+
+{repeat reviewer sections as above}
+
+## Round 2 — Thoroughness (deep only)
+
+{repeat reviewer sections as above}
+
+## Post-review fixes (round 2)
+- {what was changed and why}
 ```
+
+### Skipped Reviewers
+
+When a reviewer is skipped (e.g., `type-design-analyzer` when no new types are introduced), include the section with:
+
+```markdown
+### type-design-analyzer
+
+**Model:** skipped
+**Response:** {why this reviewer was skipped, e.g., "No new types introduced in this task"}
+```
+
+### Codex Subsections
+
+When Codex is enabled, each reviewer section includes a `#### Codex` subsection after the Response:
+
+```markdown
+### spec-reviewer
+
+**Model:** {actual model identifier}
+**Prompt:**
+{verbatim prompt}
+
+**Response:**
+{verbatim response}
+
+#### Codex
+
+**Model:** {codex model identifier}
+**Prompt:**
+{verbatim codex prompt}
+
+**Response:**
+{verbatim codex response}
+```
+
+### Rules
+
+- The **orchestrating skill** (Implement) writes this file — not the reviewer subagents
+- **Prompt and Response fields are verbatim** — no summarization, no paraphrasing
+- **Model identifiers are actual** — use the real model ID (e.g., `claude-opus-4-5`), not generic names
+- The `task` frontmatter field is **required** and must match the task number (numeric, no padding)
+- Post-review fixes sections appear **between rounds**, listing what changed and why
+- Correctness reviewers: `spec-reviewer`, `code-quality-reviewer`, `silent-failure-hunter`, `security-reviewer`
+- Thoroughness reviewers (deep only): `goal-traceability-reviewer`, `test-coverage-reviewer`, `type-design-analyzer`, `code-simplifier`
 
 ## Terminal State
 
 **Full pipeline:** Each task subagent returns to the Worktree orchestrator. Implement does not invoke the next step.
 
-**Quick fix:** Present batch gate. Recommend compaction: "Implementation complete. This is a good point to compact context before the next step (`/compact`)." Then invoke next skill in `config.md` route after `implement` (test in quick fix).
+**Quick fix:** Present batch gate (see below). Then invoke next skill in `config.md` route after `implement` (test in quick fix).
+
+## Batch Gate
+
+After all tasks complete, present results and a conditional menu based on task outcomes.
+
+**When all tasks passed clean:**
+
+```
+All tasks passed clean. Choose:
+1. Re-run all reviews (confidence check)
+2. Continue to next step
+3. Stop
+```
+
+**When tasks have unresolved issues:**
+
+```
+{N} task(s) have unresolved issues. Choose:
+1. Fix remaining issues and re-run reviews
+2. Re-run all reviews (confidence check)
+3. Continue anyway
+4. Stop
+```
+
+After the options menu, add: "Before choosing, consider running `/compact` if context is long — implementation phases consume significant context. Compacting before Integrate gives the next skill a cleaner start."
+
+### Batch Gate Red Flags — STOP
+
+- Presenting "Fix remaining issues" option when all tasks passed clean
 
 ## Reviewer Name Mapping
 
@@ -313,3 +460,13 @@ Self-review: Clean
 - Tests "pass on first run" — prove nothing
 - Testing what was built, not what should be built
 - Tests biased by implementation, not by task spec's test expectations
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Never suggest skipping steps for speed. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+
+D3 — There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency, acknowledge the constraint and offer the fastest compliant path — never a non-compliant shortcut.
+</BEHAVIORAL-DIRECTIVES>

@@ -97,16 +97,17 @@ flowchart TD
     F --> H{User decision}
     G --> G2{User decision}
     G2 -->|add more tests| B
-    G2 -->|approved| Q
+    G2 -->|approved| CR
     H -->|add more tests| B
     H -->|dispatch fixes| K[Write fix tasks to fixes/test-round-NN/]
-    H -->|accept| Q
+    H -->|accept| CR
     H -->|stop| L[Pipeline halted]
     K -->|full pipeline| M[Route to Worktree → Implement → Integrate → Test]
     K -->|quick fix| N[Route to Implement → Test]
     M --> D
     N --> D
-    Q[Prepare PR for current phase]
+    CR[Code review checkpoint]
+    CR --> Q[Prepare PR for current phase]
     Q --> R{User confirms PR?}
     R -->|yes| S[Create PR via gh pr create]
     R -->|no| S2[Skip PR — code stays on feature branch]
@@ -139,6 +140,15 @@ flowchart TD
    - **Dispatch fix tasks:** Send failing tests to the fix pipeline (only if failures)
    - **Accept/Approve:** Proceed to phase routing
    - **Stop:** Halt pipeline
+
+6a. **Update goals.md checkboxes** (runs only when user chooses "Approve" — not during fix-task dispatch):
+   - For each criterion in the coverage table where Status=Written and ALL mapped tests passed:
+     - Find the matching line in `goals.md`
+     - Change `- [ ]` to `- [x]`
+     - Match by: (1) bold criterion ID (e.g., `**M24`), or (2) exact criterion text substring
+   - Do NOT modify criteria with any failing mapped tests
+   - Do NOT modify criteria marked as gaps
+   - Display summary: "Updated N/M criteria checkboxes in goals.md"
 
 ## Test Fix Loop
 
@@ -196,6 +206,37 @@ fix_type: test
 
 Present test results to the user: which acceptance criteria passed, which failed, overall test suite status. User approves test results before phase routing proceeds. On rejection, write feedback to `feedback/test-round-{NN}.md` and re-run the test fix loop.
 
+## Code Review Checkpoint (Before PR)
+
+After all acceptance tests pass and the user has approved the test results, present a code review window before creating the PR:
+
+```
+All acceptance tests passed. Before creating the PR, take time to review the implementation code.
+
+Review options:
+1. Local file review — here are all changed files:
+   {list each changed file with absolute path}
+2. Full phase diff — run: git diff main...HEAD
+3. Skip review and continue to PR
+```
+
+Wait for the user to choose. Proceed to PR creation only after the user selects an option (including option 3 to skip).
+
+## Phase Learnings Gate
+
+Before proceeding to phase routing, ask the user:
+
+> "Before we proceed to phase routing: do you have any phase learnings or ideas for future phases?
+> - **Current-phase items** (things to fix now, constraints found): discuss these in conversation — we'll handle them before moving on.
+> - **Future work ideas** (new features, improvements for later phases): these will be appended to `future-goals.md` Ideas section.
+> (Press Enter to skip.)"
+
+If the user provides **future work ideas**: append as bullet points under `## Ideas` in `future-goals.md` in the artifact directory. If `## Ideas` section does not exist, create it.
+
+If the user provides **current-phase items**: discuss in conversation and resolve before proceeding to phase routing.
+
+If the user presses Enter or provides no input: skip silently.
+
 ## Terminal State — Phase Routing
 
 **Every phase gets a PR.** After acceptance testing passes, prepare a PR for the current phase: draft title (including phase number for multi-phase projects), summary referencing artifacts in `docs/qrspi/YYYY-MM-DD-{slug}/`. Show user for confirmation. On confirmation, create PR via `gh pr create`. If user declines (e.g., wants to review locally first), skip PR creation — code stays on the feature branch.
@@ -237,6 +278,7 @@ Sub-tasks for Test:
 - Classifying all failures as "quick fix" to avoid the Worktree → Implement → Integrate round trip
 - Creating a PR without user confirmation
 - Skipping phase routing (invoking Replan) when more phases exist
+- Proceeding to PR creation without offering a code review window after tests pass
 
 ## Common Rationalizations — STOP
 
@@ -295,3 +337,13 @@ Test-writer produces:
 - Doesn't map to any acceptance criterion
 - No boundary testing (at-limit, over-limit, reset)
 - Assertion is tautological — can't fail meaningfully
+
+<BEHAVIORAL-DIRECTIVES>
+These directives apply at every step of this skill, regardless of context.
+
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Never suggest skipping steps for speed. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+
+D3 — There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency, acknowledge the constraint and offer the fastest compliant path — never a non-compliant shortcut.
+</BEHAVIORAL-DIRECTIVES>
