@@ -64,7 +64,9 @@ flowchart TD
     I --> J{User re-approves?}
     J -->|no| G
     J -->|yes| K[Set status: approved, commit]
-    K --> L[Delete replan-pending.md]
+    K --> K2[artifact_snapshot_phase]
+    K2 --> K3[artifact_promote_next_phase]
+    K3 --> L[Delete replan-pending.md]
     L --> L2[Recommend compaction]
     L2 --> M((Invoke Worktree for next phase))
     F -->|yes, major| N[Identify loop-back target]
@@ -124,6 +126,16 @@ User reviews proposed changes and severity classifications. User can override an
 If all changes are minor: Update `tasks/*.md` and `plan.md` in place, reset status to `status: replan-draft`, present diffs for re-approval.
 
 On re-approval: set status back to `status: approved`, commit.
+
+### Phase Snapshot
+
+After re-approval on the minor path, snapshot the completed phase before promoting:
+
+1. Call `artifact_snapshot_phase <artifact_dir> <completed_phase_number>` — creates a read-only copy of all core artifacts and task files under `phases/phase-NN/`
+2. Call `artifact_promote_next_phase <artifact_dir> <completed_phase_number>` — deletes phase-scoped files (structure.md, plan.md, tasks/, reviews/, feedback/, .qrspi/) and resets remaining artifact frontmatter to `status: draft`
+3. Present summary to user: which files were snapshotted, which were deleted, which were reset
+
+Phase snapshots do NOT happen on the major backward-loop path. Major changes trigger a cascade reset through the normal pipeline, which produces new artifacts from scratch — snapshotting stale artifacts before a major redesign would be misleading.
 
 On rejection: write feedback to `feedback/replan-minor-phase-NN-round-MM.md` (note: `minor` prefix distinguishes from major loop-back feedback files), revise proposals.
 

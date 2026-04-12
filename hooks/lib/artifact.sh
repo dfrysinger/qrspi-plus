@@ -173,3 +173,84 @@ artifact_sync_state() {
     state_write_atomic "$state"
   fi
 }
+
+# artifact_snapshot_phase <artifact_dir> <phase_number>
+# Creates a read-only snapshot of the current phase's artifacts.
+# Copies core artifacts and task files; excludes reviews/, fixes/, feedback/,
+# phases/, future-goals.md, future-design.md, future-research/, config.md, .qrspi/.
+# Returns 0 on success, 1 if artifact_dir doesn't exist or copy fails.
+artifact_snapshot_phase() {
+  local artifact_dir="$1"
+  local phase_number="$2"
+
+  # Validate artifact_dir exists
+  [[ -d "$artifact_dir" ]] || return 1
+
+  # Build zero-padded phase directory name
+  local phase_label
+  phase_label="phase-$(printf '%02d' "$phase_number")"
+  local snapshot_dir="$artifact_dir/phases/$phase_label"
+
+  mkdir -p "$snapshot_dir" || return 1
+
+  # Copy core artifact files if they exist
+  local core_files=("goals.md" "questions.md" "design.md" "structure.md" "plan.md")
+  local f
+  for f in "${core_files[@]}"; do
+    if [[ -f "$artifact_dir/$f" ]]; then
+      cp "$artifact_dir/$f" "$snapshot_dir/$f" || return 1
+    fi
+  done
+
+  # Copy research/summary.md if it exists
+  if [[ -f "$artifact_dir/research/summary.md" ]]; then
+    mkdir -p "$snapshot_dir/research" || return 1
+    cp "$artifact_dir/research/summary.md" "$snapshot_dir/research/summary.md" || return 1
+  fi
+
+  # Copy tasks/ directory contents if present
+  if [[ -d "$artifact_dir/tasks" ]]; then
+    mkdir -p "$snapshot_dir/tasks" || return 1
+    # Copy task-NN.md files and parallelization.md
+    for f in "$artifact_dir/tasks/"*; do
+      [[ -f "$f" ]] || continue
+      cp "$f" "$snapshot_dir/tasks/" || return 1
+    done
+  fi
+
+  return 0
+}
+
+# artifact_promote_next_phase <artifact_dir> <completed_phase_number>
+# Cleans up phase-scoped files after snapshot, preparing for the next phase.
+# Deletes: structure.md, plan.md, tasks/, reviews/, feedback/, .qrspi/
+# Resets frontmatter status to "draft" on remaining files (goals.md, design.md,
+# questions.md, research/summary.md).
+# Returns 0 on success, 1 on failure.
+artifact_promote_next_phase() {
+  local artifact_dir="$1"
+  local completed_phase_number="$2"
+
+  # Validate artifact_dir exists
+  [[ -d "$artifact_dir" ]] || return 1
+
+  # Delete phase-scoped files and directories
+  rm -f "$artifact_dir/structure.md"
+  rm -f "$artifact_dir/plan.md"
+  rm -rf "$artifact_dir/tasks"
+  rm -rf "$artifact_dir/reviews"
+  rm -rf "$artifact_dir/feedback"
+  rm -rf "$artifact_dir/.qrspi"
+
+  # Reset frontmatter status to draft on remaining files
+  local reset_files=("goals.md" "questions.md" "design.md" "research/summary.md")
+  local f
+  for f in "${reset_files[@]}"; do
+    if [[ -f "$artifact_dir/$f" ]]; then
+      # Replace status: <anything> with status: draft in frontmatter
+      sed -i '' 's/^status: .*/status: draft/' "$artifact_dir/$f" || return 1
+    fi
+  done
+
+  return 0
+}
