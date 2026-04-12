@@ -196,6 +196,21 @@ fix_type: test
 
 Present test results to the user: which acceptance criteria passed, which failed, overall test suite status. User approves test results before phase routing proceeds. On rejection, write feedback to `feedback/test-round-{NN}.md` and re-run the test fix loop.
 
+## Phase Learnings Gate
+
+Before proceeding to phase routing, ask the user:
+
+> "Before we proceed to phase routing: do you have any phase learnings or ideas for future phases?
+> - **Current-phase items** (things to fix now, constraints found): discuss these in conversation — we'll handle them before moving on.
+> - **Future work ideas** (new features, improvements for later phases): these will be appended to `future-goals.md` Ideas section.
+> (Press Enter to skip.)"
+
+If the user provides **future work ideas**: append as bullet points under `## Ideas` in `future-goals.md` in the artifact directory. If `## Ideas` section does not exist, create it.
+
+If the user provides **current-phase items**: discuss in conversation and resolve before proceeding to phase routing.
+
+If the user presses Enter or provides no input: skip silently.
+
 ## Terminal State — Phase Routing
 
 **Every phase gets a PR.** After acceptance testing passes, prepare a PR for the current phase: draft title (including phase number for multi-phase projects), summary referencing artifacts in `docs/qrspi/YYYY-MM-DD-{slug}/`. Show user for confirmation. On confirmation, create PR via `gh pr create`. If user declines (e.g., wants to review locally first), skip PR creation — code stays on the feature branch.

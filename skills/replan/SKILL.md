@@ -36,6 +36,7 @@ Required inputs:
 - Remaining task specs (next phase's `tasks/*.md`)
 - `plan.md` with `status: approved`
 - `design.md` with `status: approved` (phase boundary context and potential updates)
+- `future-goals.md` (if present) — contains Formal goals (approved for future phases with IDs) and Ideas (informal suggestions from Test/Integrate human gates). Read before producing analysis. Formal goals inform phase promotion. Ideas are presented to user as optional additions. If file does not exist, skip silently.
 
 Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. If `config.md` doesn't exist, default to `codex_reviews: false`.
 

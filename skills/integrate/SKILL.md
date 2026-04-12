@@ -158,6 +158,21 @@ fix_type: ci
 
 Present integration review results (clean or converged issue list) to user after each review round. Present CI results to user after each CI run. User must approve or choose an action (dispatch fixes, re-run reviews, accept, stop) at each gate before the pipeline advances. On rejection, write the user's feedback to `feedback/integrate-round-{NN}.md` (using the standard feedback file format from `using-qrspi`).
 
+## Phase Learnings Gate
+
+At the integration review human gate, after presenting review results and before invoking the terminal state, ask the user:
+
+> "Before we proceed: do you have any phase learnings or ideas for future phases?
+> - **Current-phase items** (things to fix now, constraints found): discuss these in conversation — we'll handle them before moving on.
+> - **Future work ideas** (new features, improvements for later phases): these will be appended to `future-goals.md` Ideas section.
+> (Press Enter to skip.)"
+
+If the user provides **future work ideas**: append as bullet points under `## Ideas` in `future-goals.md` in the artifact directory. If `## Ideas` section does not exist, create it.
+
+If the user provides **current-phase items**: discuss in conversation and resolve before proceeding.
+
+If the user presses Enter or provides no input: skip silently.
+
 ## Terminal State
 
 Recommend compaction: "Integration complete. This is a good point to compact context before the next step (`/compact`)."
