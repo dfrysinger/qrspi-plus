@@ -261,8 +261,6 @@ If `enforcement_default` is absent from the frontmatter, do not auto-add it here
 
 After state and config are valid, scan `tasks/task-*.md` for missing Phase 4 fields (`enforcement`, `allowed_files`, `constraints`). Output any warnings to stdout and continue — this is advisory only. Missing fields in task specs do not block the pipeline at entry.
 
-**State bootstrap:** Before checking artifact status, call `state_init_or_reconcile <artifact_dir>` to bootstrap or reconcile `.qrspi/state.json`. If it fails, stop and report.
-
 **Run selection for mid-pipeline entry:** When entering mid-pipeline, glob for `docs/qrspi/*/goals.md` directories. If multiple exist, present the list and ask the user which run to resume. Load `config.md` from the chosen directory to read the `route` list. Scan for approved artifacts, then invoke the first step in the route list that is not yet complete.
 
 **Determining the next step:** Iterate through the `route` list in order. The first entry without a corresponding approved artifact is the next step to run. Do not hardcode the sequence — always derive it from `config.md`'s `route` field.
