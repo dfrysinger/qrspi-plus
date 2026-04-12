@@ -15,6 +15,7 @@ Subagent analyzes completed phase, proposes updates with severity classification
 
 ```
 DO NOT CLASSIFY A MAJOR CHANGE AS MINOR TO SKIP THE BACKWARD LOOP
+DO NOT CLASSIFY A SCOPE-UNKNOWN CHANGE AS MINOR
 ```
 
 ## Prompt Templates
@@ -43,7 +44,8 @@ If any required artifact is missing or not approved, refuse to run and tell the 
 <HARD-GATE>
 Do NOT update approved artifacts without user approval of the proposed changes.
 Do NOT classify a major change as minor to avoid the backward loop.
-Do NOT skip the backward loop for major changes — cascading re-approval is the invariant.
+Do NOT classify a scope-unknown change as minor — default to most stringent treatment.
+Do NOT skip the backward loop for major or scope-unknown changes — cascading re-approval is the invariant.
 </HARD-GATE>
 
 ## Process
@@ -71,6 +73,8 @@ flowchart TD
     N3 --> N4[Delete replan-pending.md]
     N4 --> N5[Recommend compaction]
     N5 --> O((Invoke loop-back target — normal pipeline resumes))
+    F -->|yes, scope-unknown| P[Treat as Major — identify loop-back target]
+    P --> N
 ```
 
 ## Severity Classification
@@ -80,13 +84,18 @@ flowchart TD
 | Task spec wording, LOC estimates, test expectations | **Minor** | None — update in place | "Task 7 needs an extra edge case test", "Task 9 LOC estimate should be ~400 not ~250" |
 | Add/remove/split/merge tasks within existing slices | **Minor** | None — update plan.md + tasks | "Split Task 8 into 8a and 8b", "Add Task 12 for missed validation" |
 | Reorder tasks or change dependencies | **Minor** | None — update plan.md | "Task 10 should run before Task 9" |
+| Impact unclear, cross-cutting, or ambiguous scope | **Scope Unknown** | Treat as Major — use most stringent loop-back target | "This might affect file paths or it might not", "Unclear if this changes the API contract" |
 | Change file paths or add files within existing slices | **Major** | Structure | "Need a new middleware file not in structure.md" |
 | Change interfaces between components | **Major** | Structure | "The API contract for /entries needs a new field" |
 | Change technology choice, approach, or architecture | **Major** | Design | "Switch from polling to WebSockets for real-time" |
 | Change phase boundaries or slice definitions | **Major** | Design | "Move Task 8 from Phase 2 to Phase 3" |
 | Change vertical slice decomposition | **Major** | Design | "Notifications should be its own slice, not part of the social slice" |
+| Change project goals, acceptance criteria, or constraints | **Major** | Goals | "The MVP scope should include notifications, not just messaging" |
+| Fundamental re-evaluation of project direction | **Major** | Goals | "We should target mobile-first instead of desktop-first" |
 
-**Key rule:** The loop-back target is the **earliest affected artifact**. If file paths change, loop back to Structure (which cascades to Plan). If architecture changes, loop back to Design (which cascades to Structure -> Plan).
+**Classification criteria for Scope Unknown:** Use when the impact of a change is unclear and you cannot confidently classify it as Minor or Major. Default to the most stringent treatment — treat as Major and identify the earliest plausible loop-back target. Do not guess Minor when scope is ambiguous.
+
+**Key rule:** The loop-back target is the **earliest affected artifact**. If file paths change, loop back to Structure (which cascades to Plan). If architecture changes, loop back to Design (which cascades to Structure -> Plan). If goals or acceptance criteria change, loop back to Goals (which resets all artifacts to draft — the entire pipeline re-runs).
 
 ## Replan Subagent
 
@@ -120,16 +129,17 @@ On rejection: write feedback to `feedback/replan-minor-phase-NN-round-MM.md` (no
 
 ## Human Gate — Major Changes
 
-Identify earliest loop-back target (Design or Structure).
+Identify earliest loop-back target (Goals, Design, or Structure).
 
 Write replan proposals to `feedback/replan-phase-NN-round-MM.md` with: what changed, why, phase learnings. Primary input for loop-back skill. Proposed changes described here, NOT applied to artifacts directly.
 
-Reset target artifact and all downstream artifacts to `status: draft`. Includes both main artifacts AND their outputs: loop to Design resets `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`; loop to Structure resets `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`. No content changes — just status reset. (Task files and `parallelization.md` must be reset because Plan and Worktree will re-produce them during the cascade.)
+Reset target artifact and all downstream artifacts to `status: draft`. Includes both main artifacts AND their outputs: loop to Goals resets all artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`); loop to Design resets `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`; loop to Structure resets `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`. No content changes — just status reset. (Task files and `parallelization.md` must be reset because Plan and Worktree will re-produce them during the cascade.)
 
 Recommend compaction before invoking target skill.
 
-- **Loop back to Structure:** Invoke `qrspi:structure` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
+- **Loop back to Goals:** Invoke `qrspi:goals` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
 - **Loop back to Design:** Invoke `qrspi:design` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
+- **Loop back to Structure:** Invoke `qrspi:structure` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
 
 **Fire-and-forget:** After writing the feedback file and resetting statuses, Replan invokes the loop-back target skill directly and exits. The normal pipeline terminal state routing takes over — Design invokes Structure, Structure invokes Plan, Plan invokes Worktree. Replan does not orchestrate the cascade or maintain control. Each downstream skill picks up the feedback file as additional input through its normal process.
 
@@ -187,6 +197,51 @@ Sub-tasks for Replan:
 | "This is just a wording change to design.md" | If you're changing design.md, you're in a major loop-back. The severity table governs, not your judgment. |
 | "Replan isn't needed, the phase went smoothly" | If Test invoked Replan, more phases remain. Review remaining tasks for accuracy even if no changes are needed — confirm explicitly. |
 | "I can apply the changes and show diffs later" | Present proposals first, get approval, then apply. The user reviews intent before execution. |
+| "The scope is unclear but it's probably minor" | Unclear scope = Scope Unknown. Default to the most stringent treatment. |
+
+## Clarifying Amendments
+
+Clarifying amendments are changes to approved artifacts that refine wording, fix ambiguity, or add detail without changing intent. They are distinct from Replan proposals because they don't arise from phase learnings — they arise from noticing that an artifact could be clearer.
+
+### Amendment Classification
+
+| Type | Description | Cascade behavior | Example |
+|---|---|---|---|
+| **Clarifying** | Refines wording or fixes ambiguity without changing intent | `--skip-cascade` — no downstream reset | "Change 'handle errors' to 'return HTTP 4xx on validation failure'" |
+| **Additive** | Adds new detail that doesn't contradict existing content | `--skip-cascade` — no downstream reset | "Add acceptance criterion: 'must support pagination'" |
+| **Architectural** | Changes intent, structure, or approach | Full cascade — treat as Replan Major | "Change 'REST API' to 'GraphQL'" — this is NOT an amendment, route through Replan |
+
+### Rationale Presentation
+
+Before applying any amendment, present to the user:
+
+1. **Diff:** Show the exact text change (old vs new)
+2. **Classification:** Clarifying, Additive, or Architectural
+3. **Rationale:** Why this amendment improves the artifact
+4. **Confirm/Reject:** User must explicitly approve before application
+
+If the user classifies an amendment as Architectural, stop and route through the normal Replan process instead.
+
+### Application
+
+After user approval:
+
+1. Apply the text change to the artifact file
+2. Call `pipeline_cascade_reset <step> <artifact_dir> --skip-cascade` — this resets only the amended artifact's state to draft, leaving downstream artifacts untouched
+3. Log the amendment in the artifact's frontmatter or a dedicated amendment log
+
+### Amendment Log Format
+
+Append to the artifact file, inside the frontmatter:
+
+```yaml
+amendments:
+  - date: YYYY-MM-DD
+    type: clarifying|additive
+    summary: "Brief description of what changed"
+```
+
+This log provides an audit trail of refinements without polluting the main content. Architectural changes are never logged here — they go through Replan and produce feedback files.
 
 ## Worked Example — Good (Minor)
 

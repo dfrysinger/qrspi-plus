@@ -76,15 +76,30 @@ artifact_is_known() {
   esac
 }
 
-# artifact_sync_state <file_path> <artifact_dir>
+# artifact_sync_state <file_path> <artifact_dir> [--skip-cascade]
 # Called after a known artifact is written:
 # - Reads frontmatter status via frontmatter_get
 # - If status: approved → update state.json artifacts map to set that step = "approved"
 # - If status: draft → call pipeline_cascade_reset to reset that step and all downstream
+#   (with --skip-cascade: resets only that step, leaves downstream untouched)
 # - For design.md specifically: also read wireframe_requested field and sync to state.json
+# Rejects unknown flags with return 1.
 artifact_sync_state() {
   local file_path="$1"
   local artifact_dir="$2"
+  shift 2
+
+  # Parse optional flags
+  local cascade_flag=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --skip-cascade) cascade_flag="--skip-cascade"; shift ;;
+      *)
+        echo "artifact_sync_state: unknown flag '$1'" >&2
+        return 1
+        ;;
+    esac
+  done
 
   # Get the step name for this artifact
   local step
@@ -115,8 +130,12 @@ artifact_sync_state() {
     state=$(echo "$state" | jq -c ".artifacts.$step = \"approved\"")
     state_changed=true
   elif [[ "$fm_status" == "draft" ]]; then
-    # Cascade reset from this step onwards
-    pipeline_cascade_reset "$step" "$artifact_dir"
+    # Cascade reset from this step onwards (pass --skip-cascade if set)
+    if [[ -n "$cascade_flag" ]]; then
+      pipeline_cascade_reset "$step" "$artifact_dir" "$cascade_flag"
+    else
+      pipeline_cascade_reset "$step" "$artifact_dir"
+    fi
     state=$(state_read)
     state_changed=true
   fi

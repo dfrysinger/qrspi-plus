@@ -409,3 +409,86 @@ DESIGNEOF
   # Verify it's valid JSON
   echo "$state" | jq . >/dev/null 2>&1
 }
+
+# ============================================================================
+# [T15] artifact_sync_state with --skip-cascade tests
+# ============================================================================
+
+# Helper to create all artifacts with approved status
+_t15_create_all_approved() {
+  mkdir -p "$ARTIFACT_DIR/research"
+  create_artifact_file "$ARTIFACT_DIR/goals.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/questions.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/research/summary.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/design.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/structure.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/plan.md" "approved"
+}
+
+@test "[T15-A1] artifact_sync_state design.md (draft, no flag) -> full cascade from design" {
+  _t15_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # Set design to draft on disk
+  create_artifact_file "$ARTIFACT_DIR/design.md" "draft"
+
+  # Sync without --skip-cascade
+  artifact_sync_state "$ARTIFACT_DIR/design.md" "$ARTIFACT_DIR"
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+}
+
+@test "[T15-A2] artifact_sync_state design.md (draft, --skip-cascade) -> resets only design" {
+  _t15_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # Set design to draft on disk
+  create_artifact_file "$ARTIFACT_DIR/design.md" "draft"
+
+  # Sync with --skip-cascade
+  artifact_sync_state "$ARTIFACT_DIR/design.md" "$ARTIFACT_DIR" --skip-cascade
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "approved" ]]
+}
+
+@test "[T15-A3] artifact_sync_state design.md (approved, --skip-cascade) -> sets design=approved, no downstream changes" {
+  _t15_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # Manually set structure and plan to draft in state to verify they stay untouched
+  local state
+  state=$(state_read)
+  state=$(echo "$state" | jq '.artifacts.structure = "draft"')
+  state=$(echo "$state" | jq '.artifacts.plan = "draft"')
+  state_write_atomic "$state"
+
+  # design.md stays approved on disk
+  artifact_sync_state "$ARTIFACT_DIR/design.md" "$ARTIFACT_DIR" --skip-cascade
+
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+}
+
+@test "[T15-A4] artifact_sync_state with unknown flag -> returns non-zero" {
+  _t15_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  run artifact_sync_state "$ARTIFACT_DIR/design.md" "$ARTIFACT_DIR" --bogus-flag
+  [ "$status" -ne 0 ]
+}
