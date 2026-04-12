@@ -242,7 +242,7 @@ constraints: []
   [[ $status -eq 0 ]]
 }
 
-@test "enforcement_check_allowlist: absolute path matched against relative path in allowlist" {
+@test "enforcement_check_allowlist: absolute file path does NOT match relative allowlist entry (pre-resolve required)" {
   local task_file="$ARTIFACT_DIR/tasks/task-13.md"
   create_task_spec "$task_file" "---
 enforcement: strict
@@ -255,8 +255,74 @@ constraints: []
 # Task 13
 "
   cd "$TEST_TEMP_DIR"
-  # Pass an absolute path — should strip working dir prefix and match the relative path
+  # Allowlist has relative path but we pass absolute path — no match expected.
+  # Paths must be pre-resolved to absolute via task_resolve_allowlist_paths before
+  # enforcement_check_allowlist is called; direct string comparison is used.
   run enforcement_check_allowlist "$TEST_TEMP_DIR/hooks/lib/enforcement.sh" 13 "$ARTIFACT_DIR"
+  [[ $status -eq 2 ]]
+}
+
+# ============================================================================
+# U10: Pre-resolved absolute path matching tests
+# ============================================================================
+
+@test "[U10-T1] enforcement_check_allowlist: pre-resolved absolute path matches allowlist entry" {
+  local task_file="$ARTIFACT_DIR/tasks/task-14.md"
+  local abs_path="/resolved/absolute/hooks/lib/enforcement.sh"
+  create_task_spec "$task_file" "---
+enforcement: strict
+allowed_files:
+  - action: create
+    path: /resolved/absolute/hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 14
+"
+  cd "$TEST_TEMP_DIR"
+  run enforcement_check_allowlist "$abs_path" 14 "$ARTIFACT_DIR"
+  [[ $status -eq 0 ]]
+}
+
+@test "[U10-T2] enforcement_check_allowlist: pre-resolved absolute path not in allowlist returns 2" {
+  local task_file="$ARTIFACT_DIR/tasks/task-15.md"
+  create_task_spec "$task_file" "---
+enforcement: strict
+allowed_files:
+  - action: create
+    path: /resolved/absolute/hooks/lib/enforcement.sh
+constraints: []
+---
+
+# Task 15
+"
+  cd "$TEST_TEMP_DIR"
+  run enforcement_check_allowlist "/some/other/absolute/path.sh" 15 "$ARTIFACT_DIR"
+  [[ $status -eq 2 ]]
+}
+
+@test "[U10-T3] enforcement_check_allowlist does not contain realpath/readlink/pwd path-resolution logic" {
+  local script_path="$BATS_TEST_DIRNAME/../../hooks/lib/enforcement.sh"
+  # None of these path-resolution commands should appear in enforcement_check_allowlist
+  # (they should only be in task.sh now)
+  ! grep -q "realpath\|readlink\|cwd=\$(pwd)" "$script_path"
+}
+
+@test "[U10-T4] enforcement_check_allowlist: direct string comparison matches identical absolute paths" {
+  local task_file="$ARTIFACT_DIR/tasks/task-16.md"
+  local abs_path="/absolute/path/to/file.sh"
+  create_task_spec "$task_file" "---
+enforcement: strict
+allowed_files:
+  - action: modify
+    path: /absolute/path/to/file.sh
+constraints: []
+---
+
+# Task 16
+"
+  cd "$TEST_TEMP_DIR"
+  run enforcement_check_allowlist "$abs_path" 16 "$ARTIFACT_DIR"
   [[ $status -eq 0 ]]
 }
 

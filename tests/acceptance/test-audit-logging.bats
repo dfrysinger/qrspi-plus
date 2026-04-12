@@ -37,9 +37,15 @@ create_task_spec() {
   local task_num="$1"
   local enforcement="${2:-monitored}"
   shift 2
+  # Relative paths are resolved to absolute using WORK_DIR as base,
+  # matching the pre-resolved path contract expected by enforcement_check_allowlist.
   local allowed_block=""
   for p in "$@"; do
-    allowed_block="${allowed_block}  - action: create\n    path: ${p}\n"
+    local resolved_p="$p"
+    if [[ "$p" != /* ]]; then
+      resolved_p="$WORK_DIR/$p"
+    fi
+    allowed_block="${allowed_block}  - action: create\n    path: ${resolved_p}\n"
   done
   printf -- '---\nstatus: approved\ntask: %s\nphase: 1\nenforcement: %s\nallowed_files:\n%s\nconstraints: []\n---\n\n# Task %s\n' \
     "$task_num" "$enforcement" "$(printf '%b' "$allowed_block")" "$task_num" \

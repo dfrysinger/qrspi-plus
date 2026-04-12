@@ -257,7 +257,12 @@ if [[ $is_bash_tool -eq 1 ]]; then
     if [[ -n "${targets:-}" ]]; then
       while IFS= read -r target; do
         [[ -z "$target" ]] && continue
-        if ! enforcement_check_allowlist "$target" "$task_id" "$artifact_dir"; then
+        # Resolve relative paths to absolute before enforcement check
+        abs_target="$target"
+        if [[ "$target" != /* ]]; then
+          abs_target="${PWD}/${target}"
+        fi
+        if ! enforcement_check_allowlist "$abs_target" "$task_id" "$artifact_dir"; then
           reason="File not in allowlist for task ${task_id}: ${target}. Options: 1) Ask user to approve 2) Switch to monitored 3) Find alternative"
           block_with_reason "$reason"
         fi

@@ -71,7 +71,7 @@ enforcement_get_mode() {
 #       also writes three-option message to stderr on exit 2
 #   1 - error (cannot determine mode or read spec)
 #
-# Path matching: strips working directory prefix from file_path to get relative path.
+# Path matching: uses direct string comparison against pre-resolved absolute paths from task_resolve_allowlist_paths.
 enforcement_check_allowlist() {
   local file_path="$1"
   local task_id="$2"
@@ -84,23 +84,10 @@ enforcement_check_allowlist() {
     return 1
   fi
 
-  # Convert absolute path to relative so it matches allowlist entries.
-  # Claude Code sends absolute paths (e.g., /Users/.../project/src/main.sh)
-  # but task specs declare allowed files as relative (e.g., src/main.sh).
-  # If the file is outside the working directory (e.g., /tmp/foo), the
-  # absolute path is kept — it won't match any allowlist entry and will
-  # be blocked.
-  local rel_path="$file_path"
-  local cwd
-  cwd="$(pwd)"
-  if [[ "$file_path" == /* ]]; then
-    rel_path="${file_path#"${cwd}/"}"
-    if [[ "$rel_path" == /* ]]; then
-      rel_path="$file_path"
-    fi
-  fi
-
   # Read allowed_files from task spec
+  # Paths in the allowlist are expected to be pre-resolved absolute paths
+  # (resolved by task_resolve_allowlist_paths at spec load time).
+  # Direct string comparison is used — no per-call path resolution here.
   local spec_path
   spec_path=$(task_get_spec_path "$task_id" "$artifact_dir")
   local frontmatter_json
@@ -116,7 +103,7 @@ enforcement_check_allowlist() {
 
   # Check spec allowed_files
   while IFS= read -r allowed_path; do
-    if [[ -n "$allowed_path" && "$allowed_path" == "$rel_path" ]]; then
+    if [[ -n "$allowed_path" && "$allowed_path" == "$file_path" ]]; then
       echo "true"
       return 0
     fi
@@ -128,7 +115,7 @@ enforcement_check_allowlist() {
     local overrides_approved
     overrides_approved=$(echo "$overrides_json" | jq -r '.user_approved_files[]?' 2>/dev/null || true)
     while IFS= read -r approved_path; do
-      if [[ -n "$approved_path" && "$approved_path" == "$rel_path" ]]; then
+      if [[ -n "$approved_path" && "$approved_path" == "$file_path" ]]; then
         echo "true"
         return 0
       fi
@@ -147,7 +134,7 @@ enforcement_check_allowlist() {
   local padded_id
   padded_id=$(printf "%02d" "$task_id")
   printf "BLOCKED: File '%s' is not in the allowlist for task %s.\nOptions:\n  1. approve this file (add to runtime allowlist)\n  2. switch to monitored mode for this task\n  3. reject and stop\n" \
-    "$rel_path" "$padded_id" >&2
+    "$file_path" "$padded_id" >&2
 
   return 2
 }
