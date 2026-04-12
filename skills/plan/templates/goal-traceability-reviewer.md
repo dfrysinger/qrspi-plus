@@ -98,7 +98,7 @@ If issues found:
     Gap: [what is missing or mismatched]
     Recommendation: [what task to add, modify, or remove]
 
-Categories: UNCOVERED_CRITERION (goal with no task), UNTRACEABLE_TASK
+Categories: UNCOVERED_CRITERION (goal with no task), UNTRACEABLE_EXPECTATION
 (task with no goal), SPEC_DESIGN_MISMATCH (plan diverges from design),
 WRONG_TASK_COVERAGE (task claims to cover criterion but doesn't)
 ```
