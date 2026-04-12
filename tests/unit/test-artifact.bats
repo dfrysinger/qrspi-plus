@@ -343,7 +343,47 @@ EOF
   [[ $(echo "$state" | jq -r '.wireframe_requested') == "false" ]]
 }
 
-# Test 20: State written atomically (file exists after write)
+# Test 20: wireframe_requested beyond line 10 in frontmatter is parsed correctly
+@test "artifact_sync_state design.md with wireframe_requested beyond line 10 parses correctly" {
+  create_artifact_file "$ARTIFACT_DIR/goals.md" "draft"
+  mkdir -p "$ARTIFACT_DIR/research"
+  create_artifact_file "$ARTIFACT_DIR/questions.md" "draft"
+  create_artifact_file "$ARTIFACT_DIR/research/summary.md" "draft"
+  create_artifact_file "$ARTIFACT_DIR/structure.md" "draft"
+  create_artifact_file "$ARTIFACT_DIR/plan.md" "draft"
+
+  # Create design.md with wireframe_requested well past line 10
+  cat > "$ARTIFACT_DIR/design.md" <<'DESIGNEOF'
+---
+status: draft
+title: Big Design
+author: Test Author
+description: A very long description
+category: architecture
+phase: 4
+priority: high
+reviewer: nobody
+tags: foo bar baz
+notes: extra notes here
+wireframe_requested: true
+---
+
+# Design content
+DESIGNEOF
+
+  # Initialize state
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # Sync state with design.md
+  artifact_sync_state "$ARTIFACT_DIR/design.md" "$ARTIFACT_DIR"
+
+  # Verify wireframe_requested was synced — proves no line-10 limit
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.wireframe_requested') == "true" ]]
+}
+
+# Test 21: State written atomically (file exists after write)
 @test "artifact_sync_state writes state atomically" {
   create_artifact_file "$ARTIFACT_DIR/goals.md" "approved"
   mkdir -p "$ARTIFACT_DIR/research"

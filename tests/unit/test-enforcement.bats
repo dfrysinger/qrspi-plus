@@ -270,6 +270,6 @@ constraints: []
 }
 
 @test "enforcement.sh sources task.sh" {
-  # Verify task_read_frontmatter is available after sourcing enforcement.sh
-  declare -f task_read_frontmatter > /dev/null
+  # Verify frontmatter_get is available after sourcing enforcement.sh (via task.sh)
+  declare -f frontmatter_get > /dev/null
 }

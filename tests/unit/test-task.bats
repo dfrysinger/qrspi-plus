@@ -23,27 +23,37 @@ create_task_spec() {
 }
 
 # ============================================================================
-# task_read_frontmatter tests
+# task_read_frontmatter removed — verify it no longer exists
 # ============================================================================
 
-@test "task_read_frontmatter: reads all Phase 4 fields correctly" {
+@test "task_read_frontmatter must not exist as a function after sourcing" {
+  run bash -c 'source "$1" && declare -f task_read_frontmatter >/dev/null 2>&1 && echo exists || echo gone' _ "$BATS_TEST_DIRNAME/../../hooks/lib/task.sh"
+  [[ "$output" == "gone" ]]
+}
+
+@test "frontmatter_get is available after sourcing task.sh" {
+  run bash -c 'source "$1" && declare -f frontmatter_get >/dev/null 2>&1 && echo exists || echo gone' _ "$BATS_TEST_DIRNAME/../../hooks/lib/task.sh"
+  [[ "$output" == "exists" ]]
+}
+
+@test "frontmatter_get on a full Phase 4 task spec returns valid JSON with enforcement, allowed_files, constraints" {
   local task_file="$ARTIFACT_DIR/tasks/task-01.md"
   create_task_spec "$task_file" "---
 enforcement: strict
 allowed_files:
-  - action: create
-    path: hooks/lib/example.sh
-  - action: modify
-    path: hooks/session-start
+- action: create
+  path: hooks/lib/example.sh
+- action: modify
+  path: hooks/session-start
 constraints:
-  - Must source frontmatter.sh
-  - No external deps
+- Must source frontmatter.sh
+- No external deps
 ---
 
 # Task content here
 "
 
-  output=$(task_read_frontmatter "$task_file")
+  output=$(frontmatter_get "$task_file")
 
   # Verify JSON structure
   echo "$output" | jq . > /dev/null
@@ -69,131 +79,6 @@ constraints:
   # Check first constraint
   constraint=$(echo "$output" | jq -r '.constraints[0]')
   [[ "$constraint" == "Must source frontmatter.sh" ]]
-}
-
-@test "task_read_frontmatter: reads enforcement after status/task/phase fields" {
-  # Regression: enforcement regex must not require ^ anchor (enforcement is not first field)
-  local task_file="$ARTIFACT_DIR/tasks/task-20.md"
-  create_task_spec "$task_file" "---
-status: approved
-task: 20
-phase: 1
-enforcement: strict
-allowed_files:
-  - action: create
-    path: src/main.sh
-constraints: []
----
-
-# Task 20
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  enforcement=$(echo "$output" | jq -r '.enforcement')
-  [[ "$enforcement" == "strict" ]]
-}
-
-@test "task_read_frontmatter: defaults to strict when enforcement missing (fail-closed)" {
-  local task_file="$ARTIFACT_DIR/tasks/task-02.md"
-  create_task_spec "$task_file" "---
-allowed_files: []
-constraints: []
----
-
-# Task content
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  enforcement=$(echo "$output" | jq -r '.enforcement')
-  [[ "$enforcement" == "strict" ]]
-}
-
-@test "task_read_frontmatter: returns empty allowed_files when missing" {
-  local task_file="$ARTIFACT_DIR/tasks/task-03.md"
-  create_task_spec "$task_file" "---
-enforcement: strict
-constraints: []
----
-
-# Task content
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  files_count=$(echo "$output" | jq '.allowed_files | length')
-  [[ "$files_count" == "0" ]]
-}
-
-@test "task_read_frontmatter: returns empty constraints when missing" {
-  local task_file="$ARTIFACT_DIR/tasks/task-04.md"
-  create_task_spec "$task_file" "---
-enforcement: strict
-allowed_files: []
----
-
-# Task content
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  constraints_count=$(echo "$output" | jq '.constraints | length')
-  [[ "$constraints_count" == "0" ]]
-}
-
-@test "task_read_frontmatter: all Phase 4 fields missing returns defaults" {
-  local task_file="$ARTIFACT_DIR/tasks/task-05.md"
-  create_task_spec "$task_file" "---
-title: Some task
----
-
-# Task content
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  enforcement=$(echo "$output" | jq -r '.enforcement')
-  files_count=$(echo "$output" | jq '.allowed_files | length')
-  constraints_count=$(echo "$output" | jq '.constraints | length')
-
-  [[ "$enforcement" == "strict" ]]
-  [[ "$files_count" == "0" ]]
-  [[ "$constraints_count" == "0" ]]
-}
-
-@test "task_read_frontmatter: nonexistent file returns 1" {
-  run task_read_frontmatter "/nonexistent/file.md"
-  [[ $status == 1 ]]
-}
-
-@test "task_read_frontmatter: multi-entry allowed_files parsed correctly" {
-  local task_file="$ARTIFACT_DIR/tasks/task-06.md"
-  create_task_spec "$task_file" "---
-enforcement: strict
-allowed_files:
-  - action: create
-    path: file1.sh
-  - action: modify
-    path: file2.sh
-  - action: delete
-    path: file3.sh
-constraints: []
----
-
-# Content
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  files_count=$(echo "$output" | jq '.allowed_files | length')
-  [[ "$files_count" == "3" ]]
-
-  # Verify second entry
-  action=$(echo "$output" | jq -r '.allowed_files[1].action')
-  path=$(echo "$output" | jq -r '.allowed_files[1].path')
-  [[ "$action" == "modify" ]]
-  [[ "$path" == "file2.sh" ]]
-
-  # Verify third entry
-  action=$(echo "$output" | jq -r '.allowed_files[2].action')
-  path=$(echo "$output" | jq -r '.allowed_files[2].path')
-  [[ "$action" == "delete" ]]
-  [[ "$path" == "file3.sh" ]]
 }
 
 # ============================================================================
@@ -327,6 +212,6 @@ constraints: []
 }
 
 @test "task.sh sources frontmatter.sh" {
-  # Verify frontmatter_get_status is available after sourcing task.sh
-  declare -f frontmatter_get_status > /dev/null
+  # Verify frontmatter_get is available after sourcing task.sh
+  declare -f frontmatter_get > /dev/null
 }

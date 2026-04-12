@@ -78,7 +78,7 @@ artifact_is_known() {
 
 # artifact_sync_state <file_path> <artifact_dir>
 # Called after a known artifact is written:
-# - Reads frontmatter status via frontmatter_get_status
+# - Reads frontmatter status via frontmatter_get
 # - If status: approved → update state.json artifacts map to set that step = "approved"
 # - If status: draft → call pipeline_cascade_reset to reset that step and all downstream
 # - For design.md specifically: also read wireframe_requested field and sync to state.json
@@ -92,7 +92,10 @@ artifact_sync_state() {
 
   # Read frontmatter status
   local fm_status
-  fm_status=$(frontmatter_get_status "$file_path") || return 1
+  fm_status=$(frontmatter_get "$file_path" "status") || return 1
+  # frontmatter_get returns exit 0 with empty string when field is absent;
+  # treat that like the old frontmatter_get_status behavior (return 1)
+  [[ -n "$fm_status" ]] || return 1
 
   # Read current state
   local state
@@ -120,41 +123,16 @@ artifact_sync_state() {
 
   # For design.md specifically: sync wireframe_requested field
   if [[ "$step" == "design" ]]; then
-    # Read the design.md file and extract wireframe_requested from frontmatter
-    # Look for "wireframe_requested: true" or "wireframe_requested: false"
-    local wireframe_str_value="false"
-
-    # Read first 10 lines to find wireframe_requested
-    local line_num=0
-    local in_frontmatter=0
-    while IFS= read -r line && [[ $line_num -lt 10 ]]; do
-      line_num=$((line_num + 1))
-
-      # Line 1: must be opening ---
-      if [[ $line_num -eq 1 ]]; then
-        if [[ "$line" == "---" ]]; then
-          in_frontmatter=1
-        else
-          break
-        fi
-        continue
+    local wireframe_str_value
+    wireframe_str_value=$(frontmatter_get "$file_path" "wireframe_requested") || {
+      local _ec=$?
+      if [[ $_ec -eq 1 ]]; then
+        echo "artifact_sync_state: WARNING: design.md not found at ${file_path} — treating wireframe_requested as false" >&2
       fi
-
-      # Lines 2+: look for closing --- or wireframe_requested field
-      if [[ $in_frontmatter -eq 1 ]]; then
-        if [[ "$line" == "---" ]]; then
-          break
-        fi
-
-        # Check for wireframe_requested field
-        if [[ "$line" =~ ^wireframe_requested: ]]; then
-          local value="${line#wireframe_requested:}"
-          value="${value#"${value%%[![:space:]]*}"}"  # trim leading whitespace
-          value="${value%"${value##*[![:space:]]}"}"  # trim trailing whitespace
-          wireframe_str_value="$value"
-        fi
-      fi
-    done < "$file_path"
+      wireframe_str_value="false"
+    }
+    # Default to "false" when field is absent (frontmatter_get returns empty)
+    wireframe_str_value="${wireframe_str_value:-false}"
 
     # Convert string to JSON boolean value
     local wireframe_json_value="false"
