@@ -482,6 +482,7 @@ FIXTURE="$BATS_TEST_DIRNAME/../fixtures/validate-config-field.sh"
   [[ "$output" == *"1)"* ]]
   [[ "$output" == *"2)"* ]]
   [[ "$output" == *"3)"* ]]
+  ! echo "$output" | grep -q "4)"
 }
 
 # 3. Missing pipeline field

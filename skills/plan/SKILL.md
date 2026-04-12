@@ -35,6 +35,13 @@ Read `config.md` from the artifact directory to determine whether Codex reviews 
 
 Before using any config field, validate the following:
 
+**If `config.md` is missing:**
+
+  config.md not found. Cannot determine pipeline mode or route.
+
+  1) Re-run Goals to create config.md and set the pipeline mode
+  2) Abort
+
 **If `pipeline` is missing:**
 
   config.md has no `pipeline` field.
