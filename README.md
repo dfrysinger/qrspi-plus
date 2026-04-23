@@ -10,61 +10,35 @@ qrspi-plus is a Claude Code plugin that implements QRSPI — a methodology for a
 
 ```mermaid
 flowchart TD
-    subgraph alignment["Alignment (Goals through Plan)"]
-        Goals[Goals] --> Questions[Questions]
-        Questions --> Research[Research]
-        Research --> Design[Design]
-        Design --> Structure[Structure]
-        Structure --> Plan[Plan]
-    end
-    subgraph execution["Execution (Worktree through Test)"]
-        Worktree[Worktree] --> Implement[Implement]
-        Implement --> Integrate[Integrate]
-        Integrate --> Test[Test]
-        Test --> PR[Create PR]
-        PR -->|more phases| Replan[Replan]
-        Replan -->|next phase| Worktree
-    end
-    Plan --> Worktree
+    %% Alignment
+    Goals[Goals] --> Questions[Questions]
+    Questions --> Research[Research]
+    Research --> Design[Design]
+    Design --> Structure[Structure]
+    Structure --> Plan[Plan]
+
+    %% Quick fix shortcut: Research skips directly to Plan
+    Research -.->|quick fix| Plan
+
+    %% Execution
+    Plan --> Worktree[Worktree]
+    Worktree --> Implement[Implement]
+    Implement --> Integrate[Integrate]
+    Integrate --> Test[Test]
+    Test --> PR[Create PR]
+    PR -->|more phases| Replan[Replan]
+    Replan -->|next phase| Worktree
+
+    %% Quick fix shortcut: Plan skips directly to Implement
+    Plan -.->|quick fix| Implement
+
     PR -->|last phase| Done((Done))
     Integrate -.->|fix tasks| Worktree
     Test -.->|fix tasks full| Worktree
     Test -.->|fix tasks quick| Implement
 ```
 
-The pipeline has two route variants:
-
-**Full pipeline** -- for features, new products, and anything requiring architectural design:
-
-```mermaid
-flowchart LR
-    G[Goals] --> Q[Questions]
-    Q --> R[Research]
-    R --> D[Design]
-    D --> S[Structure]
-    S --> P[Plan]
-    P --> W[Worktree]
-    W --> I[Implement]
-    I --> Int[Integrate]
-    Int --> T[Test]
-    T --> PR[PR]
-    PR -->|more phases| Re[Replan]
-    Re --> W
-    PR -->|final| Done((Done))
-```
-
-**Quick fix** -- for targeted bug fixes, small changes, and 1-3 file modifications. Skips Design, Structure, Worktree, and Integrate. Plan produces a single task.
-
-```mermaid
-flowchart LR
-    G[Goals] --> Q[Questions]
-    Q --> R[Research]
-    R --> P[Plan]
-    P --> I[Implement]
-    I --> T[Test]
-    T --> PR[PR]
-    PR --> Done((Done))
-```
+The pipeline has two routes. The **full pipeline** runs every step -- for features, new products, and anything requiring architectural design. The **quick fix** route (shown as dashed lines) skips Design, Structure, Worktree, and Integrate -- for targeted bug fixes, small changes, and 1-3 file modifications.
 
 ### Route Changes
 
@@ -113,9 +87,9 @@ Each goal must be independently scopeable -- it can be moved between phases with
 
 ```mermaid
 flowchart TD
-    A["Interactive dialogue\n(purpose, constraints, criteria, scope)"] --> B[Pipeline mode selection]
+    A["Interactive dialogue<br>(purpose, constraints, criteria, scope)"] --> B[Pipeline mode selection]
     B --> C[Write config.md with route]
-    C --> D["Launch synthesis subagent\n(conversation content only)"]
+    C --> D["Launch synthesis subagent<br>(conversation content only)"]
     D --> E["Artifact Review (Pattern 4)"]
     E --> F((Approved goals.md))
 ```
@@ -128,9 +102,9 @@ Generates tagged research questions from the approved goals. Each question is ta
 
 ```mermaid
 flowchart TD
-    A["Launch subagent\n(goals.md only)"] --> B[Generate tagged research questions]
-    B --> C["Review checks for\ngoal leakage + completeness"]
-    C --> D["Human gate\n(full questions presented verbatim)"]
+    A["Launch subagent<br>(goals.md only)"] --> B[Generate tagged research questions]
+    B --> C["Review checks for<br>goal leakage + completeness"]
+    C --> D["Human gate<br>(full questions presented verbatim)"]
     D --> E((Approved questions.md))
 ```
 
@@ -143,13 +117,13 @@ Dispatches parallel specialist subagents per question. Codebase researchers read
 ```mermaid
 flowchart TD
     A[Parse questions by research type] --> B[Dispatch parallel specialist subagents]
-    B --> C1["Codebase agent\n(file read, grep, glob)"]
-    B --> C2["Web agent\n(search, fetch)"]
-    B --> C3["Hybrid agent\n(all tools)"]
+    B --> C1["Codebase agent<br>(file read, grep, glob)"]
+    B --> C2["Web agent<br>(search, fetch)"]
+    B --> C3["Hybrid agent<br>(all tools)"]
     C1 --> D["q01-codebase.md"]
     C2 --> E["q02-web.md"]
     C3 --> F["q03-hybrid.md"]
-    D & E & F --> G["Synthesis subagent\n(NO goals.md)"]
+    D & E & F --> G["Synthesis subagent<br>(NO goals.md)"]
     G --> H["Artifact Review (Pattern 4)"]
     H --> I((Approved summary.md))
 ```
@@ -164,8 +138,8 @@ Design entries are phase-scoped: `design.md` contains only current-phase entries
 
 ```mermaid
 flowchart TD
-    A["Interactive: propose 2-3 approaches\nwith trade-offs"] --> B[User selects approach]
-    B --> C["Launch synthesis subagent\n(goals + research + discussion)"]
+    A["Interactive: propose 2-3 approaches<br>with trade-offs"] --> B[User selects approach]
+    B --> C["Launch synthesis subagent<br>(goals + research + discussion)"]
     C --> D["Artifact Review (Pattern 4)"]
     D --> E((Approved design.md))
 ```
@@ -178,7 +152,7 @@ Maps each vertical slice from the design to specific files and components. Defin
 
 ```mermaid
 flowchart TD
-    A["Launch subagent\n(goals + research + design)"] --> B["Map slices to files\n+ define interfaces"]
+    A["Launch subagent<br>(goals + research + design)"] --> B["Map slices to files<br>+ define interfaces"]
     B --> C[Generate Mermaid architecture diagram]
     C --> D["Artifact Review (Pattern 4)"]
     D --> E((Approved structure.md))
@@ -192,13 +166,13 @@ Breaks the structure into ordered tasks with detailed specs. Each task spec incl
 
 ```mermaid
 flowchart TD
-    A["Launch overview subagent\n(goals + research + design + structure)"] --> B{6+ tasks?}
+    A["Launch overview subagent<br>(goals + research + design + structure)"] --> B{6+ tasks?}
     B -->|yes| C[Farm task specs to sub-subagents]
     C --> D[Merge into single plan.md]
     B -->|no| D[Single merged plan.md]
-    D --> E["Architectural Plan Review (Pattern 5)\n5 parallel reviewer templates"]
+    D --> E["Architectural Plan Review (Pattern 5)<br>5 parallel reviewer templates"]
     E --> F[Human gate]
-    F --> G["Split into tasks/task-NN.md\nReduce plan.md to overview"]
+    F --> G["Split into tasks/task-NN.md<br>Reduce plan.md to overview"]
     G --> H((Approved plan + task files))
 ```
 
@@ -229,12 +203,12 @@ Example parallelization plan:
 
 ```mermaid
 flowchart LR
-    subgraph parallel1["Parallel Group 1"]
-        T1[Task 1: Auth + profiles\nworktree: task-01]
-        T2[Task 2: Box CRUD\nworktree: task-02]
+    subgraph parallel1["Parallel"]
+        T1[Task 1: Auth + profiles<br>worktree: task-01]
+        T2[Task 2: Box CRUD<br>worktree: task-02]
     end
     subgraph sequential["Sequential"]
-        T3[Task 3: Invitations\nworktree: task-03]
+        T3[Task 3: Invitations<br>worktree: task-03]
     end
     T1 --> T3
     T2 --> T3
@@ -248,16 +222,18 @@ TDD execution per task in an isolated worktree. The iron law: no production code
 
 Every function gets a header comment (purpose, inputs, outputs, failure behavior). Every non-obvious conditional gets an inline "why" comment.
 
+Worktree dispatches N parallel subagents, each running TDD + reviews:
+
 ```mermaid
 flowchart TD
-    subgraph dispatch["Worktree dispatches N parallel subagents"]
+    subgraph dispatch["Dispatch"]
         direction TB
-        SA1["Subagent 1\n(Task 1 in worktree)"]
-        SA2["Subagent 2\n(Task 2 in worktree)"]
-        SAN["Subagent N\n(Task N in worktree)"]
+        SA1["Subagent 1<br>(Task 1 in worktree)"]
+        SA2["Subagent 2<br>(Task 2 in worktree)"]
+        SAN["Subagent N<br>(Task N in worktree)"]
     end
 
-    subgraph pertask["Each subagent runs TDD + reviews"]
+    subgraph pertask["Per Task"]
         A[Read test expectations from task spec] --> B[Write failing tests]
         B --> C[Run tests -- VERIFY FAIL]
         C --> D{Tests fail as expected?}
@@ -274,7 +250,7 @@ flowchart TD
 
     dispatch --> pertask
 
-    K --> L["Batch gate\n(all tasks complete)"]
+    K --> L["Batch gate<br>(all tasks complete)"]
     L --> M{User decision}
     M -->|fix remaining + re-run| N[Re-enter fix cycles]
     M -->|re-run all reviews| O[Confidence check]
@@ -346,7 +322,7 @@ After tests pass and the user approves, each criterion with all mapped tests pas
 
 ```mermaid
 flowchart TD
-    A[Run full existing test suite] --> B["Launch test-writer subagent\n(goals.md + criteria mapping)"]
+    A[Run full existing test suite] --> B["Launch test-writer subagent<br>(goals.md + criteria mapping)"]
     B --> C["Review test code (Pattern 1)"]
     C --> CV{User approves coverage?}
     CV -->|add more tests| B
@@ -364,7 +340,7 @@ flowchart TD
     K -->|quick fix| NN[Route to Implement -> Test]
     M --> D
     NN --> D
-    CK["Update goals.md checkboxes\nfor passing criteria"] --> CR[Code review checkpoint]
+    CK["Update goals.md checkboxes<br>for passing criteria"] --> CR[Code review checkpoint]
     CR --> Q[Prepare PR for current phase]
     Q --> R{User confirms PR?}
     R -->|yes| S[Create PR via gh pr create]
@@ -398,7 +374,7 @@ flowchart TD
     J -->|no| G
     J -->|yes| K[Set status: approved, commit]
     K --> K2["Snapshot phase to phases/phase-NN/"]
-    K2 --> K3["Promote next phase goals\nfrom future-goals.md"]
+    K2 --> K3["Promote next phase goals<br>from future-goals.md"]
     K3 --> M((Invoke Worktree for next phase))
     F -->|yes, major| N[Identify loop-back target]
     N --> N2[Write feedback file]
@@ -520,7 +496,7 @@ flowchart TD
     C -->|no| D{Ask user: Present or Loop?}
     C -->|yes| E[Fix issues]
     E --> D
-    D -->|Present| F["Human gate\n(state review status)"]
+    D -->|Present| F["Human gate<br>(state review status)"]
     D -->|Loop until clean| G[Review round N]
     G --> H{Clean or 10 rounds?}
     H -->|clean or cap hit| F
@@ -528,8 +504,8 @@ flowchart TD
     I --> G
     F --> J{User approves?}
     J -->|yes| K[Write status: approved, commit]
-    J -->|no| L["Capture feedback\n(verbatim + rejected snapshot)"]
-    L --> M["Re-generate with new subagent\n+ all prior feedback files"]
+    J -->|no| L["Capture feedback<br>(verbatim + rejected snapshot)"]
+    L --> M["Re-generate with new subagent<br>+ all prior feedback files"]
     M --> B
 ```
 
@@ -537,14 +513,14 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["Merged plan.md ready"] --> B["Launch review subagent\nwith 5 parallel templates"]
+    A["Merged plan.md ready"] --> B["Launch review subagent<br>with 5 parallel templates"]
 
-    subgraph reviewers["5 Reviewer Templates (parallel)"]
-        R1["Spec Reviewer\n(completeness, placeholders)"]
-        R2["Security Reviewer\n(fail-closed, auth, defaults)"]
-        R3["Silent Failure Hunter\n(swallowed errors, fallbacks)"]
-        R4["Goal Traceability\n(goals -> tasks mapping)"]
-        R5["Test Coverage\n(edge cases, error conditions)"]
+    subgraph reviewers["Reviewers"]
+        R1["Spec Reviewer<br>(completeness, placeholders)"]
+        R2["Security Reviewer<br>(fail-closed, auth, defaults)"]
+        R3["Silent Failure Hunter<br>(swallowed errors, fallbacks)"]
+        R4["Goal Traceability<br>(goals -> tasks mapping)"]
+        R5["Test Coverage<br>(edge cases, error conditions)"]
     end
 
     B --> reviewers
@@ -863,17 +839,29 @@ All skills include three behavioral directives that override any conversational 
 
 ## Credits
 
-- **QRSPI methodology** from [HumanLayer](https://humanlayer.dev) by Dex Horthy. The original framework covers Goals, Questions, Research, Structure, Plan, and Implement as a methodology for steering coding agents.
-  - [No Vibes Allowed: Solving Hard Problems in Complex Codebases](https://www.youtube.com/watch?v=rmvDxxNubIg) -- the original RPI talk (AI Engineer World's Fair)
-  - [Everything We Got Wrong About RPI](https://www.youtube.com/watch?v=YwZR6tc7qYg) -- the follow-up introducing QRSPI
-  - [Slide deck](https://docs.google.com/presentation/d/1mnp0CzrRS02Y0t0vGvqX-_M5IbYPjFoZ/mobilepresent?slide=id.g3bef903f3c9_0_435) -- QRSPI talk starts at slide 291
-  - [Advanced Context Engineering for Coding Agents](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents) -- methodology docs and reference
+- **QRSPI methodology** from [HumanLayer](https://humanlayer.dev) by Dex Horthy. QRSPI is 7-or-8 stages depending on source (Questions, Research, Design, Structure, Plan, Worktree, Implement, plus PR as a formal stage or handoff). See [`docs/qrspi-canonical.md`](docs/qrspi-canonical.md) for the full per-step reference and source comparison.
+
+  **Primary sources:**
+  - [Slide deck](https://docs.google.com/presentation/d/1mnp0CzrRS02Y0t0vGvqX-_M5IbYPjFoZ/mobilepresent?slide=id.g3bef903f3c9_0_435) — Dex's QRSPI talk occupies pages 291-446 of the Coding Agents Summit 2026 conference deck. Mirrored locally at [`docs/slides/qrspi-deck.pdf`](docs/slides/qrspi-deck.pdf) (156 pages).
+  - [Advanced Context Engineering for Coding Agents (ACE-FCA)](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents) — the principles essay behind QRSPI. Mirrored at [`docs/upstream/ace-fca.md`](docs/upstream/ace-fca.md).
+  - [No Vibes Allowed: Solving Hard Problems in Complex Codebases](https://www.youtube.com/watch?v=rmvDxxNubIg) — the original RPI talk (AI Engineer World's Fair).
+  - [Everything We Got Wrong About Research-Plan-Implement](https://www.youtube.com/watch?v=YwZR6tc7qYg) — follow-up introducing QRSPI (Coding Agents Conference, Computer History Museum, March 2026).
+  - [From RPI to QRSPI](https://www.youtube.com/watch?v=5MWl3eRXVQk) — Coding Agents 2026, Mountain View.
+  - [How to Ship Complex Features 10x Faster with AI Agents](https://www.youtube.com/watch?v=c630qv03i8g) — Dex Horthy.
+
+  **Secondary / practitioner writeups:**
+  - [Alex Lavaee, "From RPI to QRSPI"](https://alexlavaee.me/blog/from-rpi-to-qrspi/) — per-stage scope + 8-stage enumeration + "CRISPY (technically QRSPI)" naming.
+  - [Heavybit, "What's Missing to Make AI Agents Mainstream?"](https://www.heavybit.com/library/article/whats-missing-to-make-ai-agents-mainstream) — March 2026 Dex Horthy interview; explicit "<40 instructions per step" framing.
+  - [Dev Interrupted, "Dex Horthy on Ralph, RPI, and escaping the Dumb Zone"](https://devinterrupted.substack.com/p/dex-horthy-on-ralph-rpi-and-escaping) — podcast teaser.
+
+  **Related framework precursors:**
+  - [12-Factor Agents](https://hlyr.dev/12fa) — cited in ACE-FCA.
 
 - **Built as a Claude Code plugin** using the skills, hooks, and agent conventions of the Claude Code plugin system.
 
 ### What qrspi-plus Adds
 
-The original QRSPI methodology defines 7 steps: Questions, Research, Design, Structure, Plan, Worktree, and Implement (-> PR). See our [deep-dive notes](docs/qrspi-reference.md) from Dex's talk for the full breakdown. qrspi-plus extends this in three areas:
+The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, Structure, Plan, Worktree, Implement, PR). See [`docs/qrspi-canonical.md`](docs/qrspi-canonical.md) for the full stage-by-stage reference. qrspi-plus extends this in three areas:
 
 **New pipeline steps:**
 
