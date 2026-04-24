@@ -22,13 +22,17 @@ QRSPI is a pipeline for agentic software development with two route variants (qu
 
 **Full pipeline:**
 ```
-Goals → Questions → Research → Design → Structure → Plan → Worktree → Implement → Integrate → Test → Replan (if needed)
+Goals → Questions → Research → Design → Structure → Plan → Worktree → Implement(×N) → Integrate → Test → Replan (if needed)
 ```
+
+> **Read the `Worktree → Implement(×N) → Integrate` segment carefully.** It is *not* a per-task chain. Worktree is the batch orchestrator: it dispatches Implement once per task in the current phase, presents a batch gate when every task has returned, and only then routes to Integrate. **Implement runs N times per phase. Integrate runs ONCE per phase.** A reader who sees `current_step: implement` in `state.json` after one task completes should expect Worktree to dispatch the next task — not advance to Integrate.
 
 **Quick Fix pipeline** (skip Design/Structure/Worktree/Integrate):
 ```
 Goals → Questions → Research → Plan → Implement → Test
 ```
+
+> Quick fix has a single task, so there is no Worktree batch and no Integrate — Implement runs once and routes directly to Test.
 
 | Step | # | What it does | Artifact |
 |------|---|-------------|----------|
@@ -206,6 +210,20 @@ The `.qrspi/` directory inside each artifact directory is created and maintained
 Skills do not need to create, read, or update any file in `.qrspi/`. State is always current when a skill needs it because the hooks maintain it continuously.
 
 **Pipeline enforcement:** PreToolUse hooks enforce pipeline step ordering. Attempting to write a downstream artifact (e.g., `design.md`) before its prerequisites are approved will be blocked by the hook. Pipeline progression is code-enforced, not just prompt-enforced.
+
+### `state.json` field semantics (for human and agent readers)
+
+Skills don't need to interpret `state.json`, but a reader (human or fresh agent recovering context between sessions) often does. Read these fields with the right mental model — getting one wrong is the most common cause of misordering pipeline steps.
+
+| Field | Meaning | When it changes |
+|-------|---------|-----------------|
+| `current_step` | The pipeline step currently active. For full-pipeline phases that loop Implement (the `Worktree → Implement(×N) → Integrate` segment), this stays at `implement` for the **entire** Worktree-orchestrated batch — across every task in the phase. It only advances to `integrate` after Worktree's batch gate releases. | Advances when a step's terminal artifact is approved (Goals, Questions, Research, Design, Structure, Plan), when a Worktree batch gate releases (Implement → Integrate), or when Integrate, Test, or Replan complete their gates. **Does not advance per-task.** |
+| `active_task` | Which task within the current phase is being worked. Only meaningful while `current_step` is `implement` (or `worktree`, while dispatch is being set up). | Advances as Worktree dispatches each next task. Resets between phases. |
+| `artifacts.{step}` | Approval status of each artifact (`draft`, `replan-draft`, or `approved`). Drives artifact gating. | Updated by the PostToolUse hook when an artifact's frontmatter changes. |
+| `wireframe_requested` | Whether the run includes the optional UX step before Structure. | Set during Goals; never changes thereafter. |
+| `phase_start_commit` | Git SHA at which the current phase began. Used by Replan and Test to scope diffs. | Set when a phase begins. |
+
+**The trap to avoid:** `current_step: implement` + a single task done does *not* mean "advance to integrate." It means "Worktree is mid-batch — expect another Implement dispatch." Verify against `parallelization.md` (which lists every task in the phase) before concluding the batch is done.
 
 ## Rejection Behavior
 

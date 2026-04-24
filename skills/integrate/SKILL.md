@@ -11,6 +11,21 @@ description: Use when all current-phase tasks are implemented — merges worktre
 
 Post-merge cross-task review. Verifies tasks work together, checks cross-task security, runs CI pipeline. Only in the full pipeline route — quick fix mode skips entirely (single task, nothing to integrate). Orchestrator in main conversation.
 
+## When This Runs
+
+```
+ONCE PER PHASE — NOT ONCE PER TASK
+```
+
+Integrate fires only after Worktree's batch gate releases — i.e., after **every** task in the current phase has completed its Implement loop and returned clean (or with accepted unresolved issues). The orchestrator that loops Implement across all phase tasks is **Worktree**, not Integrate.
+
+If you find yourself reaching for Integrate after a single task finishes, stop. Per-task correctness is the responsibility of the reviewers Implement already ran. Cross-task and cross-cutting verification is what Integrate adds — and that signal is meaningless until every task in the phase is on the table.
+
+Common misreads to avoid:
+- "T01 just finished clean, let's Integrate it now" — no. Worktree dispatches T02 next.
+- "`state.json` shows `current_step: implement` and the active task is done" — `current_step` stays at `implement` for the entire Worktree batch. Worktree advances `active_task`; the step name does not change until the batch gate releases.
+- "I'll integrate every couple of tasks to keep things tidy" — no. The CI gate, security review, and cross-task review are designed for one comprehensive pass per phase.
+
 ## Iron Law
 
 ```
