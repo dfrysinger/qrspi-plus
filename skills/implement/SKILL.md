@@ -17,6 +17,21 @@ TDD execution per task in its own worktree. Write failing tests, implement to pa
 NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 ```
 
+## Orchestration Boundary
+
+```
+MAIN CHAT ONLY ORCHESTRATES. ALL CODE EXECUTION, FILE CHANGES, AND GIT
+OPERATIONS ARE DELEGATED TO SUBAGENTS. MAIN CHAT NEVER RUNS THE WORK.
+```
+
+Main chat's responsibilities are: dispatch subagents (implementer, reviewers, fix-rounds), aggregate their findings, gate transitions, and write review logs (`reviews/tasks/task-NN-review.md` — the one file main chat authors directly, per the Rules in the Artifact section).
+
+Main chat does NOT: run tests / typecheck / lint, write or edit target-project files, run `git add` / `git commit`, invoke `pnpm` / `npm` / `cargo` / language toolchains, or perform "quick verification" between review rounds. Any of those activities are delegated to a fresh subagent (a new implementer dispatch, or a fix-round subagent for re-verification after fixes).
+
+**Why this rule matters.** Subagents inherit main chat's CWD. When the Worktree step puts task work inside `{target_project}/.trees/{run}-{task}/`, a subagent dispatched from main chat picks up the worktree via a prompt-specified path, while main chat's CWD stays at project root. If main chat instead runs work directly, its CWD ends up pinned to the worktree path for the rest of the session, which triggers the pre-tool-use hook's worktree-enforcement rules (worktree containment + protected-path + L1 allowlist) on every subsequent main-chat tool call — including the very writes main chat would need to make to repair any mid-run state corruption. Keeping main chat at project root preserves main chat's ability to write `.qrspi/state.json` and `.qrspi/task-NN-runtime.json` on behalf of a trapped subagent (per `hooks/lib/protected.sh:11-13`, those protections fire only when `$PWD` is inside a worktree).
+
+**Red flag — STOP.** If you find yourself about to run `pnpm` / `npm` / `cargo` / `git commit` / `Write` / `Edit` from main chat as part of task execution, stop. Dispatch a subagent instead. The only code main chat writes directly is review-log markdown under `reviews/tasks/`.
+
 ## Prompt Templates
 
 ```
@@ -71,30 +86,32 @@ When Worktree is not in the route:
 
 ```mermaid
 flowchart TD
-    A[Read test expectations from task spec] --> B[Write failing tests]
-    B --> C[Run tests - VERIFY FAIL]
+    A[Implementer: Read test expectations from task spec] --> B[Implementer: Write failing tests]
+    B --> C[Implementer: Run tests - VERIFY FAIL]
     C --> D{Tests fail as expected?}
-    D -->|no - tests pass| E[STOP - test is vacuous, fix it]
+    D -->|no - tests pass| E[Implementer: STOP - test is vacuous, fix it]
     E --> B
-    D -->|yes| F[Write minimal implementation]
-    F --> G[Run tests - verify pass]
+    D -->|yes| F[Implementer: Write minimal implementation]
+    F --> G[Implementer: Run tests - verify pass]
     G --> H{All tests pass?}
-    H -->|no| I[Fix implementation - not the test]
+    H -->|no| I[Implementer: Fix implementation - not the test]
     I --> G
-    H -->|yes| J[Self-review and commit]
-    J --> K{Report status}
-    K -->|DONE| L[Proceed to reviews]
-    K -->|DONE_WITH_CONCERNS| M[Assess concerns, proceed]
-    K -->|NEEDS_CONTEXT| N[Provide info, re-dispatch]
-    K -->|BLOCKED| O[Assess and escalate]
+    H -->|yes| J[Implementer: Sanity check typecheck/lint and commit]
+    J --> K{Implementer reports status}
+    K -->|DONE| L[Orchestrator: Dispatch reviewer subagents]
+    K -->|DONE_WITH_CONCERNS| M[Orchestrator: Assess concerns, dispatch reviewers]
+    K -->|NEEDS_CONTEXT| N[Orchestrator: Provide info, re-dispatch implementer]
+    K -->|BLOCKED| O[Orchestrator: Assess and escalate]
 ```
 
-1. **Read test expectations** from the task spec
-2. **Write failing tests** based on those expectations
-3. **Run tests — verify fail.** If they pass, the test is vacuous — fix it
-4. **Write minimal implementation** to make the tests pass
-5. **Run tests — verify pass.** If they fail, fix the implementation (not the test)
-6. **Self-review and commit**
+All steps 1-6 below run inside the **implementer subagent**. Main chat does not run tests, write code, or commit directly.
+
+1. **Implementer: Read test expectations** from the task spec
+2. **Implementer: Write failing tests** based on those expectations
+3. **Implementer: Run tests — verify fail.** If they pass, the test is vacuous — fix it
+4. **Implementer: Write minimal implementation** to make the tests pass
+5. **Implementer: Run tests — verify pass.** If they fail, fix the implementation (not the test)
+6. **Implementer: Sanity check and commit.** Implementer-side pass — typecheck / lint green — then commit inside the worktree's git. This is NOT the formal review; formal reviews run next as separate reviewer subagents dispatched by the orchestrator.
 
 ## Code Quality
 
@@ -102,12 +119,14 @@ Comment aggressively. Every function gets a header comment explaining: purpose, 
 
 ## Implementer Subagent Status Reporting
 
-| Status | Action |
+The implementer subagent returns one of the statuses below. The Action column names what the **orchestrator (main chat)** does next — every Action involves dispatching another subagent, never main-chat execution.
+
+| Status | Orchestrator action |
 |--------|--------|
-| **DONE** | Proceed to reviews |
-| **DONE_WITH_CONCERNS** | Read concerns, address if correctness/scope, proceed |
-| **NEEDS_CONTEXT** | Provide missing info, re-dispatch |
-| **BLOCKED** | Assess: more context, more capable model, break into pieces, or escalate |
+| **DONE** | Dispatch reviewer subagents (correctness group; then thoroughness if deep) |
+| **DONE_WITH_CONCERNS** | Read concerns; if correctness/scope, note in review log; dispatch reviewers |
+| **NEEDS_CONTEXT** | Gather missing info, re-dispatch implementer subagent with augmented prompt |
+| **BLOCKED** | Assess: re-dispatch with more context, switch to more capable model, decompose into smaller tasks, or escalate to user |
 
 ## Review Groups
 
@@ -128,14 +147,14 @@ Follows Review Pattern 1.
 
 ```mermaid
 flowchart TD
-    A[Run reviewer groups] --> B{Issues found?}
+    A[Orchestrator: Dispatch reviewer subagents] --> B{Orchestrator: Issues in aggregated findings?}
     B -->|no| C((Task clean))
-    B -->|yes| D[Converge: re-run on same code]
+    B -->|yes| D[Orchestrator: Re-dispatch reviewers on same code to converge]
     D --> E{New findings?}
     E -->|yes, under 3 rounds| D
-    E -->|no or 3 rounds hit| F[Complete issue list]
-    F --> G[Implementer fixes all issues]
-    G --> H[Re-run reviewers on fixed code]
+    E -->|no or 3 rounds hit| F[Orchestrator: Write complete issue list to review log]
+    F --> G[Orchestrator: Dispatch implementer-fix subagent with issue list]
+    G --> H[Orchestrator: Dispatch reviewers on fixed code]
     H --> I{Issues found?}
     I -->|no| C
     I -->|yes, under 3 fix cycles| D
@@ -144,12 +163,16 @@ flowchart TD
 
 ### Mechanics
 
-1. Run reviewer groups (quick = correctness only, deep = correctness then thoroughness)
-2. First pass clean → task clean
-3. Issues → converge (re-run on same code up to 3 rounds) to build complete list
-4. Fix ALL issues, re-run → back to convergence if new issues
-5. Up to 3 fix cycles. If unresolved after 3, flag and move on
-6. **Single round mode:** skip convergence, run once, fix, re-run once, flag if still issues
+All reviewer and fix work is dispatched via subagents; the orchestrator only aggregates findings and decides the next dispatch.
+
+1. **Orchestrator: dispatch reviewer groups** (quick = correctness only, deep = correctness then thoroughness). Reviewers run as subagents in parallel within their group.
+2. First pass clean → task clean.
+3. Issues → **orchestrator re-dispatches reviewers** on the same code to build a complete list (up to 3 convergence rounds).
+4. **Orchestrator dispatches implementer-fix subagent** with the full issue list → fix subagent writes the fixes → orchestrator re-dispatches reviewers on fixed code.
+5. Up to 3 fix cycles. If unresolved after 3, flag and move on.
+6. **Single round mode:** skip convergence, dispatch once, fix-subagent, re-dispatch once, flag if still issues.
+
+**Main chat never runs reviewers, verifiers, or fixers itself** — each round is a subagent dispatch.
 
 ## Dispatching Reviewers
 
@@ -383,11 +406,13 @@ Sub-tasks per task:
 - Skipping a reviewer because "the change is small"
 - Proceeding after BLOCKED status without changing approach
 - Fixing reviewer findings without re-running the reviewer
-- Self-review replacing actual review dispatch
+- Implementer self-review replacing actual reviewer-subagent dispatch
 - Committing without running tests
 - Accepting "close enough" on spec compliance
 - 3+ attempts to pass the same test without changing approach
 - Fixing a failing test by weakening the assertion
+- **Main chat running tests, typecheck, lint, git commit, or file writes directly — these must be subagent work (see Orchestration Boundary)**
+- **Main chat "quickly verifying" between review rounds — dispatch a fix-round or fresh verify subagent instead**
 
 ## Common Rationalizations — STOP
 
@@ -401,6 +426,8 @@ Sub-tasks per task:
 | "This refactor doesn't change behavior, skip tests" | If behavior doesn't change, existing tests still pass. Run them. |
 | "This reviewer is redundant, I can skip it" | Each reviewer catches different classes of issues. Run them all. |
 | "The change is too small for 8 reviewers" | Review depth is configured per phase, not per change. Follow config. |
+| "Just this once in main chat — it's faster" | Main chat is not the worker. Dispatch a subagent. Running work in main chat pins its CWD to the worktree and triggers the pre-tool-use hook's worktree-enforcement on every subsequent tool call — including any repair writes main chat would need to make. |
+| "I'll run a quick sanity check before the reviewers" | That's what the implementer subagent's step 6 already did. Dispatch reviewers next. |
 
 ## Worked Example — Good TDD Cycle
 
