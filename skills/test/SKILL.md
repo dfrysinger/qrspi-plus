@@ -41,12 +41,7 @@ Required inputs:
 
 Read `config.md` from the artifact directory to determine whether Codex reviews are enabled.
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md` against the Test-validated field (`codex_reviews`). Test-specific menu when the field is missing or invalid:
-
-**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
-1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
-2. Re-run Goals to regenerate config.md
-3. Abort
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Test validates `codex_reviews`.
 
 In quick fix mode, Test receives `goals.md` and `research/summary.md` instead of `design.md`. Phase routing is not needed (quick fix is always single-phase), and acceptance criteria come directly from `goals.md`.
 

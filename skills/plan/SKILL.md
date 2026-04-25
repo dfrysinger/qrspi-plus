@@ -33,26 +33,7 @@ Read `config.md` from the artifact directory to determine whether Codex reviews 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md` against the Plan-validated fields (`pipeline`, `route`, `codex_reviews`). Plan-specific menus when a field is missing or invalid:
-
-**If `config.md` is missing:**
-1. Re-run Goals to create config.md and set the pipeline mode
-2. Abort
-
-**If `pipeline` is missing or invalid (expected `full` or `quick`):**
-1. Edit config.md and set `pipeline: full` or `pipeline: quick`
-2. Re-run Goals to regenerate config.md
-3. Abort
-
-**If `route` is missing:**
-1. Re-run Goals to regenerate config.md with the correct route
-2. Manually add a `route:` list to config.md
-3. Abort
-
-**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
-1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
-2. Re-run Goals to regenerate config.md
-3. Abort
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Plan validates `pipeline`, `route`, and `codex_reviews`.
 
 <HARD-GATE>
 Do NOT produce plan.md without all required artifacts approved (full: goals + research + design + structure; quick: goals + research).

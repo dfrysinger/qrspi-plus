@@ -53,22 +53,7 @@ The user must explicitly choose quick fix or full pipeline before synthesis begi
 
 ### Config Validation (when config.md exists)
 
-If `config.md` already exists (resuming a run), apply the **Config Validation Procedure** in `using-qrspi/SKILL.md` against the Goals-validated fields (`route`, `pipeline`, `codex_reviews`). Goals-specific menus when a field is missing or invalid:
-
-**If `route` is missing:**
-1. Re-run Goals to regenerate config.md with the correct route
-2. Manually add a `route:` list to config.md
-3. Abort
-
-**If `pipeline` is missing or invalid (expected `full` or `quick`):**
-1. Edit config.md and set `pipeline: full` or `pipeline: quick`
-2. Re-run Goals to regenerate config.md
-3. Abort
-
-**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
-1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
-2. Re-run Goals to regenerate config.md
-3. Abort
+If `config.md` already exists (resuming a run), apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Goals validates `route`, `pipeline`, and `codex_reviews`.
 
 ## Process
 

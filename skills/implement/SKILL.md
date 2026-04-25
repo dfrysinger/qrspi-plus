@@ -57,12 +57,7 @@ Correctness checks if code is right and safe — it always runs. Thoroughness ch
 
 Read the task file's `pipeline` field to determine which inputs to load. The task's `pipeline` field is the single source of truth — Implement never checks `config.md` for pipeline routing. Read `config.md` for `review_depth`, `review_mode`, and `codex_reviews` settings.
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md` against `codex_reviews`. Implement-specific menu when the field is missing or invalid:
-
-**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
-1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
-2. Re-run Goals to regenerate config.md
-3. Abort
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Implement validates `codex_reviews`.
 
 | Input | `pipeline: quick` | `pipeline: full` |
 |-------|-------------------|-------------------|

@@ -57,21 +57,7 @@ If any required artifact is missing or not approved, refuse to run and tell the 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md` against `route` and `codex_reviews`. Integrate-specific menus:
-
-**If `config.md` is missing:**
-1. Re-run Goals to create config.md and set the pipeline mode
-2. Abort
-
-**If `route` is missing:**
-1. Re-run Goals to regenerate config.md with the correct route
-2. Manually add a `route:` list to config.md
-3. Abort
-
-**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
-1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
-2. Re-run Goals to regenerate config.md
-3. Abort
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Integrate validates `route` and `codex_reviews`.
 
 <HARD-GATE>
 Do NOT push to CI or approve integration without running integration and security reviews on the merged code.

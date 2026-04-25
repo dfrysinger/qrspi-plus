@@ -161,8 +161,6 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 
 The slug is generated during the Goals step: take the user's first description, extract 2-4 key words, convert to lowercase kebab-case (e.g., "user-auth", "product-search-api").
 
-**Skill name convention:** All QRSPI skill names follow a one-word convention. When proposing new skills, use a single lowercase word (e.g., `align`, `drift`, `audit`). Multi-word names (`goal-alignment`, `prompt-audit`) are not accepted.
-
 ## Artifact Gating
 
 Each skill checks that its required input artifacts exist on disk before proceeding:
@@ -270,19 +268,13 @@ ERROR: state.json is corrupted and could not be repaired. Run `state_init_or_rec
 
 This is fail-closed behavior: a corrupt state is worse than a stopped run.
 
-**2. Config validation (defer to M22 numbered-options flow)**
+**2. Config validation**
 
-Do not silently patch `config.md`. If `config.md` is missing or has no `route:` field, stop and tell the user:
-
-```
-Cannot continue — `config.md` is missing or has no route field. Re-run Goals to set the pipeline mode.
-```
-
-If `enforcement_default` is absent from the frontmatter, do not auto-add it here. That field is added during the M22 numbered-options selection flow (T07's work). Silently patching it during pipeline entry would bypass the user's explicit configuration choice.
+Apply the **Config Validation Procedure** below. Do not silently patch any field.
 
 **3. Task spec scan (advisory, non-blocking)**
 
-After state and config are valid, scan `tasks/task-*.md` for missing Phase 4 fields (`enforcement`, `allowed_files`, `constraints`). Output any warnings to stdout and continue — this is advisory only.
+After state and config are valid, scan `tasks/task-*.md` for missing fields (`enforcement`, `allowed_files`, `constraints`). Output any warnings to stdout and continue — this is advisory only.
 
 **Run selection for mid-pipeline entry:** When entering mid-pipeline, glob for `docs/qrspi/*/goals.md` directories. If multiple exist, present the list and ask the user which run to resume. Load `config.md` from the chosen directory to read the `route` list. Scan for approved artifacts, then invoke the first step in the route list that is not yet complete.
 
@@ -383,8 +375,6 @@ review_mode: loop   # or: single — added by Dispatch (or Implement in quick-fi
 
 ## Config Validation Procedure
 
-> **Canonical source.** This procedure is the single source of truth for config.md validation; downstream skills should reference this section rather than restate it. Each skill's Artifact Gating section may add field-specific menus (the numbered options for which field is missing/invalid), but the procedure (when to stop, fail-closed semantics, no-silent-defaults rule) lives here.
-
 Every skill that reads config.md applies this procedure before using any field.
 
 ### When config.md is missing entirely
@@ -396,13 +386,21 @@ Stop and present:
   1) Re-run Goals to create config.md and set the pipeline mode
   2) Abort
 
-### When a required field is missing or empty
+### When a required field is missing or has an invalid value
 
-Stop and present a numbered menu. The exact options depend on which field is missing — see each skill's Artifact Gating section for the field-specific menus.
+Stop and present the field-specific menu below. For an invalid value, also name the invalid value and the expected values before showing the menu. The set of fields each skill validates is per-skill (see each skill's Config Validation section); the menu for a given field is the same across all skills.
 
-### When a field has an invalid value
+**If `route` is missing:**
+1. Manually add a `route:` list to config.md
+2. Abort
 
-Stop and name the invalid value and the expected values. Present numbered options. The exact options depend on which field is invalid — see each skill's Artifact Gating section for the field-specific menus.
+**If `pipeline` is missing or invalid (expected `full` or `quick`):**
+1. Edit config.md and set `pipeline: full` or `pipeline: quick`
+2. Abort
+
+**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
+2. Abort
 
 ### No silent defaults
 
@@ -418,7 +416,7 @@ Skills must not:
 |-------|------------------------|--------------|
 | `route` | Goals, Plan, Parallelize, Dispatch, Integrate, using-qrspi | ordered list of skill names (see Route Templates) |
 | `pipeline` | Goals, Plan, Parallelize, Dispatch | `full` or `quick` |
-| `codex_reviews` | Goals, Plan | `true` or `false` |
+| `codex_reviews` | Goals, Plan, Implement, Integrate, Test | `true` or `false` |
 | `review_depth` | Dispatch, Implement | `quick` or `deep` — set by Dispatch in full pipeline; set by Implement in quick-fix mode (where Dispatch is absent from the route) |
 | `review_mode` | Dispatch, Implement | `single` or `loop` — set by Dispatch in full pipeline; set by Implement in quick-fix mode (where Dispatch is absent from the route) |
 
@@ -429,8 +427,6 @@ Skills must not:
 | `created` | ISO date, informational only — missing is not an error |
 
 ## Standard Review Loop
-
-> **Canonical source.** This is the QRSPI review loop pattern; downstream skills should reference "Standard Review Loop" rather than restate it. Skills name their reviewers (e.g., "Claude review subagent runs the spec-reviewer + security-reviewer templates from `templates/`") but the loop mechanics, the `1) Present  2) Loop until clean` prompt, the 10-round cap, and the human-gate review-status statement all live here.
 
 A "review round" consists of:
 1. Claude review subagent runs → issues found are fixed
@@ -525,8 +521,6 @@ When QRSPI applies, invoke the Goals skill to begin:
 
 **REQUIRED SKILL:** Use `qrspi:goals` to start the pipeline.
 
-For reference on the QRSPI framework: see `qrspi/docs/qrspi-reference.md`
-
 ## Pipeline Iron Laws — Final Reminder
 
 The four invariants that, when violated, produce the most damage:
@@ -540,8 +534,6 @@ The four invariants that, when violated, produce the most damage:
 4. **The `Dispatch → Implement(×N) → Integrate` segment is per-phase, not per-task.** Implement runs N times per phase. Integrate runs ONCE per phase. `current_step: implement` plus one task done does NOT mean "advance to integrate" — see `state.json` field semantics for the verification trap and `dispatch/SKILL.md` → "Dispatch Is the Per-Phase Implement Loop" for the canonical contract.
 
 <BEHAVIORAL-DIRECTIVES>
-**Canonical source for QRSPI skills.** These directives apply to every QRSPI skill. `using-qrspi` is invoked at the start of every QRSPI conversation, so these directives are in scope for the whole pipeline. Other skill files should reference this block rather than maintain their own copies.
-
 D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
 
 D2 — Never suggest skipping steps for speed: Every step in the QRSPI pipeline exists for a reason. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.

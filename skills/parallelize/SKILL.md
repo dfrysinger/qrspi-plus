@@ -38,16 +38,7 @@ If any required artifact is missing or not approved, refuse to run and tell the 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md` against `pipeline`. Parallelize-specific menus:
-
-**If `config.md` is missing:**
-1. Re-run Goals to create config.md and set the pipeline mode
-2. Abort
-
-**If `pipeline` is missing or invalid (expected `full` or `quick`):**
-1. Edit config.md and set `pipeline: full` or `pipeline: quick`
-2. Re-run Goals to regenerate config.md
-3. Abort
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Parallelize validates `pipeline` and `route`.
 
 <HARD-GATE>
 Do NOT mark `parallelization.md` approved while parallel groups overlap on files.
