@@ -74,6 +74,28 @@ section references where you confirmed or found a problem.
 - Check that file paths are exact (not "somewhere in src/")
 - Check that LOC estimates are present and reasonable
 
+### 6. Task Sizing — Is each task atomic and within budget?
+Apply the rules in `skills/plan/SKILL.md` → "Task Sizing".
+- For each task, count distinct observable behaviors / request handlers / use
+  cases implied by the description and test expectations. Flag any task with >1
+  unless the task has a **Sizing exception** bullet (in-plan) or a
+  `sizing_exception` frontmatter field (post-split) AND the stated reason is one
+  of the closed exception set: schema migration, CI scaffolding, or reusable
+  primitives. Any other exception value is itself a finding (BUNDLE).
+- Scan task titles for `+` joining feature names, or two distinct verbs joined
+  by `and` (e.g. "auth + allowlist + rename + admin", "create and delete and
+  rename"). These signal feature-bundling — flag for split.
+- Check the LOC estimate. Flag any task >200 LOC unless it carries a
+  **Sizing exception** bullet (in-plan) or a `sizing_exception` frontmatter
+  field (post-split) whose reason is in the closed set above (schema migration,
+  CI scaffolding, reusable primitives).
+- Check the floor: flag tasks that do not traverse the layers needed for their
+  behavior, produce no observable behavior change when merged alone, depend on
+  a sibling task to compile or pass tests, or cannot merge to main alone.
+- For any flagged task, propose a concrete split (N sub-tasks, each one handler,
+  with dependency ordering) so the plan author can revise without rediscovering
+  the decomposition.
+
 ## Report Format
 
 If no issues found:
@@ -92,5 +114,7 @@ If issues found:
 
 Categories: MISSING (criterion not covered), EXTRA (not in goals),
 MISINTERPRETED (wrong approach), UNTESTABLE (no test expectation),
-PLACEHOLDER (TBD/vague content present)
+PLACEHOLDER (TBD/vague content present), BUNDLE (multi-handler task —
+propose split), OVERSIZE (>200 LOC without sizing_exception),
+SUB-ATOMIC (no observable behavior, depends on sibling, or cannot merge alone)
 ```

@@ -68,6 +68,26 @@ Every task spec must be self-contained — an implementation agent reading only 
 
 plan.md contains ONLY current-phase tasks. Each task must reference a goal ID that exists in goals.md. Tasks for goals not in the current phase must not appear. The `goal_id` field in task frontmatter must match a goal in goals.md.
 
+## Task Sizing
+
+Each task implements **exactly one observable behavior** — one request handler, one use case, one user-visible change. The task title names exactly one feature, with no `+` joining feature names and no two distinct verbs joined by `and`.
+
+**LOC budget per task:**
+- Target: ~100 LOC (matches OpenAI AGENTS.md guidance for autonomous-agent task scope)
+- Policy ceiling: 200 LOC — split unless a `sizing_exception` (post-split frontmatter) or **Sizing exception** bullet (in-plan) names one of: schema migration, CI scaffolding, reusable primitives
+
+**Why:** SWE-Bench Pro reports a median patch size of 107 LOC / 4.1 files, with frontier-model success around 23% at that size (GPT-5, Opus 4.1). OpenAI's AGENTS.md guidance targets ~100 lines per agentic task. Our 100-LOC target matches that guidance; the 200-LOC ceiling sits at the lower bound of Cisco/SmartBear's code-review sweet spot (200-400 LOC) and gives margin for QRSPI's enhanced scaffolding (fresh-context subagents, structured task specs, TDD cycle, multi-reviewer loop). Multi-feature task titles like `auth + allowlist + rename + admin` are the visible symptom of oversized tasks; the underlying cause is bundling N request handlers into one task, which re-couples slices that vertical-slice decomposition exists to separate.
+
+**Splitting protocol.** A task estimated >200 LOC splits into N tasks at or below the ~100-LOC target, each implementing one handler with explicit dependency ordering. The closed exception set is: schema migration, CI scaffolding, reusable primitives. Mark `sizing_exception: <reason>` in the task frontmatter (post-split) or the **Sizing exception** bullet inside the in-plan task spec (pre-split), and explain in the Description.
+
+**Floor — a task is too small if any of these hold:**
+- Does not traverse the layers needed for its behavior (UI-only, schema-only, mock-only, test-only)
+- Produces no observable behavior change when merged alone (pure refactor with no callers, scaffold with no consumer)
+- Depends on a sibling task to compile or pass tests
+- Cannot be merged to main alone (must batch with peers to ship)
+
+A task that fails any floor check merges into the parent task that gives it observable behavior; do not ship sub-atomic tasks.
+
 ## Process
 
 ### Plan Overview Subagent
@@ -144,6 +164,7 @@ status: draft
 - **Files:** {exact paths, create/modify}
 - **Dependencies:** none
 - **LOC estimate:** ~{N}
+- **Sizing exception:** {only present when the task is a legitimate bundle (multi-handler or >200 LOC). Reason must be one of: schema migration, CI scaffolding, reusable primitives — see Task Sizing}
 - **Description:** {what this task accomplishes}
 - **Test expectations:**
   - {behavior 1}
@@ -202,6 +223,9 @@ status: approved
 task: NN
 phase: {phase number}
 pipeline: full
+# Optional: justify a legitimate bundle (multi-handler or >200 LOC).
+# Reason must be one of: schema migration, CI scaffolding, reusable primitives.
+# sizing_exception: <one-line reason>
 # Optional Phase 4 enforcement fields (deferred to T24 for full schema):
 # enforcement: strict
 # allowed_files: [...]
@@ -273,6 +297,10 @@ If compaction was not done before splitting (user declined), recommend it now: "
 - A task references a type, function, or file not defined in any task
 - A task depends on a later task (forward dependency)
 - LOC estimate is missing or wildly unrealistic (e.g., 10 LOC for a full CRUD implementation)
+- LOC estimate >200 without a `sizing_exception` (post-split frontmatter) or **Sizing exception** bullet (in-plan) naming one of the closed exception set (split unless the exception is documented — see Task Sizing)
+- Task title contains `+` joining feature names, or two distinct verbs joined by `and` (multi-feature bundle — split into per-handler tasks)
+- Task description implies multiple request handlers / use cases (one task = one handler — see Task Sizing)
+- Task fails a floor check (no observable behavior, depends on sibling to compile, cannot merge alone — see Task Sizing floor)
 - A task touches files from a different vertical slice without justification
 - Phase boundaries don't align with the design's phase definitions
 - Quick-fix plan has more than one task (quick fix = single task by definition)
@@ -286,6 +314,9 @@ If compaction was not done before splitting (user declined), recommend it now: "
 | "Test expectations are implied by the description" | Write them explicitly. The Test skill uses them to generate acceptance tests. |
 | "LOC estimates don't matter" | They signal scope. Unrealistic estimates mean the task is misunderstood. |
 | "We can split this task during implementation" | Split now. The plan is where decomposition happens, not implementation. |
+| "Splitting these features adds coordination overhead" | SWE-Bench Pro reports ~23% frontier-model success at the 107-LOC median patch size; tasks above the 200-LOC ceiling sit well past that empirical cliff. Coordination overhead is cheaper than the retry cost on a sub-50% pass rate. |
+| "These features all live in the same file" | File overlap is not handler overlap. One handler per task even if multiple share a file — separate tasks can sequence edits inside one file via Dependencies. |
+| "Schema setup naturally bundles, this is fine" | True only for the closed exception set: schema migration, CI scaffolding, reusable primitives. Mark `sizing_exception: <reason>` (post-split frontmatter) or **Sizing exception** bullet (in-plan) and explain in the Description. Do not use as a general escape hatch. |
 | "Quick fix doesn't need a plan" | Quick fix mode still produces a plan — it's just a single-task plan. The plan ensures the fix is reviewed before implementation. |
 
 ## Worked Example
@@ -328,12 +359,14 @@ The bad example has TBD files, no dependencies (but clearly needs the Redis clie
 
 ## Iron Laws — Final Reminder
 
-The three override-critical rules for Plan, restated at end:
+The four override-critical rules for Plan, restated at end:
 
 1. **No plan.md without all required artifacts approved.** Full pipeline: goals + research + design + structure. Quick fix: goals + research. Plan refuses to run otherwise.
 
 2. **No placeholders in task specs.** No "TBD", "TODO", "implement later", "similar to Task N", "add appropriate handling." Every task spec must be self-contained — an implementation agent reading only that task must have everything it needs.
 
-3. **`phase_start_commit` write is the only direct state.json write Plan performs.** Done when `plan.md` is approved. All other state updates are hook-driven — see `using-qrspi/SKILL.md` → "Hook-Managed State."
+3. **One task = one observable behavior, ~100-LOC target / ≤200 LOC ceiling.** Split before approving any task that exceeds the policy ceiling unless the task documents a `sizing_exception` (post-split frontmatter) or **Sizing exception** bullet (in-plan) naming one of the closed exception set: schema migration, CI scaffolding, reusable primitives. Multi-feature task titles (`+` joining feature names, two distinct verbs joined by `and`) are the canary — they almost always mean multiple request handlers bundled into one task. SWE-Bench Pro reports ~23% frontier-model success at the 107-LOC median patch size; OpenAI AGENTS.md guidance targets ~100 lines; our 200-LOC ceiling sits at the lower bound of Cisco/SmartBear's code-review sweet spot with margin for QRSPI's enhanced scaffolding. See "Task Sizing" earlier in this skill for full rules including the floor.
+
+4. **`phase_start_commit` write is the only direct state.json write Plan performs.** Done when `plan.md` is approved. All other state updates are hook-driven — see `using-qrspi/SKILL.md` → "Hook-Managed State."
 
 Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
