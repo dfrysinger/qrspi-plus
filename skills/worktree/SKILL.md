@@ -106,9 +106,15 @@ flowchart TD
 ## Branch Model
 
 1. **Feature branch:** Created from the current branch (typically `main`) at the start of the first phase: `qrspi/{slug}` (e.g., `qrspi/user-auth`). For subsequent phases, the feature branch already exists.
-2. **Task branches:** Each worktree forks from the feature branch: `qrspi/{slug}/task-NN` (e.g., `qrspi/user-auth/task-01`).
-3. **Merge target:** Integrate merges task branches into the feature branch.
+2. **Task branches — base depends on execution mode:**
+   - **Parallel group:** Every task in the group forks from the feature branch tip. Tasks in a parallel group are independent by construction (no file overlap, no logical dependency), so they share the same base.
+   - **Sequential chain:** Task-N forks from task-(N-1)'s branch tip, *not* from the feature branch. This is required because sequential dependencies mean task-N imports types/factories/actions/migrations introduced by task-(N-1) — and the feature branch does not yet contain task-(N-1)'s work (Integrate runs once at phase end, not per-task).
+   - **Hybrid:** Each parallel group forks from the latest sequential tip preceding it. Within the group, all tasks share that base.
+   - Naming: `qrspi/{slug}/task-NN` (e.g., `qrspi/user-auth/task-01`).
+3. **Merge target:** Integrate merges all task branches into the feature branch **once at phase end**, not per-task. The feature branch only changes via Integrate; the phase-end CI gate is meaningful precisely because the feature branch is otherwise untouched during the phase.
 4. **PR target:** Test creates the PR from the feature branch to the base branch.
+
+> **Why the base-branch rule matters.** A common misread is *"all task branches always fork from the feature branch."* That works for parallel-only phases but breaks sequential dependencies — task-N's worktree would start without task-(N-1)'s code. The correct rule is base-from-feature for parallel-group members and base-from-previous-tip for sequential-chain members. Worktree decides this per task using the dependency graph, not per phase.
 
 ## Subagent Permissions
 
@@ -176,7 +182,7 @@ If worktree-level `.claude/settings.json` is not loaded by the subagent (Claude 
 3. Analyze dependencies between tasks for parallelization opportunities
 4. Determine execution mode (sequential/parallel/hybrid)
 5. Present parallelization plan to user for approval
-6. Create worktrees from the feature branch (verify `.worktrees/` in `.gitignore`)
+6. Create worktrees, choosing each task's base per the Branch Model rule (parallel-group members fork from the feature branch tip; sequential-chain members fork from the previous task's branch tip; hybrid follows both rules per task). Verify `.worktrees/` is in `.gitignore`.
 6a. **Verify subagent permissions (first time per session only):**
     - Write `.claude/settings.json` to the first worktree (as described in Subagent Permissions above).
     - Dispatch a minimal test subagent to write `_permissions_test.txt` in that worktree.
