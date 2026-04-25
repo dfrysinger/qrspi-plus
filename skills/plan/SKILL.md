@@ -33,57 +33,26 @@ Read `config.md` from the artifact directory to determine whether Codex reviews 
 
 ### Config Validation
 
-Before using any config field, validate the following:
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md` against the Plan-validated fields (`pipeline`, `route`, `codex_reviews`). Plan-specific menus when a field is missing or invalid:
 
 **If `config.md` is missing:**
+1. Re-run Goals to create config.md and set the pipeline mode
+2. Abort
 
-  config.md not found. Cannot determine pipeline mode or route.
-
-  1) Re-run Goals to create config.md and set the pipeline mode
-  2) Abort
-
-**If `pipeline` is missing:**
-
-  config.md has no `pipeline` field.
-
-  1) Re-run Goals to regenerate config.md with the pipeline field set
-  2) Manually add `pipeline: full` or `pipeline: quick` to config.md
-  3) Abort
-
-**If `pipeline` has an invalid value (not `full` or `quick`):**
-
-  config.md has an invalid value for `pipeline`: {value}
-  Expected: `full` or `quick`
-
-  1) Edit config.md and set `pipeline: full` or `pipeline: quick`
-  2) Re-run Goals to regenerate config.md
-  3) Abort
+**If `pipeline` is missing or invalid (expected `full` or `quick`):**
+1. Edit config.md and set `pipeline: full` or `pipeline: quick`
+2. Re-run Goals to regenerate config.md
+3. Abort
 
 **If `route` is missing:**
+1. Re-run Goals to regenerate config.md with the correct route
+2. Manually add a `route:` list to config.md
+3. Abort
 
-  config.md has no `route` field.
-
-  1) Re-run Goals to regenerate config.md with the correct route
-  2) Manually add a `route:` list to config.md
-  3) Abort
-
-**If `codex_reviews` is missing:**
-
-  config.md has no `codex_reviews` field.
-
-  1) Add `codex_reviews: true` to config.md (Codex second reviews enabled)
-  2) Add `codex_reviews: false` to config.md (Codex second reviews disabled)
-  3) Re-run Goals to regenerate config.md
-  4) Abort
-
-**If `codex_reviews` has an invalid value (not `true` or `false`):**
-
-  config.md has an invalid value for `codex_reviews`: {value}
-  Expected: `true` or `false`
-
-  1) Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
-  2) Re-run Goals to regenerate config.md
-  3) Abort
+**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
+2. Re-run Goals to regenerate config.md
+3. Abort
 
 <HARD-GATE>
 Do NOT produce plan.md without all required artifacts approved (full: goals + research + design + structure; quick: goals + research).
@@ -100,54 +69,6 @@ Every task spec must be self-contained — an implementation agent reading only 
 plan.md contains ONLY current-phase tasks. Each task must reference a goal ID that exists in goals.md. Tasks for goals not in the current phase must not appear. The `goal_id` field in task frontmatter must match a goal in goals.md.
 
 ## Process
-
-The graph below shows the large-plan path with sub-subagents. For small plans (<6 tasks), the overview subagent writes merged `plan.md` directly, skipping the Farm/Merge nodes.
-
-```dot
-digraph plan {
-    "Verify required artifacts approved" [shape=box];
-    "Launch plan overview subagent" [shape=box];
-    "Farm task specs to sub-subagents" [shape=box];
-    "Merge tasks into plan.md" [shape=box];
-    "Review round (Claude + Codex if enabled)" [shape=box];
-    "Fix issues found" [shape=box];
-    "Ask: 1) Present  2) Loop until clean (recommended)" [shape=diamond];
-    "Review round N (max 10)" [shape=box];
-    "Round clean?" [shape=diamond];
-    "Present merged plan.md to user\n(state review status)" [shape=box];
-    "User approves?" [shape=diamond];
-    "Re-generate with feedback" [shape=box];
-    "Reviews passed clean?" [shape=diamond];
-    "Offer post-approval review loop" [shape=box];
-    "Recommend compaction before split" [shape=box];
-    "Split tasks, reduce plan.md" [shape=box];
-    "Write approval marker" [shape=box];
-    "Invoke next skill in route" [shape=doublecircle];
-
-    "Verify required artifacts approved" -> "Launch plan overview subagent";
-    "Launch plan overview subagent" -> "Farm task specs to sub-subagents";
-    "Farm task specs to sub-subagents" -> "Merge tasks into plan.md";
-    "Merge tasks into plan.md" -> "Review round (Claude + Codex if enabled)";
-    "Review round (Claude + Codex if enabled)" -> "Fix issues found";
-    "Fix issues found" -> "Ask: 1) Present  2) Loop until clean (recommended)";
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Present merged plan.md to user\n(state review status)" [label="1"];
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Review round N (max 10)" [label="2 (recommended)"];
-    "Review round N (max 10)" -> "Round clean?";
-    "Round clean?" -> "Present merged plan.md to user\n(state review status)" [label="yes or cap hit"];
-    "Round clean?" -> "Fix issues found" [label="no, fix and loop"];
-    "Present merged plan.md to user\n(state review status)" -> "User approves?";
-    "User approves?" -> "Re-generate with feedback" [label="no"];
-    "Re-generate with feedback" -> "Launch plan overview subagent";
-    "User approves?" -> "Reviews passed clean?" [label="yes"];
-    "Reviews passed clean?" -> "Recommend compaction before split" [label="yes"];
-    "Reviews passed clean?" -> "Offer post-approval review loop" [label="no"];
-    "Offer post-approval review loop" -> "Review round N (max 10)" [label="user agrees"];
-    "Offer post-approval review loop" -> "Recommend compaction before split" [label="user declines"];
-    "Recommend compaction before split" -> "Split tasks, reduce plan.md";
-    "Split tasks, reduce plan.md" -> "Write approval marker";
-    "Write approval marker" -> "Invoke next skill in route";
-}
-```
 
 ### Plan Overview Subagent
 
@@ -247,27 +168,11 @@ Five reviewer templates run in parallel as part of the review round. All five ru
 
 ### Review Round
 
-After the merged `plan.md` is ready, run one review round:
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Plan-specific reviewer instructions:
 
-1. **Claude review subagent** — launch a subagent that runs all five reviewer templates from `skills/plan/templates/` in parallel. Provide the subagent with:
-   - `plan.md` (merged)
-   - `goals.md`
-   - `research/summary.md`
-   - (full pipeline only) `design.md` and `structure.md`
-
-   Each reviewer template is a standalone prompt document — the subagent fills in the artifact content and runs each template as a separate review pass. The five reviews run concurrently; the subagent collects all findings and returns them as a single structured report.
-
-   The orchestrating skill writes the combined findings to `reviews/plan-review.md`.
-
-2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`plan.md`), input artifacts (`goals.md`, `research/summary.md`, and (full pipeline only) `design.md`, `structure.md`) for cross-reference, and the same review criteria. The orchestrating skill appends Codex findings to `reviews/plan-review.md`.
-
-3. Fix any issues found in both reviews.
-
-4. Ask the user ONCE: `1) Present for review  2) Loop until clean (recommended)`
-   - **1:** Proceed to human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The plan may still have issues." The user can still approve, but they make an informed choice.
-   - **2:** Loop autonomously — run review → fix → review → fix without re-prompting. Stop ONLY when a round is clean ("Reviews passed clean") or 10 rounds reached ("Hit 10-round review cap — presenting for your review."). Then proceed to human gate. **Do not re-ask between rounds.**
-   
-   **Default recommendation is always option 2.** Clean reviews before human review are important because the human cannot feasibly verify cross-file consistency, forward dependencies, or migration ordering across 10+ task specs by hand — that's what the automated reviews catch.
+- **Claude review subagent** runs all five reviewer templates from `skills/plan/templates/` in parallel (subagent fills in artifact content, runs each template as a separate pass, returns combined findings). Inputs: `plan.md` (merged), `goals.md`, `research/summary.md`, plus `design.md` and `structure.md` (full pipeline only). Findings written to `reviews/plan-review.md`.
+- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with the same inputs and criteria. Findings appended to `reviews/plan-review.md`.
+- The default-option-2 recommendation is especially important here because plan reviews catch cross-file consistency / forward dependencies / migration ordering across 10+ task specs that the human cannot feasibly verify by hand.
 
 ### Human Gate
 
@@ -321,14 +226,14 @@ The `pipeline` field is copied from `config.md`'s `pipeline` value at plan time.
 - **Plan skill** — copies from `config.md` onto every `tasks/task-NN.md` at plan time
 - **Test skill** — classifies per failure (quick or full) on fix tasks
 - **Integrate skill** — always `full` on integration/CI fix tasks
-- **Worktree baseline fix** — always `full` on task-00
+- **Dispatch baseline fix** — always `full` on task-00
 
 **Fix task files** also include a `fix_type` field (not present on regular tasks):
 - `fix_type: integration` — written by Integrate for cross-task integration fixes
 - `fix_type: ci` — written by Integrate for CI pipeline fix tasks
 - `fix_type: test` — written by Test for acceptance test fix tasks
 
-Fix tasks are stored in `fixes/{type}-round-NN/` and follow the same format as regular tasks so Worktree and Implement can process them identically.
+Fix tasks are stored in `fixes/{type}-round-NN/` and follow the same format as regular tasks so Dispatch and Implement can process them identically.
 
 ### Artifacts
 
@@ -350,7 +255,7 @@ The artifact directory contains a `.qrspi/` subdirectory managed by hooks (not b
 - The PostToolUse hook syncs `state.json` automatically whenever artifact frontmatter changes (e.g., when `status: approved` is written)
 - Skills do NOT need to update `state.json` when artifacts are approved — the hook handles this
 
-**Exception — `phase_start_commit`:** The Plan skill writes `phase_start_commit` directly to `state.json` when `plan.md` is approved. This records the current HEAD hash as the diff boundary for post-integration reviews. The Plan skill is the only skill that writes to state directly; all other state updates are hook-driven.
+**Exception — `phase_start_commit`:** The Plan skill writes `phase_start_commit` directly to `state.json` when `plan.md` is approved. This records the current HEAD hash as the diff boundary for post-integration reviews. Plan is one of three narrow exceptions to hook-driven state writes (Goals bootstrap, Plan `phase_start_commit`, Replan pre-emptive reconciliation on next-phase restart) — see `using-qrspi/SKILL.md` → "Hook-Managed State (`.qrspi/`)" for the canonical list. All other state updates are hook-driven.
 
 ### Terminal State
 
@@ -421,12 +326,14 @@ If compaction was not done before splitting (user declined), recommend it now: "
 
 The bad example has TBD files, no dependencies (but clearly needs the Redis client), unrealistic LOC, references "similar to Task 2", and test expectations that can't be verified ("works correctly", "are handled").
 
-<BEHAVIORAL-DIRECTIVES>
-These directives apply at every step of this skill, regardless of context.
+## Iron Laws — Final Reminder
 
-D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+The three override-critical rules for Plan, restated at end:
 
-D2 — Complete every step before moving on: Every process step in this skill exists for a reason. Execute each step fully. If a step seems redundant given the current state, state why and ask the user — do not silently skip it.
+1. **No plan.md without all required artifacts approved.** Full pipeline: goals + research + design + structure. Quick fix: goals + research. Plan refuses to run otherwise.
 
-D3 — Resist time-pressure shortcuts: If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
-</BEHAVIORAL-DIRECTIVES>
+2. **No placeholders in task specs.** No "TBD", "TODO", "implement later", "similar to Task N", "add appropriate handling." Every task spec must be self-contained — an implementation agent reading only that task must have everything it needs.
+
+3. **`phase_start_commit` write is the only direct state.json write Plan performs.** Done when `plan.md` is approved. All other state updates are hook-driven — see `using-qrspi/SKILL.md` → "Hook-Managed State."
+
+Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

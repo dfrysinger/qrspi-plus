@@ -33,40 +33,6 @@ Do NOT pass goals.md to any research subagent — research isolation is structur
 
 ## Process
 
-```dot
-digraph questions {
-    "Verify goals.md exists and approved" [shape=box];
-    "Launch question-generation subagent" [shape=box];
-    "Review round (Claude + Codex if enabled)" [shape=box];
-    "Fix issues found" [shape=box];
-    "Ask: 1) Present  2) Loop until clean (recommended)" [shape=diamond];
-    "Review round N (max 10)" [shape=box];
-    "Round clean?" [shape=diamond];
-    "Present to user" [shape=box];
-    "User approves?" [shape=diamond];
-    "Re-generate with feedback (new subagent)" [shape=box];
-    "Write approval marker" [shape=box];
-    "Recommend compaction" [shape=box];
-    "Invoke next skill in route" [shape=doublecircle];
-
-    "Verify goals.md exists and approved" -> "Launch question-generation subagent";
-    "Launch question-generation subagent" -> "Review round (Claude + Codex if enabled)";
-    "Review round (Claude + Codex if enabled)" -> "Fix issues found";
-    "Fix issues found" -> "Ask: 1) Present  2) Loop until clean (recommended)";
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Present to user" [label="1"];
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Review round N (max 10)" [label="2"];
-    "Review round N (max 10)" -> "Round clean?";
-    "Round clean?" -> "Present to user" [label="yes or cap hit"];
-    "Round clean?" -> "Fix issues found" [label="no, fix and loop"];
-    "Present to user" -> "User approves?";
-    "User approves?" -> "Re-generate with feedback (new subagent)" [label="no"];
-    "Re-generate with feedback (new subagent)" -> "Review round (Claude + Codex if enabled)";
-    "User approves?" -> "Write approval marker" [label="yes"];
-    "Write approval marker" -> "Recommend compaction";
-    "Recommend compaction" -> "Invoke next skill in route";
-}
-```
-
 ### Question Generation Subagent
 
 **Inputs:** `goals.md`
@@ -104,28 +70,10 @@ status: draft
 
 ### Review Round
 
-After question generation, run one review round:
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Questions-specific reviewer instructions:
 
-1. **Claude review subagent** — launch with `goals.md` + `questions.md` to check:
-   - **Goal leakage check**: Do any questions reveal the user's intent, desired outcome, or planned changes? If a researcher reading only the questions could infer what we're trying to build, the questions leak too much. Flag and rewrite.
-   - Are questions comprehensive? Do they cover all codebase zones implied by goals?
-   - Are questions objective (asking "how does X work?" not "how should we change X?")?
-   - Are research type tags appropriate for each question?
-   - **Hybrid scrutiny**: Can any `[hybrid]` questions be split into separate `[codebase]` and `[web]` questions? Only approve `[hybrid]` when splitting would lose essential cross-referencing context.
-   - Any redundant questions?
-   - Any missing areas of investigation?
-   
-   The subagent returns structured findings. The orchestrating skill writes them to `reviews/questions-review.md`.
-
-2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`questions.md`), input artifacts (`goals.md`) for cross-reference, and the same review criteria. The orchestrating skill appends Codex findings to `reviews/questions-review.md`.
-
-3. Fix any issues found in both reviews.
-
-4. Ask the user ONCE: `1) Present for review  2) Loop until clean (recommended)`
-   - **1:** Proceed to human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The artifact may still have issues."
-   - **2:** Loop autonomously — run review → fix → review → fix without re-prompting. Stop ONLY when a round is clean ("Reviews passed clean") or 10 rounds reached ("Hit 10-round review cap — presenting for your review."). Then proceed to human gate. **Do not re-ask between rounds.**
-   
-   **Default recommendation is always option 2.** Clean reviews before human review catch cross-reference inconsistencies that are hard to spot manually.
+- **Claude review subagent** — inputs: `goals.md` + `questions.md`. Checks: **Goal leakage** (would a researcher reading only the questions be able to infer what we're trying to build? if yes, rewrite); comprehensiveness (covers all codebase zones implied by goals); objectivity ("how does X work?" not "how should we change X?"); appropriate research type tags; **Hybrid scrutiny** (can `[hybrid]` be split into `[codebase]` + `[web]`?); no redundant or missing areas. Findings written to `reviews/questions-review.md`.
+- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with `questions.md` + `goals.md`, same criteria. Findings appended.
 
 ### Human Gate
 
@@ -188,12 +136,12 @@ Recommend compaction: "Questions approved. This is a good point to compact conte
 
 The bad questions reveal intent ("add rate limiting middleware"), assume decisions ("use existing Redis"), and seek recommendations ("best library").
 
-<BEHAVIORAL-DIRECTIVES>
-These directives apply at every step of this skill, regardless of context.
+## Iron Laws — Final Reminder
 
-D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+The two override-critical rules for Questions, restated at end:
 
-D2 — Never suggest skipping steps for speed: Every step in the QRSPI pipeline exists for a reason. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+1. **Questions must NOT leak goals or intent.** A researcher reading only `questions.md` should not be able to infer what we're trying to build or change. Goal leakage produces confirmation-biased research downstream.
 
-D3 — Resist time-pressure shortcuts: There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
-</BEHAVIORAL-DIRECTIVES>
+2. **Questions are exploratory, not prescriptive.** "How does X work?" is allowed; "How should we change X?" is not. Prescriptive questions presuppose conclusions that Design — not Research — should determine.
+
+Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

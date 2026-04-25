@@ -3,29 +3,21 @@ name: replan
 description: Use between phases when Test signals more phases remain — analyzes completed phase, proposes task updates with severity classification, handles minor updates or major backward loops
 ---
 
-# Replan (QRSPI Step 9.5)
+# Replan (QRSPI Step 12)
 
 **Announce at start:** "I'm using the QRSPI Replan skill to update remaining tasks based on phase learnings."
 
 ## Overview
 
-Subagent analyzes completed phase, proposes updates with severity classification. Runs between phases only — not at end of final phase. Orchestrator in main conversation.
+Subagent analyzes completed phase, proposes updates with severity classification. Runs between phases only — not at end of final phase.
 
 ## Iron Law
 
 ```
 DO NOT CLASSIFY A MAJOR CHANGE AS MINOR TO SKIP THE BACKWARD LOOP
 DO NOT CLASSIFY A SCOPE-UNKNOWN CHANGE AS MINOR
+DO NOT UPDATE APPROVED ARTIFACTS WITHOUT USER APPROVAL
 ```
-
-## Prompt Templates
-
-```
-replan/
-└── SKILL.md
-```
-
-No prompt templates — the Replan subagent works from artifact files directly (phase code, fixes, reviews, remaining tasks, plan, design).
 
 ## Artifact Gating
 
@@ -48,37 +40,6 @@ Do NOT classify a major change as minor to avoid the backward loop.
 Do NOT classify a scope-unknown change as minor — default to most stringent treatment.
 Do NOT skip the backward loop for major or scope-unknown changes — cascading re-approval is the invariant.
 </HARD-GATE>
-
-## Process
-
-```mermaid
-flowchart TD
-    A[Analyze completed phase] --> B[Identify patterns, quirks, adjustments]
-    B --> C[Propose updates + severity classification]
-    C --> D[Review round - convergence]
-    D --> E[Present changes + severity to user]
-    E --> F{User approves?}
-    F -->|no| G[Revise proposals]
-    G --> D
-    F -->|yes, minor| H[Update tasks/*.md + plan.md]
-    H --> I[Present diffs for re-approval]
-    I --> J{User re-approves?}
-    J -->|no| G
-    J -->|yes| K[Set status: approved, commit]
-    K --> K2[artifact_snapshot_phase]
-    K2 --> K3[artifact_promote_next_phase]
-    K3 --> L[Delete replan-pending.md]
-    L --> L2[Recommend compaction]
-    L2 --> M((Invoke Worktree for next phase))
-    F -->|yes, major| N[Identify loop-back target]
-    N --> N2[Write feedback/replan-phase-NN-round-MM.md]
-    N2 --> N3[Reset target + downstream to draft]
-    N3 --> N4[Delete replan-pending.md]
-    N4 --> N5[Recommend compaction]
-    N5 --> O((Invoke loop-back target — normal pipeline resumes))
-    F -->|yes, scope-unknown| P[Treat as Major — identify loop-back target]
-    P --> N
-```
 
 ## Severity Classification
 
@@ -106,7 +67,7 @@ flowchart TD
 
 NO `goals.md` directly — the subagent reads the plan and design which already incorporate goals. (The review subagent reads `goals.md` directly for consistency checking — that is a separate subagent with different inputs.)
 
-**Amendment handling:** When mapping amendment items to existing goals, verify the goal's acceptance criterion text actually describes the amendment's scope. If the goal text covers only part of the amendment, either expand the goal text or create a separate goal for the uncovered item. Never map an amendment to a goal whose criterion text doesn't describe it.
+**Scope-mapping check:** When tying a proposed change to an existing goal, verify the goal's acceptance criterion text actually describes the proposal's scope. If the proposal's scope is not covered by the existing goal text, classify the proposal as Major (loop-back to Goals) — do NOT silently expand goal text or create new goals from the Replan subagent. Goal-text changes are Goals' responsibility on the loop-back, never Replan's.
 
 **Task:**
 
@@ -142,7 +103,7 @@ After re-approval on the minor path, snapshot the completed phase before promoti
 2. Call `artifact_promote_next_phase <artifact_dir> <completed_phase_number>` — deletes phase-scoped files (structure.md, plan.md, tasks/, reviews/, feedback/, .qrspi/) and resets remaining artifact frontmatter to `status: draft`
 3. Present summary to user: which files were snapshotted, which were deleted, which were reset
 
-Phase snapshots do NOT happen on the major backward-loop path. Major changes trigger a cascade reset through the normal pipeline, which produces new artifacts from scratch — snapshotting stale artifacts before a major redesign would be misleading.
+Phase snapshots do NOT happen on the major backward-loop path. The minor path applies its proposed changes to `tasks/*.md` and `plan.md` *before* snapshotting, so the snapshot captures the as-completed-and-amended phase. The major path resets target artifacts to `draft` so that the loop-back skill can re-execute against fresh inputs — there is no stable snapshot to take, because the artifacts at that moment reflect the state we explicitly intend to discard.
 
 On rejection: write feedback to `feedback/replan-minor-phase-NN-round-MM.md` (note: `minor` prefix distinguishes from major loop-back feedback files), revise proposals.
 
@@ -152,7 +113,7 @@ Identify earliest loop-back target (Goals, Design, or Structure).
 
 Write replan proposals to `feedback/replan-phase-NN-round-MM.md` with: what changed, why, phase learnings. Primary input for loop-back skill. Proposed changes described here, NOT applied to artifacts directly.
 
-Reset target artifact and all downstream artifacts to `status: draft`. Includes both main artifacts AND their outputs: loop to Goals resets all artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`); loop to Design resets `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`; loop to Structure resets `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`. No content changes — just status reset. (Task files and `parallelization.md` must be reset because Plan and Worktree will re-produce them during the cascade.)
+Reset target artifact and all downstream artifacts to `status: draft`. Includes both main artifacts AND their outputs: loop to Goals resets all artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`); loop to Design resets `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`; loop to Structure resets `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`. No content changes — just status reset. (Task files and `parallelization.md` must be reset because Plan and Parallelize will re-produce them during the cascade.)
 
 Recommend compaction before invoking target skill.
 
@@ -160,7 +121,7 @@ Recommend compaction before invoking target skill.
 - **Loop back to Design:** Invoke `qrspi:design` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
 - **Loop back to Structure:** Invoke `qrspi:structure` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
 
-**Fire-and-forget:** After writing the feedback file and resetting statuses, Replan invokes the loop-back target skill directly and exits. The normal pipeline terminal state routing takes over — Design invokes Structure, Structure invokes Plan, Plan invokes Worktree. Replan does not orchestrate the cascade or maintain control. Each downstream skill picks up the feedback file as additional input through its normal process.
+**Fire-and-forget:** After writing the feedback file and resetting statuses, Replan invokes the loop-back target skill directly and exits. The normal pipeline terminal state routing takes over — Design invokes Structure, Structure invokes Plan, Plan invokes Parallelize, Parallelize invokes Dispatch. Replan does not orchestrate the cascade or maintain control. Each downstream skill picks up the feedback file as additional input through its normal process.
 
 **Minor changes alongside major:** Include all minor changes in the feedback file alongside the major proposals. Plan will incorporate them when it re-produces task specs during the cascade. No separate apply step is needed — the feedback file is the single communication channel.
 
@@ -172,9 +133,9 @@ Recommend compaction before invoking target skill.
 
 ## Terminal State
 
-**Minor path:** Delete `replan-pending.md`, recommend compaction, invoke `qrspi:worktree` for next phase.
+**Minor path:** Delete `replan-pending.md`, recommend compaction, then **call `state_init_or_reconcile <artifact_dir>` to reconcile `state.json` against the freshly-reset frontmatter** (this avoids relying on the PostToolUse hook's lazy catch-up — Goals reads `state.json` immediately at start and would otherwise see stale values), then invoke `qrspi:goals` for the next phase. (Rationale: `artifact_promote_next_phase` deleted `structure.md`, `plan.md`, `tasks/` and reset goals/research/design frontmatter to `draft`. Parallelize cannot run without an approved `plan.md` and `tasks/*.md`, so the next phase must restart from Goals — which re-approves the promoted goals via its "Next-Phase Restart Mode" (see `goals/SKILL.md` → "Next-Phase Restart Mode"), then cascades through Questions/Research/Design/Structure/Plan/Parallelize/Dispatch in turn.)
 
-**Major path:** Delete `replan-pending.md`, recommend compaction, invoke the loop-back target skill (Design or Structure). Replan exits — the normal pipeline takes over from the loop-back target forward. The `replan-pending.md` deletion happens before the loop-back invocation because Replan's analytical work is complete; the cascade is standard pipeline execution.
+**Major path:** Delete `replan-pending.md`, recommend compaction, invoke the loop-back target skill (Goals, Design, or Structure). Replan exits — the normal pipeline takes over from the loop-back target forward. The `replan-pending.md` deletion happens before the loop-back invocation because Replan's analytical work is complete; the cascade is standard pipeline execution.
 
 ## Model Selection Guidance
 
@@ -186,16 +147,7 @@ Recommend compaction before invoking target skill.
 
 ## Task Tracking (TodoWrite)
 
-Sub-tasks for Replan:
-
-1. Read `config.md` for Codex review setting
-2. Analyze completed phase
-3. Propose updates with severity classification
-4. Run review round
-5. Present changes to user
-6. Minor: apply updates, re-approval cycle / Major: write feedback, reset statuses
-7. Delete `replan-pending.md`
-8. Minor: invoke Worktree / Major: invoke loop-back target (pipeline resumes)
+Track sub-tasks per Replan invocation, mirroring the analyze → classify → review → present → (minor apply | major reset+feedback) → delete `replan-pending.md` → invoke-next-skill flow.
 
 ## Red Flags — STOP
 
@@ -227,8 +179,10 @@ Clarifying amendments are changes to approved artifacts that refine wording, fix
 | Type | Description | Cascade behavior | Example |
 |---|---|---|---|
 | **Clarifying** | Refines wording or fixes ambiguity without changing intent | `--skip-cascade` — no downstream reset | "Change 'handle errors' to 'return HTTP 4xx on validation failure'" |
-| **Additive** | Adds new detail that doesn't contradict existing content | `--skip-cascade` — no downstream reset | "Add acceptance criterion: 'must support pagination'" |
+| **Additive** | Adds new detail that doesn't contradict existing content and doesn't touch goals or acceptance criteria | `--skip-cascade` — no downstream reset | "Add a note to a `structure.md` interface explaining the timeout default" |
 | **Architectural** | Changes intent, structure, or approach | Full cascade — treat as Replan Major | "Change 'REST API' to 'GraphQL'" — this is NOT an amendment, route through Replan |
+
+**Goals and acceptance criteria are never amendments.** Any change to `goals.md` (purpose, constraints, success criteria, out-of-scope) is a Replan Major change with loop-back to Goals — see Severity Classification above. The Clarifying/Additive shortcut applies only to non-goal artifacts.
 
 ### Rationale Presentation
 
@@ -288,7 +242,7 @@ Phase 1 completed. Replan subagent analyzes the phase:
 - **Action:** Split tasks/task-09.md into tasks/task-09a.md and tasks/task-09b.md, update plan.md task list
 ```
 
-**Result:** All changes are minor. Update `tasks/*.md` and `plan.md` in place, set `status: replan-draft`, present diffs to user. User re-approves, set `status: approved`, commit. Delete `replan-pending.md`. Invoke Worktree for Phase 2.
+**Result:** All changes are minor. Update `tasks/*.md` and `plan.md` in place, set `status: replan-draft`, present diffs to user. User re-approves, set `status: approved`, commit. Snapshot Phase 1 and promote (which deletes `structure.md`/`plan.md`/`tasks/` and resets goals/research/design to draft). Delete `replan-pending.md`. Invoke Goals to restart the pipeline for Phase 2.
 
 ## Worked Example — Good (Major)
 
@@ -330,7 +284,7 @@ Write feedback file:
 
 Reset `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md` to `status: draft`. Delete `replan-pending.md`. Recommend compaction. Invoke `qrspi:design` with normal inputs + `feedback/replan-phase-01-round-01.md`. Replan exits.
 
-Normal pipeline takes over: Design re-reviews (incorporating WebSocket requirement + minor Task 7 change from feedback) → Structure → Plan (incorporates the Task 7 edge case test when re-producing task specs) → Worktree → Phase 2 begins.
+Normal pipeline takes over: Design re-reviews (incorporating WebSocket requirement + minor Task 7 change from feedback) → Structure → Plan (incorporates the Task 7 edge case test when re-producing task specs) → Parallelize → Dispatch → Phase 2 begins.
 
 ## Worked Example — Bad
 
@@ -340,20 +294,16 @@ Normal pipeline takes over: Design re-reviews (incorporating WebSocket requireme
 Some things need to change for Phase 2. The notification system should probably use WebSockets instead of polling. Also Task 8 might need splitting. Updated tasks/task-08.md and plan.md with the changes.
 ```
 
-**Why this fails:**
-- No severity classification — "should probably use WebSockets" is a Major architecture change but isn't classified
-- No per-change structure — changes are lumped together without individual analysis
-- Changes applied directly to artifacts ("Updated tasks/task-08.md and plan.md") without user approval — HARD GATE violation
-- No loop-back identified for the WebSocket change — interface and architecture changes require backward loops
-- No phase learnings or rationale — "some things need to change" provides no reasoning for the proposals
-- No feedback file written for the major change — the backward loop has no input to work from
+**Why this fails:** missing per-change severity classifications; an unclassified Major change ("WebSockets") with no loop-back target identified; changes applied to artifacts without user approval (HARD-GATE violation); no feedback file for the Major change; lumped narrative instead of per-change structure.
 
-<BEHAVIORAL-DIRECTIVES>
-These directives apply at every step of this skill, regardless of context.
+## Iron Laws — Final Reminder
 
-D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+The three override-critical rules for Replan, restated at end:
 
-D2 — Never suggest skipping steps for speed. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+1. **DO NOT classify a Major change as Minor to skip the backward loop.** Severity classification is the entire point of Replan. If a change touches file paths, interfaces, architecture, slices, phases, or goals — it is Major regardless of how small the wording diff looks.
 
-D3 — There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency, acknowledge the constraint and offer the fastest compliant path — never a non-compliant shortcut.
-</BEHAVIORAL-DIRECTIVES>
+2. **DO NOT classify a Scope-Unknown change as Minor.** When impact is unclear, default to the most stringent treatment (Major + earliest plausible loop-back target). Guessing Minor when scope is ambiguous is the hidden failure mode.
+
+3. **DO NOT update approved artifacts before user approval.** On the Major path, proposals are written to a feedback file and target artifacts are reset to `draft` — they are NOT amended. On the Minor path, present diffs and require re-approval before setting `status: approved`.
+
+Behavioral directives D1-D3 (encourage reviews after changes, no shortcuts for speed, no time-pressure skips) apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

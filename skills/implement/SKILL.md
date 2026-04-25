@@ -1,9 +1,9 @@
 ---
 name: implement
-description: Use when tasks are dispatched from Worktree (or Plan in quick-fix mode) — executes TDD per task in isolated worktrees with correctness and thoroughness reviews
+description: Use when tasks are dispatched from Dispatch (or Plan in quick-fix mode) — executes TDD per task in isolated worktrees with correctness and thoroughness reviews
 ---
 
-# Implement (QRSPI Step 8)
+# Implement (QRSPI Step 9)
 
 **Announce at start:** "I'm using the QRSPI Implement skill to execute TDD per task with code reviews."
 
@@ -24,11 +24,11 @@ MAIN CHAT ONLY ORCHESTRATES. ALL CODE EXECUTION, FILE CHANGES, AND GIT
 OPERATIONS ARE DELEGATED TO SUBAGENTS. MAIN CHAT NEVER RUNS THE WORK.
 ```
 
-Main chat's responsibilities are: dispatch subagents (implementer, reviewers, fix-rounds), aggregate their findings, gate transitions, and write review logs (`reviews/tasks/task-NN-review.md` — the one file main chat authors directly, per the Rules in the Artifact section).
+Main chat's responsibilities are: dispatch subagents (implementer, reviewers, fix-rounds), aggregate their findings, gate transitions, and write review logs (`reviews/tasks/task-NN-review.md` — the only file main chat authors directly; see `## Artifact` → `### Rules` below).
 
-Main chat does NOT: run tests / typecheck / lint, write or edit target-project files, run `git add` / `git commit`, invoke `pnpm` / `npm` / `cargo` / language toolchains, or perform "quick verification" between review rounds. Any of those activities are delegated to a fresh subagent (a new implementer dispatch, or a fix-round subagent for re-verification after fixes).
+Main chat does NOT: run tests / typecheck / lint, write or edit target-project source files (the `reviews/tasks/task-NN-review.md` review log is the sole exception called out above), run `git add` / `git commit`, invoke `pnpm` / `npm` / `cargo` / language toolchains, or perform "quick verification" between review rounds. Any of those activities are delegated to a fresh subagent (a new implementer dispatch, or a fix-round subagent for re-verification after fixes).
 
-**Why this rule matters.** Subagents inherit main chat's CWD. When the Worktree step puts task work inside `{target_project}/.trees/{run}-{task}/`, a subagent dispatched from main chat picks up the worktree via a prompt-specified path, while main chat's CWD stays at project root. If main chat instead runs work directly, its CWD ends up pinned to the worktree path for the rest of the session, which triggers the pre-tool-use hook's worktree-enforcement rules (worktree containment + protected-path + L1 allowlist) on every subsequent main-chat tool call — including the very writes main chat would need to make to repair any mid-run state corruption. Keeping main chat at project root preserves main chat's ability to write `.qrspi/state.json` and `.qrspi/task-NN-runtime.json` on behalf of a trapped subagent (per `hooks/lib/protected.sh:11-13`, those protections fire only when `$PWD` is inside a worktree).
+**Why this rule matters.** Subagents inherit main chat's CWD. When the Dispatch step puts task work inside `{target_project}/.worktrees/{slug}/task-NN/`, a subagent dispatched from main chat picks up the worktree via a prompt-specified path, while main chat's CWD stays at project root. If main chat instead runs work directly, its CWD ends up pinned to the worktree path for the rest of the session, which triggers the pre-tool-use hook's worktree-enforcement rules (worktree containment + protected-path + L1 allowlist) on every subsequent main-chat tool call. Keeping main chat at project root preserves main chat's ability to perform hook-safe recovery actions (e.g., re-dispatching subagents, writing review logs) that would otherwise be blocked by worktree-enforcement. State files under `.qrspi/` remain hook-managed; skills never write them directly.
 
 **Red flag — STOP.** If you find yourself about to run `pnpm` / `npm` / `cargo` / `git commit` / `Write` / `Edit` from main chat as part of task execution, stop. Dispatch a subagent instead. The only code main chat writes directly is review-log markdown under `reviews/tasks/`.
 
@@ -55,7 +55,14 @@ Correctness checks if code is right and safe — it always runs. Thoroughness ch
 
 ## Artifact Gating
 
-Read the task file's `pipeline` field to determine which inputs to load. The task's `pipeline` field is the single source of truth — Implement never checks `config.md` for pipeline routing. Read `config.md` only for `review_depth` and `review_mode` settings.
+Read the task file's `pipeline` field to determine which inputs to load. The task's `pipeline` field is the single source of truth — Implement never checks `config.md` for pipeline routing. Read `config.md` for `review_depth`, `review_mode`, and `codex_reviews` settings.
+
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md` against `codex_reviews`. Implement-specific menu when the field is missing or invalid:
+
+**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
+2. Re-run Goals to regenerate config.md
+3. Abort
 
 | Input | `pipeline: quick` | `pipeline: full` |
 |-------|-------------------|-------------------|
@@ -66,8 +73,6 @@ Read the task file's `pipeline` field to determine which inputs to load. The tas
 | `structure.md` with `status: approved` | No | Yes |
 | `parallelization.md` with `status: approved` | No | Yes |
 
-In the full pipeline, research is already incorporated into `design.md` and `structure.md`. In quick fix mode, `research/summary.md` provides design-like context since those artifacts don't exist.
-
 <HARD-GATE>
 Do NOT write production code without a failing test first.
 Do NOT skip any reviewer in the configured review depth.
@@ -77,34 +82,15 @@ Do NOT bypass the batch gate — every task's results are presented to the user.
 
 ## Quick Fix Mode
 
-When Worktree is not in the route:
+When Dispatch is not in the route (quick-fix mode), Implement owns the per-phase orchestration that Dispatch normally provides:
 
 1. Ask review depth/mode, write to `config.md`. Default: quick depth + single round.
 2. Orchestrate fix tasks from `fixes/test-round-NN/` directly.
+3. Present the Quick-Fix Batch Gate (see below) when all tasks complete.
 
 ## Per-Task TDD Process
 
-```mermaid
-flowchart TD
-    A[Implementer: Read test expectations from task spec] --> B[Implementer: Write failing tests]
-    B --> C[Implementer: Run tests - VERIFY FAIL]
-    C --> D{Tests fail as expected?}
-    D -->|no - tests pass| E[Implementer: STOP - test is vacuous, fix it]
-    E --> B
-    D -->|yes| F[Implementer: Write minimal implementation]
-    F --> G[Implementer: Run tests - verify pass]
-    G --> H{All tests pass?}
-    H -->|no| I[Implementer: Fix implementation - not the test]
-    I --> G
-    H -->|yes| J[Implementer: Sanity check typecheck/lint and commit]
-    J --> K{Implementer reports status}
-    K -->|DONE| L[Orchestrator: Dispatch reviewer subagents]
-    K -->|DONE_WITH_CONCERNS| M[Orchestrator: Assess concerns, dispatch reviewers]
-    K -->|NEEDS_CONTEXT| N[Orchestrator: Provide info, re-dispatch implementer]
-    K -->|BLOCKED| O[Orchestrator: Assess and escalate]
-```
-
-All steps 1-6 below run inside the **implementer subagent**. Main chat does not run tests, write code, or commit directly.
+All steps below run inside the **implementer subagent**. Main chat does not run tests, write code, or commit directly.
 
 1. **Implementer: Read test expectations** from the task spec
 2. **Implementer: Write failing tests** based on those expectations
@@ -112,10 +98,6 @@ All steps 1-6 below run inside the **implementer subagent**. Main chat does not 
 4. **Implementer: Write minimal implementation** to make the tests pass
 5. **Implementer: Run tests — verify pass.** If they fail, fix the implementation (not the test)
 6. **Implementer: Sanity check and commit.** Implementer-side pass — typecheck / lint green — then commit inside the worktree's git. This is NOT the formal review; formal reviews run next as separate reviewer subagents dispatched by the orchestrator.
-
-## Code Quality
-
-Comment aggressively. Every function gets a header comment explaining: purpose, inputs, outputs, and failure behavior. Every conditional block that handles an edge case, security decision, or non-obvious flow gets an inline comment explaining *why*. Assume the code reviewer is proficient in software engineering but unfamiliar with the specific language.
 
 ## Implementer Subagent Status Reporting
 
@@ -143,26 +125,6 @@ The implementer subagent returns one of the statuses below. The Action column na
 
 ## Review Fix Loop (Inner Loop, Per-Task)
 
-Follows Review Pattern 1.
-
-```mermaid
-flowchart TD
-    A[Orchestrator: Dispatch reviewer subagents] --> B{Orchestrator: Issues in aggregated findings?}
-    B -->|no| C((Task clean))
-    B -->|yes| D[Orchestrator: Re-dispatch reviewers on same code to converge]
-    D --> E{New findings?}
-    E -->|yes, under 3 rounds| D
-    E -->|no or 3 rounds hit| F[Orchestrator: Write complete issue list to review log]
-    F --> G[Orchestrator: Dispatch implementer-fix subagent with issue list]
-    G --> H[Orchestrator: Dispatch reviewers on fixed code]
-    H --> I{Issues found?}
-    I -->|no| C
-    I -->|yes, under 3 fix cycles| D
-    I -->|yes, 3+ fix cycles| J((Task unresolved — flag and move on))
-```
-
-### Mechanics
-
 All reviewer and fix work is dispatched via subagents; the orchestrator only aggregates findings and decides the next dispatch.
 
 1. **Orchestrator: dispatch reviewer groups** (quick = correctness only, deep = correctness then thoroughness). Reviewers run as subagents in parallel within their group.
@@ -177,9 +139,10 @@ All reviewer and fix work is dispatched via subagents; the orchestrator only agg
 ## Dispatching Reviewers
 
 - Read template from `implement/templates/{group}/{reviewer}.md`
-- Launch as subagent with template as prompt framework
+- Launch as Claude subagent with template as prompt framework
 - Provide: task spec, code changes (files + content), test results, additional context per template
 - Each returns: `✅ Approved` or `❌ Issues: [file:line references]`
+- **If `codex_reviews: true`:** for every Claude reviewer dispatched, dispatch `codex:rescue` in parallel with the same template + the same task/code/context. Codex returns its own findings, attributed under a `#### Codex` subsection in the review log (see Codex Subsections below). Both Claude and Codex findings feed the convergence and fix loops — neither is privileged.
 
 ## Artifact
 
@@ -209,80 +172,22 @@ task: NN
 **Response:**
 {verbatim response received from this reviewer}
 
-### code-quality-reviewer
-
-**Model:** {actual model identifier}
-**Prompt:**
-{verbatim prompt sent to this reviewer}
-
-**Response:**
-{verbatim response received from this reviewer}
-
-### silent-failure-hunter
-
-**Model:** {actual model identifier}
-**Prompt:**
-{verbatim prompt sent to this reviewer}
-
-**Response:**
-{verbatim response received from this reviewer}
-
-### security-reviewer
-
-**Model:** {actual model identifier}
-**Prompt:**
-{verbatim prompt sent to this reviewer}
-
-**Response:**
-{verbatim response received from this reviewer}
+### {next reviewer}
+{repeat the spec-reviewer block format for each correctness reviewer:
+code-quality-reviewer, silent-failure-hunter, security-reviewer}
 
 ## Round 1 — Thoroughness (deep only)
 
 ### goal-traceability-reviewer
-
-**Model:** {actual model identifier}
-**Prompt:**
-{verbatim prompt sent to this reviewer}
-
-**Response:**
-{verbatim response received from this reviewer}
-
-### test-coverage-reviewer
-
-**Model:** {actual model identifier}
-**Prompt:**
-{verbatim prompt sent to this reviewer}
-
-**Response:**
-{verbatim response received from this reviewer}
-
-### type-design-analyzer
-
-**Model:** {actual model identifier}
-**Prompt:**
-{verbatim prompt sent to this reviewer}
-
-**Response:**
-{verbatim response received from this reviewer}
-
-### code-simplifier
-
-**Model:** {actual model identifier}
-**Prompt:**
-{verbatim prompt sent to this reviewer}
-
-**Response:**
-{verbatim response received from this reviewer}
+{same block format — repeat for: test-coverage-reviewer, type-design-analyzer, code-simplifier}
 
 ## Post-review fixes (round 1)
 - {what was changed and why}
 
 ## Round 2 — Correctness
-
 {repeat reviewer sections as above}
 
 ## Round 2 — Thoroughness (deep only)
-
 {repeat reviewer sections as above}
 
 ## Post-review fixes (round 2)
@@ -336,13 +241,15 @@ When Codex is enabled, each reviewer section includes a `#### Codex` subsection 
 
 ## Terminal State
 
-**Full pipeline:** Each task subagent returns to the Worktree orchestrator. Implement does not invoke the next step.
+**Full pipeline:** Each task subagent returns to the Dispatch orchestrator. Implement does not invoke the next step.
 
 **Quick fix:** Present batch gate (see below). Then invoke next skill in `config.md` route after `implement` (test in quick fix).
 
-## Batch Gate
+## Quick-Fix Batch Gate
 
-After all tasks complete, present results and a conditional menu based on task outcomes.
+This section applies **only when Dispatch is absent from the route** (quick-fix mode). In full-pipeline mode, the batch gate is owned by Dispatch (see `dispatch/SKILL.md` → "Dispatch Is the Per-Phase Implement Loop" and "Batch Gate (After All Tasks)") — Implement never presents one in that mode.
+
+After all quick-fix tasks complete, present results and a conditional menu based on task outcomes.
 
 **When all tasks passed clean:**
 
@@ -363,19 +270,11 @@ All tasks passed clean. Choose:
 4. Stop
 ```
 
-After the options menu, add: "Before choosing, consider running `/compact` if context is long — implementation phases consume significant context. Compacting before Integrate gives the next skill a cleaner start."
+After the menu, recommend compaction before the next step: "This is a good point to compact context before the next step (`/compact`)."
 
 ### Batch Gate Red Flags — STOP
 
 - Presenting "Fix remaining issues" option when all tasks passed clean
-
-## Reviewer Name Mapping
-
-Phase 1 → Phase 3 renames:
-
-- `spec-compliance-reviewer` → `spec-reviewer`
-- `code-reviewer` → `code-quality-reviewer`
-- `test-coverage-analyzer` → `test-coverage-reviewer`
 
 ## Model Selection Guidance
 
@@ -385,20 +284,9 @@ Phase 1 → Phase 3 renames:
 | Integration tasks (multi-file, pattern matching) | Standard model (sonnet) |
 | Architecture/design/review | Most capable model (opus) |
 
-Worktree uses this for implementer subagents. Implement uses it for reviewer subagents.
-
 ## Task Tracking (TodoWrite)
 
-Sub-tasks per task:
-
-1. Write failing tests
-2. Verify tests fail
-3. Write minimal implementation
-4. Verify tests pass
-5. Self-review and commit
-6. Dispatch correctness reviewers
-7. Dispatch thoroughness reviewers (deep mode)
-8. Fix reviewer issues (if any)
+Track sub-tasks per task with TodoWrite, mirroring the Per-Task TDD Process steps plus the reviewer dispatch sequence.
 
 ## Red Flags — STOP
 
@@ -427,7 +315,7 @@ Sub-tasks per task:
 | "This reviewer is redundant, I can skip it" | Each reviewer catches different classes of issues. Run them all. |
 | "The change is too small for 8 reviewers" | Review depth is configured per phase, not per change. Follow config. |
 | "Just this once in main chat — it's faster" | Main chat is not the worker. Dispatch a subagent. Running work in main chat pins its CWD to the worktree and triggers the pre-tool-use hook's worktree-enforcement on every subsequent tool call — including any repair writes main chat would need to make. |
-| "I'll run a quick sanity check before the reviewers" | That's what the implementer subagent's step 6 already did. Dispatch reviewers next. |
+| "I'll run a quick sanity check before the reviewers" | That's what the implementer subagent's sanity-check-and-commit step already did. Dispatch reviewers next. |
 
 ## Worked Example — Good TDD Cycle
 
@@ -488,12 +376,12 @@ Self-review: Clean
 - Testing what was built, not what should be built
 - Tests biased by implementation, not by task spec's test expectations
 
-<BEHAVIORAL-DIRECTIVES>
-These directives apply at every step of this skill, regardless of context.
+## Iron Laws — Final Reminder
 
-D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+The two override-critical rules for Implement, restated at end:
 
-D2 — Never suggest skipping steps for speed. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+1. **NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST.** If the test passed on first run, it is vacuous — fix the test, then implement. Implementation-before-test is the most common silent quality failure.
 
-D3 — There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency, acknowledge the constraint and offer the fastest compliant path — never a non-compliant shortcut.
-</BEHAVIORAL-DIRECTIVES>
+2. **MAIN CHAT ONLY ORCHESTRATES.** All code execution, file changes, and git operations are delegated to subagents. The only file main chat authors directly is `reviews/tasks/task-NN-review.md`. If you find yourself about to run `pnpm` / `npm` / `cargo` / `git commit` / `Write` / `Edit` / `pytest` / typecheck / lint from main chat — stop and dispatch a subagent. Main-chat execution pins CWD to the worktree and triggers worktree-enforcement on every subsequent main-chat tool call.
+
+Behavioral directives D1-D3 (encourage reviews after changes, no shortcuts for speed, no time-pressure skips) apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

@@ -34,46 +34,6 @@ If a subagent prompt contains goals.md content, the isolation invariant is broke
 
 ## Process
 
-```dot
-digraph research {
-    "Verify questions.md exists and approved" [shape=box];
-    "Parse questions and group related ones" [shape=box];
-    "Dispatch specialist subagents (parallel)" [shape=box];
-    "All researchers complete?" [shape=diamond];
-    "Launch synthesis subagent" [shape=box];
-    "Review round (Claude + Codex if enabled)" [shape=box];
-    "Fix issues found" [shape=box];
-    "Ask: 1) Present  2) Loop until clean (recommended)" [shape=diamond];
-    "Review round N (max 10)" [shape=box];
-    "Round clean?" [shape=diamond];
-    "Present summary to user" [shape=box];
-    "User approves?" [shape=diamond];
-    "Handle rejection (synthesis or underlying)" [shape=box];
-    "Write approval marker" [shape=box];
-    "Recommend compaction" [shape=box];
-    "Invoke next skill in route" [shape=doublecircle];
-
-    "Verify questions.md exists and approved" -> "Parse questions and group related ones";
-    "Parse questions and group related ones" -> "Dispatch specialist subagents (parallel)";
-    "Dispatch specialist subagents (parallel)" -> "All researchers complete?";
-    "All researchers complete?" -> "Launch synthesis subagent" [label="yes"];
-    "Launch synthesis subagent" -> "Review round (Claude + Codex if enabled)";
-    "Review round (Claude + Codex if enabled)" -> "Fix issues found";
-    "Fix issues found" -> "Ask: 1) Present  2) Loop until clean (recommended)";
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Present summary to user" [label="1"];
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Review round N (max 10)" [label="2"];
-    "Review round N (max 10)" -> "Round clean?";
-    "Round clean?" -> "Present summary to user" [label="yes or cap hit"];
-    "Round clean?" -> "Fix issues found" [label="no, fix and loop"];
-    "Present summary to user" -> "User approves?";
-    "User approves?" -> "Handle rejection (synthesis or underlying)" [label="no"];
-    "Handle rejection (synthesis or underlying)" -> "Launch synthesis subagent";
-    "User approves?" -> "Write approval marker" [label="yes"];
-    "Write approval marker" -> "Recommend compaction";
-    "Recommend compaction" -> "Invoke next skill in route";
-}
-```
-
 ### Dispatch
 
 1. Parse `questions.md` — extract each numbered question with its research type tag
@@ -149,27 +109,10 @@ status: draft
 
 ### Review Round
 
-After synthesis, run one review round:
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research-specific reviewer instructions:
 
-1. **Claude review subagent** — launch with all `research/q*.md` files + `research/summary.md` (NO `questions.md` — maintains research isolation) to check:
-   - Is the research objective? Any opinions or recommendations that snuck in?
-   - Are there factual gaps — questions that weren't fully answered?
-   - Is anything stated as fact that's actually an inference?
-   - Are codebase references specific (`file:line`)?
-   - Are web sources cited with URLs?
-   - Does the synthesis accurately represent the per-question findings?
-   
-   The subagent returns structured findings. The orchestrating skill writes them to `reviews/research-review.md`.
-
-2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`research/summary.md`), input artifacts (`research/q*.md` — `questions.md` excluded for isolation), and the same review criteria. The orchestrating skill appends Codex findings to `reviews/research-review.md`.
-
-3. Fix any issues found in both reviews.
-
-4. Ask the user ONCE: `1) Present for review  2) Loop until clean (recommended)`
-   - **1:** Proceed to human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The artifact may still have issues."
-   - **2:** Loop autonomously — run review → fix → review → fix without re-prompting. Stop ONLY when a round is clean ("Reviews passed clean") or 10 rounds reached ("Hit 10-round review cap — presenting for your review."). Then proceed to human gate. **Do not re-ask between rounds.**
-   
-   **Default recommendation is always option 2.** Clean reviews before human review catch cross-reference inconsistencies that are hard to spot manually.
+- **Claude review subagent** — inputs: all `research/q*.md` files + `research/summary.md`. **NO `questions.md`** (maintains research isolation). Checks: objective findings (no opinions/recommendations); no factual gaps; no inference stated as fact; codebase references specific (`file:line`); web sources cited with URLs; synthesis accurately represents per-question findings. Findings written to `reviews/research-review.md`.
+- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with `research/summary.md` + `research/q*.md` (`questions.md` excluded for isolation), same criteria. Findings appended.
 
 ### Rejection Behavior
 
@@ -240,12 +183,12 @@ Recommend compaction: "Research approved. This is a good point to compact contex
 
 The bad example makes recommendations ("you should"), value judgments ("best", "outdated", "too complex"), and cites no sources.
 
-<BEHAVIORAL-DIRECTIVES>
-These directives apply at every step of this skill, regardless of context.
+## Iron Laws — Final Reminder
 
-D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+The two override-critical rules for Research, restated at end:
 
-D2 — Never suggest skipping steps for speed: Every step in the QRSPI pipeline exists for a reason. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+1. **Research isolation is structural — `goals.md` is NEVER passed to any research subagent.** This includes the synthesis subagent. Subagent prompts contain only the assigned question(s). Goal leakage produces confirmation-bias-driven research that selects for the conclusion the goals already implied.
 
-D3 — Resist time-pressure shortcuts: There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
-</BEHAVIORAL-DIRECTIVES>
+2. **Facts only — no opinions, no recommendations, no value judgments.** Codebase findings cite specific `file:line` references; web findings cite URLs. "Should", "best", "better than" are forbidden in research output — those interpretations belong in Design.
+
+Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

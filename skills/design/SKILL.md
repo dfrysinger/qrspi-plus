@@ -40,42 +40,6 @@ When the Design skill creates or updates roadmap.md: (1) every goal ID must exis
 
 ## Process
 
-```dot
-digraph design {
-    "Verify goals.md and research/summary.md approved" [shape=box];
-    "Interactive design discussion" [shape=box];
-    "Subagent synthesizes design.md" [shape=box];
-    "Review round (Claude + Codex if enabled)" [shape=box];
-    "Fix issues found" [shape=box];
-    "Ask: 1) Present  2) Loop until clean (recommended)" [shape=diamond];
-    "Review round N (max 10)" [shape=box];
-    "Round clean?" [shape=diamond];
-    "Present to user" [shape=box];
-    "User approves?" [shape=diamond];
-    "Write feedback, re-synthesize" [shape=box];
-    "Write approval marker" [shape=box];
-    "Recommend compaction" [shape=box];
-    "Invoke next skill in route" [shape=doublecircle];
-
-    "Verify goals.md and research/summary.md approved" -> "Interactive design discussion";
-    "Interactive design discussion" -> "Subagent synthesizes design.md";
-    "Subagent synthesizes design.md" -> "Review round (Claude + Codex if enabled)";
-    "Review round (Claude + Codex if enabled)" -> "Fix issues found";
-    "Fix issues found" -> "Ask: 1) Present  2) Loop until clean (recommended)";
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Present to user" [label="1"];
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Review round N (max 10)" [label="2"];
-    "Review round N (max 10)" -> "Round clean?";
-    "Round clean?" -> "Present to user" [label="yes or cap hit"];
-    "Round clean?" -> "Fix issues found" [label="no, fix and loop"];
-    "Present to user" -> "User approves?";
-    "User approves?" -> "Write feedback, re-synthesize" [label="no"];
-    "Write feedback, re-synthesize" -> "Interactive design discussion";
-    "User approves?" -> "Write approval marker" [label="yes"];
-    "Write approval marker" -> "Recommend compaction";
-    "Recommend compaction" -> "Invoke next skill in route";
-}
-```
-
 ### Interactive Design Discussion
 
 1. Propose 2-3 design approaches with trade-offs, lead with recommendation
@@ -135,28 +99,10 @@ status: draft
 
 ### Review Round
 
-After synthesis, run one review round:
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Design-specific reviewer instructions:
 
-1. **Claude review subagent** — launch with `design.md`, `goals.md`, `research/summary.md` to check:
-   - Does the design address all goals and acceptance criteria?
-   - Are trade-offs clearly stated?
-   - Any internal contradictions?
-   - Is the test strategy appropriate for the design?
-   - YAGNI check — any unnecessary complexity?
-   - Are slices truly vertical (end-to-end), not horizontal layers?
-   - Are phase boundaries reasonable? Does Phase 1 (PoC) prove the full stack?
-   
-   The subagent returns structured findings. The orchestrating skill writes them to `reviews/design-review.md`.
-
-2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`design.md`), input artifacts (`goals.md`, `research/summary.md`) for cross-reference, and the same review criteria. The orchestrating skill appends Codex findings to `reviews/design-review.md`.
-
-3. Fix any issues found in both reviews.
-
-4. Ask the user ONCE: `1) Present for review  2) Loop until clean (recommended)`
-   - **1:** Proceed to human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The artifact may still have issues."
-   - **2:** Loop autonomously — run review → fix → review → fix without re-prompting. Stop ONLY when a round is clean ("Reviews passed clean") or 10 rounds reached ("Hit 10-round review cap — presenting for your review."). Then proceed to human gate. **Do not re-ask between rounds.**
-   
-   **Default recommendation is always option 2.** Clean reviews before human review catch cross-reference inconsistencies that are hard to spot manually.
+- **Claude review subagent** — inputs: `design.md`, `goals.md`, `research/summary.md`. Checks: design addresses all goals and acceptance criteria; trade-offs clearly stated; no internal contradictions; test strategy appropriate; YAGNI (no unnecessary complexity); slices are vertical (end-to-end), not horizontal layers; phase boundaries reasonable and Phase 1 PoC proves full stack. Findings written to `reviews/design-review.md`.
+- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with `design.md` + `goals.md` + `research/summary.md` for cross-reference, same criteria. Findings appended to `reviews/design-review.md`.
 
 ### Human Gate
 
@@ -224,12 +170,12 @@ Recommend compaction: "Design approved. This is a good point to compact context 
 
 The bad example splits by technical layer. Each "layer" can't be tested or demonstrated independently — they only work together.
 
-<BEHAVIORAL-DIRECTIVES>
-These directives apply at every step of this skill, regardless of context.
+## Iron Laws — Final Reminder
 
-D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+The two override-critical rules for Design, restated at end:
 
-D2 — Never suggest skipping steps for speed: Every step in the QRSPI pipeline exists for a reason. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+1. **Vertical slices, not horizontal layers.** Each slice must be end-to-end demonstrable on its own (DB + service + API + frontend together). "DB layer first, API layer second" defers integration risk and breaks Phase 1 PoC's job of proving the full stack works.
 
-D3 — Resist time-pressure shortcuts: There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
-</BEHAVIORAL-DIRECTIVES>
+2. **Phase 1 is always the PoC and must prove the full stack end-to-end.** Backend-only Phase 1 hides cross-layer issues until Phase 2+, when they're more expensive to surface.
+
+Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

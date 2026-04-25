@@ -37,40 +37,6 @@ structure.md contains ONLY current-phase file maps and interfaces. Entries must 
 
 ## Process
 
-```dot
-digraph structure {
-    "Verify goals.md, research/summary.md, design.md approved" [shape=box];
-    "Launch structure subagent" [shape=box];
-    "Review round (Claude + Codex if enabled)" [shape=box];
-    "Fix issues found" [shape=box];
-    "Ask: 1) Present  2) Loop until clean (recommended)" [shape=diamond];
-    "Review round N (max 10)" [shape=box];
-    "Round clean?" [shape=diamond];
-    "Present to user" [shape=box];
-    "User approves?" [shape=diamond];
-    "Re-generate with feedback (new subagent)" [shape=box];
-    "Write approval marker" [shape=box];
-    "Recommend compaction" [shape=box];
-    "Invoke next skill in route" [shape=doublecircle];
-
-    "Verify goals.md, research/summary.md, design.md approved" -> "Launch structure subagent";
-    "Launch structure subagent" -> "Review round (Claude + Codex if enabled)";
-    "Review round (Claude + Codex if enabled)" -> "Fix issues found";
-    "Fix issues found" -> "Ask: 1) Present  2) Loop until clean (recommended)";
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Present to user" [label="1"];
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Review round N (max 10)" [label="2"];
-    "Review round N (max 10)" -> "Round clean?";
-    "Round clean?" -> "Present to user" [label="yes or cap hit"];
-    "Round clean?" -> "Fix issues found" [label="no, fix and loop"];
-    "Present to user" -> "User approves?";
-    "User approves?" -> "Re-generate with feedback (new subagent)" [label="no"];
-    "Re-generate with feedback (new subagent)" -> "Launch structure subagent";
-    "User approves?" -> "Write approval marker" [label="yes"];
-    "Write approval marker" -> "Recommend compaction";
-    "Recommend compaction" -> "Invoke next skill in route";
-}
-```
-
 ### Structure Subagent
 
 **Inputs:**
@@ -127,27 +93,10 @@ interface FooService {
 
 ### Review Round
 
-After the structure subagent completes, run one review round:
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Structure-specific reviewer instructions:
 
-1. **Claude review subagent** — launch with `structure.md`, `goals.md`, `research/summary.md`, `design.md` to check:
-   - Does structure match the design?
-   - Does each vertical slice map cleanly to files/components?
-   - Any missing components?
-   - Any unnecessary components (YAGNI)?
-   - Are interfaces well-defined?
-   - Do modifications to existing files conflict with current codebase patterns?
-   
-   The subagent returns structured findings. The orchestrating skill writes them to `reviews/structure-review.md`.
-
-2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`structure.md`), input artifacts (`goals.md`, `research/summary.md`, `design.md`) for cross-reference, and the same review criteria. The orchestrating skill appends Codex findings to `reviews/structure-review.md`.
-
-3. Fix any issues found in both reviews.
-
-4. Ask the user ONCE: `1) Present for review  2) Loop until clean (recommended)`
-   - **1:** Proceed to human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The artifact may still have issues."
-   - **2:** Loop autonomously — run review → fix → review → fix without re-prompting. Stop ONLY when a round is clean ("Reviews passed clean") or 10 rounds reached ("Hit 10-round review cap — presenting for your review."). Then proceed to human gate. **Do not re-ask between rounds.**
-   
-   **Default recommendation is always option 2.** Clean reviews before human review catch cross-reference inconsistencies that are hard to spot manually.
+- **Claude review subagent** — inputs: `structure.md`, `goals.md`, `research/summary.md`, `design.md`. Checks: structure matches the design; each vertical slice maps cleanly to files/components; no missing or unnecessary components (YAGNI); interfaces well-defined; modifications don't conflict with existing codebase patterns. Findings written to `reviews/structure-review.md`.
+- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with `structure.md` + `goals.md` + `research/summary.md` + `design.md`, same criteria. Findings appended.
 
 ### Human Gate
 
@@ -215,12 +164,12 @@ Recommend compaction: "Structure approved. This is a good point to compact conte
 
 The bad example uses directory paths instead of files, and "various" is not an action plan.
 
-<BEHAVIORAL-DIRECTIVES>
-These directives apply at every step of this skill, regardless of context.
+## Iron Laws — Final Reminder
 
-D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+The two override-critical rules for Structure, restated at end:
 
-D2 — Complete every step before moving on: Every process step in this skill exists for a reason. Execute each step fully. If a step seems redundant given the current state, state why and ask the user — do not silently skip it.
+1. **Every file in the design has an entry; every entry has a real path.** No directory placeholders, no "various", no "TBD". Structure IS the file decision — Plan reads from it directly to write task specs.
 
-D3 — Resist time-pressure shortcuts: If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
-</BEHAVIORAL-DIRECTIVES>
+2. **Interfaces are explicit, with concrete types.** No `any`, no `object`, no placeholder types. Plan uses interface signatures to define task boundaries; vague interfaces produce vague tasks.
+
+Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

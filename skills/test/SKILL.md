@@ -3,7 +3,7 @@ name: test
 description: Use when implementation is complete (after Integrate in full pipeline, after Implement in quick fix) — runs acceptance testing against goals, routes failures through fix pipeline, handles phase completion and PR creation
 ---
 
-# Test (QRSPI Step 9)
+# Test (QRSPI Step 11)
 
 **Announce at start:** "I'm using the QRSPI Test skill to run acceptance testing against the original goals."
 
@@ -39,13 +39,22 @@ Required inputs:
 - `fixes/` directory contents (for regression test coverage — may be empty if no prior fixes)
 - Codebase with implementation merged
 
+Read `config.md` from the artifact directory to determine whether Codex reviews are enabled.
+
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md` against the Test-validated field (`codex_reviews`). Test-specific menu when the field is missing or invalid:
+
+**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
+2. Re-run Goals to regenerate config.md
+3. Abort
+
 In quick fix mode, Test receives `goals.md` and `research/summary.md` instead of `design.md`. Phase routing is not needed (quick fix is always single-phase), and acceptance criteria come directly from `goals.md`.
 
 <HARD-GATE>
 The tester can ONLY write test files and run test commands.
 When tests fail, output fix task descriptions — NOT code fixes.
 All production code changes route through the pipeline:
-- Full pipeline: Worktree → Implement → Integrate → Test (for pipeline: full fixes)
+- Full pipeline: Dispatch → Implement → Integrate → Test (for pipeline: full fixes — Parallelize is skipped per `dispatch/SKILL.md` → "Fix Task Routing")
 - Quick fix within full pipeline: Implement → Test (for pipeline: quick fixes — Deviation #13)
 - Quick fix mode: Implement → Test (all fixes are pipeline: quick)
 Test files written by the tester are exempt from this gate — they are verified by execution, not code review.
@@ -72,51 +81,6 @@ The test-writer subagent uses these rules to determine what tests to write:
 
 The test-writer chooses the appropriate type(s) per acceptance criterion. A single criterion may need multiple test types (e.g., "user can register" needs an acceptance test for the happy path, a boundary test for invalid email, and an integration test for the DB write).
 
-## Process
-
-```mermaid
-flowchart TD
-    A[Run full existing test suite] --> B[Write tests using coverage criteria + templates]
-    B --> C[Review test code — Pattern 1 Inner Loop]
-    C --> C1{First pass clean?}
-    C1 -->|yes| CV[Present coverage to user]
-    C1 -->|no| C2[Converge: re-run on same code, up to 3 rounds]
-    C2 --> C3[Fix all issues]
-    C3 --> C4[Re-run reviewers on fixed code]
-    C4 --> C5{Issues?}
-    C5 -->|no| CV
-    C5 -->|yes, under 3 fix cycles| C2
-    C5 -->|3+ fix cycles| C6[Unresolved — present at coverage gate]
-    C6 --> CV
-    CV --> CV2{User approves coverage?}
-    CV2 -->|add more tests| B
-    CV2 -->|approved| D[Run approved test suite]
-    D --> E{Test failures?}
-    E -->|no| G[Present pass list to user]
-    E -->|yes| F[Present pass/fail list to user]
-    F --> H{User decision}
-    G --> G2{User decision}
-    G2 -->|add more tests| B
-    G2 -->|approved| CR
-    H -->|add more tests| B
-    H -->|dispatch fixes| K[Write fix tasks to fixes/test-round-NN/]
-    H -->|accept| CR
-    H -->|stop| L[Pipeline halted]
-    K -->|full pipeline| M[Route to Worktree → Implement → Integrate → Test]
-    K -->|quick fix| N[Route to Implement → Test]
-    M --> D
-    N --> D
-    CR[Code review checkpoint]
-    CR --> Q[Prepare PR for current phase]
-    Q --> R{User confirms PR?}
-    R -->|yes| S[Create PR via gh pr create]
-    R -->|no| S2[Skip PR — code stays on feature branch]
-    S --> T{Last phase?}
-    S2 --> T
-    T -->|yes| U((Pipeline complete))
-    T -->|no| V[Invoke Replan]
-```
-
 ## Process Steps
 
 1. **Run full existing test suite** — establish baseline. If tests fail, present failures to user (Pattern 3 — deterministic, don't re-run). User decides:
@@ -128,7 +92,8 @@ flowchart TD
    - **goal-traceability-reviewer** (`implement/templates/thoroughness/goal-traceability-reviewer.md`): Does each test map to a specific acceptance criterion from `goals.md`? Are any criteria untested?
    - **spec-reviewer** (`implement/templates/correctness/spec-reviewer.md`): Does the test verify what it claims to? Are assertions meaningful, not vacuous?
    - **code-quality-reviewer** (`implement/templates/correctness/code-quality-reviewer.md`): Is the test reliable? Flaky setup? Race conditions? Proper cleanup?
-   - First pass clean → proceed to coverage gate. Issues found → converge, fix all, re-converge. Up to 3 fix cycles — if unresolved, present to user at coverage gate. Test code fixes stay inside the Test skill — not production code, so the HARD GATE doesn't apply.
+   - **Codex review** (if `codex_reviews: true`) — invoke `codex:rescue` once per Claude reviewer template (3 calls total, one per template), passing the same template + the test code + `goals.md`. Findings appended to `reviews/test/round-NN-review.md` under `#### Codex` subsections beneath each reviewer's `### {reviewer-name}` heading.
+   - First pass clean (across both Claude and Codex if enabled) → proceed to coverage gate. Issues found → converge, fix all, re-converge. Up to 3 fix cycles — if unresolved, present to user at coverage gate. Test code fixes stay inside the Test skill — not production code, so the HARD GATE doesn't apply.
 4. **Coverage approval gate** — present to user:
    - Tests written (grouped by type: acceptance, integration, E2E, boundary)
    - Coverage reasoning: which acceptance criteria are covered, by which tests
@@ -167,10 +132,10 @@ Present per-failure classification to user. User can override any classification
 
 **Fix dispatch** (user-confirmed):
 1. User confirms → write fix tasks to `fixes/test-round-NN/`. Each fix task includes the **specific test(s) that must pass**.
-2. **Full pipeline mode:** Quick fix tasks route to Implement → Test. Full pipeline tasks route through Worktree → Implement → Integrate → Test.
+2. **Full pipeline mode:** Quick fix tasks route to Implement → Test. Full pipeline tasks route through Dispatch → Implement → Integrate → Test. (Parallelize is not invoked for fix-task batches — Dispatch appends new branch entries to `parallelization.md` per its Fix Task Routing rules.)
 3. After fixes return, re-run acceptance tests. If still failing, present to user again. No cycle counting — user is in the loop each time.
 
-**Fix routing note:** The Test orchestrator controls fix task routing — it dispatches Implement as a subagent (for quick fixes) or Worktree as a subagent (for full pipeline fixes). The subagent returns to the Test orchestrator when done. This is distinct from Implement's normal terminal state routing (which follows config.md) — when Implement is dispatched as a subagent by Test, it does its TDD + review work and returns to the caller, it does not invoke config.md terminal state routing. All input artifacts (`research/summary.md`, `design.md`, etc.) exist in the artifact directory and are available to Implement regardless of whether the overall pipeline is quick or full — Implement reads them based on the task file's `pipeline` field.
+**Fix routing note:** The Test orchestrator controls fix task routing — it dispatches Implement as a subagent (for quick fixes) or Dispatch as a subagent (for full pipeline fixes). The subagent returns to the Test orchestrator when done. This is distinct from Implement's normal terminal state routing (which follows config.md) — when Implement is dispatched as a subagent by Test, it does its TDD + review work and returns to the caller, it does not invoke config.md terminal state routing. All input artifacts (`research/summary.md`, `design.md`, etc.) exist in the artifact directory and are available to Implement regardless of whether the overall pipeline is quick or full — Implement reads them based on the task file's `pipeline` field.
 
 ## Fix Task File Format
 
@@ -275,7 +240,7 @@ Sub-tasks for Test:
 - Re-running failing tests without code changes (deterministic — same code = same result)
 - Writing tests that don't map to any acceptance criterion in `goals.md`
 - Writing vacuous tests (assertions that can't fail, like `expect(true).toBe(true)`)
-- Classifying all failures as "quick fix" to avoid the Worktree → Implement → Integrate round trip
+- Classifying all failures as "quick fix" to avoid the Dispatch → Implement → Integrate round trip
 - Creating a PR without user confirmation
 - Skipping phase routing (invoking Replan) when more phases exist
 - Proceeding to PR creation without offering a code review window after tests pass
@@ -290,7 +255,7 @@ Sub-tasks for Test:
 | "Routing back through the pipeline is wasteful" | The round trip ensures all code is reviewed — that's the invariant |
 | "This test failure is flaky, just re-run" | Tests are deterministic. Investigate the failure. If truly flaky, fix the test. |
 | "All acceptance criteria are covered by Implement's tests" | Implement tests verify task specs. Acceptance tests verify goals. Different things. |
-| "Quick fix classification for everything speeds us up" | Quick fix skips Worktree/Integrate. If the fix spans tasks, you need those gates. |
+| "Quick fix classification for everything speeds us up" | Quick fix skips Dispatch/Integrate. If the fix spans tasks, you need those gates. |
 | "We can create the PR later" | Phase routing happens now. If more phases exist, Replan must run before the next phase. |
 
 ## Worked Example — Good Acceptance Test Derivation
@@ -332,18 +297,14 @@ Test-writer produces:
 - Assert: Rate limiting works
 ```
 
-**Why this fails:**
-- "Rate limiting works" is not testable — no specific input, no specific expected output
-- Doesn't map to any acceptance criterion
-- No boundary testing (at-limit, over-limit, reset)
-- Assertion is tautological — can't fail meaningfully
+**Why this fails:** "Rate limiting works" is not testable — no specific input, no specific expected output; doesn't map to any acceptance criterion; no boundary testing (at-limit, over-limit, reset); tautological assertion can't fail meaningfully.
 
-<BEHAVIORAL-DIRECTIVES>
-These directives apply at every step of this skill, regardless of context.
+## Iron Laws — Final Reminder
 
-D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+The two override-critical rules for Test, restated at end:
 
-D2 — Never suggest skipping steps for speed. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+1. **NO PRODUCTION CODE FIXES IN THE TEST SKILL.** All fixes route through the pipeline (full: Dispatch → Implement → Integrate → Test; quick: Implement → Test). Test files written by the test-writer are the only exception; they are verified by execution, not by code review.
 
-D3 — There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency, acknowledge the constraint and offer the fastest compliant path — never a non-compliant shortcut.
-</BEHAVIORAL-DIRECTIVES>
+2. **Every test maps to a specific acceptance criterion in `goals.md`.** Tests that don't trace to a criterion are out of scope. Vacuous assertions (e.g., `expect(true).toBe(true)`) fail this rule because they prove nothing about the criterion.
+
+Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
