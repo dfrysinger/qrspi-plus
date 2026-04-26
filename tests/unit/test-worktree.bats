@@ -120,3 +120,45 @@ setup() {
   # Check that no 'source' or '. ' statements exist (excluding shebang and comments)
   ! grep -E "^\s*(source|\.)\s" $BATS_TEST_DIRNAME/../../hooks/lib/protected.sh
 }
+
+# ===== worktree_extract_slug tests =====
+
+@test "extracts slug from task worktree path" {
+  result=$(worktree_extract_slug "/repo/.worktrees/phase4-hooks/task-02/src/foo.ts")
+  [ "$result" = "phase4-hooks" ]
+}
+
+@test "extracts slug from task worktree root with trailing slash" {
+  result=$(worktree_extract_slug "/repo/.worktrees/phase4-hooks/task-02/")
+  [ "$result" = "phase4-hooks" ]
+}
+
+@test "extracts slug from baseline worktree" {
+  result=$(worktree_extract_slug "/repo/.worktrees/phase4-hooks/baseline/src/foo.ts")
+  [ "$result" = "phase4-hooks" ]
+}
+
+@test "extracts slug with multi-digit task number" {
+  result=$(worktree_extract_slug "/repo/.worktrees/abc-def/task-100/src/foo.ts")
+  [ "$result" = "abc-def" ]
+}
+
+@test "fails on non-worktree path" {
+  run worktree_extract_slug "/repo/src/foo.ts"
+  [ "$status" -ne 0 ]
+}
+
+@test "fails on .worktrees/ path with no task or baseline segment" {
+  run worktree_extract_slug "/repo/.worktrees/just-files-here.txt"
+  [ "$status" -ne 0 ]
+}
+
+@test "fails on .worktrees/{slug} with no task subdirectory" {
+  run worktree_extract_slug "/repo/.worktrees/phase4-hooks"
+  [ "$status" -ne 0 ]
+}
+
+@test "extracts slug from absolute path with extra leading dirs" {
+  result=$(worktree_extract_slug "/Users/me/Documents/proj/.worktrees/my-slug/task-03")
+  [ "$result" = "my-slug" ]
+}
