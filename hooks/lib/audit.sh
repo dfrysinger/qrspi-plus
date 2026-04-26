@@ -1,181 +1,154 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Source the task library for task ID resolution
-source "$(dirname "${BASH_SOURCE[0]}")/task.sh"
+# Source worktree.sh for slug extraction
+_audit_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+source "$_audit_script_dir/worktree.sh"
+source "$_audit_script_dir/bash-detect.sh"
 
-# audit_log_operation <task_id> <timestamp> <tool> <target> <targets_json> <command> <in_scope> <enforcement> <user_approved> <destructive_flag>
+# audit_resolve_artifact_dir <slug>
 #
-# Appends a single JSON line to .qrspi/audit-task-NN.jsonl (NN = zero-padded task_id).
-#
-# Arguments:
-#   task_id          - Task ID (e.g., 3, 15)
-#   timestamp        - ISO 8601 timestamp
-#   tool             - "Write", "Edit", or "Bash"
-#   target           - Primary file path (string)
-#   targets_json     - JSON array of all target paths
-#   command          - Full command string for Bash, "null" for Write/Edit
-#   in_scope         - "true" or "false" string
-#   enforcement      - "strict" or "monitored"
-#   user_approved    - "true" or "false" string
-#   destructive_flag - Pattern name or "null" string
-#
-audit_log_operation() {
-  local task_id="$1"
-  local timestamp="$2"
-  local tool="$3"
-  local target="$4"
-  local targets_json="$5"
-  local command="$6"
-  local in_scope="$7"
-  local enforcement="$8"
-  local user_approved="$9"
-  local destructive_flag="${10}"
+# Globs `docs/qrspi/*-{slug}/` relative to PWD. Echoes the absolute path of
+# the single match on stdout and returns 0. If 0 or 2+ matches, returns 1
+# without printing.
+audit_resolve_artifact_dir() {
+  local slug="$1"
+  [[ -z "$slug" ]] && return 1
 
-  # Create .qrspi directory if it doesn't exist
-  mkdir -p .qrspi
+  local matches=()
+  local d
+  shopt -s nullglob
+  for d in docs/qrspi/*-"$slug"/; do
+    matches+=("${d%/}")
+  done
+  shopt -u nullglob
 
-  # Route empty or zero task_id to generic audit file
-  local audit_file
-  if [[ -z "$task_id" || "$task_id" == "0" ]]; then
-    audit_file=".qrspi/audit.jsonl"
-  else
-    local padded_task_id
-    padded_task_id=$(printf "%02d" "$task_id" 2>/dev/null) || {
-      echo "audit_log_operation: cannot pad task_id '${task_id}' — routing to general audit" >&2
-      padded_task_id=""
-    }
-    if [[ -n "$padded_task_id" ]]; then
-      audit_file=".qrspi/audit-task-${padded_task_id}.jsonl"
-    else
-      audit_file=".qrspi/audit.jsonl"
-    fi
-  fi
-
-  # Sanitize boolean inputs: ensure they are exactly "true" or "false"
-  # so jq's --argjson can parse them as JSON booleans (not strings).
-  # Without this, an unexpected value like "yes" or "" would crash jq.
-  local in_scope_bool=$([ "$in_scope" = "true" ] && echo "true" || echo "false")
-  local user_approved_bool=$([ "$user_approved" = "true" ] && echo "true" || echo "false")
-
-  # Build the JSON record using jq with proper escaping
-  local json_record
-  if [ "$command" = "null" ] && [ "$destructive_flag" = "null" ]; then
-    if ! json_record=$(jq -cn \
-      --arg timestamp "$timestamp" \
-      --arg tool "$tool" \
-      --arg target "$target" \
-      --argjson targets "$targets_json" \
-      --arg enforcement "$enforcement" \
-      --argjson in_scope "$in_scope_bool" \
-      --argjson user_approved "$user_approved_bool" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: null, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: null}'); then
-      echo "audit_log_operation: jq failed to build audit record" >&2
-      return 1
-    fi
-  elif [ "$command" = "null" ]; then
-    if ! json_record=$(jq -cn \
-      --arg timestamp "$timestamp" \
-      --arg tool "$tool" \
-      --arg target "$target" \
-      --argjson targets "$targets_json" \
-      --arg enforcement "$enforcement" \
-      --argjson in_scope "$in_scope_bool" \
-      --argjson user_approved "$user_approved_bool" \
-      --arg destructive_flag "$destructive_flag" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: null, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: $destructive_flag}'); then
-      echo "audit_log_operation: jq failed to build audit record" >&2
-      return 1
-    fi
-  elif [ "$destructive_flag" = "null" ]; then
-    if ! json_record=$(jq -cn \
-      --arg timestamp "$timestamp" \
-      --arg tool "$tool" \
-      --arg target "$target" \
-      --argjson targets "$targets_json" \
-      --arg command "$command" \
-      --arg enforcement "$enforcement" \
-      --argjson in_scope "$in_scope_bool" \
-      --argjson user_approved "$user_approved_bool" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: $command, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: null}'); then
-      echo "audit_log_operation: jq failed to build audit record" >&2
-      return 1
-    fi
-  else
-    if ! json_record=$(jq -cn \
-      --arg timestamp "$timestamp" \
-      --arg tool "$tool" \
-      --arg target "$target" \
-      --argjson targets "$targets_json" \
-      --arg command "$command" \
-      --arg enforcement "$enforcement" \
-      --argjson in_scope "$in_scope_bool" \
-      --argjson user_approved "$user_approved_bool" \
-      --arg destructive_flag "$destructive_flag" \
-      '{timestamp: $timestamp, tool: $tool, target: $target, targets: $targets, command: $command, in_scope: $in_scope, enforcement: $enforcement, user_approved: $user_approved, destructive_flag: $destructive_flag}'); then
-      echo "audit_log_operation: jq failed to build audit record" >&2
-      return 1
-    fi
-  fi
-
-  if [[ -z "$json_record" ]]; then
-    echo "audit_log_operation: jq failed — empty output" >&2
+  if [[ ${#matches[@]} -ne 1 ]]; then
     return 1
   fi
 
-  # Append to file
-  if ! echo "$json_record" >> "$audit_file"; then
-    echo "audit_log_operation: failed to append to $audit_file" >&2
-    return 1
-  fi
+  (cd "${matches[0]}" && pwd)
 }
 
-# audit_log_stdin <task_id> <raw_input>
+# _audit_resolve_target_to_artifact_dir <target_path>
 #
-# Logs a JSONL record from a raw hook stdin blob. If the blob parses as JSON,
-# structured fields are extracted and written. If jq extraction fails (malformed
-# JSON, unexpected schema) or the input is empty, a fallback record is written
-# with the raw bytes stored in a `raw_input` field so no input is silently lost.
+# Internal helper. Given an absolute target file path, returns the artifact_dir
+# path on stdout if the target is in QRSPI scope (worktree or artifact-dir),
+# else returns 1.
+_audit_resolve_target_to_artifact_dir() {
+  local target="$1"
+  [[ -z "$target" ]] && return 1
+
+  # Case 1: target inside a worktree
+  local slug
+  if slug=$(worktree_extract_slug "$target" 2>/dev/null); then
+    audit_resolve_artifact_dir "$slug"
+    return $?
+  fi
+
+  # Case 2: target inside an artifact dir directly
+  local artifact_root
+  artifact_root="$(pwd)/docs/qrspi/"
+  if [[ "$target" == "$artifact_root"* ]]; then
+    # Strip everything after the date-slug segment to get the artifact_dir
+    local rest="${target#"$artifact_root"}"
+    local first_seg="${rest%%/*}"
+    if [[ -n "$first_seg" && -d "$artifact_root$first_seg" ]]; then
+      echo "$artifact_root$first_seg"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+# audit_log_event <envelope_json> <outcome> <reason>
+#
+# Appends a JSON line to <artifact_dir>/.qrspi/audit.jsonl when the operation
+# targets a path inside QRSPI scope (a worktree or an artifact dir). For
+# operations targeting paths outside QRSPI scope, returns 0 silently — no
+# audit log pollution from non-QRSPI work.
+#
+# Schema (one JSONL line per call):
+#   {
+#     "ts": "<ISO 8601 UTC>",
+#     "agent_id": "<string>" | null,
+#     "agent_type": "<string>" | null,
+#     "tool": "Edit" | "Write" | "NotebookEdit" | "Bash",
+#     "target": "<absolute path>" | null,
+#     "command": "<full bash command>" | null,
+#     "outcome": "allow" | "block",
+#     "reason": "<string>" | null
+#   }
 #
 # Arguments:
-#   task_id   - Task ID (e.g., 3, 15); empty or "0" routes to audit.jsonl
-#   raw_input - Raw stdin string from the hook (may be empty or malformed JSON)
-#
-audit_log_stdin() {
-  local task_id="$1"
-  local raw_input="$2"
+#   envelope_json - The full hook stdin JSON
+#   outcome       - "allow" or "block"
+#   reason        - Block reason string (use "" for allow)
+audit_log_event() {
+  local envelope_json="$1"
+  local outcome="$2"
+  local reason="$3"
 
-  # Create .qrspi directory if it doesn't exist
-  mkdir -p .qrspi
+  local agent_id agent_type tool file_path command target ts artifact_dir
 
-  # Determine audit file path
-  local audit_file
-  if [[ -z "$task_id" || "$task_id" == "0" ]]; then
-    audit_file=".qrspi/audit.jsonl"
-  else
-    local padded_task_id
-    padded_task_id=$(printf "%02d" "$task_id")
-    audit_file=".qrspi/audit-task-${padded_task_id}.jsonl"
-  fi
+  agent_id=$(printf '%s' "$envelope_json" | jq -r '.agent_id // empty' 2>/dev/null) || agent_id=""
+  agent_type=$(printf '%s' "$envelope_json" | jq -r '.agent_type // empty' 2>/dev/null) || agent_type=""
+  tool=$(printf '%s' "$envelope_json" | jq -r '.tool_name // empty' 2>/dev/null) || tool=""
+  file_path=$(printf '%s' "$envelope_json" | jq -r '.tool_input.file_path // empty' 2>/dev/null) || file_path=""
+  command=$(printf '%s' "$envelope_json" | jq -r '.tool_input.command // empty' 2>/dev/null) || command=""
 
-  # Attempt structured extraction via jq
-  local json_record
-  if [[ -n "$raw_input" ]] && json_record=$(printf '%s' "$raw_input" | jq -c '.' 2>/dev/null); then
-    # jq parsed successfully — structured record, no raw_input field
-    if ! printf '%s\n' "$json_record" >> "$audit_file"; then
-      echo "audit_log_stdin: failed to append structured record to $audit_file" >&2
-      return 1
-    fi
-  else
-    # jq failed or input was empty — preserve raw bytes in raw_input field
-    local fallback_record
-    if ! fallback_record=$(jq -cn --arg raw "$raw_input" '{raw_input: $raw}'); then
-      echo "audit_log_stdin: jq failed to build fallback raw_input record" >&2
-      return 1
-    fi
-    if ! printf '%s\n' "$fallback_record" >> "$audit_file"; then
-      echo "audit_log_stdin: failed to append fallback record to $audit_file" >&2
-      return 1
-    fi
-  fi
+  # Determine target: file_path for Write/Edit/NotebookEdit; first detected write for Bash
+  target=""
+  case "$tool" in
+    Write|Edit|NotebookEdit)
+      target="$file_path"
+      ;;
+    Bash)
+      if [[ -n "$command" ]]; then
+        local detected
+        detected=$(bash_detect_file_writes "$command" 2>/dev/null) || detected=""
+        if [[ -n "$detected" ]]; then
+          target=$(printf '%s' "$detected" | head -n1)
+          # Resolve relative to PWD if not absolute
+          if [[ -n "$target" && "$target" != /* ]]; then
+            target="$PWD/$target"
+          fi
+        fi
+      fi
+      ;;
+  esac
+
+  [[ -z "$target" ]] && return 0
+
+  # Resolve target → artifact_dir; silent skip if not in QRSPI scope
+  artifact_dir=$(_audit_resolve_target_to_artifact_dir "$target" 2>/dev/null) || return 0
+
+  ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  mkdir -p "$artifact_dir/.qrspi"
+  local audit_file="$artifact_dir/.qrspi/audit.jsonl"
+
+  local line
+  line=$(jq -cn \
+    --arg ts "$ts" \
+    --arg agent_id "$agent_id" \
+    --arg agent_type "$agent_type" \
+    --arg tool "$tool" \
+    --arg target "$target" \
+    --arg command "$command" \
+    --arg outcome "$outcome" \
+    --arg reason "$reason" \
+    '{
+      ts: $ts,
+      agent_id: (if $agent_id == "" then null else $agent_id end),
+      agent_type: (if $agent_type == "" then null else $agent_type end),
+      tool: $tool,
+      target: $target,
+      command: (if $command == "" then null else $command end),
+      outcome: $outcome,
+      reason: (if $reason == "" then null else $reason end)
+    }') || return 1
+
+  printf '%s\n' "$line" >> "$audit_file"
 }
