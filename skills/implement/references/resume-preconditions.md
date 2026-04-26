@@ -1,6 +1,6 @@
 # Resume Preconditions — Leftover Task Worktree State
 
-Read this file only when, during Process Step 6, you find leftover state for `task-NN` (the worktree dir at `.worktrees/{slug}/task-NN/` exists, or the branch `qrspi/{slug}/task-NN` exists, before Dispatch has tried to create either in this run).
+Read this file only when, during Process Step 6, you find leftover state for `task-NN` (the worktree dir at `.worktrees/{slug}/task-NN/` exists, or the branch `qrspi/{slug}/task-NN` exists, before Implement has tried to create either in this run).
 
 ## Case Classification
 
@@ -17,7 +17,7 @@ Before running `git worktree add` for `task-NN`, classify leftover state into on
 
 Applies to Cases 2 and 3-divergent.
 
-1. Resolve the task's expected base per the algorithm at the top of Process Step 6 in `dispatch/SKILL.md` (call this `expected_base`, a commit SHA).
+1. Resolve the task's expected base per the algorithm at the top of Process Step 6 in `implement/SKILL.md` (call this `expected_base`, a commit SHA).
 
 2. Compute the current common ancestor: `common_ancestor = git merge-base qrspi/{slug}/task-NN <expected_base>`. The branch is **in-sync** if `common_ancestor == expected_base`; **diverged** otherwise.
 
@@ -29,8 +29,8 @@ Applies to Cases 2 and 3-divergent.
 
 4. Present the user with the inspection summary (expected base, actual fork, tip, working-tree status) and three options:
 
-   - **Reuse**: keep the existing branch and worktree as the Implement starting point. Valid when the user confirms the divergence (if any) and the working-tree state are intentional. No re-fork; Dispatch attaches Implement to the existing worktree as-is. *In Case 3, "Reuse" specifically means proceeding from the diverged branch tip and accepting that downstream tasks may need to re-resolve their bases.*
+   - **Reuse**: keep the existing branch and worktree as the Implement starting point. Valid when the user confirms the divergence (if any) and the working-tree state are intentional. No re-fork; Implement attaches the per-task subagent to the existing worktree as-is. *In Case 3, "Reuse" specifically means proceeding from the diverged branch tip and accepting that downstream tasks may need to re-resolve their bases.*
 
-   - **Reset** (the carve-out the Re-fork prohibition's "explicit user-requested reset" clause refers to): in Case 2 destroys both committed task work and uncommitted working-tree changes; in Case 3 destroys only committed task work (no worktree existed before this step). Dispatch surfaces the case-appropriate consequence, requires a second explicit confirm, then in **both cases** first runs `git worktree remove .worktrees/{slug}/task-NN/` (in Case 2 this removes the leftover worktree; in Case 3 it removes the worktree just attached for inspection — `git branch -D` would otherwise refuse to delete a checked-out branch), then runs `git branch -D qrspi/{slug}/task-NN` and re-forks from `expected_base`.
+   - **Reset** (the carve-out the Re-fork prohibition's "explicit user-requested reset" clause refers to): in Case 2 destroys both committed task work and uncommitted working-tree changes; in Case 3 destroys only committed task work (no worktree existed before this step). Implement surfaces the case-appropriate consequence, requires a second explicit confirm, then in **both cases** first runs `git worktree remove .worktrees/{slug}/task-NN/` (in Case 2 this removes the leftover worktree; in Case 3 it removes the worktree just attached for inspection — `git branch -D` would otherwise refuse to delete a checked-out branch), then runs `git branch -D qrspi/{slug}/task-NN` and re-forks from `expected_base`.
 
    - **Stop**: halt the pipeline so the user can investigate manually.

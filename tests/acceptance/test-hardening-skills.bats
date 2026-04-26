@@ -17,7 +17,7 @@ bats_require_minimum_version 1.5.0
 #   M27 — Self-healing relocation: validate.sh absent or empty; using-qrspi refs validation
 #   M28 — Phase learnings capture: test and integrate SKILL.md have phase learnings prompts
 #   M29 — Amendment classification: three-tier amendment classification exists
-#   M32 — Worktree subagent permissions: worktree SKILL.md has permissions + settings.json
+#   M32 — Worktree subagent permissions: implement SKILL.md has permissions + settings.json (post-Phase-3 ownership)
 #   M33 — Plan-level architectural review: plan SKILL.md mentions architectural review
 #   M34 — Amendment-to-goal mapping validation: replan SKILL.md has the mapping rule
 #   M35 — Goal-text decomposition check: goal-traceability-reviewer.md has decomp check
@@ -282,17 +282,17 @@ teardown() {
   grep -qi "comment.*aggressively\|aggressive.*comment\|Comment aggressively\|every function.*comment" "$skill_file"
 }
 
-# M26 — Obs 10 (TodoWrite per parallel group) in worktree SKILL.md
-@test "[M26][Obs10] worktree SKILL.md references batch gate before parallel dispatch" {
+# M26 — Obs 10 (TodoWrite per parallel group) in implement SKILL.md
+@test "[M26][Obs10] implement SKILL.md references batch gate before parallel dispatch" {
   # AC: Obs 10 — TodoWrite / task tracking should be set up per parallel group
-  local skill_file="$SKILLS_DIR/worktree/SKILL.md"
+  local skill_file="$SKILLS_DIR/implement/SKILL.md"
   grep -qi "TodoWrite\|batch.*gate\|batch gate\|parallel.*group\|dispatch" "$skill_file"
 }
 
-# M26 — Obs 12 (conditional batch gate) in worktree SKILL.md
-@test "[M26][Obs12] worktree SKILL.md has batch gate concept for dispatch" {
+# M26 — Obs 12 (conditional batch gate) in implement SKILL.md
+@test "[M26][Obs12] implement SKILL.md has batch gate concept for dispatch" {
   # AC: Obs 12 — batch gate controls when parallel tasks are dispatched
-  local skill_file="$SKILLS_DIR/worktree/SKILL.md"
+  local skill_file="$SKILLS_DIR/implement/SKILL.md"
   grep -qi "batch\|parallelization plan\|dispatch" "$skill_file"
 }
 
@@ -302,8 +302,8 @@ teardown() {
   # AC: Obs 8 — when presenting choices to user, use numbered format (1) / 2) etc.)
   # Every skill that has a human gate should have at least one numbered option pattern.
   local skills_with_gates=(
-    "design" "goals" "integrate" "plan" "questions"
-    "replan" "research" "structure" "test" "using-qrspi" "worktree"
+    "design" "goals" "implement" "integrate" "parallelize" "plan" "questions"
+    "replan" "research" "structure" "test" "using-qrspi"
   )
   for skill in "${skills_with_gates[@]}"; do
     local skill_file="$SKILLS_DIR/$skill/SKILL.md"
@@ -318,8 +318,8 @@ teardown() {
 @test "[M26][Obs13] All skills with terminal states have compaction reminders" {
   # AC: Obs 13 — after completing a skill step, remind user to compact context
   local skills_with_terminal=(
-    "design" "goals" "integrate" "plan" "questions"
-    "replan" "research" "structure" "test" "worktree"
+    "design" "goals" "implement" "integrate" "parallelize" "plan" "questions"
+    "replan" "research" "structure" "test"
   )
   for skill in "${skills_with_terminal[@]}"; do
     local skill_file="$SKILLS_DIR/$skill/SKILL.md"
@@ -405,27 +405,28 @@ teardown() {
 }
 
 # ── M32: Worktree subagent permissions ───────────────────────────────────────
-# Criterion: Worktree SKILL.md contains permissions broadening instructions,
-# .claude/settings.json per-worktree references.
+# Criterion: Implement SKILL.md (which owns worktree creation post-Phase-3)
+# contains permissions broadening instructions and .claude/settings.json
+# per-worktree references.
 
-# M32 — worktree SKILL.md contains subagent permissions section
-@test "[M32] worktree SKILL.md has Subagent Permissions section" {
+# M32 — implement SKILL.md contains subagent permissions section
+@test "[M32] implement SKILL.md has Subagent Permissions section" {
   # AC: worktrees need broad permissions to avoid silent approval prompt stalls
-  local skill_file="$SKILLS_DIR/worktree/SKILL.md"
+  local skill_file="$SKILLS_DIR/implement/SKILL.md"
   grep -q "Subagent Permissions\|permissions\|Permissions" "$skill_file"
 }
 
-# M32 — worktree SKILL.md references writing .claude/settings.json per worktree
-@test "[M32] worktree SKILL.md references writing .claude/settings.json into each worktree" {
+# M32 — implement SKILL.md references writing .claude/settings.json per worktree
+@test "[M32] implement SKILL.md references writing .claude/settings.json into each worktree" {
   # AC: each worktree gets its own settings.json with broadened allow rules
-  local skill_file="$SKILLS_DIR/worktree/SKILL.md"
+  local skill_file="$SKILLS_DIR/implement/SKILL.md"
   grep -q "\.claude/settings\.json\|settings\.json" "$skill_file"
 }
 
-# M32 — worktree SKILL.md contains Edit/Write/Bash permissions in the settings template
-@test "[M32] worktree SKILL.md settings.json template includes Edit and Write permissions" {
+# M32 — implement SKILL.md contains Edit/Write/Bash permissions in the settings template
+@test "[M32] implement SKILL.md settings.json template includes Edit and Write permissions" {
   # AC: the permissions template must include at least Edit and Write to be useful
-  local skill_file="$SKILLS_DIR/worktree/SKILL.md"
+  local skill_file="$SKILLS_DIR/implement/SKILL.md"
   grep -q '"Edit(\*\*)"\|Edit(\*\*)\|Edit\(\*\*\)' "$skill_file"
   grep -q '"Write(\*\*)"\|Write(\*\*)\|Write\(\*\*\)' "$skill_file"
 }

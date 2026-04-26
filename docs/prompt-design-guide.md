@@ -84,8 +84,8 @@ Mermaid in skill files duplicates Process Steps below it, renders unreliably (`{
 
 Use exact terms that appear in trigger output, frontmatter, or hook output. Mitigates NoLiMa-style mid-context degradation when a rule must live mid-skill.
 
-**Better:** *"When `state.json` shows `current_step: dispatch` and `phase_start_commit` is set..."*
-**Worse:** *"When the state machine indicates the dispatch phase is active and the phase boundary has been recorded..."*
+**Better:** *"When `state.json` shows `current_step: implement` and `phase_start_commit` is set..."*
+**Worse:** *"When the state machine indicates the implement phase is active and the phase boundary has been recorded..."*
 
 ---
 

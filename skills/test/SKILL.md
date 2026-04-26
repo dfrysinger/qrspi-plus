@@ -3,7 +3,7 @@ name: test
 description: Use when implementation is complete (after Integrate in full pipeline, after Implement in quick fix) — runs acceptance testing against goals, routes failures through fix pipeline, handles phase completion and PR creation
 ---
 
-# Test (QRSPI Step 11)
+# Test (QRSPI Step 10)
 
 **Announce at start:** "I'm using the QRSPI Test skill to run acceptance testing against the original goals."
 
@@ -49,7 +49,7 @@ In quick fix mode, Test receives `goals.md` and `research/summary.md` instead of
 The tester can ONLY write test files and run test commands.
 When tests fail, output fix task descriptions — NOT code fixes.
 All production code changes route through the pipeline:
-- Full pipeline: Dispatch → Implement → Integrate → Test (for pipeline: full fixes — Parallelize is skipped per `dispatch/SKILL.md` → "Fix Task Routing")
+- Full pipeline: Implement → Integrate → Test (for pipeline: full fixes — Parallelize is skipped per `implement/SKILL.md` → "Fix Task Routing")
 - Quick fix within full pipeline: Implement → Test (for pipeline: quick fixes — Deviation #13)
 - Quick fix mode: Implement → Test (all fixes are pipeline: quick)
 Test files written by the tester are exempt from this gate — they are verified by execution, not code review.
@@ -127,10 +127,10 @@ Present per-failure classification to user. User can override any classification
 
 **Fix dispatch** (user-confirmed):
 1. User confirms → write fix tasks to `fixes/test-round-NN/`. Each fix task includes the **specific test(s) that must pass**.
-2. **Full pipeline mode:** Quick fix tasks route to Implement → Test. Full pipeline tasks route through Dispatch → Implement → Integrate → Test. (Parallelize is not invoked for fix-task batches — Dispatch appends new branch entries to `parallelization.md` per its Fix Task Routing rules.)
+2. **Full pipeline mode:** Quick fix tasks route to Implement → Test. Full pipeline tasks route through Implement → Integrate → Test. (Parallelize is not invoked for fix-task batches — Implement appends new branch entries to `parallelization.md` per its Fix Task Routing rules.)
 3. After fixes return, re-run acceptance tests. If still failing, present to user again. No cycle counting — user is in the loop each time.
 
-**Fix routing note:** The Test orchestrator controls fix task routing — it dispatches Implement as a subagent (for quick fixes) or Dispatch as a subagent (for full pipeline fixes). The subagent returns to the Test orchestrator when done. This is distinct from Implement's normal terminal state routing (which follows config.md) — when Implement is dispatched as a subagent by Test, it does its TDD + review work and returns to the caller, it does not invoke config.md terminal state routing. All input artifacts (`research/summary.md`, `design.md`, etc.) exist in the artifact directory and are available to Implement regardless of whether the overall pipeline is quick or full — Implement reads them based on the task file's `pipeline` field.
+**Fix routing note:** The Test orchestrator controls fix task routing — it dispatches Implement as a subagent (the per-task-orchestrator template inside Implement handles the quick vs full distinction based on the task file's `pipeline` field). The subagent returns to the Test orchestrator when done. This is distinct from Implement's normal terminal state routing (which follows config.md) — when Implement is dispatched as a subagent by Test, it does its TDD + review work and returns to the caller, it does not invoke config.md terminal state routing. All input artifacts (`research/summary.md`, `design.md`, etc.) exist in the artifact directory and are available to Implement regardless of whether the overall pipeline is quick or full — Implement reads them based on the task file's `pipeline` field.
 
 ## Fix Task File Format
 
@@ -235,7 +235,7 @@ Sub-tasks for Test:
 - Re-running failing tests without code changes (deterministic — same code = same result)
 - Writing tests that don't map to any acceptance criterion in `goals.md`
 - Writing vacuous tests (assertions that can't fail, like `expect(true).toBe(true)`)
-- Classifying all failures as "quick fix" to avoid the Dispatch → Implement → Integrate round trip
+- Classifying all failures as "quick fix" to avoid the Implement → Integrate round trip
 - Creating a PR without user confirmation
 - Skipping phase routing (invoking Replan) when more phases exist
 - Proceeding to PR creation without offering a code review window after tests pass
@@ -250,7 +250,7 @@ Sub-tasks for Test:
 | "Routing back through the pipeline is wasteful" | The round trip ensures all code is reviewed — that's the invariant |
 | "This test failure is flaky, just re-run" | Tests are deterministic. Investigate the failure. If truly flaky, fix the test. |
 | "All acceptance criteria are covered by Implement's tests" | Implement tests verify task specs. Acceptance tests verify goals. Different things. |
-| "Quick fix classification for everything speeds us up" | Quick fix skips Dispatch/Integrate. If the fix spans tasks, you need those gates. |
+| "Quick fix classification for everything speeds us up" | Quick fix skips Integrate and the cross-task gates. If the fix spans tasks, you need those gates. |
 | "We can create the PR later" | Phase routing happens now. If more phases exist, Replan must run before the next phase. |
 
 ## Worked Example — Good Acceptance Test Derivation
@@ -298,7 +298,7 @@ Test-writer produces:
 
 The two override-critical rules for Test, restated at end:
 
-1. **NO PRODUCTION CODE FIXES IN THE TEST SKILL.** All fixes route through the pipeline (full: Dispatch → Implement → Integrate → Test; quick: Implement → Test). Test files written by the test-writer are the only exception; they are verified by execution, not by code review.
+1. **NO PRODUCTION CODE FIXES IN THE TEST SKILL.** All fixes route through the pipeline (full: Implement → Integrate → Test; quick: Implement → Test). Test files written by the test-writer are the only exception; they are verified by execution, not by code review.
 
 2. **Every test maps to a specific acceptance criterion in `goals.md`.** Tests that don't trace to a criterion are out of scope. Vacuous assertions (e.g., `expect(true).toBe(true)`) fail this rule because they prove nothing about the criterion.
 

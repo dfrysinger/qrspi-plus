@@ -1,6 +1,6 @@
 ---
 name: parallelize
-description: Use when plan.md is approved and the QRSPI pipeline needs a parallelization plan — analyzes task dependencies and file overlap, decides execution mode, produces parallelization.md with a symbolic branch map; hands off to Dispatch
+description: Use when plan.md is approved and the QRSPI pipeline needs a parallelization plan — analyzes task dependencies and file overlap, decides execution mode, produces parallelization.md with a symbolic branch map; hands off to Implement
 ---
 
 # Parallelize (QRSPI Step 7)
@@ -9,13 +9,13 @@ description: Use when plan.md is approved and the QRSPI pipeline needs a paralle
 
 ## Overview
 
-Plan-time artifact for the current phase. Analyze dependencies and file overlap across `tasks/*.md` (or fix-task batches), determine execution mode (sequential/parallel/hybrid), and write `parallelization.md` containing a Dependency Analysis table, a symbolic Branch Map, and (if needed) a Stage Commits table. Get human approval, then hand off to Dispatch — which is the runtime owner of branch creation, worktrees, baseline tests, and the Implement loop.
+Plan-time artifact for the current phase. Analyze dependencies and file overlap across `tasks/*.md` (or fix-task batches), determine execution mode (sequential/parallel/hybrid), and write `parallelization.md` containing a Dependency Analysis table, a symbolic Branch Map, and (if needed) a Stage Commits table. Get human approval, then hand off to Implement — which is the runtime owner of branch creation, worktrees, baseline tests, and the per-task orchestration loop.
 
-Parallelize never creates branches, never runs baseline tests, never dispatches Implement. Anything that requires resolving a symbolic base to a real commit happens in Dispatch.
+Parallelize never creates branches, never runs baseline tests, never dispatches per-task subagents. Anything that requires resolving a symbolic base to a real commit happens in Implement.
 
-## Why This Skill Is Separate From Dispatch
+## Why This Skill Is Separate From Implement
 
-Earlier QRSPI revisions folded planning and runtime into a single Worktree skill. This created a half-static / half-runtime artifact: the Branch Map's `Base` column referenced stage commits that did not exist at plan time, so the document changed meaning between approval and execution. Splitting Parallelize (plan-time, symbolic) from Dispatch (runtime, concrete) restores QRSPI's "one skill = one artifact + one human gate" symmetry. Parallelize owns `parallelization.md` and the parallelization-plan gate; Dispatch owns the Implement loop and the batch gate.
+Earlier QRSPI revisions folded planning and runtime into a single Worktree skill. This created a half-static / half-runtime artifact: the Branch Map's `Base` column referenced stage commits that did not exist at plan time, so the document changed meaning between approval and execution. Splitting Parallelize (plan-time, symbolic) from Implement (runtime, concrete) restores QRSPI's "one skill = one artifact + one human gate" symmetry. Parallelize owns `parallelization.md` and the parallelization-plan gate; Implement owns the per-task orchestration loop and the batch gate.
 
 ## Iron Law
 
@@ -23,7 +23,7 @@ Earlier QRSPI revisions folded planning and runtime into a single Worktree skill
 NO TASK DISPATCH WITHOUT AN APPROVED PARALLELIZATION PLAN
 ```
 
-Parallelize is the skill that produces and gates the plan; Dispatch is the skill that consumes and enforces it.
+Parallelize is the skill that produces and gates the plan; Implement is the skill that consumes and enforces it.
 
 ## Artifact Gating
 
@@ -55,29 +55,29 @@ This applies regardless of how simple the phase appears.
 | Parallel | Tasks are independent and file-disjoint | Every task in the group shares the group's base |
 | Hybrid | Mix of independent and dependent tasks | Parallel groups share a base; downstream groups fork from a stage commit, a single prior tip, or `task-00` per the Branch Model |
 
-## Branch Model (Symbolic — Resolved by Dispatch)
+## Branch Model (Symbolic — Resolved by Implement)
 
-`parallelization.md` records every task's `Base` as a **symbolic** reference. Dispatch resolves each symbolic reference to a concrete commit at runtime — including creating stage commits when needed.
+`parallelization.md` records every task's `Base` as a **symbolic** reference. Implement resolves each symbolic reference to a concrete commit at runtime — including creating stage commits when needed.
 
-1. **Feature branch:** `qrspi/{slug}` (e.g., `qrspi/user-auth`). Created by Dispatch from the current branch (typically `main`) at the start of the first phase. For subsequent phases, the feature branch already exists.
+1. **Feature branch:** `qrspi/{slug}` (e.g., `qrspi/user-auth`). Created by Implement from the current branch (typically `main`) at the start of the first phase. For subsequent phases, the feature branch already exists.
 2. **Task branches — base depends on execution mode:**
-   - **Terminology — Parallel Group vs Dispatch Wave.** A *parallel group* is a set of tasks that share a base AND have no file overlap; group membership is purely a base-and-disjointness statement, not a dispatch-ordering statement. A *dispatch wave* is the set of tasks Dispatch fires concurrently at a given moment; a wave can contain multiple parallel groups (each with its own base), provided no inter-group logical dependency or file overlap exists. Group numbering does not imply dispatch ordering — concurrency is governed by inter-group dependencies, not by group numbers.
+   - **Terminology — Parallel Group vs Dispatch Wave.** A *parallel group* is a set of tasks that share a base AND have no file overlap; group membership is purely a base-and-disjointness statement, not a dispatch-ordering statement. A *dispatch wave* is the set of tasks Implement fires concurrently at a given moment; a wave can contain multiple parallel groups (each with its own base), provided no inter-group logical dependency or file overlap exists. Group numbering does not imply dispatch ordering — concurrency is governed by inter-group dependencies, not by group numbers.
    - **Parallel group:** Every task in the group shares the group's *base tip* (see Hybrid below for groups beyond Group 1; Group 1's base is the feature branch tip). Tasks in a parallel group are independent by construction (no file overlap, no logical dependency).
    - **Sequential chain:** Task-N's base is task-(N-1)'s tip — *not* the feature branch. This is required because sequential dependencies mean task-N imports types/factories/actions/migrations introduced by task-(N-1), and the feature branch does not yet contain task-(N-1)'s work (Integrate runs once at phase end, not per-task).
-   - **Hybrid (multi-parent):** When a downstream task or group depends on more than one task from a prior parallel group, the symbolic base is `stage-after-G{N}`. Dispatch creates the intermediate stage commit `qrspi/{slug}/stage-after-G{N}` by merging the prior group's tips into a temporary branch; the next group then forks from that commit. Stage branches are scratch infrastructure created by Dispatch; their lifecycle end (merge semantics + cleanup) is Integrate's concern — see `integrate/SKILL.md` → `Merge Strategy`.
+   - **Hybrid (multi-parent):** When a downstream task or group depends on more than one task from a prior parallel group, the symbolic base is `stage-after-G{N}`. Implement creates the intermediate stage commit `qrspi/{slug}/stage-after-G{N}` by merging the prior group's tips into a temporary branch; the next group then forks from that commit. Stage branches are scratch infrastructure created by Implement; their lifecycle end (merge semantics + cleanup) is Integrate's concern — see `integrate/SKILL.md` → `Merge Strategy`.
    - **Single-parent across groups:** When a downstream task depends on exactly one task from a prior group, name that task's tip directly as the base — no stage commit needed.
-   - **Baseline fix (`task-00`) interaction:** When Dispatch's baseline tests fail and the user chooses Auto-fix (see `dispatch/SKILL.md` → "Baseline Tests"), `task-00` is injected as a phase-level predecessor. `task-00`'s base is the feature branch tip; every other task in the phase then takes `task-00`'s tip as its base (or as one of its parents in the multi-parent case). This injection happens at runtime — Parallelize does not anticipate it. Dispatch persists the injection by appending a `task-00` row to the Branch Map *and* writing a `## Runtime Adjustments` section to `parallelization.md` that lists every task whose effective base changed; the original Branch Map rows are not rewritten. Readers (human or agent) reconstruct effective bases by reading the Branch Map and overlaying `## Runtime Adjustments`.
+   - **Baseline fix (`task-00`) interaction:** When Implement's baseline tests fail and the user chooses Auto-fix (see `implement/SKILL.md` → "Baseline Tests"), `task-00` is injected as a phase-level predecessor. `task-00`'s base is the feature branch tip; every other task in the phase then takes `task-00`'s tip as its base (or as one of its parents in the multi-parent case). This injection happens at runtime — Parallelize does not anticipate it. Implement persists the injection by appending a `task-00` row to the Branch Map *and* writing a `## Runtime Adjustments` section to `parallelization.md` that lists every task whose effective base changed; the original Branch Map rows are not rewritten. Readers (human or agent) reconstruct effective bases by reading the Branch Map and overlaying `## Runtime Adjustments`.
    - **Re-fork semantics (re-run, fix-round, replan):** Once a task branch exists, it is canonical for that task. Implementer-fix-round dispatches reuse the existing branch and add commits. Re-forking only happens at fresh worktree creation: a new task in a new phase, a replan-introduced task, or an explicit user-requested reset. Never re-fork an existing task branch silently — downstream task branches that descend from it would be invalidated.
    - **Symbolic base vocabulary** (the only values allowed in the `Base` column):
      - `feature branch tip` — the tip of `qrspi/{slug}` at runtime
      - `task-NN tip` — the tip of `qrspi/{slug}/task-NN` (for single-parent forks across groups, or sequential-chain predecessors)
-     - `stage-after-G{N}` — the stage commit Dispatch creates by merging Group N's leaves before forking the next group
-     - `task-00 tip` — the tip of the baseline-fix branch (only after Dispatch injects `task-00`)
-   - Branch naming (informational — Dispatch creates the branches): `qrspi/{slug}/task-NN`; stage branches `qrspi/{slug}/stage-after-G{N}`.
+     - `stage-after-G{N}` — the stage commit Implement creates by merging Group N's leaves before forking the next group
+     - `task-00 tip` — the tip of the baseline-fix branch (only after Implement injects `task-00`)
+   - Branch naming (informational — Implement creates the branches): `qrspi/{slug}/task-NN`; stage branches `qrspi/{slug}/stage-after-G{N}`.
 3. **Merge target:** Integrate merges all task branches into the feature branch **once at phase end**, not per-task. The feature branch only changes via Integrate. (See `integrate/SKILL.md` → "Merge Strategy" for how Integrate handles dependency-ordered merges and stage-commit dedup.)
 4. **PR target:** Test creates the PR from the feature branch to the base branch.
 
-> **Why the base-naming rule matters.** A common misread is *"all task branches always fork from the feature branch."* That works for parallel-only phases but breaks sequential dependencies — task-N's worktree would start without task-(N-1)'s code. The correct rule is base-from-feature-tip for Group 1 parallel members, base-from-previous-tip for sequential-chain members, base-from-stage-commit when a group has multi-parent dependencies, base-from-task-NN-tip when a downstream task has a single prior-group parent, and base-from-task-00-tip after a baseline fix is injected. Parallelize records the symbolic name; Dispatch resolves it to a concrete commit and creates stage commits as needed.
+> **Why the base-naming rule matters.** A common misread is *"all task branches always fork from the feature branch."* That works for parallel-only phases but breaks sequential dependencies — task-N's worktree would start without task-(N-1)'s code. The correct rule is base-from-feature-tip for Group 1 parallel members, base-from-previous-tip for sequential-chain members, base-from-stage-commit when a group has multi-parent dependencies, base-from-task-NN-tip when a downstream task has a single prior-group parent, and base-from-task-00-tip after a baseline fix is injected. Parallelize records the symbolic name; Implement resolves it to a concrete commit and creates stage commits as needed.
 
 ## Process Steps
 
@@ -97,12 +97,12 @@ This applies regardless of how simple the phase appears.
 
 - **Execution Mode** — sequential / parallel / hybrid with one-sentence rationale
 - **Dependency Analysis** — table with columns: Task / Dependencies / Files / Parallel Group
-- **Branch Map** — table with columns: Task / Branch / Base. The `Base` column uses *only* the symbolic vocabulary defined in the Branch Model (`feature branch tip`, `task-NN tip`, `stage-after-G{N}`, `task-00 tip`). Do not embed concrete commit hashes — Dispatch resolves these at runtime.
+- **Branch Map** — table with columns: Task / Branch / Base. The `Base` column uses *only* the symbolic vocabulary defined in the Branch Model (`feature branch tip`, `task-NN tip`, `stage-after-G{N}`, `task-00 tip`). Do not embed concrete commit hashes — Implement resolves these at runtime.
 - **Stage Commits** — table (only present when any group has multi-parent dependencies) with columns: Stage branch / Composition / Created before
 - **Execution Order** — narrative describing the dispatch waves (which groups fire concurrently, what gates the next wave)
 - **Mermaid dependency graph** — written inline in the file
 
-`review_depth` and `review_mode` are runtime concerns and live in `config.md` (written by Dispatch at phase start), not in `parallelization.md`.
+`review_depth` and `review_mode` are runtime concerns and live in `config.md` (written by Implement at phase start), not in `parallelization.md`.
 
 ## Human Gate
 
@@ -113,7 +113,7 @@ In the terminal, present the branch map and execution mode as plain text, e.g.:
 ```
 Execution mode: Hybrid
 
-Branch map (symbolic — Dispatch resolves at runtime):
+Branch map (symbolic — Implement resolves at runtime):
   task-01  →  qrspi/{slug}/task-01   base: feature branch tip
   task-02  →  qrspi/{slug}/task-02   base: feature branch tip
   task-03  →  qrspi/{slug}/task-03   base: stage-after-G1
@@ -138,9 +138,9 @@ The orchestrating skill writes findings to `reviews/parallelize-review.md`.
 
 ## Terminal State
 
-Recommend compaction: "Parallelization plan approved. This is a good point to compact context before dispatch (`/compact`)."
+Recommend compaction: "Parallelization plan approved. This is a good point to compact context before the next step (`/compact`)."
 
-**REQUIRED:** Invoke the next skill in the `config.md` route after `parallelize` (in the standard full-pipeline route, this is `dispatch`).
+**REQUIRED:** Invoke the next skill in the `config.md` route after `parallelize` (in the standard full-pipeline route, this is `implement`).
 
 ## Task Tracking (TodoWrite)
 
@@ -162,9 +162,9 @@ Mark each task in_progress when starting, completed when done.
 - The Branch Map names a stage commit but no Stage Commits table exists
 - A task is placed in Wave N but one of its dependencies is in Wave N or later
 - `parallelization.md` is marked approved while a group has unresolved file overlap
-- Embedding concrete commit hashes — that is Dispatch's job at runtime
-- Including baseline-fix `task-00` in the initial Branch Map (it does not yet exist; Dispatch decides whether to inject it)
-- Asking review depth or review mode here — those are runtime questions Dispatch owns
+- Embedding concrete commit hashes — that is Implement's job at runtime
+- Including baseline-fix `task-00` in the initial Branch Map (it does not yet exist; Implement decides whether to inject it)
+- Asking review depth or review mode here — those are runtime questions Implement owns
 
 ## Common Rationalizations — STOP
 
@@ -173,8 +173,8 @@ Mark each task in_progress when starting, completed when done.
 | "These tasks are independent, skip the dependency analysis" | File overlap is the real risk. Analyze every time, even when the phase looks trivial. |
 | "Sequential is fine, skip parallelization analysis" | Missing parallelization wastes time downstream. Analyze once, dispatch efficiently. |
 | "The plan already analyzed dependencies, I can skip" | Plan dependencies are logical. Parallelize checks file-level overlap — different analysis. |
-| "Single task, skip the parallelization plan" | Single-task phases still get a parallelization plan (trivial but consistent — Dispatch reads it as the source of truth). |
-| "I'll record the actual stage commit hash so Dispatch doesn't have to compute it" | Stage commits don't exist yet at plan time. The symbolic name is the contract; Dispatch resolves it. |
+| "Single task, skip the parallelization plan" | Single-task phases still get a parallelization plan (trivial but consistent — Implement reads it as the source of truth). |
+| "I'll record the actual stage commit hash so Implement doesn't have to compute it" | Stage commits don't exist yet at plan time. The symbolic name is the contract; Implement resolves it. |
 
 ## Worked Example — Good
 
@@ -200,7 +200,7 @@ Rationale: Tasks 1 and 2 are independent (file-disjoint) so they share Group 1. 
 
 ## Execution Order
 
-**Wave 1:** Tasks 1 and 2 dispatch concurrently inside Group 1 (shared base = feature branch tip; no file overlap). Once both finish, Dispatch creates the stage commit `stage-after-G1` (merge of task-01 + task-02 tips).
+**Wave 1:** Tasks 1 and 2 dispatch concurrently inside Group 1 (shared base = feature branch tip; no file overlap). Once both finish, Implement creates the stage commit `stage-after-G1` (merge of task-01 + task-02 tips).
 
 **Wave 2:** Group 2 (Task 3) forks from `stage-after-G1`. Group 3 (Task 4) forks directly from task-01's tip (single-parent shortcut — no stage commit needed). Both groups dispatch in the same wave because they have no inter-group file overlap and no logical dependency on each other.
 
@@ -240,14 +240,14 @@ All tasks run in parallel.
 | task-03 | qrspi/user-auth/task-03 |
 ```
 
-**Why this fails:** missing dependency analysis (Task 3 needs 1+2 but shown parallel); no file-overlap check (Tasks 1 and 3 both modify `src/routes/auth.ts`); no execution-mode rationale; missing Branch Map `Base` column so Dispatch has no way to know how to fork.
+**Why this fails:** missing dependency analysis (Task 3 needs 1+2 but shown parallel); no file-overlap check (Tasks 1 and 3 both modify `src/routes/auth.ts`); no execution-mode rationale; missing Branch Map `Base` column so Implement has no way to know how to fork.
 
 ## Iron Laws — Final Reminder
 
 The two override-critical rules for Parallelize, restated at end:
 
-1. **NO TASK DISPATCH WITHOUT AN APPROVED PARALLELIZATION PLAN.** Parallelize produces and gates the plan; Dispatch consumes and enforces it. Approving a plan with unresolved file overlap inside any parallel group breaks the dispatch contract.
+1. **NO TASK DISPATCH WITHOUT AN APPROVED PARALLELIZATION PLAN.** Parallelize produces and gates the plan; Implement consumes and enforces it. Approving a plan with unresolved file overlap inside any parallel group breaks the dispatch contract.
 
-2. **The `Base` column uses ONLY symbolic vocabulary** — `feature branch tip`, `task-NN tip`, `stage-after-G{N}`, `task-00 tip`. No concrete commit hashes, no improvised names. Dispatch resolves at runtime; Parallelize records only the symbolic contract.
+2. **The `Base` column uses ONLY symbolic vocabulary** — `feature branch tip`, `task-NN tip`, `stage-after-G{N}`, `task-00 tip`. No concrete commit hashes, no improvised names. Implement resolves at runtime; Parallelize records only the symbolic contract.
 
 Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

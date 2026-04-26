@@ -42,7 +42,7 @@ Goals is invoked in three distinct contexts:
 2. Skip the Pipeline Mode Selection *questions* (use the existing `config.md`'s `pipeline` and `route` — these are locked at run start and do not change between phases). Still run the standard Config Validation Procedure on the existing `config.md` to catch hand-edits that may have invalidated it between phases.
 3. Run a focused Interactive Dialogue: confirm the promoted goals match the user's expectation for this next phase, capture any phase-specific constraints discovered during the prior phase (the Replan feedback file at `feedback/replan-phase-NN-round-MM.md` is one input; ask the user whether they want anything in addition).
 4. Re-synthesize `goals.md` (subagent) with the promoted content + any new constraints.
-5. Run the standard Review Round + Human Gate; on approval, write `status: approved` and let the standard pipeline cascade (Questions → Research → ... → Parallelize → Dispatch).
+5. Run the standard Review Round + Human Gate; on approval, write `status: approved` and let the standard pipeline cascade (Questions → Research → ... → Parallelize → Implement).
 
 **State reconciliation on next-phase restart.** Replan calls `state_init_or_reconcile <artifact_dir>` before invoking Goals, so Goals does not call it again on next-phase restart. The fresh-run bootstrap above still applies when state is genuinely missing.
 
@@ -78,7 +78,7 @@ After intent capture (the interactive dialogue above) but before synthesizing `g
 
 **Pipeline mode:**
 1. Quick fix (goals → questions → research → plan → implement → test)
-2. Full pipeline (goals → questions → research → design → structure → plan → parallelize → dispatch → implement → integrate → test)
+2. Full pipeline (goals → questions → research → design → structure → plan → parallelize → implement → integrate → test)
 
 **UX step** (only ask if `qrspi:ux` skill exists — glob for `~/.claude/plugins/cache/*/qrspi/*/skills/ux/` — skip silently if not found):
 1. No UX step

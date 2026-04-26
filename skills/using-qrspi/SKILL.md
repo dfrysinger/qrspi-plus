@@ -1,6 +1,6 @@
 ---
 name: using-qrspi
-description: Use when starting any conversation — establishes the QRSPI pipeline for agentic software development, requiring structured progression through Goals, Questions, Research, Design, Structure, Plan, Parallelize, Dispatch, Implement, Integrate, Test
+description: Use when starting any conversation — establishes the QRSPI pipeline for agentic software development, requiring structured progression through Goals, Questions, Research, Design, Structure, Plan, Parallelize, Implement, Integrate, Test
 ---
 
 <SUBAGENT-STOP>
@@ -17,17 +17,17 @@ QRSPI is a pipeline for agentic software development with two route variants (qu
 
 **Full pipeline:**
 ```
-Goals → Questions → Research → Design → Structure → Plan → Parallelize → Dispatch → Implement(×N) → Integrate → Test → Replan (if needed)
+Goals → Questions → Research → Design → Structure → Plan → Parallelize → Implement → Integrate → Test → Replan (if needed)
 ```
 
-> **Read the `Parallelize → Dispatch → Implement(×N) → Integrate` segment carefully.** It is *not* a per-task chain. Parallelize produces the parallelization plan and gets human approval; Dispatch then fires Implement once per task in the current phase, presents a batch gate when every task has returned, and only then routes to Integrate. **Implement runs N times per phase. Integrate runs ONCE per phase.** Canonical contract — including batch-gate release conditions and the `current_step` transition mechanism — lives in `dispatch/SKILL.md` → "Dispatch Is the Per-Phase Implement Loop". The state.json table below is a reader's quick reference, not a second source of truth.
+> **Read the `Parallelize → Implement → Integrate` segment carefully.** Implement is *not* a per-task chain — it is the per-phase orchestrator step. Parallelize produces the parallelization plan and gets human approval; Implement then fires one per-task subagent per task in the current phase, presents a batch gate when every task has returned, and only then routes to Integrate. **Implement runs once per phase (firing N per-task subagents). Integrate runs once per phase.** Canonical contract — including batch-gate release conditions and the `current_step` transition mechanism — lives in `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop". The state.json table below is a reader's quick reference, not a second source of truth.
 
-**Quick Fix pipeline** (skip Design/Structure/Parallelize/Dispatch/Integrate):
+**Quick Fix pipeline** (skip Design/Structure/Parallelize/Integrate):
 ```
 Goals → Questions → Research → Plan → Implement → Test
 ```
 
-> Quick fix has a single task, so there is no Parallelize plan, no Dispatch batch, and no Integrate — Implement runs once and routes directly to Test.
+> Quick fix has no Parallelize plan and no Integrate. Implement still owns per-task orchestration: it fires per-task subagents (typically one for the originally-requested task; more if fix-task rounds occur) and presents the **quick-fix batch gate** before routing to Test. See `implement/SKILL.md` § Quick Fix for the full batch-gate semantics in quick-fix mode.
 
 | Step | # | What it does | Artifact |
 |------|---|-------------|----------|
@@ -38,11 +38,10 @@ Goals → Questions → Research → Plan → Implement → Test
 | **Structure** | 5 | Map design to files, interfaces, component boundaries | `structure.md` |
 | **Plan** | 6 | Detailed task specs with test expectations | `plan.md` + `tasks/*.md` |
 | **Parallelize** | 7 | Analyze dependencies and file overlap; produce symbolic parallelization plan | `parallelization.md` |
-| **Dispatch** | 8 | Resolve symbolic bases, create worktrees + stage commits, run baseline tests, dispatch Implement(×N), present batch gate | (no new artifact — runtime orchestrator) |
-| **Implement** | 9 | TDD execution per task, tiered review loops | Working code |
-| **Integrate** | 10 | Merge task branches, cross-task integration + security review, CI gate | Integration report |
-| **Test** | 11 | Acceptance testing, PR creation, phase routing | Test results + PR (every phase) |
-| **Replan** | 12 | Between phases — update remaining tasks based on learnings | Updated `plan.md` + `tasks/*.md` |
+| **Implement** | 8 | Resolve symbolic bases, create worktrees + stage commits, run baseline tests, fire per-task subagents (×N) with TDD + tiered review loops, present batch gate | Working code |
+| **Integrate** | 9 | Merge task branches, cross-task integration + security review, CI gate | Integration report |
+| **Test** | 10 | Acceptance testing, PR creation, phase routing | Test results + PR (every phase) |
+| **Replan** | 11 | Between phases — update remaining tasks based on learnings | Updated `plan.md` + `tasks/*.md` |
 
 ## Route Templates
 
@@ -69,7 +68,6 @@ route:
   - structure
   - plan
   - parallelize
-  - dispatch
   - implement
   - integrate
   - test
@@ -86,20 +84,19 @@ route:
   - structure
   - plan
   - parallelize
-  - dispatch
   - implement
   - integrate
   - test
 ```
 
-> **Note:** Replan (step 12) is NOT included in any route list. It is invoked by Test when more phases remain in the design, not when Test fails. Test handles final-phase completion (PR creation) directly.
+> **Note:** Replan (step 11) is NOT included in any route list. It is invoked by Test when more phases remain in the design, not when Test fails. Test handles final-phase completion (PR creation) directly.
 
 ### Mid-Pipeline Route Change
 
 Route changes are only allowed before Plan executes:
 
-- **Full → Quick Fix:** Allowed only before Plan. Drop Design, Structure, Parallelize, Dispatch, Integrate from the route. Update `config.md`.
-- **Quick Fix → Full:** Allowed only before Plan. Insert Design, Structure before Plan, and Parallelize, Dispatch, Integrate after Plan. Update `config.md`.
+- **Full → Quick Fix:** Allowed only before Plan. Drop Design, Structure, Parallelize, Integrate from the route. Update `config.md`.
+- **Quick Fix → Full:** Allowed only before Plan. Insert Design, Structure before Plan, and Parallelize, Integrate after Plan. Update `config.md`.
 - **Add/remove UX step:** Allowed only before Structure. Insert or remove `ux` between `design` and `structure`. Update `config.md`.
 
 After Plan is approved, the route is locked. Route changes after that point require a backward loop to re-run Plan.
@@ -142,7 +139,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   ├── structure-review.md
 │   ├── plan-review.md
 │   ├── replan-review.md
-│   ├── baseline-failures.md       (Dispatch baseline)
+│   ├── baseline-failures.md       (Implement baseline)
 │   ├── tasks/
 │   │   └── ...
 │   ├── integration/
@@ -171,8 +168,7 @@ Each skill checks that its required input artifacts exist on disk before proceed
 - **Structure**: Requires `goals.md`, `research/summary.md`, and `design.md` with `status: approved`
 - **Plan**: Full pipeline requires `goals.md`, `research/summary.md`, `design.md`, and `structure.md` with `status: approved`. Quick fix requires only `goals.md` and `research/summary.md`.
 - **Parallelize**: Requires `plan.md` with `status: approved`, `tasks/*.md`, `design.md` with `status: approved` (phase definitions), and `config.md`
-- **Dispatch**: Requires `parallelization.md` with `status: approved` (in addition to Parallelize's inputs)
-- **Implement**: Full pipeline requires `parallelization.md` with `status: approved`. Quick fix has no Parallelize/Dispatch, so no `parallelization.md` — Implement reads the task file's `pipeline` field instead.
+- **Implement**: Mode is derived from `config.md.route` (full pipeline if `parallelize` precedes `implement`; quick fix otherwise). Full pipeline additionally requires `parallelization.md` with `status: approved`. Quick fix has no Parallelize, so no `parallelization.md`; Implement requires the per-run input set defined in `implement/SKILL.md` § Artifact Gating (approved `tasks/*.md` or `fixes/{type}-round-NN/*.md`). The `pipeline` field on individual task files is a per-task input-gating concern read by the per-task orchestrator subagent, not by the Implement skill itself.
 - **Integrate**: Requires all task review files in `reviews/tasks/`, `design.md` with `status: approved`, `structure.md` with `status: approved`, `parallelization.md` with `status: approved` (branch map), and `config.md` (for route)
 - **Test**: Requires `goals.md` with `status: approved`, `design.md` with `status: approved` (full pipeline) or `research/summary.md` with `status: approved` (quick fix), `fixes/` directory (for regression tests), codebase with implementation merged
 - **Replan**: Requires completed phase code (merged), `fixes/` and `reviews/` directories, remaining `tasks/*.md`, `plan.md` with `status: approved`, and `design.md` with `status: approved`
@@ -218,13 +214,13 @@ Skills don't need to interpret `state.json`, but a reader (human or fresh agent 
 
 | Field | Meaning | When it changes |
 |-------|---------|-----------------|
-| `current_step` | The pipeline step currently active. For full-pipeline phases that loop Implement (the `Dispatch → Implement(×N) → Integrate` segment), this stays at `implement` for the **entire** Dispatch-orchestrated batch — across every task in the phase. It only advances to `integrate` after Dispatch's batch gate releases. The canonical transition contract lives in `implement/SKILL.md` → "State Transition Contract" under "Dispatch Is the Per-Phase Implement Loop"; the hook layer in `hooks/lib/` is the intended implementation layer. (Current hook code may lag the contract for transitions outside the eight pre-Phase-4 steps; if a needed transition is missing, file a hook bug rather than working around it in skills.) | Advances when a step's terminal artifact is approved, when a Dispatch batch gate releases and Dispatch invokes the next route step, or when Integrate, Test, or Replan complete their gates. **Does not advance per-task.** Skills never write this field directly — the hook layer writes it. |
-| `active_task` | Which task within the current phase is being worked. Only meaningful while `current_step` is `implement` (or `dispatch`, while a wave is being set up). | Advances as Dispatch fires each next task (or wave). Resets between phases. |
+| `current_step` | The pipeline step currently active. For full-pipeline phases that loop Implement (the per-phase orchestration loop in the `Implement → Integrate` segment), this stays at `implement` for the **entire** batch — across every per-task subagent fired by Implement. It only advances to `integrate` after Implement's batch gate releases. The canonical transition contract lives in `implement/SKILL.md` → "State Transition Contract" under "Implement Is the Per-Phase Orchestration Loop"; the hook layer in `hooks/lib/` is the intended implementation layer. (Current hook code may lag the contract for transitions outside the eight pre-Phase-4 steps; if a needed transition is missing, file a hook bug rather than working around it in skills.) | Advances when a step's terminal artifact is approved, when an Implement batch gate releases and Implement invokes the next route step, or when Integrate, Test, or Replan complete their gates. **Does not advance per-task.** Skills never write this field directly — the hook layer writes it. |
+| `active_task` | Which task within the current phase is being worked. Only meaningful while `current_step` is `implement`. | Advances as Implement fires each next task (or wave). Resets between phases. |
 | `artifacts.{step}` | Approval status of each artifact (`draft`, `replan-draft`, or `approved`). Drives artifact gating. | Updated by the PostToolUse hook when an artifact's frontmatter changes. |
 | `wireframe_requested` | Whether the run includes the optional UX step before Structure. | Set during Goals; never changes thereafter. |
 | `phase_start_commit` | Git SHA at which the current phase began. Used by Replan and Test to scope diffs. | Set when a phase begins. |
 
-**The trap to avoid:** `current_step: implement` + a single task done does *not* mean "advance to integrate." It means "Dispatch is mid-batch — expect another Implement firing." Verify against `parallelization.md` (which lists every task in the phase) before concluding the batch is done.
+**The trap to avoid:** `current_step: implement` + a single task done does *not* mean "advance to integrate." It means "Implement is mid-batch — expect another per-task firing." Verify against `parallelization.md` (which lists every task in the phase) before concluding the batch is done.
 
 ## Rejection Behavior
 
@@ -307,7 +303,6 @@ Do not create tasks for any other steps yet. The pipeline mode (and therefore th
 [ ] Structure       # full pipeline only
 [ ] Plan
 [ ] Parallelize     # full pipeline only
-[ ] Dispatch        # full pipeline only
 [ ] Implement
 [ ] Integrate       # full pipeline only
 [ ] Test
@@ -346,12 +341,11 @@ route:
   - structure
   - plan
   - parallelize
-  - dispatch
   - implement
   - integrate
   - test
-review_depth: deep  # or: quick — added by Dispatch (or Implement in quick-fix mode) at phase start
-review_mode: loop   # or: single — added by Dispatch (or Implement in quick-fix mode) at phase start
+review_depth: deep  # or: quick — added by Implement at phase start
+review_mode: loop   # or: single — added by Implement at phase start
 ---
 ```
 
@@ -360,10 +354,10 @@ review_mode: loop   # or: single — added by Dispatch (or Implement in quick-fi
 - `pipeline`: human-readable label (`full` or `quick`) — informational only; `route` is authoritative
 - `codex_reviews`: whether to include Codex in review rounds
 - `route`: ordered list of skill names this run will execute (see Route Templates above)
-- `review_depth`: `quick` (4 correctness reviewers) or `deep` (all 8 reviewers) — written by Dispatch (or Implement in quick-fix mode) at phase start
+- `review_depth`: `quick` (4 correctness reviewers) or `deep` (all 8 reviewers) — written by Implement at phase start
 - `review_mode`: `single` or `loop` — written alongside `review_depth`
 
-**Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. The `review_depth` and `review_mode` fields are added later by Dispatch (or Implement in quick-fix mode). Use the appropriate route template from the Route Templates section.
+**Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
 
 **Codex detection:** Check if `codex:rescue` is available by globbing for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`. If the file doesn't exist, skip the Codex question silently and write `codex_reviews: false`. If available, ask:
 
@@ -414,11 +408,11 @@ Skills must not:
 
 | Field | Skills that validate it | Valid values |
 |-------|------------------------|--------------|
-| `route` | Goals, Plan, Parallelize, Dispatch, Integrate, using-qrspi | ordered list of skill names (see Route Templates) |
-| `pipeline` | Goals, Plan, Parallelize, Dispatch | `full` or `quick` |
+| `route` | Goals, Plan, Parallelize, Implement, Integrate, using-qrspi | ordered list of skill names (see Route Templates) |
+| `pipeline` | Goals, Plan, Parallelize | `full` or `quick` |
 | `codex_reviews` | Goals, Plan, Implement, Integrate, Test | `true` or `false` |
-| `review_depth` | Dispatch, Implement | `quick` or `deep` — set by Dispatch in full pipeline; set by Implement in quick-fix mode (where Dispatch is absent from the route) |
-| `review_mode` | Dispatch, Implement | `single` or `loop` — set by Dispatch in full pipeline; set by Implement in quick-fix mode (where Dispatch is absent from the route) |
+| `review_depth` | Implement | `quick` or `deep` — set by Implement at phase start |
+| `review_mode` | Implement | `single` or `loop` — set by Implement at phase start |
 
 ### Fields that do NOT require validation (informational only)
 
@@ -531,7 +525,7 @@ The four invariants that, when violated, produce the most damage:
 
 3. **Backward loops cascade forward — never patch one artifact in isolation.** New learnings at step N require updating the earliest affected artifact, re-reviewing it, and re-approving every step from there to N. Drift between artifacts breaks every downstream contract.
 
-4. **The `Dispatch → Implement(×N) → Integrate` segment is per-phase, not per-task.** Implement runs N times per phase. Integrate runs ONCE per phase. `current_step: implement` plus one task done does NOT mean "advance to integrate" — see `state.json` field semantics for the verification trap and `dispatch/SKILL.md` → "Dispatch Is the Per-Phase Implement Loop" for the canonical contract.
+4. **The `Implement → Integrate` segment is per-phase, not per-task.** Implement runs once per phase, firing N per-task subagents internally. Integrate runs once per phase. `current_step: implement` plus one task done does NOT mean "advance to integrate" — see `state.json` field semantics for the verification trap and `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop" for the canonical contract.
 
 <BEHAVIORAL-DIRECTIVES>
 D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
