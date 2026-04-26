@@ -269,3 +269,30 @@ init_state() {
   run "$HOOK" <<< "$json"
   [ "$status" -eq 2 ]
 }
+
+# ──────────────────────────────────────────────────────────────
+# [runtime] empty artifact_dir in state.json blocks (fail-closed)
+# ──────────────────────────────────────────────────────────────
+@test "[runtime] empty artifact_dir in state.json blocks pipeline-ordered write" {
+  cd "$WORK_DIR"
+  mkdir -p .qrspi
+  printf '{"artifact_dir":"","current_step":"goals"}' > .qrspi/state.json
+  mkdir -p docs/qrspi/2026-04-26-myslug
+  local target="$WORK_DIR/docs/qrspi/2026-04-26-myslug/design.md"
+  local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"artifact_dir missing"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [runtime] .qrspi/ protection regex anchors to path segment
+# ──────────────────────────────────────────────────────────────
+@test "[runtime] .qrspi/ protection regex anchors to path segment (no false match on substring)" {
+  cd "$WORK_DIR"
+  mkdir -p notdocs/qrspi/foo/.qrspi
+  local target="$WORK_DIR/notdocs/qrspi/foo/.qrspi/bar.txt"
+  local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}

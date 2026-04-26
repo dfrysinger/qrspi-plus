@@ -23,23 +23,11 @@ source "$PLUGIN_ROOT/hooks/lib/worktree.sh"
 source "$PLUGIN_ROOT/hooks/lib/agent.sh"
 source "$PLUGIN_ROOT/hooks/lib/audit.sh"
 
-escape_for_json() {
-  local s="$1"
-  s="${s//\\/\\\\}"
-  s="${s//\"/\\\"}"
-  s="${s//$'\n'/\\n}"
-  s="${s//$'\r'/\\r}"
-  s="${s//$'\t'/\\t}"
-  printf '%s' "$s"
-}
-
 block() {
   local reason="$1"
   audit_log_event "$STDIN_JSON" "block" "$reason" 2>/dev/null || true
-  local reason_escaped
-  reason_escaped=$(escape_for_json "$reason")
   echo "pre-tool-use: BLOCKED: ${reason}" >&2
-  printf '{"decision":"block","reason":"%s"}\n' "$reason_escaped"
+  jq -cn --arg r "$reason" '{decision:"block",reason:$r}'
   exit 2
 }
 
@@ -60,7 +48,8 @@ if [[ -z "$tool_name" ]]; then
   block "Cannot parse tool call: missing tool_name field."
 fi
 
-# Tools we don't enforce
+# Tools we don't enforce — intentionally not audited (audit captures
+# enforcement decisions for Write/Edit/NotebookEdit/Bash, not every read).
 case "$tool_name" in
   Read|Glob|Grep|Skill|ToolSearch|Agent|TodoRead|TodoWrite|WebFetch|WebSearch)
     printf '{}\n'
@@ -113,11 +102,12 @@ if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "Note
       artifact_dir=$(printf '%s' "$state_json" | jq -r '.artifact_dir // empty' 2>/dev/null) || {
         block "Cannot verify pipeline ordering: state.json corrupted."
       }
-      if [[ -n "$artifact_dir" ]]; then
-        missing_step=$(pipeline_check_prerequisites "$artifact_step" "$artifact_dir") || {
-          block "Complete and approve ${missing_step} before writing $(basename "$file_path")"
-        }
+      if [[ -z "$artifact_dir" ]]; then
+        block "Cannot verify pipeline ordering: artifact_dir missing from state."
       fi
+      missing_step=$(pipeline_check_prerequisites "$artifact_step" "$artifact_dir") || {
+        block "Complete and approve ${missing_step} before writing $(basename "$file_path")"
+      }
     fi
   fi
 fi
@@ -170,7 +160,7 @@ fi
 # attempts so the audit log is tamper-proof.
 check_artifact_qrspi_protection() {
   local target="$1"
-  if [[ "$target" =~ docs/qrspi/[^/]+/\.qrspi(/|$) ]]; then
+  if [[ "$target" =~ (^|/)docs/qrspi/[^/]+/\.qrspi(/|$) ]]; then
     block "Cannot write to artifact_dir .qrspi/ (audit log is hook-managed): $target"
   fi
 }
