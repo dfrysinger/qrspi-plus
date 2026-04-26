@@ -33,3 +33,11 @@ setup() {
   run agent_is_subagent ''
   [ "$status" -ne 0 ]
 }
+
+@test "agent.sh uses set -euo pipefail" {
+  grep -q "set -euo pipefail" "$BATS_TEST_DIRNAME/../../hooks/lib/agent.sh"
+}
+
+@test "agent.sh does not source other libraries" {
+  ! grep -E "^\s*(source|\.)\s" "$BATS_TEST_DIRNAME/../../hooks/lib/agent.sh"
+}
