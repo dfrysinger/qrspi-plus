@@ -195,7 +195,7 @@ write_json() {
     "design"
     "structure"
     "plan"
-    "worktree"
+    "parallelize"
     "implement"
     "integrate"
     "test"

@@ -206,11 +206,13 @@ teardown() {
   grep -q "^is_protected_path()" "$protected_lib"
 }
 
-# U11 — pre-tool-use calls is_protected_path (not old name)
-@test "[U11] pre-tool-use calls is_protected_path (new name)" {
-  # AC: all callers updated; pre-tool-use must use new name
+# U11 — pre-tool-use enforces .qrspi/ artifact-dir protection (post 2026-04-26 rewrite)
+@test "[U11] pre-tool-use enforces artifact-dir .qrspi/ protection" {
+  # AC: pre-tool-use must protect <artifact_dir>/.qrspi/ paths from any writer.
+  # Post 2026-04-26 implement-runtime-fix the protection is inline in the hook
+  # binary (anchored regex on docs/qrspi/*/.qrspi/), not a protected.sh call.
   local pre_hook="$HOOKS_DIR/pre-tool-use"
-  grep -q "is_protected_path" "$pre_hook"
+  grep -q "check_artifact_qrspi_protection\|docs/qrspi/.*\.qrspi" "$pre_hook"
 }
 
 # U11 — protected.sh does not define protected_is_blocked (old name removed)
