@@ -122,3 +122,125 @@ assert_empty() {
     result=$(bash_detect_file_writes 'echo test > file.txt')
     [ -n "$result" ]
 }
+
+# ── Destructive patterns: universal (everyone) ────────────────────────
+
+@test "destructive: rm -rf with wildcard" {
+  run bash_detect_destructive_universal 'rm -rf *'
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ rm ]]
+}
+
+@test "destructive: rm -rf with home glob" {
+  run bash_detect_destructive_universal 'rm -rf ~/foo'
+  [ "$status" -eq 0 ]
+}
+
+@test "destructive: rm -rf with absolute root path" {
+  run bash_detect_destructive_universal 'rm -rf /etc'
+  [ "$status" -eq 0 ]
+}
+
+@test "destructive: rm -rf with parent traversal" {
+  run bash_detect_destructive_universal 'rm -rf ../foo'
+  [ "$status" -eq 0 ]
+}
+
+@test "non-destructive: rm -rf relative subdir" {
+  run bash_detect_destructive_universal 'rm -rf ./build'
+  [ "$status" -ne 0 ]
+}
+
+@test "non-destructive: rm -rf node_modules" {
+  run bash_detect_destructive_universal 'rm -rf node_modules'
+  [ "$status" -ne 0 ]
+}
+
+@test "destructive: git push --force" {
+  run bash_detect_destructive_universal 'git push --force origin main'
+  [ "$status" -eq 0 ]
+}
+
+@test "destructive: git push -f" {
+  run bash_detect_destructive_universal 'git push -f origin main'
+  [ "$status" -eq 0 ]
+}
+
+@test "non-destructive: git push (normal)" {
+  run bash_detect_destructive_universal 'git push origin main'
+  [ "$status" -ne 0 ]
+}
+
+@test "destructive: git reset --hard origin/main" {
+  run bash_detect_destructive_universal 'git reset --hard origin/main'
+  [ "$status" -eq 0 ]
+}
+
+@test "non-destructive: git reset --hard HEAD" {
+  run bash_detect_destructive_universal 'git reset --hard HEAD'
+  [ "$status" -ne 0 ]
+}
+
+@test "non-destructive: git reset --hard (no arg)" {
+  run bash_detect_destructive_universal 'git reset --hard'
+  [ "$status" -ne 0 ]
+}
+
+@test "destructive: git clean -fd" {
+  run bash_detect_destructive_universal 'git clean -fd'
+  [ "$status" -eq 0 ]
+}
+
+@test "destructive: git clean -fdx" {
+  run bash_detect_destructive_universal 'git clean -fdx'
+  [ "$status" -eq 0 ]
+}
+
+@test "destructive: redirect to /dev/sda" {
+  run bash_detect_destructive_universal 'cat foo > /dev/sda'
+  [ "$status" -eq 0 ]
+}
+
+@test "destructive: SQL DROP DATABASE" {
+  run bash_detect_destructive_universal 'psql -c "DROP DATABASE app"'
+  [ "$status" -eq 0 ]
+}
+
+@test "destructive: SQL DROP SCHEMA case-insensitive" {
+  run bash_detect_destructive_universal 'psql -c "drop schema public cascade"'
+  [ "$status" -eq 0 ]
+}
+
+@test "non-destructive: echo containing DROP TABLE string" {
+  run bash_detect_destructive_universal 'echo "the DROP TABLE pattern"'
+  # Echo of SQL string is NOT subagent-restricted-pattern; only universal is checked here.
+  # DROP TABLE is subagent-tier, so universal should not flag it.
+  [ "$status" -ne 0 ]
+}
+
+# ── Destructive patterns: subagent-only ───────────────────────────────
+
+@test "subagent-destructive: SQL DROP TABLE" {
+  run bash_detect_destructive_subagent 'psql -c "DROP TABLE users"'
+  [ "$status" -eq 0 ]
+}
+
+@test "subagent-destructive: SQL DROP TABLE case-insensitive" {
+  run bash_detect_destructive_subagent 'psql -c "drop table users"'
+  [ "$status" -eq 0 ]
+}
+
+@test "subagent-destructive: SQL TRUNCATE" {
+  run bash_detect_destructive_subagent 'psql -c "TRUNCATE foo"'
+  [ "$status" -eq 0 ]
+}
+
+@test "non-subagent-destructive: rm -rf (handled by universal, not subagent)" {
+  run bash_detect_destructive_subagent 'rm -rf *'
+  [ "$status" -ne 0 ]
+}
+
+@test "non-subagent-destructive: word containing TRUNCATE substring (TRUNCATED)" {
+  run bash_detect_destructive_subagent 'echo "the file was TRUNCATED yesterday"'
+  [ "$status" -ne 0 ]
+}
