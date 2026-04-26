@@ -76,6 +76,20 @@ where you confirmed or found a problem.
 - Check for "future-proofing" abstractions beyond what the task needs
 - Utility functions or helpers that go beyond the immediate requirement
 
+### 7. Target files deviation check (advisory)
+
+Compare the task's diff against the `Target files:` list in the task spec.
+
+- **PASS:** The implementation creates or modifies only files in the Target files list, OR adds a small number of necessary auxiliary files (e.g., a new test file alongside the implementation, a small helper module).
+- **FLAG:** The implementation creates or modifies files significantly outside the Target files list (e.g., wholesale restructure into different files, edits to unrelated subsystems).
+
+When flagging, report:
+- Which files in the diff are NOT in the Target files list
+- The implementer's stated rationale (if any)
+- Recommendation: should the task spec be updated retroactively, or should the implementation be reworked?
+
+This check is **advisory, not blocking**. The orchestrator main chat decides whether to act on the flag. Discipline replaces hook-layer allowlist enforcement (dropped in the 2026-04-26 implement-runtime-fix).
+
 ## Report Format
 
 After completing all checks, report your findings:
