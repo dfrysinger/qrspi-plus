@@ -61,14 +61,14 @@ The "current batch" is mode-specific:
 
 ### State Transition Contract
 
-Skills do not write `state.json` directly — the hook layer owns it. See `using-qrspi/SKILL.md` § Hook-Managed State.
+Skills do not write `state.json` directly — the hook layer owns it. State lives only in the artifact dir's `.qrspi/state.json`. Worktrees do not contain `.qrspi/` directories. See `using-qrspi/SKILL.md` § Hook-Managed State.
 
 Behavior contract Implement relies on:
 
-- While Implement is mid-batch: `state.json` `current_step` stays at `implement`; `active_task` is a liveness hint reflecting one in-flight or recently-dispatched task (the field is singular for backward compatibility, but waves and quick-fix batches dispatch concurrently — the authoritative way to verify mid-batch state is to cross-check the full batch task set per the next bullet).
+- While Implement is mid-batch: `state.json` `current_step` stays at `implement`. There is no `active_task` field in the new schema — to verify mid-batch state, cross-check the full batch task set per the next bullet.
 - After the batch gate releases and Implement invokes the next route step: `current_step` advances to whichever step is next in `config.md` route (typically `integrate` in full pipeline, `test` in quick fix).
 
-Readers verifying `current_step` mid-batch should cross-check `active_task` against `parallelization.md` (full) or against the task set for the in-flight quick-fix dispatch event — every originally-requested `tasks/*.md`, every `fixes/{type}-round-NN/*.md`, or the singleton `{tasks/task-00*.md}` for an in-flight isolated baseline-fix dispatch event (see § Batch Gate Definition for the two quick-fix main-dispatch shapes plus the isolated baseline-fix dispatch event). If a hook does not yet realize a transition asserted above, file a hook bug; do not work around it by writing state directly.
+Readers verifying `current_step` mid-batch should cross-check the in-flight task set against `parallelization.md` (full) or against the task set for the in-flight quick-fix dispatch event — every originally-requested `tasks/*.md`, every `fixes/{type}-round-NN/*.md`, or the singleton `{tasks/task-00*.md}` for an in-flight isolated baseline-fix dispatch event (see § Batch Gate Definition for the two quick-fix main-dispatch shapes plus the isolated baseline-fix dispatch event). If a hook does not yet realize a transition asserted above, file a hook bug; do not work around it by writing state directly.
 
 ## Artifact Gating
 
@@ -131,64 +131,11 @@ In full pipeline mode, Implement consumes the symbolic Branch Map from `parallel
 
 In quick fix mode, there is no Branch Map. Each task forks directly from the feature branch tip into its own worktree. The re-fork prohibition still applies (a fix-round on the same task reuses its existing branch).
 
-## Subagent Permissions
+## Subagent Permissions (Hook-Governed)
 
-Before dispatching any per-task orchestrator subagent, write `.claude/settings.json` into each *task* worktree directory (`.worktrees/{slug}/task-NN/`). The throwaway baseline worktree at `.worktrees/{slug}/baseline/` does not need a settings file — Implement runs baseline tests directly there, not via a subagent.
+Subagent containment is enforced by the QRSPI `pre-tool-use` hook (target-based asymmetric model — see `using-qrspi/SKILL.md` § How worktree enforcement works). The hook blocks any subagent Write/Edit/Bash whose target falls outside `.worktrees/{slug}/(task-NN|baseline)/`. No per-worktree `.claude/settings.json` file is required.
 
-**Why:** approval prompts inside subagents block execution silently — the subagent stalls without surfacing the prompt. Pre-writing broad permissions eliminates this failure mode. Worktrees are isolated branches, so broad tool permissions here do not affect the main project.
-
-**Settings file content** (write to `{worktree}/.claude/settings.json`):
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Edit(**)",
-      "Write(**)",
-      "Bash(git *)",
-      "Bash(npm *)",
-      "Bash(npx *)",
-      "Bash(node *)",
-      "Bash(python *)",
-      "Bash(pip *)",
-      "Bash(pytest *)",
-      "Bash(python3 *)",
-      "Bash(cargo *)",
-      "Bash(go *)",
-      "Bash(make *)",
-      "Bash(mkdir *)",
-      "Bash(cp *)",
-      "Bash(mv *)",
-      "Bash(rm *)",
-      "Bash(chmod *)",
-      "Bash(cat *)",
-      "Bash(ls *)",
-      "Bash(find *)",
-      "Bash(grep *)",
-      "Bash(sed *)",
-      "Bash(awk *)",
-      "Bash(echo *)",
-      "Bash(touch *)",
-      "Bash(wc *)",
-      "Bash(sort *)",
-      "Bash(head *)",
-      "Bash(tail *)",
-      "Bash(diff *)"
-    ],
-    "deny": []
-  }
-}
-```
-
-### Fallback Approach
-
-If worktree-level `.claude/settings.json` is not loaded by the subagent (Claude Code only loads settings from the project root or `~/.claude/`), fall back to the main project settings:
-
-1. Open `.claude/settings.json` in the main project root.
-2. For each *task* worktree path, append path-scoped allow rules in the `"allow"` array using the pattern `"Bash(* {worktree_path}/*)"` or equivalent glob. (Skip `.worktrees/{slug}/baseline/` — Implement runs baseline tests directly there, not via a subagent.)
-3. After the subagent completes, remove those path-scoped entries.
-
-**Never leave temporary permission entries in the main project `.claude/settings.json` after subagents complete.**
+**Recommended:** run sessions with `--dangerously-skip-permissions` enabled — the hook is the security wall, so per-tool approval prompts are no longer needed and would only stall subagents.
 
 ## Process Steps
 
@@ -202,8 +149,8 @@ Branch on mode (derived from `config.md.route` per § Overview) at the start. Bo
 4. **Run baseline tests** in a single throwaway worktree at `.worktrees/{slug}/baseline/` forked from the feature branch tip. **Resume precondition:** if `.worktrees/{slug}/baseline/` already exists when this step starts, delete it first — the prior baseline result is not trusted across sessions because the feature branch tip may have advanced. (One check is sufficient in full pipeline: every Group 1 task forks from this same commit, so per-task baselines would be identical; downstream-group bases derive from task work that hasn't happened yet and is validated by per-task reviewers. In quick fix the same logic holds trivially — every task forks from the feature branch tip.) See "Baseline Tests" below for the 3 options when failures occur. **Invariant:** if the pipeline continues past this step, the baseline worktree must be gone before any per-task worktree exists.
 5. **If baseline failed and the user chose Auto-fix:**
     - Delete `.worktrees/{slug}/baseline/` (per Step 4's invariant).
-    - **Full pipeline:** dispatch `task-00` first, in isolation. Write the `task-00` Branch Map row and the `## Runtime Adjustments` section to `parallelization.md` (see "Baseline Tests" Auto-fix path). Create only the `task-00` worktree at `.worktrees/{slug}/task-00/`, forked from feature branch tip. Write `.claude/settings.json` into `.worktrees/{slug}/task-00/` (see "Subagent Permissions"). If this is the first task worktree of the session, also decide between the worktree-level approach and the fallback approach (see "Subagent Permissions / Fallback Approach"); the decision applies to every later worktree this session. Dispatch the `task-00` per-task orchestrator subagent, wait for terminal state. Once `task-00` is in terminal state, proceed to Step 6 with the in-memory resolution table now overlaying Runtime Adjustments (so dependents resolve to `task-00 tip`).
-    - **Quick fix:** the baseline-fix task is dispatched as its own isolated dispatch event BEFORE the originally-requested dispatch (no `parallelization.md`, no Branch Map row to append). Write `tasks/task-00.md` with `status: approved`, create the `task-00` worktree forked from feature branch tip, write `.claude/settings.json`, dispatch its per-task orchestrator subagent, wait for terminal state. The baseline-fix dispatch's task set is `{tasks/task-00.md}` (one task). Once `task-00` is in terminal state, proceed to Step 6 to dispatch the originally-requested task set as a separate isolated dispatch event — either the originally-requested `tasks/*.md` (normal entry, **excluding** the just-written `tasks/task-00*.md` baseline-fix singleton — the main dispatch reads only the originally-requested files) or `fixes/{type}-round-NN/*.md` (fix-task dispatch). Each dispatch event reads exactly one set; the baseline fix and the main dispatch are separate events, not a merged batch. (Note: in this skill, "batch" = the full set of tasks gated together at the human batch gate; "dispatch event" = one invocation of per-task-orchestrator subagents reading one task set. The isolated baseline-fix dispatch is its own dispatch event but is not a separate batch — it auto-continues to the main dispatch with no intermediate batch gate; only the main dispatch's batch gate fires at Step 7.)
+    - **Full pipeline:** dispatch `task-00` first, in isolation. Write the `task-00` Branch Map row and the `## Runtime Adjustments` section to `parallelization.md` (see "Baseline Tests" Auto-fix path). Create only the `task-00` worktree at `.worktrees/{slug}/task-00/`, forked from feature branch tip. Dispatch the `task-00` per-task orchestrator subagent, wait for terminal state. Once `task-00` is in terminal state, proceed to Step 6 with the in-memory resolution table now overlaying Runtime Adjustments (so dependents resolve to `task-00 tip`).
+    - **Quick fix:** the baseline-fix task is dispatched as its own isolated dispatch event BEFORE the originally-requested dispatch (no `parallelization.md`, no Branch Map row to append). Write `tasks/task-00.md` with `status: approved`, create the `task-00` worktree forked from feature branch tip, dispatch its per-task orchestrator subagent, wait for terminal state. The baseline-fix dispatch's task set is `{tasks/task-00.md}` (one task). Once `task-00` is in terminal state, proceed to Step 6 to dispatch the originally-requested task set as a separate isolated dispatch event — either the originally-requested `tasks/*.md` (normal entry, **excluding** the just-written `tasks/task-00*.md` baseline-fix singleton — the main dispatch reads only the originally-requested files) or `fixes/{type}-round-NN/*.md` (fix-task dispatch). Each dispatch event reads exactly one set; the baseline fix and the main dispatch are separate events, not a merged batch. (Note: in this skill, "batch" = the full set of tasks gated together at the human batch gate; "dispatch event" = one invocation of per-task-orchestrator subagents reading one task set. The isolated baseline-fix dispatch is its own dispatch event but is not a separate batch — it auto-continues to the main dispatch with no intermediate batch gate; only the main dispatch's batch gate fires at Step 7.)
 6. **Dispatch tasks.**
     - **Full pipeline — for each wave** in the Execution Order, in order:
         - Resolve every task's effective base: read the Branch Map's `Base` column, then apply `## Runtime Adjustments` overrides on top.
@@ -211,13 +158,11 @@ Branch on mode (derived from `config.md.route` per § Overview) at the start. Bo
         - Create the per-task worktree at `.worktrees/{slug}/task-NN/`. Verify `.worktrees/` is in `.gitignore`.
 
           **Resume precondition.** Before attempting `git worktree add`, if any leftover state exists for `task-NN` (worktree dir or branch already present), see `references/resume-preconditions.md` for the four-case classification table and the inspect-and-decide procedure. The leftover-state handling differs from the baseline worktree's silent-delete rule because the baseline worktree contains no user work, while task branches and worktrees can.
-        - Write `.claude/settings.json` into the new task worktree (see "Subagent Permissions"). Use the fallback-approach choice made on the first worktree of the session (or make it now if this is the first worktree).
         - Fire the wave's tasks concurrently (one per-task orchestrator subagent per task; multiple Agent tool calls in parallel, each with `isolation: worktree`).
         - Wait for every task in the wave to reach a terminal status.
         - If the next wave needs a `stage-after-G{N}` stage commit composed from this wave's leaves, create it now.
     - **Quick fix:** for each task in the batch (no waves):
         - Create the per-task worktree at `.worktrees/{slug}/task-NN/`, forked from feature branch tip. Verify `.worktrees/` is in `.gitignore`. Apply the same Resume precondition behavior as full pipeline (see `references/resume-preconditions.md`).
-        - Write `.claude/settings.json` into the new task worktree (see "Subagent Permissions").
         - Fire the per-task orchestrator subagent (multiple if the batch has multiple fix tasks; they are file-disjoint by quick-fix construction).
         - Wait for every task to reach a terminal status.
 7. When every task in the batch has reached a terminal state, present the batch gate (see "Batch Gate" below).
@@ -327,8 +272,8 @@ Granular TodoWrite items covering the user-visible Process Steps. Numbering belo
 1. Ask phase config (covers Process Step 2).
 2. Create feature branch / verify exists (covers Process Step 3).
 3. Run baseline tests in throwaway worktree (covers Process Step 4).
-4. [conditional — only if Auto-fix chosen on baseline failure] Dispatch task-00 in isolation, including writing `.claude/settings.json` into the task-00 worktree (covers Process Step 5).
-5. Dispatch tasks (covers Process Step 6). In full pipeline mode, create one TodoWrite task per wave (e.g., "Wave 1 / G1: T01, T02 — resolve bases, create worktrees, dispatch concurrently"). In quick fix mode, create one TodoWrite task per per-task-orchestrator dispatch (typically one task; possibly several if the batch includes fix tasks). Mark `in_progress` at dispatch; mark `completed` when every task in that wave (full) or that dispatch (quick) reaches a terminal state. Writing `.claude/settings.json` into each new task worktree happens during this step; the fallback-approach decision is made on the first worktree of the session if Step 5 was skipped.
+4. [conditional — only if Auto-fix chosen on baseline failure] Dispatch task-00 in isolation (covers Process Step 5).
+5. Dispatch tasks (covers Process Step 6). In full pipeline mode, create one TodoWrite task per wave (e.g., "Wave 1 / G1: T01, T02 — resolve bases, create worktrees, dispatch concurrently"). In quick fix mode, create one TodoWrite task per per-task-orchestrator dispatch (typically one task; possibly several if the batch includes fix tasks). Mark `in_progress` at dispatch; mark `completed` when every task in that wave (full) or that dispatch (quick) reaches a terminal state.
 6. Present batch gate (covers Process Step 7).
 7. Invoke next route step (covers Process Step 8).
 
@@ -340,11 +285,11 @@ Given the Worked Example in `parallelize/SKILL.md`:
 
 **Pre-flight — baseline.** Implement creates `.worktrees/user-auth/baseline/` from the feature branch tip, runs baseline tests, deletes the worktree. Assume baseline passes (otherwise the Auto-fix path injects `task-00` and dispatches it in isolation before Wave 1).
 
-**Wave 1.** Implement reads the Branch Map. Tasks 1 and 2 both have `Base = feature branch tip` and are file-disjoint. Resolve `feature branch tip` to the current tip of `qrspi/user-auth`, create worktrees `.worktrees/user-auth/task-01/` and `.worktrees/user-auth/task-02/` from that commit, write `.claude/settings.json` into each (this is the first worktree of the session, so also decide between worktree-level and fallback approach — see "Subagent Permissions"), dispatch both per-task orchestrator subagents concurrently, wait for both to return terminal status.
+**Wave 1.** Implement reads the Branch Map. Tasks 1 and 2 both have `Base = feature branch tip` and are file-disjoint. Resolve `feature branch tip` to the current tip of `qrspi/user-auth`, create worktrees `.worktrees/user-auth/task-01/` and `.worktrees/user-auth/task-02/` from that commit, dispatch both per-task orchestrator subagents concurrently, wait for both to return terminal status.
 
 **Stage commit creation.** Both Wave 1 tasks now in terminal state. Implement sees Wave 2 needs `stage-after-G1`. Create branch `qrspi/user-auth/stage-after-G1` by merging task-01 and task-02 tips. (Composition is documented in `parallelization.md` § Stage Commits.)
 
-**Wave 2.** Task 3's `Base = stage-after-G1` resolves to the freshly-created stage commit. Task 4's `Base = task-01 tip` resolves to the current tip of `qrspi/user-auth/task-01`. Create both worktrees, write `.claude/settings.json` into each (the fallback-approach decision was made in Wave 1), dispatch both per-task orchestrator subagents concurrently, wait for both terminal statuses.
+**Wave 2.** Task 3's `Base = stage-after-G1` resolves to the freshly-created stage commit. Task 4's `Base = task-01 tip` resolves to the current tip of `qrspi/user-auth/task-01`. Create both worktrees, dispatch both per-task orchestrator subagents concurrently, wait for both terminal statuses.
 
 **Batch gate.** All four tasks are now in terminal state. Present the batch gate; on "continue," invoke the next route step (Integrate).
 
@@ -354,7 +299,7 @@ Quick-fix run with one task at `tasks/task-01.md`:
 
 **Pre-flight — baseline.** Implement creates `.worktrees/{slug}/baseline/` from the feature branch tip, runs baseline tests, deletes the worktree. Assume baseline passes.
 
-**Single dispatch.** Create worktree `.worktrees/{slug}/task-01/` forked from the feature branch tip, write `.claude/settings.json`, dispatch the per-task orchestrator subagent for task-01, wait for terminal status.
+**Single dispatch.** Create worktree `.worktrees/{slug}/task-01/` forked from the feature branch tip, dispatch the per-task orchestrator subagent for task-01, wait for terminal status.
 
 **Batch gate.** Task is in terminal state. Present the batch gate; on "continue," invoke the next route step (Test).
 
@@ -368,8 +313,7 @@ Quick-fix run with one task at `tasks/task-01.md`:
 - Proceeding after BLOCKED status from a per-task orchestrator subagent without changing approach.
 - Dispatching a task whose dependencies haven't completed (or whose stage commit hasn't been created yet, full pipeline).
 - Using a single TodoWrite task for all dispatches — create one task per wave (full) or per per-task-orchestrator dispatch (quick) so the user can track progress.
-- Dispatching per-task orchestrator subagents without first writing `.claude/settings.json` to each worktree directory.
-- Leaving temporary permission entries in main project `.claude/settings.json` after subagents complete.
+- Adding per-worktree `.claude/settings.json` files or per-worktree allow rules (the hook now governs subagent permissions; per-worktree settings are obsolete).
 - Re-forking an existing task branch (re-runs reuse the existing branch and add commits — re-fork only at fresh worktree creation, replan-introduced tasks, or explicit user-requested reset).
 - Advancing to the next route step before every task is in one of the three terminal states defined in "Batch Gate Definition (Release Conditions)".
 
