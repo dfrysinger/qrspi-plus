@@ -7,9 +7,36 @@ _state_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_state_script_dir/frontmatter.sh"
 source "$_state_script_dir/artifact-map.sh"
 
+# state_compute_current_step <state_json>
+# Walks artifacts in pipeline order and returns the first non-approved step on
+# stdout. If all eight are approved, returns "test" (the terminal step).
+# Returns 0 on success, 1 if the state JSON is unparseable by jq.
+#
+# NOTE: implement and test never become "approved" via the file-frontmatter
+# path (state_init_or_reconcile defaults them to draft; only out-of-band
+# setters could approve them). So under current callers this loop will return
+# "implement" once goals→plan are all approved, regardless of whether implement
+# itself is approved. Future skills that mark implement/test approved must do
+# so in state.json directly, after which this loop will advance correctly.
+state_compute_current_step() {
+  local state_json="$1"
+  local step status
+  for step in goals questions research design structure plan implement test; do
+    if ! status=$(echo "$state_json" | jq -r ".artifacts.$step // \"draft\"" 2>/dev/null); then
+      echo "state_compute_current_step: jq failed parsing state JSON for step '$step'" >&2
+      return 1
+    fi
+    if [[ "$status" != "approved" ]]; then
+      echo "$step"
+      return 0
+    fi
+  done
+  echo "test"
+}
+
 # state_init_or_reconcile <artifact_dir>
 # Scans artifact files in the given directory, reads their frontmatter status,
-# and creates/updates .qrspi/state.json in the current working directory.
+# and creates/updates <artifact_dir>/.qrspi/state.json.
 state_init_or_reconcile() {
   local artifact_dir="$1"
 
@@ -43,41 +70,18 @@ state_init_or_reconcile() {
   # implement and test are never read from files, always draft unless inferred
   # (but for now we keep them as draft)
 
-  # Determine current_step: first artifact that is NOT "approved"
-  local current_step=""
-  if [[ "$goals_status" != "approved" ]]; then
-    current_step="goals"
-  elif [[ "$questions_status" != "approved" ]]; then
-    current_step="questions"
-  elif [[ "$research_status" != "approved" ]]; then
-    current_step="research"
-  elif [[ "$design_status" != "approved" ]]; then
-    current_step="design"
-  elif [[ "$structure_status" != "approved" ]]; then
-    current_step="structure"
-  elif [[ "$plan_status" != "approved" ]]; then
-    current_step="plan"
-  elif [[ "$implement_status" != "approved" ]]; then
-    current_step="implement"
-  elif [[ "$test_status" != "approved" ]]; then
-    current_step="test"
-  else
-    # All approved
-    current_step="test"
-  fi
-
   # Create absolute path for artifact_dir
   local abs_artifact_dir
   abs_artifact_dir="$(cd "$artifact_dir" && pwd)"
 
-  # Create the state JSON (compact format)
+  # Build a provisional state JSON with current_step="" — we recompute it below
+  # via state_compute_current_step so the logic lives in exactly one place.
   local json
   if ! json=$(jq -cn \
-    --arg current_step "$current_step" \
     --arg artifact_dir "$abs_artifact_dir" \
     '{
       version: 1,
-      current_step: $current_step,
+      current_step: "",
       phase_start_commit: null,
       artifact_dir: $artifact_dir,
       wireframe_requested: false,
@@ -109,6 +113,17 @@ state_init_or_reconcile() {
     return 1
   fi
 
+  # Compute current_step from artifact statuses and patch it in
+  local current_step
+  if ! current_step=$(state_compute_current_step "$json"); then
+    echo "state_init_or_reconcile: state_compute_current_step failed" >&2
+    return 1
+  fi
+  if ! json=$(echo "$json" | jq -c --arg cs "$current_step" '.current_step = $cs'); then
+    echo "state_init_or_reconcile: jq patch of current_step failed" >&2
+    return 1
+  fi
+
   # Validate output is well-formed JSON before writing (basic structural check)
   # Check starts with { and ends with }, and contains required "version" key
   local trimmed
@@ -122,18 +137,22 @@ state_init_or_reconcile() {
     return 1
   fi
 
-  # Write the state file atomically
-  if ! state_write_atomic "$json"; then
+  # Write the state file atomically into the artifact_dir
+  if ! state_write_atomic "$json" "$abs_artifact_dir"; then
     echo "state_init_or_reconcile: state_write_atomic failed" >&2
     return 1
   fi
 }
 
-# state_read
-# Outputs .qrspi/state.json on stdout, returns 0.
+# state_read [artifact_dir]
+# Outputs <artifact_dir>/.qrspi/state.json on stdout.
+# If artifact_dir is omitted, reads from .qrspi/state.json relative to PWD
+# (legacy behavior — preserved for callers like the hooks that resolve the
+# location target-based and pass it explicitly when known).
 # Returns 1 if file doesn't exist.
 state_read() {
-  local state_file=".qrspi/state.json"
+  local artifact_dir="${1:-.}"
+  local state_file="$artifact_dir/.qrspi/state.json"
 
   if [[ -f "$state_file" ]]; then
     cat "$state_file"
@@ -143,22 +162,26 @@ state_read() {
   fi
 }
 
-# state_write_atomic <json_string>
-# Writes JSON to .qrspi/state.json via temp file + mv for atomicity.
-# Creates .qrspi/ directory if needed.
+# state_write_atomic <json_string> [artifact_dir]
+# Writes JSON to <artifact_dir>/.qrspi/state.json via temp file + mv for atomicity.
+# Creates <artifact_dir>/.qrspi/ directory if needed.
+# If artifact_dir is omitted, writes to .qrspi/state.json relative to PWD
+# (legacy behavior — preserved for callers that pre-cd into the artifact_dir).
 state_write_atomic() {
   local json="$1"
+  local artifact_dir="${2:-.}"
+  local qrspi_dir="$artifact_dir/.qrspi"
 
   # Create .qrspi directory if needed
-  if ! mkdir -p ".qrspi" 2>/dev/null; then
-    echo "state_write_atomic: failed to create .qrspi directory" >&2
+  if ! mkdir -p "$qrspi_dir" 2>/dev/null; then
+    echo "state_write_atomic: failed to create $qrspi_dir directory" >&2
     return 1
   fi
 
   # Create temp file in the same directory to ensure atomic rename
   local temp_file
-  if ! temp_file=$(mktemp ".qrspi/.state.json.XXXXXX" 2>/dev/null); then
-    echo "state_write_atomic: failed to create temp file in .qrspi/" >&2
+  if ! temp_file=$(mktemp "$qrspi_dir/.state.json.XXXXXX" 2>/dev/null); then
+    echo "state_write_atomic: failed to create temp file in $qrspi_dir" >&2
     return 1
   fi
 
@@ -170,8 +193,8 @@ state_write_atomic() {
   fi
 
   # Atomically move temp file to final location
-  if ! mv "$temp_file" ".qrspi/state.json" 2>/dev/null; then
-    echo "state_write_atomic: failed to move temp file to .qrspi/state.json" >&2
+  if ! mv "$temp_file" "$qrspi_dir/state.json" 2>/dev/null; then
+    echo "state_write_atomic: failed to move temp file to $qrspi_dir/state.json" >&2
     rm -f "$temp_file" 2>/dev/null
     return 1
   fi

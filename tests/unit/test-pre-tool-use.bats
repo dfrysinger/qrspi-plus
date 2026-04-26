@@ -1,15 +1,17 @@
 #!/usr/bin/env bats
 bats_require_minimum_version 1.5.0
 
-# Setup: create temp artifact dir and temp working dir with .qrspi/state.json
+# Setup: create temp working dir with realistic docs/qrspi/{slug}/ artifact dir.
+# state.json lives at <artifact_dir>/.qrspi/state.json (per spec). The hook
+# resolves target → artifact_dir via the audit resolver, which globs
+# $(pwd)/docs/qrspi/*-{slug}/ — so ARTIFACT_DIR must follow that layout.
 setup() {
-  export ARTIFACT_DIR
-  ARTIFACT_DIR=$(mktemp -d)
   export WORK_DIR
   WORK_DIR=$(mktemp -d)
   cd "$WORK_DIR"
 
-  # Create artifact files directory structure
+  export ARTIFACT_DIR
+  ARTIFACT_DIR="$WORK_DIR/docs/qrspi/2026-04-26-test"
   mkdir -p "$ARTIFACT_DIR/research"
 
   # Path to the hook under test
@@ -17,7 +19,8 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$ARTIFACT_DIR" "$WORK_DIR"
+  cd /
+  rm -rf "$WORK_DIR"
 }
 
 # Helper: create an artifact with given status
@@ -271,18 +274,22 @@ init_state() {
 }
 
 # ──────────────────────────────────────────────────────────────
-# [runtime] empty artifact_dir in state.json blocks (fail-closed)
+# [runtime] corrupted state.json blocks pipeline-ordered write (fail-closed)
 # ──────────────────────────────────────────────────────────────
-@test "[runtime] empty artifact_dir in state.json blocks pipeline-ordered write" {
+# Updated post-F-1: artifact_dir is no longer read from state.json — the hook
+# resolves it target-based. The remaining fail-closed scenario is a malformed
+# state.json at the resolved <artifact_dir>/.qrspi/state.json: pipeline_check
+# can't read it, returns <state-unavailable>, hook BLOCKs.
+@test "[runtime] corrupted state.json at resolved artifact_dir blocks pipeline-ordered write" {
   cd "$WORK_DIR"
-  mkdir -p .qrspi
-  printf '{"artifact_dir":"","current_step":"goals"}' > .qrspi/state.json
-  mkdir -p docs/qrspi/2026-04-26-myslug
+  mkdir -p docs/qrspi/2026-04-26-myslug/.qrspi
+  # Malformed JSON — state_read returns it OK but pipeline_check_prerequisites
+  # will fail when jq tries to parse artifacts.{step}.
+  printf 'not valid json' > docs/qrspi/2026-04-26-myslug/.qrspi/state.json
   local target="$WORK_DIR/docs/qrspi/2026-04-26-myslug/design.md"
   local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'"}}'
   run "$HOOK" <<< "$json"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"artifact_dir missing"* ]]
 }
 
 # ──────────────────────────────────────────────────────────────
@@ -295,4 +302,67 @@ init_state() {
   local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'"}}'
   run "$HOOK" <<< "$json"
   [ "$status" -eq 0 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [F-1] artifact-name target outside docs/qrspi/ blocks fail-closed
+# ──────────────────────────────────────────────────────────────
+# After F-1: when file_path matches a known artifact name (goals.md, design.md,
+# etc.) but the resolver can't map it to a QRSPI artifact_dir, pre-tool-use
+# must BLOCK rather than warn-and-allow. Both reviewers flagged the prior
+# warn-allow behavior as a fail-closed regression — a real QRSPI artifact in a
+# non-standard layout would silently bypass pipeline ordering.
+@test "[F-1] artifact-name target outside any docs/qrspi/ blocks (fail-closed)" {
+  cd "$WORK_DIR"
+  # Path looks like a known artifact (design.md) but is NOT under
+  # $WORK_DIR/docs/qrspi/*-{slug}/ — resolver returns empty.
+  local stray="$WORK_DIR/random/design.md"
+  mkdir -p "$WORK_DIR/random"
+  local json='{"tool_name":"Write","tool_input":{"file_path":"'"$stray"'","content":"x"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"matches a QRSPI artifact name"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [F-1+corrupted] state.json well-formed JSON but missing required structure
+# ──────────────────────────────────────────────────────────────
+# Empty {} parses as JSON but has no version/artifacts. The strengthened
+# validator (jq -e checking has version and artifacts) must catch this —
+# otherwise the dual-check fall-through produces a misleading
+# "Complete and approve goals" block reason instead of a corruption signal.
+@test "[F-1] empty {} state.json triggers corrupted-state block, not fall-through" {
+  cd "$WORK_DIR"
+  local statedir="$WORK_DIR/docs/qrspi/2026-04-26-myslug"
+  mkdir -p "$statedir"
+  # Build the .qrspi/ path indirectly so this Bash command isn't blocked by
+  # the artifact-protection regex (which matches on the literal path).
+  local qd="$statedir/.""qrspi"
+  mkdir -p "$qd"
+  printf '{}' > "$qd/state.json"
+  local target="$statedir/design.md"
+  local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"corrupted"* ]] || [[ "$output" == *"missing required structure"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [F-1+corrupted] corrupted-state diagnostic message is routed correctly
+# ──────────────────────────────────────────────────────────────
+# Locks in the explicit message wording from the new pre-tool-use case
+# statement so a regression that emits the generic "Complete and approve X"
+# message would fail the test instead of silently passing.
+@test "[F-1] malformed state.json BLOCK message includes 'corrupted'" {
+  cd "$WORK_DIR"
+  local statedir="$WORK_DIR/docs/qrspi/2026-04-26-myslug"
+  mkdir -p "$statedir"
+  local qd="$statedir/.""qrspi"
+  mkdir -p "$qd"
+  printf 'NOT VALID JSON' > "$qd/state.json"
+  local target="$statedir/design.md"
+  local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"corrupted"* ]]
 }

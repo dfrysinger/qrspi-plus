@@ -87,26 +87,46 @@ esac
 
 # ── Pipeline ordering check (Write/Edit/NotebookEdit on artifact paths only) ──
 # Runs for both main chat and subagents — protects QRSPI artifact ordering
-# regardless of who's writing.
+# regardless of who's writing. The artifact_dir is resolved target-based via the
+# audit resolver: state.json lives at <artifact_dir>/.qrspi/state.json per spec,
+# so we have to know which artifact_dir before we can read it.
 if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "NotebookEdit" ]]; then
   artifact_step=""
   artifact_step=$(artifact_map_get_step "$file_path" 2>/dev/null) || true
 
   if [[ -n "$artifact_step" ]]; then
-    if [[ ! -f ".qrspi/state.json" ]]; then
-      echo "pre-tool-use: WARNING: no state file found — pipeline ordering not enforced for ${artifact_step}" >&2
+    # Resolve target → artifact_dir. Convert relative paths to absolute first
+    # so the resolver's prefix match against $(pwd)/docs/qrspi/ works.
+    abs_file_path="$file_path"
+    [[ "$file_path" != /* ]] && abs_file_path="$PWD/$file_path"
+    pipeline_artifact_dir=""
+    pipeline_artifact_dir=$(_audit_resolve_target_to_artifact_dir "$abs_file_path" 2>/dev/null) || pipeline_artifact_dir=""
+
+    if [[ -z "$pipeline_artifact_dir" ]]; then
+      # Fail-closed: target matches a known artifact step (per artifact_map_get_step)
+      # but the resolver cannot map it to an artifact_dir. Either (a) the path
+      # is a legit non-QRSPI file with a colliding basename, or (b) it IS a real
+      # QRSPI artifact but the layout doesn't match $(pwd)/docs/qrspi/*-{slug}/
+      # (e.g., relative path from a nonstandard CWD, monorepo with docs/qrspi/
+      # not at PWD-root, ambiguous slug). Allowing (b) silently bypasses
+      # pipeline ordering — security regression. Block both cases; (a) friction
+      # is recoverable by renaming or by running QRSPI from the correct CWD.
+      block "Cannot enforce pipeline ordering for ${file_path}: target matches a QRSPI artifact name but no artifact_dir resolved. If this is non-QRSPI work, rename or move outside docs/qrspi/-shaped paths. If this is a QRSPI artifact, run from the project root so docs/qrspi/*-{slug}/ resolves."
+    elif [[ ! -f "$pipeline_artifact_dir/.qrspi/state.json" ]]; then
+      echo "pre-tool-use: WARNING: no state file found at ${pipeline_artifact_dir}/.qrspi/ — pipeline ordering not enforced for ${artifact_step}" >&2
     else
-      state_json=$(state_read 2>/dev/null) || {
-        block "Cannot verify pipeline ordering: state.json unreadable."
-      }
-      artifact_dir=$(printf '%s' "$state_json" | jq -r '.artifact_dir // empty' 2>/dev/null) || {
-        block "Cannot verify pipeline ordering: state.json corrupted."
-      }
-      if [[ -z "$artifact_dir" ]]; then
-        block "Cannot verify pipeline ordering: artifact_dir missing from state."
-      fi
-      missing_step=$(pipeline_check_prerequisites "$artifact_step" "$artifact_dir") || {
-        block "Complete and approve ${missing_step} before writing $(basename "$file_path")"
+      missing_step=$(pipeline_check_prerequisites "$artifact_step" "$pipeline_artifact_dir") || {
+        case "$missing_step" in
+          "<state-corrupted>")
+            block "Cannot verify pipeline ordering: state.json at ${pipeline_artifact_dir}/.qrspi/ is corrupted (not valid JSON)"
+            ;;
+          "<state-unavailable>")
+            block "Cannot verify pipeline ordering: state.json unreadable at ${pipeline_artifact_dir}/.qrspi/"
+            ;;
+          *)
+            block "Complete and approve ${missing_step} before writing $(basename "$file_path")"
+            ;;
+        esac
       }
     fi
   fi

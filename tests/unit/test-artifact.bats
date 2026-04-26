@@ -182,7 +182,7 @@ EOF
 
   # Verify state was updated using jq
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
 }
 
@@ -201,7 +201,7 @@ EOF
 
   # Verify initial state
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
 
   # Update questions to draft
@@ -211,7 +211,7 @@ EOF
   artifact_sync_state "$ARTIFACT_DIR/questions.md" "$ARTIFACT_DIR"
 
   # Verify cascade reset occurred using jq
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
@@ -238,7 +238,7 @@ EOF
 
   # Verify cascade reset using jq
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
@@ -266,7 +266,7 @@ EOF
 
   # Verify wireframe_requested was synced using jq
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.wireframe_requested') == "true" ]]
 }
 
@@ -288,7 +288,7 @@ EOF
 
   # Verify wireframe_requested was synced using jq
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.wireframe_requested') == "false" ]]
 }
 
@@ -329,7 +329,7 @@ EOF
 
   # Verify wireframe_requested is still false using jq (not synced from goals)
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.wireframe_requested') == "false" ]]
 }
 
@@ -369,7 +369,7 @@ DESIGNEOF
 
   # Verify wireframe_requested was synced — proves no line-10 limit
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.wireframe_requested') == "true" ]]
 }
 
@@ -389,11 +389,11 @@ DESIGNEOF
   # Sync state
   artifact_sync_state "$ARTIFACT_DIR/goals.md" "$ARTIFACT_DIR"
 
-  # Verify state file exists and is valid JSON
-  [[ -f ".qrspi/state.json" ]]
+  # Verify state file exists at the artifact_dir per spec
+  [[ -f "$ARTIFACT_DIR/.qrspi/state.json" ]]
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ -n "$state" ]]
 
   # Verify it's valid JSON
@@ -426,7 +426,7 @@ _t15_create_all_approved() {
   artifact_sync_state "$ARTIFACT_DIR/design.md" "$ARTIFACT_DIR"
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -446,7 +446,7 @@ _t15_create_all_approved() {
   artifact_sync_state "$ARTIFACT_DIR/design.md" "$ARTIFACT_DIR" --skip-cascade
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -461,15 +461,15 @@ _t15_create_all_approved() {
 
   # Manually set structure and plan to draft in state to verify they stay untouched
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   state=$(echo "$state" | jq '.artifacts.structure = "draft"')
   state=$(echo "$state" | jq '.artifacts.plan = "draft"')
-  state_write_atomic "$state"
+  state_write_atomic "$state" "$ARTIFACT_DIR"
 
   # design.md stays approved on disk
   artifact_sync_state "$ARTIFACT_DIR/design.md" "$ARTIFACT_DIR" --skip-cascade
 
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
@@ -629,4 +629,62 @@ _t16_setup_artifact_dir() {
   run artifact_promote_next_phase "/tmp/nonexistent-dir-$RANDOM" 1
 
   [ "$status" -ne 0 ]
+}
+
+# ============================================================================
+# [F-7] artifact_sync_state recomputes current_step on mid-session approval
+# ============================================================================
+# Bug: when an artifact's frontmatter changed from draft to approved during a
+# session, artifact_sync_state updated artifacts.{step} but never recomputed
+# current_step. So state.json claimed we were still on the prior step even
+# after its terminal artifact was approved.
+
+@test "[F-7] artifact_sync_state advances current_step when goals.md is approved" {
+  mkdir -p "$ARTIFACT_DIR/research"
+  create_artifact_file "$ARTIFACT_DIR/goals.md" "draft"
+  create_artifact_file "$ARTIFACT_DIR/questions.md" "draft"
+  create_artifact_file "$ARTIFACT_DIR/research/summary.md" "draft"
+  create_artifact_file "$ARTIFACT_DIR/design.md" "draft"
+  create_artifact_file "$ARTIFACT_DIR/structure.md" "draft"
+  create_artifact_file "$ARTIFACT_DIR/plan.md" "draft"
+
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # Sanity: current_step starts at "goals"
+  local state
+  state=$(state_read "$ARTIFACT_DIR")
+  [[ $(echo "$state" | jq -r '.current_step') == "goals" ]]
+
+  # Approve goals.md and sync
+  create_artifact_file "$ARTIFACT_DIR/goals.md" "approved"
+  artifact_sync_state "$ARTIFACT_DIR/goals.md" "$ARTIFACT_DIR"
+
+  # current_step must now point at questions
+  state=$(state_read "$ARTIFACT_DIR")
+  [[ $(echo "$state" | jq -r '.current_step') == "questions" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+}
+
+@test "[F-7] artifact_sync_state advances current_step through multiple approvals" {
+  mkdir -p "$ARTIFACT_DIR/research"
+  create_artifact_file "$ARTIFACT_DIR/goals.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/questions.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/research/summary.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/design.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/structure.md" "draft"
+  create_artifact_file "$ARTIFACT_DIR/plan.md" "draft"
+
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # current_step starts at "structure" (first non-approved)
+  local state
+  state=$(state_read "$ARTIFACT_DIR")
+  [[ $(echo "$state" | jq -r '.current_step') == "structure" ]]
+
+  # Approve structure.md
+  create_artifact_file "$ARTIFACT_DIR/structure.md" "approved"
+  artifact_sync_state "$ARTIFACT_DIR/structure.md" "$ARTIFACT_DIR"
+
+  state=$(state_read "$ARTIFACT_DIR")
+  [[ $(echo "$state" | jq -r '.current_step') == "plan" ]]
 }

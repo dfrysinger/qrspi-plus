@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # PostToolUse hook for QRSPI plugin
 # Responsibilities:
-#   1. Artifact state sync — for Write/Edit targeting known artifacts
-#   2. Audit logging — for ALL Write/Edit/Bash calls (via audit_log_event)
+#   1. Artifact state sync — for Write/Edit/NotebookEdit targeting known
+#      QRSPI artifacts (goals.md, design.md, etc.). Updates state.json
+#      artifact statuses and recomputes current_step on approval.
 # Always exits 0 (non-blocking, async).
+#
+# Audit logging is OWNED by pre-tool-use (audits the decision: allow/block).
+# Post-tool-use does NOT audit — would produce duplicate "allow" rows for
+# every successful Write/Edit, polluting the log.
 #
 # NEVER SILENT: All errors and unexpected conditions are logged to both
 # stderr (user sees in diagnostics) and .qrspi/errors.log (persistent
@@ -16,7 +21,7 @@ PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Source libraries
 source "$PLUGIN_ROOT/hooks/lib/artifact.sh"  # transitively gets pipeline, state, frontmatter
-source "$PLUGIN_ROOT/hooks/lib/audit.sh"     # transitively gets worktree.sh, bash-detect.sh
+source "$PLUGIN_ROOT/hooks/lib/audit.sh"     # for _audit_resolve_target_to_artifact_dir
 
 # Log errors to stderr.
 log_error() {
@@ -29,78 +34,65 @@ stdin_json=$(cat)
 
 # Parse tool_name
 tool_name=$(printf '%s' "$stdin_json" | jq -r '.tool_name // empty' 2>/dev/null) || {
-  log_error "ERROR: malformed JSON on stdin — audit logging skipped for this tool call"
+  log_error "ERROR: malformed JSON on stdin — state sync skipped for this tool call"
   exit 0
 }
 if [[ -z "$tool_name" ]]; then
-  log_error "ERROR: missing tool_name in stdin JSON — audit logging skipped for this tool call"
+  log_error "ERROR: missing tool_name in stdin JSON — state sync skipped for this tool call"
   exit 0
 fi
 
-# Only process Write, Edit, Bash — other tools don't need audit or state sync
-if [[ "$tool_name" != "Write" && "$tool_name" != "Edit" && "$tool_name" != "Bash" ]]; then
-  # Warn on unrecognized tool names
+# Only Write/Edit/NotebookEdit need artifact state sync — Bash never targets
+# a QRSPI artifact through normal pipeline flow.
+if [[ "$tool_name" != "Write" && "$tool_name" != "Edit" && "$tool_name" != "NotebookEdit" ]]; then
+  # Warn on unrecognized tool names so silent tool additions don't slip past.
   case "$tool_name" in
-    Read|Glob|Grep|Skill|ToolSearch|Agent|TodoRead|TodoWrite|WebFetch|WebSearch|NotebookEdit)
+    Read|Glob|Grep|Skill|ToolSearch|Agent|TodoRead|TodoWrite|WebFetch|WebSearch|Bash)
       ;;
     *)
-      echo "post-tool-use: WARNING: unrecognized tool_name '${tool_name}' — not audited" >&2
+      echo "post-tool-use: WARNING: unrecognized tool_name '${tool_name}' — no state sync" >&2
       ;;
   esac
   exit 0
 fi
 
-# Read state — if missing, no QRSPI project is active yet.
-# State is created by the QRSPI skills (Goals, using-qrspi) when they set
-# up the artifact directory. Hooks only read state, they don't create it.
-# Pre-tool-use already allows writes when state is missing (no pipeline to
-# enforce), so post-tool-use can safely skip artifact sync and audit logging
-# until the skills bootstrap state.
-state_json=$(state_read 2>/dev/null) || {
-  # No state file, or state file unreadable. If the file exists but can't
-  # be read, that's an error worth surfacing (vs simply "no project active").
-  if [[ -f ".qrspi/state.json" ]]; then
-    log_error "ERROR: state.json exists but cannot be read — audit logging skipped for ${tool_name} call"
+# Extract file_path
+file_path=$(printf '%s' "$stdin_json" | jq -r '.tool_input.file_path // empty' 2>/dev/null) || {
+  log_error "WARNING: cannot parse file_path from ${tool_name} tool input — state sync skipped"
+  exit 0
+}
+if [[ -z "$file_path" ]]; then
+  exit 0
+fi
+
+# Resolve target → artifact_dir. Convert relative paths to absolute first so
+# the resolver's prefix match against $(pwd)/docs/qrspi/ works.
+abs_file_path="$file_path"
+[[ "$file_path" != /* ]] && abs_file_path="$PWD/$file_path"
+
+artifact_dir=$(_audit_resolve_target_to_artifact_dir "$abs_file_path" 2>/dev/null) || {
+  # Target is outside any QRSPI artifact_dir. Usually nothing to sync, BUT if
+  # the file_path matches a known artifact name (goals.md, design.md, etc.) we
+  # have a real architectural drift: pre-tool-use blocks unresolved artifacts,
+  # so reaching here means the layout is inconsistent. Log a stderr warning so
+  # the user notices the silent state-sync skip.
+  if artifact_map_get_step "$file_path" >/dev/null 2>&1; then
+    log_error "WARNING: ${file_path} matches a QRSPI artifact name but no artifact_dir resolved — state.json sync skipped (state may now be stale; investigate the path layout)"
   fi
   exit 0
 }
-artifact_dir=$(printf '%s' "$state_json" | jq -r '.artifact_dir // empty' 2>/dev/null) || {
-  log_error "WARNING: cannot parse artifact_dir from state — artifact sync and audit logging skipped for ${tool_name} call"
+
+# Sync state if this is a known artifact within the resolved artifact_dir.
+artifact_exit=0
+step_name=$(artifact_is_known "$file_path" "$artifact_dir" 2>/dev/null) || artifact_exit=$?
+if [[ $artifact_exit -eq 2 ]]; then
+  log_error "WARNING: artifact_is_known returned error for ${file_path} — state sync skipped"
   exit 0
-}
-if [[ -z "$artifact_dir" ]]; then
-  log_error "WARNING: artifact_dir is empty in state — artifact sync and audit logging skipped for ${tool_name} call"
-  exit 0
 fi
-
-# Extract file_path (for artifact sync)
-file_path=""
-if [[ "$tool_name" != "Bash" ]]; then
-  file_path=$(printf '%s' "$stdin_json" | jq -r '.tool_input.file_path // empty' 2>/dev/null) || {
-    log_error "WARNING: cannot parse file_path from ${tool_name} tool input"
-  }
-fi
-
-# --- 1. Artifact state sync (Write/Edit only) ---
-if [[ -n "$file_path" ]]; then
-  artifact_exit=0
-  step_name=$(artifact_is_known "$file_path" "$artifact_dir" 2>/dev/null) || artifact_exit=$?
-  if [[ $artifact_exit -eq 2 ]]; then
-    log_error "WARNING: artifact_is_known returned error for ${file_path} — artifact sync skipped"
+if [[ -n "$step_name" ]]; then
+  if ! artifact_sync_state "$file_path" "$artifact_dir" 2>/dev/null; then
+    log_error "ERROR: artifact_sync_state failed for ${step_name} (${file_path}) — state.json may be stale"
   fi
-  if [[ -n "$step_name" ]]; then
-    if ! artifact_sync_state "$file_path" "$artifact_dir" 2>/dev/null; then
-      log_error "ERROR: artifact_sync_state failed for ${step_name} (${file_path}) — state.json may be stale"
-    fi
-  fi
-fi
-
-# --- 2. Audit logging ---
-# Post-tool-use only fires after the tool succeeded, so all events here are "allow".
-# audit_log_event handles target extraction, scope resolution, and silent skip
-# for out-of-QRSPI-scope targets.
-if ! audit_log_event "$stdin_json" "allow" "" 2>/dev/null; then
-  log_error "ERROR: audit_log_event failed for ${tool_name} call — audit trail has a gap"
 fi
 
 exit 0

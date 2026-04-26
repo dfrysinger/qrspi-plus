@@ -40,7 +40,7 @@ EOF
 
   # Verify current_step is "questions"
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"current_step":"questions"'* ]]
 
   # Verify artifact statuses
@@ -69,7 +69,7 @@ EOF
   [ "$status" -eq 0 ]
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"current_step":"implement"'* ]]
 }
 
@@ -84,7 +84,7 @@ EOF
   [ "$status" -eq 0 ]
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"current_step":"goals"'* ]]
   [[ "$json" == *'"goals":"draft"'* ]]
   [[ "$json" == *'"questions":"draft"'* ]]
@@ -113,7 +113,7 @@ EOF
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
-  run state_read
+  run state_read "$artifact_dir"
   [ "$status" -eq 0 ]
 
   # Verify it's valid JSON by checking with jq
@@ -177,7 +177,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"version":1'* ]]
 }
 
@@ -190,7 +190,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   # artifact_dir should be set to the absolute path
   [[ "$json" == *'"artifact_dir"'* ]]
 }
@@ -204,7 +204,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"wireframe_requested":false'* ]]
 }
 
@@ -217,7 +217,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" != *'active_task'* ]]
 }
 
@@ -230,7 +230,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
 
   # All 8 should be present
   [[ "$json" == *'"goals"'* ]]
@@ -254,7 +254,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"research":"approved"'* ]]
 }
 
@@ -283,7 +283,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
 
   [[ "$json" == *'"goals":"approved"'* ]]
   [[ "$json" == *'"questions":"approved"'* ]]
@@ -307,7 +307,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
 
   # research is draft, so it should be current_step
   [[ "$json" == *'"current_step":"research"'* ]]
@@ -362,7 +362,7 @@ EOF
   [ "$exit_code" -eq 0 ]
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"goals":"draft"'* ]]
 
   local stderr_content
@@ -377,11 +377,12 @@ EOF
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
-  mkdir -p "$TEST_DIR/.qrspi"
-  chmod 555 "$TEST_DIR/.qrspi"
+  # state.json now lands at <artifact_dir>/.qrspi/ — make that path unwritable.
+  mkdir -p "$artifact_dir/.qrspi"
+  chmod 555 "$artifact_dir/.qrspi"
 
   run state_init_or_reconcile "$artifact_dir"
-  chmod 755 "$TEST_DIR/.qrspi" 2>/dev/null || true
+  chmod 755 "$artifact_dir/.qrspi" 2>/dev/null || true
   [ "$status" -eq 1 ]
   [[ "$output" == *"state_write_atomic failed"* ]]
 }
@@ -406,7 +407,7 @@ EOF
   [ "$status" -eq 0 ]
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"current_step":"questions"'* ]]
   [[ "$json" == *'"goals":"approved"'* ]]
   [[ "$json" == *'"questions":"draft"'* ]]
@@ -423,7 +424,7 @@ EOF
   # First init: goals=approved
   state_init_or_reconcile "$artifact_dir"
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"goals":"approved"'* ]]
 
   # Now change goals.md frontmatter to draft
@@ -432,7 +433,7 @@ EOF
   # Re-reconcile
   state_init_or_reconcile "$artifact_dir"
 
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"goals":"draft"'* ]]
   [[ "$json" == *'"current_step":"goals"'* ]]
 }
@@ -449,11 +450,11 @@ EOF
 
   state_init_or_reconcile "$artifact_dir"
   local json1
-  json1=$(state_read)
+  json1=$(state_read "$artifact_dir")
 
   state_init_or_reconcile "$artifact_dir"
   local json2
-  json2=$(state_read)
+  json2=$(state_read "$artifact_dir")
 
   # Compare key fields (artifact_dir may differ in whitespace but content should match)
   local step1 step2 goals1 goals2 questions1 questions2 research1 research2

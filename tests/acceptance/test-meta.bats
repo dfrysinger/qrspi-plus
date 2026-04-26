@@ -30,14 +30,18 @@ unit_test_dir() {
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-26)
-@test "[AC8] Unit test suite has exactly 283 @test definitions (baseline)" {
+@test "[AC8] Unit test suite has exactly 288 @test definitions (baseline)" {
   # Baseline updated after 2026-04-26 implement-runtime-fix:
   # +test-agent.bats (Task 2), -test-enforcement.bats (Task 11 — dead code).
+  # 2026-04-26 (later) — Commit A part 1 added 5 unit tests covering F-1 and
+  # F-7 fixes: 2 in test-artifact.bats ([F-7] mid-session current_step),
+  # 3 in test-pre-tool-use.bats ([F-1] fail-closed for unresolved artifact,
+  # empty {} state, corrupted-state message). Baseline 283 → 288.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 283 ]
+  [ "$count" -eq 288 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-26)

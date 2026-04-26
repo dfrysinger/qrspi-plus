@@ -66,11 +66,21 @@ pipeline_check_prerequisites() {
     return 0
   fi
 
-  # Read state.json
+  # Read state.json from the artifact_dir
   local state
-  if ! state=$(state_read 2>/dev/null); then
+  if ! state=$(state_read "$artifact_dir" 2>/dev/null); then
     echo "<state-unavailable>"
-    echo "pipeline_check_prerequisites: state_read failed" >&2
+    echo "pipeline_check_prerequisites: state_read failed for $artifact_dir" >&2
+    return 1
+  fi
+
+  # Validate state is well-formed AND has the required shape. A bare {} or [] would
+  # parse OK but then every state_status lookup defaults to "draft", producing a
+  # misleading "Complete and approve goals" block reason instead of a corruption
+  # signal. Require version + artifacts.{step} for at least one known step.
+  if ! echo "$state" | jq -e 'type == "object" and has("version") and has("artifacts") and (.artifacts | type == "object")' >/dev/null 2>&1; then
+    echo "<state-corrupted>"
+    echo "pipeline_check_prerequisites: state.json at $artifact_dir/.qrspi/state.json is not valid JSON or missing required structure (version/artifacts) — Cannot verify pipeline ordering" >&2
     return 1
   fi
 
@@ -145,15 +155,15 @@ pipeline_cascade_reset() {
     esac
   done
 
-  # Read current state
+  # Read current state from the artifact_dir
   local state
-  if ! state=$(state_read 2>/dev/null); then
+  if ! state=$(state_read "$artifact_dir" 2>/dev/null); then
     # No state file yet, create one
     if ! state_init_or_reconcile "$artifact_dir"; then
       echo "pipeline_cascade_reset: cannot perform cascade reset — state_init_or_reconcile failed" >&2
       return 1
     fi
-    if ! state=$(state_read); then
+    if ! state=$(state_read "$artifact_dir"); then
       echo "pipeline_cascade_reset: cannot perform cascade reset — state_read failed after init" >&2
       return 1
     fi
@@ -190,8 +200,8 @@ pipeline_cascade_reset() {
     state=$(echo "$state" | jq ".artifacts.$reset_step = \"draft\"")
   done
 
-  # Write atomically
-  if ! state_write_atomic "$state"; then
+  # Write atomically into the artifact_dir
+  if ! state_write_atomic "$state" "$artifact_dir"; then
     echo "pipeline_cascade_reset: cannot perform cascade reset — state_write_atomic failed" >&2
     return 1
   fi

@@ -81,9 +81,10 @@ artifact_sync_state() {
   # treat that like the old frontmatter_get_status behavior (return 1)
   [[ -n "$fm_status" ]] || return 1
 
-  # Read current state
+  # Read current state from the artifact_dir (state.json lives at
+  # <artifact_dir>/.qrspi/state.json per spec).
   local state
-  state=$(state_read) || return 1
+  state=$(state_read "$artifact_dir") || return 1
 
   # Check if status actually changed before writing — avoids unnecessary
   # state writes and cascade resets on every artifact edit
@@ -96,7 +97,21 @@ artifact_sync_state() {
     :
   elif [[ "$fm_status" == "approved" ]]; then
     # Update that step to approved
-    state=$(echo "$state" | jq -c ".artifacts.$step = \"approved\"")
+    if ! state=$(echo "$state" | jq -c ".artifacts.$step = \"approved\""); then
+      echo "artifact_sync_state: jq patch of artifacts.$step failed" >&2
+      return 1
+    fi
+    # Recompute current_step — when a step's terminal artifact is approved,
+    # current_step advances per the using-qrspi spec table.
+    local new_current_step
+    if ! new_current_step=$(state_compute_current_step "$state"); then
+      echo "artifact_sync_state: state_compute_current_step failed" >&2
+      return 1
+    fi
+    if ! state=$(echo "$state" | jq -c --arg cs "$new_current_step" '.current_step = $cs'); then
+      echo "artifact_sync_state: jq patch of current_step failed" >&2
+      return 1
+    fi
     state_changed=true
   elif [[ "$fm_status" == "draft" ]]; then
     # Cascade reset from this step onwards (pass --skip-cascade if set)
@@ -105,7 +120,7 @@ artifact_sync_state() {
     else
       pipeline_cascade_reset "$step" "$artifact_dir"
     fi
-    state=$(state_read)
+    state=$(state_read "$artifact_dir")
     state_changed=true
   fi
 
@@ -139,7 +154,10 @@ artifact_sync_state() {
 
   # Only write state if something actually changed
   if [[ "$state_changed" == true ]]; then
-    state_write_atomic "$state"
+    if ! state_write_atomic "$state" "$artifact_dir"; then
+      echo "artifact_sync_state: state_write_atomic failed for $artifact_dir — state.json may be stale" >&2
+      return 1
+    fi
   fi
 }
 

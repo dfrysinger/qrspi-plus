@@ -17,10 +17,12 @@ bats_require_minimum_version 1.5.0
 setup() {
   export WORK_DIR
   WORK_DIR=$(mktemp -d)
-  export ARTIFACT_DIR="$WORK_DIR/artifacts"
-  mkdir -p "$ARTIFACT_DIR/tasks"
-  mkdir -p "$WORK_DIR/.qrspi"
   cd "$WORK_DIR"
+  # Post-F-1: state.json lives at <artifact_dir>/.qrspi/state.json. Hook
+  # resolves artifact_dir target-based via docs/qrspi/*-{slug}/ glob.
+  export ARTIFACT_DIR="$WORK_DIR/docs/qrspi/2026-04-26-test"
+  mkdir -p "$ARTIFACT_DIR/tasks"
+  mkdir -p "$ARTIFACT_DIR/.qrspi"
 
   export PRE_HOOK
   PRE_HOOK="$(dirname "$BATS_TEST_FILENAME")/../../hooks/pre-tool-use"
@@ -29,6 +31,7 @@ setup() {
 }
 
 teardown() {
+  cd /
   rm -rf "$WORK_DIR"
 }
 
