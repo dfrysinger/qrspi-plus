@@ -195,7 +195,7 @@ status: approved
 
 The `.qrspi/` directory inside each artifact directory is created and maintained entirely by hooks:
 
-- **SessionStart hook** — initializes `state.json` at the start of each session by reconciling it against artifact frontmatter on disk (handles interrupted sessions and out-of-sync state)
+- **SessionStart hook** — initializes `state.json` in the main project's artifact dir at session start by reconciling against artifact frontmatter on disk. Worktrees do not have `state.json` files — there is no per-worktree state. Subagent enforcement is target-based, not state-driven (see "How worktree enforcement works" below).
 - **PostToolUse hook** — keeps `state.json` in sync whenever an artifact's frontmatter changes
 
 During normal forward execution, skills do not need to create, read, or update any file in `.qrspi/`. State is always current when a skill needs it because the hooks maintain it continuously. The exceptions are narrow and explicit:
@@ -215,12 +215,43 @@ Skills don't need to interpret `state.json`, but a reader (human or fresh agent 
 | Field | Meaning | When it changes |
 |-------|---------|-----------------|
 | `current_step` | The pipeline step currently active. For full-pipeline phases that loop Implement (the per-phase orchestration loop in the `Implement → Integrate` segment), this stays at `implement` for the **entire** batch — across every per-task subagent fired by Implement. It only advances to `integrate` after Implement's batch gate releases. The canonical transition contract lives in `implement/SKILL.md` → "State Transition Contract" under "Implement Is the Per-Phase Orchestration Loop"; the hook layer in `hooks/lib/` is the intended implementation layer. (Current hook code may lag the contract for transitions outside the eight pre-Phase-4 steps; if a needed transition is missing, file a hook bug rather than working around it in skills.) | Advances when a step's terminal artifact is approved, when an Implement batch gate releases and Implement invokes the next route step, or when Integrate, Test, or Replan complete their gates. **Does not advance per-task.** Skills never write this field directly — the hook layer writes it. |
-| `active_task` | Which task within the current phase is being worked. Only meaningful while `current_step` is `implement`. | Advances as Implement fires each next task (or wave). Resets between phases. |
 | `artifacts.{step}` | Approval status of each artifact (`draft`, `replan-draft`, or `approved`). Drives artifact gating. | Updated by the PostToolUse hook when an artifact's frontmatter changes. |
 | `wireframe_requested` | Whether the run includes the optional UX step before Structure. | Set during Goals; never changes thereafter. |
 | `phase_start_commit` | Git SHA at which the current phase began. Used by Replan and Test to scope diffs. | Set when a phase begins. |
 
 **The trap to avoid:** `current_step: implement` + a single task done does *not* mean "advance to integrate." It means "Implement is mid-batch — expect another per-task firing." Verify against `parallelization.md` (which lists every task in the phase) before concluding the batch is done.
+
+## How worktree enforcement works
+
+The QRSPI hook enforces subagent containment using **target-based asymmetric** logic, not CWD-based logic.
+
+**Subagent vs main chat detection:** The hook reads `agent_id` from the envelope JSON. If `agent_id` is non-empty, the call is from a subagent (Agent tool dispatch). Otherwise it's main chat.
+
+**Subagent walls (target-based):**
+
+- Write/Edit/NotebookEdit targeting any file outside `.worktrees/{slug}/(task-NN|baseline)/...` is BLOCKED
+- Bash commands with detected file-write targets follow the same rule for each detected target
+- Bash commands containing `DROP TABLE` or `TRUNCATE` are BLOCKED (subagents shouldn't do destructive DB ops)
+- Bash commands containing universal destructive patterns (see below) are BLOCKED
+
+Subagents may write to ANY worktree under `.worktrees/`, not just their own. This is "loose pinning" — strict pinning (subagent bound to its own task worktree) is a future enhancement.
+
+**Main chat trust:** Main chat is not subject to the worktree wall — it can write anywhere. Pipeline ordering and universal destructive checks still apply.
+
+**Universal destructive patterns (everyone, including main chat):**
+
+- `rm -rf` with target containing `*`, `~`, leading `/`, or `..`
+- `git push --force` / `git push -f`
+- `git reset --hard <ref>` (any ref other than `HEAD`)
+- `git clean -fd` / `-fdx`
+- Redirect to `/dev/sd*`
+- `DROP DATABASE` / `DROP SCHEMA`
+
+**Artifact-dir audit log protection:** All agents are blocked from writing to `<artifact_dir>/.qrspi/` files. The hook is the only writer of these — that's what makes the audit log tamper-proof.
+
+**Audit logging:** Every allowed/blocked write whose target is inside QRSPI scope (a worktree or an artifact dir) is appended to `<artifact_dir>/.qrspi/audit.jsonl`. Writes outside QRSPI scope (random side projects, superpowers spec work) are NOT audited — the audit log stays focused on QRSPI work.
+
+**No `.qrspi/` in worktrees.** Worktrees contain only the user's task work. Audit and state both live in the artifact dir.
 
 ## Rejection Behavior
 
