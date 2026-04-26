@@ -244,3 +244,28 @@ assert_empty() {
   run bash_detect_destructive_subagent 'echo "the file was TRUNCATED yesterday"'
   [ "$status" -ne 0 ]
 }
+
+@test "destructive: rm -rf with absolute path as second target" {
+  run bash_detect_destructive_universal 'rm -rf build /etc'
+  [ "$status" -eq 0 ]
+}
+
+@test "destructive: rm -rf with home glob as second target" {
+  run bash_detect_destructive_universal 'rm -rf target ~/Documents'
+  [ "$status" -eq 0 ]
+}
+
+@test "destructive: rm -rf with parent traversal as second target" {
+  run bash_detect_destructive_universal 'rm -rf safe_dir ../credentials'
+  [ "$status" -eq 0 ]
+}
+
+@test "non-destructive: git clean -fdn is dry-run" {
+  run bash_detect_destructive_universal 'git clean -fdn'
+  [ "$status" -ne 0 ]
+}
+
+@test "non-destructive: git clean -fdXn is dry-run" {
+  run bash_detect_destructive_universal 'git clean -fdXn'
+  [ "$status" -ne 0 ]
+}

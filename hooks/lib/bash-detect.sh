@@ -141,35 +141,44 @@ bash_detect_destructive_universal() {
   local cmd="$1"
   local upper="${cmd^^}"
 
-  # rm -rf with dangerous targets — match against the full command string using
-  # regex so we never trigger glob-expansion on unquoted wildcards.
-  if [[ "$cmd" =~ rm[[:space:]]+-[rRfF]+[[:space:]] ]] || \
-     [[ "$cmd" =~ rm[[:space:]]+-[rR][[:space:]]+-[fF] ]] || \
-     [[ "$cmd" =~ rm[[:space:]]+-[fF][[:space:]]+-[rR] ]]; then
-    # Check for dangerous target patterns directly via regex on the raw command.
-    # Pattern: rm flags followed by (or containing) a wildcard, home-dir prefix,
-    # absolute path, or parent traversal anywhere in the target portion.
-    local rm_flags_re='rm[[:space:]]+(-[rRfF]+|-[rR][[:space:]]+-[fF]|-[fF][[:space:]]+-[rR])[[:space:]]+'
-    # Wildcard: * anywhere in targets
-    if [[ "$cmd" =~ $rm_flags_re.*\* ]]; then
-      echo "rm -rf with dangerous target: wildcard"
-      return 0
-    fi
-    # Home glob: ~ as first char of a target token
-    if [[ "$cmd" =~ $rm_flags_re~[^[:space:]]* ]]; then
-      echo "rm -rf with dangerous target: home glob"
-      return 0
-    fi
-    # Absolute path: / as first char of a target token
-    if [[ "$cmd" =~ $rm_flags_re/[^[:space:]]* ]]; then
-      echo "rm -rf with dangerous target: absolute path"
-      return 0
-    fi
-    # Parent traversal: .. anywhere in a target token
-    if [[ "$cmd" =~ $rm_flags_re[^[:space:]]*\.\.[^[:space:]]* ]]; then
-      echo "rm -rf with dangerous target: parent traversal"
-      return 0
-    fi
+  # rm -rf with dangerous targets — tokenize the target portion so we catch
+  # dangerous paths in ANY position (not just the first token after flags).
+  # We use set -f / set +f to suppress glob expansion during `read -ra`.
+  local rm_flags_re='rm[[:space:]]+(-[rRfF]+|-[rR][[:space:]]+-[fF]|-[fF][[:space:]]+-[rR])[[:space:]]+'
+  if [[ "$cmd" =~ $rm_flags_re ]]; then
+    # Extract everything after the matched flags portion.
+    local after="${cmd#*${BASH_REMATCH[0]}}"
+    # Truncate at compound operators so we only inspect rm's own arguments.
+    local op
+    for op in '&&' '||' ';' '|'; do
+      if [[ "$after" == *"$op"* ]]; then
+        after="${after%%$op*}"
+      fi
+    done
+    # Tokenize safely — disable glob expansion so a literal * is not expanded.
+    local -a tokens
+    set -f
+    read -ra tokens <<< "$after"
+    set +f
+    local tok
+    for tok in "${tokens[@]}"; do
+      if [[ "$tok" == *'*'* ]]; then
+        echo "rm -rf with dangerous target: wildcard ($tok)"
+        return 0
+      fi
+      if [[ "$tok" == '~'* ]]; then
+        echo "rm -rf with dangerous target: home glob ($tok)"
+        return 0
+      fi
+      if [[ "$tok" == /* ]]; then
+        echo "rm -rf with dangerous target: absolute path ($tok)"
+        return 0
+      fi
+      if [[ "$tok" == *'..'* ]]; then
+        echo "rm -rf with dangerous target: parent traversal ($tok)"
+        return 0
+      fi
+    done
   fi
 
   # git push --force / -f
@@ -191,7 +200,8 @@ bash_detect_destructive_universal() {
   fi
 
   # git clean -fd / -fdx / -fdX
-  if [[ "$cmd" =~ git[[:space:]]+clean[[:space:]]+(-fd|-fdx|-fdX|-df|-dfx|-dfX) ]]; then
+  # Anchor to end-of-token (whitespace or end-of-string) so -fdn (dry-run) is not matched.
+  if [[ "$cmd" =~ git[[:space:]]+clean[[:space:]]+(-fd|-fdx|-fdX|-df|-dfx|-dfX)([[:space:]]|$) ]]; then
     echo "git clean -fd"
     return 0
   fi
