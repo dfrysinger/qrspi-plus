@@ -118,38 +118,30 @@ write_json() {
   [ "$status" -eq 0 ]
 }
 
-# SC5 — Strict mode enforcement still blocks out-of-allowlist writes
-@test "[SC5] Strict mode allowlist enforcement still works after Phase 4 changes" {
-  # AC: enforcement_check_allowlist correctly blocks in strict mode (not accidentally bypassed)
-  local abs_artifact_dir
-  abs_artifact_dir="$(cd "$ARTIFACT_DIR" && pwd)"
+# SC5 — Asymmetric subagent target wall blocks writes outside .worktrees/
+@test "[SC5] Asymmetric subagent target wall blocks writes outside .worktrees/" {
+  # AC: pre-tool-use hook (post 2026-04-26 implement-runtime-fix) enforces target-based
+  # subagent containment. Subagents may only write inside .worktrees/{slug}/(task-NN|baseline)/.
+  # Replaces the dropped strict-mode allowlist enforcement.
+  local target="$WORK_DIR/src/foo.ts"
+  mkdir -p "$WORK_DIR/src"
+  local envelope
+  envelope=$(jq -cn --arg p "$target" '{agent_id:"sub-1",tool_name:"Edit",tool_input:{file_path:$p}}')
 
-  printf -- '---\nstatus: approved\ntask: 99\nphase: 1\nenforcement: strict\nallowed_files:\n  - action: create\n    path: %s/src/main.sh\nconstraints: []\n---\n\n# Task 99\n' \
-    "$WORK_DIR" > "$ARTIFACT_DIR/tasks/task-99.md"
-
-  jq -cn \
-    --arg artifact_dir "$abs_artifact_dir" \
-    '{version:1, current_step:"implement", phase_start_commit:null,
-      artifact_dir:$artifact_dir, wireframe_requested:false,
-      artifacts:{goals:"approved",questions:"approved",research:"approved",
-                 design:"approved",structure:"approved",plan:"approved",
-                 implement:"draft",test:"draft"},
-      active_task:{id:99}}' > "$WORK_DIR/.qrspi/state.json"
-
-  run "$PRE_HOOK" <<< "$(write_json "$WORK_DIR/src/not-main.sh")"
+  run "$PRE_HOOK" <<< "$envelope"
   [ "$status" -eq 2 ]
   [ "$(echo "${lines[-1]}" | jq -r '.decision')" = "block" ]
 }
 
 # SC5 — Unit test file count has not regressed (Phase 4 must not delete unit tests)
-@test "[SC5] Unit test suite still has 12 .bats files (no unit test regressions)" {
+@test "[SC5] Unit test suite still has 13 .bats files (no unit test regressions)" {
   # AC: Phase 4 changes must not delete existing unit test files
-  # (AC8 tracks exact count; this is a regression smoke check)
+  # 13 = original 12 + test-agent.bats added in 2026-04-26 implement-runtime-fix
   local unit_dir
   unit_dir="$(dirname "$BATS_TEST_DIRNAME")/unit"
   local count
   count=$(find "$unit_dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 12 ]
+  [ "$count" -eq 13 ]
 }
 
 # SC5 — Unit test count has not decreased below baseline

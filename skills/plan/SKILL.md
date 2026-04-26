@@ -142,7 +142,7 @@ status: draft
 
 ### Task 1: {name}
 - **Phase:** 1
-- **Files:** {exact paths, create/modify}
+- **Target files:** {exact paths, create/modify}
 - **Dependencies:** none
 - **LOC estimate:** ~{N}
 - **Sizing exception:** {only present when the task is a legitimate bundle (multi-handler or >200 LOC). Reason must be one of: schema migration, CI scaffolding, reusable primitives — see Task Sizing}
@@ -207,15 +207,14 @@ pipeline: full
 # Optional: justify a legitimate bundle (multi-handler or >200 LOC).
 # Reason must be one of: schema migration, CI scaffolding, reusable primitives.
 # sizing_exception: <one-line reason>
-# Optional Phase 4 enforcement fields (deferred to T24 for full schema):
-# enforcement: strict
-# allowed_files: [...]
-# constraints: [...]
+# (Per-task enforcement fields removed in 2026-04-26 implement-runtime-fix.
+#  Target files are aspirational; deviation discipline lives in the per-task
+#  spec reviewer, not the hook.)
 ---
 
 # Task NN: {name}
 
-- **Files:** {exact paths, create/modify}
+- **Target files:** {exact paths, create/modify}
 - **Dependencies:** {task numbers or "none"}
 - **LOC estimate:** ~{N}
 - **Description:** {what this task accomplishes}
@@ -308,7 +307,7 @@ If compaction was not done before splitting (user declined), recommend it now: "
 ### Task 3: Rate limit middleware
 
 - **Phase:** 1
-- **Files:** create `src/middleware/rate-limiter.ts`, modify `src/app.ts:34-40`
+- **Target files:** create `src/middleware/rate-limiter.ts`, modify `src/app.ts:34-40`
 - **Dependencies:** Task 1 (Redis client), Task 2 (rate limit types)
 - **LOC estimate:** ~60
 - **Description:** Express middleware that checks the client's request count against the rate limit using the Redis client from Task 1. If exceeded, returns 429 with Retry-After header. If under limit, increments the counter and calls next().
@@ -327,7 +326,7 @@ If compaction was not done before splitting (user declined), recommend it now: "
 ```markdown
 ### Task 3: Rate limiting
 
-- **Files:** TBD
+- **Target files:** TBD
 - **Dependencies:** none
 - **LOC estimate:** ~200
 - **Description:** Add rate limiting middleware. Similar to Task 2 but for the middleware layer.
