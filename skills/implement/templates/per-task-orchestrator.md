@@ -1,15 +1,12 @@
----
-name: implement
-description: Use when tasks are dispatched from Dispatch (or Plan in quick-fix mode) — executes TDD per task in isolated worktrees with correctness and thoroughness reviews
----
+# Per-Task Orchestrator Subagent Template
 
-# Implement (QRSPI Step 9)
+This template is the prompt framework for the **per-task orchestrator subagent** dispatched by the Implement skill (one subagent per task in the batch — see `implement/SKILL.md`). It is NOT a standalone skill and is not registered for skill discovery.
 
-**Announce at start:** "I'm using the QRSPI Implement skill to execute TDD per task with code reviews."
+**Announce at start (subagent):** "I'm executing as a per-task orchestrator subagent — running TDD for the assigned task with correctness and thoroughness reviews, then returning to the Implement orchestrator."
 
 ## Overview
 
-TDD execution per task in its own worktree. Write failing tests, implement to pass, run correctness and thoroughness reviews. Subagent per task.
+TDD execution per task in its own worktree. Write failing tests, implement to pass, run correctness and thoroughness reviews. One per-task orchestrator subagent runs per task; it dispatches an implementer subagent (`templates/implementer.md`) and reviewer subagents (`templates/correctness/*`, `templates/thoroughness/*`) and returns its terminal status to the Implement orchestrator (see `implement/SKILL.md` § Implement Is the Per-Phase Orchestration Loop).
 
 ## Iron Law
 
@@ -28,7 +25,7 @@ Main chat's responsibilities are: dispatch subagents (implementer, reviewers, fi
 
 Main chat does NOT: run tests / typecheck / lint, write or edit target-project source files (the `reviews/tasks/task-NN-review.md` review log is the sole exception called out above), run `git add` / `git commit`, invoke `pnpm` / `npm` / `cargo` / language toolchains, or perform "quick verification" between review rounds. Any of those activities are delegated to a fresh subagent (a new implementer dispatch, or a fix-round subagent for re-verification after fixes).
 
-**Why this rule matters.** Subagents inherit main chat's CWD. When the Dispatch step puts task work inside `{target_project}/.worktrees/{slug}/task-NN/`, a subagent dispatched from main chat picks up the worktree via a prompt-specified path, while main chat's CWD stays at project root. If main chat instead runs work directly, its CWD ends up pinned to the worktree path for the rest of the session, which triggers the pre-tool-use hook's worktree-enforcement rules (worktree containment + protected-path + L1 allowlist) on every subsequent main-chat tool call. Keeping main chat at project root preserves main chat's ability to perform hook-safe recovery actions (e.g., re-dispatching subagents, writing review logs) that would otherwise be blocked by worktree-enforcement. State files under `.qrspi/` remain hook-managed; skills never write them directly.
+**Why this rule matters.** Subagents inherit main chat's CWD. When the Implement skill puts task work inside `{target_project}/.worktrees/{slug}/task-NN/`, a subagent dispatched from main chat picks up the worktree via a prompt-specified path, while main chat's CWD stays at project root. If main chat instead runs work directly, its CWD ends up pinned to the worktree path for the rest of the session, which triggers the pre-tool-use hook's worktree-enforcement rules (worktree containment + protected-path + L1 allowlist) on every subsequent main-chat tool call. Keeping main chat at project root preserves main chat's ability to perform hook-safe recovery actions (e.g., re-dispatching subagents, writing review logs) that would otherwise be blocked by worktree-enforcement. State files under `.qrspi/` remain hook-managed; skills never write them directly.
 
 **Red flag — STOP.** If you find yourself about to run `pnpm` / `npm` / `cargo` / `git commit` / `Write` / `Edit` from main chat as part of task execution, stop. Dispatch a subagent instead. The only code main chat writes directly is review-log markdown under `reviews/tasks/`.
 
@@ -55,9 +52,9 @@ Correctness checks if code is right and safe — it always runs. Thoroughness ch
 
 ## Artifact Gating
 
-Read the task file's `pipeline` field to determine which inputs to load. The task's `pipeline` field is the single source of truth — Implement never checks `config.md` for pipeline routing. Read `config.md` for `review_depth`, `review_mode`, and `codex_reviews` settings.
+Read the task file's `pipeline` field to determine which inputs to load. The task's `pipeline` field is the single source of truth for per-task input gating — the per-task orchestrator subagent never checks `config.md` for this decision. (The Implement skill itself derives mode separately from `config.md.route` for its per-phase orchestration — see `implement/SKILL.md` § Overview.) Read `config.md` for `review_depth`, `review_mode`, and `codex_reviews` settings.
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Implement validates `codex_reviews`.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. The per-task orchestrator subagent validates `codex_reviews`.
 
 | Input | `pipeline: quick` | `pipeline: full` |
 |-------|-------------------|-------------------|
@@ -74,14 +71,6 @@ Do NOT skip any reviewer in the configured review depth.
 Do NOT proceed after BLOCKED status without changing approach.
 Do NOT bypass the batch gate — every task's results are presented to the user.
 </HARD-GATE>
-
-## Quick Fix Mode
-
-When Dispatch is not in the route (quick-fix mode), Implement owns the per-phase orchestration that Dispatch normally provides:
-
-1. Ask review depth/mode, write to `config.md`. Default: quick depth + single round.
-2. Orchestrate fix tasks from `fixes/test-round-NN/` directly.
-3. Present the Quick-Fix Batch Gate (see below) when all tasks complete.
 
 ## Per-Task TDD Process
 
@@ -125,9 +114,12 @@ All reviewer and fix work is dispatched via subagents; the orchestrator only agg
 1. **Orchestrator: dispatch reviewer groups** (quick = correctness only, deep = correctness then thoroughness). Reviewers run as subagents in parallel within their group.
 2. First pass clean → task clean.
 3. Issues → **orchestrator re-dispatches reviewers** on the same code to build a complete list (up to 3 convergence rounds).
-4. **Orchestrator dispatches implementer-fix subagent** with the full issue list → fix subagent writes the fixes → orchestrator re-dispatches reviewers on fixed code.
+4. **Implementer-fix dispatch (with persistence):**
+    - **First fix cycle:** Orchestrator dispatches an implementer-fix subagent via fresh `Agent` call with the consolidated issue list → fix subagent writes the fixes → orchestrator re-dispatches reviewers on fixed code. Capture and retain the implementer-fix subagent's agent ID.
+    - **Subsequent fix cycles:** Orchestrator uses `SendMessage` to continue the SAME implementer-fix subagent (using the retained agent ID) with the new issue list, preserving its context across cycles. Why: by cycle 2, the implementer has full context of what was tried, what reviewers flagged, and which fixes worked or didn't — re-dispatching loses that. Reviewers stay re-dispatched fresh each round (they don't need cross-cycle continuity; the convergence loop already handles their stochasticity).
+    - **BLOCKED escape hatch:** If the persisted implementer-fix subagent reports BLOCKED (per the status table above), the orchestrator's escalation actions require a fresh `Agent` dispatch: model switch (model is fixed at spawn time and cannot change via `SendMessage`), or task decomposition (an intentional clean-context reset to escape the stuck approach — `SendMessage` could redirect the same agent with a new scope, but the point of the escape is fresh context, not just new instructions). The escape explicitly breaks persistence.
 5. Up to 3 fix cycles. If unresolved after 3, flag and move on.
-6. **Single round mode:** skip convergence, dispatch once, fix-subagent, re-dispatch once, flag if still issues.
+6. **Single round mode:** skip convergence, dispatch once (fresh `Agent` for the first fix), re-dispatch reviewers once, flag if still issues. (Persistence is only meaningful when there are multiple fix cycles, so single-round mode never uses `SendMessage`.)
 
 **Main chat never runs reviewers, verifiers, or fixers itself** — each round is a subagent dispatch.
 
@@ -236,40 +228,7 @@ When Codex is enabled, each reviewer section includes a `#### Codex` subsection 
 
 ## Terminal State
 
-**Full pipeline:** Each task subagent returns to the Dispatch orchestrator. Implement does not invoke the next step.
-
-**Quick fix:** Present batch gate (see below). Then invoke next skill in `config.md` route after `implement` (test in quick fix).
-
-## Quick-Fix Batch Gate
-
-This section applies **only when Dispatch is absent from the route** (quick-fix mode). In full-pipeline mode, the batch gate is owned by Dispatch (see `dispatch/SKILL.md` → "Dispatch Is the Per-Phase Implement Loop" and "Batch Gate (After All Tasks)") — Implement never presents one in that mode.
-
-After all quick-fix tasks complete, present results and a conditional menu based on task outcomes.
-
-**When all tasks passed clean:**
-
-```
-All tasks passed clean. Choose:
-1. Re-run all reviews (confidence check)
-2. Continue to next step
-3. Stop
-```
-
-**When tasks have unresolved issues:**
-
-```
-{N} task(s) have unresolved issues. Choose:
-1. Fix remaining issues and re-run reviews
-2. Re-run all reviews (confidence check)
-3. Continue anyway
-4. Stop
-```
-
-After the menu, recommend compaction before the next step: "This is a good point to compact context before the next step (`/compact`)."
-
-### Batch Gate Red Flags — STOP
-
-- Presenting "Fix remaining issues" option when all tasks passed clean
+The per-task orchestrator subagent returns its terminal status to the Implement orchestrator (the caller). It does NOT invoke any route step, present a batch gate, or recommend compaction — those are owned by Implement (see `implement/SKILL.md` § Batch Gate, § Terminal State). Terminal statuses are: DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, BLOCKED, or unresolved-after-3-fix-cycles.
 
 ## Model Selection Guidance
 

@@ -225,20 +225,20 @@ pipeline: full
   - {error condition 1}
 ```
 
-The `pipeline` field is copied from `config.md`'s `pipeline` value at plan time. Implement reads `pipeline` from the task file — it never checks `config.md` for routing.
+The `pipeline` field is copied from `config.md`'s `pipeline` value at plan time. The per-task orchestrator subagent reads the task file's `pipeline` field for per-task input gating (which artifacts to load for the task's review context). The Implement skill itself derives run mode separately from `config.md.route` for its per-phase orchestration — see `implement/SKILL.md` § Overview.
 
 **Who writes the pipeline field:**
 - **Plan skill** — copies from `config.md` onto every `tasks/task-NN.md` at plan time
 - **Test skill** — classifies per failure (quick or full) on fix tasks
 - **Integrate skill** — always `full` on integration/CI fix tasks
-- **Dispatch baseline fix** — always `full` on task-00
+- **Implement baseline fix** — inherits the run's mode (derived by Implement from `config.md.route` per `implement/SKILL.md` § Overview) on task-00 (`pipeline: full` in full-pipeline runs, `pipeline: quick` in quick-fix runs) so the per-task orchestrator's input gating matches the artifacts that exist. Implement writes the runtime-injected `task-00.md` with `status: approved` so the Iron Law gate passes on dispatch.
 
 **Fix task files** also include a `fix_type` field (not present on regular tasks):
 - `fix_type: integration` — written by Integrate for cross-task integration fixes
 - `fix_type: ci` — written by Integrate for CI pipeline fix tasks
 - `fix_type: test` — written by Test for acceptance test fix tasks
 
-Fix tasks are stored in `fixes/{type}-round-NN/` and follow the same format as regular tasks so Dispatch and Implement can process them identically.
+Fix tasks are stored in `fixes/{type}-round-NN/` and follow the same format as regular tasks so the Implement skill can process them identically.
 
 ### Artifacts
 
