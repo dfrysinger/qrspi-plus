@@ -147,7 +147,10 @@ artifact_sync_state() {
     local current_wireframe
     current_wireframe=$(echo "$state" | jq -r '.wireframe_requested // false')
     if [[ "$current_wireframe" != "$wireframe_json_value" ]]; then
-      state=$(echo "$state" | jq -c ".wireframe_requested = $wireframe_json_value")
+      if ! state=$(echo "$state" | jq -c ".wireframe_requested = $wireframe_json_value"); then
+        echo "artifact_sync_state: jq patch of wireframe_requested failed" >&2
+        return 1
+      fi
       state_changed=true
     fi
   fi

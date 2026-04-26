@@ -137,7 +137,8 @@ EOF
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
-  local test_json='{"version":1,"current_step":"goals"}'
+  # Real schema requires artifacts field — state_write_atomic validates input.
+  local test_json='{"version":1,"current_step":"goals","artifacts":{}}'
   run state_write_atomic "$test_json"
 
   [ "$status" -eq 0 ]
@@ -161,7 +162,7 @@ EOF
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
-  local test_json='{"version":1}'
+  local test_json='{"version":1,"artifacts":{}}'
   run state_write_atomic "$test_json"
 
   [ "$status" -eq 0 ]
@@ -340,7 +341,7 @@ EOF
   mkdir -p "$TEST_DIR/.qrspi"
   chmod 555 "$TEST_DIR/.qrspi"
 
-  run state_write_atomic '{"version":1}'
+  run state_write_atomic '{"version":1,"artifacts":{}}'
   chmod 755 "$TEST_DIR/.qrspi" 2>/dev/null || true
   [ "$status" -eq 1 ]
   [[ "$output" == *"failed"* ]]

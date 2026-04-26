@@ -197,8 +197,26 @@ pipeline_cascade_reset() {
       7) reset_step="test" ;;
       *) reset_step="" ;;
     esac
-    state=$(echo "$state" | jq ".artifacts.$reset_step = \"draft\"")
+    if ! state=$(echo "$state" | jq ".artifacts.$reset_step = \"draft\""); then
+      echo "pipeline_cascade_reset: jq patch of artifacts.$reset_step failed" >&2
+      return 1
+    fi
   done
+
+  # Recompute current_step after the cascade — F-7 invariant: any mutation of
+  # artifacts.{step} must be followed by current_step recomputation. The
+  # approval branch in artifact_sync_state already does this; the cascade/draft
+  # path needs it too, otherwise reverting an approved artifact to draft leaves
+  # current_step advanced too far.
+  local new_current_step
+  if ! new_current_step=$(state_compute_current_step "$state"); then
+    echo "pipeline_cascade_reset: state_compute_current_step failed" >&2
+    return 1
+  fi
+  if ! state=$(echo "$state" | jq -c --arg cs "$new_current_step" '.current_step = $cs'); then
+    echo "pipeline_cascade_reset: jq patch of current_step failed" >&2
+    return 1
+  fi
 
   # Write atomically into the artifact_dir
   if ! state_write_atomic "$state" "$artifact_dir"; then

@@ -278,8 +278,9 @@ init_state() {
 # ──────────────────────────────────────────────────────────────
 # Updated post-F-1: artifact_dir is no longer read from state.json — the hook
 # resolves it target-based. The remaining fail-closed scenario is a malformed
-# state.json at the resolved <artifact_dir>/.qrspi/state.json: pipeline_check
-# can't read it, returns <state-unavailable>, hook BLOCKs.
+# state.json at the resolved <artifact_dir>/.qrspi/state.json: the strengthened
+# pipeline_check_prerequisites validator returns <state-corrupted>, and the
+# hook BLOCKs via the corrupted-state branch.
 @test "[runtime] corrupted state.json at resolved artifact_dir blocks pipeline-ordered write" {
   cd "$WORK_DIR"
   mkdir -p docs/qrspi/2026-04-26-myslug/.qrspi
@@ -290,6 +291,11 @@ init_state() {
   local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'"}}'
   run "$HOOK" <<< "$json"
   [ "$status" -eq 2 ]
+  # Pin the failure to the corrupted-state code path specifically — without
+  # this assertion the test would also pass if the hook hit the generic
+  # "Complete and approve goals" branch (e.g., because validator regressed
+  # to bare jq -e .).
+  [[ "$output" == *"corrupted"* ]]
 }
 
 # ──────────────────────────────────────────────────────────────

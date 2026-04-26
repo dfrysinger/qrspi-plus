@@ -165,6 +165,35 @@ teardown() {
   pipeline_check_prerequisites "foobar" "$ARTIFACT_DIR" && false || true
 }
 
+# [F-7 cascade] pipeline_cascade_reset must recompute current_step after
+# resetting artifacts.* to draft. Without this, reverting an approved
+# artifact back to draft leaves current_step advanced too far — the same
+# class of bug F-7 fixed for the approval path.
+@test "[F-7] pipeline_cascade_reset recomputes current_step after reset" {
+  # Set up an artifact_dir where everything through plan is approved
+  mkdir -p "$ARTIFACT_DIR/research"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/goals.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/questions.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/research/summary.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/design.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/structure.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/plan.md"
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # Sanity check: current_step is "implement" since plan is the last approved
+  local state_before
+  state_before=$(state_read "$ARTIFACT_DIR")
+  [[ $(echo "$state_before" | jq -r '.current_step') == "implement" ]]
+
+  # Cascade-reset from design — design/structure/plan should all become draft,
+  # so current_step must move backward to "design"
+  pipeline_cascade_reset "design" "$ARTIFACT_DIR"
+
+  local state_after
+  state_after=$(state_read "$ARTIFACT_DIR")
+  [[ $(echo "$state_after" | jq -r '.current_step') == "design" ]]
+}
+
 # Test 9: pipeline_cascade_reset "design" resets design and downstream to draft
 @test "pipeline_cascade_reset design resets design through test to draft" {
   # Create artifact files, all approved
@@ -324,11 +353,16 @@ teardown() {
   # Initialize state
   state_init_or_reconcile "$ARTIFACT_DIR"
 
-  # Manually update state to say goals is approved (to test dual check)
+  # Manually update state to say goals is approved (to test dual check).
+  # Pass artifact_dir explicitly to both state_read and state_write_atomic so
+  # the forged state lands at $ARTIFACT_DIR/.qrspi/state.json — not PWD's.
+  # Without this, the test would pass for the wrong reason (frontmatter alone
+  # blocks because no state file exists at the resolved artifact_dir), failing
+  # to actually exercise the dual-check path.
   local state
   state=$(state_read "$ARTIFACT_DIR")
   state=$(echo "$state" | jq '.artifacts.goals = "approved"')
-  state_write_atomic "$state"
+  state_write_atomic "$state" "$ARTIFACT_DIR"
 
   # Now test: even though state says approved, frontmatter says draft, so should fail
   run -1 pipeline_check_prerequisites "questions" "$ARTIFACT_DIR"

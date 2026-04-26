@@ -172,6 +172,21 @@ state_write_atomic() {
   local artifact_dir="${2:-.}"
   local qrspi_dir="$artifact_dir/.qrspi"
 
+  # Reject empty or invalid JSON before touching disk. An upstream jq mutation
+  # that silently produced empty output (e.g. unguarded jq under set -euo
+  # pipefail with $(...) capture masking the exit code) would otherwise reach
+  # this function with $json empty, and `echo "" > state.json` would corrupt
+  # the file. This input validation closes that whole class regardless of
+  # whether individual jq callsites added their own guards.
+  if [[ -z "$json" ]]; then
+    echo "state_write_atomic: refusing to write empty state to $qrspi_dir/state.json" >&2
+    return 1
+  fi
+  if ! echo "$json" | jq -e 'type == "object" and has("artifacts")' >/dev/null 2>&1; then
+    echo "state_write_atomic: refusing to write malformed state to $qrspi_dir/state.json (must be JSON object with artifacts field)" >&2
+    return 1
+  fi
+
   # Create .qrspi directory if needed
   if ! mkdir -p "$qrspi_dir" 2>/dev/null; then
     echo "state_write_atomic: failed to create $qrspi_dir directory" >&2

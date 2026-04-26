@@ -118,7 +118,7 @@ if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "Note
       missing_step=$(pipeline_check_prerequisites "$artifact_step" "$pipeline_artifact_dir") || {
         case "$missing_step" in
           "<state-corrupted>")
-            block "Cannot verify pipeline ordering: state.json at ${pipeline_artifact_dir}/.qrspi/ is corrupted (not valid JSON)"
+            block "Cannot verify pipeline ordering: state.json at ${pipeline_artifact_dir}/.qrspi/ is corrupted (not a JSON object with required version/artifacts fields)"
             ;;
           "<state-unavailable>")
             block "Cannot verify pipeline ordering: state.json unreadable at ${pipeline_artifact_dir}/.qrspi/"
