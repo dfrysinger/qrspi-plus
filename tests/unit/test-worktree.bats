@@ -123,42 +123,47 @@ setup() {
 
 # ===== worktree_extract_slug tests =====
 
-@test "extracts slug from task worktree path" {
-  result=$(worktree_extract_slug "/repo/.worktrees/phase4-hooks/task-02/src/foo.ts")
-  [ "$result" = "phase4-hooks" ]
+@test "worktree_extract_slug: extracts slug from task worktree path" {
+  run worktree_extract_slug "/repo/.worktrees/phase4-hooks/task-02/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "phase4-hooks" ]
 }
 
-@test "extracts slug from task worktree root with trailing slash" {
-  result=$(worktree_extract_slug "/repo/.worktrees/phase4-hooks/task-02/")
-  [ "$result" = "phase4-hooks" ]
+@test "worktree_extract_slug: extracts slug from task worktree root with trailing slash" {
+  run worktree_extract_slug "/repo/.worktrees/phase4-hooks/task-02/"
+  [ "$status" -eq 0 ]
+  [ "$output" = "phase4-hooks" ]
 }
 
-@test "extracts slug from baseline worktree" {
-  result=$(worktree_extract_slug "/repo/.worktrees/phase4-hooks/baseline/src/foo.ts")
-  [ "$result" = "phase4-hooks" ]
+@test "worktree_extract_slug: extracts slug from baseline worktree" {
+  run worktree_extract_slug "/repo/.worktrees/phase4-hooks/baseline/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "phase4-hooks" ]
 }
 
-@test "extracts slug with multi-digit task number" {
-  result=$(worktree_extract_slug "/repo/.worktrees/abc-def/task-100/src/foo.ts")
-  [ "$result" = "abc-def" ]
+@test "worktree_extract_slug: extracts slug with multi-digit task number" {
+  run worktree_extract_slug "/repo/.worktrees/abc-def/task-100/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "abc-def" ]
 }
 
-@test "fails on non-worktree path" {
+@test "worktree_extract_slug: fails on non-worktree path" {
   run worktree_extract_slug "/repo/src/foo.ts"
   [ "$status" -ne 0 ]
 }
 
-@test "fails on .worktrees/ path with no task or baseline segment" {
+@test "worktree_extract_slug: fails on .worktrees/ path with no task or baseline segment" {
   run worktree_extract_slug "/repo/.worktrees/just-files-here.txt"
   [ "$status" -ne 0 ]
 }
 
-@test "fails on .worktrees/{slug} with no task subdirectory" {
+@test "worktree_extract_slug: fails on .worktrees/{slug} with no task subdirectory" {
   run worktree_extract_slug "/repo/.worktrees/phase4-hooks"
   [ "$status" -ne 0 ]
 }
 
-@test "extracts slug from absolute path with extra leading dirs" {
-  result=$(worktree_extract_slug "/Users/me/Documents/proj/.worktrees/my-slug/task-03")
-  [ "$result" = "my-slug" ]
+@test "worktree_extract_slug: extracts slug from absolute path with extra leading dirs" {
+  run worktree_extract_slug "/Users/me/Documents/proj/.worktrees/my-slug/task-03"
+  [ "$status" -eq 0 ]
+  [ "$output" = "my-slug" ]
 }
