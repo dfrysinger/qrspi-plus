@@ -113,26 +113,6 @@ write_json() {
   [[ "$output" == *"malformed"* ]] || [[ "$output" == *"Cannot parse"* ]] || [[ "$output" == *"parse"* ]]
 }
 
-# U1 — Missing task_id in worktree causes block + diagnostic
-@test "[U1] Worktree path with no parseable task ID causes block with diagnostic" {
-  # AC: worktree_detect triggers but worktree_extract_task_id fails → exit 2 + diagnostic
-  # Create a worktree-like path (contains .worktrees/) but with malformed task ID
-  local bad_worktree
-  bad_worktree=$(mktemp -d "/tmp/project.XXXXXX")
-  mkdir -p "$bad_worktree/.worktrees/notaskid/.qrspi"
-
-  local json
-  json=$(printf '{"tool_name":"Write","tool_input":{"file_path":"%s/file.sh","content":"x"}}\n' \
-         "$bad_worktree/.worktrees/notaskid")
-
-  run bash -c "cd '$bad_worktree/.worktrees/notaskid' && '$PRE_HOOK' <<< '$json'"
-  # Must block — cannot determine task ID from the path
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"task"* ]] || [[ "$output" == *"Cannot"* ]] || [[ "$output" == *"worktree"* ]]
-
-  rm -rf "$bad_worktree"
-}
-
 # U1 — Block output is always valid JSON (diagnostic is in stderr, JSON in stdout)
 @test "[U1] Block response is valid JSON with decision=block even for corrupted state" {
   # AC: fail-closed response must be machine-readable JSON on stdout so Claude can process it
@@ -163,97 +143,11 @@ write_json() {
   [ "$status" -eq 0 ]
 }
 
-# ── U10: Allowlist path resolution at parse time ──────────────────────────────
-# Criterion: Paths in task spec are pre-resolved absolute paths; enforcement
-# uses direct string comparison with no per-call path resolution.
-
-# U10 — Task spec with absolute paths: relative-path enforcement resolves correctly
-@test "[U10] Pre-resolved absolute paths in task spec allowlist work through full pre-tool-use hook" {
-  # AC: task spec stores absolute paths; enforcement_check_allowlist uses direct string
-  # comparison. This test verifies the full hook flow: spec is written with absolute paths,
-  # write to that absolute path is allowed.
-  create_task_spec 40 "strict" "src/main.sh"
-  init_state_with_task 40
-
-  # Write to the absolute path that matches the pre-resolved allowlist entry
-  run "$PRE_HOOK" <<< "$(write_json "$WORK_DIR/src/main.sh")"
-  [ "$status" -eq 0 ]
-}
-
-# U10 — Write to path NOT in allowlist is blocked (direct string comparison)
-@test "[U10] Write to path not in pre-resolved allowlist is blocked by pre-tool-use" {
-  # AC: direct string comparison blocks anything not in the exact list
-  create_task_spec 41 "strict" "src/main.sh"
-  init_state_with_task 41
-
-  # A different path — not in allowlist — must be blocked
-  run "$PRE_HOOK" <<< "$(write_json "$WORK_DIR/src/other.sh")"
-  [ "$status" -eq 2 ]
-  [ "$(echo "${lines[-1]}" | jq -r '.decision')" = "block" ]
-}
-
-# U10 — enforcement_check_allowlist has no realpath/readlink/pwd in source
-@test "[U10] enforcement.sh contains no per-call path resolution (realpath/readlink calls)" {
-  # AC: enforcement_check_allowlist must use direct string comparison, not per-call
-  # realpath/readlink. Grep verifies no such calls exist in the enforcement library.
-  local enforcement_lib
-  enforcement_lib="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/enforcement.sh"
-
-  # enforcement_check_allowlist function body must not call realpath or readlink
-  # (These calls would be per-call resolution, violating U10)
-  run grep -n "realpath\|readlink" "$enforcement_lib"
-  [ "$status" -ne 0 ]
-}
-
-# ── U12: No stderr suppression on enforcement call sites ─────────────────────
-# Criterion: No 2>/dev/null on enforcement_check_allowlist or
-# pipeline_check_prerequisites call sites in pre-tool-use.
-
-# U12 — enforcement_check_allowlist call sites have no 2>/dev/null in pre-tool-use
-@test "[U12] enforcement_check_allowlist call sites in pre-tool-use have no 2>/dev/null" {
-  # AC: 2>/dev/null on these call sites would swallow diagnostic output that the
-  # user needs to understand why enforcement blocked a write.
-  local pre_hook_src
-  pre_hook_src="$(dirname "$BATS_TEST_FILENAME")/../../hooks/pre-tool-use"
-
-  # First verify the function IS called in pre-tool-use (guard against vacuous pass)
-  grep -q "enforcement_check_allowlist" "$pre_hook_src"
-  # Extract the line(s) that call enforcement_check_allowlist.
-  # None of them must have 2>/dev/null appended.
-  while IFS= read -r line; do
-    # Each enforcement_check_allowlist call line must NOT contain 2>/dev/null
-    [[ "$line" != *"2>/dev/null"* ]]
-  done < <(grep "enforcement_check_allowlist" "$pre_hook_src")
-}
-
-# U12 — pipeline_check_prerequisites call sites have no 2>/dev/null in pre-tool-use
-@test "[U12] pipeline_check_prerequisites call sites in pre-tool-use have no 2>/dev/null" {
-  # AC: diagnostic output from pipeline_check_prerequisites must reach the user;
-  # 2>/dev/null would silently suppress useful error information.
-  local pre_hook_src
-  pre_hook_src="$(dirname "$BATS_TEST_FILENAME")/../../hooks/pre-tool-use"
-
-  # First verify the function IS called in pre-tool-use (guard against vacuous pass)
-  grep -q "pipeline_check_prerequisites" "$pre_hook_src"
-  while IFS= read -r line; do
-    [[ "$line" != *"2>/dev/null"* ]]
-  done < <(grep "pipeline_check_prerequisites" "$pre_hook_src")
-}
-
-# U12 — Enforcement stderr diagnostic reaches caller (no suppression in hook)
-@test "[U12] Strict-mode block diagnostic is visible in hook output (not suppressed)" {
-  # AC: when enforcement blocks a write, the diagnostic must appear in the hook's
-  # output — it must not be silently swallowed by a 2>/dev/null redirect.
-  create_task_spec 42 "strict" "src/allowed.sh"
-  init_state_with_task 42
-
-  run "$PRE_HOOK" <<< "$(write_json "$WORK_DIR/src/not-in-allowlist.sh")"
-  [ "$status" -eq 2 ]
-  # Diagnostic must be visible (not suppressed)
-  [[ -n "$output" ]]
-  # Output must contain informational content — not just a bare JSON block
-  [[ "$output" == *"not"* ]] || [[ "$output" == *"allowlist"* ]] || [[ "$output" == *"BLOCKED"* ]]
-}
+# ── U10/U12: REMOVED ──────────────────────────────────────────────────────────
+# The per-task allowlist (`enforcement_check_allowlist`) and its call sites in
+# pre-tool-use were removed in the 2026-04-26 implement-runtime-fix. The asymmetric
+# target-based wall in pre-tool-use (covered by tests/acceptance/test-asymmetric-enforcement.bats)
+# replaces the strict/monitored allowlist mechanism.
 
 # ── U13: Monitored-mode in_scope flag ────────────────────────────────────────
 # Criterion: In monitored mode, audit logging via audit_log_event records the

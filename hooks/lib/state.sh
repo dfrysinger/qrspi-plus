@@ -90,8 +90,7 @@ state_init_or_reconcile() {
         plan: $plan,
         implement: $implement,
         test: $test
-      },
-      active_task: null
+      }
     }' \
     --arg goals "$goals_status" \
     --arg questions "$questions_status" \

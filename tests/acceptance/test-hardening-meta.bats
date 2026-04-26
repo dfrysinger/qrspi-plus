@@ -134,24 +134,27 @@ write_json() {
 }
 
 # SC5 — Unit test file count has not regressed (Phase 4 must not delete unit tests)
-@test "[SC5] Unit test suite still has 13 .bats files (no unit test regressions)" {
-  # AC: Phase 4 changes must not delete existing unit test files
-  # 13 = original 12 + test-agent.bats added in 2026-04-26 implement-runtime-fix
+@test "[SC5] Unit test suite has expected .bats files after 2026-04-26 implement-runtime-fix" {
+  # AC: Phase 4 changes must not silently delete unit test files.
+  # Net delta: +test-agent.bats (added Task 2), -test-enforcement.bats (deleted Task 11
+  # along with the dead enforcement.sh library). Original 12 → 12 unchanged net.
   local unit_dir
   unit_dir="$(dirname "$BATS_TEST_DIRNAME")/unit"
   local count
   count=$(find "$unit_dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 13 ]
+  [ "$count" -eq 12 ]
 }
 
-# SC5 — Unit test count has not decreased below baseline
-@test "[SC5] Unit test suite has at least 287 @test definitions (no regression)" {
-  # AC: Phase 4 must not accidentally remove unit tests; count must be >= baseline
+# SC5 — Unit test count has not regressed unexpectedly
+@test "[SC5] Unit test suite has at least 280 @test definitions (no major regression)" {
+  # AC: Phase 4 must not accidentally drop large numbers of unit tests.
+  # Baseline lowered from 287 → 280 after 2026-04-26 implement-runtime-fix removed
+  # test-enforcement.bats (the entire allowlist mechanism it tested no longer exists).
   local unit_dir
   unit_dir="$(dirname "$BATS_TEST_DIRNAME")/unit"
   local count
   count=$(grep -r "^@test" "$unit_dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -ge 287 ]
+  [ "$count" -ge 280 ]
 }
 
 # SC5 — All hook library files still present (no accidental deletion)
@@ -161,11 +164,11 @@ write_json() {
   hooks_lib="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib"
 
   local expected_files=(
+    "agent.sh"
     "artifact-map.sh"
     "artifact.sh"
     "audit.sh"
     "bash-detect.sh"
-    "enforcement.sh"
     "frontmatter.sh"
     "pipeline.sh"
     "protected.sh"

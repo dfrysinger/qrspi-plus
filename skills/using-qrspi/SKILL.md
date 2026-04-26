@@ -287,7 +287,7 @@ Before checking artifact status, run these three validation checks in order:
 
 **1. State schema validation (fail-closed)**
 
-Call `state_init_or_reconcile <artifact_dir>` to bootstrap or reconcile `.qrspi/state.json`. If the state file is missing, it is created from artifact frontmatter. If the version field is absent (v0), it is migrated to v1. If any required v1 fields are missing (`wireframe_requested`, `active_task`, `artifacts`), each is added with a safe default and a repair message is emitted to stdout. If `state_init_or_reconcile` returns non-zero or if JSON is unparseable, **stop immediately** — do not proceed, do not silently pass. Emit a diagnostic:
+Call `state_init_or_reconcile <artifact_dir>` to bootstrap or reconcile `.qrspi/state.json`. If the state file is missing, it is created from artifact frontmatter. If the version field is absent (v0), it is migrated to v1. If any required v1 fields are missing (`wireframe_requested`, `artifacts`), each is added with a safe default and a repair message is emitted to stdout. If `state_init_or_reconcile` returns non-zero or if JSON is unparseable, **stop immediately** — do not proceed, do not silently pass. Emit a diagnostic:
 
 ```
 ERROR: state.json is corrupted and could not be repaired. Run `state_init_or_reconcile <artifact_dir>` manually or delete .qrspi/state.json to rebuild.

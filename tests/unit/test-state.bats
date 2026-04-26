@@ -208,8 +208,8 @@ EOF
   [[ "$json" == *'"wireframe_requested":false'* ]]
 }
 
-# Test: State has active_task=null
-@test "state_init_or_reconcile: state has active_task=null" {
+# Test: State has no active_task field (removed in 2026-04-26 implement-runtime-fix)
+@test "state_init_or_reconcile: state has no active_task field" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
 
@@ -218,7 +218,7 @@ EOF
 
   local json
   json=$(state_read)
-  [[ "$json" == *'"active_task":null'* ]]
+  [[ "$json" != *'active_task'* ]]
 }
 
 # Test: Recognizes all 8 artifacts

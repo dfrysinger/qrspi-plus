@@ -710,10 +710,10 @@ qrspi-plus/
 │   ├── setup-project-hooks.sh      # Workaround for Claude Code bug #17688
 │   └── lib/                        # Shared hook library modules
 │       ├── artifact.sh             # Artifact path resolution, type detection, phase snapshot/promote
+│       ├── agent.sh                # Subagent vs main-chat detection (envelope agent_id)
 │       ├── artifact-map.sh         # Canonical step-to-file mapping (forward + reverse lookup)
-│       ├── audit.sh                # Per-task JSONL audit logging + raw blob capture
-│       ├── bash-detect.sh          # Cross-platform bash detection
-│       ├── enforcement.sh          # Pipeline ordering enforcement logic
+│       ├── audit.sh                # Target-based JSONL audit logging into <artifact_dir>/.qrspi/audit.jsonl
+│       ├── bash-detect.sh          # Bash file-write detection + universal/subagent destructive-pattern detection
 │       ├── frontmatter.sh          # Generic YAML frontmatter parser (scalars, lists, objects)
 │       ├── pipeline.sh             # Pipeline step definitions, ordering, cascade reset
 │       ├── protected.sh            # Protected path detection

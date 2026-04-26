@@ -29,26 +29,28 @@ unit_test_dir() {
   [ "$count" -eq 12 ]
 }
 
-# AC8 — Across all 12 unit test files, there are exactly 287 @test definitions
-@test "[AC8] Unit test suite has exactly 287 @test definitions (baseline)" {
+# AC8 — Unit test count baseline (updated 2026-04-26)
+@test "[AC8] Unit test suite has exactly 283 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-26 implement-runtime-fix:
+  # +test-agent.bats (Task 2), -test-enforcement.bats (Task 11 — dead code).
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 287 ]
+  [ "$count" -eq 283 ]
 }
 
-# AC8 — Every expected unit test file is present by name
+# AC8 — Every expected unit test file is present by name (updated 2026-04-26)
 @test "[AC8] All 12 expected unit test files are present by name" {
   local dir
   dir="$(unit_test_dir)"
 
   local expected_files=(
+    "test-agent.bats"
     "test-artifact-map.bats"
     "test-artifact.bats"
     "test-audit.bats"
     "test-bash-detect.bats"
-    "test-enforcement.bats"
     "test-frontmatter.bats"
     "test-pipeline.bats"
     "test-pre-tool-use.bats"
