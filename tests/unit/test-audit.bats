@@ -118,3 +118,17 @@ teardown() {
 
   [ ! -f "$TEST_ROOT/docs/qrspi/2026-04-26-fakeproj/.qrspi/audit.jsonl" ]
 }
+
+# ── Structural meta-tests ─────────────────────────────────────────
+
+@test "audit.sh uses set -euo pipefail" {
+  grep -q "set -euo pipefail" "$BATS_TEST_DIRNAME/../../hooks/lib/audit.sh"
+}
+
+@test "audit.sh sources exactly worktree.sh and bash-detect.sh (intentional exception)" {
+  # Other libs are self-contained per the structural rule. audit.sh is the
+  # documented exception because it needs slug extraction and bash write detection.
+  local sources
+  sources=$(grep -E "^\s*source\s" "$BATS_TEST_DIRNAME/../../hooks/lib/audit.sh" | sed 's/.*\///' | sed 's/".*//' | sort)
+  [ "$sources" = "$(printf 'bash-detect.sh\nworktree.sh')" ]
+}

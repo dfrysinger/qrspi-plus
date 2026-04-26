@@ -71,11 +71,6 @@ write_json() {
   printf '{"tool_name":"Write","tool_input":{"file_path":"%s","content":"x"}}\n' "$file_path"
 }
 
-audit_file_for_task() {
-  local task_id="$1"
-  printf '%s/.qrspi/audit-task-%02d.jsonl' "$WORK_DIR" "$task_id"
-}
-
 # ── U1: Fail-closed with diagnostics ─────────────────────────────────────────
 # Criterion: Any error in enforcement logic results in denial with a visible
 # diagnostic message (stderr or user-facing output), not silent pass-through
@@ -166,53 +161,6 @@ audit_file_for_task() {
 
   run "$POST_HOOK" <<< "this is not valid json at all"
   [ "$status" -eq 0 ]
-}
-
-# U9 — audit_log_stdin raw_input fallback: called directly to verify raw bytes preserved
-@test "[U9] audit_log_stdin writes raw_input field when input is not valid JSON" {
-  # AC: audit_log_stdin preserves raw bytes in raw_input field when jq fails
-  local audit_lib
-  audit_lib="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/audit.sh"
-
-  run bash -c "
-    cd '$WORK_DIR'
-    source '$audit_lib'
-    audit_log_stdin '99' 'THIS IS NOT JSON {'
-    cat .qrspi/audit-task-99.jsonl
-  "
-  [ "$status" -eq 0 ]
-  # Output must be a valid JSONL record with raw_input field
-  local record="${lines[-1]}"
-  echo "$record" | jq . > /dev/null
-  [ "$(echo "$record" | jq 'has("raw_input")')" = "true" ]
-  # raw_input must contain the original malformed input
-  [[ "$(echo "$record" | jq -r '.raw_input')" == *"THIS IS NOT JSON"* ]]
-}
-
-# U9 — audit_log_stdin structured path: valid JSON is preserved as structured record
-@test "[U9] audit_log_stdin writes structured record (not raw_input) when JSON is valid" {
-  # AC: when input is valid JSON, audit_log_stdin writes it as a compact structured record
-  # without wrapping in raw_input
-  local audit_lib
-  audit_lib="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/audit.sh"
-
-  local valid_json
-  valid_json='{"tool_name":"Write","tool_input":{"file_path":"/tmp/x","content":"y"}}'
-
-  run bash -c "
-    cd '$WORK_DIR'
-    source '$audit_lib'
-    audit_log_stdin '98' '$valid_json'
-    cat .qrspi/audit-task-98.jsonl
-  "
-  [ "$status" -eq 0 ]
-  local record="${lines[-1]}"
-  # Must be valid JSON
-  echo "$record" | jq . > /dev/null
-  # Structured path: must NOT have raw_input field
-  [ "$(echo "$record" | jq 'has("raw_input")')" = "false" ]
-  # Must have tool_name from the original JSON
-  [ "$(echo "$record" | jq -r '.tool_name')" = "Write" ]
 }
 
 # ── U10: Allowlist path resolution at parse time ──────────────────────────────
@@ -308,63 +256,7 @@ audit_file_for_task() {
 }
 
 # ── U13: Monitored-mode in_scope flag ────────────────────────────────────────
-# Criterion: In monitored mode, enforcement_check_allowlist evaluates the
-# allowlist and records in_scope correctly, independent of enforcement decision.
-# (Unit tests cover the library; here we verify through the full post-tool-use hook.)
-
-# U13 — Monitored mode + file in allowlist → in_scope=true in audit log
-@test "[U13] Monitored mode write to allowlisted file → in_scope=true in audit log (via post-tool-use)" {
-  # AC: even in monitored mode, in_scope reflects allowlist membership.
-  # File IS in allowlist → in_scope=true
-  create_task_spec 50 "monitored" "src/allowed.sh"
-  init_state_with_task 50
-
-  "$POST_HOOK" <<< "$(write_json "$WORK_DIR/src/allowed.sh")"
-
-  local record
-  record=$(head -1 "$(audit_file_for_task 50)")
-  [ "$(echo "$record" | jq '.in_scope')" = "true" ]
-}
-
-# U13 — Monitored mode + file NOT in allowlist → in_scope=false in audit log
-@test "[U13] Monitored mode write to non-allowlisted file → in_scope=false in audit log (via post-tool-use)" {
-  # AC: monitored mode allows the write but in_scope must still be false when
-  # the file is not in the allowlist. This is the U13 bug fix: in_scope was
-  # previously always true in monitored mode (it tracked the enforcement decision,
-  # not the allowlist membership).
-  create_task_spec 51 "monitored" "src/allowed.sh"
-  init_state_with_task 51
-
-  # Write to a file NOT in the allowlist — allowed in monitored mode, but in_scope=false
-  "$POST_HOOK" <<< "$(write_json "$WORK_DIR/src/not-in-allowlist.sh")"
-
-  local record
-  record=$(head -1 "$(audit_file_for_task 51)")
-  [ "$(echo "$record" | jq '.in_scope')" = "false" ]
-}
-
-# U13 — in_scope is always a JSON boolean (not a string) in monitored mode
-@test "[U13] Monitored mode audit log in_scope field is a JSON boolean type" {
-  # AC: in_scope must be a proper JSON boolean, not the string "true" or "false"
-  create_task_spec 52 "monitored"
-  init_state_with_task 52
-
-  "$POST_HOOK" <<< "$(write_json "$WORK_DIR/src/anything.sh")"
-
-  local record
-  record=$(head -1 "$(audit_file_for_task 52)")
-  [ "$(echo "$record" | jq '.in_scope | type')" = '"boolean"' ]
-}
-
-# U13 — enforcement field in audit log reflects monitored mode
-@test "[U13] Monitored mode audit log enforcement field = 'monitored'" {
-  # AC: enforcement field in the log must match the task's mode — monitored in this case
-  create_task_spec 53 "monitored"
-  init_state_with_task 53
-
-  "$POST_HOOK" <<< "$(write_json "$WORK_DIR/src/file.sh")"
-
-  local record
-  record=$(head -1 "$(audit_file_for_task 53)")
-  [ "$(echo "$record" | jq -r '.enforcement')" = "monitored" ]
-}
+# Criterion: In monitored mode, audit logging via audit_log_event records the
+# operation correctly. The old per-task in_scope/enforcement fields have been
+# replaced by the unified audit_log_event schema in audit.sh.
+# End-to-end acceptance coverage of the asymmetric runtime will be added in Task 6.

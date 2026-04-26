@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# NOTE: Unlike other hooks/lib/ files (which are self-contained per the
+# structural rule enforced in test-worktree.bats), audit.sh sources worktree.sh
+# and bash-detect.sh because it needs slug extraction and Bash write detection
+# for target-based artifact_dir resolution. Hooks that source audit.sh
+# transitively get these libraries — this is intentional.
+
 # Source worktree.sh for slug extraction
 _audit_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_audit_script_dir/worktree.sh"

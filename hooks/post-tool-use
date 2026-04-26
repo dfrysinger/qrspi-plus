@@ -2,7 +2,7 @@
 # PostToolUse hook for QRSPI plugin
 # Responsibilities:
 #   1. Artifact state sync — for Write/Edit targeting known artifacts
-#   2. Audit logging — for ALL Write/Edit/Bash calls
+#   2. Audit logging — for ALL Write/Edit/Bash calls (via audit_log_event)
 # Always exits 0 (non-blocking, async).
 #
 # NEVER SILENT: All errors and unexpected conditions are logged to both
@@ -16,33 +16,12 @@ PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Source libraries
 source "$PLUGIN_ROOT/hooks/lib/artifact.sh"  # transitively gets pipeline, state, frontmatter
-source "$PLUGIN_ROOT/hooks/lib/audit.sh"     # transitively gets task
-source "$PLUGIN_ROOT/hooks/lib/enforcement.sh"
-source "$PLUGIN_ROOT/hooks/lib/bash-detect.sh"
-source "$PLUGIN_ROOT/hooks/lib/worktree.sh"
+source "$PLUGIN_ROOT/hooks/lib/audit.sh"     # transitively gets worktree.sh, bash-detect.sh
 
-# Log errors to stderr + audit trail.
-# When task_id is known, writes to audit-task-NN.jsonl (same file as normal audit).
-# When task_id is unknown, writes to audit.jsonl.
-# Both use JSONL format so the audit trail is one consistent format.
+# Log errors to stderr.
 log_error() {
   local msg="$1"
-  local timestamp
-  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "unknown")
   echo "post-tool-use: ${msg}" >&2
-  mkdir -p .qrspi 2>/dev/null || true
-  local audit_file=".qrspi/audit.jsonl"
-  if [[ -n "${task_id:-}" ]]; then
-    local padded_id
-    padded_id=$(printf "%02d" "$task_id" 2>/dev/null || echo "00")
-    audit_file=".qrspi/audit-task-${padded_id}.jsonl"
-  fi
-  local error_json
-  error_json=$(jq -cn --arg ts "$timestamp" --arg msg "$msg" --arg tool "${tool_name:-unknown}" \
-    '{timestamp: $ts, tool: $tool, error: $msg}') 2>/dev/null || true
-  if [[ -n "$error_json" ]]; then
-    echo "$error_json" >> "$audit_file" 2>/dev/null || true
-  fi
 }
 
 # Read stdin
@@ -94,27 +73,9 @@ if [[ -z "$artifact_dir" ]]; then
   exit 0
 fi
 
-# Resolve task ID
-task_id=""
-if worktree_detect "$PWD" 2>/dev/null; then
-  task_id=$(worktree_extract_task_id "$PWD" 2>/dev/null) || {
-    log_error "WARNING: in worktree but cannot extract task ID from path: ${PWD} — audit logging skipped"
-  }
-fi
-if [[ -z "$task_id" ]]; then
-  task_id=$(printf '%s' "$state_json" | jq -r '.active_task.id // empty' 2>/dev/null) || {
-    log_error "WARNING: cannot read active_task.id from state — audit logging skipped for ${tool_name} call"
-  }
-fi
-
-# Extract file_path or command
+# Extract file_path (for artifact sync)
 file_path=""
-command_str=""
-if [[ "$tool_name" == "Bash" ]]; then
-  command_str=$(printf '%s' "$stdin_json" | jq -r '.tool_input.command // empty' 2>/dev/null) || {
-    log_error "WARNING: cannot parse command from Bash tool input"
-  }
-else
+if [[ "$tool_name" != "Bash" ]]; then
   file_path=$(printf '%s' "$stdin_json" | jq -r '.tool_input.file_path // empty' 2>/dev/null) || {
     log_error "WARNING: cannot parse file_path from ${tool_name} tool input"
   }
@@ -135,69 +96,11 @@ if [[ -n "$file_path" ]]; then
 fi
 
 # --- 2. Audit logging ---
-if [[ -n "$task_id" ]]; then
-  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-  # Determine enforcement mode and in_scope
-  enforcement="strict"
-  in_scope="true"
-  user_approved="false"
-
-  enforcement=$(enforcement_get_mode "$task_id" "$artifact_dir" 2>/dev/null) || {
-    log_error "WARNING: cannot determine enforcement mode for task ${task_id} — defaulting to strict"
-    enforcement="strict"
-  }
-
-  if [[ "$tool_name" == "Bash" ]]; then
-    # For Bash: detect file-write targets
-    targets=""
-    if [[ -n "$command_str" ]]; then
-      targets=$(bash_detect_file_writes "$command_str" 2>/dev/null) || {
-        log_error "WARNING: bash_detect_file_writes failed for command — logging with empty targets"
-      }
-    fi
-
-    if [[ -n "$targets" ]]; then
-      # Build targets JSON array using jq for proper escaping
-      targets_json=$(printf '%s' "$targets" | jq -R -s 'split("\n") | map(select(length > 0))')
-
-      # Use first target as primary
-      primary_target=$(printf '%s' "$targets" | head -1)
-
-      # Check in_scope for primary target — capture stdout ("true"/"false"),
-      # not exit code (which is 0 for both in-scope and monitored-out-of-scope)
-      in_scope=$(enforcement_check_allowlist "$primary_target" "$task_id" "$artifact_dir" 2>/dev/null) || in_scope="false"
-    else
-      targets_json='[]'
-      primary_target=""
-      in_scope="true"  # No targets = not out of scope
-    fi
-
-    if ! audit_log_operation "$task_id" "$timestamp" "Bash" "${primary_target:-}" "$targets_json" "$command_str" "$in_scope" "$enforcement" "$user_approved" "null"; then
-      log_error "ERROR: audit_log_operation failed for Bash call — audit trail has a gap"
-    fi
-  else
-    # Write/Edit
-    targets_json=$(jq -cn --arg p "$file_path" '[$p]')
-
-    # Check in_scope — capture stdout ("true"/"false"),
-    # not exit code (which is 0 for both in-scope and monitored-out-of-scope)
-    in_scope=$(enforcement_check_allowlist "$file_path" "$task_id" "$artifact_dir" 2>/dev/null) || in_scope="false"
-
-    if ! audit_log_operation "$task_id" "$timestamp" "$tool_name" "$file_path" "$targets_json" "null" "$in_scope" "$enforcement" "$user_approved" "null"; then
-      log_error "ERROR: audit_log_operation failed for ${tool_name} ${file_path} — audit trail has a gap"
-    fi
-  fi
-elif [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "Bash" ]]; then
-  # We have a Write/Edit/Bash call but no task ID — this is normal during
-  # non-implementation steps (Goals, Questions, etc.). Not an error, but
-  # worth noting if we're in a worktree (where task ID should always exist)
-  # or if state is present (which means a QRSPI project is active).
-  if worktree_detect "$PWD" 2>/dev/null; then
-    log_error "WARNING: in worktree but no task ID resolved — ${tool_name} call not audited"
-  elif [[ -f ".qrspi/state.json" ]]; then
-    log_error "WARNING: no task ID resolved — ${tool_name} call not audited"
-  fi
+# Post-tool-use only fires after the tool succeeded, so all events here are "allow".
+# audit_log_event handles target extraction, scope resolution, and silent skip
+# for out-of-QRSPI-scope targets.
+if ! audit_log_event "$stdin_json" "allow" "" 2>/dev/null; then
+  log_error "ERROR: audit_log_event failed for ${tool_name} call — audit trail has a gap"
 fi
 
 exit 0
