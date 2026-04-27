@@ -35,7 +35,13 @@ setup() {
 }
 
 teardown() {
-  true  # nothing to clean up — these are read-only grep tests
+  # Most tests are read-only grep — nothing to clean. F-14 live git tests set
+  # LIVE_GIT_TMPDIR so the temp repo gets removed even on assertion failure
+  # (bats aborts the test on the first failed [ ] assertion, skipping any
+  # in-test rm -rf).
+  if [[ -n "${LIVE_GIT_TMPDIR:-}" && -d "$LIVE_GIT_TMPDIR" ]]; then
+    rm -rf "$LIVE_GIT_TMPDIR"
+  fi
 }
 
 # ── U7: Review result persistence ────────────────────────────────────────────
@@ -51,11 +57,13 @@ teardown() {
   grep -qi "reviews/" "$skill_file"
 }
 
-# U7 — implement SKILL.md references reviews/tasks/ for per-task review output
-@test "[U7] implement SKILL.md references reviews/tasks/ directory for per-task review persistence" {
+# U7 — implement template references reviews/tasks/ for per-task review output
+# (Reference moved from implement/SKILL.md to per-task-orchestrator.md during the
+# R1 skill refactor; behavior preserved, test updated to follow.)
+@test "[U7] per-task-orchestrator template references reviews/tasks/ directory for per-task review persistence" {
   # AC: each task's review results are persisted to reviews/tasks/ so Integrate can use them
-  local skill_file="$SKILLS_DIR/implement/SKILL.md"
-  grep -q "reviews/tasks" "$skill_file"
+  local template_file="$SKILLS_DIR/implement/templates/per-task-orchestrator.md"
+  grep -q "reviews/tasks" "$template_file"
 }
 
 # ── M21: Replan rework ────────────────────────────────────────────────────────
@@ -198,19 +206,11 @@ teardown() {
   grep -q "D1\|Encourage reviews after changes\|reviews after changes" "$skill_file"
 }
 
-# M26 — D2 (never suggest skipping steps) appears across multiple skills
-@test "[M26][D2] D2 directive (never suggest skipping steps) is in replan SKILL.md" {
-  local skill_file="$SKILLS_DIR/replan/SKILL.md"
-  grep -q "D2\|Never suggest skipping\|skipping steps" "$skill_file"
-}
-
+# M26 — D2 (never suggest skipping steps) consolidated into using-qrspi.
+# Per-skill copies were cut as R1-redundant during the skill refactor; the
+# using-qrspi assertion below is the canonical check.
 @test "[M26][D2] D2 directive is in using-qrspi SKILL.md" {
   local skill_file="$SKILLS_DIR/using-qrspi/SKILL.md"
-  grep -q "D2\|Never suggest skipping\|skipping steps" "$skill_file"
-}
-
-@test "[M26][D2] D2 directive is in questions SKILL.md" {
-  local skill_file="$SKILLS_DIR/questions/SKILL.md"
   grep -q "D2\|Never suggest skipping\|skipping steps" "$skill_file"
 }
 
@@ -241,12 +241,9 @@ teardown() {
   grep -q "Rejection Behavior\|user rejects.*feedback" "$skill_file"
 }
 
-# M26 — Obs 3 (one-word naming convention) in goals SKILL.md
-@test "[M26][Obs3] using-qrspi or goals SKILL.md has one-word skill naming convention" {
-  # AC: Obs 3 — skill names must follow one-word convention
-  local skill_file="$SKILLS_DIR/using-qrspi/SKILL.md"
-  grep -q "one-word\|one word.*convention\|single.*word.*name\|lowercase.*word" "$skill_file"
-}
+# M26 — Obs 3 (one-word naming convention) was cut as R1 meta-prose during
+# the skill refactor (orchestrator doesn't act on it during a run). Test
+# removed; convention persists informally across the codebase by example.
 
 # M26 — Obs 5 (review time allocation) in using-qrspi SKILL.md
 @test "[M26][Obs5] using-qrspi SKILL.md has review time allocation guidance" {
@@ -276,12 +273,9 @@ teardown() {
   grep -qi "code review\|Code Review\|review.*code.*PR\|PR.*review" "$skill_file"
 }
 
-# M26 — Obs 19 (heavy commenting directive) in implement SKILL.md
-@test "[M26][Obs19] implement SKILL.md contains aggressive commenting directive" {
-  # AC: Obs 19 — implementer must comment aggressively; function headers + edge cases
-  local skill_file="$SKILLS_DIR/implement/SKILL.md"
-  grep -qi "comment.*aggressively\|aggressive.*comment\|Comment aggressively\|every function.*comment" "$skill_file"
-}
+# M26 — Obs 19 (heavy commenting directive) was intentionally removed during
+# the skill refactor — it contradicts global CLAUDE.md "default to no comments"
+# guidance. Test removed (the directive shouldn't be reintroduced).
 
 # M26 — Obs 10 (TodoWrite per parallel group) in implement SKILL.md
 @test "[M26][Obs10] implement SKILL.md references batch gate before parallel dispatch" {
@@ -535,4 +529,164 @@ teardown() {
   # AC: the Goals skill must detect when scope is too large and suggest decomposition
   local skill_file="$SKILLS_DIR/goals/SKILL.md"
   grep -q "Scope check\|scope check\|too large\|decomposition\|multiple independent" "$skill_file"
+}
+
+# ── F-2: Sub-skill bootstrap precondition ────────────────────────────────────
+# Criterion: every QRSPI sub-skill SKILL.md contains a PRECONDITION line
+# pointing at using-qrspi, so direct invocation (mid-pipeline resume,
+# debugging, recovery) doesn't silently miss the master rules.
+
+@test "[F-2] All QRSPI sub-skills have PRECONDITION line invoking using-qrspi" {
+  # AC: F-2 — direct sub-skill invocation must bootstrap using-qrspi
+  local sub_skills=(
+    "goals" "questions" "research" "design" "structure" "plan"
+    "parallelize" "implement" "integrate" "test" "replan"
+  )
+  for skill in "${sub_skills[@]}"; do
+    local skill_file="$SKILLS_DIR/$skill/SKILL.md"
+    [ -f "$skill_file" ]
+    grep -q "PRECONDITION.*using-qrspi" "$skill_file"
+  done
+}
+
+# ── F-4: REJECTED git pre-flight + replacement: conditional commit guidance ──
+# F-4 in the 2026-04-26 findings doc proposed Goals verify PWD is a git repo
+# and offer to `git init` it. REJECTED — the workspace (CWD) is intentionally
+# NOT a git repo per user policy. Only code projects and per-task worktrees
+# are git-managed; QRSPI artifacts under docs/qrspi/{slug}/ are working state,
+# not source. A git pre-flight at workspace level would either falsely-flag
+# or produce data loss via nested git repos.
+#
+# Replacement (applied in this commit): the "commit after approval" guidance
+# in every pre-Plan terminal-state has been made CONDITIONAL on whether the
+# artifact directory is inside a git repo (walk up from artifact_dir, NOT
+# CWD). The canonical rule lives in using-qrspi → "Commit after approval
+# (conditional)"; per-skill terminal states reference it. Tests below pin
+# the canonical rule + per-skill conditional language so the conditional
+# can't silently drift back to unconditional "commit to git" guidance.
+
+@test "[F-4-replacement] using-qrspi SKILL.md has conditional 'Commit after approval' rule" {
+  # AC: canonical rule must mention git-repo conditional + walking up from
+  # artifact_dir (not CWD) — the two ways this rule can silently regress.
+  local skill_file="$SKILLS_DIR/using-qrspi/SKILL.md"
+  grep -q "Commit after approval (conditional)" "$skill_file"
+  grep -q "artifact_dir.*rev-parse\|rev-parse.*--show-toplevel" "$skill_file"
+  grep -q "NOT.*CWD\|not.*from CWD\|NOT from CWD" "$skill_file"
+}
+
+@test "[F-4-replacement] all pre-Plan terminal states reference the conditional commit rule" {
+  # AC: every skill that committed artifacts unconditionally before this fix
+  # must now defer to the canonical conditional rule. Pre-Plan only — Implement
+  # / Integrate / Test / Replan / Parallelize commit inside code worktrees,
+  # which are always git, so unconditional language there is correct.
+  local pre_plan=("goals" "questions" "research" "design" "structure" "plan")
+  for skill in "${pre_plan[@]}"; do
+    local skill_file="$SKILLS_DIR/$skill/SKILL.md"
+    [ -f "$skill_file" ]
+    grep -q "if the artifact directory is inside a git repository" "$skill_file"
+  done
+}
+
+# ── F-5: Fix-altitude rule in Standard Review Loop ───────────────────────────
+# Criterion: using-qrspi SKILL.md documents the fix-altitude rule so review
+# loops don't self-induce churn by pulling next-step content into the current
+# artifact (R7-R10 anti-pattern at artifact level).
+
+@test "[F-5] using-qrspi SKILL.md contains fix-altitude rule" {
+  # AC: F-5 — review loops must prefer minimal additions at the current altitude
+  local skill_file="$SKILLS_DIR/using-qrspi/SKILL.md"
+  grep -q "Fix-altitude\|fix-altitude\|altitude rule\|next pipeline step" "$skill_file"
+}
+
+# ── F-14: Branch model uses qrspi/{slug}/main (sibling-with-tasks naming) ────
+# Criterion: feature branch is `qrspi/{slug}/main`, not bare `qrspi/{slug}`,
+# so it can coexist with task branches `qrspi/{slug}/task-NN` under the
+# `qrspi/{slug}/` namespace. Bare `qrspi/{slug}` would deadlock the very
+# first task-branch creation with `fatal: cannot lock ref ...`.
+
+@test "[F-14] parallelize SKILL.md uses qrspi/{slug}/main for feature branch" {
+  # AC: F-14 — feature branch must be /main suffix to coexist with task branches
+  local skill_file="$SKILLS_DIR/parallelize/SKILL.md"
+  grep -q "qrspi/{slug}/main" "$skill_file"
+}
+
+@test "[F-14] implement SKILL.md uses qrspi/{slug}/main for feature branch" {
+  local skill_file="$SKILLS_DIR/implement/SKILL.md"
+  grep -q "qrspi/{slug}/main" "$skill_file"
+}
+
+@test "[F-14] no bare qrspi/{slug} references remain in skills (would deadlock task creation)" {
+  # AC: F-14 — bare `qrspi/{slug}` (not followed by /) is git-incompatible
+  # because it cannot coexist with `qrspi/{slug}/task-NN` namespace siblings.
+  # Scan covers SKILLS_DIR recursively (templates/, references/, examples).
+  # Two checks:
+  #   (1) literal placeholder `qrspi/{slug}` not followed by `/`
+  #   (2) bare concrete branch refs (e.g. `qrspi/user-auth`) used as full branch
+  #       names in markdown — i.e. NOT preceded by `-` (which would make it
+  #       part of `using-qrspi/...` file paths) AND NOT followed by `/`.
+  local placeholder_matches concrete_matches
+  placeholder_matches=$(grep -rn "qrspi/{slug}" "$SKILLS_DIR/" 2>/dev/null | grep -v "qrspi/{slug}/" || true)
+  if [[ -n "$placeholder_matches" ]]; then
+    echo "Found bare qrspi/{slug} placeholder references (not followed by /) — F-14 regression:"
+    echo "$placeholder_matches"
+    return 1
+  fi
+  # Concrete bare refs: `qrspi/<word>` preceded by whitespace, backtick, or
+  # line start (not preceded by `-`, which excludes `using-qrspi/...` paths)
+  # and followed by something OTHER than `/` (whitespace, backtick, EOL, etc.).
+  # Use ERE; `(^|[ \t\`])` anchors the prefix and `($|[^A-Za-z0-9_/-])` the suffix.
+  concrete_matches=$(grep -rnE "(^|[[:space:]\`])qrspi/[A-Za-z][A-Za-z0-9_-]*($|[^A-Za-z0-9_/-])" "$SKILLS_DIR/" 2>/dev/null || true)
+  if [[ -n "$concrete_matches" ]]; then
+    echo "Found bare concrete qrspi/<name> references (without trailing /) — F-14 regression:"
+    echo "$concrete_matches"
+    return 1
+  fi
+}
+
+@test "[F-14] feature + task branches can coexist as siblings under namespace (live git integration)" {
+  # AC: F-14 — live integration test that the documented naming actually works
+  # in git. Creates a temp repo, makes the feature branch, then attempts to
+  # create a task branch as a sibling. Both must coexist.
+  LIVE_GIT_TMPDIR=$(mktemp -d)
+  cd "$LIVE_GIT_TMPDIR"
+  git init -q
+  git config user.email "test@test"
+  git config user.name "test"
+  git commit --allow-empty -q -m "initial"
+  git branch "qrspi/myslug/main"
+  run git branch "qrspi/myslug/task-01"
+  [ "$status" -eq 0 ]
+  # Both branches must exist
+  run git rev-parse --verify "qrspi/myslug/main"
+  [ "$status" -eq 0 ]
+  run git rev-parse --verify "qrspi/myslug/task-01"
+  [ "$status" -eq 0 ]
+}
+
+# ── F-17: Per-task orchestrator commit-message file path ─────────────────────
+# Criterion: per-task-orchestrator template instructs subagents to use a
+# worktree-internal commit-message file (not /tmp/...), since the asymmetric
+# hook walls subagents out of /tmp.
+
+@test "[F-17] per-task-orchestrator template warns against /tmp commit-message paths" {
+  # AC: F-17 — template must guide subagents to worktree-internal paths
+  local template_file="$SKILLS_DIR/implement/templates/per-task-orchestrator.md"
+  grep -q "F-17" "$template_file"
+  grep -q ".qrspi-commit-msg.txt\|worktree-internal" "$template_file"
+}
+
+@test "[F-14] bare qrspi/{slug} branch + task branch demonstrably deadlock (regression evidence)" {
+  # AC: F-14 — pin the failure mode so future maintainers can't reintroduce
+  # the bare naming without seeing exactly why it doesn't work.
+  LIVE_GIT_TMPDIR=$(mktemp -d)
+  cd "$LIVE_GIT_TMPDIR"
+  git init -q
+  git config user.email "test@test"
+  git config user.name "test"
+  git commit --allow-empty -q -m "initial"
+  git branch "qrspi/myslug"
+  # This MUST fail because qrspi/myslug is a leaf ref blocking the namespace
+  run git branch "qrspi/myslug/task-01"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cannot lock"* ]] || [[ "$output" == *"exists"* ]]
 }

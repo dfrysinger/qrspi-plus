@@ -5,6 +5,8 @@ description: Use between phases when Test signals more phases remain — analyze
 
 # Replan (QRSPI Step 11)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Replan skill to update remaining tasks based on phase learnings."
 
 ## Overview

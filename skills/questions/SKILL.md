@@ -5,6 +5,8 @@ description: Use when goals.md is approved and the QRSPI pipeline needs research
 
 # Questions (QRSPI Step 2)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Questions skill to generate research questions."
 
 ## Overview
@@ -87,7 +89,7 @@ On rejection, write the user's feedback to `feedback/questions-round-{NN}.md` (s
 
 ### Terminal State
 
-Commit the approved `questions.md` and `reviews/questions-review.md` to git.
+Commit the approved `questions.md` and `reviews/questions-review.md` to git **if the artifact directory is inside a git repository** (see `using-qrspi` → "Commit after approval (conditional)"). If not, skip the commit silently.
 
 Recommend compaction: "Questions approved. This is a good point to compact context before the next step (`/compact`)."
 

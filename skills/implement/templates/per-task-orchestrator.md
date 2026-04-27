@@ -83,6 +83,8 @@ All steps below run inside the **implementer subagent**. Main chat does not run 
 5. **Implementer: Run tests — verify pass.** If they fail, fix the implementation (not the test)
 6. **Implementer: Sanity check and commit.** Implementer-side pass — typecheck / lint green — then commit inside the worktree's git. This is NOT the formal review; formal reviews run next as separate reviewer subagents dispatched by the orchestrator.
 
+   **Multi-line commit messages (F-17):** Subagents are walled to `.worktrees/{slug}/(task-NN[a-z]?|baseline)/` by the asymmetric pre-tool-use hook, so the global CLAUDE.md "write to `/tmp/commit-msg.txt`" guidance is BLOCKED for subagents. Use a worktree-internal path instead: `Write .qrspi-commit-msg.txt` inside the worktree, then `git -C .worktrees/{slug}/task-NN/ commit -F .qrspi-commit-msg.txt`. Delete the file after commit (`rm .qrspi-commit-msg.txt` — it's not auto-ignored, and you don't want it in the next diff). Do NOT attempt `/tmp/...` writes — they will be hook-blocked and waste a turn.
+
 ## Implementer Subagent Status Reporting
 
 The implementer subagent returns one of the statuses below. The Action column names what the **orchestrator (main chat)** does next — every Action involves dispatching another subagent, never main-chat execution.

@@ -5,6 +5,8 @@ description: Use when plan.md is approved and the QRSPI pipeline needs a paralle
 
 # Parallelize (QRSPI Step 7)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Parallelize skill to analyze task dependencies and produce a parallelization plan."
 
 ## Overview
@@ -59,7 +61,9 @@ This applies regardless of how simple the phase appears.
 
 `parallelization.md` records every task's `Base` as a **symbolic** reference. Implement resolves each symbolic reference to a concrete commit at runtime — including creating stage commits when needed.
 
-1. **Feature branch:** `qrspi/{slug}` (e.g., `qrspi/user-auth`). Created by Implement from the current branch (typically `main`) at the start of the first phase. For subsequent phases, the feature branch already exists.
+1. **Feature branch:** `qrspi/{slug}/main` (e.g., `qrspi/user-auth/main`). Created by Implement from the current branch (typically `main`) at the start of the first phase. For subsequent phases, the feature branch already exists.
+
+   **Why `/main`, not bare `qrspi/{slug}`** (F-14): git stores refs hierarchically and cannot have both a leaf ref `qrspi/{slug}` and a namespace `qrspi/{slug}/...` simultaneously. Naming the feature branch `qrspi/{slug}/main` makes it a sibling of the task branches under the `qrspi/{slug}/` namespace — all four kinds of branches (feature `main`, `task-NN`, `task-NNa`, `stage-after-G{N}`) coexist as namespace siblings. Bare `qrspi/{slug}` would deadlock the very first task-branch creation with `fatal: cannot lock ref ... 'refs/heads/qrspi/{slug}' exists`.
 2. **Task branches — base depends on execution mode:**
    - **Terminology — Parallel Group vs Dispatch Wave.** A *parallel group* is a set of tasks that share a base AND have no file overlap; group membership is purely a base-and-disjointness statement, not a dispatch-ordering statement. A *dispatch wave* is the set of tasks Implement fires concurrently at a given moment; a wave can contain multiple parallel groups (each with its own base), provided no inter-group logical dependency or file overlap exists. Group numbering does not imply dispatch ordering — concurrency is governed by inter-group dependencies, not by group numbers.
    - **Parallel group:** Every task in the group shares the group's *base tip* (see Hybrid below for groups beyond Group 1; Group 1's base is the feature branch tip). Tasks in a parallel group are independent by construction (no file overlap, no logical dependency).
@@ -69,7 +73,7 @@ This applies regardless of how simple the phase appears.
    - **Baseline fix (`task-00`) interaction:** When Implement's baseline tests fail and the user chooses Auto-fix (see `implement/SKILL.md` → "Baseline Tests"), `task-00` is injected as a phase-level predecessor. `task-00`'s base is the feature branch tip; every other task in the phase then takes `task-00`'s tip as its base (or as one of its parents in the multi-parent case). This injection happens at runtime — Parallelize does not anticipate it. Implement persists the injection by appending a `task-00` row to the Branch Map *and* writing a `## Runtime Adjustments` section to `parallelization.md` that lists every task whose effective base changed; the original Branch Map rows are not rewritten. Readers (human or agent) reconstruct effective bases by reading the Branch Map and overlaying `## Runtime Adjustments`.
    - **Re-fork semantics (re-run, fix-round, replan):** Once a task branch exists, it is canonical for that task. Implementer-fix-round dispatches reuse the existing branch and add commits. Re-forking only happens at fresh worktree creation: a new task in a new phase, a replan-introduced task, or an explicit user-requested reset. Never re-fork an existing task branch silently — downstream task branches that descend from it would be invalidated.
    - **Symbolic base vocabulary** (the only values allowed in the `Base` column):
-     - `feature branch tip` — the tip of `qrspi/{slug}` at runtime
+     - `feature branch tip` — the tip of `qrspi/{slug}/main` at runtime
      - `task-NN tip` — the tip of `qrspi/{slug}/task-NN` (for single-parent forks across groups, or sequential-chain predecessors)
      - `stage-after-G{N}` — the stage commit Implement creates by merging Group N's leaves before forking the next group
      - `task-00 tip` — the tip of the baseline-fix branch (only after Implement injects `task-00`)

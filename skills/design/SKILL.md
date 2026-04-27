@@ -5,6 +5,8 @@ description: Use when research/summary.md is approved and the QRSPI pipeline nee
 
 # Design (QRSPI Step 4)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Design skill to explore approaches and define the architecture."
 
 ## Overview
@@ -118,7 +120,7 @@ On rejection, write the user's feedback to `feedback/design-round-{NN}.md` (usin
 
 ### Terminal State
 
-Commit the approved `design.md` and `reviews/design-review.md` to git.
+Commit the approved `design.md` and `reviews/design-review.md` to git **if the artifact directory is inside a git repository** (see `using-qrspi` → "Commit after approval (conditional)"). If not, skip the commit silently.
 
 Recommend compaction: "Design approved. This is a good point to compact context before the next step (`/compact`)."
 

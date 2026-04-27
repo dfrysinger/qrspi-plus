@@ -5,6 +5,8 @@ description: Use when implementation is complete (after Integrate in full pipeli
 
 # Test (QRSPI Step 10)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Test skill to run acceptance testing against the original goals."
 
 ## Overview

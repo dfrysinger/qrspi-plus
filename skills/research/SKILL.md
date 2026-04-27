@@ -5,6 +5,8 @@ description: Use when questions.md is approved and the QRSPI pipeline needs obje
 
 # Research (QRSPI Step 3)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Research skill to investigate the research questions."
 
 ## Overview
@@ -135,7 +137,7 @@ On approval, if reviews have not passed clean, note this and ask if they'd like 
 
 ### Terminal State
 
-Commit the approved `research/summary.md`, all `research/q*.md` files, and `reviews/research-review.md` to git.
+Commit the approved `research/summary.md`, all `research/q*.md` files, and `reviews/research-review.md` to git **if the artifact directory is inside a git repository** (see `using-qrspi` → "Commit after approval (conditional)"). If not, skip the commit silently.
 
 Recommend compaction: "Research approved. This is a good point to compact context before the next step (`/compact`)."
 

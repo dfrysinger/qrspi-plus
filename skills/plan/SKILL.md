@@ -5,6 +5,8 @@ description: Use when prior artifacts are approved and the QRSPI pipeline needs 
 
 # Plan (QRSPI Step 6)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Plan skill to create detailed task specs."
 
 ## Overview
@@ -263,7 +265,7 @@ The artifact directory contains a `.qrspi/` subdirectory managed by hooks (not b
 
 ### Terminal State
 
-Commit the approved `plan.md`, all `tasks/task-NN.md` files, and `reviews/plan-review.md` to git.
+Commit the approved `plan.md`, all `tasks/task-NN.md` files, and `reviews/plan-review.md` to git **if the artifact directory is inside a git repository** (see `using-qrspi` → "Commit after approval (conditional)"). If not, skip the commit silently.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `plan`.
 

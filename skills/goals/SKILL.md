@@ -5,6 +5,8 @@ description: Use when starting a new QRSPI pipeline run — captures user intent
 
 # Goals (QRSPI Step 1)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Goals skill to capture what you want to build."
 
 ## Overview
@@ -177,7 +179,7 @@ They can:
 
 ### Terminal State
 
-Commit the approved `goals.md`, `config.md`, and `reviews/goals-review.md` to git.
+Commit the approved `goals.md`, `config.md`, and `reviews/goals-review.md` to git **if the artifact directory is inside a git repository** (see `using-qrspi` → "Commit after approval (conditional)"). If not, skip the commit silently — the approved frontmatter on disk is the durable record.
 
 Recommend compaction: "Goals approved. This is a good point to compact context before the next step (`/compact`)."
 

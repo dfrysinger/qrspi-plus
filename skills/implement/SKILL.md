@@ -5,6 +5,8 @@ description: Per-phase implementation orchestrator. In full pipeline mode, resol
 
 # Implement (QRSPI Step 8)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Implement skill to run the per-phase implementation loop."
 
 ## Overview
@@ -118,7 +120,7 @@ In full pipeline mode, Implement consumes the symbolic Branch Map from `parallel
 
 | Symbolic base | Runtime resolution |
 |---------------|--------------------|
-| `feature branch tip` | The current tip of `qrspi/{slug}` |
+| `feature branch tip` | The current tip of `qrspi/{slug}/main` |
 | `task-NN tip` | The current tip of `qrspi/{slug}/task-NN` (must already exist before forking — enforce wave ordering) |
 | `stage-after-G{N}` | A new branch `qrspi/{slug}/stage-after-G{N}` created by merging the tips of every task in Group N (composition listed in `parallelization.md` § Stage Commits). Create on demand, before forking any task whose `Base` names it. |
 | `task-00 tip` | The current tip of `qrspi/{slug}/task-00` (only valid after baseline-fix injection — see "Baseline Tests" below) |
@@ -133,7 +135,7 @@ In quick fix mode, there is no Branch Map. Each task forks directly from the fea
 
 ## Subagent Permissions (Hook-Governed)
 
-Subagent containment is enforced by the QRSPI `pre-tool-use` hook (target-based asymmetric model — see `using-qrspi/SKILL.md` § How worktree enforcement works). The hook blocks any subagent Write/Edit/Bash whose target falls outside `.worktrees/{slug}/(task-NN|baseline)/`. No per-worktree `.claude/settings.json` file is required.
+Subagent containment is enforced by the QRSPI `pre-tool-use` hook (target-based asymmetric model — see `using-qrspi/SKILL.md` § How worktree enforcement works). The hook blocks any subagent Write/Edit/Bash whose target falls outside `.worktrees/{slug}/(task-NN[a-z]?|baseline)/` (the `[a-z]?` allows Plan-induced task splits like `task-07a`/`task-07b` — F-19). No per-worktree `.claude/settings.json` file is required.
 
 **Recommended:** run sessions with `--dangerously-skip-permissions` enabled — the hook is the security wall, so per-tool approval prompts are no longer needed and would only stall subagents.
 
@@ -145,7 +147,7 @@ Branch on mode (derived from `config.md.route` per § Overview) at the start. Bo
 
 1. **Read inputs.** Full pipeline: read `parallelization.md` (Branch Map + Stage Commits + Execution Order narrative; if a `## Runtime Adjustments` section exists from a prior session, load its overrides into the in-memory base-resolution table). Quick fix: read every `tasks/*.md` OR every `fixes/{type}-round-NN/*.md` per the dispatch shape — see § Batch Gate Definition for the two quick-fix main-dispatch shapes plus the isolated baseline-fix dispatch event (`references/fix-task-routing.md` for fix-task dispatch specifics). Each dispatch reads one set, not both.
 2. **Ask phase config** (`review_depth`, `review_mode`), write to `config.md` (skip on fix-task dispatches — reuse existing values).
-3. **Create feature branch** `qrspi/{slug}` from the current branch if it does not exist (first phase only in full pipeline; first batch only in quick fix).
+3. **Create feature branch** `qrspi/{slug}/main` from the current branch if it does not exist (first phase only in full pipeline; first batch only in quick fix). Naming it `/main` (not bare `qrspi/{slug}`) is required so task branches `qrspi/{slug}/task-NN` can coexist as namespace siblings — see Branch Model in `parallelize/SKILL.md` § F-14 note.
 4. **Run baseline tests** in a single throwaway worktree at `.worktrees/{slug}/baseline/` forked from the feature branch tip. **Resume precondition:** if `.worktrees/{slug}/baseline/` already exists when this step starts, delete it first — the prior baseline result is not trusted across sessions because the feature branch tip may have advanced. (One check is sufficient in full pipeline: every Group 1 task forks from this same commit, so per-task baselines would be identical; downstream-group bases derive from task work that hasn't happened yet and is validated by per-task reviewers. In quick fix the same logic holds trivially — every task forks from the feature branch tip.) See "Baseline Tests" below for the 3 options when failures occur. **Invariant:** if the pipeline continues past this step, the baseline worktree must be gone before any per-task worktree exists.
 5. **If baseline failed and the user chose Auto-fix:**
     - Delete `.worktrees/{slug}/baseline/` (per Step 4's invariant).
@@ -285,7 +287,7 @@ Given the Worked Example in `parallelize/SKILL.md`:
 
 **Pre-flight — baseline.** Implement creates `.worktrees/user-auth/baseline/` from the feature branch tip, runs baseline tests, deletes the worktree. Assume baseline passes (otherwise the Auto-fix path injects `task-00` and dispatches it in isolation before Wave 1).
 
-**Wave 1.** Implement reads the Branch Map. Tasks 1 and 2 both have `Base = feature branch tip` and are file-disjoint. Resolve `feature branch tip` to the current tip of `qrspi/user-auth`, create worktrees `.worktrees/user-auth/task-01/` and `.worktrees/user-auth/task-02/` from that commit, dispatch both per-task orchestrator subagents concurrently, wait for both to return terminal status.
+**Wave 1.** Implement reads the Branch Map. Tasks 1 and 2 both have `Base = feature branch tip` and are file-disjoint. Resolve `feature branch tip` to the current tip of `qrspi/user-auth/main`, create worktrees `.worktrees/user-auth/task-01/` and `.worktrees/user-auth/task-02/` from that commit, dispatch both per-task orchestrator subagents concurrently, wait for both to return terminal status.
 
 **Stage commit creation.** Both Wave 1 tasks now in terminal state. Implement sees Wave 2 needs `stage-after-G1`. Create branch `qrspi/user-auth/stage-after-G1` by merging task-01 and task-02 tips. (Composition is documented in `parallelization.md` § Stage Commits.)
 

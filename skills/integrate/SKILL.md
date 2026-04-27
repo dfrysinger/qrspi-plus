@@ -5,6 +5,8 @@ description: Use when all current-phase tasks are implemented — merges task br
 
 # Integrate (QRSPI Step 9)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Integrate skill to verify cross-task integration and run CI."
 
 ## Overview
