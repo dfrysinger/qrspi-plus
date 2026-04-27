@@ -13,6 +13,25 @@ If you were dispatched as a subagent to execute a specific task, skip this skill
 
 QRSPI is a pipeline for agentic software development with two route variants (quick fix and full). Each step produces a reviewable artifact, gets human approval, then invokes the next step. Most steps run as subagents for guaranteed clean context. Goals and Design run interactively in the main conversation with subagent synthesis.
 
+## Recommended Workspace Layout
+
+QRSPI separates two kinds of files:
+
+- **Artifacts** (goals, questions, research, design, structure, plan, reviews) — written under `docs/qrspi/{slug}/` by the pipeline skills.
+- **Code** — lives in a separate target repository that Implement clones/forks into worktrees under `.worktrees/{slug}/task-NN/`.
+
+The recommended layout is to keep these as siblings inside a single workspace directory, e.g.:
+
+```
+my-workspace/
+├── docs/qrspi/{slug}/   # artifacts (this pipeline's outputs)
+└── code/{repo}/         # the target git repo Implement operates on
+```
+
+This is a recommendation, not a requirement. Both locations can be configured to whatever the user prefers — for example, artifacts inside the target repo, or the target repo at an arbitrary absolute path. The skills detect the artifact directory at runtime and don't assume any particular topology.
+
+**Greenfield (no target repo yet):** Implement currently assumes the target repo exists with a base branch it can fork worktrees from. If you're starting greenfield, create and `git init` the target repo before reaching Implement (Goals/Design/Structure can still run without it). A future improvement (tracked in the project's future-goals) will let `config.md` carry an explicit `code_path` and let Goals offer a greenfield bootstrap step.
+
 ## The Pipeline
 
 **Full pipeline:**
