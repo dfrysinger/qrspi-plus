@@ -10,7 +10,11 @@ source "$_state_script_dir/artifact-map.sh"
 # state_compute_current_step <artifact_dir>
 # Helper: scan artifact files in <artifact_dir>, determine the first pipeline step
 # whose artifact frontmatter is not "approved", and echo that step name.
-# If all are approved, echoes "test" (the terminal step).
+# Only the 7 file-backed steps (goals, questions, research, design, phasing,
+# structure, plan) are inspected. If all 7 are approved, echoes "implement"
+# (the first non-file-backed step, which defaults to "draft"). This matches
+# state_init_or_reconcile, where implement is the next step in pipeline order
+# after plan-approved.
 # Returns 1 if artifact_dir does not exist.
 #
 # NOTE (FU-1): This helper duplicates the inline first-non-approved-step logic in
