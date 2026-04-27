@@ -197,14 +197,16 @@ extract_rule_block() {
   local block
   block="$(extract_rule_block "**Default-action rule.**")"
   [ -n "$block" ]
-  # auto-apply must appear on the same bullet/line as all three of
-  # style, clarity, correctness (the change_types it governs).
-  echo "$block" | grep -i "auto-apply" | grep -q "style"
-  echo "$block" | grep -i "auto-apply" | grep -q "clarity"
-  echo "$block" | grep -i "auto-apply" | grep -q "correctness"
-  # pause must appear on the same bullet/line as both scope and intent.
-  echo "$block" | grep -i "pause" | grep -q "scope"
-  echo "$block" | grep -i "pause" | grep -q "intent"
+  # Single-line co-occurrence: chain greps so each filter narrows the line set.
+  # The auto-apply rule line MUST enumerate all three governed change_types
+  # (style, clarity, correctness) on the same line. If the rule were split
+  # across multiple lines, the chain would filter the line set down to empty
+  # and grep -q would fail. (codex round-3 finding: previous independent
+  # `grep "X" | grep -q "Y"` pairs only required X and Y to co-occur somewhere
+  # in the auto-apply-filtered line set, not on a single line.)
+  echo "$block" | grep -i "auto-apply" | grep "style" | grep "clarity" | grep -q "correctness"
+  # Single-line co-occurrence: pause line must mention both scope and intent.
+  echo "$block" | grep -i "pause" | grep "scope" | grep -q "intent"
 }
 
 @test "## Change-Type Classifier includes secondary-escalation rule referencing feedback/*.md" {
