@@ -29,7 +29,14 @@ audit_resolve_artifact_dir() {
   done
   shopt -u nullglob
 
-  if [[ ${#matches[@]} -ne 1 ]]; then
+  if [[ ${#matches[@]} -eq 0 ]]; then
+    return 1
+  fi
+  if [[ ${#matches[@]} -gt 1 ]]; then
+    # Important #1: ambiguous slug is a security/observability hole — the audit
+    # pipeline silently drops events for a real QRSPI artifact. Fail loud so
+    # the operator sees it; still return 1 (don't change the contract).
+    echo "audit_resolve_artifact_dir: ambiguous slug '$slug' matches ${#matches[@]} directories: ${matches[*]}" >&2
     return 1
   fi
 
@@ -127,8 +134,12 @@ audit_log_event() {
 
   [[ -z "$target" ]] && return 0
 
-  # Resolve target → artifact_dir; silent skip if not in QRSPI scope
-  artifact_dir=$(_audit_resolve_target_to_artifact_dir "$target" 2>/dev/null) || return 0
+  # Resolve target → artifact_dir; silent skip if not in QRSPI scope.
+  # Important #3 chain: keep this stderr OPEN so the ambiguous-slug diagnostic
+  # from audit_resolve_artifact_dir reaches the operator. The internal call to
+  # worktree_extract_slug is already silenced inside _audit_resolve_target_to_artifact_dir,
+  # so the only stderr that reaches here is the intentional diagnostic.
+  artifact_dir=$(_audit_resolve_target_to_artifact_dir "$target") || return 0
 
   ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 

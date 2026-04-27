@@ -171,8 +171,18 @@ bash_detect_destructive_universal() {
         return 0
       fi
       if [[ "$tok" == /* ]]; then
-        echo "rm -rf with dangerous target: absolute path ($tok)"
-        return 0
+        # F-3 minimal: allow project-internal absolute paths (under $PWD).
+        # Catastrophic prefixes (/, /etc, /usr, /Users/other-user/...) still
+        # blocked because they don't share the $PWD prefix.
+        # NOTE: lexical comparison only — symlinked PWD (e.g. macOS
+        # /tmp → /private/tmp) won't match canonical absolute targets and will
+        # block. Errs toward safety; user can rerun with the matching form.
+        local pwd_norm="${PWD%/}"
+        if [[ -z "$pwd_norm" ]] || { [[ "$tok" != "$pwd_norm" ]] && [[ "$tok" != "$pwd_norm"/* ]]; }; then
+          echo "rm -rf with dangerous target: absolute path ($tok)"
+          return 0
+        fi
+        # project-internal absolute path — continue to ../parent-traversal check below
       fi
       if [[ "$tok" == *'..'* ]]; then
         echo "rm -rf with dangerous target: parent traversal ($tok)"

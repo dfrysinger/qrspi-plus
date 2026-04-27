@@ -238,6 +238,70 @@ init_state() {
 }
 
 # ──────────────────────────────────────────────────────────────
+# [F-19] Subagent worktree wall accepts alpha-suffix task IDs
+# (task-07a, task-07b created when Plan splits a bundled task)
+# ──────────────────────────────────────────────────────────────
+@test "[F-19] subagent Edit inside task-07a worktree allows" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-07a/src"
+  mkdir -p "$WORK_DIR/docs/qrspi/2026-04-26-myslug"
+
+  local target="$WORK_DIR/.worktrees/myslug/task-07a/src/foo.ts"
+  local json='{"agent_id":"sub-1","agent_type":"impl","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  cd "$WORK_DIR"
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+@test "[F-19] subagent Edit inside task-07b worktree allows" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-07b/src"
+  mkdir -p "$WORK_DIR/docs/qrspi/2026-04-26-myslug"
+
+  local target="$WORK_DIR/.worktrees/myslug/task-07b/src/foo.ts"
+  local json='{"agent_id":"sub-1","agent_type":"impl","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  cd "$WORK_DIR"
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+@test "[F-19] subagent Edit inside task-99 (multi-digit numeric) still allows" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-99/src"
+  mkdir -p "$WORK_DIR/docs/qrspi/2026-04-26-myslug"
+
+  local target="$WORK_DIR/.worktrees/myslug/task-99/src/foo.ts"
+  local json='{"agent_id":"sub-1","agent_type":"impl","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  cd "$WORK_DIR"
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+@test "[F-19] subagent Edit inside baseline still allows" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/baseline/src"
+  mkdir -p "$WORK_DIR/docs/qrspi/2026-04-26-myslug"
+
+  local target="$WORK_DIR/.worktrees/myslug/baseline/src/foo.ts"
+  local json='{"agent_id":"sub-1","agent_type":"impl","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  cd "$WORK_DIR"
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+@test "[F-19] subagent Edit inside random/ subdir of worktree still blocks" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/random/src"
+  mkdir -p "$WORK_DIR/docs/qrspi/2026-04-26-myslug"
+
+  local target="$WORK_DIR/.worktrees/myslug/random/src/foo.ts"
+  local json='{"agent_id":"sub-1","agent_type":"impl","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  cd "$WORK_DIR"
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# ──────────────────────────────────────────────────────────────
 # [runtime] subagent Edit outside worktree blocks
 # ──────────────────────────────────────────────────────────────
 @test "[runtime] subagent Edit outside worktree blocks" {

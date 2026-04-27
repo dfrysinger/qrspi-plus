@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+bats_require_minimum_version 1.5.0
 
 setup() {
   export TEST_ROOT
@@ -36,7 +37,70 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
+@test "[Important #1] resolve: zero matches → silent (no stderr)" {
+  run --separate-stderr audit_resolve_artifact_dir "no-such-slug"
+  [ "$status" -ne 0 ]
+  [ -z "$stderr" ]
+}
+
+@test "[Important #1] resolve: ambiguous slug → fail-loud diagnostic on stderr" {
+  mkdir -p "docs/qrspi/2026-05-01-fakeproj"
+  run --separate-stderr audit_resolve_artifact_dir "fakeproj"
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *"ambiguous"* ]]
+  [[ "$stderr" == *"fakeproj"* ]]
+}
+
+@test "[Important #1] resolve: ambiguous slug stderr names both directories" {
+  mkdir -p "docs/qrspi/2026-05-01-fakeproj"
+  run --separate-stderr audit_resolve_artifact_dir "fakeproj"
+  [[ "$stderr" == *"2026-04-26-fakeproj"* ]]
+  [[ "$stderr" == *"2026-05-01-fakeproj"* ]]
+}
+
+@test "[Important #1+3] integration: diagnostic propagates through audit_log_event call chain" {
+  # Proves Item C delivers on its premise: when audit_resolve_artifact_dir
+  # writes a diagnostic, audit_log_event must NOT swallow it. Otherwise the
+  # 2>/dev/null drop in pre-tool-use's block()/allow() is theater.
+  mkdir -p "docs/qrspi/2026-05-01-fakeproj"
+  local target="$TEST_ROOT/.worktrees/fakeproj/task-02/src/foo.ts"
+  local envelope='{"agent_id":"sub-1","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  run --separate-stderr audit_log_event "$envelope" "allow" ""
+  [[ "$stderr" == *"ambiguous"* ]]
+  [[ "$stderr" == *"fakeproj"* ]]
+}
+
 # ── audit_log_event ───────────────────────────────────────────────
+
+@test "[F-19] log: subagent Edit inside task-07a worktree audits to artifact_dir" {
+  # Pins the cross-file regex invariant: pre-tool-use accepts task-07a, AND
+  # worktree_extract_slug must too — otherwise audit silently drops the row
+  # (Codex round-2 finding; was missed by both Claude reviewers).
+  mkdir -p "$TEST_ROOT/.worktrees/fakeproj/task-07a/src"
+  local target="$TEST_ROOT/.worktrees/fakeproj/task-07a/src/foo.ts"
+  local envelope='{"agent_id":"sub-1","agent_type":"implementer","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  run audit_log_event "$envelope" "allow" ""
+  [ "$status" -eq 0 ]
+
+  local audit_file="$TEST_ROOT/docs/qrspi/2026-04-26-fakeproj/.qrspi/audit.jsonl"
+  [ -f "$audit_file" ]
+  [[ "$(cat "$audit_file")" == *"task-07a"* ]]
+}
+
+@test "[F-19] log: subagent Bash detected write under task-07b audits to artifact_dir" {
+  mkdir -p "$TEST_ROOT/.worktrees/fakeproj/task-07b"
+  local target="$TEST_ROOT/.worktrees/fakeproj/task-07b/build.log"
+  local envelope='{"agent_id":"sub-1","agent_type":"implementer","tool_name":"Bash","tool_input":{"command":"echo done > '"$target"'"}}'
+
+  run audit_log_event "$envelope" "allow" ""
+  [ "$status" -eq 0 ]
+
+  local audit_file="$TEST_ROOT/docs/qrspi/2026-04-26-fakeproj/.qrspi/audit.jsonl"
+  [ -f "$audit_file" ]
+  [[ "$(cat "$audit_file")" == *"task-07b"* ]]
+}
 
 @test "log: subagent Edit inside worktree writes line to artifact_dir audit.jsonl" {
   local target="$TEST_ROOT/.worktrees/fakeproj/task-02/src/foo.ts"

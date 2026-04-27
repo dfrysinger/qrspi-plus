@@ -25,14 +25,17 @@ source "$PLUGIN_ROOT/hooks/lib/audit.sh"
 
 block() {
   local reason="$1"
-  audit_log_event "$STDIN_JSON" "block" "$reason" 2>/dev/null || true
+  # Important #3: keep `|| true` (don't fail the hook on audit failure), but
+  # drop `2>/dev/null` so audit diagnostics (e.g., ambiguous-slug warnings) reach
+  # the operator's stderr instead of being swallowed.
+  audit_log_event "$STDIN_JSON" "block" "$reason" || true
   echo "pre-tool-use: BLOCKED: ${reason}" >&2
   jq -cn --arg r "$reason" '{decision:"block",reason:$r}'
   exit 2
 }
 
 allow() {
-  audit_log_event "$STDIN_JSON" "allow" "" 2>/dev/null || true
+  audit_log_event "$STDIN_JSON" "allow" "" || true
   printf '{}\n'
   exit 0
 }
@@ -153,7 +156,7 @@ if [[ $is_subagent -eq 1 ]]; then
 
   # Subagent Write/Edit/NotebookEdit target wall
   if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "NotebookEdit" ]]; then
-    if ! [[ "$file_path" =~ \.worktrees/[^/]+/(task-[0-9]+|baseline)(/|$) ]]; then
+    if ! [[ "$file_path" =~ \.worktrees/[^/]+/(task-[0-9]+[a-z]?|baseline)(/|$) ]]; then
       block "Subagent target outside worktree: $file_path"
     fi
   fi
@@ -167,7 +170,7 @@ if [[ $is_subagent -eq 1 ]]; then
         # Resolve relative paths to absolute (best effort using PWD)
         abs_tgt="$tgt"
         [[ "$tgt" != /* ]] && abs_tgt="$PWD/$tgt"
-        if ! [[ "$abs_tgt" =~ \.worktrees/[^/]+/(task-[0-9]+|baseline)(/|$) ]]; then
+        if ! [[ "$abs_tgt" =~ \.worktrees/[^/]+/(task-[0-9]+[a-z]?|baseline)(/|$) ]]; then
           block "Subagent Bash target outside worktree: $tgt"
         fi
       done <<< "$detected_targets"

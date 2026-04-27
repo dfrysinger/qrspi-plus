@@ -30,7 +30,7 @@ unit_test_dir() {
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-26)
-@test "[AC8] Unit test suite has exactly 289 @test definitions (baseline)" {
+@test "[AC8] Unit test suite has exactly 308 @test definitions (baseline)" {
   # Baseline updated after 2026-04-26 implement-runtime-fix:
   # +test-agent.bats (Task 2), -test-enforcement.bats (Task 11 — dead code).
   # 2026-04-26 (later) — Commit A part 1 added 5 unit tests covering F-1 and
@@ -40,11 +40,24 @@ unit_test_dir() {
   # 2026-04-26 (round-2 review fix) — added 1 in test-pipeline.bats covering
   # F-7 cascade path (current_step recompute after pipeline_cascade_reset).
   # 288 → 289.
+  # 2026-04-26 (Commit A part 2) — added 14 unit tests covering F-3, Important
+  # #1, and F-19: 5 in test-bash-detect.bats ([F-3] project-internal absolute
+  # paths allowed), 4 in test-audit.bats ([Important #1] ambiguous-slug
+  # fail-loud + [Important #1+3] integration that diagnostic propagates through
+  # audit_log_event), 5 in test-pre-tool-use.bats ([F-19] alpha-suffix worktree
+  # IDs). 289 → 303.
+  # 2026-04-26 (Codex round-2 catch) — added 5 more covering the cross-file
+  # F-19 regex invariant Codex caught: 3 in test-worktree.bats
+  # ([F-19] worktree_extract_slug must accept task-07a/07b/12c too) plus 2 in
+  # test-audit.bats ([F-19] audit_log_event writes audit.jsonl row for
+  # task-07a Edit and task-07b Bash). 303 → 308. Without this fix the
+  # asymmetric wall would let alpha-suffix writes through but audit silently
+  # drops them — a silent observability hole.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 289 ]
+  [ "$count" -eq 308 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-26)

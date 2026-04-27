@@ -167,3 +167,25 @@ setup() {
   [ "$status" -eq 0 ]
   [ "$output" = "my-slug" ]
 }
+
+# F-19: alpha-suffix task IDs (task-NNa/NNb from Plan-induced splits) — must
+# match the asymmetric wall regex in pre-tool-use:156,170 to avoid silent
+# observability hole (audit treats unmatched paths as outside-QRSPI-scope).
+
+@test "[F-19] worktree_extract_slug: extracts slug from task-07a alpha-suffix worktree" {
+  run worktree_extract_slug "/repo/.worktrees/myslug/task-07a/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "myslug" ]
+}
+
+@test "[F-19] worktree_extract_slug: extracts slug from task-07b alpha-suffix worktree" {
+  run worktree_extract_slug "/repo/.worktrees/myslug/task-07b/"
+  [ "$status" -eq 0 ]
+  [ "$output" = "myslug" ]
+}
+
+@test "[F-19] worktree_extract_slug: extracts slug from task-12c alpha-suffix worktree" {
+  run worktree_extract_slug "/repo/.worktrees/myslug/task-12c/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "myslug" ]
+}
