@@ -56,6 +56,7 @@ EOF
   create_artifact "$artifact_dir/goals.md" "approved"
   create_artifact "$artifact_dir/questions.md" "approved"
   create_artifact "$artifact_dir/design.md" "approved"
+  create_artifact "$artifact_dir/phasing.md" "approved"
   create_artifact "$artifact_dir/structure.md" "approved"
   create_artifact "$artifact_dir/plan.md" "approved"
 
@@ -489,4 +490,121 @@ EOF
 
   # No state file should have been written (or if one existed, it should not be valid)
   [ ! -f "$TEST_DIR/.qrspi/state.json" ]
+}
+
+# ============================================================================
+# [T04-PHASING] Phasing-step state integration tests (M54)
+# ============================================================================
+
+@test "[T04-PHASING-1S] state_init_or_reconcile: includes phasing artifact field with status draft when phasing.md absent" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+  state_init_or_reconcile "$artifact_dir"
+
+  local json
+  json=$(state_read)
+  [[ "$json" == *'"phasing":"draft"'* ]]
+}
+
+@test "[T04-PHASING-2S] state_init_or_reconcile: reads phasing.md frontmatter status into artifacts.phasing" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  create_artifact "$artifact_dir/phasing.md" "approved"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+  state_init_or_reconcile "$artifact_dir"
+
+  local json
+  json=$(state_read)
+  [[ "$json" == *'"phasing":"approved"'* ]]
+}
+
+@test "[T04-PHASING-3S] state_init_or_reconcile: current_step is phasing when goals/questions/research/design approved and phasing draft" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir/research"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+  create_artifact "$artifact_dir/questions.md" "approved"
+  create_artifact "$artifact_dir/research/summary.md" "approved"
+  create_artifact "$artifact_dir/design.md" "approved"
+  create_artifact "$artifact_dir/phasing.md" "draft"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+  state_init_or_reconcile "$artifact_dir"
+
+  local json
+  json=$(state_read)
+  [[ "$json" == *'"current_step":"phasing"'* ]]
+}
+
+@test "[T04-PHASING-4S] state_compute_current_step: returns phasing for fixture with phasing draft and upstream approved" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir/research"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+  create_artifact "$artifact_dir/questions.md" "approved"
+  create_artifact "$artifact_dir/research/summary.md" "approved"
+  create_artifact "$artifact_dir/design.md" "approved"
+  create_artifact "$artifact_dir/phasing.md" "draft"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+  local out
+  out=$(state_compute_current_step "$artifact_dir")
+  [[ "$out" == "phasing" ]]
+}
+
+@test "[T04-PHASING-5] state_init_or_reconcile fails closed when jq missing and writes no state.json" {
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  # Build a minimal PATH containing every shell utility state.sh legitimately
+  # uses (mkdir, mv, mktemp, rm, cat, echo, dirname, basename, sh) EXCEPT jq.
+  # This isolates the fail-closed-on-jq behavior from any other utility's
+  # absence; if PATH were empty, mkdir/mv would also fail and the test could
+  # pass for the wrong reason (state_write_atomic failure instead of jq
+  # detection).
+  local stub_dir="$TEST_DIR/stub-no-jq"
+  mkdir -p "$stub_dir"
+  local util util_path
+  for util in mkdir mv mktemp rm cat echo dirname basename sh chmod; do
+    util_path=$(command -v "$util" 2>/dev/null) || true
+    if [ -n "$util_path" ]; then
+      ln -sf "$util_path" "$stub_dir/$util"
+    fi
+  done
+  # Verify jq is NOT in stub_dir
+  [ ! -e "$stub_dir/jq" ]
+
+  # Ensure no state.json initially
+  rm -f "$TEST_DIR/.qrspi/state.json"
+
+  PATH="$stub_dir" run state_init_or_reconcile "$artifact_dir"
+  [ "$status" -ne 0 ]
+  [ ! -f "$TEST_DIR/.qrspi/state.json" ]
+}
+
+@test "[T04-PHASING-6S] state_init_or_reconcile recognizes all 9 artifacts including phasing" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+  state_init_or_reconcile "$artifact_dir" > /dev/null
+
+  local json
+  json=$(state_read)
+
+  [[ "$json" == *'"goals"'* ]]
+  [[ "$json" == *'"questions"'* ]]
+  [[ "$json" == *'"research"'* ]]
+  [[ "$json" == *'"design"'* ]]
+  [[ "$json" == *'"phasing"'* ]]
+  [[ "$json" == *'"structure"'* ]]
+  [[ "$json" == *'"plan"'* ]]
+  [[ "$json" == *'"implement"'* ]]
+  [[ "$json" == *'"test"'* ]]
 }

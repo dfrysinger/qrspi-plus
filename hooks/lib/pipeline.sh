@@ -5,13 +5,13 @@ set -euo pipefail
 _pipeline_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_pipeline_script_dir/state.sh"
 
-# PIPELINE_ORDER — readonly array of 8 steps in order
+# PIPELINE_ORDER — readonly array of 9 steps in order (M54 inserted phasing between design and structure)
 # Use +a to disable readonly temporarily for proper array declaration, then re-enable
-declare -a PIPELINE_ORDER=(goals questions research design structure plan implement test)
+declare -a PIPELINE_ORDER=(goals questions research design phasing structure plan implement test)
 declare -r PIPELINE_ORDER
 
 # _pipeline_get_step_index <step>
-# Returns the index of the step in PIPELINE_ORDER (0-7), or -1 if not found
+# Returns the index of the step in PIPELINE_ORDER (0-8), or -1 if not found
 _pipeline_get_step_index() {
   local step="$1"
   case "$step" in
@@ -19,10 +19,11 @@ _pipeline_get_step_index() {
     questions) echo 1 ;;
     research) echo 2 ;;
     design) echo 3 ;;
-    structure) echo 4 ;;
-    plan) echo 5 ;;
-    implement) echo 6 ;;
-    test) echo 7 ;;
+    phasing) echo 4 ;;
+    structure) echo 5 ;;
+    plan) echo 6 ;;
+    implement) echo 7 ;;
+    test) echo 8 ;;
     *) echo -1 ;;
   esac
 }
@@ -84,10 +85,11 @@ pipeline_check_prerequisites() {
       1) current_step="questions" ;;
       2) current_step="research" ;;
       3) current_step="design" ;;
-      4) current_step="structure" ;;
-      5) current_step="plan" ;;
-      6) current_step="implement" ;;
-      7) current_step="test" ;;
+      4) current_step="phasing" ;;
+      5) current_step="structure" ;;
+      6) current_step="plan" ;;
+      7) current_step="implement" ;;
+      8) current_step="test" ;;
       *) current_step="" ;;
     esac
 
@@ -125,7 +127,7 @@ pipeline_check_prerequisites() {
 # With --skip-cascade: resets only the given step, leaves downstream untouched.
 # Does NOT modify artifact files on disk.
 # Uses state_write_atomic().
-# If step is "goals", resets all 8 (unless --skip-cascade).
+# If step is "goals", resets all 9 (unless --skip-cascade).
 # If step is "test", resets only test.
 # Rejects unknown flags with return 1.
 pipeline_cascade_reset() {
@@ -166,8 +168,8 @@ pipeline_cascade_reset() {
     return 1
   fi
 
-  # Determine end index
-  local end_idx=8
+  # Determine end index (9 steps total after M54 phasing insertion)
+  local end_idx=9
   if [[ "$skip_cascade" == "true" ]]; then
     end_idx=$((start_idx + 1))
   fi
@@ -181,10 +183,11 @@ pipeline_cascade_reset() {
       1) reset_step="questions" ;;
       2) reset_step="research" ;;
       3) reset_step="design" ;;
-      4) reset_step="structure" ;;
-      5) reset_step="plan" ;;
-      6) reset_step="implement" ;;
-      7) reset_step="test" ;;
+      4) reset_step="phasing" ;;
+      5) reset_step="structure" ;;
+      6) reset_step="plan" ;;
+      7) reset_step="implement" ;;
+      8) reset_step="test" ;;
       *) reset_step="" ;;
     esac
     state=$(echo "$state" | jq ".artifacts.$reset_step = \"draft\"")

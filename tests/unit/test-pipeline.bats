@@ -131,12 +131,13 @@ teardown() {
 
 # Test 7: pipeline_check_prerequisites "implement" with all through plan approved returns 0
 @test "pipeline_check_prerequisites implement with all prerequisites approved returns 0" {
-  # Create artifact files
+  # Create artifact files (M54: includes phasing.md)
   mkdir -p "$ARTIFACT_DIR/research"
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/goals.md"
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/questions.md"
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/research/summary.md"
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/design.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/phasing.md"
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/structure.md"
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/plan.md"
 
@@ -521,4 +522,133 @@ _t14_create_all_approved() {
   [[ $(echo "$state" | jq -r '.artifacts.plan') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+# ============================================================================
+# [T04-PHASING] Phasing-step integration tests (M54)
+# ============================================================================
+
+# Helper: create artifacts including phasing.md
+_t04_phasing_create_all_approved() {
+  mkdir -p "$ARTIFACT_DIR/research"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/goals.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/questions.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/research/summary.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/design.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/phasing.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/structure.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/plan.md"
+}
+
+@test "[T04-PHASING-1] PIPELINE_ORDER contains phasing at index 4" {
+  # Note: re-source explicitly inside test body to avoid bats env quirks with
+  # exported readonly arrays under set -u.
+  source "$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/pipeline.sh"
+  local order_str="${PIPELINE_ORDER[*]}"
+  [[ "$order_str" == "goals questions research design phasing structure plan implement test" ]]
+  [[ "${#PIPELINE_ORDER[@]}" -eq 9 ]]
+}
+
+@test "[T04-PHASING-2] _pipeline_get_step_index recognizes phasing at index 4 with surrounding indices shifted" {
+  [[ "$(_pipeline_get_step_index goals)" == "0" ]]
+  [[ "$(_pipeline_get_step_index questions)" == "1" ]]
+  [[ "$(_pipeline_get_step_index research)" == "2" ]]
+  [[ "$(_pipeline_get_step_index design)" == "3" ]]
+  [[ "$(_pipeline_get_step_index phasing)" == "4" ]]
+  [[ "$(_pipeline_get_step_index structure)" == "5" ]]
+  [[ "$(_pipeline_get_step_index plan)" == "6" ]]
+  [[ "$(_pipeline_get_step_index implement)" == "7" ]]
+  [[ "$(_pipeline_get_step_index test)" == "8" ]]
+}
+
+@test "[T04-PHASING-3] pipeline_check_prerequisites for structure with phasing draft returns 1 with phasing on stdout" {
+  mkdir -p "$ARTIFACT_DIR/research"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/goals.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/questions.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/research/summary.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/design.md"
+  echo -e "---\nstatus: draft\n---" > "$ARTIFACT_DIR/phasing.md"
+  echo -e "---\nstatus: draft\n---" > "$ARTIFACT_DIR/structure.md"
+
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  run -1 pipeline_check_prerequisites "structure" "$ARTIFACT_DIR"
+  [[ "$output" == "phasing" ]]
+}
+
+@test "[T04-PHASING-4] pipeline_check_prerequisites for phasing with all upstream approved returns 0" {
+  mkdir -p "$ARTIFACT_DIR/research"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/goals.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/questions.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/research/summary.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/design.md"
+  echo -e "---\nstatus: draft\n---" > "$ARTIFACT_DIR/phasing.md"
+
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  pipeline_check_prerequisites "phasing" "$ARTIFACT_DIR"
+}
+
+@test "[T04-PHASING-6] pipeline_cascade_reset goals resets all 9 steps including phasing" {
+  _t04_phasing_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # Manually mark implement and test approved
+  local state
+  state=$(state_read)
+  state=$(echo "$state" | jq '.artifacts.implement = "approved"')
+  state=$(echo "$state" | jq '.artifacts.test = "approved"')
+  state_write_atomic "$state"
+
+  pipeline_cascade_reset "goals" "$ARTIFACT_DIR"
+
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.phasing') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T04-PHASING-7] pipeline_cascade_reset phasing resets phasing through test (5 steps)" {
+  _t04_phasing_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # Mark implement and test approved
+  local state
+  state=$(state_read)
+  state=$(echo "$state" | jq '.artifacts.implement = "approved"')
+  state=$(echo "$state" | jq '.artifacts.test = "approved"')
+  state_write_atomic "$state"
+
+  pipeline_cascade_reset "phasing" "$ARTIFACT_DIR"
+
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.phasing') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T04-PHASING-8] pipeline_cascade_reset phasing --skip-cascade resets only phasing" {
+  _t04_phasing_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  pipeline_cascade_reset "phasing" "$ARTIFACT_DIR" --skip-cascade
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.phasing') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "approved" ]]
 }
