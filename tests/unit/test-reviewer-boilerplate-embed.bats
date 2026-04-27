@@ -87,42 +87,56 @@ EOF
   [ "$output" = "1" ]
 }
 
+# Bullet-line assertions below intentionally avoid POSIX-incompatible \b
+# word boundaries (codex round-2 finding: BSD grep on macOS does not honor
+# \b reliably and would false-fail despite correct content). The schema
+# bullets use markdown bold around backticked field names, e.g.
+#   - **`finding_id`** — string. ...
+# So we anchor on the literal markdown bold + backtick wrapper, which is
+# both portable (basic ERE) and a stronger structural assertion than \b.
+
 @test "## Finding Schema section enumerates finding_id as a bullet item" {
   local section
   section="$(extract_section "$BOILERPLATE_FILE" "## Finding Schema")"
-  echo "$section" | grep -E "^[-*] .*\bfinding_id\b" >/dev/null
+  echo "$section" | grep -E '^[-*][[:space:]]+\*\*`finding_id`\*\*' >/dev/null
 }
 
 @test "## Finding Schema section enumerates severity as a bullet item" {
   local section
   section="$(extract_section "$BOILERPLATE_FILE" "## Finding Schema")"
-  echo "$section" | grep -E "^[-*] .*\bseverity\b" >/dev/null
+  echo "$section" | grep -E '^[-*][[:space:]]+\*\*`severity`\*\*' >/dev/null
 }
 
 @test "## Finding Schema section enumerates change_type as a bullet item" {
   local section
   section="$(extract_section "$BOILERPLATE_FILE" "## Finding Schema")"
-  echo "$section" | grep -E "^[-*] .*\bchange_type\b" >/dev/null
+  echo "$section" | grep -E '^[-*][[:space:]]+\*\*`change_type`\*\*' >/dev/null
 }
 
 @test "## Finding Schema section enumerates message as a bullet item" {
   local section
   section="$(extract_section "$BOILERPLATE_FILE" "## Finding Schema")"
-  echo "$section" | grep -E "^[-*] .*\bmessage\b" >/dev/null
+  echo "$section" | grep -E '^[-*][[:space:]]+\*\*`message`\*\*' >/dev/null
 }
 
 @test "## Finding Schema section enumerates referenced_files as a bullet item" {
   local section
   section="$(extract_section "$BOILERPLATE_FILE" "## Finding Schema")"
-  echo "$section" | grep -E "^[-*] .*\breferenced_files\b" >/dev/null
+  echo "$section" | grep -E '^[-*][[:space:]]+\*\*`referenced_files`\*\*' >/dev/null
 }
 
 @test "## Finding Schema severity field lists low/medium/high allowed values" {
-  local section
+  # Silent-failure-hunter MEDIUM: bare greps for "low"/"medium"/"high" against
+  # the entire schema section would pass on common English words ("low risk",
+  # "medium" anywhere, etc.). Tighten to the single severity bullet line so
+  # the three allowed values must co-occur in the bullet that defines them.
+  local section severity_bullet
   section="$(extract_section "$BOILERPLATE_FILE" "## Finding Schema")"
-  echo "$section" | grep -q "low"
-  echo "$section" | grep -q "medium"
-  echo "$section" | grep -q "high"
+  severity_bullet="$(echo "$section" | grep -E '^[-*][[:space:]]+\*\*`severity`\*\*')"
+  [ -n "$severity_bullet" ]
+  echo "$severity_bullet" | grep -q "low"
+  echo "$severity_bullet" | grep -q "medium"
+  echo "$severity_bullet" | grep -q "high"
 }
 
 # =============================================================================
@@ -148,19 +162,64 @@ EOF
   echo "$section" | grep -qw "intent"
 }
 
+# extract_rule_block <bold-rule-heading>
+# Extracts a bold-prefixed rule sub-block from inside the Change-Type
+# Classifier section. The classifier uses paragraph-level rule headings of
+# the form "**Default-action rule.**" / "**Secondary-escalation rule.**" /
+# "> **Future-hook placeholder ...". This helper extracts from the named
+# rule heading line up to the next bold-prefixed rule heading, the
+# blockquote future-hook marker, or the next ### sub-section heading.
+#
+# Rationale (silent-failure-hunter MEDIUM): the previous tests grep'd the
+# ENTIRE classifier section for "auto-apply"/"pause"/"escalat"/"intent" —
+# words that appear elsewhere in the classifier prose (e.g. inside the
+# scope/intent sub-blocks), so a bug that DELETED the default-action rule
+# or the secondary-escalation rule would still pass. By extracting just
+# the rule sub-block first, we force the assertions to bind to the rule
+# they claim to verify.
+extract_rule_block() {
+  local heading="$1"
+  extract_section "$BOILERPLATE_FILE" "## Change-Type Classifier" \
+    | awk -v h="$heading" '
+        $0 == h { in_b = 1; print; next }
+        in_b && /^\*\*[A-Z].*\.\*\*$/ { exit }
+        in_b && /^> \*\*/ { exit }
+        in_b && /^### / { exit }
+        in_b { print }
+      '
+}
+
 @test "## Change-Type Classifier includes default-action rule (auto-apply for style/clarity/correctness, pause for scope/intent)" {
-  local section
-  section="$(extract_section "$BOILERPLATE_FILE" "## Change-Type Classifier")"
-  echo "$section" | grep -qi "auto-apply"
-  echo "$section" | grep -qi "pause"
+  # Silent-failure-hunter MEDIUM #1: tighten from section-wide greps to the
+  # default-action sub-block, AND require the policy verbs to co-occur with
+  # the change_types they govern on the same line. Otherwise a rule that
+  # said "auto-apply" and "pause" but mis-mapped change_types would pass.
+  local block
+  block="$(extract_rule_block "**Default-action rule.**")"
+  [ -n "$block" ]
+  # auto-apply must appear on the same bullet/line as all three of
+  # style, clarity, correctness (the change_types it governs).
+  echo "$block" | grep -i "auto-apply" | grep -q "style"
+  echo "$block" | grep -i "auto-apply" | grep -q "clarity"
+  echo "$block" | grep -i "auto-apply" | grep -q "correctness"
+  # pause must appear on the same bullet/line as both scope and intent.
+  echo "$block" | grep -i "pause" | grep -q "scope"
+  echo "$block" | grep -i "pause" | grep -q "intent"
 }
 
 @test "## Change-Type Classifier includes secondary-escalation rule referencing feedback/*.md" {
-  local section
-  section="$(extract_section "$BOILERPLATE_FILE" "## Change-Type Classifier")"
-  echo "$section" | grep -q "feedback/\*\.md"
-  echo "$section" | grep -qi "escalat"
-  echo "$section" | grep -qw "intent"
+  # Silent-failure-hunter MEDIUM #2: previously three independent greps
+  # against the whole classifier section — `feedback/*.md`, "escalat", and
+  # "intent" all appear elsewhere (intent has its own ### sub-block, the
+  # M44 future-hook placeholder also says "escalation"), so the rule could
+  # be deleted and the test would still pass on coincidental matches.
+  # Require all three terms to co-occur in the actual rule sub-block.
+  local block
+  block="$(extract_rule_block "**Secondary-escalation rule.**")"
+  [ -n "$block" ]
+  echo "$block" | grep -q "feedback/\*\.md"
+  echo "$block" | grep -qi "escalat"
+  echo "$block" | grep -qw "intent"
 }
 
 @test "## Change-Type Classifier includes M44 capture-corpus future-hook placeholder note (out-of-scope this run)" {
@@ -235,6 +294,13 @@ extract_subblock() {
 }
 
 @test "## Disagreement-Valid Framing affirms contradictory findings as valid behavior" {
+  # Silent-failure-hunter MEDIUM #4: previously three independent greps
+  # against the whole framing section. The three terms (contradict/disagree,
+  # user, valid/correct/not-a-violation) could each match unrelated prose
+  # in different paragraphs while the actual affirmation sentence had been
+  # deleted. Tighten to require all three concepts to co-occur in a SINGLE
+  # sentence/line — that is the load-bearing claim "flagging contradictory
+  # findings is correct behavior."
   local section
   section="$(extract_section "$BOILERPLATE_FILE" "## Disagreement-Valid Framing")"
   # Must mention contradicting/disagreeing with prior user decisions
@@ -242,6 +308,18 @@ extract_subblock() {
   echo "$section" | grep -qi "user"
   # Must explicitly affirm: "valid", "correct behavior", "not a violation", etc.
   echo "$section" | grep -qiE "valid|correct behavior|not a violation"
+  # Co-occurrence: split the section into sentences (period-terminated) and
+  # require at least one sentence to contain a contradiction-keyword AND a
+  # user-keyword AND a validity-keyword. Bold/markdown is preserved as-is.
+  local cooccur
+  cooccur="$(echo "$section" \
+    | tr '\n' ' ' \
+    | awk 'BEGIN { RS = "[.!?]" } { print }' \
+    | grep -iE "contradict|disagree" \
+    | grep -i "user" \
+    | grep -iE "valid|correct behavior|not a violation" \
+    || true)"
+  [ -n "$cooccur" ]
 }
 
 # =============================================================================
