@@ -46,6 +46,14 @@
 //   STUB_STATUS_BAD_JSON   if "1", `status` emits malformed JSON
 //   STUB_STATUS_EXIT       on `status`, exit non-zero with this code
 //                          (distinct from job-not-found)
+//   STUB_TERMINAL_STATUS   when `status` reports a terminal state, return this
+//                          string instead of "completed" (e.g. "failed",
+//                          "cancelled"). result subcommand uses it too.
+//   STUB_RESULT_RENDERED   markdown text returned at storedJob.rendered
+//                          (used for failed/cancelled fallback test)
+//   STUB_RESULT_ERROR_MESSAGE
+//                          string returned at job.errorMessage and (when no
+//                          rendered/raw) emerges via the d/e fallbacks
 // ----------------------------------------------------------------------------
 
 import fs from "node:fs";
@@ -134,7 +142,9 @@ function handleStatus() {
   let jobStatus = "running";
   if (process.env.STUB_NEVER_COMPLETE !== "1") {
     const completeAt = Number(process.env.STUB_COMPLETE_AT_POLL || 1);
-    if (state.polls >= completeAt) jobStatus = "completed";
+    if (state.polls >= completeAt) {
+      jobStatus = process.env.STUB_TERMINAL_STATUS || "completed";
+    }
   }
 
   // Real shape: { workspaceRoot, job: { id, status, title, ... } }
@@ -161,25 +171,38 @@ function handleResult() {
     return;
   }
 
-  // Real shape: { job, storedJob } with markdown at storedJob.result.rawOutput
-  // (preferred) and storedJob.result.codex.stdout (legacy fallback).
+  // Real shape: { job, storedJob }. Markdown lookup chain (render.mjs:401-445):
+  //   storedJob.result.rawOutput → storedJob.result.codex.stdout →
+  //   storedJob.rendered → job.errorMessage → storedJob.errorMessage
   const rawOutput = process.env.STUB_RESULT_RAW || "";
   const codexStdout = process.env.STUB_RESULT_STDOUT || "";
+  const rendered = process.env.STUB_RESULT_RENDERED || "";
+  const errorMessage = process.env.STUB_RESULT_ERROR_MESSAGE || "";
+  const terminal = process.env.STUB_TERMINAL_STATUS || "completed";
+
+  // Real companion attaches `result` only on `completed` jobs; failed/cancelled
+  // jobs carry only storedJob.rendered + errorMessage. Mirror that.
+  const includeResult = terminal === "completed" && (rawOutput || codexStdout);
 
   const payload = {
     job: {
       id: argv[1] || "unknown",
-      status: "completed",
-      title: "stub task"
+      status: terminal,
+      title: "stub task",
+      errorMessage: errorMessage || undefined
     },
     storedJob: {
       id: argv[1] || "unknown",
-      status: "completed",
-      result: {
-        status: "completed",
-        rawOutput: rawOutput || undefined,
-        codex: codexStdout ? { stdout: codexStdout } : undefined
-      }
+      status: terminal,
+      result: includeResult
+        ? {
+            status: "completed",
+            rawOutput: rawOutput || undefined,
+            codex: codexStdout ? { stdout: codexStdout } : undefined
+          }
+        : undefined,
+      rendered: rendered || undefined,
+      errorMessage: errorMessage || undefined
     }
   };
   process.stdout.write(JSON.stringify(payload) + "\n");

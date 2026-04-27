@@ -335,6 +335,51 @@ EOF
   [ -n "$output$stderr" ]
 }
 
+# ── failed/cancelled fallback chain (C1) ──────────────────────────
+
+@test "await: failed job with storedJob.rendered → exits 0 and surfaces rendered text" {
+  echo '{"jobId":"job-failed","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_TERMINAL_STATUS=failed
+  export STUB_RESULT_RENDERED=$'# Codex Result\n\nReview ran but flagged blockers.\n'
+  export STUB_RESULT_ERROR_MESSAGE="Codex turn ended with failure"
+  unset STUB_RESULT_RAW
+  unset STUB_RESULT_STDOUT
+
+  run "$WRAPPER" await job-failed
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Review ran but flagged blockers"* ]]
+  status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
+  [ "$status_field" = "failed" ]
+}
+
+@test "await: cancelled job falls back to job.errorMessage when nothing else present" {
+  echo '{"jobId":"job-cancelled","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_TERMINAL_STATUS=cancelled
+  export STUB_RESULT_ERROR_MESSAGE="Cancelled by user."
+  unset STUB_RESULT_RAW
+  unset STUB_RESULT_STDOUT
+  unset STUB_RESULT_RENDERED
+
+  run "$WRAPPER" await job-cancelled
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Cancelled by user."* ]]
+  status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
+  [ "$status_field" = "cancelled" ]
+}
+
+# ── infrastructure-failure (M9) ───────────────────────────────────
+
+@test "await: missing companion → audit row uses 'infrastructure-failure'" {
+  unset CODEX_COMPANION
+  HOME="$TEST_ROOT/empty-home" run "$WRAPPER" await job-noinfra
+  [ "$status" -ne 0 ]
+  [ -f .qrspi/audit-codex-review.jsonl ]
+  status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
+  [ "$status_field" = "infrastructure-failure" ]
+}
+
 # ── stub-shape sanity (constraint C6) ─────────────────────────────
 
 @test "stub fixture emits real companion JSON shapes (.job.status, storedJob.result.rawOutput)" {
