@@ -5,6 +5,8 @@ description: Use when research/summary.md is approved and the QRSPI pipeline nee
 
 # Design (QRSPI Step 4)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Design skill to explore approaches and define the architecture."
 
 ## Overview
@@ -30,43 +32,15 @@ Do NOT proceed to Structure without user approval of the design.
 
 **Interactive in main conversation** (like Goals). User and Claude discuss approaches. Subagent synthesizes `design.md` per round. Each rejection round launches a new subagent with original inputs + all prior feedback files.
 
+## Phase-Scoped Content Rules
+
+design.md contains ONLY current-phase design entries. Each entry is keyed by `### {GOAL_ID} — {name}`. Entries for goals not in the current phase (per roadmap.md) belong in `future-design.md`, not design.md. When the Design skill creates or updates design.md, it must: (1) verify every goal ID in the document exists in goals.md, (2) move entries for out-of-scope goals to future-design.md, (3) check future-design.md for existing entries on current-phase goals and pull them into design.md.
+
+### Roadmap Maintenance
+
+When the Design skill creates or updates roadmap.md: (1) every goal ID must exist in either `goals.md` (current phase) or `future-goals.md` (Formal section), (2) the table contains ONLY goal ID, phase, and slice columns — no notes, no design content, (3) flag any goal IDs in roadmap.md that don't exist in either file as orphans for user review.
+
 ## Process
-
-```dot
-digraph design {
-    "Verify goals.md and research/summary.md approved" [shape=box];
-    "Interactive design discussion" [shape=box];
-    "Subagent synthesizes design.md" [shape=box];
-    "Review round (Claude + Codex if enabled)" [shape=box];
-    "Fix issues found" [shape=box];
-    "Ask: 1) Present  2) Loop until clean (recommended)" [shape=diamond];
-    "Review round N (max 10)" [shape=box];
-    "Round clean?" [shape=diamond];
-    "Present to user" [shape=box];
-    "User approves?" [shape=diamond];
-    "Write feedback, re-synthesize" [shape=box];
-    "Write approval marker" [shape=box];
-    "Recommend compaction" [shape=box];
-    "Invoke next skill in route" [shape=doublecircle];
-
-    "Verify goals.md and research/summary.md approved" -> "Interactive design discussion";
-    "Interactive design discussion" -> "Subagent synthesizes design.md";
-    "Subagent synthesizes design.md" -> "Review round (Claude + Codex if enabled)";
-    "Review round (Claude + Codex if enabled)" -> "Fix issues found";
-    "Fix issues found" -> "Ask: 1) Present  2) Loop until clean (recommended)";
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Present to user" [label="1"];
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Review round N (max 10)" [label="2"];
-    "Review round N (max 10)" -> "Round clean?";
-    "Round clean?" -> "Present to user" [label="yes or cap hit"];
-    "Round clean?" -> "Fix issues found" [label="no, fix and loop"];
-    "Present to user" -> "User approves?";
-    "User approves?" -> "Write feedback, re-synthesize" [label="no"];
-    "Write feedback, re-synthesize" -> "Interactive design discussion";
-    "User approves?" -> "Write approval marker" [label="yes"];
-    "Write approval marker" -> "Recommend compaction";
-    "Recommend compaction" -> "Invoke next skill in route";
-}
-```
 
 ### Interactive Design Discussion
 
@@ -78,6 +52,7 @@ digraph design {
    - GOOD: "User registration (DB + API + service + frontend), then user profile (DB + API + service + frontend)"
 5. Define phases with replan gates. Phase 1 is always the PoC — it must prove the full stack works end-to-end. Ask user which slices go in the PoC phase and where replan checkpoints belong.
 6. If no CI pipeline exists, note CI setup as the first task in Phase 1, blocking all other tasks. For greenfield projects, this task should also include creating project convention files (CLAUDE.md, linting config, etc.) so later reviewers have rules to enforce.
+7. When handling amendments, remember: Amendment items that introduce distinct new work (new functions, new behavior, new files) must receive their own goal ID. Only items that genuinely refine or detail an existing goal's described work may be compressed into that goal. Never use bare-number compression (e.g., '5/8/10 -> U1') when the goal text doesn't cover all mapped items.
 
 ### Design Synthesis Subagent
 
@@ -126,28 +101,10 @@ status: draft
 
 ### Review Round
 
-After synthesis, run one review round:
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Design-specific reviewer instructions:
 
-1. **Claude review subagent** — launch with `design.md`, `goals.md`, `research/summary.md` to check:
-   - Does the design address all goals and acceptance criteria?
-   - Are trade-offs clearly stated?
-   - Any internal contradictions?
-   - Is the test strategy appropriate for the design?
-   - YAGNI check — any unnecessary complexity?
-   - Are slices truly vertical (end-to-end), not horizontal layers?
-   - Are phase boundaries reasonable? Does Phase 1 (PoC) prove the full stack?
-   
-   The subagent returns structured findings. The orchestrating skill writes them to `reviews/design-review.md`.
-
-2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`design.md`), input artifacts (`goals.md`, `research/summary.md`) for cross-reference, and the same review criteria. The orchestrating skill appends Codex findings to `reviews/design-review.md`.
-
-3. Fix any issues found in both reviews.
-
-4. Ask the user ONCE: `1) Present for review  2) Loop until clean (recommended)`
-   - **1:** Proceed to human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The artifact may still have issues."
-   - **2:** Loop autonomously — run review → fix → review → fix without re-prompting. Stop ONLY when a round is clean ("Reviews passed clean") or 10 rounds reached ("Hit 10-round review cap — presenting for your review."). Then proceed to human gate. **Do not re-ask between rounds.**
-   
-   **Default recommendation is always option 2.** Clean reviews before human review catch cross-reference inconsistencies that are hard to spot manually.
+- **Claude review subagent** — inputs: `design.md`, `goals.md`, `research/summary.md`. Checks: design addresses all goals and acceptance criteria; trade-offs clearly stated; no internal contradictions; test strategy appropriate; YAGNI (no unnecessary complexity); slices are vertical (end-to-end), not horizontal layers; phase boundaries reasonable and Phase 1 PoC proves full stack. Findings written to `reviews/design-review.md`.
+- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with `design.md` + `goals.md` + `research/summary.md` for cross-reference, same criteria. Findings appended to `reviews/design-review.md`.
 
 ### Human Gate
 
@@ -163,7 +120,7 @@ On rejection, write the user's feedback to `feedback/design-round-{NN}.md` (usin
 
 ### Terminal State
 
-Commit the approved `design.md` and `reviews/design-review.md` to git.
+If the artifact directory is inside a git repository, commit the approved `design.md` and `reviews/design-review.md` (see `using-qrspi` → "Commit after approval (when applicable)").
 
 Recommend compaction: "Design approved. This is a good point to compact context before the next step (`/compact`)."
 
@@ -214,3 +171,13 @@ Recommend compaction: "Design approved. This is a good point to compact context 
 > ### Layer 4: Metrics collection
 
 The bad example splits by technical layer. Each "layer" can't be tested or demonstrated independently — they only work together.
+
+## Iron Laws — Final Reminder
+
+The two override-critical rules for Design, restated at end:
+
+1. **Vertical slices, not horizontal layers.** Each slice must be end-to-end demonstrable on its own (DB + service + API + frontend together). "DB layer first, API layer second" defers integration risk and breaks Phase 1 PoC's job of proving the full stack works.
+
+2. **Phase 1 is always the PoC and must prove the full stack end-to-end.** Backend-only Phase 1 hides cross-layer issues until Phase 2+, when they're more expensive to surface.
+
+Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

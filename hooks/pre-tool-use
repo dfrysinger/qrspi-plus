@@ -1,253 +1,208 @@
 #!/usr/bin/env bash
-# PreToolUse hook for QRSPI plugin
-# Enforces pipeline step ordering by blocking writes to pipeline artifacts
-# when prerequisite steps are not yet approved.
-# Also enforces L1 (allowlist) and worktree containment checks.
+# PreToolUse hook for QRSPI plugin.
 #
-# FAIL-CLOSED: When enforcement state cannot be determined (missing state file,
-# corrupted data, etc.), the hook BLOCKS and tells the user what's wrong.
-# The only exception is stdin parsing (Claude Code's responsibility) and
-# tools we don't enforce (Read, Glob, etc.).
+# Asymmetric target-based enforcement:
+#   - Subagents (envelope.agent_id non-empty) are walled inside
+#     .worktrees/{slug}/task-NN/ (loose pinning — any worktree)
+#   - Main chat is trusted; only pipeline ordering and universal-destructive
+#     checks apply.
+#   - Detection is target-based: the hook inspects what the operation TARGETS
+#     (file path, parsed Bash write targets), never the agent's CWD.
+#
+# Audits land in <artifact_dir>/.qrspi/audit.jsonl when the target is in
+# QRSPI scope. Non-QRSPI writes are not audited (no pollution).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Source pipeline library (which transitively sources state.sh and frontmatter.sh)
 source "$PLUGIN_ROOT/hooks/lib/pipeline.sh"
-
-# Source enforcement and supporting libraries
-source "$PLUGIN_ROOT/hooks/lib/enforcement.sh"
 source "$PLUGIN_ROOT/hooks/lib/bash-detect.sh"
 source "$PLUGIN_ROOT/hooks/lib/worktree.sh"
-source "$PLUGIN_ROOT/hooks/lib/protected.sh"
+source "$PLUGIN_ROOT/hooks/lib/agent.sh"
+source "$PLUGIN_ROOT/hooks/lib/audit.sh"
 
-# ── JSON escape helper ───────────────────────────────────────────────────────
-escape_for_json() {
-  local s="$1"
-  s="${s//\\/\\\\}"
-  s="${s//\"/\\\"}"
-  s="${s//$'\n'/\\n}"
-  s="${s//$'\r'/\\r}"
-  s="${s//$'\t'/\\t}"
-  printf '%s' "$s"
-}
-
-block_with_reason() {
+block() {
   local reason="$1"
-  local reason_escaped
-  reason_escaped=$(escape_for_json "$reason")
+  # Important #3: keep `|| true` (don't fail the hook on audit failure), but
+  # drop `2>/dev/null` so audit diagnostics (e.g., ambiguous-slug warnings) reach
+  # the operator's stderr instead of being swallowed.
+  audit_log_event "$STDIN_JSON" "block" "$reason" || true
   echo "pre-tool-use: BLOCKED: ${reason}" >&2
-  printf '{"decision":"block","reason":"%s"}\n' "$reason_escaped"
+  jq -cn --arg r "$reason" '{decision:"block",reason:$r}'
   exit 2
 }
 
-# ── Read stdin ───────────────────────────────────────────────────────────────
-stdin_json=$(cat)
+allow() {
+  audit_log_event "$STDIN_JSON" "allow" "" || true
+  printf '{}\n'
+  exit 0
+}
 
-# ── Parse tool_name ──────────────────────────────────────────────────────────
-# FAIL-CLOSED: if we can't parse stdin, block — don't silently allow unknown operations
-tool_name=$(printf '%s' "$stdin_json" | jq -r '.tool_name // empty' 2>/dev/null) || {
-  block_with_reason "Cannot parse tool call: malformed JSON on stdin. This may indicate a Claude Code bug — report if persistent."
+# ── Read stdin ───────────────────────────────────────────────────────────────
+STDIN_JSON=$(cat)
+
+tool_name=$(printf '%s' "$STDIN_JSON" | jq -r '.tool_name // empty' 2>/dev/null) || {
+  block "Cannot parse tool call: malformed JSON on stdin."
 }
 
 if [[ -z "$tool_name" ]]; then
-  block_with_reason "Cannot parse tool call: missing tool_name field. This may indicate a Claude Code bug — report if persistent."
+  block "Cannot parse tool call: missing tool_name field."
 fi
 
-# ── Route by tool type ───────────────────────────────────────────────────────
-# Write/Edit: extract file_path for pipeline + enforcement checks
-# Bash: will check file-write targets for enforcement later
-# Other: pass through (we don't enforce Read, Glob, etc.)
+# Tools we don't enforce — intentionally not audited (audit captures
+# enforcement decisions for Write/Edit/NotebookEdit/Bash, not every read).
+case "$tool_name" in
+  Read|Glob|Grep|Skill|ToolSearch|Agent|TodoRead|TodoWrite|WebFetch|WebSearch)
+    printf '{}\n'
+    exit 0
+    ;;
+esac
 
+# Determine if we're a subagent
+is_subagent=0
+if agent_is_subagent "$STDIN_JSON"; then
+  is_subagent=1
+fi
+
+# Extract tool-specific fields
 file_path=""
-is_bash_tool=0
+bash_command=""
+case "$tool_name" in
+  Write|Edit|NotebookEdit)
+    file_path=$(printf '%s' "$STDIN_JSON" | jq -r '.tool_input.file_path // empty' 2>/dev/null) || {
+      block "Cannot parse ${tool_name} target: malformed tool_input."
+    }
+    [[ -z "$file_path" ]] && block "Cannot parse ${tool_name} target: missing file_path."
+    ;;
+  Bash)
+    bash_command=$(printf '%s' "$STDIN_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null) || {
+      block "Cannot parse Bash command: malformed tool_input."
+    }
+    ;;
+  *)
+    echo "pre-tool-use: WARNING: unknown tool_name '${tool_name}' — not enforced" >&2
+    printf '{}\n'
+    exit 0
+    ;;
+esac
 
-if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" ]]; then
-  # FAIL-CLOSED: if we can't determine the target file, block
-  file_path=$(printf '%s' "$stdin_json" | jq -r '.tool_input.file_path // empty' 2>/dev/null) || {
-    block_with_reason "Cannot parse ${tool_name} target: malformed tool_input. This may indicate a Claude Code bug — report if persistent."
-  }
-
-  if [[ -z "$file_path" ]]; then
-    block_with_reason "Cannot parse ${tool_name} target: missing file_path. This may indicate a Claude Code bug — report if persistent."
-  fi
-elif [[ "$tool_name" == "Bash" ]]; then
-  is_bash_tool=1
-else
-  # Not a tool we enforce
-  printf '{}\n'
-  exit 0
-fi
-
-# ── Pipeline ordering check (Write/Edit only) ────────────────────────────────
-if [[ $is_bash_tool -eq 0 ]]; then
-  # Map file_path suffix to pipeline step
-  # (order matters: research/summary.md before *.md)
+# ── Pipeline ordering check (Write/Edit/NotebookEdit on artifact paths only) ──
+# Runs for both main chat and subagents — protects QRSPI artifact ordering
+# regardless of who's writing. The artifact_dir is resolved target-based via the
+# audit resolver: state.json lives at <artifact_dir>/.qrspi/state.json per spec,
+# so we have to know which artifact_dir before we can read it.
+if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "NotebookEdit" ]]; then
   artifact_step=""
-
-  if [[ "$file_path" == */research/summary.md ]]; then
-    artifact_step="research"
-  elif [[ "$file_path" == */goals.md ]]; then
-    artifact_step="goals"
-  elif [[ "$file_path" == */questions.md ]]; then
-    artifact_step="questions"
-  elif [[ "$file_path" == */design.md ]]; then
-    artifact_step="design"
-  elif [[ "$file_path" == */structure.md ]]; then
-    artifact_step="structure"
-  elif [[ "$file_path" == */plan.md ]]; then
-    artifact_step="plan"
-  fi
+  artifact_step=$(artifact_map_get_step "$file_path" 2>/dev/null) || true
 
   if [[ -n "$artifact_step" ]]; then
-    # Read state for pipeline check.
-    # If state file doesn't exist, skip the ordering check — there's no
-    # pipeline to enforce against. State is created by the QRSPI skills
-    # (Goals, using-qrspi) when they initialize the artifact directory.
-    # If state file EXISTS but is unreadable/corrupted, BLOCK — that's an
-    # error, not a bootstrap condition.
-    if [[ ! -f ".qrspi/state.json" ]]; then
-      printf '{}\n'
-      exit 0
+    # Resolve target → artifact_dir. Convert relative paths to absolute first
+    # so the resolver's prefix match against $(pwd)/docs/qrspi/ works.
+    abs_file_path="$file_path"
+    [[ "$file_path" != /* ]] && abs_file_path="$PWD/$file_path"
+    pipeline_artifact_dir=""
+    pipeline_artifact_dir=$(_audit_resolve_target_to_artifact_dir "$abs_file_path" 2>/dev/null) || pipeline_artifact_dir=""
+
+    if [[ -z "$pipeline_artifact_dir" ]]; then
+      # Fail-closed: target matches a known artifact step (per artifact_map_get_step)
+      # but the resolver cannot map it to an artifact_dir. Either (a) the path
+      # is a legit non-QRSPI file with a colliding basename, or (b) it IS a real
+      # QRSPI artifact but the layout doesn't match $(pwd)/docs/qrspi/*-{slug}/
+      # (e.g., relative path from a nonstandard CWD, monorepo with docs/qrspi/
+      # not at PWD-root, ambiguous slug). Allowing (b) silently bypasses
+      # pipeline ordering — security regression. Block both cases; (a) friction
+      # is recoverable by renaming or by running QRSPI from the correct CWD.
+      block "Cannot enforce pipeline ordering for ${file_path}: target matches a QRSPI artifact name but no artifact_dir resolved. If this is non-QRSPI work, rename or move outside docs/qrspi/-shaped paths. If this is a QRSPI artifact, run from the project root so docs/qrspi/*-{slug}/ resolves."
+    elif [[ ! -f "$pipeline_artifact_dir/.qrspi/state.json" ]]; then
+      echo "pre-tool-use: WARNING: no state file found at ${pipeline_artifact_dir}/.qrspi/ — pipeline ordering not enforced for ${artifact_step}" >&2
+    else
+      missing_step=$(pipeline_check_prerequisites "$artifact_step" "$pipeline_artifact_dir") || {
+        case "$missing_step" in
+          "<state-corrupted>")
+            block "Cannot verify pipeline ordering: state.json at ${pipeline_artifact_dir}/.qrspi/ is corrupted (not a JSON object with required version/artifacts fields)"
+            ;;
+          "<state-unavailable>")
+            block "Cannot verify pipeline ordering: state.json unreadable at ${pipeline_artifact_dir}/.qrspi/"
+            ;;
+          *)
+            block "Complete and approve ${missing_step} before writing $(basename "$file_path")"
+            ;;
+        esac
+      }
     fi
-    state_json=$(state_read 2>/dev/null) || {
-      block_with_reason "Cannot verify pipeline ordering: state file exists but is unreadable. Check .qrspi/state.json permissions or delete to reinitialize."
-    }
-
-    # Extract artifact_dir from state — FAIL-CLOSED if corrupted
-    artifact_dir=$(printf '%s' "$state_json" | jq -r '.artifact_dir // empty' 2>/dev/null) || {
-      block_with_reason "Cannot verify pipeline ordering: state file corrupted. Run SessionStart or /compact to reinitialize."
-    }
-
-    if [[ -z "$artifact_dir" ]]; then
-      block_with_reason "Cannot verify pipeline ordering: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
-    fi
-
-    missing_step=$(pipeline_check_prerequisites "$artifact_step" "$artifact_dir" 2>/dev/null) || {
-      # pipeline_check_prerequisites returned non-zero — missing_step is set on stdout
-      artifact_basename=$(basename "$file_path")
-
-      reason="Complete and approve ${missing_step} before writing ${artifact_basename}"
-      block_with_reason "$reason"
-    }
   fi
 fi
 
-# ── Resolve task ID ───────────────────────────────────────────────────────────
-task_id=""
-
-if worktree_detect "$PWD"; then
-  # In a worktree — extract task ID from path. FAIL-CLOSED: worktree without
-  # identifiable task ID means we can't determine enforcement rules.
-  task_id=$(worktree_extract_task_id "$PWD" 2>/dev/null) || {
-    block_with_reason "Cannot determine task ID from worktree path: ${PWD}. Worktree directory must contain a task identifier."
-  }
-else
-  # Not in a worktree — read from state file.
-  # If state file doesn't exist, no enforcement context (normal for early steps).
-  # If state file exists but is unreadable, block — same principle as pipeline check.
-  if [[ -f ".qrspi/state.json" ]]; then
-    state_json_for_task=$(state_read 2>/dev/null) || {
-      block_with_reason "Cannot read state file for task enforcement. Check .qrspi/state.json permissions or delete to reinitialize."
-    }
-    task_id=$(printf '%s' "$state_json_for_task" | jq -r '.active_task.id // empty' 2>/dev/null) || true
+# ── Bash policy: universal destructive check (everyone) ──────────────────────
+if [[ "$tool_name" == "Bash" && -n "$bash_command" ]]; then
+  destructive=$(bash_detect_destructive_universal "$bash_command" 2>/dev/null) || destructive=""
+  if [[ -n "$destructive" ]]; then
+    block "Destructive command blocked: $destructive"
   fi
-  # No task_id outside a worktree is normal (e.g., during Goals/Questions steps
-  # before implementation). Enforcement checks below only run when task_id is set.
 fi
 
-# ── Write/Edit-specific enforcement checks ───────────────────────────────────
-if [[ $is_bash_tool -eq 0 ]]; then
+# ── Subagent-only checks ─────────────────────────────────────────────────────
+if [[ $is_subagent -eq 1 ]]; then
 
-  # -- Worktree containment check --
-  if worktree_detect "$PWD"; then
-    if ! worktree_is_inside "$PWD" "$file_path"; then
-      block_with_reason "Worktree containment violation: target file is outside the worktree boundary"
+  # Subagent destructive Bash check
+  if [[ "$tool_name" == "Bash" && -n "$bash_command" ]]; then
+    sub_destructive=$(bash_detect_destructive_subagent "$bash_command" 2>/dev/null) || sub_destructive=""
+    if [[ -n "$sub_destructive" ]]; then
+      block "Subagents cannot run destructive command: $sub_destructive (main chat may run this manually)"
     fi
   fi
 
-  # -- Protected path check --
-  # Compute is_worktree flag: 0 = in worktree, 1 = not in worktree
-  if worktree_detect "$PWD"; then
-    is_worktree_flag=0
-  else
-    is_worktree_flag=1
-  fi
-
-  # Compute relative path from file_path
-  rel_file_path="$file_path"
-  if [[ "$file_path" == /* ]]; then
-    cwd_with_slash="${PWD}/"
-    if [[ "$file_path" == "$cwd_with_slash"* ]]; then
-      rel_file_path="${file_path#"${cwd_with_slash}"}"
+  # Subagent Write/Edit/NotebookEdit target wall
+  if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "NotebookEdit" ]]; then
+    if ! [[ "$file_path" =~ \.worktrees/[^/]+/(task-[0-9]+[a-z]?|baseline)(/|$) ]]; then
+      block "Subagent target outside worktree: $file_path"
     fi
   fi
 
-  if protected_is_blocked "$rel_file_path" "$is_worktree_flag"; then
-    block_with_reason "Protected path: ${rel_file_path} cannot be modified from a worktree"
-  fi
-
-  # -- L1 allowlist check (only if we have a task ID) --
-  if [[ -n "$task_id" ]]; then
-    # Need artifact_dir for enforcement check — read state if not already read
-    if [[ -z "${artifact_dir:-}" ]]; then
-      state_for_enf=$(state_read 2>/dev/null) || {
-        block_with_reason "Cannot verify file allowlist: state file missing. Run SessionStart or /compact to initialize."
-      }
-      artifact_dir=$(printf '%s' "$state_for_enf" | jq -r '.artifact_dir // empty' 2>/dev/null) || {
-        block_with_reason "Cannot verify file allowlist: state file corrupted. Run SessionStart or /compact to reinitialize."
-      }
-    fi
-
-    # FAIL-CLOSED: if we have a task ID but can't resolve artifact_dir, block
-    if [[ -z "${artifact_dir:-}" ]]; then
-      block_with_reason "Cannot verify file allowlist: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
-    fi
-
-    if ! enforcement_check_allowlist "$file_path" "$task_id" "$artifact_dir" 2>/dev/null; then
-      reason="File not in allowlist for task ${task_id}. Options: 1) Ask user to approve 2) Switch to monitored 3) Find alternative"
-      block_with_reason "$reason"
-    fi
-  fi
-
-fi
-
-# ── Bash file-write target enforcement ───────────────────────────────────────
-if [[ $is_bash_tool -eq 1 && -n "$task_id" ]]; then
-  bash_command=$(printf '%s' "$stdin_json" | jq -r '.tool_input.command // empty' 2>/dev/null) || true
-
-  if [[ -n "${bash_command:-}" ]]; then
-    # Need artifact_dir — read state if not already available
-    if [[ -z "${artifact_dir:-}" ]]; then
-      state_for_bash=$(state_read 2>/dev/null) || {
-        block_with_reason "Cannot verify bash file-write targets: state file missing. Run SessionStart or /compact to initialize."
-      }
-      artifact_dir=$(printf '%s' "$state_for_bash" | jq -r '.artifact_dir // empty' 2>/dev/null) || {
-        block_with_reason "Cannot verify bash file-write targets: state file corrupted. Run SessionStart or /compact to reinitialize."
-      }
-    fi
-
-    # FAIL-CLOSED: if we have a task ID but can't resolve artifact_dir, block
-    if [[ -z "${artifact_dir:-}" ]]; then
-      block_with_reason "Cannot verify bash file-write targets: artifact_dir missing from state. Run SessionStart or /compact to reinitialize."
-    fi
-
-    targets=$(bash_detect_file_writes "$bash_command" 2>/dev/null) || true
-
-    if [[ -n "${targets:-}" ]]; then
-      while IFS= read -r target; do
-        [[ -z "$target" ]] && continue
-        if ! enforcement_check_allowlist "$target" "$task_id" "$artifact_dir" 2>/dev/null; then
-          reason="File not in allowlist for task ${task_id}: ${target}. Options: 1) Ask user to approve 2) Switch to monitored 3) Find alternative"
-          block_with_reason "$reason"
+  # Subagent Bash write detection target wall
+  if [[ "$tool_name" == "Bash" && -n "$bash_command" ]]; then
+    detected_targets=$(bash_detect_file_writes "$bash_command" 2>/dev/null) || detected_targets=""
+    if [[ -n "$detected_targets" ]]; then
+      while IFS= read -r tgt; do
+        [[ -z "$tgt" ]] && continue
+        # Resolve relative paths to absolute (best effort using PWD)
+        abs_tgt="$tgt"
+        [[ "$tgt" != /* ]] && abs_tgt="$PWD/$tgt"
+        if ! [[ "$abs_tgt" =~ \.worktrees/[^/]+/(task-[0-9]+[a-z]?|baseline)(/|$) ]]; then
+          block "Subagent Bash target outside worktree: $tgt"
         fi
-      done <<< "$targets"
+      done <<< "$detected_targets"
     fi
   fi
 fi
 
-# All checks passed — allow
-printf '{}\n'
-exit 0
+# ── Artifact-dir .qrspi/ protection (everyone) ───────────────────────────────
+# The hook is the only writer of <artifact_dir>/.qrspi/ files. Block all other
+# attempts so the audit log is tamper-proof.
+check_artifact_qrspi_protection() {
+  local target="$1"
+  if [[ "$target" =~ (^|/)docs/qrspi/[^/]+/\.qrspi(/|$) ]]; then
+    block "Cannot write to artifact_dir .qrspi/ (audit log is hook-managed): $target"
+  fi
+}
+
+if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "NotebookEdit" ]]; then
+  check_artifact_qrspi_protection "$file_path"
+fi
+
+if [[ "$tool_name" == "Bash" && -n "$bash_command" ]]; then
+  detected_for_protection=$(bash_detect_file_writes "$bash_command" 2>/dev/null) || detected_for_protection=""
+  if [[ -n "$detected_for_protection" ]]; then
+    while IFS= read -r tgt; do
+      [[ -z "$tgt" ]] && continue
+      abs_tgt="$tgt"
+      [[ "$tgt" != /* ]] && abs_tgt="$PWD/$tgt"
+      check_artifact_qrspi_protection "$abs_tgt"
+    done <<< "$detected_for_protection"
+  fi
+fi
+
+# All checks passed
+allow

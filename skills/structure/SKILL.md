@@ -5,6 +5,8 @@ description: Use when design.md is approved and the QRSPI pipeline needs file/co
 
 # Structure (QRSPI Step 5)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Structure skill to map the design to files and interfaces."
 
 ## Overview
@@ -31,41 +33,11 @@ Do NOT proceed to Plan without user approval of the structure.
 
 **Subagent per round** (iterative with human feedback). Each round is a fresh subagent with declared inputs + any feedback from prior rounds.
 
+## Phase-Scoped Content Rules
+
+structure.md contains ONLY current-phase file maps and interfaces. Entries must be tagged with goal IDs. File maps for goals not in the current phase (per roadmap.md) must not appear. When the Structure skill generates structure.md, it must verify every goal ID in the file map exists in goals.md.
+
 ## Process
-
-```dot
-digraph structure {
-    "Verify goals.md, research/summary.md, design.md approved" [shape=box];
-    "Launch structure subagent" [shape=box];
-    "Review round (Claude + Codex if enabled)" [shape=box];
-    "Fix issues found" [shape=box];
-    "Ask: 1) Present  2) Loop until clean (recommended)" [shape=diamond];
-    "Review round N (max 10)" [shape=box];
-    "Round clean?" [shape=diamond];
-    "Present to user" [shape=box];
-    "User approves?" [shape=diamond];
-    "Re-generate with feedback (new subagent)" [shape=box];
-    "Write approval marker" [shape=box];
-    "Recommend compaction" [shape=box];
-    "Invoke next skill in route" [shape=doublecircle];
-
-    "Verify goals.md, research/summary.md, design.md approved" -> "Launch structure subagent";
-    "Launch structure subagent" -> "Review round (Claude + Codex if enabled)";
-    "Review round (Claude + Codex if enabled)" -> "Fix issues found";
-    "Fix issues found" -> "Ask: 1) Present  2) Loop until clean (recommended)";
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Present to user" [label="1"];
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Review round N (max 10)" [label="2"];
-    "Review round N (max 10)" -> "Round clean?";
-    "Round clean?" -> "Present to user" [label="yes or cap hit"];
-    "Round clean?" -> "Fix issues found" [label="no, fix and loop"];
-    "Present to user" -> "User approves?";
-    "User approves?" -> "Re-generate with feedback (new subagent)" [label="no"];
-    "Re-generate with feedback (new subagent)" -> "Launch structure subagent";
-    "User approves?" -> "Write approval marker" [label="yes"];
-    "Write approval marker" -> "Recommend compaction";
-    "Recommend compaction" -> "Invoke next skill in route";
-}
-```
 
 ### Structure Subagent
 
@@ -123,31 +95,16 @@ interface FooService {
 
 ### Review Round
 
-After the structure subagent completes, run one review round:
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Structure-specific reviewer instructions:
 
-1. **Claude review subagent** — launch with `structure.md`, `goals.md`, `research/summary.md`, `design.md` to check:
-   - Does structure match the design?
-   - Does each vertical slice map cleanly to files/components?
-   - Any missing components?
-   - Any unnecessary components (YAGNI)?
-   - Are interfaces well-defined?
-   - Do modifications to existing files conflict with current codebase patterns?
-   
-   The subagent returns structured findings. The orchestrating skill writes them to `reviews/structure-review.md`.
-
-2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`structure.md`), input artifacts (`goals.md`, `research/summary.md`, `design.md`) for cross-reference, and the same review criteria. The orchestrating skill appends Codex findings to `reviews/structure-review.md`.
-
-3. Fix any issues found in both reviews.
-
-4. Ask the user ONCE: `1) Present for review  2) Loop until clean (recommended)`
-   - **1:** Proceed to human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The artifact may still have issues."
-   - **2:** Loop autonomously — run review → fix → review → fix without re-prompting. Stop ONLY when a round is clean ("Reviews passed clean") or 10 rounds reached ("Hit 10-round review cap — presenting for your review."). Then proceed to human gate. **Do not re-ask between rounds.**
-   
-   **Default recommendation is always option 2.** Clean reviews before human review catch cross-reference inconsistencies that are hard to spot manually.
+- **Claude review subagent** — inputs: `structure.md`, `goals.md`, `research/summary.md`, `design.md`. Checks: structure matches the design; each vertical slice maps cleanly to files/components; no missing or unnecessary components (YAGNI); interfaces well-defined; modifications don't conflict with existing codebase patterns. Findings written to `reviews/structure-review.md`.
+- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with `structure.md` + `goals.md` + `research/summary.md` + `design.md`, same criteria. Findings appended.
 
 ### Human Gate
 
 Present `structure.md` to the user — "hammer on it" review point alongside Design. **Always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified."
+
+When presenting Mermaid diagrams (dependency graphs, architectural diagrams, parallelization plans), write the diagram to the artifact file (e.g., `structure.md` for architecture diagrams, `parallelization.md` for dependency graphs) and direct the user to open the file. Do not paste raw Mermaid syntax into terminal output — it renders as unreadable text in the terminal. Tell the user: "The architecture diagram is in `structure.md` — open it to view the rendered diagram."
 
 On approval, if reviews have not passed clean, note this and ask if they'd like a review loop before finalizing. Then write `status: approved` in frontmatter.
 
@@ -159,7 +116,7 @@ On rejection, write the user's feedback and the rejected artifact snapshot to `f
 
 ### Terminal State
 
-Commit the approved `structure.md` and `reviews/structure-review.md` to git.
+If the artifact directory is inside a git repository, commit the approved `structure.md` and `reviews/structure-review.md` (see `using-qrspi` → "Commit after approval (when applicable)").
 
 Recommend compaction: "Structure approved. This is a good point to compact context before the next step (`/compact`)."
 
@@ -175,6 +132,7 @@ Recommend compaction: "Structure approved. This is a good point to compact conte
 - Missing Mermaid architectural diagram
 - CI pipeline structure is needed (greenfield or no existing CI) but not defined
 - Interfaces use placeholder types ("any", "object", "TBD")
+- Pasting Mermaid diagram syntax directly into terminal output (user cannot read it)
 
 ## Common Rationalizations — STOP
 
@@ -207,3 +165,13 @@ Recommend compaction: "Structure approved. This is a good point to compact conte
 > | Various | Modify | Update as needed |
 
 The bad example uses directory paths instead of files, and "various" is not an action plan.
+
+## Iron Laws — Final Reminder
+
+The two override-critical rules for Structure, restated at end:
+
+1. **Every file in the design has an entry; every entry has a real path.** No directory placeholders, no "various", no "TBD". Structure IS the file decision — Plan reads from it directly to write task specs.
+
+2. **Interfaces are explicit, with concrete types.** No `any`, no `object`, no placeholder types. Plan uses interface signatures to define task boundaries; vague interfaces produce vague tasks.
+
+Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

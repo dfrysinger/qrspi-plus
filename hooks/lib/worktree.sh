@@ -28,3 +28,18 @@ worktree_extract_task_id() {
 
   return 1
 }
+
+worktree_extract_slug() {
+  local path="$1"
+
+  # F-19: regex must match the asymmetric wall regex in pre-tool-use:156,170.
+  # Drift here = silent observability hole: alpha-suffix worktree writes get
+  # past the wall but produce no audit.jsonl row (audit treats them as
+  # "outside QRSPI scope"). Catch with the bats test pinning both regexes.
+  if [[ $path =~ \.worktrees/([^/]+)/(task-[0-9]+[a-z]?|baseline)(/|$) ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  return 1
+}

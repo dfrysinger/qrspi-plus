@@ -59,45 +59,45 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-# ===== protected_is_blocked tests =====
+# ===== is_protected_path tests =====
 
-@test "protected_is_blocked: tasks/task-05.md in worktree is blocked" {
-  run protected_is_blocked "tasks/task-05.md" 0
+@test "is_protected_path: tasks/task-05.md in worktree is blocked" {
+  run is_protected_path "tasks/task-05.md" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: .qrspi/state.json in worktree is blocked" {
-  run protected_is_blocked ".qrspi/state.json" 0
+@test "is_protected_path: .qrspi/state.json in worktree is blocked" {
+  run is_protected_path ".qrspi/state.json" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: .qrspi/task-03-runtime.json in worktree is blocked" {
-  run protected_is_blocked ".qrspi/task-03-runtime.json" 0
+@test "is_protected_path: .qrspi/task-03-runtime.json in worktree is blocked" {
+  run is_protected_path ".qrspi/task-03-runtime.json" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: config.md in worktree is blocked" {
-  run protected_is_blocked "config.md" 0
+@test "is_protected_path: config.md in worktree is blocked" {
+  run is_protected_path "config.md" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: .qrspi/audit-task-03.jsonl in worktree is blocked" {
-  run protected_is_blocked ".qrspi/audit-task-03.jsonl" 0
+@test "is_protected_path: .qrspi/audit-task-03.jsonl in worktree is blocked" {
+  run is_protected_path ".qrspi/audit-task-03.jsonl" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: reviews/alignment/report.md in worktree is blocked" {
-  run protected_is_blocked "reviews/alignment/report.md" 0
+@test "is_protected_path: reviews/alignment/report.md in worktree is blocked" {
+  run is_protected_path "reviews/alignment/report.md" 0
   [ "$status" -eq 0 ]
 }
 
-@test "protected_is_blocked: hooks/lib/task.sh in worktree is not blocked" {
-  run protected_is_blocked "hooks/lib/task.sh" 0
+@test "is_protected_path: hooks/lib/task.sh in worktree is not blocked" {
+  run is_protected_path "hooks/lib/task.sh" 0
   [ "$status" -ne 0 ]
 }
 
-@test "protected_is_blocked: any path not in worktree is not blocked" {
-  run protected_is_blocked "tasks/task-05.md" 1
+@test "is_protected_path: any path not in worktree is not blocked" {
+  run is_protected_path "tasks/task-05.md" 1
   [ "$status" -ne 0 ]
 }
 
@@ -119,4 +119,73 @@ setup() {
 @test "protected.sh does not source other libraries" {
   # Check that no 'source' or '. ' statements exist (excluding shebang and comments)
   ! grep -E "^\s*(source|\.)\s" $BATS_TEST_DIRNAME/../../hooks/lib/protected.sh
+}
+
+# ===== worktree_extract_slug tests =====
+
+@test "worktree_extract_slug: extracts slug from task worktree path" {
+  run worktree_extract_slug "/repo/.worktrees/phase4-hooks/task-02/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "phase4-hooks" ]
+}
+
+@test "worktree_extract_slug: extracts slug from task worktree root with trailing slash" {
+  run worktree_extract_slug "/repo/.worktrees/phase4-hooks/task-02/"
+  [ "$status" -eq 0 ]
+  [ "$output" = "phase4-hooks" ]
+}
+
+@test "worktree_extract_slug: extracts slug from baseline worktree" {
+  run worktree_extract_slug "/repo/.worktrees/phase4-hooks/baseline/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "phase4-hooks" ]
+}
+
+@test "worktree_extract_slug: extracts slug with multi-digit task number" {
+  run worktree_extract_slug "/repo/.worktrees/abc-def/task-100/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "abc-def" ]
+}
+
+@test "worktree_extract_slug: fails on non-worktree path" {
+  run worktree_extract_slug "/repo/src/foo.ts"
+  [ "$status" -ne 0 ]
+}
+
+@test "worktree_extract_slug: fails on .worktrees/ path with no task or baseline segment" {
+  run worktree_extract_slug "/repo/.worktrees/just-files-here.txt"
+  [ "$status" -ne 0 ]
+}
+
+@test "worktree_extract_slug: fails on .worktrees/{slug} with no task subdirectory" {
+  run worktree_extract_slug "/repo/.worktrees/phase4-hooks"
+  [ "$status" -ne 0 ]
+}
+
+@test "worktree_extract_slug: extracts slug from absolute path with extra leading dirs" {
+  run worktree_extract_slug "/Users/me/Documents/proj/.worktrees/my-slug/task-03"
+  [ "$status" -eq 0 ]
+  [ "$output" = "my-slug" ]
+}
+
+# F-19: alpha-suffix task IDs (task-NNa/NNb from Plan-induced splits) — must
+# match the asymmetric wall regex in pre-tool-use:156,170 to avoid silent
+# observability hole (audit treats unmatched paths as outside-QRSPI-scope).
+
+@test "[F-19] worktree_extract_slug: extracts slug from task-07a alpha-suffix worktree" {
+  run worktree_extract_slug "/repo/.worktrees/myslug/task-07a/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "myslug" ]
+}
+
+@test "[F-19] worktree_extract_slug: extracts slug from task-07b alpha-suffix worktree" {
+  run worktree_extract_slug "/repo/.worktrees/myslug/task-07b/"
+  [ "$status" -eq 0 ]
+  [ "$output" = "myslug" ]
+}
+
+@test "[F-19] worktree_extract_slug: extracts slug from task-12c alpha-suffix worktree" {
+  run worktree_extract_slug "/repo/.worktrees/myslug/task-12c/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "myslug" ]
 }
