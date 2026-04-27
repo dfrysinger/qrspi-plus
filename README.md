@@ -2,7 +2,7 @@
 
 **A structured agentic development pipeline for Claude Code.**
 
-qrspi-plus is a Claude Code plugin that implements QRSPI — a methodology for agentic software development where every phase produces a reviewable artifact, gets human approval, and runs in isolated context. Based on Human Layer's QRSPI framework, extended with parallelization planning, runtime dispatch into worktrees, tiered code reviews, integration verification, acceptance testing, and between-phase replanning.
+qrspi-plus is a Claude Code plugin that implements QRSPI — a methodology for agentic software development where every phase produces a reviewable artifact, gets human approval, and runs in isolated context. Based on Human Layer's QRSPI framework, extended with parallelization planning, runtime worktree creation and per-task implementation, tiered code reviews, integration verification, acceptance testing, and between-phase replanning.
 
 ---
 
@@ -68,10 +68,10 @@ After Plan is approved, the route is locked. Changing it after that point requir
 **Hook-based deterministic enforcement.** Pipeline rules that were previously prompt-instructed are now code-enforced via Claude Code hooks that run on every tool call:
 
 - **Pipeline step ordering:** The PreToolUse hook blocks artifact writes that skip prerequisites. You cannot write `design.md` before `goals.md` is approved -- the hook rejects the tool call with an actionable error message.
-- **Task boundary enforcement:** In strict mode, the PreToolUse hook blocks file writes outside the active task's allowlist, preventing scope creep during implementation.
-- **Audit logging:** The PostToolUse hook logs all Write, Edit, and Bash calls to per-task JSONL files for traceability.
+- **Asymmetric target-based enforcement:** The PreToolUse hook treats main chat and dispatched subagents differently based on the dispatch envelope. Main-chat tool calls go through pipeline-ordering checks only. Subagent tool calls (any agent dispatched via the Agent tool) are additionally walled to their assigned worktree at `.worktrees/{slug}/(task-NN[a-z]?|baseline)/` — Write/Edit targets and Bash write targets outside that path are blocked. Enforcement keys on the operation's target path, not on the agent's CWD, so it survives subagent CWD inheritance quirks.
+- **Audit logging:** The PostToolUse hook logs all Write, Edit, and Bash calls to per-task JSONL files (`<artifact_dir>/.qrspi/audit-task-NN.jsonl`) for traceability. Block decisions are logged alongside allow decisions.
 - **Fail-closed security model:** All error paths in the hooks block with actionable messages rather than silently allowing violations.
-- **State management:** `.qrspi/state.json` tracks pipeline progress, artifact map, and active task. `.qrspi/task-NN-runtime.json` files capture mid-task user decisions as runtime overrides.
+- **State management:** `.qrspi/state.json` tracks pipeline progress and the artifact map. `.qrspi/task-NN-runtime.json` files capture mid-task user decisions as runtime overrides.
 
 ---
 
@@ -212,7 +212,7 @@ flowchart LR
 
 ### Step 8: Implement
 
-Runtime owner of branch creation, worktrees, baseline tests, per-task TDD orchestration, and the batch gate. Resolves the symbolic Branch Map from `parallelization.md` to real commits, creates git worktrees forked from those bases, writes subagent permission settings into each worktree's `.claude/settings.json`, and runs baseline tests. If baseline tests fail, the user can auto-fix (inject a task-00 that all others depend on), proceed with known failures, or stop. After baseline, Implement fires N per-task subagents — each running TDD + reviews in its own worktree. When every task has returned, the batch gate presents the combined results and the user decides whether to release to Integrate (or re-run reviews, or dispatch fix tasks).
+Runtime owner of branch creation, worktrees, baseline tests, per-task TDD orchestration, and the batch gate. Resolves the symbolic Branch Map from `parallelization.md` to real commits, creates git worktrees forked from those bases, and runs baseline tests. Subagent containment is enforced by the asymmetric pre-tool-use hook (no per-worktree `.claude/settings.json` is written — the hook governs from the dispatch envelope). If baseline tests fail, the user can auto-fix (inject a task-00 that all others depend on), proceed with known failures, or stop. After baseline, Implement fires N per-task subagents — each running TDD + reviews in its own worktree. When every task has returned, the batch gate presents the combined results and the user decides whether to release to Integrate (or re-run reviews, or dispatch fix tasks).
 
 For fix-task batches, Parallelize is skipped. In full-pipeline runs, Implement appends new branch entries to `parallelization.md` directly per its Fix Task Routing rules. In quick-fix runs there is no `parallelization.md`; fix-task subagents fork directly from the feature-branch tip.
 
@@ -721,8 +721,8 @@ qrspi-plus/
 │       ├── task.sh                 # Active task detection, allowlist resolution, runtime overrides
 │       └── worktree.sh             # Worktree path resolution
 ├── tests/
-│   ├── unit/                       # 287 unit tests (bats-core)
-│   ├── acceptance/                 # 175 acceptance tests (bats-core)
+│   ├── unit/                       # 308 unit tests (bats-core)
+│   ├── acceptance/                 # 134 acceptance tests (bats-core)
 │   └── fixtures/                   # Test fixtures and mock data
 ├── skills/
 │   ├── using-qrspi/
@@ -901,7 +901,7 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 | **Behavioral directives** | D1 (encourage reviews), D2 (never skip steps), D3 (resist time-pressure shortcuts) defined canonically in `using-qrspi` and applied across all 11 pipeline skills |
 | **Durable resume detection** | `replan-pending.md` marker + mid-pipeline entry via artifact scanning for crash recovery |
 | **Hook-based enforcement** | PreToolUse/PostToolUse hooks enforce pipeline ordering, task boundaries, and audit logging deterministically on every tool call -- 11 library modules, fail-closed security model, `.qrspi/state.json` state tracking |
-| **462 hook tests** | 287 unit + 175 acceptance tests using bats-core, covering all enforcement paths and library modules |
+| **442 hook tests** | 308 unit + 134 acceptance tests using bats-core, covering all enforcement paths and library modules |
 
 ---
 
