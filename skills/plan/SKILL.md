@@ -265,7 +265,7 @@ The artifact directory contains a `.qrspi/` subdirectory managed by hooks (not b
 
 ### Terminal State
 
-Commit the approved `plan.md`, all `tasks/task-NN.md` files, and `reviews/plan-review.md` to git **if the artifact directory is inside a git repository** (see `using-qrspi` → "Commit after approval (conditional)"). If not, skip the commit silently.
+If the artifact directory is inside a git repository, commit the approved `plan.md`, all `tasks/task-NN.md` files, and `reviews/plan-review.md` (see `using-qrspi` → "Commit after approval (when applicable)").
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `plan`.
 

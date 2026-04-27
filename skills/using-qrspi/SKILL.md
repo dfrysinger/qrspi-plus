@@ -189,11 +189,11 @@ status: approved
 
 **Writing `status: approved` is sufficient.** The PostToolUse hook detects the frontmatter change and updates `state.json` automatically. Skills do not need to perform any explicit state update after writing the approval marker.
 
-**Commit after approval (conditional).** Every approved artifact (and its review file) should be committed to git immediately after the approval marker is written, **only when the artifact directory is inside a git repository**. This preserves the approved state as a checkpoint the user can return to. Use a descriptive commit message like `docs(qrspi): approve {step} for {project-slug}`.
+**Commit after approval (when applicable).** When the artifact directory is inside a git repository, commit each approved artifact (and its review file) immediately after the approval marker is written — this preserves the approved state as a checkpoint. Use a descriptive commit message like `docs(qrspi): approve {step} for {project-slug}`. When the artifact directory is not inside a git repository, skip the commit step — the approved frontmatter on disk is the durable record, and that's a fully supported pipeline configuration.
 
-**How to check:** Run `git -C <artifact_dir> rev-parse --show-toplevel` and inspect the exit code. Walk up from the **artifact directory**, NOT from CWD — the workspace (CWD) is typically NOT a git repo, while the artifact directory may or may not be inside one. If the command succeeds, commit. If it fails (artifact dir is outside any git tree), skip the commit silently — the approved frontmatter on disk is the durable record. Do not propose `git init` to "make committing possible"; artifacts are working state, not source, and the user has explicitly chosen to keep their workspace non-git-managed. (See `qrspi_workspace_no_git.md` in auto-memory for the full rule.)
+**How to detect:** Run `git -C <artifact_dir> rev-parse --show-toplevel` and inspect the exit code. Detect from the **artifact directory**, not from CWD — these can differ, and the artifact directory is the right anchor for this decision.
 
-This conditional applies to every skill terminal state in this pipeline that says "commit … to git" — the per-skill instructions are shorthand for this canonical rule.
+This applies to every skill terminal state in this pipeline that says "commit … to git" — the per-skill instructions all defer to this canonical rule.
 
 ## Hook-Managed State (`.qrspi/`)
 

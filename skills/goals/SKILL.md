@@ -179,7 +179,7 @@ They can:
 
 ### Terminal State
 
-Commit the approved `goals.md`, `config.md`, and `reviews/goals-review.md` to git **if the artifact directory is inside a git repository** (see `using-qrspi` → "Commit after approval (conditional)"). If not, skip the commit silently — the approved frontmatter on disk is the durable record.
+If the artifact directory is inside a git repository, commit the approved `goals.md`, `config.md`, and `reviews/goals-review.md` (see `using-qrspi` → "Commit after approval (when applicable)" for the detection rule). Otherwise, skip the commit — the approved frontmatter on disk is the durable record.
 
 Recommend compaction: "Goals approved. This is a good point to compact context before the next step (`/compact`)."
 

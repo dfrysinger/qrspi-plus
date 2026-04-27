@@ -137,7 +137,7 @@ On approval, if reviews have not passed clean, note this and ask if they'd like 
 
 ### Terminal State
 
-Commit the approved `research/summary.md`, all `research/q*.md` files, and `reviews/research-review.md` to git **if the artifact directory is inside a git repository** (see `using-qrspi` → "Commit after approval (conditional)"). If not, skip the commit silently.
+If the artifact directory is inside a git repository, commit the approved `research/summary.md`, all `research/q*.md` files, and `reviews/research-review.md` (see `using-qrspi` → "Commit after approval (when applicable)").
 
 Recommend compaction: "Research approved. This is a good point to compact context before the next step (`/compact`)."
 

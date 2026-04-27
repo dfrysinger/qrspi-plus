@@ -549,41 +549,37 @@ teardown() {
   done
 }
 
-# ── F-4: REJECTED git pre-flight + replacement: conditional commit guidance ──
-# F-4 in the 2026-04-26 findings doc proposed Goals verify PWD is a git repo
-# and offer to `git init` it. REJECTED — the workspace (CWD) is intentionally
-# NOT a git repo per user policy. Only code projects and per-task worktrees
-# are git-managed; QRSPI artifacts under docs/qrspi/{slug}/ are working state,
-# not source. A git pre-flight at workspace level would either falsely-flag
-# or produce data loss via nested git repos.
-#
-# Replacement (applied in this commit): the "commit after approval" guidance
-# in every pre-Plan terminal-state has been made CONDITIONAL on whether the
-# artifact directory is inside a git repo (walk up from artifact_dir, NOT
-# CWD). The canonical rule lives in using-qrspi → "Commit after approval
-# (conditional)"; per-skill terminal states reference it. Tests below pin
-# the canonical rule + per-skill conditional language so the conditional
-# can't silently drift back to unconditional "commit to git" guidance.
+# ── F-4: Conditional commit guidance for non-git artifact trees ──────────────
+# QRSPI's recommended workspace layout puts artifacts under docs/qrspi/{slug}/
+# (working state) and code repos under code/{repo}/ (git-managed). With that
+# layout the artifact directory is not inside a git repo, so terminal-state
+# guidance that unconditionally says "commit … to git" produces a late
+# failure. The fix is to detect at runtime: if the artifact directory is
+# inside a git repo, commit; if not, skip the commit step. Both layouts are
+# supported. Detection anchors on the artifact directory, not CWD, since
+# they can differ. Canonical rule lives in using-qrspi → "Commit after
+# approval (when applicable)"; pre-Plan terminal states defer to it.
 
-@test "[F-4-replacement] using-qrspi SKILL.md has conditional 'Commit after approval' rule" {
-  # AC: canonical rule must mention git-repo conditional + walking up from
-  # artifact_dir (not CWD) — the two ways this rule can silently regress.
+@test "[F-4] using-qrspi SKILL.md has 'Commit after approval (when applicable)' rule" {
+  # AC: canonical rule must describe git-repo detection and anchor on the
+  # artifact directory (not CWD) — the two ways this rule can silently regress.
   local skill_file="$SKILLS_DIR/using-qrspi/SKILL.md"
-  grep -q "Commit after approval (conditional)" "$skill_file"
-  grep -q "artifact_dir.*rev-parse\|rev-parse.*--show-toplevel" "$skill_file"
-  grep -q "NOT.*CWD\|not.*from CWD\|NOT from CWD" "$skill_file"
+  grep -q "Commit after approval (when applicable)" "$skill_file"
+  grep -q "rev-parse.*--show-toplevel" "$skill_file"
+  grep -qi "artifact directory, not.*CWD\|from the.*artifact directory" "$skill_file"
 }
 
-@test "[F-4-replacement] all pre-Plan terminal states reference the conditional commit rule" {
-  # AC: every skill that committed artifacts unconditionally before this fix
-  # must now defer to the canonical conditional rule. Pre-Plan only — Implement
-  # / Integrate / Test / Replan / Parallelize commit inside code worktrees,
-  # which are always git, so unconditional language there is correct.
+@test "[F-4] all pre-Plan terminal states defer to the canonical conditional commit rule" {
+  # AC: pre-Plan skills (goals/questions/research/design/structure/plan)
+  # must condition the commit on the artifact directory being inside a git
+  # repo. Post-Plan skills (parallelize/implement/integrate/test/replan)
+  # commit inside code worktrees, which are always git, so their
+  # unconditional commit language remains correct and is not tested here.
   local pre_plan=("goals" "questions" "research" "design" "structure" "plan")
   for skill in "${pre_plan[@]}"; do
     local skill_file="$SKILLS_DIR/$skill/SKILL.md"
     [ -f "$skill_file" ]
-    grep -q "if the artifact directory is inside a git repository" "$skill_file"
+    grep -qi "if the artifact directory is inside a git repository" "$skill_file"
   done
 }
 

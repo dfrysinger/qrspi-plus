@@ -120,7 +120,7 @@ On rejection, write the user's feedback to `feedback/design-round-{NN}.md` (usin
 
 ### Terminal State
 
-Commit the approved `design.md` and `reviews/design-review.md` to git **if the artifact directory is inside a git repository** (see `using-qrspi` → "Commit after approval (conditional)"). If not, skip the commit silently.
+If the artifact directory is inside a git repository, commit the approved `design.md` and `reviews/design-review.md` (see `using-qrspi` → "Commit after approval (when applicable)").
 
 Recommend compaction: "Design approved. This is a good point to compact context before the next step (`/compact`)."
 

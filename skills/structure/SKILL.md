@@ -116,7 +116,7 @@ On rejection, write the user's feedback and the rejected artifact snapshot to `f
 
 ### Terminal State
 
-Commit the approved `structure.md` and `reviews/structure-review.md` to git **if the artifact directory is inside a git repository** (see `using-qrspi` → "Commit after approval (conditional)"). If not, skip the commit silently.
+If the artifact directory is inside a git repository, commit the approved `structure.md` and `reviews/structure-review.md` (see `using-qrspi` → "Commit after approval (when applicable)").
 
 Recommend compaction: "Structure approved. This is a good point to compact context before the next step (`/compact`)."
 
