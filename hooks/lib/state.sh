@@ -37,9 +37,11 @@ state_compute_current_step() {
     fi
   done
 
-  # implement and test are never inferred from files; default to "test" if all
-  # file-backed steps are approved (matches existing state_init_or_reconcile behavior).
-  echo "test"
+  # implement and test are never inferred from files; default to "implement" if
+  # all 7 file-backed steps are approved (matches state_init_or_reconcile: the
+  # next step after plan-approved is implement, since implement is also "draft"
+  # by default and is the first non-approved step in pipeline order).
+  echo "implement"
 }
 
 # state_init_or_reconcile <artifact_dir>

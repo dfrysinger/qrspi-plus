@@ -30,16 +30,19 @@ unit_test_dir() {
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 299 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T4 hook-layer phasing:
-  # +16 phasing-aware unit tests across test-pipeline.bats, test-state.bats,
-  # test-artifact-map.bats. Prior baseline 283 was after 2026-04-26
-  # implement-runtime-fix.
+@test "[AC8] Unit test suite has exactly 301 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T4 hook-layer phasing
+  # FIX: +2 mutation-resistance tests in test-state.bats ([T04-PHASING-4Sb] for
+  # state_compute_current_step terminal-default semantic-equivalence with
+  # state_init_or_reconcile, and [T04-PHASING-5b] for state.sh's explicit jq
+  # fail-closed stderr diagnostic). Prior baseline 299 was after T4 initial
+  # implementation (+16 phasing-aware unit tests). Prior baseline 283 was
+  # after 2026-04-26 implement-runtime-fix.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 299 ]
+  [ "$count" -eq 301 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-26)

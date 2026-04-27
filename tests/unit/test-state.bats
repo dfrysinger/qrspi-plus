@@ -556,6 +556,37 @@ EOF
   [[ "$out" == "phasing" ]]
 }
 
+@test "[T04-PHASING-4Sb] state_compute_current_step: returns implement when all 7 file-backed steps approved (matches state_init_or_reconcile)" {
+  # Semantic-equivalence guard: state_compute_current_step's terminal default
+  # must match state_init_or_reconcile's all-approved branch. Per QRSPI
+  # semantics, after plan is approved, the next step is implement (since
+  # implement_status defaults to "draft" and implement comes before test in
+  # pipeline order). The helper previously returned "test" — wrong because it
+  # diverged from state_init_or_reconcile's inline logic which yields
+  # "implement". See state.sh state_init_or_reconcile lines ~101-102.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir/research"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+  create_artifact "$artifact_dir/questions.md" "approved"
+  create_artifact "$artifact_dir/research/summary.md" "approved"
+  create_artifact "$artifact_dir/design.md" "approved"
+  create_artifact "$artifact_dir/phasing.md" "approved"
+  create_artifact "$artifact_dir/structure.md" "approved"
+  create_artifact "$artifact_dir/plan.md" "approved"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+  local helper_out
+  helper_out=$(state_compute_current_step "$artifact_dir")
+  [[ "$helper_out" == "implement" ]]
+
+  # Cross-check: state_init_or_reconcile produces matching current_step
+  state_init_or_reconcile "$artifact_dir" > /dev/null
+  local json
+  json=$(state_read)
+  [[ "$json" == *'"current_step":"implement"'* ]]
+}
+
 @test "[T04-PHASING-5] state_init_or_reconcile fails closed when jq missing and writes no state.json" {
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
@@ -586,6 +617,58 @@ EOF
   PATH="$stub_dir" run state_init_or_reconcile "$artifact_dir"
   [ "$status" -ne 0 ]
   [ ! -f "$TEST_DIR/.qrspi/state.json" ]
+}
+
+@test "[T04-PHASING-5b] state_init_or_reconcile emits state.sh stderr diagnostic when jq fails (mutation-resistant)" {
+  # This test strengthens [T04-PHASING-5] by verifying that state.sh's EXPLICIT
+  # fail-closed code path fires on jq error — not merely that bash propagates
+  # jq's non-zero exit. A regression replacing the explicit `if ! json=$(jq ...);
+  # then echo "...jq failed..." >&2; return 1; fi` with a non-checking variant
+  # like `json=$(jq ... 2>/dev/null) || true` would still produce non-zero exit
+  # via set -euo pipefail downstream, but would NOT emit state.sh's own
+  # "state_init_or_reconcile: jq failed" stderr message. This test catches
+  # exactly that mutation by asserting the state.sh-emitted message appears.
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  # Build minimal PATH with all utilities state.sh uses, plus a stub jq that
+  # FAILS with stderr (rather than being absent). This isolates the
+  # "jq exists but errors" code path from the "jq missing" code path.
+  local stub_dir="$TEST_DIR/stub-failing-jq"
+  mkdir -p "$stub_dir"
+  local util util_path
+  for util in mkdir mv mktemp rm cat echo dirname basename sh chmod; do
+    util_path=$(command -v "$util" 2>/dev/null) || true
+    if [ -n "$util_path" ]; then
+      ln -sf "$util_path" "$stub_dir/$util"
+    fi
+  done
+
+  # Stub jq: prints to stderr and exits 1 (simulating real jq error).
+  # Using printf (not heredoc) per Daniel's tooling constraints.
+  printf '#!/bin/sh\necho "fake jq failure" >&2\nexit 1\n' > "$stub_dir/jq"
+  chmod +x "$stub_dir/jq"
+
+  # Ensure no state.json exists initially
+  rm -f "$TEST_DIR/.qrspi/state.json"
+
+  PATH="$stub_dir" run state_init_or_reconcile "$artifact_dir"
+
+  # Assertion 1: non-zero exit (fail-closed)
+  [ "$status" -ne 0 ]
+
+  # Assertion 2: no state.json written (fail-closed: don't persist on error)
+  [ ! -f "$TEST_DIR/.qrspi/state.json" ]
+
+  # Assertion 3 (mutation-distinguishing): state.sh's OWN stderr diagnostic
+  # appears in output. The explicit `echo "state_init_or_reconcile: jq failed
+  # to build state JSON" >&2` at state.sh:146 must fire. If a regression
+  # removes that explicit error handling, this assertion fails — distinguishing
+  # state.sh's fail-closed code path from incidental bash exit propagation.
+  [[ "$output" == *"state_init_or_reconcile"* ]]
+  [[ "$output" == *"jq failed"* ]]
 }
 
 @test "[T04-PHASING-6S] state_init_or_reconcile recognizes all 9 artifacts including phasing" {
