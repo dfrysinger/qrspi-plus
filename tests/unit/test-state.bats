@@ -804,13 +804,21 @@ EOF
   }
 }
 
-@test "[T19-FU1-2] state_init_or_reconcile delegates to state_compute_current_step (mock returns out-of-pipeline value)" {
-  # Stronger variant: mock returns a value that is NOT one of the 9
-  # pipeline steps. Inline duplicate logic is hard-coded to a 9-way
-  # if/elif chain over the pipeline steps and could never produce
-  # "T19-DELEGATED-MARKER". If the test's resulting current_step
-  # contains that string, we have proof that the value flowed from the
-  # mock, NOT from any inline computation.
+@test "[T19-FU1-2] state_init_or_reconcile delegates to state_compute_current_step (mock returns transition-state value unreachable from inline logic)" {
+  # Stronger variant: mock returns a value that is in the allowlist but
+  # CANNOT be produced by state_compute_current_step's inline logic for
+  # the all-approved fixture (which would yield "implement"). The
+  # transition states (parallelize, integrate, replan) are documented
+  # current_step values per skills/using-qrspi/SKILL.md:223 — they are
+  # in the T24 allowlist but are never returned by
+  # state_compute_current_step (it only emits the 9 file-backed steps).
+  # If state.json's current_step contains "replan", we have proof that
+  # the value flowed from the mock, NOT from any inline computation.
+  #
+  # T24 update: the original test used "T19-DELEGATED-MARKER" which is
+  # now correctly rejected by the post-T24 allowlist. The delegation
+  # property the test was designed to verify is preserved by switching
+  # to a transition-state sentinel that is allowlisted-but-unreachable.
 
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir/research"
@@ -826,10 +834,11 @@ EOF
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
-  # Mock returns a sentinel string that no inline pipeline-step computation
-  # could produce.
+  # Mock returns "replan" — a documented transition state that
+  # state_compute_current_step never emits, distinguishing delegation
+  # from any inline pipeline-step computation.
   state_compute_current_step() {
-    echo "T19-DELEGATED-MARKER"
+    echo "replan"
     return 0
   }
 
@@ -838,8 +847,343 @@ EOF
   local json
   json=$(state_read)
 
-  [[ "$json" == *'"current_step":"T19-DELEGATED-MARKER"'* ]] || {
+  [[ "$json" == *'"current_step":"replan"'* ]] || {
     echo "FAIL: state_init_or_reconcile did not delegate; got JSON: $json" >&2
+    return 1
+  }
+}
+
+# ============================================================================
+# [T24] state.sh hardening: current_step allowlist + phase_start_commit preserve
+#       + flock TOCTOU serialization
+# ============================================================================
+# Source-of-truth references:
+#   - Allowlist (12 values): the 9 file-backed pipeline steps emitted by the
+#     hook layer (goals, questions, research, design, phasing, structure, plan,
+#     implement, test) PLUS the 3 transition states documented in
+#     skills/using-qrspi/SKILL.md:223 (parallelize, integrate, replan). External
+#     writers (Implement, Replan) persist transition states even though
+#     state_compute_current_step never emits them.
+#   - phase_start_commit preserve: state.sh:107 hardcodes null on every
+#     reconcile call. Must read existing state and preserve a non-null value.
+#   - flock TOCTOU: state_write_atomic must serialize concurrent callers via
+#     a portable file lock primitive (flock when present; mkdir-mutex
+#     fallback on macOS where flock(1) is absent).
+
+# ---- T24-A: current_step allowlist on state_write_atomic ----
+
+@test "[T24-A1] state_write_atomic: out-of-allowlist current_step returns non-zero, leaves state.json unchanged" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Seed a valid baseline state.json
+  state_write_atomic '{"version":1,"current_step":"goals"}'
+  local baseline
+  baseline=$(cat "$artifact_dir/.qrspi/state.json")
+
+  # Attempt write with bogus current_step
+  run state_write_atomic '{"version":1,"current_step":"BOGUS_STEP_XYZ"}'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"current_step"* ]] || [[ "$output" == *"allowlist"* ]] || [[ "$output" == *"invalid"* ]]
+
+  # File contents unchanged
+  local after
+  after=$(cat "$artifact_dir/.qrspi/state.json")
+  [[ "$after" == "$baseline" ]]
+}
+
+@test "[T24-A2] state_write_atomic: every documented current_step value is accepted (12-value enum round-trip)" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  local v
+  for v in goals questions research design phasing structure plan parallelize implement integrate test replan; do
+    run state_write_atomic "{\"version\":1,\"current_step\":\"$v\"}"
+    [ "$status" -eq 0 ] || {
+      echo "FAIL: state_write_atomic rejected legal current_step=$v (output: $output)" >&2
+      return 1
+    }
+    # Verify on-disk
+    local content
+    content=$(cat "$artifact_dir/.qrspi/state.json")
+    [[ "$content" == *"\"current_step\":\"$v\""* ]] || {
+      echo "FAIL: state.json missing current_step=$v after write (content: $content)" >&2
+      return 1
+    }
+  done
+}
+
+@test "[T24-A3] state_write_atomic: payload without current_step is accepted (allowlist only constrains the field when present)" {
+  # Some callers (e.g., partial state update for wireframe_requested only) may
+  # produce a JSON blob that does not include current_step. Allowlist
+  # validation must not break those; it must only apply when current_step is
+  # present in the payload.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  run state_write_atomic '{"version":1,"wireframe_requested":true}'
+  [ "$status" -eq 0 ]
+}
+
+@test "[T24-A4] state_init_or_reconcile rejects when delegated helper returns out-of-allowlist value" {
+  # Defense in depth: if state_compute_current_step is mutated/shadowed to
+  # return something not in the allowlist, state_init_or_reconcile must fail
+  # closed (returning non-zero, writing nothing) rather than persist garbage.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Shadow the helper to return a bogus value
+  state_compute_current_step() {
+    echo "BOGUS_STEP_XYZ"
+    return 0
+  }
+
+  rm -f "$TEST_DIR/.qrspi/state.json"
+  run state_init_or_reconcile "$artifact_dir"
+  [ "$status" -ne 0 ]
+  [ ! -f "$TEST_DIR/.qrspi/state.json" ]
+}
+
+# ---- T24-B: phase_start_commit preserve across reconcile ----
+
+@test "[T24-B1] state_init_or_reconcile preserves non-null phase_start_commit when state.json already exists" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # First reconcile: phase_start_commit starts null
+  state_init_or_reconcile "$artifact_dir"
+  local existing
+  existing=$(state_read)
+  local before_psc
+  before_psc=$(echo "$existing" | jq -r '.phase_start_commit')
+  [[ "$before_psc" == "null" ]]
+
+  # Plan's narrow direct-write sets phase_start_commit on the in-place file
+  local updated
+  updated=$(echo "$existing" | jq '.phase_start_commit = "abc123def456"')
+  state_write_atomic "$updated"
+
+  # Confirm seed took effect
+  local seeded
+  seeded=$(state_read | jq -r '.phase_start_commit')
+  [[ "$seeded" == "abc123def456" ]]
+
+  # Now reconcile again — must NOT wipe phase_start_commit
+  state_init_or_reconcile "$artifact_dir"
+  local after
+  after=$(state_read | jq -r '.phase_start_commit')
+  [[ "$after" == "abc123def456" ]] || {
+    echo "FAIL: phase_start_commit wiped by state_init_or_reconcile (got: $after)" >&2
+    return 1
+  }
+}
+
+@test "[T24-B2] state_init_or_reconcile initializes phase_start_commit to null when state.json does not exist (existing behavior preserved)" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Ensure no prior state
+  rm -f "$TEST_DIR/.qrspi/state.json"
+
+  state_init_or_reconcile "$artifact_dir"
+  local psc
+  psc=$(state_read | jq -r '.phase_start_commit')
+  [[ "$psc" == "null" ]]
+}
+
+@test "[T24-B3] state_init_or_reconcile preserves phase_start_commit even when reconciling other field changes (artifact statuses)" {
+  # Stress: artifact frontmatter changes (which trigger reconcile) must not
+  # wipe phase_start_commit alongside the legitimate status update.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  create_artifact "$artifact_dir/goals.md" "draft"
+  state_init_or_reconcile "$artifact_dir"
+
+  # Seed phase_start_commit
+  local seeded
+  seeded=$(state_read | jq '.phase_start_commit = "deadbeef00"')
+  state_write_atomic "$seeded"
+
+  # Approve goals.md and reconcile
+  create_artifact "$artifact_dir/goals.md" "approved"
+  state_init_or_reconcile "$artifact_dir"
+
+  # Status reconciled, phase_start_commit preserved
+  local final
+  final=$(state_read)
+  [[ "$final" == *'"goals":"approved"'* ]]
+  local psc
+  psc=$(echo "$final" | jq -r '.phase_start_commit')
+  [[ "$psc" == "deadbeef00" ]]
+}
+
+# ---- T24-C: flock / TOCTOU serialization on state_write_atomic ----
+
+@test "[T24-C1] state_write_atomic + state_init_or_reconcile: concurrent reconcile vs direct-write race preserves phase_start_commit (TOCTOU serialization)" {
+  # Threat model from R2 S-N4: Plan's narrow-direct-write sets
+  # phase_start_commit while PostToolUse hook reconciliation runs. Both
+  # callers do read-modify-write on .qrspi/state.json. Without serialization,
+  # the reconciler reads BEFORE the direct write, then overwrites it AFTER —
+  # silently destroying phase_start_commit.
+  #
+  # This test races N reconcile calls (which now read+preserve
+  # phase_start_commit) against N direct-writes setting phase_start_commit.
+  # With proper flock/lock, the final state must contain the most-recent
+  # phase_start_commit value (no R-M-W tearing).
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Initial reconcile to seed state.json with phase_start_commit=null
+  state_init_or_reconcile "$artifact_dir"
+
+  # Background process A: continuously call state_init_or_reconcile (read +
+  # rebuild + write). Each call MUST preserve phase_start_commit.
+  # NOTE: set +e + `|| true` ensures the subshell exits 0 regardless of
+  # individual iteration outcome — we measure global state correctness
+  # below, not per-iteration success rate.
+  ( set +e
+    for i in $(seq 1 30); do
+      state_init_or_reconcile "$artifact_dir" 2>/dev/null || true
+    done
+    exit 0 ) &
+  local pid_a=$!
+
+  # Background process B: continuously direct-write phase_start_commit.
+  # Pattern: each iteration reads current state, sets phase_start_commit,
+  # writes via state_write_atomic (mirrors Plan's narrow-direct-write).
+  ( set +e
+    for i in $(seq 1 30); do
+      current=$(state_read 2>/dev/null) || continue
+      updated=$(echo "$current" | jq ".phase_start_commit = \"commit-iter-$i\"" 2>/dev/null) || continue
+      state_write_atomic "$updated" 2>/dev/null || true
+    done
+    exit 0 ) &
+  local pid_b=$!
+
+  wait "$pid_a" || true
+  wait "$pid_b" || true
+
+  # File must be valid JSON (atomic mv guarantees this; included as sanity)
+  local final
+  final=$(cat "$TEST_DIR/.qrspi/state.json")
+  echo "$final" | jq . > /dev/null || {
+    echo "FAIL: state.json is not valid JSON after concurrent R-M-W (content: $final)" >&2
+    return 1
+  }
+
+  # Critical assertion: phase_start_commit must be one of writer-B's values,
+  # NOT null. If reconciler raced and won the last write, it would have
+  # wiped phase_start_commit because the snapshot it read was stale.
+  # Under proper locking, every reconciler read+write is atomic w.r.t.
+  # writer-B's writes, so the last-writer-wins value of phase_start_commit
+  # is whichever caller wrote last — and BOTH (when locked) preserve the
+  # commit value (writer-B sets it; reconciler now preserves it).
+  local psc
+  psc=$(echo "$final" | jq -r '.phase_start_commit')
+  [[ "$psc" =~ ^commit-iter-[0-9]+$ ]] || {
+    echo "FAIL: phase_start_commit is '$psc' — expected 'commit-iter-N'. TOCTOU race destroyed value." >&2
+    echo "Final state: $final" >&2
+    return 1
+  }
+}
+
+@test "[T24-C2] state_write_atomic: lock is released even on validation failure (no deadlock)" {
+  # If allowlist rejection or other validation failure leaves the lock held,
+  # subsequent legitimate writers would block forever. This test runs an
+  # invalid write (allowlist rejection) followed by a valid write and
+  # asserts the second one completes promptly.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Seed valid baseline so the rejected write has something to compare against
+  state_write_atomic '{"version":1,"current_step":"goals"}'
+
+  run state_write_atomic '{"version":1,"current_step":"NOT_A_STEP"}'
+  [ "$status" -ne 0 ]
+
+  # Now legitimate write must complete (would hang if lock held)
+  run timeout 5 bash -c "
+    source '$BATS_TEST_DIRNAME/../../hooks/lib/state.sh'
+    state_write_atomic '{\"version\":1,\"current_step\":\"questions\"}'
+  "
+  [ "$status" -eq 0 ]
+  local final
+  final=$(cat "$artifact_dir/.qrspi/state.json")
+  [[ "$final" == *'"current_step":"questions"'* ]]
+}
+
+@test "[T24-C3] state_write_atomic: serialization across distinct shells (lock is filesystem-backed, not process-local)" {
+  # A subshell launched separately must observe the same lock. If the lock
+  # is implemented as a process-local construct (e.g., a bash variable), it
+  # provides no protection across distinct shell invocations. Use a long-
+  # running first writer (held inside the critical section briefly via a
+  # CPU loop) and verify the second observes correct state.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Seed
+  state_write_atomic '{"version":1,"current_step":"goals"}'
+
+  # Launch 5 background bash subshells, each doing 20 writes.
+  # NOTE: `set +e` + `|| true` so the subshell exits 0 regardless of
+  # individual iteration outcome.
+  local i
+  local pids=()
+  for i in 1 2 3 4 5; do
+    bash -c "
+      set +e
+      source '$BATS_TEST_DIRNAME/../../hooks/lib/state.sh'
+      cd '$artifact_dir'
+      for n in \$(seq 1 20); do
+        state_write_atomic '{\"version\":1,\"current_step\":\"plan\",\"writer\":'\$\$'}' 2>/dev/null || true
+      done
+      exit 0
+    " &
+    pids+=($!)
+  done
+
+  for pid in "${pids[@]}"; do wait "$pid" || true; done
+
+  # File must remain valid JSON
+  local final
+  final=$(cat "$artifact_dir/.qrspi/state.json")
+  echo "$final" | jq . > /dev/null || {
+    echo "FAIL: state.json torn under cross-shell contention (content: $final)" >&2
     return 1
   }
 }

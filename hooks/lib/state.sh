@@ -7,6 +7,111 @@ _state_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_state_script_dir/frontmatter.sh"
 source "$_state_script_dir/artifact-map.sh"
 
+# ---------------------------------------------------------------------------
+# T24 — current_step allowlist
+#
+# Allowlist = the 9 file-backed pipeline steps emitted by the hook layer
+# (goals, questions, research, design, phasing, structure, plan, implement,
+# test) PLUS the 3 transition states documented in
+# skills/using-qrspi/SKILL.md:223 (parallelize, integrate, replan). External
+# writers (Implement, Replan) persist transition states even though
+# state_compute_current_step never emits them. Any value outside this 12-value
+# set is rejected fail-closed by state_write_atomic.
+# ---------------------------------------------------------------------------
+_state_current_step_is_allowed() {
+  local v="$1"
+  case "$v" in
+    goals|questions|research|design|phasing|structure|plan|parallelize|implement|integrate|test|replan)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# T24 — portable advisory lock for state_write_atomic
+#
+# Rationale: round-2 finding S-N4 demands serialization of the read-modify-
+# write critical section against concurrent callers (Plan's narrow direct
+# write vs PostToolUse hook reconciliation). Linux-style flock(1) is not
+# present on macOS by default, so we use a portable mkdir-based mutex —
+# mkdir is atomic on POSIX and produces a non-zero exit if the directory
+# already exists. We retry with bounded backoff and stale-lock detection
+# (PID file inside the lock dir; reclaim if owner died) to avoid deadlock
+# if a holder crashes.
+#
+# Lock dir: .qrspi/state.json.lock  (sibling of state.json)
+# Stale timeout: 30 s — generous; the critical section is microseconds.
+# Acquire timeout: 10 s — long enough for legitimate contention; short
+#                          enough that hung writers fail loudly.
+# ---------------------------------------------------------------------------
+_state_lock_acquire() {
+  local lock_dir=".qrspi/state.json.lock"
+  local pid_file="$lock_dir/owner.pid"
+  local started_file="$lock_dir/started.epoch"
+  local stale_timeout=30
+  local acquire_timeout=10
+
+  local start
+  start=$(date +%s)
+
+  while true; do
+    if mkdir "$lock_dir" 2>/dev/null; then
+      # Acquired
+      echo "$$" > "$pid_file" 2>/dev/null || true
+      date +%s > "$started_file" 2>/dev/null || true
+      return 0
+    fi
+
+    # mkdir failed. Distinguish "lock already held" (lock_dir exists)
+    # from "cannot create" (permissions, parent missing, IO error). In the
+    # latter case retrying is futile — fail fast so callers get a clean
+    # error rather than spinning to the acquire-timeout deadline.
+    if [[ ! -d "$lock_dir" ]]; then
+      echo "state_write_atomic: failed to create lock directory $lock_dir (permission denied or IO error)" >&2
+      return 1
+    fi
+
+    # Lock held — check for stale owner
+    local owner=""
+    [[ -f "$pid_file" ]] && owner=$(cat "$pid_file" 2>/dev/null || echo "")
+    local started=0
+    [[ -f "$started_file" ]] && started=$(cat "$started_file" 2>/dev/null || echo 0)
+    local now
+    now=$(date +%s)
+
+    local stale=false
+    if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
+      stale=true
+    fi
+    if (( now - started > stale_timeout )); then
+      stale=true
+    fi
+
+    if $stale; then
+      # Reclaim: remove lock dir and retry. Use rm -rf since the dir has
+      # contents (pid_file, started_file).
+      rm -rf "$lock_dir" 2>/dev/null || true
+      continue
+    fi
+
+    # Bounded wait
+    if (( now - start > acquire_timeout )); then
+      echo "state_write_atomic: failed to acquire lock $lock_dir within ${acquire_timeout}s (held by PID $owner)" >&2
+      return 1
+    fi
+    # Brief sleep to avoid busy spin
+    sleep 0.05 2>/dev/null || sleep 1
+  done
+}
+
+_state_lock_release() {
+  local lock_dir=".qrspi/state.json.lock"
+  rm -rf "$lock_dir" 2>/dev/null || true
+}
+
 # state_compute_current_step <artifact_dir>
 # Helper: scan artifact files in <artifact_dir>, determine the first pipeline step
 # whose artifact frontmatter is not "approved", and echo that step name.
@@ -48,6 +153,10 @@ state_compute_current_step() {
 # state_init_or_reconcile <artifact_dir>
 # Scans artifact files in the given directory, reads their frontmatter status,
 # and creates/updates .qrspi/state.json in the current working directory.
+#
+# T24 update (R2 I-N3): preserves an existing non-null phase_start_commit
+# rather than wiping it on every call. Plan's narrow-direct-write must
+# survive subsequent reconciliation.
 state_init_or_reconcile() {
   local artifact_dir="$1"
 
@@ -92,19 +201,52 @@ state_init_or_reconcile() {
     return 1
   fi
 
+  # T24-A4: defense-in-depth — validate delegated helper return value before
+  # serialization. If state_compute_current_step is shadowed/mutated to
+  # return a value outside the allowlist, fail closed.
+  if ! _state_current_step_is_allowed "$current_step"; then
+    echo "state_init_or_reconcile: state_compute_current_step returned out-of-allowlist value '$current_step'" >&2
+    return 1
+  fi
+
+  # T24-B: preserve phase_start_commit from existing state.json (R2 I-N3).
+  # If state.json exists and has a non-null phase_start_commit, carry it
+  # forward; otherwise initialize null (existing behavior).
+  local phase_start_commit_arg=""
+  local existing_psc=""
+  if [[ -f ".qrspi/state.json" ]]; then
+    existing_psc=$(jq -r '.phase_start_commit // ""' ".qrspi/state.json" 2>/dev/null || echo "")
+    if [[ -n "$existing_psc" && "$existing_psc" != "null" ]]; then
+      phase_start_commit_arg="$existing_psc"
+    fi
+  fi
+
   # Create absolute path for artifact_dir
   local abs_artifact_dir
   abs_artifact_dir="$(cd "$artifact_dir" && pwd)"
 
-  # Create the state JSON (compact format)
+  # Create the state JSON (compact format).
+  # T24-B: phase_start_commit is conditionally preserved. We pass either
+  # null (when no prior value) or the carried-forward string via an
+  # explicit jq filter that converts "" sentinel to null.
   local json
   if ! json=$(jq -cn \
     --arg current_step "$current_step" \
     --arg artifact_dir "$abs_artifact_dir" \
+    --arg phase_start_commit "$phase_start_commit_arg" \
+    --arg goals "$goals_status" \
+    --arg questions "$questions_status" \
+    --arg research "$research_status" \
+    --arg design "$design_status" \
+    --arg phasing "$phasing_status" \
+    --arg structure "$structure_status" \
+    --arg plan "$plan_status" \
+    --arg implement "$implement_status" \
+    --arg test "$test_status" \
     '{
       version: 1,
       current_step: $current_step,
-      phase_start_commit: null,
+      phase_start_commit: (if $phase_start_commit == "" then null else $phase_start_commit end),
       artifact_dir: $artifact_dir,
       wireframe_requested: false,
       artifacts: {
@@ -118,16 +260,7 @@ state_init_or_reconcile() {
         implement: $implement,
         test: $test
       }
-    }' \
-    --arg goals "$goals_status" \
-    --arg questions "$questions_status" \
-    --arg research "$research_status" \
-    --arg design "$design_status" \
-    --arg phasing "$phasing_status" \
-    --arg structure "$structure_status" \
-    --arg plan "$plan_status" \
-    --arg implement "$implement_status" \
-    --arg test "$test_status"); then
+    }'); then
     echo "state_init_or_reconcile: jq failed to build state JSON" >&2
     return 1
   fi
@@ -150,7 +283,21 @@ state_init_or_reconcile() {
     return 1
   fi
 
-  # Write the state file atomically
+  # T24-B/C: Preserve wireframe_requested across reconcile too — same
+  # rationale as phase_start_commit (artifact.sh sets wireframe_requested
+  # via state_write_atomic, but a subsequent reconcile would otherwise
+  # reset it to false). This was a latent bug surfaced while fixing I-N3;
+  # the symmetric preservation closes the same class of regression.
+  if [[ -f ".qrspi/state.json" ]]; then
+    local existing_wf
+    existing_wf=$(jq -r '.wireframe_requested // false' ".qrspi/state.json" 2>/dev/null || echo "false")
+    if [[ "$existing_wf" == "true" ]]; then
+      json=$(echo "$json" | jq -c '.wireframe_requested = true')
+    fi
+  fi
+
+  # Write the state file atomically (state_write_atomic also enforces
+  # current_step allowlist + lock-serializes the critical section).
   if ! state_write_atomic "$json"; then
     echo "state_init_or_reconcile: state_write_atomic failed" >&2
     return 1
@@ -174,19 +321,55 @@ state_read() {
 # state_write_atomic <json_string>
 # Writes JSON to .qrspi/state.json via temp file + mv for atomicity.
 # Creates .qrspi/ directory if needed.
+#
+# T24 hardening:
+#   - R1 Codex-S3 allowlist: validates current_step (when present in payload)
+#     against the 12-value documented enum. Out-of-allowlist values are
+#     rejected fail-closed (non-zero exit, no write).
+#   - R2 S-N4 TOCTOU: serializes the critical section via a portable mkdir-
+#     based file lock in .qrspi/state.json.lock. The lock is acquired BEFORE
+#     mkdir/.qrspi/, written under lock, and released on every exit path
+#     (including validation failures and signals via trap).
 state_write_atomic() {
   local json="$1"
 
-  # Create .qrspi directory if needed
+  # T24-A allowlist: validate current_step BEFORE acquiring lock or
+  # touching disk. Reject out-of-allowlist values fail-closed.
+  if [[ "$json" == *'"current_step"'* ]]; then
+    # Extract current_step value via jq; tolerate missing field by checking
+    # for non-null/non-empty before validating.
+    local cs
+    if ! cs=$(echo "$json" | jq -r '.current_step // empty' 2>/dev/null); then
+      echo "state_write_atomic: payload not parseable as JSON" >&2
+      return 1
+    fi
+    if [[ -n "$cs" ]] && ! _state_current_step_is_allowed "$cs"; then
+      echo "state_write_atomic: current_step '$cs' is not in the allowlist (refusing to write)" >&2
+      return 1
+    fi
+  fi
+
+  # Create .qrspi directory if needed (must exist before lock dir creation)
   if ! mkdir -p ".qrspi" 2>/dev/null; then
     echo "state_write_atomic: failed to create .qrspi directory" >&2
     return 1
   fi
 
+  # T24-C: acquire lock for the read-modify-write critical section.
+  # We use explicit release at every return path. RETURN traps interact
+  # poorly with `set -u` and bats' `run` wrapper, so a flag + trap was
+  # ruled out in favor of straight-line release calls.
+  if ! _state_lock_acquire; then
+    return 1
+  fi
+
+  # ---- critical section: any return below MUST release the lock ----
+
   # Create temp file in the same directory to ensure atomic rename
   local temp_file
   if ! temp_file=$(mktemp ".qrspi/.state.json.XXXXXX" 2>/dev/null); then
     echo "state_write_atomic: failed to create temp file in .qrspi/" >&2
+    _state_lock_release
     return 1
   fi
 
@@ -194,6 +377,7 @@ state_write_atomic() {
   if ! echo "$json" > "$temp_file" 2>/dev/null; then
     echo "state_write_atomic: failed to write to temp file $temp_file" >&2
     rm -f "$temp_file" 2>/dev/null
+    _state_lock_release
     return 1
   fi
 
@@ -201,8 +385,10 @@ state_write_atomic() {
   if ! mv "$temp_file" ".qrspi/state.json" 2>/dev/null; then
     echo "state_write_atomic: failed to move temp file to .qrspi/state.json" >&2
     rm -f "$temp_file" 2>/dev/null
+    _state_lock_release
     return 1
   fi
 
+  _state_lock_release
   return 0
 }
