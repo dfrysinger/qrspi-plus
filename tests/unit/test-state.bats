@@ -671,6 +671,72 @@ EOF
   [[ "$output" == *"jq failed"* ]]
 }
 
+# [T04-PHASING-4Sc] Table-driven coverage of every reachable return value of
+# state_compute_current_step. Round-4 thoroughness gap: prior tests (4S, 4Sb)
+# only verified the helper for "phasing" (one mid-pipeline case) and the
+# terminal "implement" default. The other 6 reachable values (goals, questions,
+# research, design, structure, plan) were unverified at the helper level — a
+# mutation reordering the helper's loop (e.g., swapping `research` and `design`)
+# would not have been caught. This test walks every step S in the file-backed
+# sequence and the all-approved terminal case, asserting state_compute_current_step
+# echoes exactly S.
+@test "[T04-PHASING-4Sc] state_compute_current_step: table-driven coverage of every reachable return value" {
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Each iteration: build a fresh fixture where every step BEFORE S is
+  # approved, S itself is draft, then assert helper echoes S exactly.
+  local target steps_before s out
+  for target in goals questions research design phasing structure plan; do
+    # Fresh artifact dir per iteration to avoid leakage from prior fixtures
+    local artifact_dir="$TEST_DIR/artifacts-$target"
+    mkdir -p "$artifact_dir/research"
+
+    # Build the upstream-approved prefix
+    local hit_target=false
+    for s in goals questions research design phasing structure plan; do
+      if [[ "$s" == "$target" ]]; then
+        hit_target=true
+        # S itself: draft (explicit file with draft frontmatter)
+        case "$s" in
+          research) create_artifact "$artifact_dir/research/summary.md" "draft" ;;
+          *) create_artifact "$artifact_dir/$s.md" "draft" ;;
+        esac
+        continue
+      fi
+      if [[ "$hit_target" == "true" ]]; then
+        # Steps after target — leave absent (helper only inspects up to first
+        # non-approved, so post-target state doesn't affect outcome)
+        continue
+      fi
+      # Steps before target: approved
+      case "$s" in
+        research) create_artifact "$artifact_dir/research/summary.md" "approved" ;;
+        *) create_artifact "$artifact_dir/$s.md" "approved" ;;
+      esac
+    done
+
+    out=$(state_compute_current_step "$artifact_dir")
+    [[ "$out" == "$target" ]] || {
+      echo "expected '$target', got '$out' (artifact_dir=$artifact_dir)" >&2
+      return 1
+    }
+  done
+
+  # All-approved terminal case → "implement"
+  local all_approved_dir="$TEST_DIR/artifacts-all-approved"
+  mkdir -p "$all_approved_dir/research"
+  create_artifact "$all_approved_dir/goals.md" "approved"
+  create_artifact "$all_approved_dir/questions.md" "approved"
+  create_artifact "$all_approved_dir/research/summary.md" "approved"
+  create_artifact "$all_approved_dir/design.md" "approved"
+  create_artifact "$all_approved_dir/phasing.md" "approved"
+  create_artifact "$all_approved_dir/structure.md" "approved"
+  create_artifact "$all_approved_dir/plan.md" "approved"
+
+  out=$(state_compute_current_step "$all_approved_dir")
+  [[ "$out" == "implement" ]]
+}
+
 @test "[T04-PHASING-6S] state_init_or_reconcile recognizes all 9 artifacts including phasing" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"

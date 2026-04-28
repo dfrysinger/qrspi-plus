@@ -652,3 +652,129 @@ _t04_phasing_create_all_approved() {
   [[ $(echo "$state" | jq -r '.artifacts.structure') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.plan') == "approved" ]]
 }
+
+# ============================================================================
+# [T04-PHASING-9] Boundary-sensitive cascade-reset assertions (Round-4 fix)
+# ============================================================================
+# Round-4 thoroughness gap: prior cascade-reset tests assert final statuses,
+# but a mutation that swaps which `--skip-cascade` boundary applies to adjacent
+# downstream entries (e.g., off-by-one in the case loop) could leave all final
+# statuses as `draft` and still pass. The fix below sets up an all-approved
+# fixture (including implement and test marked approved in state.json), invokes
+# cascade-reset at each boundary, and asserts the EXACT bipartition: every step
+# at or after the start point becomes draft AND every step strictly before
+# remains approved. This catches off-by-one mutations on the cascade boundary.
+
+# Helper: create artifacts AND mark implement+test approved in state, so that
+# every step (all 9) starts at "approved" before cascade reset. This is what
+# enables the boundary test — without implement/test being approved, the
+# downstream-becomes-draft assertion is satisfied vacuously by the fact that
+# state_init_or_reconcile leaves them at draft to begin with.
+_t04_boundary_init_all_approved_in_state() {
+  _t04_phasing_create_all_approved
+  state_init_or_reconcile "$ARTIFACT_DIR"
+  local state
+  state=$(state_read)
+  state=$(echo "$state" | jq '.artifacts.implement = "approved"')
+  state=$(echo "$state" | jq '.artifacts.test = "approved"')
+  state_write_atomic "$state"
+}
+
+@test "[T04-PHASING-9a] pipeline_cascade_reset boundary at phasing: upstream approved, at-and-after draft" {
+  # Boundary fix per Round-4 CodexF2: explicitly verify the bipartition at
+  # phasing — goals/questions/research/design remain approved, while
+  # phasing/structure/plan/implement/test become draft.
+  _t04_boundary_init_all_approved_in_state
+
+  pipeline_cascade_reset "phasing" "$ARTIFACT_DIR"
+
+  local state
+  state=$(state_read)
+  # Upstream of phasing — must stay approved (boundary lower side)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
+  # phasing and downstream — must be draft (boundary upper side)
+  [[ $(echo "$state" | jq -r '.artifacts.phasing') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T04-PHASING-9b] pipeline_cascade_reset boundary at questions: only goals stays approved" {
+  _t04_boundary_init_all_approved_in_state
+
+  pipeline_cascade_reset "questions" "$ARTIFACT_DIR"
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.phasing') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T04-PHASING-9c] pipeline_cascade_reset boundary at research: goals/questions stay approved" {
+  _t04_boundary_init_all_approved_in_state
+
+  pipeline_cascade_reset "research" "$ARTIFACT_DIR"
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.phasing') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T04-PHASING-9d] pipeline_cascade_reset boundary at plan: only implement+plan+test become draft" {
+  # Boundary at plan — exposes off-by-one mutations near the end of PIPELINE_ORDER.
+  _t04_boundary_init_all_approved_in_state
+
+  pipeline_cascade_reset "plan" "$ARTIFACT_DIR"
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.phasing') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}
+
+@test "[T04-PHASING-9e] pipeline_cascade_reset boundary at implement: only implement+test become draft" {
+  # Boundary near the very end of PIPELINE_ORDER — implement is index 7,
+  # test is index 8. An off-by-one in end_idx would either skip test (leaving
+  # it approved — caught by this test) or include plan (caught here too).
+  _t04_boundary_init_all_approved_in_state
+
+  pipeline_cascade_reset "implement" "$ARTIFACT_DIR"
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.phasing') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.structure') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.plan') == "approved" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.implement') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.test') == "draft" ]]
+}

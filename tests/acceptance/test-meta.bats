@@ -30,19 +30,22 @@ unit_test_dir() {
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 301 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T4 hook-layer phasing
-  # FIX: +2 mutation-resistance tests in test-state.bats ([T04-PHASING-4Sb] for
-  # state_compute_current_step terminal-default semantic-equivalence with
-  # state_init_or_reconcile, and [T04-PHASING-5b] for state.sh's explicit jq
-  # fail-closed stderr diagnostic). Prior baseline 299 was after T4 initial
-  # implementation (+16 phasing-aware unit tests). Prior baseline 283 was
-  # after 2026-04-26 implement-runtime-fix.
+@test "[AC8] Unit test suite has exactly 307 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T4 Round-4 thoroughness
+  # FIX: +6 boundary/coverage tests addressing CodexF1 (table-driven coverage of
+  # every reachable return value of state_compute_current_step — +1 in
+  # test-state.bats: [T04-PHASING-4Sc]) and CodexF2 (boundary-sensitive
+  # cascade-reset assertions — +5 in test-pipeline.bats: [T04-PHASING-9a]
+  # phasing boundary, [9b] questions, [9c] research, [9d] plan, [9e] implement).
+  # Prior 301 baseline was after Round-3 (+2 mutation-resistance tests in
+  # test-state.bats: [T04-PHASING-4Sb] and [T04-PHASING-5b]). Prior 299 baseline
+  # was after T4 initial implementation (+16 phasing-aware unit tests). Prior
+  # 283 baseline was after 2026-04-26 implement-runtime-fix.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 301 ]
+  [ "$count" -eq 307 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-26)
