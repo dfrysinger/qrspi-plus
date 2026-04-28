@@ -1,0 +1,9 @@
+{
+  "finding_id": "R1-F04",
+  "severity": "medium",
+  "change_type": "scope",
+  "message": "plan.md's task list does not include a migration script for the existing data store. Adding a new task expands what gets shipped — the artifact is internally consistent today; this is a scope expansion proposal that requires user judgement.",
+  "referenced_files": [
+    "plan.md"
+  ]
+}
