@@ -81,33 +81,32 @@ artifact_sync_state() {
   # treat that like the old frontmatter_get_status behavior (return 1)
   [[ -n "$fm_status" ]] || return 1
 
-  # Read current state
-  local state
-  state=$(state_read) || return 1
-
-  # Check if status actually changed before writing — avoids unnecessary
-  # state writes and cascade resets on every artifact edit
-  local current_status
-  current_status=$(echo "$state" | jq -r ".artifacts.$step // \"draft\"")
-  local state_changed=false
-
-  if [[ "$fm_status" == "$current_status" ]]; then
-    # Status unchanged — no state update needed
-    :
-  elif [[ "$fm_status" == "approved" ]]; then
-    # Update that step to approved
-    state=$(echo "$state" | jq -c ".artifacts.$step = \"approved\"")
-    state_changed=true
-  elif [[ "$fm_status" == "draft" ]]; then
-    # Cascade reset from this step onwards (pass --skip-cascade if set)
-    if [[ -n "$cascade_flag" ]]; then
-      pipeline_cascade_reset "$step" "$artifact_dir" "$cascade_flag"
-    else
-      pipeline_cascade_reset "$step" "$artifact_dir"
-    fi
-    state=$(state_read)
-    state_changed=true
-  fi
+  # Apply state changes via state_update (locked R-M-W primitive — task-24
+  # / R3 S-1). The previous state_read + state_write_atomic pattern held
+  # the lock only over the final write, leaving an open R-M-W window
+  # against concurrent state_update writers (e.g., Plan's narrow direct
+  # write of phase_start_commit). state_update serializes the full
+  # critical section and binds untrusted values via --arg/--argjson so
+  # the jq filter stays a static expression.
+  case "$fm_status" in
+    approved)
+      # Set this step's artifact status to approved. Filter is idempotent
+      # if status was already approved (unconditional write under the
+      # lock — no observable difference, and the early-skip optimization
+      # is incompatible with TOCTOU-safe R-M-W).
+      state_update '.artifacts[$step] = "approved"' --arg step "$step" || return 1
+      ;;
+    draft)
+      # Cascade reset from this step onwards (pass --skip-cascade if set).
+      # pipeline_cascade_reset itself uses state_update internally, so the
+      # cascade also runs under the same lock primitive.
+      if [[ -n "$cascade_flag" ]]; then
+        pipeline_cascade_reset "$step" "$artifact_dir" "$cascade_flag" || return 1
+      else
+        pipeline_cascade_reset "$step" "$artifact_dir" || return 1
+      fi
+      ;;
+  esac
 
   # For design.md specifically: sync wireframe_requested field
   if [[ "$step" == "design" ]]; then
@@ -128,18 +127,10 @@ artifact_sync_state() {
       wireframe_json_value="true"
     fi
 
-    # Check if wireframe value actually changed
-    local current_wireframe
-    current_wireframe=$(echo "$state" | jq -r '.wireframe_requested // false')
-    if [[ "$current_wireframe" != "$wireframe_json_value" ]]; then
-      state=$(echo "$state" | jq -c ".wireframe_requested = $wireframe_json_value")
-      state_changed=true
-    fi
-  fi
-
-  # Only write state if something actually changed
-  if [[ "$state_changed" == true ]]; then
-    state_write_atomic "$state"
+    # Bind the boolean via --argjson (typed JSON) so the filter stays
+    # static — caller-side jq-filter interpolation is forbidden (R3 S-1
+    # / L-sec-1).
+    state_update '.wireframe_requested = $w' --argjson w "$wireframe_json_value" || return 1
   fi
 }
 

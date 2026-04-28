@@ -431,7 +431,7 @@ state_init_or_reconcile() {
   return 0
 }
 
-# state_update <jq_filter>
+# state_update <jq_filter> [--arg KEY VALUE | --argjson KEY VALUE]...
 # Atomic read-modify-write of .qrspi/state.json under the lock that
 # state_write_atomic uses. Reads the current state, applies <jq_filter>
 # (a jq expression operating on the state JSON), validates the resulting
@@ -445,13 +445,47 @@ state_init_or_reconcile() {
 # than read+modify+state_write_atomic, which leaves the R-M-W window
 # unserialized.
 #
-# Example: state_update '.phase_start_commit = "abc123"'
+# Filter parameters: callers SHOULD bind untrusted values via `--arg
+# KEY VALUE` (string) or `--argjson KEY VALUE` (already-JSON value, e.g.
+# booleans, arrays, numbers). The variadic args after the filter are
+# forwarded verbatim to jq. This avoids caller-side jq-filter string
+# interpolation of untrusted data — the filter itself stays as a static
+# jq expression, and parameters are jq-typed at the parser level.
+#
+# Examples:
+#   state_update '.phase_start_commit = "abc123"'
+#   state_update '.artifacts[$step] = "approved"' --arg step "$step"
+#   state_update '.wireframe_requested = $w' --argjson w true
+#   state_update 'reduce $steps[] as $s (.; .artifacts[$s] = "draft")' \
+#     --argjson steps '["plan","parallelize","implement","test"]'
 #
 # Returns:
 #   0 on success
 #   1 on lock acquire failure, jq error, or write error (with stderr diagnostic)
 state_update() {
   local filter="$1"
+  shift
+
+  # Validate variadic args: only --arg KEY VALUE or --argjson KEY VALUE
+  # forms are accepted. Each consumes 3 tokens. Reject anything else
+  # fail-closed so a typo can't silently bypass jq parameter binding.
+  local jq_args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --arg|--argjson)
+        if [[ $# -lt 3 ]]; then
+          echo "state_update: $1 requires KEY and VALUE arguments" >&2
+          return 1
+        fi
+        jq_args+=("$1" "$2" "$3")
+        shift 3
+        ;;
+      *)
+        echo "state_update: unknown argument '$1' (only --arg / --argjson supported)" >&2
+        return 1
+        ;;
+    esac
+  done
 
   # Acquire lock for the entire R-M-W critical section.
   if ! mkdir -p ".qrspi" 2>/dev/null; then
@@ -476,9 +510,12 @@ state_update() {
     return 1
   fi
 
-  # Apply filter via jq.
+  # Apply filter via jq, forwarding any --arg / --argjson bindings.
+  # When jq_args is empty, `"${jq_args[@]+"${jq_args[@]}"}"` expands to
+  # nothing under bash 3.2 + set -u (workaround for the "unbound variable"
+  # error on empty-array expansion).
   local updated
-  if ! updated=$(echo "$current" | jq -c "$filter" 2>/dev/null); then
+  if ! updated=$(echo "$current" | jq -c ${jq_args[@]+"${jq_args[@]}"} "$filter" 2>/dev/null); then
     echo "state_update: jq filter '$filter' failed" >&2
     _state_lock_release
     return 1
