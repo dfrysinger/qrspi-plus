@@ -11,7 +11,9 @@ description: Use when starting a new QRSPI pipeline run — captures user intent
 
 Capture what the user wants — purpose, environmental constraints, and the per-goal problem frames that downstream skills will work against. Runs as an interactive conversation in the main session, then launches a subagent to synthesize the artifact.
 
-Goals is **problem-framed**, not solution-prescribing. Each goal entry states a problem, why it matters, and what is currently known. Solution candidates may surface in "What we know so far" as **possibilities for Design to weigh** — they are NOT commitments. Goals does not author acceptance criteria, file maps, phasing decisions, or detailed solution definitions; those concerns are owned by downstream artifacts (see "Goals OWNS / Goals DEFERS" below).
+Goals is **problem-framed**, not solution-prescribing. Each goal entry states a problem, why it matters, and what is currently known. Solution candidates may surface in "What we know so far" as **possibilities for Design to weigh** — they are NOT commitments.
+
+**Prohibition.** Goals does NOT author file maps, phasing decisions, or detailed solution definitions; those concerns are owned by downstream artifacts (see "Goals OWNS / Goals DEFERS" below for the locked scope contract).
 
 ## Goals OWNS / Goals DEFERS
 
@@ -74,6 +76,13 @@ Goals is invoked in three distinct contexts:
 
 **Behavior on next-phase restart:**
 
+0. **Fail-closed precondition (assert before dialogue).** Before running the focused dialogue, assert ALL of the following. On any failure, STOP and surface the failure to the user — do NOT silently dialogue against an empty or partial draft (silent goal loss is the failure mode this guards against):
+   1. `roadmap.md` exists in the artifact directory.
+   2. `future-goals.md` exists in the artifact directory.
+   3. The auto-populated draft `goals.md` is non-empty and well-formed (parses as the goals.md template above).
+   4. The draft contains ≥1 goal whose ID matches an entry in `roadmap.md`'s next-phase row.
+
+   If any condition fails, surface a concrete diagnostic (which file is missing, or which IDs failed to match) and ask the user how to proceed (re-run Replan, hand-fix the draft, or abort) before any further work.
 1. Skip artifact-directory creation (it exists).
 2. Skip the Pipeline Mode Selection *questions* (use the existing `config.md`'s `pipeline` and `route` — these are locked at run start and do not change between phases). Still run the standard Config Validation Procedure on the existing `config.md` to catch hand-edits that may have invalidated it between phases.
 3. Run a focused Interactive Dialogue against the auto-populated draft: confirm the promoted goals (Replan-populated from `roadmap.md` + `future-goals.md`) match the user's expectation for this next phase, capture any phase-specific constraints discovered during the prior phase (the Replan feedback file at `feedback/replan-phase-NN-round-MM.md` is one input; ask the user whether they want anything in addition).
@@ -229,6 +238,10 @@ status: draft
 
 **Iron Rule (template):** the goals.md output has NO top-level `Out of Scope` section and NO top-level `Success Criteria` / `Acceptance Criteria` section. What isn't a goal isn't in scope; acceptance is owned by Design's Test Strategy and Plan's per-task expectations. If the user volunteers exclusions during dialogue, capture them as constraints (when they shape the solution space) or simply omit them — do NOT reintroduce an `Out of Scope` heading.
 
+**Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Emitting only some of them (e.g. omitting `Why we care` because the answer feels obvious) is a synthesis defect, not a permitted shortcut. If the user did not articulate one of the three during dialogue, write a one-sentence honest placeholder under that subsection (e.g. under `Why we care`: "Impact not yet articulated — Design should probe before committing solution work.") rather than dropping the heading. Likewise, do NOT add a fourth subsection under any goal — additional content belongs in `What we know so far` or in a Constraint, not a new heading.
+
+**Iron Rule (type field — concrete value).** Emit ONE concrete value for each goal's `type` field — either `known-fix` OR `exploratory`. NEVER emit the alternation literal `known-fix | exploratory` (that string appears in the template as a placeholder showing the allowed values; it is not a valid output). If uncertain which applies, default to `exploratory` and explain the uncertainty under that goal's `What we know so far` subsection.
+
 **Solutions-as-possibilities framing.** When the user mentions a candidate fix, transcribe it under "What we know so far" with explicit framing such as "candidate Design should weigh" or "possibility for Design to evaluate." Do NOT promote the candidate to a Purpose-line commitment, do NOT enumerate it under Constraints, and do NOT add a `Solution` subsection.
 
 ### Review Round
@@ -237,7 +250,16 @@ status: draft
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Three reviewers run in parallel on Goals:
 
-- **Claude review subagent** — launched with `goals.md`. Reviewer prompt **embeds `skills/_shared/reviewer-boilerplate.md`** verbatim at dispatch time so the reviewer sees the M48 5-field finding schema, the change-type classifier (style / clarity / correctness / scope / intent), and the disagreement-valid framing inline. Goals-specific checks: each goal has the three required subsections (Problem / Why we care / What we know so far) and no others; each goal carries a `type` field with allowed value `known-fix | exploratory`; the file has NO top-level `Out of Scope` section and NO top-level acceptance-criteria section; solution mentions in "What we know so far" are framed as candidates Design will weigh, not commitments; environmental constraints are concrete (not "use existing tech stack"); the request scope is appropriate for a single QRSPI run. Findings written to `reviews/goals-review.md` in the M48 5-field shape.
+- **Claude review subagent** — launched with `goals.md`. Reviewer prompt **embeds `skills/_shared/reviewer-boilerplate.md`** verbatim at dispatch time so the reviewer sees the M48 5-field finding schema, the change-type classifier (style / clarity / correctness / scope / intent), and the disagreement-valid framing inline. Goals-specific checks:
+  - **Required-presence check.** For each goal, assert that ALL THREE subsections — `Problem`, `Why we care`, `What we know so far` — are present. The count of these named subsections under the goal must be exactly 3. A goal carrying only 2 of the 3 (e.g. missing `Why we care`) is a finding even if no extra subsections exist.
+  - **No-others check.** For each goal, assert that NO other subsections exist beyond those three. Any additional subsection (e.g. `What we ship`, `Acceptance Criteria`, `Out of Scope`, `Solution`) is a finding even if all three required ones are also present.
+  - Each goal carries a `type` field with allowed value `known-fix` or `exploratory` (one concrete value, not the alternation literal `known-fix | exploratory`).
+  - The file has NO top-level `Out of Scope` section and NO top-level acceptance-criteria section.
+  - Solution mentions in "What we know so far" are framed as candidates Design will weigh, not commitments.
+  - Environmental constraints are concrete (not "use existing tech stack").
+  - The request scope is appropriate for a single QRSPI run.
+
+  Findings written to `reviews/goals-review.md` in the M48 5-field shape.
 - **Scope-reviewer subagent** — dispatched from `skills/_shared/templates/scope-reviewer.md` with parameter `{ARTIFACT_TYPE}=goals`. Loads this skill's `## Goals OWNS / Goals DEFERS` section as the locked rule set, runs boundary-drift detection (content matching a DEFERS entry — e.g. acceptance criteria, file maps, phasing) and scope-compliance per OWNS, and applies the U14 boundary-drift signal (skill-implementation jargon leaking from later stages). Findings flow into `reviews/goals-review.md` under `#### Scope-Reviewer`. The dispatched prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim alongside the template body.
 - **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper:
   1. Write the review prompt (`goals.md` + the same Goals-specific criteria + the Goals OWNS/DEFERS contract) to a temporary file (e.g., `/tmp/codex-prompt-goals.md`). The prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim so Codex emits findings in the M48 5-field shape.
