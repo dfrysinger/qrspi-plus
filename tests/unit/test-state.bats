@@ -1144,6 +1144,85 @@ EOF
   [[ "$final" == *'"current_step":"questions"'* ]]
 }
 
+@test "[T24-C1b] state_update: two concurrent R-M-W writers — last-writer-wins on protected field, unrelated fields preserved (literal spec test expectation)" {
+  # Spec finding R2 S-N4 test expectation, verbatim: "two concurrent
+  # state_write_atomic calls (simulated via background process) produce a
+  # deterministic last-writer-wins on the protected field; neither write
+  # tears or loses unrelated fields."
+  #
+  # The spec's recommendation 2 says: "convert to a JSON-merge that
+  # re-reads under lock." That is the new state_update API — read-modify-
+  # write under lock via a jq filter. This test exercises state_update,
+  # which is the spec-compliant primitive for serialized R-M-W.
+  # state_write_atomic by itself only protects torn writes (atomic mv);
+  # callers that R-M-W via state_write_atomic must use state_update or
+  # acquire the lock externally.
+  #
+  # Test design: two callers each mutate a different field via
+  # state_update. Without serialization, each writer's R-M-W window is
+  # open and the other's prior write is lost when its snapshot was stale.
+  # Under proper locking, both fields persist (each writer reads the most
+  # recent committed state before its update).
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Seed baseline with both fields present
+  state_write_atomic '{"version":1,"current_step":"goals","phase_start_commit":null,"writer_a_field":"initial"}'
+
+  # Writer A: updates writer_a_field via state_update (read+modify+write
+  # all serialized under lock). Each iteration sets writer_a_field=A-iter-N.
+  ( set +e
+    for i in $(seq 1 30); do
+      state_update ".writer_a_field = \"A-iter-$i\"" 2>/dev/null || true
+    done
+    exit 0 ) &
+  local pid_a=$!
+
+  # Writer B: updates phase_start_commit via state_update.
+  ( set +e
+    for i in $(seq 1 30); do
+      state_update ".phase_start_commit = \"B-iter-$i\"" 2>/dev/null || true
+    done
+    exit 0 ) &
+  local pid_b=$!
+
+  wait "$pid_a" || true
+  wait "$pid_b" || true
+
+  # Validate no torn JSON
+  local final
+  final=$(cat "$artifact_dir/.qrspi/state.json")
+  echo "$final" | jq . > /dev/null || {
+    echo "FAIL: state.json torn under concurrent state_update (content: $final)" >&2
+    return 1
+  }
+
+  # phase_start_commit must be one of B's values (B was the only writer
+  # of that field after the seed).
+  local final_psc
+  final_psc=$(echo "$final" | jq -r '.phase_start_commit')
+  [[ "$final_psc" =~ ^B-iter-[0-9]+$ ]] || {
+    echo "FAIL: phase_start_commit lost — expected 'B-iter-N', got '$final_psc'. Concurrent R-M-W race destroyed the field." >&2
+    echo "Final state: $final" >&2
+    return 1
+  }
+
+  # writer_a_field must be one of A's values (A was the only writer after
+  # the seed). If it's still "initial", writer A's updates were
+  # overwritten by stale snapshots from writer B — exactly the TOCTOU
+  # bug the spec is fixing.
+  local final_waf
+  final_waf=$(echo "$final" | jq -r '.writer_a_field')
+  [[ "$final_waf" =~ ^A-iter-[0-9]+$ ]] || {
+    echo "FAIL: writer_a_field lost — expected 'A-iter-N', got '$final_waf'. Concurrent R-M-W race destroyed the unrelated field (this is the bug R2 S-N4 fixes)." >&2
+    echo "Final state: $final" >&2
+    return 1
+  }
+}
+
 @test "[T24-C3] state_write_atomic: serialization across distinct shells (lock is filesystem-backed, not process-local)" {
   # A subshell launched separately must observe the same lock. If the lock
   # is implemented as a process-local construct (e.g., a bash variable), it

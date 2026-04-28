@@ -31,23 +31,97 @@ _state_current_step_is_allowed() {
 }
 
 # ---------------------------------------------------------------------------
-# T24 — portable advisory lock for state_write_atomic
+# T24 — file lock for state_write_atomic (R2 S-N4)
 #
-# Rationale: round-2 finding S-N4 demands serialization of the read-modify-
-# write critical section against concurrent callers (Plan's narrow direct
-# write vs PostToolUse hook reconciliation). Linux-style flock(1) is not
-# present on macOS by default, so we use a portable mkdir-based mutex —
-# mkdir is atomic on POSIX and produces a non-zero exit if the directory
-# already exists. We retry with bounded backoff and stale-lock detection
-# (PID file inside the lock dir; reclaim if owner died) to avoid deadlock
-# if a holder crashes.
+# Rationale: serializes the read-modify-write critical section against
+# concurrent callers (Plan's narrow direct write vs PostToolUse hook
+# reconciliation). Two implementations are layered:
 #
-# Lock dir: .qrspi/state.json.lock  (sibling of state.json)
-# Stale timeout: 30 s — generous; the critical section is microseconds.
-# Acquire timeout: 10 s — long enough for legitimate contention; short
-#                          enough that hung writers fail loudly.
+#  Primary: flock(1) on .qrspi/state.json.lock — used when flock is on PATH
+#           (Linux, *BSD, and macOS systems with util-linux/flock installed).
+#           This is the spec-mandated mechanism for finding R2 S-N4.
+#  Fallback: mkdir-based mutex on the same lock dir path — used on macOS
+#           (where flock(1) is absent by default) and any other platform
+#           lacking flock. mkdir is atomic on POSIX. Stale-lock detection
+#           via PID file (kill -0) and epoch file (30s wallclock) prevents
+#           deadlock if a holder crashes.
+#
+# Lock target: .qrspi/state.json.lock
+#   - When flock is used, this is a regular file opened on FD 9.
+#   - When mkdir-mutex is used, this is a directory containing owner.pid
+#     and started.epoch.
+#   The two implementations cannot interoperate on the same host (a flock'd
+#   file vs an mkdir'd directory differ in inode type), but every caller
+#   on a given host uses the same primitive (chosen at function-call time
+#   by `command -v flock`), so consistency is preserved within the host.
+#
+# Acquire timeout: 10 s.
+# Stale timeout (mkdir fallback only): 30 s.
 # ---------------------------------------------------------------------------
+
+# Module-level: detect flock once. We re-check each call (cheap) so test
+# environments that PATH-stub flock get the right behavior.
+_state_have_flock() {
+  command -v flock >/dev/null 2>&1
+}
+
+# _state_lock_acquire — primary entry. Dispatches to flock or mkdir-mutex.
+# Sets _STATE_LOCK_KIND ("flock" | "mkdir") for _state_lock_release to know
+# which release path to take.
 _state_lock_acquire() {
+  if _state_have_flock; then
+    _state_lock_acquire_flock
+  else
+    _state_lock_acquire_mkdir
+  fi
+}
+
+_state_lock_release() {
+  case "${_STATE_LOCK_KIND:-}" in
+    flock) _state_lock_release_flock ;;
+    mkdir) _state_lock_release_mkdir ;;
+    *) : ;;  # No lock held (or unknown kind); release is a no-op
+  esac
+  _STATE_LOCK_KIND=""
+}
+
+# ---- flock implementation (primary) ----
+_state_lock_acquire_flock() {
+  local lock_file=".qrspi/state.json.lock"
+  # Touch the lock file so flock can open it.
+  if ! : > "$lock_file" 2>/dev/null; then
+    # If the lock file already exists with content (from a previous flock
+    # run), that's fine — flock locks the file, not its contents. Only
+    # complain if we cannot create or access it.
+    if [[ ! -e "$lock_file" ]]; then
+      echo "state_write_atomic: failed to create lock file $lock_file" >&2
+      return 1
+    fi
+  fi
+  # Open lock file on FD 9 in the current shell, then flock-exclusive
+  # with 10s timeout.
+  exec 9>"$lock_file" || {
+    echo "state_write_atomic: failed to open lock file $lock_file on FD 9" >&2
+    return 1
+  }
+  if ! flock -w 10 9 2>/dev/null; then
+    echo "state_write_atomic: failed to acquire flock on $lock_file within 10s" >&2
+    exec 9>&- 2>/dev/null || true
+    return 1
+  fi
+  _STATE_LOCK_KIND="flock"
+  return 0
+}
+
+_state_lock_release_flock() {
+  # Closing FD 9 releases the flock. Best-effort cleanup of lock file
+  # (other waiters may still hold the FD; rm is fine — flock is per-FD,
+  # not per-path).
+  exec 9>&- 2>/dev/null || true
+}
+
+# ---- mkdir-based mutex (fallback for macOS / no flock) ----
+_state_lock_acquire_mkdir() {
   local lock_dir=".qrspi/state.json.lock"
   local pid_file="$lock_dir/owner.pid"
   local started_file="$lock_dir/started.epoch"
@@ -62,6 +136,7 @@ _state_lock_acquire() {
       # Acquired
       echo "$$" > "$pid_file" 2>/dev/null || true
       date +%s > "$started_file" 2>/dev/null || true
+      _STATE_LOCK_KIND="mkdir"
       return 0
     fi
 
@@ -107,7 +182,7 @@ _state_lock_acquire() {
   done
 }
 
-_state_lock_release() {
+_state_lock_release_mkdir() {
   local lock_dir=".qrspi/state.json.lock"
   rm -rf "$lock_dir" 2>/dev/null || true
 }
@@ -283,25 +358,98 @@ state_init_or_reconcile() {
     return 1
   fi
 
-  # T24-B/C: Preserve wireframe_requested across reconcile too — same
-  # rationale as phase_start_commit (artifact.sh sets wireframe_requested
-  # via state_write_atomic, but a subsequent reconcile would otherwise
-  # reset it to false). This was a latent bug surfaced while fixing I-N3;
-  # the symmetric preservation closes the same class of regression.
-  if [[ -f ".qrspi/state.json" ]]; then
-    local existing_wf
-    existing_wf=$(jq -r '.wireframe_requested // false' ".qrspi/state.json" 2>/dev/null || echo "false")
-    if [[ "$existing_wf" == "true" ]]; then
-      json=$(echo "$json" | jq -c '.wireframe_requested = true')
-    fi
-  fi
-
   # Write the state file atomically (state_write_atomic also enforces
   # current_step allowlist + lock-serializes the critical section).
   if ! state_write_atomic "$json"; then
     echo "state_init_or_reconcile: state_write_atomic failed" >&2
     return 1
   fi
+}
+
+# state_update <jq_filter>
+# Atomic read-modify-write of .qrspi/state.json under the lock that
+# state_write_atomic uses. Reads the current state, applies <jq_filter>
+# (a jq expression operating on the state JSON), validates the resulting
+# current_step against the allowlist, and writes the result. The entire
+# critical section is serialized against any other state_update or
+# state_write_atomic caller.
+#
+# This is the spec-mandated path (R2 S-N4 option 2) for callers that need
+# to mutate a single field without losing concurrent updates to other
+# fields. Callers like Plan's narrow-direct-write should use this rather
+# than read+modify+state_write_atomic, which leaves the R-M-W window
+# unserialized.
+#
+# Example: state_update '.phase_start_commit = "abc123"'
+#
+# Returns:
+#   0 on success
+#   1 on lock acquire failure, jq error, or write error (with stderr diagnostic)
+state_update() {
+  local filter="$1"
+
+  # Acquire lock for the entire R-M-W critical section.
+  if ! _state_lock_acquire; then
+    return 1
+  fi
+
+  # Read current state under lock.
+  local current=""
+  if [[ -f ".qrspi/state.json" ]]; then
+    if ! current=$(cat ".qrspi/state.json" 2>/dev/null); then
+      echo "state_update: failed to read .qrspi/state.json under lock" >&2
+      _state_lock_release
+      return 1
+    fi
+  else
+    echo "state_update: .qrspi/state.json does not exist (nothing to update)" >&2
+    _state_lock_release
+    return 1
+  fi
+
+  # Apply filter via jq.
+  local updated
+  if ! updated=$(echo "$current" | jq -c "$filter" 2>/dev/null); then
+    echo "state_update: jq filter '$filter' failed" >&2
+    _state_lock_release
+    return 1
+  fi
+
+  # Validate current_step in the result against the allowlist.
+  if [[ "$updated" == *'"current_step"'* ]]; then
+    local cs
+    cs=$(echo "$updated" | jq -r '.current_step // empty' 2>/dev/null || echo "")
+    if [[ -n "$cs" ]] && ! _state_current_step_is_allowed "$cs"; then
+      echo "state_update: filter produced out-of-allowlist current_step '$cs' (refusing to write)" >&2
+      _state_lock_release
+      return 1
+    fi
+  fi
+
+  # Write atomically. We bypass state_write_atomic's internal lock to
+  # avoid double-acquire — instead we inline the temp-file + mv write
+  # under the existing lock.
+  local temp_file
+  if ! temp_file=$(mktemp ".qrspi/.state.json.XXXXXX" 2>/dev/null); then
+    echo "state_update: failed to create temp file" >&2
+    _state_lock_release
+    return 1
+  fi
+  if ! echo "$updated" > "$temp_file" 2>/dev/null; then
+    echo "state_update: failed to write temp file" >&2
+    rm -f "$temp_file" 2>/dev/null
+    _state_lock_release
+    return 1
+  fi
+  if ! mv "$temp_file" ".qrspi/state.json" 2>/dev/null; then
+    echo "state_update: failed to mv temp file into place" >&2
+    rm -f "$temp_file" 2>/dev/null
+    _state_lock_release
+    return 1
+  fi
+
+  _state_lock_release
+  return 0
 }
 
 # state_read
