@@ -119,6 +119,73 @@ teardown() {
   [ ! -f "$TEST_ROOT/docs/qrspi/2026-04-26-fakeproj/.qrspi/audit.jsonl" ]
 }
 
+# ── Worktree-CWD audit (S-N3 fix) ──────────────────────────────────
+
+@test "log: subagent CWD inside worktree resolves artifact_dir via state.json fallback" {
+  # Simulate CWD inside the worktree (the bug scenario): docs/qrspi/ is NOT
+  # visible relative to PWD, so the local-glob resolver fails. State.json
+  # at the parent repo root carries the canonical artifact_dir.
+  local repo_root="$TEST_ROOT"
+  local artifact_dir="$repo_root/docs/qrspi/2026-04-26-fakeproj"
+  mkdir -p "$repo_root/.qrspi"
+  printf '{"version":1,"artifact_dir":"%s"}\n' "$artifact_dir" > "$repo_root/.qrspi/state.json"
+
+  cd "$repo_root/.worktrees/fakeproj/task-02"
+
+  local target="$repo_root/.worktrees/fakeproj/task-02/src/foo.ts"
+  local envelope='{"agent_id":"sub-1","agent_type":"implementer","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  run audit_log_event "$envelope" "allow" ""
+  [ "$status" -eq 0 ]
+
+  local audit_file="$artifact_dir/.qrspi/audit.jsonl"
+  [ -f "$audit_file" ]
+  local line
+  line=$(cat "$audit_file")
+  [[ "$line" == *"\"agent_id\":\"sub-1\""* ]]
+  [[ "$line" == *"\"target\":\"$target\""* ]]
+}
+
+@test "log: worktree-scope target with no resolvable artifact_dir → orphan log + nonzero" {
+  # Worktree CWD, NO docs/qrspi/ glob match anywhere, NO state.json. Target is
+  # clearly in QRSPI scope (worktree path) but neither resolver succeeds.
+  # Expectation: row goes to <repo_root>/.qrspi/audit-orphan.jsonl and the
+  # function returns non-zero so callers know the canonical path failed.
+  local repo_root="$TEST_ROOT/orphan-repo"
+  mkdir -p "$repo_root/.worktrees/lostproj/task-09"
+  cd "$repo_root/.worktrees/lostproj/task-09"
+
+  local target="$repo_root/.worktrees/lostproj/task-09/src/x.ts"
+  local envelope='{"agent_id":"sub-9","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  run audit_log_event "$envelope" "allow" ""
+  [ "$status" -ne 0 ]
+
+  local orphan_file="$repo_root/.qrspi/audit-orphan.jsonl"
+  [ -f "$orphan_file" ]
+  local line
+  line=$(cat "$orphan_file")
+  [[ "$line" == *"\"agent_id\":\"sub-9\""* ]]
+  [[ "$line" == *"\"target\":\"$target\""* ]]
+}
+
+@test "log: state.json fallback preserves canonical audit.jsonl location even when local glob would also work" {
+  # Sanity guard: when CWD has docs/qrspi/ AND state.json exists, the canonical
+  # location wins (no regression for main-chat usage).
+  local artifact_dir="$TEST_ROOT/docs/qrspi/2026-04-26-fakeproj"
+  mkdir -p "$TEST_ROOT/.qrspi"
+  printf '{"version":1,"artifact_dir":"%s"}\n' "$artifact_dir" > "$TEST_ROOT/.qrspi/state.json"
+
+  local target="$TEST_ROOT/.worktrees/fakeproj/task-02/src/y.ts"
+  local envelope='{"agent_id":"sub-1","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  run audit_log_event "$envelope" "allow" ""
+  [ "$status" -eq 0 ]
+
+  local audit_file="$artifact_dir/.qrspi/audit.jsonl"
+  [ -f "$audit_file" ]
+}
+
 # ── Structural meta-tests ─────────────────────────────────────────
 
 @test "audit.sh uses set -euo pipefail" {
