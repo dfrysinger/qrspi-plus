@@ -171,8 +171,16 @@ emit_audit_row() {
   # for arbitrarily large rows. If the row plus its trailing newline exceeds
   # 4096 bytes we fail-closed: silently truncating or interleaving would
   # break the per-row JSONL invariant downstream consumers depend on.
-  # row_len uses ${#row} (bash byte count for the encoded JSON) +1 for '\n'.
-  local row_len=$(( ${#row} + 1 ))
+  #
+  # [CodexF2-resolved] Use `wc -c` for a true BYTE count rather than bash's
+  # ${#row}, which counts CHARACTERS in the active locale. In UTF-8 locales
+  # a multibyte char (e.g. a 4-byte emoji) counts as 1 in ${#row} but as 4
+  # bytes against PIPE_BUF, so a row with multibyte content could pass the
+  # char-check while exceeding 4096 actual bytes on append. printf '%s\n'
+  # adds the trailing newline so wc's count equals what we will write.
+  local row_len
+  row_len=$(printf '%s\n' "$row" | wc -c)
+  row_len=${row_len//[[:space:]]/}   # wc -c on macOS prefixes spaces
   if [ "$row_len" -gt 4096 ]; then
     rmdir "$lock_dir" 2>/dev/null
     printf 'codex-companion-bg: audit row would be %d bytes (>4096 PIPE_BUF cap); refusing to append\n' \
@@ -478,6 +486,21 @@ fetch_result() {
   if raw=$(extract_json_field "$stdout_text" "storedJob.rendered") && [ -n "$raw" ]; then
     printf '%s' "$raw"; return 0
   fi
+  # [CodexF1-resolved-by-comment]
+  # Links (d) and (e) below intentionally diverge from render.mjs:421-445.
+  # The real renderer's else-branch builds a structured header block
+  # (`# <title>`, `Job: <id>`, `Status: <status>`, optional Codex session ID
+  # / Resume hint, optional Summary) and then appends `job.errorMessage`
+  # (link d) or `storedJob.errorMessage` (link e) as a body line — emitting
+  # `"No captured result payload was stored for this job."` if both are
+  # absent. The QRSPI wrapper deliberately bypasses that header formatting
+  # and surfaces the bare errorMessage string, because the QRSPI caller's
+  # contract is "give me the markdown the codex review produced." For
+  # failed/cancelled jobs the errorMessage IS the substantive content; the
+  # title/status/job-id metadata is already known to the caller (it just
+  # invoked `await <jobId>`). Re-rendering the header block here would only
+  # add noise to the captured-text output. This is acceptable per codex's
+  # own resolution suggestion: not a defect for the wrapper's purpose.
   if raw=$(extract_json_field "$stdout_text" "job.errorMessage") && [ -n "$raw" ]; then
     printf '%s' "$raw"; return 0
   fi

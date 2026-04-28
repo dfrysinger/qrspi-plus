@@ -493,6 +493,44 @@ EOF
   done < .qrspi/audit-codex-review.jsonl
 }
 
+@test "audit: multibyte row whose CHAR count is under 4096 but BYTE count is over fails-closed with exit 12 (CodexF2)" {
+  # Regression: a previous version of the wrapper used `${#row}` which counts
+  # CHARACTERS in the active locale. In UTF-8 locales a 4-byte emoji counts
+  # as 1 against ${#row} but consumes 4 bytes against PIPE_BUF. A jobId
+  # composed of ~3500 ASCII bytes + ~200 4-byte emojis produces a row whose
+  # character count stays comfortably under 4096 but whose true byte length
+  # crosses the PIPE_BUF cap. Under the old char-count guard this row would
+  # slip through and risk an interleaved append. The fix uses `wc -c` for a
+  # true byte count.
+  echo '{"jobId":"job-mbyte","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  # 3500 ASCII bytes (3500 chars) + 200 fire emojis (4 bytes each = 800 bytes,
+  # but only 200 chars in bash with UTF-8 locale). Total: 3700 chars (well
+  # under the old ${#row} 4096 char-guard) but 4300 bytes (well over PIPE_BUF).
+  ascii_part=$(printf 'a%.0s' $(seq 1 3500))
+  emoji_part=$(printf '\xf0\x9f\x94\xa5%.0s' $(seq 1 200))
+  mb_id="${ascii_part}${emoji_part}"
+
+  # Sanity: confirm the test fixture itself satisfies the precondition
+  # (chars < 4096, bytes > 4096). If LANG/LC_ALL are unset the locale may
+  # default to C; force UTF-8 for the bash char-count check so we genuinely
+  # exercise the multibyte branch.
+  LC_ALL=en_US.UTF-8 char_count=${#mb_id}
+  byte_count=$(printf '%s' "$mb_id" | wc -c | tr -d '[:space:]')
+  [ "$char_count" -lt 4096 ]
+  [ "$byte_count" -gt 4096 ]
+
+  LC_ALL=en_US.UTF-8 run "$WRAPPER" await "$mb_id"
+  [ "$status" -eq 12 ]
+  [ -n "$output$stderr" ]
+  if [ -f .qrspi/audit-codex-review.jsonl ]; then
+    rows=$(wc -l < .qrspi/audit-codex-review.jsonl)
+    [ "$rows" -eq 0 ]
+  fi
+}
+
 @test "audit: row that would exceed 4096B fails-closed with exit 12 (PIPE_BUF guard)" {
   # A 5000-byte jobId pushes the encoded row past PIPE_BUF. The wrapper must
   # refuse the append rather than risk an interleaved write.
