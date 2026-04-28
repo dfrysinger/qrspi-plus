@@ -162,6 +162,107 @@ extract_h3_subsection() {
   ! grep -Eq "^## Iron Law 2" "$DESIGN_FILE"
 }
 
+# ── Task 36: integration-round-01 fixes for design SKILL ────────────────────
+#
+# T36 bundles two findings on skills/design/SKILL.md:
+#   T36-1 (R1 Claude-I4) — design reviewer prompt's "addresses ... acceptance
+#         criteria" wording is post-T9 deprecated; goals.md no longer authors
+#         acceptance criteria (T9 strip-from-goals contract — plan.md owns
+#         them now). The Review Round subsection's Claude reviewer checks
+#         must drop the deprecated phrasing.
+#   T36-2 (R2 I-N5) — design's Artifact Gating subsection silently defaults
+#         codex_reviews to false when config.md is missing; using-qrspi:411
+#         requires every skill that reads config.md to invoke the Config
+#         Validation Procedure instead. Design must validate codex_reviews.
+
+# extract_review_round <file>
+# Extracts the `### Review Round` subsection from the design SKILL.md, robust
+# to fenced code-block content (which contains `## Approach`, `## Key
+# Decisions`, etc., that would otherwise confuse the simple H2 extractor).
+# Tracks code-fence state and only stops on a real (out-of-fence) `### `/`## `
+# heading after the Review Round heading is entered.
+extract_review_round() {
+  local file="$1"
+  awk '
+    /^```/ { fence = !fence; if (in_b) print; next }
+    !fence && $0 == "### Review Round" { in_b = 1; print; next }
+    in_b && !fence && /^### / { exit }
+    in_b && !fence && /^## / { exit }
+    in_b { print }
+  ' "$file"
+}
+
+@test "[T36-1] design SKILL Review Round Claude-reviewer checks no longer reference deprecated 'acceptance criteria' phrasing" {
+  # The Review Round subsection (under ### Review Round) authors the Claude
+  # reviewer prompt's check list. Per T9's strip-from-goals contract,
+  # acceptance criteria are owned by plan.md, not goals.md — so a design
+  # reviewer cannot meaningfully check "design addresses ... acceptance
+  # criteria" at design time. The deprecated wording must be gone.
+  local section
+  section=$(extract_review_round "$DESIGN_FILE")
+  if [ -z "$section" ]; then
+    echo "Could not extract '### Review Round' subsection from design SKILL.md" >&2
+    return 1
+  fi
+  # The phrase "acceptance criteria" must not appear inside the Review Round
+  # subsection (case-insensitive, hyphen/space tolerant).
+  if echo "$section" | grep -Eiq "acceptance[ -]criteria"; then
+    echo "Deprecated 'acceptance criteria' phrasing still present in ### Review Round:" >&2
+    echo "$section" | grep -Ei "acceptance[ -]criteria" >&2
+    return 1
+  fi
+}
+
+@test "[T36-1] design SKILL Review Round still asserts the design addresses all goals" {
+  # Replacement wording: the reviewer should still verify that design
+  # addresses goals (T9 keeps goals as the upstream traceability anchor).
+  # We assert the post-T9 canonical phrasing — "addresses all goals"
+  # (matches structure SKILL's analogous reviewer-prompt phrasing) — is
+  # present inside the Review Round subsection.
+  local section
+  section=$(extract_review_round "$DESIGN_FILE")
+  if [ -z "$section" ]; then
+    echo "Could not extract '### Review Round' subsection from design SKILL.md" >&2
+    return 1
+  fi
+  echo "$section" | grep -Eiq "addresses (all )?goals"
+}
+
+@test "[T36-2] design SKILL Artifact Gating no longer silently defaults codex_reviews to false" {
+  # The deprecated wording: "If `config.md` doesn't exist, default to
+  # `codex_reviews: false`." This is forbidden by using-qrspi:438 ("No
+  # silent defaults"). The Artifact Gating subsection must not contain it.
+  local section
+  section=$(extract_h2_section "$DESIGN_FILE" "## Artifact Gating")
+  if [ -z "$section" ]; then
+    echo "Could not extract '## Artifact Gating' section from design SKILL.md" >&2
+    return 1
+  fi
+  if echo "$section" | grep -Eiq "default to .*codex_reviews: false"; then
+    echo "Silent codex_reviews default still present in ## Artifact Gating:" >&2
+    echo "$section" | grep -Ei "default to .*codex_reviews: false" >&2
+    return 1
+  fi
+}
+
+@test "[T36-2] design SKILL Artifact Gating invokes the Config Validation Procedure for codex_reviews" {
+  # Per using-qrspi:411 ("Every skill that reads config.md applies this
+  # procedure before using any field"), Design must invoke the procedure
+  # by name. Canonical phrasing in peer skills (goals/plan/test/integrate):
+  #   "Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`.
+  #    {Skill} validates `codex_reviews`."
+  local section
+  section=$(extract_h2_section "$DESIGN_FILE" "## Artifact Gating")
+  if [ -z "$section" ]; then
+    echo "Could not extract '## Artifact Gating' section from design SKILL.md" >&2
+    return 1
+  fi
+  # Must mention the Config Validation Procedure inside Artifact Gating.
+  echo "$section" | grep -q "Config Validation Procedure"
+  # Must name codex_reviews as one of the validated fields.
+  echo "$section" | grep -q "codex_reviews"
+}
+
 # ── M51: skills/structure/SKILL.md content patterns ─────────────────────────
 
 @test "[M51] skills/structure/SKILL.md exists" {
