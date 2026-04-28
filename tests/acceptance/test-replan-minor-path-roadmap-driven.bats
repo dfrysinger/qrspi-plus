@@ -130,3 +130,61 @@ extract_section() {
   ' "$REPLAN_FILE")"
   echo "$minor_region" | grep -q "future-research-summary.md"
 }
+
+# ── Task 34: Severity table routes phasing-owned changes to Phasing ────────
+
+@test "Severity Classification table includes Phasing as a valid loop-back target" {
+  # R1 Codex-I2: severity table previously routed phasing-owned changes to
+  # Design loop-back, violating the M54 ownership boundary (slice
+  # decomposition + phase boundaries are owned by Phasing). Phasing must be
+  # listed as a loop-back target column value in at least one row.
+  local section
+  section="$(extract_section "$REPLAN_FILE" "## Severity Classification")"
+  [ -n "$section" ]
+  # At least one severity-table row must list Phasing in the loop-back-target
+  # column (the column between the Severity column and the Examples column).
+  # Match a markdown table row with | Phasing | between two |s.
+  echo "$section" | grep -qE "\| *Phasing *\|"
+}
+
+@test "Severity table routes slice add/remove/regroup to Phasing (not Design)" {
+  # The phasing-owned change types — slice add/remove/regroup, vertical
+  # slice decomposition — must route to Phasing, not Design. Each row
+  # mentioning slice-decomposition concepts must have Phasing in the
+  # loop-back-target cell.
+  local section
+  section="$(extract_section "$REPLAN_FILE" "## Severity Classification")"
+  [ -n "$section" ]
+  # Find the row that mentions vertical slice decomposition. It must list
+  # Phasing as the loop-back target, NOT Design.
+  local slice_row
+  slice_row="$(echo "$section" | grep -iE "vertical slice|slice decomposition")"
+  [ -n "$slice_row" ]
+  echo "$slice_row" | grep -q "Phasing"
+  ! echo "$slice_row" | grep -qE "\| *Design *\|"
+}
+
+@test "Severity table routes phase boundary / phase rebalancing changes to Phasing (not Design)" {
+  # Phase boundaries and phase rebalancing are Phasing-owned per M54.
+  # The severity-table row mentioning phase boundaries must route to
+  # Phasing, not Design.
+  local section
+  section="$(extract_section "$REPLAN_FILE" "## Severity Classification")"
+  [ -n "$section" ]
+  local phase_row
+  phase_row="$(echo "$section" | grep -iE "phase boundar|phase rebalanc")"
+  [ -n "$phase_row" ]
+  echo "$phase_row" | grep -q "Phasing"
+  ! echo "$phase_row" | grep -qE "\| *Design *\|"
+}
+
+@test "Replan loop-back invocation list includes qrspi:phasing for Phasing major loop-back" {
+  # Major-path Human Gate must include a Phasing loop-back invocation
+  # entry, paralleling the existing Goals/Design/Structure entries. Without
+  # this, identifying Phasing as a severity-table target produces a
+  # dangling reference (no invocation path documented).
+  local section
+  section="$(extract_section "$REPLAN_FILE" "## Human Gate — Major Changes")"
+  [ -n "$section" ]
+  echo "$section" | grep -qE "qrspi:phasing|Loop back to Phasing"
+}
