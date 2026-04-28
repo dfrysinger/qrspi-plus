@@ -2,9 +2,33 @@
 # SessionStart hook for QRSPI plugin
 # Injects the using-qrspi skill content into conversation context.
 #
-# This hook does NOT initialize state or validate artifacts — that is the
-# responsibility of pipeline skills (which know which project they're working
-# on). Skills create state via state_init_or_reconcile; hooks only read it.
+# ─────────────────────────────────────────────────────────────────────────
+# Canonical SessionStart contract
+# ─────────────────────────────────────────────────────────────────────────
+# This file is the canonical source of truth for what the SessionStart hook
+# does and does NOT do. Any documentation that describes SessionStart (e.g.
+# skills/using-qrspi/SKILL.md) must align with this header — not the other
+# way around. If you change behavior here, update the dependent docs in the
+# same change.
+#
+# Does:
+#   - Reads skills/using-qrspi/SKILL.md and injects it into the new
+#     session's conversation context (additional_context for Cursor,
+#     hookSpecificOutput.additionalContext for Claude Code).
+#
+# Does NOT:
+#   - This hook does NOT initialize state or validate artifacts. State
+#     bootstrap is skill-driven: the Goals skill calls
+#     state_init_or_reconcile on first invocation when state.json is
+#     missing or unreadable; subsequent state updates flow through the
+#     PostToolUse hook when artifact frontmatter changes. Hooks only read
+#     state, they do not create or reconcile it here.
+#   - Does NOT enumerate artifact directories, glob docs/qrspi/*-*/, or
+#     touch .qrspi/state.json. There is intentionally no per-worktree
+#     state and no per-session state recovery in this hook — that work
+#     belongs to the skills that know which project and pipeline run they
+#     are operating on.
+# ─────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
 
