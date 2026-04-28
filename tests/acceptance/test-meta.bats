@@ -6,11 +6,13 @@ bats_require_minimum_version 1.5.0
 # Criterion 8: "All existing pipeline functionality (Goals through Replan)
 #   continues to work after Phase 4 changes — validated by the unit tests
 #   passing (baseline confirmed)."
-#   → Meta-test: confirm the unit test suite still has exactly 287 @test entries
-#     across exactly 12 .bats files.
+#   → Meta-test: confirm the unit test suite still has exactly 484 @test entries
+#     across exactly 22 .bats files (baseline as of T17 / Wave 6).
 #
 # Phase 4 changes: test-validate.bats deleted (M27), test-artifact-map.bats
 # added (U8). File count stays at 12, test count updated to 287.
+# T17 (2026-04-27, Wave 6) adds 4 new unit .bats files (cross-cutting
+# scope-reviewer + M49-M52 SKILL.md content tests): 18→22, 416→484.
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,18 +22,26 @@ unit_test_dir() {
 
 # ── Criterion 8: Unit test suite baseline ────────────────────────────────────
 
-# AC8 — The unit test directory contains exactly 18 .bats files
-@test "[AC8] Unit test suite has exactly 18 .bats files (baseline)" {
+# AC8 — The unit test directory contains exactly 22 .bats files
+@test "[AC8] Unit test suite has exactly 22 .bats files (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(find "$dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 18 ]
+  [ "$count" -eq 22 ]
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 416 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T14 fix-cycle 2
+@test "[AC8] Unit test suite has exactly 484 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T17 (Wave 6).
+  # T17 authors 4 new unit .bats files for M49-M52 + scope-reviewer
+  # cross-cutting tests:
+  #   test-skill-md-content-patterns.bats          (+26 @tests)
+  #   test-scope-reviewer.bats                     (+16 @tests)
+  #   test-scope-reviewer-parallel-with-claude.bats (+13 @tests)
+  #   test-scope-reviewer-rules-loading.bats        (+13 @tests, 1 skipped pending FU-5)
+  # Net delta: +68 @tests, +4 unit .bats files. 416 → 484; 18 → 22.
+  # Prior 416 baseline was after 2026-04-27 prompt-improvements T14 fix-cycle 2
   # (+1 for scope-reviewer-allowed-values assertion in
   # test-replan-archive-and-populate.bats — verifies the scope-reviewer
   # template's `## Parameters` allowed-values list includes `replan`, which
@@ -66,11 +76,11 @@ unit_test_dir() {
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 416 ]
+  [ "$count" -eq 484 ]
 }
 
-# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T14)
-@test "[AC8] All 18 expected unit test files are present by name" {
+# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T17)
+@test "[AC8] All 22 expected unit test files are present by name" {
   local dir
   dir="$(unit_test_dir)"
 
@@ -89,7 +99,11 @@ unit_test_dir() {
     "test-pre-tool-use.bats"
     "test-replan-archive-and-populate.bats"
     "test-reviewer-boilerplate-embed.bats"
+    "test-scope-reviewer.bats"
+    "test-scope-reviewer-parallel-with-claude.bats"
+    "test-scope-reviewer-rules-loading.bats"
     "test-setup-project-hooks.bats"
+    "test-skill-md-content-patterns.bats"
     "test-state.bats"
     "test-task.bats"
     "test-worktree.bats"
