@@ -48,11 +48,14 @@ Required inputs:
 - Remaining task specs (next phase's `tasks/*.md`)
 - `plan.md` with `status: approved`
 - `design.md` with `status: approved` (phase boundary context and potential updates)
+- `phasing.md` with `status: approved` (slice decomposition and phase boundaries — Phasing-owned per M54; Replan READS this as the source of truth for which goal IDs belong to which phase, and which severity-table loop-backs route to Phasing vs. Design)
 - `future-goals.md` (if present) — contains Formal goals (approved for future phases with IDs) and Ideas (informal suggestions from Test/Integrate human gates). Read before producing analysis. Formal goals inform phase promotion. Ideas are presented to user as optional additions. If file does not exist, skip silently.
 
-Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. If `config.md` doesn't exist, default to `codex_reviews: false`.
-
 If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
+
+### Config Validation
+
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Replan validates `codex_reviews`.
 
 <HARD-GATE>
 Do NOT update approved artifacts without user approval of the proposed changes.
@@ -72,18 +75,18 @@ Do NOT skip the backward loop for major or scope-unknown changes — cascading r
 | Change file paths or add files within existing slices | **Major** | Structure | "Need a new middleware file not in structure.md" |
 | Change interfaces between components | **Major** | Structure | "The API contract for /entries needs a new field" |
 | Change technology choice, approach, or architecture | **Major** | Design | "Switch from polling to WebSockets for real-time" |
-| Change phase boundaries or slice definitions | **Major** | Design | "Move Task 8 from Phase 2 to Phase 3" |
-| Change vertical slice decomposition | **Major** | Design | "Notifications should be its own slice, not part of the social slice" |
+| Change phase boundaries or rebalance phases (move tasks/goals across phases) | **Major** | Phasing | "Move Task 8 from Phase 2 to Phase 3", "Rebalance Phase 1 to drop Goal G5 into Phase 2" |
+| Change vertical slice decomposition (add/remove/regroup slices) | **Major** | Phasing | "Notifications should be its own slice, not part of the social slice", "Merge the messaging and notifications slices" |
 | Change project goals, acceptance criteria, or constraints | **Major** | Goals | "The MVP scope should include notifications, not just messaging" |
 | Fundamental re-evaluation of project direction | **Major** | Goals | "We should target mobile-first instead of desktop-first" |
 
 **Classification criteria for Scope Unknown:** Use when the impact of a change is unclear and you cannot confidently classify it as Minor or Major. Default to the most stringent treatment — treat as Major and identify the earliest plausible loop-back target. Do not guess Minor when scope is ambiguous.
 
-**Key rule:** The loop-back target is the **earliest affected artifact**. If file paths change, loop back to Structure (which cascades to Plan). If architecture changes, loop back to Design (which cascades to Structure -> Plan). If goals or acceptance criteria change, loop back to Goals (which resets all artifacts to draft — the entire pipeline re-runs).
+**Key rule:** The loop-back target is the **earliest affected artifact**. If file paths change, loop back to Structure (which cascades to Plan). If phase boundaries or slice decomposition change, loop back to Phasing (which cascades to Structure -> Plan; Phasing OWNS slice decomposition and phase boundaries per M54). If architecture changes (technology / approach), loop back to Design (which cascades to Phasing -> Structure -> Plan). If goals or acceptance criteria change, loop back to Goals (which resets all artifacts to draft — the entire pipeline re-runs).
 
 ## Replan Subagent
 
-**Inputs:** completed phase code, `fixes/` and `reviews/` directories, remaining `tasks/*.md`, `plan.md`, `design.md`
+**Inputs:** completed phase code, `fixes/` and `reviews/` directories, remaining `tasks/*.md`, `plan.md`, `design.md`, `phasing.md`
 
 NO `goals.md` directly — the subagent reads the plan and design which already incorporate goals. (The review subagent reads `goals.md` directly for consistency checking — that is a separate subagent with different inputs.)
 
@@ -146,19 +149,20 @@ On rejection: write feedback to `feedback/replan-minor-phase-NN-round-MM.md` (no
 
 ## Human Gate — Major Changes
 
-Identify earliest loop-back target (Goals, Design, or Structure).
+Identify earliest loop-back target (Goals, Design, Phasing, or Structure).
 
 Write replan proposals to `feedback/replan-phase-NN-round-MM.md` with: what changed, why, phase learnings. Primary input for loop-back skill. Proposed changes described here, NOT applied to artifacts directly.
 
-Reset target artifact and all downstream artifacts to `status: draft`. Includes both main artifacts AND their outputs: loop to Goals resets all artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`); loop to Design resets `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`; loop to Structure resets `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`. No content changes — just status reset. (Task files and `parallelization.md` must be reset because Plan and Parallelize will re-produce them during the cascade.)
+Reset target artifact and all downstream artifacts to `status: draft`. Includes both main artifacts AND their outputs: loop to Goals resets all artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`, `phasing.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`); loop to Design resets `design.md`, `phasing.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`; loop to Phasing resets `phasing.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md` (Phasing re-authors `roadmap.md` and the `future-*.md` artifacts as part of its cascade); loop to Structure resets `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`. No content changes — just status reset. (Task files and `parallelization.md` must be reset because Plan and Parallelize will re-produce them during the cascade.)
 
 Recommend compaction before invoking target skill.
 
 - **Loop back to Goals:** Invoke `qrspi:goals` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
 - **Loop back to Design:** Invoke `qrspi:design` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
+- **Loop back to Phasing:** Invoke `qrspi:phasing` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
 - **Loop back to Structure:** Invoke `qrspi:structure` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
 
-**Fire-and-forget:** After writing the feedback file and resetting statuses, Replan invokes the loop-back target skill directly and exits. The normal pipeline terminal state routing takes over — Design invokes Structure, Structure invokes Plan, Plan invokes Parallelize, Parallelize invokes Implement. Replan does not orchestrate the cascade or maintain control. Each downstream skill picks up the feedback file as additional input through its normal process.
+**Fire-and-forget:** After writing the feedback file and resetting statuses, Replan invokes the loop-back target skill directly and exits. The normal pipeline terminal state routing takes over — Design invokes Phasing, Phasing invokes Structure, Structure invokes Plan, Plan invokes Parallelize, Parallelize invokes Implement. Replan does not orchestrate the cascade or maintain control. Each downstream skill picks up the feedback file as additional input through its normal process.
 
 **Minor changes alongside major:** Include all minor changes in the feedback file alongside the major proposals. Plan will incorporate them when it re-produces task specs during the cascade. No separate apply step is needed — the feedback file is the single communication channel.
 
@@ -174,9 +178,9 @@ Recommend compaction before invoking target skill.
 
 **Minor path:** Delete `replan-pending.md`, recommend compaction, then **call `state_init_or_reconcile <artifact_dir>` to reconcile `state.json` against the freshly-reset frontmatter** (this avoids relying on the PostToolUse hook's lazy catch-up — Goals reads `state.json` immediately at start and would otherwise see stale values), then invoke `qrspi:goals` for the next phase. (Rationale: `artifact_promote_next_phase` deleted `structure.md`, `plan.md`, `tasks/` and reset goals/research/design frontmatter to `draft`. Parallelize cannot run without an approved `plan.md` and `tasks/*.md`, so the next phase must restart from Goals — which re-approves the promoted goals via its "Next-Phase Restart Mode" (see `goals/SKILL.md` → "Next-Phase Restart Mode"), then cascades through Questions/Research/Design/Structure/Plan/Parallelize/Implement in turn.)
 
-**Major path:** Delete `replan-pending.md`, recommend compaction, invoke the loop-back target skill (Goals, Design, or Structure). Replan exits — the normal pipeline takes over from the loop-back target forward. The `replan-pending.md` deletion happens before the loop-back invocation because Replan's analytical work is complete; the cascade is standard pipeline execution.
+**Major path:** Delete `replan-pending.md`, recommend compaction, invoke the loop-back target skill (Goals, Design, Phasing, or Structure). Replan exits — the normal pipeline takes over from the loop-back target forward. The `replan-pending.md` deletion happens before the loop-back invocation because Replan's analytical work is complete; the cascade is standard pipeline execution.
 
-> **IMPORTANT — Compaction recommended (M53; cross-skill transition).** Before invoking the next skill (next-phase Goals on the Minor path; the loop-back target — Goals, Design, or Structure — on the Major path), run `/compact` if context utilization may exceed ~50%. Loop-back targets read every prior approved artifact + every `feedback/replan-phase-*-round-*.md` file; entering them on a saturated context degrades the cascade's re-approval quality.
+> **IMPORTANT — Compaction recommended (M53; cross-skill transition).** Before invoking the next skill (next-phase Goals on the Minor path; the loop-back target — Goals, Design, Phasing, or Structure — on the Major path), run `/compact` if context utilization may exceed ~50%. Loop-back targets read every prior approved artifact + every `feedback/replan-phase-*-round-*.md` file; entering them on a saturated context degrades the cascade's re-approval quality.
 
 ## Model Selection Guidance
 
