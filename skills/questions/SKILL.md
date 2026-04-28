@@ -70,6 +70,8 @@ status: draft
 
 ### Review Round
 
+> **IMPORTANT — Compaction recommended (M53; pre-review-loop).** The Question Generation subagent has just returned `questions.md`. Before dispatching the Claude reviewer (and Codex reviewer in parallel, if enabled), run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load `questions.md` + `goals.md` + the embedded reviewer-boilerplate; running them on a saturated context produces shallow findings.
+
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Questions-specific reviewer instructions:
 
 - **Claude review subagent** — inputs: `goals.md` + `questions.md`. Checks: **Goal leakage** (would a researcher reading only the questions be able to infer what we're trying to build? if yes, rewrite); comprehensiveness (covers all codebase zones implied by goals); objectivity ("how does X work?" not "how should we change X?"); appropriate research type tags; **Hybrid scrutiny** (can `[hybrid]` be split into `[codebase]` + `[web]`?); no redundant or missing areas. Findings written to `reviews/questions-review.md`. The reviewer subagent embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. Findings must conform to the M48 5-field schema defined there (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`); `change_type` is required.
@@ -92,9 +94,11 @@ On rejection, write the user's feedback to `feedback/questions-round-{NN}.md` (s
 
 Commit the approved `questions.md` and `reviews/questions-review.md` to git.
 
-Recommend compaction: "Questions approved. This is a good point to compact context before the next step (`/compact`)."
+> **IMPORTANT — Compaction recommended (M53; terminal state).** Questions approved. This is a good point to compact context before the next step. Recommend the user run `/compact` if context utilization may exceed ~50%.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `questions`.
+
+> **IMPORTANT — Compaction recommended (M53; cross-skill transition).** Before invoking the next skill, run `/compact` if context utilization may exceed ~50%. The next skill (typically Research, per the Full route) reads `questions.md` + every prior approved artifact + reviewer findings; entering it on a saturated context degrades the synthesis quality of downstream research subagents.
 
 ## Red Flags — STOP
 

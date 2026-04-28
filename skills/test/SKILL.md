@@ -83,7 +83,9 @@ The test-writer chooses the appropriate type(s) per acceptance criterion. A sing
    - **Proceed anyway:** Log failures to `reviews/test/baseline-failures.md`. New acceptance tests will run alongside known failures.
    - **Stop:** Halt pipeline.
 2. **Write tests** using coverage criteria and test type templates. The test-writer subagent analyzes `goals.md` acceptance criteria, identifies which test types each criterion needs, and writes tests accordingly. Each test maps to a specific acceptance criterion.
-3. **Review test code** — follows **Review Pattern 1 (Inner Loop)** with 3 reviewers (reusing Implement's template files):
+3. **Review test code** — follows **Review Pattern 1 (Inner Loop)** with 3 reviewers (reusing Implement's template files).
+
+   > **IMPORTANT — Compaction recommended (M53; pre-review-loop).** The test-writer subagent has just returned the test code. Before dispatching the goal-traceability-reviewer, spec-reviewer, and code-quality-reviewer (and Codex reviewers in parallel, if enabled), run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load the test code + `goals.md` + the embedded reviewer-boilerplate; running them on a saturated context produces shallow findings.
    - **goal-traceability-reviewer** (`implement/templates/thoroughness/goal-traceability-reviewer.md`): Does each test map to a specific acceptance criterion from `goals.md`? Are any criteria untested? The reviewer subagent embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. Findings must conform to the M48 5-field schema defined there (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`); `change_type` is required.
    - **spec-reviewer** (`implement/templates/correctness/spec-reviewer.md`): Does the test verify what it claims to? Are assertions meaningful, not vacuous? The reviewer subagent embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. Findings must conform to the M48 5-field schema defined there (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`); `change_type` is required.
    - **code-quality-reviewer** (`implement/templates/correctness/code-quality-reviewer.md`): Is the test reliable? Flaky setup? Race conditions? Proper cleanup? The reviewer subagent embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. Findings must conform to the M48 5-field schema defined there (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`); `change_type` is required.
@@ -214,12 +216,14 @@ If the user presses Enter or provides no input: skip silently.
 
 ## Terminal State — Phase Routing
 
+> **IMPORTANT — Compaction recommended (M53; terminal state).** Acceptance tests passed. This is a good point to compact context before phase routing (PR creation, then either pipeline completion or Replan dispatch). Recommend the user run `/compact` if context utilization may exceed ~50%.
+
 **Every phase gets a PR.** After acceptance testing passes, prepare a PR for the current phase: draft title (including phase number for multi-phase projects), summary referencing artifacts in `docs/qrspi/YYYY-MM-DD-{slug}/`. Show user for confirmation. On confirmation, create PR via `gh pr create`. If user declines (e.g., wants to review locally first), skip PR creation — code stays on the feature branch.
 
 - **Last phase?** → Pipeline complete. Announce completion.
 - **More phases?** → Write `replan-pending.md` to the artifact directory (marker for resume detection: contains current phase number and timestamp), then invoke `qrspi:replan` to update remaining tasks based on phase learnings before starting the next phase.
 
-Recommend compaction before phase routing: "Test complete. This is a good point to compact context before the next step (`/compact`)."
+> **IMPORTANT — Compaction recommended (M53; cross-skill transition).** Before invoking the next skill (`qrspi:replan` when more phases remain), run `/compact` if context utilization may exceed ~50%. Replan reads `goals.md` + `design.md` + `plan.md` + every prior phase's review findings + `future-goals.md`; entering it on a saturated context degrades the severity-classification quality and risks misrouting major-vs-minor updates.
 
 ## Model Selection Guidance
 

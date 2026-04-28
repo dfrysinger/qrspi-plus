@@ -503,6 +503,8 @@ When presenting artifacts for human review, guide the user on where to invest re
 
 ## Compaction at Step Transitions
 
+> **IMPORTANT — Compaction recommended (M53; terminal state).** This block defines the pipeline-wide compaction-recommendation contract. Each skill's terminal state surfaces a compaction recommendation at the per-skill emphasis marker (M53; terminal state), and each cross-skill transition surfaces a second recommendation at the per-skill emphasis marker (M53; cross-skill transition). Skills enforce this by emitting an `IMPORTANT` callout at each anchor; using-qrspi documents the contract here.
+
 Each skill's terminal state should recommend compacting context before the next step: "This is a good point to compact context before the next step (`/compact`)." This is a recommendation, not a gate — the pipeline continues regardless.
 
 ## Feedback File Format
@@ -541,6 +543,8 @@ These thoughts mean the pipeline is being bypassed. Stop and follow the process:
 | "I'll come back and do the reviews later" | Reviews catch issues cheaply. Deferring them means expensive rework. |
 
 ## Skill Invocation
+
+> **IMPORTANT — Compaction recommended (M53; cross-skill transition).** Before invoking `qrspi:goals` (or any next-skill invocation in any QRSPI skill), run `/compact` if context utilization may exceed ~50%. Every downstream skill reads its declared inputs + every prior approved artifact + reviewer findings; entering it on a saturated context degrades synthesis, review, and gate-decision quality across the pipeline.
 
 When QRSPI applies, invoke the Goals skill to begin:
 
