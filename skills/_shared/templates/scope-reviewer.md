@@ -28,7 +28,7 @@ No other values are permitted. A dispatch that supplies any other token (or omit
 1. **Heading missing entirely.** The file `skills/{ARTIFACT_TYPE}/SKILL.md` does not contain the `## {Skill} OWNS / {Skill} DEFERS` heading at all. The reviewer cannot locate any rule set and must not silently fall back to a default.
 2. **`OWNS` subsection missing.** The heading is present but no `OWNS` subsection is enumerated underneath it. The reviewer has no positive-rule set to check the artifact against.
 3. **`DEFERS` subsection missing.** The heading is present but no `DEFERS` subsection is enumerated underneath it. The reviewer has no boundary-drift exclusions and cannot run boundary-drift detection.
-4. **Both subsections empty.** Both `OWNS` and `DEFERS` headings exist but their bodies contain no enumerated items (no bulleted entries, no prose rules). The rule set is structurally present but semantically empty; running the checks would produce vacuous results.
+4. **Both subsections empty.** Both subsections are present but their bodies are empty — no bulleted or numbered enumerated items (prose-only bodies do NOT satisfy this requirement and trigger fail-closed). The rule set is structurally present but semantically empty; running the checks would produce vacuous results.
 
 In all four cases the reviewer reports the malformed condition once, exits, and does NOT attempt partial checks.
 
