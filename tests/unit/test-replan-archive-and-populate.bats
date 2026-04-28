@@ -16,7 +16,8 @@ bats_require_minimum_version 1.5.0
 
 setup() {
   REPLAN_FILE="$BATS_TEST_DIRNAME/../../skills/replan/SKILL.md"
-  export REPLAN_FILE
+  SCOPE_REVIEWER_TEMPLATE="$BATS_TEST_DIRNAME/../../skills/_shared/templates/scope-reviewer.md"
+  export REPLAN_FILE SCOPE_REVIEWER_TEMPLATE
 }
 
 # extract_section <file> <heading-line>
@@ -60,18 +61,18 @@ extract_subsection() {
   [ "$output" = "1" ]
 }
 
-@test "OWNS/DEFERS section uses H3 subheadings ### OWNS and ### DEFERS (sibling-shape)" {
+@test "OWNS/DEFERS section uses H3 subheadings ### Replan OWNS and ### Replan DEFERS (family-shape)" {
   local section
   section="$(extract_section "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS")"
-  echo "$section" | grep -qE "^### OWNS$"
-  echo "$section" | grep -qE "^### DEFERS$"
+  echo "$section" | grep -qE "^### Replan OWNS$"
+  echo "$section" | grep -qE "^### Replan DEFERS$"
 }
 
-# ── OWNS list contents (scoped to ### OWNS sub-block) ───────────────────────
+# ── OWNS list contents (scoped to ### Replan OWNS sub-block) ────────────────
 
-@test "### OWNS lists archive of four synthesizing artifacts" {
+@test "### Replan OWNS lists archive of four synthesizing artifacts" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### OWNS")"
+  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan OWNS")"
   [ -n "$block" ]
   echo "$block" | grep -qi "archive"
   echo "$block" | grep -q "goals.md"
@@ -80,9 +81,9 @@ extract_subsection() {
   echo "$block" | grep -q "design.md"
 }
 
-@test "### OWNS lists populate-from-future-* and mark-as-draft and invoke-Goals" {
+@test "### Replan OWNS lists populate-from-future-* and mark-as-draft and invoke-Goals" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### OWNS")"
+  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan OWNS")"
   echo "$block" | grep -qi "future-goals.md"
   echo "$block" | grep -qi "future-questions.md"
   echo "$block" | grep -qi "future-research-summary.md"
@@ -91,11 +92,11 @@ extract_subsection() {
   echo "$block" | grep -qE "qrspi:goals|invoke .*Goals"
 }
 
-# ── DEFERS list contents (scoped to ### DEFERS sub-block) ───────────────────
+# ── DEFERS list contents (scoped to ### Replan DEFERS sub-block) ────────────
 
-@test "### DEFERS lists phasing decisions to Phasing" {
+@test "### Replan DEFERS lists phasing decisions to Phasing" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### DEFERS")"
+  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan DEFERS")"
   [ -n "$block" ]
   echo "$block" | grep -qi "Phasing"
   # Co-occurrence: a single line/bullet must reference a phasing-decision
@@ -104,9 +105,9 @@ extract_subsection() {
   echo "$block" | grep -iE "slice|phase boundar|replan-gate|Iron Law" | grep -q "Phasing"
 }
 
-@test "### DEFERS lists roadmap authoring to Phasing" {
+@test "### Replan DEFERS lists roadmap authoring to Phasing" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### DEFERS")"
+  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan DEFERS")"
   echo "$block" | grep -qi "roadmap"
   echo "$block" | grep -i "roadmap" | grep -q "Phasing"
 }
@@ -322,4 +323,25 @@ extract_step() {
   local section
   section="$(extract_section "$REPLAN_FILE" "## Review Round")"
   echo "$section" | grep -i "scope-reviewer" | grep -qiE "parallel|in parallel"
+}
+
+# ── Scope-reviewer template allowed-values list includes `replan` ───────────
+
+@test "scope-reviewer template ## Parameters allowed-values list includes replan" {
+  # The scope-reviewer template fails-closed if dispatched with an
+  # {ARTIFACT_TYPE} value not in its allowed list. Replan dispatches with
+  # {ARTIFACT_TYPE}=replan, so the template must list `replan` as one of
+  # the allowed values under its `## Parameters` section. This guards
+  # against the silent-failure mode where the template would fail-closed
+  # before running checks against the Replan-proposed changes.
+  [ -f "$SCOPE_REVIEWER_TEMPLATE" ]
+  local section
+  section="$(awk '
+    /^## Parameters/ { in_b = 1; print; next }
+    in_b && /^## / { exit }
+    in_b { print }
+  ' "$SCOPE_REVIEWER_TEMPLATE")"
+  [ -n "$section" ]
+  # Allowed-values list must contain a bullet for `replan`.
+  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`replan\`$"
 }

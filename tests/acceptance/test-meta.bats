@@ -30,8 +30,14 @@ unit_test_dir() {
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 415 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T14 Round-1 FIX
+@test "[AC8] Unit test suite has exactly 416 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T14 fix-cycle 2
+  # (+1 for scope-reviewer-allowed-values assertion in
+  # test-replan-archive-and-populate.bats — verifies the scope-reviewer
+  # template's `## Parameters` allowed-values list includes `replan`, which
+  # guards the CodexF1 silent-failure mode where the template would fail-closed
+  # before running checks). 415 → 416.
+  # Prior 415 baseline was after 2026-04-27 prompt-improvements T14 Round-1 FIX
   # (+14 fail-closed tests in test-replan-archive-and-populate.bats covering
   # the 5-step ABORT clauses (10 tests: 2 per step) and the scope-reviewer
   # dispatch in the Review Round (4 tests: dispatch presence + ARTIFACT_TYPE,
@@ -60,7 +66,7 @@ unit_test_dir() {
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 415 ]
+  [ "$count" -eq 416 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-27 T14)
