@@ -30,11 +30,17 @@ unit_test_dir() {
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 381 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T5 (Phasing skill).
-  # T5 added 3 new bats files (+19 tests): test-phasing-roadmap-generation
-  # (+5), test-phasing-goal-id-consistency (+5), test-phasing-four-artifact-
-  # pruning (+9). 362 → 381.
+@test "[AC8] Unit test suite has exactly 387 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T5 Round-1 FIX
+  # (+6 mutation-resistant + fail-closed tests across the 3 phasing files).
+  # T5 Round-1 FIX added: scope-reviewer fail-closed (+1, roadmap-generation),
+  # orphan emission round-invalid (+1, goal-id-consistency), reviewer-reject
+  # missing Orphan IDs (+1, goal-id-consistency), 8-target enumeration (+1,
+  # four-artifact-pruning), pruning atomicity (+1, four-artifact-pruning),
+  # synthesis atomicity (+1, four-artifact-pruning). 381 → 387.
+  # Prior 381 baseline was after T5 initial author (added 3 new bats files,
+  # +19 tests): test-phasing-roadmap-generation (+5), test-phasing-goal-id-
+  # consistency (+5), test-phasing-four-artifact-pruning (+9). 362 → 381.
   # Prior 362 baseline was after Wave 1 + Wave 2 merge (T1 +25, T3 +30, T4
   # +6 over 307 — sums to 362; T2/T11 are markdown-only).
   # Prior 307 baseline was after T4 Round-4 thoroughness FIX (+6 boundary
@@ -43,7 +49,7 @@ unit_test_dir() {
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 381 ]
+  [ "$count" -eq 387 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-27 T5)

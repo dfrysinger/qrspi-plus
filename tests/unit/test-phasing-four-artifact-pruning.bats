@@ -141,7 +141,84 @@ extract_subsection() {
 
   # OWNS must mention pruning specifically — Phasing owns this; Design and
   # Structure DEFER it. Per design.md M54.
-  echo "$owns_block" | grep -qi "prun"
+  # Strengthened: the pruning bullet must name all four artifacts. We collapse
+  # the OWNS block onto bullet boundaries (`- ` markers) and require a single
+  # bullet that contains "prun" plus all four artifact names. This catches
+  # mutations that drop pruning ownership of any artifact.
+  local cooccur
+  cooccur="$(echo "$owns_block" \
+    | awk 'BEGIN { RS = "\n- " } { gsub(/\n/, " "); print }' \
+    | grep -i "prun" \
+    | grep -i "goals" \
+    | grep -i "questions" \
+    | grep -i "research" \
+    | grep -i "design" \
+    || true)"
+  [ -n "$cooccur" ]
+}
+
+# =============================================================================
+# Synthesis subagent output enumerates all 8 pruned/future-* targets
+# =============================================================================
+
+@test "Phasing Synthesis Subagent block enumerates all 8 pruning targets (4 pruned + 4 future-*)" {
+  local subagent_block
+  subagent_block="$(awk '
+    /^### Phasing Synthesis Subagent$/ { in_section = 1; print; next }
+    in_section && /^### / && !/^### Phasing Synthesis Subagent$/ { in_section = 0 }
+    in_section && /^## / { in_section = 0 }
+    in_section { print }
+  ' "$SKILL_FILE")"
+  [ -n "$subagent_block" ]
+
+  # All 4 pruned current-phase targets:
+  echo "$subagent_block" | grep -qE "[Pp]runed.*goals.md|goals.md.*[Pp]runed|goals.md.*current-phase|current-phase.*goals.md"
+  echo "$subagent_block" | grep -qE "[Pp]runed.*questions.md|questions.md.*[Pp]runed|questions.md.*current-phase|current-phase.*questions.md"
+  echo "$subagent_block" | grep -qE "[Pp]runed.*research/summary.md|research/summary.md.*[Pp]runed|research/summary.md.*current-phase"
+  echo "$subagent_block" | grep -qE "[Pp]runed.*design.md|design.md.*[Pp]runed|design.md.*current-phase|current-phase.*design.md"
+
+  # All 4 future-* targets:
+  echo "$subagent_block" | grep -q "future-goals.md"
+  echo "$subagent_block" | grep -q "future-questions.md"
+  echo "$subagent_block" | grep -q "future-research-summary.md"
+  echo "$subagent_block" | grep -q "future-design.md"
+}
+
+# =============================================================================
+# Fail-closed: atomicity of pruning emission (CodexF-2 / Silent-failure F-3)
+# =============================================================================
+
+@test "Four-Artifact Pruning Procedure mandates atomic 8-file emission (partial = fail-closed)" {
+  local proc_block
+  proc_block="$(awk '
+    /^### Four-Artifact Pruning Procedure$/ ||
+    /^## Four-Artifact Pruning Procedure$/ { in_section = 1; print; next }
+    in_section && /^## / && !/^## Four-Artifact Pruning Procedure$/ { in_section = 0 }
+    in_section && /^### / && !/^### Four-Artifact Pruning Procedure$/ { in_section = 0 }
+    in_section { print }
+  ' "$SKILL_FILE")"
+  [ -n "$proc_block" ]
+
+  # Must declare atomicity: 8 files in single emission, partial = invalid.
+  echo "$proc_block" | grep -qiE "atomic"
+  echo "$proc_block" | grep -qE "8 files|all 8|eight files"
+  echo "$proc_block" | grep -qiE "partial|invalid|fail-closed|restart"
+}
+
+@test "Phasing Synthesis Subagent block declares atomic emission as fail-closed" {
+  local subagent_block
+  subagent_block="$(awk '
+    /^### Phasing Synthesis Subagent$/ { in_section = 1; print; next }
+    in_section && /^### / && !/^### Phasing Synthesis Subagent$/ { in_section = 0 }
+    in_section && /^## / { in_section = 0 }
+    in_section { print }
+  ' "$SKILL_FILE")"
+  [ -n "$subagent_block" ]
+
+  # The synthesis subagent block must declare atomicity for the 10-artifact
+  # (or 8-file pruning) emission and label partial returns fail-closed.
+  echo "$subagent_block" | grep -qiE "atomic|single (return|emission)"
+  echo "$subagent_block" | grep -qiE "partial.*(invalid|fail|restart)|fail-closed"
 }
 
 # =============================================================================

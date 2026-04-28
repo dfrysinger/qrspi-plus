@@ -173,3 +173,29 @@ extract_subsection() {
   echo "$subagent_block" | grep -q "research/summary.md"
   echo "$subagent_block" | grep -q "design.md"
 }
+
+# =============================================================================
+# Scope-reviewer fail-closed on malformed OWNS/DEFERS (CodexF-2 / CodexF-4)
+# =============================================================================
+
+@test "scope-reviewer dispatch declares fail-closed on malformed OWNS/DEFERS" {
+  # The scope-reviewer dispatch block lives under the review round; it must
+  # explicitly state that a malformed/missing OWNS/DEFERS section triggers a
+  # CRITICAL finding and a refusal to proceed (per scope-reviewer template's
+  # malformed-case fail-closed clause).
+  # Locate the scope-reviewer dispatch bullet (line containing
+  # "scope-reviewer subagent dispatch") and capture text up to the next
+  # top-level bullet ("- **Reviewer prompt block" / "- **Codex review").
+  local block
+  block="$(awk '
+    /scope-reviewer subagent dispatch/ { in_block = 1 }
+    in_block && /^- \*\*Reviewer prompt block/ { exit }
+    in_block && /^- \*\*Codex review/ { exit }
+    in_block { print }
+  ' "$SKILL_FILE")"
+  [ -n "$block" ]
+
+  echo "$block" | grep -qiE "malformed|missing"
+  echo "$block" | grep -qE "CRITICAL|fail-closed"
+  echo "$block" | grep -qiE "refuse to proceed|MUST emit"
+}

@@ -183,7 +183,63 @@ extract_subsection() {
   [ -n "$proc_block" ]
 
   # Orphans must be presented to the user, not silently dropped or
-  # auto-resolved by the synthesis subagent. Look for a phrase that names
-  # user-side resolution.
-  echo "$proc_block" | grep -qiE "user|surface|resolution|review"
+  # auto-resolved by the synthesis subagent. Strengthened: require co-occurrence
+  # of "surface" + "orphan" on a single sentence/segment so a stray mention
+  # of "user" or "review" elsewhere cannot vacuously satisfy.
+  local cooccur
+  cooccur="$(echo "$proc_block" \
+    | tr '\n' ' ' \
+    | awk 'BEGIN { RS = "[.!?]" } { print }' \
+    | grep -i "surface" \
+    | grep -i "orphan" \
+    || true)"
+  [ -n "$cooccur" ]
+}
+
+# =============================================================================
+# Fail-closed: orphan emission and round-invalid semantics (CodexF-4)
+# =============================================================================
+
+@test "Goal-ID Consistency Validation declares fail-closed: orphan detection invalidates the round" {
+  local proc_block
+  proc_block="$(awk '
+    /^## Goal-ID Consistency Validation$/ ||
+    /^### Goal-ID Consistency Validation$/ { in_section = 1; print; next }
+    in_section && /^## / && !/^## Goal-ID Consistency Validation$/ { in_section = 0 }
+    in_section && /^### / && !/^### Goal-ID Consistency Validation$/ { in_section = 0 }
+    in_section { print }
+  ' "$SKILL_FILE")"
+  [ -n "$proc_block" ]
+
+  # Must declare that orphans MUST be emitted in `## Orphan IDs` AND the round
+  # is invalid until resolved. Check for fail-closed language with "MUST"
+  # alongside "Orphan IDs" emission, and "invalid" for the round semantics.
+  echo "$proc_block" | grep -qE "MUST emit"
+  echo "$proc_block" | grep -qi "Orphan IDs"
+  echo "$proc_block" | grep -qiE "round is invalid|invalid until"
+}
+
+@test "Goal-ID Consistency Validation requires reviewers reject phasing.md missing the Orphan IDs section" {
+  local proc_block
+  proc_block="$(awk '
+    /^## Goal-ID Consistency Validation$/ ||
+    /^### Goal-ID Consistency Validation$/ { in_section = 1; print; next }
+    in_section && /^## / && !/^## Goal-ID Consistency Validation$/ { in_section = 0 }
+    in_section && /^### / && !/^### Goal-ID Consistency Validation$/ { in_section = 0 }
+    in_section { print }
+  ' "$SKILL_FILE")"
+  [ -n "$proc_block" ]
+
+  # Reviewers MUST reject phasing.md that omits the Orphan IDs section.
+  # We split on paragraph boundaries (blank lines) rather than sentence
+  # boundaries because filenames like "phasing.md" contain "."s that
+  # corrupt sentence splits.
+  local cooccur
+  cooccur="$(echo "$proc_block" \
+    | awk 'BEGIN { RS = ""; ORS = "\n---\n" } { gsub(/\n/, " "); print }' \
+    | grep -iE "Reviewers? MUST" \
+    | grep -i "Orphan IDs" \
+    | grep -iE "reject|omits|missing" \
+    || true)"
+  [ -n "$cooccur" ]
 }
