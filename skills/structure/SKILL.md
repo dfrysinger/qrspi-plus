@@ -51,7 +51,11 @@ A finding citing structure.md prose that asserts any DEFERS item — for example
 
 If any artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
 
-Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. If `config.md` doesn't exist, default to `codex_reviews: false`.
+Read `config.md` from the artifact directory to determine whether Codex reviews are enabled.
+
+### Config Validation
+
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Structure validates `codex_reviews`.
 
 <HARD-GATE>
 Do NOT produce structure.md without approved goals.md, research/summary.md, AND design.md.
