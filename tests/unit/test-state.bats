@@ -1383,6 +1383,270 @@ EOF
   }
 }
 
+# ---- T42: state_update --arg / --argjson parameter binding ----
+
+@test "[T42-A1] state_update accepts --arg KEY VALUE and binds the parameter as a jq string" {
+  # Task-42 / R3 S-1: state_update extends to accept variadic
+  # --arg/--argjson pairs forwarded to jq, so callers can bind untrusted
+  # values without caller-side jq-filter string interpolation.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+  state_init_or_reconcile "$artifact_dir"
+
+  # Bind step name via --arg
+  run state_update '.artifacts[$step] = "approved"' --arg step "questions"
+  [ "$status" -eq 0 ]
+
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
+}
+
+@test "[T42-A2] state_update accepts --argjson for typed values (boolean, array)" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+  state_init_or_reconcile "$artifact_dir"
+
+  # Boolean via --argjson
+  run state_update '.wireframe_requested = $w' --argjson w true
+  [ "$status" -eq 0 ]
+  local state
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.wireframe_requested') == "true" ]]
+
+  # Array via --argjson + reduce
+  run state_update 'reduce $steps[] as $s (.; .artifacts[$s] = "draft")' \
+    --argjson steps '["questions","research"]'
+  [ "$status" -eq 0 ]
+  state=$(state_read)
+  [[ $(echo "$state" | jq -r '.artifacts.questions') == "draft" ]]
+  [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
+}
+
+@test "[T42-A3] state_update rejects unknown variadic argument (fail-closed on typos)" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+  state_init_or_reconcile "$artifact_dir"
+
+  # --raw-input is a real jq flag but NOT in our allowed set — must reject
+  run state_update '.' --raw-input
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unknown argument"* ]]
+}
+
+# ---- T42: race tests for migrated callers (artifact_sync_state, pipeline_cascade_reset) ----
+
+@test "[T42-C1] artifact_sync_state racing state_update preserves the latest phase_start_commit (no lost update)" {
+  # Task-42 / R3 S-1: artifact_sync_state used to call state_read +
+  # state_write_atomic, leaving an open R-M-W window. PostToolUse hook
+  # fires it on every artifact edit; concurrently, Plan's narrow direct
+  # write of phase_start_commit goes through state_update. Without the
+  # migration, artifact_sync_state could read state BEFORE Plan's write
+  # and overwrite it AFTER, silently destroying phase_start_commit.
+  # This test mirrors [T24-C1c] for the migrated artifact_sync_state.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/artifact.sh"
+
+  state_init_or_reconcile "$artifact_dir"
+
+  # Process A: repeatedly invoke artifact_sync_state on goals.md
+  # (this exercises the approved-path write through state_update).
+  ( set +e
+    for i in $(seq 1 20); do
+      artifact_sync_state "$artifact_dir/goals.md" "$artifact_dir" 2>/dev/null || true
+    done
+    exit 0 ) &
+  local pid_a=$!
+
+  # Process B: repeatedly state_update phase_start_commit (mirrors
+  # Plan's narrow direct-write).
+  ( set +e
+    for i in $(seq 1 20); do
+      state_update '.phase_start_commit = $c' --arg c "sync-race-$i" 2>/dev/null || true
+    done
+    exit 0 ) &
+  local pid_b=$!
+
+  wait "$pid_a" || true
+  wait "$pid_b" || true
+
+  local final
+  final=$(cat "$TEST_DIR/.qrspi/state.json")
+  echo "$final" | jq . > /dev/null || {
+    echo "FAIL: state.json torn (content: $final)" >&2
+    return 1
+  }
+
+  local final_psc
+  final_psc=$(echo "$final" | jq -r '.phase_start_commit')
+  [[ "$final_psc" =~ ^sync-race-[0-9]+$ ]] || {
+    echo "FAIL: phase_start_commit=$final_psc — artifact_sync_state race destroyed the value (expected sync-race-N)." >&2
+    echo "Final: $final" >&2
+    return 1
+  }
+}
+
+@test "[T42-C2] pipeline_cascade_reset racing state_update preserves the latest phase_start_commit (no lost update)" {
+  # Task-42 / R3 S-1: pipeline_cascade_reset used to call state_read +
+  # state_write_atomic, identical lost-update class to artifact_sync_state.
+  # Mirrors [T24-C1c] for the migrated pipeline_cascade_reset.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+  create_artifact "$artifact_dir/questions.md" "approved"
+  create_artifact "$artifact_dir/design.md" "approved"
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/pipeline.sh"
+
+  state_init_or_reconcile "$artifact_dir"
+
+  # Process A: repeatedly cascade-reset from "design"
+  ( set +e
+    for i in $(seq 1 20); do
+      pipeline_cascade_reset "design" "$artifact_dir" 2>/dev/null || true
+    done
+    exit 0 ) &
+  local pid_a=$!
+
+  # Process B: repeatedly state_update phase_start_commit
+  ( set +e
+    for i in $(seq 1 20); do
+      state_update '.phase_start_commit = $c' --arg c "cascade-race-$i" 2>/dev/null || true
+    done
+    exit 0 ) &
+  local pid_b=$!
+
+  wait "$pid_a" || true
+  wait "$pid_b" || true
+
+  local final
+  final=$(cat "$TEST_DIR/.qrspi/state.json")
+  echo "$final" | jq . > /dev/null || {
+    echo "FAIL: state.json torn (content: $final)" >&2
+    return 1
+  }
+
+  local final_psc
+  final_psc=$(echo "$final" | jq -r '.phase_start_commit')
+  [[ "$final_psc" =~ ^cascade-race-[0-9]+$ ]] || {
+    echo "FAIL: phase_start_commit=$final_psc — pipeline_cascade_reset race destroyed the value (expected cascade-race-N)." >&2
+    echo "Final: $final" >&2
+    return 1
+  }
+}
+
+@test "[T42-S1] artifact_sync_state and pipeline_cascade_reset source code does not contain state_read+state_write_atomic R-M-W pattern" {
+  # Static check: the two migrated callers must not use the unsafe
+  # state_read + state_write_atomic R-M-W pattern. They should use
+  # state_update instead, which holds the lock for the entire R-M-W
+  # critical section. We assert by:
+  #   - extracting each function body
+  #   - rejecting any non-comment occurrence of state_write_atomic
+  #     (artifact_sync_state and pipeline_cascade_reset must not call it)
+  #   - requiring at least one state_update call
+
+  local artifact_sh="$BATS_TEST_DIRNAME/../../hooks/lib/artifact.sh"
+  local pipeline_sh="$BATS_TEST_DIRNAME/../../hooks/lib/pipeline.sh"
+
+  local artifact_body
+  artifact_body=$(awk '
+    /^artifact_sync_state\(\) \{/ { in_fn=1; next }
+    in_fn && /^\}/ { in_fn=0 }
+    in_fn { print }
+  ' "$artifact_sh")
+
+  local pipeline_body
+  pipeline_body=$(awk '
+    /^pipeline_cascade_reset\(\) \{/ { in_fn=1; next }
+    in_fn && /^\}/ { in_fn=0 }
+    in_fn { print }
+  ' "$pipeline_sh")
+
+  # Strip comment lines (those whose first non-whitespace char is '#')
+  # before checking for state_write_atomic call sites.
+  local artifact_code
+  artifact_code=$(echo "$artifact_body" | grep -vE "^[[:space:]]*#")
+  local pipeline_code
+  pipeline_code=$(echo "$pipeline_body" | grep -vE "^[[:space:]]*#")
+
+  # Reject any state_write_atomic call in either function body.
+  ! echo "$artifact_code" | grep -q "state_write_atomic" || {
+    echo "FAIL: artifact_sync_state still calls state_write_atomic" >&2
+    echo "$artifact_body" >&2
+    return 1
+  }
+  ! echo "$pipeline_code" | grep -q "state_write_atomic" || {
+    echo "FAIL: pipeline_cascade_reset still calls state_write_atomic" >&2
+    echo "$pipeline_body" >&2
+    return 1
+  }
+
+  # Both must call state_update at least once.
+  echo "$artifact_code" | grep -q "state_update" || {
+    echo "FAIL: artifact_sync_state does not call state_update" >&2
+    return 1
+  }
+  echo "$pipeline_code" | grep -q "state_update" || {
+    echo "FAIL: pipeline_cascade_reset does not call state_update" >&2
+    return 1
+  }
+}
+
+@test "[T42-S2] artifact_sync_state and pipeline_cascade_reset jq filters bind variables via --arg/--argjson (no caller-side string interpolation)" {
+  # Task-42 / L-sec-1: jq filter argument is a jq-as-code surface.
+  # Both migrated callers must build filters with --arg/--argjson and
+  # reference parameters via $var inside the filter — never interpolate
+  # bash variables directly into the filter string.
+
+  local artifact_sh="$BATS_TEST_DIRNAME/../../hooks/lib/artifact.sh"
+  local pipeline_sh="$BATS_TEST_DIRNAME/../../hooks/lib/pipeline.sh"
+
+  local artifact_body
+  artifact_body=$(awk '
+    /^artifact_sync_state\(\) \{/ { in_fn=1; next }
+    in_fn && /^\}/ { in_fn=0 }
+    in_fn { print }
+  ' "$artifact_sh")
+
+  local pipeline_body
+  pipeline_body=$(awk '
+    /^pipeline_cascade_reset\(\) \{/ { in_fn=1; next }
+    in_fn && /^\}/ { in_fn=0 }
+    in_fn { print }
+  ' "$pipeline_sh")
+
+  # Each state_update call should bind --arg or --argjson (positive
+  # signal); we accept that one of the two forms appears at least once
+  # per function.
+  echo "$artifact_body" | grep -qE -- "--arg|--argjson" || {
+    echo "FAIL: artifact_sync_state does not bind any jq parameter via --arg/--argjson" >&2
+    echo "$artifact_body" >&2
+    return 1
+  }
+  echo "$pipeline_body" | grep -qE -- "--arg|--argjson" || {
+    echo "FAIL: pipeline_cascade_reset does not bind any jq parameter via --arg/--argjson" >&2
+    echo "$pipeline_body" >&2
+    return 1
+  }
+}
+
 @test "[T24-B4] state_init_or_reconcile fails closed when existing state.json is corrupt JSON (does not silently overwrite)" {
   # Round-2 silent-failure-hunter finding 2: phase_start_commit
   # preservation must not silently destroy the value when existing
