@@ -5,10 +5,16 @@ bats_require_minimum_version 1.5.0
 #
 # This file asserts the contract that each consuming SKILL dispatches the
 # parameterized scope-reviewer template with its declared {ARTIFACT_TYPE}
-# value, and that for each of the six values (goals/design/phasing/
-# structure/plan/parallelize) a per-artifact-type seeded out-of-scope
-# fixture carries content that the scope-reviewer's boundary-drift
-# detection MUST flag with `change_type: scope` (or `intent`).
+# value, and that for each of the seven values (goals/design/phasing/
+# structure/plan/parallelize/replan) a per-artifact-type seeded
+# out-of-scope fixture carries content that the scope-reviewer's
+# boundary-drift detection MUST flag with `change_type: scope` (or
+# `intent`).
+#
+# T14 added `replan` as the 7th `{ARTIFACT_TYPE}` value; this test file
+# enforces that addition (and acts as a regression net — a checkin that
+# removes `replan` from the template's allowed-values list, the gated
+# sections, or the Replan SKILL's dispatch wiring will fail this test).
 #
 # These are prompt-content / fixture-shape invariant tests — the actual
 # subagent dispatch is exercised by the acceptance-tier test
@@ -28,9 +34,10 @@ setup() {
   STRUCTURE_FILE="$ROOT/skills/structure/SKILL.md"
   PLAN_FILE="$ROOT/skills/plan/SKILL.md"
   PARALLELIZE_FILE="$ROOT/skills/parallelize/SKILL.md"
+  REPLAN_FILE="$ROOT/skills/replan/SKILL.md"
   SCOPE_REVIEWER_TEMPLATE="$ROOT/skills/_shared/templates/scope-reviewer.md"
   FIXTURES="$ROOT/tests/fixtures"
-  export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE
+  export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE REPLAN_FILE
   export SCOPE_REVIEWER_TEMPLATE FIXTURES
 }
 
@@ -45,9 +52,9 @@ extract_h2_section() {
   ' "$file"
 }
 
-# ── scope-reviewer template Parameters list includes all six values ─────────
+# ── scope-reviewer template Parameters list includes all seven values ──────
 
-@test "scope-reviewer template ## Parameters allowed-values list includes all six artifact types" {
+@test "scope-reviewer template ## Parameters allowed-values list includes all seven artifact types" {
   [ -f "$SCOPE_REVIEWER_TEMPLATE" ]
   local section
   section="$(extract_h2_section "$SCOPE_REVIEWER_TEMPLATE" "## Parameters")"
@@ -58,6 +65,7 @@ extract_h2_section() {
   echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`structure\`$"
   echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`plan\`$"
   echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`parallelize\`$"
+  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`replan\`$"
 }
 
 @test "scope-reviewer template ## Output Contract requires change_type tag in M48 5-field schema" {
@@ -102,6 +110,12 @@ extract_h2_section() {
 @test "{ARTIFACT_TYPE}=parallelize — parallelize SKILL dispatches scope-reviewer with parameter parallelize" {
   grep -q "scope-reviewer.md" "$PARALLELIZE_FILE"
   grep -qE "\{ARTIFACT_TYPE\}=parallelize" "$PARALLELIZE_FILE"
+}
+
+@test "{ARTIFACT_TYPE}=replan — replan SKILL dispatches scope-reviewer with parameter replan (T14 7th value)" {
+  [ -f "$REPLAN_FILE" ]
+  grep -q "scope-reviewer.md" "$REPLAN_FILE"
+  grep -qE "\{ARTIFACT_TYPE\}=replan" "$REPLAN_FILE"
 }
 
 # ── Per-fixture seeding: each fixture carries content that fires change_type=scope
@@ -155,6 +169,33 @@ extract_h2_section() {
   grep -Eqi "Task [0-9]+:|Implementation Logic|Architecture Decision|## Phasing|[a-f0-9]{12}" "$fixture"
 }
 
+@test "seeded-out-of-scope-replan.md fixture exists and seeds at least one DEFERS-list violation" {
+  local fixture="$FIXTURES/seeded-out-of-scope-replan.md"
+  [ -f "$fixture" ]
+  # Replan DEFERS: phasing decisions / slice decomposition (Phasing-owned),
+  # roadmap.md authoring (Phasing-owned), future-*.md authoring
+  # (Phasing-owned), goal-text expansion (Goals-owned), architecture
+  # re-litigation (Design-owned), file maps (Structure-owned), full task
+  # spec authoring (Plan-owned). Fixture must seed at least one of these.
+  grep -Eqi "roadmap\.md|future-goals\.md|future-questions\.md|future-research|future-design\.md|goal-text expansion|polling to WebSockets|src/middleware/|vertical slice|phase boundaries|task spec from scratch" "$fixture"
+}
+
+@test "seeded-out-of-scope-replan.md fixture also includes in-scope (Replan-owned) examples (regression net)" {
+  # The fixture intentionally carries BOTH in-scope (OWNS) and
+  # out-of-scope (DEFERS) content. The in-scope block names operations
+  # Replan owns — severity classification, minor-path artifact updates,
+  # phase-transition execution. If a regression removes the replan
+  # parameterization from the scope-reviewer template, the rendered
+  # prompt for {ARTIFACT_TYPE}=replan will lose the locked rule set,
+  # which the acceptance test (test-skill-output-quality.bats) catches
+  # via the rendered-prompt content assertion. This unit-tier test
+  # asserts the in-scope content block exists in the fixture so the
+  # acceptance test has something stable to grep on.
+  local fixture="$FIXTURES/seeded-out-of-scope-replan.md"
+  [ -f "$fixture" ]
+  grep -Eqi "Severity classification|Minor-path artifact updates|five-step archive-and-populate|phase-transition execution" "$fixture"
+}
+
 # ── change_type tag presence in scope-reviewer Output Contract per-fixture ──
 
 @test "scope-reviewer template ## Output Contract names change_type values scope and intent" {
@@ -167,7 +208,7 @@ extract_h2_section() {
   echo "$section" | grep -Eq "style.*clarity.*correctness.*scope.*intent|change_type.*scope.*intent"
 }
 
-@test "scope-reviewer template Per-{ARTIFACT_TYPE} Gated Sections names all six skill rule files" {
+@test "scope-reviewer template Per-{ARTIFACT_TYPE} Gated Sections names all seven skill rule files" {
   local section
   section="$(extract_h2_section "$SCOPE_REVIEWER_TEMPLATE" "## Per-\`{ARTIFACT_TYPE}\` Gated Sections")"
   [ -n "$section" ]
@@ -177,4 +218,5 @@ extract_h2_section() {
   echo "$section" | grep -q "skills/structure/SKILL.md"
   echo "$section" | grep -q "skills/plan/SKILL.md"
   echo "$section" | grep -q "skills/parallelize/SKILL.md"
+  echo "$section" | grep -q "skills/replan/SKILL.md"
 }
