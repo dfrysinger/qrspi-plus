@@ -684,3 +684,135 @@ assert_opaque_write() {
     result=$(bash_detect_file_writes 'cd /tmp && cd src && echo x > escaped.txt')
     assert_opaque_write "$result"
 }
+
+# ── task-46 M4-1: broaden cd-escape detection ─────────────────────────
+#
+# Round-4 review M4-1: task-43's S-2 fix was incomplete. The `cd_re`
+# regex only matched literal targets; subagents could still escape via:
+#   1. Variable / parameter expansion: `cd $HOME`, `cd "${TMPDIR}"`
+#   2. Command substitution: `cd "$(mktemp -d)"`, `` cd `pwd` ``
+#   3. `pushd` (cd_re required `^cd[[:space:]]+`)
+#   4. Subshell / brace-group wrapping: `(cd /tmp; > escape)`,
+#      `{ cd /tmp; > escape; }` — splitter only handles `&&`, `||`, `;`
+#   5. Same-command assignment-then-cd: `dest=/tmp; cd "$dest"` (variant
+#      of #1 — covered once the variable case lands)
+#
+# Conservative posture (matches task-43 stance): any cd target containing
+# `$` or `` ` `` is opaque; pushd is always opaque (we don't track the
+# stack); cd / pushd inside `( )` or `{ }` triggers via inner-scan.
+
+# 1. Variable expansion — bareword
+@test "task-46 M4-1: cd \$HOME && echo > rel is opaque (var expansion)" {
+    result=$(bash_detect_file_writes 'cd $HOME && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 1. Variable expansion — double-quoted
+@test "task-46 M4-1: cd \"\$HOME\" && echo > rel is opaque (quoted var)" {
+    result=$(bash_detect_file_writes 'cd "$HOME" && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 1. Brace parameter expansion
+@test "task-46 M4-1: cd \"\${TMPDIR}\" && echo > rel is opaque (brace param)" {
+    result=$(bash_detect_file_writes 'cd "${TMPDIR}" && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 2. Command substitution — $()
+@test "task-46 M4-1: cd \"\$(mktemp -d)\" && echo > rel is opaque (cmd subst)" {
+    result=$(bash_detect_file_writes 'cd "$(mktemp -d)" && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 2. Command substitution — backticks
+@test "task-46 M4-1: cd \`pwd\` && echo > rel is opaque (backtick subst)" {
+    result=$(bash_detect_file_writes 'cd `pwd` && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 3. pushd /abs
+@test "task-46 M4-1: pushd /tmp && echo > rel is opaque (pushd absolute)" {
+    result=$(bash_detect_file_writes 'pushd /tmp && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 3. pushd "$VAR"
+@test "task-46 M4-1: pushd \"\$HOME\" && echo > rel is opaque (pushd var)" {
+    result=$(bash_detect_file_writes 'pushd "$HOME" && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 3. pushd into a relative subdir is still opaque (we don't track stack)
+@test "task-46 M4-1: pushd subdir && echo > rel is opaque (pushd untracked stack)" {
+    result=$(bash_detect_file_writes 'pushd src && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 4. Subshell wrapping — `(cd /tmp; > escape)`
+@test "task-46 M4-1: (cd /tmp; echo > escape) is opaque (subshell wrap)" {
+    result=$(bash_detect_file_writes '(cd /tmp; echo x > escape.txt)')
+    assert_opaque_write "$result"
+}
+
+# 4. Brace-group wrapping — `{ cd /tmp; > escape; }`
+@test "task-46 M4-1: { cd /tmp; echo > escape; } is opaque (brace-group wrap)" {
+    result=$(bash_detect_file_writes '{ cd /tmp; echo x > escape.txt; }')
+    assert_opaque_write "$result"
+}
+
+# 5. Same-command assignment-then-cd via variable expansion
+@test "task-46 M4-1: dest=/tmp && cd \"\$dest\" && echo > rel is opaque (assign+var)" {
+    result=$(bash_detect_file_writes 'dest=/tmp && cd "$dest" && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# Backgrounded subshell: `(cd /tmp && > escape) &`
+@test "task-46 M4-1: (cd /tmp && echo > escape) & is opaque (backgrounded subshell)" {
+    result=$(bash_detect_file_writes '(cd /tmp && echo x > escape.txt) &')
+    assert_opaque_write "$result"
+}
+
+# popd — same conservative treatment as pushd
+@test "task-46 M4-1: popd && echo > rel is opaque (popd untracked stack)" {
+    result=$(bash_detect_file_writes 'popd && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# ── Positive coverage (must STILL be allowed) ──────────────────────────
+# These were allowed before task-46 and must continue to work — false
+# positives that block legitimate cd-into-subdir would break normal
+# subagent use of `cd src && ...` patterns.
+
+# Plain bareword subdir
+@test "task-46 M4-1 NEGATIVE: cd src && echo > rel still allowed" {
+    result=$(bash_detect_file_writes 'cd src && echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive: cd src is a relative subdir — must not be opaque"
+        echo "Got: $result"
+        return 1
+    fi
+}
+
+# Nested relative subdir
+@test "task-46 M4-1 NEGATIVE: cd subdir/nested && > rel still allowed" {
+    result=$(bash_detect_file_writes 'cd subdir/nested && echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive: cd into nested relative subdir must not be opaque"
+        echo "Got: $result"
+        return 1
+    fi
+}
+
+# `cd .` is a no-op cd that keeps CWD identical — must not flag.
+@test "task-46 M4-1 NEGATIVE: cd . && echo > rel still allowed" {
+    result=$(bash_detect_file_writes 'cd . && echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive: cd . is a no-op — must not be opaque"
+        echo "Got: $result"
+        return 1
+    fi
+}
