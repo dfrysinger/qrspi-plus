@@ -72,7 +72,7 @@ When generating `structure.md`, Structure honors the phase scope set by Phasing:
 
 ### Structure Subagent
 
-> **IMPORTANT — Compaction recommended (pre-large-subagent-dispatch).** The Structure subagent ingests goals.md + research/summary.md + design.md + phasing.md + every prior feedback file and returns a full file map + interface signatures + Mermaid diagram. Run `/compact` if context utilization may exceed ~50% before dispatching this subagent — synthesis quality degrades sharply when input pressure compounds output size.
+> **IMPORTANT — Compaction recommended (M53; pre-large-subagent-dispatch).** The Structure subagent ingests goals.md + research/summary.md + design.md + phasing.md + every prior feedback file and returns a full file map + interface signatures + Mermaid diagram. Run `/compact` if context utilization may exceed ~50% before dispatching this subagent — synthesis quality degrades sharply when input pressure compounds output size.
 
 **Inputs:**
 - `goals.md`
@@ -145,7 +145,7 @@ interface FooService {
 
 ### Review Round
 
-> **IMPORTANT — Compaction recommended (pre-review-loop).** The Structure subagent has just returned a full file map + interface signatures + Mermaid diagram. Before dispatching the Claude reviewer, scope-reviewer, and Codex reviewer in parallel, run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load `structure.md` + `goals.md` + `research/summary.md` + `design.md` + `phasing.md` + the embedded reviewer-boilerplate; running them on a saturated context produces shallow findings.
+> **IMPORTANT — Compaction recommended (M53; pre-review-loop).** The Structure subagent has just returned a full file map + interface signatures + Mermaid diagram. Before dispatching the Claude reviewer, scope-reviewer, and Codex reviewer in parallel, run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load `structure.md` + `goals.md` + `research/summary.md` + `design.md` + `phasing.md` + the embedded reviewer-boilerplate; running them on a saturated context produces shallow findings.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Structure-specific reviewer instructions:
 
@@ -174,11 +174,11 @@ On rejection, write the user's feedback and the rejected artifact snapshot to `f
 
 Commit the approved `structure.md` and `reviews/structure-review.md` to git.
 
-> **IMPORTANT — Compaction recommended (terminal state).** Structure approved. This is a good point to compact context before the next step. Recommend the user run `/compact` if context utilization may exceed ~50%.
+> **IMPORTANT — Compaction recommended (M53; terminal state).** Structure approved. This is a good point to compact context before the next step. Recommend the user run `/compact` if context utilization may exceed ~50%.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `structure`.
 
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill, run `/compact` if context utilization may exceed ~50%. The next skill (typically Plan, per the Full route) reads `structure.md` + every prior approved artifact + reviewer findings; entering it on a saturated context degrades the spec-generation quality.
+> **IMPORTANT — Compaction recommended (M53; cross-skill transition).** Before invoking the next skill, run `/compact` if context utilization may exceed ~50%. The next skill (typically Plan, per the Full route) reads `structure.md` + every prior approved artifact + reviewer findings; entering it on a saturated context degrades the spec-generation quality.
 
 ## Red Flags — STOP
 
