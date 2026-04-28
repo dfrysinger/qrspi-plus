@@ -29,9 +29,21 @@ unit_test_dir() {
   [ "$count" -eq 20 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-27 T18)
-@test "[AC8] Unit test suite has exactly 449 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T18 (U14 lint +
+# AC8 — Unit test count baseline (updated 2026-04-27 T18 fix-cycle 1)
+@test "[AC8] Unit test suite has exactly 459 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T18 fix-cycle 1
+  # (CodexF2 per-cell M53 negative coverage + CodexF3 anchor-count guard
+  # removal). Net +10 over 449:
+  #   + 11 negative-coverage @tests in test-compaction-emphasis-markup.bats
+  #     (one per `—` cell in the M53 matrix: 1 per row for
+  #     goals/questions/design/phasing/structure/integrate/test/replan, 1
+  #     for implement × pre-review-loop, and 2 for using-qrspi)
+  #   - 1 [M53-anchor-counts] lower-bound count guard removed (CodexF3:
+  #     per-anchor positive checks now load-bearing; lower-bound count
+  #     could mask a missing required anchor if other emphasis markers
+  #     exist for non-M53 reasons).
+  # 449 → 459.
+  # Prior 449 baseline was after 2026-04-27 prompt-improvements T18 (U14 lint +
   # M53 emphasis tests + 5 violation fixtures). +33 over 416:
   # +16 in test-u14-lint.bats (5 deterministic lints with positive coverage
   # on seeded fixtures and FU-7-skipped clean-state assertions on in-scope
@@ -77,7 +89,7 @@ unit_test_dir() {
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 449 ]
+  [ "$count" -eq 459 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-27 T18)

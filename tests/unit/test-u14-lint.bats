@@ -82,6 +82,7 @@ strip_fenced_code() {
 # Skips fenced code blocks (artifact templates embedded in SKILL.md).
 # Treats colon `:` as legitimate terminal punctuation since markdown
 # sentences that introduce a list often end with a colon.
+# Returns 0 if no violations, 1 if any violation found (CodexF5 fix-cycle 1).
 lint_claim_line() {
   local file="$1"
   awk '
@@ -115,17 +116,21 @@ lint_claim_line() {
       last = substr(stripped, n, 1)
       if (n > 250) {
         printf "LINT: claim-line: %s :: opening-sentence-too-long (%d chars > 250)\n", heading, n
+        violations++
       }
       # Accept ".", "!", "?", and ":" (colon-introducing-list is a legitimate
       # markdown construct used throughout qrspi-plus skill prompts).
       if (last != "." && last != "!" && last != "?" && last != ":") {
         printf "LINT: claim-line: %s :: opening-sentence-missing-terminal-punctuation\n", heading
+        violations++
       }
     }
+    END { exit (violations > 0 ? 1 : 0) }
   ' "$file"
 }
 
 # lint_paragraph_density <file>
+# Returns 0 if no violations, 1 if any violation found (CodexF5 fix-cycle 1).
 lint_paragraph_density() {
   local file="$1"
   strip_fenced_code "$file" | awk '
@@ -139,9 +144,11 @@ lint_paragraph_density() {
       }
       if (wc > 150) {
         printf "LINT: paragraph-density: paragraph-too-many-words (%d words > 150)\n", wc
+        violations++
       }
       if (lc > 8) {
         printf "LINT: paragraph-density: paragraph-too-many-lines (%d lines > 8)\n", lc
+        violations++
       }
       n_lines = 0
     }
@@ -155,11 +162,12 @@ lint_paragraph_density() {
       n_lines++
       buf[n_lines] = $0
     }
-    END { flush() }
+    END { flush(); exit (violations > 0 ? 1 : 0) }
   '
 }
 
 # lint_scannability <file>
+# Returns 0 if no violations, 1 if any violation found (CodexF5 fix-cycle 1).
 lint_scannability() {
   local file="$1"
   strip_fenced_code "$file" | awk '
@@ -172,6 +180,7 @@ lint_scannability() {
       }
       if (wc > 300 && !has_list) {
         printf "LINT: scannability: %s :: long-section-no-list (%d words, no `- ` or numbered list)\n", heading, wc
+        violations++
       }
       n_body_lines = 0
       has_list = 0
@@ -188,12 +197,13 @@ lint_scannability() {
       n_body_lines++
       body[n_body_lines] = $0
     }
-    END { flush() }
+    END { flush(); exit (violations > 0 ? 1 : 0) }
   '
 }
 
 # lint_required_section <file> <artifact-type>
 # artifact-types: goals, design, structure, plan, phasing
+# Returns 0 if no violations, 1 if any violation found (CodexF5 fix-cycle 1).
 lint_required_section() {
   local file="$1"
   local type="$2"
@@ -206,16 +216,19 @@ lint_required_section() {
     phasing)   required=("## Slices" "## Phases") ;;
     *)         echo "LINT: required-section: unknown-artifact-type=$type"; return 1 ;;
   esac
-  local h
+  local h violations=0
   for h in "${required[@]}"; do
     if ! grep -qF "$h" "$file"; then
       echo "LINT: required-section: $type :: missing-heading=$h"
+      violations=$((violations + 1))
     fi
   done
+  [ "$violations" -eq 0 ]
 }
 
 # lint_no_brevity <file>
 # Flags bare brevity instructions; allowlists meta-mentions and length bands.
+# Returns 0 if no violations, 1 if any violation found (CodexF5 fix-cycle 1).
 lint_no_brevity() {
   local file="$1"
   awk '
@@ -265,8 +278,10 @@ lint_no_brevity() {
 
       if (hit) {
         printf "LINT: no-brevity: line %d :: %s\n", NR, detail
+        violations++
       }
     }
+    END { exit (violations > 0 ? 1 : 0) }
   ' "$file"
 }
 
@@ -289,6 +304,9 @@ lint_no_brevity() {
 
 @test "[U14-lint:claim-line] fires on seeded violation fixture" {
   run lint_claim_line "$FIXTURE_DIR/seeded-u14-violation-claim-line.md"
+  # CodexF5 fix-cycle 1: exit-status check is the primary contract; output
+  # checks remain as additional diagnostics.
+  [ "$status" -ne 0 ]
   [[ "$output" == *"LINT: claim-line:"* ]]
   [[ "$output" == *"opening-sentence-too-long"* ]]
   [[ "$output" == *"opening-sentence-missing-terminal-punctuation"* ]]
@@ -300,6 +318,8 @@ lint_no_brevity() {
   # against the silent-no-op failure mode where the lint passes vacuously.
   # See docs/qrspi/2026-04-26-prompt-improvements/future-followups.md (FU-7).
   run lint_claim_line "$REPO_ROOT/skills/goals/SKILL.md"
+  # CodexF5 fix-cycle 1: exit-status is now the primary contract.
+  [ "$status" -ne 0 ]
   [[ "$output" == *"LINT: claim-line:"* ]]
 }
 
@@ -322,6 +342,8 @@ lint_no_brevity() {
 
 @test "[U14-lint:paragraph-density] fires on seeded violation fixture (>150w and >8L)" {
   run lint_paragraph_density "$FIXTURE_DIR/seeded-u14-violation-paragraph-density.md"
+  # CodexF5 fix-cycle 1: exit-status check is now the primary contract.
+  [ "$status" -ne 0 ]
   [[ "$output" == *"LINT: paragraph-density:"* ]]
   [[ "$output" == *"paragraph-too-many-words"* ]]
 }
@@ -331,6 +353,8 @@ lint_no_brevity() {
   # goals/SKILL.md is the highest-violation in-scope file (4 paragraph-density
   # findings: 176/261/217-word paragraphs and one 9-line paragraph).
   run lint_paragraph_density "$REPO_ROOT/skills/goals/SKILL.md"
+  # CodexF5 fix-cycle 1: exit-status is now the primary contract.
+  [ "$status" -ne 0 ]
   [[ "$output" == *"LINT: paragraph-density:"* ]]
   [[ "$output" == *"paragraph-too-many-words"* ]]
 }
@@ -353,6 +377,8 @@ lint_no_brevity() {
 
 @test "[U14-lint:scannability] fires on seeded violation fixture (long section, no bullets)" {
   run lint_scannability "$FIXTURE_DIR/seeded-u14-violation-scannability.md"
+  # CodexF5 fix-cycle 1: exit-status check is now the primary contract.
+  [ "$status" -ne 0 ]
   [[ "$output" == *"LINT: scannability:"* ]]
   [[ "$output" == *"long-section-no-list"* ]]
 }
@@ -361,6 +387,8 @@ lint_no_brevity() {
   local f
   for f in "${IN_SCOPE_FILES[@]}"; do
     run lint_scannability "$f"
+    # CodexF5 fix-cycle 1: status MUST be zero on a clean file.
+    [ "$status" -eq 0 ]
     if [[ "$output" == *"LINT:"* ]]; then
       printf 'In-scope file violates scannability lint: %s\n%s\n' "$f" "$output" >&2
       return 1
@@ -374,6 +402,8 @@ lint_no_brevity() {
 
 @test "[U14-lint:required-section] fires on seeded violation fixture (design type, missing 2 headings)" {
   run lint_required_section "$FIXTURE_DIR/seeded-u14-violation-required-heading.md" design
+  # CodexF5 fix-cycle 1: exit-status check is now the primary contract.
+  [ "$status" -ne 0 ]
   [[ "$output" == *"LINT: required-section:"* ]]
   [[ "$output" == *"missing-heading=## Test Strategy"* ]]
   [[ "$output" == *"missing-heading=## System Diagram"* ]]
@@ -393,6 +423,8 @@ lint_no_brevity() {
 
 @test "[U14-lint:no-brevity] fires on seeded violation fixture (3 bare instructions)" {
   run lint_no_brevity "$FIXTURE_DIR/seeded-u14-violation-no-brevity.md"
+  # CodexF5 fix-cycle 1: exit-status check is now the primary contract.
+  [ "$status" -ne 0 ]
   [[ "$output" == *"LINT: no-brevity:"* ]]
   [[ "$output" == *"be concise"* ]]
   [[ "$output" == *"brief summary"* ]]
@@ -420,6 +452,8 @@ lint_no_brevity() {
   local f
   for f in "${IN_SCOPE_FILES[@]}"; do
     run lint_no_brevity "$f"
+    # CodexF5 fix-cycle 1: status MUST be zero on a clean file.
+    [ "$status" -eq 0 ]
     if [[ "$output" == *"LINT:"* ]]; then
       printf 'In-scope file violates no-brevity lint: %s\n%s\n' "$f" "$output" >&2
       return 1
