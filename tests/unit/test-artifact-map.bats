@@ -158,3 +158,25 @@ teardown() {
   [ "$status" -eq 0 ]
   [ "$output" = "phasing" ]
 }
+
+# =============================================================================
+# [T25-I-N4] parallelization.md artifact-map integration (R2 I-N4)
+# =============================================================================
+
+@test "[T25-I-N4-1A] artifact_map_get: parallelize → parallelization.md, exit 0" {
+  run artifact_map_get "parallelize"
+  [ "$status" -eq 0 ]
+  [ "$output" = "parallelization.md" ]
+}
+
+@test "[T25-I-N4-2A] artifact_map_get_step: parallelization.md → parallelize" {
+  run artifact_map_get_step "parallelization.md"
+  [ "$status" -eq 0 ]
+  [ "$output" = "parallelize" ]
+}
+
+@test "[T25-I-N4-3A] artifact_map_get_step: /some/path/parallelization.md → parallelize" {
+  run artifact_map_get_step "/some/path/parallelization.md"
+  [ "$status" -eq 0 ]
+  [ "$output" = "parallelize" ]
+}

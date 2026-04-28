@@ -129,9 +129,9 @@ teardown() {
   pipeline_check_prerequisites "design" "$ARTIFACT_DIR"
 }
 
-# Test 7: pipeline_check_prerequisites "implement" with all through plan approved returns 0
+# Test 7: pipeline_check_prerequisites "implement" with all through parallelize approved returns 0
 @test "pipeline_check_prerequisites implement with all prerequisites approved returns 0" {
-  # Create artifact files (M54: includes phasing.md)
+  # Create artifact files (M54: includes phasing.md; T25: includes parallelization.md)
   mkdir -p "$ARTIFACT_DIR/research"
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/goals.md"
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/questions.md"
@@ -140,6 +140,7 @@ teardown() {
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/phasing.md"
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/structure.md"
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/plan.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/parallelization.md"
 
   # Initialize state
   state_init_or_reconcile "$ARTIFACT_DIR"
@@ -540,16 +541,16 @@ _t04_phasing_create_all_approved() {
   echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/plan.md"
 }
 
-@test "[T04-PHASING-1] PIPELINE_ORDER contains phasing at index 4" {
+@test "[T04-PHASING-1] PIPELINE_ORDER contains phasing at index 4 (T25: parallelize at index 7)" {
   # Note: re-source explicitly inside test body to avoid bats env quirks with
   # exported readonly arrays under set -u.
   source "$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/pipeline.sh"
   local order_str="${PIPELINE_ORDER[*]}"
-  [[ "$order_str" == "goals questions research design phasing structure plan implement test" ]]
-  [[ "${#PIPELINE_ORDER[@]}" -eq 9 ]]
+  [[ "$order_str" == "goals questions research design phasing structure plan parallelize implement test" ]]
+  [[ "${#PIPELINE_ORDER[@]}" -eq 10 ]]
 }
 
-@test "[T04-PHASING-2] _pipeline_get_step_index recognizes phasing at index 4 with surrounding indices shifted" {
+@test "[T04-PHASING-2] _pipeline_get_step_index recognizes phasing at index 4 with surrounding indices shifted (T25: parallelize at index 7)" {
   [[ "$(_pipeline_get_step_index goals)" == "0" ]]
   [[ "$(_pipeline_get_step_index questions)" == "1" ]]
   [[ "$(_pipeline_get_step_index research)" == "2" ]]
@@ -557,8 +558,9 @@ _t04_phasing_create_all_approved() {
   [[ "$(_pipeline_get_step_index phasing)" == "4" ]]
   [[ "$(_pipeline_get_step_index structure)" == "5" ]]
   [[ "$(_pipeline_get_step_index plan)" == "6" ]]
-  [[ "$(_pipeline_get_step_index implement)" == "7" ]]
-  [[ "$(_pipeline_get_step_index test)" == "8" ]]
+  [[ "$(_pipeline_get_step_index parallelize)" == "7" ]]
+  [[ "$(_pipeline_get_step_index implement)" == "8" ]]
+  [[ "$(_pipeline_get_step_index test)" == "9" ]]
 }
 
 @test "[T04-PHASING-3] pipeline_check_prerequisites for structure with phasing draft returns 1 with phasing on stdout" {
