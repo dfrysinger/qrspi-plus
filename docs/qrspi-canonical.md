@@ -49,9 +49,9 @@ Per-artifact size and scope guidance is drawn primarily from deck slide ~107's s
 
 ### 1. Goals (qrspi-plus only)
 
-Not a step in Dex's pipeline. qrspi-plus adds Goals as an explicit intent-capture step: purpose, constraints, testable acceptance criteria, out-of-scope exclusions. Also selects pipeline mode (quick fix vs full) and writes `config.md`.
+Not a step in Dex's pipeline. qrspi-plus adds Goals as an explicit intent-capture step: purpose, constraints, per-goal problem framing (Problem / Why we care / What we know so far), pipeline mode (quick fix vs full), `config.md` creation. Acceptance criteria are NOT authored here — per the strip-from-goals contract, criteria are owned by Plan (per-task `## Test Expectations` plus an optional per-phase acceptance block) and exercised via Implement-TDD.
 
-**Artifact:** `goals.md`. Size: Purpose ~1-2 sentences; criteria/constraints as short lists.
+**Artifact:** `goals.md`. Size: Purpose ~1-2 sentences; per-goal entries with three fixed subsections (Problem / Why we care / What we know so far) plus constraints as short lists.
 
 ### 2. Questions (Q in QRSPI)
 
@@ -158,7 +158,7 @@ From ACE-FCA (the principles essay behind QRSPI):
 
 | Step | What it adds | Base QRSPI equivalent |
 |---|---|---|
-| **Goals** | Explicit intent capture with testable acceptance criteria, pipeline mode selection (quick fix vs full), `config.md` creation, goal specificity enforcement | Base QRSPI uses a ticket/issue as input; Goals formalizes this as a reviewable artifact |
+| **Goals** | Explicit intent capture with per-goal problem framing (acceptance criteria are authored downstream in `plan.md` per the strip-from-goals contract), pipeline mode selection (quick fix vs full), `config.md` creation, goal specificity enforcement | Base QRSPI uses a ticket/issue as input; Goals formalizes this as a reviewable artifact |
 | **Integrate** | Cross-task integration review + security integration review after merging worktrees, CI pipeline gate with fix-task routing, phase learnings capture | Not in base — Implement goes straight to PR |
 | **Test** | Acceptance testing against original goals, per-failure quick/full classification, `goals.md` checkbox updates, code review checkpoint, phase routing (PR on final phase, Replan on intermediate) | Not in base — PR review was the verification step |
 | **Replan** | Between-phase replanning with severity classification (minor/major/scope-unknown), fire-and-forget backward loops to Goals, Design, or Structure, three-tier amendment classification, phase snapshot and promotion | Not in base — single-phase execution only |

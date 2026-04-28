@@ -3,7 +3,7 @@ name: parallelize
 description: Use when plan.md is approved and the QRSPI pipeline needs a parallelization plan — analyzes task dependencies and file overlap, decides execution mode, produces parallelization.md with a symbolic branch map; hands off to Implement
 ---
 
-# Parallelize (QRSPI Step 7)
+# Parallelize (QRSPI Step 8)
 
 **Announce at start:** "I'm using the QRSPI Parallelize skill to analyze task dependencies and produce a parallelization plan."
 

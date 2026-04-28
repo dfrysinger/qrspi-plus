@@ -3,7 +3,7 @@ name: integrate
 description: Use when all current-phase tasks are implemented — merges task branches, runs cross-task integration review, security review, and CI gate
 ---
 
-# Integrate (QRSPI Step 9)
+# Integrate (QRSPI Step 10)
 
 **Announce at start:** "I'm using the QRSPI Integrate skill to verify cross-task integration and run CI."
 

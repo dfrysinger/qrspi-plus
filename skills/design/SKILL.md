@@ -75,8 +75,6 @@ Do NOT proceed to Structure without user approval of the design.
 
 ### Design Synthesis Subagent
 
-> **IMPORTANT — Compaction recommended (M53; pre-large-subagent-dispatch).** The Design synthesis subagent ingests goals.md + research/summary.md + the full design-discussion summary + every prior feedback file and returns a multi-section design.md with rationale, trade-offs, test strategy, and a Mermaid diagram. Run `/compact` if context utilization may exceed ~50% before dispatching this subagent — synthesis quality degrades sharply when input pressure compounds output size.
-
 Once the discussion settles, launch a **subagent** to synthesize `design.md`.
 
 **Subagent inputs:**

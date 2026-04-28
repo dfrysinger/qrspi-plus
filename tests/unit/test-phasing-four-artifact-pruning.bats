@@ -136,7 +136,7 @@ extract_subsection() {
 
 @test "Phasing OWNS section names current-phase pruning of the four synthesizing artifacts" {
   local owns_block
-  owns_block="$(extract_subsection "$SKILL_FILE" "## Phasing OWNS / Phasing DEFERS" "### OWNS")"
+  owns_block="$(extract_subsection "$SKILL_FILE" "## Phasing OWNS / Phasing DEFERS" "### Phasing OWNS")"
   [ -n "$owns_block" ]
 
   # OWNS must mention pruning specifically — Phasing owns this; Design and
@@ -228,7 +228,7 @@ extract_subsection() {
 
 @test "Phasing DEFERS section does not redirect pruning ownership to another skill" {
   local defers_block
-  defers_block="$(extract_subsection "$SKILL_FILE" "## Phasing OWNS / Phasing DEFERS" "### DEFERS")"
+  defers_block="$(extract_subsection "$SKILL_FILE" "## Phasing OWNS / Phasing DEFERS" "### Phasing DEFERS")"
   [ -n "$defers_block" ]
 
   # DEFERS must NOT contain a "pruning ... → Design" or "pruning ...

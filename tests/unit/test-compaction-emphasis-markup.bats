@@ -304,7 +304,6 @@ assert_anchor_absent() {
 # --- goals row ---
 
 @test "[M53-neg:goals] pre-large-subagent-dispatch anchor is no-tick (matrix cell empty; negative coverage)" {
-  skip "Documented divergence: skills/goals/SKILL.md line 166 carries a [M53 — Pre-large-subagent-dispatch] callout despite structure.md matrix marking the cell no-tick. Reconciliation (matrix update OR SKILL.md callout removal) out of scope for T18 — see header CodexF2 note."
   local f="$REPO_ROOT/skills/goals/SKILL.md"
   assert_anchor_absent "$f" "pre-large-subagent"
 }
@@ -320,7 +319,6 @@ assert_anchor_absent() {
 # --- design row ---
 
 @test "[M53-neg:design] pre-large-subagent-dispatch anchor is no-tick (matrix cell empty; negative coverage)" {
-  skip "Documented divergence: skills/design/SKILL.md line 78 carries an IMPORTANT M53 pre-large-subagent-dispatch callout despite structure.md matrix marking the cell no-tick. Reconciliation out of scope for T18 — see header CodexF2 note."
   local f="$REPO_ROOT/skills/design/SKILL.md"
   assert_anchor_absent "$f" "pre-large-subagent"
 }
@@ -336,7 +334,6 @@ assert_anchor_absent() {
 # --- structure row ---
 
 @test "[M53-neg:structure] pre-large-subagent-dispatch anchor is no-tick (matrix cell empty; negative coverage)" {
-  skip "Documented divergence: skills/structure/SKILL.md line 75 carries an IMPORTANT M53 pre-large-subagent-dispatch callout despite structure.md matrix marking the cell no-tick. Reconciliation out of scope for T18 — see header CodexF2 note."
   local f="$REPO_ROOT/skills/structure/SKILL.md"
   assert_anchor_absent "$f" "pre-large-subagent"
 }

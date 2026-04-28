@@ -3,7 +3,7 @@ name: implement
 description: Per-phase implementation orchestrator. In full pipeline mode, resolves symbolic bases from parallelization.md to concrete commits, creates worktrees and stage commits, runs baseline tests, dispatches per-task orchestrator subagents per the wave schedule, presents the batch gate, and routes to the next route step (typically Integrate). In quick-fix mode, dispatches the single task (or a fix-task batch from fixes/{type}-round-NN/) through per-task orchestrator subagents, presents the batch gate (with quick-fix-mode menu), and routes to Test.
 ---
 
-# Implement (QRSPI Step 8)
+# Implement (QRSPI Step 9)
 
 **Announce at start:** "I'm using the QRSPI Implement skill to run the per-phase implementation loop."
 
