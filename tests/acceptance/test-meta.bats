@@ -20,18 +20,29 @@ unit_test_dir() {
 
 # ── Criterion 8: Unit test suite baseline ────────────────────────────────────
 
-# AC8 — The unit test directory contains exactly 18 .bats files
-@test "[AC8] Unit test suite has exactly 18 .bats files (baseline)" {
+# AC8 — The unit test directory contains exactly 20 .bats files
+@test "[AC8] Unit test suite has exactly 20 .bats files (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(find "$dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 18 ]
+  [ "$count" -eq 20 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 416 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T14 fix-cycle 2
+# AC8 — Unit test count baseline (updated 2026-04-27 T18)
+@test "[AC8] Unit test suite has exactly 449 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T18 (U14 lint +
+  # M53 emphasis tests + 5 violation fixtures). +33 over 416:
+  # +16 in test-u14-lint.bats (5 deterministic lints with positive coverage
+  # on seeded fixtures and FU-7-skipped clean-state assertions on in-scope
+  # files; 2 helper-sanity tests; 2 scope assertions; 2 FU-7 positive
+  # assertions confirming the lint catches pre-existing in-scope
+  # violations) and +17 in test-compaction-emphasis-markup.bats (13 per-row
+  # M53 matrix coverage tests across the 13-row matrix + 4 cross-cutting
+  # assertions: no shared callout file, no shared callout citation,
+  # per-task-orchestrator delegation contract, anchor-count lower-bound
+  # mutation guard). 416 → 449.
+  # Baseline 416 set after 2026-04-27 prompt-improvements T14 fix-cycle 2
   # (+1 for scope-reviewer-allowed-values assertion in
   # test-replan-archive-and-populate.bats — verifies the scope-reviewer
   # template's `## Parameters` allowed-values list includes `replan`, which
@@ -66,11 +77,12 @@ unit_test_dir() {
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 416 ]
+  [ "$count" -eq 449 ]
 }
 
-# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T14)
-@test "[AC8] All 18 expected unit test files are present by name" {
+# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T18)
+# T18 adds test-u14-lint.bats and test-compaction-emphasis-markup.bats (M53)
+@test "[AC8] All 20 expected unit test files are present by name" {
   local dir
   dir="$(unit_test_dir)"
 
@@ -81,6 +93,7 @@ unit_test_dir() {
     "test-audit.bats"
     "test-bash-detect.bats"
     "test-codex-companion-bg.bats"
+    "test-compaction-emphasis-markup.bats"
     "test-frontmatter.bats"
     "test-phasing-four-artifact-pruning.bats"
     "test-phasing-goal-id-consistency.bats"
@@ -92,6 +105,7 @@ unit_test_dir() {
     "test-setup-project-hooks.bats"
     "test-state.bats"
     "test-task.bats"
+    "test-u14-lint.bats"
     "test-worktree.bats"
   )
 
