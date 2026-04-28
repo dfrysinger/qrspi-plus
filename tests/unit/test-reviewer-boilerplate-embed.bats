@@ -139,6 +139,28 @@ EOF
   echo "$severity_bullet" | grep -q "high"
 }
 
+@test "## Finding Schema change_type field lists style/clarity/correctness/scope/intent allowed values" {
+  # Round-4 thoroughness MEDIUM F-04: mirror the severity-bullet enumeration
+  # test above for the change_type schema bullet. Bare greps for these five
+  # values against the entire schema section would pass on coincidental prose
+  # mentions (e.g. the change_type bullet's tail prose says "auto-apply" /
+  # "pause" and references the classifier). Tighten to the single change_type
+  # bullet LINE so all five enum values must co-occur on the bullet that
+  # defines them. Mutation target: silently dropping any value (e.g. `intent`)
+  # from the schema bullet would make this test fail.
+  local section change_type_bullet
+  section="$(extract_section "$BOILERPLATE_FILE" "## Finding Schema")"
+  change_type_bullet="$(echo "$section" | grep -E '^[-*][[:space:]]+\*\*`change_type`\*\*')"
+  [ -n "$change_type_bullet" ]
+  # Per-value word match against the captured bullet line. -w prevents a
+  # substring like "intentional" from satisfying the `intent` assertion.
+  echo "$change_type_bullet" | grep -qw "style"
+  echo "$change_type_bullet" | grep -qw "clarity"
+  echo "$change_type_bullet" | grep -qw "correctness"
+  echo "$change_type_bullet" | grep -qw "scope"
+  echo "$change_type_bullet" | grep -qw "intent"
+}
+
 # =============================================================================
 # Spec test expectation 3: ## Change-Type Classifier
 #   - all five change_type values named
@@ -152,14 +174,36 @@ EOF
   [ "$output" = "1" ]
 }
 
-@test "## Change-Type Classifier names all five change_type values" {
-  local section
-  section="$(extract_section "$BOILERPLATE_FILE" "## Change-Type Classifier")"
-  echo "$section" | grep -qw "style"
-  echo "$section" | grep -qw "clarity"
-  echo "$section" | grep -qw "correctness"
-  echo "$section" | grep -qw "scope"
-  echo "$section" | grep -qw "intent"
+@test "## Change-Type Classifier default-action rule names all five change_type values in dispatch lines" {
+  # Round-4 thoroughness MEDIUM F-02 (REFRAME, not remove): the previous
+  # version of this test grep'd the ENTIRE classifier section for each of the
+  # five values as words. Because the section contains five `### style|...`
+  # sub-headings AND prose mentions of the values throughout, that test was
+  # essentially duplicative with the per-value positive/negative-example tests
+  # below — those already prove all five sub-blocks exist by name.
+  #
+  # The reframe: assert the five values appear specifically in the
+  # default-action rule's dispatch BULLET LINES (the lines that map values to
+  # auto-apply vs pause behavior), not just as sub-headings or coincidental
+  # prose. This proves the dispatch logic enumerates all five values — a
+  # mutation that dropped "intent" from the pause line (or "correctness" from
+  # the auto-apply line) while leaving the `### intent` sub-heading intact
+  # would silently pass the old section-wide test, but fails this one.
+  #
+  # Note: the existing default-action chained-grep test below already asserts
+  # the exact triple/pair groupings (style+clarity+correctness on the
+  # auto-apply line; scope+intent on the pause line). This test is the
+  # complementary "all five named" enumeration check, scoped to the rule
+  # block rather than the whole classifier section, so the two are
+  # independently load-bearing.
+  local block
+  block="$(extract_rule_block "**Default-action rule.**")"
+  [ -n "$block" ]
+  echo "$block" | grep -qw "style"
+  echo "$block" | grep -qw "clarity"
+  echo "$block" | grep -qw "correctness"
+  echo "$block" | grep -qw "scope"
+  echo "$block" | grep -qw "intent"
 }
 
 # extract_rule_block <bold-rule-heading>
