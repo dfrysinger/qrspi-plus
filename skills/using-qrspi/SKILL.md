@@ -17,7 +17,7 @@ QRSPI is a pipeline for agentic software development with two route variants (qu
 
 **Full pipeline:**
 ```
-Goals → Questions → Research → Design → Structure → Plan → Parallelize → Implement → Integrate → Test → Replan (if needed)
+Goals → Questions → Research → Design → Phasing → Structure → Plan → Parallelize → Implement → Integrate → Test → Replan (if needed)
 ```
 
 > **Read the `Parallelize → Implement → Integrate` segment carefully.** Implement is *not* a per-task chain — it is the per-phase orchestrator step. Parallelize produces the parallelization plan and gets human approval; Implement then fires one per-task subagent per task in the current phase, presents a batch gate when every task has returned, and only then routes to Integrate. **Implement runs once per phase (firing N per-task subagents). Integrate runs once per phase.** Canonical contract — including batch-gate release conditions and the `current_step` transition mechanism — lives in `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop". The state.json table below is a reader's quick reference, not a second source of truth.
@@ -34,14 +34,15 @@ Goals → Questions → Research → Plan → Implement → Test
 | **Goals** | 1 | Capture user intent, constraints, acceptance criteria | `goals.md` |
 | **Questions** | 2 | Generate tagged research questions (no goal leakage) | `questions.md` |
 | **Research** | 3 | Parallel specialist agents gather objective facts | `research/summary.md` |
-| **Design** | 4 | Interactive design discussion, vertical slicing, phasing | `design.md` |
-| **Structure** | 5 | Map design to files, interfaces, component boundaries | `structure.md` |
-| **Plan** | 6 | Detailed task specs with test expectations | `plan.md` + `tasks/*.md` |
-| **Parallelize** | 7 | Analyze dependencies and file overlap; produce symbolic parallelization plan | `parallelization.md` |
-| **Implement** | 8 | Resolve symbolic bases, create worktrees + stage commits, run baseline tests, fire per-task subagents (×N) with TDD + tiered review loops, present batch gate | Working code |
-| **Integrate** | 9 | Merge task branches, cross-task integration + security review, CI gate | Integration report |
-| **Test** | 10 | Acceptance testing, PR creation, phase routing | Test results + PR (every phase) |
-| **Replan** | 11 | Between phases — update remaining tasks based on learnings | Updated `plan.md` + `tasks/*.md` |
+| **Design** | 4 | Interactive design discussion, vertical slicing | `design.md` |
+| **Phasing** | 5 | Decompose the design into ordered phases with dependencies and acceptance criteria | `phasing.md` |
+| **Structure** | 6 | Map design to files, interfaces, component boundaries | `structure.md` |
+| **Plan** | 7 | Detailed task specs with test expectations | `plan.md` + `tasks/*.md` |
+| **Parallelize** | 8 | Analyze dependencies and file overlap; produce symbolic parallelization plan | `parallelization.md` |
+| **Implement** | 9 | Resolve symbolic bases, create worktrees + stage commits, run baseline tests, fire per-task subagents (×N) with TDD + tiered review loops, present batch gate | Working code |
+| **Integrate** | 10 | Merge task branches, cross-task integration + security review, CI gate | Integration report |
+| **Test** | 11 | Acceptance testing, PR creation, phase routing | Test results + PR (every phase) |
+| **Replan** | — | Between phases — update remaining tasks based on learnings (out-of-route) | Updated `plan.md` + `tasks/*.md` |
 
 ## Route Templates
 
@@ -65,6 +66,7 @@ route:
   - questions
   - research
   - design
+  - phasing
   - structure
   - plan
   - parallelize
@@ -73,13 +75,14 @@ route:
   - test
 ```
 
-**Full + UX (adds wireframing before Structure):**
+**Full + UX (adds wireframing after Phasing, before Structure):**
 ```yaml
 route:
   - goals
   - questions
   - research
   - design
+  - phasing
   - ux
   - structure
   - plan
@@ -89,15 +92,15 @@ route:
   - test
 ```
 
-> **Note:** Replan (step 11) is NOT included in any route list. It is invoked by Test when more phases remain in the design, not when Test fails. Test handles final-phase completion (PR creation) directly.
+> **Note:** Replan is NOT included in any route list (it is out-of-route). It is invoked by Test when more phases remain in the design, not when Test fails. Test handles final-phase completion (PR creation) directly.
 
 ### Mid-Pipeline Route Change
 
 Route changes are only allowed before Plan executes:
 
-- **Full → Quick Fix:** Allowed only before Plan. Drop Design, Structure, Parallelize, Integrate from the route. Update `config.md`.
-- **Quick Fix → Full:** Allowed only before Plan. Insert Design, Structure before Plan, and Parallelize, Integrate after Plan. Update `config.md`.
-- **Add/remove UX step:** Allowed only before Structure. Insert or remove `ux` between `design` and `structure`. Update `config.md`.
+- **Full → Quick Fix:** Allowed only before Plan. Drop Design, Phasing, Structure, Parallelize, Integrate from the route. Update `config.md`.
+- **Quick Fix → Full:** Allowed only before Plan. Insert Design, Phasing, Structure before Plan, and Parallelize, Integrate after Plan. Update `config.md`.
+- **Add/remove UX step:** Allowed only before Structure. Insert or remove `ux` between `phasing` and `structure`. Update `config.md`.
 
 After Plan is approved, the route is locked. Route changes after that point require a backward loop to re-run Plan.
 
@@ -119,6 +122,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   ├── q01-codebase.md
 │   └── ...
 ├── design.md
+├── phasing.md
 ├── structure.md
 ├── plan.md
 ├── parallelization.md
@@ -136,6 +140,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   ├── questions-review.md
 │   ├── research-review.md
 │   ├── design-review.md
+│   ├── phasing-review.md
 │   ├── structure-review.md
 │   ├── plan-review.md
 │   ├── replan-review.md
@@ -165,13 +170,14 @@ Each skill checks that its required input artifacts exist on disk before proceed
 - **Questions**: Requires `goals.md` with `status: approved`
 - **Research**: Requires `questions.md` with `status: approved`
 - **Design**: Requires `goals.md` and `research/summary.md` with `status: approved`
-- **Structure**: Requires `goals.md`, `research/summary.md`, and `design.md` with `status: approved`
-- **Plan**: Full pipeline requires `goals.md`, `research/summary.md`, `design.md`, and `structure.md` with `status: approved`. Quick fix requires only `goals.md` and `research/summary.md`.
-- **Parallelize**: Requires `plan.md` with `status: approved`, `tasks/*.md`, `design.md` with `status: approved` (phase definitions), and `config.md`
+- **Phasing**: Requires `goals.md`, `research/summary.md`, and `design.md` with `status: approved`
+- **Structure**: Requires `goals.md`, `research/summary.md`, `design.md`, and `phasing.md` with `status: approved`
+- **Plan**: Full pipeline requires `goals.md`, `research/summary.md`, `design.md`, `phasing.md`, and `structure.md` with `status: approved`. Quick fix requires only `goals.md` and `research/summary.md`.
+- **Parallelize**: Requires `plan.md` with `status: approved`, `tasks/*.md`, `phasing.md` with `status: approved` (phase definitions), and `config.md`
 - **Implement**: Mode is derived from `config.md.route` (full pipeline if `parallelize` precedes `implement`; quick fix otherwise). Full pipeline additionally requires `parallelization.md` with `status: approved`. Quick fix has no Parallelize, so no `parallelization.md`; Implement requires the per-run input set defined in `implement/SKILL.md` § Artifact Gating (approved `tasks/*.md` or `fixes/{type}-round-NN/*.md`). The `pipeline` field on individual task files is a per-task input-gating concern read by the per-task orchestrator subagent, not by the Implement skill itself.
-- **Integrate**: Requires all task review files in `reviews/tasks/`, `design.md` with `status: approved`, `structure.md` with `status: approved`, `parallelization.md` with `status: approved` (branch map), and `config.md` (for route)
-- **Test**: Requires `goals.md` with `status: approved`, `design.md` with `status: approved` (full pipeline) or `research/summary.md` with `status: approved` (quick fix), `fixes/` directory (for regression tests), codebase with implementation merged
-- **Replan**: Requires completed phase code (merged), `fixes/` and `reviews/` directories, remaining `tasks/*.md`, `plan.md` with `status: approved`, and `design.md` with `status: approved`
+- **Integrate**: Requires all task review files in `reviews/tasks/`, `design.md` with `status: approved`, `phasing.md` with `status: approved`, `structure.md` with `status: approved`, `parallelization.md` with `status: approved` (branch map), and `config.md` (for route)
+- **Test**: Requires `goals.md` with `status: approved`, `design.md` and `phasing.md` with `status: approved` (full pipeline) or `research/summary.md` with `status: approved` (quick fix), `fixes/` directory (for regression tests), codebase with implementation merged
+- **Replan**: Requires completed phase code (merged), `fixes/` and `reviews/` directories, remaining `tasks/*.md`, `plan.md` with `status: approved`, `design.md` with `status: approved`, and `phasing.md` with `status: approved`
 
 If a required artifact is missing, the skill refuses to run and tells the user which artifact is needed.
 
@@ -214,7 +220,7 @@ Skills don't need to interpret `state.json`, but a reader (human or fresh agent 
 
 | Field | Meaning | When it changes |
 |-------|---------|-----------------|
-| `current_step` | The pipeline step currently active. For full-pipeline phases that loop Implement (the per-phase orchestration loop in the `Implement → Integrate` segment), this stays at `implement` for the **entire** batch — across every per-task subagent fired by Implement. It only advances to `integrate` after Implement's batch gate releases. The canonical transition contract lives in `implement/SKILL.md` → "State Transition Contract" under "Implement Is the Per-Phase Orchestration Loop"; the hook layer in `hooks/lib/` is the intended implementation layer. (Current hook code may lag the contract for transitions outside the eight pre-Phase-4 steps; if a needed transition is missing, file a hook bug rather than working around it in skills.) | Advances when a step's terminal artifact is approved, when an Implement batch gate releases and Implement invokes the next route step, or when Integrate, Test, or Replan complete their gates. **Does not advance per-task.** Skills never write this field directly — the hook layer writes it. |
+| `current_step` | The pipeline step currently active. Valid values include the route step names (`goals`, `questions`, `research`, `design`, `phasing`, `structure`, `plan`, `parallelize`, `implement`, `integrate`, `test`) plus `replan` (out-of-route). When `phasing` is the current step, the run is in the Phasing skill (between Design approval and Structure entry); `phasing.md` approval advances `current_step` to the next route entry (`structure`, or `ux` if Full+UX). For full-pipeline phases that loop Implement (the per-phase orchestration loop in the `Implement → Integrate` segment), this stays at `implement` for the **entire** batch — across every per-task subagent fired by Implement. It only advances to `integrate` after Implement's batch gate releases. The canonical transition contract lives in `implement/SKILL.md` → "State Transition Contract" under "Implement Is the Per-Phase Orchestration Loop"; the hook layer in `hooks/lib/` is the intended implementation layer. (Current hook code may lag the contract for transitions outside the eight pre-Phase-4 steps; if a needed transition is missing, file a hook bug rather than working around it in skills.) | Advances when a step's terminal artifact is approved, when an Implement batch gate releases and Implement invokes the next route step, or when Integrate, Test, or Replan complete their gates. **Does not advance per-task.** Skills never write this field directly — the hook layer writes it. |
 | `artifacts.{step}` | Approval status of each artifact (`draft`, `replan-draft`, or `approved`). Drives artifact gating. | Updated by the PostToolUse hook when an artifact's frontmatter changes. |
 | `wireframe_requested` | Whether the run includes the optional UX step before Structure. | Set during Goals; never changes thereafter. |
 | `phase_start_commit` | Git SHA at which the current phase began. Used by Replan and Test to scope diffs. | Set when a phase begins. |
@@ -331,6 +337,7 @@ Do not create tasks for any other steps yet. The pipeline mode (and therefore th
 [ ] Questions
 [ ] Research
 [ ] Design          # full pipeline only
+[ ] Phasing         # full pipeline only
 [ ] Structure       # full pipeline only
 [ ] Plan
 [ ] Parallelize     # full pipeline only
@@ -369,6 +376,7 @@ route:
   - questions
   - research
   - design
+  - phasing
   - structure
   - plan
   - parallelize
@@ -492,6 +500,50 @@ The review file `reviews/{step}-review.md` is created on the first review round 
 ```
 
 The orchestrating skill (not the review subagent) writes and appends to the review file based on each subagent's output. Review subagents return findings; the skill handles file I/O. Each round appends its section. Claude and Codex findings are attributed separately.
+
+## Review-Loop Pause Gate
+
+Inside an autonomous review loop (option 2 from the Standard Review Loop), reviewers may surface findings the orchestrating skill cannot safely auto-apply — for example, findings that would rewrite the artifact's contract, contradict an upstream artifact, or require user judgement about scope. When that happens, the loop **pauses** and presents a single consolidated UI message for that round. This is the **Review-Loop Pause Gate**.
+
+### BATCH-WITH-OVERRIDES UI contract
+
+Each pause emits **one consolidated message per round** with three classes of findings:
+
+1. **Auto-applied findings (silent)** — list silently with a count and a one-line summary. Example: `Auto-applied: 7 findings (typos, formatting, cross-reference repair).` Do not enumerate them; the user does not need to act.
+2. **Proposed findings (batch approval)** — show as a numbered list, then ask once: `Apply all proposed findings? (y/n)`. A single `y` accepts the whole batch; `n` skips the whole batch. The user does not approve them individually.
+3. **Paused findings (per-finding 3-option menu)** — list each one individually. Each paused finding gets the **3-option menu** below.
+
+### 3-option menu (per paused finding)
+
+For each paused finding, present:
+
+```
+1) Apply anyway — apply the finding to the current artifact and continue the loop
+2) Skip finding — drop the finding, do not modify the artifact, continue the loop
+3) Loop back to upstream artifact — cascade the change backward (W2/W3/W4 cascade per Backward Loops)
+```
+
+**Loop back to upstream artifact (W2/W3/W4 cascade):** The skill identifies the earliest affected upstream artifact based on the finding's `referenced_files` and the cascade map (W2 = Goals; W3 = Goals + Questions; W4 = Goals + Questions + Research + Design). The skill MUST display the resolved upstream target name in the menu BEFORE the user picks option 3 (e.g., "Loop back to: phasing.md") and MUST request explicit confirmation (`Confirm rewind to {artifact}? (y/n)`) before initiating the cascade. If the finding's `referenced_files` resolves to ambiguous upstreams, the menu lists the candidates and asks the user to pick.
+
+Option 3 then invokes the standard Backward Loops procedure: update the confirmed upstream artifact, re-review, re-approve, and cascade forward to the current step.
+
+### Paused rounds do not decrement the cap
+
+The 10-round review-loop cap (from Standard Review Loop) **does not decrement on a paused round**. A round that triggers the Pause Gate is treated as user-interactive, not autonomous. When the user resolves the pause and the loop resumes, the round counter continues from the same value it had when the pause fired. The cap still terminates the loop at 10 autonomous rounds, but pauses are free.
+
+**Infinite-pause escape hatch:** Although paused rounds do not decrement the 10-round autonomous cap, the skill MUST track total rounds (autonomous + paused) and ABORT after 20 total rounds OR after 5 consecutive pause-only rounds (whichever comes first). On hitting the escape hatch, the skill writes a final summary to `reviews/{artifact}-loop-escape-round-NN.md` listing all unresolved findings and surfaces to the user with the option to manually triage. This prevents pathological reviewers from generating an unbounded round count.
+
+### Pending-findings file
+
+When the Pause Gate fires, the orchestrating skill writes the round's pending findings to:
+
+```
+reviews/{artifact}-loop-pause-round-NN.md
+```
+
+For example: `reviews/design-loop-pause-round-03.md`. The file captures the auto-applied summary, the proposed batch, and the paused findings (with their 3-option resolutions once the user decides). This preserves an auditable record of every pause and how it was resolved.
+
+**Write timing:** The skill MUST write the round's pending findings to `reviews/{artifact}-loop-pause-round-NN.md` **before** presenting the BATCH-WITH-OVERRIDES UI to the user. The write is a fail-closed precondition: if the file write fails (permission, ENOSPC), the skill ABORTS and surfaces the error — it does NOT advance the round or present the UI without an audit trail on disk.
 
 ## Review Time Allocation
 

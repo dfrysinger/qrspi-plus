@@ -1,6 +1,6 @@
 # Scope-Reviewer Template (parameterized)
 
-This template is consumed at dispatch time by the Goals, Design, Phasing, Structure, Plan, and Parallelize skills. Each consumer instantiates the template with a single `{ARTIFACT_TYPE}` value and the dispatched reviewer subagent runs against the corresponding artifact under the rules locked in that skill's `SKILL.md`.
+This template is consumed at dispatch time by the Goals, Design, Phasing, Structure, Plan, Parallelize, and Replan skills. Each consumer instantiates the template with a single `{ARTIFACT_TYPE}` value and the dispatched reviewer subagent runs against the corresponding artifact under the rules locked in that skill's `SKILL.md`.
 
 This template defines the schema/contract only. The reviewer-runtime logic that physically loads files, runs greps, and emits findings lives in the consuming skill prompts; this file declares the parameters those prompts must respect.
 
@@ -13,6 +13,7 @@ This template defines the schema/contract only. The reviewer-runtime logic that 
   - `structure`
   - `plan`
   - `parallelize`
+  - `replan`
 
 No other values are permitted. A dispatch that supplies any other token (or omits the parameter) is malformed and the reviewer must fail closed with a structured-error finding before performing any checks.
 
@@ -88,3 +89,7 @@ Load the rule input from `skills/plan/SKILL.md` `## Plan OWNS / Plan DEFERS`. Th
 ### When `{ARTIFACT_TYPE} == parallelize`
 
 Load the rule input from `skills/parallelize/SKILL.md` `## Parallelize OWNS / Parallelize DEFERS`. The reviewer checks `parallelization.md` against those rules.
+
+### When `{ARTIFACT_TYPE} == replan`
+
+Load the rule input from `skills/replan/SKILL.md` `## Replan OWNS / Replan DEFERS`. The reviewer checks the Replan-proposed changes (severity classifications + minor-path artifact updates) against those rules.
