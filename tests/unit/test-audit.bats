@@ -186,6 +186,108 @@ teardown() {
   [ -f "$audit_file" ]
 }
 
+# ── Symlink hardening (S-3 + L-sec-2) ──────────────────────────────
+
+@test "log: symlinked audit.jsonl → refused, returns nonzero, target untouched" {
+  # An attacker plants a symlink at the audit-file path pointing outside the
+  # artifact_dir (e.g. at a sibling workspace's state file). audit_log_event
+  # must detect the symlink BEFORE append and fail closed rather than
+  # dereferencing the write through the symlink.
+  local artifact_dir="$TEST_ROOT/docs/qrspi/2026-04-26-fakeproj"
+  mkdir -p "$artifact_dir/.qrspi"
+  local outside_target="$TEST_ROOT/outside-target.txt"
+  : > "$outside_target"
+  ln -s "$outside_target" "$artifact_dir/.qrspi/audit.jsonl"
+
+  local target="$TEST_ROOT/.worktrees/fakeproj/task-02/src/foo.ts"
+  local envelope='{"agent_id":"sub-1","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  run audit_log_event "$envelope" "allow" ""
+  [ "$status" -ne 0 ]
+
+  # Outside symlink target must remain empty — function must not have
+  # dereferenced the symlink.
+  local outside_size
+  outside_size=$(wc -c < "$outside_target" | tr -d '[:space:]')
+  [ "$outside_size" = "0" ]
+}
+
+@test "log: symlinked .qrspi/ directory under artifact_dir → refused, returns nonzero" {
+  # An attacker plants a symlink at <artifact_dir>/.qrspi -> /elsewhere/.qrspi
+  # so any append would route into the attacker's directory. audit_log_event
+  # must refuse and fail closed.
+  local artifact_dir="$TEST_ROOT/docs/qrspi/2026-04-26-fakeproj"
+  local attacker_dir="$TEST_ROOT/attacker-qrspi"
+  mkdir -p "$attacker_dir"
+  : > "$attacker_dir/audit.jsonl"
+  # NB: artifact_dir already exists; just symlink .qrspi into the attacker dir.
+  ln -s "$attacker_dir" "$artifact_dir/.qrspi"
+
+  local target="$TEST_ROOT/.worktrees/fakeproj/task-02/src/foo.ts"
+  local envelope='{"agent_id":"sub-1","tool_name":"Edit","tool_input":{"file_path":"'"$target"'"}}'
+
+  run audit_log_event "$envelope" "allow" ""
+  [ "$status" -ne 0 ]
+
+  # Attacker file must remain empty — not appended to via symlinked .qrspi/.
+  local attacker_size
+  attacker_size=$(wc -c < "$attacker_dir/audit.jsonl" | tr -d '[:space:]')
+  [ "$attacker_size" = "0" ]
+}
+
+@test "find_repo_root: symlinked .qrspi/ directory → not followed (CWE-59)" {
+  # Plant a fake repo with a symlinked .qrspi/ directory pointing at another
+  # repo's .qrspi/. _audit_find_repo_root walks via [[ -f ]] which would
+  # otherwise follow the symlink and return the wrong repo root, allowing
+  # audit rows to cross-write into the wrong repo's state.
+  local victim_repo="$TEST_ROOT/victim-repo"
+  local attacker_repo="$TEST_ROOT/attacker-repo"
+  mkdir -p "$victim_repo/.qrspi"
+  printf '{"version":1}\n' > "$victim_repo/.qrspi/state.json"
+  mkdir -p "$attacker_repo"
+  ln -s "$victim_repo/.qrspi" "$attacker_repo/.qrspi"
+
+  # Walking from inside attacker-repo must NOT silently resolve to attacker_repo
+  # (which would only "succeed" via the symlinked .qrspi/state.json).
+  run _audit_find_repo_root "$attacker_repo"
+  if [ "$status" -eq 0 ]; then
+    # If resolver returns success, the resolved path MUST NOT be the attacker
+    # path (which is only reachable via the symlink). It must be either the
+    # canonical victim repo (if hardened with realpath) or some real ancestor
+    # — never the attacker's planted symlink dir.
+    [ "$output" != "$attacker_repo" ]
+  fi
+  # status -ne 0 is also acceptable (rejection-style hardening).
+}
+
+@test "find_repo_root: symlinked state.json file → not followed (CWE-59)" {
+  # Plant a fake repo with a symlinked state.json pointing into another repo's
+  # state.json. The walk must not silently resolve the attacker's repo via the
+  # symlinked file.
+  local victim_repo="$TEST_ROOT/victim-repo2"
+  local attacker_repo="$TEST_ROOT/attacker-repo2"
+  mkdir -p "$victim_repo/.qrspi"
+  printf '{"version":1}\n' > "$victim_repo/.qrspi/state.json"
+  mkdir -p "$attacker_repo/.qrspi"
+  ln -s "$victim_repo/.qrspi/state.json" "$attacker_repo/.qrspi/state.json"
+
+  run _audit_find_repo_root "$attacker_repo"
+  if [ "$status" -eq 0 ]; then
+    [ "$output" != "$attacker_repo" ]
+  fi
+}
+
+@test "find_repo_root: canonical real .qrspi/state.json still resolves" {
+  # Sanity guard: no regression on the canonical case.
+  local repo_root="$TEST_ROOT/canon-repo"
+  mkdir -p "$repo_root/.qrspi"
+  printf '{"version":1}\n' > "$repo_root/.qrspi/state.json"
+
+  run _audit_find_repo_root "$repo_root"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"canon-repo" ]]
+}
+
 # ── Structural meta-tests ─────────────────────────────────────────
 
 @test "audit.sh uses set -euo pipefail" {
