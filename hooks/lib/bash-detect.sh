@@ -98,15 +98,28 @@ bash_detect_file_writes() {
         part="${part%"${part##*[![:space:]]}"}"
 
         # ── Pattern: opaque-write — inline interpreters ──────────────────
-        # python/python3/perl/ruby with -e or -c flag, node with -e or --eval.
-        # The interpreter receives a script as a string argument; the script
-        # may invoke arbitrary write APIs we cannot statically parse. Treat
-        # as opaque-write — pre-tool-use wall blocks for subagents.
-        if [[ "$part" =~ (^|[[:space:]/])(python[0-9]*|perl|ruby)([[:space:]]+-[A-Za-z]*)*[[:space:]]+-([cCe]|-eval)([[:space:]]|$) ]] || \
-           [[ "$part" =~ (^|[[:space:]/])(python[0-9]*|perl|ruby)[[:space:]]+-[ce]([[:space:]]|$) ]] || \
-           [[ "$part" =~ (^|[[:space:]/])(python[0-9]*)[[:space:]]+-c([[:space:]]|$) ]] || \
-           [[ "$part" =~ (^|[[:space:]/])node[[:space:]]+(-e|--eval)([[:space:]]|$) ]] || \
-           [[ "$part" =~ (^|[[:space:]/])(perl|ruby)[[:space:]]+-e([[:space:]]|$) ]]; then
+        # python/python3/perl/ruby/bash/sh with -e or -c flag, node with -e
+        # or --eval. The interpreter receives a script as a string argument;
+        # the script may invoke arbitrary write APIs we cannot statically
+        # parse. Treat as opaque-write — pre-tool-use wall blocks for
+        # subagents.
+        #
+        # We accept the flag in any position (combined or separate):
+        #   python -c CODE          → matches `-c`
+        #   python -bc CODE         → matches `-bc` (combined)
+        #   python -B -c CODE       → matches `-c` after other flag
+        #   python3 -u -c CODE      → same
+        #   bash -c CODE / sh -c CODE
+        #   node -e CODE / node --eval CODE
+        #   perl -e CODE / ruby -e CODE
+        #
+        # Match is "interpreter token, then anywhere later a flag containing
+        # c (for python/perl/ruby/bash/sh) or e (for node/perl/ruby) or
+        # --eval (for node)". We require the interpreter to be a recognized
+        # name (not arbitrary command) to avoid over-blocking.
+        local interp_re='(^|[[:space:]/])(python[0-9]*|perl|ruby|bash|sh|node)([[:space:]]+-+[A-Za-z]+)*[[:space:]]+-+[A-Za-z]*[ce][A-Za-z]*([[:space:]]|$)'
+        local interp_eval_re='(^|[[:space:]/])node([[:space:]]+-+[A-Za-z]+)*[[:space:]]+--eval([[:space:]]|$)'
+        if [[ "$part" =~ $interp_re ]] || [[ "$part" =~ $interp_eval_re ]]; then
             opaque=1
         fi
 
@@ -142,14 +155,20 @@ bash_detect_file_writes() {
                 idx=$((idx+1))
                 continue
             fi
-            # Look back: is this preceded by `<` (heredoc/herestring `<<<`,
-            # `<<`)? In that case `<<` does NOT redirect output. Skip.
-            if [[ $idx -gt 0 ]]; then
+            # Look back: is this preceded by `<<` (heredoc) or `<<<`
+            # (herestring)? In those cases the `<<...` is the operator and
+            # the `>` here is NOT a redirect — skip. But `<>file` (RW open)
+            # IS a write because it creates the file when missing.
+            if [[ $idx -gt 1 ]]; then
                 local prev="${part:$((idx-1)):1}"
-                if [[ "$prev" == "<" ]]; then
+                local prev2="${part:$((idx-2)):1}"
+                if [[ "$prev" == "<" && "$prev2" == "<" ]]; then
                     idx=$((idx+1))
                     continue
                 fi
+                # `<>file` — the `<` is bash's RW open which CREATES the
+                # file if it doesn't exist. Treat the following token as a
+                # write target. Fall through to normal target extraction.
             fi
             # Walk past the redirect operator (>, >>, >|, >&)
             local op_end=$((idx+1))
@@ -270,13 +289,13 @@ bash_detect_file_writes() {
         # ── Pattern: dd of=path or dd of="path" ──────────────────────────
         # `dd` is special: write target appears as `of=` keyword arg, NOT
         # as the last positional argument.
-        if [[ "$part" =~ (^|[[:space:]])dd([[:space:]]+|$) ]]; then
+        if [[ "$part" =~ (^|[^A-Za-z0-9_])dd([[:space:]]+|$) ]]; then
             local dd_match=""
-            if [[ "$part" =~ (^|[[:space:]])of=\"([^\"]+)\" ]]; then
+            if [[ "$part" =~ (^|[^A-Za-z0-9_])of=\"([^\"]+)\" ]]; then
                 dd_match="${BASH_REMATCH[2]}"
-            elif [[ "$part" =~ (^|[[:space:]])of=\'([^\']+)\' ]]; then
+            elif [[ "$part" =~ (^|[^A-Za-z0-9_])of=\'([^\']+)\' ]]; then
                 dd_match="${BASH_REMATCH[2]}"
-            elif [[ "$part" =~ (^|[[:space:]])of=([^[:space:]\;\&\|]+) ]]; then
+            elif [[ "$part" =~ (^|[^A-Za-z0-9_])of=([^[:space:]\;\&\|\)]+) ]]; then
                 dd_match="${BASH_REMATCH[2]}"
             fi
             [[ -n "$dd_match" ]] && _bd_add_path "$dd_match"
@@ -286,7 +305,7 @@ bash_detect_file_writes() {
         # GNU/BSD `install` copies files; the LAST non-flag positional arg
         # is the destination. We use the same shape as cp/mv: last token
         # that is not a flag.
-        if [[ "$part" =~ (^|[[:space:]])install([[:space:]]+|$) ]]; then
+        if [[ "$part" =~ (^|[^A-Za-z0-9_])install([[:space:]]+|$) ]]; then
             local args_str="${part#*install}"
             args_str="${args_str## }"
             # Strip flag-with-arg pairs we know: -m MODE, -o OWNER, -g GROUP.
@@ -300,7 +319,7 @@ bash_detect_file_writes() {
 
         # ── Pattern: rsync ... dst ───────────────────────────────────────
         # `rsync` last positional arg is the destination (local or remote).
-        if [[ "$part" =~ (^|[[:space:]])rsync([[:space:]]+|$) ]]; then
+        if [[ "$part" =~ (^|[^A-Za-z0-9_])rsync([[:space:]]+|$) ]]; then
             local args_str="${part#*rsync}"
             args_str="${args_str## }"
             local last_arg

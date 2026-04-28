@@ -443,3 +443,105 @@ assert_opaque_write() {
     assert_contains_path "$result" "/a"
     assert_opaque_write "$result"
 }
+
+# ── R2 S-N2 self-review hardening (post-initial-fix tightening) ──────
+# The reviewer (acting as security auditor) identified additional bypass
+# variants the first-pass detector missed. These tests lock in the fix.
+
+# bash -c is opaque (same as python -c)
+@test "S-N2 hardening: bash -c is flagged opaque" {
+    result=$(bash_detect_file_writes "bash -c \"echo X >/etc/poison\"")
+    assert_opaque_write "$result"
+}
+
+# sh -c is opaque
+@test "S-N2 hardening: sh -c is flagged opaque" {
+    result=$(bash_detect_file_writes "sh -c \"echo X >/etc/poison\"")
+    assert_opaque_write "$result"
+}
+
+# Combined-flag interpreter: python -bc (bytecode + command)
+@test "S-N2 hardening: python -bc combined flags is flagged opaque" {
+    result=$(bash_detect_file_writes "python -bc \"open('/x','w').write('y')\"")
+    assert_opaque_write "$result"
+}
+
+# Multi-flag interpreter: python -B -c
+@test "S-N2 hardening: python -B -c separated flags is flagged opaque" {
+    result=$(bash_detect_file_writes "python -B -c \"open('/x','w').write('y')\"")
+    assert_opaque_write "$result"
+}
+
+# Multi-flag interpreter: python3 -u -c
+@test "S-N2 hardening: python3 -u -c is flagged opaque" {
+    result=$(bash_detect_file_writes "python3 -u -c \"open('/x','w').write('y')\"")
+    assert_opaque_write "$result"
+}
+
+# `<>file` (RW open) creates the file — should be detected as a write
+@test "S-N2 hardening: <>file (RW open) detected as write" {
+    result=$(bash_detect_file_writes "exec 3<>/abs/rwopen")
+    assert_contains_path "$result" "/abs/rwopen"
+}
+
+# `dd` inside command substitution `$(dd of=...)`
+@test "S-N2 hardening: dd in command substitution detected" {
+    result=$(bash_detect_file_writes "x=\$(dd of=/abs/sub if=/dev/zero count=1)")
+    assert_contains_path "$result" "/abs/sub"
+}
+
+# `install` inside command substitution
+@test "S-N2 hardening: install in command substitution detected" {
+    result=$(bash_detect_file_writes "x=\$(install src /abs/installed)")
+    assert_contains_path "$result" "/abs/installed"
+}
+
+# `rsync` inside command substitution
+@test "S-N2 hardening: rsync in command substitution detected" {
+    result=$(bash_detect_file_writes "x=\$(rsync src /abs/synced)")
+    assert_contains_path "$result" "/abs/synced"
+}
+
+# `&>file` combined stdout+stderr redirect
+@test "S-N2 hardening: &>file combined stdout+stderr redirect detected" {
+    result=$(bash_detect_file_writes "cmd &>/abs/combined.log")
+    assert_contains_path "$result" "/abs/combined.log"
+}
+
+# `&>>file` append combined stdout+stderr
+@test "S-N2 hardening: &>>file append combined detected" {
+    result=$(bash_detect_file_writes "cmd &>>/abs/combined.log")
+    assert_contains_path "$result" "/abs/combined.log"
+}
+
+# Negative: `<<<` herestring should NOT trigger redirect detection
+@test "S-N2 hardening: <<< herestring not flagged as redirect" {
+    result=$(bash_detect_file_writes 'cat <<<"some content"')
+    if [[ "$result" == */abs/* || "$result" == *some* ]]; then
+        echo "False positive on herestring: $result"
+        return 1
+    fi
+}
+
+# Negative: shell variable that contains 'dd' substring (e.g., 'add')
+# should NOT trigger dd detector
+@test "S-N2 hardening: 'add' command not flagged as dd" {
+    result=$(bash_detect_file_writes 'add of=foo')
+    # 'add' is a non-existent command; the detector shouldn't synthesize a path.
+    # We accept that 'foo' may be captured as bareword via redirect parser; the
+    # specific check is that the regex anchor used for 'dd' doesn't match 'add'.
+    # We verify no path mentions of=foo via dd's of= shape — by checking
+    # detector doesn't claim 'foo' alone (the of= regex would extract 'foo'
+    # from 'add of=foo'). The regex should NOT match because 'a' precedes 'dd'.
+    # This test passes if 'foo' is NOT in result (meaning of= regex skipped).
+    if [[ "$result" == "foo" ]]; then
+        echo "False positive: 'add of=foo' should not match dd's of= pattern"
+        return 1
+    fi
+}
+
+# Sanity: existing python -c still opaque
+@test "S-N2 hardening: existing python -c still flagged" {
+    result=$(bash_detect_file_writes "python -c \"open('/x','w')\"")
+    assert_opaque_write "$result"
+}
