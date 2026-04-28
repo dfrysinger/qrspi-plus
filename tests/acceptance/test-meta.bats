@@ -20,18 +20,36 @@ unit_test_dir() {
 
 # ── Criterion 8: Unit test suite baseline ────────────────────────────────────
 
-# AC8 — The unit test directory contains exactly 18 .bats files
-@test "[AC8] Unit test suite has exactly 18 .bats files (baseline)" {
+# AC8 — The unit test directory contains exactly 19 .bats files
+@test "[AC8] Unit test suite has exactly 19 .bats files (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(find "$dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 18 ]
+  [ "$count" -eq 19 ]
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 416 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T14 fix-cycle 2
+@test "[AC8] Unit test suite has exactly 441 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T16 fix-cycle 1 (+3
+  # contrast tests in test-change-type-classification.bats covering the 3
+  # valid resolved-pause menu options — apply / skip / loop-back — each
+  # asserting loop_state=`next` AND cap-decrement (CodexF2 wait-state
+  # contract). 438 → 441.
+  # Prior 438 baseline was after 2026-04-27 prompt-improvements T16 (+22
+  # tests across 1 new unit .bats file plus augmentations to
+  # test-reviewer-boilerplate-embed.bats):
+  #   - test-change-type-classification.bats (NEW): +17 tests covering the
+  #     5 change_type tags, secondary-escalation rule, pause-gate dispatch,
+  #     and 10-round cap-counter non-decrement on PAUSE_PENDING sentinel.
+  #   - test-reviewer-boilerplate-embed.bats (AUGMENTED): +5 tests adding the
+  #     M48 cross-cutting embed-coverage assertion (14 distinct files, drift
+  #     detection, missed-sweep detection, test/SKILL.md = 4 occurrences in
+  #     post-Wave-5 reality) and the all-three-required-headings assertion.
+  # 416 → 438. T16 also added test-review-pause.bats to tests/acceptance/
+  # (not counted by this baseline — this baseline measures unit tests only).
+  # 438 was the post-T16-initial baseline before fix-cycle 1.
+  # Prior 416 baseline was after 2026-04-27 prompt-improvements T14 fix-cycle 2
   # (+1 for scope-reviewer-allowed-values assertion in
   # test-replan-archive-and-populate.bats — verifies the scope-reviewer
   # template's `## Parameters` allowed-values list includes `replan`, which
@@ -66,11 +84,11 @@ unit_test_dir() {
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 416 ]
+  [ "$count" -eq 441 ]
 }
 
-# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T14)
-@test "[AC8] All 18 expected unit test files are present by name" {
+# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T16)
+@test "[AC8] All 19 expected unit test files are present by name" {
   local dir
   dir="$(unit_test_dir)"
 
@@ -80,6 +98,7 @@ unit_test_dir() {
     "test-artifact.bats"
     "test-audit.bats"
     "test-bash-detect.bats"
+    "test-change-type-classification.bats"
     "test-codex-companion-bg.bats"
     "test-frontmatter.bats"
     "test-phasing-four-artifact-pruning.bats"

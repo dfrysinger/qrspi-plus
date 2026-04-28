@@ -412,3 +412,125 @@ extract_subblock() {
   preface="$(awk '/^## / { exit } { print }' "$BOILERPLATE_FILE")"
   echo "$preface" | grep -qiE "designed[- ]to[- ]grow|grow|future.+sections|additional sections"
 }
+
+# =============================================================================
+# Task 16 — M48 cross-cutting embed-coverage assertion
+#
+# The reviewer-boilerplate.md path MUST be referenced by EXACTLY this set of
+# files (per-file grep, exact match). Two failure modes are guarded:
+#
+#   (a) Drift detection: any OTHER file in the repo references the path →
+#       fail. This catches new embed sites that were added without updating
+#       the canonical set.
+#   (b) Missed-sweep detection: any in-set file that does NOT reference the
+#       path → fail. This catches sweeps that missed a required embed site.
+#
+# Embed-site count contract (T16, 2026-04-27):
+#   The spec contract is 14 distinct embed-site files with test/SKILL.md
+#   containing exactly 3 occurrences of the full path
+#   `skills/_shared/reviewer-boilerplate.md`. The occurrence-count assertion
+#   below greps the FULL PATH (not the loose substring `reviewer-boilerplate`)
+#   so an incidental prose mention of the bare phrase does not satisfy the
+#   embed-count check. See task-16 spec line 14 / line 20 (test/SKILL.md =
+#   3 occurrences).
+# =============================================================================
+
+# REPO_ROOT — the qrspi-plus checkout root (worktree-aware).
+setup_embed_coverage() {
+  REPO_ROOT="$BATS_TEST_DIRNAME/../.."
+  EXPECTED_FILES=(
+    "skills/goals/SKILL.md"
+    "skills/questions/SKILL.md"
+    "skills/research/SKILL.md"
+    "skills/design/SKILL.md"
+    "skills/phasing/SKILL.md"
+    "skills/structure/SKILL.md"
+    "skills/plan/SKILL.md"
+    "skills/parallelize/SKILL.md"
+    "skills/implement/SKILL.md"
+    "skills/integrate/SKILL.md"
+    "skills/test/SKILL.md"
+    "skills/replan/SKILL.md"
+    "skills/implement/templates/per-task-orchestrator.md"
+    "skills/_shared/templates/scope-reviewer.md"
+  )
+  export REPO_ROOT
+}
+
+@test "[M48-embed] EXACTLY 14 distinct files in skills/ reference reviewer-boilerplate.md" {
+  setup_embed_coverage
+  # Count distinct files under skills/ that reference the boilerplate. Exclude
+  # the boilerplate file itself if it self-references (it does not, but be
+  # safe). The expected set lists 14 files; this is the file-set assertion.
+  local count
+  count=$(grep -rl "reviewer-boilerplate" "$REPO_ROOT/skills/" \
+    | grep -v "skills/_shared/reviewer-boilerplate.md" \
+    | sort -u \
+    | wc -l \
+    | tr -d ' ')
+  [ "$count" -eq 14 ]
+}
+
+@test "[M48-embed] each of the 14 expected files references reviewer-boilerplate.md (missed-sweep detection)" {
+  setup_embed_coverage
+  for rel in "${EXPECTED_FILES[@]}"; do
+    [ -f "$REPO_ROOT/$rel" ]
+    grep -q "reviewer-boilerplate" "$REPO_ROOT/$rel" || {
+      echo "FAIL: expected $rel to reference reviewer-boilerplate.md but it does not" >&2
+      return 1
+    }
+  done
+}
+
+@test "[M48-embed] no file OUTSIDE the expected set references reviewer-boilerplate.md (drift detection)" {
+  setup_embed_coverage
+  # Build a sorted, normalized list of actual referencing files under skills/,
+  # excluding the boilerplate itself. Compare element-by-element against the
+  # expected set. Any extra file (drift) fails the test.
+  local actual_list expected_list extras
+  actual_list="$(grep -rl "reviewer-boilerplate" "$REPO_ROOT/skills/" \
+    | sed "s|^$REPO_ROOT/||" \
+    | grep -v "^skills/_shared/reviewer-boilerplate.md$" \
+    | sort -u)"
+  expected_list="$(printf "%s\n" "${EXPECTED_FILES[@]}" | sort -u)"
+  # comm -23 <actual> <expected>: lines in actual not in expected → drift.
+  extras="$(comm -23 <(echo "$actual_list") <(echo "$expected_list") || true)"
+  if [ -n "$extras" ]; then
+    echo "FAIL: drift detected — files referencing reviewer-boilerplate.md but not in expected set:" >&2
+    echo "$extras" >&2
+    return 1
+  fi
+}
+
+@test "[M48-embed] test/SKILL.md contains exactly 3 references to reviewer-boilerplate.md (per spec)" {
+  # Asserts the spec-contracted 3 occurrences of the FULL boilerplate path
+  # in skills/test/SKILL.md (task-16 spec line 14 / line 20). The grep
+  # pattern is the full path `skills/_shared/reviewer-boilerplate.md` (not
+  # the loose substring `reviewer-boilerplate`), so an incidental prose
+  # mention of the bare phrase elsewhere in the file does not vacuously
+  # satisfy the count.
+  setup_embed_coverage
+  local count
+  count=$(grep -c "skills/_shared/reviewer-boilerplate.md" "$REPO_ROOT/skills/test/SKILL.md" | tr -d ' ')
+  [ "$count" -eq 3 ]
+}
+
+# =============================================================================
+# Task 16 — All three M48 required headings present together
+#
+# Each individual heading already has its own per-heading test above. This
+# test additionally asserts ALL THREE are simultaneously present in the
+# boilerplate file with a single, load-bearing assertion. A single missing
+# heading deletes the M48 contract — the test is one assertion, not three,
+# so a partial sweep that drops one heading fails it cleanly.
+# =============================================================================
+
+@test "[M48-headings] all three required headings (Finding Schema, Change-Type Classifier, Disagreement-Valid Framing) are present" {
+  local has_schema has_classifier has_framing
+  has_schema=$(grep -c "^## Finding Schema$" "$BOILERPLATE_FILE" | tr -d ' ')
+  has_classifier=$(grep -c "^## Change-Type Classifier$" "$BOILERPLATE_FILE" | tr -d ' ')
+  has_framing=$(grep -c "^## Disagreement-Valid Framing$" "$BOILERPLATE_FILE" | tr -d ' ')
+  [ "$has_schema" -eq 1 ]
+  [ "$has_classifier" -eq 1 ]
+  [ "$has_framing" -eq 1 ]
+}
