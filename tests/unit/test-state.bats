@@ -748,7 +748,7 @@ EOF
   [[ "$out" == "implement" ]]
 }
 
-@test "[T04-PHASING-6S] state_init_or_reconcile recognizes all 9 artifacts including phasing" {
+@test "[T04-PHASING-6S] state_init_or_reconcile recognizes all 10 artifacts including phasing and parallelize" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
 
@@ -765,6 +765,7 @@ EOF
   [[ "$json" == *'"phasing"'* ]]
   [[ "$json" == *'"structure"'* ]]
   [[ "$json" == *'"plan"'* ]]
+  [[ "$json" == *'"parallelize"'* ]]
   [[ "$json" == *'"implement"'* ]]
   [[ "$json" == *'"test"'* ]]
 }
