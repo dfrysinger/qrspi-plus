@@ -74,6 +74,8 @@ Write your findings as a markdown document. Organize by question if you have mul
 
 ### Synthesis Subagent
 
+> **IMPORTANT — Compaction recommended (M53; pre-large-subagent-dispatch).** The synthesis subagent ingests every `research/q*.md` file (potentially 33+ sources) and returns a unified summary. Run `/compact` if context utilization may exceed ~50% before dispatching this subagent — synthesis quality degrades sharply when input pressure compounds output size.
+
 After all per-question research completes, launch a synthesis subagent:
 
 **Inputs:** All `research/q*.md` files. NO `goals.md`.
@@ -109,6 +111,8 @@ status: draft
 
 ### Review Round
 
+> **IMPORTANT — Compaction recommended (M53; pre-review-loop).** The synthesis subagent has just returned `research/summary.md`. Before dispatching the Claude reviewer (and Codex reviewer in parallel, if enabled), run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load `research/summary.md` + every `research/q*.md` file + the embedded reviewer-boilerplate; running them on a saturated context produces shallow findings.
+
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research-specific reviewer instructions:
 
 - **Claude review subagent** — inputs: all `research/q*.md` files + `research/summary.md`. **NO `questions.md`** (maintains research isolation). Checks: objective findings (no opinions/recommendations); no factual gaps; no inference stated as fact; codebase references specific (`file:line`); web sources cited with URLs; synthesis accurately represents per-question findings. Findings written to `reviews/research-review.md`. The reviewer subagent embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. Findings must conform to the M48 5-field schema defined there (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`); `change_type` is required.
@@ -140,9 +144,11 @@ On approval, if reviews have not passed clean, note this and ask if they'd like 
 
 Commit the approved `research/summary.md`, all `research/q*.md` files, and `reviews/research-review.md` to git.
 
-Recommend compaction: "Research approved. This is a good point to compact context before the next step (`/compact`)."
+> **IMPORTANT — Compaction recommended (M53; terminal state).** Research approved. This is a good point to compact context before the next step. Recommend the user run `/compact` if context utilization may exceed ~50%.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `research`.
+
+> **IMPORTANT — Compaction recommended (M53; cross-skill transition).** Before invoking the next skill, run `/compact` if context utilization may exceed ~50%. The next skill (typically Design, per the Full route) reads `research/summary.md` + every prior approved artifact + reviewer findings; entering it on a saturated context degrades the architecture-proposal quality.
 
 ## Red Flags — STOP
 

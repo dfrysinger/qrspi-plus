@@ -82,6 +82,8 @@ During phase transitions, Replan reads `roadmap.md` to determine which goals bel
 
 ## Review Round
 
+> **IMPORTANT — Compaction recommended (M53; pre-review-loop).** The Replan subagent has just returned its proposed changes + severity classifications. Before dispatching the Claude reviewer (and Codex reviewer in parallel, if enabled), run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load the proposals + `goals.md` + `plan.md` + `design.md` + every prior phase's review findings + the embedded reviewer-boilerplate; running them on a saturated context produces shallow severity-classification findings, which is the load-bearing signal for major-vs-minor routing.
+
 - **Claude review subagent:** verify proposed changes are consistent with goals (read `goals.md` for this check), don't introduce contradictions, severity classification is correct. The reviewer subagent embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. Findings must conform to the M48 5-field schema defined there (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`); `change_type` is required.
 - **Codex review** (if enabled in `config.md`): same criteria
 - Fix issues, ask user `1) Present  2) Loop until clean (recommended)`, loop or present (max 10 rounds — this is the standard using-qrspi review loop cap, distinct from the 3-round convergence in Pattern 1/2)
@@ -133,9 +135,13 @@ Recommend compaction before invoking target skill.
 
 ## Terminal State
 
+> **IMPORTANT — Compaction recommended (M53; terminal state).** Replan analysis complete. This is a good point to compact context before the cross-skill transition (next-phase Goals on the Minor path; loop-back target on the Major path). Recommend the user run `/compact` if context utilization may exceed ~50%.
+
 **Minor path:** Delete `replan-pending.md`, recommend compaction, then **call `state_init_or_reconcile <artifact_dir>` to reconcile `state.json` against the freshly-reset frontmatter** (this avoids relying on the PostToolUse hook's lazy catch-up — Goals reads `state.json` immediately at start and would otherwise see stale values), then invoke `qrspi:goals` for the next phase. (Rationale: `artifact_promote_next_phase` deleted `structure.md`, `plan.md`, `tasks/` and reset goals/research/design frontmatter to `draft`. Parallelize cannot run without an approved `plan.md` and `tasks/*.md`, so the next phase must restart from Goals — which re-approves the promoted goals via its "Next-Phase Restart Mode" (see `goals/SKILL.md` → "Next-Phase Restart Mode"), then cascades through Questions/Research/Design/Structure/Plan/Parallelize/Implement in turn.)
 
 **Major path:** Delete `replan-pending.md`, recommend compaction, invoke the loop-back target skill (Goals, Design, or Structure). Replan exits — the normal pipeline takes over from the loop-back target forward. The `replan-pending.md` deletion happens before the loop-back invocation because Replan's analytical work is complete; the cascade is standard pipeline execution.
+
+> **IMPORTANT — Compaction recommended (M53; cross-skill transition).** Before invoking the next skill (next-phase Goals on the Minor path; the loop-back target — Goals, Design, or Structure — on the Major path), run `/compact` if context utilization may exceed ~50%. Loop-back targets read every prior approved artifact + every `feedback/replan-phase-*-round-*.md` file; entering them on a saturated context degrades the cascade's re-approval quality.
 
 ## Model Selection Guidance
 
