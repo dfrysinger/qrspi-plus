@@ -259,12 +259,23 @@ extract_subsection() {
 @test "Red Flags — STOP entry for malformed OWNS/DEFERS uses high severity" {
   # The "Red Flags — STOP" bullet about scope-reviewer fail-closed previously
   # ended with "scope-reviewer fail-closed CRITICAL". After the M48 fix it
-  # must not name CRITICAL.
+  # must not name CRITICAL, AND must explicitly name the replacement
+  # severity (`high`) so that a future edit cannot accidentally drop the
+  # severity wording entirely (closes Codex round-1 GTR-001 / TCR-001:
+  # the absence-of-CRITICAL check alone is too weak — verify the
+  # replacement actually preserved the intended `severity: high` wording).
   local block
   block="$(extract_section "$SKILL_FILE" "## Red Flags — STOP")"
   [ -n "$block" ]
 
   ! echo "$block" | grep -qE "\bCRITICAL\b"
+
+  # Locate the malformed-OWNS/DEFERS bullet specifically and require it to
+  # name `severity: high` (M48-conforming severity for the fail-closed path).
+  local bullet
+  bullet="$(echo "$block" | grep -E "Phasing OWNS / Phasing DEFERS.*malformed|malformed.*Phasing OWNS / Phasing DEFERS")"
+  [ -n "$bullet" ]
+  echo "$bullet" | grep -qiE "severity: high|high.*M48|M48.*high"
 }
 
 # =============================================================================

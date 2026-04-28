@@ -24,15 +24,15 @@ Pipeline position: Goals → Questions → Research → Design → **Phasing** �
 
 If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
 
+### Config Validation
+
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Phasing validates `codex_reviews` (expected `true` or `false`). If `config.md` is missing or `codex_reviews` is missing/invalid, halt and present the field-specific menu from the Procedure — do NOT silently default `codex_reviews` to false.
+
 <HARD-GATE>
 Do NOT synthesize phasing.md, roadmap.md, or any future-* artifact without all five required inputs approved.
 Do NOT prune goals.md, questions.md, research/summary.md, or design.md until phasing.md is reviewed and approved by the user.
 Do NOT proceed to Structure without user approval of the Phasing artifact set.
 </HARD-GATE>
-
-### Config Validation
-
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Phasing validates `codex_reviews` (expected `true` or `false`). If `config.md` is missing or `codex_reviews` is missing/invalid, halt and present the field-specific menu from the Procedure — do NOT silently default `codex_reviews` to false.
 
 ## Phasing OWNS / Phasing DEFERS
 
