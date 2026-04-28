@@ -386,3 +386,40 @@ extract_step() {
   # Must name codex_reviews as a field Replan validates.
   echo "$section" | grep -i "Replan" | grep -q "codex_reviews"
 }
+
+# ── Task 40: Step 2 reads roadmap from snapshot path, not deleted live path ─
+
+@test "Step 2 (Read roadmap) reads from snapshot path, not the deleted live path" {
+  # Round-3 integration M-1 / cross-cutting F-1: artifact_promote_next_phase
+  # (hooks/lib/artifact.sh) deletes roadmap.md during phase-promote, BEFORE
+  # the archive-and-populate sequence's step 2 runs. The fail-closed clause
+  # ("If roadmap.md is missing OR has no next-phase entries … ABORT") would
+  # fire deterministically every minor-path run if step 2 read from the live
+  # path. artifact_snapshot_phase copies roadmap.md into
+  # phases/phase-{completed_NN}/roadmap.md prior to promote, so step 2 must
+  # read from that snapshot path.
+  local step
+  step="$(extract_step 2)"
+  [ -n "$step" ]
+  # Step 2 must reference the snapshot path under phases/phase-NN/.
+  echo "$step" | grep -qE "phases/phase-(\{completed_NN\}|NN)/roadmap.md"
+  # Step 2 must NOT instruct opening the bare live `roadmap.md` (the deleted
+  # path). Permit references that are clearly part of the snapshot path
+  # (i.e. preceded by `phases/phase-…/`) — those will not match the negative
+  # pattern below because we strip them out first.
+  local stripped
+  stripped="$(echo "$step" | sed -E 's#phases/phase-[^/[:space:]`]*/roadmap.md##g')"
+  ! echo "$stripped" | grep -qE "open[[:space:]]+\`?roadmap.md\`?"
+}
+
+@test "Step 2 (Read roadmap) attributes the snapshot to artifact_snapshot_phase" {
+  # The snapshot path exists because artifact_snapshot_phase ran in the
+  # Phase Snapshot section just above. Step 2's prose should make the
+  # snapshot provenance explicit so a future reader can trace WHY the read
+  # path is the snapshot copy (avoids drift if someone later edits the
+  # snapshot helper without updating Replan).
+  local step
+  step="$(extract_step 2)"
+  [ -n "$step" ]
+  echo "$step" | grep -qiE "snapshot|artifact_snapshot_phase"
+}
