@@ -20,36 +20,34 @@ unit_test_dir() {
 
 # ── Criterion 8: Unit test suite baseline ────────────────────────────────────
 
-# AC8 — The unit test directory contains exactly 12 .bats files
-@test "[AC8] Unit test suite has exactly 12 .bats files (baseline)" {
+# AC8 — The unit test directory contains exactly 17 .bats files
+@test "[AC8] Unit test suite has exactly 17 .bats files (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(find "$dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 12 ]
+  [ "$count" -eq 17 ]
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 307 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T4 Round-4 thoroughness
-  # FIX: +6 boundary/coverage tests addressing CodexF1 (table-driven coverage of
-  # every reachable return value of state_compute_current_step — +1 in
-  # test-state.bats: [T04-PHASING-4Sc]) and CodexF2 (boundary-sensitive
-  # cascade-reset assertions — +5 in test-pipeline.bats: [T04-PHASING-9a]
-  # phasing boundary, [9b] questions, [9c] research, [9d] plan, [9e] implement).
-  # Prior 301 baseline was after Round-3 (+2 mutation-resistance tests in
-  # test-state.bats: [T04-PHASING-4Sb] and [T04-PHASING-5b]). Prior 299 baseline
-  # was after T4 initial implementation (+16 phasing-aware unit tests). Prior
-  # 283 baseline was after 2026-04-26 implement-runtime-fix.
+@test "[AC8] Unit test suite has exactly 381 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T5 (Phasing skill).
+  # T5 added 3 new bats files (+19 tests): test-phasing-roadmap-generation
+  # (+5), test-phasing-goal-id-consistency (+5), test-phasing-four-artifact-
+  # pruning (+9). 362 → 381.
+  # Prior 362 baseline was after Wave 1 + Wave 2 merge (T1 +25, T3 +30, T4
+  # +6 over 307 — sums to 362; T2/T11 are markdown-only).
+  # Prior 307 baseline was after T4 Round-4 thoroughness FIX (+6 boundary
+  # tests). Prior 301/299/283 baselines see git log.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 307 ]
+  [ "$count" -eq 381 ]
 }
 
-# AC8 — Every expected unit test file is present by name (updated 2026-04-26)
-@test "[AC8] All 12 expected unit test files are present by name" {
+# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T5)
+@test "[AC8] All 17 expected unit test files are present by name" {
   local dir
   dir="$(unit_test_dir)"
 
@@ -59,9 +57,14 @@ unit_test_dir() {
     "test-artifact.bats"
     "test-audit.bats"
     "test-bash-detect.bats"
+    "test-codex-companion-bg.bats"
     "test-frontmatter.bats"
+    "test-phasing-four-artifact-pruning.bats"
+    "test-phasing-goal-id-consistency.bats"
+    "test-phasing-roadmap-generation.bats"
     "test-pipeline.bats"
     "test-pre-tool-use.bats"
+    "test-reviewer-boilerplate-embed.bats"
     "test-setup-project-hooks.bats"
     "test-state.bats"
     "test-task.bats"
