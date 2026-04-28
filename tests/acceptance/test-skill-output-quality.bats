@@ -21,6 +21,16 @@ bats_require_minimum_version 1.5.0
 # form a complete reviewer prompt with no unresolved placeholders or
 # missing files). The five remaining skills run via the same end-to-end
 # contract assertion against their stubs.
+#
+# FU-8 cross-reference: the "real-subagent smoke" pass for goals is
+# implemented as a prompt-render completeness contract (≥8000 bytes
+# assembled, all template/boilerplate sections present, fixture's seeded
+# DEFERS-list violations embedded) rather than a live LLM dispatch — the
+# bats runtime budget makes live LLM calls impractical inside the test
+# runner. An opt-in live-dispatch harness is deferred to FU-8 in
+# docs/qrspi/2026-04-26-prompt-improvements/future-followups.md (gated
+# behind LIVE_DISPATCH=1, skipped by default in CI). The prompt-render
+# contract catches every breakage upstream of the LLM call.
 
 setup() {
   ROOT="$BATS_TEST_DIRNAME/../.."
