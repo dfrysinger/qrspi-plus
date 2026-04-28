@@ -32,17 +32,17 @@ unit_test_dir() {
 
 # ── Criterion 8: Unit test suite baseline ────────────────────────────────────
 
-# AC8 — The unit test directory contains exactly 25 .bats files
-@test "[AC8] Unit test suite has exactly 25 .bats files (baseline)" {
+# AC8 — The unit test directory contains exactly 29 .bats files
+@test "[AC8] Unit test suite has exactly 29 .bats files (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(find "$dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 25 ]
+  [ "$count" -eq 29 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-28, integration-round-01 fix-cycle merge)
-@test "[AC8] Unit test suite has exactly 671 @test definitions (baseline)" {
+# AC8 — Unit test count baseline (updated 2026-04-28, integration-round-03 task-33 merge)
+@test "[AC8] Unit test suite has exactly 707 @test definitions (baseline)" {
   # Baseline for stage-after-G6 = octopus(T16, T17, T18) on top of
   # stage-after-G5 (0ee9fd1, 18 .bats / 416 @tests). All three Wave 6
   # tasks are file-disjoint except for tests/acceptance/test-meta.bats
@@ -108,27 +108,44 @@ unit_test_dir() {
   #   T38  (+3) — scope-reviewer 6→7 (replan parameterization catch-up)
   #   T39  (+8) — 4-skill phasing.md required-input + new
   #              test-artifact-gating.bats
-  # Total fix-cycle delta: +116 over the 555 baseline. Sum tracking
-  # updates again when task-33 merge lands. 555 → 671. Files baseline
-  # (25) unchanged here, but task-39 added test-artifact-gating.bats and
-  # task-33 (pending merge) will add test-session-start.bats +
-  # test-using-qrspi.bats; the file-count baseline (currently 25) and
-  # the expected-files list will need a separate bump after task-33.
-  # Tracked as round-3 finding. Existing test files already
+  # Total fix-cycle delta (13 leaves): +116 over the 555 baseline.
+  # 555 → 671.
+  #
+  # 2026-04-28 integration-round-03 task-33 merge: task-33 brings task-24
+  # (state.sh hardening) and task-30 (SessionStart contract) transitively
+  # via stage-after-fix-G1, plus task-33's own test-using-qrspi.bats.
+  # Per-file delta over the 671 baseline:
+  #   T24 (+16) — test-state.bats hardening tests: T24-A1/A1b/A1c/A2/A3/A4
+  #              (current_step allowlist), T24-B1..B4 (phase_start_commit
+  #              preservation), T24-C1/C1b/C1c/C2/C3 (concurrent locking,
+  #              TOCTOU serialization), T24-Sec1 (lock symlink refusal,
+  #              skip on non-flock hosts).
+  #   T30  (+9) — test-session-start.bats new file (SessionStart
+  #              additionalContext contract: hook injects using-qrspi
+  #              content, read-only w.r.t. state, no .qrspi/ writes).
+  #   T33 (+11) — test-using-qrspi.bats new file (current_step 12-value
+  #              enum docs, SessionStart bullet contract verification,
+  #              cross-reference test asserting documented values match
+  #              state.sh allowlist, audit-naming reconciliation).
+  # Total task-33 lineage delta: +36 over 671 baseline. 671 → 707.
+  # Files baseline bumped 25 → 29: task-37 added test-structure.bats,
+  # task-39 added test-artifact-gating.bats, task-30 added
+  # test-session-start.bats, task-33 added test-using-qrspi.bats.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 671 ]
+  [ "$count" -eq 707 ]
 }
 
-# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T16+T17+T18)
-@test "[AC8] All 25 expected unit test files are present by name" {
+# AC8 — Every expected unit test file is present by name (updated 2026-04-28 round-3 task-33 merge)
+@test "[AC8] All 29 expected unit test files are present by name" {
   local dir
   dir="$(unit_test_dir)"
 
   local expected_files=(
     "test-agent.bats"
+    "test-artifact-gating.bats"
     "test-artifact-map.bats"
     "test-artifact.bats"
     "test-audit.bats"
@@ -147,11 +164,14 @@ unit_test_dir() {
     "test-scope-reviewer.bats"
     "test-scope-reviewer-parallel-with-claude.bats"
     "test-scope-reviewer-rules-loading.bats"
+    "test-session-start.bats"
     "test-setup-project-hooks.bats"
     "test-skill-md-content-patterns.bats"
     "test-state.bats"
+    "test-structure.bats"
     "test-task.bats"
     "test-u14-lint.bats"
+    "test-using-qrspi.bats"
     "test-worktree.bats"
   )
 
