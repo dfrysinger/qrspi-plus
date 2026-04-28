@@ -73,7 +73,10 @@ status: draft
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Questions-specific reviewer instructions:
 
 - **Claude review subagent** — inputs: `goals.md` + `questions.md`. Checks: **Goal leakage** (would a researcher reading only the questions be able to infer what we're trying to build? if yes, rewrite); comprehensiveness (covers all codebase zones implied by goals); objectivity ("how does X work?" not "how should we change X?"); appropriate research type tags; **Hybrid scrutiny** (can `[hybrid]` be split into `[codebase]` + `[web]`?); no redundant or missing areas. Findings written to `reviews/questions-review.md`.
-- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with `questions.md` + `goals.md`, same criteria. Findings appended.
+- **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper:
+  1. Write the review prompt (`questions.md` + `goals.md` + the same criteria) to a temporary file (e.g., `/tmp/codex-prompt-questions.md`).
+  2. Launch the job early (in parallel with the Claude reviewer above): `scripts/codex-companion-bg.sh launch --prompt-file /tmp/codex-prompt-questions.md` — captures the jobId.
+  3. After the Claude reviewer returns, await the result: `scripts/codex-companion-bg.sh await <jobId>` — exits 0 with the review markdown on stdout when done; exits 10 if the 20-min ceiling is hit; exits 11 on companion crash. Findings appended to `reviews/questions-review.md`.
 
 ### Human Gate
 

@@ -87,7 +87,11 @@ The test-writer chooses the appropriate type(s) per acceptance criterion. A sing
    - **goal-traceability-reviewer** (`implement/templates/thoroughness/goal-traceability-reviewer.md`): Does each test map to a specific acceptance criterion from `goals.md`? Are any criteria untested?
    - **spec-reviewer** (`implement/templates/correctness/spec-reviewer.md`): Does the test verify what it claims to? Are assertions meaningful, not vacuous?
    - **code-quality-reviewer** (`implement/templates/correctness/code-quality-reviewer.md`): Is the test reliable? Flaky setup? Race conditions? Proper cleanup?
-   - **Codex review** (if `codex_reviews: true`) — invoke `codex:rescue` once per Claude reviewer template (3 calls total, one per template), passing the same template + the test code + `goals.md`. Findings appended to `reviews/test/round-NN-review.md` under `#### Codex` subsections beneath each reviewer's `### {reviewer-name}` heading.
+   - **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper, one launch+await pair per Claude reviewer template (3 standalone pairs total — one for goal-traceability-reviewer, one for spec-reviewer, one for code-quality-reviewer). For each template:
+     1. Write the review prompt (the template + the test code + `goals.md`) to a temporary file (e.g., `/tmp/codex-prompt-test-{reviewer-name}.md`).
+     2. Launch the job at dispatch time, in parallel with the Claude reviewer for the same template: `scripts/codex-companion-bg.sh launch --prompt-file /tmp/codex-prompt-test-{reviewer-name}.md` — captures the jobId.
+     3. After the Claude reviewers return, await each Codex result independently: `scripts/codex-companion-bg.sh await <jobId>` — exits 0 with the review markdown on stdout when done; exits 10 if the 20-min ceiling is hit; exits 11 on companion crash.
+     Findings appended to `reviews/test/round-NN-review.md` under `#### Codex` subsections beneath each reviewer's `### {reviewer-name}` heading.
    - First pass clean (across both Claude and Codex if enabled) → proceed to coverage gate. Issues found → converge, fix all, re-converge. Up to 3 fix cycles — if unresolved, present to user at coverage gate. Test code fixes stay inside the Test skill — not production code, so the HARD GATE doesn't apply.
 4. **Coverage approval gate** — present to user:
    - Tests written (grouped by type: acceptance, integration, E2E, boundary)

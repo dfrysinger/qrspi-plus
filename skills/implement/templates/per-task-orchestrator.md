@@ -129,7 +129,11 @@ All reviewer and fix work is dispatched via subagents; the orchestrator only agg
 - Launch as Claude subagent with template as prompt framework
 - Provide: task spec, code changes (files + content), test results, additional context per template
 - Each returns: `✅ Approved` or `❌ Issues: [file:line references]`
-- **If `codex_reviews: true`:** for every Claude reviewer dispatched, dispatch `codex:rescue` in parallel with the same template + the same task/code/context. Codex returns its own findings, attributed under a `#### Codex` subsection in the review log (see Codex Subsections below). Both Claude and Codex findings feed the convergence and fix loops — neither is privileged.
+- **If `codex_reviews: true`:** for every Claude reviewer dispatched, dispatch a non-blocking Codex review via the wrapper in parallel with the same template + the same task/code/context:
+  1. Write the review prompt (template + task spec + code changes + test results + additional context) to a temporary file (e.g., `/tmp/codex-prompt-task-{NN}-{reviewer-name}.md`).
+  2. At dispatch time (in parallel with launching the Claude reviewer subagent for that template), launch the Codex job: `scripts/codex-companion-bg.sh launch --prompt-file /tmp/codex-prompt-task-{NN}-{reviewer-name}.md` — captures the jobId per template.
+  3. At consolidation time (after the Claude reviewers return), await each Codex result: `scripts/codex-companion-bg.sh await <jobId>` — exits 0 with the review markdown on stdout when done; exits 10 if the 20-min ceiling is hit; exits 11 on companion crash.
+  Codex returns its own findings, attributed under a `#### Codex` subsection in the review log (see Codex Subsections below). Both Claude and Codex findings feed the convergence and fix loops — neither is privileged.
 
 ## Artifact
 

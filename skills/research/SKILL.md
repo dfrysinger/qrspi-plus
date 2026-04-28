@@ -112,7 +112,10 @@ status: draft
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research-specific reviewer instructions:
 
 - **Claude review subagent** — inputs: all `research/q*.md` files + `research/summary.md`. **NO `questions.md`** (maintains research isolation). Checks: objective findings (no opinions/recommendations); no factual gaps; no inference stated as fact; codebase references specific (`file:line`); web sources cited with URLs; synthesis accurately represents per-question findings. Findings written to `reviews/research-review.md`.
-- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with `research/summary.md` + `research/q*.md` (`questions.md` excluded for isolation), same criteria. Findings appended.
+- **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper:
+  1. Write the review prompt (`research/summary.md` + `research/q*.md` — `questions.md` excluded for isolation — plus the same criteria) to a temporary file (e.g., `/tmp/codex-prompt-research.md`).
+  2. Launch the job early (in parallel with the Claude reviewer above): `scripts/codex-companion-bg.sh launch --prompt-file /tmp/codex-prompt-research.md` — captures the jobId.
+  3. After the Claude reviewer returns, await the result: `scripts/codex-companion-bg.sh await <jobId>` — exits 0 with the review markdown on stdout when done; exits 10 if the 20-min ceiling is hit; exits 11 on companion crash. Findings appended to `reviews/research-review.md`.
 
 ### Rejection Behavior
 
