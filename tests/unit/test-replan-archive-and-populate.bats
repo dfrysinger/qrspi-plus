@@ -191,3 +191,135 @@ extract_subsection() {
   ' "$REPLAN_FILE")"
   echo "$minor_region" | grep -q "future-research-summary.md"
 }
+
+# ── Fail-closed ABORT clauses (silent-failure-hunter HIGHs) ─────────────────
+
+# Helper for these tests: extract the Archive-and-Populate Sequence block.
+extract_archive_block() {
+  awk '
+    /^### Archive-and-Populate Sequence/ { in_b = 1; print; next }
+    in_b && /^## / { exit }
+    in_b && /^### / && !/^### Archive-and-Populate Sequence/ { exit }
+    in_b { print }
+  ' "$REPLAN_FILE"
+}
+
+# Helper: extract one numbered step's prose (steps 1..5) from the archive block.
+# Each step starts with "^N. \*\*..." and ends at the next numbered step or end-of-block.
+extract_step() {
+  local n="$1"
+  extract_archive_block | awk -v n="$n" '
+    BEGIN { pat = "^" n "\\. \\*\\*" }
+    $0 ~ pat { in_s = 1; print; next }
+    in_s && /^[0-9]+\. \*\*/ { exit }
+    in_s { print }
+  '
+}
+
+@test "Step 1 (Archive) contains an ABORT fail-closed clause" {
+  local step
+  step="$(extract_step 1)"
+  [ -n "$step" ]
+  echo "$step" | grep -q "ABORT"
+}
+
+@test "Step 1 (Archive) fails on directory creation OR missing source files" {
+  local step
+  step="$(extract_step 1)"
+  # Must mention destination/directory creation failure modes
+  echo "$step" | grep -iE "permission|ENOSPC|cannot be created|directory"
+  # Must mention source-file missing/unreadable
+  echo "$step" | grep -iE "missing|unreadable"
+  # Must explicitly forbid partial archive
+  echo "$step" | grep -iE "partial|partially"
+}
+
+@test "Step 2 (Read roadmap) contains an ABORT fail-closed clause" {
+  local step
+  step="$(extract_step 2)"
+  [ -n "$step" ]
+  echo "$step" | grep -q "ABORT"
+}
+
+@test "Step 2 (Read roadmap) fails on missing roadmap.md or no next-phase entries" {
+  local step
+  step="$(extract_step 2)"
+  echo "$step" | grep -iE "roadmap.md.*missing|missing.*roadmap"
+  echo "$step" | grep -iE "no next-phase entries|final phase|empty next-phase"
+}
+
+@test "Step 3 (Extract) contains an ABORT fail-closed clause" {
+  local step
+  step="$(extract_step 3)"
+  [ -n "$step" ]
+  echo "$step" | grep -q "ABORT"
+}
+
+@test "Step 3 (Extract) fails on missing future-* file when expected" {
+  local step
+  step="$(extract_step 3)"
+  echo "$step" | grep -iE "future-.*missing|missing.*future-"
+  echo "$step" | grep -iE "expected|expect"
+  # And explicitly forbids silently writing empty drafts
+  echo "$step" | grep -iE "empty draft|silently"
+}
+
+@test "Step 4 (Write drafts) contains an ABORT fail-closed clause" {
+  local step
+  step="$(extract_step 4)"
+  [ -n "$step" ]
+  echo "$step" | grep -q "ABORT"
+}
+
+@test "Step 4 (Write drafts) mentions atomicity (all-or-nothing)" {
+  local step
+  step="$(extract_step 4)"
+  echo "$step" | grep -iE "atomic|atomicity"
+  echo "$step" | grep -iE "roll back|rollback|all-or-nothing|all four"
+}
+
+@test "Step 5 (Invoke Goals) contains an ABORT fail-closed clause" {
+  local step
+  step="$(extract_step 5)"
+  [ -n "$step" ]
+  echo "$step" | grep -q "ABORT"
+}
+
+@test "Step 5 (Invoke Goals) requires pre-invocation draft existence and non-emptiness check" {
+  local step
+  step="$(extract_step 5)"
+  echo "$step" | grep -iE "status: ?draft"
+  echo "$step" | grep -iE "≥1 entry|at least 1 entry|non-empty|empty.*malformed|malformed"
+  echo "$step" | grep -iE "before invoking|before invocation"
+}
+
+# ── Scope-reviewer dispatch in Review Round ─────────────────────────────────
+
+@test "Review Round dispatches scope-reviewer with {ARTIFACT_TYPE}=replan" {
+  local section
+  section="$(extract_section "$REPLAN_FILE" "## Review Round")"
+  [ -n "$section" ]
+  echo "$section" | grep -qi "scope-reviewer"
+  echo "$section" | grep -q "{ARTIFACT_TYPE}=replan"
+}
+
+@test "Review Round scope-reviewer dispatch references OWNS/DEFERS as locked rule set" {
+  local section
+  section="$(extract_section "$REPLAN_FILE" "## Review Round")"
+  # Co-occurrence: scope-reviewer line must reference OWNS / DEFERS
+  echo "$section" | grep -i "scope-reviewer" | grep -qE "OWNS|DEFERS|Replan OWNS"
+}
+
+@test "Review Round scope-reviewer dispatch is fail-closed on malformed OWNS/DEFERS" {
+  local section
+  section="$(extract_section "$REPLAN_FILE" "## Review Round")"
+  # Must mention fail-closed semantic + the H3 procedure reference from the template
+  echo "$section" | grep -iE "fail-closed|fails-closed|fails closed"
+  echo "$section" | grep -iE "malformed|unparseable"
+}
+
+@test "Review Round scope-reviewer dispatch runs in parallel with the Claude reviewer" {
+  local section
+  section="$(extract_section "$REPLAN_FILE" "## Review Round")"
+  echo "$section" | grep -i "scope-reviewer" | grep -qiE "parallel|in parallel"
+}

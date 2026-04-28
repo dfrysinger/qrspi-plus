@@ -30,12 +30,18 @@ unit_test_dir() {
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 401 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T14 (+14 tests in
-  # the new test-replan-archive-and-populate.bats file, covering OWNS/DEFERS
-  # heading + H3 sub-blocks, the five-step archive-and-populate sequence,
-  # status-draft marking, qrspi:goals invocation, and future-research
-  # naming normalization). 387 → 401.
+@test "[AC8] Unit test suite has exactly 415 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T14 Round-1 FIX
+  # (+14 fail-closed tests in test-replan-archive-and-populate.bats covering
+  # the 5-step ABORT clauses (10 tests: 2 per step) and the scope-reviewer
+  # dispatch in the Review Round (4 tests: dispatch presence + ARTIFACT_TYPE,
+  # OWNS/DEFERS co-occurrence, fail-closed-on-malformed, parallel-with-Claude).
+  # 401 → 415.
+  # Prior 401 baseline was after 2026-04-27 prompt-improvements T14 initial
+  # author (+14 tests in the new test-replan-archive-and-populate.bats file,
+  # covering OWNS/DEFERS heading + H3 sub-blocks, the five-step archive-and-
+  # populate sequence, status-draft marking, qrspi:goals invocation, and
+  # future-research naming normalization). 387 → 401.
   # Prior 387 baseline was after T5 Round-1 FIX
   # (+6 mutation-resistant + fail-closed tests across the 3 phasing files).
   # T5 Round-1 FIX added: scope-reviewer fail-closed (+1, roadmap-generation),
@@ -54,7 +60,7 @@ unit_test_dir() {
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 401 ]
+  [ "$count" -eq 415 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-27 T14)
