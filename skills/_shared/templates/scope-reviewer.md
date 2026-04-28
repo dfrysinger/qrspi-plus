@@ -20,14 +20,19 @@ No other values are permitted. A dispatch that supplies any other token (or omit
 
 1. Resolve the rules file path: `skills/{ARTIFACT_TYPE}/SKILL.md`.
 2. Read the file and locate the heading `## {Skill} OWNS / {Skill} DEFERS` where `{Skill}` is the title-case form of `{ARTIFACT_TYPE}` (e.g. for `goals` the heading is `## Goals OWNS / Goals DEFERS`).
-3. Within that section, parse two subsections: `OWNS` (rules the artifact is responsible for) and `DEFERS` (concerns explicitly punted to a later artifact).
+3. Within that H2 section, parse two H3 subsections: the OWNS rules are under `### {Skill} OWNS` (H3, rules the artifact is responsible for); the DEFERS rules are under `### {Skill} DEFERS` (H3, concerns explicitly punted to a later artifact). The literal subheading shapes (parameterized by `{Skill}`) are:
+
+```
+### {Skill} OWNS
+### {Skill} DEFERS
+```
 4. Treat the parsed `OWNS` and `DEFERS` lists as the locked rule set for this dispatch. All Checks below run against this rule set.
 
 **Fail-closed malformed cases.** If any of the following is detected, the reviewer MUST abort the checks and emit a single structured-error finding conforming to the M48 5-field schema (see `## Output Contract`). The finding's `change_type` is `correctness`, `severity` is `high`, and `message` names the malformed case in plain language so the user can repair the SKILL.md.
 
 1. **Heading missing entirely.** The file `skills/{ARTIFACT_TYPE}/SKILL.md` does not contain the `## {Skill} OWNS / {Skill} DEFERS` heading at all. The reviewer cannot locate any rule set and must not silently fall back to a default.
-2. **`OWNS` subsection missing.** The heading is present but no `OWNS` subsection is enumerated underneath it. The reviewer has no positive-rule set to check the artifact against.
-3. **`DEFERS` subsection missing.** The heading is present but no `DEFERS` subsection is enumerated underneath it. The reviewer has no boundary-drift exclusions and cannot run boundary-drift detection.
+2. **`OWNS` subsection missing.** The H2 heading is present but no H3 subsection `### {Skill} OWNS` is present underneath it. The reviewer has no positive-rule set to check the artifact against.
+3. **`DEFERS` subsection missing.** The H2 heading is present but no H3 subsection `### {Skill} DEFERS` is present underneath it. The reviewer has no boundary-drift exclusions and cannot run boundary-drift detection.
 4. **Both subsections empty.** Both subsections are present but their bodies are empty — no bulleted or numbered enumerated items (prose-only bodies do NOT satisfy this requirement and trigger fail-closed). The rule set is structurally present but semantically empty; running the checks would produce vacuous results.
 
 In all four cases the reviewer reports the malformed condition once, exits, and does NOT attempt partial checks.

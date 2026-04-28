@@ -11,6 +11,43 @@ description: Use when prior artifacts are approved and the QRSPI pipeline needs 
 
 Break the structure into ordered, self-contained tasks following vertical slices and phases from the design. Each task spec includes exact file paths, descriptions, test expectations, dependencies, and LOC estimates. For large plans (6+ tasks), individual task specs are farmed out to sub-subagents.
 
+## Plan OWNS / Plan DEFERS
+
+This section is the **single source of truth** for plan.md scope boundaries. The parameterized scope-reviewer (instantiated with `{ARTIFACT_TYPE}=plan`) parses the OWNS and DEFERS lists below as its locked rule input — boundary-drift findings, scope-compliance findings, and U14 lexical-leakage checks all run against the enumerated items here.
+
+**Length target.** plan.md aggregate length sits in the **1000–2000 lines** soft window once all task specs are appended for review (Q29's Keeplii corpus averages ~52 lines per task spec; a 10-20-task phase lands inside this band). Per-task specs are intentionally **short** — terse bullets, no narrative preamble, no design rationale repetition. The aggregate band is a soft target, not a ceiling: reviewers should flag a plan that drifts well outside it (e.g., 200 lines for 10 tasks signals under-specification; 4000 lines signals task specs that have grown into design or implementation prose).
+
+**INVEST Negotiable framing.** Per Q28, a plan task spec is a **conversation, not a contract**. Plan owns the scoping decisions and the test expectations; downstream skills (Structure, Implement, Implement-TDD) own the implementation choices that flow from those decisions. The DEFERS list below is the operational form of "Negotiable": the items deferred to later artifacts MUST stay out of plan.md — encoding a function signature or a line-by-line algorithm in a task spec turns the spec into a contract, forecloses Structure/Implement's negotiation room, and is grounds for a scope finding from the scope-reviewer.
+
+### Plan OWNS
+
+The plan.md artifact is the only authoring location for these concerns. Every paragraph or bulleted item in plan.md must trace to one of these:
+
+- **Ordered task specs** — the per-phase ordered list of tasks, each implementing exactly one observable behavior (one request handler, one use case, one user-visible change).
+- **Test expectations** in plain language per task — behaviors, inputs/outputs, edge cases, error conditions. Plain language only; not assertion code, not `expect(...)` strings.
+- **Dependencies** — explicit task-to-task ordering (`Task 3 depends on Task 1, Task 2` or `Dependencies: none`). Forward dependencies are forbidden.
+- **LOC estimates per task** — `~N` per task; the policy ceiling is 200 LOC and the target is ~100 LOC; see Task Sizing for the splitting protocol.
+
+### Plan DEFERS
+
+The following concerns are explicitly **out of plan.md scope**. Each DEFERS entry names the destination artifact that owns the concern. A finding that observes any of these in plan.md is a boundary-drift finding (`change_type: scope`); per the INVEST Negotiable framing above, the spec's job is to set the conversation, not pre-empt the downstream skill's negotiation.
+
+- **Function signatures, type definitions, parameter shapes** → `structure.md` (interface contracts per file are Structure's OWNS, not Plan's). Conversation, not contract: Plan says "rate limiter middleware exposes a single Express handler"; Structure says `rateLimiter(req, res, next)`.
+- **Full assertion text / `expect(...)` / test code** → Implement-TDD (Implement's TDD cycle authors the failing test first). Conversation, not contract: Plan says "returns 429 when client exceeds 100 requests/minute"; Implement-TDD writes `expect(res.statusCode).toBe(429)`.
+- **Line-by-line logic, control-flow detail, algorithm pseudocode** → Implement (the implementation agent owns local logic decisions inside the task's bounded scope). Conversation, not contract: Plan says "increment Redis counter on each allowed request"; Implement chooses `INCR` vs. `EVAL` with a Lua script.
+- **Architecture decisions, key trade-offs, system diagrams** → `design.md` (locked upstream; Plan consumes, does not re-author).
+- **Phasing, vertical slice authoring, roadmap maintenance, replan-gate criteria** → `phasing.md` / Phasing skill (per M54). Plan consumes phase boundaries from Phasing; it does not re-decide them.
+
+### Boundary-drift signals (U14 lexical leakage)
+
+The following lexical patterns in plan.md indicate boundary drift from a later pipeline stage and trigger a U14 boundary-drift finding from the scope-reviewer:
+
+- **Function signatures inline in a task spec** (parenthesized parameter lists, return-type arrows) — Structure-layer leak.
+- **`expect(`, `assert.`, `assertEqual`, `toBe(` in a Test Expectations bullet** — Implement-TDD-layer leak.
+- **`if/else`, `for`, `while`, line-numbered logic walkthroughs** — Implement-layer leak.
+- **"trade-off", "we considered", "alternative approach"** in task description — Design-layer leak.
+- **"phase 2 will...", "future phases", roadmap-style forward references** — Phasing-layer leak.
+
 ## Artifact Gating
 
 Read `config.md` to determine pipeline mode. If `config.md` doesn't exist or has no `route` field, refuse to proceed and tell the user to re-run Goals to set the pipeline mode. The `route` field is authoritative; `pipeline` is informational (see using-qrspi Config File section).
@@ -109,6 +146,8 @@ The review round, human gate, and approval process are identical to full pipelin
 
 ### Sub-Subagent Dispatch (Large Plans Only)
 
+> **IMPORTANT — Compaction recommended.** The per-task spec-generation sub-subagent dispatch fans out to one subagent per task (or related group) and each writes a self-contained `tasks/task-NN.md`. Aggregate sub-subagent output is large and the orchestrator must hold all returned task files plus the merged plan.md in context for the upcoming review round. Run `/compact` before dispatching if context utilization may exceed ~50%. **Iron Rule:** do NOT dispatch the per-task spec-generation fan-out without first checking utilization at this site — losing earlier conversation history mid-merge corrupts the single-source-of-truth invariant.
+
 For large plans, farm task spec writing to sub-subagents:
 
 **Sub-subagent inputs:**
@@ -120,6 +159,8 @@ Each sub-subagent writes `tasks/task-NN.md`. After all complete, the Plan skill 
 
 ### Plan Document Structure (During Review)
 
+The output template below embeds **U14 information-mapping patterns** directly: claim-before-evidence (the task title and Description's first sentence carry the load-bearing claim — what observable behavior the task delivers); one-paragraph-per-claim density (each bullet carries one claim, no compound bullets); scannable bullets and required headings (Phase / Target files / Dependencies / LOC estimate / Description / Test expectations are required structural slots, not optional prose); no "be concise" instructions (per Q1 Phare benchmark and Q2 Hakim — research-backed; brevity directives degrade factual reliability). Per-task specs are short by structural design (terse bullets, no narrative), not by an explicit brevity instruction.
+
 ```markdown
 ---
 status: draft
@@ -128,10 +169,10 @@ status: draft
 # Implementation Plan
 
 ## Overview
-{Phase structure, task ordering, dependency graph}
+{Phase structure, task ordering, dependency graph — claim first, then supporting structure}
 
 ## Phase 1: {name}
-{Tasks in this phase, ordering rationale}
+{Tasks in this phase, ordering rationale — one paragraph per claim, scannable bullets}
 
 ## Phase 2: {name}
 {Tasks in this phase, ordering rationale}
@@ -140,15 +181,15 @@ status: draft
 
 ## Task Specs
 
-### Task 1: {name}
+### Task 1: {name — names exactly one observable behavior; no `+` joining feature names; no two distinct verbs joined by `and`}
 - **Phase:** 1
 - **Target files:** {exact paths, create/modify}
 - **Dependencies:** none
 - **LOC estimate:** ~{N}
 - **Sizing exception:** {only present when the task is a legitimate bundle (multi-handler or >200 LOC). Reason must be one of: schema migration, CI scaffolding, reusable primitives — see Task Sizing}
-- **Description:** {what this task accomplishes}
+- **Description:** {what this task accomplishes — claim-before-evidence: lead with the observable-behavior sentence, then supporting context. Plain language; no function signatures (→ Structure); no algorithm pseudocode (→ Implement); no architecture rationale (→ Design).}
 - **Test expectations:**
-  - {behavior 1}
+  - {behavior 1 — plain language; no `expect(...)` or assertion code (→ Implement-TDD)}
   - {edge case 1}
   - {error condition 1}
 
@@ -156,9 +197,11 @@ status: draft
 ...
 ```
 
+**U14 conformance reminder for the per-task spec writer.** Each task spec must satisfy: required-section presence (every bullet header above is required); claim-line length ≤ 250 chars per bullet; description paragraph ≤ 150 words; section ≤ 300 words total before bullets are split; no brevity directives anywhere ("be concise", "brief summary", "≤ N lines" are forbidden — see U14 lint allowlist for the legitimate length-target exceptions). The DEFERS list above tells the writer what NOT to put in the spec; this conformance reminder tells the writer how to structure what they DO put in.
+
 ### Plan Reviewer Templates
 
-Five reviewer templates run in parallel as part of the review round. All five run always — neither quick-fix nor full-pipeline mode gates any template. Templates that require `design.md` or `structure.md` emit "NOT APPLICABLE — quick-fix route" for those checks when those files are absent.
+Six reviewer templates run in parallel as part of the review round. All six run always — neither quick-fix nor full-pipeline mode gates any template. Templates that require `design.md` or `structure.md` emit "NOT APPLICABLE — quick-fix route" for those checks when those files are absent.
 
 | Template | File | Focus | Run Condition |
 |----------|------|-------|---------------|
@@ -167,13 +210,21 @@ Five reviewer templates run in parallel as part of the review round. All five ru
 | Silent Failure Hunter | `templates/silent-failure-hunter.md` | Swallowed errors, silent fallbacks, partial state on failure, log-and-continue | Always |
 | Goal Traceability Reviewer | `templates/goal-traceability-reviewer.md` | Forward trace, backward trace, gap analysis, spec-to-design fidelity | Always |
 | Test Coverage Reviewer | `templates/test-coverage-reviewer.md` | Behavioral coverage, edge cases, error conditions, test expectation quality, missing design scenarios | Always |
+| Scope Reviewer | `_shared/templates/scope-reviewer.md` (parameterized; `{ARTIFACT_TYPE}=plan`) | OWNS/DEFERS boundary-drift detection per `## Plan OWNS / Plan DEFERS` below; scope-compliance per locked Plan rules; U14 boundary-drift signal | Always |
 
 ### Review Round
 
+> **IMPORTANT — Compaction recommended (pre-review-loop).** The merged `plan.md` plus `goals.md` + `research/summary.md` + `design.md` + `structure.md` are about to be handed to the review-round dispatch. Reviewer findings only land cleanly on a context that still holds the synthesis decisions; if utilization may exceed ~50%, run `/compact` now — before reviewers dispatch — so the upcoming cross-file consistency checks have headroom. **Iron Rule:** review-round dispatch is the highest-leverage compaction moment in Plan; do not skip this check.
+
+> **IMPORTANT — Compaction recommended (pre-large-subagent-dispatch).** The Claude review subagent runs six reviewer templates in parallel (five plan-specific + the parameterized scope-reviewer with `{ARTIFACT_TYPE}=plan`) and the Codex review wrapper launches in parallel as a non-blocking job. Aggregate reviewer output is large. RED FLAG: dispatching the parallel reviewer fan-out on a near-full context produces truncated findings and missed cross-file inconsistencies — run `/compact` if utilization may exceed ~50% before launching either dispatch.
+
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Plan-specific reviewer instructions:
 
-- **Claude review subagent** runs all five reviewer templates from `skills/plan/templates/` in parallel (subagent fills in artifact content, runs each template as a separate pass, returns combined findings). Inputs: `plan.md` (merged), `goals.md`, `research/summary.md`, plus `design.md` and `structure.md` (full pipeline only). Findings written to `reviews/plan-review.md`.
-- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with the same inputs and criteria. Findings appended to `reviews/plan-review.md`.
+- **Claude review subagent** runs all six reviewer templates in parallel (five from `skills/plan/templates/` plus the parameterized scope-reviewer from `skills/_shared/templates/scope-reviewer.md` instantiated with `{ARTIFACT_TYPE}=plan`). The subagent fills in artifact content, runs each template as a separate pass, and returns combined findings. Inputs: `plan.md` (merged), `goals.md`, `research/summary.md`, plus `design.md` and `structure.md` (full pipeline only). The reviewer-subagent prompt **embeds `skills/_shared/reviewer-boilerplate.md` verbatim** so every finding (Claude reviewer + scope-reviewer) emits the M48 five-field schema (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`) under the disagreement-valid framing. The scope-reviewer dispatch parses the `## Plan OWNS / Plan DEFERS` section below as its locked rule input — boundary-drift, scope-compliance, and U14 lexical-leakage checks all run against that section. Findings written to `reviews/plan-review.md`.
+- **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper:
+  1. Write the review prompt (`plan.md` + `goals.md` + `research/summary.md` + `design.md` + `structure.md` (full pipeline only) + the same six-template criteria, including the parameterized scope-reviewer instantiated with `{ARTIFACT_TYPE}=plan` + the embedded `skills/_shared/reviewer-boilerplate.md` content) to a temporary file (e.g., `/tmp/codex-prompt-plan.md`).
+  2. Launch the job early (in parallel with the Claude reviewer above) by running `scripts/codex-companion-bg.sh launch --prompt-file /tmp/codex-prompt-plan.md` as a foreground Bash-tool call. The wrapper prints the jobId to stdout as a single line and exits 0 within ~5 seconds. The orchestrator (this skill's caller — the Claude Code agent driving the Bash tool) records that printed jobId text from the Bash tool's stdout output and pastes it as the literal `<jobId>` argument in the matching await Bash call below; there is no shell variable assignment in this flow, and shell command substitution (`$()` / backticks) is forbidden per Daniel's CLAUDE.md. If launch exits non-zero, abort this Codex review and append a launch-failure note to `reviews/plan-review.md`.
+  3. After the Claude reviewer returns, await the result: `scripts/codex-companion-bg.sh await <jobId>`. Exit codes: **0** = success, append the markdown stdout to `reviews/plan-review.md` under `#### Codex`; **10** = 20-min ceiling hit (no stdout produced) — append an explicit ceiling note (e.g., `Codex review: 20-min ceiling hit, no findings produced`), do NOT append empty stdout, do NOT silently retry; **11** = companion crash mid-job (job-not-found) — append a crash note and surface to the user before proceeding; **12** = audit-write fail (e.g., row > 4096 bytes) — append an infrastructure-failure note and surface to the user, do NOT retry blindly. **Only append stdout to the review log on exit 0.**
 - The default-option-2 recommendation is especially important here because plan reviews catch cross-file consistency / forward dependencies / migration ordering across 10+ task specs that the human cannot feasibly verify by hand.
 
 ### Human Gate
@@ -263,7 +314,11 @@ The artifact directory contains a `.qrspi/` subdirectory managed by hooks (not b
 
 ### Terminal State
 
+> **IMPORTANT — Compaction recommended (terminal state).** Plan has just split tasks into individual files and committed the approved artifacts. The conversation history from the synthesis + review rounds is no longer load-bearing for downstream skills (Parallelize, Implement, Integrate read the artifacts, not the chat). Run `/compact` here if utilization is non-trivial. **Iron Rule:** carrying Plan's full review history into Parallelize burns context the next skill needs for dependency-graph reasoning.
+
 Commit the approved `plan.md`, all `tasks/task-NN.md` files, and `reviews/plan-review.md` to git.
+
+> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill in the `config.md` route, run `/compact` if utilization may exceed ~50%. The next skill (typically Parallelize) starts a fresh dependency-analysis flow; it does not need Plan's reviewer transcripts or sub-subagent dispatch traces. **Iron Rule:** the cross-skill boundary is the canonical compaction moment — do not invoke the next skill on a saturated context.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `plan`.
 
