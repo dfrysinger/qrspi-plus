@@ -6,11 +6,21 @@ bats_require_minimum_version 1.5.0
 # Criterion 8: "All existing pipeline functionality (Goals through Replan)
 #   continues to work after Phase 4 changes — validated by the unit tests
 #   passing (baseline confirmed)."
-#   → Meta-test: confirm the unit test suite still has exactly 287 @test entries
-#     across exactly 12 .bats files.
+#   → Meta-test: confirm the unit test suite still has the documented
+#     @test/.bats baseline (post-Wave-6 octopus T16+T17 merge).
 #
 # Phase 4 changes: test-validate.bats deleted (M27), test-artifact-map.bats
-# added (U8). File count stays at 12, test count updated to 287.
+# added (U8). Initial 12 .bats / 287 @tests baseline.
+# Wave 6 (2026-04-27) adds cross-cutting tests across T16/T17/T18:
+#   T16: +1 unit .bats (test-change-type-classification.bats), +5 augmenting
+#        @tests in test-reviewer-boilerplate-embed.bats, +1 acceptance
+#        (test-review-pause.bats — not counted by this baseline). Plus
+#        T16 fix-cycle 1 +3 contrast tests.
+#   T17: +4 unit .bats (test-skill-md-content-patterns.bats,
+#        test-scope-reviewer.bats, test-scope-reviewer-parallel-with-claude.bats,
+#        test-scope-reviewer-rules-loading.bats), +1 acceptance
+#        (test-skill-output-quality.bats — not counted).
+#   T18: +2 unit .bats (test-u14-lint.bats, test-compaction-emphasis-markup.bats).
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,75 +30,47 @@ unit_test_dir() {
 
 # ── Criterion 8: Unit test suite baseline ────────────────────────────────────
 
-# AC8 — The unit test directory contains exactly 19 .bats files
-@test "[AC8] Unit test suite has exactly 19 .bats files (baseline)" {
+# AC8 — The unit test directory contains exactly 23 .bats files
+@test "[AC8] Unit test suite has exactly 23 .bats files (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(find "$dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 19 ]
+  [ "$count" -eq 23 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 441 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T16 fix-cycle 1 (+3
-  # contrast tests in test-change-type-classification.bats covering the 3
-  # valid resolved-pause menu options — apply / skip / loop-back — each
-  # asserting loop_state=`next` AND cap-decrement (CodexF2 wait-state
-  # contract). 438 → 441.
-  # Prior 438 baseline was after 2026-04-27 prompt-improvements T16 (+22
-  # tests across 1 new unit .bats file plus augmentations to
-  # test-reviewer-boilerplate-embed.bats):
-  #   - test-change-type-classification.bats (NEW): +17 tests covering the
-  #     5 change_type tags, secondary-escalation rule, pause-gate dispatch,
-  #     and 10-round cap-counter non-decrement on PAUSE_PENDING sentinel.
-  #   - test-reviewer-boilerplate-embed.bats (AUGMENTED): +5 tests adding the
-  #     M48 cross-cutting embed-coverage assertion (14 distinct files, drift
-  #     detection, missed-sweep detection, test/SKILL.md = 4 occurrences in
-  #     post-Wave-5 reality) and the all-three-required-headings assertion.
-  # 416 → 438. T16 also added test-review-pause.bats to tests/acceptance/
-  # (not counted by this baseline — this baseline measures unit tests only).
-  # 438 was the post-T16-initial baseline before fix-cycle 1.
+# AC8 — Unit test count baseline (updated 2026-04-27, T16+T17 octopus)
+@test "[AC8] Unit test suite has exactly 509 @test definitions (baseline)" {
+  # Baseline updated for stage-after-G6 octopus merge of T16 + T17.
+  # T16 deltas (over 416): +17 from test-change-type-classification.bats
+  #   (5 change_type tags + secondary-escalation + pause-gate dispatch +
+  #   10-round cap-counter PAUSE_PENDING contract); +5 from
+  #   test-reviewer-boilerplate-embed.bats augmentation (M48 cross-cutting
+  #   embed-coverage: 14 distinct files, drift detection, missed-sweep
+  #   detection, exact full-path occurrence count for test/SKILL.md, all-
+  #   three-required-headings); +3 from T16 fix-cycle 1 contrast tests
+  #   (apply/skip/loop-back each asserting loop_state=`next` AND cap-
+  #   decrement). T16 net +25.
+  # T17 deltas (over 416): +26 test-skill-md-content-patterns.bats
+  #   (M49-M52 SKILL.md content patterns), +16 test-scope-reviewer.bats
+  #   (per-{ARTIFACT_TYPE} dispatch), +13 test-scope-reviewer-parallel-
+  #   with-claude.bats, +13 test-scope-reviewer-rules-loading.bats
+  #   (1 skipped pending FU-5). T17 net +68.
+  # Combined T16+T17 over 416: +25 +68 = +93. 416 → 509.
   # Prior 416 baseline was after 2026-04-27 prompt-improvements T14 fix-cycle 2
   # (+1 for scope-reviewer-allowed-values assertion in
   # test-replan-archive-and-populate.bats — verifies the scope-reviewer
-  # template's `## Parameters` allowed-values list includes `replan`, which
-  # guards the CodexF1 silent-failure mode where the template would fail-closed
-  # before running checks). 415 → 416.
-  # Prior 415 baseline was after 2026-04-27 prompt-improvements T14 Round-1 FIX
-  # (+14 fail-closed tests in test-replan-archive-and-populate.bats covering
-  # the 5-step ABORT clauses (10 tests: 2 per step) and the scope-reviewer
-  # dispatch in the Review Round (4 tests: dispatch presence + ARTIFACT_TYPE,
-  # OWNS/DEFERS co-occurrence, fail-closed-on-malformed, parallel-with-Claude).
-  # 401 → 415.
-  # Prior 401 baseline was after 2026-04-27 prompt-improvements T14 initial
-  # author (+14 tests in the new test-replan-archive-and-populate.bats file,
-  # covering OWNS/DEFERS heading + H3 sub-blocks, the five-step archive-and-
-  # populate sequence, status-draft marking, qrspi:goals invocation, and
-  # future-research naming normalization). 387 → 401.
-  # Prior 387 baseline was after T5 Round-1 FIX
-  # (+6 mutation-resistant + fail-closed tests across the 3 phasing files).
-  # T5 Round-1 FIX added: scope-reviewer fail-closed (+1, roadmap-generation),
-  # orphan emission round-invalid (+1, goal-id-consistency), reviewer-reject
-  # missing Orphan IDs (+1, goal-id-consistency), 8-target enumeration (+1,
-  # four-artifact-pruning), pruning atomicity (+1, four-artifact-pruning),
-  # synthesis atomicity (+1, four-artifact-pruning). 381 → 387.
-  # Prior 381 baseline was after T5 initial author (added 3 new bats files,
-  # +19 tests): test-phasing-roadmap-generation (+5), test-phasing-goal-id-
-  # consistency (+5), test-phasing-four-artifact-pruning (+9). 362 → 381.
-  # Prior 362 baseline was after Wave 1 + Wave 2 merge (T1 +25, T3 +30, T4
-  # +6 over 307 — sums to 362; T2/T11 are markdown-only).
-  # Prior 307 baseline was after T4 Round-4 thoroughness FIX (+6 boundary
-  # tests). Prior 301/299/283 baselines see git log.
+  # template's `## Parameters` allowed-values list includes `replan`). 415 → 416.
+  # Prior 415 / 401 / 387 / 381 / 362 / 307 / 301 / 299 / 283 baselines see git log.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 441 ]
+  [ "$count" -eq 509 ]
 }
 
-# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T16)
-@test "[AC8] All 19 expected unit test files are present by name" {
+# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T16+T17)
+@test "[AC8] All 23 expected unit test files are present by name" {
   local dir
   dir="$(unit_test_dir)"
 
@@ -108,7 +90,11 @@ unit_test_dir() {
     "test-pre-tool-use.bats"
     "test-replan-archive-and-populate.bats"
     "test-reviewer-boilerplate-embed.bats"
+    "test-scope-reviewer.bats"
+    "test-scope-reviewer-parallel-with-claude.bats"
+    "test-scope-reviewer-rules-loading.bats"
     "test-setup-project-hooks.bats"
+    "test-skill-md-content-patterns.bats"
     "test-state.bats"
     "test-task.bats"
     "test-worktree.bats"
