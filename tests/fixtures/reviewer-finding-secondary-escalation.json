@@ -1,0 +1,10 @@
+{
+  "finding_id": "R1-F06",
+  "severity": "medium",
+  "change_type": "clarity",
+  "message": "The wording of goal G2's `What we know so far` paragraph is hard to parse — three claims are crammed into one sentence. At first glance this looks like prose clarity, but the user has captured a directive in feedback/2026-02-15-goals-prose-shape.md requiring `What we know so far` to enumerate one claim per bullet. Because referenced_files cites a feedback/*.md path, the secondary-escalation rule applies and this finding is escalated to change_type: intent regardless of the reviewer's primary tag.",
+  "referenced_files": [
+    "goals.md",
+    "feedback/2026-02-15-goals-prose-shape.md"
+  ]
+}

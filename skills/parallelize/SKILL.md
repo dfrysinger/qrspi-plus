@@ -3,7 +3,7 @@ name: parallelize
 description: Use when plan.md is approved and the QRSPI pipeline needs a parallelization plan — analyzes task dependencies and file overlap, decides execution mode, produces parallelization.md with a symbolic branch map; hands off to Implement
 ---
 
-# Parallelize (QRSPI Step 7)
+# Parallelize (QRSPI Step 8)
 
 **Announce at start:** "I'm using the QRSPI Parallelize skill to analyze task dependencies and produce a parallelization plan."
 
@@ -24,6 +24,27 @@ NO TASK DISPATCH WITHOUT AN APPROVED PARALLELIZATION PLAN
 ```
 
 Parallelize is the skill that produces and gates the plan; Implement is the skill that consumes and enforces it.
+
+## Parallelize OWNS / Parallelize DEFERS
+
+This is the locked rule set the scope-reviewer dispatch consumes (see `skills/_shared/templates/scope-reviewer.md` rules-loading procedure with `{ARTIFACT_TYPE}=parallelize`). Boundary-drift findings dispatch off the DEFERS list; scope-compliance dispatches off the OWNS list.
+
+### Parallelize OWNS
+
+- The dependency graph between current-phase tasks (logical task-to-task dependencies recorded in the Dependency Analysis table).
+- File-overlap analysis across tasks (the file-disjointness check that distinguishes parallel groups from collisions inside a group).
+- Parallel execution groups (group membership, group bases, dispatch waves, the symbolic Branch Map, the Stage Commits table when multi-parent dependencies require stage commits).
+- The Mermaid dependency graph rendered into `parallelization.md`.
+- The Execution Mode decision (sequential / parallel / hybrid) with one-sentence rationale.
+
+### Parallelize DEFERS
+
+- Task specs themselves (acceptance tests, dependencies-list, LOC estimate, description) — owned by Plan (`plan.md` + `tasks/*.md`). Parallelize consumes these as inputs and MUST NOT rewrite them.
+- Per-task implementation logic (how a task achieves its goal; the actual code, test assertions, file edits) — owned by Implement (per-task orchestrator subagents).
+- Architecture decisions and trade-offs (which approach the project takes; why a slice exists) — owned by Design.
+- Phasing decisions, vertical slices, Iron Law 1 / Iron Law 2 rationale, roadmap maintenance — owned by Phasing.
+- Concrete commit hashes, branch creation, worktree creation, baseline tests, runtime-injected `task-00` — owned by Implement at runtime; Parallelize records only symbolic bases.
+- `review_depth` / `review_mode` / other runtime-only review configuration — owned by Implement (written into `config.md` at phase start).
 
 ## Artifact Gating
 
@@ -81,6 +102,8 @@ This applies regardless of how simple the phase appears.
 
 ## Process Steps
 
+> **IMPORTANT — Compaction recommended (M53, pre-large-subagent-dispatch — dependency-graph synthesis).** Steps 2–8 below read every current-phase task spec, synthesize the dependency graph + parallel groups + Branch Map, and render the Mermaid diagram into `parallelization.md`. If a synthesis subagent is dispatched to perform this work (delegated dependency-graph synthesis subagent), or if the inline synthesis itself reads many tasks, expected output is large. Run `/compact` before this work if context utilization may exceed ~50%.
+
 1. Identify current phase's tasks from `plan.md` phase definitions
 2. For each task, list dependencies and files-touched (read each `tasks/task-NN.md` or `fixes/{type}-round-NN/*.md`)
 3. Group tasks into parallel groups (independent + file-disjoint share a group; otherwise separate groups)
@@ -128,17 +151,32 @@ On rejection, write the user's feedback to `feedback/parallelize-round-{NN}.md` 
 
 ## Review Round
 
-After writing `parallelization.md` (and after every revision), run one review round per the standard QRSPI review-round flow (see `using-qrspi/SKILL.md` → "Review Round Flow"):
+> **IMPORTANT — Compaction recommended (M53, pre-review-loop).** The dependency-graph synthesis above plus the rendered Mermaid diagram and Branch Map can push utilization. Run `/compact` before dispatching reviewers if context utilization may exceed ~50%.
 
-1. Claude review subagent — checks for: file-overlap inside any parallel group, symbolic-base vocabulary violations, hybrid scheme that misses a needed stage commit, dispatch-wave ordering that ignores a dependency, missing required sections, mismatch between Dependency Analysis and Branch Map, mismatch between current-phase tasks and `plan.md` phase definitions.
-2. Codex review (if `config.md` has `codex_reviews: true`) — same criteria, second opinion.
-3. Apply fixes; loop until clean (default) or present at user request.
+After writing `parallelization.md` (and after every revision), run one review round per the standard QRSPI review-round flow (see `using-qrspi/SKILL.md` → "Review Round Flow"). Three reviewer dispatches run **in parallel** (Claude review subagent + scope-reviewer subagent + Codex wrapper job) — same artifact, complementary lenses, all emitting M48 5-field findings (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`).
+
+> **IMPORTANT — Compaction recommended (M53, pre-large-subagent-dispatch).** The Claude reviewer and scope-reviewer subagents below each consume `parallelization.md` plus referenced inputs and may produce >10K tokens of findings output. Run `/compact` before dispatching if context utilization may exceed ~50%.
+
+1. **Claude review subagent.** The reviewer prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim (the boilerplate file content is concatenated into the rendered prompt — the dispatched subagent sees the M48 finding schema, change-type classifier, and disagreement-valid framing inline; it does not load the file at runtime). Inputs: `parallelization.md` + `plan.md` + the current-phase `tasks/*.md` (or fix-task batch under `fixes/{type}-round-NN/`). Checks: file-overlap inside any parallel group, symbolic-base vocabulary violations, hybrid scheme that misses a needed stage commit, dispatch-wave ordering that ignores a dependency, missing required sections, mismatch between Dependency Analysis and Branch Map, mismatch between current-phase tasks and `plan.md` phase definitions. **Completeness check (mandatory):** the reviewer MUST enumerate every current-phase task from `plan.md` and verify each appears (a) as a node in the Mermaid dependency graph; (b) as a row in the Branch Map; (c) is covered by pairwise file-overlap analysis with every other current-phase task (the Dependency Analysis table must reflect this pairwise coverage, even when the analyzed pair has no overlap and no dependency). A task missing from any of (a)/(b)/(c) — or a task pair missing from pairwise file-overlap analysis — is a finding with `severity: high` and `change_type: correctness` (silent omission from BOTH the Dependency Analysis and the Branch Map is the failure mode this check exists to catch). Findings written to `reviews/parallelize-review.md` under `#### Claude` and conform to the M48 5-field schema from the embedded boilerplate.
+
+2. **Scope-reviewer subagent (runs in parallel with the Claude reviewer).** Dispatch the cross-cutting scope-reviewer template `skills/_shared/templates/scope-reviewer.md` with parameter `{ARTIFACT_TYPE}=parallelize`. The template's rules-loading procedure resolves `skills/parallelize/SKILL.md` and parses the `## Parallelize OWNS / Parallelize DEFERS` section above as the locked rule set; the dispatched subagent runs the three checks (boundary-drift detection against DEFERS, scope-compliance per OWNS, U14 boundary-drift signal) against `parallelization.md`. The template's `## Embedded Boilerplate` section requires that `skills/_shared/reviewer-boilerplate.md` is concatenated into the rendered prompt verbatim at dispatch time — do that as part of constructing this dispatch. Findings written to `reviews/parallelize-review.md` under `#### Scope-Reviewer` and conform to the M48 5-field schema.
+
+3. **Codex review (if `config.md` has `codex_reviews: true`)** — dispatch a non-blocking Codex review via the wrapper, **in parallel** with the Claude reviewer and scope-reviewer above:
+   1. Write the review prompt (`parallelization.md` + `plan.md` + the current-phase `tasks/*.md` + the same criteria as the Claude reviewer, with the contents of `skills/_shared/reviewer-boilerplate.md` concatenated verbatim into the prompt so the M48 finding schema, change-type classifier, and disagreement-valid framing are inline) to a temporary file (e.g., `/tmp/codex-prompt-parallelize.md`).
+   2. Launch the job early (in parallel with the Claude reviewer and scope-reviewer above) by running `scripts/codex-companion-bg.sh launch --prompt-file /tmp/codex-prompt-parallelize.md` as a foreground Bash-tool call. The wrapper prints the jobId to stdout as a single line and exits 0 within ~5 seconds. The orchestrator (this skill's caller — the Claude Code agent driving the Bash tool) records that printed jobId text from the Bash tool's stdout output and pastes it as the literal `<jobId>` argument in the matching await Bash call below; there is no shell variable assignment in this flow, and shell command substitution (`$()` / backticks) is forbidden per Daniel's CLAUDE.md. If launch exits non-zero, abort this Codex review and append a launch-failure note to `reviews/parallelize-review.md`.
+   3. After the Claude reviewer and scope-reviewer return, await the result: `scripts/codex-companion-bg.sh await <jobId>`. Exit codes: **0** = success, append the markdown stdout to `reviews/parallelize-review.md` under `#### Codex`; **10** = 20-min ceiling hit (no stdout produced) — append an explicit ceiling note (e.g., `Codex review: 20-min ceiling hit, no findings produced`), do NOT append empty stdout, do NOT silently retry; **11** = companion crash mid-job (job-not-found) — append a crash note and surface to the user before proceeding; **12** = audit-write fail (e.g., row > 4096 bytes) — append an infrastructure-failure note and surface to the user, do NOT retry blindly. **Only append stdout to the review log on exit 0.**
+
+4. Apply fixes; loop until clean (default) or present at user request. Findings tagged `change_type: scope` or `change_type: intent` (per the embedded change-type classifier and the secondary-escalation rule that escalates `feedback/*.md`-citing findings to `intent`) pause the loop for explicit user resolution via the batch pause UI; `style` / `clarity` / `correctness` findings auto-apply.
 
 The orchestrating skill writes findings to `reviews/parallelize-review.md`.
 
 ## Terminal State
 
+> **IMPORTANT — Compaction recommended (M53, terminal-state).** Parallelization plan approved. This is a good point to compact context before the next step. Run `/compact` if context utilization may exceed ~50%.
+
 Recommend compaction: "Parallelization plan approved. This is a good point to compact context before the next step (`/compact`)."
+
+> **IMPORTANT — Compaction recommended (M53, cross-skill-transition).** The next skill (`implement` in the standard full-pipeline route) will create worktrees, run baseline tests, and dispatch per-task orchestrator subagents — a new high-context phase. Run `/compact` before invoking the next skill if context utilization may exceed ~50%.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `parallelize` (in the standard full-pipeline route, this is `implement`).
 

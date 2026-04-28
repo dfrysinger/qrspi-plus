@@ -3,7 +3,7 @@ name: implement
 description: Per-phase implementation orchestrator. In full pipeline mode, resolves symbolic bases from parallelization.md to concrete commits, creates worktrees and stage commits, runs baseline tests, dispatches per-task orchestrator subagents per the wave schedule, presents the batch gate, and routes to the next route step (typically Integrate). In quick-fix mode, dispatches the single task (or a fix-task batch from fixes/{type}-round-NN/) through per-task orchestrator subagents, presents the batch gate (with quick-fix-mode menu), and routes to Test.
 ---
 
-# Implement (QRSPI Step 8)
+# Implement (QRSPI Step 9)
 
 **Announce at start:** "I'm using the QRSPI Implement skill to run the per-phase implementation loop."
 
@@ -194,6 +194,8 @@ If tests fail, present failure summary with 3 options:
 
 ## Wave Dispatch (Full Pipeline)
 
+> **IMPORTANT — Compaction recommended (M53; pre-large-subagent-dispatch).** Per-task orchestrator subagents are layer-2 subagents that run the full TDD + reviewer loop and routinely return >10K tokens of state (implementer transcript, reviewer findings, fix-cycle history). Before firing any wave (full pipeline) or quick-fix batch dispatch, run `/compact` if context utilization may exceed ~50% — the orchestrator's downstream work degrades sharply when input pressure compounds output size, and a saturated context will silently swallow critical reviewer signal.
+
 In full pipeline mode, dispatch tasks in the wave order Parallelize specified. For each wave:
 
 1. Verify every task in the wave has its `Base` resolved (and any required stage commit created).
@@ -242,6 +244,8 @@ All tasks passed clean. Choose:
 
 After the menu, recommend compaction before the next step: "This is a good point to compact context before the next step (`/compact`)."
 
+**Gate-level reviewer prompt (post-per-task-wave review).** When the user selects "Re-run all reviews" at the batch gate, Implement assembles the gate-level reviewer prompt and dispatches the cross-task reviewer subagent. The reviewer subagent embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. Findings must conform to the M48 5-field schema defined there (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`); `change_type` is required.
+
 ### Batch Gate Red Flags — STOP
 
 - Presenting "Fix remaining issues" option when all tasks passed clean
@@ -250,10 +254,14 @@ After the menu, recommend compaction before the next step: "This is a good point
 
 ## Terminal State
 
+> **IMPORTANT — Compaction recommended (M53; terminal state).** Implement batch complete. This is a good point to compact context before the next route step. Recommend the user run `/compact` if context utilization may exceed ~50%.
+
 When the user chooses "continue" at the batch gate, compute the next skill to invoke as follows:
 
 1. Find the index of `implement` in `config.md.route`.
 2. Invoke `route[index+1]` (typically `integrate` in full pipeline; `test` in quick fix).
+
+> **IMPORTANT — Compaction recommended (M53; cross-skill transition).** Before invoking the next route step, run `/compact` if context utilization may exceed ~50%. The next skill (typically Integrate in full pipeline; Test in quick fix) reads `parallelization.md` (or task specs in quick fix) + every prior approved artifact + per-task reviewer findings; entering it on a saturated context degrades cross-task review and fix-routing quality.
 
 **Edge case — `implement` is the last entry.** If `implement` has no successor in the route, the route is malformed (every full-pipeline route should end with `test` after `integrate`; every quick-fix route should end with `test`). Refuse to advance and tell the user: "Cannot continue — `config.md` route ends at `implement`. Add `test` (and `integrate` if this is a full-pipeline route) and re-invoke."
 

@@ -70,10 +70,15 @@ status: draft
 
 ### Review Round
 
+> **IMPORTANT — Compaction recommended (M53; pre-review-loop).** The Question Generation subagent has just returned `questions.md`. Before dispatching the Claude reviewer (and Codex reviewer in parallel, if enabled), run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load `questions.md` + `goals.md` + the embedded reviewer-boilerplate; running them on a saturated context produces shallow findings.
+
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Questions-specific reviewer instructions:
 
-- **Claude review subagent** — inputs: `goals.md` + `questions.md`. Checks: **Goal leakage** (would a researcher reading only the questions be able to infer what we're trying to build? if yes, rewrite); comprehensiveness (covers all codebase zones implied by goals); objectivity ("how does X work?" not "how should we change X?"); appropriate research type tags; **Hybrid scrutiny** (can `[hybrid]` be split into `[codebase]` + `[web]`?); no redundant or missing areas. Findings written to `reviews/questions-review.md`.
-- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with `questions.md` + `goals.md`, same criteria. Findings appended.
+- **Claude review subagent** — inputs: `goals.md` + `questions.md`. Checks: **Goal leakage** (would a researcher reading only the questions be able to infer what we're trying to build? if yes, rewrite); comprehensiveness (covers all codebase zones implied by goals); objectivity ("how does X work?" not "how should we change X?"); appropriate research type tags; **Hybrid scrutiny** (can `[hybrid]` be split into `[codebase]` + `[web]`?); no redundant or missing areas. Findings written to `reviews/questions-review.md`. The reviewer subagent embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. Findings must conform to the M48 5-field schema defined there (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`); `change_type` is required.
+- **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper:
+  1. Write the review prompt (`questions.md` + `goals.md` + the same criteria) to a temporary file (e.g., `/tmp/codex-prompt-questions.md`).
+  2. Launch the job early (in parallel with the Claude reviewer above) by running `scripts/codex-companion-bg.sh launch --prompt-file /tmp/codex-prompt-questions.md` as a foreground Bash-tool call. The wrapper prints the jobId to stdout as a single line and exits 0 within ~5 seconds. The orchestrator (this skill's caller — the Claude Code agent driving the Bash tool) records that printed jobId text from the Bash tool's stdout output and pastes it as the literal `<jobId>` argument in the matching await Bash call below; there is no shell variable assignment in this flow, and shell command substitution (`$()` / backticks) is forbidden per Daniel's CLAUDE.md. If launch exits non-zero, abort this Codex review and append a launch-failure note to `reviews/questions-review.md`.
+  3. After the Claude reviewer returns, await the result: `scripts/codex-companion-bg.sh await <jobId>`. Exit codes: **0** = success, append the markdown stdout to `reviews/questions-review.md` under `#### Codex`; **10** = 20-min ceiling hit (no stdout produced) — append an explicit ceiling note (e.g., `Codex review: 20-min ceiling hit, no findings produced`), do NOT append empty stdout, do NOT silently retry; **11** = companion crash mid-job (job-not-found) — append a crash note and surface to the user before proceeding; **12** = audit-write fail (e.g., row > 4096 bytes) — append an infrastructure-failure note and surface to the user, do NOT retry blindly. **Only append stdout to the review log on exit 0.**
 
 ### Human Gate
 
@@ -89,9 +94,11 @@ On rejection, write the user's feedback to `feedback/questions-round-{NN}.md` (s
 
 Commit the approved `questions.md` and `reviews/questions-review.md` to git.
 
-Recommend compaction: "Questions approved. This is a good point to compact context before the next step (`/compact`)."
+> **IMPORTANT — Compaction recommended (M53; terminal state).** Questions approved. This is a good point to compact context before the next step. Recommend the user run `/compact` if context utilization may exceed ~50%.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `questions`.
+
+> **IMPORTANT — Compaction recommended (M53; cross-skill transition).** Before invoking the next skill, run `/compact` if context utilization may exceed ~50%. The next skill (typically Research, per the Full route) reads `questions.md` + every prior approved artifact + reviewer findings; entering it on a saturated context degrades the synthesis quality of downstream research subagents.
 
 ## Red Flags — STOP
 

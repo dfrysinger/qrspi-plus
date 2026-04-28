@@ -1,0 +1,15 @@
+# U14 violation fixture — scannability lint
+
+This file seeds a violation of the scannability lint: any section over three hundred words under a heading must contain at least one bullet or numbered list item. The section below is well over three hundred words but contains zero list markers — the lint should fire.
+
+## Approach
+
+This section is composed entirely of running prose with no bullet points and no numbered lists anywhere in its body. The first sentence is the load-bearing claim and it does end with a period and stays under the claim-line length cap. The supporting paragraphs that follow are split for density compliance so the paragraph-density lint will not fire here. What this section deliberately lacks is any scannable structure — there are no list items, no enumeration, no per-item bullets, only continuous narrative.
+
+The reason scannability matters in QRSPI synthesizing skills is that long sections without scannable structure force the reader to perform linear scan instead of saccadic scan, and reviewer subagents (Claude reviewer, Codex reviewer, scope-reviewer) treat a long unbroken section as a signal of under-decomposition. The Nielsen inverted-pyramid pattern that QRSPI U14 enforces puts the load-bearing claim first and supporting evidence second, but the supporting evidence still needs to be scannable when the section grows past the threshold word count.
+
+This fixture deliberately keeps the section at a length comfortably above the three-hundred-word floor while remaining readable, so the lint is exercised against a realistic-looking but non-compliant section. Were a real synthesizing skill to emit a section like this — long, prose-heavy, no list markers — the U14 scannability lint would catch it during the conformance check that runs as part of the in-scope-files scan. Padding sentences continue here to push the count well past the lint floor while preserving paragraph-density compliance and claim-line compliance, isolating the scannability axis as the sole U14 violation that this fixture seeds. Additional padding follows here as needed.
+
+The remaining prose continues without lists. No bullets. No numbered items. Just paragraphs strung together to push the word count past the lint threshold while preserving paragraph-density compliance and claim-line compliance, isolating the scannability axis as the sole U14 violation that this fixture seeds. The lint pass over this file should produce exactly one finding — scannability — and zero findings on the other four U14 axes. Filler text now appears below to push the section confidently past the three-hundred-word lint floor without introducing any list markers whatsoever, ensuring the scannability lint fires as the seeded violation.
+
+Filler continues. More padding appears in this paragraph to ensure the word count is comfortably above the three-hundred-word floor that the U14 scannability lint enforces against long sections that lack scannable structure. The lint runs over the section body and counts words while looking for any list marker, and absent any marker, emits a finding tied to the section heading captured at section entry.

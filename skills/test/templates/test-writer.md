@@ -6,11 +6,12 @@ You are writing acceptance tests that verify the implementation meets the origin
 
 Before proceeding, confirm you have been given:
 
-1. `[GOALS]` — Approved goals.md with acceptance criteria to verify
-2. `[DESIGN OR RESEARCH]` — Full pipeline: design.md (phase definitions, test strategy). Quick fix: research/summary.md (context)
-3. `[FIX HISTORY]` — Contents of fixes/ directory (for regression tests). Empty if no prior fixes.
-4. `[CODEBASE CONTEXT]` — Key source files and their locations for test setup
-5. `[TEST TYPE TEMPLATES]` — The 4 test type templates (acceptance, integration, e2e, boundary) for reference
+1. `[PLAN]` — Approved plan.md whose per-task `## Test Expectations` blocks (and per-phase acceptance block, if present) are the canonical acceptance criteria to verify. Per T9's strip-from-goals contract, plan.md authors acceptance criteria; goals.md does not.
+2. `[GOALS]` — Approved goals.md, used as the upstream traceability anchor (problem statements, intent, constraints) so each plan-level criterion can be traced back to the goal it serves. NOT the criterion-authoring source.
+3. `[DESIGN OR RESEARCH]` — Full pipeline: design.md (phase definitions, test strategy). Quick fix: research/summary.md (context)
+4. `[FIX HISTORY]` — Contents of fixes/ directory (for regression tests). Empty if no prior fixes.
+5. `[CODEBASE CONTEXT]` — Key source files and their locations for test setup
+6. `[TEST TYPE TEMPLATES]` — The 4 test type templates (acceptance, integration, e2e, boundary) for reference
 
 If any placeholder is missing and you cannot proceed without it, report NEEDS_CONTEXT immediately.
 
@@ -21,7 +22,7 @@ Test execution and fix task dispatch are handled by the orchestrating skill, not
 
 ## Process
 
-1. Read all acceptance criteria from `[GOALS]`
+1. Read all acceptance criteria from `[PLAN]` — every task's `## Test Expectations` block, plus `plan.md`'s per-phase acceptance block if present. These ARE the criteria. Cross-check `[GOALS]` only to confirm each plan-level criterion traces upstream to a goal's problem statement (traceability, not authorship).
 
 2. For each criterion, determine which test type(s) are needed:
    - Does it describe a specific feature behavior? → Acceptance test
@@ -33,7 +34,7 @@ Test execution and fix task dispatch are handled by the orchestrating skill, not
 
 4. Write tests following the appropriate test type template(s)
 
-5. For each test, annotate which acceptance criterion it maps to
+5. For each test, annotate which acceptance criterion it maps to (citing the `plan.md` task ID and the specific bullet in that task's `## Test Expectations` block, or the per-phase acceptance bullet). The annotation should also reference the upstream goal ID for traceability.
 
 ## Coverage Analysis Output
 
@@ -48,7 +49,7 @@ After writing tests, produce both tables:
 | U1 | Fail-closed with diagnostics | Acceptance | tests/acceptance/test-u1.bats | Written |
 | {text only} | {full criterion text} | — | — | Gap: {reason} |
 
-Criterion ID is the bold label from goals.md (e.g., `M24`, `U1`, `SC5`) or the full criterion text when no ID label exists.
+Criterion ID is the task ID from plan.md plus a sub-label for the specific Test Expectation bullet (e.g., `task-04 / TE-1`), or the per-phase acceptance bullet ID. For traceability, also note the upstream goal ID (e.g., `M24`, `U1`) the plan-level criterion derives from. Per T9's strip-from-goals contract, plan.md is the criterion-authoring source; goals.md provides the upstream problem-framing label only.
 
 ## Regression Tests
 | Bug | Fix Round | Test File | Behavior Verified |

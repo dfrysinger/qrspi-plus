@@ -7,6 +7,44 @@ _state_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_state_script_dir/frontmatter.sh"
 source "$_state_script_dir/artifact-map.sh"
 
+# state_compute_current_step <artifact_dir>
+# Helper: scan artifact files in <artifact_dir>, determine the first pipeline step
+# whose artifact frontmatter is not "approved", and echo that step name.
+# Only the 7 file-backed steps (goals, questions, research, design, phasing,
+# structure, plan) are inspected. If all 7 are approved, echoes "implement"
+# (the first non-file-backed step, which defaults to "draft"). This matches
+# state_init_or_reconcile, where implement is the next step in pipeline order
+# after plan-approved.
+# Returns 1 if artifact_dir does not exist.
+#
+# Single source of truth for the "first non-approved step" computation.
+# state_init_or_reconcile delegates here (FU-1 refactor 2026-04-28).
+state_compute_current_step() {
+  local artifact_dir="$1"
+  [[ -d "$artifact_dir" ]] || return 1
+
+  local _step _artifact_file _status
+  for _step in goals questions research design phasing structure plan; do
+    _artifact_file="$artifact_dir/$(artifact_map_get "$_step")"
+    _status="draft"
+    if [[ -f "$_artifact_file" ]]; then
+      if ! _status=$(frontmatter_get_status "$_artifact_file" 2>/dev/null); then
+        _status="draft"
+      fi
+    fi
+    if [[ "$_status" != "approved" ]]; then
+      echo "$_step"
+      return 0
+    fi
+  done
+
+  # implement and test are never inferred from files; default to "implement" if
+  # all 7 file-backed steps are approved (matches state_init_or_reconcile: the
+  # next step after plan-approved is implement, since implement is also "draft"
+  # by default and is the first non-approved step in pipeline order).
+  echo "implement"
+}
+
 # state_init_or_reconcile <artifact_dir>
 # Scans artifact files in the given directory, reads their frontmatter status,
 # and creates/updates .qrspi/state.json in the current working directory.
@@ -16,11 +54,12 @@ state_init_or_reconcile() {
   # Check if artifact_dir exists
   [[ -d "$artifact_dir" ]] || return 1
 
-  # Determine statuses for all 8 artifacts
+  # Determine statuses for all 9 artifacts (M54 added phasing between design and structure)
   local goals_status="draft"
   local questions_status="draft"
   local research_status="draft"
   local design_status="draft"
+  local phasing_status="draft"
   local structure_status="draft"
   local plan_status="draft"
   local implement_status="draft"
@@ -28,7 +67,7 @@ state_init_or_reconcile() {
 
   # Check each artifact file using canonical mapping
   local _step _artifact_file
-  for _step in goals questions research design structure plan; do
+  for _step in goals questions research design phasing structure plan; do
     _artifact_file="$artifact_dir/$(artifact_map_get "$_step")"
     if [[ -f "$_artifact_file" ]]; then
       local _read_status
@@ -43,27 +82,14 @@ state_init_or_reconcile() {
   # implement and test are never read from files, always draft unless inferred
   # (but for now we keep them as draft)
 
-  # Determine current_step: first artifact that is NOT "approved"
-  local current_step=""
-  if [[ "$goals_status" != "approved" ]]; then
-    current_step="goals"
-  elif [[ "$questions_status" != "approved" ]]; then
-    current_step="questions"
-  elif [[ "$research_status" != "approved" ]]; then
-    current_step="research"
-  elif [[ "$design_status" != "approved" ]]; then
-    current_step="design"
-  elif [[ "$structure_status" != "approved" ]]; then
-    current_step="structure"
-  elif [[ "$plan_status" != "approved" ]]; then
-    current_step="plan"
-  elif [[ "$implement_status" != "approved" ]]; then
-    current_step="implement"
-  elif [[ "$test_status" != "approved" ]]; then
-    current_step="test"
-  else
-    # All approved
-    current_step="test"
+  # Determine current_step: delegate to state_compute_current_step (FU-1
+  # refactor 2026-04-28). state_compute_current_step is the single source of
+  # truth for the "first non-approved step" computation, so any pipeline-order
+  # change requires touching exactly one call site (the helper itself).
+  local current_step
+  if ! current_step=$(state_compute_current_step "$artifact_dir"); then
+    echo "state_init_or_reconcile: state_compute_current_step failed" >&2
+    return 1
   fi
 
   # Create absolute path for artifact_dir
@@ -86,6 +112,7 @@ state_init_or_reconcile() {
         questions: $questions,
         research: $research,
         design: $design,
+        phasing: $phasing,
         structure: $structure,
         plan: $plan,
         implement: $implement,
@@ -96,6 +123,7 @@ state_init_or_reconcile() {
     --arg questions "$questions_status" \
     --arg research "$research_status" \
     --arg design "$design_status" \
+    --arg phasing "$phasing_status" \
     --arg structure "$structure_status" \
     --arg plan "$plan_status" \
     --arg implement "$implement_status" \

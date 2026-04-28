@@ -1,0 +1,9 @@
+{
+  "finding_id": "R1-F02",
+  "severity": "medium",
+  "change_type": "clarity",
+  "message": "The design.md trade-off section buries the chosen approach in the third paragraph. Lead with the decision sentence (claim-before-evidence) so a reader can extract the decision without re-reading the section.",
+  "referenced_files": [
+    "design.md"
+  ]
+}

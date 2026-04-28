@@ -12,6 +12,7 @@ artifact_map_get() {
     questions)  echo "questions.md" ;;
     research)   echo "research/summary.md" ;;
     design)     echo "design.md" ;;
+    phasing)    echo "phasing.md" ;;
     structure)  echo "structure.md" ;;
     plan)       echo "plan.md" ;;
     *)
@@ -32,6 +33,7 @@ artifact_map_get_step() {
     */goals.md|goals.md)                       echo "goals" ;;
     */questions.md|questions.md)               echo "questions" ;;
     */design.md|design.md)                     echo "design" ;;
+    */phasing.md|phasing.md)                   echo "phasing" ;;
     */structure.md|structure.md)               echo "structure" ;;
     */plan.md|plan.md)                         echo "plan" ;;
     *)                                         return 1 ;;
