@@ -145,8 +145,13 @@ artifact_sync_state() {
 
 # artifact_snapshot_phase <artifact_dir> <phase_number>
 # Creates a read-only snapshot of the current phase's artifacts.
-# Copies core artifacts and task files; excludes reviews/, fixes/, feedback/,
-# phases/, future-goals.md, future-design.md, future-research/, config.md, .qrspi/.
+# Copies core artifacts (including Phasing-owned phasing.md, roadmap.md, and
+# the four future-*.md artifacts per M54) and task files; excludes reviews/,
+# fixes/, feedback/, phases/, config.md, .qrspi/.
+# Phasing-owned artifacts (added 2026-04-28 per task-26 / R2 I-N1):
+#   - phasing.md, roadmap.md (Phasing OWNS — see skills/phasing/SKILL.md:39-42)
+#   - future-goals.md, future-questions.md, future-research-summary.md,
+#     future-design.md (Phasing OWNS — pruning artifacts)
 # Returns 0 on success, 1 if artifact_dir doesn't exist or copy fails.
 artifact_snapshot_phase() {
   local artifact_dir="$1"
@@ -162,8 +167,22 @@ artifact_snapshot_phase() {
 
   mkdir -p "$snapshot_dir" || return 1
 
-  # Copy core artifact files if they exist
-  local core_files=("goals.md" "questions.md" "design.md" "structure.md" "plan.md")
+  # Copy core artifact files if they exist.
+  # Includes Phasing-owned artifacts (phasing.md, roadmap.md, future-*.md)
+  # per M54 — see skills/phasing/SKILL.md "Phasing OWNS / Phasing DEFERS".
+  local core_files=(
+    "goals.md"
+    "questions.md"
+    "design.md"
+    "phasing.md"
+    "roadmap.md"
+    "structure.md"
+    "plan.md"
+    "future-goals.md"
+    "future-questions.md"
+    "future-research-summary.md"
+    "future-design.md"
+  )
   local f
   for f in "${core_files[@]}"; do
     if [[ -f "$artifact_dir/$f" ]]; then
@@ -192,9 +211,21 @@ artifact_snapshot_phase() {
 
 # artifact_promote_next_phase <artifact_dir> <completed_phase_number>
 # Cleans up phase-scoped files after snapshot, preparing for the next phase.
-# Deletes: structure.md, plan.md, tasks/, reviews/, feedback/, .qrspi/
-# Resets frontmatter status to "draft" on remaining files (goals.md, design.md,
-# questions.md, research/summary.md).
+# Deletes:
+#   - phase-scoped files: structure.md, plan.md, tasks/, reviews/, feedback/, .qrspi/
+#   - roadmap.md (Phasing re-emits it on the next phase's Phasing run)
+# Resets frontmatter status to "draft" on remaining synthesizing artifacts:
+#   goals.md, questions.md, design.md, research/summary.md, phasing.md
+# Leaves future-*.md files in place — Replan's populate sequence reads them
+# to extract next-phase entries (see skills/replan/SKILL.md:135-142).
+# Phasing-owned artifact handling (added 2026-04-28 per task-26 / R2 I-N1):
+#   - phasing.md is reset to draft so the next-phase Phasing run re-validates
+#     under Phase-2+ Behavior (skills/phasing/SKILL.md "Phase-2+ Behavior").
+#   - roadmap.md is deleted; Phasing re-emits a refreshed roadmap.
+#   - future-*.md files persist; Replan reads them in the populate sequence.
+# Frontmatter reset uses portable awk (BSD/GNU compatible) per R2 I-N6 fix:
+#   the previous `sed -i ''` form is BSD/macOS-only and silently misbehaves
+#   on GNU sed (Linux/CI), leaving frontmatter unchanged with exit 0.
 # Returns 0 on success, 1 on failure.
 artifact_promote_next_phase() {
   local artifact_dir="$1"
@@ -206,18 +237,34 @@ artifact_promote_next_phase() {
   # Delete phase-scoped files and directories
   rm -f "$artifact_dir/structure.md"
   rm -f "$artifact_dir/plan.md"
+  rm -f "$artifact_dir/roadmap.md"
   rm -rf "$artifact_dir/tasks"
   rm -rf "$artifact_dir/reviews"
   rm -rf "$artifact_dir/feedback"
   rm -rf "$artifact_dir/.qrspi"
 
-  # Reset frontmatter status to draft on remaining files
-  local reset_files=("goals.md" "questions.md" "design.md" "research/summary.md")
-  local f
+  # Reset frontmatter status to draft on remaining synthesizing artifacts.
+  # phasing.md is included so Phase-2+ Behavior re-validates the roadmap.
+  # future-*.md files are intentionally NOT in this list — Replan's populate
+  # sequence reads them post-promote.
+  local reset_files=(
+    "goals.md"
+    "questions.md"
+    "design.md"
+    "research/summary.md"
+    "phasing.md"
+  )
+  local f tmp
   for f in "${reset_files[@]}"; do
     if [[ -f "$artifact_dir/$f" ]]; then
-      # Replace status: <anything> with status: draft in frontmatter
-      sed -i '' 's/^status: .*/status: draft/' "$artifact_dir/$f" || return 1
+      # Portable in-place edit: awk → tempfile → mv. This avoids the
+      # BSD-vs-GNU `sed -i` argument incompatibility — `sed -i ''` is
+      # BSD/macOS only; GNU sed (Linux/CI) treats `''` as a filename and
+      # silently leaves the file unchanged.
+      tmp="$artifact_dir/$f.tmp.$$"
+      awk '/^status: / { print "status: draft"; next } { print }' \
+        "$artifact_dir/$f" > "$tmp" || { rm -f "$tmp"; return 1; }
+      mv "$tmp" "$artifact_dir/$f" || { rm -f "$tmp"; return 1; }
     fi
   done
 
