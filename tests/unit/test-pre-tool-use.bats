@@ -296,3 +296,58 @@ init_state() {
   run "$HOOK" <<< "$json"
   [ "$status" -eq 0 ]
 }
+
+# ──────────────────────────────────────────────────────────────
+# [R2 S-N2] subagent Bash inline interpreter (python -c) blocks
+# ──────────────────────────────────────────────────────────────
+# A subagent inside a worktree cannot use `python -c` to write outside the
+# worktree. The detector emits __OPAQUE_WRITE__ for inline-interpreter
+# invocations; the subagent worktree wall checks that "target" against
+# `.worktrees/<slug>/(task-NN|baseline)/` and blocks because the sentinel
+# is not under any worktree path.
+@test "[R2 S-N2] subagent python -c (inline interpreter) blocked by worktree wall" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='python -c "open(\"/tmp/x\",\"w\").write(\"y\")"'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [R2 S-N2] subagent Bash dd of=/abs blocked by worktree wall
+# ──────────────────────────────────────────────────────────────
+@test "[R2 S-N2] subagent dd of=/abs blocked by worktree wall" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='dd if=/dev/zero of=/abs/path bs=1 count=1'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [R2 S-N2] subagent no-space redirect outside worktree blocks
+# ──────────────────────────────────────────────────────────────
+@test "[R2 S-N2] subagent no-space redirect >/abs/poison blocked by worktree wall" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='echo X >/abs/poison'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [R2 S-N2] main chat python -c is allowed (sentinel only blocks subagents)
+# ──────────────────────────────────────────────────────────────
+@test "[R2 S-N2] main chat python -c allowed (no agent_id)" {
+  cd "$WORK_DIR"
+  # Use escaped double quotes inside the JSON string so the resulting JSON
+  # remains well-formed when bats interpolates the command into the JSON
+  # body.
+  local cmd='python -c \"print(1)\"'
+  local json='{"tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}

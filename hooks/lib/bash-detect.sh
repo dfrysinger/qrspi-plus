@@ -1,9 +1,49 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# bash_detect_file_writes <command>
+#
+# Emits one line per detected write target on stdout. Always returns 0.
+#
+# When the command contains a write-effect mechanism whose target cannot be
+# reliably parsed (inline interpreters, awk redirect-from-program), the
+# function emits a single sentinel line:
+#
+#     __OPAQUE_WRITE__
+#
+# pre-tool-use treats `__OPAQUE_WRITE__` as a write target that is *not* under
+# `.worktrees/<slug>/(task-NN|baseline)/`, so the subagent worktree wall blocks
+# the command. Main chat is exempt from the wall and is unaffected.
+#
+# Detection patterns (R2 S-N2 hardening — bypass coverage):
+#
+#   Redirect-style (target extractable):
+#     - `> path`, `>> path`           — space-separated (existing)
+#     - `>path`, `>>path`             — no-space (new)
+#     - `>| path`, `>|path`           — clobber redirect (new)
+#     - `>file cmd ...`               — leading-redirect form (new)
+#     - `cat <<EOF >file`             — redirect after heredoc (new)
+#
+#   Command-style (target extractable from arguments):
+#     - `sed -i ... file`             — in-place (existing)
+#     - `cp ... dest`                 — last positional arg (existing)
+#     - `mv ... dest`                 — last positional arg (existing)
+#     - `tee [-a] file`               — existing
+#     - `dd of=path`                  — write target via of= (new)
+#     - `install ... dst`             — last positional arg (new)
+#     - `rsync ... dst`               — last positional arg (new)
+#
+#   Opaque-write (cannot reliably parse target → sentinel emitted):
+#     - `python -c ...`, `python3 -c ...`
+#     - `node -e ...`, `node --eval ...`
+#     - `perl -e ...`
+#     - `ruby -e ...`
+#     - `awk 'BEGIN{...}'` containing `>` or `>>`
+#
 bash_detect_file_writes() {
     local cmd="$1"
     local paths=()
+    local opaque=0
 
     # Split on compound operators (&&, ||, ;) to handle multiple commands
     local parts=()
@@ -34,25 +74,151 @@ bash_detect_file_writes() {
     done
     [[ -n "$current" ]] && parts+=("$current")
 
+    # Helper: append a discovered path with surrounding quotes/whitespace stripped.
+    _bd_add_path() {
+        local p="$1"
+        # Strip surrounding double quotes
+        p="${p%\"}"
+        p="${p#\"}"
+        # Strip surrounding single quotes
+        p="${p%\'}"
+        p="${p#\'}"
+        # Strip trailing whitespace/punctuation that may have leaked from regex
+        # (kept conservative to avoid mangling real paths).
+        p="${p%[[:space:]]}"
+        if [[ -n "$p" ]]; then
+            paths+=("$p")
+        fi
+    }
+
     # Process each part of the compound command
     for part in "${parts[@]}"; do
-        part="${part## }"  # Trim leading whitespace
-        part="${part%% }"  # Trim trailing whitespace
+        # Trim leading/trailing whitespace
+        part="${part#"${part%%[![:space:]]*}"}"
+        part="${part%"${part##*[![:space:]]}"}"
 
-        # Pattern 1: Output redirect (> or >>)
-        if [[ "$part" =~ \>\>?[[:space:]]+\"?([^\"]+)\"? ]]; then
-            local path="${BASH_REMATCH[1]}"
-            # Remove quotes if present
-            path="${path%\"}"
-            path="${path#\"}"
-            path="${path%\'}"
-            path="${path#\'}"
-            [[ -n "$path" ]] && paths+=("$path")
+        # ── Pattern: opaque-write — inline interpreters ──────────────────
+        # python/python3/perl/ruby with -e or -c flag, node with -e or --eval.
+        # The interpreter receives a script as a string argument; the script
+        # may invoke arbitrary write APIs we cannot statically parse. Treat
+        # as opaque-write — pre-tool-use wall blocks for subagents.
+        if [[ "$part" =~ (^|[[:space:]/])(python[0-9]*|perl|ruby)([[:space:]]+-[A-Za-z]*)*[[:space:]]+-([cCe]|-eval)([[:space:]]|$) ]] || \
+           [[ "$part" =~ (^|[[:space:]/])(python[0-9]*|perl|ruby)[[:space:]]+-[ce]([[:space:]]|$) ]] || \
+           [[ "$part" =~ (^|[[:space:]/])(python[0-9]*)[[:space:]]+-c([[:space:]]|$) ]] || \
+           [[ "$part" =~ (^|[[:space:]/])node[[:space:]]+(-e|--eval)([[:space:]]|$) ]] || \
+           [[ "$part" =~ (^|[[:space:]/])(perl|ruby)[[:space:]]+-e([[:space:]]|$) ]]; then
+            opaque=1
         fi
 
-        # Pattern 2: sed -i or sed -i.bak
+        # ── Pattern: opaque-write — awk program containing redirect ──────
+        # `awk 'BEGIN{print > "..."}'` writes from inside the awk program;
+        # we cannot reliably parse the target out of the awk script.
+        if [[ "$part" =~ (^|[[:space:]/])awk([[:space:]]+-[A-Za-z]+)*[[:space:]]+[\'\"][^\'\"]*\>[^\'\"]*[\'\"] ]]; then
+            opaque=1
+        fi
+
+        # ── Pattern: leading-redirect — `>file cmd ...` or `>>file cmd ...`
+        # POSIX allows redirections anywhere on the command line. When `>`
+        # appears at the very start (after stripping whitespace), capture
+        # the next token as the target. Skip process substitution `>(`.
+        if [[ "$part" =~ ^\>\>?\|?[[:space:]]*\"?\'?([^[:space:]\"\'\;\&\|\(]+) ]]; then
+            local lead_target="${BASH_REMATCH[1]}"
+            # Skip if it looks like the start of process substitution — already
+            # excluded `(` from the character class, so an empty match means
+            # the operand was `(...)` and we drop it.
+            [[ -n "$lead_target" ]] && _bd_add_path "$lead_target"
+        fi
+
+        # ── Pattern: redirect (>, >>, >|) — space OR no-space, anywhere ──
+        # We scan all occurrences using a hand-rolled walker because bash
+        # `=~` only returns the first match. The walker tokenizes the
+        # command into bytes, finds each `>` (skipping `>(` process subs
+        # and `>&N` fd-dups), then reads the target token.
+        local idx=0
+        local plen=${#part}
+        while [[ $idx -lt $plen ]]; do
+            local c="${part:$idx:1}"
+            if [[ "$c" != ">" ]]; then
+                idx=$((idx+1))
+                continue
+            fi
+            # Look back: is this preceded by `<` (heredoc/herestring `<<<`,
+            # `<<`)? In that case `<<` does NOT redirect output. Skip.
+            if [[ $idx -gt 0 ]]; then
+                local prev="${part:$((idx-1)):1}"
+                if [[ "$prev" == "<" ]]; then
+                    idx=$((idx+1))
+                    continue
+                fi
+            fi
+            # Walk past the redirect operator (>, >>, >|, >&)
+            local op_end=$((idx+1))
+            if [[ $op_end -lt $plen && "${part:$op_end:1}" == ">" ]]; then
+                op_end=$((op_end+1))
+            fi
+            if [[ $op_end -lt $plen && "${part:$op_end:1}" == "|" ]]; then
+                op_end=$((op_end+1))
+            fi
+            # Process substitution `>(...)` — skip; it's a read endpoint.
+            if [[ $op_end -lt $plen && "${part:$op_end:1}" == "(" ]]; then
+                idx=$((op_end+1))
+                continue
+            fi
+            # FD duplication `>&N` — not a file write. Skip.
+            if [[ $op_end -lt $plen && "${part:$op_end:1}" == "&" ]]; then
+                idx=$((op_end+1))
+                continue
+            fi
+            # Skip optional whitespace between operator and target.
+            while [[ $op_end -lt $plen ]]; do
+                local sc="${part:$op_end:1}"
+                [[ "$sc" == " " || "$sc" == $'\t' ]] || break
+                op_end=$((op_end+1))
+            done
+            # Read the target. May be quoted (single or double) or a bareword.
+            if [[ $op_end -lt $plen ]]; then
+                local q="${part:$op_end:1}"
+                if [[ "$q" == "\"" ]]; then
+                    local end=$((op_end+1))
+                    while [[ $end -lt $plen && "${part:$end:1}" != "\"" ]]; do
+                        end=$((end+1))
+                    done
+                    local target="${part:$((op_end+1)):$((end-op_end-1))}"
+                    _bd_add_path "$target"
+                    idx=$((end+1))
+                    continue
+                elif [[ "$q" == "'" ]]; then
+                    local end=$((op_end+1))
+                    while [[ $end -lt $plen && "${part:$end:1}" != "'" ]]; do
+                        end=$((end+1))
+                    done
+                    local target="${part:$((op_end+1)):$((end-op_end-1))}"
+                    _bd_add_path "$target"
+                    idx=$((end+1))
+                    continue
+                else
+                    # Bareword: read until whitespace or terminator.
+                    local end=$op_end
+                    while [[ $end -lt $plen ]]; do
+                        local tc="${part:$end:1}"
+                        case "$tc" in
+                            ' '|$'\t'|';'|'&'|'|'|'<'|'>') break ;;
+                            *) end=$((end+1)) ;;
+                        esac
+                    done
+                    if [[ $end -gt $op_end ]]; then
+                        local target="${part:$op_end:$((end-op_end))}"
+                        _bd_add_path "$target"
+                    fi
+                    idx=$end
+                    continue
+                fi
+            fi
+            idx=$((idx+1))
+        done
+
+        # ── Pattern: sed -i / sed -i.ext ─────────────────────────────────
         if [[ "$part" =~ sed[[:space:]]+-i ]]; then
-            # Extract the filename (last argument after the sed pattern)
             local sed_match=""
             if [[ "$part" =~ sed[[:space:]]+-i\.[a-zA-Z0-9]+[[:space:]]+\'[^\']*\'[[:space:]]+([^ ]+) ]]; then
                 sed_match="${BASH_REMATCH[1]}"
@@ -67,38 +233,30 @@ bash_detect_file_writes() {
             elif [[ "$part" =~ sed[[:space:]]+-i[[:space:]]+[^[:space:]]+[[:space:]]+([^ ]+)$ ]]; then
                 sed_match="${BASH_REMATCH[1]}"
             fi
-            [[ -n "$sed_match" ]] && paths+=("$sed_match")
+            [[ -n "$sed_match" ]] && _bd_add_path "$sed_match"
         fi
 
-        # Pattern 3: cp source dest
+        # ── Pattern: cp source dest ──────────────────────────────────────
         if [[ "$part" =~ ^cp[[:space:]]+ ]]; then
             local args_str="${part#cp}"
             args_str="${args_str## }"
             local last_arg=$(echo "$args_str" | awk '{print $NF}')
             if [[ ! "$last_arg" =~ ^- ]]; then
-                last_arg="${last_arg%\"}"
-                last_arg="${last_arg#\"}"
-                last_arg="${last_arg%\'}"
-                last_arg="${last_arg#\'}"
-                [[ -n "$last_arg" ]] && paths+=("$last_arg")
+                _bd_add_path "$last_arg"
             fi
         fi
 
-        # Pattern 4: mv old new
+        # ── Pattern: mv old new ──────────────────────────────────────────
         if [[ "$part" =~ ^mv[[:space:]]+ ]]; then
             local args_str="${part#mv}"
             args_str="${args_str## }"
             local last_arg=$(echo "$args_str" | awk '{print $NF}')
             if [[ ! "$last_arg" =~ ^- ]]; then
-                last_arg="${last_arg%\"}"
-                last_arg="${last_arg#\"}"
-                last_arg="${last_arg%\'}"
-                last_arg="${last_arg#\'}"
-                [[ -n "$last_arg" ]] && paths+=("$last_arg")
+                _bd_add_path "$last_arg"
             fi
         fi
 
-        # Pattern 5: tee or tee -a
+        # ── Pattern: tee or tee -a ───────────────────────────────────────
         if [[ "$part" =~ tee[[:space:]]+ ]]; then
             local tee_match=""
             if [[ "$part" =~ tee[[:space:]]+-a[[:space:]]+\"?([^\"]+)\"? ]]; then
@@ -106,20 +264,62 @@ bash_detect_file_writes() {
             elif [[ "$part" =~ tee[[:space:]]+\"?([^\"]+)\"? ]]; then
                 tee_match="${BASH_REMATCH[1]}"
             fi
-            if [[ -n "$tee_match" ]]; then
-                tee_match="${tee_match%\"}"
-                tee_match="${tee_match#\"}"
-                tee_match="${tee_match%\'}"
-                tee_match="${tee_match#\'}"
-                [[ -n "$tee_match" ]] && paths+=("$tee_match")
+            [[ -n "$tee_match" ]] && _bd_add_path "$tee_match"
+        fi
+
+        # ── Pattern: dd of=path or dd of="path" ──────────────────────────
+        # `dd` is special: write target appears as `of=` keyword arg, NOT
+        # as the last positional argument.
+        if [[ "$part" =~ (^|[[:space:]])dd([[:space:]]+|$) ]]; then
+            local dd_match=""
+            if [[ "$part" =~ (^|[[:space:]])of=\"([^\"]+)\" ]]; then
+                dd_match="${BASH_REMATCH[2]}"
+            elif [[ "$part" =~ (^|[[:space:]])of=\'([^\']+)\' ]]; then
+                dd_match="${BASH_REMATCH[2]}"
+            elif [[ "$part" =~ (^|[[:space:]])of=([^[:space:]\;\&\|]+) ]]; then
+                dd_match="${BASH_REMATCH[2]}"
+            fi
+            [[ -n "$dd_match" ]] && _bd_add_path "$dd_match"
+        fi
+
+        # ── Pattern: install ... dst ─────────────────────────────────────
+        # GNU/BSD `install` copies files; the LAST non-flag positional arg
+        # is the destination. We use the same shape as cp/mv: last token
+        # that is not a flag.
+        if [[ "$part" =~ (^|[[:space:]])install([[:space:]]+|$) ]]; then
+            local args_str="${part#*install}"
+            args_str="${args_str## }"
+            # Strip flag-with-arg pairs we know: -m MODE, -o OWNER, -g GROUP.
+            # (We don't fully parse getopt; we just take the last token.)
+            local last_arg
+            last_arg=$(echo "$args_str" | awk '{print $NF}')
+            if [[ -n "$last_arg" && ! "$last_arg" =~ ^- ]]; then
+                _bd_add_path "$last_arg"
+            fi
+        fi
+
+        # ── Pattern: rsync ... dst ───────────────────────────────────────
+        # `rsync` last positional arg is the destination (local or remote).
+        if [[ "$part" =~ (^|[[:space:]])rsync([[:space:]]+|$) ]]; then
+            local args_str="${part#*rsync}"
+            args_str="${args_str## }"
+            local last_arg
+            last_arg=$(echo "$args_str" | awk '{print $NF}')
+            if [[ -n "$last_arg" && ! "$last_arg" =~ ^- ]]; then
+                _bd_add_path "$last_arg"
             fi
         fi
     done
 
-    # Output results (one per line)
-    for path in "${paths[@]}"; do
-        echo "$path"
+    # Output results (one per line). Deduplicate trivially by tracking seen.
+    local seen_opaque=0
+    local p
+    for p in "${paths[@]}"; do
+        echo "$p"
     done
+    if [[ "$opaque" -eq 1 ]]; then
+        echo "__OPAQUE_WRITE__"
+    fi
 
     return 0
 }
