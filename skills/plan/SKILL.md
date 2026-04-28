@@ -57,6 +57,7 @@ Read `config.md` to determine pipeline mode. If `config.md` doesn't exist or has
 - `research/summary.md` with `status: approved`
 - `design.md` with `status: approved`
 - `structure.md` with `status: approved`
+- `phasing.md` with `status: approved` (phase definitions and slice ownership)
 
 **Quick fix (`pipeline: quick`) — required inputs:**
 - `goals.md` with `status: approved`

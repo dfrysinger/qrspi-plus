@@ -50,6 +50,7 @@ Required inputs:
 - Task branches (and any stage commits Implement created) ready to merge
 - `design.md` with `status: approved` (for cross-task context)
 - `structure.md` with `status: approved` (for interface definitions)
+- `phasing.md` with `status: approved` (phase definitions and slice ownership)
 - `parallelization.md` with `status: approved` (for branch map — which branches to merge)
 - `config.md` (for `route` — determines which skill to invoke after integrate; for `codex_reviews` — determines whether Codex runs alongside Claude reviewers)
 

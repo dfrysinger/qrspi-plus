@@ -53,6 +53,7 @@ Required inputs:
 - `plan.md` with `status: approved`
 - `tasks/*.md` (current phase) or `fixes/{type}-round-NN/*.md` (for fix-task routing)
 - `design.md` with `status: approved` (phase definitions)
+- `phasing.md` with `status: approved` (phase definitions and slice ownership)
 - `config.md`
 
 If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.

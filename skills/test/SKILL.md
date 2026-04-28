@@ -35,6 +35,7 @@ test/
 Required inputs:
 - `goals.md` with `status: approved` (original intent)
 - `design.md` with `status: approved` (full pipeline only — phase definitions and acceptance context)
+- `phasing.md` with `status: approved` (full pipeline only — phase definitions and slice ownership)
 - `research/summary.md` with `status: approved` (quick fix only — provides design-like context)
 - `fixes/` directory contents (for regression test coverage — may be empty if no prior fixes)
 - Codebase with implementation merged
