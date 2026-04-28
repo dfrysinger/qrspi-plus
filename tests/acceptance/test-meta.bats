@@ -41,8 +41,8 @@ unit_test_dir() {
   [ "$count" -eq 29 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-28, integration-round-03 task-33 merge)
-@test "[AC8] Unit test suite has exactly 707 @test definitions (baseline)" {
+# AC8 — Unit test count baseline (updated 2026-04-28, integration-round-04 round-02-fix-cycle merge)
+@test "[AC8] Unit test suite has exactly 749 @test definitions (baseline)" {
   # Baseline for stage-after-G6 = octopus(T16, T17, T18) on top of
   # stage-after-G5 (0ee9fd1, 18 .bats / 416 @tests). All three Wave 6
   # tasks are file-disjoint except for tests/acceptance/test-meta.bats
@@ -131,11 +131,34 @@ unit_test_dir() {
   # Files baseline bumped 25 → 29: task-37 added test-structure.bats,
   # task-39 added test-artifact-gating.bats, task-30 added
   # test-session-start.bats, task-33 added test-using-qrspi.bats.
+  #
+  # 2026-04-28 integration-round-04 round-02-fix-cycle merge: 6 fix tasks
+  # (40-45) addressing the 2 MAJOR + 4 MEDIUM round-3 review residuals
+  # plus 3 LOW incidentals (L-int-1, L-sec-2, L-sec-3). Per-task delta:
+  #   T40 (+2)  — replan SKILL.md snapshot-path read (M-1/F-1)
+  #   T41 (+3)  — using-qrspi validator-table + Plan SessionStart drift
+  #              regression tests (M-2 + M-3)
+  #   T42 (+7)  — state_update --arg/--argjson API extension + race
+  #              tests for artifact_sync_state and pipeline_cascade_reset
+  #              (S-1 / S-N4 residual)
+  #   T43 (+26) — bash-detect cd-before-relative-write coverage (12 pos
+  #              + 4 neg + 1 multi-cd in test-bash-detect.bats; 9 in
+  #              test-pre-tool-use.bats: 4 subagent block + 1 cd-into-
+  #              subdir allow + 2 Write/Edit absolute-path locks + 1
+  #              L-sec-3 doc presence + 1 multi-cd block) — S-2 + L-sec-3
+  #   T44 (+5)  — audit.sh symlink refusal + find_repo_root CWE-59
+  #              hardening (S-3 + L-sec-2)
+  #   T45 (+0)  — T04-PHASING-6S rename + assertion (no count change;
+  #              same test, additional positive substring match) — L-int-1
+  # Total round-02-fix-cycle delta: +43 over 707 baseline. 707 → 749
+  # (one test consolidated during T42 implementation rather than added).
+  # Files baseline (29) unchanged — all round-02 changes are
+  # modifications, no new .bats files.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 707 ]
+  [ "$count" -eq 749 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-28 round-3 task-33 merge)
