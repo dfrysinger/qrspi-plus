@@ -523,7 +523,7 @@ For each paused finding, present:
 3) Loop back to upstream artifact — cascade the change backward (W2/W3/W4 cascade per Backward Loops)
 ```
 
-3. **Loop back to upstream artifact (W2/W3/W4 cascade):** The skill identifies the earliest affected upstream artifact based on the finding's `referenced_files` and the cascade map (W2 = Goals; W3 = Goals + Questions; W4 = Goals + Questions + Research + Design). The skill MUST display the resolved upstream target name in the menu BEFORE the user picks option 3 (e.g., "Loop back to: phasing.md") and MUST request explicit confirmation (`Confirm rewind to {artifact}? (y/n)`) before initiating the cascade. If the finding's `referenced_files` resolves to ambiguous upstreams, the menu lists the candidates and asks the user to pick.
+**Loop back to upstream artifact (W2/W3/W4 cascade):** The skill identifies the earliest affected upstream artifact based on the finding's `referenced_files` and the cascade map (W2 = Goals; W3 = Goals + Questions; W4 = Goals + Questions + Research + Design). The skill MUST display the resolved upstream target name in the menu BEFORE the user picks option 3 (e.g., "Loop back to: phasing.md") and MUST request explicit confirmation (`Confirm rewind to {artifact}? (y/n)`) before initiating the cascade. If the finding's `referenced_files` resolves to ambiguous upstreams, the menu lists the candidates and asks the user to pick.
 
 Option 3 then invokes the standard Backward Loops procedure: update the confirmed upstream artifact, re-review, re-approve, and cascade forward to the current step.
 
