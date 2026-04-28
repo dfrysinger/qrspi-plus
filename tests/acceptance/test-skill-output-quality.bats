@@ -213,3 +213,44 @@ render_scope_reviewer_prompt() {
   grep -q "scope-reviewer.md" "$PARALLELIZE_FILE"
   grep -q "scope-reviewer.md" "$REPLAN_FILE"
 }
+
+# ── Task-31: subagent-prompt templates must not reference /tmp/ at all ───────
+#
+# The asymmetric pre-tool-use hook walls subagents to
+# `.worktrees/{slug}/(task-NN[a-z]?|baseline)/`. Any subagent-prompt
+# template that instructs a subagent to Write/launch from `/tmp/...` fails
+# closed at the hook every invocation. Subagent-prompt templates live
+# under `skills/implement/templates/` (the per-task-orchestrator + its
+# implementer/reviewer templates dispatched per task in a worktree).
+# Main-chat skill SKILL.md files are out of scope for this assertion —
+# they run from project root, where `/tmp/` writes are allowed.
+#
+# The assertion is strict: no `/tmp/` substring anywhere in any file under
+# `skills/implement/templates/`. A subagent-prompt template that even
+# *mentions* `/tmp/` invites the very rationalization this fix removes
+# ("but the docs talk about /tmp/, maybe it's fine"). The justification
+# for using the worktree-local path stays in the prose without naming
+# `/tmp/`.
+
+@test "task-31 — no subagent-prompt template under skills/implement/templates/ references /tmp/" {
+  local templates_dir="$ROOT/skills/implement/templates"
+  [ -d "$templates_dir" ]
+  run grep -RIn -e '/tmp/' "$templates_dir"
+  # grep exits 1 when no match; we want exit 1 (no /tmp/ refs found).
+  [ "$status" -eq 1 ]
+}
+
+@test "task-31 — per-task-orchestrator.md uses worktree-local .codex-prompts/ scratch path for codex prompts" {
+  local f="$ROOT/skills/implement/templates/per-task-orchestrator.md"
+  [ -f "$f" ]
+  grep -q '\.codex-prompts/' "$f"
+  # And no /tmp/ refs remain in that file specifically.
+  run grep -n '/tmp/' "$f"
+  [ "$status" -eq 1 ]
+}
+
+@test "task-31 — .codex-prompts/ is gitignored at the repo level so worktree-local scratch is never committed" {
+  local gi="$ROOT/.gitignore"
+  [ -f "$gi" ]
+  grep -qE '(^|/)\.codex-prompts/?$' "$gi"
+}

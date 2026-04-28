@@ -155,14 +155,14 @@ Branch on mode (derived from `config.md.route` per § Overview) at the start. Bo
     - **Full pipeline — for each wave** in the Execution Order, in order:
         - Resolve every task's effective base: read the Branch Map's `Base` column, then apply `## Runtime Adjustments` overrides on top.
         - Create any required `stage-after-G{N}` branch (merging the named Group's leaves).
-        - Create the per-task worktree at `.worktrees/{slug}/task-NN/`. Verify `.worktrees/` is in `.gitignore`.
+        - Create the per-task worktree at `.worktrees/{slug}/task-NN/`. Verify `.worktrees/` and `.codex-prompts/` are both in `.gitignore` (the latter is the per-task-orchestrator's worktree-local Codex-prompt scratch dir — see `templates/per-task-orchestrator.md` § Dispatching Reviewers; subagent-prompt scratch must live inside the worktree wall, not under `/tmp/`).
 
           **Resume precondition.** Before attempting `git worktree add`, if any leftover state exists for `task-NN` (worktree dir or branch already present), see `references/resume-preconditions.md` for the four-case classification table and the inspect-and-decide procedure. The leftover-state handling differs from the baseline worktree's silent-delete rule because the baseline worktree contains no user work, while task branches and worktrees can.
         - Fire the wave's tasks concurrently (one per-task orchestrator subagent per task; multiple Agent tool calls in parallel, each with `isolation: worktree`).
         - Wait for every task in the wave to reach a terminal status.
         - If the next wave needs a `stage-after-G{N}` stage commit composed from this wave's leaves, create it now.
     - **Quick fix:** for each task in the batch (no waves):
-        - Create the per-task worktree at `.worktrees/{slug}/task-NN/`, forked from feature branch tip. Verify `.worktrees/` is in `.gitignore`. Apply the same Resume precondition behavior as full pipeline (see `references/resume-preconditions.md`).
+        - Create the per-task worktree at `.worktrees/{slug}/task-NN/`, forked from feature branch tip. Verify `.worktrees/` and `.codex-prompts/` are both in `.gitignore` (see the matching note above for the rationale on the latter). Apply the same Resume precondition behavior as full pipeline (see `references/resume-preconditions.md`).
         - Fire the per-task orchestrator subagent (multiple if the batch has multiple fix tasks; they are file-disjoint by quick-fix construction).
         - Wait for every task to reach a terminal status.
 7. When every task in the batch has reached a terminal state, present the batch gate (see "Batch Gate" below).
