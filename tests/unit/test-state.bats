@@ -942,11 +942,19 @@ EOF
 @test "[T24-A1b] state_write_atomic: allowlist cannot be bypassed via JSON unicode-escape of current_step key" {
   # Round-2 silent-failure-hunter finding 1 + security-reviewer finding 2:
   # the allowlist gate must not be implemented as a raw substring match
-  # for `"current_step"`, because JSON permits escaped key names. The
-  # payload `{"current_step":"BOGUS"}` parses as a real `current_step`
-  # key but fails a literal substring check. After fix-cycle 2, allowlist
-  # validation uses jq -r '.current_step // empty' on the parsed payload,
-  # so escaped-key bypass is closed.
+  # for the literal string "current_step" because JSON permits unicode
+  # escape sequences in member names. Payload using c for "c"
+  # (`"current_step"`) parses to a real `current_step` key but
+  # fails a literal substring check on `"current_step"`.
+  #
+  # After fix-cycle 2, allowlist validation uses jq -r '.current_step //
+  # empty' on the parsed payload (no raw substring pre-filter), so jq's
+  # JSON parsing decodes the escape and the bypass is closed.
+  #
+  # Test design (round-3 silent-failure-hunter coverage gap fix):
+  # use single quotes to ensure the literal string `c` reaches
+  # state_write_atomic unchanged (bash does not interpret \u inside
+  # single quotes); jq then parses the escape and exposes the real key.
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
   cd "$artifact_dir"
@@ -958,14 +966,69 @@ EOF
   local baseline
   baseline=$(cat "$artifact_dir/.qrspi/state.json")
 
-  # Attempt allowlist bypass via unicode escape on the key
+  # Attempt allowlist bypass: the JSON key name is `current_step`
+  # (literal 14-character string with a unicode escape for "c"), which
+  # any conformant JSON parser decodes to the real key `current_step`.
+  # A raw substring check for `"current_step"` would NOT match this
+  # payload — that's the bypass we're proving is closed.
   run state_write_atomic '{"version":1,"current_step":"BOGUS_STEP_XYZ"}'
   [ "$status" -ne 0 ]
 
-  # Baseline must be unchanged
+  # Baseline must be unchanged (allowlist rejected the bypass attempt)
   local after
   after=$(cat "$artifact_dir/.qrspi/state.json")
   [[ "$after" == "$baseline" ]]
+}
+
+@test "[T24-A1c] state_update + state_write_atomic: structural validation rejects payloads that are not state objects (round-3 silent-failure finding 1)" {
+  # Round-3 silent-failure-hunter finding 1: state_update used to commit
+  # any parseable JSON, including `null`, `{}`, or arbitrary shapes,
+  # because _state_write_inline_locked only checked current_step (when
+  # present). A malicious or buggy filter could nuke the entire state
+  # by returning `null` or `{}`. Fix-cycle 3 adds structural validation:
+  # payload must be a JSON object containing a `version` field.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Seed valid baseline
+  state_write_atomic '{"version":1,"current_step":"goals"}'
+  local baseline
+  baseline=$(cat "$artifact_dir/.qrspi/state.json")
+
+  # state_update with a filter that returns `null` must be rejected.
+  run state_update '. = null'
+  [ "$status" -ne 0 ]
+  local after_null
+  after_null=$(cat "$artifact_dir/.qrspi/state.json")
+  [[ "$after_null" == "$baseline" ]]
+
+  # state_update with a filter that returns `{}` must be rejected
+  # (object but missing "version").
+  run state_update '. = {}'
+  [ "$status" -ne 0 ]
+  local after_empty
+  after_empty=$(cat "$artifact_dir/.qrspi/state.json")
+  [[ "$after_empty" == "$baseline" ]]
+
+  # state_update with a filter that returns a non-object array must be
+  # rejected.
+  run state_update '. = ["not", "an", "object"]'
+  [ "$status" -ne 0 ]
+  local after_arr
+  after_arr=$(cat "$artifact_dir/.qrspi/state.json")
+  [[ "$after_arr" == "$baseline" ]]
+
+  # state_write_atomic with a non-object payload must also be rejected.
+  run state_write_atomic 'null'
+  [ "$status" -ne 0 ]
+  run state_write_atomic '{}'
+  [ "$status" -ne 0 ]
+  local after_swa
+  after_swa=$(cat "$artifact_dir/.qrspi/state.json")
+  [[ "$after_swa" == "$baseline" ]]
 }
 
 @test "[T24-A4] state_init_or_reconcile rejects when delegated helper returns out-of-allowlist value" {

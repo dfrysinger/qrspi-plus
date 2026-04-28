@@ -87,17 +87,25 @@ _state_lock_release() {
 
 # ---- flock implementation (primary) ----
 #
-# Symlink-clobber defense (T24 round-2 sec finding 1): if `.qrspi/state.json.lock`
-# exists as a symlink, we refuse to follow it. An attacker who can create
-# files in `.qrspi/` could otherwise pre-place the lock path as a symlink to
-# an arbitrary writable target (e.g., ~/.ssh/authorized_keys) and have the
-# next state-write call truncate the link's target via `: > "$lock_file"`.
-# Defense: detect-and-remove a pre-existing symlink before opening, then
-# require the resulting path to be a regular file.
+# Symlink-clobber defense (T24 R2 sec finding 1, R3 sec finding 1):
+# An attacker with write access to `.qrspi/` could pre-place
+# `.qrspi/state.json.lock` as a symlink to an attacker-chosen writable
+# target (e.g., ~/.ssh/authorized_keys). With `> "$lock_file"` (truncate),
+# that target gets clobbered before any locking occurs. Round-2 added
+# detect-and-remove, but a TOCTOU window remained between the check and
+# the redirect.
+#
+# Round-3 fix: switch from truncate (`>`) to append (`>>`). Append never
+# truncates the file, so even if a symlink races back into the path
+# between the symlink check and the open, no clobber occurs. flock(1)
+# operates on the file descriptor's inode regardless of the file's
+# content, so append vs truncate is irrelevant for locking semantics.
+# We still detect-and-remove a pre-existing symlink (defense in depth)
+# but no longer rely on a post-touch re-check.
 _state_lock_acquire_flock() {
   local lock_file=".qrspi/state.json.lock"
 
-  # Symlink defense
+  # Symlink defense (defense in depth — main protection is open-as-append below).
   if [[ -L "$lock_file" ]]; then
     if ! rm -f "$lock_file" 2>/dev/null; then
       echo "state_lock: refused to use $lock_file — pre-existing symlink that cannot be removed" >&2
@@ -105,29 +113,10 @@ _state_lock_acquire_flock() {
     fi
   fi
 
-  # Touch the lock file so flock can open it. After symlink defense above,
-  # we know the path is NOT a symlink (or has been replaced).
-  if ! : > "$lock_file" 2>/dev/null; then
-    if [[ ! -e "$lock_file" ]]; then
-      echo "state_lock: failed to create lock file $lock_file" >&2
-      return 1
-    fi
-  fi
-
-  # Re-check after touch: if a TOCTOU race introduced a symlink between our
-  # check and our touch, refuse to proceed.
-  if [[ -L "$lock_file" ]]; then
-    echo "state_lock: lock file $lock_file is a symlink (refusing to follow)" >&2
-    return 1
-  fi
-  if [[ ! -f "$lock_file" ]]; then
-    echo "state_lock: lock path $lock_file is not a regular file (refusing to flock)" >&2
-    return 1
-  fi
-
-  # Open lock file on FD 9 in the current shell, then flock-exclusive
-  # with 10s timeout.
-  exec 9>"$lock_file" || {
+  # Open lock file on FD 9 in APPEND mode (no truncation). flock works on
+  # the FD inode, not file content, so append is sufficient and eliminates
+  # the symlink-clobber primitive.
+  exec 9>>"$lock_file" || {
     echo "state_lock: failed to open lock file $lock_file on FD 9" >&2
     return 1
   }
@@ -151,8 +140,6 @@ _state_lock_release_flock() {
 _state_lock_acquire_mkdir() {
   local lock_dir=".qrspi/state.json.lock"
   local pid_file="$lock_dir/owner.pid"
-  local started_file="$lock_dir/started.epoch"
-  local stale_timeout=30
   local acquire_timeout=10
 
   local start
@@ -160,17 +147,12 @@ _state_lock_acquire_mkdir() {
 
   while true; do
     if mkdir "$lock_dir" 2>/dev/null; then
-      # Acquired. Write metadata and FAIL CLOSED on metadata write errors —
-      # without metadata, stale-lock detection cannot tell stale from live
-      # holders, which silent-failure-hunter flagged as a degradation
-      # path. Better to release the lock and abort than silently degrade.
+      # Acquired. Write owner.pid and FAIL CLOSED on metadata write error —
+      # without owner.pid, stale-lock detection cannot tell stale from live
+      # holders, so we'd silently degrade serialization. Better to release
+      # and abort than degrade.
       if ! echo "$$" > "$pid_file" 2>/dev/null; then
         echo "state_lock: failed to write owner.pid in $lock_dir — aborting acquire" >&2
-        rm -rf "$lock_dir" 2>/dev/null || true
-        return 1
-      fi
-      if ! date +%s > "$started_file" 2>/dev/null; then
-        echo "state_lock: failed to write started.epoch in $lock_dir — aborting acquire" >&2
         rm -rf "$lock_dir" 2>/dev/null || true
         return 1
       fi
@@ -186,11 +168,14 @@ _state_lock_acquire_mkdir() {
       return 1
     fi
 
-    # Lock held — check for stale owner. We require BOTH metadata files to
-    # be readable to make a stale decision; if metadata is unreadable, we
-    # cannot trust the stale-lock heuristic, so we wait out the legitimate
-    # holder rather than reclaiming. (Silent-failure round-2 finding 4:
-    # do not silently treat unreadable metadata as 'no owner'.)
+    # Lock held — check for stale owner via PID liveness only.
+    # Round-3 simplifier review noted that wallclock-based stale reclaim
+    # weakens correctness: a live holder paused/slow past the wallclock
+    # threshold gets evicted, which exactly recreates the lost-update
+    # class T24 prevents. PID liveness is correct (the holder either
+    # exists or doesn't); we drop the wallclock heuristic entirely.
+    # If owner.pid is unreadable, we wait out the holder rather than
+    # reclaiming (silent-failure round-2 finding 4).
     local owner=""
     local owner_readable=false
     if [[ -f "$pid_file" ]]; then
@@ -198,30 +183,11 @@ _state_lock_acquire_mkdir() {
         owner_readable=true
       fi
     fi
-    local started=0
-    local started_readable=false
-    if [[ -f "$started_file" ]]; then
-      if started=$(cat "$started_file" 2>/dev/null); then
-        started_readable=true
-      fi
-    fi
     local now
     now=$(date +%s)
 
-    local stale=false
-    # Stale by dead PID — only trust if owner.pid is readable.
-    if $owner_readable && [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
-      stale=true
-    fi
-    # Stale by wallclock — only trust if started.epoch is readable AND a
-    # valid integer. Refuse to use a 0 fallback, which is what made the
-    # round-2 silent-failure scenario possible.
-    if $started_readable && [[ "$started" =~ ^[0-9]+$ ]] && (( now - started > stale_timeout )); then
-      stale=true
-    fi
-
-    if $stale; then
-      # Reclaim: remove lock dir and retry.
+    if $owner_readable && [[ -n "$owner" ]] && [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
+      # Stale: owner PID is dead. Reclaim and retry.
       rm -rf "$lock_dir" 2>/dev/null || true
       continue
     fi
@@ -534,6 +500,17 @@ state_update() {
 # Returns 0 on success, 1 on validation or write failure (with stderr).
 _state_write_inline_locked() {
   local json="$1"
+
+  # Structural validation (round-3 silent-failure finding 1): the payload
+  # MUST be a JSON object containing a "version" field. Without this
+  # check, state_update with a filter like 'null' or '{}' would commit
+  # an invalid state shape — silently corrupting the state file.
+  # We use `jq -e 'type == "object" and has("version")'` which exits 0
+  # iff the predicate is true, non-zero (or "false" output) otherwise.
+  if ! echo "$json" | jq -e 'type == "object" and has("version")' >/dev/null 2>&1; then
+    echo "state_lock: payload is not a JSON object with a 'version' field (refusing to write)" >&2
+    return 1
+  fi
 
   # Allowlist validation via jq — parses JSON, extracts current_step (or
   # empty if absent/null), validates against the 12-value enum.
