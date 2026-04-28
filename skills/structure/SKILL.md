@@ -72,8 +72,6 @@ When generating `structure.md`, Structure honors the phase scope set by Phasing:
 
 ### Structure Subagent
 
-> **IMPORTANT — Compaction recommended (M53; pre-large-subagent-dispatch).** The Structure subagent ingests goals.md + research/summary.md + design.md + phasing.md + every prior feedback file and returns a full file map + interface signatures + Mermaid diagram. Run `/compact` if context utilization may exceed ~50% before dispatching this subagent — synthesis quality degrades sharply when input pressure compounds output size.
-
 **Inputs:**
 - `goals.md`
 - `research/summary.md`

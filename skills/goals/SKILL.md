@@ -163,8 +163,6 @@ After writing `config.md`, rewrite the Level 1 pipeline tasks to match the route
 
 ### Artifact Synthesis
 
-**[M53 — Pre-large-subagent-dispatch] IMPORTANT:** before launching the synthesis subagent, if the captured-conversation context is large or context-window utilization is approaching its budget, recommend `/compact` first. Synthesis subagents inherit context; running synthesis on a near-full window risks truncated or low-quality output.
-
 Once the conversation settles, launch a **subagent** to synthesize `goals.md`:
 
 **Subagent inputs:**
