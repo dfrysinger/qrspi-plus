@@ -86,26 +86,53 @@ _state_lock_release() {
 }
 
 # ---- flock implementation (primary) ----
+#
+# Symlink-clobber defense (T24 round-2 sec finding 1): if `.qrspi/state.json.lock`
+# exists as a symlink, we refuse to follow it. An attacker who can create
+# files in `.qrspi/` could otherwise pre-place the lock path as a symlink to
+# an arbitrary writable target (e.g., ~/.ssh/authorized_keys) and have the
+# next state-write call truncate the link's target via `: > "$lock_file"`.
+# Defense: detect-and-remove a pre-existing symlink before opening, then
+# require the resulting path to be a regular file.
 _state_lock_acquire_flock() {
   local lock_file=".qrspi/state.json.lock"
-  # Touch the lock file so flock can open it.
-  if ! : > "$lock_file" 2>/dev/null; then
-    # If the lock file already exists with content (from a previous flock
-    # run), that's fine — flock locks the file, not its contents. Only
-    # complain if we cannot create or access it.
-    if [[ ! -e "$lock_file" ]]; then
-      echo "state_write_atomic: failed to create lock file $lock_file" >&2
+
+  # Symlink defense
+  if [[ -L "$lock_file" ]]; then
+    if ! rm -f "$lock_file" 2>/dev/null; then
+      echo "state_lock: refused to use $lock_file — pre-existing symlink that cannot be removed" >&2
       return 1
     fi
   fi
+
+  # Touch the lock file so flock can open it. After symlink defense above,
+  # we know the path is NOT a symlink (or has been replaced).
+  if ! : > "$lock_file" 2>/dev/null; then
+    if [[ ! -e "$lock_file" ]]; then
+      echo "state_lock: failed to create lock file $lock_file" >&2
+      return 1
+    fi
+  fi
+
+  # Re-check after touch: if a TOCTOU race introduced a symlink between our
+  # check and our touch, refuse to proceed.
+  if [[ -L "$lock_file" ]]; then
+    echo "state_lock: lock file $lock_file is a symlink (refusing to follow)" >&2
+    return 1
+  fi
+  if [[ ! -f "$lock_file" ]]; then
+    echo "state_lock: lock path $lock_file is not a regular file (refusing to flock)" >&2
+    return 1
+  fi
+
   # Open lock file on FD 9 in the current shell, then flock-exclusive
   # with 10s timeout.
   exec 9>"$lock_file" || {
-    echo "state_write_atomic: failed to open lock file $lock_file on FD 9" >&2
+    echo "state_lock: failed to open lock file $lock_file on FD 9" >&2
     return 1
   }
   if ! flock -w 10 9 2>/dev/null; then
-    echo "state_write_atomic: failed to acquire flock on $lock_file within 10s" >&2
+    echo "state_lock: failed to acquire flock on $lock_file within 10s" >&2
     exec 9>&- 2>/dev/null || true
     return 1
   fi
@@ -133,48 +160,77 @@ _state_lock_acquire_mkdir() {
 
   while true; do
     if mkdir "$lock_dir" 2>/dev/null; then
-      # Acquired
-      echo "$$" > "$pid_file" 2>/dev/null || true
-      date +%s > "$started_file" 2>/dev/null || true
+      # Acquired. Write metadata and FAIL CLOSED on metadata write errors —
+      # without metadata, stale-lock detection cannot tell stale from live
+      # holders, which silent-failure-hunter flagged as a degradation
+      # path. Better to release the lock and abort than silently degrade.
+      if ! echo "$$" > "$pid_file" 2>/dev/null; then
+        echo "state_lock: failed to write owner.pid in $lock_dir — aborting acquire" >&2
+        rm -rf "$lock_dir" 2>/dev/null || true
+        return 1
+      fi
+      if ! date +%s > "$started_file" 2>/dev/null; then
+        echo "state_lock: failed to write started.epoch in $lock_dir — aborting acquire" >&2
+        rm -rf "$lock_dir" 2>/dev/null || true
+        return 1
+      fi
       _STATE_LOCK_KIND="mkdir"
       return 0
     fi
 
     # mkdir failed. Distinguish "lock already held" (lock_dir exists)
     # from "cannot create" (permissions, parent missing, IO error). In the
-    # latter case retrying is futile — fail fast so callers get a clean
-    # error rather than spinning to the acquire-timeout deadline.
+    # latter case retrying is futile — fail fast.
     if [[ ! -d "$lock_dir" ]]; then
-      echo "state_write_atomic: failed to create lock directory $lock_dir (permission denied or IO error)" >&2
+      echo "state_lock: failed to create lock directory $lock_dir (permission denied or IO error)" >&2
       return 1
     fi
 
-    # Lock held — check for stale owner
+    # Lock held — check for stale owner. We require BOTH metadata files to
+    # be readable to make a stale decision; if metadata is unreadable, we
+    # cannot trust the stale-lock heuristic, so we wait out the legitimate
+    # holder rather than reclaiming. (Silent-failure round-2 finding 4:
+    # do not silently treat unreadable metadata as 'no owner'.)
     local owner=""
-    [[ -f "$pid_file" ]] && owner=$(cat "$pid_file" 2>/dev/null || echo "")
+    local owner_readable=false
+    if [[ -f "$pid_file" ]]; then
+      if owner=$(cat "$pid_file" 2>/dev/null); then
+        owner_readable=true
+      fi
+    fi
     local started=0
-    [[ -f "$started_file" ]] && started=$(cat "$started_file" 2>/dev/null || echo 0)
+    local started_readable=false
+    if [[ -f "$started_file" ]]; then
+      if started=$(cat "$started_file" 2>/dev/null); then
+        started_readable=true
+      fi
+    fi
     local now
     now=$(date +%s)
 
     local stale=false
-    if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
+    # Stale by dead PID — only trust if owner.pid is readable.
+    if $owner_readable && [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
       stale=true
     fi
-    if (( now - started > stale_timeout )); then
+    # Stale by wallclock — only trust if started.epoch is readable AND a
+    # valid integer. Refuse to use a 0 fallback, which is what made the
+    # round-2 silent-failure scenario possible.
+    if $started_readable && [[ "$started" =~ ^[0-9]+$ ]] && (( now - started > stale_timeout )); then
       stale=true
     fi
 
     if $stale; then
-      # Reclaim: remove lock dir and retry. Use rm -rf since the dir has
-      # contents (pid_file, started_file).
+      # Reclaim: remove lock dir and retry.
       rm -rf "$lock_dir" 2>/dev/null || true
       continue
     fi
 
     # Bounded wait
     if (( now - start > acquire_timeout )); then
-      echo "state_write_atomic: failed to acquire lock $lock_dir within ${acquire_timeout}s (held by PID $owner)" >&2
+      local owner_str="$owner"
+      [[ -z "$owner_str" ]] && owner_str="<owner.pid unreadable>"
+      echo "state_lock: failed to acquire lock $lock_dir within ${acquire_timeout}s (held by PID $owner_str)" >&2
       return 1
     fi
     # Brief sleep to avoid busy spin
@@ -284,21 +340,51 @@ state_init_or_reconcile() {
     return 1
   fi
 
-  # T24-B: preserve phase_start_commit from existing state.json (R2 I-N3).
-  # If state.json exists and has a non-null phase_start_commit, carry it
-  # forward; otherwise initialize null (existing behavior).
-  local phase_start_commit_arg=""
-  local existing_psc=""
-  if [[ -f ".qrspi/state.json" ]]; then
-    existing_psc=$(jq -r '.phase_start_commit // ""' ".qrspi/state.json" 2>/dev/null || echo "")
-    if [[ -n "$existing_psc" && "$existing_psc" != "null" ]]; then
-      phase_start_commit_arg="$existing_psc"
-    fi
-  fi
-
   # Create absolute path for artifact_dir
   local abs_artifact_dir
   abs_artifact_dir="$(cd "$artifact_dir" && pwd)"
+
+  # T24 round-2 spec finding: phase_start_commit read AND the rebuild+write
+  # MUST happen under the same lock as state_update, otherwise a
+  # state_update writer can commit a newer phase_start_commit between our
+  # read and our write, and we will overwrite it with a stale value.
+  # Acquire the shared lock here for the entire R-M-W critical section.
+  if ! mkdir -p ".qrspi" 2>/dev/null; then
+    echo "state_init_or_reconcile: failed to create .qrspi directory" >&2
+    return 1
+  fi
+  if ! _state_lock_acquire; then
+    echo "state_init_or_reconcile: failed to acquire state lock" >&2
+    return 1
+  fi
+
+  # Read existing phase_start_commit under lock (R2 I-N3 + spec round-2 fix).
+  # Fail CLOSED on corrupt state.json: silent-failure round-2 finding 2 noted
+  # that masking jq parse errors as empty silently destroys phase_start_commit.
+  # Better to abort and surface the corruption than overwrite a value we
+  # cannot read.
+  local phase_start_commit_arg=""
+  if [[ -f ".qrspi/state.json" ]]; then
+    local existing_state
+    if ! existing_state=$(cat ".qrspi/state.json" 2>/dev/null); then
+      echo "state_init_or_reconcile: failed to read existing .qrspi/state.json under lock" >&2
+      _state_lock_release
+      return 1
+    fi
+    # If the existing state is non-empty, parse it. An empty file is treated
+    # as "no prior state" (initialization case).
+    if [[ -n "$existing_state" ]]; then
+      local existing_psc
+      if ! existing_psc=$(echo "$existing_state" | jq -r '.phase_start_commit // ""' 2>/dev/null); then
+        echo "state_init_or_reconcile: existing .qrspi/state.json is corrupt (jq parse failed) — refusing to overwrite" >&2
+        _state_lock_release
+        return 1
+      fi
+      if [[ -n "$existing_psc" && "$existing_psc" != "null" ]]; then
+        phase_start_commit_arg="$existing_psc"
+      fi
+    fi
+  fi
 
   # Create the state JSON (compact format).
   # T24-B: phase_start_commit is conditionally preserved. We pass either
@@ -337,33 +423,41 @@ state_init_or_reconcile() {
       }
     }'); then
     echo "state_init_or_reconcile: jq failed to build state JSON" >&2
+    _state_lock_release
     return 1
   fi
 
   if [[ -z "$json" ]]; then
     echo "state_init_or_reconcile: jq failed — empty output" >&2
+    _state_lock_release
     return 1
   fi
 
   # Validate output is well-formed JSON before writing (basic structural check)
-  # Check starts with { and ends with }, and contains required "version" key
   local trimmed
   trimmed="${json#"${json%%[![:space:]]*}"}"
   if [[ "${trimmed:0:1}" != "{" ]] || [[ "${trimmed: -1}" != "}" ]]; then
     echo "state_init_or_reconcile: jq produced invalid JSON" >&2
+    _state_lock_release
     return 1
   fi
   if [[ "$json" != *'"version"'* ]]; then
     echo "state_init_or_reconcile: jq produced JSON missing required fields" >&2
+    _state_lock_release
     return 1
   fi
 
-  # Write the state file atomically (state_write_atomic also enforces
-  # current_step allowlist + lock-serializes the critical section).
-  if ! state_write_atomic "$json"; then
-    echo "state_init_or_reconcile: state_write_atomic failed" >&2
+  # Inline write under the existing lock (bypass state_write_atomic to avoid
+  # double-acquire). _state_write_inline_locked validates current_step and
+  # does the temp-file + atomic mv.
+  if ! _state_write_inline_locked "$json"; then
+    echo "state_init_or_reconcile: locked write failed" >&2
+    _state_lock_release
     return 1
   fi
+
+  _state_lock_release
+  return 0
 }
 
 # state_update <jq_filter>
@@ -389,6 +483,10 @@ state_update() {
   local filter="$1"
 
   # Acquire lock for the entire R-M-W critical section.
+  if ! mkdir -p ".qrspi" 2>/dev/null; then
+    echo "state_update: failed to create .qrspi directory" >&2
+    return 1
+  fi
   if ! _state_lock_acquire; then
     return 1
   fi
@@ -415,40 +513,61 @@ state_update() {
     return 1
   fi
 
-  # Validate current_step in the result against the allowlist.
-  if [[ "$updated" == *'"current_step"'* ]]; then
-    local cs
-    cs=$(echo "$updated" | jq -r '.current_step // empty' 2>/dev/null || echo "")
-    if [[ -n "$cs" ]] && ! _state_current_step_is_allowed "$cs"; then
-      echo "state_update: filter produced out-of-allowlist current_step '$cs' (refusing to write)" >&2
-      _state_lock_release
-      return 1
-    fi
-  fi
-
-  # Write atomically. We bypass state_write_atomic's internal lock to
-  # avoid double-acquire — instead we inline the temp-file + mv write
-  # under the existing lock.
-  local temp_file
-  if ! temp_file=$(mktemp ".qrspi/.state.json.XXXXXX" 2>/dev/null); then
-    echo "state_update: failed to create temp file" >&2
-    _state_lock_release
-    return 1
-  fi
-  if ! echo "$updated" > "$temp_file" 2>/dev/null; then
-    echo "state_update: failed to write temp file" >&2
-    rm -f "$temp_file" 2>/dev/null
-    _state_lock_release
-    return 1
-  fi
-  if ! mv "$temp_file" ".qrspi/state.json" 2>/dev/null; then
-    echo "state_update: failed to mv temp file into place" >&2
-    rm -f "$temp_file" 2>/dev/null
+  # Inline write under the existing lock (validates allowlist, temp+mv).
+  if ! _state_write_inline_locked "$updated"; then
+    echo "state_update: locked write failed" >&2
     _state_lock_release
     return 1
   fi
 
   _state_lock_release
+  return 0
+}
+
+# _state_write_inline_locked <json>
+# Internal helper. Caller MUST already hold the state lock. Validates
+# current_step against the allowlist (T24-A) using jq for parse-correctness
+# (no raw substring pre-filter — round-2 silent-failure-hunter and
+# security-reviewer both flagged unicode-escape bypass `current_step`),
+# then writes the JSON via temp file + atomic mv.
+#
+# Returns 0 on success, 1 on validation or write failure (with stderr).
+_state_write_inline_locked() {
+  local json="$1"
+
+  # Allowlist validation via jq — parses JSON, extracts current_step (or
+  # empty if absent/null), validates against the 12-value enum.
+  # We do NOT pre-filter on raw substring: a JSON unicode escape such as
+  # `"current_step"` would parse to the real key `current_step` while
+  # missing a literal substring match — that bypass was confirmed by both
+  # silent-failure-hunter (round-2 finding 1) and security-reviewer
+  # (round-2 finding 2).
+  local cs
+  if ! cs=$(echo "$json" | jq -r '.current_step // empty' 2>/dev/null); then
+    echo "state_lock: payload not parseable as JSON (refusing to write)" >&2
+    return 1
+  fi
+  if [[ -n "$cs" ]] && ! _state_current_step_is_allowed "$cs"; then
+    echo "state_lock: current_step '$cs' is not in the allowlist (refusing to write)" >&2
+    return 1
+  fi
+
+  # Atomic write: temp file in .qrspi/ + mv into place.
+  local temp_file
+  if ! temp_file=$(mktemp ".qrspi/.state.json.XXXXXX" 2>/dev/null); then
+    echo "state_lock: failed to create temp file in .qrspi/" >&2
+    return 1
+  fi
+  if ! echo "$json" > "$temp_file" 2>/dev/null; then
+    echo "state_lock: failed to write to temp file $temp_file" >&2
+    rm -f "$temp_file" 2>/dev/null
+    return 1
+  fi
+  if ! mv "$temp_file" ".qrspi/state.json" 2>/dev/null; then
+    echo "state_lock: failed to move temp file to .qrspi/state.json" >&2
+    rm -f "$temp_file" 2>/dev/null
+    return 1
+  fi
   return 0
 }
 
@@ -473,66 +592,34 @@ state_read() {
 # T24 hardening:
 #   - R1 Codex-S3 allowlist: validates current_step (when present in payload)
 #     against the 12-value documented enum. Out-of-allowlist values are
-#     rejected fail-closed (non-zero exit, no write).
-#   - R2 S-N4 TOCTOU: serializes the critical section via a portable mkdir-
-#     based file lock in .qrspi/state.json.lock. The lock is acquired BEFORE
-#     mkdir/.qrspi/, written under lock, and released on every exit path
-#     (including validation failures and signals via trap).
+#     rejected fail-closed (non-zero exit, no write). Validation uses jq
+#     parsing (not raw substring) to defeat unicode-escape bypass.
+#   - R2 S-N4 TOCTOU: serializes the critical section via a portable file
+#     lock in .qrspi/state.json.lock (flock when available, mkdir-mutex
+#     fallback). Lock acquired before write, released on every exit path
+#     (no traps — explicit release at each return point).
+#
+# NOTE: state_write_atomic protects only this single write against torn
+# writes (atomic mv). Callers doing read-modify-write across separate
+# state_read + state_write_atomic calls have an open R-M-W window between
+# them and MUST use state_update instead, which performs the full R-M-W
+# under the same lock.
 state_write_atomic() {
   local json="$1"
 
-  # T24-A allowlist: validate current_step BEFORE acquiring lock or
-  # touching disk. Reject out-of-allowlist values fail-closed.
-  if [[ "$json" == *'"current_step"'* ]]; then
-    # Extract current_step value via jq; tolerate missing field by checking
-    # for non-null/non-empty before validating.
-    local cs
-    if ! cs=$(echo "$json" | jq -r '.current_step // empty' 2>/dev/null); then
-      echo "state_write_atomic: payload not parseable as JSON" >&2
-      return 1
-    fi
-    if [[ -n "$cs" ]] && ! _state_current_step_is_allowed "$cs"; then
-      echo "state_write_atomic: current_step '$cs' is not in the allowlist (refusing to write)" >&2
-      return 1
-    fi
-  fi
-
-  # Create .qrspi directory if needed (must exist before lock dir creation)
+  # Create .qrspi directory if needed
   if ! mkdir -p ".qrspi" 2>/dev/null; then
     echo "state_write_atomic: failed to create .qrspi directory" >&2
     return 1
   fi
 
-  # T24-C: acquire lock for the read-modify-write critical section.
-  # We use explicit release at every return path. RETURN traps interact
-  # poorly with `set -u` and bats' `run` wrapper, so a flag + trap was
-  # ruled out in favor of straight-line release calls.
+  # Acquire lock
   if ! _state_lock_acquire; then
     return 1
   fi
 
-  # ---- critical section: any return below MUST release the lock ----
-
-  # Create temp file in the same directory to ensure atomic rename
-  local temp_file
-  if ! temp_file=$(mktemp ".qrspi/.state.json.XXXXXX" 2>/dev/null); then
-    echo "state_write_atomic: failed to create temp file in .qrspi/" >&2
-    _state_lock_release
-    return 1
-  fi
-
-  # Write JSON to temp file
-  if ! echo "$json" > "$temp_file" 2>/dev/null; then
-    echo "state_write_atomic: failed to write to temp file $temp_file" >&2
-    rm -f "$temp_file" 2>/dev/null
-    _state_lock_release
-    return 1
-  fi
-
-  # Atomically move temp file to final location
-  if ! mv "$temp_file" ".qrspi/state.json" 2>/dev/null; then
-    echo "state_write_atomic: failed to move temp file to .qrspi/state.json" >&2
-    rm -f "$temp_file" 2>/dev/null
+  # Validate + write under lock
+  if ! _state_write_inline_locked "$json"; then
     _state_lock_release
     return 1
   fi

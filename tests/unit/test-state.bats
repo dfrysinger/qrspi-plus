@@ -384,7 +384,12 @@ EOF
   run state_init_or_reconcile "$artifact_dir"
   chmod 755 "$TEST_DIR/.qrspi" 2>/dev/null || true
   [ "$status" -eq 1 ]
-  [[ "$output" == *"state_write_atomic failed"* ]]
+  # T24 fix-cycle 2: state_init_or_reconcile now does its own locked write
+  # (no longer delegates to state_write_atomic for the write step). When
+  # .qrspi/ is read-only, the failure surfaces at lock-acquire time
+  # (cannot create lock dir/file) or at temp-file write time. Either
+  # diagnostic is acceptable as a fail-closed signal; both contain "state".
+  [[ "$output" == *"failed"* ]]
 }
 
 # ============================================================================
@@ -602,7 +607,7 @@ EOF
   local stub_dir="$TEST_DIR/stub-no-jq"
   mkdir -p "$stub_dir"
   local util util_path
-  for util in mkdir mv mktemp rm cat echo dirname basename sh chmod; do
+  for util in mkdir mv mktemp rm cat echo dirname basename sh chmod date kill sleep flock; do
     util_path=$(command -v "$util" 2>/dev/null) || true
     if [ -n "$util_path" ]; then
       ln -sf "$util_path" "$stub_dir/$util"
@@ -639,7 +644,7 @@ EOF
   local stub_dir="$TEST_DIR/stub-failing-jq"
   mkdir -p "$stub_dir"
   local util util_path
-  for util in mkdir mv mktemp rm cat echo dirname basename sh chmod; do
+  for util in mkdir mv mktemp rm cat echo dirname basename sh chmod date kill sleep flock; do
     util_path=$(command -v "$util" 2>/dev/null) || true
     if [ -n "$util_path" ]; then
       ln -sf "$util_path" "$stub_dir/$util"
@@ -934,6 +939,35 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "[T24-A1b] state_write_atomic: allowlist cannot be bypassed via JSON unicode-escape of current_step key" {
+  # Round-2 silent-failure-hunter finding 1 + security-reviewer finding 2:
+  # the allowlist gate must not be implemented as a raw substring match
+  # for `"current_step"`, because JSON permits escaped key names. The
+  # payload `{"current_step":"BOGUS"}` parses as a real `current_step`
+  # key but fails a literal substring check. After fix-cycle 2, allowlist
+  # validation uses jq -r '.current_step // empty' on the parsed payload,
+  # so escaped-key bypass is closed.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Seed a known-good baseline
+  state_write_atomic '{"version":1,"current_step":"goals"}'
+  local baseline
+  baseline=$(cat "$artifact_dir/.qrspi/state.json")
+
+  # Attempt allowlist bypass via unicode escape on the key
+  run state_write_atomic '{"version":1,"current_step":"BOGUS_STEP_XYZ"}'
+  [ "$status" -ne 0 ]
+
+  # Baseline must be unchanged
+  local after
+  after=$(cat "$artifact_dir/.qrspi/state.json")
+  [[ "$after" == "$baseline" ]]
+}
+
 @test "[T24-A4] state_init_or_reconcile rejects when delegated helper returns out-of-allowlist value" {
   # Defense in depth: if state_compute_current_step is mutated/shadowed to
   # return something not in the allowlist, state_init_or_reconcile must fail
@@ -1219,6 +1253,129 @@ EOF
   [[ "$final_waf" =~ ^A-iter-[0-9]+$ ]] || {
     echo "FAIL: writer_a_field lost — expected 'A-iter-N', got '$final_waf'. Concurrent R-M-W race destroyed the unrelated field (this is the bug R2 S-N4 fixes)." >&2
     echo "Final state: $final" >&2
+    return 1
+  }
+}
+
+@test "[T24-C1c] state_init_or_reconcile racing state_update preserves the latest phase_start_commit (round-2 spec finding)" {
+  # Round-2 spec-reviewer finding (blocker): the round-1 fix moved the
+  # lock inside state_write_atomic, but state_init_or_reconcile was
+  # still reading phase_start_commit OUTSIDE the lock. A concurrent
+  # state_update could commit a newer phase_start_commit between the
+  # read and the write, and reconcile would silently overwrite it.
+  # Fix-cycle 2 brings the read AND the rebuild+write under the same
+  # lock that state_update uses. This test exercises that end-to-end.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  create_artifact "$artifact_dir/goals.md" "approved"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Seed initial state
+  state_init_or_reconcile "$artifact_dir"
+
+  # Race: process A repeatedly calls state_init_or_reconcile (full
+  # rebuild path); process B repeatedly state_updates phase_start_commit.
+  ( set +e
+    for i in $(seq 1 20); do
+      state_init_or_reconcile "$artifact_dir" 2>/dev/null || true
+    done
+    exit 0 ) &
+  local pid_a=$!
+
+  ( set +e
+    for i in $(seq 1 20); do
+      state_update ".phase_start_commit = \"reconcile-race-$i\"" 2>/dev/null || true
+    done
+    exit 0 ) &
+  local pid_b=$!
+
+  wait "$pid_a" || true
+  wait "$pid_b" || true
+
+  # Final state must be valid JSON and must contain one of B's
+  # phase_start_commit values — NOT null. If reconcile (A) won the last
+  # write but had a stale snapshot, phase_start_commit would be null.
+  local final
+  final=$(cat "$TEST_DIR/.qrspi/state.json")
+  echo "$final" | jq . > /dev/null || {
+    echo "FAIL: state.json torn (content: $final)" >&2
+    return 1
+  }
+
+  local final_psc
+  final_psc=$(echo "$final" | jq -r '.phase_start_commit')
+  [[ "$final_psc" =~ ^reconcile-race-[0-9]+$ ]] || {
+    echo "FAIL: phase_start_commit=$final_psc — reconcile race destroyed the value (expected reconcile-race-N)." >&2
+    echo "Final: $final" >&2
+    return 1
+  }
+}
+
+@test "[T24-B4] state_init_or_reconcile fails closed when existing state.json is corrupt JSON (does not silently overwrite)" {
+  # Round-2 silent-failure-hunter finding 2: phase_start_commit
+  # preservation must not silently destroy the value when existing
+  # state.json is unparseable. Fix-cycle 2 changes the behavior to
+  # fail-closed: refuse to overwrite a corrupt state file rather than
+  # silently dropping its phase_start_commit.
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$TEST_DIR"
+
+  create_artifact "$artifact_dir/goals.md" "draft"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Place a corrupt state.json
+  mkdir -p "$TEST_DIR/.qrspi"
+  printf 'this is not valid JSON' > "$TEST_DIR/.qrspi/state.json"
+  local before
+  before=$(cat "$TEST_DIR/.qrspi/state.json")
+
+  run state_init_or_reconcile "$artifact_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"corrupt"* ]] || [[ "$output" == *"refusing"* ]] || [[ "$output" == *"jq parse failed"* ]]
+
+  # Corrupt file must remain unchanged (no silent overwrite)
+  local after
+  after=$(cat "$TEST_DIR/.qrspi/state.json")
+  [[ "$after" == "$before" ]]
+}
+
+@test "[T24-Sec1] _state_lock_acquire_flock refuses to follow a pre-existing symlink at the lock path" {
+  # Round-2 security-reviewer finding 1: flock variant truncates lock
+  # file via `: > "$lock_file"` without symlink defense, giving an
+  # arbitrary file-clobber primitive if .qrspi/state.json.lock is a
+  # pre-placed symlink. Fix-cycle 2 adds symlink detect-and-remove
+  # guarding the touch.
+  if ! command -v flock >/dev/null 2>&1; then
+    skip "flock not available on this host (mkdir-mutex fallback in use); test does not apply"
+  fi
+
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Pre-place .qrspi/ + symlinked lock file pointing at a sentinel target
+  mkdir -p "$artifact_dir/.qrspi"
+  local target="$TEST_DIR/symlink-target.txt"
+  echo "DO_NOT_CLOBBER" > "$target"
+  ln -sf "$target" "$artifact_dir/.qrspi/state.json.lock"
+
+  # Trigger a write — should not truncate the symlink target.
+  run state_write_atomic '{"version":1,"current_step":"goals"}'
+
+  # Either the write succeeded (and the symlink was replaced with a
+  # regular file) OR it refused the symlink (returns non-zero with
+  # diagnostic). Either way, the target file must NOT be truncated.
+  local target_content
+  target_content=$(cat "$target")
+  [[ "$target_content" == "DO_NOT_CLOBBER" ]] || {
+    echo "FAIL: symlink target was clobbered (now: '$target_content')" >&2
     return 1
   }
 }
