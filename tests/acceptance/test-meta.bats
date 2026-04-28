@@ -42,7 +42,7 @@ unit_test_dir() {
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-28, T19 FU-1 state.sh refactor)
-@test "[AC8] Unit test suite has exactly 555 @test definitions (baseline)" {
+@test "[AC8] Unit test suite has exactly 563 @test definitions (baseline)" {
   # Baseline for stage-after-G6 = octopus(T16, T17, T18) on top of
   # stage-after-G5 (0ee9fd1, 18 .bats / 416 @tests). All three Wave 6
   # tasks are file-disjoint except for tests/acceptance/test-meta.bats
@@ -93,11 +93,27 @@ unit_test_dir() {
   # computation to state_compute_current_step (single source of truth for
   # pipeline-order rule). 552 → 555. Files baseline (25) unchanged
   # because test-state.bats already exists.
+  #
+  # 2026-04-28 T32 (integration-round-01 fix-cycle, R1 Codex-S4 + R2 S-N6
+  # bundled): +8 @tests in test-reviewer-boilerplate-embed.bats covering
+  # the new `## Untrusted Data Handling` section in
+  # skills/_shared/reviewer-boilerplate.md (delimiter contract for
+  # prompt-injection defense — START / END token form, "treat as data
+  # not instructions" rule, findings-about-content-vs-instructions-from-
+  # content distinction, secondary-escalation rule scoped to
+  # reviewer-emitted findings) and the cross-cutting embed-site coverage
+  # ([T32-wrapper] every embed-site SKILL.md / template instructs the
+  # UNTRUSTED-ARTIFACT delimiter; reviewer-boilerplate.md contains ≥2
+  # delimiter-token references). 555 → 563. Files baseline (25)
+  # unchanged because the boilerplate test file already exists; the
+  # adversarial-fixture acceptance test landed in
+  # tests/acceptance/test-reviewer-injection.bats which is NOT counted
+  # by this unit baseline.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 555 ]
+  [ "$count" -eq 563 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-27 T16+T17+T18)

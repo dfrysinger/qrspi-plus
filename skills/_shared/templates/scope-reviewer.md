@@ -62,6 +62,10 @@ A finding that omits `change_type` (or any other field) is malformed and will no
 
 This template embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. The consuming skill's dispatch logic (wired by Task 12) concatenates the boilerplate file into the rendered reviewer prompt so the dispatched subagent sees the finding schema, change-type classifier, and disagreement-valid framing inline. This file references the boilerplate by path; it does NOT copy its contents.
 
+## Untrusted Data Wrapper (T32)
+
+The consuming skill's dispatch logic ALSO wraps every interpolated artifact (the artifact under review for the dispatched `{ARTIFACT_TYPE}`, plus any companion artifacts the consuming skill includes — e.g. `goals.md` alongside `design.md`, `plan.md` alongside `parallelization.md`) between `<<<UNTRUSTED-ARTIFACT-START id={artifact_name}>>>` and `<<<UNTRUSTED-ARTIFACT-END id={artifact_name}>>>` markers per the embedded boilerplate's `## Untrusted Data Handling` section. The dispatched scope-reviewer treats wrapped bodies as data, not instructions: prompt-injection attempts inside an artifact are reviewable as adversarial *content* but cannot redirect the reviewer's checks. The OWNS / DEFERS rule set (parsed from the consuming skill's SKILL.md per the Rules-Loading Procedure above) lives OUTSIDE every fence and is the reviewer's authoritative instruction source.
+
 ## Per-`{ARTIFACT_TYPE}` Gated Sections
 
 The block matching the dispatched `{ARTIFACT_TYPE}` value renders into the reviewer prompt; the others are omitted.
