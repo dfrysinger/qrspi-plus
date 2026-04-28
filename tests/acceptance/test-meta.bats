@@ -29,15 +29,23 @@ unit_test_dir() {
   [ "$count" -eq 12 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-26)
-@test "[AC8] Unit test suite has exactly 283 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-26 implement-runtime-fix:
-  # +test-agent.bats (Task 2), -test-enforcement.bats (Task 11 — dead code).
+# AC8 — Unit test count baseline (updated 2026-04-27)
+@test "[AC8] Unit test suite has exactly 307 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T4 Round-4 thoroughness
+  # FIX: +6 boundary/coverage tests addressing CodexF1 (table-driven coverage of
+  # every reachable return value of state_compute_current_step — +1 in
+  # test-state.bats: [T04-PHASING-4Sc]) and CodexF2 (boundary-sensitive
+  # cascade-reset assertions — +5 in test-pipeline.bats: [T04-PHASING-9a]
+  # phasing boundary, [9b] questions, [9c] research, [9d] plan, [9e] implement).
+  # Prior 301 baseline was after Round-3 (+2 mutation-resistance tests in
+  # test-state.bats: [T04-PHASING-4Sb] and [T04-PHASING-5b]). Prior 299 baseline
+  # was after T4 initial implementation (+16 phasing-aware unit tests). Prior
+  # 283 baseline was after 2026-04-26 implement-runtime-fix.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 283 ]
+  [ "$count" -eq 307 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-26)

@@ -76,10 +76,12 @@ write_json() {
 # SC5 — Full-pipeline approved state allows plan write (end-to-end ordering smoke test)
 @test "[SC5] All-approved pipeline allows plan.md write after Phase 4 changes" {
   # AC: the ordering check still works correctly in the happy path after Phase 4
+  # Updated 2026-04-27 (T4 M54): includes phasing.md.
   create_artifact "$ARTIFACT_DIR/goals.md"            "approved"
   create_artifact "$ARTIFACT_DIR/questions.md"        "approved"
   create_artifact "$ARTIFACT_DIR/research/summary.md" "approved"
   create_artifact "$ARTIFACT_DIR/design.md"           "approved"
+  create_artifact "$ARTIFACT_DIR/phasing.md"          "approved"
   create_artifact "$ARTIFACT_DIR/structure.md"        "approved"
   create_artifact "$ARTIFACT_DIR/plan.md"             "draft"
   init_state "$ARTIFACT_DIR"
