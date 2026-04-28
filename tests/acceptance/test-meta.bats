@@ -41,8 +41,8 @@ unit_test_dir() {
   [ "$count" -eq 29 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-28, integration-round-04 round-03-fix-cycle task-46)
-@test "[AC8] Unit test suite has exactly 770 @test definitions (baseline)" {
+# AC8 — Unit test count baseline (updated 2026-04-28, integration-round-04 round-03-fix-cycle merge)
+@test "[AC8] Unit test suite has exactly 773 @test definitions (baseline)" {
   # Baseline for stage-after-G6 = octopus(T16, T17, T18) on top of
   # stage-after-G5 (0ee9fd1, 18 .bats / 416 @tests). All three Wave 6
   # tasks are file-disjoint except for tests/acceptance/test-meta.bats
@@ -155,7 +155,10 @@ unit_test_dir() {
   # Files baseline (29) unchanged — all round-02 changes are
   # modifications, no new .bats files.
   #
-  # 2026-04-28 integration-round-04 round-03-fix-cycle task-46:
+  # 2026-04-28 integration-round-04 round-03-fix-cycle merge: 2 fix tasks
+  # (46-47) addressing the round-4 review's 1 MAJOR + 1 MEDIUM residuals
+  # (M4-1 + M4-2). Per durable direction (major/medium only), 3 LOWs
+  # (L4-1, L4-2, L4-3) deferred to follow-ups. Per-task delta:
   #   T46 (+21) — broaden cd-escape detection in bash-detect.sh (M4-1 /
   #              S-2 residual). +16 in test-bash-detect.bats (13 negative
   #              cases for variable expansion / command substitution /
@@ -164,14 +167,19 @@ unit_test_dir() {
   #              for cd src, cd subdir/nested, cd .) + 5 in
   #              test-pre-tool-use.bats (4 subagent-block regression: cd
   #              "$HOME", cd "$(mktemp -d)", pushd /tmp, (cd /tmp; ...);
-  #              + 1 negative cd src allow). Files baseline (29)
-  #              unchanged.
-  # Total round-03-fix-cycle delta: +21 over 749. 749 → 770.
+  #              + 1 negative cd src allow).
+  #   T47 (+3)  — sentinel-aware audit_log_event (M4-2). +3 in
+  #              test-audit.bats: __OPAQUE_WRITE__ preserved verbatim in
+  #              canonical-path audit row, __OPAQUE_WRITE__ preserved
+  #              verbatim in orphan-path audit row, regression check that
+  #              ordinary relative target still gets PWD-prepend.
+  # Total round-03-fix-cycle delta: +24 over 749. 749 → 773. Files
+  # baseline (29) unchanged — all round-03 changes are modifications.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 770 ]
+  [ "$count" -eq 773 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-28 round-3 task-33 merge)
