@@ -41,6 +41,14 @@ audit_resolve_artifact_dir() {
 # Walks up from start_dir (default: $PWD) looking for a directory that
 # contains `.qrspi/state.json`. Echoes the directory's absolute path on
 # success, returns 1 if no ancestor matches before reaching `/`.
+#
+# Symlink hardening (L-sec-2 / CWE-59): the [[ -f ]] test alone follows
+# symlinks. An attacker plant of `<some-ancestor>/.qrspi -> <victim>/.qrspi`
+# (or a symlinked `state.json`) would otherwise let this walker return the
+# wrong repo root, crossing a confidentiality/integrity boundary between
+# concurrent QRSPI workspaces on the same host. We require BOTH `.qrspi`
+# AND `.qrspi/state.json` to be non-symlinks (lstat semantics via `[[ ! -L ]]`)
+# at every ancestor we accept.
 _audit_find_repo_root() {
   local dir="${1:-$PWD}"
   # Resolve to an absolute path without requiring readlink -f (BSD/macOS lacks it).
@@ -48,7 +56,9 @@ _audit_find_repo_root() {
     dir="$(cd "$dir" 2>/dev/null && pwd)" || return 1
   fi
   while [[ -n "$dir" && "$dir" != "/" ]]; do
-    if [[ -f "$dir/.qrspi/state.json" ]]; then
+    if [[ -f "$dir/.qrspi/state.json" \
+          && ! -L "$dir/.qrspi" \
+          && ! -L "$dir/.qrspi/state.json" ]]; then
       echo "$dir"
       return 0
     fi
@@ -252,8 +262,39 @@ audit_log_event() {
     return 1
   fi
 
-  mkdir -p "$artifact_dir/.qrspi"
-  local audit_file="$artifact_dir/.qrspi/audit.jsonl"
+  # Symlink hardening (S-3 / task-29 audit-path lockdown). Mirror the contract
+  # in scripts/codex-companion-bg.sh:
+  #   1. Canonicalize artifact_dir via realpath so any symlink in the ancestor
+  #      chain is resolved before we construct the audit path.
+  #   2. Refuse if <artifact_dir>/.qrspi is itself a symlink (an attacker
+  #      could redirect every audit append into a sibling workspace).
+  #   3. Refuse if <artifact_dir>/.qrspi/audit.jsonl is a symlink before the
+  #      `>>` append (a naive append would dereference and corrupt the target).
+  # Each check fails closed (return 1, stderr diagnostic) — never silently
+  # follow.
+  local canon_artifact_dir
+  if ! canon_artifact_dir=$(realpath "$artifact_dir" 2>/dev/null) \
+       || [[ -z "$canon_artifact_dir" ]]; then
+    printf 'audit.sh: realpath failed for artifact_dir %s; refusing to write audit row\n' \
+      "$artifact_dir" >&2
+    return 1
+  fi
+
+  local qrspi_dir="$canon_artifact_dir/.qrspi"
+  if [[ -L "$qrspi_dir" ]]; then
+    printf 'audit.sh: %s is a symlink; refusing to follow (path-injection guard)\n' \
+      "$qrspi_dir" >&2
+    return 1
+  fi
+
+  mkdir -p "$qrspi_dir"
+  local audit_file="$qrspi_dir/audit.jsonl"
+
+  if [[ -L "$audit_file" ]]; then
+    printf 'audit.sh: %s is a symlink; refusing to follow (path-injection guard)\n' \
+      "$audit_file" >&2
+    return 1
+  fi
 
   printf '%s\n' "$line" >> "$audit_file"
 }
