@@ -41,8 +41,8 @@ unit_test_dir() {
   [ "$count" -eq 25 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-28, T38 fix-cycle replan 6→7 tests)
-@test "[AC8] Unit test suite has exactly 558 @test definitions (baseline)" {
+# AC8 — Unit test count baseline (updated 2026-04-28, integration-round-01 fix-cycle merge)
+@test "[AC8] Unit test suite has exactly 653 @test definitions (baseline)" {
   # Baseline for stage-after-G6 = octopus(T16, T17, T18) on top of
   # stage-after-G5 (0ee9fd1, 18 .bats / 416 @tests). All three Wave 6
   # tasks are file-disjoint except for tests/acceptance/test-meta.bats
@@ -94,20 +94,31 @@ unit_test_dir() {
   # pipeline-order rule). 552 → 555. Files baseline (25) unchanged
   # because test-state.bats already exists.
   #
-  # 2026-04-28 T38 fix-cycle integration-round-01 (replan 6→7 catch-up):
-  # T14 added `replan` as the 7th `{ARTIFACT_TYPE}` value to the scope-
-  # reviewer parameterization, but tests/unit/test-scope-reviewer.bats
-  # still asserted only six values. T38 added +3 @tests to that file:
-  # one wired-skill-dispatch assertion ({ARTIFACT_TYPE}=replan), one
-  # seeded-out-of-scope-replan.md DEFERS-list assertion, and one in-
-  # scope (Replan-OWNS) regression-net assertion. 555 → 558. Files
-  # baseline (25) unchanged because test-scope-reviewer.bats already
+  # 2026-04-28 integration-round-01 fix-cycle merge: 16 fix tasks
+  # converged on the feature branch. Net unit-test additions per task
+  # (only those adding @tests in tests/unit/ are listed):
+  #   T25 (+17) — repo-root .qrspi/ + parallelization.md gating + worktree slug
+  #   T26  (+9) — artifact.sh M54 cascade + sed portability
+  #   T27 (+43) — bash-detect.sh coverage gaps + integration sweep
+  #   T28  (+3) — audit.sh worktree-CWD fallback (state.json resolver)
+  #   T29  (+6) — codex-companion-bg.sh CRIT audit lockdown
+  #   T35  (+6) — phasing CRITICAL→high + codex_reviews validation
+  #   T38  (+3) — scope-reviewer 6→7 (replan parameterization catch-up)
+  #   T39  (+8) — 4-skill phasing.md required-input + new
+  #              test-artifact-gating.bats
+  # Total fix-cycle delta: +95 over the 555 baseline. Sum tracking
+  # updates again when task-32 and task-33 merge land. 555 → 653. Files
+  # baseline (25) unchanged because no new test FILES were added except
+  # test-artifact-gating.bats (T39, +1) and test-using-qrspi.bats (T33,
+  # +1, will land soon) — both of which will require a separate Files-
+  # baseline bump in a subsequent fix; tracked as a follow-up. Existing
+  # test files already
   # exists.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 558 ]
+  [ "$count" -eq 653 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-27 T16+T17+T18)

@@ -20,9 +20,13 @@ Pipeline position: Goals → Questions → Research → Design → **Phasing** �
 - `questions.md` with `status: approved`
 - `research/summary.md` with `status: approved`
 - `design.md` with `status: approved`
-- `config.md` (read to determine whether Codex reviews are enabled; default `codex_reviews: false` if absent)
+- `config.md` (read to determine whether Codex reviews are enabled — see `### Config Validation` below)
 
 If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
+
+### Config Validation
+
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Phasing validates `codex_reviews` (expected `true` or `false`). If `config.md` is missing or `codex_reviews` is missing/invalid, halt and present the field-specific menu from the Procedure — do NOT silently default `codex_reviews` to false.
 
 <HARD-GATE>
 Do NOT synthesize phasing.md, roadmap.md, or any future-* artifact without all five required inputs approved.
@@ -116,7 +120,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Phasing-specific
 
 - **Claude review subagent** — inputs: `phasing.md`, `roadmap.md`, both pruned + future-* sets for all four artifacts, `goals.md` (pre-prune snapshot if available), `design.md` (pre-prune snapshot if available). Checks: every goal in scope has at least one slice; every slice has at least one phase; **Iron Law 1** holds for every slice (vertical, not horizontal); **Iron Law 2** holds for Phase 1 (full-stack end-to-end); replan-gate criteria are concrete and checkable; the four-artifact pruning procedure was applied (no current-phase content in `future-*.md`, no future content in current artifacts; all 8 pruning files present); goal-ID consistency holds across all nine files (no orphans, or orphans surfaced for user resolution under `## Orphan IDs`); `## Phasing OWNS / Phasing DEFERS` boundary respected (no architecture re-litigation, no file paths, no task specs). Findings written to `reviews/phasing-review.md`.
 
-- **scope-reviewer subagent dispatch** — invoke `skills/_shared/templates/scope-reviewer.md` with `{ARTIFACT_TYPE}=phasing`. The dispatched reviewer loads `skills/phasing/SKILL.md` `## Phasing OWNS / Phasing DEFERS` as the locked rule set, runs boundary-drift detection (content matching a DEFERS entry → finding), scope-compliance per OWNS, and the U14 boundary-drift signal (skill-implementation jargon, file-path leakage, task-spec leakage). **Fail-closed on malformed OWNS/DEFERS.** If the `## Phasing OWNS / Phasing DEFERS` section is missing or malformed (e.g., no `### OWNS` subsection, no `### DEFERS` subsection, or the section header is absent), the scope-reviewer MUST emit a CRITICAL finding and refuse to proceed (per the scope-reviewer template's malformed-case fail-closed clause). Findings emitted per the M48 5-field schema in `skills/_shared/reviewer-boilerplate.md` `## Finding Schema`. Append to `reviews/phasing-review.md`.
+- **scope-reviewer subagent dispatch** — invoke `skills/_shared/templates/scope-reviewer.md` with `{ARTIFACT_TYPE}=phasing`. The dispatched reviewer loads `skills/phasing/SKILL.md` `## Phasing OWNS / Phasing DEFERS` as the locked rule set, runs boundary-drift detection (content matching a DEFERS entry → finding), scope-compliance per OWNS, and the U14 boundary-drift signal (skill-implementation jargon, file-path leakage, task-spec leakage). **Fail-closed on malformed OWNS/DEFERS.** If the `## Phasing OWNS / Phasing DEFERS` section is missing or malformed (e.g., no `### OWNS` subsection, no `### DEFERS` subsection, or the section header is absent), the scope-reviewer MUST emit a finding with `severity: high` and `change_type: correctness` and refuse to proceed (per the scope-reviewer template's malformed-case fail-closed clause — the M48 schema only permits severity ∈ {low, medium, high}). Findings emitted per the M48 5-field schema in `skills/_shared/reviewer-boilerplate.md` `## Finding Schema`. Append to `reviews/phasing-review.md`.
 
 - **Reviewer prompt block — embedded boilerplate.** The Claude reviewer prompt and the scope-reviewer dispatch BOTH embed `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time so the reviewer sees the finding schema, change-type classifier, and disagreement-valid framing inline. (Embed by reference: the file path is stable across edits; the dispatch concatenates the file's contents into the rendered prompt.)
 
@@ -231,7 +235,7 @@ Run this procedure during synthesis and again during the review round. The canon
 3. **Orphan-ID flag — direction B.** An orphan in direction B is any goal ID that appears in the canonical roadmap set yet is missing from the file expected to contain it under current-phase scope: a current-phase ID must appear in the current-phase artifacts (goals, questions, research summary, design) and a deferred ID must appear in the corresponding future-* artifact.
 4. The orphan list is presented to the user; resolution is a user decision (rename ID, move entry, or accept as orphan with justification).
 
-**Fail-closed semantics.** If orphan IDs are detected, the synthesis subagent MUST emit them in the `phasing.md` `## Orphan IDs` section AND the round is invalid until the user resolves them. Reviewers MUST reject any phasing.md emission that omits the `## Orphan IDs` section (even when the section content reads "No orphan IDs." — the section header itself is required so reviewers can confirm the validation procedure ran). Silent orphan suppression is a fail-closed condition: any reviewer that detects an orphan ID present in one of the nine files but missing from `## Orphan IDs` MUST emit a CRITICAL finding and the round is invalid.
+**Fail-closed semantics.** If orphan IDs are detected, the synthesis subagent MUST emit them in the `phasing.md` `## Orphan IDs` section AND the round is invalid until the user resolves them. Reviewers MUST reject any phasing.md emission that omits the `## Orphan IDs` section (even when the section content reads "No orphan IDs." — the section header itself is required so reviewers can confirm the validation procedure ran). Silent orphan suppression is a fail-closed condition: any reviewer that detects an orphan ID present in one of the nine files but missing from `## Orphan IDs` MUST emit a finding with `severity: high` and `change_type: correctness` (per the M48 schema in `skills/_shared/reviewer-boilerplate.md`, which only permits severity ∈ {low, medium, high}) and the round is invalid.
 
 ## Phase-2+ Behavior
 
@@ -255,7 +259,7 @@ When `roadmap.md` already exists at Phasing entry — i.e., this is not the firs
 - `phasing.md` re-litigates architecture, names files, or writes task specs — boundary drift into Design / Structure / Plan ownership.
 - Replan-gate criteria are vague ("everything works") instead of concrete and checkable.
 - `roadmap.md` carries notes, design content, or any column beyond goal ID + phase + slice.
-- `## Phasing OWNS / Phasing DEFERS` section malformed/missing — scope-reviewer fail-closed CRITICAL.
+- `## Phasing OWNS / Phasing DEFERS` section malformed/missing — scope-reviewer fail-closed (emits `severity: high` per the M48 schema).
 - Pasting Mermaid diagram syntax directly into terminal output (user cannot read it).
 
 ## Common Rationalizations — STOP

@@ -449,7 +449,7 @@ Skills must not:
 |-------|------------------------|--------------|
 | `route` | Goals, Plan, Parallelize, Implement, Integrate, using-qrspi | ordered list of skill names (see Route Templates) |
 | `pipeline` | Goals, Plan, Parallelize | `full` or `quick` |
-| `codex_reviews` | Goals, Plan, Implement, Integrate, Test | `true` or `false` |
+| `codex_reviews` | Goals, Plan, Phasing, Implement, Integrate, Test | `true` or `false` |
 | `review_depth` | Implement | `quick` or `deep` — set by Implement at phase start |
 | `review_mode` | Implement | `single` or `loop` — set by Implement at phase start |
 
