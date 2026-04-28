@@ -288,6 +288,94 @@ teardown() {
   [[ "$output" == *"canon-repo" ]]
 }
 
+# ── Sentinel preservation (M4-2: __OPAQUE_WRITE__ contract) ────────
+
+@test "log: Bash with __OPAQUE_WRITE__ sentinel → target preserved verbatim (canonical path)" {
+  # Cross-task contract (task-43 + task-44): when bash_detect_file_writes
+  # returns the literal sentinel "__OPAQUE_WRITE__", audit_log_event MUST
+  # preserve that sentinel verbatim in the audit row's `target` field. The
+  # PWD-prepend branch (line ~196) must NOT fire and produce a fake in-
+  # worktree path like `<pwd>/__OPAQUE_WRITE__` — that would defeat the
+  # audit-trail compensating control by writing forensically misleading rows
+  # at exactly the moments the wall fired.
+  #
+  # Canonical-path variant: state.json exists upstream, so the row lands in
+  # the canonical artifact_dir/.qrspi/audit.jsonl.
+  local repo_root="$TEST_ROOT"
+  local artifact_dir="$repo_root/docs/qrspi/2026-04-26-fakeproj"
+  mkdir -p "$repo_root/.qrspi"
+  printf '{"version":1,"artifact_dir":"%s"}\n' "$artifact_dir" > "$repo_root/.qrspi/state.json"
+
+  cd "$repo_root/.worktrees/fakeproj/task-02"
+
+  # Inline interpreter triggers __OPAQUE_WRITE__ from bash_detect_file_writes.
+  local cmd='python3 -c "open('"'"'/etc/passwd'"'"','"'"'w'"'"').write('"'"'x'"'"')"'
+  local envelope
+  envelope=$(jq -cn --arg cmd "$cmd" '{agent_id:"sub-1",agent_type:"implementer",tool_name:"Bash",tool_input:{command:$cmd}}')
+
+  run audit_log_event "$envelope" "block" "opaque write blocked"
+  [ "$status" -eq 0 ]
+
+  local audit_file="$artifact_dir/.qrspi/audit.jsonl"
+  [ -f "$audit_file" ]
+
+  # Strong assertion: extract the target field via jq and require it to be
+  # the literal sentinel — no PWD prefix, no path mangling.
+  local target_field
+  target_field=$(jq -r '.target' "$audit_file")
+  [ "$target_field" = "__OPAQUE_WRITE__" ]
+}
+
+@test "log: Bash with __OPAQUE_WRITE__ sentinel → target preserved verbatim (orphan path)" {
+  # Same contract on the orphan fallback branch: when no state.json exists
+  # upstream of PWD, the orphan row in audit-orphan.jsonl must still record
+  # the literal sentinel.
+  local repo_root="$TEST_ROOT/orphan-repo-sentinel"
+  mkdir -p "$repo_root/.worktrees/lostproj/task-09"
+  cd "$repo_root/.worktrees/lostproj/task-09"
+
+  local cmd='node -e "require('"'"'fs'"'"').writeFileSync('"'"'/tmp/x'"'"','"'"'y'"'"')"'
+  local envelope
+  envelope=$(jq -cn --arg cmd "$cmd" '{agent_id:"sub-9",tool_name:"Bash",tool_input:{command:$cmd}}')
+
+  run audit_log_event "$envelope" "block" "opaque write blocked"
+  # Orphan-path resolution failure is signalled by non-zero return.
+  [ "$status" -ne 0 ]
+
+  local orphan_file="$repo_root/.qrspi/audit-orphan.jsonl"
+  [ -f "$orphan_file" ]
+
+  local target_field
+  target_field=$(jq -r '.target' "$orphan_file")
+  [ "$target_field" = "__OPAQUE_WRITE__" ]
+}
+
+@test "log: Bash with ordinary relative target → PWD-prepend regression unchanged" {
+  # Regression check: non-sentinel relative-path Bash writes must continue
+  # to receive a PWD prefix in the audit row's target field. The sentinel
+  # special-case must not break this branch.
+  local repo_root="$TEST_ROOT"
+  local artifact_dir="$repo_root/docs/qrspi/2026-04-26-fakeproj"
+  mkdir -p "$repo_root/.qrspi"
+  printf '{"version":1,"artifact_dir":"%s"}\n' "$artifact_dir" > "$repo_root/.qrspi/state.json"
+
+  # CWD inside the worktree so that "foo.txt" is a worktree-scope target
+  # after PWD-prepend (otherwise it would orphan-log).
+  cd "$repo_root/.worktrees/fakeproj/task-02"
+
+  local envelope='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"echo hi > foo.txt"}}'
+
+  run audit_log_event "$envelope" "allow" ""
+  [ "$status" -eq 0 ]
+
+  local audit_file="$artifact_dir/.qrspi/audit.jsonl"
+  [ -f "$audit_file" ]
+
+  local target_field
+  target_field=$(jq -r '.target' "$audit_file")
+  [ "$target_field" = "$repo_root/.worktrees/fakeproj/task-02/foo.txt" ]
+}
+
 # ── Structural meta-tests ─────────────────────────────────────────
 
 @test "audit.sh uses set -euo pipefail" {
