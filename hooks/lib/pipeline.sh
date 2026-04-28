@@ -5,13 +5,14 @@ set -euo pipefail
 _pipeline_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_pipeline_script_dir/state.sh"
 
-# PIPELINE_ORDER — readonly array of 9 steps in order (M54 inserted phasing between design and structure)
-# Use +a to disable readonly temporarily for proper array declaration, then re-enable
-declare -a PIPELINE_ORDER=(goals questions research design phasing structure plan implement test)
+# PIPELINE_ORDER — readonly array of 10 steps in order
+# (M54 inserted phasing between design and structure;
+#  T25 R2 I-N4 inserted parallelize between plan and implement)
+declare -a PIPELINE_ORDER=(goals questions research design phasing structure plan parallelize implement test)
 declare -r PIPELINE_ORDER
 
 # _pipeline_get_step_index <step>
-# Returns the index of the step in PIPELINE_ORDER (0-8), or -1 if not found
+# Returns the index of the step in PIPELINE_ORDER (0-9), or -1 if not found
 _pipeline_get_step_index() {
   local step="$1"
   case "$step" in
@@ -22,8 +23,9 @@ _pipeline_get_step_index() {
     phasing) echo 4 ;;
     structure) echo 5 ;;
     plan) echo 6 ;;
-    implement) echo 7 ;;
-    test) echo 8 ;;
+    parallelize) echo 7 ;;
+    implement) echo 8 ;;
+    test) echo 9 ;;
     *) echo -1 ;;
   esac
 }
@@ -88,8 +90,9 @@ pipeline_check_prerequisites() {
       4) current_step="phasing" ;;
       5) current_step="structure" ;;
       6) current_step="plan" ;;
-      7) current_step="implement" ;;
-      8) current_step="test" ;;
+      7) current_step="parallelize" ;;
+      8) current_step="implement" ;;
+      9) current_step="test" ;;
       *) current_step="" ;;
     esac
 
@@ -168,8 +171,8 @@ pipeline_cascade_reset() {
     return 1
   fi
 
-  # Determine end index (9 steps total after M54 phasing insertion)
-  local end_idx=9
+  # Determine end index (10 steps total after T25 parallelize insertion)
+  local end_idx=10
   if [[ "$skip_cascade" == "true" ]]; then
     end_idx=$((start_idx + 1))
   fi
@@ -186,8 +189,9 @@ pipeline_cascade_reset() {
       4) reset_step="phasing" ;;
       5) reset_step="structure" ;;
       6) reset_step="plan" ;;
-      7) reset_step="implement" ;;
-      8) reset_step="test" ;;
+      7) reset_step="parallelize" ;;
+      8) reset_step="implement" ;;
+      9) reset_step="test" ;;
       *) reset_step="" ;;
     esac
     state=$(echo "$state" | jq ".artifacts.$reset_step = \"draft\"")

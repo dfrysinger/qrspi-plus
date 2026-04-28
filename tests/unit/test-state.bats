@@ -48,8 +48,9 @@ EOF
   [[ "$json" == *'"design":"draft"'* ]]
 }
 
-# Test: state_init_or_reconcile with all approved through plan.md
-@test "state_init_or_reconcile: all approved through plan -> current_step=implement" {
+# Test: state_init_or_reconcile with all approved through parallelization.md
+# (T25 R2 I-N4: parallelize is now the 8th file-backed step; implement is next)
+@test "state_init_or_reconcile: all approved through parallelize -> current_step=implement" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
 
@@ -59,6 +60,7 @@ EOF
   create_artifact "$artifact_dir/phasing.md" "approved"
   create_artifact "$artifact_dir/structure.md" "approved"
   create_artifact "$artifact_dir/plan.md" "approved"
+  create_artifact "$artifact_dir/parallelization.md" "approved"
 
   # Create research/summary.md
   mkdir -p "$artifact_dir/research"
@@ -556,14 +558,13 @@ EOF
   [[ "$out" == "phasing" ]]
 }
 
-@test "[T04-PHASING-4Sb] state_compute_current_step: returns implement when all 7 file-backed steps approved (matches state_init_or_reconcile)" {
+@test "[T04-PHASING-4Sb] state_compute_current_step: returns implement when all 8 file-backed steps approved (matches state_init_or_reconcile)" {
   # Semantic-equivalence guard: state_compute_current_step's terminal default
   # must match state_init_or_reconcile's all-approved branch. Per QRSPI
-  # semantics, after plan is approved, the next step is implement (since
-  # implement_status defaults to "draft" and implement comes before test in
-  # pipeline order). The helper previously returned "test" — wrong because it
-  # diverged from state_init_or_reconcile's inline logic which yields
-  # "implement". See state.sh state_init_or_reconcile lines ~101-102.
+  # semantics, after parallelize is approved, the next step is implement
+  # (since implement_status defaults to "draft" and implement comes before
+  # test in pipeline order). T25 R2 I-N4 added parallelize as the 8th
+  # file-backed step.
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir/research"
 
@@ -574,6 +575,7 @@ EOF
   create_artifact "$artifact_dir/phasing.md" "approved"
   create_artifact "$artifact_dir/structure.md" "approved"
   create_artifact "$artifact_dir/plan.md" "approved"
+  create_artifact "$artifact_dir/parallelization.md" "approved"
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
   local helper_out
@@ -674,32 +676,34 @@ EOF
 # [T04-PHASING-4Sc] Table-driven coverage of every reachable return value of
 # state_compute_current_step. Round-4 thoroughness gap: prior tests (4S, 4Sb)
 # only verified the helper for "phasing" (one mid-pipeline case) and the
-# terminal "implement" default. The other 6 reachable values (goals, questions,
-# research, design, structure, plan) were unverified at the helper level — a
-# mutation reordering the helper's loop (e.g., swapping `research` and `design`)
-# would not have been caught. This test walks every step S in the file-backed
-# sequence and the all-approved terminal case, asserting state_compute_current_step
-# echoes exactly S.
+# terminal "implement" default. The other file-backed values (goals, questions,
+# research, design, structure, plan, parallelize) were unverified at the helper
+# level — a mutation reordering the helper's loop (e.g., swapping `research`
+# and `design`) would not have been caught. This test walks every step S in
+# the file-backed sequence and the all-approved terminal case, asserting
+# state_compute_current_step echoes exactly S.
+# (T25 R2 I-N4 added parallelize as the 8th file-backed step.)
 @test "[T04-PHASING-4Sc] state_compute_current_step: table-driven coverage of every reachable return value" {
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
   # Each iteration: build a fresh fixture where every step BEFORE S is
   # approved, S itself is draft, then assert helper echoes S exactly.
   local target steps_before s out
-  for target in goals questions research design phasing structure plan; do
+  for target in goals questions research design phasing structure plan parallelize; do
     # Fresh artifact dir per iteration to avoid leakage from prior fixtures
     local artifact_dir="$TEST_DIR/artifacts-$target"
     mkdir -p "$artifact_dir/research"
 
     # Build the upstream-approved prefix
     local hit_target=false
-    for s in goals questions research design phasing structure plan; do
+    for s in goals questions research design phasing structure plan parallelize; do
       if [[ "$s" == "$target" ]]; then
         hit_target=true
         # S itself: draft (explicit file with draft frontmatter)
         case "$s" in
-          research) create_artifact "$artifact_dir/research/summary.md" "draft" ;;
-          *) create_artifact "$artifact_dir/$s.md" "draft" ;;
+          research)    create_artifact "$artifact_dir/research/summary.md" "draft" ;;
+          parallelize) create_artifact "$artifact_dir/parallelization.md" "draft" ;;
+          *)           create_artifact "$artifact_dir/$s.md" "draft" ;;
         esac
         continue
       fi
@@ -710,8 +714,9 @@ EOF
       fi
       # Steps before target: approved
       case "$s" in
-        research) create_artifact "$artifact_dir/research/summary.md" "approved" ;;
-        *) create_artifact "$artifact_dir/$s.md" "approved" ;;
+        research)    create_artifact "$artifact_dir/research/summary.md" "approved" ;;
+        parallelize) create_artifact "$artifact_dir/parallelization.md" "approved" ;;
+        *)           create_artifact "$artifact_dir/$s.md" "approved" ;;
       esac
     done
 
@@ -732,6 +737,7 @@ EOF
   create_artifact "$all_approved_dir/phasing.md" "approved"
   create_artifact "$all_approved_dir/structure.md" "approved"
   create_artifact "$all_approved_dir/plan.md" "approved"
+  create_artifact "$all_approved_dir/parallelization.md" "approved"
 
   out=$(state_compute_current_step "$all_approved_dir")
   [[ "$out" == "implement" ]]

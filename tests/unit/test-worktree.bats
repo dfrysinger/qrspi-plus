@@ -167,3 +167,28 @@ setup() {
   [ "$status" -eq 0 ]
   [ "$output" = "my-slug" ]
 }
+
+# =============================================================================
+# [T25-S-N5] worktree_extract_slug rejects paths with .. segments (R2 S-N5)
+# =============================================================================
+
+@test "[T25-S-N5-A] worktree_extract_slug: rejects path with .. segments after worktree marker" {
+  run worktree_extract_slug "/tmp/.worktrees/x/task-1/../../../../etc/poison"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T25-S-N5-B] worktree_extract_slug: rejects path with .. segments before worktree marker" {
+  run worktree_extract_slug "/tmp/foo/../.worktrees/x/task-1/file.txt"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T25-S-N5-C] worktree_extract_slug: rejects path with embedded ..  in slug" {
+  run worktree_extract_slug "/repo/.worktrees/..evil/task-1/file.txt"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T25-S-N5-D] worktree_extract_slug: clean canonical path still extracts slug" {
+  run worktree_extract_slug "/repo/.worktrees/clean-slug/task-05/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "clean-slug" ]
+}

@@ -22,6 +22,7 @@ source "$PLUGIN_ROOT/hooks/lib/bash-detect.sh"
 source "$PLUGIN_ROOT/hooks/lib/worktree.sh"
 source "$PLUGIN_ROOT/hooks/lib/agent.sh"
 source "$PLUGIN_ROOT/hooks/lib/audit.sh"
+source "$PLUGIN_ROOT/hooks/lib/protected.sh"
 
 block() {
   local reason="$1"
@@ -133,6 +134,18 @@ if [[ $is_subagent -eq 1 ]]; then
 
   # Subagent Write/Edit/NotebookEdit target wall
   if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "NotebookEdit" ]]; then
+    # T25 (R2 S-N5): reject paths containing `..` segments outright. The
+    # `.worktrees/...` substring regex below is a positive containment check,
+    # but a crafted path like
+    # `<repo>/.worktrees/x/task-1/../../../../etc/poison` matches the substring
+    # while shell path-resolution lands outside the worktree. Pre-rejecting `..`
+    # closes the canonicalization gap without requiring realpath (which itself
+    # fails for not-yet-existing Write targets).
+    case "$file_path" in
+      *"/../"*|*"/.."|"../"*|"..")
+        block "Subagent target rejected (path contains '..' segment): $file_path"
+        ;;
+    esac
     if ! [[ "$file_path" =~ \.worktrees/[^/]+/(task-[0-9]+|baseline)(/|$) ]]; then
       block "Subagent target outside worktree: $file_path"
     fi
@@ -144,9 +157,20 @@ if [[ $is_subagent -eq 1 ]]; then
     if [[ -n "$detected_targets" ]]; then
       while IFS= read -r tgt; do
         [[ -z "$tgt" ]] && continue
+        # T25 (R2 S-N5): reject `..` segments before regex containment match.
+        case "$tgt" in
+          *"/../"*|*"/.."|"../"*|"..")
+            block "Subagent Bash target rejected (path contains '..' segment): $tgt"
+            ;;
+        esac
         # Resolve relative paths to absolute (best effort using PWD)
         abs_tgt="$tgt"
         [[ "$tgt" != /* ]] && abs_tgt="$PWD/$tgt"
+        case "$abs_tgt" in
+          *"/../"*|*"/.."|"../"*|"..")
+            block "Subagent Bash target rejected (path contains '..' segment): $tgt"
+            ;;
+        esac
         if ! [[ "$abs_tgt" =~ \.worktrees/[^/]+/(task-[0-9]+|baseline)(/|$) ]]; then
           block "Subagent Bash target outside worktree: $tgt"
         fi
@@ -155,11 +179,24 @@ if [[ $is_subagent -eq 1 ]]; then
   fi
 fi
 
-# ── Artifact-dir .qrspi/ protection (everyone) ───────────────────────────────
-# The hook is the only writer of <artifact_dir>/.qrspi/ files. Block all other
-# attempts so the audit log is tamper-proof.
+# ── Hook-managed `.qrspi/` write protection (everyone) ───────────────────────
+# The hook is the only writer of `.qrspi/state.json`, `.qrspi/audit.jsonl`,
+# `.qrspi/task-NN-runtime.json`, and `.qrspi/audit-codex-review.jsonl`. These
+# files exist at both repo-root (where state_write_atomic runs) and
+# `<artifact_dir>/.qrspi/` (where audit_log_event writes). Both locations must
+# be protected from non-hook writers.
+#
+# Two-tier check:
+#   1. Specific hook-managed files via is_protected_qrspi_target (canonical
+#      single source of truth, T25 R2 S-N1).
+#   2. The broader artifact-dir `.qrspi/` directory regex (existing behaviour
+#      retained as defense-in-depth — covers any future file added under
+#      `docs/qrspi/<slug>/.qrspi/`).
 check_artifact_qrspi_protection() {
   local target="$1"
+  if is_protected_qrspi_target "$target"; then
+    block "Cannot write to hook-managed .qrspi/ file: $target"
+  fi
   if [[ "$target" =~ (^|/)docs/qrspi/[^/]+/\.qrspi(/|$) ]]; then
     block "Cannot write to artifact_dir .qrspi/ (audit log is hook-managed): $target"
   fi

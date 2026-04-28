@@ -32,8 +32,28 @@ worktree_extract_task_id() {
 worktree_extract_slug() {
   local path="$1"
 
+  # T25 (R2 S-N5) — reject paths containing `..` segments outright. The
+  # subagent-wall regex below is a substring match, so a crafted path like
+  # `/tmp/.worktrees/x/task-1/../../../../etc/poison` would match the
+  # `.worktrees/x/task-1/` substring and bypass containment even though shell
+  # path-resolution lands outside the worktree. We reject any path with `..`
+  # segments before regex match — defense-in-depth, no realpath dependency
+  # (realpath also fails on non-existent paths, which the hook frequently
+  # encounters for new-file Write targets).
+  case "$path" in
+    *"/../"*|*"/.."|"../"*|"..")
+      return 1
+      ;;
+  esac
+
   if [[ $path =~ \.worktrees/([^/]+)/(task-[0-9]+|baseline)(/|$) ]]; then
-    echo "${BASH_REMATCH[1]}"
+    local slug="${BASH_REMATCH[1]}"
+    # Defense in depth: slug itself must not contain `..` (the [^/]+ above
+    # already excludes `/`, but a slug like `..evil` is suspicious).
+    if [[ "$slug" == *".."* ]]; then
+      return 1
+    fi
+    echo "$slug"
     return 0
   fi
 

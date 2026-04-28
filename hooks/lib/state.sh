@@ -10,21 +10,22 @@ source "$_state_script_dir/artifact-map.sh"
 # state_compute_current_step <artifact_dir>
 # Helper: scan artifact files in <artifact_dir>, determine the first pipeline step
 # whose artifact frontmatter is not "approved", and echo that step name.
-# Only the 7 file-backed steps (goals, questions, research, design, phasing,
-# structure, plan) are inspected. If all 7 are approved, echoes "implement"
-# (the first non-file-backed step, which defaults to "draft"). This matches
-# state_init_or_reconcile, where implement is the next step in pipeline order
-# after plan-approved.
+# Only the 8 file-backed steps (goals, questions, research, design, phasing,
+# structure, plan, parallelize) are inspected. If all 8 are approved, echoes
+# "implement" (the first non-file-backed step, which defaults to "draft"). This
+# matches state_init_or_reconcile, where implement is the next step in pipeline
+# order after parallelize-approved.
 # Returns 1 if artifact_dir does not exist.
 #
 # Single source of truth for the "first non-approved step" computation.
-# state_init_or_reconcile delegates here (FU-1 refactor 2026-04-28).
+# state_init_or_reconcile delegates here (FU-1 refactor 2026-04-28; T25 added
+# parallelize as the 8th file-backed step).
 state_compute_current_step() {
   local artifact_dir="$1"
   [[ -d "$artifact_dir" ]] || return 1
 
   local _step _artifact_file _status
-  for _step in goals questions research design phasing structure plan; do
+  for _step in goals questions research design phasing structure plan parallelize; do
     _artifact_file="$artifact_dir/$(artifact_map_get "$_step")"
     _status="draft"
     if [[ -f "$_artifact_file" ]]; then
@@ -39,9 +40,9 @@ state_compute_current_step() {
   done
 
   # implement and test are never inferred from files; default to "implement" if
-  # all 7 file-backed steps are approved (matches state_init_or_reconcile: the
-  # next step after plan-approved is implement, since implement is also "draft"
-  # by default and is the first non-approved step in pipeline order).
+  # all 8 file-backed steps are approved (matches state_init_or_reconcile: the
+  # next step after parallelize-approved is implement, since implement is also
+  # "draft" by default and is the first non-approved step in pipeline order).
   echo "implement"
 }
 
@@ -54,7 +55,8 @@ state_init_or_reconcile() {
   # Check if artifact_dir exists
   [[ -d "$artifact_dir" ]] || return 1
 
-  # Determine statuses for all 9 artifacts (M54 added phasing between design and structure)
+  # Determine statuses for all 10 artifacts (M54 added phasing between design and structure;
+  # T25 R2 I-N4 added parallelize between plan and implement)
   local goals_status="draft"
   local questions_status="draft"
   local research_status="draft"
@@ -62,12 +64,13 @@ state_init_or_reconcile() {
   local phasing_status="draft"
   local structure_status="draft"
   local plan_status="draft"
+  local parallelize_status="draft"
   local implement_status="draft"
   local test_status="draft"
 
   # Check each artifact file using canonical mapping
   local _step _artifact_file
-  for _step in goals questions research design phasing structure plan; do
+  for _step in goals questions research design phasing structure plan parallelize; do
     _artifact_file="$artifact_dir/$(artifact_map_get "$_step")"
     if [[ -f "$_artifact_file" ]]; then
       local _read_status
@@ -115,6 +118,7 @@ state_init_or_reconcile() {
         phasing: $phasing,
         structure: $structure,
         plan: $plan,
+        parallelize: $parallelize,
         implement: $implement,
         test: $test
       }
@@ -126,6 +130,7 @@ state_init_or_reconcile() {
     --arg phasing "$phasing_status" \
     --arg structure "$structure_status" \
     --arg plan "$plan_status" \
+    --arg parallelize "$parallelize_status" \
     --arg implement "$implement_status" \
     --arg test "$test_status"); then
     echo "state_init_or_reconcile: jq failed to build state JSON" >&2
