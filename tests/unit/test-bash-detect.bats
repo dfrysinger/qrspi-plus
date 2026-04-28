@@ -545,3 +545,142 @@ assert_opaque_write() {
     result=$(bash_detect_file_writes "python -c \"open('/x','w')\"")
     assert_opaque_write "$result"
 }
+
+# ── task-43 S-2: cd-before-relative-write subagent escape ─────────────
+#
+# A subagent inside a worktree could otherwise issue
+# `cd /tmp && echo x > escaped.txt`. The bash-detect output would be the
+# bare relative target `escaped.txt`, which pre-tool-use resolves against
+# its own PWD (the worktree root), masking the actual /tmp/escaped.txt
+# write. The fix: when a `cd <outside>` precedes a relative-path write in
+# the same compound command, the relative target is opaque
+# (__OPAQUE_WRITE__ sentinel) — the wall fails closed.
+#
+# Codex round-3 finding (round-2 fix). Conservative posture: cd into a
+# relative subdir of the current worktree is still allowed (the subdir
+# stays inside the worktree).
+
+# cd /tmp && echo X > rel — opaque (cd-out absolute)
+@test "task-43 S-2: cd /tmp && echo > rel is opaque" {
+    result=$(bash_detect_file_writes 'cd /tmp && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp; echo X > rel — opaque (cd-out absolute, semicolon)
+@test "task-43 S-2: cd /tmp; echo > rel is opaque (semicolon)" {
+    result=$(bash_detect_file_writes 'cd /tmp; echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && tee rel — opaque (alt write syntax via tee)
+@test "task-43 S-2: cd /tmp && tee rel is opaque (tee write)" {
+    result=$(bash_detect_file_writes 'cd /tmp && tee escaped.txt < input')
+    assert_opaque_write "$result"
+}
+
+# cd ../../.. && echo > rel — opaque (cd-out relative with ..)
+@test "task-43 S-2: cd ../../.. && echo > rel is opaque (parent traversal)" {
+    result=$(bash_detect_file_writes 'cd ../../.. && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd ~ && echo > rel — opaque (cd to home expansion)
+@test "task-43 S-2: cd ~ && echo > rel is opaque (home expansion)" {
+    result=$(bash_detect_file_writes 'cd ~ && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd - && echo > rel — opaque (cd to OLDPWD untracked)
+@test "task-43 S-2: cd - && echo > rel is opaque (OLDPWD)" {
+    result=$(bash_detect_file_writes 'cd - && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && cp src dst — opaque (cp dest is relative)
+@test "task-43 S-2: cd /tmp && cp src dst is opaque (cp relative dst)" {
+    result=$(bash_detect_file_writes 'cd /tmp && cp source.txt dest.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && mv src dst — opaque
+@test "task-43 S-2: cd /tmp && mv old new is opaque (mv relative dst)" {
+    result=$(bash_detect_file_writes 'cd /tmp && mv old.txt new.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && sed -i — opaque (sed file is relative)
+@test "task-43 S-2: cd /tmp && sed -i is opaque" {
+    result=$(bash_detect_file_writes "cd /tmp && sed -i 's/x/y/' config.txt")
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && dd of=rel — opaque
+@test "task-43 S-2: cd /tmp && dd of=rel is opaque" {
+    result=$(bash_detect_file_writes 'cd /tmp && dd if=/dev/zero of=escaped count=1')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && rsync src rel — opaque
+@test "task-43 S-2: cd /tmp && rsync src rel is opaque" {
+    result=$(bash_detect_file_writes 'cd /tmp && rsync src.txt escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# Negative: cd subdir-inside-worktree && echo > rel — STILL allowed
+# The cd target is a relative subdir (no /, no ..). Post-cd CWD is still
+# inside the worktree (or descended into a subdir thereof), so resolving
+# `inside.txt` against hook PWD is wrong by exact path but right by
+# containment — the wall regex `\.worktrees/.../task-NN/` still matches.
+@test "task-43 S-2 NEGATIVE: cd subdir && echo > rel still extracts target" {
+    result=$(bash_detect_file_writes 'cd src && echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    # Should NOT be opaque
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive opaque: cd into relative subdir should not flag opaque"
+        echo "Got: $result"
+        return 1
+    fi
+}
+
+# Negative: cd src/sub && echo > rel — relative subdir with slash is fine
+@test "task-43 S-2 NEGATIVE: cd src/sub && echo > rel is not opaque" {
+    result=$(bash_detect_file_writes 'cd src/sub && echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive opaque: cd into relative nested subdir should not flag"
+        return 1
+    fi
+}
+
+# Negative: cd /tmp && echo > /abs/path — absolute write target
+# The cd-out happens, but the write target is ABSOLUTE — the wall checks
+# the absolute path directly without consulting CWD. The detector emits
+# the absolute path; the wall's regex match decides allow/block. (For an
+# absolute path outside the worktree the wall blocks anyway; for one
+# inside a worktree it allows. Neither outcome depends on CWD.)
+@test "task-43 S-2 NEGATIVE: cd /tmp && echo > /abs/path emits absolute path" {
+    result=$(bash_detect_file_writes 'cd /tmp && echo x > /abs/poison')
+    assert_contains_path "$result" "/abs/poison"
+}
+
+# Negative: plain `echo > rel` (no cd) — relative path emitted as before
+@test "task-43 S-2 NEGATIVE: plain relative redirect (no cd) unchanged" {
+    result=$(bash_detect_file_writes 'echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive: plain relative redirect should not be opaque"
+        return 1
+    fi
+}
+
+# Multi-cd: cd src && cd /tmp && echo > rel — opaque (any cd-out triggers)
+@test "task-43 S-2: cd src && cd /tmp && echo > rel is opaque (later cd-out)" {
+    result=$(bash_detect_file_writes 'cd src && cd /tmp && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && cd back-to-relative — still opaque (we don't track CWD precisely)
+@test "task-43 S-2: cd /tmp && cd subdir && echo > rel is opaque (conservative)" {
+    result=$(bash_detect_file_writes 'cd /tmp && cd src && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}

@@ -11,6 +11,34 @@
 #
 # Audits land in <artifact_dir>/.qrspi/audit.jsonl when the target is in
 # QRSPI scope. Non-QRSPI writes are not audited (no pollution).
+#
+# ## Containment Notes
+#
+# Containment is intentionally TARGET-BASED, not CWD-based. The hook decides
+# allow/block by inspecting the operation's target (Write/Edit file_path,
+# Bash-detected write paths), never by inspecting where the subagent's shell
+# is currently running.
+#
+# Consequences:
+#
+#   1. Subagent CWD reads outside the worktree are intentionally NOT contained.
+#      Non-write Bash with `cd ..` (e.g., `cd /tmp && ls` or
+#      `cd ../sibling && cat foo`) is permitted — it does not violate the
+#      write-containment guarantee, and trying to contain it would require
+#      shell-state tracking the hook does not do.
+#      L-sec-3 (round-2 review): documented here per the target-based model.
+#
+#   2. Subagent WRITES outside the worktree ARE contained, even via cd.
+#      Specifically, `cd /tmp && echo x > escaped.txt` — where the shell's
+#      effective CWD diverges from the hook PWD before a relative-path
+#      write — is detected by `bash_detect_file_writes` and treated as
+#      opaque (`__OPAQUE_WRITE__` sentinel). The wall blocks because the
+#      sentinel is not under any worktree path. See task-43 S-2 fix in
+#      `hooks/lib/bash-detect.sh` (the `cd_escaped` tracking after compound
+#      splitting).
+#
+#   3. Main chat is exempt from the worktree wall. Both the read and write
+#      cases above apply only to subagents.
 
 set -euo pipefail
 
@@ -157,6 +185,18 @@ if [[ $is_subagent -eq 1 ]]; then
     if [[ -n "$detected_targets" ]]; then
       while IFS= read -r tgt; do
         [[ -z "$tgt" ]] && continue
+        # task-43 S-2 + R2 S-N2: __OPAQUE_WRITE__ is the bash-detect sentinel
+        # for write targets that cannot be statically resolved (inline
+        # interpreters like `python -c`, awk-with-redirect, or a
+        # cd-before-relative-write where the shell's effective CWD diverges
+        # from the hook PWD). The hook MUST fail closed on these — the
+        # apparent "target" cannot be trusted to live inside the worktree.
+        # Match before any PWD-prepend so the worktree-regex cannot
+        # accidentally allow the sentinel by virtue of PWD living inside a
+        # worktree.
+        if [[ "$tgt" == "__OPAQUE_WRITE__" ]]; then
+          block "Subagent Bash write target unresolvable (inline interpreter, cd-out, or unparseable redirect): treated as outside-worktree (fail-closed)"
+        fi
         # T25 (R2 S-N5): reject `..` segments before regex containment match.
         case "$tgt" in
           *"/../"*|*"/.."|"../"*|"..")
@@ -211,6 +251,11 @@ if [[ "$tool_name" == "Bash" && -n "$bash_command" ]]; then
   if [[ -n "$detected_for_protection" ]]; then
     while IFS= read -r tgt; do
       [[ -z "$tgt" ]] && continue
+      # Skip the opaque sentinel — `__OPAQUE_WRITE__` is not a real path, so
+      # the .qrspi/ protection regex cannot meaningfully match it. The
+      # subagent wall (above) is responsible for failing closed on opaque
+      # targets; main chat is trusted on opaque writes.
+      [[ "$tgt" == "__OPAQUE_WRITE__" ]] && continue
       abs_tgt="$tgt"
       [[ "$tgt" != /* ]] && abs_tgt="$PWD/$tgt"
       check_artifact_qrspi_protection "$abs_tgt"

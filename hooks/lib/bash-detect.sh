@@ -74,7 +74,23 @@ bash_detect_file_writes() {
     done
     [[ -n "$current" ]] && parts+=("$current")
 
+    # `cd_escaped` tracks whether an earlier compound part has changed the
+    # shell's effective CWD to a location outside the hook's PWD (the
+    # worktree root for subagents). When set, any RELATIVE write target in a
+    # subsequent part is opaque — pre-tool-use resolves relative paths
+    # against the hook PWD, but the shell will resolve against the cd-into
+    # target, so the apparent target and the actual target diverge. Treat as
+    # opaque-write to fail closed.
+    #
+    # Round-2 task-43 (S-2 MAJOR — cd-before-relative-write subagent escape):
+    # `cd /tmp && echo x > escaped.txt` would otherwise be classified as
+    # writing to `<worktree>/escaped.txt` and allowed by the wall, while the
+    # shell actually writes `/tmp/escaped.txt` outside the worktree.
+    local cd_escaped=0
+
     # Helper: append a discovered path with surrounding quotes/whitespace stripped.
+    # When `cd_escaped` is set and the path is RELATIVE (no leading /), the
+    # path is opaque — emit the sentinel instead of the apparent target.
     _bd_add_path() {
         local p="$1"
         # Strip surrounding double quotes
@@ -87,6 +103,13 @@ bash_detect_file_writes() {
         # (kept conservative to avoid mangling real paths).
         p="${p%[[:space:]]}"
         if [[ -n "$p" ]]; then
+            # task-43 S-2: relative-path writes after a cd-out are opaque.
+            # Absolute paths are unaffected — the wall resolves them
+            # directly without consulting CWD.
+            if [[ "$cd_escaped" -eq 1 && "$p" != /* ]]; then
+                opaque=1
+                return 0
+            fi
             paths+=("$p")
         fi
     }
@@ -96,6 +119,38 @@ bash_detect_file_writes() {
         # Trim leading/trailing whitespace
         part="${part#"${part%%[![:space:]]*}"}"
         part="${part%"${part##*[![:space:]]}"}"
+
+        # ── task-43 S-2: cd-before-relative-write subagent escape ─────────
+        # Detect a leading `cd <target>` in this compound part. If the target
+        # is absolute (`/...`), contains a `..` segment, or is `~` (home
+        # expansion), the shell's effective CWD diverges from the hook PWD
+        # for ALL subsequent parts in this compound. Mark cd_escaped=1 so
+        # later relative-path writes are treated as opaque.
+        #
+        # Conservative posture (Codex round-3 recommendation): we do NOT try
+        # to track exact post-cd CWD — we just refuse to trust the apparent
+        # relative-path target after any cd-out. cd into a relative subdir
+        # of the worktree (e.g., `cd src && ...`) keeps cd_escaped=0 because
+        # the post-cd CWD is still inside the worktree, so relative writes
+        # resolve to a path the wall regex still matches.
+        local cd_re='^cd[[:space:]]+([^[:space:]]+|"[^"]*"|'\''[^'\'']*'\'')'
+        if [[ "$part" =~ $cd_re ]]; then
+            local cd_target="${BASH_REMATCH[1]}"
+            # Strip surrounding quotes from the cd target.
+            cd_target="${cd_target%\"}"
+            cd_target="${cd_target#\"}"
+            cd_target="${cd_target%\'}"
+            cd_target="${cd_target#\'}"
+            case "$cd_target" in
+                /*|~*|*/../*|*/..|../*|..)
+                    cd_escaped=1
+                    ;;
+                # `cd -` (return to OLDPWD) — opaque since we don't track it.
+                -)
+                    cd_escaped=1
+                    ;;
+            esac
+        fi
 
         # ── Pattern: opaque-write — inline interpreters ──────────────────
         # python/python3/perl/ruby/bash/sh with -e or -c flag, node with -e
