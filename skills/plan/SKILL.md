@@ -174,8 +174,22 @@ status: draft
 ## Phase 1: {name}
 {Tasks in this phase, ordering rationale — one paragraph per claim, scannable bullets}
 
+### Phase 1 Acceptance Criteria
+
+Per-phase criteria that must be observable end-to-end at phase boundary (independent of any single task):
+- [ ] {Criterion 1: e.g., "Full PoC slice demonstrates request → response with rate limiting active"}
+- [ ] {Criterion 2: ...}
+
+(Per-task criteria live in each `tasks/task-NN.md`'s `## Test Expectations` block; the per-phase block above captures cross-task observable behavior at phase end.)
+
 ## Phase 2: {name}
 {Tasks in this phase, ordering rationale}
+
+### Phase 2 Acceptance Criteria
+
+Per-phase criteria observable at this phase's boundary (same authoring rules as Phase 1):
+- [ ] {Criterion 1: ...}
+- [ ] {Criterion 2: ...}
 
 ---
 
@@ -196,6 +210,8 @@ status: draft
 ### Task 2: {name}
 ...
 ```
+
+**Per-phase acceptance block authoring (T9 strip-from-goals contract).** Per-phase acceptance criteria capture cross-task observable behavior at phase end — they must trace upstream to one or more `goals.md` goals but they are AUTHORED in `plan.md`, not `goals.md` (per T9's strip-from-goals contract). The per-phase block lives directly under each `## Phase N: {name}` heading as a `### Phase N Acceptance Criteria` subsection (see template above). Downstream consumers (test/SKILL.md, plan/templates/spec-reviewer.md, plan/templates/goal-traceability-reviewer.md) read these blocks to verify end-to-end observable behavior at phase boundary independent of any single task; per-task criteria continue to live in each task spec's `## Test Expectations` block below.
 
 **U14 conformance reminder for the per-task spec writer.** Each task spec must satisfy: required-section presence (every bullet header above is required); claim-line length ≤ 250 chars per bullet; description paragraph ≤ 150 words; section ≤ 300 words total before bullets are split; no brevity directives anywhere ("be concise", "brief summary", "≤ N lines" are forbidden — see U14 lint allowlist for the legitimate length-target exceptions). The DEFERS list above tells the writer what NOT to put in the spec; this conformance reminder tells the writer how to structure what they DO put in.
 

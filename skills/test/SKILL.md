@@ -252,7 +252,7 @@ Sub-tasks for Test:
 - Writing production code to fix a failing test (HARD GATE violation)
 - Skipping test code review because "tests are not production code" (test quality matters — flaky tests are worse than no tests)
 - Re-running failing tests without code changes (deterministic — same code = same result)
-- Writing tests that don't map to any acceptance criterion in `goals.md`
+- Writing tests that don't map to any acceptance criterion in `plan.md` (per-task `## Test Expectations` or per-phase acceptance block)
 - Writing vacuous tests (assertions that can't fail, like `expect(true).toBe(true)`)
 - Classifying all failures as "quick fix" to avoid the Implement → Integrate round trip
 - Creating a PR without user confirmation
@@ -274,9 +274,9 @@ Sub-tasks for Test:
 
 ## Worked Example — Good Acceptance Test Derivation
 
-Given `goals.md` acceptance criterion:
+Given a `plan.md` task-spec `## Test Expectations` bullet:
 ```
-- [ ] Clients exceeding 100 requests/min receive 429 Too Many Requests
+- TE-1: Clients exceeding 100 requests/min receive 429 Too Many Requests
 ```
 
 Test-writer produces:
@@ -288,17 +288,17 @@ Test-writer produces:
 - Send 101 requests from the same API key within 60 seconds
 - Assert: 101st request returns HTTP 429
 - Assert: Response body contains error message
-- Maps to: goals.md criterion "Clients exceeding 100 requests/min receive 429"
+- Maps to: plan.md task-04 / TE-1 (upstream goal: M-rate-limit)
 
 ### Test 2 (Boundary): Client at exactly the limit is allowed
 - Send exactly 100 requests from the same API key within 60 seconds
 - Assert: All 100 return HTTP 200
-- Maps to: goals.md criterion (boundary — at-limit behavior)
+- Maps to: plan.md task-04 / TE-2 (upstream goal: M-rate-limit; boundary — at-limit behavior)
 
 ### Test 3 (Boundary): Rate limit resets after window expires
 - Send 100 requests, wait for window reset, send 1 more
 - Assert: The post-reset request returns HTTP 200
-- Maps to: goals.md criterion (boundary — window reset)
+- Maps to: plan.md task-04 / TE-3 (upstream goal: M-rate-limit; boundary — window reset)
 ```
 
 ## Worked Example — Bad (Vague/Vacuous)
@@ -319,6 +319,6 @@ The two override-critical rules for Test, restated at end:
 
 1. **NO PRODUCTION CODE FIXES IN THE TEST SKILL.** All fixes route through the pipeline (full: Implement → Integrate → Test; quick: Implement → Test). Test files written by the test-writer are the only exception; they are verified by execution, not by code review.
 
-2. **Every test maps to a specific acceptance criterion in `goals.md`.** Tests that don't trace to a criterion are out of scope. Vacuous assertions (e.g., `expect(true).toBe(true)`) fail this rule because they prove nothing about the criterion.
+2. **Every test maps to a specific acceptance criterion in `plan.md`'s task-spec `## Test Expectations` block or `plan.md`'s per-phase acceptance block; `goals.md` provides the upstream traceability anchor only. Tests that don't trace to a criterion are out of scope.** Vacuous assertions (e.g., `expect(true).toBe(true)`) fail this rule because they prove nothing about the criterion.
 
 Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

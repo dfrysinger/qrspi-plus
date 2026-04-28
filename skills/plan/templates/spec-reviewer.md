@@ -122,7 +122,7 @@ If issues found:
   [For each issue:]
   - [Category]: [Description]
     Evidence: [task number or section reference]
-    Goal/criterion: [quote from goals.md]
+    Acceptance criterion: [quote from plan.md task-spec `## Test Expectations` or plan.md per-phase acceptance block; if traceability requires, name the upstream `goals.md` goal ID]
     What was found: [what the plan actually says or omits]
 
 Categories: MISSING (criterion not covered), EXTRA (not in goals),

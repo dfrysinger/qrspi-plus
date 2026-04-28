@@ -1,0 +1,62 @@
+T20: FU-3 acceptance-criteria contract drift — re-source from plan.md
+
+Per T9's strip-from-goals contract (commit a4cd12a), goals.md no longer authors
+acceptance criteria. Acceptance criteria are now authored in plan.md as per-task
+`## Test Expectations` blocks (and an optional per-phase acceptance block in
+plan.md's overview). goals.md provides the upstream problem-framing only and is
+the traceability anchor for the plan-authored criteria.
+
+Decision: phase-level acceptance criteria live in plan.md's overview as a
+per-phase acceptance block (NOT in goals.md). Plan.md is the home for both
+per-task (in task specs) and per-phase (in overview) acceptance criteria.
+
+Files changed:
+- skills/test/SKILL.md (lines 46/62/72/85/87 region) — Coverage Criteria,
+  Test Types table, Process Steps, compaction note, goal-traceability-reviewer
+  prompt now source from plan.md task specs (per-task `## Test Expectations`)
+  rather than goals.md. Codex prompt-assembly references updated to load
+  plan.md alongside goals.md (with an explicit "acceptance-criteria source" /
+  "upstream traceability anchor" labeling).
+- skills/test/templates/test-writer.md — Placeholders adds [PLAN] as the
+  acceptance-criteria source; [GOALS] downgraded to upstream traceability
+  anchor. Process step 1 reads acceptance criteria from [PLAN] (not [GOALS]).
+  Coverage Analysis Output annotates by plan task ID + per-task TE bullet,
+  with goal ID kept for traceability.
+- skills/plan/templates/spec-reviewer.md — Purpose, Completeness check, and
+  Test Coverage Mapping reframed: plan.md authors acceptance criteria; goals.md
+  is the problem-framing anchor. Forward trace and gap analysis updated
+  accordingly.
+- skills/plan/templates/goal-traceability-reviewer.md — Purpose, body intro,
+  Forward Trace section (matrix columns now Goal | Plan-authored Criterion |
+  Covering Tasks), Backward Trace, Gap Analysis, Decomposition Check, and
+  Report Format all updated to make plan.md the criterion source and goals.md
+  the upstream problem-framing anchor.
+- README.md — Step 1 (Goals) and Step 10 (Test) narratives reframed; severity
+  table split "goals or acceptance criteria" into Goals (problem framing) and
+  Plan (acceptance criteria); base-vs-qrspi-plus table updated.
+- docs/qrspi-canonical.md — Per-step reference for Goals reframed; Goals row
+  in extension table updated.
+- tests/acceptance/test-hardening-skills.bats — M21 test (line 75) clarified
+  with comment about goals = problem framing, plan = criteria. M24 test
+  (lines 124-148) tightened with positive assertion that test/SKILL.md sources
+  acceptance criteria from plan.md (task spec / test expectation) AND a
+  negative assertion rejecting "goals.md acceptance criteria" phrasings.
+
+Test status:
+- Unit suite: 552/552 pass.
+- Acceptance suite: same 8 pre-existing failures as baseline (U7 reviews/tasks,
+  M26 D2/Obs3/Obs19, M37 design phase-scoped, SC5 .bats file inventory). No
+  new failures introduced.
+
+LOW-severity findings to log to future-followups.md (not fixed in this task):
+- skills/replan/SKILL.md still likely contains residual "acceptance criteria"
+  references that would benefit from the same reframing pass; out of scope per
+  RESUME-PHASE-2 (T14 was supposed to handle replan; verification deferred).
+- The plan-skill SKILL.md narrative itself does not yet describe a "per-phase
+  acceptance block" in plan.md's overview; this commit names the contract but
+  Plan SKILL.md authoring of that section remains a follow-up.
+
+AC8 baseline: not bumped — only acceptance tests modified, and AC8 only counts
+unit @tests.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

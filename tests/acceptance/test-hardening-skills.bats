@@ -139,7 +139,14 @@ teardown() {
   # Must source acceptance criteria from plan.md task specs (per T9 contract),
   # NOT from goals.md as the criteria-authoring source. Reject the legacy
   # phrasings that frame acceptance criteria as goals.md-owned.
-  ! grep -qE "goals\.md acceptance criteria|acceptance criteria (in|from) goals\.md|goals\.md.*acceptance.*criteri" "$skill_file"
+  # Specific violation patterns to forbid:
+  # - "acceptance criterion in goals.md" (Red Flag, Iron Law)
+  # - "Given goals.md acceptance criterion" (Worked Example header)
+  # - "Maps to: goals.md criterion" (Worked Example annotations)
+  # The compliant line 46 disclaimer "goals.md does NOT author acceptance criteria" is
+  # NOT matched by any of these patterns.
+  run grep -qE "acceptance criterion in [\\\`]?goals\.md|Given [\\\`]?goals\.md[\\\`]? acceptance|Maps to: [\\\`]?goals\.md" "$skill_file"
+  [ "$status" -ne 0 ]
   # Must positively reference plan.md / task specs / test expectations as the
   # acceptance-criteria source.
   grep -qE "plan\.md.*(task spec|test expectation|acceptance)|(task spec|test expectation).*plan\.md|task-spec.*test expectation|Test Expectations.*plan\.md|plan\.md.*Test Expectations" "$skill_file"
