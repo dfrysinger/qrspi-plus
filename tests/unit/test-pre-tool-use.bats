@@ -494,3 +494,95 @@ init_state() {
   run "$HOOK" <<< "$json"
   [ "$status" -eq 0 ]
 }
+
+# ──────────────────────────────────────────────────────────────
+# [task-43 S-2] subagent cd /tmp && echo > rel is blocked
+# ──────────────────────────────────────────────────────────────
+# Round-2 Codex finding. Before the fix, `cd /tmp && echo x > escaped.txt`
+# from a subagent inside a worktree was classified as writing to
+# `<worktree>/escaped.txt` (relative resolved against hook PWD = worktree
+# root) and allowed by the wall, while the shell wrote /tmp/escaped.txt
+# outside the worktree. After the fix, the cd-before-relative-write
+# pattern emits __OPAQUE_WRITE__ and the wall blocks.
+@test "[task-43 S-2] subagent cd /tmp && rel-write blocked by worktree wall" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd /tmp && echo x > escaped.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-43 S-2] semicolon variant
+@test "[task-43 S-2] subagent cd /tmp; rel-write blocked (semicolon)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd /tmp; echo x > escaped.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-43 S-2] tee variant
+@test "[task-43 S-2] subagent cd /tmp && tee rel blocked (alt write syntax)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd /tmp && tee escaped.txt < /dev/null'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-43 S-2] cd ../../.. (relative parent traversal)
+@test "[task-43 S-2] subagent cd ../../.. && rel-write blocked" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd ../../.. && echo x > escaped.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-43 S-2 NEGATIVE] cd into worktree subdir is still allowed
+# A subagent doing `cd src && echo x > inside.txt` inside the worktree
+# stays inside — the wall regex matches `<worktree>/src/inside.txt`
+# (resolved against PWD = `<worktree>/src`... actually here the hook's
+# PWD is the worktree root, so the relative target resolves to
+# `<worktree>/inside.txt`, which still matches the worktree wall).
+@test "[task-43 S-2 NEGATIVE] subagent cd into worktree subdir + rel-write allowed" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01/src"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd src && echo x > inside.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+# [task-43 S-2] Write tool with absolute path — locks contract (Write/Edit
+# are NOT vulnerable, but assert explicitly).
+@test "[task-43 S-2 contract] subagent Write to absolute /tmp path still blocked" {
+  cd "$WORK_DIR"
+  local target="/tmp/escaped-write.txt"
+  local json='{"agent_id":"sub-1","tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"x"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-43 S-2 contract] subagent Edit to absolute path outside worktree still blocked
+@test "[task-43 S-2 contract] subagent Edit to absolute /tmp path still blocked" {
+  cd "$WORK_DIR"
+  local target="/tmp/escaped-edit.txt"
+  local json='{"agent_id":"sub-1","tool_name":"Edit","tool_input":{"file_path":"'"$target"'","old_string":"x","new_string":"y"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [L-sec-3] pre-tool-use file contains the Containment Notes documenting
+# that subagent CWD reads (non-write Bash with `cd ..`) are intentionally
+# not contained per the target-based enforcement model.
+@test "[task-43 L-sec-3] pre-tool-use documents Containment Notes" {
+  local hook_path="$(dirname "$BATS_TEST_FILENAME")/../../hooks/pre-tool-use"
+  grep -q "## Containment Notes" "$hook_path"
+  grep -q "intentionally NOT contained" "$hook_path"
+  grep -q "target-based" "$hook_path"
+}
