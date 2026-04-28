@@ -20,18 +20,23 @@ unit_test_dir() {
 
 # ── Criterion 8: Unit test suite baseline ────────────────────────────────────
 
-# AC8 — The unit test directory contains exactly 17 .bats files
-@test "[AC8] Unit test suite has exactly 17 .bats files (baseline)" {
+# AC8 — The unit test directory contains exactly 18 .bats files
+@test "[AC8] Unit test suite has exactly 18 .bats files (baseline)" {
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(find "$dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 17 ]
+  [ "$count" -eq 18 ]
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-27)
-@test "[AC8] Unit test suite has exactly 387 @test definitions (baseline)" {
-  # Baseline updated after 2026-04-27 prompt-improvements T5 Round-1 FIX
+@test "[AC8] Unit test suite has exactly 401 @test definitions (baseline)" {
+  # Baseline updated after 2026-04-27 prompt-improvements T14 (+14 tests in
+  # the new test-replan-archive-and-populate.bats file, covering OWNS/DEFERS
+  # heading + H3 sub-blocks, the five-step archive-and-populate sequence,
+  # status-draft marking, qrspi:goals invocation, and future-research
+  # naming normalization). 387 → 401.
+  # Prior 387 baseline was after T5 Round-1 FIX
   # (+6 mutation-resistant + fail-closed tests across the 3 phasing files).
   # T5 Round-1 FIX added: scope-reviewer fail-closed (+1, roadmap-generation),
   # orphan emission round-invalid (+1, goal-id-consistency), reviewer-reject
@@ -49,11 +54,11 @@ unit_test_dir() {
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 387 ]
+  [ "$count" -eq 401 ]
 }
 
-# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T5)
-@test "[AC8] All 17 expected unit test files are present by name" {
+# AC8 — Every expected unit test file is present by name (updated 2026-04-27 T14)
+@test "[AC8] All 18 expected unit test files are present by name" {
   local dir
   dir="$(unit_test_dir)"
 
@@ -70,6 +75,7 @@ unit_test_dir() {
     "test-phasing-roadmap-generation.bats"
     "test-pipeline.bats"
     "test-pre-tool-use.bats"
+    "test-replan-archive-and-populate.bats"
     "test-reviewer-boilerplate-embed.bats"
     "test-setup-project-hooks.bats"
     "test-state.bats"

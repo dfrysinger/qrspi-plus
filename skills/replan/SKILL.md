@@ -11,6 +11,26 @@ description: Use between phases when Test signals more phases remain — analyze
 
 Subagent analyzes completed phase, proposes updates with severity classification. Runs between phases only — not at end of final phase.
 
+## Replan OWNS / Replan DEFERS
+
+This section is the **single source of truth** for Replan scope boundaries. Phase-transition execution (the minor-path archive-and-populate sequence) is owned here; all phasing decisions and roadmap authoring are deferred to Phasing.
+
+### OWNS
+
+- **Phase-transition execution (minor path)** — the five-step archive-and-populate sequence at phase boundary: (a) archive the completed phase's four synthesizing artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`) to the runtime path `docs/qrspi/{slug}/phases/phase-NN/`; (b) read `roadmap.md` to identify next-phase goal IDs; (c) extract entries for those goal IDs from `future-goals.md`, `future-questions.md`, `future-research-summary.md`, `future-design.md`; (d) write the populated next-phase drafts with `status: draft`; (e) invoke `qrspi:goals` for the next-phase Restart Mode pass.
+- **Severity classification of phase learnings** — categorize each proposed change as Minor, Major, or Scope Unknown per the Severity Classification table; identify the earliest loop-back target for any Major change.
+- **Minor-path artifact updates** — apply approved minor changes to `tasks/*.md` and `plan.md`; transition status to `replan-draft` and back to `approved` on re-approval.
+- **Major-path feedback authoring** — write `feedback/replan-phase-NN-round-MM.md`, reset target + downstream artifacts to `status: draft`, invoke the loop-back skill (Goals, Design, or Structure). Major path is unchanged from baseline (loop back to upstream skill on substantive learnings).
+- **Marking next-phase drafts** — every populated next-phase artifact carries `status: draft` so the downstream skill (Goals first, then Questions, Research, Design) re-reviews before proceeding.
+
+### DEFERS
+
+- **Phasing decisions** (slice decomposition, phase boundaries, replan-gate criteria, Iron Laws 1/2 vertical-slice and Phase-1-PoC enforcement) → owned by **Phasing** (`skills/phasing/SKILL.md`). Replan consumes the existing roadmap; it does NOT re-decide which goals belong to which phase or re-author phase boundaries.
+- **Authoring of `roadmap.md`** → owned by **Phasing**. Replan READS the roadmap to find next-phase goal IDs; it does NOT write or amend the roadmap. Roadmap edits between phases are a Phasing-owned operation, not a Replan-owned one.
+- **Authoring of `future-*.md` artifacts** → owned by **Phasing** (initial pruning) and by the upstream skill on a Major loop-back. Replan READS the future-* artifacts to extract the next-phase entries; it does NOT add new entries to them.
+- **Goal-text expansion or new goal creation** → owned by **Goals**. The scope-mapping check (below) makes this explicit: if a proposed change is not covered by existing goal text, classify Major and loop back to Goals — never silently expand.
+- **Architecture, file maps, task specs** → owned by Design / Structure / Plan respectively. Replan proposes severity classifications and (on Minor) applies wording/LOC/split changes inside the existing scope; it does NOT re-author these artifacts.
+
 ## Iron Law
 
 ```
@@ -78,7 +98,7 @@ NO `goals.md` directly — the subagent reads the plan and design which already 
 
 ### Roadmap Usage
 
-During phase transitions, Replan reads `roadmap.md` to determine which goals belong to the next phase. Goals for the next phase are promoted from `future-goals.md` (Formal section) into a fresh `goals.md`. The roadmap's current phase pointer is advanced. Each downstream skill checks `future-design.md` and `future-research/` for pre-existing work on promoted goals (pull model, not push).
+During phase transitions, Replan reads `roadmap.md` to determine which goals belong to the next phase. Goals for the next phase are promoted from `future-goals.md` (Formal section) into a fresh `goals.md`. The roadmap's current phase pointer is advanced. Each downstream skill checks `future-design.md` and `future-research-summary.md` for pre-existing work on promoted goals (pull model, not push). Note the file naming: the deferred research artifact is the single file `future-research-summary.md` (mirroring the synthesized `research/summary.md`); per-question files under `research/q*.md` are kept as full-corpus reference and are NOT split into a separate deferred directory.
 
 ## Review Round
 
@@ -106,6 +126,20 @@ After re-approval on the minor path, snapshot the completed phase before promoti
 3. Present summary to user: which files were snapshotted, which were deleted, which were reset
 
 Phase snapshots do NOT happen on the major backward-loop path. The minor path applies its proposed changes to `tasks/*.md` and `plan.md` *before* snapshotting, so the snapshot captures the as-completed-and-amended phase. The major path resets target artifacts to `draft` so that the loop-back skill can re-execute against fresh inputs — there is no stable snapshot to take, because the artifacts at that moment reflect the state we explicitly intend to discard.
+
+### Archive-and-Populate Sequence (Minor Path)
+
+> **IMPORTANT — Compaction recommended (M53; pre-archive-and-populate).** Before running the five-step archive-and-populate sequence below (which reads the roadmap, every `future-*.md` artifact, and writes four next-phase drafts), recommend `/compact` if context utilization may exceed ~50%. The downstream Goals invocation reads the populated drafts immediately at start; entering it on a saturated context degrades the next-phase Restart Mode dialogue.
+
+After the Phase Snapshot completes (snapshot + promote), Replan runs the **five-step archive-and-populate sequence** to set up the next phase's working artifacts. This sequence is the operational form of the "Phase-transition execution" entry in `## Replan OWNS / Replan DEFERS` above — it OWNS the mechanics; Phasing OWNS the prior decisions encoded in `roadmap.md` and the `future-*.md` artifacts.
+
+1. **Archive** — copy the completed phase's four synthesizing artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`) into the runtime archive path `docs/qrspi/{slug}/phases/phase-NN/` where `{slug}` is the project slug from `config.md` and `NN` is the zero-padded completed phase number. (The destination is the runtime artifact path under `docs/qrspi/`, not the skill-package path.) The four-file archive is the as-completed-and-amended snapshot consumed by future audit and review tooling.
+2. **Read roadmap** — open `roadmap.md` and identify the goal IDs that map to the **next phase** (the phase immediately after the completed one per the roadmap's phase → slice → goal-ID table). The roadmap is Phasing-authored (DEFERS); Replan only READS it.
+3. **Extract from future-* artifacts** — for each of `future-goals.md`, `future-questions.md`, `future-research-summary.md`, `future-design.md`, extract the entries whose goal IDs match the next-phase set identified in step 2. The source for deferred research is the single file `future-research-summary.md` (one file, mirroring `research/summary.md`).
+4. **Write next-phase drafts** — write four next-phase artifact drafts in the artifact directory: `goals.md`, `questions.md`, `research/summary.md`, `design.md`. Every populated draft carries `status: draft` in its frontmatter so the next-phase Goals → Questions → Research → Design cascade re-reviews each one before it advances.
+5. **Invoke Goals** — invoke `qrspi:goals` (the unchanged invocation target). Goals enters its Next-Phase Restart Mode (see `goals/SKILL.md` → "Next-Phase Restart Mode"), re-approves the populated draft, and the standard pipeline takes over from there.
+
+Steps 1–4 are mechanical (no severity classification, no proposal-and-approval gate — the user already approved the minor changes in the prior gate, and the future-* extraction is a pure read-and-rewrite). Step 5 is the standard cross-skill handoff. The major path does NOT run this sequence — it resets target artifacts to draft and invokes the loop-back skill instead.
 
 On rejection: write feedback to `feedback/replan-minor-phase-NN-round-MM.md` (note: `minor` prefix distinguishes from major loop-back feedback files), revise proposals.
 
