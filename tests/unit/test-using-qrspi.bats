@@ -179,3 +179,124 @@ extract_h3_section() {
   run grep -E "audit-task-(\*|N+)\.jsonl" "$USING_QRSPI"
   [ "$status" -ne 0 ]
 }
+
+# ──────────────────────────────────────────────────────────────
+# 4. Validator-table parity (task-41 M-2)
+#
+# task-41 sub-issue M-2: rounds 34/36/37 added Config Validation
+# Procedure invocations to Replan, Design, and Structure but the
+# canonical validator table in using-qrspi:447 (`### Fields that
+# affect pipeline behavior`) didn't sweep. This test enforces
+# completeness by construction: every skill (under skills/*/) that
+# invokes "Apply the **Config Validation Procedure**" must appear in
+# the codex_reviews row of the validator table. Any future skill that
+# adds the invocation without updating the doc trips this test.
+# ──────────────────────────────────────────────────────────────
+
+@test "validator table lists every skill that invokes the Config Validation Procedure" {
+  [ -f "$USING_QRSPI" ]
+  local skills_root="$PLUGIN_ROOT/skills"
+  [ -d "$skills_root" ]
+
+  # The validator table has three skill-listing rows (one per validated
+  # field: route, pipeline, codex_reviews). Every skill that invokes the
+  # Config Validation Procedure must appear in at least one of those rows
+  # — i.e., it validates SOMETHING. Skill+field-row pairing is checked by
+  # each skill's individual "validates X" sentence, not here; here we
+  # enforce completeness-by-construction at the cross-reference level so
+  # no skill silently invokes the procedure without the doc updating.
+  #
+  # Concretely: union the three rows into one blob and check each
+  # discovered invoker name appears in it.
+  local table_blob
+  table_blob=$(grep -E "^\| \`(route|pipeline|codex_reviews)\` \|" "$USING_QRSPI" | tr '[:upper:]' '[:lower:]')
+  [ -n "$table_blob" ]
+
+  # Discover every skill name that invokes the Config Validation Procedure
+  # in its top-level SKILL.md.
+  local invokers=()
+  while IFS= read -r path; do
+    local name
+    name=$(basename "$(dirname "$path")")
+    invokers+=("$name")
+  done < <(grep -lF "Apply the **Config Validation Procedure**" "$skills_root"/*/SKILL.md 2>/dev/null | sort -u)
+
+  for name in "${invokers[@]}"; do
+    # Skip using-qrspi itself — it defines the procedure, doesn't validate
+    # configs of its own.
+    if [ "$name" = "using-qrspi" ]; then
+      continue
+    fi
+    grep -qF "$name" <<<"$table_blob" || {
+      echo "skill '$name' invokes Config Validation Procedure but is not listed in any validator-table row (route/pipeline/codex_reviews) in using-qrspi/SKILL.md" >&2
+      return 1
+    }
+  done
+}
+
+@test "validator table codex_reviews row matches skills that explicitly validate codex_reviews" {
+  # Stricter parity check for the codex_reviews row specifically: every
+  # skill whose SKILL.md says "validates ... codex_reviews" must appear
+  # in the codex_reviews row, and vice versa. This catches the exact M-2
+  # drift class (round-3 added codex_reviews invocations to Design /
+  # Structure / Replan but the canonical row didn't sweep).
+  [ -f "$USING_QRSPI" ]
+  local skills_root="$PLUGIN_ROOT/skills"
+
+  local row
+  row=$(grep -F "| \`codex_reviews\` |" "$USING_QRSPI" | head -n 1)
+  [ -n "$row" ]
+  local row_lc
+  row_lc=$(printf '%s' "$row" | tr '[:upper:]' '[:lower:]')
+
+  # Discover skills that say they validate codex_reviews.
+  local validators=()
+  while IFS= read -r path; do
+    local name
+    name=$(basename "$(dirname "$path")")
+    validators+=("$name")
+  done < <(grep -lE "validates.*\`?codex_reviews\`?" "$skills_root"/*/SKILL.md 2>/dev/null | sort -u)
+
+  for name in "${validators[@]}"; do
+    if [ "$name" = "using-qrspi" ]; then
+      continue
+    fi
+    grep -qF "$name" <<<"$row_lc" || {
+      echo "skill '$name' SKILL.md says it validates codex_reviews but is missing from the codex_reviews row in using-qrspi/SKILL.md" >&2
+      echo "row: $row" >&2
+      return 1
+    }
+  done
+}
+
+# ──────────────────────────────────────────────────────────────
+# 5. No skill claims SessionStart bootstraps state (task-41 M-3)
+#
+# task-30 locked the SessionStart contract (read-only w.r.t. state;
+# no .qrspi/ writes). task-33 swept using-qrspi but plan/SKILL.md
+# (and any future copy-paste) may re-introduce the stale claim.
+# Sweep every skills/*/SKILL.md for the legacy phrasings.
+# ──────────────────────────────────────────────────────────────
+
+@test "no skill SKILL.md claims SessionStart initializes or reconciles state.json" {
+  local skills_root="$PLUGIN_ROOT/skills"
+  [ -d "$skills_root" ]
+  local offenders=()
+  while IFS= read -r path; do
+    if grep -qE "SessionStart hook initializes" "$path"; then
+      offenders+=("$path: SessionStart hook initializes")
+    fi
+    if grep -qE "SessionStart.*bootstraps state" "$path"; then
+      offenders+=("$path: SessionStart bootstraps state")
+    fi
+    if grep -qE "SessionStart.*reconciles.*state\.json" "$path"; then
+      offenders+=("$path: SessionStart reconciles state.json")
+    fi
+  done < <(find "$skills_root" -type f -name 'SKILL.md')
+
+  if [ "${#offenders[@]}" -gt 0 ]; then
+    printf 'stale SessionStart claim(s) found:\n' >&2
+    printf '  %s\n' "${offenders[@]}" >&2
+    return 1
+  fi
+}

@@ -322,10 +322,11 @@ The artifact directory contains a `.qrspi/` subdirectory managed by hooks (not b
 
 **This directory is created and managed by hooks.** The Plan skill does not need to create, update, or read files in `.qrspi/`.
 
-**State management is deterministic and hook-driven:**
-- The SessionStart hook initializes and reconciles `state.json` from artifact frontmatter at the start of each session
-- The PostToolUse hook syncs `state.json` automatically whenever artifact frontmatter changes (e.g., when `status: approved` is written)
-- Skills do NOT need to update `state.json` when artifacts are approved — the hook handles this
+**State management is deterministic and skill-bootstrapped + hook-driven:**
+- The SessionStart hook is **read-only** with respect to state — it injects `using-qrspi/SKILL.md` into the session as `additionalContext` and does NOT initialize `state.json`, reconcile artifact frontmatter, or touch any file under `.qrspi/`. The canonical contract lives in the header of `hooks/session-start`; see also `using-qrspi/SKILL.md` → "Hook-Managed State (`.qrspi/`)".
+- State bootstrap is **skill-driven**: the Goals skill calls `state_init_or_reconcile` on first invocation when `state.json` is missing or unreadable.
+- The PostToolUse hook syncs `state.json` automatically thereafter whenever artifact frontmatter changes (e.g., when `status: approved` is written).
+- Skills do NOT need to update `state.json` when artifacts are approved — the PostToolUse hook handles this.
 
 **Exception — `phase_start_commit`:** The Plan skill writes `phase_start_commit` directly to `state.json` when `plan.md` is approved. This records the current HEAD hash as the diff boundary for post-integration reviews. Plan is one of three narrow exceptions to hook-driven state writes (Goals bootstrap, Plan `phase_start_commit`, Replan pre-emptive reconciliation on next-phase restart) — see `using-qrspi/SKILL.md` → "Hook-Managed State (`.qrspi/`)" for the canonical list. All other state updates are hook-driven.
 
