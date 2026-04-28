@@ -32,7 +32,7 @@ Do NOT proceed to Structure without user approval of the Phasing artifact set.
 
 ## Phasing OWNS / Phasing DEFERS
 
-### OWNS
+### Phasing OWNS
 
 - **Vertical-slice authoring** — enumerate end-to-end demonstrable delivery units in `phasing.md` `## Slices`. **Iron Law 1 applies** (see below).
 - **Phase boundaries** — group slices into phases with explicit replan-gate criteria per phase, captured in `phasing.md` `## Phases`. **Iron Law 2 applies** (see below).
@@ -41,7 +41,7 @@ Do NOT proceed to Structure without user approval of the Phasing artifact set.
 - **Future-* artifact maintenance** — `future-goals.md`, `future-questions.md`, `future-research-summary.md`, `future-design.md` are created and updated each Phasing run; consumed by Replan during between-phase transitions.
 - **Goal-ID consistency validation** — every goal ID appearing in any of the nine target files (goals.md, questions.md, research/summary.md, design.md, future-goals.md, future-questions.md, future-research-summary.md, future-design.md, roadmap.md) must trace to the canonical roadmap.md set. Orphan IDs flagged for user review.
 
-### DEFERS
+### Phasing DEFERS
 
 - **Architecture, key decisions, system diagram, test strategy** → owned by Design. Phasing consumes design.md; it does NOT re-litigate architectural choices.
 - **File paths, module boundaries, interface contracts, file maps** → owned by Structure. Phasing names slices and phases; it does NOT enumerate files or function signatures.

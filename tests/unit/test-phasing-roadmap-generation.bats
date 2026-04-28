@@ -81,7 +81,7 @@ extract_subsection() {
 
 @test "## Phasing OWNS / Phasing DEFERS section names roadmap.md authoring under OWNS" {
   local owns_block
-  owns_block="$(extract_subsection "$SKILL_FILE" "## Phasing OWNS / Phasing DEFERS" "### OWNS")"
+  owns_block="$(extract_subsection "$SKILL_FILE" "## Phasing OWNS / Phasing DEFERS" "### Phasing OWNS")"
   [ -n "$owns_block" ]
   # Must mention roadmap.md authoring/ownership specifically.
   echo "$owns_block" | grep -q "roadmap.md"

@@ -144,7 +144,6 @@ count_enumerated_items() {
 }
 
 @test "positive-path: skills/phasing/SKILL.md exposes ## Phasing OWNS / Phasing DEFERS with family-shape H3 sub-blocks (each ≥1 bullet)" {
-  skip "FU-5: phasing/SKILL.md uses bare ### OWNS / ### DEFERS rather than family-shape ### Phasing OWNS / ### Phasing DEFERS — pending family-shape rename (logged as FU-5 in docs/qrspi/2026-04-26-prompt-improvements/future-followups.md)"
   run grep -c "^## Phasing OWNS / Phasing DEFERS$" "$PHASING_FILE"
   [ "$status" -eq 0 ]
   [ "$output" = "1" ]
