@@ -269,3 +269,279 @@ assert_empty() {
   run bash_detect_destructive_universal 'git clean -fdXn'
   [ "$status" -ne 0 ]
 }
+
+# ── R2 S-N2: coverage-gap fixes — additional write-syntax detection ────
+#
+# Helper to assert opaque-write sentinel emitted (for inline interpreters
+# whose target cannot be statically parsed).
+assert_opaque_write() {
+    local output="$1"
+    if [[ "$output" != *"__OPAQUE_WRITE__"* ]]; then
+        echo "Expected opaque-write sentinel (__OPAQUE_WRITE__) not found"
+        echo "Got output: $output"
+        return 1
+    fi
+}
+
+# No-space redirect: `>file`
+@test "S-N2: detects no-space redirect >/etc/poison" {
+    result=$(bash_detect_file_writes 'echo X >/etc/poison')
+    assert_contains_path "$result" "/etc/poison"
+}
+
+# No-space append redirect: `>>file`
+@test "S-N2: detects no-space append redirect >>/tmp/log" {
+    result=$(bash_detect_file_writes 'echo X >>/tmp/log')
+    assert_contains_path "$result" "/tmp/log"
+}
+
+# Clobber redirect: `>|file`
+@test "S-N2: detects clobber redirect >|/abs/path" {
+    result=$(bash_detect_file_writes 'echo X >|/abs/path')
+    assert_contains_path "$result" "/abs/path"
+}
+
+# Clobber redirect with space: `>| file`
+@test "S-N2: detects clobber redirect with space >| /abs/path" {
+    result=$(bash_detect_file_writes 'echo X >| /abs/path')
+    assert_contains_path "$result" "/abs/path"
+}
+
+# Leading redirect: `>file cmd ...` (POSIX)
+@test "S-N2: detects leading redirect >file printf X" {
+    result=$(bash_detect_file_writes '>/tmp/leading printf X')
+    assert_contains_path "$result" "/tmp/leading"
+}
+
+# Inline interpreter: python -c
+@test "S-N2: opaque-write sentinel for python -c" {
+    result=$(bash_detect_file_writes "python -c \"open('/abs/path','w').write('x')\"")
+    assert_opaque_write "$result"
+}
+
+# Inline interpreter: python3 -c
+@test "S-N2: opaque-write sentinel for python3 -c" {
+    result=$(bash_detect_file_writes "python3 -c \"open('/abs/path','w').write('x')\"")
+    assert_opaque_write "$result"
+}
+
+# Inline interpreter: node -e
+@test "S-N2: opaque-write sentinel for node -e" {
+    result=$(bash_detect_file_writes "node -e \"require('fs').writeFileSync('/abs/path','x')\"")
+    assert_opaque_write "$result"
+}
+
+# Inline interpreter: node --eval
+@test "S-N2: opaque-write sentinel for node --eval" {
+    result=$(bash_detect_file_writes "node --eval \"require('fs').writeFileSync('/abs/path','x')\"")
+    assert_opaque_write "$result"
+}
+
+# Inline interpreter: perl -e
+@test "S-N2: opaque-write sentinel for perl -e" {
+    result=$(bash_detect_file_writes "perl -e 'open(F,\">/abs/path\");print F \"x\"'")
+    assert_opaque_write "$result"
+}
+
+# Inline interpreter: ruby -e
+@test "S-N2: opaque-write sentinel for ruby -e" {
+    result=$(bash_detect_file_writes "ruby -e \"File.write('/abs/path','x')\"")
+    assert_opaque_write "$result"
+}
+
+# dd of=path
+@test "S-N2: detects dd of=/abs/path" {
+    result=$(bash_detect_file_writes 'dd if=/dev/zero of=/abs/path bs=1 count=1')
+    assert_contains_path "$result" "/abs/path"
+}
+
+# dd of="quoted path"
+@test "S-N2: detects dd of=\"/abs/quoted path\"" {
+    result=$(bash_detect_file_writes 'dd if=/dev/zero of="/abs/quoted path"')
+    assert_contains_path "$result" "/abs/quoted path"
+}
+
+# install (BSD/GNU)
+@test "S-N2: detects install -m 644 src dst" {
+    result=$(bash_detect_file_writes 'install -m 644 source.txt /abs/dest.txt')
+    assert_contains_path "$result" "/abs/dest.txt"
+}
+
+# rsync src dst
+@test "S-N2: detects rsync src /abs/dest" {
+    result=$(bash_detect_file_writes 'rsync source.txt /abs/dest')
+    assert_contains_path "$result" "/abs/dest"
+}
+
+# rsync with flags
+@test "S-N2: detects rsync -av src /abs/dest" {
+    result=$(bash_detect_file_writes 'rsync -av source/ /abs/dest/')
+    assert_contains_path "$result" "/abs/dest"
+}
+
+# awk BEGIN { print > "..." } — opaque (cannot reliably parse awk script)
+@test "S-N2: opaque-write sentinel for awk BEGIN with redirect" {
+    result=$(bash_detect_file_writes "awk 'BEGIN{print > \"/abs/path\"}' </dev/null")
+    assert_opaque_write "$result"
+}
+
+# Heredoc + redirect: `cat <<EOF >/file` — should detect /file via redirect
+@test "S-N2: detects redirect after heredoc cat <<EOF >/file" {
+    result=$(bash_detect_file_writes 'cat <<EOF >/tmp/heredoc-out')
+    assert_contains_path "$result" "/tmp/heredoc-out"
+}
+
+# Negative: python without -c flag (running a script) is NOT opaque
+@test "S-N2: python script.py without -c is not flagged opaque" {
+    result=$(bash_detect_file_writes 'python script.py')
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "Should not flag plain python invocation as opaque"
+        return 1
+    fi
+}
+
+# Negative: node script.js without -e is NOT opaque
+@test "S-N2: node script.js without -e is not flagged opaque" {
+    result=$(bash_detect_file_writes 'node script.js')
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "Should not flag plain node invocation as opaque"
+        return 1
+    fi
+}
+
+# Negative: rsync with --dry-run still flags (we don't parse semantics; safer to be over-broad)
+# Negative: ls /abs/path is not a write
+@test "S-N2: ls /abs/path is not detected as write" {
+    result=$(bash_detect_file_writes 'ls /abs/path')
+    assert_empty "$result"
+}
+
+# Existing-behavior regression: tab-spaced redirect still detected
+@test "S-N2 regression: tab-separated redirect still detected" {
+    # Use printf to inject a real tab between '>' and path
+    local cmd
+    cmd=$(printf 'echo foo >\t/tmp/tabbed')
+    result=$(bash_detect_file_writes "$cmd")
+    assert_contains_path "$result" "/tmp/tabbed"
+}
+
+# Regression: existing simple redirect still works
+@test "S-N2 regression: simple > /tmp/out still works" {
+    result=$(bash_detect_file_writes 'echo foo > /tmp/out')
+    assert_contains_path "$result" "/tmp/out"
+}
+
+# Regression: existing tee still works
+@test "S-N2 regression: tee output.txt still works" {
+    result=$(bash_detect_file_writes 'echo x | tee output.txt')
+    assert_contains_path "$result" "output.txt"
+}
+
+# Compound: multiple bypass patterns in one command — both detected
+@test "S-N2: compound dd && python -c — both flagged" {
+    result=$(bash_detect_file_writes "dd of=/a if=/dev/zero && python -c \"open('/b','w')\"")
+    assert_contains_path "$result" "/a"
+    assert_opaque_write "$result"
+}
+
+# ── R2 S-N2 self-review hardening (post-initial-fix tightening) ──────
+# The reviewer (acting as security auditor) identified additional bypass
+# variants the first-pass detector missed. These tests lock in the fix.
+
+# bash -c is opaque (same as python -c)
+@test "S-N2 hardening: bash -c is flagged opaque" {
+    result=$(bash_detect_file_writes "bash -c \"echo X >/etc/poison\"")
+    assert_opaque_write "$result"
+}
+
+# sh -c is opaque
+@test "S-N2 hardening: sh -c is flagged opaque" {
+    result=$(bash_detect_file_writes "sh -c \"echo X >/etc/poison\"")
+    assert_opaque_write "$result"
+}
+
+# Combined-flag interpreter: python -bc (bytecode + command)
+@test "S-N2 hardening: python -bc combined flags is flagged opaque" {
+    result=$(bash_detect_file_writes "python -bc \"open('/x','w').write('y')\"")
+    assert_opaque_write "$result"
+}
+
+# Multi-flag interpreter: python -B -c
+@test "S-N2 hardening: python -B -c separated flags is flagged opaque" {
+    result=$(bash_detect_file_writes "python -B -c \"open('/x','w').write('y')\"")
+    assert_opaque_write "$result"
+}
+
+# Multi-flag interpreter: python3 -u -c
+@test "S-N2 hardening: python3 -u -c is flagged opaque" {
+    result=$(bash_detect_file_writes "python3 -u -c \"open('/x','w').write('y')\"")
+    assert_opaque_write "$result"
+}
+
+# `<>file` (RW open) creates the file — should be detected as a write
+@test "S-N2 hardening: <>file (RW open) detected as write" {
+    result=$(bash_detect_file_writes "exec 3<>/abs/rwopen")
+    assert_contains_path "$result" "/abs/rwopen"
+}
+
+# `dd` inside command substitution `$(dd of=...)`
+@test "S-N2 hardening: dd in command substitution detected" {
+    result=$(bash_detect_file_writes "x=\$(dd of=/abs/sub if=/dev/zero count=1)")
+    assert_contains_path "$result" "/abs/sub"
+}
+
+# `install` inside command substitution
+@test "S-N2 hardening: install in command substitution detected" {
+    result=$(bash_detect_file_writes "x=\$(install src /abs/installed)")
+    assert_contains_path "$result" "/abs/installed"
+}
+
+# `rsync` inside command substitution
+@test "S-N2 hardening: rsync in command substitution detected" {
+    result=$(bash_detect_file_writes "x=\$(rsync src /abs/synced)")
+    assert_contains_path "$result" "/abs/synced"
+}
+
+# `&>file` combined stdout+stderr redirect
+@test "S-N2 hardening: &>file combined stdout+stderr redirect detected" {
+    result=$(bash_detect_file_writes "cmd &>/abs/combined.log")
+    assert_contains_path "$result" "/abs/combined.log"
+}
+
+# `&>>file` append combined stdout+stderr
+@test "S-N2 hardening: &>>file append combined detected" {
+    result=$(bash_detect_file_writes "cmd &>>/abs/combined.log")
+    assert_contains_path "$result" "/abs/combined.log"
+}
+
+# Negative: `<<<` herestring should NOT trigger redirect detection
+@test "S-N2 hardening: <<< herestring not flagged as redirect" {
+    result=$(bash_detect_file_writes 'cat <<<"some content"')
+    if [[ "$result" == */abs/* || "$result" == *some* ]]; then
+        echo "False positive on herestring: $result"
+        return 1
+    fi
+}
+
+# Negative: shell variable that contains 'dd' substring (e.g., 'add')
+# should NOT trigger dd detector
+@test "S-N2 hardening: 'add' command not flagged as dd" {
+    result=$(bash_detect_file_writes 'add of=foo')
+    # 'add' is a non-existent command; the detector shouldn't synthesize a path.
+    # We accept that 'foo' may be captured as bareword via redirect parser; the
+    # specific check is that the regex anchor used for 'dd' doesn't match 'add'.
+    # We verify no path mentions of=foo via dd's of= shape — by checking
+    # detector doesn't claim 'foo' alone (the of= regex would extract 'foo'
+    # from 'add of=foo'). The regex should NOT match because 'a' precedes 'dd'.
+    # This test passes if 'foo' is NOT in result (meaning of= regex skipped).
+    if [[ "$result" == "foo" ]]; then
+        echo "False positive: 'add of=foo' should not match dd's of= pattern"
+        return 1
+    fi
+}
+
+# Sanity: existing python -c still opaque
+@test "S-N2 hardening: existing python -c still flagged" {
+    result=$(bash_detect_file_writes "python -c \"open('/x','w')\"")
+    assert_opaque_write "$result"
+}
