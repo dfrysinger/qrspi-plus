@@ -425,15 +425,14 @@ extract_subblock() {
 #   (b) Missed-sweep detection: any in-set file that does NOT reference the
 #       path → fail. This catches sweeps that missed a required embed site.
 #
-# Embed-site count history (T16, 2026-04-27):
-#   - Original task-16 spec called for 14 distinct files with
-#     test/SKILL.md = 3 occurrences. The post-Wave-5 reality has
-#     test/SKILL.md = 4 occurrences (1 standard embed + 3 reviewer-subagent
-#     embeds, one per `goal-traceability-reviewer`/`spec-reviewer`/
-#     `code-quality-reviewer`). The spec note ("If conflicts arise … update
-#     to match the post-Wave-5 reality and document the bump") authorizes
-#     bumping the test/SKILL.md occurrence count to 4. The DISTINCT FILE
-#     count remains 14.
+# Embed-site count contract (T16, 2026-04-27):
+#   The spec contract is 14 distinct embed-site files with test/SKILL.md
+#   containing exactly 3 occurrences of the full path
+#   `skills/_shared/reviewer-boilerplate.md`. The occurrence-count assertion
+#   below greps the FULL PATH (not the loose substring `reviewer-boilerplate`)
+#   so an incidental prose mention of the bare phrase does not satisfy the
+#   embed-count check. See task-16 spec line 14 / line 20 (test/SKILL.md =
+#   3 occurrences).
 # =============================================================================
 
 # REPO_ROOT — the qrspi-plus checkout root (worktree-aware).
@@ -503,16 +502,17 @@ setup_embed_coverage() {
   fi
 }
 
-@test "[M48-embed] test/SKILL.md contains exactly 4 references to reviewer-boilerplate (post-Wave-5 reality, T16 bumped from 3)" {
-  # T16 note: original spec called for 3 occurrences (1 standard embed +
-  # 2 reviewer subagent embeds). Post-Wave-5 reality has 4 (1 standard
-  # embed + 3 reviewer subagents: goal-traceability-reviewer, spec-reviewer,
-  # code-quality-reviewer). The bump is authorized by the task-16 spec
-  # note about "post-Wave-5 reality"; documenting the bump here.
+@test "[M48-embed] test/SKILL.md contains exactly 3 references to reviewer-boilerplate.md (per spec)" {
+  # Asserts the spec-contracted 3 occurrences of the FULL boilerplate path
+  # in skills/test/SKILL.md (task-16 spec line 14 / line 20). The grep
+  # pattern is the full path `skills/_shared/reviewer-boilerplate.md` (not
+  # the loose substring `reviewer-boilerplate`), so an incidental prose
+  # mention of the bare phrase elsewhere in the file does not vacuously
+  # satisfy the count.
   setup_embed_coverage
   local count
-  count=$(grep -c "reviewer-boilerplate" "$REPO_ROOT/skills/test/SKILL.md" | tr -d ' ')
-  [ "$count" -eq 4 ]
+  count=$(grep -c "skills/_shared/reviewer-boilerplate.md" "$REPO_ROOT/skills/test/SKILL.md" | tr -d ' ')
+  [ "$count" -eq 3 ]
 }
 
 # =============================================================================

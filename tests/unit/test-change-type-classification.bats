@@ -117,6 +117,52 @@ cap_counter_after_round() {
   echo $((current - 1))
 }
 
+# loop_state_after_round <route> <menu_result>
+# Returns the loop-machinery state after a round resolves. Spec contract:
+# a paused round whose menu callable returned PAUSE_PENDING means the loop
+# returns to `wait` state (not `done` or `next`). Auto-applied rounds and
+# resolved-pause rounds advance the loop (`next`), while malformed routes
+# abort (`done`). This is the wait-state half of the PAUSE_PENDING contract
+# that the cap-counter assertion alone cannot prove (a buggy implementation
+# could keep the cap intact while still incorrectly advancing the loop).
+loop_state_after_round() {
+  local route="$1"
+  local menu="$2"
+  if [ "$route" = "pause" ] && [ "$menu" = "PAUSE_PENDING" ]; then
+    echo "wait"
+    return
+  fi
+  if [ "$route" = "auto-apply" ]; then
+    echo "next"
+    return
+  fi
+  if [ "$route" = "pause" ] && { [ "$menu" = "apply" ] || [ "$menu" = "skip" ] || [ "$menu" = "loop-back" ]; }; then
+    echo "next"
+    return
+  fi
+  echo "done"
+}
+
+# run_review_round_with_menu <change_type> <referenced_files_json> <menu_result_override>
+# Same as run_review_round but lets the caller force a specific menu_result
+# (apply / skip / loop-back / PAUSE_PENDING) for the pause route, so the
+# contrast tests can exercise resolved-pause states without rewiring the
+# global stub_menu_callable.
+run_review_round_with_menu() {
+  local primary="$1"
+  local refs_json="$2"
+  local menu_override="$3"
+  local effective route menu
+  effective="$(escalate_if_feedback "$primary" "$refs_json")"
+  route="$(classify_route "$effective")"
+  case "$route" in
+    auto-apply) menu="applied" ;;
+    pause) menu="$menu_override" ;;
+    *) menu="abort" ;;
+  esac
+  echo "$route:$menu"
+}
+
 # ── Spec coverage 1: five primary tags route correctly ──────────────────────
 
 @test "style finding has change_type=style and routes to auto-apply" {
@@ -234,8 +280,13 @@ cap_counter_after_round() {
   [ "$result" != "loop-back" ]
 }
 
-@test "10-round cap counter does NOT decrement on a paused round with PAUSE_PENDING menu (scope finding)" {
-  local refs route_pair route menu starting after
+@test "PAUSE_PENDING round (scope): cap unchanged AND loop_state=wait (full contract)" {
+  # CodexF2 fix: assert BOTH halves of the PAUSE_PENDING contract — the
+  # cap counter does not decrement AND the loop machinery returns to
+  # `wait` state. A mutation that broke only the wait-state half (e.g.
+  # advancing the loop while leaving the cap intact) would have passed
+  # the cap-only assertion this test replaces.
+  local refs route_pair route menu starting after state
   refs="$(jq -c '.referenced_files' "$FIXTURES_DIR/reviewer-finding-scope.json")"
   route_pair="$(run_review_round "scope" "$refs")"
   route="${route_pair%%:*}"
@@ -245,10 +296,12 @@ cap_counter_after_round() {
   starting=10
   after="$(cap_counter_after_round "$starting" "$route" "$menu")"
   [ "$after" -eq 10 ]
+  state="$(loop_state_after_round "$route" "$menu")"
+  [ "$state" = "wait" ]
 }
 
-@test "10-round cap counter does NOT decrement on a paused round with PAUSE_PENDING menu (intent finding)" {
-  local refs route_pair route menu starting after
+@test "PAUSE_PENDING round (intent): cap unchanged AND loop_state=wait (full contract)" {
+  local refs route_pair route menu starting after state
   refs="$(jq -c '.referenced_files' "$FIXTURES_DIR/reviewer-finding-intent.json")"
   route_pair="$(run_review_round "intent" "$refs")"
   route="${route_pair%%:*}"
@@ -258,10 +311,12 @@ cap_counter_after_round() {
   starting=7
   after="$(cap_counter_after_round "$starting" "$route" "$menu")"
   [ "$after" -eq 7 ]
+  state="$(loop_state_after_round "$route" "$menu")"
+  [ "$state" = "wait" ]
 }
 
 @test "10-round cap counter DOES decrement on an autonomous (auto-applied) round" {
-  local route_pair route menu starting after
+  local route_pair route menu starting after state
   route_pair="$(run_review_round "style" '[]')"
   route="${route_pair%%:*}"
   menu="${route_pair##*:}"
@@ -270,15 +325,73 @@ cap_counter_after_round() {
   starting=10
   after="$(cap_counter_after_round "$starting" "$route" "$menu")"
   [ "$after" -eq 9 ]
+  # Auto-applied rounds advance the loop (not wait).
+  state="$(loop_state_after_round "$route" "$menu")"
+  [ "$state" = "next" ]
+}
+
+# ── CodexF2 contrast: resolved-pause options advance the loop and decrement ──
+#
+# When the user picks one of the 3 valid menu options (apply / skip /
+# loop-back) on a paused finding, the loop must NOT remain in wait state
+# (loop_state=`next`, NOT `wait`) and the cap counter MUST decrement.
+# These contrast tests catch mutations where the wait-state contract is
+# broken without affecting cap behavior, and vice-versa.
+
+@test "resolved-pause (apply): loop_state=next AND cap decrements" {
+  local route_pair route menu starting after state
+  route_pair="$(run_review_round_with_menu "intent" '[]' "apply")"
+  route="${route_pair%%:*}"
+  menu="${route_pair##*:}"
+  [ "$route" = "pause" ]
+  [ "$menu" = "apply" ]
+  state="$(loop_state_after_round "$route" "$menu")"
+  [ "$state" = "next" ]
+  [ "$state" != "wait" ]
+  starting=10
+  after="$(cap_counter_after_round "$starting" "$route" "$menu")"
+  [ "$after" -eq 9 ]
+}
+
+@test "resolved-pause (skip): loop_state=next AND cap decrements" {
+  local route_pair route menu starting after state
+  route_pair="$(run_review_round_with_menu "scope" '[]' "skip")"
+  route="${route_pair%%:*}"
+  menu="${route_pair##*:}"
+  [ "$route" = "pause" ]
+  [ "$menu" = "skip" ]
+  state="$(loop_state_after_round "$route" "$menu")"
+  [ "$state" = "next" ]
+  [ "$state" != "wait" ]
+  starting=8
+  after="$(cap_counter_after_round "$starting" "$route" "$menu")"
+  [ "$after" -eq 7 ]
+}
+
+@test "resolved-pause (loop-back): loop_state=next AND cap decrements" {
+  local route_pair route menu starting after state
+  route_pair="$(run_review_round_with_menu "intent" '[]' "loop-back")"
+  route="${route_pair%%:*}"
+  menu="${route_pair##*:}"
+  [ "$route" = "pause" ]
+  [ "$menu" = "loop-back" ]
+  state="$(loop_state_after_round "$route" "$menu")"
+  [ "$state" = "next" ]
+  [ "$state" != "wait" ]
+  starting=5
+  after="$(cap_counter_after_round "$starting" "$route" "$menu")"
+  [ "$after" -eq 4 ]
 }
 
 @test "loop returns to wait state after PAUSE_PENDING round (cap unchanged across multiple paused rounds)" {
   # Three consecutive paused rounds (all unresolved) must leave the autonomous
-  # cap counter unchanged. This is the load-bearing claim from
-  # using-qrspi/SKILL.md §"Paused rounds do not decrement the cap": pauses
-  # are free against the autonomous cap. (The total/escape-hatch counter is
-  # a separate mechanism, not under test in this case.)
-  local cap pair route menu i
+  # cap counter unchanged AND keep the loop in wait state every round. This is
+  # the load-bearing claim from using-qrspi/SKILL.md §"Paused rounds do not
+  # decrement the cap": pauses are free against the autonomous cap. (The
+  # total/escape-hatch counter is a separate mechanism, not under test in this
+  # case.) CodexF2: also assert loop_state=wait each iteration to prove the
+  # loop returns to wait, not advances.
+  local cap pair route menu state i
   cap=10
   i=0
   while [ "$i" -lt 3 ]; do
@@ -287,6 +400,8 @@ cap_counter_after_round() {
     menu="${pair##*:}"
     [ "$route" = "pause" ]
     [ "$menu" = "PAUSE_PENDING" ]
+    state="$(loop_state_after_round "$route" "$menu")"
+    [ "$state" = "wait" ]
     cap="$(cap_counter_after_round "$cap" "$route" "$menu")"
     i=$((i + 1))
   done

@@ -1,6 +1,18 @@
 #!/usr/bin/env bats
 bats_require_minimum_version 1.5.0
 #
+# NOTE (CodexF3, FU-8 cross-reference):
+#   This is a prompt-render contract assertion, not a live-LLM dispatch.
+#   See FU-8 in `docs/qrspi/2026-04-26-prompt-improvements/future-followups.md`
+#   for the post-Integrate opt-in live-dispatch harness. The bats unit-test
+#   runtime budget (≤60s for the suite) makes live LLM dispatch impractical
+#   inside the runner; the rendered-prompt completeness contract asserted
+#   here catches all breakage upstream of the LLM call (escalation rule,
+#   route classification, cap-counter rule, BATCH-WITH-OVERRIDES UI prose,
+#   3-option menu prose, pending-findings audit-file contract). FU-8 will
+#   add the live-dispatch smoke test gated behind LIVE_DISPATCH=1, run
+#   out-of-band from this bats suite.
+#
 # Task 16 — M48 cross-cutting acceptance test: review-loop pause flow
 #
 # End-to-end exercise of the Review-Loop Pause Gate when a seeded reviewer
