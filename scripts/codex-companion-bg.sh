@@ -165,6 +165,21 @@ emit_audit_row() {
     return 12
   fi
 
+  # PIPE_BUF guard: POSIX guarantees `O_APPEND` writes ≤ PIPE_BUF (4096 bytes
+  # on Linux/macOS) are atomic — the foundation of the lock-free concurrency
+  # property. The mkdir lock is defense-in-depth, not a serialization layer
+  # for arbitrarily large rows. If the row plus its trailing newline exceeds
+  # 4096 bytes we fail-closed: silently truncating or interleaving would
+  # break the per-row JSONL invariant downstream consumers depend on.
+  # row_len uses ${#row} (bash byte count for the encoded JSON) +1 for '\n'.
+  local row_len=$(( ${#row} + 1 ))
+  if [ "$row_len" -gt 4096 ]; then
+    rmdir "$lock_dir" 2>/dev/null
+    printf 'codex-companion-bg: audit row would be %d bytes (>4096 PIPE_BUF cap); refusing to append\n' \
+      "$row_len" >&2
+    return 12
+  fi
+
   # Capture append stderr so errno survives — never silently lose failure cause.
   local append_err
   if ! append_err=$(printf '%s\n' "$row" 2>&1 >>"$audit_file"); then
@@ -355,7 +370,15 @@ launch_subcommand() {
 # poll_status <companion> <jobId>
 #
 # Single status poll. Echoes one of:
-#   running | completed | not-found | malformed | error
+#   running
+#   completed:<terminal-status>     (terminal-status ∈ completed|failed|cancelled)
+#   not-found
+#   malformed
+#   error
+#
+# The `completed:<terminal>` form lets await_subcommand record the real terminal
+# status in its audit row without re-invoking `node ... status` a second time
+# (one fewer subprocess per terminal job).
 poll_status() {
   local companion="$1" job_id="$2"
   local tmp_out tmp_err
@@ -391,10 +414,11 @@ poll_status() {
   fi
 
   case "$job_status" in
-    queued|running)        printf 'running\n' ;;
-    completed)             printf 'completed\n' ;;
-    failed|cancelled)      printf 'completed\n' ;;  # let result subcommand surface details
-    *)                     printf 'malformed\n' ;;
+    queued|running)   printf 'running\n' ;;
+    completed)        printf 'completed:completed\n' ;;
+    failed)           printf 'completed:failed\n' ;;
+    cancelled)        printf 'completed:cancelled\n' ;;
+    *)                printf 'malformed\n' ;;
   esac
 }
 
@@ -467,25 +491,6 @@ fetch_result() {
 }
 
 # ---------------------------------------------------------------------------
-# fetch_job_status_field <companion> <jobId>
-#
-# Re-fetch the job's terminal status (completed/failed/cancelled) so the audit
-# row reflects the real outcome, not a generic "success".
-fetch_job_status_field() {
-  local companion="$1" job_id="$2"
-  local tmp_out tmp_err
-  tmp_out=$(mktemp -t codex-companion-bg.XXXXXX) || return 1
-  tmp_err=$(mktemp -t codex-companion-bg.XXXXXX) || { rm -f "$tmp_out"; return 1; }
-  node "$companion" status "$job_id" --json >"$tmp_out" 2>"$tmp_err"
-  local rc=$?
-  local stdout_text
-  stdout_text=$(cat "$tmp_out")
-  rm -f "$tmp_out" "$tmp_err"
-  [ "$rc" -ne 0 ] && return 1
-  extract_json_field "$stdout_text" "job.status"
-}
-
-# ---------------------------------------------------------------------------
 # await_subcommand
 await_subcommand() {
   if [ "$#" -lt 1 ] || [ -z "$1" ]; then
@@ -548,11 +553,11 @@ await_subcommand() {
         fi
         sleep "$sleep_for"
         ;;
-      completed)
-        # Re-fetch real terminal status so the audit row distinguishes
-        # success / failed / cancelled.
-        local terminal_status
-        terminal_status=$(fetch_job_status_field "$companion" "$job_id" 2>/dev/null) || terminal_status=""
+      completed:*)
+        # Terminal status arrives encoded by poll_status as
+        # "completed:<terminal>" so we don't need a second `node ... status`
+        # subprocess to learn whether the job ended successful/failed/cancelled.
+        local terminal_status="${outcome#completed:}"
 
         local res_rc=0
         if fetch_result "$companion" "$job_id"; then

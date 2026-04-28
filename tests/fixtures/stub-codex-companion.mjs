@@ -51,9 +51,17 @@
 //                          "cancelled"). result subcommand uses it too.
 //   STUB_RESULT_RENDERED   markdown text returned at storedJob.rendered
 //                          (used for failed/cancelled fallback test)
+//   STUB_RESULT_JOB_ERROR_MESSAGE
+//                          string returned at job.errorMessage only
+//                          (exercises render.mjs link (d) in isolation)
+//   STUB_RESULT_STORED_JOB_ERROR_MESSAGE
+//                          string returned at storedJob.errorMessage only
+//                          (exercises render.mjs link (e) in isolation)
 //   STUB_RESULT_ERROR_MESSAGE
-//                          string returned at job.errorMessage and (when no
-//                          rendered/raw) emerges via the d/e fallbacks
+//                          back-compat alias: when set and the two specific
+//                          variables above are both unset, populates BOTH
+//                          job.errorMessage and storedJob.errorMessage. New
+//                          tests should prefer the specific variables.
 // ----------------------------------------------------------------------------
 
 import fs from "node:fs";
@@ -177,8 +185,17 @@ function handleResult() {
   const rawOutput = process.env.STUB_RESULT_RAW || "";
   const codexStdout = process.env.STUB_RESULT_STDOUT || "";
   const rendered = process.env.STUB_RESULT_RENDERED || "";
-  const errorMessage = process.env.STUB_RESULT_ERROR_MESSAGE || "";
   const terminal = process.env.STUB_TERMINAL_STATUS || "completed";
+
+  // Split error-message vars so tests can populate link (d) and link (e) in
+  // isolation. The legacy STUB_RESULT_ERROR_MESSAGE env var stays as a
+  // both-locations alias for tests written before the split.
+  const jobErrorRaw = process.env.STUB_RESULT_JOB_ERROR_MESSAGE;
+  const storedJobErrorRaw = process.env.STUB_RESULT_STORED_JOB_ERROR_MESSAGE;
+  const legacyErrorRaw = process.env.STUB_RESULT_ERROR_MESSAGE;
+  const useLegacy = jobErrorRaw === undefined && storedJobErrorRaw === undefined;
+  const jobErrorMessage = useLegacy ? (legacyErrorRaw || "") : (jobErrorRaw || "");
+  const storedJobErrorMessage = useLegacy ? (legacyErrorRaw || "") : (storedJobErrorRaw || "");
 
   // Real companion attaches `result` only on `completed` jobs; failed/cancelled
   // jobs carry only storedJob.rendered + errorMessage. Mirror that.
@@ -189,7 +206,7 @@ function handleResult() {
       id: argv[1] || "unknown",
       status: terminal,
       title: "stub task",
-      errorMessage: errorMessage || undefined
+      errorMessage: jobErrorMessage || undefined
     },
     storedJob: {
       id: argv[1] || "unknown",
@@ -202,7 +219,7 @@ function handleResult() {
           }
         : undefined,
       rendered: rendered || undefined,
-      errorMessage: errorMessage || undefined
+      errorMessage: storedJobErrorMessage || undefined
     }
   };
   process.stdout.write(JSON.stringify(payload) + "\n");

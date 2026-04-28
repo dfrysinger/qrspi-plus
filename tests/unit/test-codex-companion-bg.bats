@@ -173,12 +173,17 @@ EOF
   # only after 5 polls so we observe at least one fast and one slow poll.
   echo '{"jobId":"job-poll","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=5
-  export STUB_RESULT_RAW="ok"
+  export STUB_RESULT_RAW="# Review markdown poll-test"
 
   start=$(date +%s)
-  "$WRAPPER" await job-poll >/dev/null
+  run "$WRAPPER" await job-poll
   end=$(date +%s)
   elapsed=$((end - start))
+
+  # Positive completion-handling assertions: a wrapper mutation that breaks
+  # status->result handoff but happens to take 4-12s would otherwise pass.
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"# Review markdown poll-test"* ]]
 
   # If we polled 5 times always at the slow interval (2s): 10s.
   # If 5 times always fast (1s): 5s.
@@ -353,11 +358,15 @@ EOF
   [ "$status_field" = "failed" ]
 }
 
-@test "await: cancelled job falls back to job.errorMessage when nothing else present" {
+@test "await: cancelled job falls back to job.errorMessage (link d) when nothing else present" {
   echo '{"jobId":"job-cancelled","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=1
   export STUB_TERMINAL_STATUS=cancelled
-  export STUB_RESULT_ERROR_MESSAGE="Cancelled by user."
+  # Populate ONLY job.errorMessage (link d). storedJob.errorMessage stays empty
+  # so this test specifically exercises the (d) link without leaking through (e).
+  export STUB_RESULT_JOB_ERROR_MESSAGE="Cancelled by user."
+  unset STUB_RESULT_STORED_JOB_ERROR_MESSAGE
+  unset STUB_RESULT_ERROR_MESSAGE
   unset STUB_RESULT_RAW
   unset STUB_RESULT_STDOUT
   unset STUB_RESULT_RENDERED
@@ -367,6 +376,42 @@ EOF
   [[ "$output" == *"Cancelled by user."* ]]
   status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
   [ "$status_field" = "cancelled" ]
+}
+
+@test "await: storedJob.errorMessage (link e) only — wrapper surfaces it when (a)..(d) absent" {
+  # Verifies the deepest fallback link is actually wired. Without the stub
+  # split this case is unreachable because legacy STUB_RESULT_ERROR_MESSAGE
+  # populates job.errorMessage too, short-circuiting at link (d).
+  echo '{"jobId":"job-stored-only","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_TERMINAL_STATUS=cancelled
+  export STUB_RESULT_STORED_JOB_ERROR_MESSAGE="Stored-only error message."
+  unset STUB_RESULT_JOB_ERROR_MESSAGE
+  unset STUB_RESULT_ERROR_MESSAGE
+  unset STUB_RESULT_RAW
+  unset STUB_RESULT_STDOUT
+  unset STUB_RESULT_RENDERED
+
+  run "$WRAPPER" await job-stored-only
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Stored-only error message."* ]]
+  status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
+  [ "$status_field" = "cancelled" ]
+}
+
+@test "await: fallback chain precedence — link (a) wins over link (b) when both populated" {
+  # Both rawOutput (a) and codex.stdout (b) carry distinct text; wrapper must
+  # emit (a) per render.mjs:401-403 ordering. Catches a mutant that swaps the
+  # order of the first two extract_json_field probes in fetch_result.
+  echo '{"jobId":"job-prec","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="A-raw-output-wins"
+  export STUB_RESULT_STDOUT="B-codex-stdout-loses"
+
+  run "$WRAPPER" await job-prec
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"A-raw-output-wins"* ]]
+  [[ "$output" != *"B-codex-stdout-loses"* ]]
 }
 
 # ── infrastructure-failure (M9) ───────────────────────────────────
@@ -394,9 +439,106 @@ EOF
   echo "$status_json" | jq -e '.job.status' >/dev/null
   echo "$status_json" | jq -e '.workspaceRoot' >/dev/null
 
+  # Positive contract: top-level `.status` MUST be absent. A reader-mutation
+  # in the wrapper from `.job.status` → `.status` would otherwise pass only
+  # because the stub omits the field by accident — we assert the absence so
+  # the stub becomes a positive contract for the real companion shape.
+  printf '%s' "$status_json" > "$TEST_ROOT/status.json"
+  top_level_status=$(jq -r '.status // empty' < "$TEST_ROOT/status.json")
+  [ -z "$top_level_status" ]
+
   # result → storedJob.result.rawOutput
   export STUB_RESULT_RAW="hello"
   result_json=$("$STUB" result x --json)
   echo "$result_json" | jq -e '.storedJob.result.rawOutput' >/dev/null
   echo "$result_json" | jq -e '.job' >/dev/null
+}
+
+# ── PIPE_BUF / 4096-byte atomicity (F-4) ──────────────────────────
+
+@test "audit: row close to but under PIPE_BUF (4096B) — 10 concurrent writers, no interleaving" {
+  # Construct a jobId that, after JSON encoding into the audit row, leaves
+  # us within ~150 bytes of the 4096-byte PIPE_BUF cap. The other three
+  # fields (elapsed_seconds, completion_status="success", ISO timestamp,
+  # field names + JSON punctuation) consume ~120 bytes total, so we size
+  # the jobId to push the row close to 4000 bytes — comfortably under the
+  # cap so writes remain atomic, but stressing the wrapper-imposed bound.
+  echo '{"jobId":"job-bigrow","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  big_id_prefix=$(printf 'j%.0s' $(seq 1 3900))   # 3900 bytes of 'j'
+  WRITERS=10
+
+  pids=()
+  for i in $(seq 1 $WRITERS); do
+    "$WRAPPER" await "${big_id_prefix}-${i}" >/dev/null 2>&1 &
+    pids+=($!)
+  done
+  for pid in "${pids[@]}"; do wait "$pid"; done
+
+  rows=$(wc -l < .qrspi/audit-codex-review.jsonl)
+  [ "$rows" -eq "$WRITERS" ]
+
+  # Every line individually parses: this is the critical assertion. If any
+  # row interleaved with another, JSON parse would fail on at least one line.
+  bad=$(while IFS= read -r line; do
+    echo "$line" | jq -e '.job_id and .elapsed_seconds and .completion_status and .timestamp' >/dev/null 2>&1 || echo BAD
+  done < .qrspi/audit-codex-review.jsonl | grep -c BAD || true)
+  [ "$bad" -eq 0 ]
+
+  # Every row's encoded byte length stayed ≤ 4096 (PIPE_BUF).
+  while IFS= read -r line; do
+    [ "${#line}" -le 4095 ]   # +1 for the newline brings the write to ≤4096
+  done < .qrspi/audit-codex-review.jsonl
+}
+
+@test "audit: row that would exceed 4096B fails-closed with exit 12 (PIPE_BUF guard)" {
+  # A 5000-byte jobId pushes the encoded row past PIPE_BUF. The wrapper must
+  # refuse the append rather than risk an interleaved write.
+  echo '{"jobId":"oversize","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  oversize_id=$(printf 'X%.0s' $(seq 1 5000))    # 5000 bytes
+  run "$WRAPPER" await "$oversize_id"
+  [ "$status" -eq 12 ]
+  [ -n "$output$stderr" ]
+  # No row should have been appended.
+  if [ -f .qrspi/audit-codex-review.jsonl ]; then
+    rows=$(wc -l < .qrspi/audit-codex-review.jsonl)
+    [ "$rows" -eq 0 ]
+  fi
+}
+
+# ── mkdir-lock stale-reap (F-5) ───────────────────────────────────
+
+@test "audit: stale lockdir (>30s old) is reaped, await still succeeds" {
+  echo '{"jobId":"job-stale","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  # Pre-create the lockdir with a mtime far in the past (epoch). The wrapper
+  # reaps any lockdir whose age > 30s and proceeds; without the reap, it
+  # would block until the bounded retry budget (~10s) elapsed and return 12.
+  mkdir -p .qrspi
+  chmod 0700 .qrspi
+  mkdir .qrspi/audit-codex-review.lock
+  # Touch with the canonical "long ago" timestamp; both BSD and GNU touch
+  # accept `-t YYYYMMDDhhmm`. Use 2001-01-01 00:00 — far enough past to be
+  # unambiguously >30s old regardless of clock skew.
+  touch -t 200101010000 .qrspi/audit-codex-review.lock
+
+  start=$(date +%s)
+  run "$WRAPPER" await job-stale
+  end=$(date +%s)
+  elapsed=$((end - start))
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ok"* ]]
+  # Should complete quickly — well under the 10s lock-retry budget. If the
+  # stale-reap branch failed, await would either time out or fail with 12.
+  [ "$elapsed" -lt 10 ]
+  rows=$(wc -l < .qrspi/audit-codex-review.jsonl)
+  [ "$rows" -eq 1 ]
 }
