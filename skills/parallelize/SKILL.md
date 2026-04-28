@@ -29,7 +29,7 @@ Parallelize is the skill that produces and gates the plan; Implement is the skil
 
 This is the locked rule set the scope-reviewer dispatch consumes (see `skills/_shared/templates/scope-reviewer.md` rules-loading procedure with `{ARTIFACT_TYPE}=parallelize`). Boundary-drift findings dispatch off the DEFERS list; scope-compliance dispatches off the OWNS list.
 
-**Parallelize OWNS:**
+### Parallelize OWNS
 
 - The dependency graph between current-phase tasks (logical task-to-task dependencies recorded in the Dependency Analysis table).
 - File-overlap analysis across tasks (the file-disjointness check that distinguishes parallel groups from collisions inside a group).
@@ -37,7 +37,7 @@ This is the locked rule set the scope-reviewer dispatch consumes (see `skills/_s
 - The Mermaid dependency graph rendered into `parallelization.md`.
 - The Execution Mode decision (sequential / parallel / hybrid) with one-sentence rationale.
 
-**Parallelize DEFERS:**
+### Parallelize DEFERS
 
 - Task specs themselves (acceptance tests, dependencies-list, LOC estimate, description) — owned by Plan (`plan.md` + `tasks/*.md`). Parallelize consumes these as inputs and MUST NOT rewrite them.
 - Per-task implementation logic (how a task achieves its goal; the actual code, test assertions, file edits) — owned by Implement (per-task orchestrator subagents).
@@ -157,7 +157,7 @@ After writing `parallelization.md` (and after every revision), run one review ro
 
 > **IMPORTANT — Compaction recommended (M53, pre-large-subagent-dispatch).** The Claude reviewer and scope-reviewer subagents below each consume `parallelization.md` plus referenced inputs and may produce >10K tokens of findings output. Run `/compact` before dispatching if context utilization may exceed ~50%.
 
-1. **Claude review subagent.** The reviewer prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim (the boilerplate file content is concatenated into the rendered prompt — the dispatched subagent sees the M48 finding schema, change-type classifier, and disagreement-valid framing inline; it does not load the file at runtime). Inputs: `parallelization.md` + `plan.md` + the current-phase `tasks/*.md` (or fix-task batch under `fixes/{type}-round-NN/`). Checks: file-overlap inside any parallel group, symbolic-base vocabulary violations, hybrid scheme that misses a needed stage commit, dispatch-wave ordering that ignores a dependency, missing required sections, mismatch between Dependency Analysis and Branch Map, mismatch between current-phase tasks and `plan.md` phase definitions. Findings written to `reviews/parallelize-review.md` under `#### Claude` and conform to the M48 5-field schema from the embedded boilerplate.
+1. **Claude review subagent.** The reviewer prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim (the boilerplate file content is concatenated into the rendered prompt — the dispatched subagent sees the M48 finding schema, change-type classifier, and disagreement-valid framing inline; it does not load the file at runtime). Inputs: `parallelization.md` + `plan.md` + the current-phase `tasks/*.md` (or fix-task batch under `fixes/{type}-round-NN/`). Checks: file-overlap inside any parallel group, symbolic-base vocabulary violations, hybrid scheme that misses a needed stage commit, dispatch-wave ordering that ignores a dependency, missing required sections, mismatch between Dependency Analysis and Branch Map, mismatch between current-phase tasks and `plan.md` phase definitions. **Completeness check (mandatory):** the reviewer MUST enumerate every current-phase task from `plan.md` and verify each appears (a) as a node in the Mermaid dependency graph; (b) as a row in the Branch Map; (c) is covered by pairwise file-overlap analysis with every other current-phase task (the Dependency Analysis table must reflect this pairwise coverage, even when the analyzed pair has no overlap and no dependency). A task missing from any of (a)/(b)/(c) — or a task pair missing from pairwise file-overlap analysis — is a CRITICAL finding (silent omission from BOTH the Dependency Analysis and the Branch Map is the failure mode this check exists to catch). Findings written to `reviews/parallelize-review.md` under `#### Claude` and conform to the M48 5-field schema from the embedded boilerplate.
 
 2. **Scope-reviewer subagent (runs in parallel with the Claude reviewer).** Dispatch the cross-cutting scope-reviewer template `skills/_shared/templates/scope-reviewer.md` with parameter `{ARTIFACT_TYPE}=parallelize`. The template's rules-loading procedure resolves `skills/parallelize/SKILL.md` and parses the `## Parallelize OWNS / Parallelize DEFERS` section above as the locked rule set; the dispatched subagent runs the three checks (boundary-drift detection against DEFERS, scope-compliance per OWNS, U14 boundary-drift signal) against `parallelization.md`. The template's `## Embedded Boilerplate` section requires that `skills/_shared/reviewer-boilerplate.md` is concatenated into the rendered prompt verbatim at dispatch time — do that as part of constructing this dispatch. Findings written to `reviews/parallelize-review.md` under `#### Scope-Reviewer` and conform to the M48 5-field schema.
 
