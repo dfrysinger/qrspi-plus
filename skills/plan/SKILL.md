@@ -3,7 +3,7 @@ name: plan
 description: Use when prior artifacts are approved and the QRSPI pipeline needs detailed task specs — breaks structure into ordered tasks with test expectations, dependencies, and LOC estimates (full pipeline requires design+structure; quick fix requires only goals+research)
 ---
 
-# Plan (QRSPI Step 6)
+# Plan (QRSPI Step 7)
 
 **Announce at start:** "I'm using the QRSPI Plan skill to create detailed task specs."
 

@@ -3,7 +3,7 @@ name: test
 description: Use when implementation is complete (after Integrate in full pipeline, after Implement in quick fix) — runs acceptance testing against goals, routes failures through fix pipeline, handles phase completion and PR creation
 ---
 
-# Test (QRSPI Step 10)
+# Test (QRSPI Step 11)
 
 **Announce at start:** "I'm using the QRSPI Test skill to run acceptance testing against the original goals."
 

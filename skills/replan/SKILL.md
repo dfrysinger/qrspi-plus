@@ -3,7 +3,7 @@ name: replan
 description: Use between phases when Test signals more phases remain — analyzes completed phase, proposes task updates with severity classification, handles minor updates or major backward loops
 ---
 
-# Replan (QRSPI Step 11)
+# Replan (QRSPI — out-of-route)
 
 **Announce at start:** "I'm using the QRSPI Replan skill to update remaining tasks based on phase learnings."
 

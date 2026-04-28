@@ -3,7 +3,7 @@ name: structure
 description: Use when design.md is approved and the QRSPI pipeline needs file/component mapping — maps vertical slices to specific files, interfaces, and component boundaries
 ---
 
-# Structure (QRSPI Step 5)
+# Structure (QRSPI Step 6)
 
 **Announce at start:** "I'm using the QRSPI Structure skill to map the design to files and interfaces."
 
