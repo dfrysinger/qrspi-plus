@@ -120,37 +120,179 @@ bash_detect_file_writes() {
         part="${part#"${part%%[![:space:]]*}"}"
         part="${part%"${part##*[![:space:]]}"}"
 
-        # ── task-43 S-2: cd-before-relative-write subagent escape ─────────
-        # Detect a leading `cd <target>` in this compound part. If the target
-        # is absolute (`/...`), contains a `..` segment, or is `~` (home
-        # expansion), the shell's effective CWD diverges from the hook PWD
-        # for ALL subsequent parts in this compound. Mark cd_escaped=1 so
-        # later relative-path writes are treated as opaque.
+        # ── task-43 S-2 + task-46 M4-1: cd-escape detection (broadened) ───
+        # Detect any `cd`, `pushd`, or `popd` invocation in this part — at
+        # the part-leading position OR after `(`, `{`, or `;` (subshell or
+        # brace-group wrappers and intra-part sequences). Each occurrence
+        # is evaluated:
         #
-        # Conservative posture (Codex round-3 recommendation): we do NOT try
-        # to track exact post-cd CWD — we just refuse to trust the apparent
-        # relative-path target after any cd-out. cd into a relative subdir
-        # of the worktree (e.g., `cd src && ...`) keeps cd_escaped=0 because
-        # the post-cd CWD is still inside the worktree, so relative writes
-        # resolve to a path the wall regex still matches.
-        local cd_re='^cd[[:space:]]+([^[:space:]]+|"[^"]*"|'\''[^'\'']*'\'')'
-        if [[ "$part" =~ $cd_re ]]; then
-            local cd_target="${BASH_REMATCH[1]}"
-            # Strip surrounding quotes from the cd target.
-            cd_target="${cd_target%\"}"
-            cd_target="${cd_target#\"}"
-            cd_target="${cd_target%\'}"
-            cd_target="${cd_target#\'}"
+        #   pushd / popd  → always sets cd_escaped=1 (we don't track the
+        #                   directory stack; conservative).
+        #   cd <target>   → cd_escaped=1 when the target is absolute (/...),
+        #                   contains `..`, is `~`/`-`, OR contains `$` or
+        #                   `` ` `` (variable expansion or command
+        #                   substitution — actual target unknowable
+        #                   statically). Plain bareword (no /, no ., no $,
+        #                   no `, no ~, no -) keeps cd_escaped=0 so
+        #                   `cd src && ...` continues to work.
+        #
+        # Why not track CWD precisely? We refuse to model post-cd state —
+        # the function's job is to tell pre-tool-use whether to trust
+        # later RELATIVE write targets. Any cd whose effective CWD we
+        # can't compute deterministically must invalidate trust.
+        #
+        # Implementation:
+        #   1. Find each cd/pushd/popd token whose preceding char is one of
+        #      the part's start, whitespace inside `(`/`{`, or after `;`.
+        #      We do NOT match cd as a substring of another word.
+        #   2. For pushd/popd, set cd_escaped=1 unconditionally.
+        #   3. For cd, extract the next token and apply the danger check.
+        local cd_scan_idx=0
+        local cd_scan_len=${#part}
+        # Strip a leading `(` or `{` from a temp copy so cd at start of
+        # subshell/brace-group wrappers still hits the part-start branch.
+        # We just walk the part with a position cursor.
+        while [[ $cd_scan_idx -lt $cd_scan_len ]]; do
+            # Skip leading whitespace + opening group tokens at this position.
+            local boundary_ok=0
+            if [[ $cd_scan_idx -eq 0 ]]; then
+                boundary_ok=1
+            else
+                local prev_char="${part:$((cd_scan_idx-1)):1}"
+                case "$prev_char" in
+                    ' '|$'\t'|';'|'('|'{'|'&'|'|') boundary_ok=1 ;;
+                esac
+            fi
+            if [[ $boundary_ok -eq 0 ]]; then
+                cd_scan_idx=$((cd_scan_idx+1))
+                continue
+            fi
+            # Try to match cd / pushd / popd starting at this position.
+            # The keyword must be followed by either end-of-part or a
+            # word-boundary character (whitespace, ;, &, |, ), }) — never
+            # by an alphanumeric or `_` (so `cdrom` and `pushd_internal`
+            # are NOT matched). We compute the would-be next char and
+            # check it explicitly.
+            local kw=""
+            local kw_end=0
+            # Helper: set a temp variable to the next-char + 0/1 boundary flag.
+            # Inlined per keyword to avoid nested function definitions.
+            local nxt=""
+            # pushd (5 chars)
+            if [[ "${part:$cd_scan_idx:5}" == "pushd" ]]; then
+                if [[ $((cd_scan_idx+5)) -ge $cd_scan_len ]]; then
+                    nxt=""
+                else
+                    nxt="${part:$((cd_scan_idx+5)):1}"
+                fi
+                case "$nxt" in
+                    ''|' '|$'\t'|';'|'&'|'|'|')'|'}')
+                        kw="pushd"
+                        kw_end=$((cd_scan_idx+5))
+                        ;;
+                esac
+            fi
+            # popd (4 chars)
+            if [[ -z "$kw" && "${part:$cd_scan_idx:4}" == "popd" ]]; then
+                if [[ $((cd_scan_idx+4)) -ge $cd_scan_len ]]; then
+                    nxt=""
+                else
+                    nxt="${part:$((cd_scan_idx+4)):1}"
+                fi
+                case "$nxt" in
+                    ''|' '|$'\t'|';'|'&'|'|'|')'|'}')
+                        kw="popd"
+                        kw_end=$((cd_scan_idx+4))
+                        ;;
+                esac
+            fi
+            # cd (2 chars)
+            if [[ -z "$kw" && "${part:$cd_scan_idx:2}" == "cd" ]]; then
+                if [[ $((cd_scan_idx+2)) -ge $cd_scan_len ]]; then
+                    nxt=""
+                else
+                    nxt="${part:$((cd_scan_idx+2)):1}"
+                fi
+                case "$nxt" in
+                    ''|' '|$'\t'|';'|'&'|'|'|')'|'}')
+                        kw="cd"
+                        kw_end=$((cd_scan_idx+2))
+                        ;;
+                esac
+            fi
+            local rest_start=$kw_end
+            if [[ -z "$kw" ]]; then
+                cd_scan_idx=$((cd_scan_idx+1))
+                continue
+            fi
+            # Found a cd/pushd/popd at a valid boundary.
+            if [[ "$kw" == "pushd" || "$kw" == "popd" ]]; then
+                # pushd/popd always escape — we don't track the stack.
+                cd_escaped=1
+                cd_scan_idx=$rest_start
+                continue
+            fi
+            # cd: extract the next token. Skip leading whitespace.
+            while [[ $rest_start -lt $cd_scan_len ]]; do
+                local rc="${part:$rest_start:1}"
+                [[ "$rc" == " " || "$rc" == $'\t' ]] || break
+                rest_start=$((rest_start+1))
+            done
+            # Read the target token. Handle quotes (single or double) and
+            # bareword (terminated by whitespace, `;`, `&`, `|`, `)`, `}`).
+            local cd_target=""
+            if [[ $rest_start -lt $cd_scan_len ]]; then
+                local rq="${part:$rest_start:1}"
+                if [[ "$rq" == "\"" ]]; then
+                    local rend=$((rest_start+1))
+                    while [[ $rend -lt $cd_scan_len && "${part:$rend:1}" != "\"" ]]; do
+                        rend=$((rend+1))
+                    done
+                    cd_target="${part:$((rest_start+1)):$((rend-rest_start-1))}"
+                    rest_start=$((rend+1))
+                elif [[ "$rq" == "'" ]]; then
+                    local rend=$((rest_start+1))
+                    while [[ $rend -lt $cd_scan_len && "${part:$rend:1}" != "'" ]]; do
+                        rend=$((rend+1))
+                    done
+                    cd_target="${part:$((rest_start+1)):$((rend-rest_start-1))}"
+                    rest_start=$((rend+1))
+                else
+                    local rend=$rest_start
+                    while [[ $rend -lt $cd_scan_len ]]; do
+                        local rtc="${part:$rend:1}"
+                        case "$rtc" in
+                            ' '|$'\t'|';'|'&'|'|'|')'|'}') break ;;
+                            *) rend=$((rend+1)) ;;
+                        esac
+                    done
+                    cd_target="${part:$rest_start:$((rend-rest_start))}"
+                    rest_start=$rend
+                fi
+            fi
+            # Empty target (just `cd` with nothing) = cd to $HOME → escape.
+            if [[ -z "$cd_target" ]]; then
+                cd_escaped=1
+                cd_scan_idx=$rest_start
+                continue
+            fi
+            # Danger check on the (post-quote-strip) target:
+            #   - Contains `$` or `` ` `` → variable expansion or command
+            #     substitution; static target unknowable → escape.
+            #   - Absolute path, parent traversal, `~` (home), or `-`
+            #     (OLDPWD) → escape.
+            #   - Plain bareword without /, $, `, ~, - that is not "."
+            #     → keep cd_escaped as-is (legitimate subdir cd).
             case "$cd_target" in
-                /*|~*|*/../*|*/..|../*|..)
+                *'$'*|*'`'*)
                     cd_escaped=1
                     ;;
-                # `cd -` (return to OLDPWD) — opaque since we don't track it.
-                -)
+                /*|~*|*/../*|*/..|../*|..|-)
                     cd_escaped=1
                     ;;
             esac
-        fi
+            cd_scan_idx=$rest_start
+        done
 
         # ── Pattern: opaque-write — inline interpreters ──────────────────
         # python/python3/perl/ruby/bash/sh with -e or -c flag, node with -e

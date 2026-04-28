@@ -586,3 +586,64 @@ init_state() {
   grep -q "intentionally NOT contained" "$hook_path"
   grep -q "target-based" "$hook_path"
 }
+
+# ──────────────────────────────────────────────────────────────
+# [task-46 M4-1] subagent broadened cd-escape patterns blocked
+# ──────────────────────────────────────────────────────────────
+# Round-4 review M4-1 found that task-43's S-2 fix only matched literal
+# cd targets. After task-46, any cd/pushd target with `$`, `` ` ``, `$(`,
+# or `${` is opaque; pushd is opaque even with bareword target; and
+# subshell/brace-group wrapped cd-out triggers the inner scan. These four
+# regression tests confirm the pre-tool-use wall actually blocks at the
+# hook layer.
+
+# [task-46 M4-1] cd "$HOME" && rel-write (variable expansion)
+@test "[task-46 M4-1] subagent cd \"\$HOME\" && rel-write blocked (var)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd "$HOME" && echo x > escape.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-46 M4-1] cd "$(mktemp -d)" && rel-write (command substitution)
+@test "[task-46 M4-1] subagent cd \"\$(mktemp -d)\" && rel-write blocked (cmd subst)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd "$(mktemp -d)" && echo x > escape.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-46 M4-1] pushd /tmp && rel-write (pushd absolute)
+@test "[task-46 M4-1] subagent pushd /tmp && rel-write blocked (pushd)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='pushd /tmp && echo x > escape.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-46 M4-1] (cd /tmp; > escape) — subshell-wrapped cd-out
+@test "[task-46 M4-1] subagent (cd /tmp; rel-write) blocked (subshell wrap)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='(cd /tmp; echo x > escape.txt)'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-46 M4-1 NEGATIVE] cd src && rel-write still allowed (regression
+# of task-43 negative — confirm the broader detection didn't break it).
+@test "[task-46 M4-1 NEGATIVE] subagent cd src && rel-write still allowed" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01/src"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd src && echo x > inside.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
