@@ -30,9 +30,15 @@ set -u
 : "${QRSPI_CODEX_POLL_BACKOFF_AFTER:=120}"
 : "${QRSPI_CODEX_CEILING_SECONDS:=1200}"
 : "${QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS:=5}"
-: "${QRSPI_AUDIT_DIR:=.qrspi}"
-: "${QRSPI_AUDIT_FILE:=audit-codex-review.jsonl}"
-: "${QRSPI_AUDIT_LOCK_DIR:=audit-codex-review.lock}"
+
+# Audit-path lockdown (R1 Codex-S2 / task-29): the audit dir, file, and lock
+# names are NOT environment-overridable. The dir is resolved at runtime from
+# .qrspi/state.json's `artifact_dir` field via resolve_audit_dir() — there is
+# no env-var escape hatch. Any attacker-controlled $QRSPI_AUDIT_DIR /
+# $QRSPI_AUDIT_FILE / $QRSPI_AUDIT_LOCK_DIR they may inject is ignored.
+readonly QRSPI_AUDIT_FILENAME="audit-codex-review.jsonl"
+readonly QRSPI_AUDIT_LOCK_NAME="audit-codex-review.lock"
+readonly QRSPI_STATE_FILE_REL=".qrspi/state.json"
 
 # ---------------------------------------------------------------------------
 # Companion path resolution: explicit $CODEX_COMPANION wins; else glob the
@@ -95,16 +101,86 @@ now_epoch() {
 }
 
 # ---------------------------------------------------------------------------
+# resolve_audit_dir
+#
+# Audit-path lockdown (R1 Codex-S2 / task-29). The audit dir is NOT
+# environment-overridable. We resolve it from <CWD>/.qrspi/state.json's
+# `artifact_dir` field (which the QRSPI hooks write as an absolute path), then
+# canonicalize via `realpath` so any symlink in the artifact_dir chain is
+# resolved to its real on-disk path BEFORE we open files for append.
+#
+# Fail-closed contract: state.json missing, unparseable, or lacking
+# artifact_dir → rc=12 with stderr; the caller MUST refuse to write any audit
+# rows. This is the security-critical property — there is no fallback to a
+# CWD-relative `.qrspi/` default and no env-var escape hatch.
+#
+# Echoes the canonicalized audit dir (`<realpath(artifact_dir)>/.qrspi`) on
+# stdout on success. On failure, returns 12 with no stdout.
+resolve_audit_dir() {
+  local state_file="$QRSPI_STATE_FILE_REL"
+  if [ ! -f "$state_file" ]; then
+    printf 'codex-companion-bg: %s not found; cannot resolve audit dir (refusing to write audit rows)\n' \
+      "$state_file" >&2
+    return 12
+  fi
+
+  # `jq -r` echoes a literal "null" for missing keys; guard with `// empty` so
+  # the absence is observable as an empty string. A jq parse failure (rc != 0)
+  # surfaces a separate error path so we don't silently treat malformed JSON
+  # as "no artifact_dir."
+  local artifact_dir jq_err
+  if ! artifact_dir=$(jq -r '.artifact_dir // empty' < "$state_file" 2>/dev/null); then
+    jq_err=$(jq -r '.artifact_dir // empty' < "$state_file" 2>&1 1>/dev/null)
+    printf 'codex-companion-bg: failed to parse %s: %s\n' "$state_file" "$jq_err" >&2
+    return 12
+  fi
+  if [ -z "$artifact_dir" ]; then
+    printf 'codex-companion-bg: %s missing artifact_dir field; refusing to write audit rows\n' \
+      "$state_file" >&2
+    return 12
+  fi
+  if [ ! -d "$artifact_dir" ]; then
+    printf 'codex-companion-bg: artifact_dir from state.json is not a directory: %s\n' \
+      "$artifact_dir" >&2
+    return 12
+  fi
+
+  # `realpath` canonicalizes every component (resolving any symlinks in the
+  # ancestor chain). On macOS `/tmp` resolves to `/private/tmp`, so callers
+  # comparing paths must compare canonicalized forms (we always do).
+  local canon
+  if ! canon=$(realpath "$artifact_dir" 2>/dev/null); then
+    printf 'codex-companion-bg: realpath failed for artifact_dir %s\n' "$artifact_dir" >&2
+    return 12
+  fi
+  if [ -z "$canon" ]; then
+    printf 'codex-companion-bg: realpath returned empty for artifact_dir %s\n' "$artifact_dir" >&2
+    return 12
+  fi
+  printf '%s/.qrspi' "$canon"
+}
+
+# ---------------------------------------------------------------------------
 # emit_audit_row job_id elapsed_seconds completion_status timestamp
 #
-# Append one JSONL row to .qrspi/audit-codex-review.jsonl. Acquires mkdir-lock
-# with bounded retry; reaps locks older than 30s via cross-platform stat.
-# Returns 0 on success, 12 on any integrity failure (perm, lock leak, append).
+# Append one JSONL row to <artifact_dir>/.qrspi/audit-codex-review.jsonl,
+# where <artifact_dir> is resolved from state.json (NOT from any env var).
+# Acquires mkdir-lock with bounded retry; reaps locks older than 30s via
+# cross-platform stat. Returns 0 on success, 12 on any integrity failure
+# (state-resolve, perm, symlink, lock leak, append).
 emit_audit_row() {
   local job_id="$1" elapsed="$2" status="$3" ts="$4"
-  local audit_dir="$QRSPI_AUDIT_DIR"
-  local audit_file="$audit_dir/$QRSPI_AUDIT_FILE"
-  local lock_dir="$audit_dir/$QRSPI_AUDIT_LOCK_DIR"
+
+  # Resolve audit dir from state.json (security-critical: no env override).
+  # Any failure here is a hard 12 — we refuse to write to a fallback CWD
+  # `.qrspi/` because that would mask the missing-state condition the
+  # security spec demands we surface.
+  local audit_dir
+  if ! audit_dir=$(resolve_audit_dir); then
+    return 12
+  fi
+  local audit_file="$audit_dir/$QRSPI_AUDIT_FILENAME"
+  local lock_dir="$audit_dir/$QRSPI_AUDIT_LOCK_NAME"
 
   # Spec line 14: audit dir must be 0700. Create it if missing; if it already
   # exists with looser perms, repair via chmod — and HARD FAIL if chmod fails
@@ -185,6 +261,21 @@ emit_audit_row() {
     rmdir "$lock_dir" 2>/dev/null
     printf 'codex-companion-bg: audit row would be %d bytes (>4096 PIPE_BUF cap); refusing to append\n' \
       "$row_len" >&2
+    return 12
+  fi
+
+  # Symlink lockdown (R1 Codex-S2 / task-29). If the audit-file path itself is
+  # a symlink, refuse to follow it — an attacker could plant a symlink at
+  # <audit_dir>/audit-codex-review.jsonl pointing at /etc/passwd or a sibling
+  # workspace's secrets file, and a naive `>>` append would dereference it and
+  # corrupt that target. We use `[ -L ... ]` (lstat semantics) AFTER taking
+  # the mkdir lock so the check is race-free against concurrent writers in
+  # this process group; cross-process attackers planting between this check
+  # and the append are bounded by the directory's 0700 perm we just enforced.
+  if [ -L "$audit_file" ]; then
+    rmdir "$lock_dir" 2>/dev/null
+    printf 'codex-companion-bg: audit file %s is a symlink; refusing to follow (path-injection guard)\n' \
+      "$audit_file" >&2
     return 12
   fi
 
