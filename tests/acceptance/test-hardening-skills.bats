@@ -72,7 +72,10 @@ teardown() {
 
 # M21 — Replan SKILL.md contains Goals as a valid loop-back target
 @test "[M21] replan SKILL.md lists Goals as a backward loop-back target" {
-  # AC: major changes that affect acceptance criteria must loop back to Goals
+  # AC: major changes that affect project goals (problem framing, intent, scope)
+  # must loop back to Goals. Acceptance criteria themselves now live in plan.md
+  # task specs (per-task Test Expectations) and plan.md's per-phase block; changes
+  # to those route through Plan, not Goals (per T9's strip-from-goals contract).
   local skill_file="$SKILLS_DIR/replan/SKILL.md"
   grep -q "Loop back to Goals\|loop.*back.*Goals\|back.*to Goals\|loop-back target.*Goals\|Goals.*loop-back" "$skill_file"
 }
@@ -123,12 +126,23 @@ teardown() {
 # M24 — test SKILL.md contains criterion-to-test mapping
 @test "[M24] test SKILL.md contains criterion-to-test mapping instructions" {
   # AC: each acceptance criterion must map to at least one test; the SKILL.md must
-  # instruct the test-writer to build this mapping
+  # instruct the test-writer to build this mapping. Per T9's strip-from-goals
+  # contract, acceptance criteria are sourced from plan.md task specs (each task's
+  # `## Test Expectations` block) and plan.md's per-phase acceptance block, NOT
+  # from goals.md. The test SKILL.md must reference plan.md (or plan task specs /
+  # test expectations) as the source.
   local skill_file="$SKILLS_DIR/test/SKILL.md"
   [ -f "$skill_file" ]
-  grep -q "criterion\|acceptance criteria" "$skill_file"
+  grep -q "criterion\|acceptance criteria\|test expectation" "$skill_file"
   # Must reference the traceability/mapping from criteria to tests
   grep -qi "maps to\|map.*to.*test\|criterion.*test\|coverage" "$skill_file"
+  # Must source acceptance criteria from plan.md task specs (per T9 contract),
+  # NOT from goals.md as the criteria-authoring source. Reject the legacy
+  # phrasings that frame acceptance criteria as goals.md-owned.
+  ! grep -qE "goals\.md acceptance criteria|acceptance criteria (in|from) goals\.md|goals\.md.*acceptance.*criteri" "$skill_file"
+  # Must positively reference plan.md / task specs / test expectations as the
+  # acceptance-criteria source.
+  grep -qE "plan\.md.*(task spec|test expectation|acceptance)|(task spec|test expectation).*plan\.md|task-spec.*test expectation|Test Expectations.*plan\.md|plan\.md.*Test Expectations" "$skill_file"
 }
 
 # M24 — test SKILL.md contains goals.md checkbox update instructions
