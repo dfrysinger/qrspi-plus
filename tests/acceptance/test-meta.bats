@@ -41,8 +41,8 @@ unit_test_dir() {
   [ "$count" -eq 25 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-28, T19 FU-1 state.sh refactor)
-@test "[AC8] Unit test suite has exactly 555 @test definitions (baseline)" {
+# AC8 — Unit test count baseline (updated 2026-04-28, T38 fix-cycle replan 6→7 tests)
+@test "[AC8] Unit test suite has exactly 558 @test definitions (baseline)" {
   # Baseline for stage-after-G6 = octopus(T16, T17, T18) on top of
   # stage-after-G5 (0ee9fd1, 18 .bats / 416 @tests). All three Wave 6
   # tasks are file-disjoint except for tests/acceptance/test-meta.bats
@@ -93,11 +93,21 @@ unit_test_dir() {
   # computation to state_compute_current_step (single source of truth for
   # pipeline-order rule). 552 → 555. Files baseline (25) unchanged
   # because test-state.bats already exists.
+  #
+  # 2026-04-28 T38 fix-cycle integration-round-01 (replan 6→7 catch-up):
+  # T14 added `replan` as the 7th `{ARTIFACT_TYPE}` value to the scope-
+  # reviewer parameterization, but tests/unit/test-scope-reviewer.bats
+  # still asserted only six values. T38 added +3 @tests to that file:
+  # one wired-skill-dispatch assertion ({ARTIFACT_TYPE}=replan), one
+  # seeded-out-of-scope-replan.md DEFERS-list assertion, and one in-
+  # scope (Replan-OWNS) regression-net assertion. 555 → 558. Files
+  # baseline (25) unchanged because test-scope-reviewer.bats already
+  # exists.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 555 ]
+  [ "$count" -eq 558 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-27 T16+T17+T18)

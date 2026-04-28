@@ -1,14 +1,20 @@
 #!/usr/bin/env bats
 bats_require_minimum_version 1.5.0
 
-# Task 17 — End-to-end refusal across the six wired skills (Acceptance)
+# Task 17 — End-to-end refusal across the seven wired skills (Acceptance)
 #
-# Exercises the six wired skills (goals/design/phasing/structure/plan/
-# parallelize) to confirm that, when given a seeded out-of-scope fixture
-# matching that skill's `{ARTIFACT_TYPE}`, the scope-reviewer dispatch
-# would emit a boundary-drift / scope finding (the locked OWNS/DEFERS
-# rule set + the seeded-violation content together produce the contract
-# the reviewer must flag).
+# Exercises the seven wired skills (goals/design/phasing/structure/plan/
+# parallelize/replan) to confirm that, when given a seeded out-of-scope
+# fixture matching that skill's `{ARTIFACT_TYPE}`, the scope-reviewer
+# dispatch would emit a boundary-drift / scope finding (the locked
+# OWNS/DEFERS rule set + the seeded-violation content together produce
+# the contract the reviewer must flag).
+#
+# T14 added `replan` as the 7th `{ARTIFACT_TYPE}` value. The replan
+# stubbed-dispatch test (below) and the sanity-sweep test enforce that
+# addition end-to-end at the rendered-prompt layer — a regression that
+# removes `replan` from the template will fail the rendered-prompt
+# content assertions for the replan dispatch.
 #
 # Implementation note (per task-17.md): real-subagent integration is
 # expensive — the test budget is 60 seconds. Five of the six skills are
@@ -40,10 +46,11 @@ setup() {
   STRUCTURE_FILE="$ROOT/skills/structure/SKILL.md"
   PLAN_FILE="$ROOT/skills/plan/SKILL.md"
   PARALLELIZE_FILE="$ROOT/skills/parallelize/SKILL.md"
+  REPLAN_FILE="$ROOT/skills/replan/SKILL.md"
   SCOPE_REVIEWER_TEMPLATE="$ROOT/skills/_shared/templates/scope-reviewer.md"
   REVIEWER_BOILERPLATE="$ROOT/skills/_shared/reviewer-boilerplate.md"
   FIXTURES="$ROOT/tests/fixtures"
-  export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE
+  export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE REPLAN_FILE
   export SCOPE_REVIEWER_TEMPLATE REVIEWER_BOILERPLATE FIXTURES
 }
 
@@ -125,6 +132,40 @@ render_scope_reviewer_prompt() {
   printf '%s' "$prompt" | grep -Eqi "Task [0-9]+:|Implementation Logic|Architecture Decision|## Phasing|[a-f0-9]{12}"
 }
 
+@test "stubbed dispatch — replan: rendered prompt carries template + boilerplate + Replan OWNS/DEFERS + fixture content (T14 7th value)" {
+  # T14 added `replan` as the 7th `{ARTIFACT_TYPE}` value. This test
+  # asserts the same rendered-prompt contract as the other six skills:
+  # the scope-reviewer template + reviewer-boilerplate + Replan
+  # OWNS/DEFERS rule set + fixture content all assemble cleanly. A
+  # regression that removes `replan` from the template's Parameters
+  # list or the Per-{ARTIFACT_TYPE} Gated Sections will leave the
+  # rendered prompt missing the per-replan gated section content but
+  # the OWNS/DEFERS rule set extracted from the SKILL file is still
+  # present (the prompt is concatenated, not gated by render). The
+  # complementary regression net for the template's allowed-values
+  # list and gated-section enumeration is the unit-tier
+  # test-scope-reviewer.bats — together they catch removal of the
+  # replan parameterization at both the template and SKILL layers.
+  local prompt
+  prompt="$(render_scope_reviewer_prompt replan "$FIXTURES/seeded-out-of-scope-replan.md" "$REPLAN_FILE")"
+  [ -n "$prompt" ]
+  printf '%s' "$prompt" | grep -q "## Rules-Loading Procedure"
+  printf '%s' "$prompt" | grep -q "## Finding Schema"
+  printf '%s' "$prompt" | grep -q "## Replan OWNS / Replan DEFERS"
+  printf '%s' "$prompt" | grep -q "ARTIFACT_TYPE = replan"
+  # Seeded DEFERS-list violation present in the fixture portion
+  # (Phasing/Goals/Design/Structure/Plan-owned content the replan
+  # artifact must not author).
+  printf '%s' "$prompt" | grep -Eqi "roadmap\.md|future-goals\.md|future-questions\.md|future-research|future-design\.md|polling to WebSockets|src/middleware/|vertical slice|phase boundaries|task spec from scratch"
+  # In-scope OWNS content present (regression net for the locked rule
+  # set being preserved verbatim).
+  printf '%s' "$prompt" | grep -Eqi "Severity classification|Minor-path artifact updates|five-step archive-and-populate|phase-transition execution"
+  # The template's per-replan gated section is present (this is the
+  # exact line that disappears if someone removes the 7th value from
+  # the scope-reviewer template's Per-{ARTIFACT_TYPE} Gated Sections).
+  printf '%s' "$prompt" | grep -q "When \`{ARTIFACT_TYPE} == replan\`"
+}
+
 # ── Real-subagent smoke (1 skill = goals): full end-to-end dispatch contract
 
 @test "real-subagent smoke — goals: full end-to-end dispatch contract holds (rendered prompt is complete and self-contained)" {
@@ -161,13 +202,14 @@ render_scope_reviewer_prompt() {
   [ "$size" -ge 8000 ]
 }
 
-# ── Per-skill scope-reviewer-dispatch presence (sanity coverage of all 6) ──
+# ── Per-skill scope-reviewer-dispatch presence (sanity coverage of all 7) ──
 
-@test "all six wired skills dispatch the scope-reviewer template (sanity sweep)" {
+@test "all seven wired skills dispatch the scope-reviewer template (sanity sweep)" {
   grep -q "scope-reviewer.md" "$GOALS_FILE"
   grep -q "scope-reviewer.md" "$DESIGN_FILE"
   grep -q "scope-reviewer.md" "$PHASING_FILE"
   grep -q "scope-reviewer.md" "$STRUCTURE_FILE"
   grep -q "scope-reviewer.md" "$PLAN_FILE"
   grep -q "scope-reviewer.md" "$PARALLELIZE_FILE"
+  grep -q "scope-reviewer.md" "$REPLAN_FILE"
 }
