@@ -181,8 +181,9 @@ extract_subsection() {
 @test "scope-reviewer dispatch declares fail-closed on malformed OWNS/DEFERS" {
   # The scope-reviewer dispatch block lives under the review round; it must
   # explicitly state that a malformed/missing OWNS/DEFERS section triggers a
-  # CRITICAL finding and a refusal to proceed (per scope-reviewer template's
-  # malformed-case fail-closed clause).
+  # high-severity finding and a refusal to proceed (per scope-reviewer template's
+  # malformed-case fail-closed clause). Severity must conform to the M48 schema
+  # which only permits low|medium|high.
   # Locate the scope-reviewer dispatch bullet (line containing
   # "scope-reviewer subagent dispatch") and capture text up to the next
   # top-level bullet ("- **Reviewer prompt block" / "- **Codex review").
@@ -196,6 +197,103 @@ extract_subsection() {
   [ -n "$block" ]
 
   echo "$block" | grep -qiE "malformed|missing"
-  echo "$block" | grep -qE "CRITICAL|fail-closed"
+  echo "$block" | grep -qiE "fail-closed|severity: high|high-severity"
   echo "$block" | grep -qiE "refuse to proceed|MUST emit"
+}
+
+# =============================================================================
+# M48 schema compliance — phasing emissions never use `critical` severity
+# (R1 3-way converged: Claude-I1 + Codex-I4 + Codex-S5)
+# The shared M48 finding schema in skills/_shared/reviewer-boilerplate.md only
+# permits severity ∈ {low, medium, high}. Phasing previously instructed the
+# dispatched reviewer to emit "CRITICAL" findings in 3 places. A reviewer that
+# obeys phasing/SKILL.md emits findings the pause-gate cannot dispatch on
+# (severity outside enum). Normalize to `high` to match the shared
+# scope-reviewer template's malformed-case wording.
+# =============================================================================
+
+@test "phasing/SKILL.md never instructs emitting CRITICAL severity (M48 schema)" {
+  # The shared M48 finding schema only permits severity ∈ {low, medium, high}.
+  # Search the entire SKILL.md for any occurrence of the literal token
+  # "CRITICAL" (case-sensitive) — every prior occurrence in this file was a
+  # severity-emission instruction. The fix replaces them all with `high`.
+  # We allow "critical" lower-case as a normal English word (e.g. "critical
+  # path") only outside severity-emission contexts; this test enforces the
+  # uppercase token absence which previously appeared exclusively in severity
+  # contexts at lines 119, 234, 258.
+  if grep -nE "\bCRITICAL\b" "$SKILL_FILE"; then
+    echo "phasing/SKILL.md still contains CRITICAL severity tokens; M48 schema only allows low|medium|high" >&2
+    return 1
+  fi
+}
+
+@test "phasing/SKILL.md never instructs emitting severity-critical (M48 schema)" {
+  # Stronger structural guard: the literal pattern `severity: critical`
+  # (case-insensitive) must not appear anywhere in the skill prompt. Phasing
+  # emissions must conform to the shared M48 5-field schema.
+  if grep -niE "severity[[:space:]]*:[[:space:]]*critical" "$SKILL_FILE"; then
+    echo "phasing/SKILL.md instructs emitting severity: critical, which is outside the M48 schema" >&2
+    return 1
+  fi
+}
+
+@test "orphan-ID fail-closed clause uses high severity (not CRITICAL)" {
+  # The Goal-ID Consistency Validation section's "Fail-closed semantics."
+  # paragraph previously said "MUST emit a CRITICAL finding". After the M48
+  # alignment fix it must read as a high-severity emission.
+  local block
+  block="$(awk '
+    /^\*\*Fail-closed semantics\.\*\*/ { in_block = 1 }
+    in_block && /^## / { exit }
+    in_block && /^\*\*[A-Z]/ && !/^\*\*Fail-closed/ { exit }
+    in_block { print }
+  ' "$SKILL_FILE")"
+  [ -n "$block" ]
+
+  # Must NOT contain CRITICAL token
+  ! echo "$block" | grep -qE "\bCRITICAL\b"
+  # Must contain a high-severity reference (or fail-closed wording naming `high`)
+  echo "$block" | grep -qiE "severity: high|high-severity|emit a high"
+}
+
+@test "Red Flags — STOP entry for malformed OWNS/DEFERS uses high severity" {
+  # The "Red Flags — STOP" bullet about scope-reviewer fail-closed previously
+  # ended with "scope-reviewer fail-closed CRITICAL". After the M48 fix it
+  # must not name CRITICAL.
+  local block
+  block="$(extract_section "$SKILL_FILE" "## Red Flags — STOP")"
+  [ -n "$block" ]
+
+  ! echo "$block" | grep -qE "\bCRITICAL\b"
+}
+
+# =============================================================================
+# Config Validation — codex_reviews must invoke the procedure, not silent default
+# (R2 I-N5: Phasing silently defaults codex_reviews: false)
+# using-qrspi:411 says "Every skill that reads config.md applies this procedure
+# before using any field." The "No silent defaults" subsection forbids assuming
+# `codex_reviews: false` when missing.
+# =============================================================================
+
+@test "phasing/SKILL.md invokes the Config Validation Procedure" {
+  # The skill must reference the Config Validation Procedure from using-qrspi
+  # and name codex_reviews as a validated field — mirroring the pattern used
+  # by Plan/Implement/Integrate/Test.
+  grep -qE "Config Validation Procedure" "$SKILL_FILE"
+  grep -qiE "validates.*codex_reviews|codex_reviews.*validation" "$SKILL_FILE"
+}
+
+@test "phasing/SKILL.md does NOT silently default codex_reviews to false" {
+  # The Required-inputs line previously said: "default codex_reviews: false if
+  # absent". This silent default violates using-qrspi's "No silent defaults"
+  # contract. After the fix the silent-default phrase must be gone.
+  if grep -niE "default[[:space:]]+(to[[:space:]]+)?(\`)?codex_reviews:[[:space:]]*false(\`)?[[:space:]]+if[[:space:]]+absent" "$SKILL_FILE"; then
+    echo "phasing/SKILL.md still contains a silent codex_reviews:false default" >&2
+    return 1
+  fi
+  # Also reject the looser variant "default codex_reviews: false"
+  if grep -niE "default[[:space:]]+(to[[:space:]]+)?(\`)?codex_reviews:[[:space:]]*false" "$SKILL_FILE"; then
+    echo "phasing/SKILL.md still contains a silent codex_reviews:false default" >&2
+    return 1
+  fi
 }
