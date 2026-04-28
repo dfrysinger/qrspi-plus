@@ -17,11 +17,8 @@ source "$_state_script_dir/artifact-map.sh"
 # after plan-approved.
 # Returns 1 if artifact_dir does not exist.
 #
-# NOTE (FU-1): This helper duplicates the inline first-non-approved-step logic in
-# state_init_or_reconcile below. Refactoring state_init_or_reconcile to delegate
-# to this helper is OUT OF SCOPE for T4 (insertion-only spec). See
-# docs/qrspi/2026-04-26-prompt-improvements/future-followups.md FU-1 for the
-# refactor follow-up.
+# Single source of truth for the "first non-approved step" computation.
+# state_init_or_reconcile delegates here (FU-1 refactor 2026-04-28).
 state_compute_current_step() {
   local artifact_dir="$1"
   [[ -d "$artifact_dir" ]] || return 1
@@ -85,32 +82,14 @@ state_init_or_reconcile() {
   # implement and test are never read from files, always draft unless inferred
   # (but for now we keep them as draft)
 
-  # Determine current_step: first artifact that is NOT "approved"
-  # NOTE (FU-1): This inline logic duplicates state_compute_current_step above.
-  # Refactoring to delegate is OUT OF SCOPE for T4 (insertion-only spec). See
-  # docs/qrspi/2026-04-26-prompt-improvements/future-followups.md FU-1.
-  local current_step=""
-  if [[ "$goals_status" != "approved" ]]; then
-    current_step="goals"
-  elif [[ "$questions_status" != "approved" ]]; then
-    current_step="questions"
-  elif [[ "$research_status" != "approved" ]]; then
-    current_step="research"
-  elif [[ "$design_status" != "approved" ]]; then
-    current_step="design"
-  elif [[ "$phasing_status" != "approved" ]]; then
-    current_step="phasing"
-  elif [[ "$structure_status" != "approved" ]]; then
-    current_step="structure"
-  elif [[ "$plan_status" != "approved" ]]; then
-    current_step="plan"
-  elif [[ "$implement_status" != "approved" ]]; then
-    current_step="implement"
-  elif [[ "$test_status" != "approved" ]]; then
-    current_step="test"
-  else
-    # All approved
-    current_step="test"
+  # Determine current_step: delegate to state_compute_current_step (FU-1
+  # refactor 2026-04-28). state_compute_current_step is the single source of
+  # truth for the "first non-approved step" computation, so any pipeline-order
+  # change requires touching exactly one call site (the helper itself).
+  local current_step
+  if ! current_step=$(state_compute_current_step "$artifact_dir"); then
+    echo "state_init_or_reconcile: state_compute_current_step failed" >&2
+    return 1
   fi
 
   # Create absolute path for artifact_dir

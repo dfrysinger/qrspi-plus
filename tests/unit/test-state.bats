@@ -757,3 +757,134 @@ EOF
   [[ "$json" == *'"implement"'* ]]
   [[ "$json" == *'"test"'* ]]
 }
+
+# ============================================================================
+# [T19-FU1] state_init_or_reconcile delegates to state_compute_current_step
+# ============================================================================
+# These tests prove that state_init_or_reconcile no longer carries an inline
+# copy of the "first non-approved step" logic but instead delegates to
+# state_compute_current_step. Strategy: override state_compute_current_step
+# after sourcing state.sh with a mock that returns a value the inline logic
+# would never produce on the fixture; then assert the resulting state.json's
+# current_step matches the mock's return value. If the inline duplicate logic
+# is still present, current_step will reflect the inline computation (NOT the
+# mock), and the test fails.
+
+@test "[T19-FU1-1] state_init_or_reconcile delegates to state_compute_current_step (mock returns sentinel)" {
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir"
+
+  # Fixture: empty artifact dir. Inline logic would compute current_step="goals".
+  # Mock returns a sentinel ("phasing") that inline logic would never produce
+  # for this fixture, so any current_step != "phasing" proves delegation
+  # failed.
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Override the helper after sourcing. Bash function lookup is dynamic, so
+  # the override applies to subsequent calls — including from
+  # state_init_or_reconcile if it delegates.
+  state_compute_current_step() {
+    echo "phasing"
+    return 0
+  }
+
+  state_init_or_reconcile "$artifact_dir" > /dev/null
+
+  local json
+  json=$(state_read)
+
+  # If delegation works, current_step is the mock's value ("phasing").
+  # If duplicate inline logic survives, current_step would be "goals" (since
+  # all artifacts are draft on this fixture).
+  [[ "$json" == *'"current_step":"phasing"'* ]] || {
+    echo "FAIL: state_init_or_reconcile did not delegate to state_compute_current_step." >&2
+    echo "Expected current_step=phasing (from mock), got JSON: $json" >&2
+    return 1
+  }
+}
+
+@test "[T19-FU1-2] state_init_or_reconcile delegates to state_compute_current_step (mock returns out-of-pipeline value)" {
+  # Stronger variant: mock returns a value that is NOT one of the 9
+  # pipeline steps. Inline duplicate logic is hard-coded to a 9-way
+  # if/elif chain over the pipeline steps and could never produce
+  # "T19-DELEGATED-MARKER". If the test's resulting current_step
+  # contains that string, we have proof that the value flowed from the
+  # mock, NOT from any inline computation.
+
+  local artifact_dir="$TEST_DIR/artifacts"
+  mkdir -p "$artifact_dir/research"
+
+  # Approved through plan: inline logic would yield "implement".
+  create_artifact "$artifact_dir/goals.md" "approved"
+  create_artifact "$artifact_dir/questions.md" "approved"
+  create_artifact "$artifact_dir/research/summary.md" "approved"
+  create_artifact "$artifact_dir/design.md" "approved"
+  create_artifact "$artifact_dir/phasing.md" "approved"
+  create_artifact "$artifact_dir/structure.md" "approved"
+  create_artifact "$artifact_dir/plan.md" "approved"
+
+  source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Mock returns a sentinel string that no inline pipeline-step computation
+  # could produce.
+  state_compute_current_step() {
+    echo "T19-DELEGATED-MARKER"
+    return 0
+  }
+
+  state_init_or_reconcile "$artifact_dir" > /dev/null
+
+  local json
+  json=$(state_read)
+
+  [[ "$json" == *'"current_step":"T19-DELEGATED-MARKER"'* ]] || {
+    echo "FAIL: state_init_or_reconcile did not delegate; got JSON: $json" >&2
+    return 1
+  }
+}
+
+@test "[T19-FU1-3] state.sh: state_init_or_reconcile body has no inline first-non-approved if/elif chain" {
+  # Structural test: scan state_init_or_reconcile's body for the duplicate
+  # if/elif chain that previously branched on every <step>_status variable.
+  # After the FU-1 refactor, that chain should be gone — replaced by a single
+  # call to state_compute_current_step. We assert the body contains a call to
+  # state_compute_current_step AND does NOT contain the elif chain over
+  # *_status variables that characterized the duplicated logic.
+
+  local state_sh="$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
+
+  # Extract the body of state_init_or_reconcile (between its opening
+  # "state_init_or_reconcile() {" and the matching closing brace at start of
+  # line). awk: print between the function header and the next sole "}" at
+  # column 1.
+  local body
+  body=$(awk '
+    /^state_init_or_reconcile\(\) \{/ { in_fn=1; next }
+    in_fn && /^\}/ { in_fn=0 }
+    in_fn { print }
+  ' "$state_sh")
+
+  # Assertion 1: body delegates by calling state_compute_current_step
+  echo "$body" | grep -q "state_compute_current_step" || {
+    echo "FAIL: state_init_or_reconcile body does not call state_compute_current_step" >&2
+    echo "Body was:" >&2
+    echo "$body" >&2
+    return 1
+  }
+
+  # Assertion 2: body does NOT contain the duplicate elif chain over _status
+  # variables. The pre-refactor body had `elif [[ "$questions_status" !=
+  # "approved" ]]` etc. — count occurrences of `_status" != "approved"` in
+  # the body; the refactored version should have ZERO such occurrences (the
+  # per-artifact status vars are read but no longer consulted in a
+  # current_step decision chain).
+  local elif_chain_hits
+  elif_chain_hits=$(echo "$body" | grep -c '_status" != "approved"' || true)
+  [ "$elif_chain_hits" -eq 0 ] || {
+    echo "FAIL: state_init_or_reconcile body still contains $elif_chain_hits inline '_status != approved' branch(es)" >&2
+    echo "Body was:" >&2
+    echo "$body" >&2
+    return 1
+  }
+}

@@ -41,8 +41,8 @@ unit_test_dir() {
   [ "$count" -eq 25 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-27, T16+T17+T18 stage-G6 octopus)
-@test "[AC8] Unit test suite has exactly 552 @test definitions (baseline)" {
+# AC8 — Unit test count baseline (updated 2026-04-28, T19 FU-1 state.sh refactor)
+@test "[AC8] Unit test suite has exactly 555 @test definitions (baseline)" {
   # Baseline for stage-after-G6 = octopus(T16, T17, T18) on top of
   # stage-after-G5 (0ee9fd1, 18 .bats / 416 @tests). All three Wave 6
   # tasks are file-disjoint except for tests/acceptance/test-meta.bats
@@ -86,11 +86,18 @@ unit_test_dir() {
   # 415 → 416.
   # Prior 415 / 401 / 387 / 381 / 362 / 307 / 301 / 299 / 283 baselines
   # see git log.
+  #
+  # 2026-04-28 T19 (FU-1 state.sh refactor): +3 @tests in test-state.bats
+  # ([T19-FU1-1], [T19-FU1-2], [T19-FU1-3]) proving that
+  # state_init_or_reconcile delegates the "first non-approved step"
+  # computation to state_compute_current_step (single source of truth for
+  # pipeline-order rule). 552 → 555. Files baseline (25) unchanged
+  # because test-state.bats already exists.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 552 ]
+  [ "$count" -eq 555 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-27 T16+T17+T18)
