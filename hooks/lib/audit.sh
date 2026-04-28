@@ -192,8 +192,20 @@ audit_log_event() {
         detected=$(bash_detect_file_writes "$command" 2>/dev/null) || detected=""
         if [[ -n "$detected" ]]; then
           target=$(printf '%s' "$detected" | head -n1)
-          # Resolve relative to PWD if not absolute
-          if [[ -n "$target" && "$target" != /* ]]; then
+          # M4-2 (cross-task contract with task-43): __OPAQUE_WRITE__ is the
+          # bash-detect sentinel emitted when a write-effect command's target
+          # cannot be statically resolved (inline interpreters, awk redirect-
+          # from-program, cd-before-relative-write). pre-tool-use already
+          # treats it as a fail-closed wall trigger BEFORE any PWD-prepend.
+          # The audit row must mirror that contract verbatim — prepending PWD
+          # would record a fake in-worktree path like `<pwd>/__OPAQUE_WRITE__`
+          # that misleads forensic review at exactly the moments the wall
+          # fired. Preserve the literal sentinel; downstream resolution is
+          # short-circuited via _audit_find_repo_root("$PWD") below.
+          if [[ "$target" == "__OPAQUE_WRITE__" ]]; then
+            : # preserve verbatim; do not prepend PWD
+          elif [[ -n "$target" && "$target" != /* ]]; then
+            # Resolve relative to PWD if not absolute
             target="$PWD/$target"
           fi
         fi
@@ -211,7 +223,26 @@ audit_log_event() {
   # If the target is out of QRSPI scope, silently skip with return 0 (no
   # audit pollution from non-QRSPI work).
   local resolution_failed=0
-  if ! artifact_dir=$(_audit_resolve_target_to_artifact_dir "$target" 2>/dev/null); then
+  if [[ "$target" == "__OPAQUE_WRITE__" ]]; then
+    # M4-2: sentinel is not a real path — bypass target-based resolution
+    # entirely and resolve artifact_dir via PWD's repo root (state.json).
+    # If repo-root lookup succeeds, route to the canonical artifact_dir;
+    # otherwise fall through to the orphan path so the row is never silently
+    # dropped (forensic-integrity invariant: opaque-write events are exactly
+    # the moments the wall fired and MUST be auditable).
+    local sentinel_repo_root
+    if sentinel_repo_root=$(_audit_find_repo_root "$PWD" 2>/dev/null); then
+      local sentinel_artifact_dir
+      if sentinel_artifact_dir=$(jq -r '.artifact_dir // empty' "$sentinel_repo_root/.qrspi/state.json" 2>/dev/null) \
+           && [[ -n "$sentinel_artifact_dir" ]]; then
+        artifact_dir="$sentinel_artifact_dir"
+      else
+        resolution_failed=1
+      fi
+    else
+      resolution_failed=1
+    fi
+  elif ! artifact_dir=$(_audit_resolve_target_to_artifact_dir "$target" 2>/dev/null); then
     if _audit_target_is_qrspi_scope "$target"; then
       resolution_failed=1
     else
@@ -252,6 +283,11 @@ audit_log_event() {
       # Derive from target: strip from /.worktrees/ onward.
       if [[ "$target" == *"/.worktrees/"* ]]; then
         orphan_root="${target%%/.worktrees/*}"
+      elif [[ "$PWD" == *"/.worktrees/"* ]]; then
+        # M4-2: target is the sentinel (`__OPAQUE_WRITE__`) so it carries no
+        # path information. Derive the orphan root from PWD instead — strip
+        # the worktree segment to reach the parent repo.
+        orphan_root="${PWD%%/.worktrees/*}"
       else
         # Last resort: PWD itself.
         orphan_root="$PWD"
