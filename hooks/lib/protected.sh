@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-protected_is_blocked() {
+is_protected_path() {
   local target_path="$1"
   local is_worktree="$2"
 

@@ -5,6 +5,8 @@ description: Use when prior artifacts are approved and the QRSPI pipeline needs 
 
 # Plan (QRSPI Step 6)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Plan skill to create detailed task specs."
 
 ## Overview
@@ -29,7 +31,11 @@ Note: Design and Structure are not in the quick fix route, so `design.md` and `s
 
 If any required artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
 
-Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. If `config.md` doesn't exist, default to `codex_reviews: false`.
+Read `config.md` from the artifact directory to determine whether Codex reviews are enabled.
+
+### Config Validation
+
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Plan validates `pipeline`, `route`, and `codex_reviews`.
 
 <HARD-GATE>
 Do NOT produce plan.md without all required artifacts approved (full: goals + research + design + structure; quick: goals + research).
@@ -41,55 +47,31 @@ Every task spec must be self-contained — an implementation agent reading only 
 
 **Subagent** produces `plan.md` overview. For large plans (6+ tasks), individual task specs are farmed out to sub-subagents (one per task or related group) to keep context manageable. Iterative with human feedback.
 
+## Phase-Scoped Content Rules
+
+plan.md contains ONLY current-phase tasks. Each task must reference a goal ID that exists in goals.md. Tasks for goals not in the current phase must not appear. The `goal_id` field in task frontmatter must match a goal in goals.md.
+
+## Task Sizing
+
+Each task implements **exactly one observable behavior** — one request handler, one use case, one user-visible change. The task title names exactly one feature, with no `+` joining feature names and no two distinct verbs joined by `and`.
+
+**LOC budget per task:**
+- Target: ~100 LOC (matches OpenAI AGENTS.md guidance for autonomous-agent task scope)
+- Policy ceiling: 200 LOC — split unless a `sizing_exception` (post-split frontmatter) or **Sizing exception** bullet (in-plan) names one of: schema migration, CI scaffolding, reusable primitives
+
+**Why:** SWE-Bench Pro reports a median patch size of 107 LOC / 4.1 files, with frontier-model success around 23% at that size (GPT-5, Opus 4.1). OpenAI's AGENTS.md guidance targets ~100 lines per agentic task. Our 100-LOC target matches that guidance; the 200-LOC ceiling sits at the lower bound of Cisco/SmartBear's code-review sweet spot (200-400 LOC) and gives margin for QRSPI's enhanced scaffolding (fresh-context subagents, structured task specs, TDD cycle, multi-reviewer loop). Multi-feature task titles like `auth + allowlist + rename + admin` are the visible symptom of oversized tasks; the underlying cause is bundling N request handlers into one task, which re-couples slices that vertical-slice decomposition exists to separate.
+
+**Splitting protocol.** A task estimated >200 LOC splits into N tasks at or below the ~100-LOC target, each implementing one handler with explicit dependency ordering. The closed exception set is: schema migration, CI scaffolding, reusable primitives. Mark `sizing_exception: <reason>` in the task frontmatter (post-split) or the **Sizing exception** bullet inside the in-plan task spec (pre-split), and explain in the Description.
+
+**Floor — a task is too small if any of these hold:**
+- Does not traverse the layers needed for its behavior (UI-only, schema-only, mock-only, test-only)
+- Produces no observable behavior change when merged alone (pure refactor with no callers, scaffold with no consumer)
+- Depends on a sibling task to compile or pass tests
+- Cannot be merged to main alone (must batch with peers to ship)
+
+A task that fails any floor check merges into the parent task that gives it observable behavior; do not ship sub-atomic tasks.
+
 ## Process
-
-The graph below shows the large-plan path with sub-subagents. For small plans (<6 tasks), the overview subagent writes merged `plan.md` directly, skipping the Farm/Merge nodes.
-
-```dot
-digraph plan {
-    "Verify required artifacts approved" [shape=box];
-    "Launch plan overview subagent" [shape=box];
-    "Farm task specs to sub-subagents" [shape=box];
-    "Merge tasks into plan.md" [shape=box];
-    "Review round (Claude + Codex if enabled)" [shape=box];
-    "Fix issues found" [shape=box];
-    "Ask: 1) Present  2) Loop until clean (recommended)" [shape=diamond];
-    "Review round N (max 10)" [shape=box];
-    "Round clean?" [shape=diamond];
-    "Present merged plan.md to user\n(state review status)" [shape=box];
-    "User approves?" [shape=diamond];
-    "Re-generate with feedback" [shape=box];
-    "Reviews passed clean?" [shape=diamond];
-    "Offer post-approval review loop" [shape=box];
-    "Recommend compaction before split" [shape=box];
-    "Split tasks, reduce plan.md" [shape=box];
-    "Write approval marker" [shape=box];
-    "Invoke next skill in route" [shape=doublecircle];
-
-    "Verify required artifacts approved" -> "Launch plan overview subagent";
-    "Launch plan overview subagent" -> "Farm task specs to sub-subagents";
-    "Farm task specs to sub-subagents" -> "Merge tasks into plan.md";
-    "Merge tasks into plan.md" -> "Review round (Claude + Codex if enabled)";
-    "Review round (Claude + Codex if enabled)" -> "Fix issues found";
-    "Fix issues found" -> "Ask: 1) Present  2) Loop until clean (recommended)";
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Present merged plan.md to user\n(state review status)" [label="1"];
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Review round N (max 10)" [label="2 (recommended)"];
-    "Review round N (max 10)" -> "Round clean?";
-    "Round clean?" -> "Present merged plan.md to user\n(state review status)" [label="yes or cap hit"];
-    "Round clean?" -> "Fix issues found" [label="no, fix and loop"];
-    "Present merged plan.md to user\n(state review status)" -> "User approves?";
-    "User approves?" -> "Re-generate with feedback" [label="no"];
-    "Re-generate with feedback" -> "Launch plan overview subagent";
-    "User approves?" -> "Reviews passed clean?" [label="yes"];
-    "Reviews passed clean?" -> "Recommend compaction before split" [label="yes"];
-    "Reviews passed clean?" -> "Offer post-approval review loop" [label="no"];
-    "Offer post-approval review loop" -> "Review round N (max 10)" [label="user agrees"];
-    "Offer post-approval review loop" -> "Recommend compaction before split" [label="user declines"];
-    "Recommend compaction before split" -> "Split tasks, reduce plan.md";
-    "Split tasks, reduce plan.md" -> "Write approval marker";
-    "Write approval marker" -> "Invoke next skill in route";
-}
-```
 
 ### Plan Overview Subagent
 
@@ -162,9 +144,10 @@ status: draft
 
 ### Task 1: {name}
 - **Phase:** 1
-- **Files:** {exact paths, create/modify}
+- **Target files:** {exact paths, create/modify}
 - **Dependencies:** none
 - **LOC estimate:** ~{N}
+- **Sizing exception:** {only present when the task is a legitimate bundle (multi-handler or >200 LOC). Reason must be one of: schema migration, CI scaffolding, reusable primitives — see Task Sizing}
 - **Description:** {what this task accomplishes}
 - **Test expectations:**
   - {behavior 1}
@@ -175,31 +158,25 @@ status: draft
 ...
 ```
 
+### Plan Reviewer Templates
+
+Five reviewer templates run in parallel as part of the review round. All five run always — neither quick-fix nor full-pipeline mode gates any template. Templates that require `design.md` or `structure.md` emit "NOT APPLICABLE — quick-fix route" for those checks when those files are absent.
+
+| Template | File | Focus | Run Condition |
+|----------|------|-------|---------------|
+| Spec Reviewer | `templates/spec-reviewer.md` | Completeness, scope, interpretation, test coverage mapping, placeholder detection | Always |
+| Security Reviewer | `templates/security-reviewer.md` | Fail-closed requirements, input validation, auth/authz, no insecure defaults | Always |
+| Silent Failure Hunter | `templates/silent-failure-hunter.md` | Swallowed errors, silent fallbacks, partial state on failure, log-and-continue | Always |
+| Goal Traceability Reviewer | `templates/goal-traceability-reviewer.md` | Forward trace, backward trace, gap analysis, spec-to-design fidelity | Always |
+| Test Coverage Reviewer | `templates/test-coverage-reviewer.md` | Behavioral coverage, edge cases, error conditions, test expectation quality, missing design scenarios | Always |
+
 ### Review Round
 
-After the merged `plan.md` is ready, run one review round:
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Plan-specific reviewer instructions:
 
-1. **Claude review subagent** — launch with `plan.md` (merged), `goals.md`, `research/summary.md`, and (full pipeline only) `design.md`, `structure.md` to check:
-   - Does every goal/acceptance criterion map to test expectations in at least one task?
-   - Are edge cases and error conditions identified in test expectations?
-   - Is the test strategy from `design.md` reflected in the task test expectations?
-   - Are dependencies between tasks correct?
-   - Does the task ordering make sense (bottom-up through the stack)?
-   - Any TBD/TODO/placeholder content? (forbidden)
-   - Are task specs specific enough for an implementation agent to execute without guessing?
-   - Are LOC estimates reasonable?
-   
-   The subagent returns structured findings. The orchestrating skill writes them to `reviews/plan-review.md`.
-
-2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path (`plan.md`), input artifacts (`goals.md`, `research/summary.md`, and (full pipeline only) `design.md`, `structure.md`) for cross-reference, and the same review criteria. The orchestrating skill appends Codex findings to `reviews/plan-review.md`.
-
-3. Fix any issues found in both reviews.
-
-4. Ask the user ONCE: `1) Present for review  2) Loop until clean (recommended)`
-   - **1:** Proceed to human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The plan may still have issues." The user can still approve, but they make an informed choice.
-   - **2:** Loop autonomously — run review → fix → review → fix without re-prompting. Stop ONLY when a round is clean ("Reviews passed clean") or 10 rounds reached ("Hit 10-round review cap — presenting for your review."). Then proceed to human gate. **Do not re-ask between rounds.**
-   
-   **Default recommendation is always option 2.** Clean reviews before human review are important because the human cannot feasibly verify cross-file consistency, forward dependencies, or migration ordering across 10+ task specs by hand — that's what the automated reviews catch.
+- **Claude review subagent** runs all five reviewer templates from `skills/plan/templates/` in parallel (subagent fills in artifact content, runs each template as a separate pass, returns combined findings). Inputs: `plan.md` (merged), `goals.md`, `research/summary.md`, plus `design.md` and `structure.md` (full pipeline only). Findings written to `reviews/plan-review.md`.
+- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with the same inputs and criteria. Findings appended to `reviews/plan-review.md`.
+- The default-option-2 recommendation is especially important here because plan reviews catch cross-file consistency / forward dependencies / migration ordering across 10+ task specs that the human cannot feasibly verify by hand.
 
 ### Human Gate
 
@@ -229,15 +206,17 @@ status: approved
 task: NN
 phase: {phase number}
 pipeline: full
-# Optional Phase 4 enforcement fields (deferred to T24 for full schema):
-# enforcement: strict
-# allowed_files: [...]
-# constraints: [...]
+# Optional: justify a legitimate bundle (multi-handler or >200 LOC).
+# Reason must be one of: schema migration, CI scaffolding, reusable primitives.
+# sizing_exception: <one-line reason>
+# (Per-task enforcement fields removed in 2026-04-26 implement-runtime-fix.
+#  Target files are aspirational; deviation discipline lives in the per-task
+#  spec reviewer, not the hook.)
 ---
 
 # Task NN: {name}
 
-- **Files:** {exact paths, create/modify}
+- **Target files:** {exact paths, create/modify}
 - **Dependencies:** {task numbers or "none"}
 - **LOC estimate:** ~{N}
 - **Description:** {what this task accomplishes}
@@ -247,20 +226,20 @@ pipeline: full
   - {error condition 1}
 ```
 
-The `pipeline` field is copied from `config.md`'s `pipeline` value at plan time. Implement reads `pipeline` from the task file — it never checks `config.md` for routing.
+The `pipeline` field is copied from `config.md`'s `pipeline` value at plan time. The per-task orchestrator subagent reads the task file's `pipeline` field for per-task input gating (which artifacts to load for the task's review context). The Implement skill itself derives run mode separately from `config.md.route` for its per-phase orchestration — see `implement/SKILL.md` § Overview.
 
 **Who writes the pipeline field:**
 - **Plan skill** — copies from `config.md` onto every `tasks/task-NN.md` at plan time
 - **Test skill** — classifies per failure (quick or full) on fix tasks
 - **Integrate skill** — always `full` on integration/CI fix tasks
-- **Worktree baseline fix** — always `full` on task-00
+- **Implement baseline fix** — inherits the run's mode (derived by Implement from `config.md.route` per `implement/SKILL.md` § Overview) on task-00 (`pipeline: full` in full-pipeline runs, `pipeline: quick` in quick-fix runs) so the per-task orchestrator's input gating matches the artifacts that exist. Implement writes the runtime-injected `task-00.md` with `status: approved` so the Iron Law gate passes on dispatch.
 
 **Fix task files** also include a `fix_type` field (not present on regular tasks):
 - `fix_type: integration` — written by Integrate for cross-task integration fixes
 - `fix_type: ci` — written by Integrate for CI pipeline fix tasks
 - `fix_type: test` — written by Test for acceptance test fix tasks
 
-Fix tasks are stored in `fixes/{type}-round-NN/` and follow the same format as regular tasks so Worktree and Implement can process them identically.
+Fix tasks are stored in `fixes/{type}-round-NN/` and follow the same format as regular tasks so the Implement skill can process them identically.
 
 ### Artifacts
 
@@ -282,11 +261,11 @@ The artifact directory contains a `.qrspi/` subdirectory managed by hooks (not b
 - The PostToolUse hook syncs `state.json` automatically whenever artifact frontmatter changes (e.g., when `status: approved` is written)
 - Skills do NOT need to update `state.json` when artifacts are approved — the hook handles this
 
-**Exception — `phase_start_commit`:** The Plan skill writes `phase_start_commit` directly to `state.json` when `plan.md` is approved. This records the current HEAD hash as the diff boundary for post-integration reviews. The Plan skill is the only skill that writes to state directly; all other state updates are hook-driven.
+**Exception — `phase_start_commit`:** The Plan skill writes `phase_start_commit` directly to `state.json` when `plan.md` is approved. This records the current HEAD hash as the diff boundary for post-integration reviews. Plan is one of three narrow exceptions to hook-driven state writes (Goals bootstrap, Plan `phase_start_commit`, Replan pre-emptive reconciliation on next-phase restart) — see `using-qrspi/SKILL.md` → "Hook-Managed State (`.qrspi/`)" for the canonical list. All other state updates are hook-driven.
 
 ### Terminal State
 
-Commit the approved `plan.md`, all `tasks/task-NN.md` files, and `reviews/plan-review.md` to git.
+If the artifact directory is inside a git repository, commit the approved `plan.md`, all `tasks/task-NN.md` files, and `reviews/plan-review.md` (see `using-qrspi` → "Commit after approval (when applicable)").
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `plan`.
 
@@ -300,6 +279,10 @@ If compaction was not done before splitting (user declined), recommend it now: "
 - A task references a type, function, or file not defined in any task
 - A task depends on a later task (forward dependency)
 - LOC estimate is missing or wildly unrealistic (e.g., 10 LOC for a full CRUD implementation)
+- LOC estimate >200 without a `sizing_exception` (post-split frontmatter) or **Sizing exception** bullet (in-plan) naming one of the closed exception set (split unless the exception is documented — see Task Sizing)
+- Task title contains `+` joining feature names, or two distinct verbs joined by `and` (multi-feature bundle — split into per-handler tasks)
+- Task description implies multiple request handlers / use cases (one task = one handler — see Task Sizing)
+- Task fails a floor check (no observable behavior, depends on sibling to compile, cannot merge alone — see Task Sizing floor)
 - A task touches files from a different vertical slice without justification
 - Phase boundaries don't align with the design's phase definitions
 - Quick-fix plan has more than one task (quick fix = single task by definition)
@@ -313,6 +296,9 @@ If compaction was not done before splitting (user declined), recommend it now: "
 | "Test expectations are implied by the description" | Write them explicitly. The Test skill uses them to generate acceptance tests. |
 | "LOC estimates don't matter" | They signal scope. Unrealistic estimates mean the task is misunderstood. |
 | "We can split this task during implementation" | Split now. The plan is where decomposition happens, not implementation. |
+| "Splitting these features adds coordination overhead" | SWE-Bench Pro reports ~23% frontier-model success at the 107-LOC median patch size; tasks above the 200-LOC ceiling sit well past that empirical cliff. Coordination overhead is cheaper than the retry cost on a sub-50% pass rate. |
+| "These features all live in the same file" | File overlap is not handler overlap. One handler per task even if multiple share a file — separate tasks can sequence edits inside one file via Dependencies. |
+| "Schema setup naturally bundles, this is fine" | True only for the closed exception set: schema migration, CI scaffolding, reusable primitives. Mark `sizing_exception: <reason>` (post-split frontmatter) or **Sizing exception** bullet (in-plan) and explain in the Description. Do not use as a general escape hatch. |
 | "Quick fix doesn't need a plan" | Quick fix mode still produces a plan — it's just a single-task plan. The plan ensures the fix is reviewed before implementation. |
 
 ## Worked Example
@@ -323,7 +309,7 @@ If compaction was not done before splitting (user declined), recommend it now: "
 ### Task 3: Rate limit middleware
 
 - **Phase:** 1
-- **Files:** create `src/middleware/rate-limiter.ts`, modify `src/app.ts:34-40`
+- **Target files:** create `src/middleware/rate-limiter.ts`, modify `src/app.ts:34-40`
 - **Dependencies:** Task 1 (Redis client), Task 2 (rate limit types)
 - **LOC estimate:** ~60
 - **Description:** Express middleware that checks the client's request count against the rate limit using the Redis client from Task 1. If exceeded, returns 429 with Retry-After header. If under limit, increments the counter and calls next().
@@ -342,7 +328,7 @@ If compaction was not done before splitting (user declined), recommend it now: "
 ```markdown
 ### Task 3: Rate limiting
 
-- **Files:** TBD
+- **Target files:** TBD
 - **Dependencies:** none
 - **LOC estimate:** ~200
 - **Description:** Add rate limiting middleware. Similar to Task 2 but for the middleware layer.
@@ -352,3 +338,17 @@ If compaction was not done before splitting (user declined), recommend it now: "
 ```
 
 The bad example has TBD files, no dependencies (but clearly needs the Redis client), unrealistic LOC, references "similar to Task 2", and test expectations that can't be verified ("works correctly", "are handled").
+
+## Iron Laws — Final Reminder
+
+The four override-critical rules for Plan, restated at end:
+
+1. **No plan.md without all required artifacts approved.** Full pipeline: goals + research + design + structure. Quick fix: goals + research. Plan refuses to run otherwise.
+
+2. **No placeholders in task specs.** No "TBD", "TODO", "implement later", "similar to Task N", "add appropriate handling." Every task spec must be self-contained — an implementation agent reading only that task must have everything it needs.
+
+3. **One task = one observable behavior, ~100-LOC target / ≤200 LOC ceiling.** Split before approving any task that exceeds the policy ceiling unless the task documents a `sizing_exception` (post-split frontmatter) or **Sizing exception** bullet (in-plan) naming one of the closed exception set: schema migration, CI scaffolding, reusable primitives. Multi-feature task titles (`+` joining feature names, two distinct verbs joined by `and`) are the canary — they almost always mean multiple request handlers bundled into one task. SWE-Bench Pro reports ~23% frontier-model success at the 107-LOC median patch size; OpenAI AGENTS.md guidance targets ~100 lines; our 200-LOC ceiling sits at the lower bound of Cisco/SmartBear's code-review sweet spot with margin for QRSPI's enhanced scaffolding. See "Task Sizing" earlier in this skill for full rules including the floor.
+
+4. **`phase_start_commit` write is the only direct state.json write Plan performs.** Done when `plan.md` is approved. All other state updates are hook-driven — see `using-qrspi/SKILL.md` → "Hook-Managed State."
+
+Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

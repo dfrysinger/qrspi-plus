@@ -1,6 +1,6 @@
 ---
 name: using-qrspi
-description: Use when starting any conversation — establishes the QRSPI pipeline for agentic software development, requiring structured progression through Goals, Questions, Research, Design, Structure, Plan, Worktree, Implement, Integrate, Test
+description: Use when starting any conversation — establishes the QRSPI pipeline for agentic software development, requiring structured progression through Goals, Questions, Research, Design, Structure, Plan, Parallelize, Implement, Integrate, Test
 ---
 
 <SUBAGENT-STOP>
@@ -13,22 +13,40 @@ If you were dispatched as a subagent to execute a specific task, skip this skill
 
 QRSPI is a pipeline for agentic software development with two route variants (quick fix and full). Each step produces a reviewable artifact, gets human approval, then invokes the next step. Most steps run as subagents for guaranteed clean context. Goals and Design run interactively in the main conversation with subagent synthesis.
 
-**Core principles:**
-- **Do not outsource the thinking.** Every phase produces a reviewable artifact (~200 lines, not ~2000 lines of code).
-- **Context engineering is the only lever.** Each phase runs in a fresh subagent with only its declared inputs.
-- **Structural enforcement over instructional discipline.** Constraints enforced architecturally where possible.
+## Recommended Workspace Layout
+
+QRSPI separates two kinds of files:
+
+- **Artifacts** (goals, questions, research, design, structure, plan, reviews) — written under `docs/qrspi/{slug}/` by the pipeline skills.
+- **Code** — lives in a separate target repository that Implement clones/forks into worktrees under `.worktrees/{slug}/task-NN/`.
+
+The recommended layout is to keep these as siblings inside a single workspace directory, e.g.:
+
+```
+my-workspace/
+├── docs/qrspi/{slug}/   # artifacts (this pipeline's outputs)
+└── code/{repo}/         # the target git repo Implement operates on
+```
+
+This is a recommendation, not a requirement. Both locations can be configured to whatever the user prefers — for example, artifacts inside the target repo, or the target repo at an arbitrary absolute path. The skills detect the artifact directory at runtime and don't assume any particular topology.
+
+**Greenfield (no target repo yet):** Implement currently assumes the target repo exists with a base branch it can fork worktrees from. If you're starting greenfield, create and `git init` the target repo before reaching Implement (Goals/Design/Structure can still run without it). A future improvement (tracked in the project's future-goals) will let `config.md` carry an explicit `code_path` and let Goals offer a greenfield bootstrap step.
 
 ## The Pipeline
 
 **Full pipeline:**
 ```
-Goals → Questions → Research → Design → Structure → Plan → Worktree → Implement → Integrate → Test → Replan (if needed)
+Goals → Questions → Research → Design → Structure → Plan → Parallelize → Implement → Integrate → Test → Replan (if needed)
 ```
 
-**Quick Fix pipeline** (skip Design/Structure/Worktree/Integrate):
+> **Read the `Parallelize → Implement → Integrate` segment carefully.** Implement is *not* a per-task chain — it is the per-phase orchestrator step. Parallelize produces the parallelization plan and gets human approval; Implement then fires one per-task subagent per task in the current phase, presents a batch gate when every task has returned, and only then routes to Integrate. **Implement runs once per phase (firing N per-task subagents). Integrate runs once per phase.** Canonical contract — including batch-gate release conditions and the `current_step` transition mechanism — lives in `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop". The state.json table below is a reader's quick reference, not a second source of truth.
+
+**Quick Fix pipeline** (skip Design/Structure/Parallelize/Integrate):
 ```
 Goals → Questions → Research → Plan → Implement → Test
 ```
+
+> Quick fix has no Parallelize plan and no Integrate. Implement still owns per-task orchestration: it fires per-task subagents (typically one for the originally-requested task; more if fix-task rounds occur) and presents the **quick-fix batch gate** before routing to Test. See `implement/SKILL.md` § Quick Fix for the full batch-gate semantics in quick-fix mode.
 
 | Step | # | What it does | Artifact |
 |------|---|-------------|----------|
@@ -38,13 +56,11 @@ Goals → Questions → Research → Plan → Implement → Test
 | **Design** | 4 | Interactive design discussion, vertical slicing, phasing | `design.md` |
 | **Structure** | 5 | Map design to files, interfaces, component boundaries | `structure.md` |
 | **Plan** | 6 | Detailed task specs with test expectations | `plan.md` + `tasks/*.md` |
-| **Worktree** | 7 | Analyze parallelization, create worktrees, dispatch | `parallelization.md` |
-| **Implement** | 8 | TDD execution per task, tiered review loops | Working code |
-| **Integrate** | 8.5 | Merge worktrees, cross-task integration + security review, CI gate | Integration report |
-| **Test** | 9 | Acceptance testing, PR creation, phase routing | Test results + PR (every phase) |
-| **Replan** | 9.5 | Between phases — update remaining tasks based on learnings | Updated `plan.md` + `tasks/*.md` |
-
-> **Availability:** Steps 1-9.5 are implemented (Goals through Replan). All pipeline steps are available.
+| **Parallelize** | 7 | Analyze dependencies and file overlap; produce symbolic parallelization plan | `parallelization.md` |
+| **Implement** | 8 | Resolve symbolic bases, create worktrees + stage commits, run baseline tests, fire per-task subagents (×N) with TDD + tiered review loops, present batch gate | Working code |
+| **Integrate** | 9 | Merge task branches, cross-task integration + security review, CI gate | Integration report |
+| **Test** | 10 | Acceptance testing, PR creation, phase routing | Test results + PR (every phase) |
+| **Replan** | 11 | Between phases — update remaining tasks based on learnings | Updated `plan.md` + `tasks/*.md` |
 
 ## Route Templates
 
@@ -70,7 +86,7 @@ route:
   - design
   - structure
   - plan
-  - worktree
+  - parallelize
   - implement
   - integrate
   - test
@@ -86,20 +102,20 @@ route:
   - ux
   - structure
   - plan
-  - worktree
+  - parallelize
   - implement
   - integrate
   - test
 ```
 
-> **Note:** Replan (step 9.5) is NOT included in any route list. It is invoked by Test when more phases remain in the design, not when Test fails. Test handles final-phase completion (PR creation) directly.
+> **Note:** Replan (step 11) is NOT included in any route list. It is invoked by Test when more phases remain in the design, not when Test fails. Test handles final-phase completion (PR creation) directly.
 
 ### Mid-Pipeline Route Change
 
 Route changes are only allowed before Plan executes:
 
-- **Full → Quick Fix:** Allowed only before Plan. Drop Design, Structure, Worktree, Integrate from the route. Update `config.md`.
-- **Quick Fix → Full:** Allowed only before Plan. Insert Design, Structure before Plan, and Worktree, Integrate after Plan. Update `config.md`.
+- **Full → Quick Fix:** Allowed only before Plan. Drop Design, Structure, Parallelize, Integrate from the route. Update `config.md`.
+- **Quick Fix → Full:** Allowed only before Plan. Insert Design, Structure before Plan, and Parallelize, Integrate after Plan. Update `config.md`.
 - **Add/remove UX step:** Allowed only before Structure. Insert or remove `ux` between `design` and `structure`. Update `config.md`.
 
 After Plan is approved, the route is locked. Route changes after that point require a backward loop to re-run Plan.
@@ -142,7 +158,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   ├── structure-review.md
 │   ├── plan-review.md
 │   ├── replan-review.md
-│   ├── baseline-failures.md       (Worktree baseline)
+│   ├── baseline-failures.md       (Implement baseline)
 │   ├── tasks/
 │   │   └── ...
 │   ├── integration/
@@ -152,6 +168,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   └── test/
 │       ├── round-NN-review.md
 │       └── baseline-failures.md   (Test baseline)
+├── future-goals.md                (optional — captured future ideas, deferred scope)
 └── .qrspi/                        (hook-managed, do not edit manually)
     ├── state.json                 (pipeline state cache)
     ├── task-NN-runtime.json       (per-task runtime overrides — user mid-task decisions)
@@ -169,8 +186,8 @@ Each skill checks that its required input artifacts exist on disk before proceed
 - **Design**: Requires `goals.md` and `research/summary.md` with `status: approved`
 - **Structure**: Requires `goals.md`, `research/summary.md`, and `design.md` with `status: approved`
 - **Plan**: Full pipeline requires `goals.md`, `research/summary.md`, `design.md`, and `structure.md` with `status: approved`. Quick fix requires only `goals.md` and `research/summary.md`.
-- **Worktree**: Requires `plan.md` with `status: approved`, `tasks/*.md`, `design.md` with `status: approved` (phase definitions), and `config.md`
-- **Implement**: Full pipeline requires `parallelization.md` with `status: approved`. Quick fix has no Worktree, so no `parallelization.md` — Implement reads the task file's `pipeline` field instead.
+- **Parallelize**: Requires `plan.md` with `status: approved`, `tasks/*.md`, `design.md` with `status: approved` (phase definitions), and `config.md`
+- **Implement**: Mode is derived from `config.md.route` (full pipeline if `parallelize` precedes `implement`; quick fix otherwise). Full pipeline additionally requires `parallelization.md` with `status: approved`. Quick fix has no Parallelize, so no `parallelization.md`; Implement requires the per-run input set defined in `implement/SKILL.md` § Artifact Gating (approved `tasks/*.md` or `fixes/{type}-round-NN/*.md`). The `pipeline` field on individual task files is a per-task input-gating concern read by the per-task orchestrator subagent, not by the Implement skill itself.
 - **Integrate**: Requires all task review files in `reviews/tasks/`, `design.md` with `status: approved`, `structure.md` with `status: approved`, `parallelization.md` with `status: approved` (branch map), and `config.md` (for route)
 - **Test**: Requires `goals.md` with `status: approved`, `design.md` with `status: approved` (full pipeline) or `research/summary.md` with `status: approved` (quick fix), `fixes/` directory (for regression tests), codebase with implementation merged
 - **Replan**: Requires completed phase code (merged), `fixes/` and `reviews/` directories, remaining `tasks/*.md`, `plan.md` with `status: approved`, and `design.md` with `status: approved`
@@ -191,18 +208,75 @@ status: approved
 
 **Writing `status: approved` is sufficient.** The PostToolUse hook detects the frontmatter change and updates `state.json` automatically. Skills do not need to perform any explicit state update after writing the approval marker.
 
-**Commit after approval.** Every approved artifact (and its review file) should be committed to git immediately after the approval marker is written. This preserves the approved state as a checkpoint the user can return to. Use a descriptive commit message like `docs(qrspi): approve {step} for {project-slug}`. Do not batch approvals across steps — commit each step's approval separately.
+**Commit after approval (when applicable).** When the artifact directory is inside a git repository, commit each approved artifact (and its review file) immediately after the approval marker is written — this preserves the approved state as a checkpoint. Use a descriptive commit message like `docs(qrspi): approve {step} for {project-slug}`. When the artifact directory is not inside a git repository, skip the commit step — the approved frontmatter on disk is the durable record, and that's a fully supported pipeline configuration.
+
+**How to detect:** Run `git -C <artifact_dir> rev-parse --show-toplevel` and inspect the exit code. Detect from the **artifact directory**, not from CWD — these can differ, and the artifact directory is the right anchor for this decision.
+
+This applies to every skill terminal state in this pipeline that says "commit … to git" — the per-skill instructions all defer to this canonical rule.
 
 ## Hook-Managed State (`.qrspi/`)
 
 The `.qrspi/` directory inside each artifact directory is created and maintained entirely by hooks:
 
-- **SessionStart hook** — initializes `state.json` at the start of each session by reconciling it against artifact frontmatter on disk (handles interrupted sessions and out-of-sync state)
+- **SessionStart hook** — initializes `state.json` in the main project's artifact dir at session start by reconciling against artifact frontmatter on disk. Worktrees do not have `state.json` files — there is no per-worktree state. Subagent enforcement is target-based, not state-driven (see "How worktree enforcement works" below).
 - **PostToolUse hook** — keeps `state.json` in sync whenever an artifact's frontmatter changes
 
-Skills do not need to create, read, or update any file in `.qrspi/`. State is always current when a skill needs it because the hooks maintain it continuously.
+During normal forward execution, skills do not need to create, read, or update any file in `.qrspi/`. State is always current when a skill needs it because the hooks maintain it continuously. The exceptions are narrow and explicit:
+
+1. **Bootstrap recovery (Goals)** — the Goals skill calls `state_init_or_reconcile` if `state.json` is missing or unreadable at session start.
+2. **`phase_start_commit` write (Plan)** — when `plan.md` is approved, Plan writes the current HEAD hash to `state.json.phase_start_commit`.
+3. **Pre-emptive reconciliation on next-phase restart (Replan)** — Replan's minor-path terminal state calls `state_init_or_reconcile` immediately before invoking Goals, so Goals sees state that already matches the freshly-reset frontmatter (rather than relying on the PostToolUse hook's lazy catch-up). See `replan/SKILL.md` → "Terminal State" and `goals/SKILL.md` → "Next-Phase Restart Mode".
+
+All three exceptions are bounded calls touching specific fields (or invoking the bootstrap helper), not general skill-level ownership of state. No other skill should read or write `.qrspi/` files.
 
 **Pipeline enforcement:** PreToolUse hooks enforce pipeline step ordering. Attempting to write a downstream artifact (e.g., `design.md`) before its prerequisites are approved will be blocked by the hook. Pipeline progression is code-enforced, not just prompt-enforced.
+
+### `state.json` field semantics (for human and agent readers)
+
+Skills don't need to interpret `state.json`, but a reader (human or fresh agent recovering context between sessions) often does. Read these fields with the right mental model — getting one wrong is the most common cause of misordering pipeline steps.
+
+| Field | Meaning | When it changes |
+|-------|---------|-----------------|
+| `current_step` | The pipeline step currently active. For full-pipeline phases that loop Implement (the per-phase orchestration loop in the `Implement → Integrate` segment), this stays at `implement` for the **entire** batch — across every per-task subagent fired by Implement. It only advances to `integrate` after Implement's batch gate releases. The canonical transition contract lives in `implement/SKILL.md` → "State Transition Contract" under "Implement Is the Per-Phase Orchestration Loop"; the hook layer in `hooks/lib/` is the intended implementation layer. (Current hook code may lag the contract for transitions outside the eight pre-Phase-4 steps; if a needed transition is missing, file a hook bug rather than working around it in skills.) | Advances when a step's terminal artifact is approved, when an Implement batch gate releases and Implement invokes the next route step, or when Integrate, Test, or Replan complete their gates. **Does not advance per-task.** Skills never write this field directly — the hook layer writes it. |
+| `artifacts.{step}` | Approval status of each artifact (`draft`, `replan-draft`, or `approved`). Drives artifact gating. | Updated by the PostToolUse hook when an artifact's frontmatter changes. |
+| `wireframe_requested` | Whether the run includes the optional UX step before Structure. | Set during Goals; never changes thereafter. |
+| `phase_start_commit` | Git SHA at which the current phase began. Used by Replan and Test to scope diffs. | Set when a phase begins. |
+
+**The trap to avoid:** `current_step: implement` + a single task done does *not* mean "advance to integrate." It means "Implement is mid-batch — expect another per-task firing." Verify against `parallelization.md` (which lists every task in the phase) before concluding the batch is done.
+
+## How worktree enforcement works
+
+The QRSPI hook enforces subagent containment using **target-based asymmetric** logic, not CWD-based logic.
+
+**Subagent vs main chat detection:** The hook reads `agent_id` from the envelope JSON. If `agent_id` is non-empty, the call is from a subagent (Agent tool dispatch). Otherwise it's main chat.
+
+**Subagent walls (target-based):**
+
+- Write/Edit/NotebookEdit targeting any file outside `.worktrees/{slug}/(task-NN[a-z]?|baseline)/...` is BLOCKED. The `[a-z]?` allows Plan-induced task splits like `task-07a`/`task-07b` (F-19).
+- Bash commands with detected file-write targets follow the same rule for each detected target
+- Bash commands containing `DROP TABLE` or `TRUNCATE` are BLOCKED (subagents shouldn't do destructive DB ops)
+- Bash commands containing universal destructive patterns (see below) are BLOCKED
+
+Subagents may write to ANY worktree under `.worktrees/`, not just their own. This is "loose pinning" — strict pinning (subagent bound to its own task worktree) is a future enhancement.
+
+**Known limitation — binary subagent model (F-8):** The hook's enforcement is binary: any non-empty `agent_id` is treated as "subagent" and walled to the worktree pattern. The envelope's `agent_type` field (`researcher`, `implementer`, `reviewer`, etc.) is captured for audit but NOT consulted for enforcement. This works for per-task implementer dispatches (the highest-volume, highest-risk subagent class) but blocks ~5 of 7 actual subagent dispatch patterns whose legitimate write surface is outside `.worktrees/` (researchers writing `research/q*.md`, synthesis writing `summary.md`, question generators writing `questions/*.md`). Skills currently work around this with the text-return pattern (subagent returns text, main chat writes the file) at the cost of subagent-isolation. The proper architectural fix is per-`agent_type` enforcement scoping — tracked as a future-goal; see `docs/qrspi/2026-04-06-phase4-hooks/future-goals.md` for the roadmap entry.
+
+**Main chat trust:** Main chat is not subject to the worktree wall — it can write anywhere. Pipeline ordering and universal destructive checks still apply.
+
+**Universal destructive patterns (everyone, including main chat):**
+
+- `rm -rf` with target containing `*`, `~`, leading `/`, or `..`
+- `git push --force` / `git push -f`
+- `git reset --hard <ref>` (any ref other than `HEAD`)
+- `git clean -fd` / `-fdx`
+- Redirect to `/dev/sd*`
+- `DROP DATABASE` / `DROP SCHEMA`
+
+**Artifact-dir audit log protection:** All agents are blocked from writing to `<artifact_dir>/.qrspi/` files. The hook is the only writer of these — that's what makes the audit log tamper-proof.
+
+**Audit logging:** Every allowed/blocked write whose target is inside QRSPI scope (a worktree or an artifact dir) is appended to `<artifact_dir>/.qrspi/audit.jsonl`. Writes outside QRSPI scope (random side projects, superpowers spec work) are NOT audited — the audit log stays focused on QRSPI work.
+
+**No `.qrspi/` in worktrees.** Worktrees contain only the user's task work. Audit and state both live in the artifact dir.
 
 ## Rejection Behavior
 
@@ -232,6 +306,28 @@ When a later step surfaces new requirements or contradictions — e.g., Figma wi
 
 Users can enter mid-pipeline if they already have artifacts from prior work. As long as the required input files exist with `status: approved`, any step can run. This is an escape hatch, not the default path.
 
+### Validation and Repair
+
+Before checking artifact status, run these three validation checks in order:
+
+**1. State schema validation (fail-closed)**
+
+Call `state_init_or_reconcile <artifact_dir>` to bootstrap or reconcile `.qrspi/state.json`. If the state file is missing, it is created from artifact frontmatter. If the version field is absent (v0), it is migrated to v1. If any required v1 fields are missing (`wireframe_requested`, `artifacts`), each is added with a safe default and a repair message is emitted to stdout. If `state_init_or_reconcile` returns non-zero or if JSON is unparseable, **stop immediately** — do not proceed, do not silently pass. Emit a diagnostic:
+
+```
+ERROR: state.json is corrupted and could not be repaired. Run `state_init_or_reconcile <artifact_dir>` manually or delete .qrspi/state.json to rebuild.
+```
+
+This is fail-closed behavior: a corrupt state is worse than a stopped run.
+
+**2. Config validation**
+
+Apply the **Config Validation Procedure** below. Do not silently patch any field.
+
+**3. Task spec scan (advisory, non-blocking)**
+
+After state and config are valid, scan `tasks/task-*.md` for missing fields (`enforcement`, `allowed_files`, `constraints`). Output any warnings to stdout and continue — this is advisory only.
+
 **Run selection for mid-pipeline entry:** When entering mid-pipeline, glob for `docs/qrspi/*/goals.md` directories. If multiple exist, present the list and ask the user which run to resume. Load `config.md` from the chosen directory to read the `route` list. Scan for approved artifacts, then invoke the first step in the route list that is not yet complete.
 
 **Determining the next step:** Iterate through the `route` list in order. The first entry without a corresponding approved artifact is the next step to run. Do not hardcode the sequence — always derive it from `config.md`'s `route` field.
@@ -254,31 +350,21 @@ Do not create tasks for any other steps yet. The pipeline mode (and therefore th
 
 **Phase 2 — Full task list (Goals skill):** After the user selects a pipeline mode and `config.md` is written with the `route` field, the Goals skill rewrites the task list based on `config.md`'s route. The Goals task itself is already `in_progress` at this point; Goals marks it `completed` after approval and then creates the remaining tasks.
 
-**Example — Quick Fix task list (written by Goals after mode selection):**
+**Example — task list written by Goals after route selection:**
 ```
 [x] Goals
 [ ] Questions
 [ ] Research
+[ ] Design          # full pipeline only
+[ ] Structure       # full pipeline only
 [ ] Plan
+[ ] Parallelize     # full pipeline only
 [ ] Implement
+[ ] Integrate       # full pipeline only
 [ ] Test
 ```
 
-**Example — Full pipeline task list (written by Goals after mode selection):**
-```
-[x] Goals
-[ ] Questions
-[ ] Research
-[ ] Design
-[ ] Structure
-[ ] Plan
-[ ] Worktree
-[ ] Implement
-[ ] Integrate
-[ ] Test
-```
-
-Update each task as the pipeline progresses (mark `in_progress` when a step starts, `completed` when approved).
+The exact list mirrors the `route` field in `config.md`. Update each task as the pipeline progresses (mark `in_progress` when a step starts, `completed` when approved).
 
 **Mid-pipeline entry:** When a user enters mid-pipeline with pre-existing approved artifacts, read the `route` from `config.md`. Create the full route task list and immediately mark steps with approved artifacts as `completed`. Then invoke the first incomplete step's skill.
 
@@ -310,12 +396,12 @@ route:
   - design
   - structure
   - plan
-  - worktree
+  - parallelize
   - implement
   - integrate
   - test
-review_depth: deep  # or: quick — added by Worktree/Implement at phase start
-review_mode: loop   # or: single — added by Worktree/Implement at phase start
+review_depth: deep  # or: quick — added by Implement at phase start
+review_mode: loop   # or: single — added by Implement at phase start
 ---
 ```
 
@@ -324,18 +410,73 @@ review_mode: loop   # or: single — added by Worktree/Implement at phase start
 - `pipeline`: human-readable label (`full` or `quick`) — informational only; `route` is authoritative
 - `codex_reviews`: whether to include Codex in review rounds
 - `route`: ordered list of skill names this run will execute (see Route Templates above)
-- `review_depth`: `quick` (4 correctness reviewers) or `deep` (all 8 reviewers) — written by Worktree (or Implement in quick-fix mode) at phase start
+- `review_depth`: `quick` (4 correctness reviewers) or `deep` (all 8 reviewers) — written by Implement at phase start
 - `review_mode`: `single` or `loop` — written alongside `review_depth`
 
-**Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. The `review_depth` and `review_mode` fields are added later by Worktree (or Implement in quick-fix mode). Use the appropriate route template from the Route Templates section.
+**Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
 
 **Codex detection:** Check if `codex:rescue` is available by globbing for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`. If the file doesn't exist, skip the Codex question silently and write `codex_reviews: false`. If available, ask:
 
-> Use Codex for second reviews this run? (yes/no)
+> Codex reviews:
+> 1) No Codex reviews
+> 2) Use Codex for second reviews
 
-**No legacy fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing OR exists but has no `route:` field (pre-Phase 3 runs), refuse to proceed and tell the user: "Cannot continue — `config.md` is missing or has no route field. Re-run Goals to set the pipeline mode." There is no automatic derivation of the route — this avoids conditional branches in every skill. Existing runs can be migrated by manually adding `pipeline` and `route` fields to their config.md.
+**No legacy fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing or has missing/invalid fields, apply the **Config Validation Procedure** (see below). Skills do not silently default any field that affects pipeline behavior. There is no automatic derivation of the route — this avoids conditional branches in every skill. Existing runs can be migrated by manually adding `pipeline` and `route` fields to their config.md.
 
-### Review Round Flow
+## Config Validation Procedure
+
+Every skill that reads config.md applies this procedure before using any field.
+
+### When config.md is missing entirely
+
+Stop and present:
+
+  config.md not found in the artifact directory.
+
+  1) Re-run Goals to create config.md and set the pipeline mode
+  2) Abort
+
+### When a required field is missing or has an invalid value
+
+Stop and present the field-specific menu below. For an invalid value, also name the invalid value and the expected values before showing the menu. The set of fields each skill validates is per-skill (see each skill's Config Validation section); the menu for a given field is the same across all skills.
+
+**If `route` is missing:**
+1. Manually add a `route:` list to config.md
+2. Abort
+
+**If `pipeline` is missing or invalid (expected `full` or `quick`):**
+1. Edit config.md and set `pipeline: full` or `pipeline: quick`
+2. Abort
+
+**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
+2. Abort
+
+### No silent defaults
+
+Skills must not:
+- Assume `pipeline: full` when `pipeline` is missing
+- Assume `codex_reviews: false` when `codex_reviews` is missing
+- Attempt to derive `route` from `pipeline` when `route` is missing
+- Proceed with a guessed or inferred field value
+
+### Fields that affect pipeline behavior (must be validated)
+
+| Field | Skills that validate it | Valid values |
+|-------|------------------------|--------------|
+| `route` | Goals, Plan, Parallelize, Implement, Integrate, using-qrspi | ordered list of skill names (see Route Templates) |
+| `pipeline` | Goals, Plan, Parallelize | `full` or `quick` |
+| `codex_reviews` | Goals, Plan, Implement, Integrate, Test | `true` or `false` |
+| `review_depth` | Implement | `quick` or `deep` — set by Implement at phase start |
+| `review_mode` | Implement | `single` or `loop` — set by Implement at phase start |
+
+### Fields that do NOT require validation (informational only)
+
+| Field | Note |
+|-------|------|
+| `created` | ISO date, informational only — missing is not an error |
+
+## Standard Review Loop
 
 A "review round" consists of:
 1. Claude review subagent runs → issues found are fixed
@@ -355,9 +496,15 @@ After the first review round completes and fixes are applied, ask ONCE:
 
 **At the human gate, always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified." If the user approves but reviews have not passed clean, ask if they'd like a review loop before finalizing — this is strongly recommended.
 
-This question is asked independently at each skill's review gate, not stored globally.
+### Fix-altitude rule (F-5)
 
-### Review Output Handling
+When fixing an "X is under-specified" finding, prefer minimal additions that stay at the artifact's altitude. If the natural fix pulls content from the next pipeline step (Design content into Goals; Plan content into Design; Implementation choices into Plan), that's a signal to defer specification rather than over-specify here. Add a one-line "[X] pinned in <next step>" note instead of pinning X exhaustively now. Reviewers who flag missing detail at the next-step altitude are misapplying their review brief — decline the finding with a one-line explanation in the round notes.
+
+Why: pulling next-step detail upward inflates the artifact, introduces internal contradictions (the natural-language detail at this altitude often contradicts the structured detail at the next altitude), and produces R7-R10-style self-induced review churn — reviewers in subsequent rounds correctly flag the over-specification, the fix removes it, the cycle repeats. Minimal additions converge in 1–2 rounds; maximal additions can take 5+.
+
+Mirrors the skill-refactor design's "decline scope-extension findings" rule, applied to artifact-level reviews.
+
+## Review Output Handling
 
 The review file `reviews/{step}-review.md` is created on the first review round and appended on subsequent rounds:
 
@@ -378,6 +525,14 @@ The review file `reviews/{step}-review.md` is created on the first review round 
 ```
 
 The orchestrating skill (not the review subagent) writes and appends to the review file based on each subagent's output. Review subagents return findings; the skill handles file I/O. Each round appends its section. Claude and Codex findings are attributed separately.
+
+## Review Time Allocation
+
+When presenting artifacts for human review, guide the user on where to invest review time:
+
+- **Design and Structure** — invest heavy review here. These artifacts set the architecture. Errors here cascade through every downstream step.
+- **Plan** — spot-check. Plan is a mechanical decomposition of approved artifacts. Sample a few task specs for correctness; you don't need to read every line.
+- **Implementation code** — use task specs as a review guide. Each spec in `tasks/*.md` describes what a task was supposed to do, making code review efficient and traceable. Time saved on Plan review is time available to read the code.
 
 ## Compaction at Step Transitions
 
@@ -424,4 +579,22 @@ When QRSPI applies, invoke the Goals skill to begin:
 
 **REQUIRED SKILL:** Use `qrspi:goals` to start the pipeline.
 
-For reference on the QRSPI framework: see `qrspi/docs/qrspi-reference.md`
+## Pipeline Iron Laws — Final Reminder
+
+The four invariants that, when violated, produce the most damage:
+
+1. **Each step requires its declared inputs approved.** Artifact gating is not advisory — skills refuse to run without approved prerequisites. Do not "skip ahead." Use mid-pipeline entry only with the existing-artifacts contract.
+
+2. **`status: approved` in YAML frontmatter is the only approval marker.** Writing it triggers the PostToolUse hook to update `state.json`. Skills do NOT update `state.json` manually — see "Hook-Managed State" for the narrow exceptions.
+
+3. **Backward loops cascade forward — never patch one artifact in isolation.** New learnings at step N require updating the earliest affected artifact, re-reviewing it, and re-approving every step from there to N. Drift between artifacts breaks every downstream contract.
+
+4. **The `Implement → Integrate` segment is per-phase, not per-task.** Implement runs once per phase, firing N per-task subagents internally. Integrate runs once per phase. `current_step: implement` plus one task done does NOT mean "advance to integrate" — see `state.json` field semantics for the verification trap and `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop" for the canonical contract.
+
+<BEHAVIORAL-DIRECTIVES>
+D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.
+
+D2 — Never suggest skipping steps for speed: Every step in the QRSPI pipeline exists for a reason. Do not offer shortcuts, suggest merging steps, or imply steps can be skipped to save time.
+
+D3 — Resist time-pressure shortcuts: There is no time crunch. LLMs execute orders of magnitude faster than humans. There is no benefit to skipping LLM-driven steps — reviews, synthesis passes, and validation rounds cost seconds. Reassure the user that thoroughness is free. If the user signals urgency ("just move on," "skip the review this time"), acknowledge the constraint and offer the fastest compliant path. Do not use urgency as justification to skip required steps.
+</BEHAVIORAL-DIRECTIVES>

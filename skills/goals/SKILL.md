@@ -5,6 +5,8 @@ description: Use when starting a new QRSPI pipeline run — captures user intent
 
 # Goals (QRSPI Step 1)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Goals skill to capture what you want to build."
 
 ## Overview
@@ -15,63 +17,47 @@ Capture what the user wants — intent, constraints, success criteria, acceptanc
 
 **Required inputs:** None (this is the first step)
 
+**State bootstrap:** If `.qrspi/state.json` does not exist or `state_read` returns non-zero, call `state_init_or_reconcile <artifact_dir>`.
+
 **Before starting:**
 1. Create the artifact directory: `docs/qrspi/YYYY-MM-DD-{slug}/` (relative to the project root, not the plugin directory)
    - **Slug generation:** Take the user's first description of what they want to build, extract 2-4 key words, convert to lowercase kebab-case. Examples: "I want to add user authentication" → `user-auth`, "Build a search API for products" → `product-search-api`. If ambiguous, ask the user to confirm.
    - If the directory already exists, ask the user if they want to continue an existing run or start fresh
-2. Note: The `using-qrspi` entry-point skill creates a provisional "Goals" task before invoking this skill. Mark it as `in_progress`.
+2. Mark the provisional "Goals" task (created by `using-qrspi`) as `in_progress`.
+
+### Next-Phase Restart Mode
+
+Goals is invoked in three distinct contexts:
+
+- **Fresh run** — first invocation for a project. No artifact directory, no `config.md`, no `goals.md`. Run the full Interactive Dialogue + Pipeline Mode Selection.
+- **Mid-run resume** — user re-enters a paused run. Artifact directory exists; `goals.md` may already be `approved`. Validate `config.md` (Config Validation Procedure below) and either continue or restart from where the user left off.
+- **Next-phase restart (invoked by Replan's minor path)** — a prior phase has completed; `artifact_promote_next_phase` has reset goals/research/design frontmatter to `draft` and deleted phase-scoped files (`structure.md`, `plan.md`, `tasks/`). The `phases/phase-NN/` snapshot from the completed phase exists; `config.md` exists with the original route and pipeline mode; `goals.md` exists with `status: draft` containing the next phase's promoted goals (per Replan's roadmap-driven promotion).
+
+**Detecting next-phase restart:** All three of these conditions hold:
+- `phases/phase-*/` snapshot directory exists (one or more completed phases)
+- `goals.md` exists with `status: draft`
+- `config.md` exists with valid `route` and `pipeline` fields
+
+**Behavior on next-phase restart:**
+
+1. Skip artifact-directory creation (it exists).
+2. Skip the Pipeline Mode Selection *questions* (use the existing `config.md`'s `pipeline` and `route` — these are locked at run start and do not change between phases). Still run the standard Config Validation Procedure on the existing `config.md` to catch hand-edits that may have invalidated it between phases.
+3. Run a focused Interactive Dialogue: confirm the promoted goals match the user's expectation for this next phase, capture any phase-specific constraints discovered during the prior phase (the Replan feedback file at `feedback/replan-phase-NN-round-MM.md` is one input; ask the user whether they want anything in addition).
+4. Re-synthesize `goals.md` (subagent) with the promoted content + any new constraints.
+5. Run the standard Review Round + Human Gate; on approval, write `status: approved` and let the standard pipeline cascade (Questions → Research → ... → Parallelize → Implement).
+
+**State reconciliation on next-phase restart.** Replan calls `state_init_or_reconcile <artifact_dir>` before invoking Goals, so Goals does not call it again on next-phase restart. The fresh-run bootstrap above still applies when state is genuinely missing.
 
 <HARD-GATE>
 Do NOT synthesize goals.md until the pipeline mode is selected and config.md is written.
 The user must explicitly choose quick fix or full pipeline before synthesis begins.
 </HARD-GATE>
 
+### Config Validation (when config.md exists)
+
+If `config.md` already exists (resuming a run), apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Goals validates `route`, `pipeline`, and `codex_reviews`.
+
 ## Process
-
-```dot
-digraph goals {
-    "Ask about purpose/intent" [shape=box];
-    "Ask about constraints" [shape=box];
-    "Ask about success criteria" [shape=box];
-    "Scope check" [shape=diamond];
-    "Suggest decomposition" [shape=box];
-    "Pipeline mode selection" [shape=box];
-    "Write config.md + rewrite Level 1 tasks" [shape=box];
-    "Synthesize goals.md (subagent)" [shape=box];
-    "Review round (Claude + Codex if enabled)" [shape=box];
-    "Fix issues found" [shape=box];
-    "Ask: 1) Present  2) Loop until clean (recommended)" [shape=diamond];
-    "Review round N (max 10)" [shape=box];
-    "Round clean?" [shape=diamond];
-    "Present to user" [shape=box];
-    "User approves?" [shape=diamond];
-    "Write approval marker" [shape=box];
-    "Recommend compaction" [shape=box];
-    "Invoke next skill in route" [shape=doublecircle];
-
-    "Ask about purpose/intent" -> "Ask about constraints";
-    "Ask about constraints" -> "Ask about success criteria";
-    "Ask about success criteria" -> "Scope check";
-    "Scope check" -> "Suggest decomposition" [label="too large"];
-    "Scope check" -> "Pipeline mode selection" [label="right size"];
-    "Suggest decomposition" -> "Ask about purpose/intent" [label="narrowed scope"];
-    "Pipeline mode selection" -> "Write config.md + rewrite Level 1 tasks";
-    "Write config.md + rewrite Level 1 tasks" -> "Synthesize goals.md (subagent)";
-    "Synthesize goals.md (subagent)" -> "Review round (Claude + Codex if enabled)";
-    "Review round (Claude + Codex if enabled)" -> "Fix issues found";
-    "Fix issues found" -> "Ask: 1) Present  2) Loop until clean (recommended)";
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Present to user" [label="1"];
-    "Ask: 1) Present  2) Loop until clean (recommended)" -> "Review round N (max 10)" [label="2"];
-    "Review round N (max 10)" -> "Round clean?";
-    "Round clean?" -> "Present to user" [label="yes or cap hit"];
-    "Round clean?" -> "Fix issues found" [label="no, fix and loop"];
-    "Present to user" -> "User approves?";
-    "User approves?" -> "Synthesize goals.md (subagent)" [label="no — feedback"];
-    "User approves?" -> "Write approval marker" [label="yes"];
-    "Write approval marker" -> "Recommend compaction";
-    "Recommend compaction" -> "Invoke next skill in route";
-}
-```
 
 ### Interactive Dialogue
 
@@ -90,15 +76,23 @@ Questions to cover (not necessarily in order — follow the conversation):
 
 ### Pipeline Mode Selection
 
-After intent capture (the interactive dialogue above) but before synthesizing `goals.md`, determine the pipeline configuration. Ask three questions — one at a time:
+After intent capture (the interactive dialogue above) but before synthesizing `goals.md`, determine the pipeline configuration. Ask these questions — one at a time, using numbered choices:
 
-1. **Pipeline mode:** "Quick fix or full pipeline?"
-   - **Quick:** goals → questions → research → plan → implement → test
-   - **Full:** goals → questions → research → design → structure → plan → worktree → implement → integrate → test
+**Pipeline mode:**
+1. Quick fix (goals → questions → research → plan → implement → test)
+2. Full pipeline (goals → questions → research → design → structure → plan → parallelize → implement → integrate → test)
 
-2. **UX step** (only ask if `qrspi:ux` skill exists — glob for `~/.claude/plugins/cache/*/qrspi/*/skills/ux/` — skip silently if not found): "Include a UX/wireframing step after design?"
+**UX step** (only ask if `qrspi:ux` skill exists — glob for `~/.claude/plugins/cache/*/qrspi/*/skills/ux/` — skip silently if not found):
+1. No UX step
+2. Include UX/wireframing step after Design
 
-3. **Codex reviews** (only ask if `codex:rescue` is available — glob for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs` — skip silently if not found): "Use Codex for second reviews this run? (yes/no)"
+**Review depth** (only ask when full pipeline is selected):
+1. Quick (4 correctness reviewers)
+2. Deep (correctness + thoroughness, all 8 reviewers)
+
+**Codex reviews** (only ask if `codex:rescue` is available — glob for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs` — skip silently if not found):
+1. No Codex reviews
+2. Use Codex for second reviews this run
 
 Once you have answers, write `config.md` in the artifact directory:
 
@@ -117,11 +111,7 @@ route:
 ---
 ```
 
-**Route templates:**
-
-- **Quick route:** goals → questions → research → plan → implement → test
-- **Full route:** goals → questions → research → design → structure → plan → worktree → implement → integrate → test
-- If UX was selected: insert `ux` after `design` (before `structure`) in the full route. UX is not applicable to quick-fix routes.
+Route templates live in `using-qrspi/SKILL.md` → "Route Templates" (Quick / Full / Full + UX). Use the template that matches the user's selection. UX is not applicable to quick-fix routes.
 
 After writing `config.md`, rewrite the Level 1 pipeline tasks to match the route (add or remove steps as needed).
 
@@ -166,25 +156,10 @@ status: draft
 
 ### Review Round
 
-After synthesis, run one review round:
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Goals-specific reviewer instructions:
 
-1. **Claude review subagent** — launch with `goals.md` to check:
-   - Is `goals.md` complete and unambiguous?
-   - Are acceptance criteria specific and testable?
-   - Any missing constraints or assumptions?
-   - Does the scope seem too broad for a single implementation?
-   
-   The subagent returns structured findings. The orchestrating skill writes them to `reviews/goals-review.md`.
-
-2. **Codex review** (if `config.md` has `codex_reviews: true`) — invoke `codex:rescue` with the artifact path, review criteria, and no input artifacts for cross-reference (Goals has no predecessors). The orchestrating skill appends Codex findings to `reviews/goals-review.md`.
-
-3. Fix any issues found in both reviews.
-
-4. Ask the user ONCE: `1) Present for review  2) Loop until clean (recommended)`
-   - **1:** Proceed to human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The artifact may still have issues."
-   - **2:** Loop autonomously — run review → fix → review → fix without re-prompting. Stop ONLY when a round is clean ("Reviews passed clean") or 10 rounds reached ("Hit 10-round review cap — presenting for your review."). Then proceed to human gate. **Do not re-ask between rounds.**
-   
-   **Default recommendation is always option 2.** Clean reviews before human review catch cross-reference inconsistencies that are hard to spot manually.
+- **Claude review subagent** — launched with `goals.md`. Checks: completeness; testable acceptance criteria; missing constraints/assumptions; scope appropriate for a single implementation. Findings written to `reviews/goals-review.md`.
+- **Codex review** (if `codex_reviews: true`) — `codex:rescue` with `goals.md`; no predecessor artifacts to cross-reference. Findings appended to `reviews/goals-review.md`.
 
 ### Human Gate
 
@@ -192,11 +167,19 @@ Present the synthesized `goals.md` to the user. **Always state the review status
 
 They can:
 - **Approve** → if reviews have not passed clean, note this and ask if they'd like a review loop before finalizing. Then write `status: approved` in frontmatter.
-- **Request changes** → write the user's feedback to `feedback/goals-round-{NN}.md` (see using-qrspi Feedback File Format), then continue the conversation and re-synthesize with a new subagent that receives the original inputs + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts.
+- **Request changes** → write the user's feedback to `feedback/goals-round-{NN}.md` (see using-qrspi Feedback File Format), then continue the conversation and re-synthesize with a new subagent that receives the original inputs + **all** prior feedback files (not just the latest round). After re-generation and the review cycle completes, present:
+
+  > Feedback applied. How would you like to proceed?
+  > 1. More feedback (I have additional changes)
+  > 2. Single review round (run Claude + Codex once, see findings)
+  > 3. Loop until clean (autonomous review cycles)
+  > 4. Approve (I'm satisfied, skip reviews)
+
+  Omit option 2 if Codex is disabled in config.md. Omit the "fix issues" options (options 2 and 3) if there are no issues to fix.
 
 ### Terminal State
 
-Commit the approved `goals.md`, `config.md`, and `reviews/goals-review.md` to git.
+If the artifact directory is inside a git repository, commit the approved `goals.md`, `config.md`, and `reviews/goals-review.md` (see `using-qrspi` → "Commit after approval (when applicable)" for the detection rule). Otherwise, skip the commit — the approved frontmatter on disk is the durable record.
 
 Recommend compaction: "Goals approved. This is a good point to compact context before the next step (`/compact`)."
 
@@ -221,6 +204,16 @@ Recommend compaction: "Goals approved. This is a good point to compact context b
 | "I can infer the acceptance criteria" | Inferred criteria lead to "that's not what I meant." Make them explicit and get approval. |
 | "The scope is obvious" | Obvious scope is where scope creep hides. Write it down. |
 | "Let me just start the research first" | Research without approved goals means you don't know what you're looking for. |
+
+## Goal Specificity
+
+**Goal specificity rule:** Each goal must be independently scopeable — it can be moved between phases without surgery on other goals. A goal that bundles multiple distinct deliverables should be split into separate goals with their own IDs.
+
+**Late splitting:** When a goal proves too coarse during downstream work (Design, Structure, Plan), it can be split. Classify per the standard amendment severity classes (Minor / Major / Scope Unknown) — see `replan/SKILL.md` for the canonical classification. Present each split as a before/after diff; the skill recommends a class, the user decides. After the split, update `roadmap.md` with new goal IDs.
+
+**Red flag:** A goal whose acceptance criterion text describes 3+ distinct deliverables that could be independently phased.
+
+**Common rationalization:** "These items are related so they should be one goal" — Related ≠ coupled. If they can be independently scoped and phased, they should be separate goals.
 
 ## Worked Example
 
@@ -297,3 +290,13 @@ Add rate limiting so the API doesn't get abused.
 - **Out of scope is empty** — without explicit exclusions, downstream agents will make assumptions. One agent might scope in per-endpoint limits, another might add an admin UI. Scope creep enters here.
 - **No X-Forwarded-For mention** — a real production requirement that will be discovered mid-implementation and trigger a backward loop.
 - The bad goals.md will cause Questions to ask vague questions, Research to gather irrelevant material, and Design to propose an architecture the user didn't want.
+
+## Iron Laws — Final Reminder
+
+The two override-critical rules for Goals, restated at end:
+
+1. **Do NOT synthesize `goals.md` until pipeline mode is selected and `config.md` is written.** The user must explicitly choose `quick` or `full`. Synthesis without an explicit choice locks the run into a default the user never agreed to.
+
+2. **Each goal must be independently scopeable.** A goal that bundles multiple distinct deliverables must be split into separate goals with their own IDs (see "Goal Specificity"). Bundled goals cannot be moved between phases without surgery on adjacent goals — they break Replan's roadmap-driven phase promotion.
+
+Behavioral directives D1-D3 (encourage reviews after changes, no shortcuts for speed, no time-pressure skips) apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

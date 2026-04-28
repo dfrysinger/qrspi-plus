@@ -9,12 +9,15 @@ bats_require_minimum_version 1.5.0
 # not individual library functions (those are covered by unit tests).
 
 setup() {
-  export ARTIFACT_DIR
-  ARTIFACT_DIR=$(mktemp -d)
   export WORK_DIR
   WORK_DIR=$(mktemp -d)
   cd "$WORK_DIR"
 
+  # state.json now lives at <artifact_dir>/.qrspi/state.json (per spec) and the
+  # hook resolves artifact_dir target-based via the audit resolver, which globs
+  # $(pwd)/docs/qrspi/*-{slug}/. ARTIFACT_DIR must follow that production layout.
+  export ARTIFACT_DIR
+  ARTIFACT_DIR="$WORK_DIR/docs/qrspi/2026-04-26-test"
   mkdir -p "$ARTIFACT_DIR/research"
 
   # Path to the hook under test
@@ -23,7 +26,8 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$ARTIFACT_DIR" "$WORK_DIR"
+  cd /
+  rm -rf "$WORK_DIR"
 }
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -183,9 +187,9 @@ setup_full_draft() {
   bash -c "
     source '$pipeline_lib'
     cd '$WORK_DIR'
-    s=\$(state_read)
+    s=\$(state_read '$ARTIFACT_DIR')
     s=\$(printf '%s' \"\$s\" | jq '.artifacts.goals = \"approved\"')
-    state_write_atomic \"\$s\"
+    state_write_atomic \"\$s\" '$ARTIFACT_DIR'
   "
 
   # Hook must still block because frontmatter says draft
@@ -308,4 +312,41 @@ setup_full_draft() {
 
   run "$HOOK" <<< '{"tool_name":"Bash","tool_input":{"command":"echo hello"}}'
   [ "$status" -eq 0 ]
+}
+
+# ── Important #5: post-tool-use no longer audits — single audit row per Write ──
+
+# Pre-F-1: every successful Write produced TWO "allow" rows in audit.jsonl
+# (one from pre-tool-use's allow(), one from post-tool-use's audit_log_event).
+# After dropping the post-hook audit, exactly one row should exist per Write.
+@test "[I5] successful Write produces exactly one audit row (no double-audit)" {
+  # Approve everything up through plan so writing goals.md is allowed
+  create_artifact "$ARTIFACT_DIR/goals.md"            "approved"
+  create_artifact "$ARTIFACT_DIR/questions.md"        "approved"
+  create_artifact "$ARTIFACT_DIR/research/summary.md" "approved"
+  create_artifact "$ARTIFACT_DIR/design.md"           "approved"
+  create_artifact "$ARTIFACT_DIR/structure.md"        "approved"
+  create_artifact "$ARTIFACT_DIR/plan.md"             "approved"
+  init_state "$ARTIFACT_DIR"
+
+  local target="$ARTIFACT_DIR/goals.md"
+  local payload
+  payload=$(write_json "$target")
+
+  # Run pre-tool-use (audits the decision)
+  run "$HOOK" <<< "$payload"
+  [ "$status" -eq 0 ]
+
+  # Run post-tool-use (no longer audits — only syncs state)
+  local post_hook
+  post_hook="$(dirname "$BATS_TEST_FILENAME")/../../hooks/post-tool-use"
+  run "$post_hook" <<< "$payload"
+  [ "$status" -eq 0 ]
+
+  # Audit log must have exactly one row for this Write
+  local audit_log="$ARTIFACT_DIR/.""qrspi/audit.jsonl"
+  [ -f "$audit_log" ]
+  local row_count
+  row_count=$(wc -l < "$audit_log" | tr -d ' ')
+  [ "$row_count" -eq 1 ]
 }

@@ -4,155 +4,26 @@ set -euo pipefail
 # Source the frontmatter library
 source "$(dirname "${BASH_SOURCE[0]}")/frontmatter.sh"
 
-# task_read_frontmatter <task_file>
-# Parses YAML frontmatter from a task spec file.
-# Returns JSON with enforcement, allowed_files, and constraints.
-task_read_frontmatter() {
-  local task_file="$1"
-
-  if [[ ! -f "$task_file" ]]; then
-    return 1
-  fi
-
-  local enforcement="strict"
-  local allowed_files_json="[]"
-  local constraints_json="[]"
-
-  # Extract frontmatter block (between --- markers)
-  local in_frontmatter=0
-  local frontmatter=""
-  local line_num=0
-
-  while IFS= read -r line; do
-    line_num=$((line_num + 1))
-
-    # First --- marks start
-    if [[ $line_num -eq 1 && "$line" == "---" ]]; then
-      in_frontmatter=1
-      continue
-    fi
-
-    # Second --- marks end
-    if [[ $in_frontmatter -eq 1 && "$line" == "---" ]]; then
-      break
-    fi
-
-    # Collect frontmatter lines
-    if [[ $in_frontmatter -eq 1 ]]; then
-      frontmatter+="$line"$'\n'
-    fi
-  done < "$task_file"
-
-  # Parse enforcement
-  if [[ "$frontmatter" =~ (^|$'\n')enforcement:\ ([a-z]+) ]]; then
-    enforcement="${BASH_REMATCH[2]}"
-  fi
-
-  # Parse allowed_files array
-  local in_allowed_files=0
-  local files_array=()
-
-  while IFS= read -r line; do
-    # Check if we're at the allowed_files section
-    if [[ "$line" =~ ^allowed_files: ]]; then
-      in_allowed_files=1
-      continue
-    fi
-
-    # Exit allowed_files section when we hit a non-indented line or another field
-    if [[ $in_allowed_files -eq 1 ]] && [[ "$line" =~ ^[a-z] ]]; then
-      in_allowed_files=0
-    fi
-
-    # Parse list items
-    if [[ $in_allowed_files -eq 1 && "$line" =~ ^[[:space:]]*-[[:space:]]action: ]]; then
-      local action_line="$line"
-      local action=""
-      local path=""
-
-      # Extract action from current line
-      if [[ "$action_line" =~ action:[[:space:]]+([a-z]+) ]]; then
-        action="${BASH_REMATCH[1]}"
-      fi
-
-      # Read the next line for path (should be indented with path:)
-      IFS= read -r path_line || break
-      if [[ "$path_line" =~ path:[[:space:]]+(.*) ]]; then
-        path="${BASH_REMATCH[1]}"
-      fi
-
-      # Add to files array
-      if [[ -n "$action" && -n "$path" ]]; then
-        files_array+=("{\"action\": \"$action\", \"path\": \"$path\"}")
-      fi
-    fi
-  done <<< "$frontmatter"
-
-  # Build allowed_files JSON
-  if [[ ${#files_array[@]} -gt 0 ]]; then
-    allowed_files_json="["
-    for i in "${!files_array[@]}"; do
-      allowed_files_json+="${files_array[$i]}"
-      if [[ $i -lt $((${#files_array[@]} - 1)) ]]; then
-        allowed_files_json+=","
-      fi
-    done
-    allowed_files_json+="]"
-  fi
-
-  # Parse constraints array
-  local in_constraints=0
-  local constraints_array=()
-
-  while IFS= read -r line; do
-    # Check if we're at the constraints section
-    if [[ "$line" =~ ^constraints: ]]; then
-      in_constraints=1
-      continue
-    fi
-
-    # Exit constraints section when we hit a non-indented line
-    if [[ $in_constraints -eq 1 ]] && [[ "$line" =~ ^[a-z] ]]; then
-      in_constraints=0
-    fi
-
-    # Parse list items
-    if [[ $in_constraints -eq 1 && "$line" =~ ^[[:space:]]*-[[:space:]]+(.*) ]]; then
-      local constraint_text="${BASH_REMATCH[1]}"
-      if [[ -n "$constraint_text" ]]; then
-        # Escape quotes for JSON
-        constraint_text="${constraint_text//\\/\\\\}"
-        constraint_text="${constraint_text//\"/\\\"}"
-        constraints_array+=("\"$constraint_text\"")
-      fi
-    fi
-  done <<< "$frontmatter"
-
-  # Build constraints JSON
-  if [[ ${#constraints_array[@]} -gt 0 ]]; then
-    constraints_json="["
-    for i in "${!constraints_array[@]}"; do
-      constraints_json+="${constraints_array[$i]}"
-      if [[ $i -lt $((${#constraints_array[@]} - 1)) ]]; then
-        constraints_json+=","
-      fi
-    done
-    constraints_json+="]"
-  fi
-
-  # Output as JSON
-  jq -n \
-    --arg enforcement "$enforcement" \
-    --argjson allowed_files "$allowed_files_json" \
-    --argjson constraints "$constraints_json" \
-    '{enforcement: $enforcement, allowed_files: $allowed_files, constraints: $constraints}'
-}
-
 # task_get_spec_path <task_id> <artifact_dir>
 # Returns the path to the task spec file with zero-padded ID.
 task_get_spec_path() {
   local task_id="$1"
   local artifact_dir="$2"
+
+  if [[ -z "$task_id" ]]; then
+    echo "task_id is empty" >&2
+    return 1
+  fi
+
+  if [[ ! "$task_id" =~ ^[0-9]+$ ]]; then
+    echo "task_id is not a positive integer" >&2
+    return 1
+  fi
+
+  if [[ -z "$artifact_dir" ]]; then
+    echo "artifact_dir is empty" >&2
+    return 1
+  fi
 
   local padded_id
   padded_id=$(printf "%02d" "$task_id")
@@ -164,7 +35,7 @@ task_get_spec_path() {
 # Reads the runtime overrides file (.qrspi/task-{NN}-runtime.json).
 # This file holds mid-task user decisions: approved extra files,
 # enforcement mode switches. See enforcement.sh for how it's consumed.
-# Returns 1 if not found.
+# Returns 1 if not found or content is invalid JSON.
 task_read_runtime_overrides() {
   local task_id="$1"
 
@@ -177,7 +48,77 @@ task_read_runtime_overrides() {
     return 1
   fi
 
-  cat "$overrides_path"
+  local content
+  content=$(cat "$overrides_path") || { echo "failed to read $overrides_path" >&2; return 1; }
+
+  if [[ -z "$content" ]] || ! echo "$content" | jq empty 2>/dev/null; then
+    echo "invalid JSON in $overrides_path" >&2
+    return 1
+  fi
+
+  echo "$content"
+}
+
+# task_resolve_allowlist_paths <allowed_files_json> <base_dir>
+# Resolves each path in an allowed_files JSON array to its absolute canonical form.
+# Relative paths are resolved relative to base_dir. Already-absolute paths pass through.
+# Tilde expansion is handled via bash parameter expansion.
+# Uses realpath --no-symlinks if available, falls back to readlink -f.
+# Writes the resolved array to .qrspi/resolved-allowlist-paths.json (runtime sidecar).
+# Outputs the updated JSON array on stdout.
+task_resolve_allowlist_paths() {
+  local allowed_files_json="$1"
+  local base_dir="$2"
+
+  local resolved_json
+  resolved_json="[]"
+
+  local count
+  count=$(printf "%s" "$allowed_files_json" | jq 'length')
+
+  local i=0
+  while [[ $i -lt $count ]]; do
+    local entry
+    entry=$(printf "%s" "$allowed_files_json" | jq --argjson idx "$i" '.[$idx]')
+
+    local raw_path
+    raw_path=$(printf "%s" "$entry" | jq -r '.path')
+
+    # Tilde expansion
+    if [[ "$raw_path" == "~/"* ]]; then
+      raw_path="${HOME}/${raw_path#"~/"}"
+    elif [[ "$raw_path" == "~" ]]; then
+      raw_path="$HOME"
+    fi
+
+    # Resolve to absolute path
+    local abs_path
+    if [[ "$raw_path" != /* ]]; then
+      # Relative path — resolve against base_dir
+      local candidate="${base_dir}/${raw_path}"
+      if realpath --no-symlinks "$candidate" > /dev/null 2>&1; then
+        abs_path=$(realpath --no-symlinks "$candidate")
+      elif readlink -f "$candidate" > /dev/null 2>&1; then
+        abs_path=$(readlink -f "$candidate")
+      else
+        abs_path="$candidate"
+      fi
+    else
+      abs_path="$raw_path"
+    fi
+
+    local resolved_entry
+    resolved_entry=$(printf "%s" "$entry" | jq --arg p "$abs_path" '.path = $p')
+    resolved_json=$(printf "%s" "$resolved_json" | jq --argjson e "$resolved_entry" '. + [$e]')
+
+    i=$((i + 1))
+  done
+
+  # Write sidecar
+  mkdir -p .qrspi
+  printf "%s" "$resolved_json" > ".qrspi/resolved-allowlist-paths.json"
+
+  printf "%s" "$resolved_json"
 }
 
 # task_write_runtime_overrides <task_id> <json_string>
@@ -186,6 +127,11 @@ task_read_runtime_overrides() {
 task_write_runtime_overrides() {
   local task_id="$1"
   local json_string="$2"
+
+  if ! echo "$json_string" | jq empty 2>/dev/null; then
+    echo "json_string is not valid JSON" >&2
+    return 1
+  fi
 
   local padded_id
   padded_id=$(printf "%02d" "$task_id")
@@ -197,8 +143,17 @@ task_write_runtime_overrides() {
   # Write to temp file on the same filesystem so mv is atomic
   # (cross-filesystem mv degrades to copy+delete, not atomic)
   local temp_file
-  temp_file=$(mktemp ".qrspi/.task-${padded_id}-runtime.json.XXXXXX")
+  temp_file=$(mktemp ".qrspi/.task-${padded_id}-runtime.json.XXXXXX") || { echo "failed to create temp file" >&2; return 1; }
 
-  printf "%s" "$json_string" > "$temp_file"
-  mv "$temp_file" "$overrides_path"
+  if ! printf "%s" "$json_string" > "$temp_file"; then
+    echo "failed to write to temp file $temp_file" >&2
+    rm -f "$temp_file"
+    return 1
+  fi
+
+  if ! mv "$temp_file" "$overrides_path"; then
+    echo "failed to move temp file to $overrides_path" >&2
+    rm -f "$temp_file"
+    return 1
+  fi
 }

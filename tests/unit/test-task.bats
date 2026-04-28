@@ -23,27 +23,37 @@ create_task_spec() {
 }
 
 # ============================================================================
-# task_read_frontmatter tests
+# task_read_frontmatter removed — verify it no longer exists
 # ============================================================================
 
-@test "task_read_frontmatter: reads all Phase 4 fields correctly" {
+@test "task_read_frontmatter must not exist as a function after sourcing" {
+  run bash -c 'source "$1" && declare -f task_read_frontmatter >/dev/null 2>&1 && echo exists || echo gone' _ "$BATS_TEST_DIRNAME/../../hooks/lib/task.sh"
+  [[ "$output" == "gone" ]]
+}
+
+@test "frontmatter_get is available after sourcing task.sh" {
+  run bash -c 'source "$1" && declare -f frontmatter_get >/dev/null 2>&1 && echo exists || echo gone' _ "$BATS_TEST_DIRNAME/../../hooks/lib/task.sh"
+  [[ "$output" == "exists" ]]
+}
+
+@test "frontmatter_get on a full Phase 4 task spec returns valid JSON with enforcement, allowed_files, constraints" {
   local task_file="$ARTIFACT_DIR/tasks/task-01.md"
   create_task_spec "$task_file" "---
 enforcement: strict
 allowed_files:
-  - action: create
-    path: hooks/lib/example.sh
-  - action: modify
-    path: hooks/session-start
+- action: create
+  path: hooks/lib/example.sh
+- action: modify
+  path: hooks/session-start
 constraints:
-  - Must source frontmatter.sh
-  - No external deps
+- Must source frontmatter.sh
+- No external deps
 ---
 
 # Task content here
 "
 
-  output=$(task_read_frontmatter "$task_file")
+  output=$(frontmatter_get "$task_file")
 
   # Verify JSON structure
   echo "$output" | jq . > /dev/null
@@ -69,131 +79,6 @@ constraints:
   # Check first constraint
   constraint=$(echo "$output" | jq -r '.constraints[0]')
   [[ "$constraint" == "Must source frontmatter.sh" ]]
-}
-
-@test "task_read_frontmatter: reads enforcement after status/task/phase fields" {
-  # Regression: enforcement regex must not require ^ anchor (enforcement is not first field)
-  local task_file="$ARTIFACT_DIR/tasks/task-20.md"
-  create_task_spec "$task_file" "---
-status: approved
-task: 20
-phase: 1
-enforcement: strict
-allowed_files:
-  - action: create
-    path: src/main.sh
-constraints: []
----
-
-# Task 20
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  enforcement=$(echo "$output" | jq -r '.enforcement')
-  [[ "$enforcement" == "strict" ]]
-}
-
-@test "task_read_frontmatter: defaults to strict when enforcement missing (fail-closed)" {
-  local task_file="$ARTIFACT_DIR/tasks/task-02.md"
-  create_task_spec "$task_file" "---
-allowed_files: []
-constraints: []
----
-
-# Task content
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  enforcement=$(echo "$output" | jq -r '.enforcement')
-  [[ "$enforcement" == "strict" ]]
-}
-
-@test "task_read_frontmatter: returns empty allowed_files when missing" {
-  local task_file="$ARTIFACT_DIR/tasks/task-03.md"
-  create_task_spec "$task_file" "---
-enforcement: strict
-constraints: []
----
-
-# Task content
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  files_count=$(echo "$output" | jq '.allowed_files | length')
-  [[ "$files_count" == "0" ]]
-}
-
-@test "task_read_frontmatter: returns empty constraints when missing" {
-  local task_file="$ARTIFACT_DIR/tasks/task-04.md"
-  create_task_spec "$task_file" "---
-enforcement: strict
-allowed_files: []
----
-
-# Task content
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  constraints_count=$(echo "$output" | jq '.constraints | length')
-  [[ "$constraints_count" == "0" ]]
-}
-
-@test "task_read_frontmatter: all Phase 4 fields missing returns defaults" {
-  local task_file="$ARTIFACT_DIR/tasks/task-05.md"
-  create_task_spec "$task_file" "---
-title: Some task
----
-
-# Task content
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  enforcement=$(echo "$output" | jq -r '.enforcement')
-  files_count=$(echo "$output" | jq '.allowed_files | length')
-  constraints_count=$(echo "$output" | jq '.constraints | length')
-
-  [[ "$enforcement" == "strict" ]]
-  [[ "$files_count" == "0" ]]
-  [[ "$constraints_count" == "0" ]]
-}
-
-@test "task_read_frontmatter: nonexistent file returns 1" {
-  run task_read_frontmatter "/nonexistent/file.md"
-  [[ $status == 1 ]]
-}
-
-@test "task_read_frontmatter: multi-entry allowed_files parsed correctly" {
-  local task_file="$ARTIFACT_DIR/tasks/task-06.md"
-  create_task_spec "$task_file" "---
-enforcement: strict
-allowed_files:
-  - action: create
-    path: file1.sh
-  - action: modify
-    path: file2.sh
-  - action: delete
-    path: file3.sh
-constraints: []
----
-
-# Content
-"
-
-  output=$(task_read_frontmatter "$task_file")
-  files_count=$(echo "$output" | jq '.allowed_files | length')
-  [[ "$files_count" == "3" ]]
-
-  # Verify second entry
-  action=$(echo "$output" | jq -r '.allowed_files[1].action')
-  path=$(echo "$output" | jq -r '.allowed_files[1].path')
-  [[ "$action" == "modify" ]]
-  [[ "$path" == "file2.sh" ]]
-
-  # Verify third entry
-  action=$(echo "$output" | jq -r '.allowed_files[2].action')
-  path=$(echo "$output" | jq -r '.allowed_files[2].path')
-  [[ "$action" == "delete" ]]
-  [[ "$path" == "file3.sh" ]]
 }
 
 # ============================================================================
@@ -317,6 +202,122 @@ constraints: []
 }
 
 # ============================================================================
+# T05: task_get_spec_path validation tests
+# ============================================================================
+
+@test "[T05-T1] task_get_spec_path: empty task_id returns 1 with 'task_id is empty'" {
+  run task_get_spec_path "" "/some/dir"
+  [[ $status == 1 ]]
+  [[ "$output" == *"task_id is empty"* ]]
+}
+
+@test "[T05-T2] task_get_spec_path: non-numeric task_id returns 1 with 'not a positive integer'" {
+  run task_get_spec_path "abc" "/some/dir"
+  [[ $status == 1 ]]
+  [[ "$output" == *"not a positive integer"* ]]
+}
+
+@test "[T05-T3] task_get_spec_path: empty artifact_dir returns 1 with 'artifact_dir is empty'" {
+  run task_get_spec_path "3" ""
+  [[ $status == 1 ]]
+  [[ "$output" == *"artifact_dir is empty"* ]]
+}
+
+# ============================================================================
+# T05: task_read_runtime_overrides validation tests
+# ============================================================================
+
+@test "[T05-T4] task_read_runtime_overrides: invalid JSON content returns 1 with 'invalid JSON'" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .qrspi
+  printf "not-json-content" > ".qrspi/task-09-runtime.json"
+
+  run task_read_runtime_overrides 9
+  [[ $status == 1 ]]
+  [[ "$output" == *"invalid JSON"* ]]
+}
+
+@test "[T05-T5] task_read_runtime_overrides: empty file returns 1 with 'invalid JSON'" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .qrspi
+  printf "" > ".qrspi/task-10-runtime.json"
+
+  run task_read_runtime_overrides 10
+  [[ $status == 1 ]]
+  [[ "$output" == *"invalid JSON"* ]]
+}
+
+# ============================================================================
+# T05: task_write_runtime_overrides validation tests
+# ============================================================================
+
+@test "[T05-T6] task_write_runtime_overrides: non-JSON input returns 1 with 'not valid JSON', file not created" {
+  cd "$TEST_TEMP_DIR"
+
+  run task_write_runtime_overrides "3" "not-json"
+  [[ $status == 1 ]]
+  [[ "$output" == *"not valid JSON"* ]]
+  [[ ! -f ".qrspi/task-03-runtime.json" ]]
+}
+
+# ============================================================================
+# U10: task_resolve_allowlist_paths tests
+# ============================================================================
+
+@test "[U10-T5] task_resolve_allowlist_paths: converts relative paths to absolute" {
+  cd "$TEST_TEMP_DIR"
+  local input_json='[{"action":"create","path":"hooks/lib/enforcement.sh"},{"action":"modify","path":"src/main.sh"}]'
+  output=$(task_resolve_allowlist_paths "$input_json" "$TEST_TEMP_DIR")
+
+  first_path=$(printf "%s" "$output" | jq -r '.[0].path')
+  second_path=$(printf "%s" "$output" | jq -r '.[1].path')
+
+  [[ "$first_path" == "$TEST_TEMP_DIR/hooks/lib/enforcement.sh" ]]
+  [[ "$second_path" == "$TEST_TEMP_DIR/src/main.sh" ]]
+}
+
+@test "[U10-T6] task_resolve_allowlist_paths: already-absolute paths pass through unchanged" {
+  cd "$TEST_TEMP_DIR"
+  local abs_path="/already/absolute/file.sh"
+  local input_json="[{\"action\":\"create\",\"path\":\"$abs_path\"}]"
+  output=$(task_resolve_allowlist_paths "$input_json" "$TEST_TEMP_DIR")
+
+  result_path=$(printf "%s" "$output" | jq -r '.[0].path')
+  [[ "$result_path" == "$abs_path" ]]
+}
+
+@test "[U10-T7] task_resolve_allowlist_paths: resolved paths stored in runtime sidecar JSON" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .qrspi
+  local input_json='[{"action":"create","path":"hooks/lib/task.sh"}]'
+  task_resolve_allowlist_paths "$input_json" "$TEST_TEMP_DIR" > /dev/null
+
+  local sidecar_path=".qrspi/resolved-allowlist-paths.json"
+  [[ -f "$sidecar_path" ]]
+
+  stored_path=$(jq -r '.[0].path' "$sidecar_path")
+  [[ "$stored_path" == "$TEST_TEMP_DIR/hooks/lib/task.sh" ]]
+}
+
+@test "[U10-T8] task_resolve_allowlist_paths: falls back to readlink when realpath unavailable" {
+  cd "$TEST_TEMP_DIR"
+  # Override PATH to hide realpath, simulating its absence
+  local save_path="$PATH"
+  local bin_dir="$TEST_TEMP_DIR/mock-bin"
+  mkdir -p "$bin_dir"
+  # Create a fake realpath that exits non-zero (as if not found)
+  printf '#!/usr/bin/env bash\nexit 127\n' > "$bin_dir/realpath"
+  chmod +x "$bin_dir/realpath"
+
+  local input_json='[{"action":"create","path":"src/fallback.sh"}]'
+  output=$(PATH="$bin_dir:$PATH" task_resolve_allowlist_paths "$input_json" "$TEST_TEMP_DIR")
+
+  result_path=$(printf "%s" "$output" | jq -r '.[0].path')
+  # Should still resolve to an absolute path via readlink fallback
+  [[ "$result_path" == /* ]]
+}
+
+# ============================================================================
 # Library quality tests
 # ============================================================================
 
@@ -327,6 +328,6 @@ constraints: []
 }
 
 @test "task.sh sources frontmatter.sh" {
-  # Verify frontmatter_get_status is available after sourcing task.sh
-  declare -f frontmatter_get_status > /dev/null
+  # Verify frontmatter_get is available after sourcing task.sh
+  declare -f frontmatter_get > /dev/null
 }

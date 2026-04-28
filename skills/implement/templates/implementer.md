@@ -58,6 +58,41 @@ RED-GREEN-REFACTOR with verification at every step:
 - If an existing file you're modifying is already large or tangled, work carefully and note it as a concern in your report
 - In existing codebases, follow established patterns. Improve code you're touching the way a good developer would, but don't restructure things outside your task.
 
+## Commenting
+
+Comment aggressively. The reviewer reading your code is proficient in software engineering but may be unfamiliar with the specific language or framework.
+
+**Every function gets a header comment** covering four things:
+
+```
+// Purpose:  What this function does (one sentence).
+// Inputs:   Parameters — name, type, and what they represent.
+// Outputs:  Return value — type and what it represents.
+// Failure:  What happens when inputs are invalid, dependencies are unavailable,
+//           or the operation cannot complete (error thrown, sentinel returned, etc.).
+```
+
+**Every non-obvious conditional block gets an inline comment explaining *why***, not just what. Focus on:
+- Edge cases ("empty array returns early to avoid divide-by-zero below")
+- Security decisions ("reject before parsing to avoid ReDoS on malformed input")
+- Non-obvious flow ("fall through intentionally — both branches share the cleanup step")
+
+<example>
+// GOOD — explains why, not what
+if (token === null) {
+  // Fail closed: treat missing token as unauthenticated rather than
+  // allowing the downstream handler to decide. Auth failures are silent
+  // by design to avoid leaking which tokens exist.
+  return res.status(401).end();
+}
+
+// BAD — restates the code, adds no signal
+if (token === null) {
+  // token is null, return 401
+  return res.status(401).end();
+}
+</example>
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

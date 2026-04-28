@@ -123,3 +123,138 @@ bash_detect_file_writes() {
 
     return 0
 }
+
+# bash_detect_destructive_universal <command>
+#
+# Returns 0 (and prints pattern name on stdout) if the command matches a
+# destructive pattern that should be blocked for ALL agents, including main chat.
+# Returns 1 otherwise.
+#
+# Patterns:
+#   - rm -rf with target containing *, ~, leading /, or ..
+#   - git push --force / -f
+#   - git reset --hard <ref> where ref is anything other than HEAD or HEAD~/HEAD^ variants
+#   - git clean -fd / -fdx / -fdX
+#   - Redirect to /dev/sd*
+#   - DROP DATABASE / DROP SCHEMA (case-insensitive)
+bash_detect_destructive_universal() {
+  local cmd="$1"
+  local upper="${cmd^^}"
+
+  # rm -rf with dangerous targets — tokenize the target portion so we catch
+  # dangerous paths in ANY position (not just the first token after flags).
+  # We use set -f / set +f to suppress glob expansion during `read -ra`.
+  local rm_flags_re='rm[[:space:]]+(-[rRfF]+|-[rR][[:space:]]+-[fF]|-[fF][[:space:]]+-[rR])[[:space:]]+'
+  if [[ "$cmd" =~ $rm_flags_re ]]; then
+    # Extract everything after the matched flags portion.
+    local after="${cmd#*${BASH_REMATCH[0]}}"
+    # Truncate at compound operators so we only inspect rm's own arguments.
+    local op
+    for op in '&&' '||' ';' '|'; do
+      if [[ "$after" == *"$op"* ]]; then
+        after="${after%%$op*}"
+      fi
+    done
+    # Tokenize safely — disable glob expansion so a literal * is not expanded.
+    local -a tokens
+    set -f
+    read -ra tokens <<< "$after"
+    set +f
+    local tok
+    for tok in "${tokens[@]}"; do
+      if [[ "$tok" == *'*'* ]]; then
+        echo "rm -rf with dangerous target: wildcard ($tok)"
+        return 0
+      fi
+      if [[ "$tok" == '~'* ]]; then
+        echo "rm -rf with dangerous target: home glob ($tok)"
+        return 0
+      fi
+      if [[ "$tok" == /* ]]; then
+        # F-3 minimal: allow project-internal absolute paths (under $PWD).
+        # Catastrophic prefixes (/, /etc, /usr, /Users/other-user/...) still
+        # blocked because they don't share the $PWD prefix.
+        # NOTE: lexical comparison only — symlinked PWD (e.g. macOS
+        # /tmp → /private/tmp) won't match canonical absolute targets and will
+        # block. Errs toward safety; user can rerun with the matching form.
+        local pwd_norm="${PWD%/}"
+        if [[ -z "$pwd_norm" ]] || { [[ "$tok" != "$pwd_norm" ]] && [[ "$tok" != "$pwd_norm"/* ]]; }; then
+          echo "rm -rf with dangerous target: absolute path ($tok)"
+          return 0
+        fi
+        # project-internal absolute path — continue to ../parent-traversal check below
+      fi
+      if [[ "$tok" == *'..'* ]]; then
+        echo "rm -rf with dangerous target: parent traversal ($tok)"
+        return 0
+      fi
+    done
+  fi
+
+  # git push --force / -f
+  if [[ "$cmd" =~ git[[:space:]]+push([[:space:]]|$) ]]; then
+    if [[ "$cmd" =~ ([[:space:]]|^)--force([[:space:]]|$) ]] || \
+       [[ "$cmd" =~ ([[:space:]]|^)-f([[:space:]]|$) ]]; then
+      echo "git push --force"
+      return 0
+    fi
+  fi
+
+  # git reset --hard <non-HEAD>
+  if [[ "$cmd" =~ git[[:space:]]+reset[[:space:]]+--hard[[:space:]]+([^[:space:]]+) ]]; then
+    local ref="${BASH_REMATCH[1]}"
+    case "$ref" in
+      HEAD|HEAD~*|HEAD^*) ;;  # safe
+      *) echo "git reset --hard non-HEAD ref: $ref"; return 0 ;;
+    esac
+  fi
+
+  # git clean -fd / -fdx / -fdX
+  # Anchor to end-of-token (whitespace or end-of-string) so -fdn (dry-run) is not matched.
+  if [[ "$cmd" =~ git[[:space:]]+clean[[:space:]]+(-fd|-fdx|-fdX|-df|-dfx|-dfX)([[:space:]]|$) ]]; then
+    echo "git clean -fd"
+    return 0
+  fi
+
+  # Redirect to /dev/sd*
+  if [[ "$cmd" =~ \>[[:space:]]*/dev/sd ]]; then
+    echo "redirect to /dev/sd*"
+    return 0
+  fi
+
+  # SQL DROP DATABASE / DROP SCHEMA
+  if [[ "$upper" =~ DROP[[:space:]]+DATABASE ]] || [[ "$upper" =~ DROP[[:space:]]+SCHEMA ]]; then
+    echo "DROP DATABASE/SCHEMA"
+    return 0
+  fi
+
+  return 1
+}
+
+# bash_detect_destructive_subagent <command>
+#
+# Returns 0 (and prints pattern name on stdout) if the command matches a
+# destructive pattern that should be blocked for SUBAGENTS only. Main chat is
+# exempt — these patterns have legitimate manual-migration use cases.
+# Returns 1 otherwise.
+#
+# Patterns:
+#   - DROP TABLE (case-insensitive)
+#   - TRUNCATE (case-insensitive, word-boundary)
+bash_detect_destructive_subagent() {
+  local cmd="$1"
+  local upper="${cmd^^}"
+
+  if [[ "$upper" =~ DROP[[:space:]]+TABLE ]]; then
+    echo "DROP TABLE"
+    return 0
+  fi
+
+  # Word-boundary TRUNCATE: not preceded or followed by [A-Z_]
+  if [[ "$upper" =~ (^|[^A-Z_])TRUNCATE([^A-Z_]|$) ]]; then
+    echo "TRUNCATE"
+    return 0
+  fi
+
+  return 1
+}
