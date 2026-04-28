@@ -1,6 +1,6 @@
 # Reviewer Boilerplate (shared)
 
-This file is the single consolidated reviewer-shared content asset for the QRSPI pipeline. It is embedded verbatim into every Claude reviewer subagent prompt, into the cross-cutting `scope-reviewer` template, and into every Codex reviewer call site constructed by QRSPI skills.
+This file is the single consolidated reviewer-shared content asset for the QRSPI pipeline. It defines the shared finding contract that the reviewer templates listed below will embed verbatim — every Claude reviewer subagent prompt, the cross-cutting `scope-reviewer` template, and every Codex reviewer call site constructed by QRSPI skills. Task 1 of this run only creates this asset; Task 11 wires the actual embeds into those call sites.
 
 This file is **designed to grow**. Future reviewer-shared content (reviewer tone guidance, fact-vs-opinion guardrails, severity rubric reminders, etc.) is added as **additional sections** to this same file rather than as new files. The file path and file name are stable across edits so embed references in skill prompts do not need to change.
 
@@ -23,7 +23,7 @@ Five categories. Each entry below names the category, gives the rule of thumb, a
 **Default-action rule.**
 
 - `style`, `clarity`, `correctness` — **auto-apply**. The review loop applies the fix without pausing.
-- `scope`, `intent` — **pause**. The review loop stops and surfaces the finding to the user via the batch pause UI with the 3-option menu (apply / skip / loop back to upstream artifact).
+- `scope`, `intent` — **pause**. The review loop stops and surfaces the finding to the user via the batch pause UI with the 3-option menu (apply / skip / loop back to upstream artifact). (Per design.md §"M48 — Review-loop pause on scope/intent findings": batch-with-overrides UI, paused findings listed individually with the inherited 3-option pause menu.)
 
 **Secondary-escalation rule.**
 
