@@ -42,7 +42,7 @@ unit_test_dir() {
 }
 
 # AC8 — Unit test count baseline (updated 2026-04-28, integration-round-01 fix-cycle merge)
-@test "[AC8] Unit test suite has exactly 653 @test definitions (baseline)" {
+@test "[AC8] Unit test suite has exactly 671 @test definitions (baseline)" {
   # Baseline for stage-after-G6 = octopus(T16, T17, T18) on top of
   # stage-after-G5 (0ee9fd1, 18 .bats / 416 @tests). All three Wave 6
   # tasks are file-disjoint except for tests/acceptance/test-meta.bats
@@ -102,23 +102,24 @@ unit_test_dir() {
   #   T27 (+43) — bash-detect.sh coverage gaps + integration sweep
   #   T28  (+3) — audit.sh worktree-CWD fallback (state.json resolver)
   #   T29  (+6) — codex-companion-bg.sh CRIT audit lockdown
+  #   T32 (+18) — reviewer-boilerplate untrusted-data wrapper +
+  #              embed-site coverage (boilerplate-embed.bats expanded)
   #   T35  (+6) — phasing CRITICAL→high + codex_reviews validation
   #   T38  (+3) — scope-reviewer 6→7 (replan parameterization catch-up)
   #   T39  (+8) — 4-skill phasing.md required-input + new
   #              test-artifact-gating.bats
-  # Total fix-cycle delta: +95 over the 555 baseline. Sum tracking
-  # updates again when task-32 and task-33 merge land. 555 → 653. Files
-  # baseline (25) unchanged because no new test FILES were added except
-  # test-artifact-gating.bats (T39, +1) and test-using-qrspi.bats (T33,
-  # +1, will land soon) — both of which will require a separate Files-
-  # baseline bump in a subsequent fix; tracked as a follow-up. Existing
-  # test files already
-  # exists.
+  # Total fix-cycle delta: +116 over the 555 baseline. Sum tracking
+  # updates again when task-33 merge lands. 555 → 671. Files baseline
+  # (25) unchanged here, but task-39 added test-artifact-gating.bats and
+  # task-33 (pending merge) will add test-session-start.bats +
+  # test-using-qrspi.bats; the file-count baseline (currently 25) and
+  # the expected-files list will need a separate bump after task-33.
+  # Tracked as round-3 finding. Existing test files already
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 653 ]
+  [ "$count" -eq 671 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-27 T16+T17+T18)
