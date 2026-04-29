@@ -79,10 +79,12 @@ write_json() {
 # SC5 — Full-pipeline approved state allows plan write (end-to-end ordering smoke test)
 @test "[SC5] All-approved pipeline allows plan.md write after Phase 4 changes" {
   # AC: the ordering check still works correctly in the happy path after Phase 4
+  # Updated 2026-04-27 (T4 M54): includes phasing.md.
   create_artifact "$ARTIFACT_DIR/goals.md"            "approved"
   create_artifact "$ARTIFACT_DIR/questions.md"        "approved"
   create_artifact "$ARTIFACT_DIR/research/summary.md" "approved"
   create_artifact "$ARTIFACT_DIR/design.md"           "approved"
+  create_artifact "$ARTIFACT_DIR/phasing.md"          "approved"
   create_artifact "$ARTIFACT_DIR/structure.md"        "approved"
   create_artifact "$ARTIFACT_DIR/plan.md"             "draft"
   init_state "$ARTIFACT_DIR"
@@ -139,13 +141,14 @@ write_json() {
 # SC5 — Unit test file count has not regressed (Phase 4 must not delete unit tests)
 @test "[SC5] Unit test suite has expected .bats files after 2026-04-26 implement-runtime-fix" {
   # AC: Phase 4 changes must not silently delete unit test files.
-  # Net delta: +test-agent.bats (added Task 2), -test-enforcement.bats (deleted Task 11
-  # along with the dead enforcement.sh library). Original 12 → 12 unchanged net.
+  # Post prompt-improvements ↔ main merge (2026-04-29): both branches added
+  # unit-test files (HEAD added 17 new files; main kept its original 12).
+  # Combined net count after merge resolution = 29.
   local unit_dir
   unit_dir="$(dirname "$BATS_TEST_DIRNAME")/unit"
   local count
   count=$(find "$unit_dir" -maxdepth 1 -name "*.bats" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 12 ]
+  [ "$count" -eq 29 ]
 }
 
 # SC5 — Unit test count has not regressed unexpectedly

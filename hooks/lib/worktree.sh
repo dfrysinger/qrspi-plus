@@ -32,12 +32,33 @@ worktree_extract_task_id() {
 worktree_extract_slug() {
   local path="$1"
 
-  # F-19: regex must match the asymmetric wall regex in pre-tool-use:156,170.
-  # Drift here = silent observability hole: alpha-suffix worktree writes get
-  # past the wall but produce no audit.jsonl row (audit treats them as
-  # "outside QRSPI scope"). Catch with the bats test pinning both regexes.
+  # Reject paths containing `..` segments outright. The
+  # subagent-wall regex below is a substring match, so a crafted path like
+  # `/tmp/.worktrees/x/task-1/../../../../etc/poison` would match the
+  # `.worktrees/x/task-1/` substring and bypass containment even though shell
+  # path-resolution lands outside the worktree. We reject any path with `..`
+  # segments before regex match — defense-in-depth, no realpath dependency
+  # (realpath also fails on non-existent paths, which the hook frequently
+  # encounters for new-file Write targets).
+  case "$path" in
+    *"/../"*|*"/.."|"../"*|"..")
+      return 1
+      ;;
+  esac
+
+  # The task-NN[a-z]? alpha-suffix supports baseline-fix-of-baseline-fix
+  # scenarios (task-00b, task-00c). This regex MUST match the asymmetric
+  # wall regex in pre-tool-use:156,170 — drift here = silent observability
+  # hole where alpha-suffix worktree writes get past the wall but produce no
+  # audit.jsonl row.
   if [[ $path =~ \.worktrees/([^/]+)/(task-[0-9]+[a-z]?|baseline)(/|$) ]]; then
-    echo "${BASH_REMATCH[1]}"
+    local slug="${BASH_REMATCH[1]}"
+    # Defense in depth: slug itself must not contain `..` (the [^/]+ above
+    # already excludes `/`, but a slug like `..evil` is suspicious).
+    if [[ "$slug" == *".."* ]]; then
+      return 1
+    fi
+    echo "$slug"
     return 0
   fi
 

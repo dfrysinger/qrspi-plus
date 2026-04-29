@@ -1,0 +1,10 @@
+{
+  "finding_id": "R1-F05",
+  "severity": "high",
+  "change_type": "intent",
+  "message": "goals.md frames goal G3 as solution-prescribing (lists components to build) but the user has previously stated `I want goals to be problem-framed, not solution-prescribing` in feedback/2025-12-01-goals-shape.md. Rewrite G3 in problem-framed shape (Problem / Why we care / What we know so far). This contradicts a captured user decision.",
+  "referenced_files": [
+    "goals.md",
+    "feedback/2025-12-01-goals-shape.md"
+  ]
+}

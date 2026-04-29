@@ -8,12 +8,14 @@ set -euo pipefail
 artifact_map_get() {
   local step="$1"
   case "$step" in
-    goals)      echo "goals.md" ;;
-    questions)  echo "questions.md" ;;
-    research)   echo "research/summary.md" ;;
-    design)     echo "design.md" ;;
-    structure)  echo "structure.md" ;;
-    plan)       echo "plan.md" ;;
+    goals)        echo "goals.md" ;;
+    questions)    echo "questions.md" ;;
+    research)     echo "research/summary.md" ;;
+    design)       echo "design.md" ;;
+    phasing)      echo "phasing.md" ;;
+    structure)    echo "structure.md" ;;
+    plan)         echo "plan.md" ;;
+    parallelize)  echo "parallelization.md" ;;
     *)
       echo "artifact_map_get: unrecognized step '${step}'" >&2
       return 1
@@ -28,12 +30,14 @@ artifact_map_get() {
 artifact_map_get_step() {
   local filename="$1"
   case "$filename" in
-    */research/summary.md|research/summary.md) echo "research" ;;
-    */goals.md|goals.md)                       echo "goals" ;;
-    */questions.md|questions.md)               echo "questions" ;;
-    */design.md|design.md)                     echo "design" ;;
-    */structure.md|structure.md)               echo "structure" ;;
-    */plan.md|plan.md)                         echo "plan" ;;
-    *)                                         return 1 ;;
+    */research/summary.md|research/summary.md)   echo "research" ;;
+    */goals.md|goals.md)                         echo "goals" ;;
+    */questions.md|questions.md)                 echo "questions" ;;
+    */design.md|design.md)                       echo "design" ;;
+    */phasing.md|phasing.md)                     echo "phasing" ;;
+    */structure.md|structure.md)                 echo "structure" ;;
+    */plan.md|plan.md)                           echo "plan" ;;
+    */parallelization.md|parallelization.md)     echo "parallelize" ;;
+    *)                                           return 1 ;;
   esac
 }

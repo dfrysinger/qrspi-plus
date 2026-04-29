@@ -632,6 +632,133 @@ _t16_setup_artifact_dir() {
 }
 
 # ============================================================================
+# [T16-N] M54 cascade: snapshot + promote include Phasing-owned artifacts
+# (Task 26 / R2 I-N1, R2 I-N6)
+# ============================================================================
+
+# Helper: set up artifact dir with full Phasing-owned artifact set
+_t16n_setup_phasing_artifacts() {
+  _t16_setup_artifact_dir
+  # Add Phasing-owned artifacts
+  create_artifact_file "$ARTIFACT_DIR/phasing.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/roadmap.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/future-goals.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/future-questions.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/future-research-summary.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/future-design.md" "approved"
+}
+
+@test "[T16-N1] snapshot copies phasing.md into phase archive" {
+  _t16n_setup_phasing_artifacts
+
+  run artifact_snapshot_phase "$ARTIFACT_DIR" 1
+
+  [ "$status" -eq 0 ]
+  [ -f "$ARTIFACT_DIR/phases/phase-01/phasing.md" ]
+}
+
+@test "[T16-N2] snapshot copies roadmap.md into phase archive" {
+  _t16n_setup_phasing_artifacts
+
+  artifact_snapshot_phase "$ARTIFACT_DIR" 1
+
+  [ -f "$ARTIFACT_DIR/phases/phase-01/roadmap.md" ]
+}
+
+@test "[T16-N3] snapshot copies all four future-*.md files" {
+  _t16n_setup_phasing_artifacts
+
+  artifact_snapshot_phase "$ARTIFACT_DIR" 1
+
+  [ -f "$ARTIFACT_DIR/phases/phase-01/future-goals.md" ]
+  [ -f "$ARTIFACT_DIR/phases/phase-01/future-questions.md" ]
+  [ -f "$ARTIFACT_DIR/phases/phase-01/future-research-summary.md" ]
+  [ -f "$ARTIFACT_DIR/phases/phase-01/future-design.md" ]
+}
+
+@test "[T16-N4] snapshot tolerates absent future-*.md files (only copies what exists)" {
+  _t16_setup_artifact_dir
+  # Add only phasing.md and roadmap.md, NO future-*.md files
+  create_artifact_file "$ARTIFACT_DIR/phasing.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/roadmap.md" "approved"
+
+  run artifact_snapshot_phase "$ARTIFACT_DIR" 1
+
+  [ "$status" -eq 0 ]
+  [ -f "$ARTIFACT_DIR/phases/phase-01/phasing.md" ]
+  [ -f "$ARTIFACT_DIR/phases/phase-01/roadmap.md" ]
+  [ ! -f "$ARTIFACT_DIR/phases/phase-01/future-goals.md" ]
+  [ ! -f "$ARTIFACT_DIR/phases/phase-01/future-questions.md" ]
+  [ ! -f "$ARTIFACT_DIR/phases/phase-01/future-research-summary.md" ]
+  [ ! -f "$ARTIFACT_DIR/phases/phase-01/future-design.md" ]
+}
+
+@test "[T16-N5] promote resets phasing.md frontmatter to draft" {
+  _t16n_setup_phasing_artifacts
+
+  artifact_promote_next_phase "$ARTIFACT_DIR" 1
+
+  [ -f "$ARTIFACT_DIR/phasing.md" ]
+  local phasing_status
+  phasing_status=$(frontmatter_get "$ARTIFACT_DIR/phasing.md" "status")
+  [ "$phasing_status" = "draft" ]
+}
+
+@test "[T16-N6] promote deletes roadmap.md (re-emitted by next-phase Phasing)" {
+  _t16n_setup_phasing_artifacts
+
+  artifact_promote_next_phase "$ARTIFACT_DIR" 1
+
+  [ ! -f "$ARTIFACT_DIR/roadmap.md" ]
+}
+
+@test "[T16-N7] promote leaves future-*.md files in place (Replan reads them next)" {
+  _t16n_setup_phasing_artifacts
+
+  artifact_promote_next_phase "$ARTIFACT_DIR" 1
+
+  # future-*.md files persist — Replan's populate sequence reads them
+  # to extract next-phase entries.
+  [ -f "$ARTIFACT_DIR/future-goals.md" ]
+  [ -f "$ARTIFACT_DIR/future-questions.md" ]
+  [ -f "$ARTIFACT_DIR/future-research-summary.md" ]
+  [ -f "$ARTIFACT_DIR/future-design.md" ]
+}
+
+@test "[T16-N8] promote frontmatter reset works regardless of GNU vs BSD sed (portability)" {
+  # This test asserts the actual side effect: status: approved -> status: draft
+  # in goals.md. On GNU sed, `sed -i ''` interprets '' as filename and silently
+  # leaves frontmatter unchanged; this test would fail under that broken form.
+  _t16_setup_artifact_dir
+  # Make sure goals.md starts as approved
+  create_artifact_file "$ARTIFACT_DIR/goals.md" "approved"
+
+  artifact_promote_next_phase "$ARTIFACT_DIR" 1
+
+  # Verify frontmatter actually mutated
+  local goals_status
+  goals_status=$(frontmatter_get "$ARTIFACT_DIR/goals.md" "status")
+  [ "$goals_status" = "draft" ]
+
+  # Also verify no stray '' file was created (BSD-only `sed -i ''` would
+  # not create one, but GNU sed misinterpreting it WOULD on some invocations).
+  [ ! -f "$ARTIFACT_DIR/''" ]
+  [ ! -f "''" ]
+}
+
+@test "[T16-N9] promote does NOT use BSD-only 'sed -i ''' syntax in source (non-comment lines)" {
+  # Static check: no NON-COMMENT line in artifact.sh may contain `sed -i ''`
+  # (BSD/macOS-only form that silently misbehaves on GNU sed). Comment lines
+  # may reference the historical pattern in docstrings/rationale notes.
+  local lib_file
+  lib_file="$(dirname "$BATS_TEST_FILENAME")/../../hooks/lib/artifact.sh"
+
+  # Strip comment lines (those whose first non-whitespace char is '#'),
+  # then check that no remaining line contains `sed -i ''`.
+  ! grep -vE "^[[:space:]]*#" "$lib_file" | grep -qE "sed -i ''"
+}
+
+# ============================================================================
 # [F-7] artifact_sync_state recomputes current_step on mid-session approval
 # ============================================================================
 # Bug: when an artifact's frontmatter changed from draft to approved during a
@@ -671,6 +798,7 @@ _t16_setup_artifact_dir() {
   create_artifact_file "$ARTIFACT_DIR/questions.md" "approved"
   create_artifact_file "$ARTIFACT_DIR/research/summary.md" "approved"
   create_artifact_file "$ARTIFACT_DIR/design.md" "approved"
+  create_artifact_file "$ARTIFACT_DIR/phasing.md" "approved"
   create_artifact_file "$ARTIFACT_DIR/structure.md" "draft"
   create_artifact_file "$ARTIFACT_DIR/plan.md" "draft"
 

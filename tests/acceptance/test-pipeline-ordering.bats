@@ -63,6 +63,7 @@ setup_full_draft() {
   create_artifact "$ARTIFACT_DIR/questions.md"        "draft"
   create_artifact "$ARTIFACT_DIR/research/summary.md" "draft"
   create_artifact "$ARTIFACT_DIR/design.md"           "draft"
+  create_artifact "$ARTIFACT_DIR/phasing.md"          "draft"
   create_artifact "$ARTIFACT_DIR/structure.md"        "draft"
   create_artifact "$ARTIFACT_DIR/plan.md"             "draft"
   init_state "$ARTIFACT_DIR"
@@ -107,6 +108,7 @@ setup_full_draft() {
   create_artifact "$ARTIFACT_DIR/questions.md"        "approved"
   create_artifact "$ARTIFACT_DIR/research/summary.md" "approved"
   create_artifact "$ARTIFACT_DIR/design.md"           "draft"
+  create_artifact "$ARTIFACT_DIR/phasing.md"          "draft"
   create_artifact "$ARTIFACT_DIR/structure.md"        "draft"
   create_artifact "$ARTIFACT_DIR/plan.md"             "draft"
   init_state "$ARTIFACT_DIR"
@@ -116,12 +118,29 @@ setup_full_draft() {
   [[ "$output" == *"design"* ]]
 }
 
+# AC1 — Write to structure.md blocked when phasing not approved (M54)
+@test "[AC1] Write structure.md blocked when phasing not approved → exit 2 with 'phasing' in reason" {
+  create_artifact "$ARTIFACT_DIR/goals.md"            "approved"
+  create_artifact "$ARTIFACT_DIR/questions.md"        "approved"
+  create_artifact "$ARTIFACT_DIR/research/summary.md" "approved"
+  create_artifact "$ARTIFACT_DIR/design.md"           "approved"
+  create_artifact "$ARTIFACT_DIR/phasing.md"          "draft"
+  create_artifact "$ARTIFACT_DIR/structure.md"        "draft"
+  create_artifact "$ARTIFACT_DIR/plan.md"             "draft"
+  init_state "$ARTIFACT_DIR"
+
+  run "$HOOK" <<< "$(edit_json "$ARTIFACT_DIR/structure.md")"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"phasing"* ]]
+}
+
 # AC1 — Write to plan.md blocked when structure not approved
 @test "[AC1] Write plan.md blocked when structure not approved → exit 2" {
   create_artifact "$ARTIFACT_DIR/goals.md"            "approved"
   create_artifact "$ARTIFACT_DIR/questions.md"        "approved"
   create_artifact "$ARTIFACT_DIR/research/summary.md" "approved"
   create_artifact "$ARTIFACT_DIR/design.md"           "approved"
+  create_artifact "$ARTIFACT_DIR/phasing.md"          "approved"
   create_artifact "$ARTIFACT_DIR/structure.md"        "draft"
   create_artifact "$ARTIFACT_DIR/plan.md"             "draft"
   init_state "$ARTIFACT_DIR"
@@ -137,6 +156,7 @@ setup_full_draft() {
   create_artifact "$ARTIFACT_DIR/questions.md"        "approved"
   create_artifact "$ARTIFACT_DIR/research/summary.md" "approved"
   create_artifact "$ARTIFACT_DIR/design.md"           "approved"
+  create_artifact "$ARTIFACT_DIR/phasing.md"          "approved"
   create_artifact "$ARTIFACT_DIR/structure.md"        "approved"
   create_artifact "$ARTIFACT_DIR/plan.md"             "draft"
   init_state "$ARTIFACT_DIR"

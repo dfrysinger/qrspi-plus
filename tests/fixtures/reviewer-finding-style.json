@@ -1,0 +1,9 @@
+{
+  "finding_id": "R1-F01",
+  "severity": "low",
+  "change_type": "style",
+  "message": "Bullet items in `## Goals` use mixed period/no-period sentence terminators. Normalize all bullets to consistently terminate with periods. The artifact's substance is unchanged; only punctuation is normalized.",
+  "referenced_files": [
+    "goals.md"
+  ]
+}

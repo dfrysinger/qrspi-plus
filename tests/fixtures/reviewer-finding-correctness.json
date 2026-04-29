@@ -1,0 +1,10 @@
+{
+  "finding_id": "R1-F03",
+  "severity": "high",
+  "change_type": "correctness",
+  "message": "structure.md asserts `skills/foo/SKILL.md` exports a function `bar()` but the corresponding plan task spec defines the function as `baz()`. Update one or the other so the cross-reference is consistent.",
+  "referenced_files": [
+    "structure.md",
+    "plan.md"
+  ]
+}

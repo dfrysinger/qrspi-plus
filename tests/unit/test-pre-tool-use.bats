@@ -375,6 +375,357 @@ init_state() {
 }
 
 # ──────────────────────────────────────────────────────────────
+# [T25-S-N1-A] Repo-root .qrspi/state.json write from main chat is blocked
+# ──────────────────────────────────────────────────────────────
+@test "[T25-S-N1-A] main chat Write to .qrspi/state.json blocks (repo-root protection)" {
+  cd "$WORK_DIR"
+  local target="$WORK_DIR/.qrspi/state.json"
+  local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"{}"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"BLOCKED"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T25-S-N1-B] Repo-root .qrspi/audit.jsonl write from main chat is blocked
+# ──────────────────────────────────────────────────────────────
+@test "[T25-S-N1-B] main chat Write to .qrspi/audit.jsonl blocks (repo-root protection)" {
+  cd "$WORK_DIR"
+  local target="$WORK_DIR/.qrspi/audit.jsonl"
+  local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"{}"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"BLOCKED"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T25-S-N1-C] Repo-root .qrspi/task-NN-runtime.json write from main chat is blocked
+# ──────────────────────────────────────────────────────────────
+@test "[T25-S-N1-C] main chat Write to .qrspi/task-03-runtime.json blocks" {
+  cd "$WORK_DIR"
+  local target="$WORK_DIR/.qrspi/task-03-runtime.json"
+  local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"{}"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"BLOCKED"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T25-S-N1-D] Existing artifact-dir .qrspi/ protection still works
+# ──────────────────────────────────────────────────────────────
+@test "[T25-S-N1-D] artifact-dir .qrspi/state.json write still blocks (regression)" {
+  cd "$WORK_DIR"
+  mkdir -p docs/qrspi/2026-04-26-myslug/.qrspi
+  local target="$WORK_DIR/docs/qrspi/2026-04-26-myslug/.qrspi/state.json"
+  local json='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"{}"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"BLOCKED"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T25-S-N1-E] Repo-root .qrspi/ protection also fires for Bash redirects
+# ──────────────────────────────────────────────────────────────
+@test "[T25-S-N1-E] Bash redirect to .qrspi/state.json is blocked (main chat)" {
+  cd "$WORK_DIR"
+  local cmd="echo {} > $WORK_DIR/.qrspi/state.json"
+  local json='{"tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"BLOCKED"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T25-I-N4-A] parallelization.md write before plan.md approved blocks
+# ──────────────────────────────────────────────────────────────
+@test "[T25-I-N4-A] Write to parallelization.md with plan draft blocks (exit 2) with plan in reason" {
+  create_artifact "$ARTIFACT_DIR/goals.md" "approved"
+  create_artifact "$ARTIFACT_DIR/questions.md" "approved"
+  create_artifact "$ARTIFACT_DIR/research/summary.md" "approved"
+  create_artifact "$ARTIFACT_DIR/design.md" "approved"
+  create_artifact "$ARTIFACT_DIR/phasing.md" "approved"
+  create_artifact "$ARTIFACT_DIR/structure.md" "approved"
+  create_artifact "$ARTIFACT_DIR/plan.md" "draft"
+
+  init_state "$ARTIFACT_DIR"
+
+  local json
+  json='{"tool_name":"Write","tool_input":{"file_path":"'"$ARTIFACT_DIR/parallelization.md"'","content":"---\nstatus: approved\n---\n"}}'
+
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"plan"* ]]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T25-I-N4-B] parallelization.md write with plan approved allows
+# ──────────────────────────────────────────────────────────────
+@test "[T25-I-N4-B] Write to parallelization.md with plan approved allows (exit 0)" {
+  create_artifact "$ARTIFACT_DIR/goals.md" "approved"
+  create_artifact "$ARTIFACT_DIR/questions.md" "approved"
+  create_artifact "$ARTIFACT_DIR/research/summary.md" "approved"
+  create_artifact "$ARTIFACT_DIR/design.md" "approved"
+  create_artifact "$ARTIFACT_DIR/phasing.md" "approved"
+  create_artifact "$ARTIFACT_DIR/structure.md" "approved"
+  create_artifact "$ARTIFACT_DIR/plan.md" "approved"
+
+  init_state "$ARTIFACT_DIR"
+
+  local json
+  json='{"tool_name":"Write","tool_input":{"file_path":"'"$ARTIFACT_DIR/parallelization.md"'","content":"---\nstatus: approved\n---\n"}}'
+
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T25-S-N5-A] Subagent Write with crafted .. path is rejected (canonicalization)
+# ──────────────────────────────────────────────────────────────
+@test "[T25-S-N5-A] subagent Write with .. escape is blocked (path canonicalization)" {
+  cd "$WORK_DIR"
+  mkdir -p .worktrees/x/task-1
+  # This path's regex matches via substring `.worktrees/x/task-1/`, but it
+  # actually resolves outside the worktree. Pre-canonicalization: pass.
+  # Post-canonicalization: blocked (resolves to /tmp/poison or outside worktree).
+  local target="$WORK_DIR/.worktrees/x/task-1/../../../../tmp/poison"
+  local json='{"agent_id":"sub-1","tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"x"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T25-S-N5-B] Subagent Write with explicit .. segments rejected even without resolving
+# ──────────────────────────────────────────────────────────────
+@test "[T25-S-N5-B] subagent Write with .. segments in path is blocked" {
+  cd "$WORK_DIR"
+  mkdir -p .worktrees/myslug/task-01
+  local target="$WORK_DIR/.worktrees/myslug/task-01/../../../etc/poison"
+  local json='{"agent_id":"sub-1","tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"x"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [T25-S-N5-C] Subagent Write to legitimate worktree path still allowed
+# ──────────────────────────────────────────────────────────────
+@test "[T25-S-N5-C] subagent Write to canonical worktree path allows (regression)" {
+  cd "$WORK_DIR"
+  mkdir -p .worktrees/myslug/task-01/src
+  local target="$WORK_DIR/.worktrees/myslug/task-01/src/foo.ts"
+  local json='{"agent_id":"sub-1","tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"x"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [R2 S-N2] subagent Bash inline interpreter (python -c) blocks
+# ──────────────────────────────────────────────────────────────
+# A subagent inside a worktree cannot use `python -c` to write outside the
+# worktree. The detector emits __OPAQUE_WRITE__ for inline-interpreter
+# invocations; the subagent worktree wall checks that "target" against
+# `.worktrees/<slug>/(task-NN|baseline)/` and blocks because the sentinel
+# is not under any worktree path.
+@test "[R2 S-N2] subagent python -c (inline interpreter) blocked by worktree wall" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='python -c "open(\"/tmp/x\",\"w\").write(\"y\")"'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [R2 S-N2] subagent Bash dd of=/abs blocked by worktree wall
+# ──────────────────────────────────────────────────────────────
+@test "[R2 S-N2] subagent dd of=/abs blocked by worktree wall" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='dd if=/dev/zero of=/abs/path bs=1 count=1'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [R2 S-N2] subagent no-space redirect outside worktree blocks
+# ──────────────────────────────────────────────────────────────
+@test "[R2 S-N2] subagent no-space redirect >/abs/poison blocked by worktree wall" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='echo X >/abs/poison'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [R2 S-N2] main chat python -c is allowed (sentinel only blocks subagents)
+# ──────────────────────────────────────────────────────────────
+@test "[R2 S-N2] main chat python -c allowed (no agent_id)" {
+  cd "$WORK_DIR"
+  # Use escaped double quotes inside the JSON string so the resulting JSON
+  # remains well-formed when bats interpolates the command into the JSON
+  # body.
+  local cmd='python -c \"print(1)\"'
+  local json='{"tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+# ──────────────────────────────────────────────────────────────
+# [task-43 S-2] subagent cd /tmp && echo > rel is blocked
+# ──────────────────────────────────────────────────────────────
+# Round-2 Codex finding. Before the fix, `cd /tmp && echo x > escaped.txt`
+# from a subagent inside a worktree was classified as writing to
+# `<worktree>/escaped.txt` (relative resolved against hook PWD = worktree
+# root) and allowed by the wall, while the shell wrote /tmp/escaped.txt
+# outside the worktree. After the fix, the cd-before-relative-write
+# pattern emits __OPAQUE_WRITE__ and the wall blocks.
+@test "[task-43 S-2] subagent cd /tmp && rel-write blocked by worktree wall" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd /tmp && echo x > escaped.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-43 S-2] semicolon variant
+@test "[task-43 S-2] subagent cd /tmp; rel-write blocked (semicolon)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd /tmp; echo x > escaped.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-43 S-2] tee variant
+@test "[task-43 S-2] subagent cd /tmp && tee rel blocked (alt write syntax)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd /tmp && tee escaped.txt < /dev/null'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-43 S-2] cd ../../.. (relative parent traversal)
+@test "[task-43 S-2] subagent cd ../../.. && rel-write blocked" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd ../../.. && echo x > escaped.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-43 S-2 NEGATIVE] cd into worktree subdir is still allowed
+# A subagent doing `cd src && echo x > inside.txt` inside the worktree
+# stays inside — the wall regex matches `<worktree>/src/inside.txt`
+# (resolved against PWD = `<worktree>/src`... actually here the hook's
+# PWD is the worktree root, so the relative target resolves to
+# `<worktree>/inside.txt`, which still matches the worktree wall).
+@test "[task-43 S-2 NEGATIVE] subagent cd into worktree subdir + rel-write allowed" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01/src"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd src && echo x > inside.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+# [task-43 S-2] Write tool with absolute path — locks contract (Write/Edit
+# are NOT vulnerable, but assert explicitly).
+@test "[task-43 S-2 contract] subagent Write to absolute /tmp path still blocked" {
+  cd "$WORK_DIR"
+  local target="/tmp/escaped-write.txt"
+  local json='{"agent_id":"sub-1","tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"x"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-43 S-2 contract] subagent Edit to absolute path outside worktree still blocked
+@test "[task-43 S-2 contract] subagent Edit to absolute /tmp path still blocked" {
+  cd "$WORK_DIR"
+  local target="/tmp/escaped-edit.txt"
+  local json='{"agent_id":"sub-1","tool_name":"Edit","tool_input":{"file_path":"'"$target"'","old_string":"x","new_string":"y"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [L-sec-3] pre-tool-use file contains the Containment Notes documenting
+# that subagent CWD reads (non-write Bash with `cd ..`) are intentionally
+# not contained per the target-based enforcement model.
+@test "[task-43 L-sec-3] pre-tool-use documents Containment Notes" {
+  local hook_path="$(dirname "$BATS_TEST_FILENAME")/../../hooks/pre-tool-use"
+  grep -q "## Containment Notes" "$hook_path"
+  grep -q "intentionally NOT contained" "$hook_path"
+  grep -q "target-based" "$hook_path"
+}
+
+# ──────────────────────────────────────────────────────────────
+# [task-46 M4-1] subagent broadened cd-escape patterns blocked
+# ──────────────────────────────────────────────────────────────
+# Round-4 review M4-1 found that task-43's S-2 fix only matched literal
+# cd targets. After task-46, any cd/pushd target with `$`, `` ` ``, `$(`,
+# or `${` is opaque; pushd is opaque even with bareword target; and
+# subshell/brace-group wrapped cd-out triggers the inner scan. These four
+# regression tests confirm the pre-tool-use wall actually blocks at the
+# hook layer.
+
+# [task-46 M4-1] cd "$HOME" && rel-write (variable expansion)
+@test "[task-46 M4-1] subagent cd \"\$HOME\" && rel-write blocked (var)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd "$HOME" && echo x > escape.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-46 M4-1] cd "$(mktemp -d)" && rel-write (command substitution)
+@test "[task-46 M4-1] subagent cd \"\$(mktemp -d)\" && rel-write blocked (cmd subst)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd "$(mktemp -d)" && echo x > escape.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-46 M4-1] pushd /tmp && rel-write (pushd absolute)
+@test "[task-46 M4-1] subagent pushd /tmp && rel-write blocked (pushd)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='pushd /tmp && echo x > escape.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-46 M4-1] (cd /tmp; > escape) — subshell-wrapped cd-out
+@test "[task-46 M4-1] subagent (cd /tmp; rel-write) blocked (subshell wrap)" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='(cd /tmp; echo x > escape.txt)'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 2 ]
+}
+
+# [task-46 M4-1 NEGATIVE] cd src && rel-write still allowed (regression
+# of task-43 negative — confirm the broader detection didn't break it).
+@test "[task-46 M4-1 NEGATIVE] subagent cd src && rel-write still allowed" {
+  mkdir -p "$WORK_DIR/.worktrees/myslug/task-01/src"
+  cd "$WORK_DIR/.worktrees/myslug/task-01"
+  local cmd='cd src && echo x > inside.txt'
+  local json='{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+  run "$HOOK" <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+# ──────────────────────────────────────────────────────────────
 # [F-1] artifact-name target outside docs/qrspi/ blocks fail-closed
 # ──────────────────────────────────────────────────────────────
 # After F-1: when file_path matches a known artifact name (goals.md, design.md,

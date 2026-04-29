@@ -270,6 +270,553 @@ assert_empty() {
   [ "$status" -ne 0 ]
 }
 
+# ── R2 S-N2: coverage-gap fixes — additional write-syntax detection ────
+#
+# Helper to assert opaque-write sentinel emitted (for inline interpreters
+# whose target cannot be statically parsed).
+assert_opaque_write() {
+    local output="$1"
+    if [[ "$output" != *"__OPAQUE_WRITE__"* ]]; then
+        echo "Expected opaque-write sentinel (__OPAQUE_WRITE__) not found"
+        echo "Got output: $output"
+        return 1
+    fi
+}
+
+# No-space redirect: `>file`
+@test "S-N2: detects no-space redirect >/etc/poison" {
+    result=$(bash_detect_file_writes 'echo X >/etc/poison')
+    assert_contains_path "$result" "/etc/poison"
+}
+
+# No-space append redirect: `>>file`
+@test "S-N2: detects no-space append redirect >>/tmp/log" {
+    result=$(bash_detect_file_writes 'echo X >>/tmp/log')
+    assert_contains_path "$result" "/tmp/log"
+}
+
+# Clobber redirect: `>|file`
+@test "S-N2: detects clobber redirect >|/abs/path" {
+    result=$(bash_detect_file_writes 'echo X >|/abs/path')
+    assert_contains_path "$result" "/abs/path"
+}
+
+# Clobber redirect with space: `>| file`
+@test "S-N2: detects clobber redirect with space >| /abs/path" {
+    result=$(bash_detect_file_writes 'echo X >| /abs/path')
+    assert_contains_path "$result" "/abs/path"
+}
+
+# Leading redirect: `>file cmd ...` (POSIX)
+@test "S-N2: detects leading redirect >file printf X" {
+    result=$(bash_detect_file_writes '>/tmp/leading printf X')
+    assert_contains_path "$result" "/tmp/leading"
+}
+
+# Inline interpreter: python -c
+@test "S-N2: opaque-write sentinel for python -c" {
+    result=$(bash_detect_file_writes "python -c \"open('/abs/path','w').write('x')\"")
+    assert_opaque_write "$result"
+}
+
+# Inline interpreter: python3 -c
+@test "S-N2: opaque-write sentinel for python3 -c" {
+    result=$(bash_detect_file_writes "python3 -c \"open('/abs/path','w').write('x')\"")
+    assert_opaque_write "$result"
+}
+
+# Inline interpreter: node -e
+@test "S-N2: opaque-write sentinel for node -e" {
+    result=$(bash_detect_file_writes "node -e \"require('fs').writeFileSync('/abs/path','x')\"")
+    assert_opaque_write "$result"
+}
+
+# Inline interpreter: node --eval
+@test "S-N2: opaque-write sentinel for node --eval" {
+    result=$(bash_detect_file_writes "node --eval \"require('fs').writeFileSync('/abs/path','x')\"")
+    assert_opaque_write "$result"
+}
+
+# Inline interpreter: perl -e
+@test "S-N2: opaque-write sentinel for perl -e" {
+    result=$(bash_detect_file_writes "perl -e 'open(F,\">/abs/path\");print F \"x\"'")
+    assert_opaque_write "$result"
+}
+
+# Inline interpreter: ruby -e
+@test "S-N2: opaque-write sentinel for ruby -e" {
+    result=$(bash_detect_file_writes "ruby -e \"File.write('/abs/path','x')\"")
+    assert_opaque_write "$result"
+}
+
+# dd of=path
+@test "S-N2: detects dd of=/abs/path" {
+    result=$(bash_detect_file_writes 'dd if=/dev/zero of=/abs/path bs=1 count=1')
+    assert_contains_path "$result" "/abs/path"
+}
+
+# dd of="quoted path"
+@test "S-N2: detects dd of=\"/abs/quoted path\"" {
+    result=$(bash_detect_file_writes 'dd if=/dev/zero of="/abs/quoted path"')
+    assert_contains_path "$result" "/abs/quoted path"
+}
+
+# install (BSD/GNU)
+@test "S-N2: detects install -m 644 src dst" {
+    result=$(bash_detect_file_writes 'install -m 644 source.txt /abs/dest.txt')
+    assert_contains_path "$result" "/abs/dest.txt"
+}
+
+# rsync src dst
+@test "S-N2: detects rsync src /abs/dest" {
+    result=$(bash_detect_file_writes 'rsync source.txt /abs/dest')
+    assert_contains_path "$result" "/abs/dest"
+}
+
+# rsync with flags
+@test "S-N2: detects rsync -av src /abs/dest" {
+    result=$(bash_detect_file_writes 'rsync -av source/ /abs/dest/')
+    assert_contains_path "$result" "/abs/dest"
+}
+
+# awk BEGIN { print > "..." } — opaque (cannot reliably parse awk script)
+@test "S-N2: opaque-write sentinel for awk BEGIN with redirect" {
+    result=$(bash_detect_file_writes "awk 'BEGIN{print > \"/abs/path\"}' </dev/null")
+    assert_opaque_write "$result"
+}
+
+# Heredoc + redirect: `cat <<EOF >/file` — should detect /file via redirect
+@test "S-N2: detects redirect after heredoc cat <<EOF >/file" {
+    result=$(bash_detect_file_writes 'cat <<EOF >/tmp/heredoc-out')
+    assert_contains_path "$result" "/tmp/heredoc-out"
+}
+
+# Negative: python without -c flag (running a script) is NOT opaque
+@test "S-N2: python script.py without -c is not flagged opaque" {
+    result=$(bash_detect_file_writes 'python script.py')
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "Should not flag plain python invocation as opaque"
+        return 1
+    fi
+}
+
+# Negative: node script.js without -e is NOT opaque
+@test "S-N2: node script.js without -e is not flagged opaque" {
+    result=$(bash_detect_file_writes 'node script.js')
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "Should not flag plain node invocation as opaque"
+        return 1
+    fi
+}
+
+# Negative: rsync with --dry-run still flags (we don't parse semantics; safer to be over-broad)
+# Negative: ls /abs/path is not a write
+@test "S-N2: ls /abs/path is not detected as write" {
+    result=$(bash_detect_file_writes 'ls /abs/path')
+    assert_empty "$result"
+}
+
+# Existing-behavior regression: tab-spaced redirect still detected
+@test "S-N2 regression: tab-separated redirect still detected" {
+    # Use printf to inject a real tab between '>' and path
+    local cmd
+    cmd=$(printf 'echo foo >\t/tmp/tabbed')
+    result=$(bash_detect_file_writes "$cmd")
+    assert_contains_path "$result" "/tmp/tabbed"
+}
+
+# Regression: existing simple redirect still works
+@test "S-N2 regression: simple > /tmp/out still works" {
+    result=$(bash_detect_file_writes 'echo foo > /tmp/out')
+    assert_contains_path "$result" "/tmp/out"
+}
+
+# Regression: existing tee still works
+@test "S-N2 regression: tee output.txt still works" {
+    result=$(bash_detect_file_writes 'echo x | tee output.txt')
+    assert_contains_path "$result" "output.txt"
+}
+
+# Compound: multiple bypass patterns in one command — both detected
+@test "S-N2: compound dd && python -c — both flagged" {
+    result=$(bash_detect_file_writes "dd of=/a if=/dev/zero && python -c \"open('/b','w')\"")
+    assert_contains_path "$result" "/a"
+    assert_opaque_write "$result"
+}
+
+# ── R2 S-N2 self-review hardening (post-initial-fix tightening) ──────
+# The reviewer (acting as security auditor) identified additional bypass
+# variants the first-pass detector missed. These tests lock in the fix.
+
+# bash -c is opaque (same as python -c)
+@test "S-N2 hardening: bash -c is flagged opaque" {
+    result=$(bash_detect_file_writes "bash -c \"echo X >/etc/poison\"")
+    assert_opaque_write "$result"
+}
+
+# sh -c is opaque
+@test "S-N2 hardening: sh -c is flagged opaque" {
+    result=$(bash_detect_file_writes "sh -c \"echo X >/etc/poison\"")
+    assert_opaque_write "$result"
+}
+
+# Combined-flag interpreter: python -bc (bytecode + command)
+@test "S-N2 hardening: python -bc combined flags is flagged opaque" {
+    result=$(bash_detect_file_writes "python -bc \"open('/x','w').write('y')\"")
+    assert_opaque_write "$result"
+}
+
+# Multi-flag interpreter: python -B -c
+@test "S-N2 hardening: python -B -c separated flags is flagged opaque" {
+    result=$(bash_detect_file_writes "python -B -c \"open('/x','w').write('y')\"")
+    assert_opaque_write "$result"
+}
+
+# Multi-flag interpreter: python3 -u -c
+@test "S-N2 hardening: python3 -u -c is flagged opaque" {
+    result=$(bash_detect_file_writes "python3 -u -c \"open('/x','w').write('y')\"")
+    assert_opaque_write "$result"
+}
+
+# `<>file` (RW open) creates the file — should be detected as a write
+@test "S-N2 hardening: <>file (RW open) detected as write" {
+    result=$(bash_detect_file_writes "exec 3<>/abs/rwopen")
+    assert_contains_path "$result" "/abs/rwopen"
+}
+
+# `dd` inside command substitution `$(dd of=...)`
+@test "S-N2 hardening: dd in command substitution detected" {
+    result=$(bash_detect_file_writes "x=\$(dd of=/abs/sub if=/dev/zero count=1)")
+    assert_contains_path "$result" "/abs/sub"
+}
+
+# `install` inside command substitution
+@test "S-N2 hardening: install in command substitution detected" {
+    result=$(bash_detect_file_writes "x=\$(install src /abs/installed)")
+    assert_contains_path "$result" "/abs/installed"
+}
+
+# `rsync` inside command substitution
+@test "S-N2 hardening: rsync in command substitution detected" {
+    result=$(bash_detect_file_writes "x=\$(rsync src /abs/synced)")
+    assert_contains_path "$result" "/abs/synced"
+}
+
+# `&>file` combined stdout+stderr redirect
+@test "S-N2 hardening: &>file combined stdout+stderr redirect detected" {
+    result=$(bash_detect_file_writes "cmd &>/abs/combined.log")
+    assert_contains_path "$result" "/abs/combined.log"
+}
+
+# `&>>file` append combined stdout+stderr
+@test "S-N2 hardening: &>>file append combined detected" {
+    result=$(bash_detect_file_writes "cmd &>>/abs/combined.log")
+    assert_contains_path "$result" "/abs/combined.log"
+}
+
+# Negative: `<<<` herestring should NOT trigger redirect detection
+@test "S-N2 hardening: <<< herestring not flagged as redirect" {
+    result=$(bash_detect_file_writes 'cat <<<"some content"')
+    if [[ "$result" == */abs/* || "$result" == *some* ]]; then
+        echo "False positive on herestring: $result"
+        return 1
+    fi
+}
+
+# Negative: shell variable that contains 'dd' substring (e.g., 'add')
+# should NOT trigger dd detector
+@test "S-N2 hardening: 'add' command not flagged as dd" {
+    result=$(bash_detect_file_writes 'add of=foo')
+    # 'add' is a non-existent command; the detector shouldn't synthesize a path.
+    # We accept that 'foo' may be captured as bareword via redirect parser; the
+    # specific check is that the regex anchor used for 'dd' doesn't match 'add'.
+    # We verify no path mentions of=foo via dd's of= shape — by checking
+    # detector doesn't claim 'foo' alone (the of= regex would extract 'foo'
+    # from 'add of=foo'). The regex should NOT match because 'a' precedes 'dd'.
+    # This test passes if 'foo' is NOT in result (meaning of= regex skipped).
+    if [[ "$result" == "foo" ]]; then
+        echo "False positive: 'add of=foo' should not match dd's of= pattern"
+        return 1
+    fi
+}
+
+# Sanity: existing python -c still opaque
+@test "S-N2 hardening: existing python -c still flagged" {
+    result=$(bash_detect_file_writes "python -c \"open('/x','w')\"")
+    assert_opaque_write "$result"
+}
+
+# ── task-43 S-2: cd-before-relative-write subagent escape ─────────────
+#
+# A subagent inside a worktree could otherwise issue
+# `cd /tmp && echo x > escaped.txt`. The bash-detect output would be the
+# bare relative target `escaped.txt`, which pre-tool-use resolves against
+# its own PWD (the worktree root), masking the actual /tmp/escaped.txt
+# write. The fix: when a `cd <outside>` precedes a relative-path write in
+# the same compound command, the relative target is opaque
+# (__OPAQUE_WRITE__ sentinel) — the wall fails closed.
+#
+# Codex round-3 finding (round-2 fix). Conservative posture: cd into a
+# relative subdir of the current worktree is still allowed (the subdir
+# stays inside the worktree).
+
+# cd /tmp && echo X > rel — opaque (cd-out absolute)
+@test "task-43 S-2: cd /tmp && echo > rel is opaque" {
+    result=$(bash_detect_file_writes 'cd /tmp && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp; echo X > rel — opaque (cd-out absolute, semicolon)
+@test "task-43 S-2: cd /tmp; echo > rel is opaque (semicolon)" {
+    result=$(bash_detect_file_writes 'cd /tmp; echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && tee rel — opaque (alt write syntax via tee)
+@test "task-43 S-2: cd /tmp && tee rel is opaque (tee write)" {
+    result=$(bash_detect_file_writes 'cd /tmp && tee escaped.txt < input')
+    assert_opaque_write "$result"
+}
+
+# cd ../../.. && echo > rel — opaque (cd-out relative with ..)
+@test "task-43 S-2: cd ../../.. && echo > rel is opaque (parent traversal)" {
+    result=$(bash_detect_file_writes 'cd ../../.. && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd ~ && echo > rel — opaque (cd to home expansion)
+@test "task-43 S-2: cd ~ && echo > rel is opaque (home expansion)" {
+    result=$(bash_detect_file_writes 'cd ~ && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd - && echo > rel — opaque (cd to OLDPWD untracked)
+@test "task-43 S-2: cd - && echo > rel is opaque (OLDPWD)" {
+    result=$(bash_detect_file_writes 'cd - && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && cp src dst — opaque (cp dest is relative)
+@test "task-43 S-2: cd /tmp && cp src dst is opaque (cp relative dst)" {
+    result=$(bash_detect_file_writes 'cd /tmp && cp source.txt dest.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && mv src dst — opaque
+@test "task-43 S-2: cd /tmp && mv old new is opaque (mv relative dst)" {
+    result=$(bash_detect_file_writes 'cd /tmp && mv old.txt new.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && sed -i — opaque (sed file is relative)
+@test "task-43 S-2: cd /tmp && sed -i is opaque" {
+    result=$(bash_detect_file_writes "cd /tmp && sed -i 's/x/y/' config.txt")
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && dd of=rel — opaque
+@test "task-43 S-2: cd /tmp && dd of=rel is opaque" {
+    result=$(bash_detect_file_writes 'cd /tmp && dd if=/dev/zero of=escaped count=1')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && rsync src rel — opaque
+@test "task-43 S-2: cd /tmp && rsync src rel is opaque" {
+    result=$(bash_detect_file_writes 'cd /tmp && rsync src.txt escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# Negative: cd subdir-inside-worktree && echo > rel — STILL allowed
+# The cd target is a relative subdir (no /, no ..). Post-cd CWD is still
+# inside the worktree (or descended into a subdir thereof), so resolving
+# `inside.txt` against hook PWD is wrong by exact path but right by
+# containment — the wall regex `\.worktrees/.../task-NN/` still matches.
+@test "task-43 S-2 NEGATIVE: cd subdir && echo > rel still extracts target" {
+    result=$(bash_detect_file_writes 'cd src && echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    # Should NOT be opaque
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive opaque: cd into relative subdir should not flag opaque"
+        echo "Got: $result"
+        return 1
+    fi
+}
+
+# Negative: cd src/sub && echo > rel — relative subdir with slash is fine
+@test "task-43 S-2 NEGATIVE: cd src/sub && echo > rel is not opaque" {
+    result=$(bash_detect_file_writes 'cd src/sub && echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive opaque: cd into relative nested subdir should not flag"
+        return 1
+    fi
+}
+
+# Negative: cd /tmp && echo > /abs/path — absolute write target
+# The cd-out happens, but the write target is ABSOLUTE — the wall checks
+# the absolute path directly without consulting CWD. The detector emits
+# the absolute path; the wall's regex match decides allow/block. (For an
+# absolute path outside the worktree the wall blocks anyway; for one
+# inside a worktree it allows. Neither outcome depends on CWD.)
+@test "task-43 S-2 NEGATIVE: cd /tmp && echo > /abs/path emits absolute path" {
+    result=$(bash_detect_file_writes 'cd /tmp && echo x > /abs/poison')
+    assert_contains_path "$result" "/abs/poison"
+}
+
+# Negative: plain `echo > rel` (no cd) — relative path emitted as before
+@test "task-43 S-2 NEGATIVE: plain relative redirect (no cd) unchanged" {
+    result=$(bash_detect_file_writes 'echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive: plain relative redirect should not be opaque"
+        return 1
+    fi
+}
+
+# Multi-cd: cd src && cd /tmp && echo > rel — opaque (any cd-out triggers)
+@test "task-43 S-2: cd src && cd /tmp && echo > rel is opaque (later cd-out)" {
+    result=$(bash_detect_file_writes 'cd src && cd /tmp && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# cd /tmp && cd back-to-relative — still opaque (we don't track CWD precisely)
+@test "task-43 S-2: cd /tmp && cd subdir && echo > rel is opaque (conservative)" {
+    result=$(bash_detect_file_writes 'cd /tmp && cd src && echo x > escaped.txt')
+    assert_opaque_write "$result"
+}
+
+# ── task-46 M4-1: broaden cd-escape detection ─────────────────────────
+#
+# Round-4 review M4-1: task-43's S-2 fix was incomplete. The `cd_re`
+# regex only matched literal targets; subagents could still escape via:
+#   1. Variable / parameter expansion: `cd $HOME`, `cd "${TMPDIR}"`
+#   2. Command substitution: `cd "$(mktemp -d)"`, `` cd `pwd` ``
+#   3. `pushd` (cd_re required `^cd[[:space:]]+`)
+#   4. Subshell / brace-group wrapping: `(cd /tmp; > escape)`,
+#      `{ cd /tmp; > escape; }` — splitter only handles `&&`, `||`, `;`
+#   5. Same-command assignment-then-cd: `dest=/tmp; cd "$dest"` (variant
+#      of #1 — covered once the variable case lands)
+#
+# Conservative posture (matches task-43 stance): any cd target containing
+# `$` or `` ` `` is opaque; pushd is always opaque (we don't track the
+# stack); cd / pushd inside `( )` or `{ }` triggers via inner-scan.
+
+# 1. Variable expansion — bareword
+@test "task-46 M4-1: cd \$HOME && echo > rel is opaque (var expansion)" {
+    result=$(bash_detect_file_writes 'cd $HOME && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 1. Variable expansion — double-quoted
+@test "task-46 M4-1: cd \"\$HOME\" && echo > rel is opaque (quoted var)" {
+    result=$(bash_detect_file_writes 'cd "$HOME" && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 1. Brace parameter expansion
+@test "task-46 M4-1: cd \"\${TMPDIR}\" && echo > rel is opaque (brace param)" {
+    result=$(bash_detect_file_writes 'cd "${TMPDIR}" && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 2. Command substitution — $()
+@test "task-46 M4-1: cd \"\$(mktemp -d)\" && echo > rel is opaque (cmd subst)" {
+    result=$(bash_detect_file_writes 'cd "$(mktemp -d)" && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 2. Command substitution — backticks
+@test "task-46 M4-1: cd \`pwd\` && echo > rel is opaque (backtick subst)" {
+    result=$(bash_detect_file_writes 'cd `pwd` && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 3. pushd /abs
+@test "task-46 M4-1: pushd /tmp && echo > rel is opaque (pushd absolute)" {
+    result=$(bash_detect_file_writes 'pushd /tmp && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 3. pushd "$VAR"
+@test "task-46 M4-1: pushd \"\$HOME\" && echo > rel is opaque (pushd var)" {
+    result=$(bash_detect_file_writes 'pushd "$HOME" && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 3. pushd into a relative subdir is still opaque (we don't track stack)
+@test "task-46 M4-1: pushd subdir && echo > rel is opaque (pushd untracked stack)" {
+    result=$(bash_detect_file_writes 'pushd src && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# 4. Subshell wrapping — `(cd /tmp; > escape)`
+@test "task-46 M4-1: (cd /tmp; echo > escape) is opaque (subshell wrap)" {
+    result=$(bash_detect_file_writes '(cd /tmp; echo x > escape.txt)')
+    assert_opaque_write "$result"
+}
+
+# 4. Brace-group wrapping — `{ cd /tmp; > escape; }`
+@test "task-46 M4-1: { cd /tmp; echo > escape; } is opaque (brace-group wrap)" {
+    result=$(bash_detect_file_writes '{ cd /tmp; echo x > escape.txt; }')
+    assert_opaque_write "$result"
+}
+
+# 5. Same-command assignment-then-cd via variable expansion
+@test "task-46 M4-1: dest=/tmp && cd \"\$dest\" && echo > rel is opaque (assign+var)" {
+    result=$(bash_detect_file_writes 'dest=/tmp && cd "$dest" && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# Backgrounded subshell: `(cd /tmp && > escape) &`
+@test "task-46 M4-1: (cd /tmp && echo > escape) & is opaque (backgrounded subshell)" {
+    result=$(bash_detect_file_writes '(cd /tmp && echo x > escape.txt) &')
+    assert_opaque_write "$result"
+}
+
+# popd — same conservative treatment as pushd
+@test "task-46 M4-1: popd && echo > rel is opaque (popd untracked stack)" {
+    result=$(bash_detect_file_writes 'popd && echo x > escape.txt')
+    assert_opaque_write "$result"
+}
+
+# ── Positive coverage (must STILL be allowed) ──────────────────────────
+# These were allowed before task-46 and must continue to work — false
+# positives that block legitimate cd-into-subdir would break normal
+# subagent use of `cd src && ...` patterns.
+
+# Plain bareword subdir
+@test "task-46 M4-1 NEGATIVE: cd src && echo > rel still allowed" {
+    result=$(bash_detect_file_writes 'cd src && echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive: cd src is a relative subdir — must not be opaque"
+        echo "Got: $result"
+        return 1
+    fi
+}
+
+# Nested relative subdir
+@test "task-46 M4-1 NEGATIVE: cd subdir/nested && > rel still allowed" {
+    result=$(bash_detect_file_writes 'cd subdir/nested && echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive: cd into nested relative subdir must not be opaque"
+        echo "Got: $result"
+        return 1
+    fi
+}
+
+# `cd .` is a no-op cd that keeps CWD identical — must not flag.
+@test "task-46 M4-1 NEGATIVE: cd . && echo > rel still allowed" {
+    result=$(bash_detect_file_writes 'cd . && echo x > inside.txt')
+    assert_contains_path "$result" "inside.txt"
+    if [[ "$result" == *"__OPAQUE_WRITE__"* ]]; then
+        echo "False-positive: cd . is a no-op — must not be opaque"
+        echo "Got: $result"
+        return 1
+    fi
+}
+
 # ── F-3: project-internal absolute paths allowed ─────────────────────────────
 
 @test "[F-3] non-destructive: rm -rf project-internal absolute path under \$PWD" {

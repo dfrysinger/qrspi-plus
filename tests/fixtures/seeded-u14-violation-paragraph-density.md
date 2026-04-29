@@ -1,0 +1,7 @@
+# U14 violation fixture — paragraph-density lint
+
+This file seeds a violation of the paragraph-density lint: no paragraph may exceed 150 words or 8 rendered lines. The single dense paragraph below is engineered to exceed both ceilings simultaneously so the lint fires on either dimension independently.
+
+## Approach
+
+The paragraph that follows is intentionally over-long and packed into a single contiguous block of prose so that it will exceed both the one-hundred-and-fifty word ceiling and the eight-line ceiling that the U14 paragraph-density lint enforces against the in-scope skill files and their output templates as written under the Goal Specificity, Goals OWNS, Goals DEFERS, Design OWNS, Design DEFERS, Structure OWNS, Structure DEFERS, Plan OWNS, Plan DEFERS, Phasing OWNS, and Phasing DEFERS sections that the synthesizing skills emit through their respective output templates and worked examples and red-flag enumerations and common-rationalization enumerations and Iron Laws — Final Reminder sections that close out each skill prompt and which the U14 lint scrutinizes for paragraph density along with claim-line length and section scannability and required-section conformance and the no-brevity prohibition that this very paragraph also happens to gleefully ignore in service of seeding a maximally informative violation that will trip the density lint along multiple axes simultaneously and reliably without flapping across re-runs because both the word-count and the line-count axes blow past their respective ceilings by a comfortable margin.

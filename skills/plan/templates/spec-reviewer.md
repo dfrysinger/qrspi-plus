@@ -1,6 +1,6 @@
 # Spec Reviewer Template (Plan)
 
-**Purpose:** Verify the plan covers every goal and acceptance criterion — nothing missing, nothing extra, no misinterpretations.
+**Purpose:** Verify the plan covers every goal — and authors the acceptance criteria for those goals as per-task test expectations and (where appropriate) a per-phase acceptance block — nothing missing, nothing extra, no misinterpretations. Per the strip-from-goals contract, `plan.md` is the home for acceptance criteria (per-task `## Test Expectations` blocks plus an optional per-phase acceptance block in the overview); `goals.md` states problems and what is known but does NOT itself author criteria.
 **Runs:** Always (quick + full pipeline).
 
 ## Template
@@ -36,12 +36,20 @@ acceptance criteria — nothing more, nothing less.
 Work through each item. For every check, cite specific task numbers or
 section references where you confirmed or found a problem.
 
-### 1. Completeness — Does the plan cover every goal and acceptance criterion?
-- Read every acceptance criterion in goals.md one by one
-- For each criterion, identify which task(s) cover it
-- Flag any criterion with no corresponding task or test expectation
-- Check that every goal's success condition has a verifiable test expectation
-  somewhere in the plan
+### 1. Completeness — Does the plan cover every goal, and does it author acceptance criteria for those goals?
+- Read every goal in goals.md one by one (problem framing, intent, constraints).
+  Per the strip-from-goals contract, goals.md does NOT author acceptance
+  criteria; plan.md does (per-task `## Test Expectations` blocks plus an
+  optional per-phase acceptance block in the overview).
+- For each goal, identify which task(s) carry test expectations that, taken
+  together, constitute the acceptance criteria for that goal.
+- Flag any goal with no corresponding task or test expectation (gap), and any
+  goal whose problem statement is not testably converted into at least one
+  plan-level test expectation.
+- Check that every goal's success condition (as derivable from its problem
+  framing) has a verifiable test expectation somewhere in the plan — either in
+  a task spec's `## Test Expectations` block or in the per-phase acceptance
+  block.
 
 ### 2. Scope — Does the plan include work NOT in the goals?
 - Compare tasks and deliverables against goals.md and research/summary.md
@@ -58,13 +66,18 @@ section references where you confirmed or found a problem.
 - Check that constraints from goals.md (must-not-dos, non-functional requirements)
   are reflected in task descriptions
 
-### 4. Test Coverage Mapping — Are acceptance criteria covered by test expectations?
-- For each acceptance criterion in goals.md, find the test expectation(s) in
-  the plan that would verify it
+### 4. Test Coverage Mapping — Are goals covered by plan-authored test expectations?
+- For each goal in goals.md (problem framing), find the plan-level test
+  expectation(s) — in a task spec's `## Test Expectations` block or in the
+  per-phase acceptance block — that would verify the goal is met. Per the
+  strip-from-goals contract, plan.md is the criterion-authoring source; goals.md is the upstream
+  problem-framing anchor.
 - Verify test expectations are specific behaviors, not vague ("works correctly"
   is not a test expectation)
-- Flag any criterion where no task has a matching test expectation
-- Check error conditions and edge cases mentioned in goals are covered
+- Flag any goal where no task carries a matching test expectation, and flag
+  any plan-level test expectation that is too vague to verify.
+- Check error conditions and edge cases implied by the goal's problem framing
+  are covered by plan-level test expectations.
 
 ### 5. Placeholder Detection — Is the plan free of TBD/TODO/vague content?
 - Scan every task spec for: "TBD", "TODO", "implement later", "similar to Task N",
@@ -109,7 +122,7 @@ If issues found:
   [For each issue:]
   - [Category]: [Description]
     Evidence: [task number or section reference]
-    Goal/criterion: [quote from goals.md]
+    Acceptance criterion: [quote from plan.md task-spec `## Test Expectations` or plan.md per-phase acceptance block; if traceability requires, name the upstream `goals.md` goal ID]
     What was found: [what the plan actually says or omits]
 
 Categories: MISSING (criterion not covered), EXTRA (not in goals),

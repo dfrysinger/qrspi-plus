@@ -5,13 +5,13 @@ set -euo pipefail
 _pipeline_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_pipeline_script_dir/state.sh"
 
-# PIPELINE_ORDER — readonly array of 8 steps in order
-# Use +a to disable readonly temporarily for proper array declaration, then re-enable
-declare -a PIPELINE_ORDER=(goals questions research design structure plan implement test)
+# PIPELINE_ORDER — readonly array of 10 steps in order
+# (phasing sits between design and structure; parallelize sits between plan and implement)
+declare -a PIPELINE_ORDER=(goals questions research design phasing structure plan parallelize implement test)
 declare -r PIPELINE_ORDER
 
 # _pipeline_get_step_index <step>
-# Returns the index of the step in PIPELINE_ORDER (0-7), or -1 if not found
+# Returns the index of the step in PIPELINE_ORDER (0-9), or -1 if not found
 _pipeline_get_step_index() {
   local step="$1"
   case "$step" in
@@ -19,10 +19,12 @@ _pipeline_get_step_index() {
     questions) echo 1 ;;
     research) echo 2 ;;
     design) echo 3 ;;
-    structure) echo 4 ;;
-    plan) echo 5 ;;
-    implement) echo 6 ;;
-    test) echo 7 ;;
+    phasing) echo 4 ;;
+    structure) echo 5 ;;
+    plan) echo 6 ;;
+    parallelize) echo 7 ;;
+    implement) echo 8 ;;
+    test) echo 9 ;;
     *) echo -1 ;;
   esac
 }
@@ -94,10 +96,12 @@ pipeline_check_prerequisites() {
       1) current_step="questions" ;;
       2) current_step="research" ;;
       3) current_step="design" ;;
-      4) current_step="structure" ;;
-      5) current_step="plan" ;;
-      6) current_step="implement" ;;
-      7) current_step="test" ;;
+      4) current_step="phasing" ;;
+      5) current_step="structure" ;;
+      6) current_step="plan" ;;
+      7) current_step="parallelize" ;;
+      8) current_step="implement" ;;
+      9) current_step="test" ;;
       *) current_step="" ;;
     esac
 
@@ -134,10 +138,18 @@ pipeline_check_prerequisites() {
 # Resets the given step and all downstream steps to "draft" in state.json.
 # With --skip-cascade: resets only the given step, leaves downstream untouched.
 # Does NOT modify artifact files on disk.
-# Uses state_write_atomic().
-# If step is "goals", resets all 8 (unless --skip-cascade).
+# Uses state_update (locked R-M-W primitive — task-24 / R3 S-1).
+# If step is "goals", resets all 10 (unless --skip-cascade).
 # If step is "test", resets only test.
 # Rejects unknown flags with return 1.
+#
+# Concurrency: the previous implementation read state via state_read,
+# mutated locally, and wrote via state_write_atomic — leaving the full
+# R-M-W window unserialized against concurrent state_update writers
+# (e.g., Plan's narrow direct-write of phase_start_commit). The migrated
+# implementation uses state_update which holds the lock for the entire
+# read-modify-write critical section, eliminating the lost-update class
+# (CWE-362) for this caller.
 pipeline_cascade_reset() {
   local step="$1"
   local artifact_dir="$2"
@@ -155,35 +167,27 @@ pipeline_cascade_reset() {
     esac
   done
 
-  # Read current state from the artifact_dir
-  local state
-  if ! state=$(state_read "$artifact_dir" 2>/dev/null); then
-    # No state file yet, create one
-    if ! state_init_or_reconcile "$artifact_dir"; then
-      echo "pipeline_cascade_reset: cannot perform cascade reset — state_init_or_reconcile failed" >&2
-      return 1
-    fi
-    if ! state=$(state_read "$artifact_dir"); then
-      echo "pipeline_cascade_reset: cannot perform cascade reset — state_read failed after init" >&2
-      return 1
-    fi
-  fi
-
-  # Find the index of the step
+  # Find the index of the step (validates the step name against the
+  # PIPELINE_ORDER enum — out-of-enum names error out before we touch state).
   local start_idx
   start_idx=$(_pipeline_get_step_index "$step")
   if [[ $start_idx -eq -1 ]]; then
     return 1
   fi
 
-  # Determine end index
-  local end_idx=8
+  # Determine end index (10 steps total)
+  local end_idx=10
   if [[ "$skip_cascade" == "true" ]]; then
     end_idx=$((start_idx + 1))
   fi
 
-  # Reset from start_idx to end_idx to "draft"
-  local i
+  # Build the JSON array of step names to reset. Each name is sourced
+  # from the case below (closed enum keyed off the index), so the array
+  # contents are bounded to the documented PIPELINE_ORDER values — no
+  # untrusted strings reach the jq layer. We still pass it via --argjson
+  # (not interpolated into the filter) per task-42 / L-sec-1.
+  local i steps_json="["
+  local first=true
   for (( i = start_idx; i < end_idx; i++ )); do
     local reset_step
     case "$i" in
@@ -191,36 +195,53 @@ pipeline_cascade_reset() {
       1) reset_step="questions" ;;
       2) reset_step="research" ;;
       3) reset_step="design" ;;
-      4) reset_step="structure" ;;
-      5) reset_step="plan" ;;
-      6) reset_step="implement" ;;
-      7) reset_step="test" ;;
+      4) reset_step="phasing" ;;
+      5) reset_step="structure" ;;
+      6) reset_step="plan" ;;
+      7) reset_step="parallelize" ;;
+      8) reset_step="implement" ;;
+      9) reset_step="test" ;;
       *) reset_step="" ;;
     esac
-    if ! state=$(echo "$state" | jq ".artifacts.$reset_step = \"draft\""); then
-      echo "pipeline_cascade_reset: jq patch of artifacts.$reset_step failed" >&2
-      return 1
+    if [[ -z "$reset_step" ]]; then
+      continue
+    fi
+    if [[ "$first" == "true" ]]; then
+      steps_json+="\"$reset_step\""
+      first=false
+    else
+      steps_json+=",\"$reset_step\""
     fi
   done
+  steps_json+="]"
 
-  # Recompute current_step after the cascade — F-7 invariant: any mutation of
-  # artifacts.{step} must be followed by current_step recomputation. The
-  # approval branch in artifact_sync_state already does this; the cascade/draft
-  # path needs it too, otherwise reverting an approved artifact to draft leaves
-  # current_step advanced too far.
-  local new_current_step
-  if ! new_current_step=$(state_compute_current_step "$state"); then
-    echo "pipeline_cascade_reset: state_compute_current_step failed" >&2
-    return 1
-  fi
-  if ! state=$(echo "$state" | jq -c --arg cs "$new_current_step" '.current_step = $cs'); then
-    echo "pipeline_cascade_reset: jq patch of current_step failed" >&2
-    return 1
+  # Bootstrap: if state.json does not exist yet, initialize it. Then run
+  # the cascade reset under the state_update lock.
+  if [[ ! -f "$artifact_dir/.qrspi/state.json" ]]; then
+    if ! state_init_or_reconcile "$artifact_dir"; then
+      echo "pipeline_cascade_reset: cannot perform cascade reset — state_init_or_reconcile failed" >&2
+      return 1
+    fi
   fi
 
-  # Write atomically into the artifact_dir
-  if ! state_write_atomic "$state" "$artifact_dir"; then
-    echo "pipeline_cascade_reset: cannot perform cascade reset — state_write_atomic failed" >&2
+  # Locked R-M-W: jq's `reduce` walks the typed array of step names and sets
+  # each artifact to "draft", then derives current_step from the post-cascade
+  # in-memory artifacts dict — F-7 invariant: any mutation of artifacts.{step}
+  # must be followed by current_step recomputation. We cannot use
+  # state_compute_current_step here because the cascade only mutates state.json,
+  # not on-disk frontmatter, so a disk-based recompute would return a stale value.
+  if ! state_update '
+        reduce $steps[] as $s (.; .artifacts[$s] = "draft")
+        | . as $resetted
+        | .current_step = (
+            ["goals","questions","research","design","phasing","structure","plan","parallelize"]
+            | map(select($resetted.artifacts[.] != "approved"))
+            | (.[0] // "implement")
+          )
+      ' \
+        --argjson steps "$steps_json" \
+        --artifact-dir "$artifact_dir"; then
+    echo "pipeline_cascade_reset: cannot perform cascade reset — state_update failed" >&2
     return 1
   fi
 }

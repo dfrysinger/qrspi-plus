@@ -79,7 +79,7 @@ After Plan is approved, the route is locked. Changing it after that point requir
 
 ### Step 1: Goals
 
-Captures user intent, constraints, and acceptance criteria through interactive dialogue. The user and agent discuss purpose, constraints, success criteria, and scope. A subagent then synthesizes `goals.md` with structured acceptance criteria. This step also determines the pipeline mode (quick fix or full) and writes `config.md` with the route.
+Captures user intent, constraints, and per-goal problem framing through interactive dialogue. The user and agent discuss purpose, constraints, problems to solve, and scope. A subagent then synthesizes `goals.md` with structured per-goal entries (Problem / Why we care / What we know so far). Acceptance criteria are NOT authored in `goals.md` — per the strip-from-goals contract, criteria are owned by `plan.md` (per-task `## Test Expectations` blocks plus an optional per-phase acceptance block in the overview) and exercised via Implement-TDD; `goals.md` provides the upstream problem framing only. This step also determines the pipeline mode (quick fix or full) and writes `config.md` with the route.
 
 Each goal must be independently scopeable -- it can be moved between phases without surgery on other goals. Goals that bundle multiple distinct deliverables are split into separate goals with their own IDs. Late splitting is classified like any amendment (clarifying, additive, or architectural) and presented as a before/after diff.
 
@@ -314,7 +314,7 @@ flowchart TD
 
 ### Step 10: Test
 
-Acceptance testing against the original goals. A test-writer subagent maps every acceptance criterion from `goals.md` to tests (acceptance, integration, E2E, boundary). Test code goes through its own review round. The tester can only write test files -- when tests fail, it outputs fix task descriptions, not code fixes. Fix routing depends on classification: `pipeline: quick` test fixes route `Implement -> Test` (skipping Integrate); `pipeline: full` test fixes route `Implement -> Integrate -> Test`. All production code changes go through reviews regardless of route. Every phase produces a PR after acceptance testing passes. Phase routing happens after the PR: if this is the final phase, the pipeline is complete; if more phases remain, invoke Replan.
+Acceptance testing against the original goals. A test-writer subagent maps every plan-authored acceptance criterion (per-task `## Test Expectations` blocks in `plan.md` plus the per-phase acceptance block in `plan.md`'s overview) to tests (acceptance, integration, E2E, boundary), tracing each criterion upstream to the goal in `goals.md` it serves. Per the strip-from-goals contract, `plan.md` is the criterion-authoring source; `goals.md` is the upstream problem-framing anchor used for traceability only. Test code goes through its own review round. The tester can only write test files -- when tests fail, it outputs fix task descriptions, not code fixes. Fix routing depends on classification: `pipeline: quick` test fixes route `Implement -> Test` (skipping Integrate); `pipeline: full` test fixes route `Implement -> Integrate -> Test`. All production code changes go through reviews regardless of route. Every phase produces a PR after acceptance testing passes. Phase routing happens after the PR: if this is the final phase, the pipeline is complete; if more phases remain, invoke Replan.
 
 After tests pass and the user approves, each criterion with all mapped tests passing is automatically checked off (`- [x]`) in `goals.md`. A code review checkpoint is offered before PR creation -- the user can review all changed files or the full phase diff before proceeding.
 
@@ -577,7 +577,8 @@ Replan classifies every proposed change using a defined severity table:
 | Change interfaces between components | **Major** | Structure |
 | Change technology choice, approach, or architecture | **Major** | Design |
 | Change phase boundaries or slice definitions | **Major** | Design |
-| Change project goals or acceptance criteria | **Major** | Goals |
+| Change project goals (problem framing, intent, scope) | **Major** | Goals |
+| Change acceptance criteria (per-task test expectations or per-phase acceptance block) | **Major** | Plan |
 
 The loop-back target is always the earliest affected artifact. If file paths change, loop back to Structure (cascades to Plan). If architecture changes, loop back to Design (cascades to Structure, then Plan). Scope-unknown changes default to the most stringent treatment to prevent under-classification. This prevents architectural drift from being patched over with task-level fixes.
 
@@ -867,7 +868,7 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 
 | Step | What it adds | Original QRSPI equivalent |
 |------|-------------|--------------------------|
-| **Goals** | Explicit intent capture with testable acceptance criteria, pipeline mode selection (quick fix vs full), `config.md` creation, goal specificity enforcement | The original uses a ticket/issue as input; Goals formalizes this as a reviewable artifact |
+| **Goals** | Explicit intent capture with per-goal problem framing (acceptance criteria are authored downstream in `plan.md`), pipeline mode selection (quick fix vs full), `config.md` creation, goal specificity enforcement | The original uses a ticket/issue as input; Goals formalizes this as a reviewable artifact |
 | **Integrate** | Cross-task integration review + security integration review after merging worktrees, CI pipeline gate with fix-task routing, phase learnings capture | Not in original -- Implement goes straight to PR |
 | **Test** | Acceptance testing against original goals, per-failure quick/full classification, goals.md checkbox updates, code review checkpoint, phase routing (PR on final phase, Replan on intermediate) | Not in original -- PR review was the verification step |
 | **Replan** | Between-phase replanning with severity classification (minor/major/scope-unknown), fire-and-forget backward loops to Goals, Design, or Structure, three-tier amendment classification, phase snapshot and promotion | Not in original -- single-phase execution only |

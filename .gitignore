@@ -1,4 +1,5 @@
 .worktrees/
+.codex-prompts/
 
 # macOS metadata files
 .DS_Store

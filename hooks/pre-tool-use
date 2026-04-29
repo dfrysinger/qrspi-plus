@@ -11,6 +11,34 @@
 #
 # Audits land in <artifact_dir>/.qrspi/audit.jsonl when the target is in
 # QRSPI scope. Non-QRSPI writes are not audited (no pollution).
+#
+# ## Containment Notes
+#
+# Containment is intentionally TARGET-BASED, not CWD-based. The hook decides
+# allow/block by inspecting the operation's target (Write/Edit file_path,
+# Bash-detected write paths), never by inspecting where the subagent's shell
+# is currently running.
+#
+# Consequences:
+#
+#   1. Subagent CWD reads outside the worktree are intentionally NOT contained.
+#      Non-write Bash with `cd ..` (e.g., `cd /tmp && ls` or
+#      `cd ../sibling && cat foo`) is permitted — it does not violate the
+#      write-containment guarantee, and trying to contain it would require
+#      shell-state tracking the hook does not do.
+#      L-sec-3 (round-2 review): documented here per the target-based model.
+#
+#   2. Subagent WRITES outside the worktree ARE contained, even via cd.
+#      Specifically, `cd /tmp && echo x > escaped.txt` — where the shell's
+#      effective CWD diverges from the hook PWD before a relative-path
+#      write — is detected by `bash_detect_file_writes` and treated as
+#      opaque (`__OPAQUE_WRITE__` sentinel). The wall blocks because the
+#      sentinel is not under any worktree path. See task-43 S-2 fix in
+#      `hooks/lib/bash-detect.sh` (the `cd_escaped` tracking after compound
+#      splitting).
+#
+#   3. Main chat is exempt from the worktree wall. Both the read and write
+#      cases above apply only to subagents.
 
 set -euo pipefail
 
@@ -22,6 +50,7 @@ source "$PLUGIN_ROOT/hooks/lib/bash-detect.sh"
 source "$PLUGIN_ROOT/hooks/lib/worktree.sh"
 source "$PLUGIN_ROOT/hooks/lib/agent.sh"
 source "$PLUGIN_ROOT/hooks/lib/audit.sh"
+source "$PLUGIN_ROOT/hooks/lib/protected.sh"
 
 block() {
   local reason="$1"
@@ -156,6 +185,20 @@ if [[ $is_subagent -eq 1 ]]; then
 
   # Subagent Write/Edit/NotebookEdit target wall
   if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "NotebookEdit" ]]; then
+    # Reject paths containing `..` segments outright. The
+    # `.worktrees/...` substring regex below is a positive containment check,
+    # but a crafted path like
+    # `<repo>/.worktrees/x/task-1/../../../../etc/poison` matches the substring
+    # while shell path-resolution lands outside the worktree. Pre-rejecting `..`
+    # closes the canonicalization gap without requiring realpath (which itself
+    # fails for not-yet-existing Write targets).
+    case "$file_path" in
+      *"/../"*|*"/.."|"../"*|"..")
+        block "Subagent target rejected (path contains '..' segment): $file_path"
+        ;;
+    esac
+    # The task-NN[a-z]? alpha suffix supports baseline-fix-of-baseline-fix
+    # tasks (task-00b, task-00c). MUST match worktree_extract_slug's regex.
     if ! [[ "$file_path" =~ \.worktrees/[^/]+/(task-[0-9]+[a-z]?|baseline)(/|$) ]]; then
       block "Subagent target outside worktree: $file_path"
     fi
@@ -167,9 +210,32 @@ if [[ $is_subagent -eq 1 ]]; then
     if [[ -n "$detected_targets" ]]; then
       while IFS= read -r tgt; do
         [[ -z "$tgt" ]] && continue
+        # __OPAQUE_WRITE__ is the bash-detect sentinel
+        # for write targets that cannot be statically resolved (inline
+        # interpreters like `python -c`, awk-with-redirect, or a
+        # cd-before-relative-write where the shell's effective CWD diverges
+        # from the hook PWD). The hook MUST fail closed on these — the
+        # apparent "target" cannot be trusted to live inside the worktree.
+        # Match before any PWD-prepend so the worktree-regex cannot
+        # accidentally allow the sentinel by virtue of PWD living inside a
+        # worktree.
+        if [[ "$tgt" == "__OPAQUE_WRITE__" ]]; then
+          block "Subagent Bash write target unresolvable (inline interpreter, cd-out, or unparseable redirect): treated as outside-worktree (fail-closed)"
+        fi
+        # Reject `..` segments before regex containment match.
+        case "$tgt" in
+          *"/../"*|*"/.."|"../"*|"..")
+            block "Subagent Bash target rejected (path contains '..' segment): $tgt"
+            ;;
+        esac
         # Resolve relative paths to absolute (best effort using PWD)
         abs_tgt="$tgt"
         [[ "$tgt" != /* ]] && abs_tgt="$PWD/$tgt"
+        case "$abs_tgt" in
+          *"/../"*|*"/.."|"../"*|"..")
+            block "Subagent Bash target rejected (path contains '..' segment): $tgt"
+            ;;
+        esac
         if ! [[ "$abs_tgt" =~ \.worktrees/[^/]+/(task-[0-9]+[a-z]?|baseline)(/|$) ]]; then
           block "Subagent Bash target outside worktree: $tgt"
         fi
@@ -178,11 +244,24 @@ if [[ $is_subagent -eq 1 ]]; then
   fi
 fi
 
-# ── Artifact-dir .qrspi/ protection (everyone) ───────────────────────────────
-# The hook is the only writer of <artifact_dir>/.qrspi/ files. Block all other
-# attempts so the audit log is tamper-proof.
+# ── Hook-managed `.qrspi/` write protection (everyone) ───────────────────────
+# The hook is the only writer of `.qrspi/state.json`, `.qrspi/audit.jsonl`,
+# `.qrspi/task-NN-runtime.json`, and `.qrspi/audit-codex-review.jsonl`. These
+# files exist at both repo-root (where state_write_atomic runs) and
+# `<artifact_dir>/.qrspi/` (where audit_log_event writes). Both locations must
+# be protected from non-hook writers.
+#
+# Two-tier check:
+#   1. Specific hook-managed files via is_protected_qrspi_target (canonical
+#      single source of truth).
+#   2. The broader artifact-dir `.qrspi/` directory regex (existing behaviour
+#      retained as defense-in-depth — covers any future file added under
+#      `docs/qrspi/<slug>/.qrspi/`).
 check_artifact_qrspi_protection() {
   local target="$1"
+  if is_protected_qrspi_target "$target"; then
+    block "Cannot write to hook-managed .qrspi/ file: $target"
+  fi
   if [[ "$target" =~ (^|/)docs/qrspi/[^/]+/\.qrspi(/|$) ]]; then
     block "Cannot write to artifact_dir .qrspi/ (audit log is hook-managed): $target"
   fi
@@ -197,6 +276,11 @@ if [[ "$tool_name" == "Bash" && -n "$bash_command" ]]; then
   if [[ -n "$detected_for_protection" ]]; then
     while IFS= read -r tgt; do
       [[ -z "$tgt" ]] && continue
+      # Skip the opaque sentinel — `__OPAQUE_WRITE__` is not a real path, so
+      # the .qrspi/ protection regex cannot meaningfully match it. The
+      # subagent wall (above) is responsible for failing closed on opaque
+      # targets; main chat is trusted on opaque writes.
+      [[ "$tgt" == "__OPAQUE_WRITE__" ]] && continue
       abs_tgt="$tgt"
       [[ "$tgt" != /* ]] && abs_tgt="$PWD/$tgt"
       check_artifact_qrspi_protection "$abs_tgt"
