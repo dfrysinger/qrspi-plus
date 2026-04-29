@@ -18,9 +18,37 @@ When starting a fresh Claude Code session as an agent:
    ```
    gh api user --jq .login
    ```
-   If it doesn't match, stop and ask the human — never act under another
-   agent's identity.
+   If it doesn't match, see "Switching identities" below. Never act under
+   another agent's identity.
 4. Follow "Before starting any task" below.
+
+### Switching identities
+
+If `gh api user --jq .login` shows the wrong account, you have three
+recipes depending on setup:
+
+- **Multiple accounts already logged in** (preferred — fastest):
+  ```
+  gh auth switch --user df-agent-alpha
+  ```
+- **You only have the PAT** (e.g., pulled from 1Password into
+  `/tmp/df-agent-alpha-token`):
+  ```
+  gh auth login --with-token < /tmp/df-agent-alpha-token
+  ```
+- **One-off commands without changing the stored login** — set
+  `GH_TOKEN` for the session shell. Read the token from a file; do not
+  use `$(...)` or backtick substitution if your environment forbids it
+  (most QRSPI agent envs do):
+  ```
+  export GH_TOKEN_FILE=/tmp/df-agent-alpha-token
+  GH_TOKEN=$(< "$GH_TOKEN_FILE") gh ...      # if substitution allowed
+  ```
+  Or simpler: `gh auth login --with-token < /tmp/...` (recipe above) and
+  let `gh` manage the token for the rest of the session.
+
+Re-verify with `gh api user --jq .login` after switching. If you can't
+get to the correct identity, stop and ask the human.
 
 ## Before starting any task
 
