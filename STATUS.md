@@ -5,7 +5,7 @@
 
 ## Active work
 
-_(none yet — first agent to start a task adds a line here)_
+- df-agent-echo → v0.4 bundle (#26, #51, #52, #54, #55, #56, #91, #93, #94, #95, #96), draft, started 2026-04-29
 
 <!--
 Format:
