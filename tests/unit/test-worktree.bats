@@ -169,7 +169,7 @@ setup() {
 }
 
 # =============================================================================
-# [T25-S-N5] worktree_extract_slug rejects paths with .. segments (R2 S-N5)
+# [T25-S-N5] worktree_extract_slug rejects paths with .. segments
 # =============================================================================
 
 @test "[T25-S-N5-A] worktree_extract_slug: rejects path with .. segments after worktree marker" {
@@ -191,4 +191,26 @@ setup() {
   run worktree_extract_slug "/repo/.worktrees/clean-slug/task-05/src/foo.ts"
   [ "$status" -eq 0 ]
   [ "$output" = "clean-slug" ]
+}
+
+# F-19: alpha-suffix task IDs (task-NNa/NNb from Plan-induced splits) — must
+# match the asymmetric wall regex in pre-tool-use:156,170 to avoid silent
+# observability hole (audit treats unmatched paths as outside-QRSPI-scope).
+
+@test "[F-19] worktree_extract_slug: extracts slug from task-07a alpha-suffix worktree" {
+  run worktree_extract_slug "/repo/.worktrees/myslug/task-07a/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "myslug" ]
+}
+
+@test "[F-19] worktree_extract_slug: extracts slug from task-07b alpha-suffix worktree" {
+  run worktree_extract_slug "/repo/.worktrees/myslug/task-07b/"
+  [ "$status" -eq 0 ]
+  [ "$output" = "myslug" ]
+}
+
+@test "[F-19] worktree_extract_slug: extracts slug from task-12c alpha-suffix worktree" {
+  run worktree_extract_slug "/repo/.worktrees/myslug/task-12c/src/foo.ts"
+  [ "$status" -eq 0 ]
+  [ "$output" = "myslug" ]
 }

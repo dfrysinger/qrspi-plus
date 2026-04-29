@@ -81,20 +81,28 @@ artifact_sync_state() {
   # treat that like the old frontmatter_get_status behavior (return 1)
   [[ -n "$fm_status" ]] || return 1
 
-  # Apply state changes via state_update (locked R-M-W primitive — task-24
-  # / R3 S-1). The previous state_read + state_write_atomic pattern held
-  # the lock only over the final write, leaving an open R-M-W window
-  # against concurrent state_update writers (e.g., Plan's narrow direct
-  # write of phase_start_commit). state_update serializes the full
-  # critical section and binds untrusted values via --arg/--argjson so
-  # the jq filter stays a static expression.
+  # Apply state changes via state_update (locked R-M-W primitive — the
+  # previous state_read + state_write_atomic pattern held the lock only
+  # over the final write, leaving an open R-M-W window against concurrent
+  # state_update writers (e.g., Plan's narrow direct write of
+  # phase_start_commit). state_update serializes the full critical
+  # section and binds untrusted values via --arg/--argjson so the jq
+  # filter stays a static expression.
   case "$fm_status" in
     approved)
-      # Set this step's artifact status to approved. Filter is idempotent
-      # if status was already approved (unconditional write under the
-      # lock — no observable difference, and the early-skip optimization
-      # is incompatible with TOCTOU-safe R-M-W).
-      state_update '.artifacts[$step] = "approved"' --arg step "$step" || return 1
+      # Set this step's artifact status to approved AND recompute
+      # current_step in the same atomic write. The recompute reads
+      # frontmatter from disk via state_compute_current_step; the
+      # on-disk status was just promoted to approved (caller wrote it
+      # before invoking artifact_sync_state), so the recompute sees the
+      # post-promotion value. Combining both patches into one filter
+      # ensures readers never observe (artifacts advanced, current_step
+      # stale).
+      local new_cs
+      new_cs=$(state_compute_current_step "$artifact_dir") || return 1
+      state_update '.artifacts[$step] = "approved" | .current_step = $cs' \
+        --arg step "$step" --arg cs "$new_cs" \
+        --artifact-dir "$artifact_dir" || return 1
       ;;
     draft)
       # Cascade reset from this step onwards (pass --skip-cascade if set).
@@ -128,9 +136,10 @@ artifact_sync_state() {
     fi
 
     # Bind the boolean via --argjson (typed JSON) so the filter stays
-    # static — caller-side jq-filter interpolation is forbidden (R3 S-1
-    # / L-sec-1).
-    state_update '.wireframe_requested = $w' --argjson w "$wireframe_json_value" || return 1
+    # static — caller-side jq-filter interpolation is forbidden.
+    state_update '.wireframe_requested = $w' \
+      --argjson w "$wireframe_json_value" \
+      --artifact-dir "$artifact_dir" || return 1
   fi
 }
 

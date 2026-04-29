@@ -46,7 +46,12 @@ worktree_extract_slug() {
       ;;
   esac
 
-  if [[ $path =~ \.worktrees/([^/]+)/(task-[0-9]+|baseline)(/|$) ]]; then
+  # The task-NN[a-z]? alpha-suffix supports baseline-fix-of-baseline-fix
+  # scenarios (task-00b, task-00c). This regex MUST match the asymmetric
+  # wall regex in pre-tool-use:156,170 — drift here = silent observability
+  # hole where alpha-suffix worktree writes get past the wall but produce no
+  # audit.jsonl row.
+  if [[ $path =~ \.worktrees/([^/]+)/(task-[0-9]+[a-z]?|baseline)(/|$) ]]; then
     local slug="${BASH_REMATCH[1]}"
     # Defense in depth: slug itself must not contain `..` (the [^/]+ above
     # already excludes `/`, but a slug like `..evil` is suspicious).

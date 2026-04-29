@@ -40,7 +40,7 @@ EOF
 
   # Verify current_step is "questions"
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"current_step":"questions"'* ]]
 
   # Verify artifact statuses
@@ -72,7 +72,7 @@ EOF
   [ "$status" -eq 0 ]
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"current_step":"implement"'* ]]
 }
 
@@ -87,7 +87,7 @@ EOF
   [ "$status" -eq 0 ]
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"current_step":"goals"'* ]]
   [[ "$json" == *'"goals":"draft"'* ]]
   [[ "$json" == *'"questions":"draft"'* ]]
@@ -116,7 +116,7 @@ EOF
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
-  run state_read
+  run state_read "$artifact_dir"
   [ "$status" -eq 0 ]
 
   # Verify it's valid JSON by checking with jq
@@ -140,7 +140,8 @@ EOF
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
-  local test_json='{"version":1,"current_step":"goals"}'
+  # Real schema requires artifacts field — state_write_atomic validates input.
+  local test_json='{"version":1,"current_step":"goals","artifacts":{}}'
   run state_write_atomic "$test_json"
 
   [ "$status" -eq 0 ]
@@ -164,7 +165,7 @@ EOF
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
-  local test_json='{"version":1}'
+  local test_json='{"version":1,"artifacts":{}}'
   run state_write_atomic "$test_json"
 
   [ "$status" -eq 0 ]
@@ -180,7 +181,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"version":1'* ]]
 }
 
@@ -193,7 +194,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   # artifact_dir should be set to the absolute path
   [[ "$json" == *'"artifact_dir"'* ]]
 }
@@ -207,7 +208,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"wireframe_requested":false'* ]]
 }
 
@@ -220,7 +221,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" != *'active_task'* ]]
 }
 
@@ -233,7 +234,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
 
   # All 8 should be present
   [[ "$json" == *'"goals"'* ]]
@@ -257,7 +258,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"research":"approved"'* ]]
 }
 
@@ -286,7 +287,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
 
   [[ "$json" == *'"goals":"approved"'* ]]
   [[ "$json" == *'"questions":"approved"'* ]]
@@ -310,7 +311,7 @@ EOF
   state_init_or_reconcile "$artifact_dir" > /dev/null
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
 
   # research is draft, so it should be current_step
   [[ "$json" == *'"current_step":"research"'* ]]
@@ -343,7 +344,7 @@ EOF
   mkdir -p "$TEST_DIR/.qrspi"
   chmod 555 "$TEST_DIR/.qrspi"
 
-  run state_write_atomic '{"version":1}'
+  run state_write_atomic '{"version":1,"artifacts":{}}'
   chmod 755 "$TEST_DIR/.qrspi" 2>/dev/null || true
   [ "$status" -eq 1 ]
   [[ "$output" == *"failed"* ]]
@@ -365,7 +366,7 @@ EOF
   [ "$exit_code" -eq 0 ]
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"goals":"draft"'* ]]
 
   local stderr_content
@@ -380,11 +381,12 @@ EOF
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
-  mkdir -p "$TEST_DIR/.qrspi"
-  chmod 555 "$TEST_DIR/.qrspi"
+  # state.json now lands at <artifact_dir>/.qrspi/ — make that path unwritable.
+  mkdir -p "$artifact_dir/.qrspi"
+  chmod 555 "$artifact_dir/.qrspi"
 
   run state_init_or_reconcile "$artifact_dir"
-  chmod 755 "$TEST_DIR/.qrspi" 2>/dev/null || true
+  chmod 755 "$artifact_dir/.qrspi" 2>/dev/null || true
   [ "$status" -eq 1 ]
   # T24 fix-cycle 2: state_init_or_reconcile now does its own locked write
   # (no longer delegates to state_write_atomic for the write step). When
@@ -414,7 +416,7 @@ EOF
   [ "$status" -eq 0 ]
 
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"current_step":"questions"'* ]]
   [[ "$json" == *'"goals":"approved"'* ]]
   [[ "$json" == *'"questions":"draft"'* ]]
@@ -431,7 +433,7 @@ EOF
   # First init: goals=approved
   state_init_or_reconcile "$artifact_dir"
   local json
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"goals":"approved"'* ]]
 
   # Now change goals.md frontmatter to draft
@@ -440,7 +442,7 @@ EOF
   # Re-reconcile
   state_init_or_reconcile "$artifact_dir"
 
-  json=$(state_read)
+  json=$(state_read "$artifact_dir")
   [[ "$json" == *'"goals":"draft"'* ]]
   [[ "$json" == *'"current_step":"goals"'* ]]
 }
@@ -457,11 +459,11 @@ EOF
 
   state_init_or_reconcile "$artifact_dir"
   local json1
-  json1=$(state_read)
+  json1=$(state_read "$artifact_dir")
 
   state_init_or_reconcile "$artifact_dir"
   local json2
-  json2=$(state_read)
+  json2=$(state_read "$artifact_dir")
 
   # Compare key fields (artifact_dir may differ in whitespace but content should match)
   local step1 step2 goals1 goals2 questions1 questions2 research1 research2
@@ -506,6 +508,7 @@ EOF
 @test "[T04-PHASING-1S] state_init_or_reconcile: includes phasing artifact field with status draft when phasing.md absent" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
   state_init_or_reconcile "$artifact_dir"
@@ -518,6 +521,7 @@ EOF
 @test "[T04-PHASING-2S] state_init_or_reconcile: reads phasing.md frontmatter status into artifacts.phasing" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/phasing.md" "approved"
 
@@ -532,6 +536,7 @@ EOF
 @test "[T04-PHASING-3S] state_init_or_reconcile: current_step is phasing when goals/questions/research/design approved and phasing draft" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir/research"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "approved"
   create_artifact "$artifact_dir/questions.md" "approved"
@@ -572,6 +577,7 @@ EOF
   # file-backed step.
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir/research"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "approved"
   create_artifact "$artifact_dir/questions.md" "approved"
@@ -751,6 +757,7 @@ EOF
 @test "[T04-PHASING-6S] state_init_or_reconcile recognizes all 10 artifacts including phasing and parallelize" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
   state_init_or_reconcile "$artifact_dir" > /dev/null
@@ -785,6 +792,7 @@ EOF
 @test "[T19-FU1-1] state_init_or_reconcile delegates to state_compute_current_step (mock returns sentinel)" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
+  cd "$artifact_dir"
 
   # Fixture: empty artifact dir. Inline logic would compute current_step="goals".
   # Mock returns a sentinel ("phasing") that inline logic would never produce
@@ -834,6 +842,7 @@ EOF
 
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir/research"
+  cd "$artifact_dir"
 
   # Approved through plan: inline logic would yield "implement".
   create_artifact "$artifact_dir/goals.md" "approved"
@@ -1044,7 +1053,7 @@ EOF
   # closed (returning non-zero, writing nothing) rather than persist garbage.
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
@@ -1057,7 +1066,7 @@ EOF
   rm -f "$TEST_DIR/.qrspi/state.json"
   run state_init_or_reconcile "$artifact_dir"
   [ "$status" -ne 0 ]
-  [ ! -f "$TEST_DIR/.qrspi/state.json" ]
+  [ ! -f "$artifact_dir/.qrspi/state.json" ]
 }
 
 # ---- T24-B: phase_start_commit preserve across reconcile ----
@@ -1065,7 +1074,7 @@ EOF
 @test "[T24-B1] state_init_or_reconcile preserves non-null phase_start_commit when state.json already exists" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "approved"
 
@@ -1102,12 +1111,12 @@ EOF
 @test "[T24-B2] state_init_or_reconcile initializes phase_start_commit to null when state.json does not exist (existing behavior preserved)" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
   # Ensure no prior state
-  rm -f "$TEST_DIR/.qrspi/state.json"
+  rm -f "$artifact_dir/.qrspi/state.json"
 
   state_init_or_reconcile "$artifact_dir"
   local psc
@@ -1120,7 +1129,7 @@ EOF
   # wipe phase_start_commit alongside the legitimate status update.
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
@@ -1160,7 +1169,7 @@ EOF
   # phase_start_commit value (no R-M-W tearing).
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "approved"
 
@@ -1198,7 +1207,7 @@ EOF
 
   # File must be valid JSON (atomic mv guarantees this; included as sanity)
   local final
-  final=$(cat "$TEST_DIR/.qrspi/state.json")
+  final=$(cat "$artifact_dir/.qrspi/state.json")
   echo "$final" | jq . > /dev/null || {
     echo "FAIL: state.json is not valid JSON after concurrent R-M-W (content: $final)" >&2
     return 1
@@ -1337,7 +1346,7 @@ EOF
   # lock that state_update uses. This test exercises that end-to-end.
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "approved"
 
@@ -1369,7 +1378,7 @@ EOF
   # phase_start_commit values — NOT null. If reconcile (A) won the last
   # write but had a stale snapshot, phase_start_commit would be null.
   local final
-  final=$(cat "$TEST_DIR/.qrspi/state.json")
+  final=$(cat "$artifact_dir/.qrspi/state.json")
   echo "$final" | jq . > /dev/null || {
     echo "FAIL: state.json torn (content: $final)" >&2
     return 1
@@ -1392,7 +1401,7 @@ EOF
   # values without caller-side jq-filter string interpolation.
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "approved"
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
@@ -1410,7 +1419,7 @@ EOF
 @test "[T42-A2] state_update accepts --argjson for typed values (boolean, array)" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "approved"
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
@@ -1435,7 +1444,7 @@ EOF
 @test "[T42-A3] state_update rejects unknown variadic argument (fail-closed on typos)" {
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "approved"
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
@@ -1459,7 +1468,7 @@ EOF
   # This test mirrors [T24-C1c] for the migrated artifact_sync_state.
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "approved"
   source "$BATS_TEST_DIRNAME/../../hooks/lib/artifact.sh"
@@ -1488,7 +1497,7 @@ EOF
   wait "$pid_b" || true
 
   local final
-  final=$(cat "$TEST_DIR/.qrspi/state.json")
+  final=$(cat "$artifact_dir/.qrspi/state.json")
   echo "$final" | jq . > /dev/null || {
     echo "FAIL: state.json torn (content: $final)" >&2
     return 1
@@ -1509,7 +1518,7 @@ EOF
   # Mirrors [T24-C1c] for the migrated pipeline_cascade_reset.
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "approved"
   create_artifact "$artifact_dir/questions.md" "approved"
@@ -1538,7 +1547,7 @@ EOF
   wait "$pid_b" || true
 
   local final
-  final=$(cat "$TEST_DIR/.qrspi/state.json")
+  final=$(cat "$artifact_dir/.qrspi/state.json")
   echo "$final" | jq . > /dev/null || {
     echo "FAIL: state.json torn (content: $final)" >&2
     return 1
@@ -1656,17 +1665,17 @@ EOF
   # silently dropping its phase_start_commit.
   local artifact_dir="$TEST_DIR/artifacts"
   mkdir -p "$artifact_dir"
-  cd "$TEST_DIR"
+  cd "$artifact_dir"
 
   create_artifact "$artifact_dir/goals.md" "draft"
 
   source "$BATS_TEST_DIRNAME/../../hooks/lib/state.sh"
 
   # Place a corrupt state.json
-  mkdir -p "$TEST_DIR/.qrspi"
-  printf 'this is not valid JSON' > "$TEST_DIR/.qrspi/state.json"
+  mkdir -p "$artifact_dir/.qrspi"
+  printf 'this is not valid JSON' > "$artifact_dir/.qrspi/state.json"
   local before
-  before=$(cat "$TEST_DIR/.qrspi/state.json")
+  before=$(cat "$artifact_dir/.qrspi/state.json")
 
   run state_init_or_reconcile "$artifact_dir"
   [ "$status" -ne 0 ]
@@ -1674,7 +1683,7 @@ EOF
 
   # Corrupt file must remain unchanged (no silent overwrite)
   local after
-  after=$(cat "$TEST_DIR/.qrspi/state.json")
+  after=$(cat "$artifact_dir/.qrspi/state.json")
   [[ "$after" == "$before" ]]
 }
 

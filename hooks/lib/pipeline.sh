@@ -68,11 +68,21 @@ pipeline_check_prerequisites() {
     return 0
   fi
 
-  # Read state.json
+  # Read state.json from the artifact_dir
   local state
-  if ! state=$(state_read 2>/dev/null); then
+  if ! state=$(state_read "$artifact_dir" 2>/dev/null); then
     echo "<state-unavailable>"
-    echo "pipeline_check_prerequisites: state_read failed" >&2
+    echo "pipeline_check_prerequisites: state_read failed for $artifact_dir" >&2
+    return 1
+  fi
+
+  # Validate state is well-formed AND has the required shape. A bare {} or [] would
+  # parse OK but then every state_status lookup defaults to "draft", producing a
+  # misleading "Complete and approve goals" block reason instead of a corruption
+  # signal. Require version + artifacts.{step} for at least one known step.
+  if ! echo "$state" | jq -e 'type == "object" and has("version") and has("artifacts") and (.artifacts | type == "object")' >/dev/null 2>&1; then
+    echo "<state-corrupted>"
+    echo "pipeline_check_prerequisites: state.json at $artifact_dir/.qrspi/state.json is not valid JSON or missing required structure (version/artifacts) — Cannot verify pipeline ordering" >&2
     return 1
   fi
 
@@ -207,18 +217,30 @@ pipeline_cascade_reset() {
 
   # Bootstrap: if state.json does not exist yet, initialize it. Then run
   # the cascade reset under the state_update lock.
-  if [[ ! -f ".qrspi/state.json" ]]; then
+  if [[ ! -f "$artifact_dir/.qrspi/state.json" ]]; then
     if ! state_init_or_reconcile "$artifact_dir"; then
       echo "pipeline_cascade_reset: cannot perform cascade reset — state_init_or_reconcile failed" >&2
       return 1
     fi
   fi
 
-  # Locked R-M-W: jq's `reduce` walks the typed array of step names and
-  # sets each artifact to "draft". The filter is a static jq expression;
-  # the step list is bound via --argjson.
-  if ! state_update 'reduce $steps[] as $s (.; .artifacts[$s] = "draft")' \
-        --argjson steps "$steps_json"; then
+  # Locked R-M-W: jq's `reduce` walks the typed array of step names and sets
+  # each artifact to "draft", then derives current_step from the post-cascade
+  # in-memory artifacts dict — F-7 invariant: any mutation of artifacts.{step}
+  # must be followed by current_step recomputation. We cannot use
+  # state_compute_current_step here because the cascade only mutates state.json,
+  # not on-disk frontmatter, so a disk-based recompute would return a stale value.
+  if ! state_update '
+        reduce $steps[] as $s (.; .artifacts[$s] = "draft")
+        | . as $resetted
+        | .current_step = (
+            ["goals","questions","research","design","phasing","structure","plan","parallelize"]
+            | map(select($resetted.artifacts[.] != "approved"))
+            | (.[0] // "implement")
+          )
+      ' \
+        --argjson steps "$steps_json" \
+        --artifact-dir "$artifact_dir"; then
     echo "pipeline_cascade_reset: cannot perform cascade reset — state_update failed" >&2
     return 1
   fi

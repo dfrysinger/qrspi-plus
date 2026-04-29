@@ -167,6 +167,37 @@ teardown() {
   pipeline_check_prerequisites "foobar" "$ARTIFACT_DIR" && false || true
 }
 
+# [F-7 cascade] pipeline_cascade_reset must recompute current_step after
+# resetting artifacts.* to draft. Without this, reverting an approved
+# artifact back to draft leaves current_step advanced too far — the same
+# class of bug F-7 fixed for the approval path.
+@test "[F-7] pipeline_cascade_reset recomputes current_step after reset" {
+  # Set up an artifact_dir where everything through parallelize is approved
+  mkdir -p "$ARTIFACT_DIR/research"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/goals.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/questions.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/research/summary.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/design.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/phasing.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/structure.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/plan.md"
+  echo -e "---\nstatus: approved\n---" > "$ARTIFACT_DIR/parallelization.md"
+  state_init_or_reconcile "$ARTIFACT_DIR"
+
+  # Sanity check: current_step is "implement" since plan is the last approved
+  local state_before
+  state_before=$(state_read "$ARTIFACT_DIR")
+  [[ $(echo "$state_before" | jq -r '.current_step') == "implement" ]]
+
+  # Cascade-reset from design — design/structure/plan should all become draft,
+  # so current_step must move backward to "design"
+  pipeline_cascade_reset "design" "$ARTIFACT_DIR"
+
+  local state_after
+  state_after=$(state_read "$ARTIFACT_DIR")
+  [[ $(echo "$state_after" | jq -r '.current_step') == "design" ]]
+}
+
 # Test 9: pipeline_cascade_reset "design" resets design and downstream to draft
 @test "pipeline_cascade_reset design resets design through test to draft" {
   # Create artifact files, all approved
@@ -186,7 +217,7 @@ teardown() {
 
   # Verify state
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -216,7 +247,7 @@ teardown() {
 
   # Verify all are draft
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
@@ -243,16 +274,16 @@ teardown() {
 
   # Manually mark implement and test as approved (state_init_or_reconcile doesn't do this)
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   state=$(echo "$state" | jq '.artifacts.implement = "approved"')
   state=$(echo "$state" | jq '.artifacts.test = "approved"')
-  state_write_atomic "$state"
+  state_write_atomic "$state" "$ARTIFACT_DIR"
 
   # Reset test only
   pipeline_cascade_reset "test" "$ARTIFACT_DIR"
 
   # Verify only test is draft
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -307,9 +338,9 @@ teardown() {
   # Reset
   pipeline_cascade_reset "design" "$ARTIFACT_DIR"
 
-  # Verify .qrspi/state.json exists and is valid JSON
-  [[ -f ".qrspi/state.json" ]]
-  state_read | jq . > /dev/null
+  # Verify state.json exists at the artifact_dir per spec and is valid JSON
+  [[ -f "$ARTIFACT_DIR/.qrspi/state.json" ]]
+  state_read "$ARTIFACT_DIR" | jq . > /dev/null
 }
 
 # Test 14: Dual check - state says approved but frontmatter says draft, trust frontmatter
@@ -326,11 +357,16 @@ teardown() {
   # Initialize state
   state_init_or_reconcile "$ARTIFACT_DIR"
 
-  # Manually update state to say goals is approved (to test dual check)
+  # Manually update state to say goals is approved (to test dual check).
+  # Pass artifact_dir explicitly to both state_read and state_write_atomic so
+  # the forged state lands at $ARTIFACT_DIR/.qrspi/state.json — not PWD's.
+  # Without this, the test would pass for the wrong reason (frontmatter alone
+  # blocks because no state file exists at the resolved artifact_dir), failing
+  # to actually exercise the dual-check path.
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   state=$(echo "$state" | jq '.artifacts.goals = "approved"')
-  state_write_atomic "$state"
+  state_write_atomic "$state" "$ARTIFACT_DIR"
 
   # Now test: even though state says approved, frontmatter says draft, so should fail
   run -1 pipeline_check_prerequisites "questions" "$ARTIFACT_DIR"
@@ -404,14 +440,14 @@ _t14_create_all_approved() {
 
   # Mark implement and test as approved in state
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   state=$(echo "$state" | jq '.artifacts.implement = "approved"')
   state=$(echo "$state" | jq '.artifacts.test = "approved"')
-  state_write_atomic "$state"
+  state_write_atomic "$state" "$ARTIFACT_DIR"
 
   pipeline_cascade_reset "goals" "$ARTIFACT_DIR"
 
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
@@ -429,7 +465,7 @@ _t14_create_all_approved() {
   pipeline_cascade_reset "design" "$ARTIFACT_DIR"
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -447,7 +483,7 @@ _t14_create_all_approved() {
   pipeline_cascade_reset "design" "$ARTIFACT_DIR" --skip-cascade
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -476,7 +512,7 @@ _t14_create_all_approved() {
 
   # State should exist now, with design through test reset
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -496,7 +532,7 @@ _t14_create_all_approved() {
   pipeline_cascade_reset "structure" "$ARTIFACT_DIR"
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -514,7 +550,7 @@ _t14_create_all_approved() {
   pipeline_cascade_reset "structure" "$ARTIFACT_DIR" --skip-cascade
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -597,14 +633,14 @@ _t04_phasing_create_all_approved() {
 
   # Manually mark implement and test approved
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   state=$(echo "$state" | jq '.artifacts.implement = "approved"')
   state=$(echo "$state" | jq '.artifacts.test = "approved"')
-  state_write_atomic "$state"
+  state_write_atomic "$state" "$ARTIFACT_DIR"
 
   pipeline_cascade_reset "goals" "$ARTIFACT_DIR"
 
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
@@ -622,14 +658,14 @@ _t04_phasing_create_all_approved() {
 
   # Mark implement and test approved
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   state=$(echo "$state" | jq '.artifacts.implement = "approved"')
   state=$(echo "$state" | jq '.artifacts.test = "approved"')
-  state_write_atomic "$state"
+  state_write_atomic "$state" "$ARTIFACT_DIR"
 
   pipeline_cascade_reset "phasing" "$ARTIFACT_DIR"
 
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -648,7 +684,7 @@ _t04_phasing_create_all_approved() {
   pipeline_cascade_reset "phasing" "$ARTIFACT_DIR" --skip-cascade
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.design') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.phasing') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.structure') == "approved" ]]
@@ -676,10 +712,10 @@ _t04_boundary_init_all_approved_in_state() {
   _t04_phasing_create_all_approved
   state_init_or_reconcile "$ARTIFACT_DIR"
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   state=$(echo "$state" | jq '.artifacts.implement = "approved"')
   state=$(echo "$state" | jq '.artifacts.test = "approved"')
-  state_write_atomic "$state"
+  state_write_atomic "$state" "$ARTIFACT_DIR"
 }
 
 @test "[T04-PHASING-9a] pipeline_cascade_reset boundary at phasing: upstream approved, at-and-after draft" {
@@ -691,7 +727,7 @@ _t04_boundary_init_all_approved_in_state() {
   pipeline_cascade_reset "phasing" "$ARTIFACT_DIR"
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   # Upstream of phasing — must stay approved (boundary lower side)
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
@@ -711,7 +747,7 @@ _t04_boundary_init_all_approved_in_state() {
   pipeline_cascade_reset "questions" "$ARTIFACT_DIR"
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "draft" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
@@ -729,7 +765,7 @@ _t04_boundary_init_all_approved_in_state() {
   pipeline_cascade_reset "research" "$ARTIFACT_DIR"
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "draft" ]]
@@ -748,7 +784,7 @@ _t04_boundary_init_all_approved_in_state() {
   pipeline_cascade_reset "plan" "$ARTIFACT_DIR"
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]
@@ -769,7 +805,7 @@ _t04_boundary_init_all_approved_in_state() {
   pipeline_cascade_reset "implement" "$ARTIFACT_DIR"
 
   local state
-  state=$(state_read)
+  state=$(state_read "$ARTIFACT_DIR")
   [[ $(echo "$state" | jq -r '.artifacts.goals') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.questions') == "approved" ]]
   [[ $(echo "$state" | jq -r '.artifacts.research') == "approved" ]]

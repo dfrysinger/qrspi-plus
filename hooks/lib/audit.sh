@@ -29,7 +29,14 @@ audit_resolve_artifact_dir() {
   done
   shopt -u nullglob
 
-  if [[ ${#matches[@]} -ne 1 ]]; then
+  if [[ ${#matches[@]} -eq 0 ]]; then
+    return 1
+  fi
+  if [[ ${#matches[@]} -gt 1 ]]; then
+    # Important #1: ambiguous slug is a security/observability hole — the audit
+    # pipeline silently drops events for a real QRSPI artifact. Fail loud so
+    # the operator sees it; still return 1 (don't change the contract).
+    echo "audit_resolve_artifact_dir: ambiguous slug '$slug' matches ${#matches[@]} directories: ${matches[*]}" >&2
     return 1
   fi
 
@@ -104,8 +111,12 @@ _audit_resolve_target_to_artifact_dir() {
   # Case 1: target inside a worktree
   local slug
   if slug=$(worktree_extract_slug "$target" 2>/dev/null); then
+    # F-3 / Important #3: do NOT silence audit_resolve_artifact_dir — its
+    # diagnostics (e.g., ambiguous-slug "found N candidates: ...") must reach
+    # the caller's stderr so the operator sees why a slug failed to resolve.
+    # Silencing here would make audit-routing failures indistinguishable.
     local resolved
-    if resolved=$(audit_resolve_artifact_dir "$slug" 2>/dev/null); then
+    if resolved=$(audit_resolve_artifact_dir "$slug"); then
       echo "$resolved"
       return 0
     fi
@@ -218,18 +229,24 @@ audit_log_event() {
   # Resolve target → artifact_dir.
   # If resolution fails AND the target is in QRSPI scope (a worktree path),
   # write an orphan row to <repo_root>/.qrspi/audit-orphan.jsonl and return
-  # non-zero so the caller knows the canonical path failed (S-N3 fix:
-  # never silently drop subagent enforcement events).
+  # non-zero so the caller knows the canonical path failed — never silently
+  # drop subagent enforcement events.
   # If the target is out of QRSPI scope, silently skip with return 0 (no
   # audit pollution from non-QRSPI work).
+  #
+  # stderr handling: keep the resolver's stderr OPEN so the ambiguous-slug
+  # diagnostic from audit_resolve_artifact_dir reaches the operator. The
+  # internal call to worktree_extract_slug is already silenced inside
+  # _audit_resolve_target_to_artifact_dir, so the only stderr that reaches
+  # here is the intentional diagnostic.
   local resolution_failed=0
   if [[ "$target" == "__OPAQUE_WRITE__" ]]; then
-    # M4-2: sentinel is not a real path — bypass target-based resolution
-    # entirely and resolve artifact_dir via PWD's repo root (state.json).
-    # If repo-root lookup succeeds, route to the canonical artifact_dir;
-    # otherwise fall through to the orphan path so the row is never silently
-    # dropped (forensic-integrity invariant: opaque-write events are exactly
-    # the moments the wall fired and MUST be auditable).
+    # Sentinel is not a real path — bypass target-based resolution entirely
+    # and resolve artifact_dir via PWD's repo root (state.json). If repo-root
+    # lookup succeeds, route to the canonical artifact_dir; otherwise fall
+    # through to the orphan path so the row is never silently dropped
+    # (forensic-integrity invariant: opaque-write events are exactly the
+    # moments the wall fired and MUST be auditable).
     local sentinel_repo_root
     if sentinel_repo_root=$(_audit_find_repo_root "$PWD" 2>/dev/null); then
       local sentinel_artifact_dir
@@ -242,7 +259,7 @@ audit_log_event() {
     else
       resolution_failed=1
     fi
-  elif ! artifact_dir=$(_audit_resolve_target_to_artifact_dir "$target" 2>/dev/null); then
+  elif ! artifact_dir=$(_audit_resolve_target_to_artifact_dir "$target"); then
     if _audit_target_is_qrspi_scope "$target"; then
       resolution_failed=1
     else

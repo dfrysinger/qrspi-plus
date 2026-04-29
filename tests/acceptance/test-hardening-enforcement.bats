@@ -17,10 +17,13 @@ bats_require_minimum_version 1.5.0
 setup() {
   export WORK_DIR
   WORK_DIR=$(mktemp -d)
-  export ARTIFACT_DIR="$WORK_DIR/artifacts"
-  mkdir -p "$ARTIFACT_DIR/tasks"
-  mkdir -p "$WORK_DIR/.qrspi"
   cd "$WORK_DIR"
+  # state.json lives at <artifact_dir>/.qrspi/state.json (per F-1 fix). The
+  # hook resolves artifact_dir target-based via the audit resolver, which globs
+  # $(pwd)/docs/qrspi/*-{slug}/ — so ARTIFACT_DIR must follow that layout.
+  export ARTIFACT_DIR="$WORK_DIR/docs/qrspi/2026-04-26-test"
+  mkdir -p "$ARTIFACT_DIR/tasks"
+  mkdir -p "$ARTIFACT_DIR/.qrspi"
 
   export PRE_HOOK
   PRE_HOOK="$(dirname "$BATS_TEST_FILENAME")/../../hooks/pre-tool-use"
@@ -29,6 +32,7 @@ setup() {
 }
 
 teardown() {
+  cd /
   rm -rf "$WORK_DIR"
 }
 
@@ -63,7 +67,7 @@ init_state_with_task() {
       artifacts:{goals:"approved",questions:"approved",research:"approved",
                  design:"approved",structure:"approved",plan:"approved",
                  implement:"draft",test:"draft"},
-      active_task:{id:$task_id}}' > "$WORK_DIR/.qrspi/state.json"
+      active_task:{id:$task_id}}' > "$ARTIFACT_DIR/.qrspi/state.json"
 }
 
 write_json() {
@@ -79,7 +83,7 @@ write_json() {
 # U1 — Corrupted state.json (exists but not parseable) causes block + stderr diagnostic
 @test "[U1] Corrupted state.json causes pre-tool-use to fail-closed with stderr diagnostic" {
   # AC: state file exists but is corrupted JSON → hook blocks with exit 2 + diagnostic on stderr
-  printf 'NOT VALID JSON\n' > "$WORK_DIR/.qrspi/state.json"
+  printf 'NOT VALID JSON\n' > "$ARTIFACT_DIR/.qrspi/state.json"
 
   # Write to a pipeline artifact (triggers state read for pipeline ordering check)
   run "$PRE_HOOK" <<< "$(write_json "$ARTIFACT_DIR/design.md")"
@@ -88,20 +92,17 @@ write_json() {
   [[ "$output" == *"state"* ]] || [[ "$output" == *"corrupted"* ]] || [[ "$output" == *"Cannot"* ]]
 }
 
-# U1 — State file with missing artifact_dir causes block + diagnostic
-@test "[U1] State with missing artifact_dir causes block with diagnostic on stderr" {
-  # AC: state parses but is missing required artifact_dir field → hook blocks with exit 2
-  jq -cn '{version:1, current_step:"implement", phase_start_commit:null,
-           wireframe_requested:false,
-           artifacts:{goals:"approved",questions:"approved",research:"approved",
-                      design:"approved",structure:"approved",plan:"approved",
-                      implement:"draft",test:"draft"},
-           active_task:null}' > "$WORK_DIR/.qrspi/state.json"
-
-  run "$PRE_HOOK" <<< "$(write_json "$ARTIFACT_DIR/design.md")"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"artifact_dir"* ]] || [[ "$output" == *"missing"* ]] || [[ "$output" == *"Cannot"* ]]
-}
+# [U1] (removed) — "missing artifact_dir in state.json blocks"
+#
+# Removed post-F-1 (2026-04-26). The pre-tool-use hook no longer reads
+# artifact_dir from state.json; it resolves the target-based artifact_dir via
+# _audit_resolve_target_to_artifact_dir before reading state. The "missing
+# artifact_dir → block" code path was deleted along with that change.
+#
+# Fail-closed coverage for state.json defects is now provided by:
+#   [U1] Corrupted state.json (above) — invalid JSON → block via the new
+#        state-validity check in pipeline_check_prerequisites.
+#   [U1] Block response is valid JSON (below) — verifies block JSON shape.
 
 # U1 — Malformed JSON on stdin causes block with diagnostic (existing coverage, verify still passes)
 @test "[U1] Malformed stdin JSON causes pre-tool-use to block with exit 2 and diagnostic" {
@@ -116,7 +117,7 @@ write_json() {
 # U1 — Block output is always valid JSON (diagnostic is in stderr, JSON in stdout)
 @test "[U1] Block response is valid JSON with decision=block even for corrupted state" {
   # AC: fail-closed response must be machine-readable JSON on stdout so Claude can process it
-  printf 'INVALID JSON\n' > "$WORK_DIR/.qrspi/state.json"
+  printf 'INVALID JSON\n' > "$ARTIFACT_DIR/.qrspi/state.json"
 
   run "$PRE_HOOK" <<< "$(write_json "$ARTIFACT_DIR/design.md")"
   [ "$status" -eq 2 ]

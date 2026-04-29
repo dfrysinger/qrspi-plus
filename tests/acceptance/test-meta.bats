@@ -41,8 +41,8 @@ unit_test_dir() {
   [ "$count" -eq 29 ]
 }
 
-# AC8 — Unit test count baseline (updated 2026-04-28, integration-round-04 round-03-fix-cycle merge)
-@test "[AC8] Unit test suite has exactly 773 @test definitions (baseline)" {
+# AC8 — Unit test count baseline (updated 2026-04-28, post-merge of origin/main F-* hardening)
+@test "[AC8] Unit test suite has exactly 798 @test definitions (baseline)" {
   # Baseline for stage-after-G6 = octopus(T16, T17, T18) on top of
   # stage-after-G5 (0ee9fd1, 18 .bats / 416 @tests). All three Wave 6
   # tasks are file-disjoint except for tests/acceptance/test-meta.bats
@@ -175,11 +175,27 @@ unit_test_dir() {
   #              ordinary relative target still gets PWD-prepend.
   # Total round-03-fix-cycle delta: +24 over 749. 749 → 773. Files
   # baseline (29) unchanged — all round-03 changes are modifications.
+  #
+  # 2026-04-28 origin/main merge: +25 from F-* hardening tests (PR #2 on
+  # main: F-1 fail-closed, F-3 project-internal absolute paths, F-7
+  # current_step recompute, F-19 alpha-suffix worktree IDs, Important #1
+  # ambiguous-slug fail-loud). Per-file delta:
+  #   +2 in test-artifact.bats ([F-7] mid-session current_step recompute)
+  #   +5 in test-bash-detect.bats ([F-3] project-internal absolute paths)
+  #   +3 in test-pre-tool-use.bats ([F-1] fail-closed BLOCK on unresolved
+  #     artifact / empty {} / corrupted state)
+  #   +3 in test-worktree.bats ([F-19] task-07a/07b/12c alpha-suffix)
+  #   +6 in test-audit.bats ([Important #1] ambiguous-slug + [F-19] audit
+  #     row written for alpha-suffix paths)
+  #   +1 in test-pipeline.bats ([F-7] cascade-reset current_step recompute)
+  #   +5 in test-pre-tool-use.bats ([F-19] alpha-suffix worktree IDs)
+  # 773 → 798. Files baseline (29) unchanged — all main additions are
+  # modifications, no new .bats files.
   local dir
   dir="$(unit_test_dir)"
   local count
   count=$(grep -r "^@test" "$dir" --include="*.bats" | wc -l | tr -d ' ')
-  [ "$count" -eq 773 ]
+  [ "$count" -eq 798 ]
 }
 
 # AC8 — Every expected unit test file is present by name (updated 2026-04-28 round-3 task-33 merge)

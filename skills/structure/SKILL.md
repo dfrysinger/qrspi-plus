@@ -5,6 +5,8 @@ description: Use when design.md is approved and the QRSPI pipeline needs file/co
 
 # Structure (QRSPI Step 6)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Structure skill to map the design to files and interfaces."
 
 ## Overview
@@ -174,7 +176,7 @@ On rejection, write the user's feedback and the rejected artifact snapshot to `f
 
 ### Terminal State
 
-Commit the approved `structure.md` and `reviews/structure-review.md` to git.
+If the artifact directory is inside a git repository, commit the approved `structure.md` and `reviews/structure-review.md` (see `using-qrspi` → "Commit after approval (when applicable)").
 
 > **IMPORTANT — Compaction recommended (terminal state).** Structure approved. This is a good point to compact context before the next step. Recommend the user run `/compact` if context utilization may exceed ~50%.
 

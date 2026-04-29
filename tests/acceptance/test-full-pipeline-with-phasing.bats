@@ -14,12 +14,12 @@ bats_require_minimum_version 1.5.0
 # Design and produces phasing.md before Structure runs."
 
 setup() {
-  export ARTIFACT_DIR
-  ARTIFACT_DIR=$(mktemp -d)
   export WORK_DIR
   WORK_DIR=$(mktemp -d)
   cd "$WORK_DIR"
 
+  export ARTIFACT_DIR
+  ARTIFACT_DIR="$WORK_DIR/docs/qrspi/2026-04-26-fakeproj"
   mkdir -p "$ARTIFACT_DIR/research"
 
   export HOOK
@@ -27,7 +27,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$ARTIFACT_DIR" "$WORK_DIR"
+  rm -rf "$WORK_DIR"
 }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

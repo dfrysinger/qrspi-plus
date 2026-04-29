@@ -5,6 +5,8 @@ description: Use when prior artifacts are approved and the QRSPI pipeline needs 
 
 # Plan (QRSPI Step 7)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Plan skill to create detailed task specs."
 
 ## Overview
@@ -334,7 +336,7 @@ The artifact directory contains a `.qrspi/` subdirectory managed by hooks (not b
 
 > **IMPORTANT — Compaction recommended (terminal state).** Plan has just split tasks into individual files and committed the approved artifacts. The conversation history from the synthesis + review rounds is no longer load-bearing for downstream skills (Parallelize, Implement, Integrate read the artifacts, not the chat). Run `/compact` here if utilization is non-trivial. **Iron Rule:** carrying Plan's full review history into Parallelize burns context the next skill needs for dependency-graph reasoning.
 
-Commit the approved `plan.md`, all `tasks/task-NN.md` files, and `reviews/plan-review.md` to git.
+If the artifact directory is inside a git repository, commit the approved `plan.md`, all `tasks/task-NN.md` files, and `reviews/plan-review.md` (see `using-qrspi` → "Commit after approval (when applicable)").
 
 > **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill in the `config.md` route, run `/compact` if utilization may exceed ~50%. The next skill (typically Parallelize) starts a fresh dependency-analysis flow; it does not need Plan's reviewer transcripts or sub-subagent dispatch traces. **Iron Rule:** the cross-skill boundary is the canonical compaction moment — do not invoke the next skill on a saturated context.
 

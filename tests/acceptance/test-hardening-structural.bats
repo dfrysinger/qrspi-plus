@@ -254,7 +254,9 @@ teardown() {
 
 # M23 — state_init_or_reconcile correctly initializes state from scratch
 @test "[M23] state_init_or_reconcile creates valid state.json from artifact directory" {
-  # AC: function works end-to-end for the bootstrap use case
+  # AC: function works end-to-end for the bootstrap use case.
+  # Post-F-1: state.json now lands at <artifact_dir>/.qrspi/state.json (per spec),
+  # not at the caller's PWD/.qrspi/.
   local state_lib="$HOOKS_DIR/lib/state.sh"
   local artifact_dir="$WORK_DIR/new-artifacts"
   mkdir -p "$artifact_dir"
@@ -262,9 +264,9 @@ teardown() {
 
   run bash -c "cd '$WORK_DIR'; source '$state_lib'; state_init_or_reconcile '$artifact_dir'"
   [ "$status" -eq 0 ]
-  [ -f "$WORK_DIR/.qrspi/state.json" ]
+  [ -f "$artifact_dir/.qrspi/state.json" ]
   # Must be valid JSON with required fields
-  jq . "$WORK_DIR/.qrspi/state.json" > /dev/null
-  [ "$(jq -r '.version' "$WORK_DIR/.qrspi/state.json")" = "1" ]
-  [ "$(jq -r '.artifacts.goals' "$WORK_DIR/.qrspi/state.json")" = "approved" ]
+  jq . "$artifact_dir/.qrspi/state.json" > /dev/null
+  [ "$(jq -r '.version' "$artifact_dir/.qrspi/state.json")" = "1" ]
+  [ "$(jq -r '.artifacts.goals' "$artifact_dir/.qrspi/state.json")" = "approved" ]
 }

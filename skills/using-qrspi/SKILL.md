@@ -13,6 +13,25 @@ If you were dispatched as a subagent to execute a specific task, skip this skill
 
 QRSPI is a pipeline for agentic software development with two route variants (quick fix and full). Each step produces a reviewable artifact, gets human approval, then invokes the next step. Most steps run as subagents for guaranteed clean context. Goals and Design run interactively in the main conversation with subagent synthesis.
 
+## Recommended Workspace Layout
+
+QRSPI separates two kinds of files:
+
+- **Artifacts** (goals, questions, research, design, structure, plan, reviews) — written under `docs/qrspi/{slug}/` by the pipeline skills.
+- **Code** — lives in a separate target repository that Implement clones/forks into worktrees under `.worktrees/{slug}/task-NN/`.
+
+The recommended layout is to keep these as siblings inside a single workspace directory, e.g.:
+
+```
+my-workspace/
+├── docs/qrspi/{slug}/   # artifacts (this pipeline's outputs)
+└── code/{repo}/         # the target git repo Implement operates on
+```
+
+This is a recommendation, not a requirement. Both locations can be configured to whatever the user prefers — for example, artifacts inside the target repo, or the target repo at an arbitrary absolute path. The skills detect the artifact directory at runtime and don't assume any particular topology.
+
+**Greenfield (no target repo yet):** Implement currently assumes the target repo exists with a base branch it can fork worktrees from. If you're starting greenfield, create and `git init` the target repo before reaching Implement (Goals/Design/Structure can still run without it). A future improvement (tracked in the project's future-goals) will let `config.md` carry an explicit `code_path` and let Goals offer a greenfield bootstrap step.
+
 ## The Pipeline
 
 **Full pipeline:**
@@ -196,7 +215,11 @@ status: approved
 
 **Writing `status: approved` is sufficient.** The PostToolUse hook detects the frontmatter change and updates `state.json` automatically. Skills do not need to perform any explicit state update after writing the approval marker.
 
-**Commit after approval.** Every approved artifact (and its review file) should be committed to git immediately after the approval marker is written. This preserves the approved state as a checkpoint the user can return to. Use a descriptive commit message like `docs(qrspi): approve {step} for {project-slug}`.
+**Commit after approval (when applicable).** When the artifact directory is inside a git repository, commit each approved artifact (and its review file) immediately after the approval marker is written — this preserves the approved state as a checkpoint. Use a descriptive commit message like `docs(qrspi): approve {step} for {project-slug}`. When the artifact directory is not inside a git repository, skip the commit step — the approved frontmatter on disk is the durable record, and that's a fully supported pipeline configuration.
+
+**How to detect:** Run `git -C <artifact_dir> rev-parse --show-toplevel` and inspect the exit code. Detect from the **artifact directory**, not from CWD — these can differ, and the artifact directory is the right anchor for this decision.
+
+This applies to every skill terminal state in this pipeline that says "commit … to git" — the per-skill instructions all defer to this canonical rule.
 
 ## Hook-Managed State (`.qrspi/`)
 
@@ -236,12 +259,14 @@ The QRSPI hook enforces subagent containment using **target-based asymmetric** l
 
 **Subagent walls (target-based):**
 
-- Write/Edit/NotebookEdit targeting any file outside `.worktrees/{slug}/(task-NN|baseline)/...` is BLOCKED
+- Write/Edit/NotebookEdit targeting any file outside `.worktrees/{slug}/(task-NN[a-z]?|baseline)/...` is BLOCKED. The `[a-z]?` allows Plan-induced task splits like `task-07a`/`task-07b` (F-19).
 - Bash commands with detected file-write targets follow the same rule for each detected target
 - Bash commands containing `DROP TABLE` or `TRUNCATE` are BLOCKED (subagents shouldn't do destructive DB ops)
 - Bash commands containing universal destructive patterns (see below) are BLOCKED
 
 Subagents may write to ANY worktree under `.worktrees/`, not just their own. This is "loose pinning" — strict pinning (subagent bound to its own task worktree) is a future enhancement.
+
+**Known limitation — binary subagent model (F-8):** The hook's enforcement is binary: any non-empty `agent_id` is treated as "subagent" and walled to the worktree pattern. The envelope's `agent_type` field (`researcher`, `implementer`, `reviewer`, etc.) is captured for audit but NOT consulted for enforcement. This works for per-task implementer dispatches (the highest-volume, highest-risk subagent class) but blocks ~5 of 7 actual subagent dispatch patterns whose legitimate write surface is outside `.worktrees/` (researchers writing `research/q*.md`, synthesis writing `summary.md`, question generators writing `questions/*.md`). Skills currently work around this with the text-return pattern (subagent returns text, main chat writes the file) at the cost of subagent-isolation. The proper architectural fix is per-`agent_type` enforcement scoping — tracked as a future-goal; see `docs/qrspi/2026-04-06-phase4-hooks/future-goals.md` for the roadmap entry.
 
 **Main chat trust:** Main chat is not subject to the worktree wall — it can write anywhere. Pipeline ordering and universal destructive checks still apply.
 
@@ -479,6 +504,14 @@ After the first review round completes and fixes are applied, ask ONCE:
 **Once the user selects option 2, do not re-prompt between rounds.** The entire point of this option is autonomous iteration. Only return to the user when the loop terminates (clean or cap).
 
 **At the human gate, always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified." If the user approves but reviews have not passed clean, ask if they'd like a review loop before finalizing — this is strongly recommended.
+
+### Fix-altitude rule (F-5)
+
+When fixing an "X is under-specified" finding, prefer minimal additions that stay at the artifact's altitude. If the natural fix pulls content from the next pipeline step (Design content into Goals; Plan content into Design; Implementation choices into Plan), that's a signal to defer specification rather than over-specify here. Add a one-line "[X] pinned in <next step>" note instead of pinning X exhaustively now. Reviewers who flag missing detail at the next-step altitude are misapplying their review brief — decline the finding with a one-line explanation in the round notes.
+
+Why: pulling next-step detail upward inflates the artifact, introduces internal contradictions (the natural-language detail at this altitude often contradicts the structured detail at the next altitude), and produces R7-R10-style self-induced review churn — reviewers in subsequent rounds correctly flag the over-specification, the fix removes it, the cycle repeats. Minimal additions converge in 1–2 rounds; maximal additions can take 5+.
+
+Mirrors the skill-refactor design's "decline scope-extension findings" rule, applied to artifact-level reviews.
 
 ## Review Output Handling
 
