@@ -7,6 +7,7 @@ route:
   - questions
   - research
   - design
+  - phasing
   - structure
   - plan
   - parallelize
@@ -17,8 +18,11 @@ route:
 
 # QRSPI Configuration — v0.4 bundle
 
-Source: 11 GitHub issues assigned to `df-agent-echo` on the v0.4 milestone:
-#26, #51, #52, #54, #55, #56, #91, #93, #94, #95, #96.
+Source: 12 GitHub issues assigned to `df-agent-echo` on the v0.4 milestone:
+#26, #51, #52, #54, #55, #56, #91, #93, #94, #95, #96, #98.
+
+(#98 added 2026-04-29 — companion to #94 covering the existing brittle
+prompt-focused test corpus.)
 
 Workspace root: this repository (`qrspi-plus`). Artifacts live in-repo under
 `docs/qrspi/2026-04-29-v0.4-bundle/` for ease of human review.
