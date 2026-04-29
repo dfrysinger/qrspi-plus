@@ -15,7 +15,7 @@ Translate research findings into an architecture through interactive discussion.
 
 ## Design OWNS / Design DEFERS
 
-**Analogy.** design.md is the **architecture brief** for the project: it states the chosen approach, the trade-offs that were weighed, the key technical decisions and their rationale, the design-level test strategy, and a high-level system diagram. It does NOT enumerate concrete implementation surfaces (DDL, full signatures, assertion text), and it does NOT author phasing decisions (which slices belong in which phase). Implementation surfaces are owned downstream by Plan / Implement; phasing concerns — vertical slice authoring, phase boundaries, Iron Law 1, Iron Law 2, replan-gate criteria — are owned by `qrspi:phasing` (see `skills/phasing/SKILL.md`).
+**Analogy.** design.md is the **architecture brief** for the project: it states the chosen approach, the trade-offs that were weighed, the key technical decisions and their rationale, the design-level test strategy, and a high-level system diagram. It does NOT enumerate concrete implementation surfaces (DDL, full signatures, assertion text), and it does NOT author phasing decisions (which slices belong in which phase). Implementation surfaces are owned downstream by Plan / Implement; phasing concerns — vertical slice authoring, phase boundaries, Iron Law 1, the Phase 1 PoC guideline, replan-gate criteria — are owned by `qrspi:phasing` (see `skills/phasing/SKILL.md`).
 
 The OWNS/DEFERS contract below is the locked rule set the scope-reviewer dispatch (`{ARTIFACT_TYPE}=design`) loads at review time per `skills/_shared/templates/scope-reviewer.md` `## Rules-Loading Procedure`. Boundary-drift detection runs against the DEFERS list; scope-compliance runs against the OWNS list.
 
@@ -37,10 +37,10 @@ The OWNS/DEFERS contract below is the locked rule set the scope-reviewer dispatc
 - **Full assertion text** (literal `expect(...).toEqual(...)` lines) → Implement (TDD).
 - **Line-by-line logic** (procedural pseudocode, control-flow detail) → Plan / Implement.
 - **Vertical slice authoring** (Iron Law 1 — vertical-not-horizontal slicing) → `qrspi:phasing`.
-- **Phase boundaries and replan gates** (Iron Law 2 — Phase 1 PoC must prove the full stack; replan-gate criteria) → `qrspi:phasing`.
+- **Phase boundaries and replan gates** (Phase 1 PoC guideline — prove the full stack end-to-end when possible; replan-gate criteria) → `qrspi:phasing`.
 - **roadmap.md** (goal-to-phase assignment table) → `qrspi:phasing`.
 
-**Phasing pointer.** Phasing concerns (vertical slices, phase boundaries, Iron Law 1 + Iron Law 2) are owned by `qrspi:phasing` — see `skills/phasing/SKILL.md`.
+**Phasing pointer.** Phasing concerns (vertical slices, phase boundaries, Iron Law 1, the Phase 1 PoC guideline) are owned by `qrspi:phasing` — see `skills/phasing/SKILL.md`.
 
 A finding citing design.md prose that asserts any DEFERS item — for example, embedding a CREATE TABLE block, listing a CHECK constraint inline, pasting a literal function signature, or authoring a phase split — is a boundary-drift finding emitted by the scope-reviewer with `change_type: scope` (per the schema in `skills/_shared/reviewer-boilerplate.md`).
 

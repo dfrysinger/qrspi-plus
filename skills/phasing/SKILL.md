@@ -9,7 +9,7 @@ description: Use when design.md is approved and the QRSPI pipeline needs vertica
 
 ## Overview
 
-Translate the approved architecture into delivery units. Phasing is a dedicated step between Design and Structure that owns vertical-slice authoring (Iron Law 1), phase boundary decisions (Iron Law 2), roadmap.md authoring, current-phase pruning of the four synthesizing artifacts (goals.md, questions.md, research/summary.md, design.md), future-* artifact maintenance, and goal-ID consistency validation across the nine target artifact files. The discussion happens conversationally; a subagent synthesizes the artifact set per round.
+Translate the approved architecture into delivery units. Phasing is a dedicated step between Design and Structure that owns vertical-slice authoring (Iron Law 1), phase boundary decisions (Phase 1 PoC guideline), roadmap.md authoring, current-phase pruning of the four synthesizing artifacts (goals.md, questions.md, research/summary.md, design.md), future-* artifact maintenance, and goal-ID consistency validation across the nine target artifact files. The discussion happens conversationally; a subagent synthesizes the artifact set per round.
 
 Pipeline position: Goals → Questions → Research → Design → **Phasing** → Structure → Plan → Parallelize → Implement → Integrate → Test → Replan. Quick-fix routes skip Phasing entirely.
 
@@ -39,7 +39,7 @@ Do NOT proceed to Structure without user approval of the Phasing artifact set.
 ### Phasing OWNS
 
 - **Vertical-slice authoring** — enumerate end-to-end demonstrable delivery units in `phasing.md` `## Slices`. **Iron Law 1 applies** (see below).
-- **Phase boundaries** — group slices into phases with explicit replan-gate criteria per phase, captured in `phasing.md` `## Phases`. **Iron Law 2 applies** (see below).
+- **Phase boundaries** — group slices into phases with explicit replan-gate criteria per phase, captured in `phasing.md` `## Phases`. **The Phase 1 PoC guideline applies** (see below).
 - **roadmap.md authoring** — canonical phase → slice → goal-ID mapping table. Roadmap is the source of truth for which goals belong to which phase via which slice; downstream skills (Structure, Plan, Replan) read from it.
 - **Current-phase pruning of four synthesizing artifacts** — split goals.md, questions.md, research/summary.md, and design.md into current-phase content (kept in place) and deferred content (moved to `future-goals.md`, `future-questions.md`, `future-research-summary.md`, `future-design.md`). Individual `research/q*.md` files are NOT split — they remain as full-corpus reference so the summary's Q-attribution links continue to resolve.
 - **Future-* artifact maintenance** — `future-goals.md`, `future-questions.md`, `future-research-summary.md`, `future-design.md` are created and updated each Phasing run; consumed by Replan during between-phase transitions.
@@ -60,9 +60,9 @@ Every slice in `phasing.md` `## Slices` must be **end-to-end demonstrable on its
 - BAD: "DB layer, then API layer, then service layer, then frontend"
 - GOOD: "User registration (DB + API + service + frontend), then user profile (DB + API + service + frontend)"
 
-## Iron Law 2 — Phase 1 PoC must prove the full stack end-to-end
+## Phase 1 PoC Guideline — prove the full stack end-to-end when possible
 
-**Phase 1 is always the PoC** and it must prove the full stack works end-to-end across every layer the project touches. A backend-only Phase 1 hides cross-layer issues until Phase 2+, when they are more expensive to surface. If a proposed Phase 1 does not exercise every layer named in design.md, it is not a valid PoC — pull at least one full-stack slice forward into Phase 1.
+**Phase 1 is the PoC**, and it should prove the full stack works end-to-end across every layer the project touches whenever possible. A backend-only Phase 1 tends to hide cross-layer issues until Phase 2+, where they are more expensive to surface — so the default is to pull at least one full-stack slice forward into Phase 1. Departures are fine when there's a real reason (e.g., the frontend depends on a backend contract that genuinely cannot be stubbed for Phase 1, or the project is single-layer by nature). When Phase 1 does not exercise every layer named in design.md, the discussion should name the reason explicitly so reviewers can confirm it's a deliberate choice rather than horizontal layering by accident.
 
 ## Process
 
@@ -71,7 +71,7 @@ Every slice in `phasing.md` `## Slices` must be **end-to-end demonstrable on its
 ### Interactive Phasing Discussion
 
 1. Read `goals.md`, `questions.md`, `research/summary.md`, `design.md` and present a proposed slice decomposition derived from the Design's vertical slices (if any) plus a proposed Phase 1 PoC scope.
-2. Discuss with the user: which slices belong in Phase 1 (must satisfy Iron Law 2), where the replan checkpoints belong, and what gate criteria each phase carries.
+2. Discuss with the user: which slices belong in Phase 1 (should satisfy the Phase 1 PoC guideline when possible; departures need an explicit reason), where the replan checkpoints belong, and what gate criteria each phase carries.
 3. Collect amendment items from the user: any new slices introduced here must receive their own goal IDs in roadmap.md (do not bare-number-compress amendment items into existing goals when the goal text doesn't cover them — see Goals "Amendment handling").
 4. Once the slice set and phase grouping settle, hand off to the synthesis subagent.
 
@@ -118,7 +118,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Phasing-specific
 
 > **IMPORTANT — Compaction recommended.** Reviewers run in parallel and emit findings against the full ten-artifact set. If context utilization may exceed ~50% before this dispatch, run `/compact` first.
 
-- **Claude review subagent** — inputs: `phasing.md`, `roadmap.md`, both pruned + future-* sets for all four artifacts, `goals.md` (pre-prune snapshot if available), `design.md` (pre-prune snapshot if available). Checks: every goal in scope has at least one slice; every slice has at least one phase; **Iron Law 1** holds for every slice (vertical, not horizontal); **Iron Law 2** holds for Phase 1 (full-stack end-to-end); replan-gate criteria are concrete and checkable; the four-artifact pruning procedure was applied (no current-phase content in `future-*.md`, no future content in current artifacts; all 8 pruning files present); goal-ID consistency holds across all nine files (no orphans, or orphans surfaced for user resolution under `## Orphan IDs`); `## Phasing OWNS / Phasing DEFERS` boundary respected (no architecture re-litigation, no file paths, no task specs). Findings written to `reviews/phasing-review.md`.
+- **Claude review subagent** — inputs: `phasing.md`, `roadmap.md`, both pruned + future-* sets for all four artifacts, `goals.md` (pre-prune snapshot if available), `design.md` (pre-prune snapshot if available). Checks: every goal in scope has at least one slice; every slice has at least one phase; **Iron Law 1** holds for every slice (vertical, not horizontal); the **Phase 1 PoC guideline** is honored where possible (full-stack end-to-end), with any departure named in the phasing discussion; replan-gate criteria are concrete and checkable; the four-artifact pruning procedure was applied (no current-phase content in `future-*.md`, no future content in current artifacts; all 8 pruning files present); goal-ID consistency holds across all nine files (no orphans, or orphans surfaced for user resolution under `## Orphan IDs`); `## Phasing OWNS / Phasing DEFERS` boundary respected (no architecture re-litigation, no file paths, no task specs). Findings written to `reviews/phasing-review.md`.
 
 - **scope-reviewer subagent dispatch** — invoke `skills/_shared/templates/scope-reviewer.md` with `{ARTIFACT_TYPE}=phasing`. The dispatched reviewer loads `skills/phasing/SKILL.md` `## Phasing OWNS / Phasing DEFERS` as the locked rule set, runs boundary-drift detection (content matching a DEFERS entry → finding), scope-compliance per OWNS, and the boundary-drift signal (skill-implementation jargon, file-path leakage, task-spec leakage). **Fail-closed on malformed OWNS/DEFERS.** If the `## Phasing OWNS / Phasing DEFERS` section is missing or malformed (e.g., no `### OWNS` subsection, no `### DEFERS` subsection, or the section header is absent), the scope-reviewer MUST emit a finding with `severity: high` and `change_type: correctness` and refuse to proceed (per the scope-reviewer template's malformed-case fail-closed clause — the schema only permits severity ∈ {low, medium, high}). Findings emitted per the 5-field schema in `skills/_shared/reviewer-boilerplate.md` `## Finding Schema`. Append to `reviews/phasing-review.md`.
 
@@ -155,7 +155,7 @@ Recommend compaction: "Phasing approved. This is a good point to compact context
 
 The Phasing skill emits the following artifacts on a successful run:
 
-- `phasing.md` — vertical slice enumeration (with Iron Law 1) and phasing decisions (with Iron Law 2 Phase 1 PoC justification + replan-gate criteria per phase).
+- `phasing.md` — vertical slice enumeration (with Iron Law 1) and phasing decisions (with Phase 1 PoC justification + replan-gate criteria per phase).
 - `roadmap.md` — canonical phase → slice → goal-ID mapping table.
 - Pruned `goals.md` + new/updated `future-goals.md`.
 - Pruned `questions.md` + new/updated `future-questions.md`.
@@ -188,7 +188,7 @@ Vertical, end-to-end demonstrable delivery units. Iron Law 1 applies: each slice
 
 ## Phases
 
-Phase grouping with replan-gate criteria. Iron Law 2 applies: Phase 1 must prove the full stack end-to-end.
+Phase grouping with replan-gate criteria. The Phase 1 PoC guideline applies: Phase 1 should prove the full stack end-to-end whenever possible, with any departure named explicitly.
 
 ### Phase 1: PoC — {name} (slices: {Slice 1, Slice N})
 **Phase 1 PoC justification.** {Claim-before-evidence: which layers are exercised, why this proves the full stack, what cross-layer risk is surfaced.}
@@ -250,7 +250,7 @@ When `roadmap.md` already exists at Phasing entry — i.e., this is not the firs
 ## Red Flags — STOP
 
 - A "slice" is actually a horizontal layer ("database setup", "API scaffolding", "frontend shell") — Iron Law 1 violated.
-- Phase 1 does not exercise every layer named in design.md — Iron Law 2 violated.
+- Phase 1 does not exercise every layer named in design.md AND the phasing discussion does not name an explicit reason — Phase 1 PoC guideline departure without justification.
 - A goal ID appears in `goals.md` but not in `roadmap.md` (or vice versa) and is not surfaced under `## Orphan IDs`.
 - `future-*.md` contains entries for current-phase goal IDs (pruning procedure not applied).
 - Current-phase artifact (`goals.md`, `questions.md`, `research/summary.md`, `design.md`) contains entries for deferred goal IDs (pruning procedure not applied).
@@ -273,12 +273,12 @@ When `roadmap.md` already exists at Phasing entry — i.e., this is not the firs
 | "An orphan ID is fine, the user will notice" | Surface orphans explicitly under `## Orphan IDs`. Silent orphans are fail-closed: the round is invalid until resolved. |
 | "We can emit phasing.md and finish pruning next round" | Atomicity is mandatory: the synthesis subagent MUST emit all 8 pruning files in a single return. Partial returns are fail-closed. |
 
-## Iron Laws — Final Reminder
+## Iron Law and Guidelines — Final Reminder
 
-The two override-critical rules for Phasing, restated at end:
+The override-critical rule plus the strong recommendation for Phasing, restated at end:
 
-1. **Vertical slices, not horizontal layers.** Each slice must be end-to-end demonstrable on its own. "DB layer first, API layer second" defers integration risk and breaks Phase 1 PoC's job of proving the full stack works. Phasing is the natural home of slice authoring.
+1. **Iron Law — Vertical slices, not horizontal layers.** Each slice must be end-to-end demonstrable on its own. "DB layer first, API layer second" defers integration risk and breaks Phase 1 PoC's job of proving the full stack works. Phasing is the natural home of slice authoring.
 
-2. **Phase 1 is always the PoC and must prove the full stack end-to-end.** Backend-only Phase 1 hides cross-layer issues until Phase 2+, when they're more expensive to surface. Phasing owns phase boundaries.
+2. **Phase 1 PoC guideline — prove the full stack end-to-end when possible.** Phase 1 is the PoC; it should exercise every layer the project touches whenever practical. Backend-only Phase 1 tends to hide cross-layer issues until Phase 2+, where they are more expensive to surface — so the default is full-stack. Departures are fine when the phasing discussion names a real reason; the goal is deliberate scoping, not horizontal layering by accident. Phasing owns phase boundaries.
 
 Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
