@@ -6,8 +6,7 @@ _pipeline_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$_pipeline_script_dir/state.sh"
 
 # PIPELINE_ORDER — readonly array of 10 steps in order
-# (M54 inserted phasing between design and structure;
-#  T25 R2 I-N4 inserted parallelize between plan and implement)
+# (phasing sits between design and structure; parallelize sits between plan and implement)
 declare -a PIPELINE_ORDER=(goals questions research design phasing structure plan parallelize implement test)
 declare -r PIPELINE_ORDER
 
@@ -166,7 +165,7 @@ pipeline_cascade_reset() {
     return 1
   fi
 
-  # Determine end index (10 steps total after T25 parallelize insertion)
+  # Determine end index (10 steps total)
   local end_idx=10
   if [[ "$skip_cascade" == "true" ]]; then
     end_idx=$((start_idx + 1))

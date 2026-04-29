@@ -162,7 +162,7 @@ if [[ $is_subagent -eq 1 ]]; then
 
   # Subagent Write/Edit/NotebookEdit target wall
   if [[ "$tool_name" == "Write" || "$tool_name" == "Edit" || "$tool_name" == "NotebookEdit" ]]; then
-    # T25 (R2 S-N5): reject paths containing `..` segments outright. The
+    # Reject paths containing `..` segments outright. The
     # `.worktrees/...` substring regex below is a positive containment check,
     # but a crafted path like
     # `<repo>/.worktrees/x/task-1/../../../../etc/poison` matches the substring
@@ -185,7 +185,7 @@ if [[ $is_subagent -eq 1 ]]; then
     if [[ -n "$detected_targets" ]]; then
       while IFS= read -r tgt; do
         [[ -z "$tgt" ]] && continue
-        # task-43 S-2 + R2 S-N2: __OPAQUE_WRITE__ is the bash-detect sentinel
+        # __OPAQUE_WRITE__ is the bash-detect sentinel
         # for write targets that cannot be statically resolved (inline
         # interpreters like `python -c`, awk-with-redirect, or a
         # cd-before-relative-write where the shell's effective CWD diverges
@@ -197,7 +197,7 @@ if [[ $is_subagent -eq 1 ]]; then
         if [[ "$tgt" == "__OPAQUE_WRITE__" ]]; then
           block "Subagent Bash write target unresolvable (inline interpreter, cd-out, or unparseable redirect): treated as outside-worktree (fail-closed)"
         fi
-        # T25 (R2 S-N5): reject `..` segments before regex containment match.
+        # Reject `..` segments before regex containment match.
         case "$tgt" in
           *"/../"*|*"/.."|"../"*|"..")
             block "Subagent Bash target rejected (path contains '..' segment): $tgt"
@@ -228,7 +228,7 @@ fi
 #
 # Two-tier check:
 #   1. Specific hook-managed files via is_protected_qrspi_target (canonical
-#      single source of truth, T25 R2 S-N1).
+#      single source of truth).
 #   2. The broader artifact-dir `.qrspi/` directory regex (existing behaviour
 #      retained as defense-in-depth — covers any future file added under
 #      `docs/qrspi/<slug>/.qrspi/`).

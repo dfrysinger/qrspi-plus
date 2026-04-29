@@ -137,10 +137,10 @@ artifact_sync_state() {
 # artifact_snapshot_phase <artifact_dir> <phase_number>
 # Creates a read-only snapshot of the current phase's artifacts.
 # Copies core artifacts (including Phasing-owned phasing.md, roadmap.md, and
-# the four future-*.md artifacts per M54) and task files; excludes reviews/,
+# the four future-*.md artifacts) and task files; excludes reviews/,
 # fixes/, feedback/, phases/, config.md, .qrspi/.
-# Phasing-owned artifacts (added 2026-04-28 per task-26 / R2 I-N1):
-#   - phasing.md, roadmap.md (Phasing OWNS — see skills/phasing/SKILL.md:39-42)
+# Phasing-owned artifacts:
+#   - phasing.md, roadmap.md (Phasing OWNS — see skills/phasing/SKILL.md)
 #   - future-goals.md, future-questions.md, future-research-summary.md,
 #     future-design.md (Phasing OWNS — pruning artifacts)
 # Returns 0 on success, 1 if artifact_dir doesn't exist or copy fails.
@@ -160,7 +160,7 @@ artifact_snapshot_phase() {
 
   # Copy core artifact files if they exist.
   # Includes Phasing-owned artifacts (phasing.md, roadmap.md, future-*.md)
-  # per M54 — see skills/phasing/SKILL.md "Phasing OWNS / Phasing DEFERS".
+  # — see skills/phasing/SKILL.md "Phasing OWNS / Phasing DEFERS".
   local core_files=(
     "goals.md"
     "questions.md"

@@ -1,6 +1,6 @@
 # Spec Reviewer Template (Plan)
 
-**Purpose:** Verify the plan covers every goal — and authors the acceptance criteria for those goals as per-task test expectations and (where appropriate) a per-phase acceptance block — nothing missing, nothing extra, no misinterpretations. Per T9's strip-from-goals contract, `plan.md` is the home for acceptance criteria (per-task `## Test Expectations` blocks plus an optional per-phase acceptance block in the overview); `goals.md` states problems and what is known but does NOT itself author criteria.
+**Purpose:** Verify the plan covers every goal — and authors the acceptance criteria for those goals as per-task test expectations and (where appropriate) a per-phase acceptance block — nothing missing, nothing extra, no misinterpretations. Per the strip-from-goals contract, `plan.md` is the home for acceptance criteria (per-task `## Test Expectations` blocks plus an optional per-phase acceptance block in the overview); `goals.md` states problems and what is known but does NOT itself author criteria.
 **Runs:** Always (quick + full pipeline).
 
 ## Template
@@ -38,7 +38,7 @@ section references where you confirmed or found a problem.
 
 ### 1. Completeness — Does the plan cover every goal, and does it author acceptance criteria for those goals?
 - Read every goal in goals.md one by one (problem framing, intent, constraints).
-  Per T9's strip-from-goals contract, goals.md does NOT author acceptance
+  Per the strip-from-goals contract, goals.md does NOT author acceptance
   criteria; plan.md does (per-task `## Test Expectations` blocks plus an
   optional per-phase acceptance block in the overview).
 - For each goal, identify which task(s) carry test expectations that, taken
@@ -69,8 +69,8 @@ section references where you confirmed or found a problem.
 ### 4. Test Coverage Mapping — Are goals covered by plan-authored test expectations?
 - For each goal in goals.md (problem framing), find the plan-level test
   expectation(s) — in a task spec's `## Test Expectations` block or in the
-  per-phase acceptance block — that would verify the goal is met. Per T9,
-  plan.md is the criterion-authoring source; goals.md is the upstream
+  per-phase acceptance block — that would verify the goal is met. Per the
+  strip-from-goals contract, plan.md is the criterion-authoring source; goals.md is the upstream
   problem-framing anchor.
 - Verify test expectations are specific behaviors, not vague ("works correctly"
   is not a test expectation)

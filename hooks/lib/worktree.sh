@@ -32,7 +32,7 @@ worktree_extract_task_id() {
 worktree_extract_slug() {
   local path="$1"
 
-  # T25 (R2 S-N5) — reject paths containing `..` segments outright. The
+  # Reject paths containing `..` segments outright. The
   # subagent-wall regex below is a substring match, so a crafted path like
   # `/tmp/.worktrees/x/task-1/../../../../etc/poison` would match the
   # `.worktrees/x/task-1/` substring and bypass containment even though shell

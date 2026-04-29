@@ -268,10 +268,10 @@ extract_rule_block() {
   echo "$block" | grep -qw "intent"
 }
 
-@test "## Change-Type Classifier includes M44 capture-corpus future-hook placeholder note (out-of-scope this run)" {
+@test "## Change-Type Classifier includes capture-corpus future-hook placeholder note (out-of-scope this run)" {
   local section
   section="$(extract_section "$BOILERPLATE_FILE" "## Change-Type Classifier")"
-  echo "$section" | grep -q "M44"
+  echo "$section" | grep -q "capture-corpus"
 }
 
 # Constraint 2: positive AND negative examples for each of the five change_type values.

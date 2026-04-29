@@ -8,7 +8,7 @@ source "$_state_script_dir/frontmatter.sh"
 source "$_state_script_dir/artifact-map.sh"
 
 # ---------------------------------------------------------------------------
-# T24 — current_step allowlist
+# current_step allowlist
 #
 # Allowlist = the 9 file-backed pipeline steps emitted by the hook layer
 # (goals, questions, research, design, phasing, structure, plan, implement,
@@ -31,7 +31,7 @@ _state_current_step_is_allowed() {
 }
 
 # ---------------------------------------------------------------------------
-# T24 — file lock for state_write_atomic (R2 S-N4)
+# File lock for state_write_atomic
 #
 # Rationale: serializes the read-modify-write critical section against
 # concurrent callers (Plan's narrow direct write vs PostToolUse hook
@@ -87,7 +87,7 @@ _state_lock_release() {
 
 # ---- flock implementation (primary) ----
 #
-# Symlink-clobber defense (T24 R2 sec finding 1, R3 sec finding 1):
+# Symlink-clobber defense:
 # An attacker with write access to `.qrspi/` could pre-place
 # `.qrspi/state.json.lock` as a symlink to an attacker-chosen writable
 # target (e.g., ~/.ssh/authorized_keys). With `> "$lock_file"` (truncate),
@@ -172,7 +172,7 @@ _state_lock_acquire_mkdir() {
     # Round-3 simplifier review noted that wallclock-based stale reclaim
     # weakens correctness: a live holder paused/slow past the wallclock
     # threshold gets evicted, which exactly recreates the lost-update
-    # class T24 prevents. PID liveness is correct (the holder either
+    # class the lock prevents. PID liveness is correct (the holder either
     # exists or doesn't); we drop the wallclock heuristic entirely.
     # If owner.pid is unreadable, we wait out the holder rather than
     # reclaiming (silent-failure round-2 finding 4).
@@ -220,8 +220,7 @@ _state_lock_release_mkdir() {
 # Returns 1 if artifact_dir does not exist.
 #
 # Single source of truth for the "first non-approved step" computation.
-# state_init_or_reconcile delegates here (FU-1 refactor 2026-04-28; T25 added
-# parallelize as the 8th file-backed step).
+# state_init_or_reconcile delegates here. Parallelize is the 8th file-backed step.
 state_compute_current_step() {
   local artifact_dir="$1"
   [[ -d "$artifact_dir" ]] || return 1
@@ -252,17 +251,16 @@ state_compute_current_step() {
 # Scans artifact files in the given directory, reads their frontmatter status,
 # and creates/updates .qrspi/state.json in the current working directory.
 #
-# T24 update (R2 I-N3): preserves an existing non-null phase_start_commit
-# rather than wiping it on every call. Plan's narrow-direct-write must
-# survive subsequent reconciliation.
+# Preserves an existing non-null phase_start_commit rather than wiping it on
+# every call. Plan's narrow-direct-write must survive subsequent reconciliation.
 state_init_or_reconcile() {
   local artifact_dir="$1"
 
   # Check if artifact_dir exists
   [[ -d "$artifact_dir" ]] || return 1
 
-  # Determine statuses for all 10 artifacts (M54 added phasing between design and structure;
-  # T25 R2 I-N4 added parallelize between plan and implement)
+  # Determine statuses for all 10 artifacts (phasing sits between design and structure;
+  # parallelize sits between plan and implement)
   local goals_status="draft"
   local questions_status="draft"
   local research_status="draft"
@@ -301,7 +299,7 @@ state_init_or_reconcile() {
     return 1
   fi
 
-  # T24-A4: defense-in-depth — validate delegated helper return value before
+  # Defense-in-depth — validate delegated helper return value before
   # serialization. If state_compute_current_step is shadowed/mutated to
   # return a value outside the allowlist, fail closed.
   if ! _state_current_step_is_allowed "$current_step"; then
@@ -313,7 +311,7 @@ state_init_or_reconcile() {
   local abs_artifact_dir
   abs_artifact_dir="$(cd "$artifact_dir" && pwd)"
 
-  # T24 round-2 spec finding: phase_start_commit read AND the rebuild+write
+  # phase_start_commit read AND the rebuild+write
   # MUST happen under the same lock as state_update, otherwise a
   # state_update writer can commit a newer phase_start_commit between our
   # read and our write, and we will overwrite it with a stale value.
@@ -356,7 +354,7 @@ state_init_or_reconcile() {
   fi
 
   # Create the state JSON (compact format).
-  # T24-B: phase_start_commit is conditionally preserved. We pass either
+  # phase_start_commit is conditionally preserved. We pass either
   # null (when no prior value) or the carried-forward string via an
   # explicit jq filter that converts "" sentinel to null.
   local json
@@ -534,7 +532,7 @@ state_update() {
 
 # _state_write_inline_locked <json>
 # Internal helper. Caller MUST already hold the state lock. Validates
-# current_step against the allowlist (T24-A) using jq for parse-correctness
+# current_step against the allowlist using jq for parse-correctness
 # (no raw substring pre-filter — round-2 silent-failure-hunter and
 # security-reviewer both flagged unicode-escape bypass `current_step`),
 # then writes the JSON via temp file + atomic mv.
@@ -608,12 +606,12 @@ state_read() {
 # Writes JSON to .qrspi/state.json via temp file + mv for atomicity.
 # Creates .qrspi/ directory if needed.
 #
-# T24 hardening:
-#   - R1 Codex-S3 allowlist: validates current_step (when present in payload)
+# Hardening:
+#   - Allowlist: validates current_step (when present in payload)
 #     against the 12-value documented enum. Out-of-allowlist values are
 #     rejected fail-closed (non-zero exit, no write). Validation uses jq
 #     parsing (not raw substring) to defeat unicode-escape bypass.
-#   - R2 S-N4 TOCTOU: serializes the critical section via a portable file
+#   - TOCTOU: serializes the critical section via a portable file
 #     lock in .qrspi/state.json.lock (flock when available, mkdir-mutex
 #     fallback). Lock acquired before write, released on every exit path
 #     (no traps — explicit release at each return point).

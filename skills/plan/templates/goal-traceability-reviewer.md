@@ -1,6 +1,6 @@
 # Goal Traceability Reviewer Template (Plan)
 
-**Purpose:** Verify bidirectional traceability between goals (problem framing in `goals.md`) and plan tasks — every goal traces forward to plan-authored test expectations that constitute its acceptance criteria, and every task traces back to a goal or research finding. Per T9's strip-from-goals contract, `plan.md` (per-task `## Test Expectations` plus an optional per-phase acceptance block) authors acceptance criteria; `goals.md` does not.
+**Purpose:** Verify bidirectional traceability between goals (problem framing in `goals.md`) and plan tasks — every goal traces forward to plan-authored test expectations that constitute its acceptance criteria, and every task traces back to a goal or research finding. Per the strip-from-goals contract, `plan.md` (per-task `## Test Expectations` plus an optional per-phase acceptance block) authors acceptance criteria; `goals.md` does not.
 **Runs:** Always (quick + full pipeline).
 
 ## Template
@@ -15,7 +15,7 @@ block — and that every task traces back to at least one goal or research
 finding. You also verify that the design's intent (full pipeline only) is
 faithfully reflected in the task structure.
 
-Per T9's strip-from-goals contract, `plan.md` is the home for acceptance
+Per the strip-from-goals contract, `plan.md` is the home for acceptance
 criteria (per-task test expectations + per-phase acceptance block); `goals.md`
 states problems and what is known but does NOT itself author criteria. Use
 `goals.md` as the upstream problem-framing anchor and `plan.md` as the
@@ -47,7 +47,7 @@ criterion-authoring source when building the traceability matrix.
 For every goal in goals.md (problem framing), identify which task(s) implement
 it AND which plan-level test expectation(s) — in those tasks' `## Test
 Expectations` blocks or in plan.md's per-phase acceptance block — constitute
-the acceptance criteria for that goal. Per T9, plan.md authors the criteria;
+the acceptance criteria for that goal. Per the strip-from-goals contract, plan.md authors the criteria;
 goals.md provides the upstream problem-framing only.
 
 Build a traceability matrix:
@@ -66,7 +66,7 @@ For every task in the plan, identify which goal or research finding justifies it
 
 For each task, answer: "Why does this task exist?" The answer must trace to:
 - A specific goal in goals.md (problem framing) — note that acceptance
-  criteria themselves live in plan.md per T9, but each task must trace to a
+  criteria themselves live in plan.md, but each task must trace to a
   goal that motivates it, OR
 - A specific finding in research/summary.md that necessitates this task
 
@@ -82,7 +82,7 @@ stated approach against the plan-authored test expectations:
 - Are there research findings the design incorporates that no task reflects?
 
 Flag any goal that design.md promises to address but plan.md omits (no task
-or no plan-authored test expectation covers it). Per T9, plan.md is the
+or no plan-authored test expectation covers it). plan.md is the
 acceptance-criteria authoring source — gaps must be evaluated against
 plan.md's test expectations, not against goals.md.
 
@@ -96,7 +96,7 @@ Compare the plan's task structure against design.md's vertical slices and phases
 Flag any mismatch between what the design specified and what the plan delivers.
 
 ### 5. Decomposition Check
-For each goal, verify that every amendment item mapped to it (from the design.md Amendments section) is decomposable from the goal's problem text. Flag goals that have amendment items whose work is not described by the goal's problem framing in goals.md (note: per T9, goals.md carries problem statements, not acceptance criteria — the decomposition check applies to the goal's problem text, and any acceptance-criterion content the amendment introduces should land in plan.md, not goals.md).
+For each goal, verify that every amendment item mapped to it (from the design.md Amendments section) is decomposable from the goal's problem text. Flag goals that have amendment items whose work is not described by the goal's problem framing in goals.md (note: goals.md carries problem statements, not acceptance criteria — the decomposition check applies to the goal's problem text, and any acceptance-criterion content the amendment introduces should land in plan.md, not goals.md).
 
 ## Report Format
 

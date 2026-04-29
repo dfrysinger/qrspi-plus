@@ -3,12 +3,12 @@ set -euo pipefail
 
 # is_protected_path <target_path> <is_worktree>
 #
-# Legacy API (pre-T25): used by worktree-subagent enforcement to block writes
+# Legacy API: used by worktree-subagent enforcement to block writes
 # to pipeline-infrastructure files. Returns 0 if blocked, 1 if allowed. The
 # is_worktree gate (0=in-worktree, non-zero=outside) means main session bypasses.
 #
 # Kept for backward compat with test-worktree.bats. Prefer
-# is_protected_qrspi_target() (T25) as the canonical check; it operates on
+# is_protected_qrspi_target() as the canonical check; it operates on
 # fully-qualified target paths (relative or absolute) and is gate-agnostic so
 # pre-tool-use can call it for both main chat and subagents.
 is_protected_path() {
@@ -50,7 +50,7 @@ is_protected_path() {
 
 # is_protected_qrspi_target <target_path>
 #
-# Canonical T25 (R2 S-N1) hook-managed-write protection. Returns 0 if the path
+# Canonical hook-managed-write protection. Returns 0 if the path
 # is a hook-managed file under any `.qrspi/` directory (repo-root or
 # artifact-dir or any intermediate parent). Returns 1 otherwise.
 #
