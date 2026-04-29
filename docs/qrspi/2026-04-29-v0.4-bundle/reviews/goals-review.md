@@ -95,3 +95,7 @@ Applied to goals.md:
 1. G2 Note for Design rewritten to align with issue #51's fix-path (a) semantics (flatten = (a) = Candidate B).
 2. G10 in-session-validation bullet removed from Cross-Cutting Notes (redundant with the four-hypotheses bullet and G10's own "What we know so far").
 
+## Backward-loop addition (post-approval) — 2026-04-29
+
+User-directed lightweight addition during Research stage: G13 added (researchers should write their own per-question reports directly). Triggered by an empirical observation in this run's Research dispatch — text-return pattern was over-applied to the per-question files (over and above the `summary.md`-only requirement), routing ~200KB of output through main chat and slowing the run noticeably. User explicitly framed it as "just a quick prompt/process update" — handled via the lightweight prompt/prose path: edit goals.md, no new question/research, defer the SKILL.md edit to Design's per-goal scoping. Goals frontmatter remains `status: approved` per the user's in-session approval of the addition.
+

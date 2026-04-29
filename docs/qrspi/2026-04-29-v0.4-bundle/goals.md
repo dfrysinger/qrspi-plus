@@ -265,6 +265,26 @@ This is the existing-corpus companion to G9 (G9 builds the new infrastructure; G
 - Candidate C — Design should weigh: leave as-is — accept brittle tests as legacy noise; prompt edits in this run break what they break.
 - Candidate D — Design should weigh: hybrid — delete the most brittle (exact-string) tests, keep coarser structural ones.
 
+### G13 — Researcher subagents write their own per-question reports directly
+
+- **type:** `known-fix`
+
+#### Problem
+
+The Research SKILL prescribes per-question researcher subagents writing their own `research/q*.md` files directly to disk; only the synthesis subagent uses the text-return-then-orchestrator-writes pattern (because of the CC 2.1.x guardrail blocking subagent writes to filenames matching `^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$`). In practice during this run's Research stage, the text-return pattern was over-applied to the per-question files as well — likely as a defensive fallback against the F-8 binary subagent worktree wall — and routed ~200KB of research output back through main chat that then had to re-emit each file via the Write tool. The user observed this on 2026-04-29 ("very slow and context heavy") and asked to revert.
+
+#### Why we care
+
+Research is the highest fan-out subagent stage in QRSPI (typically 10–20 parallel researchers). Text-return compounds cost at the worst time: just before the synthesis subagent needs a clean context to compress everything into `summary.md`, and just before the cross-skill transition to Design. Direct writes by per-question researchers reduce token burn, wall time, and compression-cascade quality loss on every full-pipeline run that does Research.
+
+#### What we know so far
+
+The Research SKILL already prescribes direct writes for `research/q*.md` files; the issue is at the per-researcher dispatch-prompt level (defensive over-fencing) and in operator habits formed around the F-8 subagent wall. The fix is small.
+
+- Candidate A — Design should weigh: tighten per-researcher dispatch language in `skills/research/SKILL.md` (and any explicit fan-out subagent dispatch templates) to make the direct-write path the unambiguous default; reserve text-return for `summary.md` only and call out the CC 2.1.x guardrail as the sole reason that file is special.
+- Candidate B — Design should weigh: audit any other fan-out subagent stages where the same defensive over-fencing might have crept in (e.g., per-task implementer batch reporting). Out of scope unless an audit reveals systemic drift.
+- Candidate C — Design should weigh: how to interact with G7's sandbox-replaces-hooks outcome — if the F-8 binary wall is replaced by per-tool-grant sandboxing, the defensive fallback rationale weakens further and direct-writes become the obvious default everywhere.
+
 ## Cross-Cutting Notes
 
 - **Four hypotheses validated in-session before codification.** This run treats four claims as live hypotheses, tested against actual evidence rather than baked-in commitments: (i) G7 — the native Claude Code sandbox may cover all hook enforcement (Bash plus Edit/Write), not just Bash; (ii) G6 — `state.sh`'s complexity may not be justified, with deletion as the maximum landing; (iii) G10 — researcher subagents emitting their own summary blocks may produce better Design inputs than main-chat compression; (iv) G1 — the 3-level Implement hierarchy may collapse to 2-level via fix-path (a). Each hypothesis's outcome shapes its goal's solution space; Replan or in-flight amendments propagate the outcome to dependent goals.
