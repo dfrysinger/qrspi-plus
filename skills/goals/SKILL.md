@@ -55,8 +55,6 @@ If neither value fits cleanly, default to `exploratory` and flag the ambiguity i
 
 **Required inputs:** None (this is the first step)
 
-**State bootstrap:** If `.qrspi/state.json` does not exist or `state_read` returns non-zero, call `state_init_or_reconcile <artifact_dir>`.
-
 **Before starting:**
 1. Create the artifact directory: `docs/qrspi/YYYY-MM-DD-{slug}/` (relative to the project root, not the plugin directory)
    - **Slug generation:** Take the user's first description of what they want to build, extract 2-4 key words, convert to lowercase kebab-case. Examples: "I want to add user authentication" → `user-auth`, "Build a search API for products" → `product-search-api`. If ambiguous, ask the user to confirm.
@@ -90,8 +88,6 @@ Goals is invoked in three distinct contexts:
 3. Run a focused Interactive Dialogue against the auto-populated draft: confirm the promoted goals (Replan-populated from `roadmap.md` + `future-goals.md`) match the user's expectation for this next phase, capture any phase-specific constraints discovered during the prior phase (the Replan feedback file at `feedback/replan-phase-NN-round-MM.md` is one input; ask the user whether they want anything in addition).
 4. Re-synthesize `goals.md` (subagent) with the auto-populated content + any new constraints. Preserve goal IDs from `roadmap.md` so downstream artifact references remain valid.
 5. Run the standard Review Round + Human Gate; on approval, write `status: approved` and let the standard pipeline cascade (Questions → Research → ... → Parallelize → Implement).
-
-**State reconciliation on next-phase restart.** Replan calls `state_init_or_reconcile <artifact_dir>` before invoking Goals, so Goals does not call it again on next-phase restart. The fresh-run bootstrap above still applies when state is genuinely missing.
 
 <HARD-GATE>
 Do NOT synthesize goals.md until the pipeline mode is selected and config.md is written.

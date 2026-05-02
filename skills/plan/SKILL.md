@@ -167,6 +167,7 @@ The output template below embeds **information-mapping patterns** directly: clai
 ```markdown
 ---
 status: draft
+phase_start_commit: null
 ---
 
 # Implementation Plan
@@ -278,9 +279,8 @@ goal_ids: [G1, G2]   # QRSPI-internal traceability metadata — see ID-Hygiene C
 # Optional: justify a legitimate bundle (multi-handler or >200 LOC).
 # Reason must be one of: schema migration, CI scaffolding, reusable primitives.
 # sizing_exception: <one-line reason>
-# (Per-task enforcement fields removed in 2026-04-26 implement-runtime-fix.
-#  Target files are aspirational; deviation discipline lives in the per-task
-#  spec reviewer, not the hook.)
+# (Target files are aspirational; deviation discipline lives in the per-task
+#  spec reviewer.)
 ---
 
 # Task NN: {name}
@@ -317,23 +317,13 @@ Fix tasks are stored in `fixes/{type}-round-NN/` and follow the same format as r
 - `plan.md` — complete plan with overview + all task specs (review artifact), overview-only after approval
 - `tasks/task-NN.md` — individual task specs split out after approval (implementation artifacts)
 
-### `.qrspi/` Directory
+### `phase_start_commit` capture at approval time
 
-The artifact directory contains a `.qrspi/` subdirectory managed by hooks (not by this skill):
+At plan.md approval time, capture the current HEAD SHA into plan.md frontmatter's `phase_start_commit:` field. This is the diff anchor Replan and Test use to scope post-phase changes.
 
-- `state.json` — pipeline state cache (current step, approved artifacts, `phase_start_commit`)
-- `task-NN-runtime.json` — per-task runtime overrides: user mid-task decisions like approved extra files and enforcement mode switches (written by hooks during implementation)
-- `audit-task-NN.jsonl` — per-task audit logs (written by hooks during implementation)
+**Implementation:** when the user approves plan.md, run `git -C <artifact_dir> rev-parse HEAD` (or the closest enclosing git repo if the artifact dir isn't itself a repo). Write the SHA into the frontmatter alongside `status: approved`, then commit per the standard "commit after approval" rule. If the artifact dir is not in a git repo, leave `phase_start_commit: null` — Replan and Test fall back to whole-codebase scope.
 
-**This directory is created and managed by hooks.** The Plan skill does not need to create, update, or read files in `.qrspi/`.
-
-**State management is deterministic and skill-bootstrapped + hook-driven:**
-- The SessionStart hook is **read-only** with respect to state — it injects `using-qrspi/SKILL.md` into the session as `additionalContext` and does NOT initialize `state.json`, reconcile artifact frontmatter, or touch any file under `.qrspi/`. The canonical contract lives in the header of `hooks/session-start`; see also `using-qrspi/SKILL.md` → "Hook-Managed State (`.qrspi/`)".
-- State bootstrap is **skill-driven**: the Goals skill calls `state_init_or_reconcile` on first invocation when `state.json` is missing or unreadable.
-- The PostToolUse hook syncs `state.json` automatically thereafter whenever artifact frontmatter changes (e.g., when `status: approved` is written).
-- Skills do NOT need to update `state.json` when artifacts are approved — the PostToolUse hook handles this.
-
-**Exception — `phase_start_commit`:** The Plan skill writes `phase_start_commit` directly to `state.json` when `plan.md` is approved. This records the current HEAD hash as the diff boundary for post-integration reviews. Plan is one of three narrow exceptions to hook-driven state writes (Goals bootstrap, Plan `phase_start_commit`, Replan pre-emptive reconciliation on next-phase restart) — see `using-qrspi/SKILL.md` → "Hook-Managed State (`.qrspi/`)" for the canonical list. All other state updates are hook-driven.
+**Verification fallback (debug only):** if the frontmatter value is missing or suspect, the SHA can be derived from `git -C <repo> log -1 --format=%H -- <artifact_dir>/plan.md`. This is the non-git fallback path for runs where the frontmatter wasn't populated; the frontmatter is the primary store.
 
 ### Terminal State
 
@@ -417,14 +407,12 @@ The bad example has TBD files, no dependencies (but clearly needs the Redis clie
 
 ## Iron Laws — Final Reminder
 
-The four override-critical rules for Plan, restated at end:
+The three override-critical rules for Plan, restated at end:
 
 1. **No plan.md without all required artifacts approved.** Full pipeline: goals + research + design + structure. Quick fix: goals + research. Plan refuses to run otherwise.
 
 2. **No placeholders in task specs.** No "TBD", "TODO", "implement later", "similar to Task N", "add appropriate handling." Every task spec must be self-contained — an implementation agent reading only that task must have everything it needs.
 
 3. **One task = one observable behavior, ~100-LOC target / ≤200 LOC ceiling.** Split before approving any task that exceeds the policy ceiling unless the task documents a `sizing_exception` (post-split frontmatter) or **Sizing exception** bullet (in-plan) naming one of the closed exception set: schema migration, CI scaffolding, reusable primitives. Multi-feature task titles (`+` joining feature names, two distinct verbs joined by `and`) are the canary — they almost always mean multiple request handlers bundled into one task. SWE-Bench Pro reports ~23% frontier-model success at the 107-LOC median patch size; OpenAI AGENTS.md guidance targets ~100 lines; our 200-LOC ceiling sits at the lower bound of Cisco/SmartBear's code-review sweet spot with margin for QRSPI's enhanced scaffolding. See "Task Sizing" earlier in this skill for full rules including the floor.
-
-4. **`phase_start_commit` write is the only direct state.json write Plan performs.** Done when `plan.md` is approved. All other state updates are hook-driven — see `using-qrspi/SKILL.md` → "Hook-Managed State."
 
 Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

@@ -19,13 +19,13 @@ Post-merge cross-task review. Verifies tasks work together, checks cross-task se
 ONCE PER PHASE — NOT ONCE PER TASK
 ```
 
-Integrate fires only after Implement's batch gate releases. The canonical contract for the loop, batch-gate definition (including all release conditions: clean / accepted-with-issues / skipped-by-user), and the `current_step` transition mechanism lives in `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop". This skill does not restate that contract; consult Implement if any question arises about *when* Integrate is allowed to start.
+Integrate fires only after Implement's batch gate releases. The canonical contract for the loop and the batch-gate definition (including all release conditions: clean / accepted-with-issues / skipped-by-user) lives in `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop". This skill does not restate that contract; consult Implement if any question arises about *when* Integrate is allowed to start.
 
 If you find yourself reaching for Integrate after a single task finishes, stop. Per-task correctness is the responsibility of the reviewers the per-task flow already ran (see `implement/SKILL.md` § Per-Task Execution). Cross-task and cross-cutting verification is what Integrate adds — and that signal is meaningless until every task in the phase is on the table.
 
 Common misreads to avoid:
 - "T01 just finished clean, let's Integrate it now" — no. Implement (main chat) fires the next task's implementer subagent.
-- "`state.json` shows `current_step: implement` and the active task is done" — see `implement/SKILL.md` → "State Transition Contract" under "Implement Is the Per-Phase Orchestration Loop".
+- "A per-task subagent just returned, so it must be time for Integrate" — no, that's normal mid-batch state. The batch is done only when every task in `parallelization.md` has cleared its review/fix cycles and Implement's batch gate releases. See `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop".
 - "I'll integrate every couple of tasks to keep things tidy" — no. The CI gate, security review, and cross-task review are designed for one comprehensive pass per phase.
 
 ## Iron Law

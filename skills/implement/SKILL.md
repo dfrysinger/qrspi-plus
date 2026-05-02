@@ -61,16 +61,11 @@ The "current batch" is mode-specific:
 
 **Why:** without the (a)/(b)/(c) gate, the model rationalizes "this one task is done, just integrate it" and per-task integration breaks the cross-task review's premise. Implement does not advance to Integrate (or Test) task-by-task.
 
-### State Transition Contract
+### Batch Progression
 
-Skills do not write `state.json` directly — the hook layer owns it. State lives only in the artifact dir's `.qrspi/state.json`. Worktrees do not contain `.qrspi/` directories. See `using-qrspi/SKILL.md` § Hook-Managed State.
+Implement's progression through the batch is governed entirely by the batch gate (see § Batch Gate Definition above). While the batch is open, Implement keeps firing per-task subagents and routing their results through the review/fix cycle. Only when the batch gate releases does Implement invoke the next step in `config.md.route` — typically `integrate` in full pipeline, `test` in quick fix.
 
-Behavior contract Implement relies on:
-
-- While Implement is mid-batch: `state.json` `current_step` stays at `implement`. There is no `active_task` field in the new schema — to verify mid-batch state, cross-check the full batch task set per the next bullet.
-- After the batch gate releases and Implement invokes the next route step: `current_step` advances to whichever step is next in `config.md` route (typically `integrate` in full pipeline, `test` in quick fix).
-
-Readers verifying `current_step` mid-batch should cross-check the in-flight task set against `parallelization.md` (full) or against the task set for the in-flight quick-fix dispatch event — every originally-requested `tasks/*.md`, every `fixes/{type}-round-NN/*.md`, or the singleton `{tasks/task-00*.md}` for an in-flight isolated baseline-fix dispatch event (see § Batch Gate Definition for the two quick-fix main-dispatch shapes plus the isolated baseline-fix dispatch event). If a hook does not yet realize a transition asserted above, file a hook bug; do not work around it by writing state directly.
+To verify mid-batch state, cross-check the in-flight task set against `parallelization.md` (full pipeline) or against the task set for the in-flight quick-fix dispatch event — every originally-requested `tasks/*.md`, every `fixes/{type}-round-NN/*.md`, or the singleton `{tasks/task-00*.md}` for an in-flight isolated baseline-fix dispatch event (see § Batch Gate Definition for the two quick-fix main-dispatch shapes plus the isolated baseline-fix dispatch event).
 
 ## Artifact Gating
 
@@ -149,11 +144,11 @@ In full pipeline mode, Implement consumes the symbolic Branch Map from `parallel
 
 In quick fix mode, there is no Branch Map. Each task forks directly from the feature branch tip into its own worktree. The re-fork prohibition still applies (a fix-round on the same task reuses its existing branch).
 
-## Subagent Permissions (Hook-Governed)
+## Subagent Permissions
 
-Subagent containment is enforced by the QRSPI `pre-tool-use` hook (target-based asymmetric model — see `using-qrspi/SKILL.md` § How worktree enforcement works). The hook blocks any subagent Write/Edit/Bash whose target falls outside `.worktrees/{slug}/(task-NN[a-z]?|baseline)/` (the `[a-z]?` allows Plan-induced task splits like `task-07a`/`task-07b` — F-19). No per-worktree `.claude/settings.json` file is required.
+Subagent containment is the runtime sandbox's responsibility (auto-mode plus Claude's judgment); there is no in-pipeline worktree wall. Subagents should be dispatched with the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt and treat that path as their working scope. The `[a-z]?` suffix in the worktree pattern allows Plan-induced task splits like `task-07a`/`task-07b` (F-19).
 
-**Recommended:** run sessions with `--dangerously-skip-permissions` enabled — the hook is the security wall, so per-tool approval prompts are no longer needed and would only stall subagents.
+**Recommended:** run sessions with `--dangerously-skip-permissions` enabled so per-tool approval prompts do not stall subagents.
 
 ## Process Steps
 
@@ -578,7 +573,6 @@ Quick-fix run with one task at `tasks/task-01.md`:
 - Proceeding after BLOCKED status from an implementer or fix subagent without changing approach.
 - Dispatching a task whose dependencies haven't completed (or whose stage commit hasn't been created yet, full pipeline).
 - Using a single TodoWrite task for all dispatches — create one task per wave (full) or per per-task dispatch (quick) so the user can track progress.
-- Adding per-worktree `.claude/settings.json` files or per-worktree allow rules (the hook now governs subagent permissions; per-worktree settings are obsolete).
 - Re-forking an existing task branch (re-runs reuse the existing branch and add commits — re-fork only at fresh worktree creation, replan-introduced tasks, or explicit user-requested reset).
 - Advancing to the next route step before every task is in one of the three terminal states defined in "Batch Gate Definition (Release Conditions)".
 
@@ -592,7 +586,6 @@ Quick-fix run with one task at `tasks/task-01.md`:
 | "Quick fix has only one task — skip baseline" | Baseline failures masquerade as task failures; baseline runs in both modes. |
 | "I can resolve `stage-after-G1` to a hash and write it back into `parallelization.md`" | The symbolic name is the contract; appending a hash drifts the artifact away from its approved form. Resolve in-memory. |
 | "Just integrate this task now while the others run — it'll save time" | No. Integrate runs once per phase, after the batch gate releases. Per-task integration breaks the cross-task review's premise. |
-| "I'll write `state.json` `current_step = integrate` myself when the batch is done" | Skills never write state directly. The hook layer does. If a transition is missing, file a hook bug; do not work around it in this skill. |
 | "The implementer's self-review was clean — skip the reviewer dispatch" | No. Self-review catches obvious issues before review; it does not substitute for the formal reviewer dispatch. Role separation is the design intent. |
 
 ## Iron Rules — Final Reminder
