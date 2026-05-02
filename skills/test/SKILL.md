@@ -124,14 +124,15 @@ The test-writer chooses the appropriate type(s) per acceptance criterion. A sing
    - **Accept/Approve:** Proceed to phase routing
    - **Stop:** Halt pipeline
 
-6a. **Update goals.md checkboxes** (runs only when user chooses "Approve" — not during fix-task dispatch):
+6a. **Update plan.md acceptance-criterion checkboxes** (runs only when user chooses "Approve" — not during fix-task dispatch):
    - For each criterion in the coverage table where Status=Written and ALL mapped tests passed:
-     - Find the matching line in `goals.md`
+     - Find the matching line in `plan.md` (per-task `## Test Expectations` block or the per-phase acceptance block — `plan.md` is the criterion-authoring source per the strip-from-goals contract)
      - Change `- [ ]` to `- [x]`
      - Match by: (1) bold criterion ID (e.g., `**M24`), or (2) exact criterion text substring
    - Do NOT modify criteria with any failing mapped tests
    - Do NOT modify criteria marked as gaps
-   - Display summary: "Updated N/M criteria checkboxes in goals.md"
+   - Do NOT modify `goals.md` — it carries problem framing only and does not author acceptance criteria
+   - Display summary: "Updated N/M criteria checkboxes in plan.md"
 
 ## Test Fix Loop
 
@@ -153,7 +154,7 @@ Present per-failure classification to user. User can override any classification
 2. **Full pipeline mode:** Quick fix tasks route to Implement → Test. Full pipeline tasks route through Implement → Integrate → Test. (Parallelize is not invoked for fix-task batches — Implement appends new branch entries to `parallelization.md` per its Fix Task Routing rules.)
 3. After fixes return, re-run acceptance tests. If still failing, present to user again. No cycle counting — user is in the loop each time.
 
-**Fix routing note:** The Test orchestrator controls fix task routing — it dispatches Implement as a subagent (the per-task-orchestrator template inside Implement handles the quick vs full distinction based on the task file's `pipeline` field). The subagent returns to the Test orchestrator when done. This is distinct from Implement's normal terminal state routing (which follows config.md) — when Implement is dispatched as a subagent by Test, it does its TDD + review work and returns to the caller, it does not invoke config.md terminal state routing. All input artifacts (`research/summary.md`, `design.md`, etc.) exist in the artifact directory and are available to Implement regardless of whether the overall pipeline is quick or full — Implement reads them based on the task file's `pipeline` field.
+**Fix routing note:** The Test orchestrator controls fix task routing — it dispatches Implement as a subagent (Implement's per-task flow inside `skills/implement/SKILL.md` § Per-Task Execution handles the quick vs full distinction based on the task file's `pipeline` field). The subagent returns to the Test orchestrator when done. This is distinct from Implement's normal terminal state routing (which follows config.md) — when Implement is dispatched as a subagent by Test, it does its TDD + review work and returns to the caller, it does not invoke config.md terminal state routing. All input artifacts (`research/summary.md`, `design.md`, etc.) exist in the artifact directory and are available to Implement regardless of whether the overall pipeline is quick or full — Implement reads them based on the task file's `pipeline` field.
 
 ## Fix Task File Format
 

@@ -5,6 +5,8 @@ description: Use when design.md is approved and the QRSPI pipeline needs vertica
 
 # Phasing (QRSPI Step 5)
 
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+
 **Announce at start:** "I'm using the QRSPI Phasing skill to author vertical slices, phase boundaries, and the roadmap."
 
 ## Overview

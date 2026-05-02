@@ -22,7 +22,7 @@ This section is the **single source of truth** for Replan scope boundaries. Phas
 - **Phase-transition execution (minor path)** — the five-step archive-and-populate sequence at phase boundary: (a) archive the completed phase's four synthesizing artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`) to the runtime path `docs/qrspi/{slug}/phases/phase-NN/`; (b) read `roadmap.md` to identify next-phase goal IDs; (c) extract entries for those goal IDs from `future-goals.md`, `future-questions.md`, `future-research-summary.md`, `future-design.md`; (d) write the populated next-phase drafts with `status: draft`; (e) invoke `qrspi:goals` for the next-phase Restart Mode pass.
 - **Severity classification of phase learnings** — categorize each proposed change as Minor, Major, or Scope Unknown per the Severity Classification table; identify the earliest loop-back target for any Major change.
 - **Minor-path artifact updates** — apply approved minor changes to `tasks/*.md` and `plan.md`; transition status to `replan-draft` and back to `approved` on re-approval.
-- **Major-path feedback authoring** — write `feedback/replan-phase-NN-round-MM.md`, reset target + downstream artifacts to `status: draft`, invoke the loop-back skill (Goals, Design, or Structure). Major path is unchanged from baseline (loop back to upstream skill on substantive learnings).
+- **Major-path feedback authoring** — write `feedback/replan-phase-NN-round-MM.md`, reset target + downstream artifacts to `status: draft`, invoke the loop-back skill (Goals, Design, Phasing, or Structure — chosen per the Severity Classification table). Major path is unchanged from baseline (loop back to upstream skill on substantive learnings).
 - **Marking next-phase drafts** — every populated next-phase artifact carries `status: draft` so the downstream skill (Goals first, then Questions, Research, Design) re-reviews before proceeding.
 
 ### Replan DEFERS
@@ -79,12 +79,14 @@ Do NOT skip the backward loop for major or scope-unknown changes — cascading r
 | Change technology choice, approach, or architecture | **Major** | Design | "Switch from polling to WebSockets for real-time" |
 | Change phase boundaries or rebalance phases (move tasks/goals across phases) | **Major** | Phasing | "Move Task 8 from Phase 2 to Phase 3", "Rebalance Phase 1 to drop Goal G5 into Phase 2" |
 | Change vertical slice decomposition (add/remove/regroup slices) | **Major** | Phasing | "Notifications should be its own slice, not part of the social slice", "Merge the messaging and notifications slices" |
-| Change project goals, acceptance criteria, or constraints | **Major** | Goals | "The MVP scope should include notifications, not just messaging" |
+| Change per-task test expectations | **Major** | Plan | "Task 5's expected behavior on retry should change to exponential backoff" |
+| Change per-phase acceptance criteria | **Major** | Plan | "Phase 2's acceptance block should require notifications to be observable end-to-end, not just persisted" |
+| Change project goals or constraints (problem framing, intent, scope, environmental constraints) | **Major** | Goals | "The MVP scope should include notifications, not just messaging" |
 | Fundamental re-evaluation of project direction | **Major** | Goals | "We should target mobile-first instead of desktop-first" |
 
 **Classification criteria for Scope Unknown:** Use when the impact of a change is unclear and you cannot confidently classify it as Minor or Major. Default to the most stringent treatment — treat as Major and identify the earliest plausible loop-back target. Do not guess Minor when scope is ambiguous.
 
-**Key rule:** The loop-back target is the **earliest affected artifact**. If file paths change, loop back to Structure (which cascades to Plan). If phase boundaries or slice decomposition change, loop back to Phasing (which cascades to Structure -> Plan; Phasing OWNS slice decomposition and phase boundaries). If architecture changes (technology / approach), loop back to Design (which cascades to Phasing -> Structure -> Plan). If goals or acceptance criteria change, loop back to Goals (which resets all artifacts to draft — the entire pipeline re-runs).
+**Key rule:** The loop-back target is the **earliest affected artifact**. If per-task test expectations or per-phase acceptance criteria change, loop back to Plan (Plan OWNS acceptance criteria per the strip-from-goals contract; cascades to tasks/`*.md` regeneration). If file paths change, loop back to Structure (which cascades to Plan). If phase boundaries or slice decomposition change, loop back to Phasing (which cascades to Structure → Plan; Phasing OWNS slice decomposition and phase boundaries). If architecture changes (technology / approach), loop back to Design (which cascades to Phasing → Structure → Plan). If project goals or constraints change (problem framing, intent, scope), loop back to Goals (which resets all artifacts to draft — the entire pipeline re-runs).
 
 ## Replan Subagent
 
@@ -92,7 +94,7 @@ Do NOT skip the backward loop for major or scope-unknown changes — cascading r
 
 NO `goals.md` directly — the subagent reads the plan and design which already incorporate goals. (The review subagent reads `goals.md` directly for consistency checking — that is a separate subagent with different inputs.)
 
-**Scope-mapping check:** When tying a proposed change to an existing goal, verify the goal's acceptance criterion text actually describes the proposal's scope. If the proposal's scope is not covered by the existing goal text, classify the proposal as Major (loop-back to Goals) — do NOT silently expand goal text or create new goals from the Replan subagent. Goal-text changes are Goals' responsibility on the loop-back, never Replan's.
+**Scope-mapping check:** When tying a proposed change to an existing goal, verify the goal's problem framing (Problem / Why we care / What we know so far) actually describes the proposal's scope. If the proposal's scope is not covered by the existing goal text, classify the proposal as Major (loop-back to Goals) — do NOT silently expand goal text or create new goals from the Replan subagent. Goal-text changes are Goals' responsibility on the loop-back, never Replan's. (Acceptance-criteria changes are a separate routing — see the Severity Classification table; per the strip-from-goals contract those route to Plan, not Goals.)
 
 **Task:**
 
@@ -178,7 +180,7 @@ Recommend compaction before invoking target skill.
 
 > **IMPORTANT — Compaction recommended (terminal state).** Replan analysis complete. This is a good point to compact context before the cross-skill transition (next-phase Goals on the Minor path; loop-back target on the Major path). Recommend the user run `/compact` if context utilization may exceed ~50%.
 
-**Minor path:** Delete `replan-pending.md`, recommend compaction, then **call `state_init_or_reconcile <artifact_dir>` to reconcile `state.json` against the freshly-reset frontmatter** (this avoids relying on the PostToolUse hook's lazy catch-up — Goals reads `state.json` immediately at start and would otherwise see stale values), then invoke `qrspi:goals` for the next phase. (Rationale: `artifact_promote_next_phase` deleted `structure.md`, `plan.md`, `tasks/` and reset goals/research/design frontmatter to `draft`. Parallelize cannot run without an approved `plan.md` and `tasks/*.md`, so the next phase must restart from Goals — which re-approves the promoted goals via its "Next-Phase Restart Mode" (see `goals/SKILL.md` → "Next-Phase Restart Mode"), then cascades through Questions/Research/Design/Structure/Plan/Parallelize/Implement in turn.)
+**Minor path:** Delete `replan-pending.md`, recommend compaction, then **call `state_init_or_reconcile <artifact_dir>` to reconcile `state.json` against the freshly-reset frontmatter** (this avoids relying on the PostToolUse hook's lazy catch-up — Goals reads `state.json` immediately at start and would otherwise see stale values), then invoke `qrspi:goals` for the next phase. (Rationale: `artifact_promote_next_phase` deleted `structure.md`, `plan.md`, `tasks/` and reset goals/research/design frontmatter to `draft`. Parallelize cannot run without an approved `plan.md` and `tasks/*.md`, so the next phase must restart from Goals — which re-approves the promoted goals via its "Next-Phase Restart Mode" (see `goals/SKILL.md` → "Next-Phase Restart Mode"), then cascades through Questions/Research/Design/Phasing/Structure/Plan/Parallelize/Implement in turn.)
 
 **Major path:** Delete `replan-pending.md`, recommend compaction, invoke the loop-back target skill (Goals, Design, Phasing, or Structure). Replan exits — the normal pipeline takes over from the loop-back target forward. The `replan-pending.md` deletion happens before the loop-back invocation because Replan's analytical work is complete; the cascade is standard pipeline execution.
 
@@ -226,10 +228,10 @@ Clarifying amendments are changes to approved artifacts that refine wording, fix
 | Type | Description | Cascade behavior | Example |
 |---|---|---|---|
 | **Clarifying** | Refines wording or fixes ambiguity without changing intent | `--skip-cascade` — no downstream reset | "Change 'handle errors' to 'return HTTP 4xx on validation failure'" |
-| **Additive** | Adds new detail that doesn't contradict existing content and doesn't touch goals or acceptance criteria | `--skip-cascade` — no downstream reset | "Add a note to a `structure.md` interface explaining the timeout default" |
+| **Additive** | Adds new detail that doesn't contradict existing content and doesn't touch goals, per-task test expectations, or per-phase acceptance criteria | `--skip-cascade` — no downstream reset | "Add a note to a `structure.md` interface explaining the timeout default" |
 | **Architectural** | Changes intent, structure, or approach | Full cascade — treat as Replan Major | "Change 'REST API' to 'GraphQL'" — this is NOT an amendment, route through Replan |
 
-**Goals and acceptance criteria are never amendments.** Any change to `goals.md` (purpose, constraints, success criteria, out-of-scope) is a Replan Major change with loop-back to Goals — see Severity Classification above. The Clarifying/Additive shortcut applies only to non-goal artifacts.
+**Goals, per-task test expectations, and per-phase acceptance criteria are never amendments.** Changes to `goals.md` (purpose, constraints, problem framing, out-of-scope) route to Goals as a Replan Major; changes to per-task `## Test Expectations` or to a `plan.md` per-phase acceptance block route to Plan as a Replan Major (per the strip-from-goals contract — Plan owns acceptance criteria) — see Severity Classification above. The Clarifying/Additive shortcut applies only to non-goal, non-acceptance artifacts.
 
 ### Rationale Presentation
 

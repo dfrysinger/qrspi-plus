@@ -42,7 +42,7 @@ This is the locked rule set the scope-reviewer dispatch consumes (see `skills/_s
 ### Parallelize DEFERS
 
 - Task specs themselves (acceptance tests, dependencies-list, LOC estimate, description) — owned by Plan (`plan.md` + `tasks/*.md`). Parallelize consumes these as inputs and MUST NOT rewrite them.
-- Per-task implementation logic (how a task achieves its goal; the actual code, test assertions, file edits) — owned by Implement (per-task orchestrator subagents).
+- Per-task implementation logic (how a task achieves its goal; the actual code, test assertions, file edits) — owned by Implement (per-task TDD + review flow — see `implement/SKILL.md` § Per-Task Execution).
 - Architecture decisions and trade-offs (which approach the project takes; why a slice exists) — owned by Design.
 - Phasing decisions, vertical slices, Iron Law 1 rationale, the Phase 1 PoC guideline, roadmap maintenance — owned by Phasing.
 - Concrete commit hashes, branch creation, worktree creation, baseline tests, runtime-injected `task-00` — owned by Implement at runtime; Parallelize records only symbolic bases.
@@ -54,7 +54,6 @@ Required inputs:
 
 - `plan.md` with `status: approved`
 - `tasks/*.md` (current phase) or `fixes/{type}-round-NN/*.md` (for fix-task routing)
-- `design.md` with `status: approved` (phase definitions)
 - `phasing.md` with `status: approved` (phase definitions and slice ownership)
 - `config.md`
 
@@ -181,7 +180,7 @@ The orchestrating skill writes findings to `reviews/parallelize-review.md`.
 
 Recommend compaction: "Parallelization plan approved. This is a good point to compact context before the next step (`/compact`)."
 
-> **IMPORTANT — Compaction recommended (cross-skill-transition).** The next skill (`implement` in the standard full-pipeline route) will create worktrees, run baseline tests, and dispatch per-task orchestrator subagents — a new high-context phase. Run `/compact` before invoking the next skill if context utilization may exceed ~50%.
+> **IMPORTANT — Compaction recommended (cross-skill-transition).** The next skill (`implement` in the standard full-pipeline route) will create worktrees, run baseline tests, and dispatch implementer + reviewer subagents per task — a new high-context phase. Run `/compact` before invoking the next skill if context utilization may exceed ~50%.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `parallelize` (in the standard full-pipeline route, this is `implement`).
 

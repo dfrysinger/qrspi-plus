@@ -50,6 +50,7 @@ A finding citing structure.md prose that asserts any DEFERS item — for example
 - `goals.md` with `status: approved`
 - `research/summary.md` with `status: approved`
 - `design.md` with `status: approved`
+- `phasing.md` with `status: approved`
 
 If any artifact is missing or not approved, refuse to run and tell the user which artifact is needed.
 
@@ -60,7 +61,7 @@ Read `config.md` from the artifact directory to determine whether Codex reviews 
 Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Structure validates `codex_reviews`.
 
 <HARD-GATE>
-Do NOT produce structure.md without approved goals.md, research/summary.md, AND design.md.
+Do NOT produce structure.md without approved goals.md, research/summary.md, design.md, AND phasing.md.
 Do NOT proceed to Plan without user approval of the structure.
 </HARD-GATE>
 

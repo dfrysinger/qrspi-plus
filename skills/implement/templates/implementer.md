@@ -58,24 +58,19 @@ RED-GREEN-REFACTOR with verification at every step:
 - If an existing file you're modifying is already large or tangled, work carefully and note it as a concern in your report
 - In existing codebases, follow established patterns. Improve code you're touching the way a good developer would, but don't restructure things outside your task.
 
-## Commenting
+## Commenting — orient readers, explain WHY
 
-Comment aggressively. The reviewer reading your code is proficient in software engineering but may be unfamiliar with the specific language or framework.
+Comments serve two purposes; both are valuable and neither is mandatory ceremony.
 
-**Every function gets a header comment** covering four things:
+**1. Orient the reader.** On non-trivial functions where it would help a non-technical reader (a PM reviewing the PR, a future maintainer landing in this file for the first time, someone tracing a bug from a log message), add a short function-level comment giving the high-level overview — what the function is for, why it exists in the system, and a sketch of what it does — so that reader can get the gist without reading the body. One paragraph is plenty. **Skip the header on trivial helpers** — small private utilities, obvious accessors, single-purpose functions whose name and signature already tell the reader what they need. The goal is orientation, not ceremony; do NOT add a header on every function.
 
-```
-// Purpose:  What this function does (one sentence).
-// Inputs:   Parameters — name, type, and what they represent.
-// Outputs:  Return value — type and what it represents.
-// Failure:  What happens when inputs are invalid, dependencies are unavailable,
-//           or the operation cannot complete (error thrown, sentinel returned, etc.).
-```
+**2. Surface non-obvious intent inline.** Add an inline comment when the WHY would not be apparent to a careful reader:
+- A non-obvious constraint or invariant the code relies on
+- A tradeoff or design decision the code can't reveal on its own
+- A pointer to external context (spec section, incident, library docs) that explains why this shape was chosen
+- A surprise — behavior that would mislead a careful reader (intentional fall-through, fail-closed default, ordering dependency)
 
-**Every non-obvious conditional block gets an inline comment explaining *why***, not just what. Focus on:
-- Edge cases ("empty array returns early to avoid divide-by-zero below")
-- Security decisions ("reject before parsing to avoid ReDoS on malformed input")
-- Non-obvious flow ("fall through intentionally — both branches share the cleanup step")
+**What to avoid:** line-by-line restatement of code, ceremonial per-function headers that just paraphrase the signature, comments that add nothing a careful reader couldn't infer in two seconds. Names and types document WHAT; comments earn their keep by orienting readers and explaining WHY.
 
 <example>
 // GOOD — explains why, not what
@@ -92,6 +87,25 @@ if (token === null) {
   return res.status(401).end();
 }
 </example>
+
+## ID Hygiene
+
+The task spec you receive may carry **QRSPI-internal IDs** and **external tracker IDs** (`#123`, `JIRA-456`) in its metadata block. These IDs are routing/traceability metadata for the QRSPI run — they are NOT part of the work product. A future reader of the merged codebase has no context for what `<goal-ID>` or `<decision-ID>` from this run meant.
+
+**What counts as a QRSPI-internal ID for this rule:** run-specific decision metadata — G/R/D/T/Q-prefixed numeric tokens (a single capital letter G/R/D/T/Q optionally followed by a hyphen and digits, matching the shape of goal / research / decision / task / question IDs in the task spec metadata) that name a particular item in **the QRSPI run's task spec you were just handed**. The rule targets one specific failure mode: copying those tokens from your task spec into the diff. Tokens already present in the codebase before this task — domain-specific class names like `Q32Tensor`, feature flags like `F7_ENABLED`, model identifiers — are the customer's own naming and are not in scope, even when they match the shape. F-prefixed tokens (`F-N`) are reserved framework vocabulary in QRSPI itself and are never the target of this rule.
+
+**Strict surfaces — both QRSPI-internal AND external tracker IDs are forbidden:**
+- Code identifiers (variable, function, type, file names)
+- Runtime string literals (error messages, log lines, UI strings, telemetry tags)
+- Prompt templates and prompt strings authored as part of this task
+
+**Comments and test surfaces — split rule:**
+- **QRSPI-internal IDs (G/R/D/T/Q-prefixed, per the shape definition above — `F-N` is reserved framework vocabulary, not run-specific):** forbidden in code comments, test names, `describe` / `it` blocks, and fixture names — everywhere outside `docs/qrspi/`. These IDs have zero lifecycle outside the run that produced them.
+- **External tracker IDs (`#N`, `JIRA-N`, etc.):** allowed in comments or test names only as scoped "see #N for context" references with a stated reason that genuinely helps a future reader. A bare `// fixes #123` adds nothing; `// rate-limit before parse to avoid ReDoS — see #123 incident for repro` adds context.
+
+**Commit-message and PR-body `Closes #N` are fine** — that's tracker-coupling at the right altitude.
+
+When tempted to comment `// implements <goal-ID>`, `// per <decision-ID>`, or `// per task spec`, drop the ID and write only the substantive WHY (or write no comment at all).
 
 ## When You're in Over Your Head
 

@@ -1,6 +1,6 @@
 ---
 name: using-qrspi
-description: Use when starting any conversation — establishes the QRSPI pipeline for agentic software development, requiring structured progression through Goals, Questions, Research, Design, Structure, Plan, Parallelize, Implement, Integrate, Test
+description: Use when starting any conversation — establishes the QRSPI pipeline for agentic software development, requiring structured progression through Goals, Questions, Research, Design, Phasing, Structure, Plan, Parallelize, Implement, Integrate, Test, with Replan firing between phases
 ---
 
 <SUBAGENT-STOP>
@@ -39,26 +39,26 @@ This is a recommendation, not a requirement. Both locations can be configured to
 Goals → Questions → Research → Design → Phasing → Structure → Plan → Parallelize → Implement → Integrate → Test → Replan (if needed)
 ```
 
-> **Read the `Parallelize → Implement → Integrate` segment carefully.** Implement is *not* a per-task chain — it is the per-phase orchestrator step. Parallelize produces the parallelization plan and gets human approval; Implement then fires one per-task subagent per task in the current phase, presents a batch gate when every task has returned, and only then routes to Integrate. **Implement runs once per phase (firing N per-task subagents). Integrate runs once per phase.** Canonical contract — including batch-gate release conditions and the `current_step` transition mechanism — lives in `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop". The state.json table below is a reader's quick reference, not a second source of truth.
+> **Read the `Parallelize → Implement → Integrate` segment carefully.** Implement is *not* a per-task chain — it is the per-phase orchestrator step. Parallelize produces the parallelization plan and gets human approval; Implement then, for each task in the current phase, dispatches an implementer subagent (TDD) and on its DONE / DONE_WITH_CONCERNS terminal status dispatches the configured reviewer subagents in parallel against that task; main chat itself is the per-task orchestrator (flat dispatch — there is no per-task orchestrator subagent layer). When every task has cleared its review/fix cycles, Implement presents a batch gate and only then routes to Integrate. **Implement runs once per phase. Integrate runs once per phase.** Canonical contract — including batch-gate release conditions and the `current_step` transition mechanism — lives in `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop". The state.json table below is a reader's quick reference, not a second source of truth.
 
-**Quick Fix pipeline** (skip Design/Structure/Parallelize/Integrate):
+**Quick Fix pipeline** (skip Design/Phasing/Structure/Parallelize/Integrate):
 ```
 Goals → Questions → Research → Plan → Implement → Test
 ```
 
-> Quick fix has no Parallelize plan and no Integrate. Implement still owns per-task orchestration: it fires per-task subagents (typically one for the originally-requested task; more if fix-task rounds occur) and presents the **quick-fix batch gate** before routing to Test. See `implement/SKILL.md` § Quick Fix for the full batch-gate semantics in quick-fix mode.
+> Quick fix has no Parallelize plan and no Integrate. Implement still owns per-task orchestration: for each task (typically one for the originally-requested fix; more if fix-task rounds occur) main chat dispatches an implementer subagent and reviewer subagents directly, then presents the **quick-fix batch gate** before routing to Test. See `implement/SKILL.md` § Quick Fix for the full batch-gate semantics in quick-fix mode.
 
 | Step | # | What it does | Artifact |
 |------|---|-------------|----------|
-| **Goals** | 1 | Capture user intent, constraints, acceptance criteria | `goals.md` |
+| **Goals** | 1 | Capture user intent, environmental constraints, per-goal problem framing (Problem / Why we care / What we know so far) | `goals.md` |
 | **Questions** | 2 | Generate tagged research questions (no goal leakage) | `questions.md` |
 | **Research** | 3 | Parallel specialist agents gather objective facts | `research/summary.md` |
-| **Design** | 4 | Interactive design discussion, vertical slicing | `design.md` |
-| **Phasing** | 5 | Decompose the design into ordered phases with dependencies and acceptance criteria | `phasing.md` |
+| **Design** | 4 | Interactive design discussion: approach selection, key decisions, trade-offs, design-level test strategy, system diagram | `design.md` |
+| **Phasing** | 5 | Author vertical slices and phase boundaries with replan gates; maintain `roadmap.md` and `future-*.md` | `phasing.md` |
 | **Structure** | 6 | Map design to files, interfaces, component boundaries | `structure.md` |
 | **Plan** | 7 | Detailed task specs with test expectations | `plan.md` + `tasks/*.md` |
 | **Parallelize** | 8 | Analyze dependencies and file overlap; produce symbolic parallelization plan | `parallelization.md` |
-| **Implement** | 9 | Resolve symbolic bases, create worktrees + stage commits, run baseline tests, fire per-task subagents (×N) with TDD + tiered review loops, present batch gate | Working code |
+| **Implement** | 9 | Resolve symbolic bases, create worktrees + stage commits, run baseline tests, dispatch implementer + reviewer subagents per task with TDD + tiered review loops, present batch gate | Working code |
 | **Integrate** | 10 | Merge task branches, cross-task integration + security review, CI gate | Integration report |
 | **Test** | 11 | Acceptance testing, PR creation, phase routing | Test results + PR (every phase) |
 | **Replan** | — | Between phases — update remaining tasks based on learnings (out-of-route) | Updated `plan.md` + `tasks/*.md` |
@@ -142,6 +142,11 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   └── ...
 ├── design.md
 ├── phasing.md
+├── roadmap.md
+├── future-goals.md                (optional — Phasing-managed cross-phase scope)
+├── future-questions.md            (optional — Phasing-managed cross-phase scope)
+├── future-research-summary.md     (optional — Phasing-managed cross-phase scope)
+├── future-design.md               (optional — Phasing-managed cross-phase scope)
 ├── structure.md
 ├── plan.md
 ├── parallelization.md
@@ -173,7 +178,6 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   └── test/
 │       ├── round-NN-review.md
 │       └── baseline-failures.md   (Test baseline)
-├── future-goals.md                (optional — captured future ideas, deferred scope)
 └── .qrspi/                        (hook-managed, do not edit manually)
     ├── state.json                 (pipeline state cache)
     ├── task-NN-runtime.json       (per-task runtime overrides — user mid-task decisions)
@@ -190,11 +194,11 @@ Each skill checks that its required input artifacts exist on disk before proceed
 - **Questions**: Requires `goals.md` with `status: approved`
 - **Research**: Requires `questions.md` with `status: approved`
 - **Design**: Requires `goals.md` and `research/summary.md` with `status: approved`
-- **Phasing**: Requires `goals.md`, `research/summary.md`, and `design.md` with `status: approved`
+- **Phasing**: Requires `goals.md`, `questions.md`, `research/summary.md`, and `design.md` with `status: approved`
 - **Structure**: Requires `goals.md`, `research/summary.md`, `design.md`, and `phasing.md` with `status: approved`
 - **Plan**: Full pipeline requires `goals.md`, `research/summary.md`, `design.md`, `phasing.md`, and `structure.md` with `status: approved`. Quick fix requires only `goals.md` and `research/summary.md`.
 - **Parallelize**: Requires `plan.md` with `status: approved`, `tasks/*.md`, `phasing.md` with `status: approved` (phase definitions), and `config.md`
-- **Implement**: Mode is derived from `config.md.route` (full pipeline if `parallelize` precedes `implement`; quick fix otherwise). Full pipeline additionally requires `parallelization.md` with `status: approved`. Quick fix has no Parallelize, so no `parallelization.md`; Implement requires the per-run input set defined in `implement/SKILL.md` § Artifact Gating (approved `tasks/*.md` or `fixes/{type}-round-NN/*.md`). The `pipeline` field on individual task files is a per-task input-gating concern read by the per-task orchestrator subagent, not by the Implement skill itself.
+- **Implement**: Mode is derived from `config.md.route` (full pipeline if `parallelize` precedes `implement`; quick fix otherwise). Full pipeline additionally requires `parallelization.md` with `status: approved`. Quick fix has no Parallelize, so no `parallelization.md`; Implement requires the per-run input set defined in `implement/SKILL.md` § Artifact Gating (approved `tasks/*.md` or `fixes/{type}-round-NN/*.md`). The `pipeline` field on individual task files is a per-task input-gating concern read by the per-task dispatch in `implement/SKILL.md` § Per-Task Execution, not by the Implement skill's run-mode derivation.
 - **Integrate**: Requires all task review files in `reviews/tasks/`, `design.md` with `status: approved`, `phasing.md` with `status: approved`, `structure.md` with `status: approved`, `parallelization.md` with `status: approved` (branch map), and `config.md` (for route)
 - **Test**: Requires `goals.md` with `status: approved`, `design.md` and `phasing.md` with `status: approved` (full pipeline) or `research/summary.md` with `status: approved` (quick fix), `fixes/` directory (for regression tests), codebase with implementation merged
 - **Replan**: Requires completed phase code (merged), `fixes/` and `reviews/` directories, remaining `tasks/*.md`, `plan.md` with `status: approved`, `design.md` with `status: approved`, and `phasing.md` with `status: approved`
@@ -621,7 +625,7 @@ These thoughts mean the pipeline is being bypassed. Stop and follow the process:
 |----------------|---------|
 | "This is too simple for the full pipeline" | Quick-fix mode exists for simple changes. Use it — don't skip the pipeline entirely. |
 | "I already know the answer, skip Research" | Research prevents confirmation bias. What you "know" may be outdated or incomplete. |
-| "The goals are obvious, skip Goals" | Goals captures acceptance criteria. Without them, you can't verify success. |
+| "The goals are obvious, skip Goals" | Goals captures the problem framing every downstream artifact traces to. Without it, you can't articulate what success means at the goal level (acceptance criteria themselves are authored downstream in `plan.md` per the strip-from-goals contract, but they trace back to goals). |
 | "Let me just start coding" | Code without a plan means rework. Even quick fixes go through Goals → Questions → Research → Plan. |
 | "I can design and implement at the same time" | Design and implementation are separate context windows. Mixing them produces underthought architecture. |
 | "This fix doesn't need questions" | Questions identify what you need to learn. Skipping them means you'll discover gaps mid-implementation. |
@@ -646,7 +650,7 @@ The four invariants that, when violated, produce the most damage:
 
 3. **Backward loops cascade forward — never patch one artifact in isolation.** New learnings at step N require updating the earliest affected artifact, re-reviewing it, and re-approving every step from there to N. Drift between artifacts breaks every downstream contract.
 
-4. **The `Implement → Integrate` segment is per-phase, not per-task.** Implement runs once per phase, firing N per-task subagents internally. Integrate runs once per phase. `current_step: implement` plus one task done does NOT mean "advance to integrate" — see `state.json` field semantics for the verification trap and `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop" for the canonical contract.
+4. **The `Implement → Integrate` segment is per-phase, not per-task.** Implement runs once per phase; main chat itself is the per-task orchestrator, firing implementer + reviewer subagents per task in the wave (flat dispatch — no per-task orchestrator subagent). Integrate runs once per phase. `current_step: implement` plus one task done does NOT mean "advance to integrate" — see `state.json` field semantics for the verification trap and `implement/SKILL.md` → "Implement Is the Per-Phase Orchestration Loop" for the canonical contract.
 
 <BEHAVIORAL-DIRECTIVES>
 D1 — Encourage reviews after changes: After any significant change to an artifact (whether from feedback, a fix round, or a re-run), recommend a review before proceeding. Reviews catch regressions that are invisible during forward-only execution.

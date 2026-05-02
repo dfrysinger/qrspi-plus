@@ -87,7 +87,7 @@ Every task spec must be self-contained — an implementation agent reading only 
 
 ## Phase-Scoped Content Rules
 
-plan.md contains ONLY current-phase tasks. Each task must reference a goal ID that exists in goals.md. Tasks for goals not in the current phase must not appear. The `goal_id` field in task frontmatter must match a goal in goals.md.
+plan.md contains ONLY current-phase tasks. Each task must reference goal IDs that exist in goals.md. Tasks for goals not in the current phase must not appear. The `goal_ids` field in task frontmatter (a list, e.g. `[G1, G2]` — see ID-Hygiene Contract below) must contain only IDs of goals in goals.md.
 
 ## Task Sizing
 
@@ -274,6 +274,7 @@ status: approved
 task: NN
 phase: {phase number}
 pipeline: full
+goal_ids: [G1, G2]   # QRSPI-internal traceability metadata — see ID-Hygiene Contract below
 # Optional: justify a legitimate bundle (multi-handler or >200 LOC).
 # Reason must be one of: schema migration, CI scaffolding, reusable primitives.
 # sizing_exception: <one-line reason>
@@ -287,20 +288,22 @@ pipeline: full
 - **Target files:** {exact paths, create/modify}
 - **Dependencies:** {task numbers or "none"}
 - **LOC estimate:** ~{N}
-- **Description:** {what this task accomplishes}
+- **Description:** {what this task accomplishes — substantive WHY only; no ID echoes (see ID-Hygiene Contract below)}
 - **Test expectations:**
   - {behavior 1}
   - {edge case 1}
   - {error condition 1}
 ```
 
-The `pipeline` field is copied from `config.md`'s `pipeline` value at plan time. The per-task orchestrator subagent reads the task file's `pipeline` field for per-task input gating (which artifacts to load for the task's review context). The Implement skill itself derives run mode separately from `config.md.route` for its per-phase orchestration — see `implement/SKILL.md` § Overview.
+**ID-Hygiene Contract.** QRSPI-internal traceability lives in the YAML frontmatter `goal_ids` field — the **metadata block** the implementer subagent reads but does NOT echo into the work product. The canonical surface list (strict surfaces and the comment/test split rule) lives in `implement/templates/implementer.md` § ID Hygiene and is reviewed by `implement/templates/correctness/code-quality-reviewer.md` § 11; this contract defers to those sites rather than re-enumerating, so the surface list has a single source of truth. Plan's responsibility here is upstream: do NOT add `Target satisfies:`, `Goals addressed:`, `Closes <goal-ID>`, `per <decision-ID>`, or similar QRSPI-internal-ID-bearing prose to the body of the task spec — those phrasings invite the implementer to copy IDs into the work product. The body's Description, Test expectations, and supporting bullets must read as standalone work specifications grounded in observable behavior; goal traceability is a metadata concern, not a body concern. PR-body `Closes #N` (external tracker IDs only) remains valid at commit/PR altitude.
+
+The `pipeline` field is copied from `config.md`'s `pipeline` value at plan time. The per-task dispatch in `implement/SKILL.md` § Per-Task Execution reads the task file's `pipeline` field for per-task input gating (which artifacts to load for the task's review context). The Implement skill itself derives run mode separately from `config.md.route` for its per-phase orchestration — see `implement/SKILL.md` § Overview.
 
 **Who writes the pipeline field:**
 - **Plan skill** — copies from `config.md` onto every `tasks/task-NN.md` at plan time
 - **Test skill** — classifies per failure (quick or full) on fix tasks
 - **Integrate skill** — always `full` on integration/CI fix tasks
-- **Implement baseline fix** — inherits the run's mode (derived by Implement from `config.md.route` per `implement/SKILL.md` § Overview) on task-00 (`pipeline: full` in full-pipeline runs, `pipeline: quick` in quick-fix runs) so the per-task orchestrator's input gating matches the artifacts that exist. Implement writes the runtime-injected `task-00.md` with `status: approved` so the Iron Law gate passes on dispatch.
+- **Implement baseline fix** — inherits the run's mode (derived by Implement from `config.md.route` per `implement/SKILL.md` § Overview) on task-00 (`pipeline: full` in full-pipeline runs, `pipeline: quick` in quick-fix runs) so the per-task input gating matches the artifacts that exist. Implement writes the runtime-injected `task-00.md` with `status: approved` so the Iron Law gate passes on dispatch.
 
 **Fix task files** also include a `fix_type` field (not present on regular tasks):
 - `fix_type: integration` — written by Integrate for cross-task integration fixes
