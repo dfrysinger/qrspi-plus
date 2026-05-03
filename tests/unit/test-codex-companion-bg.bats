@@ -127,9 +127,19 @@ EOF
 
 @test "launch: zero-byte prompt file → nonzero with stderr (no companion launch)" {
   : > "$TEST_ROOT/prompts/empty.txt"
+
+  # Pre-condition: stub state file does not exist (the stub writes it only when
+  # `handleTask` runs, which is what we're proving did NOT happen).
+  [ ! -e "$STUB_STATE_FILE" ]
+
   run "$WRAPPER" launch --prompt-file "$TEST_ROOT/prompts/empty.txt"
   [ "$status" -ne 0 ]
   [ -n "$output" ] || [ -n "$stderr" ]
+
+  # Post-condition: companion was never invoked, so the stub never had a chance
+  # to persist its state file. Absence proves the wrapper failed closed at its
+  # own boundary instead of punting the failure to the companion.
+  [ ! -e "$STUB_STATE_FILE" ]
 }
 
 # ── await: happy path ──────────────────────────────────────────────
