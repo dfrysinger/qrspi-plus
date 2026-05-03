@@ -146,7 +146,7 @@ In quick fix mode, there is no Branch Map. Each task forks directly from the fea
 
 ## Subagent Permissions
 
-Subagent containment is the runtime sandbox's responsibility (auto-mode plus Claude's judgment); there is no in-pipeline worktree wall. Subagents should be dispatched with the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt and treat that path as their working scope. The `[a-z]?` suffix in the worktree pattern allows Plan-induced task splits like `task-07a`/`task-07b` (F-19).
+Subagent containment is the runtime sandbox's responsibility (auto-mode plus Claude's judgment); there is no in-pipeline worktree wall. Subagents should be dispatched with the task's worktree path `.worktrees/{slug}/task-NN[a-z]?/` named in the prompt and treat that path as their working scope. The optional `[a-z]?` letter suffix on the task number allows Plan-induced task splits like `task-07a`/`task-07b` (F-19).
 
 **Recommended:** run sessions with `--dangerously-skip-permissions` enabled so per-tool approval prompts do not stall subagents.
 
