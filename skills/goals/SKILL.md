@@ -255,8 +255,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Three reviewers 
   - Environmental constraints are concrete (not "use existing tech stack").
   - The request scope is appropriate for a single QRSPI run.
 
-  Findings written to `reviews/goals-review.md` in the 5-field shape.
-- **Scope-reviewer subagent** — dispatched from `skills/_shared/templates/scope-reviewer.md` with parameter `{ARTIFACT_TYPE}=goals`. Loads this skill's `## Goals OWNS / Goals DEFERS` section as the locked rule set, runs boundary-drift detection (content matching a DEFERS entry — e.g. acceptance criteria, file maps, phasing) and scope-compliance per OWNS, and applies the boundary-drift signal (skill-implementation jargon leaking from later stages). Findings flow into `reviews/goals-review.md` under `#### Scope-Reviewer`. The dispatched prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim alongside the template body.
+  **Output file (disk-write contract):** `<ABS_ARTIFACT_DIR>/reviews/goals/round-NN-claude.md`. The dispatching skill MUST interpolate the absolute artifact directory path and the current round number into the prompt. Per `skills/_shared/reviewer-boilerplate.md` `## Disk-Write Contract`, the reviewer writes findings there using `Write` and returns only the brief summary form to main chat. The Claude reviewer is dispatched with `model: "sonnet"`.
+- **Scope-reviewer subagent** — dispatched from `skills/_shared/templates/scope-reviewer.md` with parameter `{ARTIFACT_TYPE}=goals`. Loads this skill's `## Goals OWNS / Goals DEFERS` section as the locked rule set, runs boundary-drift detection (content matching a DEFERS entry — e.g. acceptance criteria, file maps, phasing) and scope-compliance per OWNS, and applies the boundary-drift signal (skill-implementation jargon leaking from later stages). The dispatched prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim alongside the template body. **Output file:** `<ABS_ARTIFACT_DIR>/reviews/goals/round-NN-scope.md`. Dispatched with `model: "sonnet"`.
 - **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper. Prompt content: `goals.md` + the Goals-specific criteria + the Goals OWNS/DEFERS contract; embeds `skills/_shared/reviewer-boilerplate.md` verbatim so Codex emits findings in the 5-field shape.
 
 <prompt_file>/tmp/codex-prompt-goals.md</prompt_file>
@@ -282,7 +282,7 @@ They can:
 
 ### Terminal State
 
-If the artifact directory is inside a git repository, commit the approved `goals.md`, `config.md`, and `reviews/goals-review.md` (see `using-qrspi` → "Commit after approval (when applicable)" for the detection rule). Otherwise, skip the commit — the approved frontmatter on disk is the durable record.
+If the artifact directory is inside a git repository, commit the approved `goals.md`, `config.md`, and the `reviews/goals/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)" for the detection rule). Otherwise, skip the commit — the approved frontmatter on disk is the durable record.
 
 **IMPORTANT:** Goals is approved. This is a high-value compaction moment — the dialogue transcript and review-loop context are no longer needed downstream. Recommend `/compact` to the user: "Goals approved. This is a good point to compact context before the next step (`/compact`)."
 
