@@ -4,9 +4,13 @@
 # Subcommands:
 #   launch --prompt-file <path>   Fork companion `task --background` and print
 #                                 the captured jobId; exit 0 within ~5s.
-#   await <jobId>                 Poll status (5s/30s with backoff at 120s),
+#   await --artifact-dir <abs_path> <jobId>
+#                                 Poll status (5s/30s with backoff at 120s),
 #                                 fetch result on completion, write review
 #                                 markdown to stdout; ceiling at 1200s.
+#                                 --artifact-dir is required (absolute path);
+#                                 audit rows are written canonically under
+#                                 <abs_path>/.qrspi/.
 #
 # Exit codes:
 #   0   success

@@ -169,7 +169,7 @@ fix_type: ci
 ## Artifacts
 
 - `reviews/integration/round-NN-{template}-claude.md` — per-template per-round Claude reviewer findings (`{template}` is `integration` or `security`); reviewer-authored per the disk-write contract
-- `reviews/integration/round-NN-{template}-codex.md` — per-template per-round Codex stdout (filled by `scripts/codex-companion-bg.sh await > ...` redirection)
+- `reviews/integration/round-NN-{template}-codex.md` — per-template per-round Codex stdout (filled by `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId> > ...` redirection)
 - `reviews/ci/round-NN-review.md` — CI failure analysis per round
 
 ## Human Gate

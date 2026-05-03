@@ -165,12 +165,13 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   ├── round-01-scope.md
     │   ├── round-01-codex.md
     │   └── round-01-fixes.md      (main-chat-authored: what was fixed this round)
-    ├── questions/                 (same shape as goals/)
+    ├── questions/                 (same shape; no scope reviewer for questions)
     ├── research/                  (same shape; no scope reviewer for research)
     ├── design/                    (same shape as goals/)
     ├── phasing/                   (same shape as goals/)
     ├── structure/                 (same shape as goals/)
     ├── plan/                      (same shape as goals/)
+    ├── parallelize/               (same shape as goals/)
     ├── replan/                    (same shape as goals/)
     ├── baseline-failures.md       (Implement baseline)
     ├── tasks/
@@ -467,7 +468,7 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 
 - Claude reviewer subagent → `reviews/{step}/round-NN-claude.md`
 - Scope-reviewer subagent → `reviews/{step}/round-NN-scope.md` (skills that dispatch the parameterized scope-reviewer)
-- Codex reviewer (async) → `reviews/{step}/round-NN-codex.md` (filled by `scripts/codex-companion-bg.sh await <jobId>` stdout redirection — see per-skill Codex dispatch language)
+- Codex reviewer (async) → `reviews/{step}/round-NN-codex.md` (filled by `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId>` stdout redirection — see per-skill Codex dispatch language)
 - Main chat fix-apply summary → `reviews/{step}/round-NN-fixes.md`
 
 `{step}` is the canonical step name (e.g. `goals`, `design`, `plan`, `replan`). `NN` is the zero-padded round number. Per-reviewer parallelism is preserved: each reviewer writes its own file, so two reviewers running concurrently never race on the same file.
