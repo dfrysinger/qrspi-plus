@@ -160,24 +160,35 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 ├── feedback/
 │   └── ...
 └── reviews/
-    ├── goals-review.md
-    ├── questions-review.md
-    ├── research-review.md
-    ├── design-review.md
-    ├── phasing-review.md
-    ├── structure-review.md
-    ├── plan-review.md
-    ├── replan-review.md
+    ├── goals/
+    │   ├── round-01-claude.md
+    │   ├── round-01-scope.md
+    │   ├── round-01-codex.md
+    │   └── round-01-fixes.md      (main-chat-authored: what was fixed this round)
+    ├── questions/                 (same shape as goals/)
+    ├── research/                  (same shape; no scope reviewer for research)
+    ├── design/                    (same shape as goals/)
+    ├── phasing/                   (same shape as goals/)
+    ├── structure/                 (same shape as goals/)
+    ├── plan/                      (same shape as goals/)
+    ├── replan/                    (same shape as goals/)
     ├── baseline-failures.md       (Implement baseline)
     ├── tasks/
     │   └── ...
     ├── integration/
-    │   └── round-NN-review.md
+    │   ├── round-NN-integration-claude.md
+    │   ├── round-NN-security-claude.md
+    │   ├── round-NN-integration-codex.md
+    │   └── round-NN-security-codex.md
     ├── ci/
     │   └── round-NN-review.md
     └── test/
-        ├── round-NN-review.md
-        └── baseline-failures.md   (Test baseline)
+        ├── round-NN-goal-traceability-claude.md
+        ├── round-NN-spec-claude.md
+        ├── round-NN-code-quality-claude.md
+        ├── round-NN-{template}-codex.md   (per-template Codex stdout)
+        ├── round-NN-results.md            (main-chat-authored test results)
+        └── baseline-failures.md           (Test baseline)
 ```
 
 The slug is generated during the Goals step: take the user's first description, extract 2-4 key words, convert to lowercase kebab-case (e.g., "user-auth", "product-search-api").
@@ -450,25 +461,75 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 
 ## Review Output Handling
 
-The review file `reviews/{step}-review.md` is created on the first review round and appended on subsequent rounds:
+**Disk-write contract (artifact-level reviews).** Each artifact-level reviewer subagent writes its findings directly to disk and returns only a brief structured summary to main chat. Main chat never receives finding text in subagent return values. This keeps reviewer output out of main chat's conversation history (where it would re-bill as cache reads on every subsequent turn) until main chat explicitly reads the file to apply fixes — at which point the standard `/compact` after fix-apply (see "Compaction at Step Transitions" + per-skill apply-fix recommendations) sheds it.
+
+**Per-reviewer file paths.** Each reviewer writes to its own per-round per-reviewer file under `reviews/{step}/`:
+
+- Claude reviewer subagent → `reviews/{step}/round-NN-claude.md`
+- Scope-reviewer subagent → `reviews/{step}/round-NN-scope.md` (skills that dispatch the parameterized scope-reviewer)
+- Codex reviewer (async) → `reviews/{step}/round-NN-codex.md` (filled by `scripts/codex-companion-bg.sh await <jobId>` stdout redirection — see per-skill Codex dispatch language)
+- Main chat fix-apply summary → `reviews/{step}/round-NN-fixes.md`
+
+`{step}` is the canonical step name (e.g. `goals`, `design`, `plan`, `replan`). `NN` is the zero-padded round number. Per-reviewer parallelism is preserved: each reviewer writes its own file, so two reviewers running concurrently never race on the same file.
+
+**Per-reviewer file format** (each Claude-or-scope reviewer authors a file in this shape):
 
 ```markdown
-# {Step} Review
+---
+artifact: {step}
+round: NN
+reviewer: claude   # or "scope"
+---
 
-## Round 1 — Claude
-{findings or "No issues found"}
+# {Step} review — round NN — {reviewer}
 
-## Round 1 — Codex
-{findings or "No issues found" or "Skipped (not enabled)"}
+## Summary
 
-## Post-review fixes (round 1)
-- {what was changed and why}
+- Total findings: N
+- Severity: high=X, medium=Y, low=Z
+- Auto-apply (style/clarity/correctness): A
+- Paused (scope/intent): P
 
-## Round 2 — Claude
-...
+## Findings
+
+{Findings emitted as a list, each conforming to the 5-field schema in `_shared/reviewer-boilerplate.md` `## Finding Schema`. "No issues found" is a valid body when N=0.}
 ```
 
-The orchestrating skill (not the review subagent) writes and appends to the review file based on each subagent's output. Review subagents return findings; the skill handles file I/O. Each round appends its section. Claude and Codex findings are attributed separately.
+**Subagent return value (brief).** After writing the per-reviewer file, the reviewer subagent returns a single brief summary string to main chat. The summary MUST NOT include the finding text — main chat reads the file when it needs the details. Required summary form:
+
+```
+Round NN {reviewer-tag} review complete.
+Findings: N (high=X, medium=Y, low=Z)
+Auto-apply: A | Paused: P
+Written to: reviews/{step}/round-NN-{reviewer-tag}.md
+```
+
+This brevity is load-bearing for the optimization: the savings in cache-read accumulation across subsequent main-chat turns depend on the subagent's return text being ~30 tokens, not 3K-30K.
+
+**Subagent guardrail compatibility.** The per-reviewer filename pattern `round-NN-{reviewer}.md` does not match the Claude Code 2.1.x subagent-write blocklist (`^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$`, case-insensitive at filename stem start). Subagents can `Write` these files directly without hitting the guardrail. (For comparison, the research-step `summary.md` DOES match the blocklist, which is why that file goes through orchestrator-write — see `research/SKILL.md` for the exception.)
+
+**Codex output handling.** Codex reviews run as bash-launched background jobs via `scripts/codex-companion-bg.sh`. The `await` step's stdout is redirected to `reviews/{step}/round-NN-codex.md` directly (see optimization-plan item #8 and per-skill Codex dispatch language) — main chat never paste-backs Codex stdout into its own conversation. Main chat does write a one-line "Codex exit M, see reviews/{step}/round-NN-codex.md" status note when needed, but the bulk findings live on disk only.
+
+**Apply-fix protocol.** When main chat applies fixes after a round:
+
+1. Read each per-reviewer file (Claude, scope, Codex) for that round.
+2. Apply auto-apply findings via Edit on the artifact under review.
+3. For paused findings, follow the Review-Loop Pause Gate (below) — write `reviews/{artifact}-loop-pause-round-NN.md` and present the BATCH-WITH-OVERRIDES UI.
+4. Write a brief `reviews/{step}/round-NN-fixes.md` (main-chat-authored, ≤30 lines) listing what was changed and why.
+5. Run `/compact` (per-skill apply-fix compaction recommendation) to shed the per-reviewer file Read content from main chat's transcript.
+6. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
+
+**Diff handling between rounds (round 2+).** Round NN+1 reviewers see a focused diff — not the full artifact pasted into the prompt — and main chat never reads diff content into its own context. Three steps:
+
+1. **Per-round commit on the artifact.** After step 4 (writing `round-NN-fixes.md`) and before dispatching round NN+1, commit the round-NN fixes when the artifact directory is inside a git repository: `git -C <repo> commit -m "qrspi: {step} round NN fixes"` covering the artifact and `reviews/{step}/round-NN-*.md`. The commit becomes the round's diff anchor (`HEAD~1` after the round-NN+1 fixes commit) and provides a free rollback point. When the artifact directory is not in a git repo, skip the commit step and the diff-file step below — round NN+1 reviewers see the full artifact, the same as round 1 (the per-reviewer file path savings still apply; only the diff-narrowing optimization degrades).
+
+2. **Orchestrator writes the diff to a file via redirect.** Before dispatching round NN+1, run a Bash call that emits no stdout: `git -C <repo> diff <ref> -- <artifact_path> > <ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff`. `<ref>` selects scope: typically `HEAD~1` for round NN+1's narrow delta; `<base-branch>` to force a fresh full-scope round (post-backward-loop, user-requested re-broaden). Bash exits 0 with no stdout — the diff content never enters main chat's transcript. Round 1 has no prior round and writes no diff file; round-1 reviewers see the full artifact only.
+
+3. **Reviewer dispatches reference the diff file by path.** Round NN+1 reviewer prompts (Claude reviewer, scope reviewer, Codex prompt-file) carry `<diff_file_path>` as a string parameter pointing at the round-NN.diff written in step 2; reviewers Read the diff file directly. Single git op per round (vs one per reviewer), byte-identical input across Claude and Codex, and main chat sees no diff text on dispatch or return.
+
+This protocol is the canonical statement of the diff-handling policy. Per-skill SKILL.md files defer to it via the Standard Review Loop reference; they do not need to repeat the diff-redirect mechanics inline.
+
+**Per-task review logs differ.** The `implement` skill's per-task review log at `reviews/tasks/task-NN-review.md` follows a different shape (verbatim prompts and responses are captured for diagnostic purposes, and main chat aggregates per-reviewer responses). The disk-write contract above applies only to **artifact-level** reviews (Goals, Questions, Research, Design, Phasing, Structure, Plan, Parallelize, Replan). See `implement/SKILL.md` § Review Log Artifact for the per-task shape.
 
 ## Review-Loop Pause Gate
 
