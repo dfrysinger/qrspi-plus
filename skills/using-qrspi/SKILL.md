@@ -234,7 +234,7 @@ This applies to every skill terminal state in this pipeline that says "commit �
 
 ## State and Pipeline Ordering
 
-Pipeline state is derived from artifact frontmatter (`status: approved`). There is no state cache file. To determine the current step, walk `config.md.route` and find the first entry whose artifact does not have `status: approved`.
+Pipeline state is derived from artifact frontmatter (`status: approved`). No pipeline-state cache file gates step ordering — the legacy hook layer's `.qrspi/state.json` is unrelated runtime state and is not consulted by skills when computing the next step. To determine the current step, walk `config.md.route` and find the first entry whose artifact does not have `status: approved`.
 
 Pipeline ordering is enforced by the `<HARD-GATE>` blocks in each skill — every skill checks predecessor approval at its top and refuses to run if missing. Subagent containment is the runtime sandbox's responsibility (auto-mode plus Claude's judgment); there is no in-pipeline worktree wall.
 
@@ -639,7 +639,7 @@ The four invariants that, when violated, produce the most damage:
 
 1. **Each step requires its declared inputs approved.** Artifact gating is not advisory — skills refuse to run without approved prerequisites. Do not "skip ahead." Use mid-pipeline entry only with the existing-artifacts contract.
 
-2. **`status: approved` in YAML frontmatter is the only approval marker.** Pipeline progression is derived from frontmatter — there is no state cache file. The single piece of derived state worth persisting (`phase_start_commit`) lives in `plan.md` frontmatter; see `plan/SKILL.md`.
+2. **`status: approved` in YAML frontmatter is the only approval marker.** Pipeline progression is derived from frontmatter — no state cache file gates ordering (the hook layer's `.qrspi/state.json` is separate runtime state, not consulted by skills). The single piece of derived state worth persisting (`phase_start_commit`) lives in `plan.md` frontmatter; see `plan/SKILL.md`.
 
 3. **Backward loops cascade forward — never patch one artifact in isolation.** New learnings at step N require updating the earliest affected artifact, re-reviewing it, and re-approving every step from there to N. Drift between artifacts breaks every downstream contract.
 

@@ -125,6 +125,13 @@ EOF
   [ -n "$output" ] || [ -n "$stderr" ]
 }
 
+@test "launch: zero-byte prompt file → nonzero with stderr (no companion launch)" {
+  : > "$TEST_ROOT/prompts/empty.txt"
+  run "$WRAPPER" launch --prompt-file "$TEST_ROOT/prompts/empty.txt"
+  [ "$status" -ne 0 ]
+  [ -n "$output" ] || [ -n "$stderr" ]
+}
+
 # ── await: happy path ──────────────────────────────────────────────
 
 @test "await: exits 0 on completion and writes review markdown to stdout" {
@@ -769,4 +776,21 @@ EOF
 
   # And NOT at CWD/.qrspi/audit-codex-review.jsonl.
   [ ! -f "$TEST_ROOT/.qrspi/audit-codex-review.jsonl" ]
+}
+
+@test "audit-lockdown: trailing-slash --artifact-dir → rows still land at canonical <flag>/.qrspi/" {
+  echo '{"jobId":"job-trailslash","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  mkdir -p "$TEST_ROOT/trailslash-artifact"
+
+  # Pass artifact-dir with trailing slash; realpath must canonicalize and the
+  # row must land at <dir>/.qrspi/audit-codex-review.jsonl, not at <dir>//.qrspi/.
+  run "$WRAPPER" await --artifact-dir "$TEST_ROOT/trailslash-artifact/" job-trailslash
+  [ "$status" -eq 0 ]
+
+  [ -f "$TEST_ROOT/trailslash-artifact/.qrspi/audit-codex-review.jsonl" ]
+  rows=$(wc -l < "$TEST_ROOT/trailslash-artifact/.qrspi/audit-codex-review.jsonl")
+  [ "$rows" -eq 1 ]
 }

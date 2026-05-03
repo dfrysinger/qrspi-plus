@@ -413,6 +413,10 @@ launch_subcommand() {
     printf 'launch: prompt file not readable: %s\n' "$prompt_file" >&2
     return 1
   fi
+  if [ ! -s "$prompt_file" ]; then
+    printf 'launch: prompt file is empty: %s\n' "$prompt_file" >&2
+    return 1
+  fi
 
   local companion
   if ! companion=$(resolve_codex_companion); then

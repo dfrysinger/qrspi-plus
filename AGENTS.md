@@ -76,7 +76,7 @@ long session.
 Echo's classic PAT is in 1Password at `op://Agent Vault/GitHub - df-agent-echo/pat`.
 
 ```
-gh auth login --with-token < <path-to-pat-file>
+gh auth login --with-token < /path/to/pat-file
 ```
 
 (Or use `GH_TOKEN` env var with the PAT's value.)
