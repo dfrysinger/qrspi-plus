@@ -171,7 +171,7 @@ Branch on mode (derived from `config.md.route` per § Overview) at the start. Bo
         - Create the per-task worktree at `.worktrees/{slug}/task-NN/`. Verify `.worktrees/` and `.codex-prompts/` are both in `.gitignore` (the latter is the per-task Codex-prompt scratch dir — see § Per-Task Execution → "Dispatching Reviewers"; subagent-prompt scratch must live inside the worktree wall, not under `/tmp/`).
 
           **Resume precondition.** Before attempting `git worktree add`, if any leftover state exists for `task-NN` (worktree dir or branch already present), see `references/resume-preconditions.md` for the four-case classification table and the inspect-and-decide procedure. The leftover-state handling differs from the baseline worktree's silent-delete rule because the baseline worktree contains no user work, while task branches and worktrees can.
-        - Fire the wave's per-task flows concurrently — for each task, dispatch the implementer subagent with `isolation: worktree` (multiple Agent tool calls in a single message) per § Per-Task Execution.
+        - Fire the wave's per-task flows concurrently — for each task, dispatch the implementer subagent (multiple Agent tool calls in a single message; each with the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt) per § Per-Task Execution.
         - Wait for every task in the wave to reach a terminal status (per the per-task fix loop).
         - If the next wave needs a `stage-after-G{N}` stage commit composed from this wave's leaves, create it now.
     - **Quick fix:** for each task in the batch (no waves):
@@ -213,7 +213,7 @@ In full pipeline mode, dispatch tasks in the wave order Parallelize specified. F
 
 1. Verify every task in the wave has its `Base` resolved (and any required stage commit created).
 2. Mark each task `in_progress` in TodoWrite.
-3. Fire all tasks in the wave concurrently — for each task in the wave, dispatch the implementer subagent (one Agent tool call per task in a single message; each with `isolation: worktree` and the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt) per § Per-Task Execution. As each implementer returns DONE or DONE_WITH_CONCERNS, dispatch its reviewer set in parallel against that task's worktree.
+3. Fire all tasks in the wave concurrently — for each task in the wave, dispatch the implementer subagent (one Agent tool call per task in a single message; each with the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt) per § Per-Task Execution. As each implementer returns DONE or DONE_WITH_CONCERNS, dispatch its reviewer set in parallel against that task's worktree.
 4. Wait for every task in the wave to return a per-task terminal status (clean, accepted-with-issues, or unresolved-after-3-fix-cycles per § Per-Task Execution → Per-Task Terminal Status).
 
 **Per-task state main chat tracks across the wave.** A wave with N concurrent tasks means N independent fix loops. For each task in the wave, main chat tracks four pieces of state, kept distinct *per task* so concurrent fix loops never cross-contaminate:
@@ -325,7 +325,7 @@ All reviewer and fix work is dispatched via subagents; main chat only aggregates
 2. First pass clean → task clean.
 3. Issues → **main chat re-dispatches reviewers** on the same code to build a complete list (up to 3 convergence rounds).
 4. **Implementer-fix dispatch (with persistence):**
-    - **First fix cycle:** Main chat dispatches an implementer-fix subagent via fresh `Agent` call (with `isolation: worktree` and the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt) with the consolidated issue list → fix subagent writes the fixes inside that worktree → main chat re-dispatches reviewers (same worktree pinning) on fixed code. Capture and retain the implementer-fix subagent's agent ID, indexed by task — when running concurrent fix loops in a wave, do NOT mix agent IDs across tasks.
+    - **First fix cycle:** Main chat dispatches an implementer-fix subagent via fresh `Agent` call (with the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt) with the consolidated issue list → fix subagent writes the fixes inside that worktree → main chat re-dispatches reviewers (same worktree pinning) on fixed code. Capture and retain the implementer-fix subagent's agent ID, indexed by task — when running concurrent fix loops in a wave, do NOT mix agent IDs across tasks.
     - **Subsequent fix cycles:** Main chat uses `SendMessage` to continue the SAME implementer-fix subagent (using the retained agent ID) with the new issue list, preserving its context across cycles. Why: by cycle 2, the implementer has full context of what was tried, what reviewers flagged, and which fixes worked or didn't — re-dispatching loses that. Reviewers stay re-dispatched fresh each round (they don't need cross-cycle continuity; the convergence loop already handles their stochasticity).
     - **BLOCKED escape hatch:** If the persisted implementer-fix subagent reports BLOCKED (per the status table above), main chat's escalation actions require a fresh `Agent` dispatch: model switch (model is fixed at spawn time and cannot change via `SendMessage`), or task decomposition (an intentional clean-context reset to escape the stuck approach — `SendMessage` could redirect the same agent with a new scope, but the point of the escape is fresh context, not just new instructions). The escape explicitly breaks persistence.
 5. Up to 3 fix cycles. If unresolved after 3, flag and move on.
@@ -336,7 +336,7 @@ All reviewer and fix work is dispatched via subagents; main chat only aggregates
 ### Dispatching Reviewers
 
 - Read template from `skills/implement/templates/{group}/{reviewer}.md`.
-- Launch as a Claude subagent with template as prompt framework, dispatched with `isolation: worktree` and the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt — the reviewer reads code from that worktree.
+- Launch as a Claude subagent with template as prompt framework, dispatched with `model: "sonnet"` and the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt — the reviewer reads code from that worktree.
 - Provide: task spec, code changes (files + content), test results, additional context per template, and the explicit worktree path the reviewer is bound to.
 - Each returns: `✅ Approved` or `❌ Issues: [file:line references]`.
 - **Per-task review prompt — boilerplate embed.** Each Claude reviewer subagent dispatched here embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. Findings must conform to the 5-field schema defined there (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`); `change_type` is required.
@@ -580,7 +580,7 @@ Given the Worked Example in `parallelize/SKILL.md`:
 
 **Pre-flight — baseline.** Implement creates `.worktrees/user-auth/baseline/` from the feature branch tip, runs baseline tests, deletes the worktree. Assume baseline passes (otherwise the Auto-fix path injects `task-00` and runs the per-task flow for it in isolation before Wave 1).
 
-**Wave 1.** Implement reads the Branch Map. Tasks 1 and 2 both have `Base = feature branch tip` and are file-disjoint. Resolve `feature branch tip` to the current tip of `qrspi/user-auth/main`, create worktrees `.worktrees/user-auth/task-01/` and `.worktrees/user-auth/task-02/` from that commit, dispatch both implementer subagents concurrently (Agent tool, `isolation: worktree`). When task-01's implementer returns DONE, main chat dispatches task-01's reviewer set in parallel; same for task-02. Wait for both per-task flows to reach a terminal status.
+**Wave 1.** Implement reads the Branch Map. Tasks 1 and 2 both have `Base = feature branch tip` and are file-disjoint. Resolve `feature branch tip` to the current tip of `qrspi/user-auth/main`, create worktrees `.worktrees/user-auth/task-01/` and `.worktrees/user-auth/task-02/` from that commit, dispatch both implementer subagents concurrently (Agent tool; each with its task's worktree path named in the prompt). When task-01's implementer returns DONE, main chat dispatches task-01's reviewer set in parallel; same for task-02. Wait for both per-task flows to reach a terminal status.
 
 **Stage commit creation.** Both Wave 1 tasks now in terminal state. Implement sees Wave 2 needs `stage-after-G1`. Create branch `qrspi/user-auth/stage-after-G1` by merging task-01 and task-02 tips. (Composition is documented in `parallelization.md` § Stage Commits.)
 
@@ -594,7 +594,7 @@ Quick-fix run with one task at `tasks/task-01.md`:
 
 **Pre-flight — baseline.** Implement creates `.worktrees/{slug}/baseline/` from the feature branch tip, runs baseline tests, deletes the worktree. Assume baseline passes.
 
-**Single dispatch.** Create worktree `.worktrees/{slug}/task-01/` forked from the feature branch tip, dispatch the implementer subagent for task-01 (Agent tool, `isolation: worktree`). On DONE, dispatch the correctness reviewer set in parallel; on issues, dispatch implementer-fix subagent and re-run reviewers (up to 3 cycles). Wait for terminal status.
+**Single dispatch.** Create worktree `.worktrees/{slug}/task-01/` forked from the feature branch tip, dispatch the implementer subagent for task-01 (Agent tool; with the worktree path named in the prompt). On DONE, dispatch the correctness reviewer set in parallel; on issues, dispatch implementer-fix subagent and re-run reviewers (up to 3 cycles). Wait for terminal status.
 
 **Batch gate.** Task is in terminal state. Present the batch gate; on "continue," invoke the next route step (Test).
 

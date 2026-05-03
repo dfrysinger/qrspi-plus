@@ -677,6 +677,36 @@ EOF
   [ -n "$output$stderr" ]
 }
 
+@test "await: --artifact-dir pointing at a regular file → fail-closed" {
+  # If --artifact-dir resolves to a regular file rather than a directory,
+  # resolve_audit_dir's [ ! -d ] check must reject before any audit write.
+  echo '{"jobId":"job-regfile","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  : > "$TEST_ROOT/regular-file-not-a-dir"
+
+  run "$WRAPPER" await --artifact-dir "$TEST_ROOT/regular-file-not-a-dir" job-regfile
+  [ "$status" -ne 0 ]
+  [ -n "$output$stderr" ]
+}
+
+@test "audit-lockdown: <artifact_dir>/.qrspi pre-planted as regular file → exit 12" {
+  # An attacker (or a leftover from an aborted run) plants a regular file at
+  # <artifact_dir>/.qrspi/, blocking mkdir -p from creating the audit dir.
+  # The wrapper must surface this as audit-write-fail (exit 12), NOT silently
+  # skip auditing.
+  echo '{"jobId":"job-regfile-qrspi","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  : > .qrspi   # regular file at the audit-dir path inside $AWAIT_ARTIFACT_DIR
+
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-regfile-qrspi
+
+  [ "$status" -eq 12 ]
+}
+
 @test "audit-lockdown: symlinked audit file is refused (planted at <artifact_dir>/.qrspi/audit-...)" {
   # An attacker plants a symlink at the audit-file path pointing outside the
   # artifact dir (e.g. at a sensitive system file proxy). The wrapper must

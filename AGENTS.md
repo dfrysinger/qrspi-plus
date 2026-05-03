@@ -39,24 +39,37 @@ Each app has its credentials in 1Password (`Agent Vault`, item title
 - `installation_id` (text)
 - `private_key` (concealed, RSA PEM)
 
-Mint a fresh installation token (valid 1 hour) with:
+Mint a fresh GitHub installation token (the installation token GitHub
+returns is valid 1 hour) with:
 
 ```
 node ~/Library/CloudStorage/Dropbox/claude-workspace/agent-tooling/playwright-signup/smoke-test-app.mjs {nato}
 ```
 
-That script also doubles as a connectivity check (it reads the repo
-metadata as a smoke test). For programmatic use, the token-mint logic is:
+That helper script lives in Daniel's private workspace; it is not the
+canonical token-mint surface. The canonical mint logic (which any
+operator can implement from scratch) is the three steps below — the
+script is a convenience wrapper plus a connectivity check (it reads
+the repo metadata as a smoke test).
 
 1. Build a JWT signed `RS256` with the private key:
    `header={alg:RS256}`, `payload={iat:now-60, exp:now+540, iss:app_id}`.
+   The `iat:now-60` backdate (60 seconds) absorbs clock skew between
+   your machine and GitHub; the `exp:now+540` window (9 minutes) sits
+   safely under GitHub's 600-second JWT-validity ceiling so a slow
+   request cannot expire the JWT mid-flight. These are NOT typos —
+   GitHub rejects any JWT whose `exp` is more than 600s after `iat`.
 2. POST `https://api.github.com/app/installations/{installation_id}/access_tokens`
-   with `Authorization: Bearer <jwt>`.
-3. Use the returned `token` as `GH_TOKEN` for `gh` and as git password
-   over HTTPS (`https://x-access-token:<token>@github.com/...`).
+   with `Authorization: Bearer <jwt>`. The response body's `token`
+   field is the **installation token** — distinct from the JWT above
+   and with a different (1-hour) validity window.
+3. Use the returned installation token as `GH_TOKEN` for `gh` and as
+   the git password over HTTPS
+   (`https://x-access-token:<token>@github.com/...`).
 
-Tokens are scoped to dfrysinger/qrspi-plus only and expire in 1 hour.
-Re-mint if you see auth errors during a long session.
+The installation token (NOT the JWT) is scoped to dfrysinger/qrspi-plus
+only and expires in 1 hour. Re-mint if you see auth errors during a
+long session.
 
 ### Echo (legacy user account, until transition)
 
