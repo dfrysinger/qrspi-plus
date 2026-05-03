@@ -58,6 +58,8 @@ Every finding emitted by this reviewer — including the fail-closed structured-
 
 A finding that omits `change_type` (or any other field) is malformed and will not be accepted by the review-loop pause gate.
 
+**Disk-write contract.** This template inherits the disk-write contract from `skills/_shared/reviewer-boilerplate.md` `## Disk-Write Contract`. Reviewer-tag for the scope-reviewer is `scope`. The dispatching skill provides an absolute output path in the prompt — typically `<ABS_ARTIFACT_DIR>/reviews/{ARTIFACT_TYPE}/round-NN-scope.md`. The reviewer writes its findings to that exact path using `Write` and returns only the brief summary form per the contract.
+
 ## Embedded Boilerplate
 
 This template embeds `skills/_shared/reviewer-boilerplate.md` verbatim at dispatch time. The consuming skill's dispatch logic concatenates the boilerplate file into the rendered reviewer prompt so the dispatched subagent sees the finding schema, change-type classifier, and disagreement-valid framing inline. This file references the boilerplate by path; it does NOT copy its contents.

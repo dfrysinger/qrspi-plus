@@ -102,3 +102,47 @@ The `{artifact_name}` parameter is a short stable identifier for the embedded so
 **Embed-site contract.** The dispatching skills (Goals, Questions, Research, Design, Phasing, Structure, Plan, Parallelize, Implement, Integrate, Test, Replan, plus the cross-cutting `scope-reviewer` template) reference this section by name when they instruct the dispatch logic to interpolate artifact content. Each embed-site SKILL.md / template MUST mention the `UNTRUSTED-ARTIFACT-START` / `UNTRUSTED-ARTIFACT-END` token form so a reader auditing the dispatch can confirm the wrapper is applied. Cross-cutting unit tests (`tests/unit/test-reviewer-boilerplate-embed.bats`) assert this property across the canonical embed-site set.
 
 **Interaction with the secondary-escalation rule.** Per `## Change-Type Classifier` → "Trigger surface": the secondary-escalation rule fires only on a reviewer's own emitted `referenced_files` / `message` (a reviewer-authored citation), never on content found INSIDE a `feedback/*.md` body that the reviewer is reading through the wrapper. The wrapper is what makes that distinction enforceable.
+
+## Disk-Write Contract
+
+Reviewer subagents (Claude reviewer, scope-reviewer) MUST write their findings directly to disk and return only a brief summary to the orchestrator. This is the cost-optimization contract that keeps finding text out of main chat's conversation history. The full orchestrator-side rationale lives in `using-qrspi/SKILL.md` `## Review Output Handling`; this section defines the reviewer's obligations.
+
+**File path.** The dispatching skill provides an absolute output path in the reviewer's prompt under a clearly-labeled field (e.g. `Output file: <ABS_PATH>/reviews/{step}/round-NN-{reviewer-tag}.md`). The reviewer writes to that exact path using its `Write` tool. Do NOT invent a path; do NOT write to any other location.
+
+**File format.** The reviewer authors the file in this shape:
+
+```markdown
+---
+artifact: {step}
+round: NN
+reviewer: {reviewer-tag}
+---
+
+# {Step} review — round NN — {reviewer-tag}
+
+## Summary
+
+- Total findings: N
+- Severity: high=X, medium=Y, low=Z
+- Auto-apply (style/clarity/correctness): A
+- Paused (scope/intent): P
+
+## Findings
+
+{Findings as a numbered list. Each finding conforms to the 5-field schema above (`## Finding Schema`): finding_id, severity, change_type, message, referenced_files. "No issues found" is a valid body when N=0.}
+```
+
+**Subagent guardrail.** The filename pattern `round-NN-{reviewer-tag}.md` is not blocked by the Claude Code 2.1.x subagent-write guardrail (which blocks `^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$`, case-insensitive at filename stem start). The reviewer's `Write` call succeeds without special handling.
+
+**Return value.** After writing the file, return ONLY a brief summary to the orchestrator. Required form:
+
+```
+Round NN {reviewer-tag} review complete.
+Findings: N (high=X, medium=Y, low=Z)
+Auto-apply: A | Paused: P
+Written to: reviews/{step}/round-NN-{reviewer-tag}.md
+```
+
+Do NOT include finding text, prose explanations, or per-finding detail in the return value. The brevity of this return is load-bearing for the optimization — verbose returns recreate the cache-read bloat the contract is designed to eliminate. If the orchestrator needs detail, it reads the file directly.
+
+**Failure mode.** If the `Write` call fails (permission, ENOSPC, malformed path), the reviewer's return value MUST surface the failure to the orchestrator with the literal token `WRITE_FAILED:` followed by the underlying error string. Do NOT silently fall back to returning findings-as-text — that defeats the contract. The orchestrator handles `WRITE_FAILED:` returns explicitly.
