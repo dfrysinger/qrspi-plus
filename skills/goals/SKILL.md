@@ -257,10 +257,12 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Three reviewers 
 
   Findings written to `reviews/goals-review.md` in the 5-field shape.
 - **Scope-reviewer subagent** — dispatched from `skills/_shared/templates/scope-reviewer.md` with parameter `{ARTIFACT_TYPE}=goals`. Loads this skill's `## Goals OWNS / Goals DEFERS` section as the locked rule set, runs boundary-drift detection (content matching a DEFERS entry — e.g. acceptance criteria, file maps, phasing) and scope-compliance per OWNS, and applies the boundary-drift signal (skill-implementation jargon leaking from later stages). Findings flow into `reviews/goals-review.md` under `#### Scope-Reviewer`. The dispatched prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim alongside the template body.
-- **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper:
-  1. Write the review prompt (`goals.md` + the same Goals-specific criteria + the Goals OWNS/DEFERS contract) to a temporary file (e.g., `/tmp/codex-prompt-goals.md`). The prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim so Codex emits findings in the 5-field shape.
-  2. Launch the job early (in parallel with the Claude reviewer above) by running `scripts/codex-companion-bg.sh launch --prompt-file /tmp/codex-prompt-goals.md` as a foreground Bash-tool call. The wrapper prints the jobId to stdout as a single line and exits 0 within ~5 seconds. The orchestrator (this skill's caller — the Claude Code agent driving the Bash tool) records that printed jobId text from the Bash tool's stdout output and pastes it as the literal `<jobId>` argument in the matching await Bash call below; there is no shell variable assignment in this flow, and shell command substitution (`$()` / backticks) is forbidden per Daniel's CLAUDE.md. If launch exits non-zero, abort this Codex review and append a launch-failure note to `reviews/goals-review.md`.
-  3. After the Claude reviewer returns, await the result: `scripts/codex-companion-bg.sh await <jobId>`. Exit codes: **0** = success, append the markdown stdout to `reviews/goals-review.md` under `#### Codex`; **10** = 20-min ceiling hit (no stdout produced) — append an explicit ceiling note (e.g., `Codex review: 20-min ceiling hit, no findings produced`), do NOT append empty stdout, do NOT silently retry; **11** = companion crash mid-job (job-not-found) — append a crash note and surface to the user before proceeding; **12** = audit-write fail (e.g., row > 4096 bytes) — append an infrastructure-failure note and surface to the user, do NOT retry blindly. **Only append stdout to the review log on exit 0.**
+- **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper. Prompt content: `goals.md` + the Goals-specific criteria + the Goals OWNS/DEFERS contract; embeds `skills/_shared/reviewer-boilerplate.md` verbatim so Codex emits findings in the 5-field shape.
+
+<prompt_file>/tmp/codex-prompt-goals.md</prompt_file>
+<output_file><ABS_ARTIFACT_DIR>/reviews/goals/round-NN-codex.md</output_file>
+
+!`cat ${CLAUDE_SKILL_DIR}/../_shared/codex/launch-await-pattern.md`
 
 ### Human Gate
 
