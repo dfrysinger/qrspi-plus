@@ -459,7 +459,7 @@ code-quality-reviewer, silent-failure-hunter, security-reviewer}
 **Status:** {success | ceiling-hit | crash | audit-fail | launch-fail}
 ```
 
-The per-reviewer per-round Codex file (filled by `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId> > ...` redirection in the embedded launch-await pattern) holds the verbatim Codex stdout — exit-0 success means the file contains the Codex markdown findings; exit codes 10/11/12 result in the wrapper writing an explicit ceiling/crash/audit-fail note to the same file. Apply-fix dispatch reads each referenced Codex file at dispatch time to merge findings with the Claude reviewer findings.
+The per-reviewer per-round Codex file (filled by `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId> > ...` redirection in the embedded launch-await pattern) holds the verbatim Codex stdout on exit-0; per the shared launch-await pattern, on non-zero exit codes (10 ceiling-hit / 11 crash / 12 audit-fail) the **orchestrator** (main chat — not the wrapper) writes the corresponding explicit ceiling/crash/audit-fail note into the same per-round Codex file before recording Status. Apply-fix dispatch reads each referenced Codex file at dispatch time to merge findings with the Claude reviewer findings.
 
 **Rules:**
 
