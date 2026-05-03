@@ -88,7 +88,7 @@ When flagging, report:
 - The implementer's stated rationale (if any)
 - Recommendation: should the task spec be updated retroactively, or should the implementation be reworked?
 
-This check is **advisory, not blocking**. The orchestrator main chat decides whether to act on the flag. Discipline replaces hook-layer allowlist enforcement (dropped in the 2026-04-26 implement-runtime-fix).
+This check is **advisory, not blocking**. The orchestrator main chat decides whether to act on the flag.
 
 ## Report Format
 

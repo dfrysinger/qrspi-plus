@@ -4,9 +4,13 @@
 # Subcommands:
 #   launch --prompt-file <path>   Fork companion `task --background` and print
 #                                 the captured jobId; exit 0 within ~5s.
-#   await <jobId>                 Poll status (5s/30s with backoff at 120s),
+#   await --artifact-dir <abs_path> <jobId>
+#                                 Poll status (5s/30s with backoff at 120s),
 #                                 fetch result on completion, write review
 #                                 markdown to stdout; ceiling at 1200s.
+#                                 --artifact-dir is required (absolute path);
+#                                 audit rows are written canonically under
+#                                 <abs_path>/.qrspi/.
 #
 # Exit codes:
 #   0   success
@@ -31,14 +35,16 @@ set -u
 : "${QRSPI_CODEX_CEILING_SECONDS:=1200}"
 : "${QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS:=5}"
 
-# Audit-path lockdown (R1 Codex-S2 / task-29): the audit dir, file, and lock
-# names are NOT environment-overridable. The dir is resolved at runtime from
-# .qrspi/state.json's `artifact_dir` field via resolve_audit_dir() — there is
+# Audit-path lockdown: the audit dir, file, and lock names are NOT
+# environment-overridable. The dir is resolved at runtime from `await`'s
+# trusted-caller --artifact-dir CLI flag via resolve_audit_dir() — there is
 # no env-var escape hatch. Any attacker-controlled $QRSPI_AUDIT_DIR /
 # $QRSPI_AUDIT_FILE / $QRSPI_AUDIT_LOCK_DIR they may inject is ignored.
+# Trust boundary: the QRSPI orchestrator (the Claude Code agent driving the
+# Bash tool) supplies --artifact-dir; auto-mode + Claude judgment is the
+# governing safety surface per the broader hooks-removal contract.
 readonly QRSPI_AUDIT_FILENAME="audit-codex-review.jsonl"
 readonly QRSPI_AUDIT_LOCK_NAME="audit-codex-review.lock"
-readonly QRSPI_STATE_FILE_REL=".qrspi/state.json"
 
 # ---------------------------------------------------------------------------
 # Companion path resolution: explicit $CODEX_COMPANION wins; else glob the
@@ -101,82 +107,66 @@ now_epoch() {
 }
 
 # ---------------------------------------------------------------------------
-# resolve_audit_dir
+# resolve_audit_dir <artifact_dir>
 #
-# Audit-path lockdown (R1 Codex-S2 / task-29). The audit dir is NOT
-# environment-overridable. We resolve it from <CWD>/.qrspi/state.json's
-# `artifact_dir` field (which the QRSPI hooks write as an absolute path), then
-# canonicalize via `realpath` so any symlink in the artifact_dir chain is
-# resolved to its real on-disk path BEFORE we open files for append.
+# Validate the trusted-caller-supplied artifact_dir and echo the canonicalized
+# audit-dir path on stdout. The caller (await_subcommand) obtains artifact_dir
+# from its own --artifact-dir CLI flag.
 #
-# Fail-closed contract: state.json missing, unparseable, or lacking
-# artifact_dir → rc=12 with stderr; the caller MUST refuse to write any audit
-# rows. This is the security-critical property — there is no fallback to a
-# CWD-relative `.qrspi/` default and no env-var escape hatch.
+# Hardening retained from the prior state.json-based resolver:
+#   - artifact_dir must be absolute and exist as a directory
+#   - realpath canonicalization (resolves any symlink in the ancestor chain
+#     before we open files for append, e.g. /tmp → /private/tmp on macOS)
+#   - returns 12 on any validation failure with a clear stderr message
 #
-# Echoes the canonicalized audit dir (`<realpath(artifact_dir)>/.qrspi`) on
-# stdout on success. On failure, returns 12 with no stdout.
+# Hardening NOT retained (intentional, threat-model change):
+#   - state.json existence/parse checks (file is gone)
+#   - "no env override" property (replaced by "trusted-caller-supplied
+#     CLI flag", which is the QRSPI orchestrator's responsibility per
+#     auto-mode + Claude judgment)
 resolve_audit_dir() {
-  local state_file="$QRSPI_STATE_FILE_REL"
-  if [ ! -f "$state_file" ]; then
-    printf 'codex-companion-bg: %s not found; cannot resolve audit dir (refusing to write audit rows)\n' \
-      "$state_file" >&2
-    return 12
-  fi
-
-  # `jq -r` echoes a literal "null" for missing keys; guard with `// empty` so
-  # the absence is observable as an empty string. A jq parse failure (rc != 0)
-  # surfaces a separate error path so we don't silently treat malformed JSON
-  # as "no artifact_dir."
-  local artifact_dir jq_err
-  if ! artifact_dir=$(jq -r '.artifact_dir // empty' < "$state_file" 2>/dev/null); then
-    jq_err=$(jq -r '.artifact_dir // empty' < "$state_file" 2>&1 1>/dev/null)
-    printf 'codex-companion-bg: failed to parse %s: %s\n' "$state_file" "$jq_err" >&2
-    return 12
-  fi
+  local artifact_dir="${1:-}"
   if [ -z "$artifact_dir" ]; then
-    printf 'codex-companion-bg: %s missing artifact_dir field; refusing to write audit rows\n' \
-      "$state_file" >&2
+    printf 'codex-companion-bg: resolve_audit_dir called with empty artifact_dir\n' >&2
     return 12
   fi
+  case "$artifact_dir" in
+    /*) ;;
+    *)
+      printf 'codex-companion-bg: artifact_dir must be absolute, got: %s\n' "$artifact_dir" >&2
+      return 12
+      ;;
+  esac
   if [ ! -d "$artifact_dir" ]; then
-    printf 'codex-companion-bg: artifact_dir from state.json is not a directory: %s\n' \
+    printf 'codex-companion-bg: artifact_dir does not exist or is not a directory: %s\n' \
       "$artifact_dir" >&2
     return 12
   fi
-
-  # `realpath` canonicalizes every component (resolving any symlinks in the
-  # ancestor chain). On macOS `/tmp` resolves to `/private/tmp`, so callers
-  # comparing paths must compare canonicalized forms (we always do).
   local canon
-  if ! canon=$(realpath "$artifact_dir" 2>/dev/null); then
+  if ! canon=$(realpath "$artifact_dir" 2>/dev/null) || [ -z "$canon" ]; then
     printf 'codex-companion-bg: realpath failed for artifact_dir %s\n' "$artifact_dir" >&2
-    return 12
-  fi
-  if [ -z "$canon" ]; then
-    printf 'codex-companion-bg: realpath returned empty for artifact_dir %s\n' "$artifact_dir" >&2
     return 12
   fi
   printf '%s/.qrspi' "$canon"
 }
 
 # ---------------------------------------------------------------------------
-# emit_audit_row job_id elapsed_seconds completion_status timestamp
+# emit_audit_row job_id elapsed_seconds completion_status timestamp artifact_dir
 #
 # Append one JSONL row to <artifact_dir>/.qrspi/audit-codex-review.jsonl,
-# where <artifact_dir> is resolved from state.json (NOT from any env var).
+# where <artifact_dir> is the trusted-caller value supplied via await's
+# --artifact-dir CLI flag (NOT from any env var, NOT from state.json).
 # Acquires mkdir-lock with bounded retry; reaps locks older than 30s via
 # cross-platform stat. Returns 0 on success, 12 on any integrity failure
-# (state-resolve, perm, symlink, lock leak, append).
+# (artifact_dir validation, perm, symlink, lock leak, append).
 emit_audit_row() {
-  local job_id="$1" elapsed="$2" status="$3" ts="$4"
+  local job_id="$1" elapsed="$2" status="$3" ts="$4" artifact_dir="$5"
 
-  # Resolve audit dir from state.json (security-critical: no env override).
-  # Any failure here is a hard 12 — we refuse to write to a fallback CWD
-  # `.qrspi/` because that would mask the missing-state condition the
-  # security spec demands we surface.
+  # Resolve audit dir from caller-supplied artifact_dir (security-critical:
+  # no env override). Any failure here is a hard 12 — we refuse to write to
+  # a fallback location because that would mask the configuration error.
   local audit_dir
-  if ! audit_dir=$(resolve_audit_dir); then
+  if ! audit_dir=$(resolve_audit_dir "$artifact_dir"); then
     return 12
   fi
   local audit_file="$audit_dir/$QRSPI_AUDIT_FILENAME"
@@ -423,6 +413,10 @@ launch_subcommand() {
     printf 'launch: prompt file not readable: %s\n' "$prompt_file" >&2
     return 1
   fi
+  if [ ! -s "$prompt_file" ]; then
+    printf 'launch: prompt file is empty: %s\n' "$prompt_file" >&2
+    return 1
+  fi
 
   local companion
   if ! companion=$(resolve_codex_companion); then
@@ -606,12 +600,57 @@ fetch_result() {
 
 # ---------------------------------------------------------------------------
 # await_subcommand
+#
+# Parse `--artifact-dir <abs_path>` (required, order-tolerant relative to the
+# positional <jobId>) and the positional jobId, then poll/await/emit audit.
 await_subcommand() {
-  if [ "$#" -lt 1 ] || [ -z "$1" ]; then
+  local job_id=""
+  local artifact_dir=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --artifact-dir)
+        if [ "$#" -lt 2 ]; then
+          printf 'await: --artifact-dir requires a value\n' >&2
+          return 1
+        fi
+        artifact_dir="$2"
+        shift 2
+        ;;
+      --artifact-dir=*)
+        artifact_dir="${1#--artifact-dir=}"
+        shift
+        ;;
+      --)
+        shift
+        if [ "$#" -ge 1 ] && [ -z "$job_id" ]; then
+          job_id="$1"
+          shift
+        fi
+        ;;
+      -*)
+        printf 'await: unrecognised flag: %s\n' "$1" >&2
+        return 1
+        ;;
+      *)
+        if [ -z "$job_id" ]; then
+          job_id="$1"
+          shift
+        else
+          printf 'await: unexpected extra positional argument: %s\n' "$1" >&2
+          return 1
+        fi
+        ;;
+    esac
+  done
+
+  if [ -z "$job_id" ]; then
     printf 'await: jobId argument is required\n' >&2
     return 1
   fi
-  local job_id="$1"
+  if [ -z "$artifact_dir" ]; then
+    printf 'await: --artifact-dir <abs_path> is required\n' >&2
+    return 1
+  fi
 
   local companion
   if ! companion=$(resolve_codex_companion); then
@@ -620,7 +659,7 @@ await_subcommand() {
     # caller's log isn't silent.
     local ts
     ts=$(now_iso) || ts="1970-01-01T00:00:00Z"
-    if ! emit_audit_row "$job_id" 0 "infrastructure-failure" "$ts"; then
+    if ! emit_audit_row "$job_id" 0 "infrastructure-failure" "$ts" "$artifact_dir"; then
       printf 'await: audit-row write failed during infrastructure-failure path for job %s\n' "$job_id" >&2
       return 12
     fi
@@ -719,7 +758,7 @@ await_subcommand() {
   local ts
   ts=$(now_iso) || return 1
 
-  if ! emit_audit_row "$job_id" "$elapsed_total" "$final_status" "$ts"; then
+  if ! emit_audit_row "$job_id" "$elapsed_total" "$final_status" "$ts" "$artifact_dir"; then
     printf 'await: audit-row write failed for job %s\n' "$job_id" >&2
     return 12
   fi
@@ -733,7 +772,7 @@ main() {
     cat >&2 <<'USAGE'
 Usage:
   codex-companion-bg.sh launch --prompt-file <path>
-  codex-companion-bg.sh await <jobId>
+  codex-companion-bg.sh await --artifact-dir <abs_path> <jobId>
 USAGE
     return 1
   fi

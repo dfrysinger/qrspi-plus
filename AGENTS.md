@@ -1,11 +1,15 @@
 # Agent protocol for QRSPI-plus
 
-You are an agent with your own GitHub identity (e.g. `df-agent-alpha`).
-Your branch prefix matches your username.
+You are an agent with your own GitHub identity. Most agents are GitHub
+Apps named `qrspi-{nato}` (alpha through golf, minus echo) — they commit
+and comment as `qrspi-alpha[bot]`. Echo is the lone remaining machine
+user account (`df-agent-echo`) during a transition; it will move to a
+GitHub App once its current work is done.
 
-The roster of agent identities lives in this repo's GitHub collaborators
-list — `df-agent-alpha` through `df-agent-golf` (NATO phonetic). The human
-reviewer is `@dfrysinger`.
+The human reviewer is `@dfrysinger`.
+
+Branch prefix matches your bot/user handle (without the `[bot]` suffix
+for apps): e.g. `qrspi-alpha/...` or `df-agent-echo/...`.
 
 ## Bootstrapping a session
 
@@ -14,38 +18,68 @@ When starting a fresh Claude Code session as an agent:
 1. Clone (or `cd` into) the `qrspi-plus` repo. **This file (`AGENTS.md`)
    auto-loads** once you're in the repo root.
 2. Read the kickoff message from the human for the issue assignment.
-3. Confirm your GitHub identity matches the agent the human addressed:
+3. Authenticate as the right identity (see "Authenticating" below).
+4. Confirm your GitHub identity matches the agent the human addressed:
    ```
    gh api user --jq .login
    ```
-   If it doesn't match, see "Switching identities" below. Never act under
-   another agent's identity.
-4. Follow "Before starting any task" below.
+   For apps it returns `qrspi-{nato}[bot]`. Echo returns `df-agent-echo`.
+   If it doesn't match, re-run the auth recipe. Never act under another
+   agent's identity.
+5. Follow "Before starting any task" below.
 
-### Switching identities
+## Authenticating
 
-If `gh api user --jq .login` shows the wrong account, you have three
-recipes depending on setup:
+### Apps (qrspi-alpha … qrspi-golf, except echo)
 
-- **Multiple accounts already logged in** (preferred — fastest):
-  ```
-  gh auth switch --user df-agent-alpha
-  ```
-- **You only have the PAT** (e.g., pulled from 1Password into
-  `/tmp/df-agent-alpha-token`):
-  ```
-  gh auth login --with-token < /tmp/df-agent-alpha-token
-  ```
-- **One-off commands without changing the stored login** — set
-  `GH_TOKEN` for the session shell. Read the token from a file; do not
-  use `$(...)` or backtick substitution if your environment forbids it
-  (most QRSPI agent envs do):
-  ```
-  export GH_TOKEN_FILE=/tmp/df-agent-alpha-token
-  GH_TOKEN=$(< "$GH_TOKEN_FILE") gh ...      # if substitution allowed
-  ```
-  Or simpler: `gh auth login --with-token < /tmp/...` (recipe above) and
-  let `gh` manage the token for the rest of the session.
+Each app has its credentials in 1Password (`Agent Vault`, item title
+`GitHub App - qrspi-{nato}`):
+
+- `app_id` (text)
+- `installation_id` (text)
+- `private_key` (concealed, RSA PEM)
+
+Mint a fresh GitHub installation token (the installation token GitHub
+returns is valid 1 hour) with:
+
+```
+node ~/Library/CloudStorage/Dropbox/claude-workspace/agent-tooling/playwright-signup/smoke-test-app.mjs {nato}
+```
+
+That helper script lives in Daniel's private workspace; it is not the
+canonical token-mint surface. The canonical mint logic (which any
+operator can implement from scratch) is the three steps below — the
+script is a convenience wrapper plus a connectivity check (it reads
+the repo metadata as a smoke test).
+
+1. Build a JWT signed `RS256` with the private key:
+   `header={alg:RS256}`, `payload={iat:now-60, exp:now+540, iss:app_id}`.
+   The `iat:now-60` backdate (60 seconds) absorbs clock skew between
+   your machine and GitHub; the `exp:now+540` window (9 minutes) sits
+   safely under GitHub's 600-second JWT-validity ceiling so a slow
+   request cannot expire the JWT mid-flight. These are NOT typos —
+   GitHub rejects any JWT whose `exp` is more than 600s after `iat`.
+2. POST `https://api.github.com/app/installations/{installation_id}/access_tokens`
+   with `Authorization: Bearer <jwt>`. The response body's `token`
+   field is the **installation token** — distinct from the JWT above
+   and with a different (1-hour) validity window.
+3. Use the returned installation token as `GH_TOKEN` for `gh` and as
+   the git password over HTTPS
+   (`https://x-access-token:<token>@github.com/...`).
+
+The installation token (NOT the JWT) is scoped to dfrysinger/qrspi-plus
+only and expires in 1 hour. Re-mint if you see auth errors during a
+long session.
+
+### Echo (legacy user account, until transition)
+
+Echo's classic PAT is in 1Password at `op://Agent Vault/GitHub - df-agent-echo/pat`.
+
+```
+gh auth login --with-token < /path/to/pat-file
+```
+
+(Or use `GH_TOKEN` env var with the PAT's value.)
 
 Re-verify with `gh api user --jq .login` after switching. If you can't
 get to the correct identity, stop and ask the human.
@@ -61,8 +95,9 @@ get to the correct identity, stop and ask the human.
 
 ## Starting work
 
-5. Branch name: `{your-username}/issue-{NNN}-{short-slug}`
-   (e.g. `df-agent-alpha/issue-42-fix-plan-stage-loop`).
+5. Branch name: `{your-handle}/issue-{NNN}-{short-slug}`
+   (e.g. `qrspi-alpha/issue-42-fix-plan-stage-loop` for an app, or
+   `df-agent-echo/issue-42-...` for echo).
 6. Make a stub commit and open a **draft** PR with body `Fixes #NNN`:
    ```
    gh pr create --draft --title "..." --body "Fixes #NNN"

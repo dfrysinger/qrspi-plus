@@ -12,13 +12,22 @@ Your job is to verify an unbroken traceability chain from goals through
 specs through tests to implementation. Every piece of code should exist
 because a goal demands it.
 
-## Goals — Acceptance Criteria
+**Acceptance criteria source (strip-from-goals contract).** Acceptance criteria are NOT authored in `goals.md`. `goals.md` carries per-goal problem framing only (Problem / Why we care / What we know so far). Acceptance criteria live downstream:
+- **Per-task test expectations** — in each `tasks/task-NN.md`'s `## Test Expectations` block.
+- **Per-phase acceptance criteria** — in `plan.md` under each `## Phase N: {name}` heading as a `### Phase N Acceptance Criteria` subsection.
+Use `goals.md` to anchor goal-level intent (each task's `goal_ids` frontmatter list maps tasks to goals); use `plan.md` and the task spec for the criteria themselves.
 
-[FULL TEXT of goals.md — acceptance criteria section]
+## Goals — Problem Framing (for goal-level intent)
+
+[FULL TEXT of goals.md goals — Problem / Why we care / What we know so far per goal]
+
+## Acceptance Criteria — From plan.md and Task Spec
+
+[Per-phase acceptance block from plan.md + the relevant task spec's Test Expectations]
 
 ## Task Spec
 
-[Task spec with test expectations]
+[Task spec with test expectations and goal_ids frontmatter]
 
 ## Implementation and Tests
 
@@ -29,27 +38,27 @@ because a goal demands it.
 Work through each direction of the trace. For every finding, cite
 specific files and lines.
 
-### 1. Forward Trace: Goal → Task Spec → Test → Implementation
+### 1. Forward Trace: Goal → Per-Phase Acceptance → Task Spec → Test → Implementation
 
-For each acceptance criterion in goals.md that this task addresses:
-- Find the corresponding test expectation in the task spec
-- Find the actual test that covers that expectation
+For each acceptance criterion (per-phase block in plan.md, or the task spec's Test Expectations) this task addresses:
+- Confirm it traces upstream to a goal in `goals.md` via the task spec's `goal_ids` frontmatter
+- Find the actual test that covers the criterion
 - Find the production code that the test exercises
-- Record the chain: criterion → spec expectation → test file:line → impl file:line
+- Record the chain: goal → criterion (plan.md or task spec) → test file:line → impl file:line
 
 ### 2. Backward Trace: Implementation → Test → Spec → Goal
 
 For each implementation behavior (public function, branch, error path):
 - Does a test exercise it?
 - Does a test expectation in the spec call for it?
-- Does an acceptance criterion in goals.md require it?
+- Does the spec's `goal_ids` frontmatter trace it back to a goal in `goals.md`?
 - If any behavior cannot trace back to a goal, flag it as a YAGNI signal
 
 ### 3. Gap Analysis: Uncovered Acceptance Criteria
 
-For each acceptance criterion in goals.md:
-- Should this task address it? (Based on task spec scope)
-- If yes, is there a test expectation for it?
+For each acceptance criterion (per-phase block in plan.md + task spec Test Expectations):
+- Should this task address it? (Based on task spec scope and `goal_ids` mapping)
+- If yes, is there a test expectation for it in the task spec?
 - If there's a test expectation, is there an actual test?
 - Flag criteria that this task should cover but doesn't
 

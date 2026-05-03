@@ -5,7 +5,7 @@ description: Use when starting a new QRSPI pipeline run — captures user intent
 
 # Goals (QRSPI Step 1)
 
-**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
+!`cat ${CLAUDE_SKILL_DIR}/../_shared/precondition-block.md`
 
 **Announce at start:** "I'm using the QRSPI Goals skill to capture what you want to build."
 
@@ -55,8 +55,6 @@ If neither value fits cleanly, default to `exploratory` and flag the ambiguity i
 
 **Required inputs:** None (this is the first step)
 
-**State bootstrap:** If `.qrspi/state.json` does not exist or `state_read` returns non-zero, call `state_init_or_reconcile <artifact_dir>`.
-
 **Before starting:**
 1. Create the artifact directory: `docs/qrspi/YYYY-MM-DD-{slug}/` (relative to the project root, not the plugin directory)
    - **Slug generation:** Take the user's first description of what they want to build, extract 2-4 key words, convert to lowercase kebab-case. Examples: "I want to add user authentication" → `user-auth`, "Build a search API for products" → `product-search-api`. If ambiguous, ask the user to confirm.
@@ -90,8 +88,6 @@ Goals is invoked in three distinct contexts:
 3. Run a focused Interactive Dialogue against the auto-populated draft: confirm the promoted goals (Replan-populated from `roadmap.md` + `future-goals.md`) match the user's expectation for this next phase, capture any phase-specific constraints discovered during the prior phase (the Replan feedback file at `feedback/replan-phase-NN-round-MM.md` is one input; ask the user whether they want anything in addition).
 4. Re-synthesize `goals.md` (subagent) with the auto-populated content + any new constraints. Preserve goal IDs from `roadmap.md` so downstream artifact references remain valid.
 5. Run the standard Review Round + Human Gate; on approval, write `status: approved` and let the standard pipeline cascade (Questions → Research → ... → Parallelize → Implement).
-
-**State reconciliation on next-phase restart.** Replan calls `state_init_or_reconcile <artifact_dir>` before invoking Goals, so Goals does not call it again on next-phase restart. The fresh-run bootstrap above still applies when state is genuinely missing.
 
 <HARD-GATE>
 Do NOT synthesize goals.md until the pipeline mode is selected and config.md is written.
@@ -259,12 +255,14 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Three reviewers 
   - Environmental constraints are concrete (not "use existing tech stack").
   - The request scope is appropriate for a single QRSPI run.
 
-  Findings written to `reviews/goals-review.md` in the 5-field shape.
-- **Scope-reviewer subagent** — dispatched from `skills/_shared/templates/scope-reviewer.md` with parameter `{ARTIFACT_TYPE}=goals`. Loads this skill's `## Goals OWNS / Goals DEFERS` section as the locked rule set, runs boundary-drift detection (content matching a DEFERS entry — e.g. acceptance criteria, file maps, phasing) and scope-compliance per OWNS, and applies the boundary-drift signal (skill-implementation jargon leaking from later stages). Findings flow into `reviews/goals-review.md` under `#### Scope-Reviewer`. The dispatched prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim alongside the template body.
-- **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper:
-  1. Write the review prompt (`goals.md` + the same Goals-specific criteria + the Goals OWNS/DEFERS contract) to a temporary file (e.g., `/tmp/codex-prompt-goals.md`). The prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim so Codex emits findings in the 5-field shape.
-  2. Launch the job early (in parallel with the Claude reviewer above) by running `scripts/codex-companion-bg.sh launch --prompt-file /tmp/codex-prompt-goals.md` as a foreground Bash-tool call. The wrapper prints the jobId to stdout as a single line and exits 0 within ~5 seconds. The orchestrator (this skill's caller — the Claude Code agent driving the Bash tool) records that printed jobId text from the Bash tool's stdout output and pastes it as the literal `<jobId>` argument in the matching await Bash call below; there is no shell variable assignment in this flow, and shell command substitution (`$()` / backticks) is forbidden per Daniel's CLAUDE.md. If launch exits non-zero, abort this Codex review and append a launch-failure note to `reviews/goals-review.md`.
-  3. After the Claude reviewer returns, await the result: `scripts/codex-companion-bg.sh await <jobId>`. Exit codes: **0** = success, append the markdown stdout to `reviews/goals-review.md` under `#### Codex`; **10** = 20-min ceiling hit (no stdout produced) — append an explicit ceiling note (e.g., `Codex review: 20-min ceiling hit, no findings produced`), do NOT append empty stdout, do NOT silently retry; **11** = companion crash mid-job (job-not-found) — append a crash note and surface to the user before proceeding; **12** = audit-write fail (e.g., row > 4096 bytes) — append an infrastructure-failure note and surface to the user, do NOT retry blindly. **Only append stdout to the review log on exit 0.**
+  **Output file (disk-write contract):** `<ABS_ARTIFACT_DIR>/reviews/goals/round-NN-claude.md`. The dispatching skill MUST interpolate the absolute artifact directory path and the current round number into the prompt. Per `skills/_shared/reviewer-boilerplate.md` `## Disk-Write Contract`, the reviewer writes findings there using `Write` and returns only the brief summary form to main chat. The Claude reviewer is dispatched with `model: "sonnet"`.
+- **Scope-reviewer subagent** — dispatched from `skills/_shared/templates/scope-reviewer.md` with parameter `{ARTIFACT_TYPE}=goals`. Loads this skill's `## Goals OWNS / Goals DEFERS` section as the locked rule set, runs boundary-drift detection (content matching a DEFERS entry — e.g. acceptance criteria, file maps, phasing) and scope-compliance per OWNS, and applies the boundary-drift signal (skill-implementation jargon leaking from later stages). The dispatched prompt embeds `skills/_shared/reviewer-boilerplate.md` verbatim alongside the template body. **Output file:** `<ABS_ARTIFACT_DIR>/reviews/goals/round-NN-scope.md`. Dispatched with `model: "sonnet"`.
+- **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via the wrapper. Prompt content: `goals.md` + the Goals-specific criteria + the Goals OWNS/DEFERS contract; embeds `skills/_shared/reviewer-boilerplate.md` verbatim so Codex emits findings in the 5-field shape.
+
+<prompt_file>/tmp/codex-prompt-goals.md</prompt_file>
+<output_file><ABS_ARTIFACT_DIR>/reviews/goals/round-NN-codex.md</output_file>
+
+!`cat ${CLAUDE_SKILL_DIR}/../_shared/codex/launch-await-pattern.md`
 
 ### Human Gate
 
@@ -284,7 +282,7 @@ They can:
 
 ### Terminal State
 
-If the artifact directory is inside a git repository, commit the approved `goals.md`, `config.md`, and `reviews/goals-review.md` (see `using-qrspi` → "Commit after approval (when applicable)" for the detection rule). Otherwise, skip the commit — the approved frontmatter on disk is the durable record.
+If the artifact directory is inside a git repository, commit the approved `goals.md`, `config.md`, and the `reviews/goals/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)" for the detection rule). Otherwise, skip the commit — the approved frontmatter on disk is the durable record.
 
 **IMPORTANT:** Goals is approved. This is a high-value compaction moment — the dialogue transcript and review-loop context are no longer needed downstream. Recommend `/compact` to the user: "Goals approved. This is a good point to compact context before the next step (`/compact`)."
 

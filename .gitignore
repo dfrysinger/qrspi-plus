@@ -1,6 +1,9 @@
 .worktrees/
 .codex-prompts/
 
+# Editor / IDE
+.vscode/
+
 # macOS metadata files
 .DS_Store
 **/.DS_Store

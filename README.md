@@ -14,7 +14,8 @@ flowchart TD
     Goals[Goals] --> Questions[Questions]
     Questions --> Research[Research]
     Research --> Design[Design]
-    Design --> Structure[Structure]
+    Design --> Phasing[Phasing]
+    Phasing --> Structure[Structure]
     Structure --> Plan[Plan]
 
     %% Quick fix shortcut: Research skips directly to Plan
@@ -27,7 +28,7 @@ flowchart TD
     Integrate --> Test[Test]
     Test --> PR[Create PR]
     PR -->|more phases| Replan[Replan]
-    Replan -->|next phase| Parallelize
+    Replan -->|next phase| Goals
 
     %% Quick fix shortcut: Plan skips directly to Implement
     Plan -.->|quick fix| Implement
@@ -38,14 +39,14 @@ flowchart TD
     Test -.->|fix tasks quick| Implement
 ```
 
-The pipeline has two routes. The **full pipeline** runs every step -- for features, new products, and anything requiring architectural design. The **quick fix** route (shown as dashed lines) skips Design, Structure, Parallelize, and Integrate -- for targeted bug fixes, small changes, and 1-3 file modifications.
+The pipeline has two routes. The **full pipeline** runs every step -- for features, new products, and anything requiring architectural design. The **quick fix** route (shown as dashed lines) skips Design, Phasing, Structure, Parallelize, and Integrate -- for targeted bug fixes, small changes, and 1-3 file modifications. **Replan's "next phase" path returns to Goals**, where the next phase's draft is auto-populated from `roadmap.md` + `future-goals.md` and cascaded through the full pipeline — not directly back to Parallelize.
 
 ### Route Changes
 
 Route changes are allowed before Plan executes:
 
-- **Full to Quick Fix:** Drop Design, Structure, Parallelize, Integrate from the route.
-- **Quick Fix to Full:** Insert Design, Structure before Plan, and Parallelize, Integrate after Plan.
+- **Full to Quick Fix:** Drop Design, Phasing, Structure, Parallelize, Integrate from the route.
+- **Quick Fix to Full:** Insert Design, Phasing, Structure before Plan, and Parallelize, Integrate after Plan.
 
 After Plan is approved, the route is locked. Changing it after that point requires a backward loop to re-run Plan.
 
@@ -57,7 +58,7 @@ After Plan is approved, the route is locked. Changing it after that point requir
 
 - **Goals, Questions, Research, Design** -- closely reviewed by the human. These are the alignment artifacts that determine whether the right thing gets built.
 - **Structure, Plan, Tasks** -- spot-checked by the human. The detail is too dense to read line by line, but the human reviews the overall approach and catches structural issues.
-- **Code** -- reviewed by the human during the Test step before the PR is created. The pipeline produces heavily commented, well-structured code designed to be reviewable in a standard code review.
+- **Code** -- reviewed by the human during the Test step before the PR is created. The pipeline produces well-structured code designed to be reviewable in a standard code review, with comments that orient readers and explain non-obvious WHY (not line-by-line restatement).
 
 **Human approval gates between steps.** Every artifact is presented to the user for approval before the pipeline advances. Rejection captures feedback and re-generates the artifact in a fresh subagent with the feedback included. No artifact is silently mutated.
 
@@ -69,7 +70,7 @@ After Plan is approved, the route is locked. Changing it after that point requir
 
 - **Pipeline step ordering:** The PreToolUse hook blocks artifact writes that skip prerequisites. You cannot write `design.md` before `goals.md` is approved -- the hook rejects the tool call with an actionable error message.
 - **Asymmetric target-based enforcement:** The PreToolUse hook treats main chat and dispatched subagents differently based on the dispatch envelope. Main-chat tool calls go through pipeline-ordering checks only. Subagent tool calls (any agent dispatched via the Agent tool) are additionally walled to their assigned worktree at `.worktrees/{slug}/(task-NN[a-z]?|baseline)/` — Write/Edit targets and Bash write targets outside that path are blocked. Enforcement keys on the operation's target path, not on the agent's CWD, so it survives subagent CWD inheritance quirks.
-- **Audit logging:** The PostToolUse hook logs all Write, Edit, and Bash calls to per-task JSONL files (`<artifact_dir>/.qrspi/audit-task-NN.jsonl`) for traceability. Block decisions are logged alongside allow decisions.
+- **Audit logging:** Hook-driven writes append to `<artifact_dir>/.qrspi/audit.jsonl` (one line per allowed/blocked Write, Edit, or Bash call inside QRSPI scope), and Codex review jobs append to `<artifact_dir>/.qrspi/audit-codex-review.jsonl`. Block decisions are logged alongside allow decisions.
 - **Fail-closed security model:** All error paths in the hooks block with actionable messages rather than silently allowing violations.
 - **State management:** `.qrspi/state.json` tracks pipeline progress and the artifact map. `.qrspi/task-NN-runtime.json` files capture mid-task user decisions as runtime overrides.
 
@@ -130,9 +131,9 @@ flowchart TD
 
 ### Step 4: Design
 
-Interactive design discussion in the main conversation. The agent proposes 2-3 approaches with trade-offs and a recommendation. The user and agent converge on an approach, then a subagent synthesizes the artifact. Design enforces vertical slice decomposition -- end-to-end feature slices, not horizontal layers. Phases are defined with replan gates between them. Phase 1 is always the PoC that proves the full stack works. Includes test strategy and a high-level Mermaid system diagram.
+Interactive design discussion in the main conversation. The agent proposes 2-3 approaches with trade-offs and a recommendation. The user and agent converge on an approach, then a subagent synthesizes the artifact. Design owns approach selection, key architectural decisions with rationale, design-level test strategy, and a high-level Mermaid system diagram. Vertical-slice authoring, phase boundaries, and roadmap composition are owned by Phasing (Step 5), not Design.
 
-Design entries are phase-scoped: `design.md` contains only current-phase entries keyed by `### {GOAL_ID} -- {name}`. Out-of-scope entries live in `future-design.md` and are pulled in when goals are promoted.
+`design.md` may carry per-phase content keyed by `### {GOAL_ID} -- {name}`; future-phase entries live in `future-design.md` and are pulled in when goals are promoted via Replan.
 
 **Artifact:** `design.md`
 
@@ -144,7 +145,24 @@ flowchart TD
     D --> E((Approved design.md))
 ```
 
-### Step 5: Structure
+### Step 5: Phasing
+
+Translates the approved architecture into delivery units. Phasing owns vertical-slice authoring (end-to-end demonstrable units, not horizontal layers), phase boundaries with explicit replan-gate criteria, the Phase 1 PoC guideline (prove the full stack end-to-end when possible), `roadmap.md` (canonical phase → slice → goal-ID mapping), current-phase pruning of the four synthesizing artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`) into current-phase content + `future-*` files, and goal-ID consistency validation across all nine target artifacts. Quick-fix routes skip Phasing entirely.
+
+**Artifacts:** `phasing.md`, `roadmap.md`, `future-goals.md`, `future-questions.md`, `future-research-summary.md`, `future-design.md` (and pruned-in-place `goals.md`, `questions.md`, `research/summary.md`, `design.md`)
+
+```mermaid
+flowchart TD
+    A["Interactive: discuss slices and phase boundaries"] --> B[User confirms slice + phase decomposition]
+    B --> C["Launch synthesis subagent<br>(goals + research + design)"]
+    C --> D[Author phasing.md + roadmap.md]
+    D --> E[Prune four synthesizing artifacts into current + future-*]
+    E --> F[Validate goal-ID consistency across nine target artifacts]
+    F --> G["Artifact Review (Pattern 4)"]
+    G --> H((Approved phasing artifact set))
+```
+
+### Step 6: Structure
 
 Maps each vertical slice from the design to specific files and components. Defines interfaces between components (function/class signatures, not implementations), identifies create vs. modify for each file, and produces a detailed architectural diagram. The key design decision: the file-level mapping makes the gap between design and plan concrete -- downstream agents know exactly which files to touch and what interfaces to honor.
 
@@ -158,9 +176,9 @@ flowchart TD
     D --> E((Approved structure.md))
 ```
 
-### Step 6: Plan
+### Step 7: Plan
 
-Breaks the structure into ordered tasks with detailed specs. Each task spec includes exact file paths, a description, test expectations in plain language (behaviors, edge cases, error conditions), dependencies, and LOC estimates. No placeholders, no TBDs, no "similar to Task N." For large plans (6+ tasks), task spec writing is farmed to sub-subagents. In quick fix mode, Plan produces a single task directly from research (no design or structure). The plan is reviewed as a single merged document by 5 specialized reviewer templates, then split into individual task files after approval.
+Breaks the structure into ordered tasks with detailed specs. Each task spec includes exact file paths, a description, test expectations in plain language (behaviors, edge cases, error conditions), dependencies, and LOC estimates. No placeholders, no TBDs, no "similar to Task N." For large plans (6+ tasks), task spec writing is farmed to sub-subagents. In quick fix mode, Plan produces a single task directly from research (no design or structure). The plan is reviewed as a single merged document by 6 reviewer templates in parallel (5 plan-specific + the parameterized scope-reviewer), then split into individual task files after approval.
 
 **Artifact:** `plan.md` + `tasks/task-NN.md`
 
@@ -170,13 +188,13 @@ flowchart TD
     B -->|yes| C[Farm task specs to sub-subagents]
     C --> D[Merge into single plan.md]
     B -->|no| D[Single merged plan.md]
-    D --> E["Architectural Plan Review (Pattern 5)<br>5 parallel reviewer templates"]
+    D --> E["Architectural Plan Review (Pattern 5)<br>6 parallel reviewer templates"]
     E --> F[Human gate]
     F --> G["Split into tasks/task-NN.md<br>Reduce plan.md to overview"]
     G --> H((Approved plan + task files))
 ```
 
-### Step 7: Parallelize
+### Step 8: Parallelize
 
 Plan-time analysis. Analyzes the task dependency graph for the current phase and determines the execution mode: sequential (chain dependencies), parallel (independent tasks on different files), or hybrid (mixed). Produces a symbolic Branch Map that names the base each task forks from -- but does not create branches, run baseline tests, or dispatch subagents. That work happens in Implement.
 
@@ -210,27 +228,27 @@ flowchart LR
 
 **Artifact:** `parallelization.md`
 
-### Step 8: Implement
+### Step 9: Implement
 
-Runtime owner of branch creation, worktrees, baseline tests, per-task TDD orchestration, and the batch gate. Resolves the symbolic Branch Map from `parallelization.md` to real commits, creates git worktrees forked from those bases, and runs baseline tests. Subagent containment is enforced by the asymmetric pre-tool-use hook (no per-worktree `.claude/settings.json` is written — the hook governs from the dispatch envelope). If baseline tests fail, the user can auto-fix (inject a task-00 that all others depend on), proceed with known failures, or stop. After baseline, Implement fires N per-task subagents — each running TDD + reviews in its own worktree. When every task has returned, the batch gate presents the combined results and the user decides whether to release to Integrate (or re-run reviews, or dispatch fix tasks).
+Runtime owner of branch creation, worktrees, baseline tests, per-task TDD orchestration, and the batch gate. Resolves the symbolic Branch Map from `parallelization.md` to real commits, creates git worktrees forked from those bases, and runs baseline tests. Subagent containment is enforced by the asymmetric pre-tool-use hook (no per-worktree `.claude/settings.json` is written — the hook governs from the dispatch envelope). If baseline tests fail, the user can auto-fix (inject a task-00 that all others depend on), proceed with known failures, or stop. After baseline, Implement orchestrates each task in the wave directly — main chat dispatches an implementer subagent (TDD) and the configured reviewer subagents (parallel) per task, each running in its own worktree. When every task has returned, the batch gate presents the combined results and the user decides whether to release to Integrate (or re-run reviews, or dispatch fix tasks).
 
 For fix-task batches, Parallelize is skipped. In full-pipeline runs, Implement appends new branch entries to `parallelization.md` directly per its Fix Task Routing rules. In quick-fix runs there is no `parallelization.md`; fix-task subagents fork directly from the feature-branch tip.
 
 The per-task work is TDD-first: no production code without a failing test. Write failing tests from the task spec's test expectations, verify they fail, write minimal implementation, verify they pass, self-review and commit. After implementation, reviewers run in two tiers: 4 correctness reviewers always run; 4 thoroughness reviewers run in deep mode only. Review depth is configurable per phase.
 
-Every function gets a header comment (purpose, inputs, outputs, failure behavior). Every non-obvious conditional gets an inline "why" comment.
+Comments serve two purposes: orienting the reader and explaining WHY. Functions get a short high-level header when it would help a non-technical reader (PM reviewing the PR, future maintainer, on-caller tracing a log line) understand what the function is for without reading the body — but headers are not mandated as ceremony, and trivial helpers don't need them. Inline comments are added when the intent (a non-obvious constraint, tradeoff, pointer to external context, or surprise) cannot be inferred from the code. The reviewer flags comments that just paraphrase the signature or restate the line below — names and types document WHAT.
 
 ```mermaid
 flowchart TD
     A["Read approved parallelization.md"] --> B[Resolve symbolic bases to real commits]
-    B --> C[Create worktrees from feature branch]
-    C --> D[Write subagent permissions per worktree]
-    D --> E[Run baseline tests per worktree]
+    B --> BL["Create single baseline worktree<br>at .worktrees/{slug}/baseline/"]
+    BL --> E[Run baseline tests once in baseline worktree]
     E --> F{Baseline passes?}
     F -->|no| BF[Present to user: auto-fix / proceed / stop]
-    BF -->|auto-fix| BI["Inject task-00, all others depend on it"]
-    BI --> H
-    F -->|yes| H[Fire N per-task subagents]
+    BF -->|auto-fix| BI["Run task-00 in isolation (baseline-fix),<br>then proceed; remaining tasks depend on its tip"]
+    BI --> CW
+    F -->|yes| CW[Create per-task worktrees from resolved bases]
+    CW --> H["Per task: dispatch implementer + reviewer subagents<br>(containment enforced by pre-tool-use hook,<br>no per-worktree settings written)"]
 
     subgraph pertask["Per Task"]
         PA[Read test expectations from task spec] --> PB[Write failing tests]
@@ -270,7 +288,7 @@ flowchart TD
 
 **Artifact:** `reviews/tasks/task-NN-review.md` (per-task review results with verbatim prompt/response pairs)
 
-### Step 9: Integrate
+### Step 10: Integrate
 
 Merges worktree branches into the feature branch and runs cross-task reviews. Two reviewers check integration: an integration-reviewer verifies components work together, and a security-integration-reviewer checks cross-task security boundaries. After review, pushes the branch and triggers CI. Both integration review failures and CI failures generate fix tasks that route back through the pipeline (Implement -> Integrate; Parallelize is skipped for fix-task batches). The user is in the loop at every decision point -- dispatch fixes, re-run reviews, accept, or stop.
 
@@ -312,11 +330,11 @@ flowchart TD
 
 **Artifact:** `reviews/integration/round-NN-review.md`, `reviews/ci/round-NN-review.md`
 
-### Step 10: Test
+### Step 11: Test
 
 Acceptance testing against the original goals. A test-writer subagent maps every plan-authored acceptance criterion (per-task `## Test Expectations` blocks in `plan.md` plus the per-phase acceptance block in `plan.md`'s overview) to tests (acceptance, integration, E2E, boundary), tracing each criterion upstream to the goal in `goals.md` it serves. Per the strip-from-goals contract, `plan.md` is the criterion-authoring source; `goals.md` is the upstream problem-framing anchor used for traceability only. Test code goes through its own review round. The tester can only write test files -- when tests fail, it outputs fix task descriptions, not code fixes. Fix routing depends on classification: `pipeline: quick` test fixes route `Implement -> Test` (skipping Integrate); `pipeline: full` test fixes route `Implement -> Integrate -> Test`. All production code changes go through reviews regardless of route. Every phase produces a PR after acceptance testing passes. Phase routing happens after the PR: if this is the final phase, the pipeline is complete; if more phases remain, invoke Replan.
 
-After tests pass and the user approves, each criterion with all mapped tests passing is automatically checked off (`- [x]`) in `goals.md`. A code review checkpoint is offered before PR creation -- the user can review all changed files or the full phase diff before proceeding.
+After tests pass and the user approves, each criterion with all mapped tests passing is automatically checked off (`- [x]`) in `plan.md` (the criterion-authoring source per the strip-from-goals contract; `goals.md` is not modified). A code review checkpoint is offered before PR creation -- the user can review all changed files or the full phase diff before proceeding.
 
 ```mermaid
 flowchart TD
@@ -338,7 +356,7 @@ flowchart TD
     K -->|quick fix| NN[Route to Implement -> Test]
     M --> D
     NN --> D
-    CK["Update goals.md checkboxes<br>for passing criteria"] --> CR[Code review checkpoint]
+    CK["Update plan.md acceptance-criterion checkboxes<br>for passing criteria"] --> CR[Code review checkpoint]
     CR --> Q[Prepare PR for current phase]
     Q --> R{User confirms PR?}
     R -->|yes| S[Create PR via gh pr create]
@@ -351,9 +369,9 @@ flowchart TD
 
 **Artifact:** `reviews/test/round-NN-review.md`
 
-### Step 11: Replan
+### Step 12: Replan
 
-Runs between phases only. A subagent analyzes the completed phase for patterns, framework quirks, and architectural adjustments. Each proposed change gets a severity classification: minor changes (task spec wording, LOC estimates, add/split/merge tasks) are updated in place with a lightweight re-approval cycle. Major changes (new files, interface changes, technology switches, phase boundary changes) trigger fire-and-forget backward loops to the earliest affected artifact (Goals, Design, or Structure). Scope-unknown changes default to the most stringent treatment. On the minor path, the completed phase is archived via snapshot before promoting the next phase's goals.
+Runs between phases only. A subagent analyzes the completed phase for patterns, framework quirks, and architectural adjustments. Each proposed change gets a severity classification: minor changes (task spec wording, LOC estimates, add/split/merge tasks) are updated in place with a lightweight re-approval cycle. Major changes trigger fire-and-forget backward loops to the earliest affected artifact: goals or acceptance-criteria changes loop back to Goals; architecture/approach changes loop back to Design; phase boundary or slice-decomposition changes loop back to Phasing; file-path changes loop back to Structure. Scope-unknown changes default to the most stringent treatment. On the minor path, the completed phase is archived via snapshot before promoting the next phase's goals.
 
 Amendments found during any step are classified into three tiers: clarifying (no cascade), additive (lightweight cascade), and architectural (full backward loop). The skill recommends a classification; the user always decides.
 
@@ -373,7 +391,7 @@ flowchart TD
     J -->|yes| K[Set status: approved, commit]
     K --> K2["Snapshot phase to phases/phase-NN/"]
     K2 --> K3["Promote next phase goals<br>from future-goals.md"]
-    K3 --> M((Invoke Parallelize for next phase))
+    K3 --> M((Invoke Goals for next phase))
     F -->|yes, major| N[Identify loop-back target]
     N --> N2[Write feedback file]
     N2 --> N3[Reset target + downstream to draft]
@@ -400,13 +418,14 @@ The gating chain builds cumulatively:
 | Questions | `goals.md` |
 | Research | `questions.md` |
 | Design | `goals.md`, `research/summary.md` |
-| Structure | `goals.md`, `research/summary.md`, `design.md` |
-| Plan | All prior artifacts (quick fix: `goals.md`, `research/summary.md` only) |
-| Parallelize | `plan.md`, `tasks/*.md`, `design.md`, `config.md` |
-| Implement | `parallelization.md`, `tasks/*.md`, `config.md` (full pipeline); task file + pipeline-specific inputs (quick fix) |
-| Integrate | Task reviews, worktree branches, `design.md`, `structure.md`, `parallelization.md` |
-| Test | `goals.md`, `design.md` (full) or `research/summary.md` (quick), merged code |
-| Replan | Merged phase code, `fixes/`, `reviews/`, remaining `tasks/*.md`, `plan.md`, `design.md` |
+| Phasing | `goals.md`, `questions.md`, `research/summary.md`, `design.md` |
+| Structure | `goals.md`, `research/summary.md`, `design.md`, `phasing.md` |
+| Plan | All prior artifacts including `phasing.md` (quick fix: `goals.md`, `research/summary.md` only) |
+| Parallelize | `plan.md`, `tasks/*.md`, `phasing.md`, `config.md` |
+| Implement | `parallelization.md`, `plan.md`, `tasks/*.md`, `design.md`, `phasing.md`, `structure.md`, `config.md` (full pipeline); `plan.md`, `tasks/*.md` or `fixes/*`, `goals.md`, `research/summary.md`, `config.md` (quick fix) |
+| Integrate | Task reviews, worktree branches, `design.md`, `phasing.md`, `structure.md`, `parallelization.md` |
+| Test | `goals.md`, `design.md`, `phasing.md` (full) or `research/summary.md` (quick), merged code |
+| Replan | Merged phase code, `fixes/`, `reviews/`, remaining `tasks/*.md`, `plan.md`, `design.md`, `phasing.md` |
 
 ### Review Patterns
 
@@ -507,11 +526,11 @@ flowchart TD
     M --> B
 ```
 
-**Pattern 5: Architectural Plan Review** -- Five specialized reviewer templates run in parallel. Used by Plan to catch cross-task consistency issues.
+**Pattern 5: Architectural Plan Review** -- Six reviewer templates run in parallel (5 plan-specific + the parameterized scope-reviewer). Used by Plan to catch cross-task consistency issues.
 
 ```mermaid
 flowchart TD
-    A["Merged plan.md ready"] --> B["Launch review subagent<br>with 5 parallel templates"]
+    A["Merged plan.md ready"] --> B["Launch review subagent<br>with 6 parallel templates"]
 
     subgraph reviewers["Reviewers"]
         R1["Spec Reviewer<br>(completeness, placeholders)"]
@@ -519,6 +538,7 @@ flowchart TD
         R3["Silent Failure Hunter<br>(swallowed errors, fallbacks)"]
         R4["Goal Traceability<br>(goals -> tasks mapping)"]
         R5["Test Coverage<br>(edge cases, error conditions)"]
+        R6["Scope Reviewer<br>(OWNS/DEFERS boundary drift)"]
     end
 
     B --> reviewers
@@ -528,7 +548,7 @@ flowchart TD
     D -->|yes| F[Fix issues]
     F --> E
     E -->|Present| G[Human gate]
-    E -->|Loop until clean| H[Re-run all 5 reviewers]
+    E -->|Loop until clean| H[Re-run all 6 reviewers]
     H --> I{Clean or 10 rounds?}
     I -->|clean or cap hit| G
     I -->|issues found| J[Fix and re-review]
@@ -546,8 +566,8 @@ The `config.md` file's `route` field is the single source of truth for pipeline 
 Replan is deliberately absent from the route list because it only fires between phases (invoked by Test, not by route progression). The multi-phase cycle works as follows:
 
 - **Test** checks if more phases remain: last phase creates a PR, more phases invoke `qrspi:replan`
-- **Replan** always invokes `qrspi:parallelize` for the next phase
-- **Parallelize** re-enters the implement/integrate/test portion of the route for the new phase
+- **Replan** invokes `qrspi:goals` for the next phase, with the next phase's draft auto-populated from `roadmap.md` + `future-goals.md`
+- The next phase then cascades through the full route (Goals → Questions → Research → Design → Phasing → Structure → Plan → Parallelize → Implement → Integrate → Test) for the new phase
 
 ### Config Validation
 
@@ -576,11 +596,12 @@ Replan classifies every proposed change using a defined severity table:
 | Change file paths or add files within existing slices | **Major** | Structure |
 | Change interfaces between components | **Major** | Structure |
 | Change technology choice, approach, or architecture | **Major** | Design |
-| Change phase boundaries or slice definitions | **Major** | Design |
+| Change phase boundaries or slice definitions | **Major** | Phasing |
 | Change project goals (problem framing, intent, scope) | **Major** | Goals |
-| Change acceptance criteria (per-task test expectations or per-phase acceptance block) | **Major** | Plan |
+| Change per-task test expectations | **Major** | Plan |
+| Change per-phase acceptance criteria | **Major** | Plan |
 
-The loop-back target is always the earliest affected artifact. If file paths change, loop back to Structure (cascades to Plan). If architecture changes, loop back to Design (cascades to Structure, then Plan). Scope-unknown changes default to the most stringent treatment to prevent under-classification. This prevents architectural drift from being patched over with task-level fixes.
+The loop-back target is always the earliest affected artifact. If file paths change, loop back to Structure (cascades to Plan). If phase boundaries or slice decomposition change, loop back to Phasing (cascades to Structure → Plan). If architecture changes, loop back to Design (cascades to Phasing → Structure → Plan). If goals or acceptance criteria change, loop back to Goals (cascades through the entire pipeline). Scope-unknown changes default to the most stringent treatment to prevent under-classification. This prevents architectural drift from being patched over with task-level fixes.
 
 ### Phase-Scoped Artifacts
 
@@ -671,6 +692,7 @@ route:
   - questions
   - research
   - design
+  - phasing
   - structure
   - plan
   - parallelize
@@ -735,11 +757,13 @@ qrspi-plus/
 │   ├── research/
 │   │   └── SKILL.md                # Step 3: Parallel specialist research
 │   ├── design/
-│   │   └── SKILL.md                # Step 4: Architecture + vertical slices + phase scoping
+│   │   └── SKILL.md                # Step 4: Architecture + key decisions + design-level test strategy
+│   ├── phasing/
+│   │   └── SKILL.md                # Step 5: Vertical slices + phase boundaries + roadmap.md + current-phase pruning
 │   ├── structure/
-│   │   └── SKILL.md                # Step 5: File/component mapping + phase scoping
+│   │   └── SKILL.md                # Step 6: File/component mapping
 │   ├── plan/
-│   │   ├── SKILL.md                # Step 6: Task specs + architectural review
+│   │   ├── SKILL.md                # Step 7: Task specs + architectural review
 │   │   └── templates/
 │   │       ├── spec-reviewer.md
 │   │       ├── security-reviewer.md
@@ -747,21 +771,20 @@ qrspi-plus/
 │   │       ├── goal-traceability-reviewer.md
 │   │       └── test-coverage-reviewer.md
 │   ├── parallelize/
-│   │   └── SKILL.md                # Step 7: Plan-time dependency analysis + symbolic Branch Map
+│   │   └── SKILL.md                # Step 8: Plan-time dependency analysis + symbolic Branch Map
 │   ├── implement/
-│   │   ├── SKILL.md                # Step 8: Runtime worktree creation + per-task TDD orchestration + batch gate
+│   │   ├── SKILL.md                # Step 9: Runtime worktree creation + per-task TDD orchestration + batch gate
 │   │   └── templates/
 │   │       ├── implementer.md      # TDD execution prompt
-│   │       ├── per-task-orchestrator.md
 │   │       ├── correctness/        # Always-run reviewers (4)
 │   │       └── thoroughness/       # Deep-mode reviewers (4)
 │   ├── integrate/
-│   │   ├── SKILL.md                # Step 9: Merge + cross-task review + phase learnings
+│   │   ├── SKILL.md                # Step 10: Merge + cross-task review + phase learnings
 │   │   └── templates/
 │   │       ├── integration-reviewer.md
 │   │       └── security-integration-reviewer.md
 │   ├── test/
-│   │   ├── SKILL.md                # Step 10: Acceptance testing + code review checkpoint
+│   │   ├── SKILL.md                # Step 11: Acceptance testing + code review checkpoint
 │   │   └── templates/
 │   │       ├── test-writer.md
 │   │       ├── acceptance-test.md
@@ -769,7 +792,7 @@ qrspi-plus/
 │   │       ├── e2e-test.md
 │   │       └── boundary-test.md
 │   └── replan/
-│       └── SKILL.md                # Step 11: Between-phase replanning + phase snapshot
+│       └── SKILL.md                # Step 12: Between-phase replanning + phase snapshot
 └── docs/
     └── qrspi-reference.md          # QRSPI framework reference
 ```
@@ -786,8 +809,11 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   ├── summary.md
 │   └── q*.md
 ├── design.md
-├── future-design.md
+├── phasing.md
 ├── future-goals.md
+├── future-questions.md
+├── future-research-summary.md
+├── future-design.md
 ├── structure.md
 ├── plan.md
 ├── parallelization.md
@@ -810,7 +836,8 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 └── .qrspi/
     ├── state.json
     ├── task-NN-runtime.json
-    └── audit-task-NN.jsonl
+    ├── audit.jsonl
+    └── audit-codex-review.jsonl
 ```
 
 ---
@@ -869,29 +896,30 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 | Step | What it adds | Original QRSPI equivalent |
 |------|-------------|--------------------------|
 | **Goals** | Explicit intent capture with per-goal problem framing (acceptance criteria are authored downstream in `plan.md`), pipeline mode selection (quick fix vs full), `config.md` creation, goal specificity enforcement | The original uses a ticket/issue as input; Goals formalizes this as a reviewable artifact |
+| **Phasing** | Vertical slice authoring with anti-pattern guards, phase boundaries and replan gates, current-phase pruning, `roadmap.md` and `future-*.md` maintenance, goal-ID consistency validation | Not in original -- single-phase execution only |
 | **Integrate** | Cross-task integration review + security integration review after merging worktrees, CI pipeline gate with fix-task routing, phase learnings capture | Not in original -- Implement goes straight to PR |
 | **Test** | Acceptance testing against original goals, per-failure quick/full classification, goals.md checkbox updates, code review checkpoint, phase routing (PR on final phase, Replan on intermediate) | Not in original -- PR review was the verification step |
-| **Replan** | Between-phase replanning with severity classification (minor/major/scope-unknown), fire-and-forget backward loops to Goals, Design, or Structure, three-tier amendment classification, phase snapshot and promotion | Not in original -- single-phase execution only |
+| **Replan** | Between-phase replanning with severity classification (minor/major/scope-unknown), fire-and-forget backward loops to Goals, Design, Phasing, or Structure (target chosen by what changed), three-tier amendment classification, phase snapshot and promotion | Not in original -- single-phase execution only |
 
 **Extended existing steps:**
 
 | Step | What qrspi-plus adds beyond the original |
 |------|------------------------------------------|
-| **Design** | Vertical slice enforcement (anti-pattern examples), phase definitions with replan gates, test strategy, Mermaid system diagrams, phase-scoped content rules, roadmap maintenance |
+| **Design** | Approach selection with rationale, key architectural decisions, trade-offs considered, design-level test strategy, Mermaid system diagrams. Vertical slicing and phase boundaries are owned by Phasing. |
 | **Structure** | Interface definitions (function/class signatures), create vs modify tracking, CI pipeline structure for greenfield projects, phase-scoped file maps |
-| **Plan** | Sub-subagent dispatch for large plans, merge/split lifecycle, quick-fix single-task mode, `pipeline` field on task files, 5 specialized reviewer templates (architectural plan review) |
-| **Parallelize + Implement (split from original Worktree)** | Plan-time dependency graph analysis with parallel/sequential/hybrid execution modes and a symbolic Branch Map (Parallelize); runtime branch resolution, worktree creation, baseline tests with auto-fix, per-task orchestration loop, batch gate, and subagent permission pre-configuration (Implement). Splitting plan-time and runtime restores QRSPI's "one skill = one artifact + one human gate" symmetry. |
-| **Implement** | TDD iron law (no code without failing test), 8 specialized reviewers in correctness/thoroughness tiers, configurable review depth per phase, aggressive commenting requirements, verbatim review result persistence |
+| **Plan** | Sub-subagent dispatch for large plans, merge/split lifecycle, quick-fix single-task mode, `pipeline` field on task files, 6 parallel reviewer templates (5 plan-specific + scope-reviewer) |
+| **Parallelize + Implement (split from original Worktree)** | Plan-time dependency graph analysis with parallel/sequential/hybrid execution modes and a symbolic Branch Map (Parallelize); runtime branch resolution, single baseline worktree at `.worktrees/{slug}/baseline/`, baseline tests with auto-fix, per-task worktrees with hook-based subagent containment (no per-worktree settings), per-task implementer dispatch, and batch gate (Implement). Splitting plan-time and runtime restores QRSPI's "one skill = one artifact + one human gate" symmetry. |
+| **Implement** | TDD iron law (no code without failing test), 8 specialized reviewers in correctness/thoroughness tiers, configurable review depth per phase, WHY-not-WHAT commenting discipline with non-technical-reader orientation lean, verbatim review result persistence |
 
 **Infrastructure additions:**
 
 | Addition | What it adds |
 |----------|-------------|
-| **13 specialized reviewers** | 4 implementation correctness (spec, code quality, silent failures, security) + 4 implementation thoroughness (goal traceability, test coverage, type design, simplification) + 5 plan-level (spec, security, silent failures, goal traceability, test coverage) |
-| **5 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once), Artifact Synthesis (subagent produce + review loop), Architectural Plan (5 parallel templates) |
+| **14 specialized reviewers** | 4 implementation correctness (spec, code quality, silent failures, security) + 4 implementation thoroughness (goal traceability, test coverage, type design, simplification) + 5 plan-level (spec, security, silent failures, goal traceability, test coverage) + 1 cross-cutting scope-reviewer (parameterized per artifact type) |
+| **5 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once), Artifact Synthesis (subagent produce + review loop), Architectural Plan (6 parallel templates: 5 plan-specific + scope-reviewer) |
 | **Route-based routing** | `config.md` with route field as single source of truth, replacing hardcoded skill-to-skill invocations |
 | **Config validation** | Numbered-option menus for missing/invalid config fields -- never silent defaults |
-| **Quick fix mode** | Shortened pipeline (Goals -> Questions -> Research -> Plan -> Implement -> Test) for targeted fixes — skips Design, Structure, Parallelize, Integrate |
+| **Quick fix mode** | Shortened pipeline (Goals -> Questions -> Research -> Plan -> Implement -> Test) for targeted fixes — skips Design, Phasing, Structure, Parallelize, Integrate |
 | **Fix-task routing loops** | Three outer loops (integration, CI, test) that route failures back through the pipeline with full TDD and reviews |
 | **Artifact gating** | Structural enforcement -- each step checks prerequisites exist and are approved before proceeding |
 | **Phase-scoped artifacts** | Working artifacts contain current-phase only; `future-design.md`, `future-goals.md`, `roadmap.md` manage cross-phase scope; `phases/phase-NN/` archives completed phases |
@@ -899,7 +927,7 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 | **Phase learnings** | Integrate and Test gates capture future work ideas into `future-goals.md` |
 | **Goal specificity** | Each goal independently scopeable; late splitting classified by impact |
 | **Feedback-driven re-generation** | Rejected artifacts capture user feedback + rejected snapshot, new subagent receives full rejection history |
-| **Behavioral directives** | D1 (encourage reviews), D2 (never skip steps), D3 (resist time-pressure shortcuts) defined canonically in `using-qrspi` and applied across all 11 pipeline skills |
+| **Behavioral directives** | D1 (encourage reviews), D2 (never skip steps), D3 (resist time-pressure shortcuts) defined canonically in `using-qrspi` and applied across all 12 pipeline skills (Goals, Questions, Research, Design, Phasing, Structure, Plan, Parallelize, Implement, Integrate, Test, Replan) |
 | **Durable resume detection** | `replan-pending.md` marker + mid-pipeline entry via artifact scanning for crash recovery |
 | **Hook-based enforcement** | PreToolUse/PostToolUse hooks enforce pipeline ordering, task boundaries, and audit logging deterministically on every tool call -- 11 library modules, fail-closed security model, `.qrspi/state.json` state tracking |
 | **442 hook tests** | 308 unit + 134 acceptance tests using bats-core, covering all enforcement paths and library modules |

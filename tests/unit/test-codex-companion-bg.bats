@@ -37,27 +37,19 @@ setup() {
   export QRSPI_CODEX_CEILING_SECONDS=10
   export QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS=5
 
-  # Per-test stub state file.
+  # Per-test stub state file (used by the stub companion to track jobs across
+  # status/result calls — unrelated to the wrapper's audit-dir resolution).
   export STUB_STATE_FILE="$TEST_ROOT/stub-state.json"
 
   mkdir -p "$TEST_ROOT/prompts"
   echo "test prompt" > "$TEST_ROOT/prompts/p.txt"
   export PROMPT_FILE="$TEST_ROOT/prompts/p.txt"
 
-  # Default-seed .qrspi/state.json with artifact_dir = TEST_ROOT so the wrapper
-  # resolves the audit dir to $TEST_ROOT/.qrspi/. Tests that need to exercise
-  # the missing-state.json branch must explicitly remove this file.
-  seed_state_json
-}
-
-# Seed .qrspi/state.json in the current test's CWD. The wrapper reads this at
-# runtime to resolve the audit-dir target — there is no env-var escape hatch.
-# Optional first arg overrides the artifact_dir value (defaults to CWD).
-seed_state_json() {
-  local artifact_dir="${1:-$PWD}"
-  mkdir -p .qrspi
-  printf '{"version":1,"current_step":"goals","artifact_dir":"%s","artifacts":{}}\n' \
-    "$artifact_dir" > .qrspi/state.json
+  # Default --artifact-dir for await tests is $TEST_ROOT (the bats CWD), so the
+  # wrapper writes audit rows to $TEST_ROOT/.qrspi/. Tests that need a
+  # different artifact_dir override AWAIT_ARTIFACT_DIR explicitly before
+  # calling the wrapper, or call the wrapper directly with a custom flag value.
+  export AWAIT_ARTIFACT_DIR="$TEST_ROOT"
 }
 
 teardown() {
@@ -133,6 +125,23 @@ EOF
   [ -n "$output" ] || [ -n "$stderr" ]
 }
 
+@test "launch: zero-byte prompt file → nonzero with stderr (no companion launch)" {
+  : > "$TEST_ROOT/prompts/empty.txt"
+
+  # Pre-condition: stub state file does not exist (the stub writes it only when
+  # `handleTask` runs, which is what we're proving did NOT happen).
+  [ ! -e "$STUB_STATE_FILE" ]
+
+  run "$WRAPPER" launch --prompt-file "$TEST_ROOT/prompts/empty.txt"
+  [ "$status" -ne 0 ]
+  [ -n "$output" ] || [ -n "$stderr" ]
+
+  # Post-condition: companion was never invoked, so the stub never had a chance
+  # to persist its state file. Absence proves the wrapper failed closed at its
+  # own boundary instead of punting the failure to the companion.
+  [ ! -e "$STUB_STATE_FILE" ]
+}
+
 # ── await: happy path ──────────────────────────────────────────────
 
 @test "await: exits 0 on completion and writes review markdown to stdout" {
@@ -142,7 +151,7 @@ EOF
   export STUB_RESULT_RAW=$'# Review\n\nLooks fine.\n'
 
   mkdir -p "$TEST_ROOT/.qrspi"
-  run "$WRAPPER" await job-abc
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-abc
   [ "$status" -eq 0 ]
   [[ "$output" == *"# Review"* ]]
   [[ "$output" == *"Looks fine."* ]]
@@ -154,7 +163,7 @@ EOF
   export STUB_RESULT_STDOUT=$'# Fallback Review\n'
   unset STUB_RESULT_RAW
 
-  run "$WRAPPER" await job-fb
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-fb
   [ "$status" -eq 0 ]
   [[ "$output" == *"Fallback Review"* ]]
 }
@@ -164,7 +173,7 @@ EOF
   export STUB_COMPLETE_AT_POLL=1
   export STUB_RESULT_RAW="ok"
 
-  "$WRAPPER" await job-x >/dev/null
+  "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-x >/dev/null
   [ -f .qrspi/audit-codex-review.jsonl ]
   rows=$(wc -l < .qrspi/audit-codex-review.jsonl)
   [ "$rows" -eq 1 ]
@@ -176,7 +185,7 @@ EOF
   echo '{"jobId":"job-perm","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=1
   export STUB_RESULT_RAW="ok"
-  "$WRAPPER" await job-perm >/dev/null
+  "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-perm >/dev/null
   perms=$(stat -f "%Lp" .qrspi 2>/dev/null || stat -c "%a" .qrspi)
   [ "$perms" = "700" ]
 }
@@ -191,7 +200,7 @@ EOF
   export STUB_RESULT_RAW="# Review markdown poll-test"
 
   start=$(date +%s)
-  run "$WRAPPER" await job-poll
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-poll
   end=$(date +%s)
   elapsed=$((end - start))
 
@@ -214,7 +223,7 @@ EOF
   echo '{"jobId":"job-c","polls":0}' > "$STUB_STATE_FILE"
   export STUB_NEVER_COMPLETE=1
 
-  run "$WRAPPER" await job-c
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-c
   [ "$status" -eq 10 ]
   [ -z "$output" ]
 }
@@ -223,7 +232,7 @@ EOF
   echo '{"jobId":"job-cb","polls":0}' > "$STUB_STATE_FILE"
   export STUB_NEVER_COMPLETE=1
 
-  run "$WRAPPER" await job-cb
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-cb
   [ "$status" -eq 10 ]
   [ -f .qrspi/audit-codex-review.jsonl ]
   rows=$(wc -l < .qrspi/audit-codex-review.jsonl)
@@ -238,7 +247,7 @@ EOF
   echo '{"jobId":"job-bad","polls":0}' > "$STUB_STATE_FILE"
   export STUB_STATUS_BAD_JSON=1
 
-  run "$WRAPPER" await job-bad
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-bad
   [ "$status" -ne 0 ]
   [ "$status" -ne 10 ]   # not ceiling
   # Must emit something to stderr (or merged output) — never silent.
@@ -253,7 +262,7 @@ EOF
   export STUB_COMPLETE_AT_POLL=1
   export STUB_RESULT_BAD_JSON=1
 
-  run "$WRAPPER" await job-rb
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-rb
   [ "$status" -ne 0 ]
   [ "$status" -ne 10 ]
   status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
@@ -264,7 +273,7 @@ EOF
   echo '{"jobId":"job-nf","polls":0}' > "$STUB_STATE_FILE"
   export STUB_JOB_NOT_FOUND=1
 
-  run "$WRAPPER" await job-nf
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-nf
   [ "$status" -eq 11 ]
   [ -n "$output$stderr" ]
   status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
@@ -275,7 +284,7 @@ EOF
   echo '{"jobId":"job-err","polls":0}' > "$STUB_STATE_FILE"
   export STUB_STATUS_EXIT=42
 
-  run "$WRAPPER" await job-err
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-err
   [ "$status" -eq 13 ]
   [ "$status" -ne 11 ]
   [ -n "$output$stderr" ]
@@ -294,7 +303,7 @@ EOF
   chmod 0444 .qrspi/audit-codex-review.jsonl
   chmod 0555 .qrspi
 
-  run "$WRAPPER" await job-wf
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-wf
 
   # Restore so teardown can clean up.
   chmod 0700 .qrspi
@@ -317,11 +326,10 @@ EOF
   for trial in $(seq 1 $TRIALS); do
     rm -rf .qrspi
     mkdir -p .qrspi
-    seed_state_json   # state.json is now mandatory — wrapper fails closed without it
 
     pids=()
     for i in $(seq 1 $WRITERS); do
-      "$WRAPPER" await "job-conc-$i" >/dev/null 2>&1 &
+      "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" "job-conc-$i" >/dev/null 2>&1 &
       pids+=($!)
     done
     for pid in "${pids[@]}"; do wait "$pid"; done
@@ -367,7 +375,7 @@ EOF
   unset STUB_RESULT_RAW
   unset STUB_RESULT_STDOUT
 
-  run "$WRAPPER" await job-failed
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-failed
   [ "$status" -eq 0 ]
   [[ "$output" == *"Review ran but flagged blockers"* ]]
   status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
@@ -387,7 +395,7 @@ EOF
   unset STUB_RESULT_STDOUT
   unset STUB_RESULT_RENDERED
 
-  run "$WRAPPER" await job-cancelled
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-cancelled
   [ "$status" -eq 0 ]
   [[ "$output" == *"Cancelled by user."* ]]
   status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
@@ -408,7 +416,7 @@ EOF
   unset STUB_RESULT_STDOUT
   unset STUB_RESULT_RENDERED
 
-  run "$WRAPPER" await job-stored-only
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-stored-only
   [ "$status" -eq 0 ]
   [[ "$output" == *"Stored-only error message."* ]]
   status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
@@ -424,7 +432,7 @@ EOF
   export STUB_RESULT_RAW="A-raw-output-wins"
   export STUB_RESULT_STDOUT="B-codex-stdout-loses"
 
-  run "$WRAPPER" await job-prec
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-prec
   [ "$status" -eq 0 ]
   [[ "$output" == *"A-raw-output-wins"* ]]
   [[ "$output" != *"B-codex-stdout-loses"* ]]
@@ -434,7 +442,7 @@ EOF
 
 @test "await: missing companion → audit row uses 'infrastructure-failure'" {
   unset CODEX_COMPANION
-  HOME="$TEST_ROOT/empty-home" run "$WRAPPER" await job-noinfra
+  HOME="$TEST_ROOT/empty-home" run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-noinfra
   [ "$status" -ne 0 ]
   [ -f .qrspi/audit-codex-review.jsonl ]
   status_field=$(jq -r '.completion_status' < .qrspi/audit-codex-review.jsonl)
@@ -488,7 +496,7 @@ EOF
 
   pids=()
   for i in $(seq 1 $WRITERS); do
-    "$WRAPPER" await "${big_id_prefix}-${i}" >/dev/null 2>&1 &
+    "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" "${big_id_prefix}-${i}" >/dev/null 2>&1 &
     pids+=($!)
   done
   for pid in "${pids[@]}"; do wait "$pid"; done
@@ -538,7 +546,7 @@ EOF
   [ "$char_count" -lt 4096 ]
   [ "$byte_count" -gt 4096 ]
 
-  LC_ALL=en_US.UTF-8 run "$WRAPPER" await "$mb_id"
+  LC_ALL=en_US.UTF-8 run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" "$mb_id"
   [ "$status" -eq 12 ]
   [ -n "$output$stderr" ]
   if [ -f .qrspi/audit-codex-review.jsonl ]; then
@@ -555,7 +563,7 @@ EOF
   export STUB_RESULT_RAW="ok"
 
   oversize_id=$(printf 'X%.0s' $(seq 1 5000))    # 5000 bytes
-  run "$WRAPPER" await "$oversize_id"
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" "$oversize_id"
   [ "$status" -eq 12 ]
   [ -n "$output$stderr" ]
   # No row should have been appended.
@@ -584,7 +592,7 @@ EOF
   touch -t 200101010000 .qrspi/audit-codex-review.lock
 
   start=$(date +%s)
-  run "$WRAPPER" await job-stale
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-stale
   end=$(date +%s)
   elapsed=$((end - start))
 
@@ -597,23 +605,27 @@ EOF
   [ "$rows" -eq 1 ]
 }
 
-# ── audit-path lockdown (R1 Codex-S2, task-29) ────────────────────
-# These four tests cover the spec test expectations for task-29:
-#   1. QRSPI_AUDIT_DIR env override is dead — has no effect on write target
-#   2. Missing state.json → fail-closed (non-zero exit, no audit rows)
-#   3. Symlink at the audit target is detected and refused
-#   4. Existing valid path behavior preserved (canonical location)
+# ── audit-path lockdown (--artifact-dir CLI flag) ─────────────────
+# These tests cover the trusted-caller-flag input contract for `await`:
+#   1. Env-var override (QRSPI_AUDIT_DIR) is dead — flag is the only path source
+#   2. --artifact-dir flag absent → fail-closed (non-zero exit, no audit rows)
+#   3. --artifact-dir empty value → fail-closed
+#   4. --artifact-dir relative path → fail-closed (only absolute paths allowed)
+#   5. --artifact-dir non-existent dir → fail-closed
+#   6. Symlink at the audit-file path is detected and refused
+#   7. Symlinked --artifact-dir is canonicalized via realpath (parity preserved)
+#   8. Valid absolute --artifact-dir → rows write to <flag>/.qrspi/ canonically
 
-@test "audit-lockdown: QRSPI_AUDIT_DIR env override is ignored — rows still go to <artifact_dir>/.qrspi/" {
+@test "audit-lockdown: QRSPI_AUDIT_DIR env override is ignored — rows go to --artifact-dir/.qrspi/" {
   # Attacker sets QRSPI_AUDIT_DIR to a poison path. The wrapper must NOT honor
-  # it — audit rows must land at the canonical <artifact_dir>/.qrspi/ derived
-  # from state.json instead.
+  # it — audit rows land at the canonical <--artifact-dir>/.qrspi/ derived from
+  # the trusted-caller CLI flag instead.
   echo '{"jobId":"job-env","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=1
   export STUB_RESULT_RAW="ok"
 
   mkdir -p "$TEST_ROOT/poison"
-  QRSPI_AUDIT_DIR="$TEST_ROOT/poison" run "$WRAPPER" await job-env
+  QRSPI_AUDIT_DIR="$TEST_ROOT/poison" run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-env
   [ "$status" -eq 0 ]
 
   # No file landed in the poison directory.
@@ -624,27 +636,95 @@ EOF
   [ "$rows" -eq 1 ]
 }
 
-@test "audit-lockdown: state.json absent → exits non-zero, writes no audit rows" {
-  echo '{"jobId":"job-nostate","polls":0}' > "$STUB_STATE_FILE"
+@test "await: --artifact-dir flag absent → fail-closed (no audit rows)" {
+  echo '{"jobId":"job-noflag","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=1
   export STUB_RESULT_RAW="ok"
 
-  # Remove the state file the setup() helper seeded.
-  rm -f .qrspi/state.json
-
-  run "$WRAPPER" await job-nostate
+  run "$WRAPPER" await job-noflag
   [ "$status" -ne 0 ]
-  # Stderr (or merged output) must surface the failure — never silent.
   [ -n "$output$stderr" ]
 
-  # No audit row appended anywhere — fail-closed semantics.
+  # No audit row anywhere — wrapper exits before any file is touched.
   if [ -f .qrspi/audit-codex-review.jsonl ]; then
     rows=$(wc -l < .qrspi/audit-codex-review.jsonl)
     [ "$rows" -eq 0 ]
   fi
 }
 
-@test "audit-lockdown: symlinked audit file is refused (realpath canonicalization)" {
+@test "await: --artifact-dir empty value → fail-closed" {
+  echo '{"jobId":"job-emptyflag","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  run "$WRAPPER" await --artifact-dir "" job-emptyflag
+  [ "$status" -ne 0 ]
+  [ -n "$output$stderr" ]
+  if [ -f .qrspi/audit-codex-review.jsonl ]; then
+    rows=$(wc -l < .qrspi/audit-codex-review.jsonl)
+    [ "$rows" -eq 0 ]
+  fi
+}
+
+@test "await: --artifact-dir relative path → fail-closed (rejects non-absolute)" {
+  echo '{"jobId":"job-relflag","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  mkdir -p "$TEST_ROOT/rel-target"
+  cd "$TEST_ROOT"
+  run "$WRAPPER" await --artifact-dir "rel-target" job-relflag
+  [ "$status" -ne 0 ]
+  [ -n "$output$stderr" ]
+  # No audit row should land under any candidate path.
+  [ ! -e "$TEST_ROOT/rel-target/.qrspi/audit-codex-review.jsonl" ]
+  if [ -f "$TEST_ROOT/.qrspi/audit-codex-review.jsonl" ]; then
+    rows=$(wc -l < "$TEST_ROOT/.qrspi/audit-codex-review.jsonl")
+    [ "$rows" -eq 0 ]
+  fi
+}
+
+@test "await: --artifact-dir non-existent dir → fail-closed" {
+  echo '{"jobId":"job-baddir","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  run "$WRAPPER" await --artifact-dir "$TEST_ROOT/does-not-exist" job-baddir
+  [ "$status" -ne 0 ]
+  [ -n "$output$stderr" ]
+}
+
+@test "await: --artifact-dir pointing at a regular file → fail-closed" {
+  # If --artifact-dir resolves to a regular file rather than a directory,
+  # resolve_audit_dir's [ ! -d ] check must reject before any audit write.
+  echo '{"jobId":"job-regfile","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  : > "$TEST_ROOT/regular-file-not-a-dir"
+
+  run "$WRAPPER" await --artifact-dir "$TEST_ROOT/regular-file-not-a-dir" job-regfile
+  [ "$status" -ne 0 ]
+  [ -n "$output$stderr" ]
+}
+
+@test "audit-lockdown: <artifact_dir>/.qrspi pre-planted as regular file → exit 12" {
+  # An attacker (or a leftover from an aborted run) plants a regular file at
+  # <artifact_dir>/.qrspi/, blocking mkdir -p from creating the audit dir.
+  # The wrapper must surface this as audit-write-fail (exit 12), NOT silently
+  # skip auditing.
+  echo '{"jobId":"job-regfile-qrspi","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  : > .qrspi   # regular file at the audit-dir path inside $AWAIT_ARTIFACT_DIR
+
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-regfile-qrspi
+
+  [ "$status" -eq 12 ]
+}
+
+@test "audit-lockdown: symlinked audit file is refused (planted at <artifact_dir>/.qrspi/audit-...)" {
   # An attacker plants a symlink at the audit-file path pointing outside the
   # artifact dir (e.g. at a sensitive system file proxy). The wrapper must
   # detect the symlink and fail closed rather than dereferencing the write.
@@ -653,15 +733,12 @@ EOF
   export STUB_RESULT_RAW="ok"
 
   mkdir -p .qrspi
-  # The seeded state.json is here too; that's fine.
-  # Plant a symlink target outside the artifact dir.
   outside_target="$TEST_ROOT/outside-target"
   : > "$outside_target"
   ln -s "$outside_target" .qrspi/audit-codex-review.jsonl
 
-  run "$WRAPPER" await job-symlink
+  run "$WRAPPER" await --artifact-dir "$AWAIT_ARTIFACT_DIR" job-symlink
 
-  # Must fail closed.
   [ "$status" -ne 0 ]
   [ -n "$output$stderr" ]
 
@@ -670,54 +747,60 @@ EOF
   [ "$outside_size" = "0" ]
 }
 
-@test "audit-lockdown: state.json present but missing artifact_dir → fail-closed" {
-  echo '{"jobId":"job-noartifact","polls":0}' > "$STUB_STATE_FILE"
+@test "await: symlinked --artifact-dir is canonicalized via realpath" {
+  # An attacker (or a legitimate symlink in the artifact-dir ancestor chain)
+  # could pass a symlinked path. The wrapper canonicalizes via realpath BEFORE
+  # appending so the resulting audit-dir reflects the real on-disk location.
+  echo '{"jobId":"job-canonsymlink","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=1
   export STUB_RESULT_RAW="ok"
 
-  # Overwrite seeded state.json with one that lacks artifact_dir.
-  printf '{"version":1,"current_step":"goals","artifacts":{}}\n' > .qrspi/state.json
+  mkdir -p "$TEST_ROOT/real-artifact"
+  ln -s "$TEST_ROOT/real-artifact" "$TEST_ROOT/symlinked-artifact"
+  real_canon=$(realpath "$TEST_ROOT/real-artifact")
 
-  run "$WRAPPER" await job-noartifact
-  [ "$status" -ne 0 ]
-  [ -n "$output$stderr" ]
-  if [ -f .qrspi/audit-codex-review.jsonl ]; then
-    rows=$(wc -l < .qrspi/audit-codex-review.jsonl)
-    [ "$rows" -eq 0 ]
-  fi
+  run "$WRAPPER" await --artifact-dir "$TEST_ROOT/symlinked-artifact" job-canonsymlink
+  [ "$status" -eq 0 ]
+
+  # Row lands at the canonicalized path's .qrspi/ — not at the symlinked path.
+  [ -f "$real_canon/.qrspi/audit-codex-review.jsonl" ]
+  rows=$(wc -l < "$real_canon/.qrspi/audit-codex-review.jsonl")
+  [ "$rows" -eq 1 ]
 }
 
-@test "audit-lockdown: state.json artifact_dir points at non-existent dir → fail-closed" {
-  echo '{"jobId":"job-baddir","polls":0}' > "$STUB_STATE_FILE"
-  export STUB_COMPLETE_AT_POLL=1
-  export STUB_RESULT_RAW="ok"
-
-  printf '{"version":1,"artifact_dir":"%s/does-not-exist","artifacts":{}}\n' "$TEST_ROOT" \
-    > .qrspi/state.json
-
-  run "$WRAPPER" await job-baddir
-  [ "$status" -ne 0 ]
-  [ -n "$output$stderr" ]
-}
-
-@test "audit-lockdown: valid state.json with normal artifact_dir → rows write to canonical location" {
+@test "audit-lockdown: valid absolute --artifact-dir → rows write to <flag>/.qrspi/ canonically" {
   echo '{"jobId":"job-canon","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=1
   export STUB_RESULT_RAW="ok"
 
-  # Use a separate artifact_dir distinct from CWD to verify the wrapper actually
-  # consults state.json rather than just writing under CWD/.qrspi/.
+  # Use an artifact_dir distinct from CWD to verify the wrapper consults the
+  # CLI flag rather than implicit CWD.
   mkdir -p "$TEST_ROOT/separate-artifact"
-  seed_state_json "$TEST_ROOT/separate-artifact"
 
-  run "$WRAPPER" await job-canon
+  run "$WRAPPER" await --artifact-dir "$TEST_ROOT/separate-artifact" job-canon
   [ "$status" -eq 0 ]
 
-  # Rows landed at <artifact_dir>/.qrspi/audit-codex-review.jsonl
   [ -f "$TEST_ROOT/separate-artifact/.qrspi/audit-codex-review.jsonl" ]
   rows=$(wc -l < "$TEST_ROOT/separate-artifact/.qrspi/audit-codex-review.jsonl")
   [ "$rows" -eq 1 ]
 
-  # And NOT at CWD/.qrspi/audit-codex-review.jsonl (the old default).
+  # And NOT at CWD/.qrspi/audit-codex-review.jsonl.
   [ ! -f "$TEST_ROOT/.qrspi/audit-codex-review.jsonl" ]
+}
+
+@test "audit-lockdown: trailing-slash --artifact-dir → rows still land at canonical <flag>/.qrspi/" {
+  echo '{"jobId":"job-trailslash","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="ok"
+
+  mkdir -p "$TEST_ROOT/trailslash-artifact"
+
+  # Pass artifact-dir with trailing slash; realpath must canonicalize and the
+  # row must land at <dir>/.qrspi/audit-codex-review.jsonl, not at <dir>//.qrspi/.
+  run "$WRAPPER" await --artifact-dir "$TEST_ROOT/trailslash-artifact/" job-trailslash
+  [ "$status" -eq 0 ]
+
+  [ -f "$TEST_ROOT/trailslash-artifact/.qrspi/audit-codex-review.jsonl" ]
+  rows=$(wc -l < "$TEST_ROOT/trailslash-artifact/.qrspi/audit-codex-review.jsonl")
+  [ "$rows" -eq 1 ]
 }
