@@ -79,12 +79,10 @@ extract_h2_section() {
 # ── Per-{ARTIFACT_TYPE} dispatch: each consuming SKILL wires the template ──
 
 @test "{ARTIFACT_TYPE}=goals — goals SKILL dispatches scope-reviewer with parameter goals" {
-  # The dispatch may live under ### Review Round (H3 nested in ## Process)
-  # or in a top-level Review section depending on the SKILL's structure.
-  # Search the whole file for the template path and the parameter
-  # together, on the same line or within a window — both must occur.
-  grep -q "scope-reviewer.md" "$GOALS_FILE"
-  grep -qE "\{ARTIFACT_TYPE\}=goals" "$GOALS_FILE"
+  # Commit 7/22 migration: scope-reviewer is now dispatched as a dedicated
+  # agent (qrspi-goals-scope-reviewer) rather than via the shared template.
+  # The old scope-reviewer.md + {ARTIFACT_TYPE}=goals pattern is retired.
+  grep -q "qrspi-goals-scope-reviewer" "$GOALS_FILE"
 }
 
 @test "{ARTIFACT_TYPE}=design — design SKILL dispatches scope-reviewer with parameter design" {

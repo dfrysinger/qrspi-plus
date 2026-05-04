@@ -32,12 +32,11 @@ setup() {
 # ── Per-skill: scope-reviewer dispatched in parallel with Claude reviewer ──
 
 @test "goals SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  # The Claude review subagent and scope-reviewer subagent are both
-  # listed in the Review Round and the goals SKILL's prose names parallel
-  # dispatch (three reviewers in parallel).
-  grep -qi "Claude review subagent" "$GOALS_FILE"
-  grep -qi "Scope-reviewer subagent" "$GOALS_FILE"
-  grep -Eqi "in parallel|run in parallel|reviewers run in parallel|three reviewers run in parallel" "$GOALS_FILE"
+  # The quality-reviewer and scope-reviewer subagents are both listed in
+  # the Review Round (commit 7/22 migration: Agent({subagent_type:...}) form).
+  grep -qi "qrspi-goals-reviewer" "$GOALS_FILE"
+  grep -qi "qrspi-goals-scope-reviewer" "$GOALS_FILE"
+  grep -Eqi "in parallel|run in parallel|reviewers run in parallel|four reviewer dispatches run in parallel" "$GOALS_FILE"
 }
 
 @test "design SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
