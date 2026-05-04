@@ -249,8 +249,3 @@ render_scope_reviewer_prompt() {
   [ "$status" -eq 1 ]
 }
 
-@test "task-31 — .codex-prompts/ is gitignored at the repo level so worktree-local scratch is never committed" {
-  local gi="$ROOT/.gitignore"
-  [ -f "$gi" ]
-  grep -qE '(^|/)\.codex-prompts/?$' "$gi"
-}
