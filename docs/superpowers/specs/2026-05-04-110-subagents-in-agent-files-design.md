@@ -2,7 +2,9 @@
 
 **Date:** 2026-05-04
 **Status:** Approved for implementation plan
-**Scope:** Move every Claude subagent dispatched by the QRSPI pipeline into a Claude Code agent file (`agents/*.md`). Per-artifact reviewers handle artifact-specific quality concerns only (no scope, no OWNS/DEFERS). Per-artifact **dedicated scope-reviewers** (9 of them) handle scope/boundary concerns exclusively. The cross-cutting reviewer protocol is a skill, preloaded into every reviewer subagent via the agent file's `skills:` frontmatter (zero main-chat cost, zero Step-1 reliability dependency). Per-artifact OWNS/DEFERS rules live as plain markdown files (`skills/{name}/owns-defers.md`) consumed by the author skill (via `!cat` in `SKILL.md` at authoring time) and by the dedicated scope-reviewer (via Read at dispatch time) — single canonical source per artifact. Codex receives agent bodies via a shell pipeline that bypasses main-chat context. Zero rules content ever enters main chat for reviewers.
+**Scope:** Move every QRSPI subagent that **has an existing template file** (or has inline-prompted reviewer logic in its parent skill) into a Claude Code agent file (`agents/*.md`). Concretely: 7 per-artifact quality reviewers + 7 per-artifact dedicated scope-reviewers (one each for goals, design, structure, phasing, plan, parallelize, replan — Questions and Research have no scope reviewer per the canonical artifact-tree contract in `skills/using-qrspi/SKILL.md:168-169`) + 2 integration reviewers + 8 per-task reviewers + 5 worker agents (research-specialist, research-collator, replan-analyzer, implementer, test-writer). The cross-cutting reviewer protocol is a skill, preloaded into every reviewer subagent via the agent file's `skills:` frontmatter (zero main-chat cost, zero Step-1 reliability dependency). Per-artifact OWNS/DEFERS rules live as plain markdown files (`skills/{name}/owns-defers.md` for the 7 scope-reviewer artifacts) consumed by the author skill (via `!cat` in `SKILL.md` at authoring time) and by the dedicated scope-reviewer (via Read at dispatch time) — single canonical source per artifact. Codex receives agent bodies via a shell pipeline that bypasses main-chat context. Zero rules content ever enters main chat for reviewers.
+
+**Out of scope for this PR (deferred to a follow-up issue):** the **authoring/synthesis subagents** dispatched inline from each authoring skill — Goals synthesis (`skills/goals/SKILL.md:164-171`), Questions generation (`skills/questions/SKILL.md:34-42`), Phasing synthesis (`skills/phasing/SKILL.md:71-89`), Plan overview + per-task spec-generation sub-subagent fan-out (`skills/plan/SKILL.md:134-161`), Design synthesis, Structure synthesis, and the Parallelize dependency-graph synthesis subagent. These have very different shapes (large round-by-round prompts assembled inline; no existing template files) and would significantly expand this PR's surface. They are tracked as a follow-up issue. The "all QRSPI subagents" framing of issue #110 applies to authoring subagents in spirit but is realized in two PRs: this one (33 agents covering reviewers + workers + research isolation), then the follow-up (~7 authoring subagents).
 
 ### Why skill preload for the protocol (not Step-1 Read)
 
@@ -20,7 +22,7 @@ Step-1 Read is still viable but adds a reliability dependency. Skill preload mak
 
 Today, every QRSPI subagent dispatch inlines its system prompt at the call site, embedding `skills/_shared/reviewer-boilerplate.md` (148 lines) plus per-template logic plus per-skill checks. The same content is constructed a second time for the parallel Codex reviewer. Across ~10 reviewer dispatch sites and 11 template files, the duplication is the biggest maintenance cost in the pipeline.
 
-This spec migrates that inventory to **33 agent files in `agents/`**, plus **1 protocol skill** (`skills/reviewer-protocol/SKILL.md`) preloaded into every reviewer subagent via the agent file's `skills:` frontmatter, plus **9 per-artifact OWNS/DEFERS files** (`skills/{name}/owns-defers.md`) consumed by the author skill (via `!cat` in `SKILL.md`) and by the dedicated scope-reviewer (via Read at dispatch time). Per-artifact reviewer agents (9) carry only artifact-specific quality checks — no scope, no OWNS/DEFERS, no Read. Per-artifact dedicated scope-reviewer agents (9) carry only the scope-check procedure. Codex receives agent bodies through a shell pipeline (`cat … | codex-companion-bg.sh launch`) — no /tmp file, no main-chat exposure. The wrapper grows a one-liner: `launch` reads the prompt from stdin instead of from a file path.
+This spec migrates that inventory to **31 agent files in `agents/`**, plus **1 protocol skill** (`skills/reviewer-protocol/SKILL.md`) preloaded into every reviewer subagent via the agent file's `skills:` frontmatter, plus **7 per-artifact OWNS/DEFERS files** (one per artifact that has a scope-reviewer: goals, design, structure, phasing, plan, parallelize, replan). Per-artifact quality reviewer agents (9) carry only artifact-specific quality checks — no scope, no OWNS/DEFERS, no Read (one exception: design reviewer's narrow Citation-verification Read carve-out for `research/q*.md`). Per-artifact dedicated scope-reviewer agents (7) carry only the scope-check procedure. Codex receives agent bodies through a shell pipeline (`cat … | codex-companion-bg.sh launch`) — no /tmp file, no main-chat exposure. The wrapper grows a one-liner: `launch` reads the prompt from stdin instead of from a file path.
 
 Net effect: dispatcher prompts shrink to per-call parameters only (~5 lines), the cross-cutting protocol has one source of truth and is delivered into every reviewer with zero main-chat cost and zero Step-1 reliability dependency, OWNS/DEFERS has one canonical file per artifact (consumed by author + scope-reviewer only), per-artifact and scope concerns are cleanly separated into dedicated agents, the Claude/Codex content split is closed, and rules content never enters main chat for reviewers.
 
@@ -265,9 +267,9 @@ Mitigations:
 - **Smoke test** asserts a dispatched scope-reviewer's findings reflect OWNS/DEFERS-aware behavior (correct boundary calls on a fixture artifact with a deliberate boundary violation).
 - **Fallback decision is binary and made at the smoke-test gate (commit 6), before any per-skill migration starts.** The default ("Read mode") is what this spec specifies: scope-reviewer body has Step-1 Read, no inlined OWNS/DEFERS, and the CI test `test-scope-reviewer-step1-read.bats` enforces the Step-1 Read presence. The smoke test in commit 6 IS the decision gate. If the smoke test passes, Read mode is confirmed and the migration proceeds from commit 7 onward as written. If the smoke test fails on the OWNS/DEFERS-aware fixture, the response is a single mode-switch commit (between commit 6 and commit 7) that *switches the entire spec to inline mode*: scope-reviewer bodies inline OWNS/DEFERS verbatim, the CI test is replaced with `test-scope-reviewer-inline-owns-defers.bats` which asserts byte-parity between each scope-reviewer body's inlined block and the corresponding `skills/{name}/owns-defers.md`, and this Reliability section is updated to reflect the choice. The two modes are mutually exclusive — CI never accepts both — so the migration always carries exactly one source-of-truth contract from commit 7 onward.
 
-## Inventory — 33 agent files + 1 protocol skill + 9 OWNS/DEFERS files
+## Inventory — 31 agent files + 1 protocol skill + 7 OWNS/DEFERS files
 
-### Agent files (33)
+### Agent files (31)
 
 #### Per-artifact quality reviewers (9)
 
@@ -289,17 +291,15 @@ Companion sets are the documented review inputs from each skill's current SKILL.
 
 All `model: sonnet`. Frontmatter: `skills: [reviewer-protocol]`.
 
-#### Per-artifact dedicated scope-reviewers (9)
+#### Per-artifact dedicated scope-reviewers (7)
 
-Scope/boundary only — Reads `skills/{name}/owns-defers.md` then runs the 3-check procedure.
+Scope/boundary only — Reads `skills/{name}/owns-defers.md` then runs the 3-check procedure. **Questions and Research have no scope-reviewer** per `skills/using-qrspi/SKILL.md:168-169` (canonical artifact-tree contract); those two phases rely on quality-reviewer-only review.
 
 The `Artifact` column names what the scope-reviewer reviews — that artifact arrives as `artifact_body` in the dispatch prompt (NOT via the Read tool). The `OWNS/DEFERS source` column names the only file the scope-reviewer actually Reads at runtime.
 
 | File | Artifact (delivered as `artifact_body`) | OWNS/DEFERS source (Step-1 Read) |
 |---|---|---|
 | `qrspi-goals-scope-reviewer.md` | goals.md | `skills/goals/owns-defers.md` |
-| `qrspi-questions-scope-reviewer.md` | questions.md | `skills/questions/owns-defers.md` |
-| `qrspi-research-scope-reviewer.md` | research/summary.md | `skills/research/owns-defers.md` |
 | `qrspi-design-scope-reviewer.md` | design.md | `skills/design/owns-defers.md` |
 | `qrspi-structure-scope-reviewer.md` | structure.md | `skills/structure/owns-defers.md` |
 | `qrspi-phasing-scope-reviewer.md` | phasing.md | `skills/phasing/owns-defers.md` |
@@ -351,13 +351,13 @@ All `model: sonnet`. Frontmatter: `skills: [reviewer-protocol]`. Per-task review
 
 Preloaded into every reviewer subagent via `skills: [reviewer-protocol]` in the agent file frontmatter. Codex receives the same body via the shell pipeline (`awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md` strips frontmatter).
 
-### Per-artifact OWNS/DEFERS files (9)
+### Per-artifact OWNS/DEFERS files (7)
+
+One per artifact that has a scope-reviewer. Questions and Research are excluded (no scope-reviewer; their author skills also lack an OWNS/DEFERS section today, per the canonical topology in `skills/using-qrspi/SKILL.md:168-169`).
 
 | File | Content | Size |
 |---|---|---|
 | `skills/goals/owns-defers.md` | Goals OWNS/DEFERS | ~30 lines |
-| `skills/questions/owns-defers.md` | Questions OWNS/DEFERS | ~30 lines |
-| `skills/research/owns-defers.md` | Research OWNS/DEFERS | ~30 lines |
 | `skills/design/owns-defers.md` | Design OWNS/DEFERS | ~30 lines |
 | `skills/structure/owns-defers.md` | Structure OWNS/DEFERS | ~30 lines |
 | `skills/phasing/owns-defers.md` | Phasing OWNS/DEFERS | ~30 lines |
@@ -386,6 +386,8 @@ The per-artifact quality reviewer is **not** a consumer — it carries no OWNS/D
 - `skills/test/templates/test-writer.md` — replaced by `agents/qrspi-test-writer.md`
 - `skills/test/templates/{acceptance,boundary,e2e,integration}-test.md` — content folded into `agents/qrspi-test-writer.md` body so the test-writer agent has all four test-type rule sets at startup
 - `skills/test/templates/` (directory removed if empty)
+- `skills/plan/templates/{spec,security,silent-failure-hunter,goal-traceability,test-coverage}-reviewer.md` — these are duplicate per-task reviewer templates (parallel to `skills/implement/templates/correctness/` and `thoroughness/`). Plan dispatches its reviewers via these templates today. Per the Plan reviewer migration in commit 13, Plan now dispatches the per-task reviewer agent files (`agents/qrspi-{spec,security,silent-failure-hunter,goal-traceability,test-coverage}-reviewer.md`) added in commit 5; the local templates become unused and are deleted in commit 20.
+- `skills/plan/templates/` (directory removed if empty)
 
 ### OWNS/DEFERS heading in skill SKILL.md files
 
@@ -403,7 +405,7 @@ The `!` prefix in skill files is the supported mechanism for runtime command int
 
 ## Dispatch parameter schema
 
-This schema applies to the **9 per-artifact quality reviewers** and **9 per-artifact dedicated scope-reviewers**. Other agent kinds (per-task reviewers, integration reviewers, test-writer, research-specialist, research-collator, replan-analyzer, implementer) use different dispatch shapes — see "Other agent dispatch shapes" below.
+This schema applies to the **9 per-artifact quality reviewers** and **7 per-artifact dedicated scope-reviewers**. Other agent kinds (per-task reviewers, integration reviewers, test-writer, research-specialist, research-collator, replan-analyzer, implementer) use different dispatch shapes — see "Other agent dispatch shapes" below.
 
 ### For per-artifact quality and scope reviewers
 
@@ -541,22 +543,23 @@ Each commit lands on `qrspi-echo/issue-110-subagents-in-agent-files` and remains
 
 1. **Commit 1** — Spec (this document).
 2. **Commit 2** — Create `skills/reviewer-protocol/SKILL.md` (convert content from `_shared/reviewer-boilerplate.md` to a skill: add frontmatter `name: reviewer-protocol` + `description`; extend `## Untrusted Data Handling` to cover the read-from-disk path). Old file remains in place until commit 20 (deletion).
-3. **Commit 3** — Create `skills/{name}/owns-defers.md` for the 9 artifact-shaped skills. For 7 skills (goals, design, structure, phasing, plan, parallelize, replan) this is a straight extraction from the existing `## {Skill} OWNS / {Skill} DEFERS` section in their SKILL.md files. For **questions** and **research**, the SKILL.md does NOT have an explicit OWNS/DEFERS section today — the rules are implicit in the skill bodies (e.g. research-isolation invariant; questions-must-not-leak-goals). For these two, **author** new OWNS/DEFERS content distilled from the existing skill bodies (cite source lines in the commit message; do not change semantics). For all 9, replace (or add) the SKILL.md `## {Skill} OWNS / {Skill} DEFERS` section body with `!cat skills/{name}/owns-defers.md` (keeping the section heading). Add `tests/unit/test-author-skill-uses-cat.bats` asserting each author SKILL.md uses the `!cat` directive — this test lands here, with the change it asserts.
+3. **Commit 3** — Create `skills/{name}/owns-defers.md` for the **7 scope-reviewed** skills (goals, design, structure, phasing, plan, parallelize, replan). Each is a straight extraction from the existing `## {Skill} OWNS / {Skill} DEFERS` section in the source SKILL.md. Questions and Research are excluded — they have no scope-reviewer per `skills/using-qrspi/SKILL.md:168-169` and no `## OWNS / DEFERS` section in their SKILL.md today; their canonical scope rules are implicit in the skill bodies (research-isolation invariant; questions-must-not-leak-goals). For all 7 covered skills, replace the SKILL.md `## {Skill} OWNS / {Skill} DEFERS` section body with `!cat skills/{name}/owns-defers.md` (keeping the section heading). Add `tests/unit/test-author-skill-uses-cat.bats` asserting each of the 7 author SKILL.md files uses the `!cat` directive — this test lands here, with the change it asserts.
 4. **Commit 4** — Add stdin support to `scripts/codex-companion-bg.sh launch` (read prompt from stdin if no path argument is provided; existing path-arg invocation kept working until all callers are migrated). Add stdin-path coverage to `tests/unit/test-codex-companion-bg.bats`.
-5. **Commit 5** — Add 33 agent files in `agents/`. Body shapes:
+5. **Commit 5** — Add 31 agent files in `agents/`. Body shapes:
    - **9 per-artifact quality reviewers** — follow the "Per-artifact reviewer body shape" template above. Body holds artifact-specific quality checks; no scope content.
-   - **9 per-artifact dedicated scope-reviewers** — follow the "Per-artifact dedicated scope-reviewer body shape" template above. Body holds the 3-check procedure + Step-1 OWNS/DEFERS Read.
-   - **8 per-task reviewers + 2 integration reviewers + 5 other agents (research-specialist, research-collator, replan-analyzer, implementer, test-writer)** — bodies are a **1:1 conversion of the existing template content** with three uniform changes: (a) add YAML frontmatter (`name`, `description`, `model`, `tools`, `skills: [reviewer-protocol]` for reviewer kinds only), (b) remove the "embed `skills/_shared/reviewer-boilerplate.md` verbatim" boilerplate-concatenation instructions (the protocol now arrives via skill preload), (c) rename references to deleted templates with the new agent file names. The semantic content of each agent body is unchanged from its source template; the commit message lists the source template path for each new agent file.
+   - **7 per-artifact dedicated scope-reviewers** (goals, design, structure, phasing, plan, parallelize, replan) — follow the "Per-artifact dedicated scope-reviewer body shape" template above. Body holds the 3-check procedure + Step-1 OWNS/DEFERS Read.
+   - **8 per-task reviewers + 2 integration reviewers + test-writer + implementer** — template-backed agents. Bodies are a **1:1 conversion of the existing template content** at `skills/{implement,integrate,test}/templates/...` with three uniform changes: (a) add YAML frontmatter (`name`, `description`, `model`, `tools`, `skills: [reviewer-protocol]` for reviewer kinds only), (b) remove the "embed `skills/_shared/reviewer-boilerplate.md` verbatim" boilerplate-concatenation instructions (the protocol now arrives via skill preload), (c) rename references to deleted templates with the new agent file names. The semantic content of each agent body is unchanged from its source template; the commit message lists the source template path for each new agent file.
+   - **research-specialist, research-collator, replan-analyzer** — SKILL-backed agents (no template files exist for these). Bodies are authored from the corresponding SKILL.md sections: `qrspi-research-specialist` from `skills/research/SKILL.md` § Per-Question Research Subagent (lines 50-90+); `qrspi-research-collator` from `skills/research/SKILL.md` § Collation Subagent (lines 120-160+); `qrspi-replan-analyzer` from `skills/replan/SKILL.md` § Replan Analysis Subagent (lines 80-120+). Commit message cites the exact SKILL.md line ranges for each.
    
    All reviewer agents declare `skills: [reviewer-protocol]` in frontmatter. No skill SKILL.md dispatch changes yet. **Add the structural CI tests that assert the agent-file shape**: `test-agent-files-skill-preload.bats`, `test-scope-reviewer-step1-read.bats` (Read mode, default), and `test-quality-reviewer-no-scope.bats`. These tests land here (not commit 22) because they assert facts about the agent files added in this same commit; this also lets the commit-6 mode-switch fallback replace `test-scope-reviewer-step1-read.bats` with `test-scope-reviewer-inline-owns-defers.bats` against an actually-present file. (Author-skill `!cat` test moves into commit 3.)
 6. **Commit 6** — Smoke test. Dispatch (a) one per-artifact quality reviewer and (b) the matching dedicated scope-reviewer against a fixture. Verify the protocol skill is present (5-field findings, change-type labels), the scope-reviewer's Step-1 Read happens and findings reflect OWNS/DEFERS, the per-artifact reviewer emits no scope findings, and outputs are written per the disk-write contract. If the scope-reviewer Step-1 Read is unreliable, **switch the entire spec to inline mode** before any per-skill migration starts (single mode-switch commit per the Reliability section: rewrite all 9 scope-reviewer bodies to inline OWNS/DEFERS verbatim, replace `test-scope-reviewer-step1-read.bats` with `test-scope-reviewer-inline-owns-defers.bats`, update the spec's mode marker). The migration only proceeds in one mode at a time.
 7. **Commit 7** — Migrate `skills/goals/SKILL.md`: replace inline reviewer dispatch with parallel `Agent({ subagent_type: "qrspi-goals-reviewer", … })` (quality) + `Agent({ subagent_type: "qrspi-goals-scope-reviewer", … })` (scope). Codex dispatch in same SKILL.md becomes two shell-pipeline forms (one per reviewer kind). (Proof of pattern.)
-8. **Commit 8** — Migrate `skills/questions/SKILL.md`.
-9. **Commit 9** — Migrate `skills/research/SKILL.md` (per-question specialists, collator, plus the artifact reviewer for `summary.md`).
+8. **Commit 8** — Migrate `skills/questions/SKILL.md`. Replace inline reviewer dispatch with `Agent({ subagent_type: "qrspi-questions-reviewer", … })`. **No scope-reviewer dispatch is added** (Questions has no scope-reviewer per the canonical topology).
+9. **Commit 9** — Migrate `skills/research/SKILL.md` (per-question specialists, collator, plus the quality reviewer for `summary.md`). **No scope-reviewer dispatch is added** (Research has no scope-reviewer per the canonical topology).
 10. **Commit 10** — Migrate `skills/design/SKILL.md`.
 11. **Commit 11** — Migrate `skills/structure/SKILL.md`.
 12. **Commit 12** — Migrate `skills/phasing/SKILL.md`.
-13. **Commit 13** — Migrate `skills/plan/SKILL.md`.
+13. **Commit 13** — Migrate `skills/plan/SKILL.md`. Replace inline plan-reviewer dispatch with parallel quality + scope-reviewer Agent calls plus the 5 per-task reviewer dispatches (spec, security, silent-failure-hunter, goal-traceability, test-coverage) that Plan currently runs from `skills/plan/templates/`. The dispatches now point at the per-task agent files added in commit 5 (`agents/qrspi-{name}-reviewer.md`); the `skills/plan/templates/` directory becomes unreferenced and is deleted in commit 20.
 14. **Commit 14** — Migrate `skills/parallelize/SKILL.md`.
 15. **Commit 15** — Migrate `skills/implement/SKILL.md` (per-task reviewers + implementer).
 16. **Commit 16** — Migrate `skills/integrate/SKILL.md` (integration + security reviewers, both Claude and Codex).
@@ -577,16 +580,16 @@ The following bats test files hard-reference paths slated for deletion in commit
 |---|---|---|
 | `tests/unit/test-reviewer-boilerplate-embed.bats` | `skills/_shared/reviewer-boilerplate.md` | `skills/reviewer-protocol/SKILL.md` |
 | `tests/unit/test-scope-reviewer.bats` | `skills/_shared/templates/scope-reviewer.md` | `agents/qrspi-{name}-scope-reviewer.md` (per-artifact) |
-| `tests/unit/test-scope-reviewer-rules-loading.bats` | `skills/_shared/templates/scope-reviewer.md` + per-skill OWNS/DEFERS in SKILL.md | `agents/qrspi-{name}-scope-reviewer.md` + `skills/{name}/owns-defers.md` |
-| `tests/unit/test-scope-reviewer-parallel-with-claude.bats` | `skills/_shared/templates/scope-reviewer.md` | `agents/qrspi-{name}-scope-reviewer.md` |
+| `tests/unit/test-scope-reviewer-rules-loading.bats` | `skills/_shared/templates/scope-reviewer.md` + per-skill OWNS/DEFERS in SKILL.md | `agents/qrspi-{name}-scope-reviewer.md` + `skills/{name}/owns-defers.md` (7 artifacts — Questions/Research no longer in scope per canonical topology; assertions iterating over all artifacts must be narrowed to the 7) |
+| `tests/unit/test-scope-reviewer-parallel-with-claude.bats` | `skills/_shared/templates/scope-reviewer.md` | `agents/qrspi-{name}-scope-reviewer.md` (7 agents) |
 | `tests/unit/test-change-type-classification.bats` | `skills/_shared/reviewer-boilerplate.md` (line 207 comment + assertions) | `skills/reviewer-protocol/SKILL.md` |
 | `tests/unit/test-replan-archive-and-populate.bats` | `SCOPE_REVIEWER_TEMPLATE=skills/_shared/templates/scope-reviewer.md` (line 19) | `agents/qrspi-replan-scope-reviewer.md` |
 | `tests/unit/test-phasing-roadmap-generation.bats` | comment refs `skills/_shared/reviewer-boilerplate.md` (line 207) | `skills/reviewer-protocol/SKILL.md` |
 | `tests/acceptance/test-review-pause.bats` | `BOILERPLATE_FILE=skills/_shared/reviewer-boilerplate.md` (line 41) | `skills/reviewer-protocol/SKILL.md` |
-| `tests/acceptance/test-hardening-skills.bats` | `skills/implement/templates/per-task-orchestrator.md` (line 65); `skills/implement/templates/thoroughness/goal-traceability-reviewer.md` (line 459) | per-task orchestration moves into `agents/qrspi-implementer.md` body; goal-traceability test points at `agents/qrspi-goal-traceability-reviewer.md` |
+| `tests/acceptance/test-hardening-skills.bats` | `skills/implement/templates/per-task-orchestrator.md` (line 65); `skills/implement/templates/thoroughness/goal-traceability-reviewer.md` (line 459) | **Pre-existing repo issue:** `per-task-orchestrator.md` does not exist at HEAD (verified by `ls`); the existing test references a stale path. Commit 19 resolves this by re-pointing the U7-named assertion at `agents/qrspi-implementer.md` (which is where the per-task orchestration content lands post-migration). The M35 goal-traceability assertion re-points at `agents/qrspi-goal-traceability-reviewer.md`. |
 | `tests/acceptance/test-skill-output-quality.bats` | `SCOPE_REVIEWER_TEMPLATE=skills/_shared/templates/scope-reviewer.md` (line 50); `REVIEWER_BOILERPLATE=skills/_shared/reviewer-boilerplate.md` (line 51); `implement/templates/` references (line 223) | `agents/qrspi-{name}-scope-reviewer.md` + `skills/reviewer-protocol/SKILL.md` + per-task agent files in `agents/` |
-| `tests/acceptance/test-reviewer-injection.bats` | `skills/_shared/templates/` | `agents/qrspi-{name}-scope-reviewer.md` |
-| `tests/unit/test-compaction-emphasis-markup.bats` | `skills/implement/templates/per-task-orchestrator.md` (line 22 comment, line 32 comment, line 265 file existence assertion) | per-task-orchestrator content moves into `agents/qrspi-implementer.md` body; assertion now greps the agent body for the corresponding emphasis markup |
+| `tests/acceptance/test-reviewer-injection.bats` | `skills/_shared/templates/` | `agents/qrspi-{name}-scope-reviewer.md` (7 per-artifact agents — Questions/Research excluded) |
+| `tests/unit/test-compaction-emphasis-markup.bats` | `skills/implement/templates/per-task-orchestrator.md` (line 22/32 comments, line 265 file-existence assertion) | **Pre-existing repo issue:** the file-existence assertion on `per-task-orchestrator.md` would fail at HEAD today (the file does not exist). Commit 19 re-points the assertion at `agents/qrspi-implementer.md` (where the per-task-orchestrator content lands) and updates the test name + comments. |
 
 This list was produced by `grep -rlE "_shared/reviewer-boilerplate\|_shared/templates\|implement/templates\|test/templates" tests/` against HEAD; commit 19's PR description must include the same grep result to confirm no test was missed.
 
@@ -648,7 +651,7 @@ Smoke test confirms no behavioral regression. Test fixtures under `tests/fixture
 | Agent file location | `agents/` at plugin root | Canonical Claude Code plugin convention |
 | Naming prefix | `qrspi-` | Namespaces against other plugins' agents |
 | Per-artifact quality reviewer count | 9 (one per artifact-shaped skill) | Each artifact has distinct quality checks; 1:1 mapping is natural |
-| Scope-reviewer architecture | 9 per-artifact dedicated scope-reviewers (NOT one generic parameterized agent) | Single-purpose 30-line bodies make Step-1 Read reliability a non-issue; hard-coded paths (no `{artifact_type}` substitution); cleaner agent files than a generic parameterized one. Cost (+8 agent files) is small. |
+| Scope-reviewer architecture | 7 per-artifact dedicated scope-reviewers (one each for goals, design, structure, phasing, plan, parallelize, replan); none for Questions or Research per `skills/using-qrspi/SKILL.md:168-169` | Single-purpose 30-line bodies make Step-1 Read reliability a non-issue; hard-coded paths (no `{artifact_type}` substitution); cleaner agent files than a generic parameterized one. Questions/Research excluded matches the canonical artifact-tree contract. |
 | Scope vs quality split | Quality reviewer carries no OWNS/DEFERS, no scope checks; scope-reviewer carries no quality checks | Cognitive separation. Each agent has one job. Reduces attention dilution that bundling produces on big artifacts (design, research, plan). |
 | OWNS/DEFERS extracted to standalone files | Yes, per-artifact `owns-defers.md` (plain markdown) | Two consumers (author skill via `!cat`; dedicated scope-reviewer via Read). Single source of truth per artifact. |
 | OWNS/DEFERS in author skill | `!cat skills/{name}/owns-defers.md` in SKILL.md OWNS/DEFERS section | Author needs OWNS/DEFERS in main chat at authoring time (it IS the rule the author applies); `!cat` works in skill files and gives fresh content per activation; same canonical file as scope-reviewer Reads. |
