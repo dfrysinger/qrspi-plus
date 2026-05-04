@@ -98,8 +98,10 @@ extract_h2_section() {
 }
 
 @test "{ARTIFACT_TYPE}=structure — structure SKILL dispatches scope-reviewer with parameter structure" {
-  grep -q "scope-reviewer.md" "$STRUCTURE_FILE"
-  grep -qE "\{ARTIFACT_TYPE\}=structure" "$STRUCTURE_FILE"
+  # Commit 11/22 migration: scope-reviewer is now dispatched as a dedicated
+  # agent (qrspi-structure-scope-reviewer) rather than via the shared template.
+  # The old scope-reviewer.md + {ARTIFACT_TYPE}=structure pattern is retired.
+  grep -q "qrspi-structure-scope-reviewer" "$STRUCTURE_FILE"
 }
 
 @test "{ARTIFACT_TYPE}=plan — plan SKILL dispatches scope-reviewer with parameter plan" {
