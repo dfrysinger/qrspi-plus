@@ -22,10 +22,11 @@ setup() {
   STRUCTURE_FILE="$ROOT/skills/structure/SKILL.md"
   PLAN_FILE="$ROOT/skills/plan/SKILL.md"
   PARALLELIZE_FILE="$ROOT/skills/parallelize/SKILL.md"
+  REPLAN_FILE="$ROOT/skills/replan/SKILL.md"
   USING_QRSPI_FILE="$ROOT/skills/using-qrspi/SKILL.md"
   SCOPE_REVIEWER_TEMPLATE="$ROOT/skills/_shared/templates/scope-reviewer.md"
   REVIEWER_BOILERPLATE="$ROOT/skills/_shared/reviewer-boilerplate.md"
-  export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE
+  export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE REPLAN_FILE
   export USING_QRSPI_FILE SCOPE_REVIEWER_TEMPLATE REVIEWER_BOILERPLATE
 }
 
@@ -72,6 +73,13 @@ setup() {
   grep -qi "qrspi-parallelize-reviewer" "$PARALLELIZE_FILE"
   grep -qi "qrspi-parallelize-scope-reviewer" "$PARALLELIZE_FILE"
   grep -Eqi "in parallel|run in parallel|two parallel reviewer dispatches" "$PARALLELIZE_FILE"
+}
+
+@test "replan SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
+  # Commit 17/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-replan-reviewer" "$REPLAN_FILE"
+  grep -qi "qrspi-replan-scope-reviewer" "$REPLAN_FILE"
+  grep -Eqi "in parallel|run in parallel|parallel reviewer dispatches" "$REPLAN_FILE"
 }
 
 # ── Shared finding schema: both reviewers emit M48 5-field findings ─────────

@@ -1,4 +1,4 @@
-This is the locked rule set the scope-reviewer dispatch consumes (see `skills/_shared/templates/scope-reviewer.md` rules-loading procedure with `{ARTIFACT_TYPE}=parallelize`). Boundary-drift findings dispatch off the DEFERS list; scope-compliance dispatches off the OWNS list.
+This is the locked rule set the scope-reviewer dispatch consumes (Read by the `qrspi-parallelize-scope-reviewer` agent at runtime per its rules-loading procedure). Boundary-drift findings dispatch off the DEFERS list; scope-compliance dispatches off the OWNS list.
 
 ### Parallelize OWNS
 

@@ -120,10 +120,12 @@ extract_h2_section() {
   grep -q "qrspi-parallelize-scope-reviewer" "$PARALLELIZE_FILE"
 }
 
-@test "{ARTIFACT_TYPE}=replan — replan SKILL dispatches scope-reviewer with parameter replan (T14 7th value)" {
+@test "{ARTIFACT_TYPE}=replan — replan SKILL dispatches scope-reviewer with parameter replan" {
+  # Commit 17/22 migration: scope-reviewer is now dispatched as a dedicated
+  # agent (qrspi-replan-scope-reviewer) rather than via the shared template.
+  # The old scope-reviewer.md + {ARTIFACT_TYPE}=replan pattern is retired.
   [ -f "$REPLAN_FILE" ]
-  grep -q "scope-reviewer.md" "$REPLAN_FILE"
-  grep -qE "\{ARTIFACT_TYPE\}=replan" "$REPLAN_FILE"
+  grep -q "qrspi-replan-scope-reviewer" "$REPLAN_FILE"
 }
 
 # ── Per-fixture seeding: each fixture carries content that fires change_type=scope
