@@ -1,56 +1,75 @@
 # Agent protocol for QRSPI-plus
 
-You are an agent with your own GitHub identity. Most agents are GitHub
-Apps named `qrspi-{nato}` (alpha through golf, minus echo) — they commit
-and comment as `qrspi-alpha[bot]`. Echo is the lone remaining machine
-user account (`df-agent-echo`) during a transition; it will move to a
-GitHub App once its current work is done.
+You are an agent with your own GitHub identity. All 7 agents are GitHub
+Apps named `qrspi-{nato}` (alpha, bravo, charlie, delta, echo, foxtrot,
+golf) — they commit and comment as `qrspi-{nato}[bot]`.
 
 The human reviewer is `@dfrysinger`.
 
-Branch prefix matches your bot/user handle (without the `[bot]` suffix
-for apps): e.g. `qrspi-alpha/...` or `df-agent-echo/...`.
+Branch prefix matches your bot handle without the `[bot]` suffix:
+e.g. `qrspi-alpha/...`.
+
+Each CC session lives in a folder named `agent-{nato}` under
+`~/Library/CloudStorage/Dropbox/claude-workspace/`. The folder name is
+the source of truth for which identity that session uses.
 
 ## Bootstrapping a session
 
 When starting a fresh Claude Code session as an agent:
 
-1. Clone (or `cd` into) the `qrspi-plus` repo. **This file (`AGENTS.md`)
-   auto-loads** once you're in the repo root.
+1. Open the session in its `agent-{nato}` folder. **This file
+   (`AGENTS.md`) auto-loads** once you're in the qrspi-plus repo root.
 2. Read the kickoff message from the human for the issue assignment.
-3. Authenticate as the right identity (see "Authenticating" below).
-4. Confirm your GitHub identity matches the agent the human addressed:
-   ```
-   gh api user --jq .login
-   ```
-   For apps it returns `qrspi-{nato}[bot]`. Echo returns `df-agent-echo`.
-   If it doesn't match, re-run the auth recipe. Never act under another
-   agent's identity.
+3. Authenticate by running `qas` (auto-detects nato from `$PWD`) — see
+   "Authenticating" below.
+4. Confirm your identity matches what the human addressed; the `qas`
+   output line shows it (`qas: qrspi-{nato}[bot] (expires …)`). The
+   `gh api user` endpoint is **not** accessible to installation tokens,
+   so don't use it for verification — `qas --who` reads the cached
+   identity instead.
 5. Follow "Before starting any task" below.
 
 ## Authenticating
 
-### Apps (qrspi-alpha … qrspi-golf, except echo)
+### Canonical: `qas`
 
-Each app has its credentials in 1Password (`Agent Vault`, item title
+Source the helper once in your shell config (one-time setup):
+
+```
+# in ~/.zshrc
+source "$HOME/Library/CloudStorage/Dropbox/claude-workspace/agent-tooling/playwright-signup/qas-init.sh"
+```
+
+Then in any new shell, inside the `agent-{nato}` folder:
+
+```
+qas              # auto-detects nato from $PWD, mints token, exports GH_TOKEN
+qas alpha        # explicit override (use when working outside an agent dir)
+qas --who        # print currently-cached identity, don't re-mint
+```
+
+`qas` does four things:
+
+1. Mints a fresh installation token via `mint-installation-token.mjs`.
+2. Exports `GH_TOKEN` so `gh` and `git push` (over HTTPS via gh's
+   credential helper) act as the bot.
+3. Sets `git config user.name` + `user.email` for the current repo to
+   the bot's noreply identity.
+4. Prints `qas: qrspi-{nato}[bot] (expires <iso8601>)`.
+
+The token is scoped to `dfrysinger/qrspi-plus` only and expires in
+1 hour. Re-run `qas` if you see auth errors during a long session.
+
+### Reference: manual mint (what `qas` does under the hood)
+
+Each app's credentials live in 1Password (`Agent Vault`, item title
 `GitHub App - qrspi-{nato}`):
 
 - `app_id` (text)
 - `installation_id` (text)
 - `private_key` (concealed, RSA PEM)
 
-Mint a fresh GitHub installation token (the installation token GitHub
-returns is valid 1 hour) with:
-
-```
-node ~/Library/CloudStorage/Dropbox/claude-workspace/agent-tooling/playwright-signup/smoke-test-app.mjs {nato}
-```
-
-That helper script lives in Daniel's private workspace; it is not the
-canonical token-mint surface. The canonical mint logic (which any
-operator can implement from scratch) is the three steps below — the
-script is a convenience wrapper plus a connectivity check (it reads
-the repo metadata as a smoke test).
+The canonical mint logic (any operator can implement this from scratch):
 
 1. Build a JWT signed `RS256` with the private key:
    `header={alg:RS256}`, `payload={iat:now-60, exp:now+540, iss:app_id}`.
@@ -67,23 +86,6 @@ the repo metadata as a smoke test).
    the git password over HTTPS
    (`https://x-access-token:<token>@github.com/...`).
 
-The installation token (NOT the JWT) is scoped to dfrysinger/qrspi-plus
-only and expires in 1 hour. Re-mint if you see auth errors during a
-long session.
-
-### Echo (legacy user account, until transition)
-
-Echo's classic PAT is in 1Password at `op://Agent Vault/GitHub - df-agent-echo/pat`.
-
-```
-gh auth login --with-token < /path/to/pat-file
-```
-
-(Or use `GH_TOKEN` env var with the PAT's value.)
-
-Re-verify with `gh api user --jq .login` after switching. If you can't
-get to the correct identity, stop and ask the human.
-
 ## Before starting any task
 
 1. Run `gh issue list --state open` and pick (or accept) one.
@@ -96,8 +98,7 @@ get to the correct identity, stop and ask the human.
 ## Starting work
 
 5. Branch name: `{your-handle}/issue-{NNN}-{short-slug}`
-   (e.g. `qrspi-alpha/issue-42-fix-plan-stage-loop` for an app, or
-   `df-agent-echo/issue-42-...` for echo).
+   (e.g. `qrspi-alpha/issue-42-fix-plan-stage-loop`).
 6. Make a stub commit and open a **draft** PR with body `Fixes #NNN`:
    ```
    gh pr create --draft --title "..." --body "Fixes #NNN"
