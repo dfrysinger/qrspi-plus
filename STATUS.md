@@ -5,7 +5,7 @@
 
 ## Active work
 
-- df-agent-echo → v0.4 bundle (#26, #51, #52, #54, #55, #56, #91, #93, #94, #95, #96, #98), draft (PR #97), started 2026-04-29
+- qrspi-echo[bot] → #110 all subagents in agent files (PR #124, draft, started 2026-05-04)
 
 <!--
 Format:
