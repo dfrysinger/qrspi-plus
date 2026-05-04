@@ -4,7 +4,7 @@
 **Status:** Approved for implementation plan
 **Scope:** Move every QRSPI subagent that **has an existing template file** (or has inline-prompted reviewer logic in its parent skill) into a Claude Code agent file (`agents/*.md`). Concretely: 9 per-artifact quality reviewers (one each for goals, questions, research, design, structure, phasing, plan, parallelize, replan) + 7 per-artifact dedicated scope-reviewers (one each for goals, design, structure, phasing, plan, parallelize, replan — Questions and Research have no scope reviewer per the canonical artifact-tree contract in `skills/using-qrspi/SKILL.md:168-169`) + 2 integration reviewers + 8 per-task reviewers + 1 implement-gate cross-task reviewer (the gate-level "Re-run all reviews" subagent dispatched from `skills/implement/SKILL.md:534`) + 5 worker agents (research-specialist, research-collator, replan-analyzer, implementer, test-writer). Total: 9 + 7 + 2 + 8 + 1 + 5 = **32 agents**. The cross-cutting reviewer protocol is a skill, preloaded into every reviewer subagent via the agent file's `skills:` frontmatter (zero main-chat cost, zero Step-1 reliability dependency). Per-artifact OWNS/DEFERS rules live as plain markdown files (`skills/{name}/owns-defers.md` for the 7 scope-reviewer artifacts) consumed by the author skill (via `!cat` in `SKILL.md` at authoring time) and by the dedicated scope-reviewer (via Read at dispatch time) — single canonical source per artifact. Codex receives agent bodies via a shell pipeline that bypasses main-chat context. Zero rules content ever enters main chat for reviewers.
 
-**Out of scope for this PR (deferred to a follow-up issue):** the **authoring/synthesis subagents** dispatched inline from each authoring skill — Goals synthesis (`skills/goals/SKILL.md:164-171`), Questions generation (`skills/questions/SKILL.md:34-42`), Phasing synthesis (`skills/phasing/SKILL.md:71-89`), Plan overview + per-task spec-generation sub-subagent fan-out (`skills/plan/SKILL.md:134-161`), Design synthesis, Structure synthesis, and the Parallelize dependency-graph synthesis subagent. These have very different shapes (large round-by-round prompts assembled inline; no existing template files) and would significantly expand this PR's surface. They are tracked as a follow-up issue. The "all QRSPI subagents" framing of issue #110 applies to authoring subagents in spirit but is realized in two PRs: this one (31 agents covering reviewers + workers + research isolation), then the follow-up (~7 authoring subagents).
+**Out of scope for this PR (deferred to a follow-up issue):** the **authoring/synthesis subagents** dispatched inline from each authoring skill — Goals synthesis (`skills/goals/SKILL.md:164-171`), Questions generation (`skills/questions/SKILL.md:34-42`), Phasing synthesis (`skills/phasing/SKILL.md:71-89`), Plan overview + per-task spec-generation sub-subagent fan-out (`skills/plan/SKILL.md:134-161`), Design synthesis, Structure synthesis, and the Parallelize dependency-graph synthesis subagent. These have very different shapes (large round-by-round prompts assembled inline; no existing template files) and would significantly expand this PR's surface. They are tracked as a follow-up issue. The "all QRSPI subagents" framing of issue #110 applies to authoring subagents in spirit but is realized in two PRs: this one (32 agents covering reviewers + workers + research isolation + the implement gate-level reviewer), then the follow-up (~7 authoring subagents).
 
 ### Why skill preload for the protocol (not Step-1 Read)
 
@@ -90,7 +90,17 @@ The mechanics: agent file body and preloaded skills are both loaded from disk in
   - `name` — required, matches filename stem
   - `description` — required, one-line description of when to delegate
   - `model` — set per-agent (`sonnet`, `opus`, `inherit`)
-  - `tools` — set per-agent (typically `Read, Write, Bash, Grep, Glob`)
+  - `tools` — granted **per-agent-family** to enforce the Read-restriction model at the tool level (the agent body's instructions and the CI tests are belt-and-suspenders, but the tool grant is the primary enforcement):
+    - **Per-artifact quality reviewers (except design)**: `Write` only. Cannot Read — artifact and companions arrive via dispatch prompt; protocol arrives via skill preload. Any attempted Read fails at the tool level.
+    - **`qrspi-design-reviewer` (the citation-verification carve-out)**: `Read, Write`. The agent body restricts Reads to `research/q*.md` only; CI test asserts the carve-out phrase + path scope.
+    - **Per-artifact dedicated scope-reviewers**: `Read, Write`. Read used only for the Step-1 OWNS/DEFERS Read.
+    - **Per-task reviewers**: `Read, Write`. (Some review checks need Read — e.g. spec-reviewer cross-referencing; conservative grant. CI does not enforce zero Reads here.)
+    - **Integration reviewers + implement-gate-reviewer**: `Read, Write`.
+    - **`qrspi-test-writer`**: `Write`. Writes tests; does not Read at runtime (per the dispatch shape).
+    - **`qrspi-research-specialist`**: `Read, Write, Bash, WebFetch, Grep, Glob`. Does live research over codebase + web.
+    - **`qrspi-research-collator`**: `Read, Write, Bash`. Reads q*.md + writes staging file + bash for the rename step (orchestrator does the rename today, but a future revision may push it into the agent — Bash kept available).
+    - **`qrspi-replan-analyzer`**: `Read, Write, Bash, Grep, Glob`. Fans out across `fixes/`, `reviews/`, `tasks/`.
+    - **`qrspi-implementer`**: `Read, Write, Bash, Edit, Grep, Glob`. Does the actual implementation work (TDD, edits, tests).
   - `skills` — for reviewer agents, includes `reviewer-protocol`. Preloaded into the subagent at startup; not visible to main chat.
 - **Body.** The agent's system prompt. Static content; no shell-command interpolation (`!` prefix does not work in agent file bodies). For per-artifact **quality** reviewers, the body holds the artifact-specific quality checks only — no OWNS/DEFERS, no Read step, no scope content. For per-artifact **scope** reviewers, the body holds the 3-check scope procedure plus a Step-1 Read of `skills/{name}/owns-defers.md`. The cross-cutting protocol is preloaded as a skill in both cases, so neither body instructs the agent to read it.
 
@@ -105,10 +115,12 @@ Frontmatter:
 name: qrspi-{name}-reviewer
 description: Reviews {artifact}.md for artifact-specific quality (correctness, clarity, completeness) per the QRSPI reviewer protocol. Scope/boundary review is handled by qrspi-{name}-scope-reviewer.
 model: sonnet
-tools: Read, Write, Bash, Grep, Glob
+tools: Write
 skills: [reviewer-protocol]
 ---
 ```
+
+(Exception: `qrspi-design-reviewer` declares `tools: Read, Write` to enable the Citation-verification Read carve-out for `research/q*.md`.)
 
 Body:
 
@@ -153,7 +165,7 @@ Frontmatter:
 name: qrspi-{name}-scope-reviewer
 description: Scope/boundary review for {artifact}.md. Reads skills/{name}/owns-defers.md and applies the 3-check scope procedure. Companion to qrspi-{name}-reviewer (which handles artifact quality).
 model: sonnet
-tools: Read, Write, Bash, Grep, Glob
+tools: Read, Write
 skills: [reviewer-protocol]
 ---
 ```
@@ -575,7 +587,7 @@ Each commit lands on `qrspi-echo/issue-110-subagents-in-agent-files` and remains
 18. **Commit 18** — Migrate `skills/test/SKILL.md`. Replace inline `test-writer` dispatch (`skills/test/templates/test-writer.md`) with `Agent({ subagent_type: "qrspi-test-writer", … })`. Replace the three reviewer dispatches — currently pointing at `skills/implement/templates/...` — with the per-task reviewer agent files added in commit 5: `Agent({ subagent_type: "qrspi-goal-traceability-reviewer", … })`, `Agent({ subagent_type: "qrspi-spec-reviewer", … })`, `Agent({ subagent_type: "qrspi-code-quality-reviewer", … })`. Replace the Codex reviewer dispatches with the shell-pipeline form. Test phase has no artifact-shaped scope review (test code is not an OWNS/DEFERS-shaped artifact), so no scope-reviewer dispatch is added.
 19. **Commit 19** — Migrate the test suite. Update bats test files that hard-reference the soon-to-be-deleted paths so they pass against the new locations: `tests/unit/test-reviewer-boilerplate-embed.bats`, `tests/unit/test-scope-reviewer*.bats` (3 files), `tests/unit/test-change-type-classification.bats`, `tests/unit/test-replan-archive-and-populate.bats`, `tests/unit/test-phasing-roadmap-generation.bats`, `tests/unit/test-compaction-emphasis-markup.bats`, `tests/acceptance/test-review-pause.bats`, `tests/acceptance/test-hardening-skills.bats`, `tests/acceptance/test-skill-output-quality.bats`, `tests/acceptance/test-reviewer-injection.bats`. Each test now greps the agent file body or the protocol skill body instead of the legacy template paths. The full list (with legacy reference and new authoritative source per file) is in the "Test-suite migration inventory" subsection below; the PR description must include the live `grep -rlE "_shared/reviewer-boilerplate|_shared/templates|implement/templates|test/templates" tests/` result against HEAD to confirm completeness.
 20. **Commit 20** — Delete the old shared/template files: `_shared/reviewer-boilerplate.md`, `_shared/templates/scope-reviewer.md`, `integrate/templates/`, `implement/templates/`, `test/templates/`, and `plan/templates/`. (Sequencing requirement: must come AFTER commits 13, 15, 16, 17, 18 — which migrate the live callers — and after commit 19 — which migrates the test references.)
-21. **Commit 21** — Update `using-qrspi/SKILL.md`, `AGENTS.md`, and `README.md` references that point at deleted files. Remove the path-arg invocation in `codex-companion-bg.sh` if all callers have migrated.
+21. **Commit 21** — Update doc/contract files that reference deleted paths or the legacy Codex prompt-file pattern: `using-qrspi/SKILL.md`, `AGENTS.md`, `README.md`, and **`skills/_shared/codex/launch-await-pattern.md`** (which currently documents `launch --prompt-file`). The shared launch-await-pattern doc is rewritten to document the new stdin pipeline form (`{ awk … } | scripts/codex-companion-bg.sh launch`) and explicitly retire the path-arg form. If any per-skill callsite still references the legacy stdin form by the time this commit fires, the commit's grep-based check (added inline) fails — `grep -RnE 'launch --prompt-file' skills/` must return zero results before this commit lands. Remove the path-arg invocation from `scripts/codex-companion-bg.sh` itself in this same commit (no caller depends on it after commit 18).
 22. **Commit 22** — Final cross-cutting CI tests. The structural agent-file tests (`test-agent-files-skill-preload`, `test-scope-reviewer-step1-read`, `test-quality-reviewer-no-scope`) and the author-skill `!cat` test are already in place from commits 3/5. This commit adds the remaining cross-cutting assertions: `test-rules-files-exist.bats` (asserts `skills/reviewer-protocol/SKILL.md` is present and each of the 7 scope-reviewed skills has a non-empty `owns-defers.md`), `test-no-deleted-files.bats` (asserts the deleted files are absent at HEAD), `test-dispatch-sites.bats` (asserts no migrated SKILL.md still embeds the old reviewer-boilerplate content, writes to `/tmp/codex-prompt-*`, or writes to `.codex-prompts/codex-prompt-task-*`; full ban list documented in Testing § Unit tests), and `test-test-skill-no-legacy-templates.bats` (asserts `skills/test/SKILL.md` no longer references `implement/templates/` or `test/templates/`).
 
 If a per-skill commit (7–17) discovers behavioral subtlety, it earns its own follow-up commit — no need to amend prior commits.
@@ -615,9 +627,9 @@ The unit tests below land across multiple commits per the migration sequence. Te
 - `tests/unit/test-quality-reviewer-no-scope.bats` — for each of the 9 `qrspi-{name}-reviewer.md` quality-reviewer agent bodies, asserts:
   - No `owns-defers.md` reference (no OWNS/DEFERS Read).
   - No language emitting scope findings (no occurrences of "scope finding", "scope review", "boundary drift", "OWNS / DEFERS", or similar — exact regex documented in the test).
-  - **For 8 of the 9 reviewers** (every quality reviewer EXCEPT `qrspi-design-reviewer`): no runtime Read instruction at all (greps for `Read` in the body and asserts only matches that are part of natural prose, not tool-call directives — exact regex documented in the test).
-  - **For `qrspi-design-reviewer.md` only**: exactly one Read carve-out is permitted, and it must contain the literal phrase `Citation-verification Read exception` and scope the Read target to `research/q*.md` (the test greps for both literals on adjacent lines). Any Read instruction outside this carve-out is a test failure.
-  This pair of constraints — 8 reviewers fully Read-free; 1 reviewer with a single, narrowly-bounded, exactly-phrased exception — is what enforces the design.
+  - **For 8 of the 9 reviewers** (every quality reviewer EXCEPT `qrspi-design-reviewer`): the frontmatter `tools:` grant does NOT include `Read` (this is the primary tool-level enforcement; the body-language grep is belt-and-suspenders).
+  - **For `qrspi-design-reviewer.md` only**: the frontmatter `tools:` grant includes `Read` AND the body contains the literal phrase `Citation-verification Read exception` and scopes the Read target to `research/q*.md` (the test greps for both literals on adjacent lines). Any other Read directive in the body is a test failure.
+  This pair of constraints — 8 reviewers tool-level Read-free; 1 reviewer with a single, narrowly-bounded, exactly-phrased Read exception backed by a tool grant — is what enforces the design.
 - `tests/unit/test-author-skill-uses-cat.bats` — asserts each of the **7 scope-reviewed** author SKILL.md files (goals, design, structure, phasing, plan, parallelize, replan) contains `!cat skills/{name}/owns-defers.md` in its OWNS/DEFERS section. Questions and Research are explicitly excluded — they have no scope-reviewer and no OWNS/DEFERS section.
 - `tests/unit/test-rules-files-exist.bats` — asserts `skills/reviewer-protocol/SKILL.md` is present and each of the **7 scope-reviewed** skills (goals, design, structure, phasing, plan, parallelize, replan) has a non-empty `owns-defers.md`. Questions and Research are explicitly excluded.
 - `tests/unit/test-no-deleted-files.bats` — asserts the deleted files are absent at HEAD.
