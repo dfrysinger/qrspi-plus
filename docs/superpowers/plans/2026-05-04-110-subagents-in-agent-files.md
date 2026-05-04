@@ -16,7 +16,7 @@
 
 ## File Structure
 
-### New files (47 total)
+### New files (53 total — plus the `tests/fixtures/issue-110/` directory)
 
 **Agents (37 files in `agents/`):**
 - 9 per-artifact quality reviewers — `qrspi-{goals,questions,research,design,structure,phasing,plan,parallelize,replan}-reviewer.md`
@@ -50,7 +50,7 @@
 - `skills/{goals,questions,research,design,structure,phasing,plan,parallelize,implement,integrate,replan,test}/SKILL.md` — replace inline reviewer dispatch with `Agent({ subagent_type: "qrspi-..." })` calls + Codex shell-pipeline forms.
 - 7 author SKILL.md files (`skills/{goals,design,structure,phasing,plan,parallelize,replan}/SKILL.md`) — replace OWNS/DEFERS section body with `!cat skills/{name}/owns-defers.md` (heading kept).
 - 12 bats test files referencing soon-deleted paths (commit 19; full list in spec § Test-suite migration inventory).
-- `using-qrspi/SKILL.md`, `AGENTS.md`, `README.md`, `skills/_shared/codex/launch-await-pattern.md` — doc updates (commit 21).
+- `skills/using-qrspi/SKILL.md`, `AGENTS.md`, `README.md`, `skills/_shared/codex/launch-await-pattern.md` — doc updates (commit 21). (Note: spec § Migration sequence commit 21 currently writes `using-qrspi/SKILL.md` without the `skills/` prefix — that is a spec-level path bug; the actual file is at `skills/using-qrspi/SKILL.md` and that is what commit 21 must edit.)
 
 ### Deleted files (commit 20)
 
@@ -213,7 +213,7 @@ Commit message: `feat(owns-defers): #110 extract per-artifact OWNS/DEFERS to sta
 
 **Spec reference:** § Codex dispatch — shell pipeline, no /tmp file
 
-- [ ] **Step 1: Write a failing test for stdin-path coverage**
+- [ ] **Step 1: Write a failing test for stdin-path coverage + the awk frontmatter-strip regression**
 
 Append to `tests/unit/test-codex-companion-bg.bats`:
 
@@ -231,6 +231,36 @@ Append to `tests/unit/test-codex-companion-bg.bats`:
   local f=/tmp/codex-test-prompt.$$.md
   echo 'Test prompt body' > "$f"
   scripts/codex-companion-bg.sh launch --dry-run "$f"
+  rm -f "$f"
+}
+
+# Regression test for spec § Risks — frontmatter-strip awk form. The pipeline
+# uses awk '/^---$/{n++; next} n>=2{print}' which prints lines after the SECOND
+# `---` marker (skipping only the leading frontmatter block). An earlier draft
+# used sed '/^---$/,/^---$/!p' which incorrectly drops every `---`-delimited
+# block — this test asserts the awk form survives `---` separators in body
+# content. Lives in this commit because commit 4 is where the pipeline form
+# is introduced.
+@test "awk frontmatter-strip preserves body content with internal --- separators" {
+  local f=/tmp/awk-strip-test.$$.md
+  cat > "$f" <<'EOF'
+---
+name: test
+description: smoke
+---
+
+body line 1
+
+---
+
+body line 2 after a separator
+EOF
+  local out
+  out=$(awk '/^---$/{n++; next} n>=2{print}' "$f")
+  echo "$out" | grep -qF 'body line 1'
+  echo "$out" | grep -qF 'body line 2 after a separator'
+  # And the frontmatter must be gone
+  ! echo "$out" | grep -qF 'name: test'
   rm -f "$f"
 }
 ```
@@ -423,15 +453,26 @@ Commit message must cite the exact SKILL.md line ranges for each.
   return 0
 }
 
-@test "qrspi-design-reviewer is the single Read carve-out" {
+@test "qrspi-design-reviewer is the single Read carve-out (adjacency + bounded scope)" {
   local fm body
   fm=$(awk '/^---$/{n++; next} n==1{print}' agents/qrspi-design-reviewer.md)
   body=$(awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-design-reviewer.md)
   echo "$fm" | grep -qE '^tools:.*Read' || { echo "design-reviewer must grant Read"; return 1; }
-  echo "$body" | grep -qF 'Citation-verification Read exception' \
-    || { echo "design-reviewer body must contain literal phrase 'Citation-verification Read exception'"; return 1; }
-  echo "$body" | grep -qE 'research/q\*\.md' \
-    || { echo "design-reviewer body must scope Read to research/q*.md"; return 1; }
+  # The carve-out phrase and the research/q*.md scope must appear on adjacent lines
+  # (within 1 line of each other) — this enforces that the scope binding is anchored
+  # to the carve-out phrase, not floating somewhere unrelated in the body.
+  echo "$body" | grep -B1 -A1 -F 'Citation-verification Read exception' \
+    | grep -qE 'research/q\*\.md' \
+    || { echo "design-reviewer body must place 'Citation-verification Read exception' adjacent to research/q*.md scope"; return 1; }
+  # Negative assertion: NO other Read directive anywhere in the body.
+  # Acceptable Read mentions are only those on the lines spanning the carve-out block.
+  # Strip the carve-out block (5 lines surrounding the phrase) and grep the remainder for Read directives.
+  local non_carveout
+  non_carveout=$(echo "$body" | grep -v -B2 -A2 -F 'Citation-verification Read exception' || true)
+  if echo "$non_carveout" | grep -qE '\bRead\s+(file|tool|the)|\bRead\(.*\)|\bread\s+research/'; then
+    echo "design-reviewer body must contain no Read directive outside the carve-out block"
+    return 1
+  fi
 }
 ```
 
@@ -496,29 +537,48 @@ Inspect `round-01-claude.md`:
 Inspect `round-01-scope-claude.md`:
 - 5-field finding schema present.
 - The deliberate boundary violation in the fixture is **reported** as a scope finding.
-- Findings reflect OWNS/DEFERS-aware behavior (the agent's Step-1 Read of `skills/goals/owns-defers.md` actually happened — visible in the agent's reasoning citations).
+- The reported finding is **OWNS/DEFERS-shaped** — its evidence cites the specific OWNS or DEFERS clause from `skills/goals/owns-defers.md` that the artifact violated. (This is the observable signal that Step-1 Read occurred and produced the right finding; do NOT rely on agent-internal reasoning logs, which are not reliably surfaced.) Choose the fixture so the violation is **only** detectable by consulting OWNS/DEFERS — i.e. an artifact-quality reviewer with no OWNS/DEFERS access would have nothing to say about it.
 - Zero artifact-quality findings.
 
 - [ ] **Step 5: Decision gate**
 
 If both verifications pass: Read mode is confirmed. Proceed to commit 7 unmodified.
 
-If the scope-reviewer output fails (Step-1 Read didn't happen, or findings don't reflect OWNS/DEFERS-aware behavior): execute the **mode-switch commit** before commit 7. Concretely:
+If the scope-reviewer output fails (no OWNS/DEFERS-shaped finding emitted): execute the **mode-switch commit** before commit 7. Concretely:
 1. Rewrite each `agents/qrspi-{name}-scope-reviewer.md` body to inline the OWNS/DEFERS verbatim under a "Scope rules (verbatim)" heading instead of the Step-1 Read.
 2. Replace `tests/unit/test-scope-reviewer-step1-read.bats` with `tests/unit/test-scope-reviewer-inline-owns-defers.bats` asserting byte-parity between each scope-reviewer body's inlined block and the corresponding `skills/{name}/owns-defers.md`.
 3. Update the spec's Reliability section mode marker to "inline mode" + remove the Step-1 Read language.
-4. Run the smoke test again to confirm inline mode works.
+4. Re-run the smoke test against the same fixture to confirm inline mode produces the OWNS/DEFERS-shaped finding.
 
 The two modes are mutually exclusive — CI never accepts both.
 
-- [ ] **Step 6: Commit (smoke fixtures + smoke results)**
+- [ ] **Step 6a (Read mode): Commit fixtures only**
+
+If the smoke gate passed, the only artifact to commit is the fixture set:
 
 ```bash
 git add tests/fixtures/issue-110/
 git commit -F /tmp/commit-msg-110-c06.txt
 ```
 
-Commit message: `test(smoke): #110 commit-6 smoke gate — Read mode confirmed (commit 6/22)` (or `… — switched to inline mode`). Body should describe what was tested and what the gate outcome was. The smoke fixtures stay in the repo for re-use by the integration test (spec § Integration tests).
+Commit message: `test(smoke): #110 commit-6 smoke gate — Read mode confirmed (commit 6/22)`. Body describes what was tested and the green outcome.
+
+- [ ] **Step 6b (inline mode, only if step 5 fell through): Commit the mode switch**
+
+If the smoke gate failed and step 5 forced the mode switch, the fixture commit AND the mode-switch artifacts both land. They can land as one combined commit (preferred — keeps commit count at 22) or as two sequential commits (if the engineer prefers to keep the fixture commit isolated). Combined form:
+
+```bash
+git add tests/fixtures/issue-110/ \
+  agents/qrspi-{goals,design,structure,phasing,plan,parallelize,replan}-scope-reviewer.md \
+  tests/unit/test-scope-reviewer-inline-owns-defers.bats \
+  docs/superpowers/specs/2026-05-04-110-subagents-in-agent-files-design.md
+git rm tests/unit/test-scope-reviewer-step1-read.bats
+git commit -F /tmp/commit-msg-110-c06-inline.txt
+```
+
+Commit message: `test(smoke): #110 commit-6 smoke gate — switched to inline mode (commit 6/22)`. Body describes what was tested, what failed, and the resulting rewrites (7 scope-reviewer bodies, bats swap, spec mode-marker update).
+
+The smoke fixtures stay in the repo for re-use by the final integration smoke (spec § Integration tests).
 
 ---
 
@@ -569,7 +629,7 @@ Replace the Codex parallel dispatch with two shell-pipeline launches (one per re
 - [ ] **Step 4: Run the existing goals tests, expect green**
 
 ```bash
-bats tests/unit/test-goals*.bats tests/acceptance/test-goals*.bats 2>/dev/null
+bats tests/unit/
 ```
 
 Expected: green (or no matching tests if there are none specific to goals dispatch). This commit is the proof-of-pattern; the structural CI tests in commit 5 already enforce agent-side facts.
@@ -618,7 +678,7 @@ Expected: empty (no matches).
 - [ ] **Step 4: Run questions tests + full unit suite**
 
 ```bash
-bats tests/unit/test-questions*.bats tests/unit/
+bats tests/unit/
 ```
 Expected: green.
 
@@ -668,7 +728,7 @@ Expected: empty.
 - [ ] **Step 6: Run research tests + full unit suite**
 
 ```bash
-bats tests/unit/test-research*.bats tests/unit/
+bats tests/unit/
 ```
 Expected: green.
 
@@ -700,7 +760,7 @@ Same shape as Task 6, with these specifics:
 - [ ] **Step 2: Run design tests + full unit suite**
 
 ```bash
-bats tests/unit/test-design*.bats tests/unit/
+bats tests/unit/
 ```
 Expected: green.
 
@@ -729,7 +789,7 @@ Same shape as Task 6. Companions for `qrspi-structure-reviewer` per inventory: `
 - [ ] **Step 2: Run structure tests + full unit suite**
 
 ```bash
-bats tests/unit/test-structure*.bats tests/unit/
+bats tests/unit/
 ```
 Expected: green.
 
@@ -758,7 +818,7 @@ Companions for `qrspi-phasing-reviewer` per inventory: `companion_roadmap`, `com
 - [ ] **Step 2: Run phasing tests + full unit suite**
 
 ```bash
-bats tests/unit/test-phasing*.bats tests/unit/
+bats tests/unit/
 ```
 Expected: green.
 
@@ -814,7 +874,7 @@ Expected: empty.
 - [ ] **Step 5: Run plan tests + full unit suite**
 
 ```bash
-bats tests/unit/test-plan*.bats tests/unit/
+bats tests/unit/
 ```
 Expected: green.
 
@@ -843,7 +903,7 @@ Companions for `qrspi-parallelize-reviewer` per inventory: `companion_plan`, `co
 - [ ] **Step 2: Run parallelize tests + full unit suite**
 
 ```bash
-bats tests/unit/test-parallelize*.bats tests/unit/
+bats tests/unit/
 ```
 Expected: green.
 
@@ -913,7 +973,7 @@ Expected: only this commit's deletions remaining (the `.gitignore` entry to remo
 - [ ] **Step 7: Run implement tests + full unit suite**
 
 ```bash
-bats tests/unit/test-implement*.bats tests/acceptance/test-implement*.bats tests/unit/
+bats tests/unit/ tests/acceptance/
 ```
 Expected: green. Some tests still reference `skills/implement/templates/...`; those migrate in commit 19. The implement-SKILL.md-based tests should be green now that the SKILL.md is migrated.
 
@@ -954,7 +1014,7 @@ Two shell-pipeline launches. Same body shape; different `output` filename suffix
 - [ ] **Step 3: Run integrate tests + full unit suite**
 
 ```bash
-bats tests/unit/test-integrate*.bats tests/unit/
+bats tests/unit/
 ```
 Expected: green.
 
@@ -1004,7 +1064,7 @@ Expected: empty (no SKILL.md references remain — all 7 migrations are done by 
 - [ ] **Step 6: Run replan tests + full unit suite**
 
 ```bash
-bats tests/unit/test-replan*.bats tests/unit/
+bats tests/unit/
 ```
 Expected: green.
 
@@ -1062,7 +1122,7 @@ Expected: empty.
 - [ ] **Step 6: Run test tests + full unit suite**
 
 ```bash
-bats tests/unit/test-test*.bats tests/unit/
+bats tests/unit/
 ```
 Expected: green.
 
@@ -1217,12 +1277,12 @@ Commit message: `chore: #110 delete legacy template + boilerplate files (commit 
 
 **Spec reference:** Migration sequence commit 21
 
-- [ ] **Step 1: Update `using-qrspi/SKILL.md`, `AGENTS.md`, `README.md`**
+- [ ] **Step 1: Update `skills/using-qrspi/SKILL.md`, `AGENTS.md`, `README.md`**
 
 Search for references to deleted paths (`_shared/reviewer-boilerplate`, `_shared/templates`, per-skill `templates/` dirs) and the legacy Codex prompt-file pattern (`/tmp/codex-prompt-`, `.codex-prompts/`, `launch --prompt-file`). Replace with references to the new architecture (agent files, protocol skill, OWNS/DEFERS files, shell-pipeline form).
 
 ```bash
-grep -rl '_shared/reviewer-boilerplate\|_shared/templates\|/tmp/codex-prompt-\|\.codex-prompts/\|launch --prompt-file' using-qrspi/SKILL.md AGENTS.md README.md
+grep -rl '_shared/reviewer-boilerplate\|_shared/templates\|/tmp/codex-prompt-\|\.codex-prompts/\|launch --prompt-file' skills/using-qrspi/SKILL.md AGENTS.md README.md
 ```
 
 For each match, update inline.
