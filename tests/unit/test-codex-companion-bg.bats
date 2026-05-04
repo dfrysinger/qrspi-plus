@@ -60,7 +60,8 @@ teardown() {
 
 @test "launch: returns within 5s and prints exactly the job ID to stdout" {
   start=$(date +%s)
-  run "$WRAPPER" launch --prompt-file "$PROMPT_FILE"
+  # Path-arg form retired (#110 commit 21/22): pipe prompt on stdin.
+  run bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
   end=$(date +%s)
 
   [ "$status" -eq 0 ]
@@ -70,8 +71,10 @@ teardown() {
   [ "$((end - start))" -lt 5 ]
 }
 
-@test "launch: passes --prompt-file through to the companion" {
-  # Stub records argv via STUB_ARGV_DUMP.
+@test "launch: passes prompt to companion via internal --prompt-file (stdin captured to temp)" {
+  # The wrapper still passes --prompt-file to the *underlying companion*
+  # internally (after capturing stdin to a temp file). This test verifies the
+  # internal handoff still works under the stdin-only public surface.
   export STUB_ARGV_DUMP="$TEST_ROOT/argv.dump"
   cat > "$TEST_ROOT/companion-record.mjs" <<'EOF'
 #!/usr/bin/env node
@@ -80,20 +83,22 @@ fs.writeFileSync(process.env.STUB_ARGV_DUMP, JSON.stringify(process.argv.slice(2
 process.stdout.write(JSON.stringify({ jobId: "task-stub-recorder", status: "queued", title: "x", summary: "y", logFile: "/tmp/x" }) + "\n");
 EOF
   chmod +x "$TEST_ROOT/companion-record.mjs"
-  CODEX_COMPANION="$TEST_ROOT/companion-record.mjs" run "$WRAPPER" launch --prompt-file "$PROMPT_FILE"
+  export CODEX_COMPANION="$TEST_ROOT/companion-record.mjs"
+  run bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
   [ "$status" -eq 0 ]
   argv=$(cat "$TEST_ROOT/argv.dump")
   [[ "$argv" == *"task"* ]]
   [[ "$argv" == *"--background"* ]]
   [[ "$argv" == *"--prompt-file"* ]]
-  [[ "$argv" == *"$PROMPT_FILE"* ]]
+  # The captured prompt path is now a wrapper-managed temp, not the original
+  # PROMPT_FILE — so we no longer assert PROMPT_FILE itself appears in argv.
 }
 
 @test "launch: exits nonzero within 6s when companion hangs (5s timeout)" {
   # Companion sleeps 30s — wrapper must not block past its 5s budget.
   export STUB_LAUNCH_HANG_MS=30000
   start=$(date +%s)
-  run "$WRAPPER" launch --prompt-file "$PROMPT_FILE"
+  run bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
   end=$(date +%s)
   [ "$status" -ne 0 ]
   [ "$((end - start))" -lt 7 ]
@@ -103,7 +108,7 @@ EOF
 @test "launch: preserves real non-zero exit (constraint C1)" {
   # Companion exits 7; wrapper must not mask it via `|| true`.
   export STUB_LAUNCH_EXIT=7
-  run "$WRAPPER" launch --prompt-file "$PROMPT_FILE"
+  run bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
   [ "$status" -ne 0 ]
   # Stderr must say something — no silent failure (constraint C2 cousin).
   [ -n "$output$stderr" ]
@@ -111,7 +116,7 @@ EOF
 
 @test "launch: malformed JSON from companion → nonzero with stderr" {
   export STUB_LAUNCH_BAD_JSON=1
-  run "$WRAPPER" launch --prompt-file "$PROMPT_FILE"
+  run bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
   [ "$status" -ne 0 ]
   # Non-empty stderr OR error message in output (run merges by default in
   # current bats; we accept either).
@@ -120,19 +125,20 @@ EOF
 
 @test "launch: missing jobId in JSON → nonzero with stderr" {
   export STUB_LAUNCH_NO_JOBID=1
-  run "$WRAPPER" launch --prompt-file "$PROMPT_FILE"
+  run bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
   [ "$status" -ne 0 ]
   [ -n "$output" ] || [ -n "$stderr" ]
 }
 
-@test "launch: zero-byte prompt file → nonzero with stderr (no companion launch)" {
+@test "launch: zero-byte stdin → nonzero with stderr (no companion launch)" {
   : > "$TEST_ROOT/prompts/empty.txt"
 
   # Pre-condition: stub state file does not exist (the stub writes it only when
   # `handleTask` runs, which is what we're proving did NOT happen).
   [ ! -e "$STUB_STATE_FILE" ]
 
-  run "$WRAPPER" launch --prompt-file "$TEST_ROOT/prompts/empty.txt"
+  # Pipe the empty file on stdin — wrapper must reject and never reach companion.
+  run bash -c 'cat "$TEST_ROOT/prompts/empty.txt" | "$WRAPPER" launch'
   [ "$status" -ne 0 ]
   [ -n "$output" ] || [ -n "$stderr" ]
 
@@ -140,6 +146,25 @@ EOF
   # to persist its state file. Absence proves the wrapper failed closed at its
   # own boundary instead of punting the failure to the companion.
   [ ! -e "$STUB_STATE_FILE" ]
+}
+
+# ── path-arg retirement regression (#110 commit 21/22) ─────────────
+
+@test "launch: path-arg form is retired — --prompt-file flag rejected" {
+  # The legacy `launch --prompt-file <path>` invocation must now fail with a
+  # non-zero exit and a clear error on stderr. Even passing a valid prompt
+  # file MUST NOT succeed via the path-arg surface.
+  run "$WRAPPER" launch --prompt-file "$PROMPT_FILE"
+  [ "$status" -ne 0 ]
+  [ -n "$output$stderr" ]
+}
+
+@test "launch: any positional argument is rejected (path-arg surface fully closed)" {
+  # Bare positional argument (no flag) must also be rejected — defense in depth
+  # against a future refactor that re-introduces a positional path-arg variant.
+  run "$WRAPPER" launch "$PROMPT_FILE"
+  [ "$status" -ne 0 ]
+  [ -n "$output$stderr" ]
 }
 
 # ── await: happy path ──────────────────────────────────────────────
@@ -359,7 +384,8 @@ EOF
   unset CODEX_COMPANION
   # Force the glob to a controlled empty location so we deterministically
   # exercise the missing-companion branch. The wrapper must fail loud.
-  HOME="$TEST_ROOT/empty-home" run "$WRAPPER" launch --prompt-file "$PROMPT_FILE"
+  # Path-arg form retired: pipe prompt on stdin (#110 commit 21/22).
+  HOME="$TEST_ROOT/empty-home" run bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
   [ "$status" -ne 0 ]
   [ -n "$output$stderr" ]
 }
@@ -837,10 +863,10 @@ EOF
   [[ "$argv" == *"--prompt-file"* ]]
 }
 
-# Test B — path-arg form is preserved:
-# The existing test at line 73 ("launch: passes --prompt-file through to the
-# companion") already covers this. No new test needed; path-arg form is
-# exercised by the pre-existing suite and is preserved by this commit.
+# Test B — path-arg form is RETIRED (#110 commit 21/22):
+# The legacy `launch --prompt-file <path>` invocation is now rejected by the
+# wrapper. Regression coverage: see "launch: path-arg form is retired" and
+# "launch: any positional argument is rejected" tests above.
 
 # Test C — awk frontmatter-strip regression:
 # Self-contained test of the awk one-liner used by the Codex pipeline dispatch

@@ -2,10 +2,12 @@
 # codex-companion-bg.sh — non-blocking wrapper around codex-companion.mjs.
 #
 # Subcommands:
-#   launch [--prompt-file <path>] Fork companion `task --background` and print
+#   launch                        Fork companion `task --background` and print
 #                                 the captured jobId; exit 0 within ~5s.
-#                                 If --prompt-file is omitted and stdin is not
-#                                 a TTY, the prompt is read from stdin.
+#                                 The prompt is read from stdin (stdin must
+#                                 not be a TTY). The legacy --prompt-file
+#                                 path-arg form was retired in commit 21/22
+#                                 of the #110 migration sequence.
 #   await --artifact-dir <abs_path> <jobId>
 #                                 Poll status (5s/30s with backoff at 120s),
 #                                 fetch result on completion, write review
@@ -388,53 +390,34 @@ parse_launch_output() {
 
 # ---------------------------------------------------------------------------
 # launch_subcommand
+#
+# The launch subcommand reads the prompt from stdin (path-arg form retired in
+# commit 21/22 of the #110 migration sequence). Any positional/flag argument
+# is rejected — including the legacy --prompt-file form — to keep the
+# trust boundary tight and prevent silent fallback to a stale path-arg caller.
 launch_subcommand() {
-  local prompt_file=""
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --prompt-file)
-        if [ "$#" -lt 2 ]; then
-          printf 'launch: --prompt-file requires a value\n' >&2
-          return 1
-        fi
-        prompt_file="$2"
-        shift 2
-        ;;
-      *)
-        printf 'launch: unrecognised argument: %s\n' "$1" >&2
-        return 1
-        ;;
-    esac
-  done
+  if [ "$#" -gt 0 ]; then
+    printf 'launch: unrecognised argument: %s (path-arg form retired; pipe prompt on stdin)\n' "$1" >&2
+    return 1
+  fi
 
-  local stdin_temp=""
-  if [ -z "$prompt_file" ]; then
-    if [ -t 0 ]; then
-      printf 'launch: --prompt-file is required (or pipe a prompt on stdin)\n' >&2
-      return 1
-    fi
-    stdin_temp=$(mktemp -t codex-companion-bg-stdin.XXXXXX) || {
-      printf 'launch: mktemp failed for stdin capture\n' >&2
-      return 1
-    }
-    cat > "$stdin_temp"
-    if [ ! -s "$stdin_temp" ]; then
-      rm -f "$stdin_temp"
-      printf 'launch: stdin was empty\n' >&2
-      return 1
-    fi
-    prompt_file="$stdin_temp"
-  fi
-  if [ ! -r "$prompt_file" ]; then
-    rm -f "$stdin_temp"
-    printf 'launch: prompt file not readable: %s\n' "$prompt_file" >&2
+  if [ -t 0 ]; then
+    printf 'launch: stdin must not be a TTY (pipe a non-empty prompt on stdin)\n' >&2
     return 1
   fi
-  if [ ! -s "$prompt_file" ]; then
+
+  local stdin_temp
+  stdin_temp=$(mktemp -t codex-companion-bg-stdin.XXXXXX) || {
+    printf 'launch: mktemp failed for stdin capture\n' >&2
+    return 1
+  }
+  cat > "$stdin_temp"
+  if [ ! -s "$stdin_temp" ]; then
     rm -f "$stdin_temp"
-    printf 'launch: prompt file is empty: %s\n' "$prompt_file" >&2
+    printf 'launch: stdin was empty\n' >&2
     return 1
   fi
+  local prompt_file="$stdin_temp"
 
   local companion
   if ! companion=$(resolve_codex_companion); then
@@ -795,7 +778,6 @@ main() {
   if [ "$#" -lt 1 ]; then
     cat >&2 <<'USAGE'
 Usage:
-  codex-companion-bg.sh launch --prompt-file <path>
   codex-companion-bg.sh launch          (pipe prompt on stdin)
   codex-companion-bg.sh await --artifact-dir <abs_path> <jobId>
 USAGE
