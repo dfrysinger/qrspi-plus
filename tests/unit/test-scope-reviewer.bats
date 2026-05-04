@@ -107,8 +107,10 @@ extract_h2_section() {
 }
 
 @test "{ARTIFACT_TYPE}=plan — plan SKILL dispatches scope-reviewer with parameter plan" {
-  grep -q "scope-reviewer.md" "$PLAN_FILE"
-  grep -qE "\{ARTIFACT_TYPE\}=plan" "$PLAN_FILE"
+  # Commit 13/22 migration: scope-reviewer is now dispatched as a dedicated
+  # agent (qrspi-plan-scope-reviewer) rather than via the shared template.
+  # The old scope-reviewer.md + {ARTIFACT_TYPE}=plan pattern is retired.
+  grep -q "qrspi-plan-scope-reviewer" "$PLAN_FILE"
 }
 
 @test "{ARTIFACT_TYPE}=parallelize — parallelize SKILL dispatches scope-reviewer with parameter parallelize" {

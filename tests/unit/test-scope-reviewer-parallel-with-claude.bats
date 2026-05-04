@@ -61,9 +61,10 @@ setup() {
 }
 
 @test "plan SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  grep -qi "Claude review subagent" "$PLAN_FILE"
-  grep -qi "scope-reviewer" "$PLAN_FILE"
-  grep -Eqi "in parallel|run in parallel" "$PLAN_FILE"
+  # Commit 13/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-plan-reviewer" "$PLAN_FILE"
+  grep -qi "qrspi-plan-scope-reviewer" "$PLAN_FILE"
+  grep -Eqi "in parallel|run in parallel|parallel reviewer dispatches" "$PLAN_FILE"
 }
 
 @test "parallelize SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
