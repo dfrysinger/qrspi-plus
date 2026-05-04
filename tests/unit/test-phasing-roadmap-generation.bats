@@ -199,14 +199,14 @@ extract_h3_direct() {
   # high-severity finding and a refusal to proceed (per scope-reviewer template's
   # malformed-case fail-closed clause). Severity must conform to the M48 schema
   # which only permits low|medium|high.
+  # Commit 12/22 migration: "scope-reviewer subagent dispatch" pattern is
+  # replaced by "Claude scope-reviewer subagent" Agent({subagent_type:...}) form.
   # Locate the scope-reviewer dispatch bullet (line containing
-  # "scope-reviewer subagent dispatch") and capture text up to the next
-  # top-level bullet ("- **Reviewer prompt block" / "- **Codex review").
+  # "scope-reviewer subagent") and capture its block.
   local block
   block="$(awk '
-    /scope-reviewer subagent dispatch/ { in_block = 1 }
-    in_block && /^- \*\*Reviewer prompt block/ { exit }
-    in_block && /^- \*\*Codex review/ { exit }
+    /Claude scope-reviewer subagent/ { in_block = 1 }
+    in_block && /^- \*\*Codex reviews/ { exit }
     in_block { print }
   ' "$SKILL_FILE")"
   [ -n "$block" ]
