@@ -564,20 +564,44 @@ git commit -F /tmp/commit-msg-110-c06.txt
 
 Commit message: `test(smoke): #110 commit-6 smoke gate — Read mode confirmed (commit 6/22)`. Body describes what was tested and the green outcome.
 
-- [ ] **Step 6b (inline mode, only if step 5 fell through): Commit the mode switch**
+- [ ] **Step 6b (inline mode, only if step 5 fell through): Commit the mode switch as a SEPARATE commit between commit 6 and commit 7**
 
-If the smoke gate failed and step 5 forced the mode switch, the fixture commit AND the mode-switch artifacts must land as **one combined commit** to preserve the spec's fixed 22-commit numbering (commit 6 stays commit 6; commits 7/22 through 22/22 stay stable):
+Per spec § Reliability and § Migration sequence commit 6: the mode-switch is a **separate, distinct commit** that lands *between* the smoke-gate commit (commit 6) and the first per-skill migration (commit 7 in Read mode). Combining the mode switch into commit 6 itself is **not** what the spec authorizes — the smoke gate's commit must stand on its own as evidence of the gate decision, and the mode switch is a deliberate, separately-reviewable rewrite of the architecture's source of truth.
+
+Commit ordering and numbering when the mode switch fires:
+
+| # | Commit | Status |
+|---|---|---|
+| 6 | Smoke fixtures + smoke results showing FAILURE | unchanged |
+| 7 | Mode switch (rewrite 7 scope-reviewers + bats swap + spec mode-marker) | new — only present if mode switch fires |
+| 8 | Migrate `skills/goals/SKILL.md` (was commit 7 in Read mode) | renumbered |
+| … | All subsequent per-skill commits shift by +1 | renumbered |
+| 23 | Final cross-cutting CI tests (was commit 22 in Read mode) | renumbered |
+
+Sequence under Read mode (smoke pass) stays at 22 commits with original numbering (6/22 through 22/22). Sequence under inline mode (smoke fail) becomes 23 commits; per-skill migration commit messages must use the renumbered labels (`8/23` through `23/23`).
+
+First, commit the smoke results (still labeled `commit 6/22` even in inline mode — the gate decision is captured in the body):
 
 ```bash
-git add tests/fixtures/issue-110/ \
-  agents/qrspi-{goals,design,structure,phasing,plan,parallelize,replan}-scope-reviewer.md \
+git add tests/fixtures/issue-110/
+git commit -F /tmp/commit-msg-110-c06-fail.txt
+```
+
+Commit message: `test(smoke): #110 commit-6 smoke gate — Read mode FAILED, switching to inline (commit 6/22)`. Body documents which fixture failed and why.
+
+Then, the mode-switch commit:
+
+```bash
+git add agents/qrspi-{goals,design,structure,phasing,plan,parallelize,replan}-scope-reviewer.md \
   tests/unit/test-scope-reviewer-inline-owns-defers.bats \
   docs/superpowers/specs/2026-05-04-110-subagents-in-agent-files-design.md
 git rm tests/unit/test-scope-reviewer-step1-read.bats
-git commit -F /tmp/commit-msg-110-c06-inline.txt
+git commit -F /tmp/commit-msg-110-c07-inline.txt
 ```
 
-Commit message: `test(smoke): #110 commit-6 smoke gate — switched to inline mode (commit 6/22)`. Body describes what was tested, what failed, and the resulting rewrites (7 scope-reviewer bodies, bats swap, spec mode-marker update).
+Commit message: `refactor(scope-reviewers): #110 switch to inline-mode OWNS/DEFERS (commit 7/23)`. Body documents the rewrite (7 scope-reviewer bodies, bats swap, spec mode-marker update) and the renumbering (`X/22` → `X+1/23` for all subsequent commits).
+
+Finally re-run the smoke-test driver against the inline-mode scope-reviewers to confirm the mode-switch produces the OWNS/DEFERS-shaped finding before proceeding to per-skill migration.
 
 The smoke fixtures stay in the repo for re-use by the final integration smoke (spec § Integration tests).
 
@@ -859,7 +883,7 @@ Agent({ subagent_type: "qrspi-plan-goal-traceability-reviewer", prompt: "...", m
 Agent({ subagent_type: "qrspi-plan-test-coverage-reviewer", prompt: "...", model: "sonnet" })
 ```
 
-Each takes the same companions as `qrspi-plan-reviewer` (per spec § Plan-artifact reviewers — they reuse the per-artifact quality reviewer dispatch schema with the same companion list).
+Each plan-artifact reviewer **reuses the full `qrspi-plan-reviewer` dispatch schema** per spec § Plan-artifact reviewers: `artifact_body` (= `plan.md`), `output`, `round`, `reviewer_tag`, the same companion set (`companion_goals`, `companion_research`, `companion_phasing` always required; `companion_design`, `companion_structure` only on full pipeline), AND the same `route: full | quick` key controlling the quick-vs-full checklist selection. Each plan-artifact reviewer's body reads `route` to know which checklist to run.
 
 - [ ] **Step 3: Migrate Codex parallels for all 7 dispatches**
 
@@ -1154,7 +1178,11 @@ grep -rlE "_shared/reviewer-boilerplate|_shared/templates|implement/templates|te
 ```
 Expected: exactly the file list in spec § Test-suite migration inventory (commit 19) (12 files).
 
-If the live grep result differs from the spec list, **update the spec** to match the live result before proceeding (commit 19's PR description must include the live grep output to confirm completeness).
+**If the live grep result differs from the spec inventory, STOP.** Drift is a blocker, not a normalization opportunity. Investigate why the live result differs:
+- A new test file may have been added since the spec was written (then the spec needs a separately-reviewed amendment to add it before commit 19 proceeds).
+- Or an earlier per-skill migration (commits 7–18) may have missed a callsite that should have been migrated then (in which case the fix is to retroactively migrate that callsite, not to add it to commit 19's inventory).
+
+Either way, the live grep must match the spec inventory exactly before commit 19 lands. The PR description for commit 19 must include the live grep output to prove the match.
 
 - [ ] **Step 2: Migrate each test file per the spec table**
 
