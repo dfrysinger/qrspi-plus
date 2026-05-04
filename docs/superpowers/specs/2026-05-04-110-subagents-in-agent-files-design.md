@@ -451,38 +451,48 @@ The agent body's "Step 1 — load the artifact and companions" step parses the `
 
 The 15 non-artifact agents have heterogeneous inputs. Per-agent contracts below; in all cases content delivery defaults to **wrapped bodies via dispatch param** (Path B), and the only agents that may Read at runtime are explicitly named.
 
-**Per-task reviewers (8)** — `qrspi-spec-reviewer`, `qrspi-code-quality-reviewer`, `qrspi-silent-failure-hunter`, `qrspi-security-reviewer`, `qrspi-goal-traceability-reviewer`, `qrspi-test-coverage-reviewer`, `qrspi-type-design-analyzer`, `qrspi-code-simplifier`. All share:
-- `task_code` — wrapped body of the file(s) under review (concatenated `path1\n<<<UNTRUSTED-ARTIFACT-START id=path1>>>...END>>>`, repeated per file)
+**Per-task reviewers — Implement-phase contract (8 agents)** — `qrspi-spec-reviewer`, `qrspi-code-quality-reviewer`, `qrspi-silent-failure-hunter`, `qrspi-security-reviewer`, `qrspi-goal-traceability-reviewer`, `qrspi-test-coverage-reviewer`, `qrspi-type-design-analyzer`, `qrspi-code-simplifier`. When dispatched from `skills/implement/SKILL.md`:
+- `subject_code` — wrapped body of the production code file(s) under review (concatenated; one wrapped block per file)
 - `task_definition` — wrapped body of the `tasks/task-NN.md` (or `fixes/{type}-round-NN/task-NN.md` for fix mode)
 - `output` — absolute path
 - `round` — round number
 - `reviewer_tag` — `claude` or `codex`
 
-Per-reviewer extras (all wrapped bodies, no Reads):
-- `qrspi-goal-traceability-reviewer` adds `companion_plan` (= `plan.md`) + `companion_goals` (= `goals.md`).
+Per-reviewer extras (Implement-phase, all wrapped bodies):
+- `qrspi-goal-traceability-reviewer` adds `companion_plan` + `companion_goals`.
 - `qrspi-test-coverage-reviewer` adds `companion_plan` + `companion_test_expectations` (the `## Test Expectations` block extracted from the task's plan entry).
-- The other 6 take no companions beyond `task_code` + `task_definition`.
+- The other 6 take no companions beyond `subject_code` + `task_definition`.
 
-No per-task reviewer Reads at runtime.
-
-**Integration reviewers (2)** — `qrspi-integration-reviewer`, `qrspi-security-integration-reviewer`. Both take:
-- `merged_diff` — wrapped body of the post-implement merged diff for the phase
-- `companion_goals` — wrapped body of `goals.md`
-- `companion_plan` — wrapped body of `plan.md`
-- `output` — absolute path
+**Per-task reviewers — Test-phase reuse contract (3 agents reused)** — `qrspi-spec-reviewer`, `qrspi-code-quality-reviewer`, `qrspi-goal-traceability-reviewer` are also dispatched from `skills/test/SKILL.md` to review the **generated test code** (not production code). When dispatched from Test:
+- `subject_code` — wrapped body of the generated test files (concatenated; one wrapped block per file)
+- `companion_plan` — wrapped body of `plan.md` (acceptance-criteria source)
+- `companion_goals` — wrapped body of `goals.md` (upstream traceability anchor)
+- `output` — absolute path (under `reviews/test/round-NN-{label}-claude.md`)
 - `round` — round number
 - `reviewer_tag` — `claude` or `codex`
 
-`qrspi-security-integration-reviewer` additionally takes `companion_security_context` (any phase-specific security notes from `plan.md`'s security blocks; concatenated and wrapped). No Reads at runtime.
+The agent bodies for those three reviewers must accept either dispatch shape; the agent reads the dispatch params it actually receives (a missing `task_definition` signals Test-phase reuse; absence of `subject_code`-as-production-files vs `subject_code`-as-test-files is contextual and not enforced by the agent). No per-task reviewer Reads at runtime.
 
-**`qrspi-test-writer`** (model: `inherit`):
-- `task_definition` — wrapped body of `tasks/task-NN.md`
-- `companion_plan_test_expectations` — wrapped body of the `## Test Expectations` block from `plan.md` for this task
-- `companion_phase_acceptance` — wrapped body of `plan.md`'s per-phase acceptance block
-- `companion_goals` — wrapped body of `goals.md` (traceability anchor)
-- `output_dir` — absolute directory the test-writer must write tests into
+**Integration reviewers (2)** — `qrspi-integration-reviewer`, `qrspi-security-integration-reviewer`. Per `skills/integrate/SKILL.md:90`:
+- `subject_code` — wrapped body of the merged code under review (per-file blocks)
+- `companion_design` — wrapped body of `design.md`
+- `companion_structure` — wrapped body of `structure.md`
+- `companion_task_review_findings` — concatenated wrapped bodies of all current-phase task review files in `reviews/tasks/` (per the integrate Required-inputs list)
+- `output` — absolute path (`<ABS_ARTIFACT_DIR>/reviews/integration/round-NN-{integration|security}-claude.md`)
+- `round` — round number
+- `reviewer_tag` — `claude` or `codex`
 
-The four test-type rule sets (acceptance, boundary, e2e, integration) are inlined in the agent body at startup (not passed as dispatch params). The test-writer Writes test files to `output_dir`; no runtime Read of any artifact.
+No additional security-context companion is invented — `qrspi-security-integration-reviewer` shares the same dispatch shape; its agent body's checks are what differ. No Reads at runtime.
+
+**`qrspi-test-writer`** (model: `inherit`). Per the 6 placeholders in `skills/test/templates/test-writer.md`:
+- `companion_plan` — wrapped body of `plan.md` (PLAN placeholder; per-task `## Test Expectations` blocks + per-phase acceptance block are the canonical acceptance criteria)
+- `companion_goals` — wrapped body of `goals.md` (GOALS placeholder; upstream traceability anchor)
+- `companion_design_or_research` — wrapped body of `design.md` (full pipeline) OR `research/summary.md` (quick-fix). The dispatcher picks one based on `route` and passes a single key
+- `companion_fix_history` — concatenated wrapped bodies of `fixes/**/*.md` files. Empty payload (`<<<UNTRUSTED-ARTIFACT-START id=fix-history>>>NONE<<<UNTRUSTED-ARTIFACT-END id=fix-history>>>`) when no prior fixes exist
+- `companion_codebase_context` — concatenated wrapped bodies of the key source files the test-writer needs for setup (the dispatcher selects these per phase from `structure.md`'s file map; the dispatcher is the source of truth for which files are "key")
+- `output_dir` — absolute directory for written test files
+
+The four test-type rule sets (acceptance, boundary, e2e, integration) are inlined in the agent body at startup (TEST TYPE TEMPLATES placeholder). The test-writer Writes test files to `output_dir`. The agent's `NEEDS_CONTEXT` reporting behavior is preserved — if any required dispatch param is missing or empty when it shouldn't be, the agent stops and reports `NEEDS_CONTEXT` rather than proceeding. No runtime Read of any artifact (test-writer reads from dispatch payload only).
 
 **`qrspi-research-specialist`** (model: `inherit`) — research-isolation invariant binding:
 - `question_body` — wrapped body of the assigned `research/q*.md` question(s); for grouped questions, all assigned IDs concatenated
@@ -499,17 +509,17 @@ NO `companion_goals`. NO other-question content. NO `feedback/research-round-*.m
 
 NO `companion_goals`. NO `companion_questions`. The collator's Read of `research/q*.md` is the primary documented runtime Read for this agent; outputs are artifact content (untrusted-data Path A trust handling applies).
 
-**`qrspi-replan-analyzer`** (model: `opus`):
+**`qrspi-replan-analyzer`** (model: `opus`). The analyzer's input set is large and fan-out (it ranges over an entire `fixes/` + `reviews/` tree), so unlike the other agents it is **dispatched with paths, not wrapped bodies**, and Reads files at runtime:
 - `target_artifact` — name of the artifact whose proposed changes are being analyzed (e.g. `design`, `plan`)
-- `companion_completed_phase_code` — wrapped body / file paths for the completed phase code
-- `companion_fixes_dir` — absolute path to `fixes/`
-- `companion_reviews_dir` — absolute path to `reviews/`
-- `companion_remaining_tasks` — wrapped bodies of remaining `tasks/*.md` files concatenated
-- `companion_plan` — wrapped body of `plan.md`
-- `companion_design` — wrapped body of `design.md`
-- `companion_phasing` — wrapped body of `phasing.md`
+- `path_completed_phase_code` — absolute path to the completed phase's source root (analyzer Reads files under this path)
+- `path_fixes_dir` — absolute path to `fixes/` (analyzer Reads files under this path)
+- `path_reviews_dir` — absolute path to `reviews/` (analyzer Reads files under this path)
+- `path_remaining_tasks_dir` — absolute path to `tasks/` (analyzer Reads remaining `tasks/*.md` files under this path)
+- `companion_plan` — wrapped body of `plan.md` (small enough to inline)
+- `companion_design` — wrapped body of `design.md` (small enough to inline)
+- `companion_phasing` — wrapped body of `phasing.md` (small enough to inline)
 
-The analyzer may Read individual files in `fixes/` and `reviews/` at runtime per `skills/replan/SKILL.md` (these Reads are documented in the agent body; Path A trust handling). Returns proposed-changes payload **inline** in its response — the orchestrator captures the response text and feeds it as `artifact_body` to the replan reviewer + scope-reviewer dispatches.
+The path-vs-body split is deliberate: large fan-out inputs travel as paths to keep the dispatch prompt manageable; small fixed artifacts travel as wrapped bodies to avoid repeated Reads. All Reads under `path_*` are documented in the agent body and Path-A trust-handled (file content is treated as data, not instructions). Returns proposed-changes payload **inline** in its response — the orchestrator captures the response text and feeds it as `artifact_body` to the replan reviewer + scope-reviewer dispatches.
 
 **`qrspi-implementer`** (model: `inherit`, per-task override per `skills/implement/SKILL.md`'s `## Model Selection Guidance`):
 - `mode` — `implement` | `fix`
