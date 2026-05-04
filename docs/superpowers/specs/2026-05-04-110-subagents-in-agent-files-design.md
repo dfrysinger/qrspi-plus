@@ -194,7 +194,7 @@ Example using `goals` (no companions — keeps the example compact). For agents 
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md; \
   printf '\n\n---\n\n'; \
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-goals-reviewer.md; \
-  printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: reviews/goals/round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/goals/round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
     "<wrapped body>" "$ROUND" "$ROUND"; \
 } | scripts/codex-companion-bg.sh launch
 
@@ -202,7 +202,7 @@ Example using `goals` (no companions — keeps the example compact). For agents 
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md; \
   printf '\n\n---\n\n'; \
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-goals-scope-reviewer.md; \
-  printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: reviews/goals/round-%s-scope-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/goals/round-%s-scope-codex.md\nround: %s\nreviewer_tag: codex\n' \
     "<wrapped body>" "$ROUND" "$ROUND"; \
 } | scripts/codex-companion-bg.sh launch
 ```
@@ -219,14 +219,14 @@ Example using `goals` (no companions). For agents with companions, the dispatch 
 // Per-artifact quality reviewer
 Agent({
   subagent_type: "qrspi-goals-reviewer",
-  prompt: "artifact_body: <wrapped>\noutput: reviews/goals/round-NN-claude.md\nround: NN\nreviewer_tag: claude",
+  prompt: "artifact_body: <wrapped>\noutput: <ABS_ARTIFACT_DIR>/reviews/goals/round-NN-claude.md\nround: NN\nreviewer_tag: claude",
   model: "sonnet"
 })
 
 // Per-artifact dedicated scope-reviewer (never carries companion_* keys)
 Agent({
   subagent_type: "qrspi-goals-scope-reviewer",
-  prompt: "artifact_body: <wrapped>\noutput: reviews/goals/round-NN-scope-claude.md\nround: NN\nreviewer_tag: claude",
+  prompt: "artifact_body: <wrapped>\noutput: <ABS_ARTIFACT_DIR>/reviews/goals/round-NN-scope-claude.md\nround: NN\nreviewer_tag: claude",
   model: "sonnet"
 })
 ```
@@ -266,17 +266,19 @@ Mitigations:
 
 Artifact-specific quality only — no scope, no OWNS/DEFERS, no Read.
 
-| File | Reviews | Companions |
+Companion sets are the documented review inputs from each skill's current SKILL.md (cited in commit-message footnotes when the agent file lands). Companion keys in the dispatch prompt mirror these names (`companion_goals`, `companion_design`, etc.).
+
+| File | Artifact (`artifact_body`) | Companions |
 |---|---|---|
-| `qrspi-goals-reviewer.md` | goals.md | — |
-| `qrspi-questions-reviewer.md` | questions.md | goals.md |
-| `qrspi-research-reviewer.md` | research/summary.md | all `research/q*.md` (NO `goals.md`, NO `questions.md` — research-isolation invariant per `skills/research/SKILL.md`) |
-| `qrspi-design-reviewer.md` | design.md | goals.md, research/summary.md |
-| `qrspi-structure-reviewer.md` | structure.md | design.md |
-| `qrspi-phasing-reviewer.md` | phasing.md | design.md, structure.md |
-| `qrspi-plan-reviewer.md` | plan.md | structure.md, phasing.md |
-| `qrspi-parallelize-reviewer.md` | parallelization.md | plan.md |
-| `qrspi-replan-reviewer.md` | replan-proposed-changes | prior-phase artifacts |
+| `qrspi-goals-reviewer.md` | `goals.md` | — |
+| `qrspi-questions-reviewer.md` | `questions.md` | `companion_goals` |
+| `qrspi-research-reviewer.md` | `research/summary.md` | `companion_qfiles` (concatenated `research/q*.md`). NO `companion_goals`, NO `companion_questions` — research-isolation invariant per `skills/research/SKILL.md` |
+| `qrspi-design-reviewer.md` | `design.md` | `companion_goals`, `companion_research` (= `research/summary.md`). On-demand-only access to `research/q*.md` for citation verification — not part of the standard dispatch payload (agent uses Read to fetch on demand when verifying a specific cited q*.md) |
+| `qrspi-structure-reviewer.md` | `structure.md` | `companion_goals`, `companion_research`, `companion_design`, `companion_phasing` |
+| `qrspi-phasing-reviewer.md` | `phasing.md` | `companion_roadmap`, `companion_pruned_pairs` (the pruned + `future-*` artifact pairs as a single concatenated payload), `companion_goals_snapshot` (pre-prune `goals.md`), `companion_design_snapshot` (pre-prune `design.md`) |
+| `qrspi-plan-reviewer.md` | `plan.md` | `companion_goals`, `companion_research`, `companion_design`, `companion_structure` (full pipeline; the design/structure pair is omitted on the quick path) |
+| `qrspi-parallelize-reviewer.md` | `parallelization.md` | `companion_plan`, `companion_tasks` (concatenated current-phase `tasks/*.md` or fix-task batch under `fixes/{type}-round-NN/`) |
+| `qrspi-replan-reviewer.md` | The replan-analyzer's emitted proposed-changes payload (inline content from `qrspi-replan-analyzer`'s output — Replan does not currently persist this to a fixed filename; it is captured by the orchestrator and passed as `artifact_body`) | `companion_goals`, `companion_plan`, `companion_design`, `companion_prior_review_findings` (concatenated review findings from every prior phase) |
 
 All `model: sonnet`. Frontmatter: `skills: [reviewer-protocol]`.
 
@@ -296,7 +298,7 @@ The `Artifact` column names what the scope-reviewer reviews — that artifact ar
 | `qrspi-phasing-scope-reviewer.md` | phasing.md | `skills/phasing/owns-defers.md` |
 | `qrspi-plan-scope-reviewer.md` | plan.md | `skills/plan/owns-defers.md` |
 | `qrspi-parallelize-scope-reviewer.md` | parallelization.md | `skills/parallelize/owns-defers.md` |
-| `qrspi-replan-scope-reviewer.md` | replan-proposed-changes | `skills/replan/owns-defers.md` |
+| `qrspi-replan-scope-reviewer.md` | replan-analyzer's emitted proposed-changes payload (inline; same as `qrspi-replan-reviewer`) | `skills/replan/owns-defers.md` |
 
 All `model: sonnet`. Frontmatter: `skills: [reviewer-protocol]`.
 
@@ -423,7 +425,7 @@ Agent({
     companion_research: <<<UNTRUSTED-ARTIFACT-START id=research/summary.md>>>
       ...summary.md content...
     <<<UNTRUSTED-ARTIFACT-END id=research/summary.md>>>
-    output: reviews/design/round-NN-claude.md
+    output: <ABS_ARTIFACT_DIR>/reviews/design/round-NN-claude.md
     round: NN
     reviewer_tag: claude
   """,
@@ -459,7 +461,7 @@ Each commit lands on `qrspi-echo/issue-110-subagents-in-agent-files` and remains
 16. **Commit 16** — Migrate `skills/integrate/SKILL.md` (integration + security reviewers, both Claude and Codex).
 17. **Commit 17** — Migrate `skills/replan/SKILL.md` (replan-analyzer for analysis work, replan-reviewer for output review).
 18. **Commit 18** — Migrate `skills/test/SKILL.md`. Replace inline `test-writer` dispatch (`skills/test/templates/test-writer.md`) with `Agent({ subagent_type: "qrspi-test-writer", … })`. Replace the three reviewer dispatches (`goal-traceability`, `spec`, `code-quality`) — currently pointing at `skills/implement/templates/...` — with `Agent({ subagent_type: "qrspi-{name}-reviewer", … })` using the per-task reviewer agent files added in commit 5. Replace the Codex reviewer dispatches with the shell-pipeline form. Test phase has no artifact-shaped scope review (test code is not an OWNS/DEFERS-shaped artifact), so no scope-reviewer dispatch is added.
-19. **Commit 19** — Migrate the test suite. Update bats test files that hard-reference the soon-to-be-deleted paths so they pass against the new locations: `tests/unit/test-reviewer-boilerplate-embed.bats` (→ `skills/reviewer-protocol/SKILL.md`), `tests/unit/test-scope-reviewer*.bats` (→ per-artifact scope-reviewer agents), `tests/unit/test-change-type-classification.bats`, `tests/unit/test-replan-archive-and-populate.bats`, `tests/unit/test-phasing-roadmap-generation.bats`, `tests/acceptance/test-review-pause.bats`, `tests/acceptance/test-hardening-skills.bats`, `tests/acceptance/test-skill-output-quality.bats`, `tests/acceptance/test-reviewer-injection.bats`. Each test now greps the agent file body or the protocol skill body instead of the legacy template paths. (See "Test-suite migration inventory" subsection below for the full list.)
+19. **Commit 19** — Migrate the test suite. Update bats test files that hard-reference the soon-to-be-deleted paths so they pass against the new locations: `tests/unit/test-reviewer-boilerplate-embed.bats`, `tests/unit/test-scope-reviewer*.bats` (3 files), `tests/unit/test-change-type-classification.bats`, `tests/unit/test-replan-archive-and-populate.bats`, `tests/unit/test-phasing-roadmap-generation.bats`, `tests/unit/test-compaction-emphasis-markup.bats`, `tests/acceptance/test-review-pause.bats`, `tests/acceptance/test-hardening-skills.bats`, `tests/acceptance/test-skill-output-quality.bats`, `tests/acceptance/test-reviewer-injection.bats`. Each test now greps the agent file body or the protocol skill body instead of the legacy template paths. The full list (with legacy reference and new authoritative source per file) is in the "Test-suite migration inventory" subsection below; the PR description must include the live `grep -rlE "_shared/reviewer-boilerplate|_shared/templates|implement/templates|test/templates" tests/` result against HEAD to confirm completeness.
 20. **Commit 20** — Delete the old shared/template files: `_shared/reviewer-boilerplate.md`, `_shared/templates/scope-reviewer.md`, `integrate/templates/`, `implement/templates/`, `test/templates/`. (Sequencing requirement: must come AFTER commits 18–19 so no live caller or test references remain.)
 21. **Commit 21** — Update `using-qrspi/SKILL.md`, `AGENTS.md`, and `README.md` references that point at deleted files. Remove the path-arg invocation in `codex-companion-bg.sh` if all callers have migrated.
 22. **Commit 22** — Final cross-cutting CI tests. The structural agent-file tests (`test-agent-files-skill-preload`, `test-scope-reviewer-step1-read`, `test-quality-reviewer-no-scope`) and the author-skill `!cat` test are already in place from commits 3/5. This commit adds the remaining cross-cutting assertions: `test-rules-files-exist.bats` (asserts `skills/reviewer-protocol/SKILL.md` is present and each artifact-shaped skill has a non-empty `owns-defers.md`), `test-no-deleted-files.bats` (asserts the deleted files are absent at HEAD), `test-dispatch-sites.bats` (asserts no migrated SKILL.md still embeds the old reviewer-boilerplate content or writes to `/tmp/codex-prompt-*`), and `test-test-skill-no-legacy-templates.bats` (asserts `skills/test/SKILL.md` no longer references `implement/templates/` or `test/templates/`).
@@ -483,6 +485,9 @@ The following bats test files hard-reference paths slated for deletion in commit
 | `tests/acceptance/test-hardening-skills.bats` | `skills/implement/templates/per-task-orchestrator.md` (line 65); `skills/implement/templates/thoroughness/goal-traceability-reviewer.md` (line 459) | per-task orchestration moves into `agents/qrspi-implementer.md` body; goal-traceability test points at `agents/qrspi-goal-traceability-reviewer.md` |
 | `tests/acceptance/test-skill-output-quality.bats` | `SCOPE_REVIEWER_TEMPLATE=skills/_shared/templates/scope-reviewer.md` (line 50); `REVIEWER_BOILERPLATE=skills/_shared/reviewer-boilerplate.md` (line 51); `implement/templates/` references (line 223) | `agents/qrspi-{name}-scope-reviewer.md` + `skills/reviewer-protocol/SKILL.md` + per-task agent files in `agents/` |
 | `tests/acceptance/test-reviewer-injection.bats` | `skills/_shared/templates/` | `agents/qrspi-{name}-scope-reviewer.md` |
+| `tests/unit/test-compaction-emphasis-markup.bats` | `skills/implement/templates/per-task-orchestrator.md` (line 22 comment, line 32 comment, line 265 file existence assertion) | per-task-orchestrator content moves into `agents/qrspi-implementer.md` body; assertion now greps the agent body for the corresponding emphasis markup |
+
+This list was produced by `grep -rlE "_shared/reviewer-boilerplate\|_shared/templates\|implement/templates\|test/templates" tests/` against HEAD; commit 19's PR description must include the same grep result to confirm no test was missed.
 
 Commit 19 must leave every test green against HEAD (which still has the legacy files in place); commit 20 then removes them.
 
@@ -521,7 +526,7 @@ Smoke test confirms no behavioral regression. Test fixtures under `tests/fixture
 | Scope-reviewer's Step-1 Read not followed reliably | Smoke test in commit 6 verifies OWNS/DEFERS-aware behavior on a fixture with a deliberate boundary violation. Risk is bounded by the agent's small surface area (single-purpose, ~30-line body). If the smoke test fails: switch to **inline mode** (binary, mutually exclusive with Read mode — see Reliability section). One follow-up commit re-writes scope-reviewer bodies to inline OWNS/DEFERS verbatim, replaces `test-scope-reviewer-step1-read.bats` with `test-scope-reviewer-inline-owns-defers.bats` (byte-parity vs `skills/{name}/owns-defers.md`), and updates the spec. Author skill consumption (via `!cat`) unchanged in either mode. Reversible. |
 | Per-artifact reviewer accidentally emits scope findings | Agent file body explicitly states "do not emit scope findings"; CI test (`test-quality-reviewer-no-scope.bats`) greps for forbidden scope-related language; smoke test verifies no scope findings appear in `reviews/{name}/round-NN-claude.md`. |
 | Dedicated scope-reviewer accidentally emits artifact-quality findings | Agent file body explicitly states "scope only"; smoke test verifies output contains only scope-shaped findings. |
-| Codex stdin support breaks existing path-arg callers | Wrapper accepts both forms (stdin if no path arg) until commit 19; existing tests cover the path-arg form for the duration of the migration. |
+| Codex stdin support breaks existing path-arg callers | Wrapper accepts both forms (stdin if no path arg) until commit 21 (when the path-arg form is retired); existing tests cover the path-arg form for the duration of the migration. |
 | OWNS/DEFERS file path mismatches what scope-reviewer expects | `tests/unit/test-rules-files-exist.bats` asserts presence; CI test asserts each scope-reviewer body's Read path matches its agent name; smoke test exercises scope-reviewer end-to-end. |
 | Author skill `!cat` directive doesn't resolve at activation time | Tested in commit 3; if `!cat` resolution misbehaves in a SKILL.md context, fall back to inlining OWNS/DEFERS in the SKILL.md body (with CI parity check vs `owns-defers.md`). Reversible. |
 | Per-skill review checks accidentally retained in SKILL.md after migration | Code review on each per-skill commit verifies that the inline reviewer logic moved entirely into the agent bodies. CI test in commit 22 (`test-dispatch-sites.bats`) catches deprecated patterns. |
@@ -584,7 +589,7 @@ Agent({
     artifact_body: <<<UNTRUSTED-ARTIFACT-START id=goals.md>>>
       ... goals.md content ...
     <<<UNTRUSTED-ARTIFACT-END id=goals.md>>>
-    output: reviews/goals/round-NN-claude.md
+    output: <ABS_ARTIFACT_DIR>/reviews/goals/round-NN-claude.md
     round: NN
     reviewer_tag: claude
   """,
@@ -598,7 +603,7 @@ Agent({
     artifact_body: <<<UNTRUSTED-ARTIFACT-START id=goals.md>>>
       ... goals.md content ...
     <<<UNTRUSTED-ARTIFACT-END id=goals.md>>>
-    output: reviews/goals/round-NN-scope-claude.md
+    output: <ABS_ARTIFACT_DIR>/reviews/goals/round-NN-scope-claude.md
     round: NN
     reviewer_tag: claude
   """,
@@ -628,7 +633,7 @@ Two parallel Codex dispatches per artifact per round, mirroring the Claude pair:
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-goals-reviewer.md;
-  printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: reviews/goals/round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/goals/round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
     "<wrapped body>" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 
@@ -636,7 +641,7 @@ Two parallel Codex dispatches per artifact per round, mirroring the Claude pair:
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-goals-scope-reviewer.md;
-  printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: reviews/goals/round-%s-scope-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/goals/round-%s-scope-codex.md\nround: %s\nreviewer_tag: codex\n' \
     "<wrapped body>" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 ```
