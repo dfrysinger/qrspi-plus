@@ -19,29 +19,19 @@ bats_require_minimum_version 1.5.0
 #     (M53 deliberately uses inline duplication, not centralization — per
 #     design.md "Trade-offs Considered: M53 — centralized callout template
 #     vs. per-site high-emphasis markup").
-#   - implement template (skills/implement/templates/per-task-orchestrator.md)
-#     does NOT carry the implement-row M53 callouts itself — those callouts
-#     live in skills/implement/SKILL.md (the per-task orchestrator subagent
-#     delegates compaction-recommendation to its caller per its own prompt
-#     line 236). The implement-row matrix coverage is therefore checked
-#     against skills/implement/SKILL.md.
+#   - The implement-row M53 callouts live in skills/implement/SKILL.md
+#     (the orchestrator that owns the batch gate / compaction recommendation).
+#     Post-migration (commit 19/22): per-task-orchestrator.md is gone; the
+#     delegation contract is enforced inline within skills/implement/SKILL.md.
 #
-# CodexF1 (fix-cycle 1, downgraded HIGH→LOW per Claude verifier):
+# CodexF1 (post-migration update, commit 19/22):
 #   The implement-row M53 emphasis markers MUST live in
-#   `skills/implement/SKILL.md`, NOT in
-#   `skills/implement/templates/per-task-orchestrator.md`. The template at
-#   line 236 explicitly states it "does NOT invoke any route step, present
-#   a batch gate, or recommend compaction — those are owned by Implement
-#   (see implement/SKILL.md)". This is the load-bearing delegation contract
-#   that resolves the spec ambiguity between (a) marking the row at the
-#   template (because the template hosts the per-task subagent dispatch)
-#   and (b) marking the row at Implement/SKILL.md (because Implement is
-#   the orchestrator that owns the batch gate / compaction recommendation).
-#   This test enforces (b): @tests below assert (i) emphasis markers in
-#   `skills/implement/SKILL.md` (positive coverage at the implement row)
-#   AND (ii) the delegation-contract pin in the template (the
-#   per-task-orchestrator.md does NOT carry compaction-recommendation
-#   language).
+#   `skills/implement/SKILL.md`. Post-migration the per-task-orchestrator.md
+#   template no longer exists; the cited delegation contract is enforced
+#   in-place inside skills/implement/SKILL.md (the orchestrator that owns
+#   the batch gate / compaction recommendation). This test enforces:
+#   (i) emphasis markers in `skills/implement/SKILL.md` (positive
+#   coverage at the implement row).
 #
 # CodexF2 (fix-cycle 1):
 #   For each `—` (no-tick) cell in the M53 matrix, this file adds a
@@ -257,15 +247,15 @@ assert_anchor_present() {
   return 0
 }
 
-@test "[M53-implement-template] per-task-orchestrator.md does NOT recommend compaction (delegated to Implement)" {
-  # The per-task-orchestrator template explicitly delegates compaction
-  # recommendation to its caller (Implement). The implement row's M53
-  # callouts therefore live in skills/implement/SKILL.md, not in the
-  # template. This test pins the contract.
-  local f="$REPO_ROOT/skills/implement/templates/per-task-orchestrator.md"
+@test "[M53-implement] implement SKILL.md owns compaction-recommendation language (post-migration)" {
+  # Post-migration (commit 19/22): per-task-orchestrator.md is gone. The
+  # implement row's M53 callouts (compaction-recommendation language) live
+  # directly in skills/implement/SKILL.md, the orchestrator that owns the
+  # batch gate. This test pins the contract.
+  local f="$REPO_ROOT/skills/implement/SKILL.md"
   [ -f "$f" ]
-  # The template should explicitly state the delegation.
-  grep -qE "does NOT.*recommend compaction|owned by Implement" "$f"
+  # The orchestrator's SKILL.md must carry the compaction-recommendation language.
+  grep -qiE "compaction|compact" "$f"
 }
 
 # =============================================================================

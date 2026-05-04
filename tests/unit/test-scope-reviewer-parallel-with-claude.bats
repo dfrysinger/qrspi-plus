@@ -24,10 +24,10 @@ setup() {
   PARALLELIZE_FILE="$ROOT/skills/parallelize/SKILL.md"
   REPLAN_FILE="$ROOT/skills/replan/SKILL.md"
   USING_QRSPI_FILE="$ROOT/skills/using-qrspi/SKILL.md"
-  SCOPE_REVIEWER_TEMPLATE="$ROOT/skills/_shared/templates/scope-reviewer.md"
-  REVIEWER_BOILERPLATE="$ROOT/skills/_shared/reviewer-boilerplate.md"
+  AGENTS_DIR="$ROOT/agents"
+  REVIEWER_BOILERPLATE="$ROOT/skills/reviewer-protocol/SKILL.md"
   export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE REPLAN_FILE
-  export USING_QRSPI_FILE SCOPE_REVIEWER_TEMPLATE REVIEWER_BOILERPLATE
+  export USING_QRSPI_FILE AGENTS_DIR REVIEWER_BOILERPLATE
 }
 
 # ── Per-skill: scope-reviewer dispatched in parallel with Claude reviewer ──
@@ -100,33 +100,37 @@ setup() {
   echo "$section" | grep -q "referenced_files"
 }
 
-@test "scope-reviewer template ## Output Contract references reviewer-boilerplate Finding Schema for unified output" {
-  local section
-  section="$(awk '
-    $0 == "## Output Contract" { in_b = 1; print; next }
-    in_b && /^## / { exit }
-    in_b { print }
-  ' "$SCOPE_REVIEWER_TEMPLATE")"
-  [ -n "$section" ]
-  echo "$section" | grep -q "reviewer-boilerplate.md"
-  echo "$section" | grep -qi "Finding Schema"
+@test "every per-artifact scope-reviewer agent declares skills: [reviewer-protocol] for unified Finding Schema" {
+  # Post-migration replacement for the legacy "Output Contract references
+  # reviewer-boilerplate Finding Schema" template assertion. Each agent file
+  # loads the reviewer-protocol skill via frontmatter, so the M48 5-field
+  # finding schema is shared across the Claude reviewer and the scope-reviewer.
+  for name in goals design phasing structure plan parallelize replan; do
+    local agent="$AGENTS_DIR/qrspi-${name}-scope-reviewer.md"
+    [ -f "$agent" ] || { echo "FAIL: missing agent $agent" >&2; return 1; }
+    grep -qE "^skills:[[:space:]]*\[.*reviewer-protocol.*\]" "$agent" || {
+      echo "FAIL: $agent does not declare skills: [reviewer-protocol]" >&2
+      return 1
+    }
+  done
 }
 
 # ── Conflict resolution / merger policy ─────────────────────────────────────
 
-@test "scope-reviewer template names the embedded boilerplate so finding shapes are unified across reviewers" {
-  # The boilerplate-embedding policy is the merger primitive — both the
+@test "every per-artifact scope-reviewer agent loads reviewer-protocol so finding shapes are unified across reviewers" {
+  # The boilerplate-loading policy is the merger primitive — both the
   # Claude reviewer and the scope-reviewer emit findings in the same
   # 5-field shape, so deduplication / merger can run on a uniform set.
-  local section
-  section="$(awk '
-    $0 == "## Embedded Boilerplate" { in_b = 1; print; next }
-    in_b && /^## / { exit }
-    in_b { print }
-  ' "$SCOPE_REVIEWER_TEMPLATE")"
-  [ -n "$section" ]
-  echo "$section" | grep -q "reviewer-boilerplate.md"
-  echo "$section" | grep -Eqi "embeds|verbatim|concatenates"
+  # Post-migration: agents declare `skills: [reviewer-protocol]` instead
+  # of the legacy ## Embedded Boilerplate prose section.
+  for name in goals design phasing structure plan parallelize replan; do
+    local agent="$AGENTS_DIR/qrspi-${name}-scope-reviewer.md"
+    [ -f "$agent" ] || { echo "FAIL: missing agent $agent" >&2; return 1; }
+    grep -qE "skills:.*reviewer-protocol" "$agent" || {
+      echo "FAIL: $agent does not load reviewer-protocol skill" >&2
+      return 1
+    }
+  done
 }
 
 @test "goals SKILL Review Round writes findings from BOTH reviewers to the same review log file" {

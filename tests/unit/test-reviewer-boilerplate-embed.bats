@@ -11,7 +11,9 @@
 #   4. Frontmatter / rename-stability assertion MUST exist.
 #
 # The shared file under test:
-#   skills/_shared/reviewer-boilerplate.md
+#   skills/reviewer-protocol/SKILL.md
+# (Migrated from the legacy reviewer-boilerplate.md path in commit 19/22 of
+# the #110 subagents-in-agent-files migration; same content, new canonical path.)
 #
 # All assertions extract a target heading's section text first (until the next
 # `^## ` heading) and then assert on the extracted slice — never on the whole
@@ -19,7 +21,7 @@
 # satisfy a different section's check.
 
 setup() {
-  BOILERPLATE_FILE="$BATS_TEST_DIRNAME/../../skills/_shared/reviewer-boilerplate.md"
+  BOILERPLATE_FILE="$BATS_TEST_DIRNAME/../../skills/reviewer-protocol/SKILL.md"
   export BOILERPLATE_FILE
 }
 
@@ -72,7 +74,7 @@ EOF
 # Spec test expectation 1: file exists at the canonical path
 # =============================================================================
 
-@test "reviewer-boilerplate.md exists at skills/_shared/reviewer-boilerplate.md" {
+@test "reviewer-protocol SKILL.md exists at skills/reviewer-protocol/SKILL.md" {
   [ -f "$BOILERPLATE_FILE" ]
 }
 
@@ -373,31 +375,26 @@ extract_subblock() {
 # subsequent edits — rename-stability assertion (constraint 4).
 # =============================================================================
 
-@test "rename-stability: file lives at canonical path skills/_shared/reviewer-boilerplate.md" {
+@test "rename-stability: file lives at canonical path skills/reviewer-protocol/SKILL.md" {
   # Path-stability check: the exact file path must exist (no rename).
   [ -f "$BOILERPLATE_FILE" ]
   # And no sibling file with a renamed/legacy name is present that would shadow it.
-  ! [ -f "$BATS_TEST_DIRNAME/../../skills/_shared/reviewer-disagreement-valid.md" ]
-  ! [ -f "$BATS_TEST_DIRNAME/../../skills/_shared/finding-schema.md" ]
-  ! [ -f "$BATS_TEST_DIRNAME/../../skills/_shared/change-type-classifier.md" ]
+  ! [ -f "$BATS_TEST_DIRNAME/../../skills/reviewer-protocol/reviewer-disagreement-valid.md" ]
+  ! [ -f "$BATS_TEST_DIRNAME/../../skills/reviewer-protocol/finding-schema.md" ]
+  ! [ -f "$BATS_TEST_DIRNAME/../../skills/reviewer-protocol/change-type-classifier.md" ]
 }
 
-@test "rename-stability: frontmatter state captured (either absent or contains a stable marker)" {
-  # Capture the frontmatter state. The design choice is no frontmatter on this
-  # shared content file (it is included verbatim into reviewer prompts; YAML
-  # frontmatter would leak into the prompt). This assertion locks that choice
-  # so a later edit that adds frontmatter will fail this test and force an
-  # explicit rename-stability conversation.
+@test "rename-stability: frontmatter is YAML with name=reviewer-protocol (skill manifest)" {
+  # Commit 19/22 migration: the consolidated reviewer boilerplate is now a
+  # skill (skills/reviewer-protocol/SKILL.md) loaded by reviewer agents via
+  # `skills: [reviewer-protocol]`. The skill's YAML frontmatter declares the
+  # skill name; this assertion locks the manifest contract.
   local first_line
   first_line="$(head -n 1 "$BOILERPLATE_FILE")"
-  if [ "$first_line" = "---" ]; then
-    # If the project later decides to introduce frontmatter, it MUST contain a
-    # stable marker we lock here. Currently no frontmatter is expected.
-    echo "Unexpected frontmatter present; design specifies no frontmatter." >&2
-    return 1
-  fi
-  # Confirm the file starts with the H1/preface, not YAML.
-  [ "$first_line" != "---" ]
+  [ "$first_line" = "---" ]
+  # Frontmatter must declare name: reviewer-protocol so dependent agents can
+  # load it by name. (`skills: [reviewer-protocol]` resolves against this name.)
+  grep -qE "^name:[[:space:]]*reviewer-protocol\$" "$BOILERPLATE_FILE"
 }
 
 # =============================================================================
@@ -425,102 +422,46 @@ extract_subblock() {
 #   (b) Missed-sweep detection: any in-set file that does NOT reference the
 #       path → fail. This catches sweeps that missed a required embed site.
 #
-# Embed-site count contract (T16, 2026-04-27):
-#   The spec contract is 14 distinct embed-site files with test/SKILL.md
-#   containing exactly 3 occurrences of the full path
-#   `skills/_shared/reviewer-boilerplate.md`. The occurrence-count assertion
-#   below greps the FULL PATH (not the loose substring `reviewer-boilerplate`)
-#   so an incidental prose mention of the bare phrase does not satisfy the
-#   embed-count check. See task-16 spec line 14 / line 20 (test/SKILL.md =
-#   3 occurrences).
+# Post-migration contract (commit 19/22, 2026-05-04):
+#   reviewer-boilerplate content has moved to its own skill at
+#   skills/reviewer-protocol/SKILL.md. Reviewer agent files load it via the
+#   `skills: [reviewer-protocol]` frontmatter declaration, NOT via path-based
+#   embed references inside SKILL.md prose. The legacy "M48-embed" set
+#   (14 SKILL.md / template files referencing the boilerplate by path) is
+#   superseded by the per-agent declarative loading. The embed-coverage
+#   contract is therefore restated here as: every reviewer agent that emits
+#   findings declares the reviewer-protocol skill in its frontmatter.
 # =============================================================================
 
 # REPO_ROOT — the qrspi-plus checkout root (worktree-aware).
 setup_embed_coverage() {
   REPO_ROOT="$BATS_TEST_DIRNAME/../.."
-  EXPECTED_FILES=(
-    "skills/goals/SKILL.md"
-    "skills/questions/SKILL.md"
-    "skills/research/SKILL.md"
-    "skills/design/SKILL.md"
-    "skills/phasing/SKILL.md"
-    "skills/structure/SKILL.md"
-    "skills/plan/SKILL.md"
-    "skills/parallelize/SKILL.md"
-    "skills/implement/SKILL.md"
-    "skills/integrate/SKILL.md"
-    "skills/test/SKILL.md"
-    "skills/replan/SKILL.md"
-    "skills/implement/templates/per-task-orchestrator.md"
-    "skills/_shared/templates/scope-reviewer.md"
-  )
   export REPO_ROOT
 }
 
-@test "[M48-embed] EXACTLY 14 distinct files in skills/ reference reviewer-boilerplate.md" {
+@test "[M48-embed] every reviewer agent file declares skills: [reviewer-protocol] (post-migration contract)" {
+  # Post-migration replacement for the legacy 14-file embed-coverage check.
+  # Every agent file under agents/qrspi-*-reviewer.md (and the per-artifact
+  # *-scope-reviewer.md siblings) must declare reviewer-protocol so the
+  # finding-schema / change-type-classifier / untrusted-data-handling rules
+  # load uniformly across all reviewer dispatches.
   setup_embed_coverage
-  # Count distinct files under skills/ that reference the boilerplate. Exclude
-  # the boilerplate file itself if it self-references (it does not, but be
-  # safe). The expected set lists 14 files; this is the file-set assertion.
-  local count
-  count=$(grep -rl "reviewer-boilerplate" "$REPO_ROOT/skills/" \
-    | grep -v "skills/_shared/reviewer-boilerplate.md" \
-    | sort -u \
-    | wc -l \
-    | tr -d ' ')
-  [ "$count" -eq 14 ]
-}
-
-@test "[M48-embed] each of the 14 expected files references reviewer-boilerplate.md (missed-sweep detection)" {
-  setup_embed_coverage
-  for rel in "${EXPECTED_FILES[@]}"; do
-    [ -f "$REPO_ROOT/$rel" ]
-    grep -q "reviewer-boilerplate" "$REPO_ROOT/$rel" || {
-      echo "FAIL: expected $rel to reference reviewer-boilerplate.md but it does not" >&2
-      return 1
-    }
-  done
-}
-
-@test "[M48-embed] no file OUTSIDE the expected set references reviewer-boilerplate.md (drift detection)" {
-  setup_embed_coverage
-  # Build a sorted, normalized list of actual referencing files under skills/,
-  # excluding the boilerplate itself. Compare element-by-element against the
-  # expected set. Any extra file (drift) fails the test.
-  local actual_list expected_list extras
-  actual_list="$(grep -rl "reviewer-boilerplate" "$REPO_ROOT/skills/" \
-    | sed "s|^$REPO_ROOT/||" \
-    | grep -v "^skills/_shared/reviewer-boilerplate.md$" \
-    | sort -u)"
-  expected_list="$(printf "%s\n" "${EXPECTED_FILES[@]}" | sort -u)"
-  # comm -23 <actual> <expected>: lines in actual not in expected → drift.
-  extras="$(comm -23 <(echo "$actual_list") <(echo "$expected_list") || true)"
-  if [ -n "$extras" ]; then
-    echo "FAIL: drift detected — files referencing reviewer-boilerplate.md but not in expected set:" >&2
-    echo "$extras" >&2
+  local missing=()
+  while IFS= read -r f; do
+    grep -qE "^skills:[[:space:]]*\[.*reviewer-protocol.*\]" "$f" || missing+=("$f")
+  done < <(find "$REPO_ROOT/agents" -name "qrspi-*reviewer*.md" -type f)
+  if [ "${#missing[@]}" -gt 0 ]; then
+    printf 'FAIL: reviewer agent missing skills: [reviewer-protocol] declaration:\n%s\n' "${missing[@]}" >&2
     return 1
   fi
 }
 
-@test "[M48-embed] test/SKILL.md contains exactly 4 references to reviewer-boilerplate.md (per spec; bumped 3→4 by T32)" {
-  # Asserts the spec-contracted occurrences of the FULL boilerplate path
-  # in skills/test/SKILL.md. The grep pattern is the full path
-  # `skills/_shared/reviewer-boilerplate.md` (not the loose substring
-  # `reviewer-boilerplate`), so an incidental prose mention of the bare
-  # phrase elsewhere in the file does not vacuously satisfy the count.
-  #
-  # Original task-16 contract was 3 occurrences (task-16 spec line 14 /
-  # line 20). T32 (integration-round-01 fix-cycle, R1 Codex-S4 + R2 S-N6
-  # bundled) adds a fourth occurrence to introduce the
-  # `## Untrusted Data Handling` wrapper instruction at the test review
-  # step (a single bridging paragraph that applies the wrapper uniformly
-  # across all three reviewer dispatches). The baseline shifts 3 → 4 to
-  # lock the T32 addition; a future edit that accidentally drops the
-  # wrapper instruction would fail this assertion.
+@test "[M48-embed] reviewer-protocol skill file (canonical content host) exists" {
+  # Post-migration: the reviewer-shared content lives in a dedicated skill
+  # rather than under skills/_shared/. This assertion locks the canonical
+  # path for the content host.
   setup_embed_coverage
-  local count
-  count=$(grep -c "skills/_shared/reviewer-boilerplate.md" "$REPO_ROOT/skills/test/SKILL.md" | tr -d ' ')
-  [ "$count" -eq 4 ]
+  [ -f "$REPO_ROOT/skills/reviewer-protocol/SKILL.md" ]
 }
 
 # =============================================================================
@@ -551,8 +492,8 @@ setup_embed_coverage() {
 # trusted reviewer instructions and untrusted embedded data, a crafted
 # artifact can inject prompt instructions that the reviewer would obey.
 #
-# The fix adds a `## Untrusted Data Handling` section to
-# `skills/_shared/reviewer-boilerplate.md` defining a fenced delimiter:
+# The fix adds a `## Untrusted Data Handling` section to the reviewer-protocol
+# skill (skills/reviewer-protocol/SKILL.md) defining a fenced delimiter:
 #
 #   <<<UNTRUSTED-ARTIFACT-START id={artifact_name}>>>
 #   ... raw content ...
@@ -646,37 +587,25 @@ extract_h2_section() {
 }
 
 # =============================================================================
-# Task 32 — embed-site delimiter wrapper coverage
+# Task 32 — Untrusted-Data wrapper coverage (post-migration)
 #
-# Every reviewer template / SKILL.md embed site that interpolates artifact
-# content (artifact, code-under-review, feedback, test-results, task-spec)
-# MUST instruct the dispatch to wrap the embedded content with the
-# UNTRUSTED-ARTIFACT delimiter pair. This is the load-bearing fix for the
-# 14+ embed sites flagged by R2 S-N6.
-#
-# Coverage check: every file in the EXPECTED_FILES set (the canonical 14
-# referencing `reviewer-boilerplate.md`) plus the per-task-orchestrator
-# template MUST contain at least one mention of `UNTRUSTED-ARTIFACT-START`
-# (the delimiter token reference) — proving the embed-site dispatch
-# instructs the wrapper. Files that reference reviewer-boilerplate.md ONLY
-# for the finding-schema contract (and don't embed artifact content) are
-# called out in this comment for the reviewer's awareness; the test below
-# enumerates the embed sites that MUST carry the wrapper instruction.
+# After commit 19/22, the wrapper instruction lives in the reviewer-protocol
+# SKILL.md itself (## Untrusted Data Handling). Reviewer agents inherit it
+# via `skills: [reviewer-protocol]` at agent load time. This test asserts
+# the wrapper-token contract continues to be reachable from reviewer
+# agents — the per-agent files reference the START/END tokens directly so a
+# reader of the agent prompt sees the delimiter contract inline.
 # =============================================================================
 
-@test "[T32-wrapper] every embed-site SKILL.md / template instructs the UNTRUSTED-ARTIFACT delimiter wrapper" {
+@test "[T32-wrapper] reviewer-protocol SKILL.md ## Untrusted Data Handling section instructs the UNTRUSTED-ARTIFACT delimiter wrapper" {
+  # Post-migration consolidation: the wrapper rule lives in one place
+  # (reviewer-protocol SKILL.md), and reviewer agents load it via
+  # skills: [reviewer-protocol]. This assertion locks the contract on the
+  # canonical content host.
   setup_embed_coverage
-  # Embed-content sites: SKILLs/templates that interpolate raw artifact /
-  # code / feedback / test-results into a reviewer prompt. This is the
-  # canonical set per the 14-file embed contract. Each must reference the
-  # delimiter token so the dispatch logic wraps embedded content.
-  for rel in "${EXPECTED_FILES[@]}"; do
-    [ -f "$REPO_ROOT/$rel" ]
-    grep -q "UNTRUSTED-ARTIFACT-START" "$REPO_ROOT/$rel" || {
-      echo "FAIL: $rel references reviewer-boilerplate.md but does not instruct the UNTRUSTED-ARTIFACT delimiter wrapper" >&2
-      return 1
-    }
-  done
+  [ -f "$REPO_ROOT/skills/reviewer-protocol/SKILL.md" ]
+  grep -q "UNTRUSTED-ARTIFACT-START" "$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
+  grep -q "UNTRUSTED-ARTIFACT-END" "$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
 }
 
 @test "[T32-wrapper] reviewer-boilerplate.md preface or Untrusted Data Handling references the delimiter contract by name" {

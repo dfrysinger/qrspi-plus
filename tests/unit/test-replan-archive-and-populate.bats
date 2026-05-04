@@ -17,8 +17,8 @@ bats_require_minimum_version 1.5.0
 setup() {
   REPLAN_FILE="$BATS_TEST_DIRNAME/../../skills/replan/SKILL.md"
   OWNS_FILE="$BATS_TEST_DIRNAME/../../skills/replan/owns-defers.md"
-  SCOPE_REVIEWER_TEMPLATE="$BATS_TEST_DIRNAME/../../skills/_shared/templates/scope-reviewer.md"
-  export REPLAN_FILE OWNS_FILE SCOPE_REVIEWER_TEMPLATE
+  SCOPE_REVIEWER_AGENT="$BATS_TEST_DIRNAME/../../agents/qrspi-replan-scope-reviewer.md"
+  export REPLAN_FILE OWNS_FILE SCOPE_REVIEWER_AGENT
 }
 
 # extract_section <file> <heading-line>
@@ -340,25 +340,18 @@ extract_step() {
   echo "$section" | grep -i "scope-reviewer" | grep -qiE "parallel|in parallel"
 }
 
-# ── Scope-reviewer template allowed-values list includes `replan` ───────────
+# ── Replan scope-reviewer agent file exists and references the Replan rules ───
 
-@test "scope-reviewer template ## Parameters allowed-values list includes replan" {
-  # The scope-reviewer template fails-closed if dispatched with an
-  # {ARTIFACT_TYPE} value not in its allowed list. Replan dispatches with
-  # {ARTIFACT_TYPE}=replan, so the template must list `replan` as one of
-  # the allowed values under its `## Parameters` section. This guards
-  # against the silent-failure mode where the template would fail-closed
-  # before running checks against the Replan-proposed changes.
-  [ -f "$SCOPE_REVIEWER_TEMPLATE" ]
-  local section
-  section="$(awk '
-    /^## Parameters/ { in_b = 1; print; next }
-    in_b && /^## / { exit }
-    in_b { print }
-  ' "$SCOPE_REVIEWER_TEMPLATE")"
-  [ -n "$section" ]
-  # Allowed-values list must contain a bullet for `replan`.
-  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`replan\`$"
+@test "qrspi-replan-scope-reviewer agent file exists and references Replan OWNS/DEFERS rules" {
+  # Commit 19/22 migration: per-artifact scope-reviewer agents replace the
+  # legacy parameterized template. The dedicated agent file
+  # `agents/qrspi-replan-scope-reviewer.md` is what Replan dispatches; it
+  # must exist and must read the Replan-specific OWNS/DEFERS rule set.
+  [ -f "$SCOPE_REVIEWER_AGENT" ]
+  # Must instruct reading the replan owns-defers rule file.
+  grep -q "skills/replan/owns-defers.md" "$SCOPE_REVIEWER_AGENT"
+  # Must reference the Replan OWNS / Replan DEFERS rule set name.
+  grep -qE "Replan OWNS.*Replan DEFERS" "$SCOPE_REVIEWER_AGENT"
 }
 
 # ── Task 34: Artifact Gating includes phasing.md (R1 Claude-I2) ─────────────

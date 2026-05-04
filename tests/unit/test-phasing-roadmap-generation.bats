@@ -219,7 +219,7 @@ extract_h3_direct() {
 # =============================================================================
 # M48 schema compliance — phasing emissions never use `critical` severity
 # (R1 3-way converged: Claude-I1 + Codex-I4 + Codex-S5)
-# The shared M48 finding schema in skills/_shared/reviewer-boilerplate.md only
+# The shared M48 finding schema in skills/reviewer-protocol/SKILL.md only
 # permits severity ∈ {low, medium, high}. Phasing previously instructed the
 # dispatched reviewer to emit "CRITICAL" findings in 3 places. A reviewer that
 # obeys phasing/SKILL.md emits findings the pause-gate cannot dispatch on

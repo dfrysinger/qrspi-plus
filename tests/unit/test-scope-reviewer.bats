@@ -35,10 +35,11 @@ setup() {
   PLAN_FILE="$ROOT/skills/plan/SKILL.md"
   PARALLELIZE_FILE="$ROOT/skills/parallelize/SKILL.md"
   REPLAN_FILE="$ROOT/skills/replan/SKILL.md"
-  SCOPE_REVIEWER_TEMPLATE="$ROOT/skills/_shared/templates/scope-reviewer.md"
+  AGENTS_DIR="$ROOT/agents"
+  REVIEWER_PROTOCOL="$ROOT/skills/reviewer-protocol/SKILL.md"
   FIXTURES="$ROOT/tests/fixtures"
   export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE REPLAN_FILE
-  export SCOPE_REVIEWER_TEMPLATE FIXTURES
+  export AGENTS_DIR REVIEWER_PROTOCOL FIXTURES
 }
 
 # extract_h2_section <file> <h2-heading>
@@ -52,25 +53,22 @@ extract_h2_section() {
   ' "$file"
 }
 
-# ── scope-reviewer template Parameters list includes all seven values ──────
+# ── per-artifact scope-reviewer agents exist for all seven artifact types ──
+# Commit 19/22 migration: the legacy parameterized scope-reviewer template
+# (the legacy parameterized scope-reviewer template with a {ARTIFACT_TYPE} parameter)
+# is replaced by seven dedicated agent files under agents/.
 
-@test "scope-reviewer template ## Parameters allowed-values list includes all seven artifact types" {
-  [ -f "$SCOPE_REVIEWER_TEMPLATE" ]
-  local section
-  section="$(extract_h2_section "$SCOPE_REVIEWER_TEMPLATE" "## Parameters")"
-  [ -n "$section" ]
-  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`goals\`$"
-  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`design\`$"
-  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`phasing\`$"
-  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`structure\`$"
-  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`plan\`$"
-  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`parallelize\`$"
-  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`replan\`$"
+@test "per-artifact scope-reviewer agents exist for all seven artifact types" {
+  for name in goals design phasing structure plan parallelize replan; do
+    local agent="$AGENTS_DIR/qrspi-${name}-scope-reviewer.md"
+    [ -f "$agent" ] || { echo "FAIL: missing agent $agent" >&2; return 1; }
+  done
 }
 
-@test "scope-reviewer template ## Output Contract requires change_type tag in M48 5-field schema" {
+@test "reviewer-protocol SKILL.md ## Finding Schema declares change_type field used by scope-reviewer dispatches" {
+  [ -f "$REVIEWER_PROTOCOL" ]
   local section
-  section="$(extract_h2_section "$SCOPE_REVIEWER_TEMPLATE" "## Output Contract")"
+  section="$(extract_h2_section "$REVIEWER_PROTOCOL" "## Finding Schema")"
   [ -n "$section" ]
   echo "$section" | grep -q "change_type"
   echo "$section" | grep -Eqi "scope|intent"
@@ -206,27 +204,25 @@ extract_h2_section() {
   grep -Eqi "Severity classification|Minor-path artifact updates|five-step archive-and-populate|phase-transition execution" "$fixture"
 }
 
-# ── change_type tag presence in scope-reviewer Output Contract per-fixture ──
+# ── change_type tag presence in reviewer-protocol Finding Schema ────────────
 
-@test "scope-reviewer template ## Output Contract names change_type values scope and intent" {
+@test "reviewer-protocol SKILL.md ## Change-Type Classifier names change_type values scope and intent" {
   local section
-  section="$(extract_h2_section "$SCOPE_REVIEWER_TEMPLATE" "## Output Contract")"
+  section="$(extract_h2_section "$REVIEWER_PROTOCOL" "## Change-Type Classifier")"
   [ -n "$section" ]
-  # The structured-error fail-closed clause uses `correctness`; the
-  # boundary-drift findings use `scope` (or `intent`). Both must be named
-  # in the template's classifier reference.
-  echo "$section" | grep -Eq "style.*clarity.*correctness.*scope.*intent|change_type.*scope.*intent"
+  # The classifier section names all five change_type values; scope and
+  # intent are the two that route to pause (the values scope-reviewer
+  # findings most commonly carry).
+  echo "$section" | grep -Eq "style.*clarity.*correctness.*scope.*intent|change_type.*scope.*intent|scope.*intent.*pause"
 }
 
-@test "scope-reviewer template Per-{ARTIFACT_TYPE} Gated Sections names all seven skill rule files" {
-  local section
-  section="$(extract_h2_section "$SCOPE_REVIEWER_TEMPLATE" "## Per-\`{ARTIFACT_TYPE}\` Gated Sections")"
-  [ -n "$section" ]
-  echo "$section" | grep -q "skills/goals/SKILL.md"
-  echo "$section" | grep -q "skills/design/SKILL.md"
-  echo "$section" | grep -q "skills/phasing/SKILL.md"
-  echo "$section" | grep -q "skills/structure/SKILL.md"
-  echo "$section" | grep -q "skills/plan/SKILL.md"
-  echo "$section" | grep -q "skills/parallelize/SKILL.md"
-  echo "$section" | grep -q "skills/replan/SKILL.md"
+@test "per-artifact scope-reviewer agents read the corresponding skills/{name}/owns-defers.md rule file" {
+  for name in goals design phasing structure plan parallelize replan; do
+    local agent="$AGENTS_DIR/qrspi-${name}-scope-reviewer.md"
+    [ -f "$agent" ] || { echo "FAIL: missing agent $agent" >&2; return 1; }
+    grep -q "skills/${name}/owns-defers.md" "$agent" || {
+      echo "FAIL: $agent does not reference skills/${name}/owns-defers.md" >&2
+      return 1
+    }
+  done
 }

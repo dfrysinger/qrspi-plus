@@ -38,7 +38,7 @@ setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/../.."
   FIXTURES_DIR="$BATS_TEST_DIRNAME/../fixtures"
   USING_QRSPI_FILE="$REPO_ROOT/skills/using-qrspi/SKILL.md"
-  BOILERPLATE_FILE="$REPO_ROOT/skills/_shared/reviewer-boilerplate.md"
+  BOILERPLATE_FILE="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
   ESCALATION_FIXTURE="$FIXTURES_DIR/reviewer-finding-secondary-escalation.json"
   export REPO_ROOT FIXTURES_DIR USING_QRSPI_FILE BOILERPLATE_FILE ESCALATION_FIXTURE
 }
