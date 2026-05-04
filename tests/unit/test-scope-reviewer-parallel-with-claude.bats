@@ -67,9 +67,10 @@ setup() {
 }
 
 @test "parallelize SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  grep -qi "Claude review subagent\|Claude reviewer" "$PARALLELIZE_FILE"
-  grep -qi "scope-reviewer" "$PARALLELIZE_FILE"
-  grep -Eqi "in parallel|run in parallel" "$PARALLELIZE_FILE"
+  # Commit 14/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-parallelize-reviewer" "$PARALLELIZE_FILE"
+  grep -qi "qrspi-parallelize-scope-reviewer" "$PARALLELIZE_FILE"
+  grep -Eqi "in parallel|run in parallel|two parallel reviewer dispatches" "$PARALLELIZE_FILE"
 }
 
 # ── Shared finding schema: both reviewers emit M48 5-field findings ─────────

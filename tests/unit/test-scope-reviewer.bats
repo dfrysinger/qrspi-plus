@@ -112,8 +112,10 @@ extract_h2_section() {
 }
 
 @test "{ARTIFACT_TYPE}=parallelize — parallelize SKILL dispatches scope-reviewer with parameter parallelize" {
-  grep -q "scope-reviewer.md" "$PARALLELIZE_FILE"
-  grep -qE "\{ARTIFACT_TYPE\}=parallelize" "$PARALLELIZE_FILE"
+  # Commit 14/22 migration: scope-reviewer is now dispatched as a dedicated
+  # agent (qrspi-parallelize-scope-reviewer) rather than via the shared template.
+  # The old scope-reviewer.md + {ARTIFACT_TYPE}=parallelize pattern is retired.
+  grep -q "qrspi-parallelize-scope-reviewer" "$PARALLELIZE_FILE"
 }
 
 @test "{ARTIFACT_TYPE}=replan — replan SKILL dispatches scope-reviewer with parameter replan (T14 7th value)" {
