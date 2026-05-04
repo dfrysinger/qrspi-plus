@@ -86,8 +86,10 @@ extract_h2_section() {
 }
 
 @test "{ARTIFACT_TYPE}=design — design SKILL dispatches scope-reviewer with parameter design" {
-  grep -q "scope-reviewer.md" "$DESIGN_FILE"
-  grep -qE "\{ARTIFACT_TYPE\}=design" "$DESIGN_FILE"
+  # Commit 10/22 migration: scope-reviewer is now dispatched as a dedicated
+  # agent (qrspi-design-scope-reviewer) rather than via the shared template.
+  # The old scope-reviewer.md + {ARTIFACT_TYPE}=design pattern is retired.
+  grep -q "qrspi-design-scope-reviewer" "$DESIGN_FILE"
 }
 
 @test "{ARTIFACT_TYPE}=phasing — phasing SKILL dispatches scope-reviewer with parameter phasing" {
