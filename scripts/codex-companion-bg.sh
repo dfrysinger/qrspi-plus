@@ -2,8 +2,10 @@
 # codex-companion-bg.sh — non-blocking wrapper around codex-companion.mjs.
 #
 # Subcommands:
-#   launch --prompt-file <path>   Fork companion `task --background` and print
+#   launch [--prompt-file <path>] Fork companion `task --background` and print
 #                                 the captured jobId; exit 0 within ~5s.
+#                                 If --prompt-file is omitted and stdin is not
+#                                 a TTY, the prompt is read from stdin.
 #   await --artifact-dir <abs_path> <jobId>
 #                                 Poll status (5s/30s with backoff at 120s),
 #                                 fetch result on completion, write review
@@ -405,31 +407,53 @@ launch_subcommand() {
     esac
   done
 
+  local stdin_temp=""
   if [ -z "$prompt_file" ]; then
-    printf 'launch: --prompt-file is required\n' >&2
-    return 1
+    if [ -t 0 ]; then
+      printf 'launch: --prompt-file is required (or pipe a prompt on stdin)\n' >&2
+      return 1
+    fi
+    stdin_temp=$(mktemp -t codex-companion-bg-stdin.XXXXXX) || {
+      printf 'launch: mktemp failed for stdin capture\n' >&2
+      return 1
+    }
+    cat > "$stdin_temp"
+    if [ ! -s "$stdin_temp" ]; then
+      rm -f "$stdin_temp"
+      printf 'launch: stdin was empty\n' >&2
+      return 1
+    fi
+    prompt_file="$stdin_temp"
   fi
   if [ ! -r "$prompt_file" ]; then
+    rm -f "$stdin_temp"
     printf 'launch: prompt file not readable: %s\n' "$prompt_file" >&2
     return 1
   fi
   if [ ! -s "$prompt_file" ]; then
+    rm -f "$stdin_temp"
     printf 'launch: prompt file is empty: %s\n' "$prompt_file" >&2
     return 1
   fi
 
   local companion
   if ! companion=$(resolve_codex_companion); then
+    rm -f "$stdin_temp"
     return 1
   fi
 
   local stdout_file stderr_file
-  stdout_file=$(mktemp -t codex-companion-bg.XXXXXX) || { printf 'launch: mktemp failed\n' >&2; return 1; }
-  stderr_file=$(mktemp -t codex-companion-bg.XXXXXX) || { rm -f "$stdout_file"; printf 'launch: mktemp failed\n' >&2; return 1; }
+  stdout_file=$(mktemp -t codex-companion-bg.XXXXXX) || { rm -f "$stdin_temp"; printf 'launch: mktemp failed\n' >&2; return 1; }
+  stderr_file=$(mktemp -t codex-companion-bg.XXXXXX) || { rm -f "$stdin_temp" "$stdout_file"; printf 'launch: mktemp failed\n' >&2; return 1; }
 
   local SPAWN_RC=0 SPAWN_TIMED_OUT=0
+  # The companion reads --prompt-file synchronously inside spawn_with_timeout;
+  # stdin_temp (if set) remains on disk until after spawn_with_timeout returns.
   spawn_with_timeout "$QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS" "$stdout_file" "$stderr_file" \
     node "$companion" task --background --prompt-file "$prompt_file" --json
+
+  # stdin_temp no longer needed: companion has read the file (or timed out).
+  rm -f "$stdin_temp"
 
   if [ "$SPAWN_TIMED_OUT" -eq 1 ]; then
     printf 'launch: companion did not return within %ds (job-create hung)\n' \
@@ -772,6 +796,7 @@ main() {
     cat >&2 <<'USAGE'
 Usage:
   codex-companion-bg.sh launch --prompt-file <path>
+  codex-companion-bg.sh launch          (pipe prompt on stdin)
   codex-companion-bg.sh await --artifact-dir <abs_path> <jobId>
 USAGE
     return 1

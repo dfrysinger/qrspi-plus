@@ -804,3 +804,67 @@ EOF
   rows=$(wc -l < "$TEST_ROOT/trailslash-artifact/.qrspi/audit-codex-review.jsonl")
   [ "$rows" -eq 1 ]
 }
+
+# ── stdin support (commit 4 / issue #110) ─────────────────────────
+
+# Test A — stdin path:
+# When no --prompt-file is given and stdin is not a TTY, the wrapper reads
+# the prompt from stdin, writes it to a temp file, and passes --prompt-file
+# to the companion. Mirrors the argv-dump pattern used by test 73.
+@test "launch: reads prompt from stdin when --prompt-file is omitted and stdin is not a tty" {
+  export STUB_ARGV_DUMP="$TEST_ROOT/argv-stdin.dump"
+  cat > "$TEST_ROOT/companion-stdin-record.mjs" <<'EOF'
+#!/usr/bin/env node
+import fs from "node:fs";
+fs.writeFileSync(process.env.STUB_ARGV_DUMP, JSON.stringify(process.argv.slice(2)));
+process.stdout.write(JSON.stringify({ jobId: "task-stub-stdin-recorder", status: "queued", title: "x", summary: "y", logFile: "/tmp/x" }) + "\n");
+EOF
+  chmod +x "$TEST_ROOT/companion-stdin-record.mjs"
+
+  # Pipe a non-empty prompt on stdin (non-tty by virtue of the pipe).
+  # bats `run` does not forward a pipe — invoke via a subshell so the wrapper
+  # actually receives the piped stdin.
+  export CODEX_COMPANION="$TEST_ROOT/companion-stdin-record.mjs"
+  run bash -c 'echo "stdin prompt content" | "$WRAPPER" launch'
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"task-stub-stdin-recorder"* ]]
+
+  # Companion must have received --prompt-file pointing at a real temp file.
+  argv=$(cat "$TEST_ROOT/argv-stdin.dump")
+  [[ "$argv" == *"task"* ]]
+  [[ "$argv" == *"--background"* ]]
+  [[ "$argv" == *"--prompt-file"* ]]
+}
+
+# Test B — path-arg form is preserved:
+# The existing test at line 73 ("launch: passes --prompt-file through to the
+# companion") already covers this. No new test needed; path-arg form is
+# exercised by the pre-existing suite and is preserved by this commit.
+
+# Test C — awk frontmatter-strip regression:
+# Self-contained test of the awk one-liner used by the Codex pipeline dispatch
+# introduced in this commit. Does NOT exercise the wrapper — verifies that awk
+# strips only YAML front-matter and preserves body content (including internal
+# --- separators), guarding against a future sed-form regression.
+@test "awk frontmatter-strip preserves body content with internal --- separators" {
+  local f=/tmp/awk-strip-test.$$.md
+  cat > "$f" <<'EOF'
+---
+name: test
+description: smoke
+---
+
+body line 1
+
+---
+
+body line 2 after a separator
+EOF
+  local out
+  out=$(awk '/^---$/{n++; next} n>=2{print}' "$f")
+  echo "$out" | grep -qF 'body line 1'
+  echo "$out" | grep -qF 'body line 2 after a separator'
+  ! echo "$out" | grep -qF 'name: test'
+  rm -f "$f"
+}
