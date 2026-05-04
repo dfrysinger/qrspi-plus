@@ -152,7 +152,7 @@ After writing `parallelization.md` (and after every revision), run one review ro
    - `round`: NN
    - `reviewer_tag`: `claude`
 
-   The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/_shared/reviewer-boilerplate.md`) arrives via the agent file's `skills:` preload — do NOT embed `skills/_shared/reviewer-boilerplate.md` in the dispatch prompt. The Parallelize-specific checks (file-overlap, symbolic-base vocabulary, stage commits, completeness) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
+   The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Parallelize-specific checks (file-overlap, symbolic-base vocabulary, stage commits, completeness) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
 2. **Claude scope-reviewer subagent (runs in parallel with the quality reviewer)** — dispatch `Agent({ subagent_type: "qrspi-parallelize-scope-reviewer", model: "sonnet" })` with a prompt containing only:
    - `artifact_body`: same untrusted-data-wrapped `parallelization.md` body
@@ -160,7 +160,7 @@ After writing `parallelization.md` (and after every revision), run one review ro
    - `round`: NN
    - `reviewer_tag`: `claude`
 
-   The scope-reviewer's Step-1 Read of `skills/parallelize/owns-defers.md` delivers the Parallelize OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or `skills/_shared/reviewer-boilerplate.md` in the dispatch prompt.
+   The scope-reviewer's Step-1 Read of `skills/parallelize/owns-defers.md` delivers the Parallelize OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
 3. **Codex reviews (if `config.md` has `codex_reviews: true`)** — dispatch TWO non-blocking Codex reviews **in parallel** (quality + scope) via shell pipelines:
 
@@ -184,7 +184,7 @@ After writing `parallelization.md` (and after every revision), run one review ro
 
    The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints.
 
-4. Apply fixes; loop until clean (default) or present at user request. Findings tagged `change_type: scope` or `change_type: intent` (per the change-type classifier in `skills/_shared/reviewer-boilerplate.md` and the secondary-escalation rule that escalates `feedback/*.md`-citing findings to `intent`) pause the loop for explicit user resolution via the batch pause UI; `style` / `clarity` / `correctness` findings auto-apply.
+4. Apply fixes; loop until clean (default) or present at user request. Findings tagged `change_type: scope` or `change_type: intent` (per the change-type classifier in `skills/reviewer-protocol/SKILL.md` and the secondary-escalation rule that escalates `feedback/*.md`-citing findings to `intent`) pause the loop for explicit user resolution via the batch pause UI; `style` / `clarity` / `correctness` findings auto-apply.
 
 ## Terminal State
 

@@ -115,7 +115,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   - `round`: NN
   - `reviewer_tag`: `claude`
 
-  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/_shared/reviewer-boilerplate.md`) arrives via the agent file's `skills:` preload — do NOT embed `skills/_shared/reviewer-boilerplate.md` in the dispatch prompt. The Phasing-specific checks (Iron Law 1, Phase 1 PoC guideline, pruning procedure, goal-ID consistency) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
+  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Phasing-specific checks (Iron Law 1, Phase 1 PoC guideline, pruning procedure, goal-ID consistency) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
 - **Claude scope-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-phasing-scope-reviewer", model: "sonnet" })` in parallel with the quality reviewer, with a prompt containing only:
   - `artifact_body`: same untrusted-data-wrapped `phasing.md` body
@@ -123,7 +123,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   - `round`: NN
   - `reviewer_tag`: `claude`
 
-  The scope-reviewer's Step-1 Read of `skills/phasing/owns-defers.md` delivers the Phasing OWNS/DEFERS contract at runtime. **Fail-closed on malformed OWNS/DEFERS:** if the `## Phasing OWNS / Phasing DEFERS` section is missing or malformed, the scope-reviewer MUST emit a finding with `severity: high` and `change_type: correctness` and refuse to proceed (the schema only permits severity ∈ {low, medium, high}). Do NOT embed the OWNS/DEFERS rule set or `skills/_shared/reviewer-boilerplate.md` in the dispatch prompt.
+  The scope-reviewer's Step-1 Read of `skills/phasing/owns-defers.md` delivers the Phasing OWNS/DEFERS contract at runtime. **Fail-closed on malformed OWNS/DEFERS:** if the `## Phasing OWNS / Phasing DEFERS` section is missing or malformed, the scope-reviewer MUST emit a finding with `severity: high` and `change_type: correctness` and refuse to proceed (the schema only permits severity ∈ {low, medium, high}). Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
 - **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (quality + scope) via shell pipelines:
 
@@ -253,7 +253,7 @@ Run this procedure during synthesis and again during the review round. The canon
 3. **Orphan-ID flag — direction B.** An orphan in direction B is any goal ID that appears in the canonical roadmap set yet is missing from the file expected to contain it under current-phase scope: a current-phase ID must appear in the current-phase artifacts (goals, questions, research summary, design) and a deferred ID must appear in the corresponding future-* artifact.
 4. The orphan list is presented to the user; resolution is a user decision (rename ID, move entry, or accept as orphan with justification).
 
-**Fail-closed semantics.** If orphan IDs are detected, the synthesis subagent MUST emit them in the `phasing.md` `## Orphan IDs` section AND the round is invalid until the user resolves them. Reviewers MUST reject any phasing.md emission that omits the `## Orphan IDs` section (even when the section content reads "No orphan IDs." — the section header itself is required so reviewers can confirm the validation procedure ran). Silent orphan suppression is a fail-closed condition: any reviewer that detects an orphan ID present in one of the nine files but missing from `## Orphan IDs` MUST emit a finding with `severity: high` and `change_type: correctness` (per the schema in `skills/_shared/reviewer-boilerplate.md`, which only permits severity ∈ {low, medium, high}) and the round is invalid.
+**Fail-closed semantics.** If orphan IDs are detected, the synthesis subagent MUST emit them in the `phasing.md` `## Orphan IDs` section AND the round is invalid until the user resolves them. Reviewers MUST reject any phasing.md emission that omits the `## Orphan IDs` section (even when the section content reads "No orphan IDs." — the section header itself is required so reviewers can confirm the validation procedure ran). Silent orphan suppression is a fail-closed condition: any reviewer that detects an orphan ID present in one of the nine files but missing from `## Orphan IDs` MUST emit a finding with `severity: high` and `change_type: correctness` (per the schema in `skills/reviewer-protocol/SKILL.md`, which only permits severity ∈ {low, medium, high}) and the round is invalid.
 
 ## Phase-2+ Behavior
 

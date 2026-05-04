@@ -493,7 +493,7 @@ reviewer: claude   # or "scope"
 
 ## Findings
 
-{Findings emitted as a list, each conforming to the 5-field schema in `_shared/reviewer-boilerplate.md` `## Finding Schema`. "No issues found" is a valid body when N=0.}
+{Findings emitted as a list, each conforming to the 5-field schema in `skills/reviewer-protocol/SKILL.md` `## Finding Schema`. "No issues found" is a valid body when N=0.}
 ```
 
 **Subagent return value (brief).** After writing the per-reviewer file, the reviewer subagent returns a single brief summary string to main chat. The summary MUST NOT include the finding text — main chat reads the file when it needs the details. Required summary form:

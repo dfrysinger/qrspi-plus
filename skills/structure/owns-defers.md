@@ -16,11 +16,11 @@ The OWNS/DEFERS contract below is the locked rule set the scope-reviewer dispatc
 
 - **Actual prompt or SKILL.md text content** → Plan / Implement.
 - **Actual scope-reviewer template prose** → Plan / Implement.
-- **Actual `reviewer-boilerplate.md` content text** → Plan / Implement.
+- **Actual reviewer-protocol content text** → Plan / Implement.
 - **Actual compaction-callout wording at each placement site** (Structure owns the *locations*; Plan/Implement own the *words*) → Plan / Implement.
 - **Test assertion code** → Implement (TDD).
 - **Per-task LOC, full assertion text, per-task commit ranges, line-by-line logic** → Plan / Implement.
 - **Architecture decisions** (which approach, which components exist at all) → Design.
 - **Phasing / vertical slice authoring** (Iron Law 1, the Phase 1 PoC guideline, which slices belong in this phase, replan-gate criteria) → Phasing.
 
-A finding citing structure.md prose that asserts any DEFERS item — for example, embedding a literal compaction-callout sentence rather than just the placement site, or specifying per-task LOC inside a structure entry — is a boundary-drift finding emitted by the scope-reviewer with `change_type: scope` (per the schema in `skills/_shared/reviewer-boilerplate.md`).
+A finding citing structure.md prose that asserts any DEFERS item — for example, embedding a literal compaction-callout sentence rather than just the placement site, or specifying per-task LOC inside a structure entry — is a boundary-drift finding emitted by the scope-reviewer with `change_type: scope` (per the schema in `skills/reviewer-protocol/SKILL.md`).

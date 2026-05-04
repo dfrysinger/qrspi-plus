@@ -229,7 +229,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   - `round`: NN
   - `reviewer_tag`: `claude`
 
-  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/_shared/reviewer-boilerplate.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Plan-specific quality checks (completeness, criterion authoring, no-scope-creep, no-placeholders, task sizing, interpretation, phase alignment, design/structure traceability on full route) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
+  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Plan-specific quality checks (completeness, criterion authoring, no-scope-creep, no-placeholders, task sizing, interpretation, phase alignment, design/structure traceability on full route) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
 - **Claude plan-artifact reviewers (five)** — dispatch the five plan-artifact reviewers in parallel with the unified plan-quality reviewer above. Each dispatch reuses the **full plan-reviewer dispatch schema** (artifact_body + companions + route key + output + round + reviewer_tag) — they share companion delivery because they all consume the same plan + companion context. Per-template checks live in each agent body.
 

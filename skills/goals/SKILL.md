@@ -231,7 +231,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer di
   - `round`: NN
   - `reviewer_tag`: `claude`
 
-  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling) arrives via the agent file's `skills:` preload — do NOT embed `skills/_shared/reviewer-boilerplate.md` in the dispatch prompt. The Goals-specific checks (required subsections, no-others, type field, no Out-of-Scope section, etc.) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
+  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Goals-specific checks (required subsections, no-others, type field, no Out-of-Scope section, etc.) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
 - **Claude scope-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-goals-scope-reviewer", model: "sonnet" })` in parallel with the quality reviewer, with a prompt containing only:
   - `artifact_body`: same untrusted-data-wrapped `goals.md` body
@@ -239,7 +239,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer di
   - `round`: NN
   - `reviewer_tag`: `claude`
 
-  The scope-reviewer's Step-1 Read of `skills/goals/owns-defers.md` delivers the Goals OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or `skills/_shared/reviewer-boilerplate.md` in the dispatch prompt.
+  The scope-reviewer's Step-1 Read of `skills/goals/owns-defers.md` delivers the Goals OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
 - **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (quality + scope) via shell pipelines. The `/tmp/codex-prompt-goals.md` temp-file pattern is retired; protocol and agent body flow via stdin:
 

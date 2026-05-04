@@ -123,7 +123,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   - `round`: NN
   - `reviewer_tag`: `claude`
 
-  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/_shared/reviewer-boilerplate.md`) arrives via the agent file's `skills:` preload — do NOT embed `skills/_shared/reviewer-boilerplate.md` in the dispatch prompt. The Design-specific checks (addresses all goals, trade-offs, YAGNI, diagram, no phasing checks) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
+  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Design-specific checks (addresses all goals, trade-offs, YAGNI, diagram, no phasing checks) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
 - **Claude scope-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-design-scope-reviewer", model: "sonnet" })` in parallel with the quality reviewer, with a prompt containing only:
   - `artifact_body`: same untrusted-data-wrapped `design.md` body
@@ -131,7 +131,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   - `round`: NN
   - `reviewer_tag`: `claude`
 
-  The scope-reviewer's Step-1 Read of `skills/design/owns-defers.md` delivers the Design OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or `skills/_shared/reviewer-boilerplate.md` in the dispatch prompt.
+  The scope-reviewer's Step-1 Read of `skills/design/owns-defers.md` delivers the Design OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
 - **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (quality + scope) via shell pipelines:
 

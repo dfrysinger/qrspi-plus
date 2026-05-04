@@ -83,7 +83,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Questions has no
   - `round`: NN
   - `reviewer_tag`: `claude`
 
-  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/_shared/reviewer-boilerplate.md`) arrives via the agent file's `skills:` preload — do NOT embed `skills/_shared/reviewer-boilerplate.md` in the dispatch prompt. The Questions-specific checks (goal leakage, comprehensiveness, objectivity, research type tags, hybrid scrutiny) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
+  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Questions-specific checks (goal leakage, comprehensiveness, objectivity, research type tags, hybrid scrutiny) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
 - **Codex review** (if `codex_reviews: true`) — dispatch a non-blocking Codex review via a shell pipeline, in parallel with the Claude reviewer:
 

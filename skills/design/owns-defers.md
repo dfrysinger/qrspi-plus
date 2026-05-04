@@ -25,4 +25,4 @@ The OWNS/DEFERS contract below is the locked rule set the scope-reviewer dispatc
 
 **Phasing pointer.** Phasing concerns (vertical slices, phase boundaries, Iron Law 1, the Phase 1 PoC guideline) are owned by `qrspi:phasing` — see `skills/phasing/SKILL.md`.
 
-A finding citing design.md prose that asserts any DEFERS item — for example, embedding a CREATE TABLE block, listing a CHECK constraint inline, pasting a literal function signature, or authoring a phase split — is a boundary-drift finding emitted by the scope-reviewer with `change_type: scope` (per the schema in `skills/_shared/reviewer-boilerplate.md`).
+A finding citing design.md prose that asserts any DEFERS item — for example, embedding a CREATE TABLE block, listing a CHECK constraint inline, pasting a literal function signature, or authoring a phase split — is a boundary-drift finding emitted by the scope-reviewer with `change_type: scope` (per the schema in `skills/reviewer-protocol/SKILL.md`).
