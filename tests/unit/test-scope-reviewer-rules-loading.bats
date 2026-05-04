@@ -33,9 +33,16 @@ setup() {
   STRUCTURE_FILE="$ROOT/skills/structure/SKILL.md"
   PLAN_FILE="$ROOT/skills/plan/SKILL.md"
   PARALLELIZE_FILE="$ROOT/skills/parallelize/SKILL.md"
+  GOALS_OWNS_FILE="$ROOT/skills/goals/owns-defers.md"
+  DESIGN_OWNS_FILE="$ROOT/skills/design/owns-defers.md"
+  PHASING_OWNS_FILE="$ROOT/skills/phasing/owns-defers.md"
+  STRUCTURE_OWNS_FILE="$ROOT/skills/structure/owns-defers.md"
+  PLAN_OWNS_FILE="$ROOT/skills/plan/owns-defers.md"
+  PARALLELIZE_OWNS_FILE="$ROOT/skills/parallelize/owns-defers.md"
   SCOPE_REVIEWER_TEMPLATE="$ROOT/skills/_shared/templates/scope-reviewer.md"
   FIXTURES="$ROOT/tests/fixtures"
   export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE
+  export GOALS_OWNS_FILE DESIGN_OWNS_FILE PHASING_OWNS_FILE STRUCTURE_OWNS_FILE PLAN_OWNS_FILE PARALLELIZE_OWNS_FILE
   export SCOPE_REVIEWER_TEMPLATE FIXTURES
 }
 
@@ -64,6 +71,20 @@ extract_h3_subsection() {
         in_b && /^## / { exit }
         in_b { print }
       '
+}
+
+# extract_h3_direct <file> <h3-heading>
+# Extracts an H3 sub-block directly from a file (no H2 wrapper required).
+# Used for owns-defers.md files which start at H3 level.
+extract_h3_direct() {
+  local file="$1"
+  local h3="$2"
+  awk -v h="$h3" '
+    $0 == h { in_b = 1; print; next }
+    in_b && /^### / { exit }
+    in_b && /^## / { exit }
+    in_b { print }
+  ' "$file"
 }
 
 # count_enumerated_items <stdin>
@@ -118,8 +139,8 @@ count_enumerated_items() {
   [ "$status" -eq 0 ]
   [ "$output" = "1" ]
   local owns defers owns_count defers_count
-  owns="$(extract_h3_subsection "$GOALS_FILE" "## Goals OWNS / Goals DEFERS" "### Goals OWNS")"
-  defers="$(extract_h3_subsection "$GOALS_FILE" "## Goals OWNS / Goals DEFERS" "### Goals DEFERS")"
+  owns="$(extract_h3_direct "$GOALS_OWNS_FILE" "### Goals OWNS")"
+  defers="$(extract_h3_direct "$GOALS_OWNS_FILE" "### Goals DEFERS")"
   [ -n "$owns" ]
   [ -n "$defers" ]
   owns_count="$(printf '%s\n' "$owns" | count_enumerated_items)"
@@ -133,8 +154,8 @@ count_enumerated_items() {
   [ "$status" -eq 0 ]
   [ "$output" = "1" ]
   local owns defers owns_count defers_count
-  owns="$(extract_h3_subsection "$DESIGN_FILE" "## Design OWNS / Design DEFERS" "### Design OWNS")"
-  defers="$(extract_h3_subsection "$DESIGN_FILE" "## Design OWNS / Design DEFERS" "### Design DEFERS")"
+  owns="$(extract_h3_direct "$DESIGN_OWNS_FILE" "### Design OWNS")"
+  defers="$(extract_h3_direct "$DESIGN_OWNS_FILE" "### Design DEFERS")"
   [ -n "$owns" ]
   [ -n "$defers" ]
   owns_count="$(printf '%s\n' "$owns" | count_enumerated_items)"
@@ -148,8 +169,8 @@ count_enumerated_items() {
   [ "$status" -eq 0 ]
   [ "$output" = "1" ]
   local owns defers owns_count defers_count
-  owns="$(extract_h3_subsection "$PHASING_FILE" "## Phasing OWNS / Phasing DEFERS" "### Phasing OWNS")"
-  defers="$(extract_h3_subsection "$PHASING_FILE" "## Phasing OWNS / Phasing DEFERS" "### Phasing DEFERS")"
+  owns="$(extract_h3_direct "$PHASING_OWNS_FILE" "### Phasing OWNS")"
+  defers="$(extract_h3_direct "$PHASING_OWNS_FILE" "### Phasing DEFERS")"
   [ -n "$owns" ]
   [ -n "$defers" ]
   owns_count="$(printf '%s\n' "$owns" | count_enumerated_items)"
@@ -163,8 +184,8 @@ count_enumerated_items() {
   [ "$status" -eq 0 ]
   [ "$output" = "1" ]
   local owns defers owns_count defers_count
-  owns="$(extract_h3_subsection "$STRUCTURE_FILE" "## Structure OWNS / Structure DEFERS" "### Structure OWNS")"
-  defers="$(extract_h3_subsection "$STRUCTURE_FILE" "## Structure OWNS / Structure DEFERS" "### Structure DEFERS")"
+  owns="$(extract_h3_direct "$STRUCTURE_OWNS_FILE" "### Structure OWNS")"
+  defers="$(extract_h3_direct "$STRUCTURE_OWNS_FILE" "### Structure DEFERS")"
   [ -n "$owns" ]
   [ -n "$defers" ]
   owns_count="$(printf '%s\n' "$owns" | count_enumerated_items)"
@@ -178,8 +199,8 @@ count_enumerated_items() {
   [ "$status" -eq 0 ]
   [ "$output" = "1" ]
   local owns defers owns_count defers_count
-  owns="$(extract_h3_subsection "$PLAN_FILE" "## Plan OWNS / Plan DEFERS" "### Plan OWNS")"
-  defers="$(extract_h3_subsection "$PLAN_FILE" "## Plan OWNS / Plan DEFERS" "### Plan DEFERS")"
+  owns="$(extract_h3_direct "$PLAN_OWNS_FILE" "### Plan OWNS")"
+  defers="$(extract_h3_direct "$PLAN_OWNS_FILE" "### Plan DEFERS")"
   [ -n "$owns" ]
   [ -n "$defers" ]
   owns_count="$(printf '%s\n' "$owns" | count_enumerated_items)"
@@ -193,8 +214,8 @@ count_enumerated_items() {
   [ "$status" -eq 0 ]
   [ "$output" = "1" ]
   local owns defers owns_count defers_count
-  owns="$(extract_h3_subsection "$PARALLELIZE_FILE" "## Parallelize OWNS / Parallelize DEFERS" "### Parallelize OWNS")"
-  defers="$(extract_h3_subsection "$PARALLELIZE_FILE" "## Parallelize OWNS / Parallelize DEFERS" "### Parallelize DEFERS")"
+  owns="$(extract_h3_direct "$PARALLELIZE_OWNS_FILE" "### Parallelize OWNS")"
+  defers="$(extract_h3_direct "$PARALLELIZE_OWNS_FILE" "### Parallelize DEFERS")"
   [ -n "$owns" ]
   [ -n "$defers" ]
   owns_count="$(printf '%s\n' "$owns" | count_enumerated_items)"

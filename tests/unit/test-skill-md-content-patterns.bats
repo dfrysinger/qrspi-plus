@@ -34,7 +34,11 @@ setup() {
   DESIGN_FILE="$BATS_TEST_DIRNAME/../../skills/design/SKILL.md"
   STRUCTURE_FILE="$BATS_TEST_DIRNAME/../../skills/structure/SKILL.md"
   PLAN_FILE="$BATS_TEST_DIRNAME/../../skills/plan/SKILL.md"
+  GOALS_OWNS_FILE="$BATS_TEST_DIRNAME/../../skills/goals/owns-defers.md"
+  STRUCTURE_OWNS_FILE="$BATS_TEST_DIRNAME/../../skills/structure/owns-defers.md"
+  PLAN_OWNS_FILE="$BATS_TEST_DIRNAME/../../skills/plan/owns-defers.md"
   export GOALS_FILE DESIGN_FILE STRUCTURE_FILE PLAN_FILE
+  export GOALS_OWNS_FILE STRUCTURE_OWNS_FILE PLAN_OWNS_FILE
 }
 
 # extract_h2_section <file> <h2-heading>
@@ -66,6 +70,20 @@ extract_h3_subsection() {
       '
 }
 
+# extract_h3_direct <file> <h3-heading>
+# Extracts an H3 sub-block directly from a file (no H2 wrapper required).
+# Used for owns-defers.md files which start at H3 level.
+extract_h3_direct() {
+  local file="$1"
+  local h3="$2"
+  awk -v h="$h3" '
+    $0 == h { in_b = 1; print; next }
+    in_b && /^### / { exit }
+    in_b && /^## / { exit }
+    in_b { print }
+  ' "$file"
+}
+
 # ── M49: skills/goals/SKILL.md content patterns ─────────────────────────────
 
 @test "[M49] skills/goals/SKILL.md exists" {
@@ -80,7 +98,7 @@ extract_h3_subsection() {
 
 @test "[M49] goals SKILL OWNS subsection mandates type field with known-fix|exploratory values" {
   local block
-  block="$(extract_h3_subsection "$GOALS_FILE" "## Goals OWNS / Goals DEFERS" "### Goals OWNS")"
+  block="$(extract_h3_direct "$GOALS_OWNS_FILE" "### Goals OWNS")"
   [ -n "$block" ]
   echo "$block" | grep -qi "type"
   echo "$block" | grep -q "known-fix"
@@ -89,7 +107,7 @@ extract_h3_subsection() {
 
 @test "[M49] goals SKILL OWNS subsection mandates three-section Problem / Why we care / What we know so far per goal" {
   local block
-  block="$(extract_h3_subsection "$GOALS_FILE" "## Goals OWNS / Goals DEFERS" "### Goals OWNS")"
+  block="$(extract_h3_direct "$GOALS_OWNS_FILE" "### Goals OWNS")"
   [ -n "$block" ]
   echo "$block" | grep -qi "Problem"
   echo "$block" | grep -qi "Why we care"
@@ -99,7 +117,7 @@ extract_h3_subsection() {
 
 @test "[M49] goals SKILL DEFERS subsection lists acceptance criteria as deferred (no acceptance-criteria push)" {
   local block
-  block="$(extract_h3_subsection "$GOALS_FILE" "## Goals OWNS / Goals DEFERS" "### Goals DEFERS")"
+  block="$(extract_h3_direct "$GOALS_OWNS_FILE" "### Goals DEFERS")"
   [ -n "$block" ]
   echo "$block" | grep -qi "Acceptance criteria"
 }
@@ -114,7 +132,7 @@ extract_h3_subsection() {
   # The OWNS subsection or template prose must frame solution candidates
   # as possibilities Design will weigh, not commitments.
   local block
-  block="$(extract_h3_subsection "$GOALS_FILE" "## Goals OWNS / Goals DEFERS" "### Goals OWNS")"
+  block="$(extract_h3_direct "$GOALS_OWNS_FILE" "### Goals OWNS")"
   [ -n "$block" ]
   echo "$block" | grep -Eqi "candidates? Design should weigh|possibilit(y|ies)|possibilities for Design"
 }
@@ -286,12 +304,12 @@ extract_review_round() {
 }
 
 @test "[M51] structure SKILL contains C-header analogy phrase" {
-  grep -qi "C-header" "$STRUCTURE_FILE"
+  grep -qi "C-header" "$STRUCTURE_OWNS_FILE"
 }
 
 @test "[M51] structure SKILL OWNS subsection does NOT positively enumerate per-task LOC, assertion text, or commit ranges" {
   local block
-  block="$(extract_h3_subsection "$STRUCTURE_FILE" "## Structure OWNS / Structure DEFERS" "### Structure OWNS")"
+  block="$(extract_h3_direct "$STRUCTURE_OWNS_FILE" "### Structure OWNS")"
   [ -n "$block" ]
   # OWNS must not enumerate per-task LOC, assertion text, or commit ranges
   # as positively-owned items. The Test-file-layout bullet may *negate*
@@ -319,17 +337,17 @@ extract_review_round() {
 }
 
 @test "[M52] plan SKILL has 1000-2000 length-target marker" {
-  grep -Eq "1000[-–]2000" "$PLAN_FILE"
+  grep -Eq "1000[-–]2000" "$PLAN_OWNS_FILE"
 }
 
 @test "[M52] plan SKILL has INVEST Negotiable framing" {
-  grep -qi "INVEST Negotiable" "$PLAN_FILE"
-  grep -Eqi "conversation, not a contract|conversation, not contract" "$PLAN_FILE"
+  grep -qi "INVEST Negotiable" "$PLAN_OWNS_FILE"
+  grep -Eqi "conversation, not a contract|conversation, not contract" "$PLAN_OWNS_FILE"
 }
 
 @test "[M52] plan SKILL OWNS subsection does NOT include function signatures, full assertion text, or line-by-line logic" {
   local block
-  block="$(extract_h3_subsection "$PLAN_FILE" "## Plan OWNS / Plan DEFERS" "### Plan OWNS")"
+  block="$(extract_h3_direct "$PLAN_OWNS_FILE" "### Plan OWNS")"
   [ -n "$block" ]
   # The OWNS list itself must not enumerate function signatures, full
   # assertion text, or line-by-line logic as plan.md's responsibilities.
@@ -341,7 +359,7 @@ extract_review_round() {
 
 @test "[M52] plan SKILL DEFERS lists function signatures as deferred to structure.md" {
   local block
-  block="$(extract_h3_subsection "$PLAN_FILE" "## Plan OWNS / Plan DEFERS" "### Plan DEFERS")"
+  block="$(extract_h3_direct "$PLAN_OWNS_FILE" "### Plan DEFERS")"
   [ -n "$block" ]
   echo "$block" | grep -Eqi "[Ff]unction signatures?"
   echo "$block" | grep -qi "structure.md"

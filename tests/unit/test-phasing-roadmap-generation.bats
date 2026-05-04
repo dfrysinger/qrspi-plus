@@ -16,7 +16,8 @@ bats_require_minimum_version 1.5.0
 
 setup() {
   SKILL_FILE="$BATS_TEST_DIRNAME/../../skills/phasing/SKILL.md"
-  export SKILL_FILE
+  OWNS_FILE="$BATS_TEST_DIRNAME/../../skills/phasing/owns-defers.md"
+  export SKILL_FILE OWNS_FILE
 }
 
 # extract_section <file> <heading-line>
@@ -45,6 +46,20 @@ extract_subsection() {
         in_b && /^## / { exit }
         in_b { print }
       '
+}
+
+# extract_h3_direct <file> <h3-heading>
+# Extracts an H3 sub-block directly from a file (no H2 wrapper required).
+# Used for owns-defers.md files which start at H3 level.
+extract_h3_direct() {
+  local file="$1"
+  local h3="$2"
+  awk -v h="$h3" '
+    $0 == h { in_b = 1; print; next }
+    in_b && /^### / { exit }
+    in_b && /^## / { exit }
+    in_b { print }
+  ' "$file"
 }
 
 # =============================================================================
@@ -81,7 +96,7 @@ extract_subsection() {
 
 @test "## Phasing OWNS / Phasing DEFERS section names roadmap.md authoring under OWNS" {
   local owns_block
-  owns_block="$(extract_subsection "$SKILL_FILE" "## Phasing OWNS / Phasing DEFERS" "### Phasing OWNS")"
+  owns_block="$(extract_h3_direct "$OWNS_FILE" "### Phasing OWNS")"
   [ -n "$owns_block" ]
   # Must mention roadmap.md authoring/ownership specifically.
   echo "$owns_block" | grep -q "roadmap.md"

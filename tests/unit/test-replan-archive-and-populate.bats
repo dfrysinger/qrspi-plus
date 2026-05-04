@@ -16,8 +16,9 @@ bats_require_minimum_version 1.5.0
 
 setup() {
   REPLAN_FILE="$BATS_TEST_DIRNAME/../../skills/replan/SKILL.md"
+  OWNS_FILE="$BATS_TEST_DIRNAME/../../skills/replan/owns-defers.md"
   SCOPE_REVIEWER_TEMPLATE="$BATS_TEST_DIRNAME/../../skills/_shared/templates/scope-reviewer.md"
-  export REPLAN_FILE SCOPE_REVIEWER_TEMPLATE
+  export REPLAN_FILE OWNS_FILE SCOPE_REVIEWER_TEMPLATE
 }
 
 # extract_section <file> <heading-line>
@@ -49,6 +50,20 @@ extract_subsection() {
       '
 }
 
+# extract_h3_direct <file> <h3-heading>
+# Extracts an H3 sub-block directly from a file (no H2 wrapper required).
+# Used for owns-defers.md files which start at H3 level.
+extract_h3_direct() {
+  local file="$1"
+  local h3="$2"
+  awk -v h="$h3" '
+    $0 == h { in_b = 1; print; next }
+    in_b && /^### / { exit }
+    in_b && /^## / { exit }
+    in_b { print }
+  ' "$file"
+}
+
 # ── File existence and OWNS/DEFERS heading ──────────────────────────────────
 
 @test "skills/replan/SKILL.md exists" {
@@ -62,17 +77,15 @@ extract_subsection() {
 }
 
 @test "OWNS/DEFERS section uses H3 subheadings ### Replan OWNS and ### Replan DEFERS (family-shape)" {
-  local section
-  section="$(extract_section "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS")"
-  echo "$section" | grep -qE "^### Replan OWNS$"
-  echo "$section" | grep -qE "^### Replan DEFERS$"
+  grep -qE "^### Replan OWNS$" "$OWNS_FILE"
+  grep -qE "^### Replan DEFERS$" "$OWNS_FILE"
 }
 
 # ── OWNS list contents (scoped to ### Replan OWNS sub-block) ────────────────
 
 @test "### Replan OWNS lists archive of four synthesizing artifacts" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan OWNS")"
+  block="$(extract_h3_direct "$OWNS_FILE" "### Replan OWNS")"
   [ -n "$block" ]
   echo "$block" | grep -qi "archive"
   echo "$block" | grep -q "goals.md"
@@ -83,7 +96,7 @@ extract_subsection() {
 
 @test "### Replan OWNS lists populate-from-future-* and mark-as-draft and invoke-Goals" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan OWNS")"
+  block="$(extract_h3_direct "$OWNS_FILE" "### Replan OWNS")"
   echo "$block" | grep -qi "future-goals.md"
   echo "$block" | grep -qi "future-questions.md"
   echo "$block" | grep -qi "future-research-summary.md"
@@ -96,7 +109,7 @@ extract_subsection() {
 
 @test "### Replan DEFERS lists phasing decisions to Phasing" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan DEFERS")"
+  block="$(extract_h3_direct "$OWNS_FILE" "### Replan DEFERS")"
   [ -n "$block" ]
   echo "$block" | grep -qi "Phasing"
   # Co-occurrence: a single line/bullet must reference a phasing-decision
@@ -107,7 +120,7 @@ extract_subsection() {
 
 @test "### Replan DEFERS lists roadmap authoring to Phasing" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan DEFERS")"
+  block="$(extract_h3_direct "$OWNS_FILE" "### Replan DEFERS")"
   echo "$block" | grep -qi "roadmap"
   echo "$block" | grep -i "roadmap" | grep -q "Phasing"
 }
