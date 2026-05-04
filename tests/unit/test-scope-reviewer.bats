@@ -93,8 +93,10 @@ extract_h2_section() {
 }
 
 @test "{ARTIFACT_TYPE}=phasing — phasing SKILL dispatches scope-reviewer with parameter phasing" {
-  grep -q "scope-reviewer.md" "$PHASING_FILE"
-  grep -qE "\{ARTIFACT_TYPE\}=phasing" "$PHASING_FILE"
+  # Commit 12/22 migration: scope-reviewer is now dispatched as a dedicated
+  # agent (qrspi-phasing-scope-reviewer) rather than via the shared template.
+  # The old scope-reviewer.md + {ARTIFACT_TYPE}=phasing pattern is retired.
+  grep -q "qrspi-phasing-scope-reviewer" "$PHASING_FILE"
 }
 
 @test "{ARTIFACT_TYPE}=structure — structure SKILL dispatches scope-reviewer with parameter structure" {

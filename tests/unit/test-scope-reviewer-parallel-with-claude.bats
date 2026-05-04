@@ -40,21 +40,24 @@ setup() {
 }
 
 @test "design SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  grep -qi "Claude review subagent" "$DESIGN_FILE"
-  grep -qi "scope-reviewer dispatch\|scope-reviewer subagent" "$DESIGN_FILE"
-  grep -Eqi "in parallel|run in parallel" "$DESIGN_FILE"
+  # Commit 10/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-design-reviewer" "$DESIGN_FILE"
+  grep -qi "qrspi-design-scope-reviewer" "$DESIGN_FILE"
+  grep -Eqi "in parallel|run in parallel|two parallel reviewer dispatches" "$DESIGN_FILE"
 }
 
 @test "phasing SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  grep -qi "Claude review subagent" "$PHASING_FILE"
-  grep -qi "scope-reviewer.*dispatch\|scope-reviewer subagent" "$PHASING_FILE"
-  grep -Eqi "in parallel|run in parallel" "$PHASING_FILE"
+  # Commit 12/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-phasing-reviewer" "$PHASING_FILE"
+  grep -qi "qrspi-phasing-scope-reviewer" "$PHASING_FILE"
+  grep -Eqi "in parallel|run in parallel|two parallel reviewer dispatches" "$PHASING_FILE"
 }
 
 @test "structure SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  grep -qi "Claude review subagent" "$STRUCTURE_FILE"
-  grep -qi "scope-reviewer dispatch\|scope-reviewer subagent" "$STRUCTURE_FILE"
-  grep -Eqi "in parallel|run in parallel" "$STRUCTURE_FILE"
+  # Commit 11/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-structure-reviewer" "$STRUCTURE_FILE"
+  grep -qi "qrspi-structure-scope-reviewer" "$STRUCTURE_FILE"
+  grep -Eqi "in parallel|run in parallel|two parallel reviewer dispatches" "$STRUCTURE_FILE"
 }
 
 @test "plan SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
