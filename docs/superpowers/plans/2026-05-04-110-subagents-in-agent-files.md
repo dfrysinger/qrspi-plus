@@ -377,9 +377,10 @@ Source map (commit message must cite these for each agent):
 - `qrspi-test-writer` ← `skills/test/templates/test-writer.md` PLUS the four test-type rule sets from `skills/test/templates/{acceptance,boundary,e2e,integration}-test.md` inlined under the TEST TYPE TEMPLATES placeholder per spec § `qrspi-test-writer`.
 - `qrspi-implementer` ← `skills/implement/templates/per-task-implementer.md` (or whichever current Implement-mode template the codebase uses; cite the actual source path in the commit message). Add the `mode:` dispatch param documentation per spec § Implementer mode parameter.
 
-Tools grants (per spec § Agent file convention):
-- 8 per-task reviewers + 5 plan-artifact reviewers: `tools: Read, Write`
-- 2 integration reviewers + implement-gate: `tools: Read, Write`
+Tools grants (per spec § Agent file convention; spec § Plan-artifact reviewers):
+- 8 per-task reviewers: `tools: Read, Write` (per-task review checks may need Read; conservative grant per spec).
+- 5 plan-artifact reviewers: `tools: Write` (no Read — they are quality-reviewer variants and follow the same no-Read rule as the per-artifact quality reviewers; see spec § Plan-artifact reviewers).
+- 2 integration reviewers + implement-gate: `tools: Read, Write` (integration reviewers may Read merged code; implement-gate has Read as a conservative default — CI does not enforce zero Reads here).
 - `qrspi-test-writer`: `tools: Write`
 - `qrspi-implementer`: `tools: Read, Write, Bash, Edit, Grep, Glob`
 
@@ -565,7 +566,7 @@ Commit message: `test(smoke): #110 commit-6 smoke gate — Read mode confirmed (
 
 - [ ] **Step 6b (inline mode, only if step 5 fell through): Commit the mode switch**
 
-If the smoke gate failed and step 5 forced the mode switch, the fixture commit AND the mode-switch artifacts both land. They can land as one combined commit (preferred — keeps commit count at 22) or as two sequential commits (if the engineer prefers to keep the fixture commit isolated). Combined form:
+If the smoke gate failed and step 5 forced the mode switch, the fixture commit AND the mode-switch artifacts must land as **one combined commit** to preserve the spec's fixed 22-commit numbering (commit 6 stays commit 6; commits 7/22 through 22/22 stay stable):
 
 ```bash
 git add tests/fixtures/issue-110/ \
@@ -1273,7 +1274,7 @@ Commit message: `chore: #110 delete legacy template + boilerplate files (commit 
 ## Task 20: Update doc/contract files + retire codex path-arg form (commit 21)
 
 **Files:**
-- Modify: `using-qrspi/SKILL.md`, `AGENTS.md`, `README.md`, `skills/_shared/codex/launch-await-pattern.md`, `scripts/codex-companion-bg.sh`, `tests/unit/test-codex-companion-bg.bats`
+- Modify: `skills/using-qrspi/SKILL.md`, `AGENTS.md`, `README.md`, `skills/_shared/codex/launch-await-pattern.md`, `scripts/codex-companion-bg.sh`, `tests/unit/test-codex-companion-bg.bats`
 
 **Spec reference:** Migration sequence commit 21
 
@@ -1329,7 +1330,7 @@ Expected: green; the stdin test still passes; the new regression test confirms p
 - [ ] **Step 7: Commit**
 
 ```bash
-git add using-qrspi/SKILL.md AGENTS.md README.md skills/_shared/codex/launch-await-pattern.md scripts/codex-companion-bg.sh tests/unit/test-codex-companion-bg.bats
+git add skills/using-qrspi/SKILL.md AGENTS.md README.md skills/_shared/codex/launch-await-pattern.md scripts/codex-companion-bg.sh tests/unit/test-codex-companion-bg.bats
 git commit -F /tmp/commit-msg-110-c21.txt
 ```
 
