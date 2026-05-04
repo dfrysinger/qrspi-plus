@@ -309,12 +309,14 @@ extract_step() {
 
 # ── Scope-reviewer dispatch in Review Round ─────────────────────────────────
 
-@test "Review Round dispatches scope-reviewer with {ARTIFACT_TYPE}=replan" {
+@test "Review Round dispatches scope-reviewer with parameter replan" {
+  # Commit 17/22 migration: scope-reviewer is now dispatched as a dedicated
+  # agent (qrspi-replan-scope-reviewer) rather than via the shared template.
+  # The old scope-reviewer.md + {ARTIFACT_TYPE}=replan pattern is retired.
   local section
   section="$(extract_section "$REPLAN_FILE" "## Review Round")"
   [ -n "$section" ]
-  echo "$section" | grep -qi "scope-reviewer"
-  echo "$section" | grep -q "{ARTIFACT_TYPE}=replan"
+  echo "$section" | grep -qi "qrspi-replan-scope-reviewer"
 }
 
 @test "Review Round scope-reviewer dispatch references OWNS/DEFERS as locked rule set" {
