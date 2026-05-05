@@ -265,7 +265,8 @@ The per-task flow dispatches subagents defined as agent files under `agents/`. E
 
 ```
 agents/
-├── qrspi-implementer.md                       (TDD execution — implement + fix modes)
+├── qrspi-implementer.md                       (TDD execution — task_type: code)
+├── qrspi-implementer-lightweight.md           (single-pass execution — task_type: lightweight)
 ├── qrspi-spec-reviewer.md                     (correctness — gate)
 ├── qrspi-code-quality-reviewer.md             (correctness)
 ├── qrspi-silent-failure-hunter.md             (correctness — note: no -reviewer suffix)
@@ -277,11 +278,37 @@ agents/
 └── qrspi-implement-gate-reviewer.md           (cross-task gate-level reviewer)
 ```
 
-Correctness checks if code is right and safe — it always runs. Thoroughness checks if it's complete, well-typed, and clean — it runs in deep mode only. Execution order: spec-reviewer first (gate), remaining correctness in parallel, then thoroughness in parallel (deep only). Three thoroughness reviewers (`qrspi-silent-failure-hunter`, `qrspi-type-design-analyzer`, `qrspi-code-simplifier`) drop the `-reviewer` suffix for historical naming reasons — substitute the literal filenames when constructing dispatch shell pipelines.
+Correctness checks if code is right and safe — it always runs. Thoroughness checks if it's complete, well-typed, and clean — it runs in deep mode only AND only on `task_type: code` tasks (lightweight tasks force quick mode regardless of `config.review_depth` — see § Per-Task Routing). Execution order: spec-reviewer first (gate), remaining correctness in parallel, then thoroughness in parallel (deep + code only). Three thoroughness reviewers (`qrspi-silent-failure-hunter`, `qrspi-type-design-analyzer`, `qrspi-code-simplifier`) drop the `-reviewer` suffix for historical naming reasons — substitute the literal filenames when constructing dispatch shell pipelines.
+
+### Per-Task Routing (`task_type` and `model`)
+
+Before dispatching the implementer for a task, main chat reads `task_type` and `model` from the task's `tasks/task-NN.md` frontmatter and resolves three per-task flags:
+
+```
+task_type ∈ {code, lightweight}              # from tasks/task-NN.md frontmatter (default: code)
+model ∈ {sonnet, opus}                       # from tasks/task-NN.md frontmatter (default: sonnet)
+
+if task_type == "lightweight":
+    implementer_subagent = "qrspi-implementer-lightweight"
+    review_depth_effective = "quick"         # forced — overrides config.review_depth
+    codex_enabled_per_task = false           # forced — overrides config.codex_reviews
+else:
+    implementer_subagent = "qrspi-implementer"
+    review_depth_effective = config.review_depth
+    codex_enabled_per_task = config.codex_reviews
+
+dispatch: Agent({ subagent_type: implementer_subagent, model: <model> })
+```
+
+**Default flow (legacy plans).** Tasks predating the schema have neither field. Both default to `code` / `sonnet`, log a warning, and proceed exactly as the pre-routing flow did — no behavior change for in-flight plans.
+
+**What's inherited unchanged.** The fix-loop round count (3 cycles, hardcoded), accepted-with-issues batch-gate behavior, BLOCKED escape hatch, SendMessage continuity rules, and reviewer parallelism all carry over without modification across both `task_type` values. Lightweight only flips the three flags above; the orchestration shape is identical.
+
+**Gate-level reviewer (cross-task).** The Batch Gate's `qrspi-implement-gate-reviewer` runs at batch altitude across all tasks in a wave; it is gated by `config.codex_reviews` (config-level), not by per-task `task_type`. A wave that mixes `code` and `lightweight` tasks still gets the gate-level Codex parallel if config enables it.
 
 ### Dispatching the Implementer
 
-The implementer is an agent-file subagent: `Agent({ subagent_type: "qrspi-implementer", model: "<inherit or per-task override>" })`. The `qrspi-implementer` agent body carries the TDD process, status-reporting contract, self-review checklist, and ID-hygiene rules; main chat does not duplicate that content in the dispatch prompt. Per-task model selection (haiku / sonnet / opus per task complexity — see § Model Selection Guidance) is supplied via the per-invocation `model` override; the agent file's frontmatter `model: inherit` is the default.
+The implementer is an agent-file subagent: `Agent({ subagent_type: "<implementer_subagent>", model: "<model>" })` where both values are resolved per § Per-Task Routing from the task's frontmatter. The `qrspi-implementer` agent body carries the TDD process; the `qrspi-implementer-lightweight` agent body carries the single-pass discipline. Both load the shared `implementer-protocol` skill (status-reporting contract, ID-hygiene rules, dispatch-parameter contract) so main chat does not duplicate that content in the dispatch prompt. The agent file's frontmatter `model: inherit` is the default that the per-invocation override replaces.
 
 Dispatch parameters per the agent's contract:
 
@@ -313,7 +340,7 @@ The implementer subagent returns one of the statuses below. The Action column na
 
 | Status | Main chat action |
 |--------|--------|
-| **DONE** | Dispatch reviewer subagents against this task's worktree (correctness group; then thoroughness if deep) |
+| **DONE** | Dispatch reviewer subagents against this task's worktree (correctness group; then thoroughness if `review_depth_effective == "deep"` per § Per-Task Routing — i.e., deep mode AND `task_type: code`) |
 | **DONE_WITH_CONCERNS** | Read concerns; if correctness/scope, note in review log; dispatch reviewers (same as DONE — concerns do not skip review) |
 | **NEEDS_CONTEXT** | Gather missing info, re-dispatch implementer subagent with augmented prompt |
 | **BLOCKED** | Assess: re-dispatch with more context, switch to more capable model, decompose into smaller tasks, or escalate to user |
@@ -335,11 +362,11 @@ The implementer subagent returns one of the statuses below. The Action column na
 
 All reviewer and fix work is dispatched via subagents; main chat only aggregates findings and decides the next dispatch.
 
-1. **Main chat: dispatch reviewer groups** (quick = correctness only, deep = correctness then thoroughness). Reviewers run as subagents in parallel within their group.
+1. **Main chat: dispatch reviewer groups** per `review_depth_effective` from § Per-Task Routing (quick = correctness only; deep = correctness then thoroughness; lightweight tasks always force quick regardless of `config.review_depth`). Reviewers run as subagents in parallel within their group.
 2. First pass clean → task clean.
 3. Issues → **main chat re-dispatches reviewers** on the same code to build a complete list (up to 3 convergence rounds).
 4. **Implementer-fix dispatch (with persistence):**
-    - **First fix cycle:** Main chat dispatches an implementer-fix subagent via fresh `Agent({ subagent_type: "qrspi-implementer", model: "<per-task override>" })` call (with `mode: fix`, the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt, and `companion_review_findings` carrying the consolidated issue list per § Dispatching the Implementer) → fix subagent writes the fixes inside that worktree → main chat re-dispatches reviewers (same worktree pinning) on fixed code. Capture and retain the implementer-fix subagent's agent ID, indexed by task — when running concurrent fix loops in a wave, do NOT mix agent IDs across tasks.
+    - **First fix cycle:** Main chat dispatches an implementer-fix subagent via fresh `Agent({ subagent_type: "<implementer_subagent>", model: "<model>" })` call (both resolved per § Per-Task Routing — same variant + model the implement-mode dispatch used) (with `mode: fix`, the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt, and `companion_review_findings` carrying the consolidated issue list per § Dispatching the Implementer) → fix subagent writes the fixes inside that worktree → main chat re-dispatches reviewers (same worktree pinning) on fixed code. Capture and retain the implementer-fix subagent's agent ID, indexed by task — when running concurrent fix loops in a wave, do NOT mix agent IDs across tasks.
     - **Subsequent fix cycles:** Main chat uses `SendMessage` to continue the SAME implementer-fix subagent (using the retained agent ID) with the new issue list, preserving its context across cycles. Why: by cycle 2, the implementer has full context of what was tried, what reviewers flagged, and which fixes worked or didn't — re-dispatching loses that. Reviewers stay re-dispatched fresh each round (they don't need cross-cycle continuity; the convergence loop already handles their stochasticity).
     - **BLOCKED escape hatch:** If the persisted implementer-fix subagent reports BLOCKED (per the status table above), main chat's escalation actions require a fresh `Agent({ subagent_type: "qrspi-implementer", ... })` dispatch: model switch (model is fixed at spawn time and cannot change via `SendMessage`), or task decomposition (an intentional clean-context reset to escape the stuck approach — `SendMessage` could redirect the same agent with a new scope, but the point of the escape is fresh context, not just new instructions). The escape explicitly breaks persistence.
 5. Up to 3 fix cycles. If unresolved after 3, flag and move on.
@@ -375,7 +402,7 @@ Thoroughness reviewers (deep mode only):
 - `Agent({ subagent_type: "qrspi-type-design-analyzer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN-type-design-analyzer-round-NN-claude.md` (no `-reviewer` suffix — naming convention exception). Skip dispatch entirely when no new types are introduced; record skip in the review log per § Review Log Artifact.
 - `Agent({ subagent_type: "qrspi-code-simplifier", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN-code-simplifier-round-NN-claude.md` (no `-reviewer` suffix — naming convention exception)
 
-**Codex parallels (if `codex_reviews: true`).** For every Claude reviewer dispatched this round/tier, dispatch a non-blocking Codex parallel via shell pipeline. The reviewer-protocol body and the agent body flow via stdin — no per-task scratch files on disk:
+**Codex parallels (if `codex_enabled_per_task: true` per § Per-Task Routing — i.e., `config.codex_reviews && task_type == code`).** For every Claude reviewer dispatched this round/tier, dispatch a non-blocking Codex parallel via shell pipeline. Lightweight tasks skip every per-task Codex launch site below regardless of `config.codex_reviews`. The reviewer-protocol body and the agent body flow via stdin — no per-task scratch files on disk:
 
 ```sh
 # Spec reviewer (Codex)
