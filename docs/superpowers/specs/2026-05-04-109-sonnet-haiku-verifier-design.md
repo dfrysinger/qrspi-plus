@@ -8,7 +8,7 @@
 
 **Architecture (one sentence):** Reviewers emit one finding per file; main chat dispatches one Haiku verifier per file in parallel; each Haiku writes a **sidecar score file** next to the finding (it never mutates the original); main chat Bash-assembles per-finding files + sidecars + clean markers into `round-NN-verified.md` it reads exactly once.
 
-**On reviewer/Codex failures:** No crash-file machinery. We mirror `/code-review`: trust the reviewer. If a Codex run produces unparseable output (malformed, empty, or non-zero exit), the splitter writes nothing into the round directory and the step-2 schema-violation guard catches "expected tag produced no output" → §3 menu. Raw stdout sits in `codex-companion-bg.sh`'s artifact dir under `/tmp/` for inspection if the user wants it.
+**On reviewer/Codex failures:** No crash-file machinery. We mirror `/code-review`: trust the reviewer. If a Codex run produces unparseable output (malformed, empty, or non-zero exit), the splitter writes nothing into the round directory and the step-2 schema-violation guard catches "expected tag produced no output" → §3 menu. The §3 menu's diagnostic line names the failure source (Codex `await` non-zero / Codex stdout malformed / Claude reviewer wrote nothing / Claude reviewer returned `WRITE_FAILED:`); inspection surface is the wrapper's `--artifact-dir` for Codex paths and the subagent return text for Claude paths. The orchestrator derives both at runtime — they are not hardcoded paths.
 
 **Tech stack:** Existing QRSPI agent-file infrastructure (per #110), `scripts/codex-companion-bg.sh` async pipeline (extended with a finding-boundary splitter), Bash assembly with no-stdout redirects, `Read`/`Write` tools.
 
@@ -89,9 +89,9 @@ The bifurcation is removed in the follow-up issue (§7) when the deferred review
   ```
 - **Schema fields** (the canonical 5-field finding schema): `finding_id`, `severity` ∈ `low|medium|high`, `change_type` ∈ `style|clarity|correctness|scope|intent`, `referenced_files` (list), `message` (body).
 - **Audit fields** (frontmatter only): `artifact`, `round`, `reviewer` (must equal `<reviewer_tag>` and the filename prefix).
-- **`finding_id` uniqueness** — unique per `(round, reviewer_tag)`. Canonical form `R{NN}-F{NN}`. Splitter-fallback form (Codex emitted malformed output) `R{NN}-F00-<reviewer_tag>` — the schema-guard regex `^R\d+-F\d+(-[a-z-]+)?$` accepts both.
+- **`finding_id` uniqueness** — unique per `(round, reviewer_tag)`. Canonical form `R{NN}-F{NN}`. Schema-guard regex: `^R\d+-F\d+$`. (No splitter-fallback form: malformed Codex output now produces zero finding files for the tag, caught at apply-fix step 2.)
 - **Clean-round sentinel** — when a reviewer's analysis surfaces zero findings, it Writes a single `reviews/{step}/round-NN/<reviewer_tag>.clean.md` with a frontmatter-only body (`reviewer: <tag>`, `round: <NN>`, `findings: 0`).
-- **Reviewer brief-return shape** — five lines: `Step / Round / Reviewer / Findings / Written to`.
+- **Reviewer brief-return shape** — five lines: `Step / Round / Reviewer / Findings / Written to`. On a partial-write failure (some finding files persisted, some not — e.g., ENOSPC, permission), the reviewer's last line is `WRITE_FAILED: <error>` instead of `Written to: <path>`. Orchestrator routes `WRITE_FAILED` returns to the §3 menu (same path as "expected tag produced no output").
 - **Trailing newline** — every per-finding file ends with exactly one `\n` (deterministic byte-level normalize-then-warn at apply-fix step 2 if malformed).
 
 The Expected-Reviewer Matrix lives adjacent to the Routing Table, listing the expected reviewer-tag set per artifact step (config-aware: respects `codex_reviews: false`, no scope reviewer for Questions/Research).
@@ -141,8 +141,38 @@ The current Apply-fix protocol is replaced with this 10-step sequence (lands ato
 4. **Dispatch one `qrspi-finding-verifier` per finding-file path in parallel.** Each verifier reads its file + artifact + lazy-Reads upstreams + writes its sidecar `.score.yml`. Main chat receives ~10-token returns per Haiku. If any return is `VERIFY_FAILED:` OR any expected sidecar is missing on disk after dispatch, route to the §3 failure menu BEFORE assembly. Otherwise continue.
 5. **Bash assembly** of the round into `reviews/{step}/round-NN-verified.md`:
    ```bash
+   # Pre-pass: compute totals over findings + sidecars.
+   scored=0; failed=0; dropped=0
+   clean_count=${#cleans[@]}
+   for f in "${findings[@]}"; do
+     sc="${f%.md}.score.yml"
+     [[ -f $sc ]] || continue
+     if grep -q '^score: VERIFY_FAILED' "$sc"; then
+       failed=$((failed + 1))
+       continue
+     fi
+     score=$(awk -F': *' '/^score:/ {print $2; exit}' "$sc")
+     scored=$((scored + 1))
+     ct=$(awk -F': *' '/^change_type:/ {print $2; exit}' "$f")
+     if (( score < 80 )) && [[ $ct =~ ^(style|clarity|correctness)$ ]]; then
+       dropped=$((dropped + 1))
+     fi
+   done
+   kept=$(( ${#findings[@]} - dropped ))
+   verifier_enabled_str=$(awk -F': *' '/^verifier_enabled:/ {print $2; exit}' config.md)
+
+   # Emit header + per-finding interleaved body + clean files.
    {
-     awk_totals_header  # see Header fields below
+     printf '%s\n' \
+       '---' \
+       "verifier_enabled: ${verifier_enabled_str:-true}" \
+       "scored: $scored" \
+       "kept: $kept" \
+       "dropped: $dropped" \
+       "failed: $failed" \
+       "clean: $clean_count" \
+       '---' \
+       ''
      for f in "${findings[@]}"; do
        echo "<!-- @@FINDING: $(basename "$f" .md) @@ -->"
        cat "$f"
@@ -158,7 +188,7 @@ The current Apply-fix protocol is replaced with this 10-step sequence (lands ato
      done
    } > "$D/../round-NN-verified.md"
    ```
-   The boundary HTML comments give a single-pass reader an unambiguous record delimiter without the verifier writing into the finding file. Sidecars are emitted only when present on disk, so the disabled-from-start path (no sidecars created) and the sidecar-absent edge case both produce a well-formed verified file. Header fields: `verifier_enabled: <true|false>`, `scored`, `kept`, `dropped`, `failed`, `clean`. Count definitions: `scored` = sidecars with integer score; `failed` = sidecars with `score: VERIFY_FAILED`; `dropped` = sidecars with score < 80 AND `change_type` ∈ `style|clarity|correctness`; `kept` = (findings - dropped) i.e. everything that survives to step 7's Edit/pause routing (sidecar score ≥80, sidecar absent, sidecar VERIFY_FAILED, scope/intent change-type, and verifier-disabled-round findings all funnel into `kept`); `clean` = count of `*.clean.md` files.
+   The boundary HTML comments give a single-pass reader an unambiguous record delimiter without the verifier writing into the finding file. Sidecars are emitted only when present on disk, so the disabled-from-start path (no sidecars created) and the sidecar-absent edge case both produce a well-formed verified file. Header field semantics: `verifier_enabled` mirrors `config.md`; `scored` = sidecars with integer score; `failed` = sidecars with `score: VERIFY_FAILED`; `dropped` = sidecars with score < 80 AND `change_type` ∈ `style|clarity|correctness`; `kept` = (findings - dropped) — everything that survives to step 7's Edit/pause routing (sidecar score ≥80, sidecar absent, sidecar VERIFY_FAILED, scope/intent change-type, and verifier-disabled-round findings all funnel into `kept`); `clean` = count of `*.clean.md` files.
 6. **Read** `reviews/{step}/round-NN-verified.md` exactly once.
 7. **Filter and dispatch.** Partition findings by `change_type`:
    - `scope` and `intent`: bypass score filter; flow directly to the existing pause gate.
@@ -217,8 +247,10 @@ QRSPI verifier round failure
 ─────────────────────────────
 {one-line summary of the abnormality, e.g.:
   - "Verifier returned VERIFY_FAILED for 2 findings"
-  - "Reviewer quality-claude produced no output (raw stdout at
-    /tmp/codex-await/<jobid>/stdout.txt)"
+  - "Reviewer quality-codex produced no output (await exit 12;
+    inspection: <wrapper --artifact-dir>)"
+  - "Reviewer quality-claude wrote no per-finding files
+    (subagent return: '<verbatim brief-return text>')"
   - "Sidecar missing for finding quality-claude.R3-F02"}
 
 What would you like to do?
