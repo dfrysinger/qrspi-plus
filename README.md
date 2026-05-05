@@ -747,52 +747,53 @@ qrspi-plus/
 │   ├── unit/                       # 308 unit tests (bats-core)
 │   ├── acceptance/                 # 134 acceptance tests (bats-core)
 │   └── fixtures/                   # Test fixtures and mock data
+├── agents/                         # 37 Claude Code agent files (per #110)
+│   ├── qrspi-{goals,questions,research,design,structure,phasing,plan,parallelize,replan}-reviewer.md
+│   ├── qrspi-{goals,design,structure,phasing,plan,parallelize,replan}-scope-reviewer.md
+│   ├── qrspi-plan-{spec,security,goal-traceability,test-coverage}-reviewer.md
+│   ├── qrspi-plan-silent-failure-hunter.md
+│   ├── qrspi-{integration,security-integration}-reviewer.md
+│   ├── qrspi-{spec,code-quality,security,goal-traceability,test-coverage}-reviewer.md
+│   ├── qrspi-{silent-failure-hunter,type-design-analyzer,code-simplifier}.md
+│   ├── qrspi-implementer.md, qrspi-implement-gate-reviewer.md
+│   ├── qrspi-test-writer.md
+│   └── qrspi-research-{specialist,collator}.md, qrspi-replan-{analyzer,reviewer}.md
 ├── skills/
+│   ├── reviewer-protocol/
+│   │   └── SKILL.md                # Cross-cutting reviewer protocol (preloaded by every reviewer agent)
 │   ├── using-qrspi/
 │   │   └── SKILL.md                # Entry point -- pipeline overview, routing, validation
 │   ├── goals/
-│   │   └── SKILL.md                # Step 1: Capture intent, goal specificity
+│   │   ├── SKILL.md                # Step 1: Capture intent, goal specificity
+│   │   └── owns-defers.md          # Goals OWNS/DEFERS (read by qrspi-goals-scope-reviewer)
 │   ├── questions/
-│   │   └── SKILL.md                # Step 2: Research questions
+│   │   └── SKILL.md                # Step 2: Research questions (no scope-reviewer per topology)
 │   ├── research/
-│   │   └── SKILL.md                # Step 3: Parallel specialist research
+│   │   └── SKILL.md                # Step 3: Parallel specialist research (no scope-reviewer per topology)
 │   ├── design/
-│   │   └── SKILL.md                # Step 4: Architecture + key decisions + design-level test strategy
+│   │   ├── SKILL.md                # Step 4: Architecture + key decisions + design-level test strategy
+│   │   └── owns-defers.md          # Design OWNS/DEFERS
 │   ├── phasing/
-│   │   └── SKILL.md                # Step 5: Vertical slices + phase boundaries + roadmap.md + current-phase pruning
+│   │   ├── SKILL.md                # Step 5: Vertical slices + phase boundaries + roadmap.md + current-phase pruning
+│   │   └── owns-defers.md          # Phasing OWNS/DEFERS
 │   ├── structure/
-│   │   └── SKILL.md                # Step 6: File/component mapping
+│   │   ├── SKILL.md                # Step 6: File/component mapping
+│   │   └── owns-defers.md          # Structure OWNS/DEFERS
 │   ├── plan/
 │   │   ├── SKILL.md                # Step 7: Task specs + architectural review
-│   │   └── templates/
-│   │       ├── spec-reviewer.md
-│   │       ├── security-reviewer.md
-│   │       ├── silent-failure-hunter.md
-│   │       ├── goal-traceability-reviewer.md
-│   │       └── test-coverage-reviewer.md
+│   │   └── owns-defers.md          # Plan OWNS/DEFERS
 │   ├── parallelize/
-│   │   └── SKILL.md                # Step 8: Plan-time dependency analysis + symbolic Branch Map
+│   │   ├── SKILL.md                # Step 8: Plan-time dependency analysis + symbolic Branch Map
+│   │   └── owns-defers.md          # Parallelize OWNS/DEFERS
 │   ├── implement/
-│   │   ├── SKILL.md                # Step 9: Runtime worktree creation + per-task TDD orchestration + batch gate
-│   │   └── templates/
-│   │       ├── implementer.md      # TDD execution prompt
-│   │       ├── correctness/        # Always-run reviewers (4)
-│   │       └── thoroughness/       # Deep-mode reviewers (4)
+│   │   └── SKILL.md                # Step 9: Runtime worktree creation + per-task TDD orchestration + batch gate
 │   ├── integrate/
-│   │   ├── SKILL.md                # Step 10: Merge + cross-task review + phase learnings
-│   │   └── templates/
-│   │       ├── integration-reviewer.md
-│   │       └── security-integration-reviewer.md
+│   │   └── SKILL.md                # Step 10: Merge + cross-task review + phase learnings
 │   ├── test/
-│   │   ├── SKILL.md                # Step 11: Acceptance testing + code review checkpoint
-│   │   └── templates/
-│   │       ├── test-writer.md
-│   │       ├── acceptance-test.md
-│   │       ├── integration-test.md
-│   │       ├── e2e-test.md
-│   │       └── boundary-test.md
+│   │   └── SKILL.md                # Step 11: Acceptance testing + code review checkpoint
 │   └── replan/
-│       └── SKILL.md                # Step 12: Between-phase replanning + phase snapshot
+│       ├── SKILL.md                # Step 12: Between-phase replanning + phase snapshot
+│       └── owns-defers.md          # Replan OWNS/DEFERS
 └── docs/
     └── qrspi-reference.md          # QRSPI framework reference
 ```
@@ -915,7 +916,7 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 
 | Addition | What it adds |
 |----------|-------------|
-| **14 specialized reviewers** | 4 implementation correctness (spec, code quality, silent failures, security) + 4 implementation thoroughness (goal traceability, test coverage, type design, simplification) + 5 plan-level (spec, security, silent failures, goal traceability, test coverage) + 1 cross-cutting scope-reviewer (parameterized per artifact type) |
+| **Specialized reviewer agents (per #110)** | 9 quality reviewers (one per artifact: goals, questions, research, design, structure, phasing, plan, parallelize, replan) + 7 dedicated scope-reviewers (`qrspi-{name}-scope-reviewer` for goals, design, structure, phasing, plan, parallelize, replan) + 5 plan-artifact reviewers (spec, security, silent-failure-hunter, goal-traceability, test-coverage) + 8 per-task implementation reviewers (spec, code quality, silent failures, security, goal traceability, test coverage, type design, simplification) + 2 integration reviewers (integration, security-integration) + 1 implement-gate reviewer. Each lives as a first-class `agents/qrspi-*.md` file with the cross-cutting protocol preloaded via `skills: [reviewer-protocol]`. |
 | **5 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once), Artifact Synthesis (subagent produce + review loop), Architectural Plan (7 parallel reviewer subagents: 1 unified plan-quality + 5 plan-artifact + dedicated `qrspi-plan-scope-reviewer`) |
 | **Route-based routing** | `config.md` with route field as single source of truth, replacing hardcoded skill-to-skill invocations |
 | **Config validation** | Numbered-option menus for missing/invalid config fields -- never silent defaults |
