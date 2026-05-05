@@ -6,11 +6,13 @@
 
 **Scope:** ONLY the artifact-level Apply-fix protocol in `skills/using-qrspi/SKILL.md` for the 8 artifact steps `Goals / Questions / Research / Design / Phasing / Structure / Parallelize / Replan`. Plan, per-task implementation, integration, and test reviewers retain their existing flows; their verifier integration is deferred (§7).
 
-**Architecture (one sentence):** Reviewers emit one finding per file; main chat dispatches one Haiku verifier per file in parallel; each Haiku writes a **sidecar score file** next to the finding (it never mutates the original); main chat Bash-assembles the per-finding files + sidecars + clean/crash markers into `round-NN-verified.md` it reads exactly once.
+**Architecture (one sentence):** Reviewers emit one finding per file; main chat dispatches one Haiku verifier per file in parallel; each Haiku writes a **sidecar score file** next to the finding (it never mutates the original); main chat Bash-assembles per-finding files + sidecars + clean markers into `round-NN-verified.md` it reads exactly once.
+
+**On reviewer/Codex failures:** No crash-file machinery. We mirror `/code-review`: trust the reviewer. If a Codex run produces unparseable output (malformed, empty, or non-zero exit), the splitter writes nothing into the round directory and the step-2 schema-violation guard catches "expected tag produced no output" → §3 menu. Raw stdout sits in `codex-companion-bg.sh`'s artifact dir under `/tmp/` for inspection if the user wants it.
 
 **Tech stack:** Existing QRSPI agent-file infrastructure (per #110), `scripts/codex-companion-bg.sh` async pipeline (extended with a finding-boundary splitter), Bash assembly with no-stdout redirects, `Read`/`Write` tools.
 
-**Error-handling philosophy:** any abnormality (verifier failure, malformed reviewer output, unexpected exit code) routes through a single generic 3-option menu (`skip`, `retry`, `stop`). The spec does NOT enumerate per-failure-mode preserve guards, snapshots, or sentinels — the sidecar design eliminates the file-corruption surface the heavy machinery was defending against, and any other anomaly is handed to the user.
+**Error-handling philosophy:** any abnormality (verifier failure, missing reviewer output) routes through a single generic 3-option menu (`skip`, `retry`, `stop`). The spec does NOT enumerate per-failure-mode preserve guards, snapshots, sentinels, or crash files — the sidecar design eliminates the file-mutation surface, and unparseable Codex output collapses into the same "expected tag produced no output" branch as a Claude reviewer that wrote nothing.
 
 ---
 
@@ -38,7 +40,7 @@ Body sections:
   - **(QRSPI)** Findings that contradict captured user decisions in `feedback/*.md` (verifier checks the citation against the file)
 - **Input contract** — prompt parameters:
   - `<finding_file_path>` — absolute path under `reviews/{step}/round-NN/`
-  - `<sidecar_path>` — absolute path the verifier writes to (always `<finding_file_path>` with `.md` → `.score.md`)
+  - `<sidecar_path>` — absolute path the verifier writes to (always `<finding_file_path>` with `.md` → `.score.yml`). The `.yml` extension is deliberate: it keeps the sidecar from matching `*.finding-*.md` globs in the round directory and lets editors syntax-highlight the YAML body.
   - `<artifact_path>` — absolute path to the artifact under review
   - `<diff_file_path>` — absolute path to `reviews/{step}/round-NN.diff` (round 2+; empty string on round 1)
   - `<upstream_paths>` — newline-separated upstream-artifact + SKILL paths the verifier may Read on demand
@@ -117,14 +119,14 @@ Per the scope statement, this issue migrates ONLY the artifact-level reviewers f
 - **Exit 0, well-formed stdout** — main chat invokes `scripts/codex-finding-splitter.sh <stdout-path> <round-subdir> <reviewer_tag>`:
   - Splits on `<<<FINDING-BOUNDARY>>>` lines; writes each segment to `<round-subdir>/<reviewer_tag>.finding-F<NN>.md`.
   - On the literal `NO_FINDINGS` sentinel: writes a single `<reviewer_tag>.clean.md`.
-  - On malformed input (no boundaries AND no `NO_FINDINGS` sentinel, OR empty stdout): writes a single `<reviewer_tag>.crash.md` whose body contains a one-line `## Splitter Note` with the failure reason and the raw Codex stdout verbatim. NO synthetic frontmatter, NO F00 fake-finding — the crash file is the user-triage surface and the failure menu (§3) handles it.
-- **Exit non-zero (10/11/12/13/14)** — main chat does NOT invoke the splitter. It writes a `<reviewer_tag>.crash.md` audit file directly with the existing crash-note content.
+  - On malformed input (no boundaries AND no `NO_FINDINGS` sentinel, OR empty stdout): the splitter writes nothing to the round directory and exits non-zero with a one-line diagnostic on stderr. The raw Codex stdout already lives in the `codex-companion-bg.sh` artifact dir under `/tmp/` and remains there for inspection.
+- **Exit non-zero from `await` (10/11/12/13/14)** — main chat does NOT invoke the splitter. No file is written to the round directory.
 
-Splitter is idempotent.
+Either failure path leaves the expected reviewer tag with zero output files in the round directory. Step 2's schema-violation guard catches that as "expected tag produced no output" and surfaces the §3 menu. Splitter is idempotent on the success path.
 
 ### `skills/using-qrspi/SKILL.md` (Apply-fix protocol — verifier-aware revision)
 
-The current Apply-fix protocol is replaced with this 12-step sequence. Lands atomically in the cutover commit (§8) with the reviewer-protocol amendment + reviewer-agent migrations.
+The current Apply-fix protocol is replaced with this 10-step sequence (lands atomically in the §7 step-4 cutover commit alongside the reviewer-protocol amendment and the reviewer-agent migrations):
 
 1. **List per-reviewer outputs** for the round (nullglob-safe, fully path-qualified):
    ```bash
@@ -132,38 +134,47 @@ The current Apply-fix protocol is replaced with this 12-step sequence. Lands ato
    D="reviews/{step}/round-NN"
    findings=( "$D"/*.finding-*.md )
    cleans=( "$D"/*.clean.md )
-   crashes=( "$D"/*.crash.md )
    ```
-2. **Per-expected-tag schema-violation guard.** Evaluate the Expected-Reviewer Matrix for the current step against `config.md.codex_reviews`. For each expected tag, assert step 1 produced at least one of (`<tag>.finding-*.md`, `<tag>.clean.md`, `<tag>.crash.md`). Any expected tag with zero matches → present the §3 failure menu. Step 2 also fails loud on: malformed YAML, missing required fields, malformed `change_type` enum, unrouted `(step, tag)` route. Trailing-newline malformations are normalized (deterministic strip+append-`\n`) with a one-line audit warning, NOT a hard fail.
-3. **Crash-staging + verifier-enabled gate (unconditional, then conditional).** First (always): for each tag with both a crash file and finding files, move the tag's finding files to `reviews/{step}/round-NN/.crash-skipped/`. Re-glob to refresh the post-staging arrays. Then read `verifier_enabled` from `config.md`; if `false`, jump to step 6 (skip dispatch, all findings kept, no scoring).
-4. **Dispatch one `qrspi-finding-verifier` per non-crashed finding-file path in parallel.** Each verifier reads its file + artifact + lazy-Reads upstreams + writes its sidecar `.score.md`. Main chat receives ~10-token returns per Haiku.
-5. **Aggregate returns.** If any return is `VERIFY_FAILED:` OR any sidecar is missing on disk after dispatch, route to the §3 failure menu BEFORE assembly. Otherwise continue.
-6. **Bash assembly** of the round into `reviews/{step}/round-NN-verified.md`:
+   Sidecars (`*.score.yml`) are intentionally not enumerated here; they're discovered per-finding at step 5.
+2. **Per-expected-tag schema-violation guard.** Evaluate the Expected-Reviewer Matrix for the current step against `config.md.codex_reviews`. For each expected tag, assert step 1 produced at least one of (`<tag>.finding-*.md`, `<tag>.clean.md`). Any expected tag with zero matches → present the §3 failure menu. Step 2 also fails loud on: malformed YAML, missing required fields, malformed `change_type` enum, unrouted `(step, tag)` route. Trailing-newline malformations are normalized (deterministic strip+append-`\n`) with a one-line audit warning, NOT a hard fail.
+3. **Verifier-enabled gate.** Read `verifier_enabled` from `config.md`; if `false`, jump to step 5 (skip dispatch, all findings kept, no scoring).
+4. **Dispatch one `qrspi-finding-verifier` per finding-file path in parallel.** Each verifier reads its file + artifact + lazy-Reads upstreams + writes its sidecar `.score.yml`. Main chat receives ~10-token returns per Haiku. If any return is `VERIFY_FAILED:` OR any expected sidecar is missing on disk after dispatch, route to the §3 failure menu BEFORE assembly. Otherwise continue.
+5. **Bash assembly** of the round into `reviews/{step}/round-NN-verified.md`:
    ```bash
-   cat "${findings[@]}" \
-       "${findings[@]/%.md/.score.md}" \
-       "${cleans[@]}" \
-       "${crashes[@]}" \
-     > "$D/../round-NN-verified.md"
+   {
+     awk_totals_header  # see Header fields below
+     for f in "${findings[@]}"; do
+       echo "<!-- @@FINDING: $(basename "$f" .md) @@ -->"
+       cat "$f"
+       sc="${f%.md}.score.yml"
+       if [[ -f $sc ]]; then
+         echo "<!-- @@SCORE: $(basename "$sc" .yml) @@ -->"
+         cat "$sc"
+       fi
+     done
+     for c in "${cleans[@]}"; do
+       echo "<!-- @@CLEAN: $(basename "$c" .md) @@ -->"
+       cat "$c"
+     done
+   } > "$D/../round-NN-verified.md"
    ```
-   (Schematic — the implementation pairs each finding with its sidecar in interleaved order so the assembled file groups them. The `awk` totals header is then injected on top.) Header fields: `verifier_enabled: <true|false>`, `scored`, `kept`, `dropped`, `failed`, `clean`, `crashed`, `crash-skipped`. Counts derive from sidecar contents and file presence — there is no disambiguator between empty-stdout and other crashes; both count as `crashed`.
-7. **Read** `reviews/{step}/round-NN-verified.md` exactly once.
-8. **Filter and dispatch.** Partition findings by `change_type`:
+   The boundary HTML comments give a single-pass reader an unambiguous record delimiter without the verifier writing into the finding file. Sidecars are emitted only when present on disk, so the disabled-from-start path (no sidecars created) and the sidecar-absent edge case both produce a well-formed verified file. Header fields: `verifier_enabled: <true|false>`, `scored`, `kept`, `dropped`, `failed`, `clean`. Count definitions: `scored` = sidecars with integer score; `failed` = sidecars with `score: VERIFY_FAILED`; `dropped` = sidecars with score < 80 AND `change_type` ∈ `style|clarity|correctness`; `kept` = (findings - dropped) i.e. everything that survives to step 7's Edit/pause routing (sidecar score ≥80, sidecar absent, sidecar VERIFY_FAILED, scope/intent change-type, and verifier-disabled-round findings all funnel into `kept`); `clean` = count of `*.clean.md` files.
+6. **Read** `reviews/{step}/round-NN-verified.md` exactly once.
+7. **Filter and dispatch.** Partition findings by `change_type`:
    - `scope` and `intent`: bypass score filter; flow directly to the existing pause gate.
    - `style`, `clarity`, `correctness`: filter at score ≥80 (verifier-enabled rounds with a sidecar score) or keep-all (verifier-disabled rounds OR sidecar absent OR sidecar has VERIFY_FAILED). Survivors → `Edit` on the artifact.
-   - Crash files → pause gate (reviewer-failure path).
 
    Out-of-enum `change_type` values are loud failures from step 2's schema guard.
-9. **Write** `reviews/{step}/round-NN-fixes.md` (≤30 lines).
-10. **`/compact`** to shed the verified-file Read.
-11. **Per-round commit** covers the artifact, `round-NN/` subdir (including sidecars + `.crash-skipped/`), `round-NN-verified.md`, `round-NN-fixes.md`.
+8. **Write** `reviews/{step}/round-NN-fixes.md` (≤30 lines).
+9. **`/compact`** to shed the verified-file Read.
+10. **Per-round commit** covers the artifact, `round-NN/` subdir (including sidecars), `round-NN-verified.md`, `round-NN-fixes.md`.
 
 The diff-handling protocol (today's line 527+) is unchanged.
 
 ### `skills/using-qrspi/SKILL.md` config schema additions
 
 Add `verifier_enabled` (boolean, default `true`) to the Config-File schema:
-- **Default:** `true`. Set by the using-qrspi run-init code at run creation. CLI-flag opt-out is out of scope (§7); to start a run with the verifier disabled, the user runs once, hits the §3 menu, picks `skip` (which writes `verifier_enabled: false` to config for the rest of the run).
+- **Default:** `true`. Set by the using-qrspi run-init code at run creation. CLI-flag opt-out is out of scope (§7). To run with the verifier off, the user edits `config.md` directly between rounds (the §3 `skip` option only disables the verifier for the current round, not the run).
 - **Persistence:** durable across `/compact`, pause, resume, and re-entry within the run directory under `docs/qrspi/<date>-<bundle>/`. Fresh run directory starts with `verifier_enabled: true`.
 - **Carve-out from the no-silent-defaults rule:** runtime-backfill — if the field is missing from `config.md` on first verifier-aware Apply-fix invocation, treat as `true`, surface a one-line stderr warning once per resume, and backfill the field. Documented in the Config-File schema's "Exceptions" section.
 
@@ -172,36 +183,29 @@ Add `verifier_enabled` (boolean, default `true`) to the Config-File schema:
 ```
 Reviewers (Sonnet/Codex)             Main chat (orchestrator)              Haiku verifiers
 ─────────────────────────────────    ────────────────────────────────      ─────────────────────
-Per-finding files emitted to         1. List finding/clean/crash files
-reviews/{step}/round-NN/.            2. Schema-violation guard.
-Codex stdout → splitter →            3. Stage crashed-tag findings into
-  per-finding files OR clean            .crash-skipped/. Read verifier_
-  marker OR crash file.                 enabled. If false → step 6.
-                                     4. Dispatch one Haiku per finding ──> Read finding + artifact +
-                                        in parallel.                        upstreams. Score 0–100
-                                                                            against rubric. Write
-                                                                            <finding>.score.md
-                                                                            sidecar. Return
-                                                                            "<tag>.<id>: <int>" or
-                                                                            "<tag>.<id>: VERIFY_FAILED:
-                                                                            <reason>".
-                                     5. If any VERIFY_FAILED or any
-                                        missing sidecar → §3 menu.
-                                     6. Bash assembly of finding files +
-                                        sidecars + clean + crash files →
-                                        round-NN-verified.md (awk header
-                                        with totals).
-                                     7. Read round-NN-verified.md once.
-                                     8. Partition by change_type:
+Per-finding files emitted to         1. List finding + clean files.
+reviews/{step}/round-NN/.            2. Schema-violation guard;
+Codex stdout → splitter →               expected-tag-with-no-output → §3.
+  per-finding files OR clean         3. Read verifier_enabled. If false
+  marker. (Splitter writes nothing      → step 5.
+  on malformed/empty stdout; raw     4. Dispatch one Haiku per finding ──> Read finding + artifact +
+  stdout stays in /tmp/codex-           in parallel. Any VERIFY_FAILED       upstreams. Score 0–100
+  await/<jobid>/ for inspection.)       or missing sidecar → §3.             against rubric. Write
+                                     5. Bash assembly: per-finding loop      <finding>.score.yml
+                                        emits boundary-delimited finding     sidecar. Return
+                                        + sidecar pairs + clean files →      "<tag>.<id>: <int>" or
+                                        round-NN-verified.md (awk            "<tag>.<id>: VERIFY_FAILED:
+                                        totals header).                      <reason>".
+                                     6. Read round-NN-verified.md once.
+                                     7. Partition by change_type:
                                           scope/intent → pause gate
                                           style/clarity/correctness →
                                             score ≥80 (or keep-all if
                                             sidecar missing or
                                             verifier_enabled=false)
-                                          → Edit on artifact
-                                        crashes → pause gate.
-                                     9. Write round-NN-fixes.md.
-                                    10. /compact. 11. Per-round commit.
+                                          → Edit on artifact.
+                                     8. Write round-NN-fixes.md.
+                                     9. /compact. 10. Per-round commit.
 ```
 
 ## §3 Failure handling (single generic menu)
@@ -213,19 +217,22 @@ QRSPI verifier round failure
 ─────────────────────────────
 {one-line summary of the abnormality, e.g.:
   - "Verifier returned VERIFY_FAILED for 2 findings"
-  - "Reviewer quality-claude produced no output"
-  - "Codex stdout malformed (no FINDING-BOUNDARY delimiters)"
+  - "Reviewer quality-claude produced no output (raw stdout at
+    /tmp/codex-await/<jobid>/stdout.txt)"
   - "Sidecar missing for finding quality-claude.R3-F02"}
 
 What would you like to do?
-  1. skip   — proceed without scoring this round (kept-all assembly).
-              Sets verifier_enabled: false for the rest of this run
-              and writes reviews/{step}/round-NN-verifier-disabled.md
-              (timestamp + reason + finding count).
-  2. retry  — re-dispatch the failed verifiers / re-run the splitter
-              against the same Codex stdout / re-prompt the reviewer.
-              Specific to the failure type; each retry path is bounded
-              and surfaces the same menu again on a second failure.
+  1. skip   — proceed without scoring THIS ROUND (kept-all assembly).
+              Writes reviews/{step}/round-NN-verifier-disabled.md
+              (timestamp + reason + finding count). Does NOT mutate
+              config.md — the next round resumes verifier-enabled if
+              config still says true. Edit config.md by hand to disable
+              the verifier across the run.
+  2. retry  — re-run the failed step. For "VERIFY_FAILED" / "missing
+              sidecar": re-dispatch only the failing verifiers. For
+              "reviewer produced no output": delete the tag's
+              `*.finding-*.md`, `*.score.yml`, and `*.clean.md` for
+              the round (if any), then re-prompt the reviewer.
   3. stop   — abort the protocol with no commit. The round directory
               remains on disk for inspection.
 
@@ -234,7 +241,7 @@ What would you like to do?
 
 Always-on footer: "If the same path keeps failing, picking `skip` is the safe escape."
 
-`skip` is the only option that mutates state (config.md). `retry` is bounded by the underlying operation (verifier dispatch → re-dispatch failed verifiers only; splitter → re-run on same input; reviewer no-output → re-dispatch the reviewer). `stop` is non-destructive. There is no retry counter — repeated retries surface the menu repeatedly so the user can switch to `skip` whenever.
+No option mutates `config.md`. `retry` is bounded by the underlying operation (verifier dispatch → re-dispatch only the failed verifiers; reviewer no-output → clean the tag's stale files first, then re-dispatch the reviewer). `stop` is non-destructive. There is no retry counter — repeated retries surface the menu repeatedly so the user can switch to `skip` whenever.
 
 ## §4 Cost discipline
 
@@ -249,16 +256,16 @@ Wallclock: parallel dispatch → ~3–5 sec total (Haiku call latency).
 
 Added to `tests/unit/`:
 
-1. **`test-verifier-agent-file.bats`** — `agents/qrspi-finding-verifier.md` exists; frontmatter has `model: haiku`, `tools: [Read, Write]`; body cites the 0/25/50/75/100 anchors verbatim from /code-review step 5; rubric described as continuous 0–100; sidecar path is constructed by replacing `.md` → `.score.md`; brief-return shape is `<reviewer_tag>.<finding_id>: <int 0..100>` (or VERIFY_FAILED).
+1. **`test-verifier-agent-file.bats`** — `agents/qrspi-finding-verifier.md` exists; frontmatter has `model: haiku`, `tools: [Read, Write]`; body cites the 0/25/50/75/100 anchors verbatim from /code-review step 5; rubric described as continuous 0–100; sidecar path is constructed by replacing `.md` → `.score.yml`; brief-return shape is `<reviewer_tag>.<finding_id>: <int 0..100>` (or VERIFY_FAILED).
 2. **`test-per-finding-file-emission.bats`** — every #109-scope reviewer agent file (14 files) instructs per-finding emission with the canonical filename pattern using role-distinct `reviewer_tag` values; `<reviewer_tag>.clean.md` clean-sentinel pattern documented; legacy single-file writes are absent. Deferred reviewers (18) are explicitly skipped with a comment citing the follow-up issue number.
-3. **`test-codex-splitter.bats`** — `scripts/codex-finding-splitter.sh` exists, executable; handles boundary-delimited input (multi-finding split with role-distinct tag in filenames), `NO_FINDINGS` sentinel (writes clean marker), malformed input (writes crash file with raw stdout in body, NO synthetic finding), empty input (writes crash file), idempotency. Asserts splitter is NOT invoked on `await` non-zero exit. Asserts the Codex prompt template in each #109 dispatching skill includes worked one-finding + zero-findings examples + the no-prose-outside-finding-blocks constraint.
-4. **`test-verifier-dispatch-contract.bats`** — `using-qrspi/SKILL.md` Apply-fix protocol body references the 11 documented steps in order: enumerate, schema guard, stage+gate, parallel verifier dispatch, aggregate, assembly, read-once, filter/partition by change_type, write fixes, /compact, per-round commit. Asserts the protocol does NOT instruct main chat to read per-reviewer single files for #109-scope artifacts. Asserts `await` non-zero routes to crash-file path, not splitter.
-5. **`test-failure-menu.bats`** — main-chat-authored protocol body describes the §3 menu with three exact option strings (`skip`, `retry`, `stop`); no default option; `skip` mutates `config.md` `verifier_enabled: false` and writes `round-NN-verifier-disabled.md`; the always-on footer is present. Fixture covers each abnormality the menu handles (VERIFY_FAILED, missing reviewer output, malformed Codex stdout, missing sidecar).
-6. **`test-verified-file-shape.bats`** — `round-NN-verified.md` is the assembly of `*.finding-*.md` + `*.score.md` + `*.clean.md` + `*.crash.md` with totals header (`verifier_enabled`, `scored`, `kept`, `dropped`, `failed`, `clean`, `crashed`, `crash-skipped`). The file is the sole apply-fix dispatch Read source. Three fixtures: enabled+clean (scored>0, some kept, some dropped); disabled-from-start (scored=0, all kept); skip-after-failure (scored = pre-failure successful subset, kept = scored + VERIFY_FAILED + un-dispatched, failed = VERIFY_FAILED count).
-7. **`test-config-verifier-enabled-field.bats`** — `verifier_enabled` documented in the Config-File schema; default `true`; runtime-backfill carve-out documented; field is read by every artifact-level Apply-fix invocation; persistence semantics (durable across /compact + resume) documented; mid-run mutation precedent (`review_mode`/`review_depth`) cited.
-8. **`test-disabled-mode-fallthrough.bats`** — when `verifier_enabled: false`, Apply-fix protocol skips verifier dispatch (no sidecars created) but STILL assembles `round-NN-verified.md`; dispatch keeps all findings via "no sidecar → keep" branch (NOT a synthetic 80 score); no preserve-guard semantics referenced. Fixture round directory verifies behavior.
+3. **`test-codex-splitter.bats`** — `scripts/codex-finding-splitter.sh` exists, executable; handles boundary-delimited input (multi-finding split with role-distinct tag in filenames), `NO_FINDINGS` sentinel (writes clean marker), malformed input (writes nothing to round dir, exits non-zero with stderr diagnostic), empty input (same: nothing written, non-zero exit), idempotency on the success path. Asserts splitter is NOT invoked on `await` non-zero exit. Asserts the Codex prompt template in each #109 dispatching skill includes worked one-finding + zero-findings examples + the no-prose-outside-finding-blocks constraint.
+4. **`test-verifier-dispatch-contract.bats`** — `using-qrspi/SKILL.md` Apply-fix protocol body references the 10 documented steps in order: enumerate, schema guard, verifier-enabled gate, parallel verifier dispatch, assembly, read-once, filter/partition by change_type, write fixes, /compact, per-round commit. Asserts the protocol does NOT instruct main chat to read per-reviewer single files for #109-scope artifacts. Asserts that `await` non-zero or splitter-malformed leaves the expected tag with zero output, which the step-2 schema guard catches.
+5. **`test-failure-menu.bats`** — main-chat-authored protocol body describes the §3 menu with three exact option strings (`skip`, `retry`, `stop`); no default option; `skip` writes `round-NN-verifier-disabled.md` and does NOT mutate `config.md`; `retry` for the "reviewer produced no output" path deletes the tag's stale `*.finding-*.md`/`*.score.yml`/`*.clean.md` before re-dispatch; the always-on footer is present. Fixture covers each abnormality the menu handles (VERIFY_FAILED, missing reviewer output, missing sidecar).
+6. **`test-verified-file-shape.bats`** — `round-NN-verified.md` is the assembly of `*.finding-*.md` + `*.score.yml` + `*.clean.md` with boundary HTML comments and a totals header (`verifier_enabled`, `scored`, `kept`, `dropped`, `failed`, `clean`). The file is the sole apply-fix dispatch Read source. Two fixtures: enabled+clean (scored>0, some kept, some dropped); disabled-from-start (scored=0, all kept, no sidecars on disk).
+7. **`test-config-verifier-enabled-field.bats`** — `verifier_enabled` documented in the Config-File schema; default `true`; runtime-backfill carve-out documented; field is read by every artifact-level Apply-fix invocation; persistence semantics (durable across /compact + resume) documented.
+8. **`test-disabled-mode-fallthrough.bats`** — when `verifier_enabled: false`, Apply-fix protocol skips verifier dispatch (no sidecars created) but STILL assembles `round-NN-verified.md`; dispatch keeps all findings via "no sidecar → keep" branch (NOT a synthetic 80 score). Fixture round directory verifies behavior.
 9. **`test-change-type-partition.bats`** — Apply-fix dispatch protocol asserts scope/intent flow to pause gate REGARDLESS of score; style/clarity/correctness are score-filtered at ≥80 in verifier-enabled rounds; the canonical 5-value `change_type` enum is cited from `reviewer-protocol/SKILL.md`; out-of-enum values trigger loud failure. Fixture verified.md with mixed `change_type`s + assertion of routing.
-10. **`test-clean-sentinel-and-schema-guard.bats`** — `reviewer-protocol/SKILL.md` defines `<reviewer_tag>.clean.md` sentinel format and the dispatcher's "zero-files-and-no-clean-and-no-crash → fail loud" rule. Negative fixtures assert the failure path.
+10. **`test-clean-sentinel-and-schema-guard.bats`** — `reviewer-protocol/SKILL.md` defines `<reviewer_tag>.clean.md` sentinel format and the dispatcher's "expected tag with zero finding/clean files → fail loud (§3 menu)" rule. Negative fixtures assert the failure path.
 
 ## §6 Out of scope
 
@@ -272,6 +279,7 @@ Added to `tests/unit/`:
 - **Verifier model upgrades** (Sonnet verifier, custom rubric per artifact type).
 - **CLI-flag opt-out at `/qrspi` invocation** for verifier-disabled-from-start mode.
 - **Preserve guard / checksum snapshot / boundary sentinel infrastructure.** The sidecar-write design eliminates the file-mutation surface this would defend; if practice surfaces verifier-side corruption, add then.
+- **Crash-file audit artifacts.** A failed Codex run leaves nothing in the round directory; the raw stdout in `/tmp/codex-await/<jobid>/` is the inspection surface. Mirroring `/code-review`, which has no crash-file machinery either. Reconsider only if a real failure mode shows up that isn't already explained by the §3 menu's diagnostic line.
 
 The follow-up issue migrates Plan-step reviewers atomically and collapses the bifurcated reviewer-protocol skill back to a single contract.
 
@@ -283,7 +291,7 @@ The cutover commit (step 4) is the load-bearing atomicity boundary. Pre-cutover 
 
 1. **Verifier agent file.** Create `agents/qrspi-finding-verifier.md` with rubric + false-positive examples + sidecar-write procedure. Land alone with test #1. Not yet referenced — purely additive.
 
-2. **Codex splitter (script only, no prompt or wrapper changes).** Add `scripts/codex-finding-splitter.sh` and a NARROWED `tests/unit/test-codex-splitter.bats` that exercises the splitter directly with synthetic inputs (boundary-delimited, NO_FINDINGS, malformed, empty). Codex prompts in dispatching skills are NOT changed in this commit; the test does NOT grep dispatching skill prompts. Splitter is dead code until step 4 wires it up.
+2. **Codex splitter (script only, no prompt or wrapper changes).** Add `scripts/codex-finding-splitter.sh` and a NARROWED `tests/unit/test-codex-splitter.bats` that exercises the splitter directly with synthetic inputs (boundary-delimited, NO_FINDINGS, malformed → exit non-zero with stderr diagnostic, empty → exit non-zero with stderr diagnostic). Codex prompts in dispatching skills are NOT changed in this commit; the test does NOT grep dispatching skill prompts. Splitter is dead code until step 4 wires it up.
 
 3. **`config.md` schema update (documentation only).** Add `verifier_enabled` field (default `true`) to `using-qrspi/SKILL.md` Config-File schema. Land with a NARROWED `test-config-verifier-enabled-field.bats` that asserts schema-doc presence (default-on, persistence, runtime-backfill carve-out) — does NOT yet assert the field is read by any protocol.
 
@@ -291,22 +299,21 @@ The cutover commit (step 4) is the load-bearing atomicity boundary. Pre-cutover 
    - The bifurcated reviewer-protocol amendment (Routing Table + Expected-Reviewer Matrix + new Per-Finding Disk-Write Contract keyed on the 4 role-distinct tags + renamed Legacy section).
    - All 14 #109-scope reviewer agent file migrations (per-finding emission + clean sentinel + new brief-return shape, using the role-distinct `reviewer_tag` value).
    - Codex prompt + dispatch-parameter amendments in 8 dispatching skills (role-distinct tag, `<<<FINDING-BOUNDARY>>>` + `NO_FINDINGS` + worked examples, retire `output:` path-arg).
-   - The Apply-fix protocol revision in `using-qrspi/SKILL.md` (11-step verifier-aware sequence including the runtime-backfill code).
-   - The §3 failure-menu logic in `using-qrspi/SKILL.md` (`skip`/`retry`/`stop` + `skip` mutation + always-on footer).
+   - The Apply-fix protocol revision in `using-qrspi/SKILL.md` (10-step verifier-aware sequence including the runtime-backfill code).
+   - The §3 failure-menu logic in `using-qrspi/SKILL.md` (`skip`/`retry`/`stop`; round-scoped `skip`; retry-cleanup contract; always-on footer).
    - Test updates pinning the new contracts (tests #2, #3, #4, #5, #6, #7, #8, #9, #10).
 
-   The commit is large by design (~50 files: 14 agent files + 8 dispatching skills + 1 reviewer-protocol skill + 1 using-qrspi skill + the splitter + ~10 test files + a few READMEs/docs). Pre-merge gates: (i) every existing bats passes; (ii) every new bats passes; (iii) the §7 step-5 smoke matrix passes for ALL 8 #109 steps.
+   The commit is large by design (~50 files: 14 agent files + 8 dispatching skills + 1 reviewer-protocol skill + 1 using-qrspi skill + the splitter + ~10 test files + a few READMEs/docs). Pre-merge verification (smoke matrix below) MUST pass before this commit merges; the smoke matrix is part of step-4 verification, not a separately-shippable step.
 
-5. **Smoke matrix.** Run a real review round per behavior class:
+   **Pre-merge smoke matrix** (run a real review round per behavior class; all must pass before merging step 4):
    - Questions or Research (no scope reviewer) — verifies the config-aware matrix doesn't false-fail.
    - Goals or Design (full 4-reviewer set) — verifies routing-table disambiguation.
    - One run with `verifier_enabled: false` from start (smoke fixture manually edits `config.md` before the run).
    - One run with `codex_reviews: false`.
-   - One run with synthesized crash + finding files for one tag (verifies step-3 staging in both modes).
-   - One run that triggers splitter malformed-input → crash file (no synthetic finding).
+   - One run that triggers splitter malformed-input → step-2 schema guard fires "expected tag produced no output" → §3 menu.
    - One run with a verifier hitting VERIFY_FAILED → §3 menu → `skip` chosen (verifies kept-all fall-through).
    - One run with a verifier hitting VERIFY_FAILED → §3 menu → `retry` chosen (verifies re-dispatch).
 
-6. **Documentation update** in `docs/qrspi/CHANGELOG.md` describing the verifier addition and listing the follow-up issue.
+5. **Documentation update** in `docs/qrspi/CHANGELOG.md` describing the verifier addition and listing the follow-up issue.
 
-Rollback contract: steps 1–3 are individually revertible (purely additive). Step 4 must be reverted as a whole. Step 5 is not a code change. After step 4 lands, the pre-#109 reviewer-output shape is gone for #109-scope reviewers; deferred reviewers retain their existing shape via the legacy section.
+Rollback contract: steps 1–3 are individually revertible (purely additive). Step 4 must be reverted as a whole. After step 4 lands, the pre-#109 reviewer-output shape is gone for #109-scope reviewers; deferred reviewers retain their existing shape via the legacy section.
