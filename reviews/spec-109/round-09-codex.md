@@ -1,0 +1,15 @@
+**Verifier Failure State**
+
+1. `finding_id`: `R9-F01`
+
+   `severity`: `high`
+   `change_type`: `correctness`
+   `message`: `The verifier-failure path still assumes, but never enforces, that a Haiku returning \`VERIFY_FAILED:\` left its finding file untouched. The spec now makes that assumption load-bearing in multiple places: step 4 re-entry says failed-verifier files are "still pre-verify" and their original snapshots remain valid (lines 170, 175), step 6 explicitly skips preserve-guard checks for \`VERIFY_FAILED\` files (line 176), and §4 repeats that failed files are pre-verify shape (lines 479-496). But the verifier agent has \`Write\` access and the contract never says "on failure, do not write"; a failed run can partially append the sentinel / \`## Verifier\` block before returning \`VERIFY_FAILED:\`. Because \`.snapshots.txt\` stores only hashes, not original bytes (line 168; §4 lines 493-494), there is then no recovery path: option 2 retries against an already-mutated file while reusing the old snapshot, and option 1 can fall through to assembly with a contaminated file that was never preserve-checked. The design needs an explicit invariant plus enforcement for failed verifiers, e.g. either (a) failed verifiers must be treated as hard-fail if their file differs from the step-4 snapshot, or (b) the orchestrator must restore failed files from a byte-for-byte snapshot before retry/fallthrough instead of storing hashes only.`
+   `referenced_files`: `["docs/superpowers/specs/2026-05-04-109-sonnet-haiku-verifier-design.md"]`
+
+2. `finding_id`: `R9-F02`
+
+   `severity`: `medium`
+   `change_type`: `correctness`
+   `message`: `Option 1 still collapses two different round states into one boolean and makes the assembly contract internally contradictory. Step 6 says that after some verifiers have already run, option 1 mutates \`config.md\` to \`verifier_enabled: false\` and falls through to assembly (line 175; §5 line 516). But step 7 treats \`verifier_enabled=false\` at assembly time as the disabled-from-start branch: no verifier blocks expected, \`scored=0\`, \`failed=0\`, and all findings counted under \`kept\` (line 177); §2's audit-shape note makes the same assumption for all false-valued rounds (line 172). That does not describe the documented option-1 path, where some files were already verified, some verifiers failed, and preserve-guard already ran on the successful subset. Using the live config bit as the round-state discriminator makes the totals header inaccurate and conflates "verifier never ran this round" with "verifier started, then was disabled after failures." The design should track round-local verifier mode separately from the persisted future-round config, e.g. preserve a per-round state such as \`enabled\` / \`disabled-from-start\` / \`disabled-after-failure\`, and key assembly/header behavior off that round-local state rather than the post-mutation \`config.md.verifier_enabled\` value.`
+   `referenced_files`: `["docs/superpowers/specs/2026-05-04-109-sonnet-haiku-verifier-design.md"]`
