@@ -30,7 +30,7 @@
 
 setup() {
   REPO_ROOT="$(dirname "$(dirname "$BATS_TEST_DIRNAME")")"
-  BOILERPLATE_FILE="$REPO_ROOT/skills/_shared/reviewer-boilerplate.md"
+  BOILERPLATE_FILE="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
   FIXTURE_DIR="$BATS_TEST_DIRNAME/fixtures/reviewer-injection"
   export REPO_ROOT BOILERPLATE_FILE FIXTURE_DIR
 }
@@ -133,14 +133,13 @@ setup() {
 # ── Embed-site sweep: a representative SKILL.md instructs the wrapper for ──
 # ── attacker-reachable embed sites (feedback, code-under-review) ─────────────
 
-@test "[T32-adversarial] per-task-orchestrator template instructs the wrapper for code-under-review / task-spec embeds" {
-  # The per-task-orchestrator embeds raw code + task spec + test results into
-  # reviewer prompts. The template MUST reference the delimiter wrapper for
-  # those embed sites — otherwise an attacker who lands a string in the
-  # code-under-review (e.g. a previously-merged feedback file content
-  # propagated forward) could inject reviewer instructions.
+@test "[T32-adversarial] implement SKILL.md instructs the wrapper for code-under-review / task-spec embeds" {
+  # Post-migration (commit 19/22): the per-task-orchestrator template no
+  # longer exists. The cited dispatch logic — wrapping raw code, task spec,
+  # and test results into reviewer prompts via the UNTRUSTED-ARTIFACT
+  # delimiter — now lives in skills/implement/SKILL.md (the orchestrator).
   local file
-  file="$REPO_ROOT/skills/implement/templates/per-task-orchestrator.md"
+  file="$REPO_ROOT/skills/implement/SKILL.md"
   [ -f "$file" ]
   grep -q "UNTRUSTED-ARTIFACT-START" "$file"
 }

@@ -57,13 +57,16 @@ teardown() {
   grep -qi "reviews/" "$skill_file"
 }
 
-# U7 — implement template references reviews/tasks/ for per-task review output
-# (Reference moved from implement/SKILL.md to per-task-orchestrator.md during the
-# R1 skill refactor; behavior preserved, test updated to follow.)
-@test "[U7] per-task-orchestrator template references reviews/tasks/ directory for per-task review persistence" {
+# U7 — implement SKILL.md references reviews/tasks/ for per-task review output
+# (Post-migration commit 19/22: per-task-orchestrator.md no longer exists at
+# HEAD. The cited behavior — directing per-task review output to reviews/tasks/
+# — lives in skills/implement/SKILL.md, the orchestrator that dispatches per-
+# task work into worktrees.)
+@test "[U7] implement SKILL.md references reviews/tasks/ directory for per-task review persistence" {
   # AC: each task's review results are persisted to reviews/tasks/ so Integrate can use them
-  local template_file="$SKILLS_DIR/implement/templates/per-task-orchestrator.md"
-  grep -q "reviews/tasks" "$template_file"
+  local skill_file="$SKILLS_DIR/implement/SKILL.md"
+  [ -f "$skill_file" ]
+  grep -q "reviews/tasks" "$skill_file"
 }
 
 # ── M21: Replan rework ────────────────────────────────────────────────────────
@@ -453,25 +456,28 @@ teardown() {
 # ── M35: Goal-text decomposition check ───────────────────────────────────────
 # Criterion: goal-traceability-reviewer.md contains decomposition check criterion.
 
-# M35 — goal-traceability-reviewer.md exists
-@test "[M35] goal-traceability-reviewer.md template exists in implement/templates/thoroughness/" {
-  # AC: the template must exist for test SKILL.md to reference it in review
-  local template_file="$SKILLS_DIR/implement/templates/thoroughness/goal-traceability-reviewer.md"
-  [ -f "$template_file" ]
+# M35 — goal-traceability-reviewer agent file exists
+# Post-migration (commit 19/22): goal-traceability-reviewer was migrated from
+# the legacy implement-thoroughness template path to the dedicated
+# agent file agents/qrspi-goal-traceability-reviewer.md.
+@test "[M35] qrspi-goal-traceability-reviewer.md agent exists at agents/" {
+  # AC: the agent must exist for test SKILL.md to reference it in review
+  local agent_file="$(dirname "$SKILLS_DIR")/agents/qrspi-goal-traceability-reviewer.md"
+  [ -f "$agent_file" ]
 }
 
-# M35 — goal-traceability-reviewer.md contains traceability analysis sections
-@test "[M35] goal-traceability-reviewer.md has forward and backward trace sections" {
+# M35 — qrspi-goal-traceability-reviewer.md contains traceability analysis sections
+@test "[M35] qrspi-goal-traceability-reviewer.md has forward and backward trace sections" {
   # AC: decomposition check means verifying each goal traces to tests and back
-  local template_file="$SKILLS_DIR/implement/templates/thoroughness/goal-traceability-reviewer.md"
-  grep -q "Forward Trace\|Backward Trace\|Gap Analysis" "$template_file"
+  local agent_file="$(dirname "$SKILLS_DIR")/agents/qrspi-goal-traceability-reviewer.md"
+  grep -q "Forward Trace\|Backward Trace\|Gap Analysis" "$agent_file"
 }
 
-# M35 — goal-traceability-reviewer.md has UNCOVERED_CRITERION gap type
-@test "[M35] goal-traceability-reviewer.md defines UNCOVERED_CRITERION gap type" {
+# M35 — qrspi-goal-traceability-reviewer.md has UNCOVERED_CRITERION gap type
+@test "[M35] qrspi-goal-traceability-reviewer.md defines UNCOVERED_CRITERION gap type" {
   # AC: the decomposition check must identify goals that have no test coverage
-  local template_file="$SKILLS_DIR/implement/templates/thoroughness/goal-traceability-reviewer.md"
-  grep -q "UNCOVERED_CRITERION\|uncovered.*criterion\|criterion.*uncovered" "$template_file"
+  local agent_file="$(dirname "$SKILLS_DIR")/agents/qrspi-goal-traceability-reviewer.md"
+  grep -q "UNCOVERED_CRITERION\|uncovered.*criterion\|criterion.*uncovered" "$agent_file"
 }
 
 # ── M36: Amendment compression rule ──────────────────────────────────────────
@@ -680,16 +686,20 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-# ── F-17: Per-task orchestrator commit-message file path ─────────────────────
-# Criterion: per-task-orchestrator template instructs subagents to use a
-# worktree-internal commit-message file (not /tmp/...), since the asymmetric
-# hook walls subagents out of /tmp.
+# ── F-17: Per-task commit-message file path ──────────────────────────────────
+# Criterion: subagent dispatch instructs subagents to use a worktree-internal
+# commit-message file (not /tmp/...), since the asymmetric hook walls
+# subagents out of /tmp.
+# Post-migration (commit 19/22): the cited behavior previously documented in
+# the legacy per-task-orchestrator template now lives in
+# skills/implement/SKILL.md (the orchestrator that owns the per-task dispatch).
 
-@test "[F-17] per-task-orchestrator template warns against /tmp commit-message paths" {
-  # AC: F-17 — template must guide subagents to worktree-internal paths
-  local template_file="$SKILLS_DIR/implement/templates/per-task-orchestrator.md"
-  grep -q "F-17" "$template_file"
-  grep -q ".qrspi-commit-msg.txt\|worktree-internal" "$template_file"
+@test "[F-17] implement SKILL.md warns against /tmp commit-message paths" {
+  # AC: F-17 — orchestrator must guide subagents to worktree-internal paths
+  local skill_file="$SKILLS_DIR/implement/SKILL.md"
+  [ -f "$skill_file" ]
+  grep -q "F-17" "$skill_file"
+  grep -q ".qrspi-commit-msg.txt\|worktree-internal" "$skill_file"
 }
 
 @test "[F-14] bare qrspi/{slug} branch + task branch demonstrably deadlock (regression evidence)" {

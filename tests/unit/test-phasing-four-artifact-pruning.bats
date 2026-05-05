@@ -17,7 +17,8 @@ bats_require_minimum_version 1.5.0
 
 setup() {
   SKILL_FILE="$BATS_TEST_DIRNAME/../../skills/phasing/SKILL.md"
-  export SKILL_FILE
+  OWNS_FILE="$BATS_TEST_DIRNAME/../../skills/phasing/owns-defers.md"
+  export SKILL_FILE OWNS_FILE
 }
 
 # Extract a "## parent" section up to the next "## " heading.
@@ -44,6 +45,20 @@ extract_subsection() {
     in_child && /^## / { exit }
     in_parent && /^## / && $0 != p { in_parent = 0 }
     in_child { print }
+  ' "$file"
+}
+
+# extract_h3_direct <file> <h3-heading>
+# Extracts an H3 sub-block directly from a file (no H2 wrapper required).
+# Used for owns-defers.md files which start at H3 level.
+extract_h3_direct() {
+  local file="$1"
+  local h3="$2"
+  awk -v h="$h3" '
+    $0 == h { in_b = 1; print; next }
+    in_b && /^### / { exit }
+    in_b && /^## / { exit }
+    in_b { print }
   ' "$file"
 }
 
@@ -136,7 +151,7 @@ extract_subsection() {
 
 @test "Phasing OWNS section names current-phase pruning of the four synthesizing artifacts" {
   local owns_block
-  owns_block="$(extract_subsection "$SKILL_FILE" "## Phasing OWNS / Phasing DEFERS" "### Phasing OWNS")"
+  owns_block="$(extract_h3_direct "$OWNS_FILE" "### Phasing OWNS")"
   [ -n "$owns_block" ]
 
   # OWNS must mention pruning specifically — Phasing owns this; Design and
@@ -228,7 +243,7 @@ extract_subsection() {
 
 @test "Phasing DEFERS section does not redirect pruning ownership to another skill" {
   local defers_block
-  defers_block="$(extract_subsection "$SKILL_FILE" "## Phasing OWNS / Phasing DEFERS" "### Phasing DEFERS")"
+  defers_block="$(extract_h3_direct "$OWNS_FILE" "### Phasing DEFERS")"
   [ -n "$defers_block" ]
 
   # DEFERS must NOT contain a "pruning ... → Design" or "pruning ...

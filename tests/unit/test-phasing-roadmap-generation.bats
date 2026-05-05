@@ -16,7 +16,8 @@ bats_require_minimum_version 1.5.0
 
 setup() {
   SKILL_FILE="$BATS_TEST_DIRNAME/../../skills/phasing/SKILL.md"
-  export SKILL_FILE
+  OWNS_FILE="$BATS_TEST_DIRNAME/../../skills/phasing/owns-defers.md"
+  export SKILL_FILE OWNS_FILE
 }
 
 # extract_section <file> <heading-line>
@@ -45,6 +46,20 @@ extract_subsection() {
         in_b && /^## / { exit }
         in_b { print }
       '
+}
+
+# extract_h3_direct <file> <h3-heading>
+# Extracts an H3 sub-block directly from a file (no H2 wrapper required).
+# Used for owns-defers.md files which start at H3 level.
+extract_h3_direct() {
+  local file="$1"
+  local h3="$2"
+  awk -v h="$h3" '
+    $0 == h { in_b = 1; print; next }
+    in_b && /^### / { exit }
+    in_b && /^## / { exit }
+    in_b { print }
+  ' "$file"
 }
 
 # =============================================================================
@@ -81,7 +96,7 @@ extract_subsection() {
 
 @test "## Phasing OWNS / Phasing DEFERS section names roadmap.md authoring under OWNS" {
   local owns_block
-  owns_block="$(extract_subsection "$SKILL_FILE" "## Phasing OWNS / Phasing DEFERS" "### Phasing OWNS")"
+  owns_block="$(extract_h3_direct "$OWNS_FILE" "### Phasing OWNS")"
   [ -n "$owns_block" ]
   # Must mention roadmap.md authoring/ownership specifically.
   echo "$owns_block" | grep -q "roadmap.md"
@@ -184,14 +199,14 @@ extract_subsection() {
   # high-severity finding and a refusal to proceed (per scope-reviewer template's
   # malformed-case fail-closed clause). Severity must conform to the M48 schema
   # which only permits low|medium|high.
+  # Commit 12/22 migration: "scope-reviewer subagent dispatch" pattern is
+  # replaced by "Claude scope-reviewer subagent" Agent({subagent_type:...}) form.
   # Locate the scope-reviewer dispatch bullet (line containing
-  # "scope-reviewer subagent dispatch") and capture text up to the next
-  # top-level bullet ("- **Reviewer prompt block" / "- **Codex review").
+  # "scope-reviewer subagent") and capture its block.
   local block
   block="$(awk '
-    /scope-reviewer subagent dispatch/ { in_block = 1 }
-    in_block && /^- \*\*Reviewer prompt block/ { exit }
-    in_block && /^- \*\*Codex review/ { exit }
+    /Claude scope-reviewer subagent/ { in_block = 1 }
+    in_block && /^- \*\*Codex reviews/ { exit }
     in_block { print }
   ' "$SKILL_FILE")"
   [ -n "$block" ]
@@ -204,7 +219,7 @@ extract_subsection() {
 # =============================================================================
 # M48 schema compliance — phasing emissions never use `critical` severity
 # (R1 3-way converged: Claude-I1 + Codex-I4 + Codex-S5)
-# The shared M48 finding schema in skills/_shared/reviewer-boilerplate.md only
+# The shared M48 finding schema in skills/reviewer-protocol/SKILL.md only
 # permits severity ∈ {low, medium, high}. Phasing previously instructed the
 # dispatched reviewer to emit "CRITICAL" findings in 3 places. A reviewer that
 # obeys phasing/SKILL.md emits findings the pause-gate cannot dispatch on

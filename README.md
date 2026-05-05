@@ -178,7 +178,7 @@ flowchart TD
 
 ### Step 7: Plan
 
-Breaks the structure into ordered tasks with detailed specs. Each task spec includes exact file paths, a description, test expectations in plain language (behaviors, edge cases, error conditions), dependencies, and LOC estimates. No placeholders, no TBDs, no "similar to Task N." For large plans (6+ tasks), task spec writing is farmed to sub-subagents. In quick fix mode, Plan produces a single task directly from research (no design or structure). The plan is reviewed as a single merged document by 6 reviewer templates in parallel (5 plan-specific + the parameterized scope-reviewer), then split into individual task files after approval.
+Breaks the structure into ordered tasks with detailed specs. Each task spec includes exact file paths, a description, test expectations in plain language (behaviors, edge cases, error conditions), dependencies, and LOC estimates. No placeholders, no TBDs, no "similar to Task N." For large plans (6+ tasks), task spec writing is farmed to sub-subagents. In quick fix mode, Plan produces a single task directly from research (no design or structure). The plan is reviewed as a single merged document by 7 reviewer subagents in parallel (1 unified plan-quality reviewer + 5 plan-artifact reviewers + the dedicated `qrspi-plan-scope-reviewer`), then split into individual task files after approval.
 
 **Artifact:** `plan.md` + `tasks/task-NN.md`
 
@@ -188,7 +188,7 @@ flowchart TD
     B -->|yes| C[Farm task specs to sub-subagents]
     C --> D[Merge into single plan.md]
     B -->|no| D[Single merged plan.md]
-    D --> E["Architectural Plan Review (Pattern 5)<br>6 parallel reviewer templates"]
+    D --> E["Architectural Plan Review (Pattern 5)<br>7 parallel reviewer subagents"]
     E --> F[Human gate]
     F --> G["Split into tasks/task-NN.md<br>Reduce plan.md to overview"]
     G --> H((Approved plan + task files))
@@ -526,11 +526,11 @@ flowchart TD
     M --> B
 ```
 
-**Pattern 5: Architectural Plan Review** -- Six reviewer templates run in parallel (5 plan-specific + the parameterized scope-reviewer). Used by Plan to catch cross-task consistency issues.
+**Pattern 5: Architectural Plan Review** -- Seven reviewer subagents run in parallel (1 unified plan-quality reviewer + 5 plan-artifact reviewers + the dedicated `qrspi-plan-scope-reviewer`). Used by Plan to catch cross-task consistency issues.
 
 ```mermaid
 flowchart TD
-    A["Merged plan.md ready"] --> B["Launch review subagent<br>with 6 parallel templates"]
+    A["Merged plan.md ready"] --> B["Launch 7 parallel reviewer subagents<br>(1 unified plan-quality + 5 plan-artifact + qrspi-plan-scope-reviewer)"]
 
     subgraph reviewers["Reviewers"]
         R1["Spec Reviewer<br>(completeness, placeholders)"]
@@ -548,7 +548,7 @@ flowchart TD
     D -->|yes| F[Fix issues]
     F --> E
     E -->|Present| G[Human gate]
-    E -->|Loop until clean| H[Re-run all 6 reviewers]
+    E -->|Loop until clean| H[Re-run all 7 reviewers]
     H --> I{Clean or 10 rounds?}
     I -->|clean or cap hit| G
     I -->|issues found| J[Fix and re-review]
@@ -747,52 +747,53 @@ qrspi-plus/
 │   ├── unit/                       # 308 unit tests (bats-core)
 │   ├── acceptance/                 # 134 acceptance tests (bats-core)
 │   └── fixtures/                   # Test fixtures and mock data
+├── agents/                         # 37 Claude Code agent files (per #110)
+│   ├── qrspi-{goals,questions,research,design,structure,phasing,plan,parallelize,replan}-reviewer.md
+│   ├── qrspi-{goals,design,structure,phasing,plan,parallelize,replan}-scope-reviewer.md
+│   ├── qrspi-plan-{spec,security,goal-traceability,test-coverage}-reviewer.md
+│   ├── qrspi-plan-silent-failure-hunter.md
+│   ├── qrspi-{integration,security-integration}-reviewer.md
+│   ├── qrspi-{spec,code-quality,security,goal-traceability,test-coverage}-reviewer.md
+│   ├── qrspi-{silent-failure-hunter,type-design-analyzer,code-simplifier}.md
+│   ├── qrspi-implementer.md, qrspi-implement-gate-reviewer.md
+│   ├── qrspi-test-writer.md
+│   └── qrspi-research-{specialist,collator}.md, qrspi-replan-{analyzer,reviewer}.md
 ├── skills/
+│   ├── reviewer-protocol/
+│   │   └── SKILL.md                # Cross-cutting reviewer protocol (preloaded by every reviewer agent)
 │   ├── using-qrspi/
 │   │   └── SKILL.md                # Entry point -- pipeline overview, routing, validation
 │   ├── goals/
-│   │   └── SKILL.md                # Step 1: Capture intent, goal specificity
+│   │   ├── SKILL.md                # Step 1: Capture intent, goal specificity
+│   │   └── owns-defers.md          # Goals OWNS/DEFERS (read by qrspi-goals-scope-reviewer)
 │   ├── questions/
-│   │   └── SKILL.md                # Step 2: Research questions
+│   │   └── SKILL.md                # Step 2: Research questions (no scope-reviewer per topology)
 │   ├── research/
-│   │   └── SKILL.md                # Step 3: Parallel specialist research
+│   │   └── SKILL.md                # Step 3: Parallel specialist research (no scope-reviewer per topology)
 │   ├── design/
-│   │   └── SKILL.md                # Step 4: Architecture + key decisions + design-level test strategy
+│   │   ├── SKILL.md                # Step 4: Architecture + key decisions + design-level test strategy
+│   │   └── owns-defers.md          # Design OWNS/DEFERS
 │   ├── phasing/
-│   │   └── SKILL.md                # Step 5: Vertical slices + phase boundaries + roadmap.md + current-phase pruning
+│   │   ├── SKILL.md                # Step 5: Vertical slices + phase boundaries + roadmap.md + current-phase pruning
+│   │   └── owns-defers.md          # Phasing OWNS/DEFERS
 │   ├── structure/
-│   │   └── SKILL.md                # Step 6: File/component mapping
+│   │   ├── SKILL.md                # Step 6: File/component mapping
+│   │   └── owns-defers.md          # Structure OWNS/DEFERS
 │   ├── plan/
 │   │   ├── SKILL.md                # Step 7: Task specs + architectural review
-│   │   └── templates/
-│   │       ├── spec-reviewer.md
-│   │       ├── security-reviewer.md
-│   │       ├── silent-failure-hunter.md
-│   │       ├── goal-traceability-reviewer.md
-│   │       └── test-coverage-reviewer.md
+│   │   └── owns-defers.md          # Plan OWNS/DEFERS
 │   ├── parallelize/
-│   │   └── SKILL.md                # Step 8: Plan-time dependency analysis + symbolic Branch Map
+│   │   ├── SKILL.md                # Step 8: Plan-time dependency analysis + symbolic Branch Map
+│   │   └── owns-defers.md          # Parallelize OWNS/DEFERS
 │   ├── implement/
-│   │   ├── SKILL.md                # Step 9: Runtime worktree creation + per-task TDD orchestration + batch gate
-│   │   └── templates/
-│   │       ├── implementer.md      # TDD execution prompt
-│   │       ├── correctness/        # Always-run reviewers (4)
-│   │       └── thoroughness/       # Deep-mode reviewers (4)
+│   │   └── SKILL.md                # Step 9: Runtime worktree creation + per-task TDD orchestration + batch gate
 │   ├── integrate/
-│   │   ├── SKILL.md                # Step 10: Merge + cross-task review + phase learnings
-│   │   └── templates/
-│   │       ├── integration-reviewer.md
-│   │       └── security-integration-reviewer.md
+│   │   └── SKILL.md                # Step 10: Merge + cross-task review + phase learnings
 │   ├── test/
-│   │   ├── SKILL.md                # Step 11: Acceptance testing + code review checkpoint
-│   │   └── templates/
-│   │       ├── test-writer.md
-│   │       ├── acceptance-test.md
-│   │       ├── integration-test.md
-│   │       ├── e2e-test.md
-│   │       └── boundary-test.md
+│   │   └── SKILL.md                # Step 11: Acceptance testing + code review checkpoint
 │   └── replan/
-│       └── SKILL.md                # Step 12: Between-phase replanning + phase snapshot
+│       ├── SKILL.md                # Step 12: Between-phase replanning + phase snapshot
+│       └── owns-defers.md          # Replan OWNS/DEFERS
 └── docs/
     └── qrspi-reference.md          # QRSPI framework reference
 ```
@@ -907,7 +908,7 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 |------|------------------------------------------|
 | **Design** | Approach selection with rationale, key architectural decisions, trade-offs considered, design-level test strategy, Mermaid system diagrams. Vertical slicing and phase boundaries are owned by Phasing. |
 | **Structure** | Interface definitions (function/class signatures), create vs modify tracking, CI pipeline structure for greenfield projects, phase-scoped file maps |
-| **Plan** | Sub-subagent dispatch for large plans, merge/split lifecycle, quick-fix single-task mode, `pipeline` field on task files, 6 parallel reviewer templates (5 plan-specific + scope-reviewer) |
+| **Plan** | Sub-subagent dispatch for large plans, merge/split lifecycle, quick-fix single-task mode, `pipeline` field on task files, 7 parallel reviewer subagents (1 unified plan-quality + 5 plan-artifact + dedicated `qrspi-plan-scope-reviewer`) |
 | **Parallelize + Implement (split from original Worktree)** | Plan-time dependency graph analysis with parallel/sequential/hybrid execution modes and a symbolic Branch Map (Parallelize); runtime branch resolution, single baseline worktree at `.worktrees/{slug}/baseline/`, baseline tests with auto-fix, per-task worktrees with hook-based subagent containment (no per-worktree settings), per-task implementer dispatch, and batch gate (Implement). Splitting plan-time and runtime restores QRSPI's "one skill = one artifact + one human gate" symmetry. |
 | **Implement** | TDD iron law (no code without failing test), 8 specialized reviewers in correctness/thoroughness tiers, configurable review depth per phase, WHY-not-WHAT commenting discipline with non-technical-reader orientation lean, verbatim review result persistence |
 
@@ -915,8 +916,8 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 
 | Addition | What it adds |
 |----------|-------------|
-| **14 specialized reviewers** | 4 implementation correctness (spec, code quality, silent failures, security) + 4 implementation thoroughness (goal traceability, test coverage, type design, simplification) + 5 plan-level (spec, security, silent failures, goal traceability, test coverage) + 1 cross-cutting scope-reviewer (parameterized per artifact type) |
-| **5 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once), Artifact Synthesis (subagent produce + review loop), Architectural Plan (6 parallel templates: 5 plan-specific + scope-reviewer) |
+| **Specialized reviewer agents (per #110)** | 9 quality reviewers (one per artifact: goals, questions, research, design, structure, phasing, plan, parallelize, replan) + 7 dedicated scope-reviewers (`qrspi-{name}-scope-reviewer` for goals, design, structure, phasing, plan, parallelize, replan) + 5 plan-artifact reviewers (spec, security, silent-failure-hunter, goal-traceability, test-coverage) + 8 per-task implementation reviewers (spec, code quality, silent failures, security, goal traceability, test coverage, type design, simplification) + 2 integration reviewers (integration, security-integration) + 1 implement-gate reviewer. Each lives as a first-class `agents/qrspi-*.md` file with the cross-cutting protocol preloaded via `skills: [reviewer-protocol]`. |
+| **5 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once), Artifact Synthesis (subagent produce + review loop), Architectural Plan (7 parallel reviewer subagents: 1 unified plan-quality + 5 plan-artifact + dedicated `qrspi-plan-scope-reviewer`) |
 | **Route-based routing** | `config.md` with route field as single source of truth, replacing hardcoded skill-to-skill invocations |
 | **Config validation** | Numbered-option menus for missing/invalid config fields -- never silent defaults |
 | **Quick fix mode** | Shortened pipeline (Goals -> Questions -> Research -> Plan -> Implement -> Test) for targeted fixes — skips Design, Phasing, Structure, Parallelize, Integrate |

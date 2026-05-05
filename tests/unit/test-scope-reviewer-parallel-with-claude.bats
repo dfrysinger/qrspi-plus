@@ -22,52 +22,64 @@ setup() {
   STRUCTURE_FILE="$ROOT/skills/structure/SKILL.md"
   PLAN_FILE="$ROOT/skills/plan/SKILL.md"
   PARALLELIZE_FILE="$ROOT/skills/parallelize/SKILL.md"
+  REPLAN_FILE="$ROOT/skills/replan/SKILL.md"
   USING_QRSPI_FILE="$ROOT/skills/using-qrspi/SKILL.md"
-  SCOPE_REVIEWER_TEMPLATE="$ROOT/skills/_shared/templates/scope-reviewer.md"
-  REVIEWER_BOILERPLATE="$ROOT/skills/_shared/reviewer-boilerplate.md"
-  export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE
-  export USING_QRSPI_FILE SCOPE_REVIEWER_TEMPLATE REVIEWER_BOILERPLATE
+  AGENTS_DIR="$ROOT/agents"
+  REVIEWER_BOILERPLATE="$ROOT/skills/reviewer-protocol/SKILL.md"
+  export ROOT GOALS_FILE DESIGN_FILE PHASING_FILE STRUCTURE_FILE PLAN_FILE PARALLELIZE_FILE REPLAN_FILE
+  export USING_QRSPI_FILE AGENTS_DIR REVIEWER_BOILERPLATE
 }
 
 # ── Per-skill: scope-reviewer dispatched in parallel with Claude reviewer ──
 
 @test "goals SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  # The Claude review subagent and scope-reviewer subagent are both
-  # listed in the Review Round and the goals SKILL's prose names parallel
-  # dispatch (three reviewers in parallel).
-  grep -qi "Claude review subagent" "$GOALS_FILE"
-  grep -qi "Scope-reviewer subagent" "$GOALS_FILE"
-  grep -Eqi "in parallel|run in parallel|reviewers run in parallel|three reviewers run in parallel" "$GOALS_FILE"
+  # The quality-reviewer and scope-reviewer subagents are both listed in
+  # the Review Round (commit 7/22 migration: Agent({subagent_type:...}) form).
+  grep -qi "qrspi-goals-reviewer" "$GOALS_FILE"
+  grep -qi "qrspi-goals-scope-reviewer" "$GOALS_FILE"
+  grep -Eqi "in parallel|run in parallel|reviewers run in parallel|four reviewer dispatches run in parallel" "$GOALS_FILE"
 }
 
 @test "design SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  grep -qi "Claude review subagent" "$DESIGN_FILE"
-  grep -qi "scope-reviewer dispatch\|scope-reviewer subagent" "$DESIGN_FILE"
-  grep -Eqi "in parallel|run in parallel" "$DESIGN_FILE"
+  # Commit 10/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-design-reviewer" "$DESIGN_FILE"
+  grep -qi "qrspi-design-scope-reviewer" "$DESIGN_FILE"
+  grep -Eqi "in parallel|run in parallel|two parallel reviewer dispatches" "$DESIGN_FILE"
 }
 
 @test "phasing SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  grep -qi "Claude review subagent" "$PHASING_FILE"
-  grep -qi "scope-reviewer.*dispatch\|scope-reviewer subagent" "$PHASING_FILE"
-  grep -Eqi "in parallel|run in parallel" "$PHASING_FILE"
+  # Commit 12/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-phasing-reviewer" "$PHASING_FILE"
+  grep -qi "qrspi-phasing-scope-reviewer" "$PHASING_FILE"
+  grep -Eqi "in parallel|run in parallel|two parallel reviewer dispatches" "$PHASING_FILE"
 }
 
 @test "structure SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  grep -qi "Claude review subagent" "$STRUCTURE_FILE"
-  grep -qi "scope-reviewer dispatch\|scope-reviewer subagent" "$STRUCTURE_FILE"
-  grep -Eqi "in parallel|run in parallel" "$STRUCTURE_FILE"
+  # Commit 11/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-structure-reviewer" "$STRUCTURE_FILE"
+  grep -qi "qrspi-structure-scope-reviewer" "$STRUCTURE_FILE"
+  grep -Eqi "in parallel|run in parallel|two parallel reviewer dispatches" "$STRUCTURE_FILE"
 }
 
 @test "plan SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  grep -qi "Claude review subagent" "$PLAN_FILE"
-  grep -qi "scope-reviewer" "$PLAN_FILE"
-  grep -Eqi "in parallel|run in parallel" "$PLAN_FILE"
+  # Commit 13/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-plan-reviewer" "$PLAN_FILE"
+  grep -qi "qrspi-plan-scope-reviewer" "$PLAN_FILE"
+  grep -Eqi "in parallel|run in parallel|parallel reviewer dispatches" "$PLAN_FILE"
 }
 
 @test "parallelize SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
-  grep -qi "Claude review subagent\|Claude reviewer" "$PARALLELIZE_FILE"
-  grep -qi "scope-reviewer" "$PARALLELIZE_FILE"
-  grep -Eqi "in parallel|run in parallel" "$PARALLELIZE_FILE"
+  # Commit 14/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-parallelize-reviewer" "$PARALLELIZE_FILE"
+  grep -qi "qrspi-parallelize-scope-reviewer" "$PARALLELIZE_FILE"
+  grep -Eqi "in parallel|run in parallel|two parallel reviewer dispatches" "$PARALLELIZE_FILE"
+}
+
+@test "replan SKILL: scope-reviewer dispatched in parallel with Claude reviewer" {
+  # Commit 17/22 migration: Agent({subagent_type:...}) form.
+  grep -qi "qrspi-replan-reviewer" "$REPLAN_FILE"
+  grep -qi "qrspi-replan-scope-reviewer" "$REPLAN_FILE"
+  grep -Eqi "in parallel|run in parallel|parallel reviewer dispatches" "$REPLAN_FILE"
 }
 
 # ── Shared finding schema: both reviewers emit M48 5-field findings ─────────
@@ -88,33 +100,37 @@ setup() {
   echo "$section" | grep -q "referenced_files"
 }
 
-@test "scope-reviewer template ## Output Contract references reviewer-boilerplate Finding Schema for unified output" {
-  local section
-  section="$(awk '
-    $0 == "## Output Contract" { in_b = 1; print; next }
-    in_b && /^## / { exit }
-    in_b { print }
-  ' "$SCOPE_REVIEWER_TEMPLATE")"
-  [ -n "$section" ]
-  echo "$section" | grep -q "reviewer-boilerplate.md"
-  echo "$section" | grep -qi "Finding Schema"
+@test "every per-artifact scope-reviewer agent declares skills: [reviewer-protocol] for unified Finding Schema" {
+  # Post-migration replacement for the legacy "Output Contract references
+  # reviewer-boilerplate Finding Schema" template assertion. Each agent file
+  # loads the reviewer-protocol skill via frontmatter, so the M48 5-field
+  # finding schema is shared across the Claude reviewer and the scope-reviewer.
+  for name in goals design phasing structure plan parallelize replan; do
+    local agent="$AGENTS_DIR/qrspi-${name}-scope-reviewer.md"
+    [ -f "$agent" ] || { echo "FAIL: missing agent $agent" >&2; return 1; }
+    grep -qE "^skills:[[:space:]]*\[.*reviewer-protocol.*\]" "$agent" || {
+      echo "FAIL: $agent does not declare skills: [reviewer-protocol]" >&2
+      return 1
+    }
+  done
 }
 
 # ── Conflict resolution / merger policy ─────────────────────────────────────
 
-@test "scope-reviewer template names the embedded boilerplate so finding shapes are unified across reviewers" {
-  # The boilerplate-embedding policy is the merger primitive — both the
+@test "every per-artifact scope-reviewer agent loads reviewer-protocol so finding shapes are unified across reviewers" {
+  # The boilerplate-loading policy is the merger primitive — both the
   # Claude reviewer and the scope-reviewer emit findings in the same
   # 5-field shape, so deduplication / merger can run on a uniform set.
-  local section
-  section="$(awk '
-    $0 == "## Embedded Boilerplate" { in_b = 1; print; next }
-    in_b && /^## / { exit }
-    in_b { print }
-  ' "$SCOPE_REVIEWER_TEMPLATE")"
-  [ -n "$section" ]
-  echo "$section" | grep -q "reviewer-boilerplate.md"
-  echo "$section" | grep -Eqi "embeds|verbatim|concatenates"
+  # Post-migration: agents declare `skills: [reviewer-protocol]` instead
+  # of the legacy ## Embedded Boilerplate prose section.
+  for name in goals design phasing structure plan parallelize replan; do
+    local agent="$AGENTS_DIR/qrspi-${name}-scope-reviewer.md"
+    [ -f "$agent" ] || { echo "FAIL: missing agent $agent" >&2; return 1; }
+    grep -qE "skills:.*reviewer-protocol" "$agent" || {
+      echo "FAIL: $agent does not load reviewer-protocol skill" >&2
+      return 1
+    }
+  done
 }
 
 @test "goals SKILL Review Round writes findings from BOTH reviewers to the same review log file" {

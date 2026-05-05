@@ -162,8 +162,9 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 └── reviews/
     ├── goals/
     │   ├── round-01-claude.md
-    │   ├── round-01-scope.md
+    │   ├── round-01-scope-claude.md
     │   ├── round-01-codex.md
+    │   ├── round-01-scope-codex.md
     │   └── round-01-fixes.md      (main-chat-authored: what was fixed this round)
     ├── questions/                 (same shape; no scope reviewer for questions)
     ├── research/                  (same shape; no scope reviewer for research)
@@ -180,7 +181,9 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   ├── round-NN-integration-claude.md
     │   ├── round-NN-security-claude.md
     │   ├── round-NN-integration-codex.md
-    │   └── round-NN-security-codex.md
+    │   ├── round-NN-security-codex.md
+    │   ├── round-NN-implement-gate-claude.md   (when "Re-run all reviews" selected at Implement batch gate)
+    │   └── round-NN-implement-gate-codex.md    (same condition; only when codex_reviews: true)
     ├── ci/
     │   └── round-NN-review.md
     └── test/
@@ -467,8 +470,9 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 **Per-reviewer file paths.** Each reviewer writes to its own per-round per-reviewer file under `reviews/{step}/`:
 
 - Claude reviewer subagent → `reviews/{step}/round-NN-claude.md`
-- Scope-reviewer subagent → `reviews/{step}/round-NN-scope.md` (skills that dispatch the parameterized scope-reviewer)
+- Claude scope-reviewer subagent → `reviews/{step}/round-NN-scope-claude.md` (one per scope-reviewed artifact; dedicated `qrspi-{name}-scope-reviewer` agents per #110)
 - Codex reviewer (async) → `reviews/{step}/round-NN-codex.md` (filled by `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId>` stdout redirection — see per-skill Codex dispatch language)
+- Codex scope-reviewer (async) → `reviews/{step}/round-NN-scope-codex.md` (when `codex_reviews: true` and the artifact has a dedicated scope-reviewer)
 - Main chat fix-apply summary → `reviews/{step}/round-NN-fixes.md`
 
 `{step}` is the canonical step name (e.g. `goals`, `design`, `plan`, `replan`). `NN` is the zero-padded round number. Per-reviewer parallelism is preserved: each reviewer writes its own file, so two reviewers running concurrently never race on the same file.
@@ -479,7 +483,7 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 ---
 artifact: {step}
 round: NN
-reviewer: claude   # or "scope"
+reviewer: claude   # or "codex"; the runtime, not the role. Scope-reviewer outputs land in round-NN-scope-{reviewer}.md filenames.
 ---
 
 # {Step} review — round NN — {reviewer}
@@ -493,7 +497,7 @@ reviewer: claude   # or "scope"
 
 ## Findings
 
-{Findings emitted as a list, each conforming to the 5-field schema in `_shared/reviewer-boilerplate.md` `## Finding Schema`. "No issues found" is a valid body when N=0.}
+{Findings emitted as a list, each conforming to the 5-field schema in `skills/reviewer-protocol/SKILL.md` `## Finding Schema`. "No issues found" is a valid body when N=0.}
 ```
 
 **Subagent return value (brief).** After writing the per-reviewer file, the reviewer subagent returns a single brief summary string to main chat. The summary MUST NOT include the finding text — main chat reads the file when it needs the details. Required summary form:

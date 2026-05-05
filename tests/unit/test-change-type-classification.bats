@@ -31,7 +31,7 @@ bats_require_minimum_version 1.5.0
 
 setup() {
   FIXTURES_DIR="$BATS_TEST_DIRNAME/../fixtures"
-  BOILERPLATE_FILE="$BATS_TEST_DIRNAME/../../skills/_shared/reviewer-boilerplate.md"
+  BOILERPLATE_FILE="$BATS_TEST_DIRNAME/../../skills/reviewer-protocol/SKILL.md"
   USING_QRSPI_FILE="$BATS_TEST_DIRNAME/../../skills/using-qrspi/SKILL.md"
   export FIXTURES_DIR BOILERPLATE_FILE USING_QRSPI_FILE
 }

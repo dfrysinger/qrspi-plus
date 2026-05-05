@@ -16,8 +16,9 @@ bats_require_minimum_version 1.5.0
 
 setup() {
   REPLAN_FILE="$BATS_TEST_DIRNAME/../../skills/replan/SKILL.md"
-  SCOPE_REVIEWER_TEMPLATE="$BATS_TEST_DIRNAME/../../skills/_shared/templates/scope-reviewer.md"
-  export REPLAN_FILE SCOPE_REVIEWER_TEMPLATE
+  OWNS_FILE="$BATS_TEST_DIRNAME/../../skills/replan/owns-defers.md"
+  SCOPE_REVIEWER_AGENT="$BATS_TEST_DIRNAME/../../agents/qrspi-replan-scope-reviewer.md"
+  export REPLAN_FILE OWNS_FILE SCOPE_REVIEWER_AGENT
 }
 
 # extract_section <file> <heading-line>
@@ -49,6 +50,20 @@ extract_subsection() {
       '
 }
 
+# extract_h3_direct <file> <h3-heading>
+# Extracts an H3 sub-block directly from a file (no H2 wrapper required).
+# Used for owns-defers.md files which start at H3 level.
+extract_h3_direct() {
+  local file="$1"
+  local h3="$2"
+  awk -v h="$h3" '
+    $0 == h { in_b = 1; print; next }
+    in_b && /^### / { exit }
+    in_b && /^## / { exit }
+    in_b { print }
+  ' "$file"
+}
+
 # ── File existence and OWNS/DEFERS heading ──────────────────────────────────
 
 @test "skills/replan/SKILL.md exists" {
@@ -62,17 +77,15 @@ extract_subsection() {
 }
 
 @test "OWNS/DEFERS section uses H3 subheadings ### Replan OWNS and ### Replan DEFERS (family-shape)" {
-  local section
-  section="$(extract_section "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS")"
-  echo "$section" | grep -qE "^### Replan OWNS$"
-  echo "$section" | grep -qE "^### Replan DEFERS$"
+  grep -qE "^### Replan OWNS$" "$OWNS_FILE"
+  grep -qE "^### Replan DEFERS$" "$OWNS_FILE"
 }
 
 # ── OWNS list contents (scoped to ### Replan OWNS sub-block) ────────────────
 
 @test "### Replan OWNS lists archive of four synthesizing artifacts" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan OWNS")"
+  block="$(extract_h3_direct "$OWNS_FILE" "### Replan OWNS")"
   [ -n "$block" ]
   echo "$block" | grep -qi "archive"
   echo "$block" | grep -q "goals.md"
@@ -83,7 +96,7 @@ extract_subsection() {
 
 @test "### Replan OWNS lists populate-from-future-* and mark-as-draft and invoke-Goals" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan OWNS")"
+  block="$(extract_h3_direct "$OWNS_FILE" "### Replan OWNS")"
   echo "$block" | grep -qi "future-goals.md"
   echo "$block" | grep -qi "future-questions.md"
   echo "$block" | grep -qi "future-research-summary.md"
@@ -96,7 +109,7 @@ extract_subsection() {
 
 @test "### Replan DEFERS lists phasing decisions to Phasing" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan DEFERS")"
+  block="$(extract_h3_direct "$OWNS_FILE" "### Replan DEFERS")"
   [ -n "$block" ]
   echo "$block" | grep -qi "Phasing"
   # Co-occurrence: a single line/bullet must reference a phasing-decision
@@ -107,7 +120,7 @@ extract_subsection() {
 
 @test "### Replan DEFERS lists roadmap authoring to Phasing" {
   local block
-  block="$(extract_subsection "$REPLAN_FILE" "## Replan OWNS / Replan DEFERS" "### Replan DEFERS")"
+  block="$(extract_h3_direct "$OWNS_FILE" "### Replan DEFERS")"
   echo "$block" | grep -qi "roadmap"
   echo "$block" | grep -i "roadmap" | grep -q "Phasing"
 }
@@ -296,12 +309,14 @@ extract_step() {
 
 # ── Scope-reviewer dispatch in Review Round ─────────────────────────────────
 
-@test "Review Round dispatches scope-reviewer with {ARTIFACT_TYPE}=replan" {
+@test "Review Round dispatches scope-reviewer with parameter replan" {
+  # Commit 17/22 migration: scope-reviewer is now dispatched as a dedicated
+  # agent (qrspi-replan-scope-reviewer) rather than via the shared template.
+  # The old scope-reviewer.md + {ARTIFACT_TYPE}=replan pattern is retired.
   local section
   section="$(extract_section "$REPLAN_FILE" "## Review Round")"
   [ -n "$section" ]
-  echo "$section" | grep -qi "scope-reviewer"
-  echo "$section" | grep -q "{ARTIFACT_TYPE}=replan"
+  echo "$section" | grep -qi "qrspi-replan-scope-reviewer"
 }
 
 @test "Review Round scope-reviewer dispatch references OWNS/DEFERS as locked rule set" {
@@ -325,25 +340,18 @@ extract_step() {
   echo "$section" | grep -i "scope-reviewer" | grep -qiE "parallel|in parallel"
 }
 
-# ── Scope-reviewer template allowed-values list includes `replan` ───────────
+# ── Replan scope-reviewer agent file exists and references the Replan rules ───
 
-@test "scope-reviewer template ## Parameters allowed-values list includes replan" {
-  # The scope-reviewer template fails-closed if dispatched with an
-  # {ARTIFACT_TYPE} value not in its allowed list. Replan dispatches with
-  # {ARTIFACT_TYPE}=replan, so the template must list `replan` as one of
-  # the allowed values under its `## Parameters` section. This guards
-  # against the silent-failure mode where the template would fail-closed
-  # before running checks against the Replan-proposed changes.
-  [ -f "$SCOPE_REVIEWER_TEMPLATE" ]
-  local section
-  section="$(awk '
-    /^## Parameters/ { in_b = 1; print; next }
-    in_b && /^## / { exit }
-    in_b { print }
-  ' "$SCOPE_REVIEWER_TEMPLATE")"
-  [ -n "$section" ]
-  # Allowed-values list must contain a bullet for `replan`.
-  echo "$section" | grep -qE "^[[:space:]]*-[[:space:]]+\`replan\`$"
+@test "qrspi-replan-scope-reviewer agent file exists and references Replan OWNS/DEFERS rules" {
+  # Commit 19/22 migration: per-artifact scope-reviewer agents replace the
+  # legacy parameterized template. The dedicated agent file
+  # `agents/qrspi-replan-scope-reviewer.md` is what Replan dispatches; it
+  # must exist and must read the Replan-specific OWNS/DEFERS rule set.
+  [ -f "$SCOPE_REVIEWER_AGENT" ]
+  # Must instruct reading the replan owns-defers rule file.
+  grep -q "skills/replan/owns-defers.md" "$SCOPE_REVIEWER_AGENT"
+  # Must reference the Replan OWNS / Replan DEFERS rule set name.
+  grep -qE "Replan OWNS.*Replan DEFERS" "$SCOPE_REVIEWER_AGENT"
 }
 
 # ── Task 34: Artifact Gating includes phasing.md (R1 Claude-I2) ─────────────
