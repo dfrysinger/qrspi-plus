@@ -54,14 +54,14 @@ model: sonnet          # NEW. one of: sonnet | opus. default: sonnet.
 
 | Value | When Plan assigns it | Implement-skill behavior |
 |---|---|---|
-| `code` (default) | Anything that adds or modifies executable code, tests, schemas, or build/CI config | Full TDD path. Quick or Deep mode per `config.md`. Codex companion per `config.md`. Configured fix-round cap. Dispatches `qrspi-implementer`. |
-| `lightweight` | All target files match prose/prompt globs (see §6) | No TDD. **Quick mode forced** (4 correctness reviewers). **Codex companion skipped** unconditionally. **Fix-round cap forced to 3**. Dispatches `qrspi-implementer-lightweight`. |
+| `code` (default) | Anything that adds or modifies executable code, tests, schemas, or build/CI config | Full TDD path. Quick or Deep mode per `config.md`. Codex companion per `config.md`. Dispatches `qrspi-implementer`. |
+| `lightweight` | All target files match prose/prompt globs (see §6) | No TDD. **Quick mode forced** (4 correctness reviewers). **Codex companion skipped** unconditionally. Dispatches `qrspi-implementer-lightweight`. |
+
+**What lightweight does NOT change.** The per-task fix-loop semantics are inherited unchanged from the existing flow at `implement/SKILL.md:340,541,682`: up to 3 fix cycles (already hardcoded), then unresolved tasks are presented as "accepted-with-issues at the batch gate" (`:541`); the BLOCKED escape hatch (`:319,344` — model switch, task decomposition, or fresh `Agent` dispatch) is available throughout. No new escalation path, no new cap, no new gate. Lightweight is two flag-flips on the existing orchestration shape: skip codex, force Quick.
 
 **Why force Quick + skip codex on lightweight.** The motivation behind #94 is wall-time, not correctness. The lightweight path is for tasks where the artifact has no executable behavior to test and no security/code-quality surface to review against — running thoroughness reviewers or codex companion on prose burns tokens for clean.md sentinels. Forcing Quick + claude-only is the largest wall-time saving available without dropping reviewer coverage on the things that *can* go wrong (spec drift, weakened safety language).
 
 **Why keep all four correctness reviewers on lightweight.** `qrspi-spec-reviewer` and `qrspi-code-quality-reviewer` are obviously load-bearing for prose. `qrspi-security-reviewer` and `qrspi-silent-failure-hunter` will emit `clean.md` sentinels on most prose edits, but the cases where they don't — a prompt edit that weakens a fail-closed rule, a doc edit that exposes a credential location, removal of a security warning from a skill — are exactly the cases where a missing reviewer would be a regression. They run in parallel; wall-time cost is `max(reviewers)`, not `sum(reviewers)`.
-
-**Why 3-round cap on lightweight.** The current per-task fix loop is already capped at 3 cycles (`implement/SKILL.md:682`). Lightweight inherits that cap explicitly — if a prose change can't converge in 3 fix cycles, the next move is human review, not more iteration.
 
 ## 6. Plan-skill heuristic
 
@@ -107,16 +107,16 @@ Implement reads `task_type` and `model` from each `tasks/task-NN.md` at dispatch
 if task_type == "lightweight":
     review_depth = "quick"               # 4 correctness reviewers, no thoroughness
     codex_enabled = false                # skip all scripts/codex-companion-bg.sh launch sites
-    fix_round_cap = 3                    # override config.md
     implementer_subagent = "qrspi-implementer-lightweight"
 else:
     review_depth = config.review_depth   # quick or deep per config.md
     codex_enabled = config.codex_enabled
-    fix_round_cap = config.fix_round_cap
     implementer_subagent = "qrspi-implementer"
 
 dispatch: Agent({ subagent_type: implementer_subagent, model: task.model })
 ```
+
+**Inherited unchanged.** Fix-loop round count (3 cycles, hardcoded), accepted-with-issues batch-gate behavior, and the BLOCKED escape hatch all carry over without modification. Lightweight reuses the existing per-task orchestration loop — only the flags listed above flip.
 
 The codex-launch sites at `implement/SKILL.md:387,395,403,411,419,427,435,443` (per-task reviewer parallel launches) and `:616` (gate-level launch) become conditional on `codex_enabled`. The thoroughness-reviewer dispatch becomes conditional on `review_depth == "deep"`.
 
