@@ -60,9 +60,9 @@ Body sections:
 
 ### `skills/reviewer-protocol/SKILL.md` (amendments — bifurcated contract during the migration window)
 
-Because `skills/reviewer-protocol/SKILL.md` is preloaded by EVERY reviewer agent (artifact-level + per-task implementation + plan-artifact + integration + implement-gate + security-integration), and #109 migrates only the 16 artifact-level reviewers (§2 "Reviewer agent files"), a wholesale replacement of the existing `## Disk-Write Contract` would give the 16 deferred reviewers contradictory instructions. The amendment below is therefore **bifurcated**: it keeps the current single-file contract intact (renamed `## Legacy Disk-Write Contract (deferred reviewers)`), and adds a new `## Per-Finding Disk-Write Contract (#109 reviewers)` alongside it. The skill body adds an explicit **Reviewer-Tag Routing Table** at the top that lists which reviewer-tag uses which contract; reviewer agent files preload the skill and follow the contract their tag is routed to.
+Because `skills/reviewer-protocol/SKILL.md` is preloaded by EVERY reviewer agent (artifact-level + per-task implementation + plan-step + integration + implement-gate + security-integration), and #109 migrates only the 14 artifact-level reviewers in scope (§2 "Reviewer agent files"), a wholesale replacement of the existing `## Disk-Write Contract` would give the deferred reviewers contradictory instructions. The amendment below is therefore **bifurcated**: it keeps the current single-file contract intact (renamed `## Legacy Disk-Write Contract (deferred reviewers)`), and adds a new `## Per-Finding Disk-Write Contract (#109 reviewers)` alongside it. The skill body adds an explicit **Reviewer-Tag Routing Table** at the top that lists which reviewer-tag uses which contract; reviewer agent files preload the skill and follow the contract their tag is routed to.
 
-The bifurcation is removed in the follow-up issue (§8) when the remaining 16 reviewers migrate. At that point the legacy section is deleted and the routing table collapses.
+The bifurcation is removed in the follow-up issue (§8) when the remaining deferred reviewers migrate. At that point the legacy section is deleted and the routing table collapses.
 
 The new `## Per-Finding Disk-Write Contract (#109 reviewers)` section defines:
 
@@ -70,7 +70,7 @@ The new `## Per-Finding Disk-Write Contract (#109 reviewers)` section defines:
 
 - **Trailing-newline mandate (with normalize-then-warn fallback):** every per-finding file emitted by a reviewer SHOULD end with EXACTLY ONE trailing newline character (POSIX-conformant). The reviewer-protocol contract documents this so the orchestrator-side preserve guard can reproduce the snapshot deterministically. **Reviewers are stochastic LLMs**, so the dispatcher's Apply-fix step 2 normalizes any per-finding file with malformed trailing-newline shape (zero, two, or more trailing newlines) to canonical one-trailing-newline form (deterministic byte-level fix: strip all trailing whitespace + append exactly one `\n`) and surfaces a one-line warning to the round audit (`normalized trailing newline on <path>`). The snapshot at step 4 is then taken over the normalized file. Hard-fail at step 2 is reserved for unrecoverable shape errors (missing frontmatter, corrupt YAML, malformed `change_type` enum, missing required fields).
 
-- **Per-finding filename pattern:** `<reviewer-tag>.finding-F<NN>.md` (zero-padded F##; reviewer-tag ∈ `claude` | `scope-claude` | `codex` | `scope-codex`). Findings number from F01 in emission order.
+- **Per-finding filename pattern:** `<reviewer-tag>.finding-F<NN>.md` (zero-padded F##; reviewer_tag ∈ `quality-claude` | `scope-claude` | `quality-codex` | `scope-codex`). Findings number from F01 in emission order.
 
 - **Per-finding file format:**
   - YAML frontmatter carries 4 of the 5 schema fields plus 3 audit fields: `finding_id`, `severity`, `change_type`, `referenced_files`, `artifact`, `round`, `reviewer`.
@@ -144,10 +144,22 @@ Apply-fix step 2 reads `config.md.codex_reviews` (existing field) before evaluat
 
 The current Apply-fix protocol (steps 1–6 at line 518+) is replaced with the verifier-aware sequence below. The Apply-fix protocol revision lands in the SAME commit as the reviewer-protocol amendment and the reviewer-agent-file migrations (see §9 — atomic landing) so main does not break between commits.
 
-1. **List all per-reviewer outputs** for the round: `ls reviews/{step}/round-NN/*.finding-*.md reviews/{step}/round-NN/*.clean.md reviews/{step}/round-NN/*.crash.md` (silent capture). All three file kinds — finding files, clean markers, crash files — are part of the primary enumeration so a crashed reviewer never trips the schema-violation guard. The combined list partitions into "to verify" (finding files), "audit-only clean" (clean markers), and "audit-only crash" (crash files).
+1. **List all per-reviewer outputs** for the round (nullglob-safe; unmatched globs MUST yield zero matches, not literal patterns or shell errors): the dispatcher invokes a small bash helper that runs `shopt -s nullglob` then enumerates the three patterns, all fully path-qualified to the round subdir:
+   ```bash
+   shopt -s nullglob
+   D="reviews/{step}/round-NN"
+   findings=( "$D"/*.finding-*.md )
+   cleans=( "$D"/*.clean.md )
+   crashes=( "$D"/*.crash.md )
+   ```
+   All three file kinds — finding files, clean markers, crash files — are part of the primary enumeration so a crashed reviewer never trips the schema-violation guard. An all-clean round (zero findings, all clean markers) and a no-crash round (zero crash files) are both valid; nullglob makes the empty-array case work. The combined list partitions into "to verify" (finding files), "audit-only clean" (clean markers), and "audit-only crash" (crash files).
 2. **Per-expected-reviewer schema-violation guard + trailing-newline normalization:** the **Expected-Reviewer Matrix** in `skills/reviewer-protocol/SKILL.md` (defined adjacent to the Reviewer Routing Table — see §2 reviewer-protocol section) is the source of truth for the expected-tag set per artifact step, config-aware. Apply-fix step 2 evaluates the matrix row for the current step against `config.md.codex_reviews` to derive the active expected set, then for each expected tag asserts that step-1's `ls` produced AT LEAST ONE of (`<tag>.finding-*.md`, `<tag>.clean.md`, `<tag>.crash.md`). Any expected tag with zero matches fails loud with "reviewer X did not emit any output for round NN — agent file may be out of date or dispatch failed silently." Step 2 ALSO fails loud if any output file is keyed to a `(step, tag)` route that is unrouted in the Reviewer Routing Table. Crash precedence is explicit: if a tag has both a crash file and finding files, treat as reviewer failure (route to pause via the crash path; do NOT verifier-dispatch the finding files for that tag, and stage them out of the assembly globbing per step 4 below). Step 2 normalizes per-finding files with malformed trailing-newline shape per the trailing-newline-with-normalize-then-warn rule above (warning to round audit, not hard fail). Hard fails are reserved for: missing frontmatter, corrupt YAML, malformed `change_type` enum value, missing required fields, unrouted `(step, tag)` route, expected-tag with zero output files.
 3. **Verifier-enabled gate:** read `verifier_enabled` from `config.md` (lives in `skills/using-qrspi/SKILL.md`'s Config-File schema). If `false`, skip steps 4–6 (no checksum snapshot, no verifier dispatch, no preserve guard). Jump to step 7 with all findings kept (no scoring).
-4. **Stage out crashed-tag finding files + pre-dispatch checksum snapshot to disk.** For each tag that has BOTH a crash file and finding files, move the tag's finding files to a sibling `reviews/{step}/round-NN/.crash-skipped/` subdir (created on demand). This keeps the audit trail intact (crashed tag's findings are still on disk under `.crash-skipped/`) while ensuring the step 7 glob `cat reviews/{step}/round-NN/*.finding-*.md *.clean.md *.crash.md` doesn't pollute `round-NN-verified.md` with unverified findings from a failed reviewer. The `.crash-skipped/` subdir IS committed in the per-round commit (step 12) — it lives inside `reviews/` which is the existing audit-trail tree. Then, for each remaining `*.finding-*.md` (non-crashed-tag), compute `sha256sum` of the entire file content (pre-verifier-dispatch, ending with the mandated single trailing newline, no boundary sentinel). Write the snapshot map to disk at `reviews/{step}/round-NN/.snapshots.txt` (one `<sha256> <relative-path>` line per finding file, `sha256sum`-output format). Disk-backed snapshots survive `/compact` between steps 4 and 6 — the dispatcher can re-read the snapshot file at step 6 even after a long verifier run causes intervening compaction. The `.snapshots.txt` file is also committed (audit trail of what the dispatcher checksummed; cheap to keep).
+4. **Stage out crashed-tag finding files + pre-dispatch checksum snapshot to disk.** For each tag that has BOTH a crash file and finding files, move the tag's finding files to a sibling `reviews/{step}/round-NN/.crash-skipped/` subdir (created on demand). This keeps the audit trail intact (crashed tag's findings are still on disk under `.crash-skipped/`) while ensuring the step 7 assembly (which uses the same nullglob-safe arrays from step 1, all fully path-qualified) doesn't pollute `round-NN-verified.md` with unverified findings from a failed reviewer. The `.crash-skipped/` subdir IS committed in the per-round commit (step 12) — it lives inside `reviews/` which is the existing audit-trail tree. Then, for each remaining `*.finding-*.md` (non-crashed-tag), compute `sha256sum` of the entire file content (pre-verifier-dispatch, ending with the mandated single trailing newline, no boundary sentinel). Write the snapshot map to disk at `reviews/{step}/round-NN/.snapshots.txt` (one `<sha256> <relative-path>` line per finding file, `sha256sum`-output format). Disk-backed snapshots survive `/compact` between steps 4 and 6 — the dispatcher can re-read the snapshot file at step 6 even after a long verifier run causes intervening compaction. The `.snapshots.txt` file is also committed in the per-round commit (audit trail of what the dispatcher checksummed; cheap to keep).
+
+**Re-entry semantics:** if Apply-fix step 4 runs again on the same round (option-2 re-dispatch path or post-`/compact` recovery), the existing `.snapshots.txt` is PRESERVED — never truncated. Step 4 reads the existing file and uses its entries as the snapshot for any finding files that already have snapshot lines; only finding files NOT yet present get new entries appended (e.g., on re-dispatch, the failed-verifier files are still pre-verify and their existing snapshots remain valid). The helper script's `snapshot` subcommand is idempotent on already-snapshotted paths. This eliminates the failure mode of a re-entry destroying the original snapshot.
+
+**Audit-trail asymmetry on disabled rounds:** verifier-disabled rounds skip step 4 entirely, so `.snapshots.txt` is absent from those rounds' commits. Future inspectors reading the round commit see this asymmetry as the disambiguator between an enabled-round commit (`.snapshots.txt` present, `## Verifier` blocks in finding files, `verifier_enabled: true` row in totals header) and a disabled-round commit (no `.snapshots.txt`, no `## Verifier` blocks, `verifier_enabled: false` row in totals header). The asymmetry is documented in the README's audit-shape section as part of the cutover commit.
 5. **Dispatch one `qrspi-finding-verifier` per non-crashed-tag finding-file path in parallel.** (Clean markers and crash files are NOT dispatched against; finding files from a crashed reviewer-tag are NOT dispatched against.) Each prompt carries the four input-contract parameters. Main chat receives ~10-token returns per Haiku.
 6. **Failure handling + preserve guard:**
    - **Verifier-failure:** if any verifier returned `VERIFY_FAILED:`, present the failure menu (§5 below) before assembly. User pick is honored before continuing: option 1 sets `verifier_enabled: false` AND runs the preserve guard against the un-failed-verifier files (those have snapshots and sentinels; option 1 must NOT silently skip the guard for files where verifiers did run and write content), then falls through to step 7; option 2 re-dispatches ONLY the failed verifiers (NOT all verifiers — the un-failed ones already wrote their `## Verifier` blocks; re-dispatching would invalidate the step-4 snapshot for files already verified). Option 2 reuses the step-4 snapshots for the un-failed verifiers (no re-snapshot); the failed verifiers' files are still pre-verify shape so their step-4 snapshots remain valid. There is no retry cap (per §8 — out of scope for #109); if option 2 keeps failing, the user can switch to option 1 or 3. Option 3 aborts the protocol.
@@ -190,13 +202,13 @@ New flow (post-#109):
 
 - After `await` returns 0 (success), main chat invokes `scripts/codex-finding-splitter.sh <codex-stdout-path> <round-subdir> <reviewer-tag>` which:
   - Splits the stdout file on `<<<FINDING-BOUNDARY>>>` lines.
-  - Writes each segment to `<round-subdir>/<reviewer-tag>.finding-F<NN>.md` (e.g. `codex.finding-F01.md` for artifact-Codex, `scope-codex.finding-F01.md` for scope-Codex).
+  - Writes each segment to `<round-subdir>/<reviewer_tag>.finding-F<NN>.md` (e.g. `quality-codex.finding-F01.md` for artifact-quality-Codex, `scope-codex.finding-F01.md` for scope-Codex).
   - Each segment must conform to the per-finding file format from `reviewer-protocol/SKILL.md` (Codex prompt enforces YAML frontmatter + body shape).
   - **Zero findings (Codex emits the literal sentinel `NO_FINDINGS` on stdout, no `<<<FINDING-BOUNDARY>>>` markers):** writes a single `<round-subdir>/<reviewer-tag>.clean.md` clean marker and exits 0. This is the codex equivalent of the per-reviewer clean sentinel.
   - **Missing-delimiter fallback (Codex emitted prose without delimiters AND without the `NO_FINDINGS` sentinel):** writes the entire stream to `<round-subdir>/<reviewer_tag>.finding-F00.md` as a single coarse finding with FULLY-VALID synthetic frontmatter (all 7 fields per the per-finding contract):
     ```
     ---
-    finding_id: R{NN}-{reviewer_tag}-F00   # tag-prefixed for round-wide uniqueness
+    finding_id: R{NN}-F00-{reviewer_tag}   # F-number first, tag-suffixed (matches the permissive schema-guard regex)
     severity: high
     change_type: intent                     # routes to pause gate (NEVER auto-applied)
     referenced_files: []
@@ -213,7 +225,8 @@ New flow (post-#109):
     ```
     The `change_type: intent` choice is load-bearing: it routes the malformed-Codex finding to the pause gate (so a human triages it) rather than the auto-apply path where the verifier could silently drop it. The tag-prefixed `finding_id` form (e.g. `R3-quality-codex-F00`, `R3-scope-codex-F00`) ensures uniqueness even if both quality-codex and scope-codex hit the fallback in the same round. The synthetic frontmatter satisfies the schema-violation guard at Apply-fix step 2 (all 7 fields present, change_type in the canonical enum, finding_id matches the per-finding pattern). Splitter emits a stderr warning. Verifier still scores it (likely low) and the score is purely advisory — the change_type partition routes it to pause regardless of score.
   - **Empty input (Codex stdout was empty when the reviewer was expected to emit):** writes a `<round-subdir>/<reviewer-tag>.crash.md` (NOT a clean marker — empty stdout is failure, not success) with a `## Splitter Note` body indicating "Codex stdout was empty; reviewer produced no output." Routes to the pause gate via the reviewer-failure path. (A reviewer that genuinely surfaces no findings is contractually required to emit `NO_FINDINGS` — empty stdout is unambiguous failure.)
-- On non-zero `await` exit code (10/11/12/13/14): main chat does NOT invoke the splitter. It writes a `<round-subdir>/<reviewer-tag>.crash.md` audit file directly (carrying the existing crash-note content) and short-circuits the reviewer's contribution to this round (no findings, no clean marker, no verifier dispatch for this reviewer). The apply-fix step's clean-vs-broken disambiguation rule treats `<reviewer-tag>.crash.md` as a hard reviewer failure and pauses the round via the existing pause gate. (This means crash notes are NEVER fed to the splitter and never become fake findings.)
+- On non-zero `await` exit code (10/11/12/13/14): main chat does NOT invoke the splitter. It writes a `<round-subdir>/<reviewer_tag>.crash.md` audit file directly (carrying the existing crash-note content) and short-circuits the reviewer's contribution to this round (no findings, no clean marker, no verifier dispatch for this reviewer). The apply-fix step's clean-vs-broken disambiguation rule treats `<reviewer_tag>.crash.md` as a hard reviewer failure and pauses the round via the existing pause gate. (Crash notes are NEVER fed to the splitter.)
+- **Exit-0 failure-payload classifier (pre-splitter):** the existing `codex-companion-bg.sh` wrapper can exit 0 while emitting failure text on stdout from the `storedJob.rendered` / `job.errorMessage` / `storedJob.errorMessage` paths (when Codex itself returned a failed-job payload the wrapper rendered as text rather than masking as a non-zero exit). Without classification, those payloads fall into the splitter's missing-delimiter F00 fallback, becoming pseudo-findings instead of crash records. Before invoking the splitter on `await` exit-0 stdout, main chat runs a one-line classifier: if the first non-blank line of stdout matches the wrapper's failure-rendering markers (the canonical markers are `^Codex job failed:`, `^Codex companion error:`, or any line containing `errorMessage:` outside a YAML frontmatter block), main chat treats the stdout as a failure payload and writes it to `<reviewer_tag>.crash.md` instead of feeding it to the splitter. The classifier lives in a shared helper `scripts/codex-stdout-classify.sh` (added in the cutover commit), invoked by each #109 dispatching skill before the splitter call. Test #3 gains fixtures for each canonical exit-0-failure marker.
 - **Multi-template Codex sites** (`skills/integrate/SKILL.md`, `skills/test/SKILL.md` — multiple Codex dispatches per round, each with a `<template>` suffix): the splitter is invoked once per template completion, with the per-template reviewer-tag (`codex-<template>`, `scope-codex-<template>`). The per-template tags are recorded in the reviewer-protocol contract.
 - Splitter is idempotent (re-running on the same input produces the same output files).
 
@@ -325,14 +338,18 @@ Reviewers (Sonnet/Codex)             Main chat (orchestrator)            Haiku v
                                             exit 2 = missing sentinel.
                                             Non-zero → surface stderr,
                                             hard abort.
-                                       7. Bash assembly:
-                                          cat reviews/{step}/round-NN/
-                                          *.finding-*.md *.clean.md
-                                          *.crash.md > round-NN-verified.md
+                                       7. Bash assembly (nullglob-safe;
+                                          uses the path-qualified arrays
+                                          from step 1):
+                                            cat "${findings[@]}" \
+                                                "${cleans[@]}" \
+                                                "${crashes[@]}" \
+                                              > "$D/../round-NN-verified.md"
                                           (with awk-injected totals header
-                                          carrying scored/kept/dropped/
-                                          failed/clean/crashed/empty-codex
-                                          counts).
+                                          carrying verifier_enabled +
+                                          scored/kept/dropped/failed/
+                                          clean/crashed/empty-codex/
+                                          crash-skipped counts).
                                        8. Reads round-NN-verified.md ONCE.
                                        9. Partitions by change_type:
                                           - scope/intent → pause gate
@@ -349,7 +366,7 @@ Reviewers (Sonnet/Codex)             Main chat (orchestrator)            Haiku v
                                       11. /compact. 12. Per-round commit.
 ```
 
-**Per-finding file format:**
+**Per-finding file format (post-verify, including the boundary sentinel the verifier MUST write):**
 
 ```markdown
 ---
@@ -359,29 +376,56 @@ change_type: correctness
 referenced_files: [skills/design/SKILL.md]
 artifact: design
 round: 3
-reviewer: claude
+reviewer: quality-claude
 ---
 
 {message body — reviewer's prose explanation; this IS the 5th schema field (`message`), transported in the body rather than the YAML frontmatter to avoid awkward YAML quoting of multi-paragraph prose; multi-paragraph allowed}
 
+<!-- @@QRSPI-VERIFIER-BOUNDARY@@ -->
 ## Verifier
 score: 75
 reason: confirmed — cited file does not handle the concurrency case under multi-writer pressure
 ```
 
-The `## Verifier` block is absent before the verifier runs and present after. The dispatcher in step 14 treats absence of the `## Verifier` block as "keep this finding without scoring" via an explicit branch — no synthetic score is materialized. This handles three cases uniformly: `verifier_enabled=false` (all findings kept, no scoring), a verifier that silently failed without returning `VERIFY_FAILED:` (kept under loud-failure-by-default), and pre-#109 audit-trail interop (a future inspector reading these files sees an explicit absent-Verifier signal rather than a synthetic 80).
+The YAML `reviewer:` field carries the role-distinct dispatcher-supplied `reviewer_tag` value (`quality-claude` | `scope-claude` | `quality-codex` | `scope-codex` for #109). It MUST equal the per-finding filename prefix and the route key the dispatcher used to launch the reviewer. The schema-violation guard at Apply-fix step 2 cross-checks all three (filename prefix, YAML `reviewer` field, dispatched route key) and fails loud on mismatch.
+
+The `<!-- @@QRSPI-VERIFIER-BOUNDARY@@ -->` line and the `## Verifier` block are absent before the verifier runs and BOTH are present after (the verifier writes them as one atomic append). The dispatcher in step 14 treats absence of the `## Verifier` block as "keep this finding without scoring" via an explicit branch ONLY for case (a) verifier-disabled rounds and case (b) verifier returned `VERIFY_FAILED:`. Case (c) — verifier-enabled, brief returned a score, but no `## Verifier` block (or no boundary sentinel) — is impossible because the preserve guard at Apply-fix step 6 hard-aborts on missing sentinel before assembly. There is no "silent verifier failure → keep" path; silent failures are caught and aborted.
+
+**Pre-verify file format (the same file before the verifier runs):**
+
+```markdown
+---
+finding_id: R3-F02
+severity: high
+change_type: correctness
+referenced_files: [skills/design/SKILL.md]
+artifact: design
+round: 3
+reviewer: quality-claude
+---
+
+{message body}
+```
+
+(Ends with exactly one trailing newline after the last body line. Step-4 snapshots this byte content.)
 
 **Clean-marker file format:**
 
 ```markdown
 ---
-reviewer: claude
+reviewer: quality-claude
 round: 3
 findings: 0
 ---
 ```
 
 No body content. The clean marker is the audit signal that a reviewer ran and surfaced zero findings; its absence (combined with absence of any `*.finding-*.md` and `*.crash.md` from a reviewer that the dispatcher expected to run) is the schema-violation signal that a reviewer broke its emission contract.
+
+**finding_id format (canonical and F00 fallback):**
+- Canonical reviewer-emitted: `R{NN}-F<NN>` (e.g., `R3-F01`, `R3-F02`). Within a single per-finding file, `finding_id` is unique per `(round, reviewer_tag)`.
+- F00 fallback (Codex missing-delimiter): `R{NN}-F00-<reviewer_tag>` (e.g., `R3-F00-quality-codex`, `R3-F00-scope-codex`). The fallback inverts the canonical pattern (F-number first, then tag suffix) so the schema-violation guard's regex `^R\d+-F\d+(-[a-z-]+)?$` accepts both shapes — canonical findings have no suffix; F00 fallback findings carry a tag suffix to disambiguate when both quality-codex and scope-codex hit the fallback in the same round.
+
+The schema-violation guard's permissive regex is documented alongside the routing table in `reviewer-protocol/SKILL.md`.
 
 ## §4 Error handling
 
@@ -443,7 +487,7 @@ Added to `tests/unit/`:
 
 1. **`test-verifier-agent-file.bats`** — `agents/qrspi-finding-verifier.md` exists; frontmatter has `model: haiku`, `tools: [Read, Write]`, name `qrspi-finding-verifier`; body cites the rubric verbatim (greps for the 0/25/50/75/100 grade definitions and asserts the rubric is described as "discrete" / "exactly one of"); body cites the false-positive examples list; body specifies the input-contract parameter names and the procedure step ordering; body asserts the preserve-preceding-content requirement is documented.
 
-2. **`test-per-finding-file-emission.bats`** — every reviewer agent file under `agents/qrspi-*reviewer*.md` IN THE #109 SCOPE (the 16 artifact-level reviewers enumerated in §2) has body language instructing per-finding emission with the canonical `<reviewer-tag>.finding-F<NN>.md` filename pattern AND the `<reviewer-tag>.clean.md` clean-sentinel pattern; the same files do NOT emit a single multi-finding file (greps for legacy `round-NN-{reviewer}.md` writes and asserts they are absent). The 16 deferred reviewers are explicitly skipped by this test with a comment citing the follow-up issue number (filed BEFORE the cutover commit per §9 step 0; the issue number is known at test-write time).
+2. **`test-per-finding-file-emission.bats`** — every reviewer agent file under `agents/qrspi-*reviewer*.md` IN THE #109 SCOPE (the 14 artifact-level reviewers enumerated in §2: 8 quality + 6 scope) has body language instructing per-finding emission with the canonical `<reviewer_tag>.finding-F<NN>.md` filename pattern AND the `<reviewer_tag>.clean.md` clean-sentinel pattern using the role-distinct tag values; the same files do NOT emit a single multi-finding file (greps for legacy `round-NN-{reviewer}.md` writes and asserts they are absent). The 18 deferred reviewers (Plan-step 7 + per-task 8 + implement-gate 1 + security-integration 1 + integration-quality 1) are explicitly skipped with a comment citing the follow-up issue number (filed BEFORE the cutover commit per §9 step 0).
 
 3. **`test-codex-splitter.bats`** — `scripts/codex-finding-splitter.sh` exists, is executable, handles boundary-delimited input (multi-finding split with role-distinct tag flowing through into per-finding filenames), `NO_FINDINGS`-sentinel input (writes clean marker), missing-delimiter fallback (single F00 file + stderr warning + FULL 7-field synthetic frontmatter passing the schema-violation guard), **empty input (writes `<reviewer_tag>.crash.md`, NOT a clean marker — empty Codex stdout is failure)**, idempotency (re-run produces same output). Also asserts the splitter is NOT invoked when `await` returns non-zero (covered via the dispatch-site test #4). Also asserts the Codex prompt template in each #109 dispatching skill includes the worked one-finding example, the worked zero-findings example, and the no-prose-outside-finding-blocks constraint (greps the prompt template for these features).
 
@@ -489,9 +533,9 @@ The implementation plan (forthcoming in `docs/superpowers/plans/`) sequences as 
 
 1. **Verifier agent file.** Create `agents/qrspi-finding-verifier.md` with the rubric, false-positive examples, and procedure. Land alone with unit test #1. Not yet referenced by any skill — purely additive.
 
-2. **Codex splitter (script only, no prompt changes yet).** Add `scripts/codex-finding-splitter.sh` and `tests/unit/test-codex-splitter.bats`. The Codex prompts in dispatching skills are NOT changed in this commit (so existing Codex flows still work). The splitter is dead code until step 4 wires it up. Land with test #3.
+2. **Codex splitter + classifier (scripts only, no prompt changes yet).** Add `scripts/codex-finding-splitter.sh` and `scripts/codex-stdout-classify.sh` and a NARROWED `tests/unit/test-codex-splitter.bats` that exercises ONLY the splitter and classifier scripts directly with synthetic inputs (boundary-delimited, NO_FINDINGS sentinel, missing-delimiter fallback, empty input, exit-0-failure-payload markers). The Codex prompts in dispatching skills are NOT changed in this commit, and the test does NOT grep dispatching skill prompts (that assertion moves to a test that lands in the cutover commit). The splitter and classifier are dead code until step 4 wires them up.
 
-3. **`config.md` schema update.** Add `verifier_enabled` field (default `true`) to `skills/using-qrspi/SKILL.md` Config-File schema. The field is documented but not yet read by any protocol. Land with test #7.
+3. **`config.md` schema update (documentation only, no protocol changes).** Add `verifier_enabled` field (default `true`) to `skills/using-qrspi/SKILL.md` Config-File schema. Land with a NARROWED `tests/unit/test-config-verifier-enabled-field.bats` that asserts the schema documentation exists (default-on, persistence semantics, runtime-backfill carve-out documented) — it does NOT yet assert the field is read by any protocol (that assertion moves to a test that lands in the cutover commit, since the runtime-backfill code itself lands at step 4).
 
 4. **Atomic cutover commit (the load-bearing one).** This single commit lands EVERY runtime-behavior change together — including the failure-menu mutation logic and the `reviewer_tag` rename in the dispatching skills. Splitting any of these out would leave main in a contradictory runtime state:
    - The bifurcated reviewer-protocol amendment in `skills/reviewer-protocol/SKILL.md` (Reviewer Routing Table + Expected-Reviewer Matrix + new `## Per-Finding Disk-Write Contract` keyed on the 4 role-distinct #109 tags + renamed `## Legacy Disk-Write Contract` preserved verbatim for deferred tags).
@@ -509,7 +553,7 @@ The implementation plan (forthcoming in `docs/superpowers/plans/`) sequences as 
    - Goals or Design (full 4-reviewer set) — verifies the routing-table disambiguates quality vs scope via the role-distinct `reviewer_tag`.
    - One run with `verifier_enabled: false` from start — verifies the disabled-mode totals header shape with the explicit `verifier_enabled: false` row.
    - One run with `codex_reviews: false` — verifies the matrix excludes codex tags without false-failing.
-   - One run with a synthesized crash file in `.crash-skipped/` — verifies step-4 staging keeps assembly clean.
+   - One run with a synthesized `<reviewer_tag>.crash.md` AND matching `<reviewer_tag>.finding-*.md` files in the round dir — verifies step-4 moves the finding files into `.crash-skipped/` and assembly stays clean.
    - One run that triggers the F00 missing-delimiter fallback — verifies the synthetic full-frontmatter file passes the schema-violation guard.
    - One run with a verifier hitting `VERIFY_FAILED:` followed by an option-1 mid-run mutation — verifies the preserve guard runs against un-failed-verifier files before fall-through.
 
