@@ -32,23 +32,42 @@ setup() {
   )
 }
 
-@test "every #109-scope reviewer agent body specifies per-finding filename pattern" {
+@test "every #109-scope reviewer agent body references per-finding emission via the protocol skill" {
+  # Post-dedupe: the per-finding filename pattern lives in skills/reviewer-protocol/SKILL.md.
+  # Each #109-scope agent must (a) load reviewer-protocol via its skills: frontmatter, and
+  # (b) reference the per-finding contract in the body so dispatchers know where it comes from.
+  local protocol="skills/reviewer-protocol/SKILL.md"
+  [[ -f "$protocol" ]] || { echo "missing protocol skill: $protocol"; return 1; }
+  grep -qE 'finding-F[0-9]+\.md|finding-F<[Nn][Nn]>' "$protocol" \
+    || { echo "per-finding pattern missing in $protocol"; return 1; }
+
   for f in "${scope_files[@]}"; do
     [[ -f "$f" ]] || { echo "missing #109-scope agent file: $f"; return 1; }
-    local body
+    local frontmatter body
+    frontmatter=$(awk '/^---$/{n++; if(n==2)exit; next} n==1{print}' "$f")
     body=$(awk '/^---$/{n++; next} n>=2{print}' "$f")
-    echo "$body" | grep -qE 'finding-F[0-9]+\.md|finding-F<[Nn][Nn]>' \
-      || { echo "per-finding pattern missing in $f"; return 1; }
+    echo "$frontmatter" | grep -qE '^skills:.*reviewer-protocol' \
+      || { echo "reviewer-protocol skill not loaded via frontmatter in $f"; return 1; }
+    echo "$body" | grep -qE 'Per-Finding Disk-Write Contract|reviewer-protocol' \
+      || { echo "Per-Finding contract reference missing in $f"; return 1; }
   done
 }
 
-@test "every #109-scope reviewer agent body specifies the clean sentinel pattern" {
+@test "every #109-scope reviewer agent body references the clean sentinel via the protocol skill" {
+  # Post-dedupe: the clean-sentinel pattern lives in skills/reviewer-protocol/SKILL.md.
+  # Each #109-scope agent must call out clean-sentinel emission so dispatchers know
+  # zero-findings still produces an artifact (vs. silent absence).
+  local protocol="skills/reviewer-protocol/SKILL.md"
+  [[ -f "$protocol" ]] || { echo "missing protocol skill: $protocol"; return 1; }
+  grep -qE '<reviewer_tag>\.clean\.md|\.clean\.md.*<reviewer_tag>|clean-round sentinel' "$protocol" \
+    || { echo "clean-sentinel pattern missing in $protocol"; return 1; }
+
   for f in "${scope_files[@]}"; do
     [[ -f "$f" ]] || { echo "missing #109-scope agent file: $f"; return 1; }
     local body
     body=$(awk '/^---$/{n++; next} n>=2{print}' "$f")
-    echo "$body" | grep -qE '<reviewer_tag>\.clean\.md|\.clean\.md.*<reviewer_tag>|clean-round sentinel' \
-      || { echo "clean-sentinel pattern missing in $f"; return 1; }
+    echo "$body" | grep -qE 'clean\.md|clean-round sentinel|clean sentinel' \
+      || { echo "clean-sentinel reference missing in $f"; return 1; }
   done
 }
 

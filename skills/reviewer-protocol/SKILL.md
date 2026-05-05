@@ -205,6 +205,8 @@ Do NOT include finding text, prose explanations, or per-finding detail in the re
 
 Reviewer subagents tagged `quality-claude`, `scope-claude`, `quality-codex`, or `scope-codex` use this per-finding contract (see `## Reviewer-Tag Routing Table` above).
 
+> **IRON RULE — exactly one finding per file. Never combine findings.** The Apply-fix protocol dispatches one Haiku verifier per `*.finding-*.md` file in parallel; combining findings causes the verifier to score them as a unit, which breaks the change-type partition (style/clarity/correctness score-filtering applies to the bundle instead of each finding). Two findings = two files, every time. Zero findings → write one `<reviewer_tag>.clean.md` sentinel (defined below). Never write zero files for an expected reviewer tag — the schema-violation guard at apply-fix step 2 surfaces the §3 menu when an expected tag emits no output.
+
 **Per-finding emission contract.** File path = `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md`, F-numbered zero-padded in emission order, where `<reviewer_tag>` is the dispatcher-supplied value.
 
 **Per-finding file format.** YAML frontmatter (4 schema fields + 3 audit fields) + body (prose `message`):
