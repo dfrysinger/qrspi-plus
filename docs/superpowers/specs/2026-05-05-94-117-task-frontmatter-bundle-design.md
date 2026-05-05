@@ -31,7 +31,9 @@ Both issues add frontmatter fields to `tasks/task-NN.md`, both are written by th
 
 ## 4. Schema additions
 
-Two fields added to the `tasks/task-NN.md` frontmatter (split task file format, currently defined at `skills/plan/SKILL.md:336-352`). Both are operator-editable before Implement dispatches.
+### 4a. `tasks/task-NN.md` frontmatter
+
+Two fields added (split task file format, currently defined at `skills/plan/SKILL.md:336-352`). Both are operator-editable before Implement dispatches.
 
 ```yaml
 ---
@@ -46,9 +48,25 @@ model: sonnet          # NEW. one of: sonnet | opus. default: sonnet.
 ---
 ```
 
-**Defaults.** When the Plan skill omits a field (e.g. legacy plan files predating this schema), Implement reads the missing field as `code` / `sonnet` and logs a warning. No hard failure — backwards compatibility for in-flight plans.
+### 4b. `plan.md` frontmatter
 
-**Override path.** Same as `goal_ids` and `sizing_exception`: the operator edits the file before approving the plan. No dedicated UI.
+One field added for Test-stage model selection.
+
+```yaml
+---
+status: approved
+phase_start_commit: <sha>
+test_writer_model: sonnet   # NEW. one of: sonnet | opus. default: sonnet.
+---
+```
+
+**Why this field is on `plan.md`, not on tasks.** `qrspi-test-writer` is dispatched **once per phase**, not per-task (`test/SKILL.md:84`). It receives all phase artifacts at once and picks test types per acceptance criterion internally. There is no per-task surface to attach a model to, so the field lives at phase altitude on `plan.md` instead.
+
+**No Plan-skill heuristic for this field.** It's a manual operator override (default Sonnet, flip to Opus when the test surface is gnarly — e.g., heavy e2e coverage, complex invariants, large acceptance-criterion set). A heuristic could come later if a pattern emerges; for now, manual is the right complexity floor.
+
+**Defaults.** When any field is missing (legacy plan files predating this schema), the consuming skill reads the default (`code` / `sonnet` / `sonnet`) and logs a warning. No hard failure — backwards compatibility for in-flight plans.
+
+**Override path.** Same as `goal_ids` and `sizing_exception`: the operator edits the frontmatter before approving the plan. No dedicated UI.
 
 ## 5. `task_type` semantics
 
@@ -190,9 +208,19 @@ Inventory every `Agent({ subagent_type: ... })` and `subagent_type:` mention in 
 
 1. If the subagent is a **reviewer** (matches `qrspi-*-reviewer`, `qrspi-silent-failure-hunter`, `qrspi-type-design-analyzer`, `qrspi-code-simplifier`, `qrspi-implement-gate-reviewer`) → already pinned per #101; verify `model: "sonnet"` is explicit; add if inherit.
 2. If the subagent is the **implementer** (`qrspi-implementer`, `qrspi-implementer-lightweight`) → leave as `model: "<per-task override>"` per §7 — Part 2 owns this surface.
-3. **Everything else** (researchers, scope-tagger if present, synthesis subagents, Goals/Design subagents, replan-analyzer, etc.) → if `model:` is missing, add `model: "sonnet"` explicitly.
+3. If the subagent is the **test-writer** (`qrspi-test-writer`) → handled in commit 2 alongside the schema change. Dispatch becomes `model: "<plan.frontmatter.test_writer_model || 'sonnet'>"` per §4b.
+4. **Everything else** (researchers, scope-tagger if present, synthesis subagents, Goals/Design subagents, replan-analyzer) → if `model:` is missing or `"inherit"`, change to `model: "sonnet"` explicitly.
 
-This commit produces no behavioral change for sites that were already inheriting Sonnet, and pins the surface so future model-default drift cannot silently move them.
+**Audit results (4 sites identified):**
+
+| File | Line | Subagent | Current `model:` | Action |
+|---|---|---|---|---|
+| `research/SKILL.md` | 58 | `qrspi-research-specialist` | (missing) | Add `model: "sonnet"` (commit 1) |
+| `research/SKILL.md` | 81 | `qrspi-research-collator` | (missing) | Add `model: "sonnet"` (commit 1) |
+| `replan/SKILL.md` | 77 | `qrspi-replan-analyzer` | `"inherit"` | Change to `"sonnet"` (commit 1) |
+| `test/SKILL.md` | 92 | `qrspi-test-writer` | `"inherit"` | Change to `<plan.test_writer_model>` (commit 2, with schema) |
+
+This audit produces no behavioral change for sites that were already inheriting Sonnet, and pins the surface so future model-default drift cannot silently move them. The `inherit`-→-`sonnet` demotion on `qrspi-replan-analyzer` is intentional — see #117 Part 1 motivation: silent inheritance is exactly the failure mode being closed off.
 
 ## 10. Sequencing
 
@@ -201,7 +229,7 @@ One PR, one branch, six commits.
 | # | Commit | Scope |
 |---|---|---|
 | 1 | `chore(audit): #117 Part 1 — pin Sonnet on non-reviewer Agent dispatches` | Mechanical; no schema change. |
-| 2 | `feat(plan): #94 #117 — add task_type and model to tasks/task-NN.md schema` | Plan-skill template update + Plan-skill heuristic prompt section + plan.md frontmatter validators. |
+| 2 | `feat(plan): #94 #117 — add task_type, model, and test_writer_model schema` | Plan-skill template update for `tasks/task-NN.md` (`task_type` + `model`) and `plan.md` (`test_writer_model`) + Plan-skill heuristic prompt section + frontmatter validators + Test-skill dispatch reads `test_writer_model` from `plan.md`. |
 | 3 | `refactor(implementer): split implementer boilerplate into shared implementer-protocol skill` | New `skills/implementer-protocol/SKILL.md` + slimmed `qrspi-implementer.md` (TDD-only). No behavior change yet. |
 | 4 | `feat(implementer): #94 — add qrspi-implementer-lightweight agent` | New `agents/qrspi-implementer-lightweight.md`. Not yet dispatched. |
 | 5 | `feat(implement): #94 #117 — route by task_type and model` | Implement-skill routing change at the dispatch sites in §7. Cuts the codex-launch and thoroughness-reviewer gates over to `task_type`-driven flags. |
@@ -218,7 +246,7 @@ Added under `tests/unit/`:
 3. **`test-plan-model-heuristic.bats`** — fixture cases covering: 4-file code task → `opus`; 1-file core-surface code task → `opus`; 1-file non-core code task → `sonnet`; lightweight task → `sonnet` regardless of file count; `sizing_exception` set → `opus`.
 4. **`test-implementer-protocol-skill-shared.bats`** — analog of `test-per-finding-file-emission.bats`. Asserts `qrspi-implementer.md` and `qrspi-implementer-lightweight.md` both load `implementer-protocol` via `skills:` frontmatter, and both reference the shared contract by name in their bodies. Asserts `skills/implementer-protocol/SKILL.md` carries the allowed-files / status-reporting / SendMessage-continuity / ID-Hygiene patterns.
 5. **`test-implement-routing-by-task-type.bats`** — fixture-based dry-run check: a `tasks/task-NN.md` with `task_type: lightweight` causes Implement to (a) select `qrspi-implementer-lightweight`, (b) skip codex-launch sites, (c) force quick mode, (d) cap fix rounds at 3. A `task_type: code` task takes the existing path.
-6. **`test-sonnet-default-audit.bats`** — every `Agent({ subagent_type: "qrspi-*" })` invocation in `skills/**/SKILL.md` either pins `model: "sonnet"` or pins `model: "<per-task override>"`. No bare `Agent({ subagent_type: ... })` without an explicit model on non-implementer subagents. This test is the regression guard for #117 Part 1.
+6. **`test-sonnet-default-audit.bats`** — every `Agent({ subagent_type: "qrspi-*" })` invocation in `skills/**/SKILL.md` carries an explicit `model:` value. Reviewers pin `"sonnet"` (per #101). Implementer dispatches pin `"<per-task override>"` (or per-task value). Test-writer dispatch reads `<plan.test_writer_model>` (or pins `"sonnet"` as a fallback literal acceptable to the test). All other non-implementer dispatches pin `"sonnet"` literally. No bare dispatches without an explicit model. This test is the regression guard for #117 Part 1.
 
 Pre-existing tests touched:
 - `test-per-finding-file-emission.bats` — unchanged (this PR doesn't touch reviewer agents).
