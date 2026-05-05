@@ -227,28 +227,57 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer di
 
 - **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-goals-reviewer", model: "sonnet" })` with a prompt containing only:
   - `artifact_body`: `goals.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=goals.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=goals.md>>>` markers
-  - `output`: `<ABS_ARTIFACT_DIR>/reviews/goals/round-NN-claude.md` (interpolate absolute path and round number)
+  - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/goals/round-NN/` (interpolate absolute path and round number)
   - `round`: NN
-  - `reviewer_tag`: `claude`
+  - `reviewer_tag`: `quality-claude`
 
   The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Goals-specific checks (required subsections, no-others, type field, no Out-of-Scope section, etc.) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
 - **Claude scope-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-goals-scope-reviewer", model: "sonnet" })` in parallel with the quality reviewer, with a prompt containing only:
   - `artifact_body`: same untrusted-data-wrapped `goals.md` body
-  - `output`: `<ABS_ARTIFACT_DIR>/reviews/goals/round-NN-scope-claude.md` (interpolate absolute path and round number)
+  - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/goals/round-NN/` (interpolate absolute path and round number)
   - `round`: NN
-  - `reviewer_tag`: `claude`
+  - `reviewer_tag`: `scope-claude`
 
   The scope-reviewer's Step-1 Read of `skills/goals/owns-defers.md` delivers the Goals OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
 - **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (quality + scope) via shell pipelines. The legacy temp-file dispatch is retired; protocol and agent body flow via stdin:
+
+  **Output format (per-finding emission, #109).** Emit ONLY finding blocks (each preceded by exactly the literal line `<<<FINDING-BOUNDARY>>>`) or the literal sentinel `NO_FINDINGS` on its own line. No prose outside finding bodies. No preamble, no summary, no commentary between findings. The orchestrator's splitter (`scripts/codex-finding-splitter.sh`) treats anything before the first boundary as discardable preamble; anything that is neither boundary-prefixed nor the `NO_FINDINGS` sentinel is malformed and produces zero finding files for this tag (caught at apply-fix step 2 as "expected tag produced no output").
+
+  **Worked one-finding example** (the example uses concrete `design` / `quality-codex` values to keep the prompt template fully literal — the implementer should NOT swap these to other artifact names; only the per-skill `artifact:` field of REAL findings emitted at runtime varies. Substitution-tokens like `<round>` and `<NN>` are placeholders Codex itself fills in at emission time):
+
+  ```
+  <<<FINDING-BOUNDARY>>>
+  ---
+  finding_id: R3-F01
+  severity: high
+  change_type: correctness
+  referenced_files: [skills/design/SKILL.md]
+  artifact: design
+  round: 3
+  reviewer: quality-codex
+  ---
+
+  The artifact's "Default action" sentence contradicts the change-type classifier in skills/reviewer-protocol/SKILL.md (which lists `style|clarity|correctness` as auto-apply and `scope|intent` as pause). Fix: rewrite the sentence to cite the classifier verbatim.
+  ```
+
+  **Worked zero-findings example.** When the analysis surfaces no findings, the entire output is exactly one line:
+
+  ```
+  NO_FINDINGS
+  ```
+
+  Nothing else — no boundary, no frontmatter, no commentary.
+
+  **Constraint reminder.** Emit only finding blocks (each preceded by `<<<FINDING-BOUNDARY>>>`) or the literal `NO_FINDINGS` sentinel; no prose outside finding bodies.
 
   ```sh
   # Quality reviewer (Codex)
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-goals-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/goals/round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/goals/round-%s/\nround: %s\nreviewer_tag: quality-codex\n' \
       "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
 
@@ -256,12 +285,28 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer di
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-goals-scope-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/goals/round-%s-scope-codex.md\nround: %s\nreviewer_tag: codex\n' \
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/goals/round-%s/\nround: %s\nreviewer_tag: scope-codex\n' \
       "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
   ```
 
   The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints.
+
+  After `await` returns, on exit 0 run the splitter to split Codex output into per-finding files:
+
+  ```sh
+  scripts/codex-companion-bg.sh await --artifact-dir <ABS_DIR> <jobId> > /tmp/codex-stdout-<jobId>.txt
+  if [[ $? -eq 0 ]]; then
+    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<jobId>.txt reviews/goals/round-NN/ quality-codex
+  fi
+  # On either failure path (await non-zero OR splitter non-zero), the round
+  # directory has zero output for the tag — step 2's schema guard catches it.
+
+  scripts/codex-companion-bg.sh await --artifact-dir <ABS_DIR> <scopeJobId> > /tmp/codex-stdout-<scopeJobId>.txt
+  if [[ $? -eq 0 ]]; then
+    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<scopeJobId>.txt reviews/goals/round-NN/ scope-codex
+  fi
+  ```
 
 ### Human Gate
 

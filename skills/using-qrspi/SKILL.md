@@ -361,6 +361,7 @@ route:
   - test
 review_depth: deep  # or: quick — added by Implement at phase start
 review_mode: loop   # or: single — added by Implement at phase start
+verifier_enabled: true  # set at run creation; edit directly between rounds to disable for the whole run
 ---
 ```
 
@@ -523,12 +524,194 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
 **Apply-fix protocol.** When main chat applies fixes after a round:
 
-1. Read each per-reviewer file (Claude, scope, Codex) for that round.
-2. Apply auto-apply findings via Edit on the artifact under review.
-3. For paused findings, follow the Review-Loop Pause Gate (below) — write `reviews/{artifact}-loop-pause-round-NN.md` and present the BATCH-WITH-OVERRIDES UI.
-4. Write a brief `reviews/{step}/round-NN-fixes.md` (main-chat-authored, ≤30 lines) listing what was changed and why.
-5. Run `/compact` (per-skill apply-fix compaction recommendation) to shed the per-reviewer file Read content from main chat's transcript.
-6. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
+1. **List per-reviewer outputs** for the round (nullglob-safe, fully path-qualified):
+   ```bash
+   shopt -s nullglob
+   D="reviews/{step}/round-NN"
+   findings=( "$D"/*.finding-*.md )
+   cleans=( "$D"/*.clean.md )
+   ```
+   Sidecars (`*.score.yml`) are intentionally not enumerated here; they're discovered per-finding at step 5.
+
+2. **Per-expected-tag schema-violation guard.** Evaluate the Expected-Reviewer Matrix for the current step against `config.md.codex_reviews`. For each expected tag, assert step 1 produced at least one of (`<tag>.finding-*.md`, `<tag>.clean.md`). Any expected tag with zero matches → present the §3 failure menu. Step 2 also fails loud on: malformed YAML, missing required fields, malformed `change_type` enum values that are out-of-enum (not one of style/clarity/correctness/scope/intent), unrouted `(step, tag)` route (no route entry in the Expected-Reviewer Matrix for this combination). Trailing-newline malformations are normalized (deterministic strip+append-`\n`) with a one-line audit warning, NOT a hard fail.
+
+3. **Verifier-enabled gate.** Read `verifier_enabled` from `config.md`:
+   ```bash
+   cfg=docs/qrspi/<bundle>/config.md   # absolute path resolved at runtime
+   verifier_enabled=$(awk -F': *' '/^verifier_enabled:/ {print $2; exit}' "$cfg")
+   if [[ -z "$verifier_enabled" ]]; then
+     echo "verifier_enabled missing from config.md — backfilling default 'true' for this run" >&2
+     # config.md's trailing-newline invariant lets us append directly without a
+     # leading \n. (If the invariant ever breaks, the YAML parser still tolerates
+     # the missing newline — the backfill is correctness-soft on this edge.)
+     printf 'verifier_enabled: true\n' >> "$cfg"
+     verifier_enabled=true
+   fi
+   if [[ "$verifier_enabled" != "true" ]]; then
+     : # verifier_enabled=false — jump to step 5 with no sidecars on disk (skip dispatch; keep-all assembly)
+   fi
+   ```
+
+4. **Parallel verifier dispatch.** Dispatch one `qrspi-finding-verifier` Task per finding-file enumerated in Step 1:
+
+   ```markdown
+   Step 4 — parallel verifier dispatch.
+
+   For each finding-file enumerated in Step 1, dispatch one Task call:
+
+     subagent_type: qrspi-finding-verifier
+     description:   verify <reviewer_tag>.<finding_id>
+     prompt: |
+       finding_file_path: <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md
+       sidecar_path:      <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.score.yml
+       artifact_path:     <abs_path>/<step>.md
+       diff_file_path:    <abs_path>/reviews/{step}/round-NN.diff   # empty string on round 1
+       upstream_paths: |
+         <abs_path>/<upstream-artifact-1>.md
+         <abs_path>/<upstream-artifact-2>.md
+         ...
+         skills/<step>/SKILL.md
+         skills/using-qrspi/SKILL.md
+
+   Parameter derivation (per spec §1 `## Input contract`, verbatim):
+     - finding_file_path: enumerated by Step 1's nullglob loop (absolute path).
+     - sidecar_path:      finding_file_path with `.md` → `.score.yml`.
+     - artifact_path:     `<run_dir>/<step>.md` where <step> ∈
+                          {goals, questions, research, design, phasing,
+                           structure, parallelize, replan}.
+     - diff_file_path:    `<run_dir>/reviews/{step}/round-NN.diff`. Empty
+                          string on round 1 (no prior round, no diff yet);
+                          round 2+ uses the diff file produced by Step 1's
+                          diff-handling protocol against the prior round's
+                          fixes.
+     - upstream_paths:    NEWLINE-separated list. Includes (a) the upstream
+                          artifacts the current step consumes per the QRSPI
+                          pipeline order, AND (b) the SKILL paths the
+                          verifier may lazy-Read for context (the dispatching
+                          skill's SKILL.md and skills/using-qrspi/SKILL.md).
+                          Per-step upstream-artifact lists:
+                            Goals:       (no upstream artifacts; SKILL paths only)
+                            Questions:   goals.md
+                            Research:    goals.md, questions.md
+                            Design:      goals.md, questions.md, research/summary.md
+                            Phasing:     goals.md, design.md
+                            Structure:   goals.md, design.md, phasing.md
+                            Parallelize: goals.md, design.md, structure.md
+                            Replan:      plan.md, replan-trigger-source
+                          SKILL paths appended on every step:
+                            skills/<step>/SKILL.md
+                            skills/using-qrspi/SKILL.md
+   ```
+
+   Each Task subagent returns a brief `<reviewer_tag>.<finding_id>: <score>` line (or `: VERIFY_FAILED:<reason>` on failure); main chat ignores the return text (the sidecar on disk is the source of truth) but does inspect for the `VERIFY_FAILED:` prefix to route into the §3 menu. If any return is `VERIFY_FAILED:` OR any expected sidecar is missing on disk after dispatch, route to the §3 failure menu BEFORE assembly. Otherwise continue.
+
+5. **Bash assembly** of the round into `reviews/{step}/round-NN-verified.md`:
+   ```bash
+   # Pre-pass: compute totals over findings + sidecars.
+   scored=0; failed=0; dropped=0
+   clean_count=${#cleans[@]}
+   for f in "${findings[@]}"; do
+     sc="${f%.md}.score.yml"
+     [[ -f $sc ]] || continue
+     if grep -q '^score: VERIFY_FAILED' "$sc"; then
+       failed=$((failed + 1))
+       continue
+     fi
+     score=$(awk -F': *' '/^score:/ {print $2; exit}' "$sc")
+     scored=$((scored + 1))
+     ct=$(awk -F': *' '/^change_type:/ {print $2; exit}' "$f")
+     if (( score < 80 )) && [[ $ct =~ ^(style|clarity|correctness)$ ]]; then
+       dropped=$((dropped + 1))
+     fi
+   done
+   kept=$(( ${#findings[@]} - dropped ))
+   verifier_enabled_str=$(awk -F': *' '/^verifier_enabled:/ {print $2; exit}' config.md)
+
+   # Emit header + per-finding interleaved body + clean files.
+   {
+     printf '%s\n' \
+       '---' \
+       "verifier_enabled: ${verifier_enabled_str:-true}" \
+       "scored: $scored" \
+       "kept: $kept" \
+       "dropped: $dropped" \
+       "failed: $failed" \
+       "clean: $clean_count" \
+       '---' \
+       ''
+     for f in "${findings[@]}"; do
+       echo "<!-- @@FINDING: $(basename "$f" .md) @@ -->"
+       cat "$f"
+       sc="${f%.md}.score.yml"
+       if [[ -f $sc ]]; then
+         echo "<!-- @@SCORE: $(basename "$sc" .yml) @@ -->"
+         cat "$sc"
+       fi
+     done
+     for c in "${cleans[@]}"; do
+       echo "<!-- @@CLEAN: $(basename "$c" .md) @@ -->"
+       cat "$c"
+     done
+   } > "$D/../round-NN-verified.md"
+   ```
+   The boundary HTML comments give a single-pass reader an unambiguous record delimiter without the verifier writing into the finding file. Sidecars are emitted only when present on disk, so the disabled-from-start path (no sidecars created) and the sidecar-absent edge case both produce a well-formed verified file. Header field semantics: `verifier_enabled` mirrors `config.md`; `scored` = sidecars with integer score; `failed` = sidecars with `score: VERIFY_FAILED`; `dropped` = sidecars with score < 80 AND `change_type` ∈ `style|clarity|correctness`; `kept` = (findings - dropped) — everything that survives to step 7's Edit/pause routing (sidecar score ≥80, sidecar absent, sidecar VERIFY_FAILED, scope/intent change-type, and verifier-disabled-round findings all funnel into `kept`); `clean` = count of `*.clean.md` files.
+
+6. **Read** `reviews/{step}/round-NN-verified.md` exactly once.
+
+7. **Filter and dispatch.** Partition findings by `change_type`:
+   - `scope` and `intent`: bypass score filter; flow directly to the existing pause gate (scope and intent are never score-filtered, regardless of sidecar value).
+   - `style`, `clarity`, `correctness`: filter at score ≥80 (verifier-enabled rounds with a sidecar score) or keep-all (verifier-disabled rounds, sidecar absent, OR sidecar has VERIFY_FAILED — degraded-but-uncertain → favor surfacing). Survivors → `Edit` on the artifact.
+
+   Out-of-enum `change_type` values are loud failures from step 2's schema guard (already caught before reaching step 7).
+
+8. **Write** `reviews/{step}/round-NN-fixes.md` (main-chat-authored, ≤30 lines) listing what was changed and why.
+
+9. **`/compact`** to shed the verified-file Read content from main chat's transcript.
+
+10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-verified.md`, and `round-NN-fixes.md`. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
+
+**Verifier-round failure menu.** Any abnormality during Apply-fix (VERIFY_FAILED from one or more verifiers; Codex reviewer no-output — cite `await` exit + wrapper `--artifact-dir`; Claude reviewer no-output — cite verbatim subagent return; sidecar missing for a finding) dispatches the same 3-option menu:
+
+```
+QRSPI verifier round failure
+─────────────────────────────
+{one-line diagnostic summary of the abnormality, e.g.:
+  - "Verifier returned VERIFY_FAILED for 2 findings"
+  - "Reviewer quality-codex produced no output (await exit 12;
+    inspection: <wrapper --artifact-dir>)"
+  - "Reviewer quality-claude wrote no per-finding files
+    (subagent return: '<verbatim brief-return text>')"
+  - "Sidecar missing for finding quality-claude.R3-F02"}
+
+What would you like to do?
+  1. skip   — proceed without scoring THIS ROUND (kept-all assembly).
+              Writes reviews/{step}/round-NN-verifier-disabled.md with
+              the following YAML body (exactly these three mandatory fields —
+              timestamp + reason + finding_count):
+
+              ---
+              timestamp: <ISO-8601 UTC, e.g. 2026-05-05T15:30:00Z>
+              reason: <one-line summary identical to the menu's diagnostic line>
+              finding_count: <integer total of *.finding-*.md files in the round directory>
+              ---
+
+              does NOT mutate config.md — the next round resumes
+              verifier-enabled if config still says true. Edit config.md by
+              hand to disable the verifier across the run.
+  2. retry  — re-run the failed step. For "VERIFY_FAILED" / "missing
+              sidecar": re-dispatch only the failing verifiers. For
+              "reviewer produced no output": delete the tag's
+              `*.finding-*.md`, `*.score.yml`, and `*.clean.md` for
+              the round (if any), then re-prompt the reviewer.
+  3. stop   — abort the protocol with no commit. The round directory
+              remains on disk for inspection.
+
+(no default; user must pick)
+```
+
+If the same path keeps failing, picking `skip` is the safe escape.
+
+No option mutates `config.md`. `retry` is bounded by the underlying operation. There is no retry counter — repeated retries surface the menu repeatedly so the user can switch to `skip` whenever.
 
 **Diff handling between rounds (round 2+).** Round NN+1 reviewers see a focused diff — not the full artifact pasted into the prompt — and main chat never reads diff content into its own context. Three steps:
 

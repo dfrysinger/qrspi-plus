@@ -16,6 +16,35 @@ This file is **designed to grow**. Future reviewer-shared content (reviewer tone
 
 The current set of sections — `## Finding Schema`, `## Change-Type Classifier`, `## Disagreement-Valid Framing` — defines the reviewer-finding contract. Reviewers cite this file by reference and emit findings that conform to the schema below.
 
+## Reviewer-Tag Routing Table
+
+The reviewer protocol bifurcates during the #109 migration window. The follow-up issue (#125 per Task 0) collapses this back to a single per-finding contract.
+
+| `reviewer_tag` | Contract section | Filename pattern |
+|---|---|---|
+| `quality-claude` | `## Per-Finding Disk-Write Contract (#109 reviewers)` | `reviews/{step}/round-NN/quality-claude.finding-F<NN>.md` |
+| `scope-claude` | `## Per-Finding Disk-Write Contract (#109 reviewers)` | `reviews/{step}/round-NN/scope-claude.finding-F<NN>.md` |
+| `quality-codex` | `## Per-Finding Disk-Write Contract (#109 reviewers)` | `reviews/{step}/round-NN/quality-codex.finding-F<NN>.md` |
+| `scope-codex` | `## Per-Finding Disk-Write Contract (#109 reviewers)` | `reviews/{step}/round-NN/scope-codex.finding-F<NN>.md` |
+| every other reviewer (5 plan-artifact, plan quality/scope, 8 per-task, implement-gate, security-integration, integration-quality) | `## Legacy Disk-Write Contract (deferred reviewers)` | `reviews/{step}/round-NN-{reviewer-tag}.md` (single file per reviewer) |
+
+## Expected-Reviewer Matrix
+
+For each artifact step, the apply-fix step-2 schema-violation guard asserts the round directory contains at least one of `<tag>.finding-*.md` or `<tag>.clean.md` for every expected tag in the row below — based on the run's `config.md`.
+
+| Step | `codex_reviews: true` | `codex_reviews: false` |
+|---|---|---|
+| `goals` | `quality-claude`, `scope-claude`, `quality-codex`, `scope-codex` | `quality-claude`, `scope-claude` |
+| `questions` | `quality-claude`, `quality-codex` | `quality-claude` |
+| `research` | `quality-claude`, `quality-codex` | `quality-claude` |
+| `design` | `quality-claude`, `scope-claude`, `quality-codex`, `scope-codex` | `quality-claude`, `scope-claude` |
+| `phasing` | `quality-claude`, `scope-claude`, `quality-codex`, `scope-codex` | `quality-claude`, `scope-claude` |
+| `structure` | `quality-claude`, `scope-claude`, `quality-codex`, `scope-codex` | `quality-claude`, `scope-claude` |
+| `parallelize` | `quality-claude`, `scope-claude`, `quality-codex`, `scope-codex` | `quality-claude`, `scope-claude` |
+| `replan` | `quality-claude`, `scope-claude`, `quality-codex`, `scope-codex` | `quality-claude`, `scope-claude` |
+
+(Plan, Implement-gate, Integrate, Test are out of scope for #109 — see follow-up issue.)
+
 ## Finding Schema
 
 Every reviewer finding (Claude reviewer, scope-reviewer, Codex reviewer) is a structured object with exactly five fields. Reviewers MUST emit findings in this shape — the review-loop pause gate dispatches on these fields and a finding that omits a field is malformed.
@@ -128,7 +157,7 @@ The `{artifact_name}` parameter is a short stable identifier for the embedded so
 
 **Interaction with the secondary-escalation rule.** Per `## Change-Type Classifier` → "Trigger surface": the secondary-escalation rule fires only on a reviewer's own emitted `referenced_files` / `message` (a reviewer-authored citation), never on content found INSIDE a `feedback/*.md` body that the reviewer is reading through the wrapper. The wrapper is what makes that distinction enforceable.
 
-## Disk-Write Contract
+## Legacy Disk-Write Contract (deferred reviewers)
 
 Reviewer subagents (Claude reviewer, scope-reviewer) MUST write their findings directly to disk and return only a brief summary to the orchestrator. This is the cost-optimization contract that keeps finding text out of main chat's conversation history. The full orchestrator-side rationale lives in `using-qrspi/SKILL.md` `## Review Output Handling`; this section defines the reviewer's obligations.
 
@@ -171,3 +200,55 @@ Written to: reviews/{step}/round-NN-{reviewer-tag}.md
 Do NOT include finding text, prose explanations, or per-finding detail in the return value. The brevity of this return is load-bearing for the optimization — verbose returns recreate the cache-read bloat the contract is designed to eliminate. If the orchestrator needs detail, it reads the file directly.
 
 **Failure mode.** If the `Write` call fails (permission, ENOSPC, malformed path), the reviewer's return value MUST surface the failure to the orchestrator with the literal token `WRITE_FAILED:` followed by the underlying error string. Do NOT silently fall back to returning findings-as-text — that defeats the contract. The orchestrator handles `WRITE_FAILED:` returns explicitly.
+
+## Per-Finding Disk-Write Contract (#109 reviewers)
+
+Reviewer subagents tagged `quality-claude`, `scope-claude`, `quality-codex`, or `scope-codex` use this per-finding contract (see `## Reviewer-Tag Routing Table` above).
+
+**Per-finding emission contract.** File path = `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md`, F-numbered zero-padded in emission order, where `<reviewer_tag>` is the dispatcher-supplied value.
+
+**Per-finding file format.** YAML frontmatter (4 schema fields + 3 audit fields) + body (prose `message`):
+
+```yaml
+---
+finding_id: R3-F02
+severity: high
+change_type: correctness
+referenced_files: [skills/design/SKILL.md]
+artifact: design
+round: 3
+reviewer: quality-claude
+---
+
+{message body — multi-paragraph prose, the 5th schema field, transported in the body to avoid YAML quoting}
+```
+
+**Schema fields** (the canonical 5-field finding schema): `finding_id`, `severity` ∈ `low|medium|high`, `change_type` ∈ `style|clarity|correctness|scope|intent`, `referenced_files` (list), `message` (body).
+
+**Audit fields** (frontmatter only): `artifact`, `round`, `reviewer` (must equal `<reviewer_tag>` and the filename prefix).
+
+**`finding_id` uniqueness** — unique per `(round, reviewer_tag)`. Canonical form `R{NN}-F{NN}`. Schema-guard regex: `^R\d+-F\d+$`. (No splitter-fallback form: malformed Codex output now produces zero finding files for the tag, caught at apply-fix step 2 as "expected tag produced no output".)
+
+**Clean-round sentinel** — when a reviewer's analysis surfaces zero findings, it Writes a single `reviews/{step}/round-NN/<reviewer_tag>.clean.md` with a frontmatter-only body (`reviewer: <tag>`, `round: <NN>`, `findings: 0`):
+
+```markdown
+---
+reviewer: <reviewer_tag>
+round: <round-number>
+findings: 0
+---
+```
+
+**Reviewer brief-return shape** — exactly five lines, in this order:
+
+```
+Step: <artifact-name>
+Round: <round-number>
+Reviewer: <reviewer_tag>
+Findings: N (high=X, medium=Y, low=Z)
+Written to: reviews/{step}/round-NN/
+```
+
+(Partial-write failures — some finding files persisted, some not — are not separately signaled; mirrors `/code-review`. The schema-violation guard at apply-fix step 2 catches only the all-or-nothing case where the expected tag produced ZERO output.)
+
+**Trailing newline** — every per-finding file ends with exactly one `\n` (deterministic byte-level normalize-then-warn at apply-fix step 2 if malformed).
