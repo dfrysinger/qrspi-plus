@@ -419,6 +419,10 @@ Skills must not:
 - Attempt to derive `route` from `pipeline` when `route` is missing
 - Proceed with a guessed or inferred field value
 
+### Exceptions to the no-silent-defaults rule
+
+- **`verifier_enabled` runtime backfill.** If the field is missing from `config.md` on the first verifier-aware Apply-fix invocation in a resumed run created before the verifier landed, the runtime treats it as `true`, surfaces a one-line stderr warning once per resume (form: `verifier_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`. This is the only carve-out from the no-silent-defaults rule (`### No silent defaults` above). The carve-out exists because pre-existing run directories on disk pre-date the field's introduction and the alternative — failing the run on a missing field — would prevent users from resuming any in-flight run after upgrading.
+
 ### Fields that affect pipeline behavior (must be validated)
 
 | Field | Skills that validate it | Valid values |
@@ -428,6 +432,8 @@ Skills must not:
 | `codex_reviews` | Goals, Plan, Design, Phasing, Structure, Replan, Implement, Integrate, Test | `true` or `false` |
 | `review_depth` | Implement | `quick` or `deep` — set by Implement at phase start |
 | `review_mode` | Implement | `single` or `loop` — set by Implement at phase start |
+
+- **`verifier_enabled`** (boolean, default `true`) — when `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` (Haiku) per finding-file in parallel and filters style/clarity/correctness findings at score ≥80 before applying. When `false`, the protocol skips verifier dispatch entirely (no sidecars are written) and keeps all findings via the "no sidecar → keep" branch in step 7. The field is durable across `/compact`, pause, resume, and re-entry within the run directory under `docs/qrspi/<date>-<bundle>/`. Fresh run directories start with `verifier_enabled: true` (set by the `using-qrspi` run-init code at run creation). The §3 menu's `skip` option disables the verifier for the CURRENT round only (it does NOT mutate `config.md`); to disable across the whole run, edit `config.md` directly between rounds. CLI-flag opt-out at `/qrspi` invocation is out of scope for #109 (deferred).
 
 ### Fields that do NOT require validation (informational only)
 
