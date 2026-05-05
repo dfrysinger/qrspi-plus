@@ -204,11 +204,11 @@ On rejection: write feedback to `feedback/replan-minor-phase-NN-round-MM.md` (no
 
 ## Human Gate — Major Changes
 
-Identify earliest loop-back target (Goals, Design, Phasing, or Structure).
+Identify earliest loop-back target (Goals, Design, Phasing, Structure, or Plan).
 
 Write replan proposals to `feedback/replan-phase-NN-round-MM.md` with: what changed, why, phase learnings. Primary input for loop-back skill. Proposed changes described here, NOT applied to artifacts directly.
 
-Reset target artifact and all downstream artifacts to `status: draft`. Includes both main artifacts AND their outputs: loop to Goals resets all artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`, `phasing.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`); loop to Design resets `design.md`, `phasing.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`; loop to Phasing resets `phasing.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md` (Phasing re-authors `roadmap.md` and the `future-*.md` artifacts as part of its cascade); loop to Structure resets `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`. No content changes — just status reset. (Task files and `parallelization.md` must be reset because Plan and Parallelize will re-produce them during the cascade.)
+Reset target artifact and all downstream artifacts to `status: draft`. Includes both main artifacts AND their outputs: loop to Goals resets all artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`, `phasing.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`); loop to Design resets `design.md`, `phasing.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`; loop to Phasing resets `phasing.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md` (Phasing re-authors `roadmap.md` and the `future-*.md` artifacts as part of its cascade); loop to Structure resets `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md`; loop to Plan resets `plan.md`, all `tasks/task-NN.md`, and `parallelization.md` (per-task test expectations and per-phase acceptance criteria are owned by Plan per the strip-from-goals contract — Plan re-authors them on the cascade). No content changes — just status reset. (Task files and `parallelization.md` must be reset because Plan and Parallelize will re-produce them during the cascade.)
 
 Recommend compaction before invoking target skill.
 
@@ -216,6 +216,7 @@ Recommend compaction before invoking target skill.
 - **Loop back to Design:** Invoke `qrspi:design` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
 - **Loop back to Phasing:** Invoke `qrspi:phasing` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
 - **Loop back to Structure:** Invoke `qrspi:structure` with normal inputs + all `feedback/replan-phase-*-round-*.md` files
+- **Loop back to Plan:** Invoke `qrspi:plan` with normal inputs + all `feedback/replan-phase-*-round-*.md` files (criteria-only Major changes per the strip-from-goals contract)
 
 **Fire-and-forget:** After writing the feedback file and resetting statuses, Replan invokes the loop-back target skill directly and exits. The normal pipeline terminal state routing takes over — Design invokes Phasing, Phasing invokes Structure, Structure invokes Plan, Plan invokes Parallelize, Parallelize invokes Implement. Replan does not orchestrate the cascade or maintain control. Each downstream skill picks up the feedback file as additional input through its normal process.
 
@@ -233,9 +234,9 @@ Recommend compaction before invoking target skill.
 
 **Minor path:** Delete `replan-pending.md`, recommend compaction, then invoke `qrspi:goals` for the next phase. (Rationale: `artifact_promote_next_phase` deleted `structure.md`, `plan.md`, `tasks/` and reset goals/research/design frontmatter to `draft`. Parallelize cannot run without an approved `plan.md` and `tasks/*.md`, so the next phase must restart from Goals — which re-approves the promoted goals via its "Next-Phase Restart Mode" (see `goals/SKILL.md` → "Next-Phase Restart Mode"), then cascades through Questions/Research/Design/Phasing/Structure/Plan/Parallelize/Implement in turn. Pipeline progression is derived from artifact frontmatter — there is no state cache file to reconcile.)
 
-**Major path:** Delete `replan-pending.md`, recommend compaction, invoke the loop-back target skill (Goals, Design, Phasing, or Structure). Replan exits — the normal pipeline takes over from the loop-back target forward. The `replan-pending.md` deletion happens before the loop-back invocation because Replan's analytical work is complete; the cascade is standard pipeline execution.
+**Major path:** Delete `replan-pending.md`, recommend compaction, invoke the loop-back target skill (Goals, Design, Phasing, Structure, or Plan). Replan exits — the normal pipeline takes over from the loop-back target forward. The `replan-pending.md` deletion happens before the loop-back invocation because Replan's analytical work is complete; the cascade is standard pipeline execution.
 
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill (next-phase Goals on the Minor path; the loop-back target — Goals, Design, Phasing, or Structure — on the Major path), run `/compact` if context utilization may exceed ~50%. Loop-back targets read every prior approved artifact + every `feedback/replan-phase-*-round-*.md` file; entering them on a saturated context degrades the cascade's re-approval quality.
+> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill (next-phase Goals on the Minor path; the loop-back target — Goals, Design, Phasing, Structure, or Plan — on the Major path), run `/compact` if context utilization may exceed ~50%. Loop-back targets read every prior approved artifact + every `feedback/replan-phase-*-round-*.md` file; entering them on a saturated context degrades the cascade's re-approval quality.
 
 ## Model Selection Guidance
 

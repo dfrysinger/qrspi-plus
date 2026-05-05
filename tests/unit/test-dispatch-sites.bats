@@ -36,3 +36,20 @@ setup() {
       || { echo "skills/${skill}/SKILL.md still uses .codex-prompts/ dispatch pattern"; return 1; }
   done
 }
+
+@test "no migrated SKILL.md references deleted template paths" {
+  local skills=(goals questions research design structure phasing plan parallelize implement integrate replan test)
+  local deleted_paths=(
+    'skills/_shared/templates/scope-reviewer\.md'
+    'skills/implement/templates/'
+    'skills/integrate/templates/'
+    'skills/test/templates/'
+    'skills/plan/templates/'
+  )
+  for skill in "${skills[@]}"; do
+    for path in "${deleted_paths[@]}"; do
+      ! grep -qE "$path" "skills/${skill}/SKILL.md" \
+        || { echo "skills/${skill}/SKILL.md still references deleted template path: $path"; return 1; }
+    done
+  done
+}

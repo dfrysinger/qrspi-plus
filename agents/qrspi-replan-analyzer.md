@@ -42,10 +42,11 @@ The path-vs-body split is deliberate: large fan-out inputs travel as paths to ke
 | Major (Design) | Change requires rethinking architecture | Loop back to `qrspi:design` |
 | Major (Phasing) | Change requires re-slicing or re-phasing | Loop back to `qrspi:phasing` |
 | Major (Structure) | Change requires file-map restructure | Loop back to `qrspi:structure` |
+| Major (Plan) | Change requires rewriting per-task test expectations or per-phase acceptance criteria (Plan OWNS acceptance criteria per the strip-from-goals contract) | Loop back to `qrspi:plan` |
 
 4. **Scope-mapping check** — when tying a proposed change to an existing goal, verify the goal's problem framing (Problem / Why we care / What we know so far) actually describes the proposal's scope. If the proposal's scope is not covered by the existing goal text, classify the proposal as Major (loop-back to Goals) — do NOT silently expand goal text or create new goals from the Replan subagent. Goal-text changes are Goals' responsibility on the loop-back, never Replan's.
 
-5. **If any major change** — identify the earliest loop-back target (Goals, Design, Phasing, or Structure): the earliest artifact whose content needs to change.
+5. **If any major change** — identify the earliest loop-back target (Goals, Design, Phasing, Structure, or Plan): the earliest artifact whose content needs to change. Acceptance-criteria-only Major changes route to Plan, not Goals (per the strip-from-goals contract).
 
 ## Output format
 
