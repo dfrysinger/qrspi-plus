@@ -47,7 +47,7 @@ Test execution and fix task dispatch are handled by the orchestrating skill, not
 
 ### Acceptance Test
 
-Tests that verify a specific acceptance criterion from goals.md is met. Each test proves one feature works as specified.
+Tests that verify a specific acceptance criterion from `plan.md` (per-task `## Test Expectations` block, or per-phase acceptance block when present) is met. Each test proves one feature works as specified. Per the strip-from-goals contract, `plan.md` authors acceptance criteria; `goals.md` is traceability-only and is NOT the criterion-authoring source.
 
 **Test structure:**
 1. **Setup:** Create the preconditions (user, data, state)

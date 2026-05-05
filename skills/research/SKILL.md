@@ -97,7 +97,7 @@ Dispatch parameters:
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **no scope-reviewer** per canonical artifact-tree topology — only the quality reviewer runs (one Claude dispatch + one Codex dispatch when `codex_reviews: true`).
 
 - **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-research-reviewer", model: "sonnet" })` with a prompt containing only:
-  - `artifact_body`: `research/summary.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=research>>>` and `<<<UNTRUSTED-ARTIFACT-END id=research>>>` markers
+  - `artifact_body`: `research/summary.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=research/summary.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=research/summary.md>>>` markers
   - `companion_qfiles`: a single concatenated payload containing every `research/q*.md` file, each wrapped between its own `<<<UNTRUSTED-ARTIFACT-START id=q01.md>>>` / `<<<UNTRUSTED-ARTIFACT-END id=q01.md>>>` fences (per-file id matches the filename so the reviewer can cite specific `q*.md` defects)
   - `output`: `<ABS_ARTIFACT_DIR>/reviews/research/round-NN-claude.md` (interpolate absolute path and round number)
   - `round`: NN
