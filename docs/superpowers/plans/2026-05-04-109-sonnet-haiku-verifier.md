@@ -12,6 +12,8 @@
 
 **Branch:** `qrspi-echo/issue-109-sonnet-haiku-verifier` (HEAD `4e4dcf1`, 16 commits, PR not yet created). Spec itself already committed.
 
+**Path convention.** The bash blocks below repeat the absolute path `/Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus` for explicitness — that's where the qrspi-plus checkout lives on the user's workstation today. If the repo is cloned elsewhere, the implementer should set `REPO_ROOT="$(git -C <other-checkout> rev-parse --show-toplevel)"` once at the top of execution and substitute `$REPO_ROOT` for the hardcoded path everywhere it appears (the plan does not pre-substitute because the literal path is the user's actual workstation, and rewriting every block to use a variable would obscure the canonical paths).
+
 **Prerequisite:** Issue #110 (`docs/superpowers/plans/2026-05-04-110-subagents-in-agent-files.md`) must merge to main before this plan's commits go out for review — #109 consumes the agent-file infrastructure, the `skills/reviewer-protocol/SKILL.md` skill, and the `scripts/codex-companion-bg.sh` stdin pipeline that #110 lands. Implementation work on #109 can begin on the post-#110 main; if #110 is still in flight when #109 starts, rebase #109's branch onto #110's branch as needed.
 
 ---
@@ -413,18 +415,21 @@ awk -v out="$tmpdir" '
 i=0
 for seg in "$tmpdir"/seg-*; do
   [[ -e "$seg" ]] || continue
+  # Skip empty segment files — Codex stdout ending with a stray trailing
+  # `<<<FINDING-BOUNDARY>>>` (no content after) would create a zero-byte seg
+  # file via the awk loop's `started=1` flag firing on the boundary alone;
+  # writing that to disk would violate spec §1's "exactly one `\n`" contract.
+  [[ -s "$seg" ]] || continue
   i=$((i + 1))
   printf -v num '%02d' "$i"
   out="$round_subdir/${tag}.finding-F${num}.md"
   # Strip leading blank lines via awk; awk's `print` emits a trailing newline
   # for every output line, so a non-empty awk output is guaranteed to end in
-  # exactly one `\n` already. (The previous `$(tail -c1 …) != $'\n'` test was
-  # broken: command substitution strips trailing newlines, so the compared
-  # value was always the empty string, and the script always appended a
-  # second `\n`. Per spec §1 the per-finding file must end in EXACTLY one
-  # `\n`. Awk's behavior already guarantees that when the input segment is
-  # non-empty; no post-hoc fix-up is needed.)
+  # exactly one `\n` already.
   awk 'BEGIN{started=0} {if (!started && NF==0) next; started=1; print}' "$seg" > "$out"
+  # Defense-in-depth: if the awk output is empty (segment was all blank
+  # lines), drop the file rather than ship a zero-byte finding.
+  [[ -s "$out" ]] || rm -f "$out"
 done
 ```
 
@@ -879,6 +884,32 @@ if [[ "$verifier_enabled" != "true" ]]; then
 fi
 ```
 
+Step 4 (verifier dispatch) instructs main chat to issue one Task tool call per finding-file in parallel, with the `qrspi-finding-verifier` subagent type and an explicit prompt that supplies the 5 input parameters spec §1 enumerates. Concrete dispatch sketch (this is the sub-block to paste into the Apply-fix protocol body, with the 5 parameters resolved at runtime per the rules below):
+
+```markdown
+Step 4 — parallel verifier dispatch.
+
+For each finding-file enumerated in Step 1, dispatch one Task call:
+
+  subagent_type: qrspi-finding-verifier
+  description:   verify <reviewer_tag>.<finding_id>
+  prompt: |
+    finding_file_path: <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md
+    sidecar_path:      <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.score.yml
+    artifact_path:     <abs_path>/<step>.md
+    diff_file_path:    <abs_path>/reviews/{step}/round-(NN-1)-fixes.md   # round 1: omit; round 2+: prior round's fixes
+    upstream_paths:    [<abs_path>/<upstream-1>.md, <abs_path>/<upstream-2>.md, ...]   # see derivation rule below
+
+Parameter derivation:
+  - finding_file_path: enumerated by Step 1's nullglob loop (absolute path).
+  - sidecar_path:      finding_file_path with `.md` → `.score.yml` (rule from spec §1 verifier `## Input contract`).
+  - artifact_path:     `<run_dir>/<step>.md` where <step> ∈ {goals, questions, research, design, phasing, structure, parallelize, replan}.
+  - diff_file_path:    omitted on round 1 (no prior fixes file). Round 2+: `<run_dir>/reviews/{step}/round-(NN-1)-fixes.md`.
+  - upstream_paths:    the artifacts the current step CONSUMES per the QRSPI pipeline order. For Goals: []. Questions: [goals.md]. Research: [goals.md, questions.md]. Design: [goals.md, questions.md, research/summary.md]. Phasing: [goals.md, design.md]. Structure: [goals.md, design.md, phasing.md]. Parallelize: [goals.md, design.md, structure.md]. Replan: [plan.md, replan-trigger-source].
+```
+
+Each Task subagent returns a brief `<reviewer_tag>.<finding_id>: <score>` line (or `: VERIFY_FAILED:<reason>` on failure); main chat ignores the return text (the sidecar on disk is the source of truth) but does inspect for the `VERIFY_FAILED:` prefix to route into the §3 menu. Spec §1 (`agents/qrspi-finding-verifier.md` `## Procedure`) defines the verifier's internal behavior; this dispatch sketch only documents the orchestrator side.
+
 Step 7 (filter and dispatch) handles four routing branches per spec §1:
 - `scope` and `intent` → bypass score filter, flow directly to the existing pause gate.
 - `style` / `clarity` / `correctness` with sidecar score ≥80 OR no sidecar OR sidecar VERIFY_FAILED OR verifier_enabled=false → keep, Edit on artifact.
@@ -1162,7 +1193,8 @@ Append to the existing `tests/unit/test-codex-splitter.bats`:
     local f="skills/${skill}/SKILL.md"
     local marker
     marker=$(awk '
-      /codex-companion-bg\.sh await/ { capturing=1 }
+      /codex-finding-splitter\.sh/ && capturing == 0 { saw_splitter_pre_await=1 }
+      /codex-companion-bg\.sh await/ { capturing=1; saw_await=1 }
       capturing { buf = buf $0 "\n" }
       /codex-finding-splitter\.sh/ && capturing {
         if (buf ~ /\$\? -eq 0/ || buf ~ /&&/ || buf ~ /if .*\$\?/) {
@@ -1171,16 +1203,19 @@ Append to the existing `tests/unit/test-codex-splitter.bats`:
         print "GATE_MISSING"; capturing=0; exit
       }
       END {
-        if (capturing == 0 && buf == "") print "AWAIT_NOT_FOUND"
+        if (saw_await == 0 && saw_splitter_pre_await == 0) print "AWAIT_NOT_FOUND"
+        else if (saw_await == 0 && saw_splitter_pre_await == 1) print "SPLITTER_BEFORE_AWAIT"
+        else if (capturing == 1 && saw_splitter_pre_await == 1) print "SPLITTER_BEFORE_AWAIT"
         else if (capturing == 1) print "SPLITTER_NOT_FOUND"
       }
     ' "$f")
     case "$marker" in
-      GATE_OK)            ;;  # pass
-      GATE_MISSING)       echo "splitter not gated on await success in $f"; return 1 ;;
-      AWAIT_NOT_FOUND)    echo "codex-companion-bg.sh await invocation missing entirely in $f"; return 1 ;;
-      SPLITTER_NOT_FOUND) echo "await line found but no codex-finding-splitter.sh invocation reachable in $f"; return 1 ;;
-      *)                  echo "unrecognized marker '$marker' from gate-detection awk in $f"; return 1 ;;
+      GATE_OK)              ;;  # pass
+      GATE_MISSING)         echo "splitter not gated on await success in $f"; return 1 ;;
+      AWAIT_NOT_FOUND)      echo "codex-companion-bg.sh await invocation missing entirely in $f"; return 1 ;;
+      SPLITTER_NOT_FOUND)   echo "await line found but no codex-finding-splitter.sh invocation reachable in $f"; return 1 ;;
+      SPLITTER_BEFORE_AWAIT) echo "splitter invocation precedes await line in $f — re-order so splitter is gated on await success"; return 1 ;;
+      *)                    echo "unrecognized marker '$marker' from gate-detection awk in $f"; return 1 ;;
     esac
   done
 }
@@ -1342,32 +1377,41 @@ setup() {
 
 Per spec §5 test #5 ("Fixture covers each abnormality the menu handles (VERIFY_FAILED, missing reviewer output, missing sidecar)"). Create four fixture round directories — one per abnormality class — each populated with the file shape that triggers that class, and a `cited-diagnostic.txt` file naming the diagnostic line the menu's prose must produce when this fixture is the failing input:
 
-Each fixture's `cited-diagnostic.txt` carries a regex that must match the verbatim spec §3 menu prose (NOT plan-Step-3 explanatory bullets — the test enforces the spec text itself, so the regex must work against the prose pasted in from spec §3). Spec §3's diagnostic-line shapes are:
+Each fixture's `cited-diagnostic.txt` carries a regex that must match the verbatim spec §3 menu prose (NOT plan-Step-3 explanatory bullets — the test enforces the spec text itself). Spec §3's diagnostic-line shapes are:
 
 - VERIFY_FAILED branch: `verifier returned VERIFY_FAILED`
 - Codex no-output branch: `wrote no per-finding files` and `await` / `--artifact-dir` references
 - Claude no-output branch: `wrote no per-finding files` and `subagent return:`
 - Sidecar missing branch: `sidecar missing` (or `expected sidecar missing` per spec §3)
 
-Create `tests/fixtures/issue-109/menu-cases/verify-failed/round-03/`:
-- `quality-claude.finding-F01.md` (frontmatter `change_type: correctness`, sample body)
-- `quality-claude.finding-F01.score.yml` (`score: VERIFY_FAILED:upstream-not-readable`)
-- `cited-diagnostic.txt`: a single line — `VERIFY_FAILED`
+The `cited-diagnostic.txt` file lives at the case-directory root (NOT inside `round-03/`) — the test's `${case_dir}cited-diagnostic.txt` lookup is one level above the round subdir. Each case directory has the structure:
 
-Create `tests/fixtures/issue-109/menu-cases/missing-codex-output/round-03/`:
-- `quality-claude.finding-F01.md` + `quality-claude.finding-F01.score.yml` (real, score 87)
-- (NO `quality-codex.*` files — the Codex tag was expected per the matrix but produced nothing)
-- `cited-diagnostic.txt`: a single line — `wrote no per-finding files|await.*exit|--artifact-dir`
+```
+tests/fixtures/issue-109/menu-cases/<case>/
+  cited-diagnostic.txt       # case-level regex
+  round-03/                  # round contents exhibiting the abnormality
+    <per-case files…>
+```
 
-Create `tests/fixtures/issue-109/menu-cases/missing-claude-output/round-03/`:
-- `quality-codex.finding-F01.md` + `quality-codex.finding-F01.score.yml` (real, score 90)
-- (NO `quality-claude.*` files)
-- `cited-diagnostic.txt`: a single line — `wrote no per-finding files|subagent return:`
+Create `tests/fixtures/issue-109/menu-cases/verify-failed/`:
+- `cited-diagnostic.txt` — single line: `VERIFY_FAILED`
+- `round-03/quality-claude.finding-F01.md` (frontmatter `change_type: correctness`, sample body)
+- `round-03/quality-claude.finding-F01.score.yml` (`score: VERIFY_FAILED:upstream-not-readable`)
 
-Create `tests/fixtures/issue-109/menu-cases/missing-sidecar/round-03/`:
-- `quality-claude.finding-F01.md` (real)
-- (NO `quality-claude.finding-F01.score.yml` — verifier was expected to produce a sidecar but didn't)
-- `cited-diagnostic.txt`: a single line — `sidecar missing|expected sidecar`
+Create `tests/fixtures/issue-109/menu-cases/missing-codex-output/`:
+- `cited-diagnostic.txt` — single line: `wrote no per-finding files|await.*exit|--artifact-dir`
+- `round-03/quality-claude.finding-F01.md` + `round-03/quality-claude.finding-F01.score.yml` (real, score 87)
+- (NO `round-03/quality-codex.*` files — the Codex tag was expected per the matrix but produced nothing)
+
+Create `tests/fixtures/issue-109/menu-cases/missing-claude-output/`:
+- `cited-diagnostic.txt` — single line: `wrote no per-finding files|subagent return:`
+- `round-03/quality-codex.finding-F01.md` + `round-03/quality-codex.finding-F01.score.yml` (real, score 90)
+- (NO `round-03/quality-claude.*` files)
+
+Create `tests/fixtures/issue-109/menu-cases/missing-sidecar/`:
+- `cited-diagnostic.txt` — single line: `sidecar missing|expected sidecar`
+- `round-03/quality-claude.finding-F01.md` (real)
+- (NO `round-03/quality-claude.finding-F01.score.yml` — verifier was expected to produce a sidecar but didn't)
 
 ```bash
 #!/usr/bin/env bats
@@ -1604,19 +1648,32 @@ Append to the existing test file (created in commit 3):
 
 @test "fresh-run config init writes verifier_enabled: true to config.md" {
   # Spec §1: "Fresh run directories start with verifier_enabled: true (set by
-  # the using-qrspi run-init code at run creation)." Locate the run-init
-  # config-template region (the prose that authors a new config.md when a
-  # fresh run is created) and assert it lists verifier_enabled: true.
-  # Search heuristic: the run-init template region typically lives near the
-  # config-validation prose and references at least two existing fields
-  # (codex_reviews, route). Find any block that lists those plus the new
-  # verifier_enabled field.
+  # the using-qrspi run-init code at run creation)." Shape-agnostic check —
+  # the run-init prose lists at least the legacy fields (codex_reviews, route)
+  # and must now also include verifier_enabled: true somewhere in the same
+  # SKILL.md file. The three field names appear together nowhere else in
+  # using-qrspi/SKILL.md (codex_reviews / route / verifier_enabled), so a
+  # whole-file presence triple is sufficient and shape-independent.
+  grep -qE '^[[:space:]]*[-*][[:space:]]*`?codex_reviews`?:|codex_reviews:[[:space:]]+(true|false)' skills/using-qrspi/SKILL.md \
+    || { echo "codex_reviews not present in using-qrspi/SKILL.md"; return 1; }
+  grep -qE '^[[:space:]]*[-*][[:space:]]*`?route`?:|route:[[:space:]]+' skills/using-qrspi/SKILL.md \
+    || { echo "route not present in using-qrspi/SKILL.md"; return 1; }
+  # The new field must appear with a literal `true` default in a run-init
+  # context — the simplest shape-agnostic check is "verifier_enabled: true"
+  # appearing somewhere in the file (the schema doc + the run-init template
+  # both contain it; if either is missing, this fails).
+  grep -qE 'verifier_enabled:[[:space:]]*true' skills/using-qrspi/SKILL.md \
+    || { echo "verifier_enabled: true not present in using-qrspi/SKILL.md (run-init template missing the field)"; return 1; }
+  # Stronger shape: the run-init template region typically appears in a
+  # fenced code block. Assert at least one ```yaml/```bash/```markdown fenced
+  # block contains both `route:` and `verifier_enabled:` together — that's the
+  # template-shape signal.
   awk '
-    /codex_reviews:.*route:|route:.*codex_reviews:/ { in_block=1 }
-    in_block { buf = buf $0 "\n" }
-    /^## / && in_block && NR>1 { exit }
-  ' skills/using-qrspi/SKILL.md | grep -qE 'verifier_enabled:\s*true' \
-    || { echo "run-init template does not write verifier_enabled: true on fresh runs"; return 1; }
+    /^```/ { in_fence = !in_fence; if (!in_fence) { if (has_route && has_ve) { print "TEMPLATE_FENCE_OK"; exit }; has_route=0; has_ve=0 } }
+    in_fence && /^[[:space:]]*route:/ { has_route=1 }
+    in_fence && /^[[:space:]]*verifier_enabled:[[:space:]]*true/ { has_ve=1 }
+  ' skills/using-qrspi/SKILL.md | grep -q '^TEMPLATE_FENCE_OK$' \
+    || { echo "no fenced code block in using-qrspi/SKILL.md contains both 'route:' and 'verifier_enabled: true' (the run-init template fence)"; return 1; }
 }
 ```
 
@@ -1823,20 +1880,26 @@ If anything fails, fix the cutover edits — do NOT loosen the tests. The cutove
 
 Per spec §7 step 4. Run a real review round per behavior class. ALL must pass before the commit may merge to main. Use a fresh QRSPI run directory per case so the cases don't pollute each other; the cases share a small set of pre-built fixture artifacts (`docs/qrspi/2026-04-29-v0.4-bundle/` already on disk has a working `goals.md`, `design.md`, etc. — clone its directory under a new bundle name per case).
 
-Setup helper (run once before the cases). Smoke run-bundles live OUTSIDE the repo working tree under `/tmp/issue-109-smoke/` so they don't clutter `git status` and cannot be accidentally staged into the cutover commit:
+Setup helper (run once before the cases). Smoke run-bundles MUST live under `docs/qrspi/` because that's where `using-qrspi`'s resume-discovery code scans for `config.md` files; relocating them to `/tmp/` would break the slash-command invocation. To keep `git status` clean, the bundles are gitignored for the duration of the matrix run:
 
 ```bash
-SMOKE_ROOT=/tmp/issue-109-smoke
+SMOKE_ROOT=docs/qrspi/_smoke-issue-109   # underscore prefix sorts to top + clearly scratch
 rm -rf "$SMOKE_ROOT"   # idempotent — re-running the matrix starts clean
 mkdir -p "$SMOKE_ROOT"
+# Add a temporary gitignore line so smoke bundles don't pollute git status.
+# (Strip on teardown so the gitignore tail doesn't drift across runs.)
+printf '\n# Issue #109 smoke matrix — temporary, removed at teardown\n/docs/qrspi/_smoke-issue-109/\n' >> /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus/.gitignore
 echo "case | outcome | notes" > /tmp/issue-109-smoke-results.txt
 ```
 
-Teardown (run after the matrix completes — even on failure — to free disk and surface a clean repo state):
+Teardown (run after the matrix completes — even on failure — to free disk and restore the gitignore):
 
 ```bash
 # After all cases recorded:
-rm -rf /tmp/issue-109-smoke
+rm -rf docs/qrspi/_smoke-issue-109
+# Strip the temporary gitignore line.
+sed -i.bak '/# Issue #109 smoke matrix/,/_smoke-issue-109/d' /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus/.gitignore
+rm -f /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus/.gitignore.bak
 ```
 
 For each case below, the `setup` block creates the per-case run directory, the `command` block triggers the review round, and the `assertion` block is a single grep/test that produces PASS or FAIL into `/tmp/issue-109-smoke-results.txt`.
@@ -1847,7 +1910,7 @@ For each case below, the `setup` block creates the per-case run directory, the `
 2. **Implementing-agent action:** invoke the slash command, which loads the `using-qrspi` Skill and walks the resume protocol against the configured run directory. Wait for the review round to complete (a fresh `round-NN/` subdir is created with new finding/sidecar files; the round number increments past whatever was already in the cloned bundle).
 3. Run the `assertion` bash block, which inspects the LATEST round directory (NOT the pre-existing one in the cloned bundle) — the assertion uses `ls -d "$RUN/reviews/<step>/round-"* | tail -1` to find the newly-created round.
 
-Pre-cutover, the cloned bundle's youngest round is round-NN; post-cutover invocation of `/qrspi resume` creates round-(NN+1) — so the assertion's `tail -1` always selects the new round, never the stale pre-cutover one. (If `/qrspi resume` does NOT advance the round number, that is itself a smoke-matrix failure: the new dispatch contract isn't exercising. Fail the case.)
+Pre-cutover, the cloned bundle's youngest round is round-NN; post-cutover invocation of `/qrspi resume` creates round-(NN+1). Each case captures `BEFORE_COUNT` (count of round directories in the cloned bundle) BEFORE the slash-command, then asserts `AFTER_COUNT > BEFORE_COUNT` BEFORE running the contents grep. Without this enforced numerically, the contents grep could pass against the stale pre-cutover round directory `tail -1` happens to select.
 
 **Case (a) — Questions or Research (no scope reviewer):**
 
@@ -1855,17 +1918,19 @@ Pre-cutover, the cloned bundle's youngest round is round-NN; post-cutover invoca
 # setup
 RUN=$SMOKE_ROOT/case-a; cp -R docs/qrspi/2026-04-29-v0.4-bundle "$RUN"
 sed -i.bak 's/^codex_reviews: .*/codex_reviews: true/' "$RUN/config.md"
-# command — trigger via /qrspi route entry; observe that the questions step's
-# review round (already populated in the bundle) re-dispatches with the new tags
-# (this is the simplest path that exercises the new dispatching-skill prompt
-# without re-running an entire pipeline). Use the orchestrator manually:
+BEFORE_A=$(ls -d "$RUN/reviews/questions/round-"* 2>/dev/null | wc -l | tr -d ' ')
 # IMPLEMENTING-AGENT-ACTION: /qrspi resume questions   (await new round-NN before running assertion)
-# assertion
-ls "$RUN/reviews/questions/round-"*"/quality-claude.finding-"*.md "$RUN/reviews/questions/round-"*"/quality-codex.finding-"*.md >/dev/null 2>&1 \
-  && ! ls "$RUN/reviews/questions/round-"*"/scope-claude."*.md 2>/dev/null \
-  && ! ls "$RUN/reviews/questions/round-"*"/scope-codex."*.md 2>/dev/null \
-  && echo "(a) | PASS | quality-only matrix, no scope tag files" >> /tmp/issue-109-smoke-results.txt \
-  || echo "(a) | FAIL | matrix mismatch (see $RUN/reviews/questions/)" >> /tmp/issue-109-smoke-results.txt
+# assertion — first verify a NEW round was created (staleness guard), then check the matrix shape.
+AFTER_A=$(ls -d "$RUN/reviews/questions/round-"* 2>/dev/null | wc -l | tr -d ' ')
+RD=$(ls -d "$RUN/reviews/questions/round-"* 2>/dev/null | sort -V | tail -1)
+if [[ "$AFTER_A" -le "$BEFORE_A" ]]; then
+  echo "(a) | FAIL | /qrspi resume did not create a new round (BEFORE=$BEFORE_A AFTER=$AFTER_A)" >> /tmp/issue-109-smoke-results.txt
+elif ls "$RD"/quality-claude.finding-*.md "$RD"/quality-codex.finding-*.md >/dev/null 2>&1 \
+  && ! ls "$RD"/scope-claude.*.md "$RD"/scope-codex.*.md 2>/dev/null; then
+  echo "(a) | PASS | quality-only matrix, no scope tag files (round $(basename "$RD"))" >> /tmp/issue-109-smoke-results.txt
+else
+  echo "(a) | FAIL | matrix mismatch in $RD" >> /tmp/issue-109-smoke-results.txt
+fi
 ```
 
 **Case (b) — Goals or Design (full 4-reviewer set):**
@@ -1873,33 +1938,40 @@ ls "$RUN/reviews/questions/round-"*"/quality-claude.finding-"*.md "$RUN/reviews/
 ```bash
 RUN=$SMOKE_ROOT/case-b; cp -R docs/qrspi/2026-04-29-v0.4-bundle "$RUN"
 sed -i.bak 's/^codex_reviews: .*/codex_reviews: true/' "$RUN/config.md"
-# command — re-dispatch the design step (full 4-reviewer artifact):
+BEFORE_B=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | wc -l | tr -d ' ')
 # IMPLEMENTING-AGENT-ACTION: /qrspi resume design   (await new round-NN before running assertion)
-# assertion: all four role-distinct tags present in the round dir.
-RD=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | tail -1)
-[ -n "$RD" ] \
-  && ls "$RD/quality-claude."*.md "$RD/scope-claude."*.md "$RD/quality-codex."*.md "$RD/scope-codex."*.md >/dev/null 2>&1 \
-  && echo "(b) | PASS | full 4-reviewer matrix with role-distinct prefixes" >> /tmp/issue-109-smoke-results.txt \
-  || echo "(b) | FAIL | missing one of the four role-distinct tags in $RD" >> /tmp/issue-109-smoke-results.txt
+AFTER_B=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | wc -l | tr -d ' ')
+RD=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | sort -V | tail -1)
+if [[ "$AFTER_B" -le "$BEFORE_B" ]]; then
+  echo "(b) | FAIL | /qrspi resume did not create a new round (BEFORE=$BEFORE_B AFTER=$AFTER_B)" >> /tmp/issue-109-smoke-results.txt
+elif ls "$RD/quality-claude."*.md "$RD/scope-claude."*.md "$RD/quality-codex."*.md "$RD/scope-codex."*.md >/dev/null 2>&1; then
+  echo "(b) | PASS | full 4-reviewer matrix with role-distinct prefixes ($(basename "$RD"))" >> /tmp/issue-109-smoke-results.txt
+else
+  echo "(b) | FAIL | missing one of the four role-distinct tags in $RD" >> /tmp/issue-109-smoke-results.txt
+fi
 ```
 
 **Case (c) — `verifier_enabled: false` from start:**
 
 ```bash
 RUN=$SMOKE_ROOT/case-c; cp -R docs/qrspi/2026-04-29-v0.4-bundle "$RUN"
-# Edit config BEFORE the round — verifier_enabled false from start.
 grep -q '^verifier_enabled:' "$RUN/config.md" \
   && sed -i.bak 's/^verifier_enabled: .*/verifier_enabled: false/' "$RUN/config.md" \
-  || printf '\nverifier_enabled: false\n' >> "$RUN/config.md"
+  || printf 'verifier_enabled: false\n' >> "$RUN/config.md"
+BEFORE_C=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | wc -l | tr -d ' ')
 # IMPLEMENTING-AGENT-ACTION: /qrspi resume design   (await new round-NN before running assertion)
-# assertion: no sidecars on disk + verified-file header shows scored:0 and verifier_enabled:false.
-RD=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | tail -1)
+AFTER_C=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | wc -l | tr -d ' ')
+RD=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | sort -V | tail -1)
 VF="$RUN/reviews/design/round-$(basename "$RD" | sed 's/round-//')-verified.md"
-! ls "$RD"/*.score.yml 2>/dev/null \
+if [[ "$AFTER_C" -le "$BEFORE_C" ]]; then
+  echo "(c) | FAIL | /qrspi resume did not create a new round (BEFORE=$BEFORE_C AFTER=$AFTER_C)" >> /tmp/issue-109-smoke-results.txt
+elif ! ls "$RD"/*.score.yml 2>/dev/null \
   && grep -qE '^verifier_enabled: false$' "$VF" \
-  && grep -qE '^scored: 0$' "$VF" \
-  && echo "(c) | PASS | no sidecars, header confirms disabled-from-start" >> /tmp/issue-109-smoke-results.txt \
-  || echo "(c) | FAIL | sidecars present or header malformed in $VF" >> /tmp/issue-109-smoke-results.txt
+  && grep -qE '^scored: 0$' "$VF"; then
+  echo "(c) | PASS | no sidecars, header confirms disabled-from-start ($(basename "$RD"))" >> /tmp/issue-109-smoke-results.txt
+else
+  echo "(c) | FAIL | sidecars present or header malformed in $VF" >> /tmp/issue-109-smoke-results.txt
+fi
 ```
 
 **Case (d) — `codex_reviews: false`:**
@@ -1907,13 +1979,18 @@ VF="$RUN/reviews/design/round-$(basename "$RD" | sed 's/round-//')-verified.md"
 ```bash
 RUN=$SMOKE_ROOT/case-d; cp -R docs/qrspi/2026-04-29-v0.4-bundle "$RUN"
 sed -i.bak 's/^codex_reviews: .*/codex_reviews: false/' "$RUN/config.md"
+BEFORE_D=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | wc -l | tr -d ' ')
 # IMPLEMENTING-AGENT-ACTION: /qrspi resume design   (await new round-NN before running assertion)
-# assertion: only Claude tags, no Codex tags.
-RD=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | tail -1)
-ls "$RD/quality-claude."*.md "$RD/scope-claude."*.md >/dev/null 2>&1 \
-  && ! ls "$RD/quality-codex."*.md "$RD/scope-codex."*.md 2>/dev/null \
-  && echo "(d) | PASS | claude-only matrix, no codex tags" >> /tmp/issue-109-smoke-results.txt \
-  || echo "(d) | FAIL | codex tags leaked under codex_reviews:false" >> /tmp/issue-109-smoke-results.txt
+AFTER_D=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | wc -l | tr -d ' ')
+RD=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | sort -V | tail -1)
+if [[ "$AFTER_D" -le "$BEFORE_D" ]]; then
+  echo "(d) | FAIL | /qrspi resume did not create a new round (BEFORE=$BEFORE_D AFTER=$AFTER_D)" >> /tmp/issue-109-smoke-results.txt
+elif ls "$RD/quality-claude."*.md "$RD/scope-claude."*.md >/dev/null 2>&1 \
+  && ! ls "$RD/quality-codex."*.md "$RD/scope-codex."*.md 2>/dev/null; then
+  echo "(d) | PASS | claude-only matrix, no codex tags ($(basename "$RD"))" >> /tmp/issue-109-smoke-results.txt
+else
+  echo "(d) | FAIL | codex tags leaked under codex_reviews:false" >> /tmp/issue-109-smoke-results.txt
+fi
 ```
 
 **Cases (e)/(f)/(g) — failure-path coverage via the unit suite.**
@@ -2006,9 +2083,11 @@ cat > /tmp/issue-109-substitute-followup.sh <<'HELPER'
 set -euo pipefail
 read NUM < /tmp/issue-109-followup-num.txt
 [[ "$NUM" =~ ^[0-9]+$ ]] || { echo "follow-up issue number missing or invalid: '$NUM'"; exit 1; }
+read SMOKE_NUM < /tmp/issue-109-smoke-followup-num.txt
+[[ "$SMOKE_NUM" =~ ^[0-9]+$ ]] || { echo "smoke follow-up issue number missing or invalid: '$SMOKE_NUM'"; exit 1; }
 target="${1:-}"
 if [[ -n "$target" ]]; then
-  sed -i.bak "s/\${FOLLOWUP_ISSUE}/${NUM}/g" "$target" && rm -f "${target}.bak"
+  sed -i.bak "s/\${FOLLOWUP_ISSUE}/${NUM}/g; s/\${SMOKE_FOLLOWUP_ISSUE}/${SMOKE_NUM}/g" "$target" && rm -f "${target}.bak"
 else
   echo "usage: $0 <file>"; exit 2
 fi
@@ -2016,7 +2095,7 @@ HELPER
 chmod +x /tmp/issue-109-substitute-followup.sh
 ```
 
-Tasks 6 and Final invoke this helper against the specific file they just authored (CHANGELOG.md and `/tmp/issue-109-pr-body.md` respectively).
+Tasks 6 and Final invoke this helper against the specific file they just authored (CHANGELOG.md and `/tmp/issue-109-pr-body.md` respectively). The helper substitutes BOTH `${FOLLOWUP_ISSUE}` (deferred-reviewer migration) and `${SMOKE_FOLLOWUP_ISSUE}` (smoke-matrix end-to-end coverage gap) so both follow-up issues are linked from the shipped record (CHANGELOG + PR body).
 
 - [ ] **Step 17: Stage all cutover changes**
 
@@ -2182,7 +2261,7 @@ Findings with `change_type` ∈ {`style`, `clarity`, `correctness`} are filtered
 
 Configuration: `verifier_enabled` (boolean, default `true`) in `config.md`. The §3 menu's `skip` option disables the verifier for the current round only (no `config.md` mutation); to disable across the whole run, edit `config.md` directly between rounds. CLI-flag opt-out at `/qrspi` invocation is out of scope.
 
-Scope: 14 artifact-level reviewers for `goals`, `questions`, `research`, `design`, `phasing`, `structure`, `parallelize`, `replan`. The 18 deferred reviewers (plan-artifact, plan quality/scope, per-task, implement-gate, security-integration, integration-quality) migrate atomically in follow-up issue #${FOLLOWUP_ISSUE}, which also collapses the bifurcated `reviewer-protocol/SKILL.md` back to a single per-finding contract.
+Scope: 14 artifact-level reviewers for `goals`, `questions`, `research`, `design`, `phasing`, `structure`, `parallelize`, `replan`. The 18 deferred reviewers (plan-artifact, plan quality/scope, per-task, implement-gate, security-integration, integration-quality) migrate atomically in follow-up issue #${FOLLOWUP_ISSUE}, which also collapses the bifurcated `reviewer-protocol/SKILL.md` back to a single per-finding contract. Pre-merge smoke-matrix cases (e)/(f)/(g) are pinned by the unit suite rather than executed as real review rounds; end-to-end coverage of those failure paths is tracked in #${SMOKE_FOLLOWUP_ISSUE}.
 
 Wallclock cost: ~3–5 sec per round (parallel Haiku dispatch); token cost: ~$0.045/round at typical N=8 finding-file count. Negligible.
 
@@ -2279,7 +2358,9 @@ Closes #109.
 
 Spec: `docs/superpowers/specs/2026-05-04-109-sonnet-haiku-verifier-design.md`.
 Plan: `docs/superpowers/plans/2026-05-04-109-sonnet-haiku-verifier.md`.
-Follow-up: #${FOLLOWUP_ISSUE} (deferred reviewer migration + reviewer-protocol bifurcation collapse).
+Follow-ups:
+- #${FOLLOWUP_ISSUE} — deferred reviewer migration + reviewer-protocol bifurcation collapse
+- #${SMOKE_FOLLOWUP_ISSUE} — smoke-matrix end-to-end coverage of failure paths (e)/(f)/(g)
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
