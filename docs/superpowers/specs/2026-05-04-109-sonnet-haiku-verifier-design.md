@@ -31,7 +31,7 @@ Frontmatter:
 - `description: "Score a single reviewer finding 0-100 against the /code-review confidence rubric. Read the per-finding file, score against the artifact and lazy-Read upstreams, write the score back to the same file, return a brief ID:score line."`
 
 Body sections:
-- **Rubric** — verbatim copy of `/code-review` step 5's 0/25/50/75/100 grade definitions (a/b/c/d/e), including the verbatim "give this rubric to the agent verbatim" prefix language.
+- **Rubric** — verbatim copy of `/code-review` step 5's 0/25/50/75/100 anchor definitions (a/b/c/d/e), including the verbatim "give this rubric to the agent verbatim" prefix language. The anchors are reference points on the continuous 0–100 scale (per /code-review step 5's "score each issue on a scale from 0–100"), NOT the only valid score values; the verifier is expected to emit off-anchor integers when its confidence falls between anchors.
 - **False-positive examples** — adapted from `/code-review` step 4–5 examples, augmented for QRSPI:
   - Pre-existing issues (already in the artifact before this round's diff)
   - Pedantic nitpicks a senior engineer wouldn't call out
@@ -52,10 +52,10 @@ Body sections:
   2. Read `<artifact_path>` (and `<diff_file_path>` if non-empty) eagerly.
   3. For each `referenced_files` entry in the finding, Read it.
   4. If any `<upstream_paths>` is cited in the finding's `message` or seems load-bearing for the verdict, Read it. Otherwise skip.
-  5. Score using EXACTLY one of the discrete rubric values: `0`, `25`, `50`, `75`, or `100`. Continuous scores are not permitted; the rubric is bucketed.
+  5. Score on a continuous **0–100** integer scale, using the rubric anchor descriptions (`0`/`25`/`50`/`75`/`100` from /code-review step 5 a–e) as guidance for what each marker value represents. Off-anchor scores (e.g., `80`, `90`, `95`) are valid and expected — the anchors are reference points, not the universe of valid scores. This faithfully matches /code-review's "scale from 0 to 100" contract; the threshold filter at Apply-fix step 9 is `≥80`, which under continuous scoring filters at the documented threshold rather than collapsing to a 100-only gate.
   6. Compose new file content: original content (preserved byte-identically) + a single newline + the boundary sentinel `<!-- @@QRSPI-VERIFIER-BOUNDARY@@ -->` on its own line + the `## Verifier` block (`score: <S>`, `reason: <≤1-sentence>`).
   7. Write the new content back to `<finding_file_path>`.
-  8. Return exactly: `<finding_id>: <score>` (e.g. `R3-F02: 75`) where `<score>` is one of the discrete bucket values 0/25/50/75/100. If the agent's reasoning would land off-bucket, snap to the NEAREST bucket (e.g. 80 → 75; 60 → 50; 90 → 100). **Tie-break: round DOWN to the lower bucket** (e.g. 87 → 75; 12.5 → 0; 62.5 → 50). The conservative tie-break favors pause/keep over auto-apply because borderline findings should reach the user, not silently auto-apply. The snap rule + tie-break are documented in the agent file body so the orchestrator's brief-return parser can rely on always-discrete values. On failure, return `<finding_id>: VERIFY_FAILED:<reason>`.
+  8. Return exactly: `<finding_id>: <score>` (e.g. `R3-F02: 87`) where `<score>` is an integer in `0..100`. The orchestrator's brief-return parser accepts any integer in this range; the verifier does NOT snap or quantize. On failure, return `<finding_id>: VERIFY_FAILED:<reason>`.
 - **Disk-write contract reference** — points at `skills/reviewer-protocol/SKILL.md` `## Disk-Write Contract` for the brief-return rationale.
 
 ### `skills/reviewer-protocol/SKILL.md` (amendments — bifurcated contract during the migration window)
@@ -223,10 +223,19 @@ New flow (post-#109):
 
     {raw Codex stdout content, verbatim}
     ```
-    The `change_type: intent` choice is load-bearing: it routes the malformed-Codex finding to the pause gate (so a human triages it) rather than the auto-apply path where the verifier could silently drop it. The tag-prefixed `finding_id` form (e.g. `R3-quality-codex-F00`, `R3-scope-codex-F00`) ensures uniqueness even if both quality-codex and scope-codex hit the fallback in the same round. The synthetic frontmatter satisfies the schema-violation guard at Apply-fix step 2 (all 7 fields present, change_type in the canonical enum, finding_id matches the per-finding pattern). Splitter emits a stderr warning. Verifier still scores it (likely low) and the score is purely advisory — the change_type partition routes it to pause regardless of score.
+    The `change_type: intent` choice is load-bearing: it routes the malformed-Codex finding to the pause gate (so a human triages it) rather than the auto-apply path where the verifier could silently drop it. The tag-suffixed `finding_id` form (`R{NN}-F00-<reviewer-tag>`, e.g. `R3-F00-quality-codex`, `R3-F00-scope-codex`) ensures uniqueness even if both quality-codex and scope-codex hit the fallback in the same round, and matches the permissive schema-guard regex `^R\d+-F\d+(-[a-z-]+)?$` from §3. The synthetic frontmatter satisfies the schema-violation guard at Apply-fix step 2 (all 7 fields present, change_type in the canonical enum, finding_id matches the per-finding pattern). Splitter emits a stderr warning. Verifier still scores it (likely low) and the score is purely advisory — the change_type partition routes it to pause regardless of score.
   - **Empty input (Codex stdout was empty when the reviewer was expected to emit):** writes a `<round-subdir>/<reviewer-tag>.crash.md` (NOT a clean marker — empty stdout is failure, not success) with a `## Splitter Note` body indicating "Codex stdout was empty; reviewer produced no output." Routes to the pause gate via the reviewer-failure path. (A reviewer that genuinely surfaces no findings is contractually required to emit `NO_FINDINGS` — empty stdout is unambiguous failure.)
 - On non-zero `await` exit code (10/11/12/13/14): main chat does NOT invoke the splitter. It writes a `<round-subdir>/<reviewer_tag>.crash.md` audit file directly (carrying the existing crash-note content) and short-circuits the reviewer's contribution to this round (no findings, no clean marker, no verifier dispatch for this reviewer). The apply-fix step's clean-vs-broken disambiguation rule treats `<reviewer_tag>.crash.md` as a hard reviewer failure and pauses the round via the existing pause gate. (Crash notes are NEVER fed to the splitter.)
-- **Exit-0 failure-payload classifier (pre-splitter):** the existing `codex-companion-bg.sh` wrapper can exit 0 while emitting failure text on stdout from the `storedJob.rendered` / `job.errorMessage` / `storedJob.errorMessage` paths (when Codex itself returned a failed-job payload the wrapper rendered as text rather than masking as a non-zero exit). Without classification, those payloads fall into the splitter's missing-delimiter F00 fallback, becoming pseudo-findings instead of crash records. Before invoking the splitter on `await` exit-0 stdout, main chat runs a one-line classifier: if the first non-blank line of stdout matches the wrapper's failure-rendering markers (the canonical markers are `^Codex job failed:`, `^Codex companion error:`, or any line containing `errorMessage:` outside a YAML frontmatter block), main chat treats the stdout as a failure payload and writes it to `<reviewer_tag>.crash.md` instead of feeding it to the splitter. The classifier lives in a shared helper `scripts/codex-stdout-classify.sh` (added in the cutover commit), invoked by each #109 dispatching skill before the splitter call. Test #3 gains fixtures for each canonical exit-0-failure marker.
+- **Exit-0 failure-payload classifier (pre-splitter):** the existing `codex-companion-bg.sh` wrapper can exit 0 while emitting failure text on stdout from the `storedJob.rendered` / `job.errorMessage` / `storedJob.errorMessage` extraction paths (links c/d/e in `fetch_result()`'s fallback chain — render.mjs:413, 437, 439). Today those failure-source extractions emit BARE text with no distinguishing prefix (the wrapper's verified contract per `scripts/codex-companion-bg.sh:586-596` and the bats fixtures `Cancelled by user.`, `Stored-only error message.`, `Codex turn ended with failure`); a classifier that grepped for substring markers like `errorMessage:` would either miss real failures (the wrapper does not emit that string) or fire on legitimate review prose that happens to discuss errors. The fix lives **inside the wrapper**: in the cutover commit (§9 step 4), `fetch_result()` is modified to prepend a unique sentinel header line on links (c)/(d)/(e) BEFORE the bare extracted text. The marker shape is:
+
+  ```
+  # @@QRSPI-CODEX-FAILURE@@: <source>
+  <bare extracted text...>
+  ```
+
+  where `<source>` is one of `storedJob.rendered`, `job.errorMessage`, `storedJob.errorMessage`. Links (a) `storedJob.result.rawOutput` and (b) `storedJob.result.codex.stdout` (the success-path review extractions) emit content as-is — no marker. The wrapper's exit code stays 0 in all five fallback paths (no breaking change for non-#109 callers; the marker is a benign decoration that they can ignore or strip). Existing wrapper bats fixtures are updated to assert the marker is emitted on links (c)/(d)/(e) and absent on links (a)/(b).
+
+  Main chat then runs the pre-splitter classifier `scripts/codex-stdout-classify.sh`: if the first non-blank line of `await` exit-0 stdout matches the literal regex `^# @@QRSPI-CODEX-FAILURE@@:`, main chat treats the stdout as a failure payload and writes it to `<reviewer_tag>.crash.md` instead of feeding it to the splitter. The marker is unspoofable as review content because the per-finding contract REQUIRES every Codex review payload to start with either `` 1. `finding_id`: ... `` (numbered finding block) or the literal `NO_FINDINGS` sentinel — neither shape can begin with `# @@QRSPI-CODEX-FAILURE@@:`. The classifier and the wrapper modification ship together in the cutover commit (§9 step 4); the standalone classifier-script test that lands in step 2 uses synthetic fixtures (literal marker headers prepended to bare-text bodies) so it can validate the classifier in isolation before the wrapper actually emits the markers. Test #3 gains fixtures for each of the three failure-source markers AND a negative fixture asserting that review prose containing the substring `errorMessage:` (without the leading marker header) is NOT classified as failure.
 - **Multi-template Codex sites** (`skills/integrate/SKILL.md`, `skills/test/SKILL.md` — multiple Codex dispatches per round, each with a `<template>` suffix): the splitter is invoked once per template completion, with the per-template reviewer-tag (`codex-<template>`, `scope-codex-<template>`). The per-template tags are recorded in the reviewer-protocol contract.
 - Splitter is idempotent (re-running on the same input produces the same output files).
 
@@ -300,15 +309,16 @@ Reviewers (Sonnet/Codex)             Main chat (orchestrator)            Haiku v
                                           in parallel              ──> Each Haiku Reads its file +
                                                                           artifact + lazy-Reads upstreams
                                                                           + lazy-Reads referenced_files.
-                                                                          Scores against discrete rubric
-                                                                          (0/25/50/75/100; off-bucket
-                                                                          snaps to nearest). Writes back
-                                                                          to same path with the
+                                                                          Scores 0–100 (continuous;
+                                                                          0/25/50/75/100 are anchor
+                                                                          descriptions, not bucket-only
+                                                                          values). Writes back to same
+                                                                          path with the
                                                                           @@QRSPI-VERIFIER-BOUNDARY@@
                                                                           sentinel + ## Verifier block
                                                                           appended (preceding content
                                                                           byte-identical). Returns
-                                                                          "F##: <bucket>" or
+                                                                          "F##: <int 0..100>" or
                                                                           "F##: VERIFY_FAILED:<reason>".
                                        6. Aggregates returns + preserve
                                           guard.
@@ -356,9 +366,16 @@ Reviewers (Sonnet/Codex)             Main chat (orchestrator)            Haiku v
                                             (NEVER score-filtered)
                                           - style/clarity/correctness:
                                             filter at score ≥80 (or
-                                            all-kept if verifier_enabled
-                                            =false OR ## Verifier block
-                                            missing). Survivors →
+                                            all-kept if (a) verifier_
+                                            enabled=false, OR (b) finding's
+                                            verifier returned VERIFY_FAILED).
+                                            Case (c) — missing ## Verifier
+                                            block on a verifier-enabled
+                                            non-VERIFY_FAILED finding —
+                                            cannot reach this step (preserve
+                                            guard at §2 step 6 hard-aborts
+                                            on missing sentinel before
+                                            assembly). Survivors →
                                             auto-apply via Edit.
                                           Crash files → pause gate
                                           (reviewer-failure path).
@@ -389,7 +406,7 @@ reason: confirmed — cited file does not handle the concurrency case under mult
 
 The YAML `reviewer:` field carries the role-distinct dispatcher-supplied `reviewer_tag` value (`quality-claude` | `scope-claude` | `quality-codex` | `scope-codex` for #109). It MUST equal the per-finding filename prefix and the route key the dispatcher used to launch the reviewer. The schema-violation guard at Apply-fix step 2 cross-checks all three (filename prefix, YAML `reviewer` field, dispatched route key) and fails loud on mismatch.
 
-The `<!-- @@QRSPI-VERIFIER-BOUNDARY@@ -->` line and the `## Verifier` block are absent before the verifier runs and BOTH are present after (the verifier writes them as one atomic append). The dispatcher in step 14 treats absence of the `## Verifier` block as "keep this finding without scoring" via an explicit branch ONLY for case (a) verifier-disabled rounds and case (b) verifier returned `VERIFY_FAILED:`. Case (c) — verifier-enabled, brief returned a score, but no `## Verifier` block (or no boundary sentinel) — is impossible because the preserve guard at Apply-fix step 6 hard-aborts on missing sentinel before assembly. There is no "silent verifier failure → keep" path; silent failures are caught and aborted.
+The `<!-- @@QRSPI-VERIFIER-BOUNDARY@@ -->` line and the `## Verifier` block are absent before the verifier runs and BOTH are present after (the verifier writes them as one atomic append). The dispatcher's filter step (Apply-fix step 9 — see §2 step 7 for assembly and §2 step 9 for the partition/filter rule that consumes the assembled file) treats absence of the `## Verifier` block as "keep this finding without scoring" via an explicit branch ONLY for case (a) verifier-disabled rounds and case (b) verifier returned `VERIFY_FAILED:`. Case (c) — verifier-enabled, brief returned a score, but no `## Verifier` block (or no boundary sentinel) — is impossible because the preserve guard at Apply-fix step 6 hard-aborts on missing sentinel before assembly. There is no "silent verifier failure → keep" path; silent failures are caught and aborted.
 
 **Pre-verify file format (the same file before the verifier runs):**
 
@@ -437,7 +454,7 @@ The schema-violation guard's permissive regex is documented alongside the routin
 
 **Codex splitter failure modes:**
 - `NO_FINDINGS` sentinel emitted: clean marker written, no findings.
-- Missing-delimiter input (no boundary markers AND no `NO_FINDINGS` sentinel): writes the entire Codex stream to `<reviewer-tag>.finding-F00.md` as a single coarse high-severity finding with tag-prefixed unique `finding_id: R{NN}-<reviewer-tag>-F00` and `change_type: intent` (route-to-pause). Stderr warning surfaced. Verifier scores it but the score is advisory — change_type partitioning routes it to the pause gate regardless.
+- Missing-delimiter input (no boundary markers AND no `NO_FINDINGS` sentinel): writes the entire Codex stream to `<reviewer-tag>.finding-F00.md` as a single coarse high-severity finding with the canonical-form unique `finding_id: R{NN}-F00-<reviewer-tag>` (F-number first, then tag suffix — matches §3's permissive schema-guard regex `^R\d+-F\d+(-[a-z-]+)?$`) and `change_type: intent` (route-to-pause). Stderr warning surfaced. Verifier scores it but the score is advisory — change_type partitioning routes it to the pause gate regardless.
 - Empty input: writes a `<reviewer-tag>.crash.md` (NOT a clean marker — empty Codex stdout is failure, not success) with a `## Splitter Note` body. Routes to the pause gate via the reviewer-failure path.
 - `await` non-zero exit (10/11/12/13/14): splitter NOT invoked; main chat writes `<reviewer-tag>.crash.md` directly; dispatch step routes the round to the pause gate via the reviewer-failure path.
 
@@ -485,7 +502,7 @@ Option 3 follows the existing autonomous-loop abort path: writes `reviews/{step}
 
 Added to `tests/unit/`:
 
-1. **`test-verifier-agent-file.bats`** — `agents/qrspi-finding-verifier.md` exists; frontmatter has `model: haiku`, `tools: [Read, Write]`, name `qrspi-finding-verifier`; body cites the rubric verbatim (greps for the 0/25/50/75/100 grade definitions and asserts the rubric is described as "discrete" / "exactly one of"); body cites the false-positive examples list; body specifies the input-contract parameter names and the procedure step ordering; body asserts the preserve-preceding-content requirement is documented.
+1. **`test-verifier-agent-file.bats`** — `agents/qrspi-finding-verifier.md` exists; frontmatter has `model: haiku`, `tools: [Read, Write]`, name `qrspi-finding-verifier`; body cites the rubric verbatim (greps for the 0/25/50/75/100 grade-anchor definitions a–e from /code-review step 5); body asserts the rubric is described as **continuous 0–100** with the anchors as reference points (NOT discrete-bucket-only); body cites the false-positive examples list; body specifies the input-contract parameter names and the procedure step ordering; body asserts the preserve-preceding-content requirement is documented; body asserts the brief-return uses an integer in `0..100` (not a bucket label).
 
 2. **`test-per-finding-file-emission.bats`** — every reviewer agent file under `agents/qrspi-*reviewer*.md` IN THE #109 SCOPE (the 14 artifact-level reviewers enumerated in §2: 8 quality + 6 scope) has body language instructing per-finding emission with the canonical `<reviewer_tag>.finding-F<NN>.md` filename pattern AND the `<reviewer_tag>.clean.md` clean-sentinel pattern using the role-distinct tag values; the same files do NOT emit a single multi-finding file (greps for legacy `round-NN-{reviewer}.md` writes and asserts they are absent). The 18 deferred reviewers (Plan-step 7 + per-task 8 + implement-gate 1 + security-integration 1 + integration-quality 1) are explicitly skipped with a comment citing the follow-up issue number (filed BEFORE the cutover commit per §9 step 0).
 
@@ -495,7 +512,7 @@ Added to `tests/unit/`:
 
 5. **`test-verifier-failure-menu.bats`** — main-chat-authored protocol body (in `using-qrspi/SKILL.md`) describes the §5 menu with the three exact option strings; no default option; option 1 mutates `config.md` `verifier_enabled: false` and writes the audit note path; the always-on footer about repeated unavailability is present.
 
-6. **`test-verified-file-shape.bats`** — `round-NN-verified.md` is the assembly of `*.finding-*.md` + `*.clean.md` + `*.crash.md` with a totals-header injected by `awk` (asserts the header field set: `verifier_enabled`, `total_scored`, `kept`, `dropped`, `failed`, `clean`, `crashed`, `empty-codex`, `crash-skipped`); the file is the sole apply-fix dispatch Read source; the file format is documented in `reviewer-protocol/SKILL.md`. Includes a verifier-enabled fixture (asserts `verifier_enabled: true` row + non-zero `scored`) and a verifier-disabled fixture (asserts `verifier_enabled: false` row + `scored: 0` + all findings under `kept`).
+6. **`test-verified-file-shape.bats`** — `round-NN-verified.md` is the assembly of `*.finding-*.md` + `*.clean.md` + `*.crash.md` with a totals-header injected by `awk` (asserts the header field set: `verifier_enabled`, `scored`, `kept`, `dropped`, `failed`, `clean`, `crashed`, `empty-codex`, `crash-skipped` — the canonical field name is the singular `scored`, matching §2 step 7 and §3 data-flow). The file is the sole apply-fix dispatch Read source; the file format is documented in `reviewer-protocol/SKILL.md`. Includes a verifier-enabled fixture (asserts `verifier_enabled: true` row + non-zero `scored`) and a verifier-disabled fixture (asserts `verifier_enabled: false` row + `scored: 0` + all findings under `kept`).
 
 7. **`test-config-verifier-enabled-field.bats`** — `verifier_enabled` field is documented in `skills/using-qrspi/SKILL.md`'s Config-File schema (NOT a hypothetical `skills/config/` skill); default is `true` on missing field; the field is read by every artifact-level Apply-fix protocol invocation; the run-scope persistence semantics (durable across `/compact` and resume within the same run directory) are documented; mid-run mutation precedent (`review_mode`/`review_depth`) is cited.
 
@@ -522,7 +539,7 @@ Added to `tests/unit/`:
 - **Within-round dedup** (same finding flagged by claude AND codex). Convergent flags are signal, not noise — verifier scores both. Future v0.6+ optimization candidate.
 - **Across-round dedup** (same finding re-flagged in round N+1 after surviving round N's drop). Memoization adds a cache invalidation surface (artifact edits, backward loops) that complicates the design beyond "copy first." Future v0.6+ candidate.
 - **Per-per-reviewer-file dispatch refinement** (one Haiku per per-reviewer-tag instead of one Haiku per finding). Considered for attention-management at very high finding counts (>15/round); not adopted in #109. Future v0.6+ candidate if stress observed.
-- **Verifier model upgrades** (Sonnet verifier, custom rubric per artifact type, continuous scoring). The `model: haiku` + discrete-rubric choice is load-bearing for the cost math and the faithful-copy-of-`/code-review` argument. Any upgrade lands in a separate issue.
+- **Verifier model upgrades** (Sonnet verifier, custom rubric per artifact type, alternative scoring scales). The `model: haiku` + verbatim-/code-review-rubric choice is load-bearing for the cost math and the faithful-copy-of-`/code-review` argument. Any upgrade lands in a separate issue.
 - **Verifier-disable-by-default mode.** The default is `verifier_enabled: true`. Per-run opt-out exists via the §5 menu (option 1). A pipeline-wide opt-out via CLI flag at run start is out of scope for #109 — add when the use case appears.
 
 ## §9 Migration sequence
@@ -533,7 +550,7 @@ The implementation plan (forthcoming in `docs/superpowers/plans/`) sequences as 
 
 1. **Verifier agent file.** Create `agents/qrspi-finding-verifier.md` with the rubric, false-positive examples, and procedure. Land alone with unit test #1. Not yet referenced by any skill — purely additive.
 
-2. **Codex splitter + classifier (scripts only, no prompt changes yet).** Add `scripts/codex-finding-splitter.sh` and `scripts/codex-stdout-classify.sh` and a NARROWED `tests/unit/test-codex-splitter.bats` that exercises ONLY the splitter and classifier scripts directly with synthetic inputs (boundary-delimited, NO_FINDINGS sentinel, missing-delimiter fallback, empty input, exit-0-failure-payload markers). The Codex prompts in dispatching skills are NOT changed in this commit, and the test does NOT grep dispatching skill prompts (that assertion moves to a test that lands in the cutover commit). The splitter and classifier are dead code until step 4 wires them up.
+2. **Codex splitter + classifier (scripts only, no prompt or wrapper changes yet).** Add `scripts/codex-finding-splitter.sh` and `scripts/codex-stdout-classify.sh` and a NARROWED `tests/unit/test-codex-splitter.bats` that exercises ONLY the splitter and classifier scripts directly with **synthetic** inputs (boundary-delimited, NO_FINDINGS sentinel, missing-delimiter fallback, empty input, and synthetic `# @@QRSPI-CODEX-FAILURE@@:` marker headers prepended to bare-text bodies — the synthetic fixtures stand in for what `codex-companion-bg.sh` will emit AFTER step 4 modifies it). The Codex prompts in dispatching skills are NOT changed in this commit; the wrapper itself is NOT yet modified to emit the marker (that lands in step 4); and the test does NOT grep dispatching skill prompts (that assertion moves to a test that lands in the cutover commit). The splitter and classifier are dead code until step 4 wires them up.
 
 3. **`config.md` schema update (documentation only, no protocol changes).** Add `verifier_enabled` field (default `true`) to `skills/using-qrspi/SKILL.md` Config-File schema. Land with a NARROWED `tests/unit/test-config-verifier-enabled-field.bats` that asserts the schema documentation exists (default-on, persistence semantics, runtime-backfill carve-out documented) — it does NOT yet assert the field is read by any protocol (that assertion moves to a test that lands in the cutover commit, since the runtime-backfill code itself lands at step 4).
 
@@ -542,6 +559,7 @@ The implementation plan (forthcoming in `docs/superpowers/plans/`) sequences as 
    - All 14 #109-scope reviewer agent file migrations (per-finding emission + clean sentinel + new brief-return shape, using the dispatcher-supplied role-distinct `reviewer_tag` value) under `agents/qrspi-{goals,questions,research,design,phasing,structure,parallelize,replan}-reviewer.md` (8 quality) and `agents/qrspi-{goals,design,phasing,structure,parallelize,replan}-scope-reviewer.md` (6 scope).
    - The Codex prompt + dispatch-parameter amendments in the 8 #109 artifact-level dispatching skills (`skills/{goals,questions,research,design,phasing,structure,parallelize,replan}/SKILL.md`) to: (a) pass the role-distinct `reviewer_tag` values (`quality-claude`/`scope-claude`/`quality-codex`/`scope-codex`) instead of today's collapsed `claude`/`codex`; (b) inject the `<<<FINDING-BOUNDARY>>>` delimiter and the `NO_FINDINGS` sentinel into the Codex reviewer prompt with worked one-finding and zero-finding examples; (c) retire the `output:` path-arg.
    - `scripts/verifier-preserve-guard.sh` (new helper, with `snapshot` and `check` subcommands per §4; reads/writes `reviews/{step}/round-NN/.snapshots.txt` for `/compact`-resilience).
+   - `scripts/codex-companion-bg.sh` `fetch_result()` modification: prepend `# @@QRSPI-CODEX-FAILURE@@: <source>\n` (where `<source>` ∈ `storedJob.rendered`/`job.errorMessage`/`storedJob.errorMessage`) to the extracted text on links (c)/(d)/(e); leave links (a)/(b) unchanged; keep exit code 0 in all five paths. Existing `tests/unit/test-codex-companion-bg.bats` fixtures updated to assert the marker is emitted on links (c)/(d)/(e) and absent on links (a)/(b). This is the live-emission half of the classifier contract that step 2 stubbed in.
    - The Apply-fix protocol revision in `skills/using-qrspi/SKILL.md` (verifier-aware sequence with all 12 steps, including the per-expected-tag schema-violation guard, the orchestrator-side preserve guard via the helper script, the change_type partition, the new clean-vs-broken disambiguation, AND the runtime backfill code for the `verifier_enabled` carve-out).
    - The §5 failure-menu mutation logic in `skills/using-qrspi/SKILL.md` (option 1 → write `verifier_enabled: false` to `config.md` + write the `reviews/{step}/round-NN-verifier-disabled.md` audit note + the always-on footer text).
    - All `using-qrspi`/`reviewer-protocol`/script test updates that pin the new contracts (tests #2, #3, #4, #5, #6, #7, #8, #9, #10, #11).
