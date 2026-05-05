@@ -1,3 +1,5 @@
+This is the locked rule set the scope-reviewer dispatch loads at review time (Read by the `qrspi-phasing-scope-reviewer` agent at runtime per its rules-loading procedure). Boundary-drift findings dispatch off the DEFERS list; scope-compliance dispatches off the OWNS list.
+
 ### Phasing OWNS
 
 - **Vertical-slice authoring** — enumerate end-to-end demonstrable delivery units in `phasing.md` `## Slices`. **Iron Law 1 applies** (see below).

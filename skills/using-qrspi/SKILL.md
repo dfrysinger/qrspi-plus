@@ -181,7 +181,9 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   ├── round-NN-integration-claude.md
     │   ├── round-NN-security-claude.md
     │   ├── round-NN-integration-codex.md
-    │   └── round-NN-security-codex.md
+    │   ├── round-NN-security-codex.md
+    │   ├── round-NN-implement-gate-claude.md   (when "Re-run all reviews" selected at Implement batch gate)
+    │   └── round-NN-implement-gate-codex.md    (same condition; only when codex_reviews: true)
     ├── ci/
     │   └── round-NN-review.md
     └── test/

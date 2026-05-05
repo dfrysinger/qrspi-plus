@@ -188,7 +188,7 @@ flowchart TD
     B -->|yes| C[Farm task specs to sub-subagents]
     C --> D[Merge into single plan.md]
     B -->|no| D[Single merged plan.md]
-    D --> E["Architectural Plan Review (Pattern 5)<br>6 parallel reviewer templates"]
+    D --> E["Architectural Plan Review (Pattern 5)<br>7 parallel reviewer subagents"]
     E --> F[Human gate]
     F --> G["Split into tasks/task-NN.md<br>Reduce plan.md to overview"]
     G --> H((Approved plan + task files))
@@ -530,7 +530,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["Merged plan.md ready"] --> B["Launch review subagent<br>with 6 parallel templates"]
+    A["Merged plan.md ready"] --> B["Launch 7 parallel reviewer subagents<br>(1 unified plan-quality + 5 plan-artifact + qrspi-plan-scope-reviewer)"]
 
     subgraph reviewers["Reviewers"]
         R1["Spec Reviewer<br>(completeness, placeholders)"]
@@ -548,7 +548,7 @@ flowchart TD
     D -->|yes| F[Fix issues]
     F --> E
     E -->|Present| G[Human gate]
-    E -->|Loop until clean| H[Re-run all 6 reviewers]
+    E -->|Loop until clean| H[Re-run all 7 reviewers]
     H --> I{Clean or 10 rounds?}
     I -->|clean or cap hit| G
     I -->|issues found| J[Fix and re-review]
@@ -907,7 +907,7 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 |------|------------------------------------------|
 | **Design** | Approach selection with rationale, key architectural decisions, trade-offs considered, design-level test strategy, Mermaid system diagrams. Vertical slicing and phase boundaries are owned by Phasing. |
 | **Structure** | Interface definitions (function/class signatures), create vs modify tracking, CI pipeline structure for greenfield projects, phase-scoped file maps |
-| **Plan** | Sub-subagent dispatch for large plans, merge/split lifecycle, quick-fix single-task mode, `pipeline` field on task files, 6 parallel reviewer templates (5 plan-specific + scope-reviewer) |
+| **Plan** | Sub-subagent dispatch for large plans, merge/split lifecycle, quick-fix single-task mode, `pipeline` field on task files, 7 parallel reviewer subagents (1 unified plan-quality + 5 plan-artifact + dedicated `qrspi-plan-scope-reviewer`) |
 | **Parallelize + Implement (split from original Worktree)** | Plan-time dependency graph analysis with parallel/sequential/hybrid execution modes and a symbolic Branch Map (Parallelize); runtime branch resolution, single baseline worktree at `.worktrees/{slug}/baseline/`, baseline tests with auto-fix, per-task worktrees with hook-based subagent containment (no per-worktree settings), per-task implementer dispatch, and batch gate (Implement). Splitting plan-time and runtime restores QRSPI's "one skill = one artifact + one human gate" symmetry. |
 | **Implement** | TDD iron law (no code without failing test), 8 specialized reviewers in correctness/thoroughness tiers, configurable review depth per phase, WHY-not-WHAT commenting discipline with non-technical-reader orientation lean, verbatim review result persistence |
 
@@ -916,7 +916,7 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 | Addition | What it adds |
 |----------|-------------|
 | **14 specialized reviewers** | 4 implementation correctness (spec, code quality, silent failures, security) + 4 implementation thoroughness (goal traceability, test coverage, type design, simplification) + 5 plan-level (spec, security, silent failures, goal traceability, test coverage) + 1 cross-cutting scope-reviewer (parameterized per artifact type) |
-| **5 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once), Artifact Synthesis (subagent produce + review loop), Architectural Plan (6 parallel templates: 5 plan-specific + scope-reviewer) |
+| **5 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once), Artifact Synthesis (subagent produce + review loop), Architectural Plan (7 parallel reviewer subagents: 1 unified plan-quality + 5 plan-artifact + dedicated `qrspi-plan-scope-reviewer`) |
 | **Route-based routing** | `config.md` with route field as single source of truth, replacing hardcoded skill-to-skill invocations |
 | **Config validation** | Numbered-option menus for missing/invalid config fields -- never silent defaults |
 | **Quick fix mode** | Shortened pipeline (Goals -> Questions -> Research -> Plan -> Implement -> Test) for targeted fixes — skips Design, Phasing, Structure, Parallelize, Integrate |
