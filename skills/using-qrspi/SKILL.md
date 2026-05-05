@@ -481,7 +481,7 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 ---
 artifact: {step}
 round: NN
-reviewer: claude   # or "scope"
+reviewer: claude   # or "codex"; the runtime, not the role. Scope-reviewer outputs land in round-NN-scope-{reviewer}.md filenames.
 ---
 
 # {Step} review — round NN — {reviewer}

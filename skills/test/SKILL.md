@@ -72,14 +72,14 @@ The test-writer subagent uses these rules to determine what tests to write:
 
 ## Test Types
 
-| Type | When to write | What it proves | Template |
-|------|--------------|----------------|----------|
-| Acceptance | Every `plan.md` task-spec criterion (per-task `## Test Expectations`) | Feature works as specified | `acceptance-test.md` |
-| Integration | Cross-slice data flow | Components work together correctly | `integration-test.md` |
-| E2E | Critical user journeys | Full stack works end-to-end | `e2e-test.md` |
-| Boundary | Edge cases from task specs + goals | System handles limits gracefully | `boundary-test.md` |
+| Type | When to write | What it proves |
+|------|--------------|----------------|
+| Acceptance | Every `plan.md` task-spec criterion (per-task `## Test Expectations`) | Feature works as specified |
+| Integration | Cross-slice data flow | Components work together correctly |
+| E2E | Critical user journeys | Full stack works end-to-end |
+| Boundary | Edge cases from task specs + goals | System handles limits gracefully |
 
-The test-writer chooses the appropriate type(s) per acceptance criterion. A single criterion may need multiple test types (e.g., "user can register" needs an acceptance test for the happy path, a boundary test for invalid email, and an integration test for the DB write).
+Per-type rule sets (test structure, naming convention, anti-patterns) live in the `qrspi-test-writer` agent body — see `agents/qrspi-test-writer.md` § TEST TYPE TEMPLATES. The test-writer chooses the appropriate type(s) per acceptance criterion. A single criterion may need multiple test types (e.g., "user can register" needs an acceptance test for the happy path, a boundary test for invalid email, and an integration test for the DB write).
 
 ## Process Steps
 

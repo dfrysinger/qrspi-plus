@@ -15,6 +15,7 @@ setup() {
     skills/_shared/templates/scope-reviewer.md
     skills/integrate/templates/integration-reviewer.md
     skills/integrate/templates/security-integration-reviewer.md
+    skills/implement/templates/implementer.md
     skills/implement/templates/correctness/spec-reviewer.md
     skills/implement/templates/correctness/code-quality-reviewer.md
     skills/implement/templates/correctness/silent-failure-hunter.md

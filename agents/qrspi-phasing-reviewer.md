@@ -17,7 +17,7 @@ You handle **artifact-specific quality only**. Boundary/scope concerns are revie
 Your dispatch prompt provides:
 - `artifact_body`: the artifact under review (`phasing.md`), wrapped between `<<<UNTRUSTED-ARTIFACT-START id=phasing.md>>>` / `<<<UNTRUSTED-ARTIFACT-END id=phasing.md>>>` markers
 - `companion_roadmap`: the roadmap artifact, wrapped between `<<<UNTRUSTED-ARTIFACT-START id=roadmap.md>>>` / `<<<UNTRUSTED-ARTIFACT-END id=roadmap.md>>>` markers
-- `companion_pruned_pairs`: the pruned + `future-*` artifact pairs as a concatenated payload — each file wrapped in its own `<<<UNTRUSTED-ARTIFACT-START id={filename}>>>` / `<<<UNTRUSTED-ARTIFACT-END>>>` pair (per-file id matches the filename)
+- `companion_pruned_pairs`: the pruned + `future-*` artifact pairs as a concatenated payload — each file wrapped in its own `<<<UNTRUSTED-ARTIFACT-START id={filename}>>>` / `<<<UNTRUSTED-ARTIFACT-END id={filename}>>>` pair (per-file id matches the filename)
 - `companion_goals_snapshot`: the pre-prune `goals.md`, wrapped between `<<<UNTRUSTED-ARTIFACT-START id=goals-snapshot.md>>>` / `<<<UNTRUSTED-ARTIFACT-END id=goals-snapshot.md>>>` markers
 - `companion_design_snapshot`: the pre-prune `design.md`, wrapped between `<<<UNTRUSTED-ARTIFACT-START id=design-snapshot.md>>>` / `<<<UNTRUSTED-ARTIFACT-END id=design-snapshot.md>>>` markers
 
