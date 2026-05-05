@@ -74,11 +74,13 @@ The spec's §7 migration sequence already establishes the file-structure plan: o
 
 ---
 
-## Task 0: File follow-up issue for deferred reviewer migration (no commit)
+## Task 0: File the two follow-up issues (no commit)
 
-**Files:** none modified locally — this task creates a GitHub issue and captures its number for use in commit 1's test #2.
+**Files:** none modified locally — this task creates two GitHub issues and captures their numbers for downstream tasks.
 
 **Spec reference:** §7 step 0 ("File the follow-up issue BEFORE any code commits"), §6 (out-of-scope reviewer set), §1 ("Files NOT modified by #109").
+
+Two follow-up issues are filed before any code commits: (1) the deferred-reviewer migration tracker (used by commit 1's test #2 deferred-reviewer skip-comment, the bifurcated-protocol Routing Table prose, the CHANGELOG, and the PR body), and (2) the smoke-matrix end-to-end-coverage tracker (records the deliberate narrowing where commit-4 cases (e)/(f)/(g) are pinned by the unit suite rather than executed as real review rounds — see Task 5 step 15).
 
 - [ ] **Step 1: Confirm the issue title and body**
 
@@ -126,7 +128,40 @@ cat /tmp/issue-109-followup-num.txt
 ```
 Expected: a positive integer on a single line.
 
-This task does NOT commit anything — it only creates a tracking issue. The first code commit is Task 1.
+- [ ] **Step 4: File the smoke-matrix end-to-end coverage follow-up issue**
+
+Body (write to `/tmp/issue-109-smoke-followup-body.md`):
+
+```markdown
+Tracks the deferred end-to-end smoke coverage for #109's commit-4 cutover.
+
+#109 commit 4 lands the Sonnet→Haiku confidence verifier. Spec §7 step 4 enumerates a 7-case pre-merge smoke matrix; cases (a)–(d) are real review rounds, but cases (e) (splitter malformed input), (f) (VERIFY_FAILED → skip), and (g) (VERIFY_FAILED → retry) are pinned by the unit suite rather than executed as real review rounds. The narrowing is documented at the top of #109's plan Task 5 step 15.
+
+End-to-end coverage of (e)/(f)/(g) requires either:
+- Adding a `QRSPI_CODEX_STDOUT_OVERRIDE` (or equivalent) env-hook to `scripts/codex-companion-bg.sh launch` so a fixture stdout file can replace the live Codex call (out of scope for #109's atomic cutover — wrapper not in commit 4's file inventory).
+- Adding a deterministic verifier-failure stub agent file (e.g. `agents/qrspi-finding-verifier-stub-fail.md`) and a synchronization point in the Apply-fix protocol that lets the smoke harness swap the agent atomically between the menu render and the retry dispatch.
+
+Source spec: `docs/superpowers/specs/2026-05-04-109-sonnet-haiku-verifier-design.md` §7 step 4 (smoke matrix).
+
+When this issue lands, the unit-test equivalence in #109's plan Task 5 step 15 should be replaced with real review-round invocations for cases (e)/(f)/(g).
+```
+
+```bash
+gh issue create \
+  --repo dfrysinger/qrspi-plus \
+  --title "Smoke-matrix end-to-end coverage for #109 cutover failure paths (e)/(f)/(g)" \
+  --body-file /tmp/issue-109-smoke-followup-body.md
+```
+
+- [ ] **Step 5: Capture the smoke follow-up issue number**
+
+```bash
+gh issue list --repo dfrysinger/qrspi-plus --search "Smoke-matrix end-to-end coverage" --json number --jq '.[0].number' > /tmp/issue-109-smoke-followup-num.txt
+cat /tmp/issue-109-smoke-followup-num.txt
+```
+Expected: a positive integer on a single line.
+
+This task does NOT commit anything — it only creates two tracking issues. The first code commit is Task 1.
 
 ---
 
@@ -381,11 +416,15 @@ for seg in "$tmpdir"/seg-*; do
   i=$((i + 1))
   printf -v num '%02d' "$i"
   out="$round_subdir/${tag}.finding-F${num}.md"
-  # Strip leading blank lines, ensure trailing newline.
+  # Strip leading blank lines via awk; awk's `print` emits a trailing newline
+  # for every output line, so a non-empty awk output is guaranteed to end in
+  # exactly one `\n` already. (The previous `$(tail -c1 …) != $'\n'` test was
+  # broken: command substitution strips trailing newlines, so the compared
+  # value was always the empty string, and the script always appended a
+  # second `\n`. Per spec §1 the per-finding file must end in EXACTLY one
+  # `\n`. Awk's behavior already guarantees that when the input segment is
+  # non-empty; no post-hoc fix-up is needed.)
   awk 'BEGIN{started=0} {if (!started && NF==0) next; started=1; print}' "$seg" > "$out"
-  if [[ -s "$out" ]] && [[ $(tail -c1 "$out") != $'\n' ]]; then
-    printf '\n' >> "$out"
-  fi
 done
 ```
 
@@ -706,9 +745,11 @@ git -C /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plu
 
 **Spec reference:** §7 final paragraph ("Rollback contract: steps 1–3 are individually revertible (purely additive).").
 
-- [ ] **Step 1: Verify each of commits 1–3 is purely additive**
+- [ ] **Step 1: Verify each of commits 1–3 is individually revertible (the operational meaning of "purely additive")**
 
-For each of the three commits, assert it touches only NEW files (no modifications to pre-existing tracked files) — that's the operational definition of "purely additive" for spec §7's rollback contract. A non-destructive `git show --stat` check is sufficient and avoids mutating the working tree:
+Spec §7's "Rollback contract: steps 1–3 are individually revertible (purely additive)" frames "purely additive" as the *means* by which the commits are individually revertible — i.e. the parenthetical is the explanation, not a separate stricter contract. For commits 1 and 2 the means is literal ("only new files added"); for commit 3 it is "the only modification is a doc-only addition to a schema region the runtime does not yet read, which is operationally equivalent to additive-only behavior under revert". The revertibility check below allows commit 3 to modify exactly `skills/using-qrspi/SKILL.md` (the field doc) and nothing else; commits 1 and 2 must be only-create.
+
+A non-destructive `git show --stat` check is sufficient and avoids mutating the working tree:
 
 ```bash
 for ref in HEAD~2 HEAD~1 HEAD; do
@@ -845,6 +886,10 @@ Step 7 (filter and dispatch) handles four routing branches per spec §1:
 - Out-of-enum `change_type` → loud failure (caught at step 2 already, but step 7 reasserts).
 
 Step 10 (per-round commit) covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-verified.md`, and `round-NN-fixes.md`. The diff-handling protocol (today's lines 527+) is unchanged.
+
+Additionally, locate the run-init code in `skills/using-qrspi/SKILL.md` that creates `config.md` for fresh runs (per spec §1: "Fresh run directories start with `verifier_enabled: true` (set by the `using-qrspi` run-init code at run creation)") and amend it to include `verifier_enabled: true` in the initial config-template. Today's run-init writes `config.md` with the existing fields (e.g. `codex_reviews:`, `route:`); add a `verifier_enabled: true` line in the same template region. This means fresh runs persist the field immediately on disk, NOT via the runtime-backfill carve-out — backfill is only for resumed pre-#109 runs.
+
+Verification: the test-config-verifier-enabled-field.bats expansion (Task 5 step 11) asserts the run-init template includes the field — see the new test case "fresh-run config init writes verifier_enabled: true" in step 11.
 
 - [ ] **Step 3: Edit `skills/using-qrspi/SKILL.md` — add the §3 failure-menu logic**
 
@@ -1050,6 +1095,48 @@ Append to the existing `tests/unit/test-codex-splitter.bats`:
   done
 }
 
+@test "every #109 dispatching skill passes <round_subdir> as the dispatch parameter (Claude AND Codex sides)" {
+  for skill in goals questions research design phasing structure parallelize replan; do
+    local f="skills/${skill}/SKILL.md"
+    grep -qE '<round_subdir>|round_subdir|round-NN/' "$f" \
+      || { echo "<round_subdir> dispatch parameter missing in $f"; return 1; }
+  done
+}
+
+@test "every #109 dispatching skill removes the legacy 'output:' single-file path argument" {
+  for skill in goals questions research design phasing structure parallelize replan; do
+    local f="skills/${skill}/SKILL.md"
+    # The legacy form passed `output: reviews/{step}/round-NN-{tag}.md` to the
+    # reviewer dispatch. Post-cutover, the parameter is `<round_subdir>` and
+    # the legacy `output:` path argument is gone. Tolerate the word "output"
+    # appearing in unrelated contexts (e.g. "Codex output"); only fail if a
+    # path-shaped legacy `output:` argument with `round-NN-` survives.
+    ! grep -qE 'output:[[:space:]]*reviews/.*round-NN-(claude|codex|scope-(claude|codex))' "$f" \
+      || { echo "legacy 'output:' single-file path argument still present in $f"; return 1; }
+  done
+}
+
+@test "every #109 dispatching skill passes role-distinct reviewer_tag values (quality- and scope-prefixed)" {
+  for skill in goals questions research design phasing structure parallelize replan; do
+    local f="skills/${skill}/SKILL.md"
+    grep -qE 'quality-claude|quality-codex' "$f" \
+      || { echo "quality-tag dispatch parameter missing in $f"; return 1; }
+  done
+  # Goals/Design/Phasing/Structure/Parallelize/Replan also dispatch a scope reviewer.
+  for skill in goals design phasing structure parallelize replan; do
+    local f="skills/${skill}/SKILL.md"
+    grep -qE 'scope-claude|scope-codex' "$f" \
+      || { echo "scope-tag dispatch parameter missing in $f"; return 1; }
+  done
+  # Questions/Research do NOT dispatch a scope reviewer (per spec). Verify the
+  # legacy collapsed `claude`/`codex` tags are gone (replaced by quality-prefixed).
+  for skill in questions research; do
+    local f="skills/${skill}/SKILL.md"
+    ! grep -qE 'reviewer_tag:[[:space:]]*(claude|codex)[[:space:]]*$' "$f" \
+      || { echo "legacy collapsed tag (no role prefix) still in $f"; return 1; }
+  done
+}
+
 @test "no #109 dispatching skill retains the legacy single-file Codex stdout redirect" {
   for skill in goals questions research design phasing structure parallelize replan; do
     local f="skills/${skill}/SKILL.md"
@@ -1073,19 +1160,28 @@ Append to the existing `tests/unit/test-codex-splitter.bats`:
   # within it.
   for skill in goals questions research design phasing structure parallelize replan; do
     local f="skills/${skill}/SKILL.md"
-    awk '
+    local marker
+    marker=$(awk '
       /codex-companion-bg\.sh await/ { capturing=1 }
       capturing { buf = buf $0 "\n" }
       /codex-finding-splitter\.sh/ && capturing {
         if (buf ~ /\$\? -eq 0/ || buf ~ /&&/ || buf ~ /if .*\$\?/) {
-          print "GATE_OK"; exit 0
+          print "GATE_OK"; capturing=0; exit
         }
-        # Saw splitter without a gate token between it and await — fail.
-        print "GATE_MISSING"; exit 1
+        print "GATE_MISSING"; capturing=0; exit
       }
-      END { if (!capturing) print "AWAIT_NOT_FOUND" }
-    ' "$f" | grep -q '^GATE_OK$' \
-      || { echo "splitter not gated on await success in $f"; return 1; }
+      END {
+        if (capturing == 0 && buf == "") print "AWAIT_NOT_FOUND"
+        else if (capturing == 1) print "SPLITTER_NOT_FOUND"
+      }
+    ' "$f")
+    case "$marker" in
+      GATE_OK)            ;;  # pass
+      GATE_MISSING)       echo "splitter not gated on await success in $f"; return 1 ;;
+      AWAIT_NOT_FOUND)    echo "codex-companion-bg.sh await invocation missing entirely in $f"; return 1 ;;
+      SPLITTER_NOT_FOUND) echo "await line found but no codex-finding-splitter.sh invocation reachable in $f"; return 1 ;;
+      *)                  echo "unrecognized marker '$marker' from gate-detection awk in $f"; return 1 ;;
+    esac
   done
 }
 ```
@@ -1246,6 +1342,13 @@ setup() {
 
 Per spec §5 test #5 ("Fixture covers each abnormality the menu handles (VERIFY_FAILED, missing reviewer output, missing sidecar)"). Create four fixture round directories — one per abnormality class — each populated with the file shape that triggers that class, and a `cited-diagnostic.txt` file naming the diagnostic line the menu's prose must produce when this fixture is the failing input:
 
+Each fixture's `cited-diagnostic.txt` carries a regex that must match the verbatim spec §3 menu prose (NOT plan-Step-3 explanatory bullets — the test enforces the spec text itself, so the regex must work against the prose pasted in from spec §3). Spec §3's diagnostic-line shapes are:
+
+- VERIFY_FAILED branch: `verifier returned VERIFY_FAILED`
+- Codex no-output branch: `wrote no per-finding files` and `await` / `--artifact-dir` references
+- Claude no-output branch: `wrote no per-finding files` and `subagent return:`
+- Sidecar missing branch: `sidecar missing` (or `expected sidecar missing` per spec §3)
+
 Create `tests/fixtures/issue-109/menu-cases/verify-failed/round-03/`:
 - `quality-claude.finding-F01.md` (frontmatter `change_type: correctness`, sample body)
 - `quality-claude.finding-F01.score.yml` (`score: VERIFY_FAILED:upstream-not-readable`)
@@ -1254,17 +1357,17 @@ Create `tests/fixtures/issue-109/menu-cases/verify-failed/round-03/`:
 Create `tests/fixtures/issue-109/menu-cases/missing-codex-output/round-03/`:
 - `quality-claude.finding-F01.md` + `quality-claude.finding-F01.score.yml` (real, score 87)
 - (NO `quality-codex.*` files — the Codex tag was expected per the matrix but produced nothing)
-- `cited-diagnostic.txt`: a single line — `Codex reviewer no-output|await exit|--artifact-dir`
+- `cited-diagnostic.txt`: a single line — `wrote no per-finding files|await.*exit|--artifact-dir`
 
 Create `tests/fixtures/issue-109/menu-cases/missing-claude-output/round-03/`:
 - `quality-codex.finding-F01.md` + `quality-codex.finding-F01.score.yml` (real, score 90)
 - (NO `quality-claude.*` files)
-- `cited-diagnostic.txt`: a single line — `Claude reviewer no-output|verbatim subagent return`
+- `cited-diagnostic.txt`: a single line — `wrote no per-finding files|subagent return:`
 
 Create `tests/fixtures/issue-109/menu-cases/missing-sidecar/round-03/`:
 - `quality-claude.finding-F01.md` (real)
 - (NO `quality-claude.finding-F01.score.yml` — verifier was expected to produce a sidecar but didn't)
-- `cited-diagnostic.txt`: a single line — `Sidecar missing`
+- `cited-diagnostic.txt`: a single line — `sidecar missing|expected sidecar`
 
 ```bash
 #!/usr/bin/env bats
@@ -1498,6 +1601,23 @@ Append to the existing test file (created in commit 3):
   ' skills/using-qrspi/SKILL.md)
   echo "$protocol" | grep -qE 'verifier_enabled missing from config\.md|backfilling default'
 }
+
+@test "fresh-run config init writes verifier_enabled: true to config.md" {
+  # Spec §1: "Fresh run directories start with verifier_enabled: true (set by
+  # the using-qrspi run-init code at run creation)." Locate the run-init
+  # config-template region (the prose that authors a new config.md when a
+  # fresh run is created) and assert it lists verifier_enabled: true.
+  # Search heuristic: the run-init template region typically lives near the
+  # config-validation prose and references at least two existing fields
+  # (codex_reviews, route). Find any block that lists those plus the new
+  # verifier_enabled field.
+  awk '
+    /codex_reviews:.*route:|route:.*codex_reviews:/ { in_block=1 }
+    in_block { buf = buf $0 "\n" }
+    /^## / && in_block && NR>1 { exit }
+  ' skills/using-qrspi/SKILL.md | grep -qE 'verifier_enabled:\s*true' \
+    || { echo "run-init template does not write verifier_enabled: true on fresh runs"; return 1; }
+}
 ```
 
 - [ ] **Step 12: Create `tests/unit/test-disabled-mode-fallthrough.bats`**
@@ -1721,6 +1841,14 @@ rm -rf /tmp/issue-109-smoke
 
 For each case below, the `setup` block creates the per-case run directory, the `command` block triggers the review round, and the `assertion` block is a single grep/test that produces PASS or FAIL into `/tmp/issue-109-smoke-results.txt`.
 
+**How to trigger a real review round.** The `/qrspi resume <step>` references below are slash-command invocations the implementing agent types in its Claude Code session — they are NOT bash commands. The plan annotates these as `# IMPLEMENTING-AGENT-ACTION:` comments to make the invocation site explicit. Each case proceeds in three stages:
+
+1. Run the `setup` bash block to clone and configure the run directory.
+2. **Implementing-agent action:** invoke the slash command, which loads the `using-qrspi` Skill and walks the resume protocol against the configured run directory. Wait for the review round to complete (a fresh `round-NN/` subdir is created with new finding/sidecar files; the round number increments past whatever was already in the cloned bundle).
+3. Run the `assertion` bash block, which inspects the LATEST round directory (NOT the pre-existing one in the cloned bundle) — the assertion uses `ls -d "$RUN/reviews/<step>/round-"* | tail -1` to find the newly-created round.
+
+Pre-cutover, the cloned bundle's youngest round is round-NN; post-cutover invocation of `/qrspi resume` creates round-(NN+1) — so the assertion's `tail -1` always selects the new round, never the stale pre-cutover one. (If `/qrspi resume` does NOT advance the round number, that is itself a smoke-matrix failure: the new dispatch contract isn't exercising. Fail the case.)
+
 **Case (a) — Questions or Research (no scope reviewer):**
 
 ```bash
@@ -1731,7 +1859,7 @@ sed -i.bak 's/^codex_reviews: .*/codex_reviews: true/' "$RUN/config.md"
 # review round (already populated in the bundle) re-dispatches with the new tags
 # (this is the simplest path that exercises the new dispatching-skill prompt
 # without re-running an entire pipeline). Use the orchestrator manually:
-#   /qrspi resume questions  # prompts main chat to re-review questions.md
+# IMPLEMENTING-AGENT-ACTION: /qrspi resume questions   (await new round-NN before running assertion)
 # assertion
 ls "$RUN/reviews/questions/round-"*"/quality-claude.finding-"*.md "$RUN/reviews/questions/round-"*"/quality-codex.finding-"*.md >/dev/null 2>&1 \
   && ! ls "$RUN/reviews/questions/round-"*"/scope-claude."*.md 2>/dev/null \
@@ -1746,7 +1874,7 @@ ls "$RUN/reviews/questions/round-"*"/quality-claude.finding-"*.md "$RUN/reviews/
 RUN=$SMOKE_ROOT/case-b; cp -R docs/qrspi/2026-04-29-v0.4-bundle "$RUN"
 sed -i.bak 's/^codex_reviews: .*/codex_reviews: true/' "$RUN/config.md"
 # command — re-dispatch the design step (full 4-reviewer artifact):
-#   /qrspi resume design
+# IMPLEMENTING-AGENT-ACTION: /qrspi resume design   (await new round-NN before running assertion)
 # assertion: all four role-distinct tags present in the round dir.
 RD=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | tail -1)
 [ -n "$RD" ] \
@@ -1763,7 +1891,7 @@ RUN=$SMOKE_ROOT/case-c; cp -R docs/qrspi/2026-04-29-v0.4-bundle "$RUN"
 grep -q '^verifier_enabled:' "$RUN/config.md" \
   && sed -i.bak 's/^verifier_enabled: .*/verifier_enabled: false/' "$RUN/config.md" \
   || printf '\nverifier_enabled: false\n' >> "$RUN/config.md"
-#   /qrspi resume design
+# IMPLEMENTING-AGENT-ACTION: /qrspi resume design   (await new round-NN before running assertion)
 # assertion: no sidecars on disk + verified-file header shows scored:0 and verifier_enabled:false.
 RD=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | tail -1)
 VF="$RUN/reviews/design/round-$(basename "$RD" | sed 's/round-//')-verified.md"
@@ -1779,7 +1907,7 @@ VF="$RUN/reviews/design/round-$(basename "$RD" | sed 's/round-//')-verified.md"
 ```bash
 RUN=$SMOKE_ROOT/case-d; cp -R docs/qrspi/2026-04-29-v0.4-bundle "$RUN"
 sed -i.bak 's/^codex_reviews: .*/codex_reviews: false/' "$RUN/config.md"
-#   /qrspi resume design
+# IMPLEMENTING-AGENT-ACTION: /qrspi resume design   (await new round-NN before running assertion)
 # assertion: only Claude tags, no Codex tags.
 RD=$(ls -d "$RUN/reviews/design/round-"* 2>/dev/null | tail -1)
 ls "$RD/quality-claude."*.md "$RD/scope-claude."*.md >/dev/null 2>&1 \
@@ -1792,7 +1920,7 @@ ls "$RD/quality-claude."*.md "$RD/scope-claude."*.md >/dev/null 2>&1 \
 
 Spec §7 step 4 calls for "a real review round per behavior class" for the smoke matrix. Cases (a)–(d) are real review rounds (cloned bundles, `/qrspi resume`). Cases (e), (f), and (g) — splitter malformed input, `VERIFY_FAILED → skip`, and `VERIFY_FAILED → retry` — would require either an `QRSPI_CODEX_STDOUT_OVERRIDE` env-hook in `scripts/codex-companion-bg.sh launch` (out of scope for #109's cutover — that wrapper is not in the File Structure inventory) or a mid-run swap of `agents/qrspi-finding-verifier.md` (race-prone — there is no synchronization point between menu render and retry dispatch).
 
-Because the underlying behaviors ARE pinned by the unit suite, cases (e)/(f)/(g) are recorded as **PASS via unit-test equivalence**, not as separate end-to-end runs. This is a conscious narrowing of spec §7's smoke gate — accepted because (a) inserting the env-hook would expand the cutover scope beyond the spec's listed file changes and (b) the live-swap timing would produce non-deterministic outcomes that obscure real failures. If end-to-end coverage of these three failure paths is later judged necessary, file a follow-up issue to add the env-hook + a deterministic verifier-stub mechanism.
+Because the underlying behaviors ARE pinned by the unit suite, cases (e)/(f)/(g) are recorded as **PASS via unit-test equivalence**, not as separate end-to-end runs. This is a conscious narrowing of spec §7's smoke gate — accepted because (a) inserting the env-hook would expand the cutover scope beyond the spec's listed file changes and (b) the live-swap timing would produce non-deterministic outcomes that obscure real failures. The narrowing is tracked in the smoke-matrix follow-up issue filed at Task 0 step 4 (number captured in `/tmp/issue-109-smoke-followup-num.txt`); when that issue lands, the PASS-via-unit shortcut is replaced with real review rounds for cases (e)/(f)/(g).
 
 ```bash
 # (e) — splitter malformed input. Equivalent: tests/unit/test-codex-splitter.bats
@@ -1847,6 +1975,7 @@ read NUM < /tmp/issue-109-followup-num.txt
 grep -rlF '${FOLLOWUP_ISSUE}' /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus \
   --exclude-dir=.git \
   --exclude-dir=node_modules \
+  --exclude-dir=reviews \
   --exclude='*/docs/superpowers/plans/2026-05-04-109-sonnet-haiku-verifier.md' \
   --exclude='*/docs/superpowers/specs/2026-05-04-109-sonnet-haiku-verifier-design.md' \
   | xargs -I{} sed -i.bak "s/\${FOLLOWUP_ISSUE}/${NUM}/g" "{}"
@@ -1855,15 +1984,18 @@ find /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus 
   -name '*.bak' -newer /tmp/issue-109-followup-num.txt -delete
 ```
 
-(c) Verify the literal token is gone from the shipping working tree (excluding the plan and spec, which retain it as documentation):
+The `--exclude-dir=reviews` is essential: the `reviews/plan-109/` directory carries past-round finding records that QUOTE the plan's literal `${FOLLOWUP_ISSUE}` token. Substituting it there would corrupt the audit record of those rounds and pollute `git status` with modified-but-unstaged files an implementer might mistake for legitimate cutover changes.
+
+(c) Verify the literal token is gone from the shipping working tree (excluding the plan, spec, and reviews — all of which retain it as documentation/audit):
 
 ```bash
 grep -rF '${FOLLOWUP_ISSUE}' /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus \
   --exclude-dir=.git \
+  --exclude-dir=reviews \
   --exclude='*/docs/superpowers/plans/2026-05-04-109-sonnet-haiku-verifier.md' \
   --exclude='*/docs/superpowers/specs/2026-05-04-109-sonnet-haiku-verifier-design.md' \
   && { echo "literal token still present — substitution failed"; exit 1; } \
-  || echo "all '\${FOLLOWUP_ISSUE}' tokens (outside plan/spec) substituted with #${NUM}"
+  || echo "all '\${FOLLOWUP_ISSUE}' tokens (outside plan/spec/reviews) substituted with #${NUM}"
 ```
 
 (d) **Reusable helper for Tasks 6 and Final integration.** Save the substitution logic as `/tmp/issue-109-substitute-followup.sh` so Task 6 (CHANGELOG) and Final integration (PR body) can re-run it after they author new files containing the token:
@@ -2111,23 +2243,17 @@ Expected: clean working tree; HEAD shows commits 1–5 of #109 above the spec co
 
 After commit 5 lands and the suite is green:
 
-- [ ] **Step 1: Push the branch and open the PR**
+- [ ] **Step 1: Write the PR body, substitute, then push and open the PR**
+
+The bash blocks below run in this order: (a) push the branch, (b) write the PR body file, (c) substitute the follow-up issue number, (d) verify substitution, (e) invoke `gh pr create`. The PR body file MUST exist (with all `${FOLLOWUP_ISSUE}` tokens replaced) before `gh pr create` runs.
+
+(a) Push the branch:
 
 ```bash
 git -C /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus push -u origin qrspi-echo/issue-109-sonnet-haiku-verifier
 ```
 
-```bash
-gh pr create \
-  --repo dfrysinger/qrspi-plus \
-  --base main \
-  --head qrspi-echo/issue-109-sonnet-haiku-verifier \
-  --title "v0.5: #109 — Sonnet→Haiku confidence verifier" \
-  --body-file /tmp/issue-109-pr-body.md \
-  --draft
-```
-
-PR body (write to `/tmp/issue-109-pr-body.md`):
+(b) Write the PR body to `/tmp/issue-109-pr-body.md` (use the Write tool with this content):
 
 ```markdown
 ## Summary
@@ -2158,11 +2284,28 @@ Follow-up: #${FOLLOWUP_ISSUE} (deferred reviewer migration + reviewer-protocol b
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
-After writing the PR body to `/tmp/issue-109-pr-body.md`, substitute the follow-up issue number BEFORE invoking `gh pr create`:
+(c) Substitute the follow-up issue number using the helper from Task 5 step 16(d):
 
 ```bash
 /tmp/issue-109-substitute-followup.sh /tmp/issue-109-pr-body.md
-grep -F '${FOLLOWUP_ISSUE}' /tmp/issue-109-pr-body.md && { echo "FOLLOWUP_ISSUE not substituted in PR body"; exit 1; } || true
+```
+
+(d) Verify the substitution landed:
+
+```bash
+grep -F '${FOLLOWUP_ISSUE}' /tmp/issue-109-pr-body.md && { echo "FOLLOWUP_ISSUE not substituted in PR body"; exit 1; } || echo "PR body substitution OK"
+```
+
+(e) Open the PR:
+
+```bash
+gh pr create \
+  --repo dfrysinger/qrspi-plus \
+  --base main \
+  --head qrspi-echo/issue-109-sonnet-haiku-verifier \
+  --title "v0.5: #109 — Sonnet→Haiku confidence verifier" \
+  --body-file /tmp/issue-109-pr-body.md \
+  --draft
 ```
 
 - [ ] **Step 2: Rebase onto current main and mark PR ready**
