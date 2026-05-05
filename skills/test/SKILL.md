@@ -89,7 +89,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
    - **Stop:** Halt pipeline.
 2. **Write tests** — dispatch the test-writer subagent.
 
-   Dispatch `Agent({ subagent_type: "qrspi-test-writer", model: "inherit" })` with a prompt containing only:
+   Read `test_writer_model` from `plan.md` frontmatter (default `sonnet` if missing). Dispatch `Agent({ subagent_type: "qrspi-test-writer", model: "<plan.test_writer_model || 'sonnet'>" })` with a prompt containing only:
    - `companion_plan`: `plan.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=plan.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=plan.md>>>` markers (canonical acceptance-criteria source per the strip-from-goals contract)
    - `companion_goals`: `goals.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=goals.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=goals.md>>>` markers (upstream traceability anchor only — NOT the criterion source)
    - `companion_design_or_research`: SINGLE key, dispatcher-selected by route — full pipeline passes wrapped `design.md` (phase definitions, test strategy); quick fix passes wrapped `research/summary.md` (context). The dispatcher reads `config.md.route` and chooses one.

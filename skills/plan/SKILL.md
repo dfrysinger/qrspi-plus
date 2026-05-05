@@ -127,6 +127,36 @@ For large plans, farm task spec writing to sub-subagents:
 
 Each sub-subagent writes `tasks/task-NN.md`. After all complete, the Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files — creating a single document as the only source of truth during review.
 
+### Per-Task Classification (`task_type` and `model`)
+
+Every task spec — whether emitted by the merged-plan subagent or by a per-task sub-subagent — must set `task_type` and `model` in its frontmatter. Assign them in this order, per task. These flags drive Implement-skill routing: `task_type` selects between the TDD implementer and the lightweight implementer; `model` is forwarded as the per-invocation override on the implementer Agent dispatch.
+
+**Step 1 — `task_type`.** Default `code`. Assign `task_type: lightweight` only when **all** target files match one of these globs:
+- `skills/**/SKILL.md`
+- `skills/**/templates/*.md`
+- `agents/qrspi-*.md`
+- `docs/**/*.md` (excluding `docs/qrspi/**` — those are pipeline artifacts, not docs)
+- `*.md` at repo root (e.g., CHANGELOG, AGENTS, README)
+
+Edge cases:
+- Mixed target file lists (one prose file + one code file) → `code`. Lightweight is all-or-nothing; any executable surface in the diff promotes the whole task to `code`.
+- Frontmatter-only edits to `agents/*.md` (e.g. flipping a `model:` value) → `lightweight` per the glob — that change has no runtime behavior to TDD against.
+- New file creation → use the planned final path against the same globs. The path is determined by the task spec, not by `git status`.
+
+**Step 2 — `model`.** Run after `task_type` is set.
+
+- If `task_type == lightweight` → `model: sonnet`. No exception.
+- If `task_type == code` → `model: opus` if **any** of:
+  - `Target files` count > 3 (multi-file architectural touch)
+  - Any target file matches a "core surface" glob: `skills/**/SKILL.md`, `skills/_shared/**`, `agents/qrspi-implementer*.md`, `agents/qrspi-implementer-lightweight*.md`, `skills/reviewer-protocol/**`, `skills/implementer-protocol/**`
+  - The task is a fix-task spawned by Replan after an earlier fix-round failure (Replan tags it `fix_task_retry: true`)
+  - The task carries `sizing_exception` (deliberately-bundled task in the closed exception set — schema migration, CI scaffolding, reusable primitives — higher uncertainty by construction)
+- Otherwise `model: sonnet`.
+
+**Operator override.** Both fields are editable by the operator before plan approval. The heuristic is a default, not a contract. A user who knows a single-file task is high-stakes can flip `model: opus` manually; a user who knows a 4-file task is mechanical can flip it back to `sonnet`.
+
+**Defaults on legacy plans.** Plan files written before this schema have neither field. Implement reads missing fields as `code`/`sonnet` and logs a warning — no hard failure, no forced rewrite.
+
 ### Plan Document Structure (During Review)
 
 The output template below embeds **information-mapping patterns** directly: claim-before-evidence (the task title and Description's first sentence carry the load-bearing claim — what observable behavior the task delivers); one-paragraph-per-claim density (each bullet carries one claim, no compound bullets); scannable bullets and required headings (Phase / Target files / Dependencies / LOC estimate / Description / Test expectations are required structural slots, not optional prose); no "be concise" instructions (research-backed: brevity directives degrade factual reliability per the Phare benchmark and Hakim). Per-task specs are short by structural design (terse bullets, no narrative), not by an explicit brevity instruction.
@@ -135,6 +165,7 @@ The output template below embeds **information-mapping patterns** directly: clai
 ---
 status: draft
 phase_start_commit: null
+test_writer_model: sonnet   # one of: sonnet | opus. default: sonnet. Operator override for qrspi-test-writer (per-phase dispatch). No heuristic — flip to opus when the test surface is gnarly (heavy e2e coverage, complex invariants, large acceptance-criterion set).
 ---
 
 # Implementation Plan
@@ -342,6 +373,8 @@ task: NN
 phase: {phase number}
 pipeline: full
 goal_ids: [G1, G2]   # QRSPI-internal traceability metadata — see ID-Hygiene Contract below
+task_type: code      # one of: code | lightweight. default: code. See "Per-Task Classification" below.
+model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Classification" below.
 # Optional: justify a legitimate bundle (multi-handler or >200 LOC).
 # Reason must be one of: schema migration, CI scaffolding, reusable primitives.
 # sizing_exception: <one-line reason>

@@ -74,7 +74,7 @@ Do NOT skip the backward loop for major or scope-unknown changes — cascading r
 
 ## Replan Analyzer Dispatch
 
-Dispatch `Agent({ subagent_type: "qrspi-replan-analyzer", model: "inherit" })` with a prompt containing the path-vs-body split per the agent's dispatch contract:
+Dispatch `Agent({ subagent_type: "qrspi-replan-analyzer", model: "sonnet" })` with a prompt containing the path-vs-body split per the agent's dispatch contract:
 
 **Path inputs (the analyzer Reads files under these paths at runtime):**
 - `target_artifact`: name of the artifact whose proposed changes are being analyzed (typically `plan` for replan dispatch — orchestrator picks based on context)

@@ -47,3 +47,34 @@ setup() {
       || { echo "missing reviewer-protocol skill preload in $f"; return 1; }
   done
 }
+
+@test "every implementer agent file declares skills: [implementer-protocol]" {
+  local implementer_files=(
+    agents/qrspi-implementer.md
+    agents/qrspi-implementer-lightweight.md
+  )
+  for f in "${implementer_files[@]}"; do
+    awk '/^---$/{n++; next} n==1{print}' "$f" | grep -qE '^skills:.*implementer-protocol' \
+      || { echo "missing implementer-protocol skill preload in $f"; return 1; }
+  done
+}
+
+@test "skills/implementer-protocol/SKILL.md carries the load-bearing shared sections" {
+  local skill="skills/implementer-protocol/SKILL.md"
+  [ -f "$skill" ] || { echo "missing $skill"; return 1; }
+  for section in "## Dispatch Parameters" "## Mode payloads" "## ID Hygiene" "## When You're in Over Your Head" "## Report Format"; do
+    grep -qF "$section" "$skill" \
+      || { echo "missing section '$section' in $skill"; return 1; }
+  done
+}
+
+@test "implementer agent bodies reference the shared protocol skill by name" {
+  local implementer_files=(
+    agents/qrspi-implementer.md
+    agents/qrspi-implementer-lightweight.md
+  )
+  for f in "${implementer_files[@]}"; do
+    grep -qF 'implementer-protocol' "$f" \
+      || { echo "$f does not reference implementer-protocol in body"; return 1; }
+  done
+}
