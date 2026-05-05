@@ -15,8 +15,7 @@ The OWNS/DEFERS contract below is the locked rule set the scope-reviewer dispatc
 ### Structure DEFERS
 
 - **Actual prompt or SKILL.md text content** → Plan / Implement.
-- **Actual scope-reviewer template prose** → Plan / Implement.
-- **Actual reviewer-protocol content text** → Plan / Implement.
+- **Actual reviewer-protocol or agent-file body content** → `skills/reviewer-protocol/SKILL.md` and `agents/qrspi-*.md`. (structure.md must not paste reviewer infrastructure prose; the protocol lives in the dedicated skill, agent bodies live in agent files.)
 - **Actual compaction-callout wording at each placement site** (Structure owns the *locations*; Plan/Implement own the *words*) → Plan / Implement.
 - **Test assertion code** → Implement (TDD).
 - **Per-task LOC, full assertion text, per-task commit ranges, line-by-line logic** → Plan / Implement.

@@ -8,12 +8,38 @@ setup() {
   cd "$BATS_TEST_DIRNAME/../.."
 }
 
-@test "quality reviewers carry no OWNS/DEFERS or scope language" {
+@test "quality reviewers do not Read OWNS/DEFERS rules" {
+  # Quality reviewers must NOT load the per-artifact OWNS/DEFERS file —
+  # that is the scope-reviewer's job. The narrow check is "no reference
+  # to the rule file"; emitting language is checked separately below.
   for name in goals questions research design structure phasing plan parallelize replan; do
     local body
     body=$(awk '/^---$/{n++; next} n>=2{print}' "agents/qrspi-${name}-reviewer.md")
-    echo "$body" | grep -qE 'owns-defers\.md|scope finding|scope review|boundary drift|OWNS / DEFERS' \
-      && { echo "qrspi-${name}-reviewer.md contains forbidden scope language"; return 1; }
+    echo "$body" | grep -qE 'owns-defers\.md' \
+      && { echo "qrspi-${name}-reviewer.md references owns-defers.md (scope-reviewer territory)"; return 1; }
+  done
+  return 0
+}
+
+@test "quality reviewers do not author or emit scope-shaped findings" {
+  # Quality reviewers must not produce the kinds of findings that belong
+  # to the scope-reviewer. We catch that as an emit-shape: a positive
+  # instruction to emit scope/boundary/OWNS-DEFERS findings.
+  #
+  # The regex covers both spaced (`OWNS / DEFERS`) and unspaced
+  # (`OWNS/DEFERS`) forms — the unspaced form is what every quality
+  # reviewer body actually contains in NEGATION prose ("do not emit
+  # OWNS/DEFERS violations as findings"). We exclude negation lines
+  # (do not / MUST not / cannot / never) so the test only fires on
+  # affirmative instructions to author scope findings.
+  local emit_shaped='emit (a |an |any )?(scope|boundary[- ]drift|OWNS/DEFERS|OWNS / DEFERS) (finding|violation)|scope-compliance finding'
+  local negation='do not|do NOT|MUST not|cannot|never'
+  for name in goals questions research design structure phasing plan parallelize replan; do
+    local body affirmative
+    body=$(awk '/^---$/{n++; next} n>=2{print}' "agents/qrspi-${name}-reviewer.md")
+    affirmative=$(echo "$body" | grep -iE "$emit_shaped" | grep -ivE "$negation" || true)
+    [ -z "$affirmative" ] \
+      || { echo "qrspi-${name}-reviewer.md contains affirmative emit-shaped scope language: $affirmative"; return 1; }
   done
   return 0
 }

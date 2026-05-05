@@ -1,4 +1,4 @@
-This section is the **single source of truth** for the scope-reviewer dispatch (`{ARTIFACT_TYPE}=goals`). Findings cite this list directly.
+This section is the **single source of truth** for goals.md scope boundaries. It is the locked rule set the scope-reviewer dispatch loads at review time (Read by the `qrspi-goals-scope-reviewer` agent at runtime per its rules-loading procedure). Findings cite this list directly.
 
 ### Goals OWNS
 

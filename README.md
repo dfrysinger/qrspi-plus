@@ -178,7 +178,7 @@ flowchart TD
 
 ### Step 7: Plan
 
-Breaks the structure into ordered tasks with detailed specs. Each task spec includes exact file paths, a description, test expectations in plain language (behaviors, edge cases, error conditions), dependencies, and LOC estimates. No placeholders, no TBDs, no "similar to Task N." For large plans (6+ tasks), task spec writing is farmed to sub-subagents. In quick fix mode, Plan produces a single task directly from research (no design or structure). The plan is reviewed as a single merged document by 6 reviewer templates in parallel (5 plan-specific + the parameterized scope-reviewer), then split into individual task files after approval.
+Breaks the structure into ordered tasks with detailed specs. Each task spec includes exact file paths, a description, test expectations in plain language (behaviors, edge cases, error conditions), dependencies, and LOC estimates. No placeholders, no TBDs, no "similar to Task N." For large plans (6+ tasks), task spec writing is farmed to sub-subagents. In quick fix mode, Plan produces a single task directly from research (no design or structure). The plan is reviewed as a single merged document by 7 reviewer subagents in parallel (1 unified plan-quality reviewer + 5 plan-artifact reviewers + the dedicated `qrspi-plan-scope-reviewer`), then split into individual task files after approval.
 
 **Artifact:** `plan.md` + `tasks/task-NN.md`
 
@@ -526,7 +526,7 @@ flowchart TD
     M --> B
 ```
 
-**Pattern 5: Architectural Plan Review** -- Six reviewer templates run in parallel (5 plan-specific + the parameterized scope-reviewer). Used by Plan to catch cross-task consistency issues.
+**Pattern 5: Architectural Plan Review** -- Seven reviewer subagents run in parallel (1 unified plan-quality reviewer + 5 plan-artifact reviewers + the dedicated `qrspi-plan-scope-reviewer`). Used by Plan to catch cross-task consistency issues.
 
 ```mermaid
 flowchart TD
