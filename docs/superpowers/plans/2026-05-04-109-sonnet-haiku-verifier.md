@@ -47,7 +47,6 @@
 - `tests/fixtures/issue-109/menu-cases/{verify-failed,missing-codex-output,missing-claude-output,missing-sidecar}/round-NN/` — four abnormality-class fixtures backing test #5 (spec §5 explicitly: "Fixture covers each abnormality the menu handles (VERIFY_FAILED, missing reviewer output, missing sidecar)"). Each fixture is a populated `round-NN/` subdir exhibiting one abnormality.
 - `tests/fixtures/issue-109/round-mixed-change-types/round-04/` — populated `round-NN/` directory with findings spanning all five `change_type` values (style, clarity, correctness, scope, intent) plus matching `.score.yml` sidecars; backs test #9 (spec §5: "Fixture verified.md with mixed `change_type`s + assertion of routing").
 - `tests/fixtures/issue-109/round-missing-tag/round-05/` — round directory missing one expected tag's output (no `quality-codex.*` files); backs test #10's negative-fixture failure path (spec §5: "Negative fixtures assert the failure path").
-- `tests/fixtures/issue-109/round-schema-violations/round-03/` — five per-file fixtures covering spec §1 step 2's schema-guard branches: malformed YAML frontmatter, missing required field, malformed `change_type` enum value, unrouted reviewer-tag, and trailing-newline malformation. The implementer wires these into a runtime parser test at commit-4 time; the bats prose-greps in `test-verifier-dispatch-contract.bats` pin the documented contract independent of these fixtures.
 
 ### Modified files (commit 4 — atomic cutover)
 
@@ -755,16 +754,16 @@ git -C /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plu
 
 Spec §7's "Rollback contract: steps 1–3 are individually revertible (purely additive)" frames "purely additive" as the *means* by which the commits are individually revertible — i.e. the parenthetical is the explanation, not a separate stricter contract. For commits 1 and 2 the means is literal ("only new files added"); for commit 3 it is "the only modification is a doc-only addition to a schema region the runtime does not yet read, which is operationally equivalent to additive-only behavior under revert". The revertibility check below allows commit 3 to modify exactly `skills/using-qrspi/SKILL.md` (the field doc) and nothing else; commits 1 and 2 must be only-create.
 
-A non-destructive `git show --stat` check is sufficient and avoids mutating the working tree:
+Use `git show --name-status` (which prints one letter per file: `A` add, `M` modify, `D` delete, `R` rename — exactly the signal needed for additive-only verification) to inspect each commit, and then assert against that output. (Earlier plan revisions also ran `git show --stat` for the eyeball pass, but `--stat` emits diffstat summaries — `path | N +-` lines — not `create mode` lines, so it is not a usable observable for additive-only assertion. Drop it; `--name-status` is sufficient.)
 
 ```bash
 for ref in HEAD~2 HEAD~1 HEAD; do
   echo "=== checking $ref ==="
-  git -C /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus show --stat --format= "$ref"
+  git -C /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus show --name-status --format= "$ref"
 done
 ```
 
-Expected: every line in each commit's stat starts with `create mode` (or, equivalently, the `git show --name-status $ref` output shows only `A` entries — no `M`, `D`, or `R`). Spot-check the three commits:
+Expected: each commit's `--name-status` output shows only `A` entries (added files) — no `M` (modify), `D` (delete), or `R` (rename), with one allowed exception in commit 3 noted below. Spot-check the three commits:
 
 - **HEAD~2** (commit 1, verifier agent): should add `agents/qrspi-finding-verifier.md` and `tests/unit/test-verifier-agent-file.bats` only.
 - **HEAD~1** (commit 2, splitter): should add `scripts/codex-finding-splitter.sh`, `tests/unit/test-codex-splitter.bats`, and 4 fixture files under `tests/fixtures/issue-109/codex-stdout/` only.
@@ -959,18 +958,17 @@ Add a new bold-paragraph subsection `**Verifier-round failure menu.**` directly 
 - The full menu text with the three options (`skip`, `retry`, `stop`) and their exact semantics:
   - `skip` — proceed without scoring THIS ROUND (kept-all assembly), writes `reviews/{step}/round-NN-verifier-disabled.md` with the concrete YAML body shape below (per spec §3: "timestamp + reason + finding count"), does NOT mutate `config.md`.
 
-  The `round-NN-verifier-disabled.md` write contract (paste this YAML body shape verbatim into the failure-menu prose so the implementer has an unambiguous template):
+  The `round-NN-verifier-disabled.md` write contract — exactly the three fields spec §3 names (timestamp + reason + finding count); paste this YAML body shape verbatim into the failure-menu prose so the implementer has an unambiguous template:
 
   ```yaml
   ---
   timestamp: <ISO-8601 UTC, e.g. 2026-05-05T15:30:00Z>
   reason: <one-line summary identical to the menu's diagnostic line>
   finding_count: <integer total of *.finding-*.md files in the round directory>
-  abnormality_class: <one of: VERIFY_FAILED | reviewer_no_output | sidecar_missing>
   ---
   ```
 
-  Three fields are mandatory per spec §3 (timestamp, reason, finding_count); `abnormality_class` is added by the plan to give the audit record a routable taxonomy that mirrors the menu's diagnostic-line classes (the menu prose uses the same four classes; a fifth would indicate a menu/protocol drift). The file is written exactly once per round at `skip` selection. `skip` is a during-round control flow, not a cross-round signal: after the file is written, the same Apply-fix invocation jumps to step 5 (kept-all assembly with no sidecars on disk). The next round starts fresh from step 1 and re-reads `config.md` at step 3 — if `verifier_enabled: true`, the next round IS verifier-enabled. The `round-NN-verifier-disabled.md` artifact is purely the audit record of what happened on the round it was written for; it does not affect any subsequent round's gate behavior.
+  All three fields are mandatory per spec §3. The file is written exactly once per round at `skip` selection. `skip` is a during-round control flow, not a cross-round signal: after the file is written, the same Apply-fix invocation jumps to step 5 (kept-all assembly with no sidecars on disk). The next round starts fresh from step 1 and re-reads `config.md` at step 3 — if `verifier_enabled: true`, the next round IS verifier-enabled. The `round-NN-verifier-disabled.md` artifact is purely the audit record of what happened on the round it was written for; it does not affect any subsequent round's gate behavior.
   - `retry` — re-dispatch only the failing verifiers; for "reviewer produced no output", delete the tag's stale `*.finding-*.md`, `*.score.yml`, `*.clean.md` first, then re-prompt the reviewer.
   - `stop` — abort the protocol with no commit; round directory remains on disk.
 - The four abnormality classes the menu's diagnostic line covers:
@@ -1088,37 +1086,52 @@ skills/replan/SKILL.md
 
 (b) Update the dispatch-parameter list to pass `<round_subdir>` (the absolute path to `reviews/{step}/round-NN/`) instead of the legacy `Output file:` single-file path.
 
-(a)+(b) Concrete before→after replacement shape (the implementer locates each pre-cutover dispatch block in the 8 skill files and applies this transform). The exact YAML keys may differ between skills (some use `output:` not `Output file:`; some embed the value inline) — the contract is structural: replace any line/key that names a per-tag SINGLE FILE PATH with a per-tag DIRECTORY PATH, and rename `claude`/`codex` to `quality-claude`/`quality-codex` (or `scope-claude`/`scope-codex` for scope-reviewer dispatches).
+(a)+(b) Concrete before→after replacement shape (the implementer locates each pre-cutover dispatch block in the 8 skill files and applies this transform). The pre-cutover dispatches in `skills/{goals,design,phasing,structure,parallelize,replan}/SKILL.md` pass `reviewer_tag: claude` for BOTH the quality and the scope Claude reviewers, and `reviewer_tag: codex` for BOTH Codex reviewers — the disambiguation is purely in the `output:` path filename (e.g. `round-NN-claude.md` vs `round-NN-scope-claude.md`). After the cutover, all reviewers write into the same `round-NN/` directory, so path-based disambiguation collapses; the per-finding filename's `<reviewer_tag>` prefix becomes the only disambiguator. ALL FOUR tag values must therefore rename to their role-distinct forms — both quality AND scope sides:
 
 ```diff
- # Pre-cutover dispatch (representative — exact keys vary per skill):
--  reviewer_tag: claude
--  output: reviews/{step}/round-NN-claude.md
-+  reviewer_tag: quality-claude
-+  round_subdir: reviews/{step}/round-NN/
- ...
--  reviewer_tag: codex
--  output: reviews/{step}/round-NN-codex.md
-+  reviewer_tag: quality-codex
-+  round_subdir: reviews/{step}/round-NN/
+ # Quality-claude dispatch (Claude Agent({…}) call; all 8 skills):
+   reviewer_tag:
+-    claude
++    quality-claude
+   output:
+-    <ABS>/reviews/{step}/round-NN-claude.md
+   round_subdir:                       # NEW — all reviewers in this round share this value
++    <ABS>/reviews/{step}/round-NN/
 
- # And for skills that ALSO have a scope-reviewer dispatch
- # (goals, design, phasing, structure, parallelize, replan):
--  reviewer_tag: scope-claude
--  output: reviews/{step}/round-NN-scope-claude.md
-+  reviewer_tag: scope-claude
-+  round_subdir: reviews/{step}/round-NN/
- ...
--  reviewer_tag: scope-codex
--  output: reviews/{step}/round-NN-scope-codex.md
-+  reviewer_tag: scope-codex
-+  round_subdir: reviews/{step}/round-NN/
+ # Quality-codex dispatch (Codex stdin pipeline; all 8 skills):
+   reviewer_tag:
+-    codex
++    quality-codex
+   output:
+-    <ABS>/reviews/{step}/round-NN-codex.md
+   round_subdir:                       # NEW
++    <ABS>/reviews/{step}/round-NN/
+
+ # Scope-claude dispatch (Claude Agent({…}) call; 6 skills:
+ #   goals, design, phasing, structure, parallelize, replan):
+   reviewer_tag:
+-    claude                             # SAME tag as quality-claude pre-cutover
++    scope-claude                       # role-distinct rename — was DIFFERENTIATED only by output path
+   output:
+-    <ABS>/reviews/{step}/round-NN-scope-claude.md
+   round_subdir:                       # NEW
++    <ABS>/reviews/{step}/round-NN/
+
+ # Scope-codex dispatch (Codex stdin pipeline; same 6 skills):
+   reviewer_tag:
+-    codex                              # SAME tag as quality-codex pre-cutover
++    scope-codex                        # role-distinct rename — was DIFFERENTIATED only by output path
+   output:
+-    <ABS>/reviews/{step}/round-NN-scope-codex.md
+   round_subdir:                       # NEW
++    <ABS>/reviews/{step}/round-NN/
 ```
 
 Notes:
-- The `scope-claude` / `scope-codex` tags do NOT change names (they were already role-distinct on the scope side); only the quality-side `claude` / `codex` rename to `quality-claude` / `quality-codex` for the role-distinct symmetry the spec calls "load-bearing" (per spec §1 "The role-distinct rename is load-bearing").
+- The scope-side tag rename (`claude`→`scope-claude`, `codex`→`scope-codex`) is the load-bearing edit. Pre-cutover, the scope reviewers were tag-collapsed with quality reviewers; only the output filename differentiated them. Post-cutover, both write into the same `round-NN/` directory and the per-finding filenames carry the tag prefix — leaving the scope tags as `claude`/`codex` would either collide on per-finding filenames OR misroute every scope finding to the quality-route in the Routing Table.
 - The `round_subdir` value is the SAME for every reviewer in a given round — they all write into the same directory. Per-finding filenames carry the role-distinct prefix, so directory collision is eliminated.
 - If a pre-cutover skill embedded the output path inline inside a Codex prompt (rather than as a separate `output:` parameter), the inline reference must also be removed; the role-distinct `<reviewer_tag>` is the only path-component the post-cutover prompt needs to mention (the splitter is told the round_subdir separately at invocation time per sub-step (d) below).
+- Verification: after editing all 8 skills, `grep -nE 'reviewer_tag:[[:space:]]*(claude|codex)\b'` over `skills/{goals,questions,research,design,phasing,structure,parallelize,replan}/SKILL.md` should return ZERO matches. Any remaining bare `claude`/`codex` tag is an un-renamed dispatch that will misroute at runtime.
 
 (c) Inject the per-finding-file format + `NO_FINDINGS` sentinel + `<<<FINDING-BOUNDARY>>>` delimiter into the Codex reviewer prompt. Paste the following block VERBATIM into each of the 8 dispatching skills — the worked example uses concrete `design` / `quality-codex` values that all 8 skills inherit literally; the example is a teaching artifact, not a per-skill template. (Reviewers reading the prompt understand that real findings vary the `artifact:` and `reviewer:` fields per the dispatcher's parameters; the literal example does not need to be skill-specific.)
 
@@ -1487,15 +1500,7 @@ setup() {
 }
 ```
 
-The five new schema-guard tests need ONE additional fixture covering the malformed-YAML + missing-field + bad-change_type + unrouted-tag input cases (the trailing-newline case is tested via the prose-grep alone, since the normalization is on disk content not in the prose itself). Add this fixture inventory to commit 4's File Structure:
-
-- `tests/fixtures/issue-109/round-schema-violations/round-03/quality-claude.finding-F01.md` — malformed YAML frontmatter (e.g. unclosed `---`, tab where space expected). One file per branch is sufficient because step 2 fails on the first violation it sees and the test's purpose is to PIN the prose contract, not exercise the runtime parser.
-- `tests/fixtures/issue-109/round-schema-violations/round-03/quality-claude.finding-F02.md` — missing required field (`change_type:` line removed from frontmatter).
-- `tests/fixtures/issue-109/round-schema-violations/round-03/quality-claude.finding-F03.md` — bad-enum `change_type: maintenance` (out of `style|clarity|correctness|scope|intent`).
-- `tests/fixtures/issue-109/round-schema-violations/round-03/quality-unknown.finding-F01.md` — unrouted reviewer-tag (`quality-unknown` is not in the Routing Table).
-- `tests/fixtures/issue-109/round-schema-violations/round-03/quality-claude.finding-F04.md` — trailing-newline malformation (file ends with `\n\n` or no `\n`).
-
-(These fixtures are NOT consumed by the bats prose-greps above — those are pure documentation tests against `using-qrspi/SKILL.md`. The fixtures exist so the implementer can wire them into a runtime parser test at commit-4 implementation time. Tracking them in the staging list ensures they ship with the cutover commit, not as orphans.)
+These five new tests are PROSE-GREPS against `using-qrspi/SKILL.md`'s Apply-fix protocol body — they pin that the spec §1 step-2 contract is COMMUNICATED to the implementer (each branch is named in the documented protocol). They do NOT exercise a runtime parser; the runtime implementation is the implementer's responsibility at commit-4 time. Fixture-backed runtime testing of the schema-guard branches is an opportunistic addition the implementer MAY choose if they pin the bash code in step 2 with enough specificity to extract and test it; the plan does not mandate it because the spec specifies branch BEHAVIOR, not branch IMPLEMENTATION shape, and over-pinning the implementation would constrain the implementer beyond the spec's contract.
 
 - [ ] **Step 9: Create `tests/unit/test-failure-menu.bats` + the four `menu-cases/` fixtures**
 
@@ -1569,17 +1574,15 @@ setup() {
   echo "$MENU" | grep -qE 'does NOT mutate.*config\.md|no config\.md mutation'
 }
 
-@test "skip's round-NN-verifier-disabled.md write contract pins the four required fields" {
-  # Spec §3: "timestamp + reason + finding count". Plan adds abnormality_class
-  # for routable audit taxonomy. The bats test pins all four fields are
-  # documented in the menu prose (which is sourced from the spec text the
-  # implementer pasted into using-qrspi/SKILL.md). If a future edit drops one
-  # of these fields from the documented schema, this test fails — preventing
-  # the implementer from authoring a schema-incomplete write contract.
+@test "skip's round-NN-verifier-disabled.md write contract pins the three spec §3 fields" {
+  # Spec §3: "timestamp + reason + finding count". The bats test pins all
+  # three fields are documented in the menu prose (which is sourced from the
+  # spec text the implementer pasted into using-qrspi/SKILL.md). If a future
+  # edit drops one of these fields, this test fails — preventing the
+  # implementer from authoring a schema-incomplete write contract.
   echo "$MENU" | grep -qE 'timestamp:|^[[:space:]]*timestamp\b'
   echo "$MENU" | grep -qE 'reason:|^[[:space:]]*reason\b'
   echo "$MENU" | grep -qE 'finding_count:|finding count'
-  echo "$MENU" | grep -qE 'abnormality_class:|abnormality class'
 }
 
 @test "retry for reviewer-no-output deletes stale tag files before re-dispatch" {
@@ -1891,32 +1894,6 @@ Create `tests/fixtures/issue-109/round-missing-tag/round-05/` populated as:
 - (NO `quality-codex.*` and NO `scope-codex.*` files — both were expected per the Goals/Design 4-reviewer matrix when `codex_reviews: true`, but neither produced output)
 
 Expected schema-guard verdict: at least one expected tag has zero files → would route to §3 menu.
-
-Create `tests/fixtures/issue-109/round-schema-violations/round-03/` populated as five per-file fixtures, one per spec §1 step-2 schema-guard branch:
-
-- `quality-claude.finding-F01.md` — malformed YAML frontmatter. Body starts with `---` but no closing `---` before the prose body; the YAML parser must reject this.
-- `quality-claude.finding-F02.md` — missing required field. Frontmatter has `finding_id`, `severity`, `referenced_files`, `artifact`, `round`, `reviewer` — but NO `change_type` line.
-- `quality-claude.finding-F03.md` — bad-enum `change_type: maintenance`. All other fields well-formed; the enum check must reject the unknown value.
-- `quality-unknown.finding-F01.md` — unrouted reviewer-tag. Filename uses `quality-unknown` (not in the Routing Table); per-finding contents may be well-formed YAML.
-- `quality-claude.finding-F04.md` — trailing-newline malformation. Either no trailing `\n` at all, or `\n\n` (two trailing newlines). Per spec §1 step 2 this is normalized + warning, NOT a hard fail.
-
-Sample first fixture (the others follow the same shape, varying only the violation):
-
-```yaml
----
-finding_id: R3-F01
-severity: high
-change_type: correctness
-referenced_files: [skills/design/SKILL.md]
-artifact: design
-round: 3
-reviewer: quality-claude
-# (missing closing --- to trigger the malformed-YAML branch)
-
-Sample finding body — the YAML above is unclosed so a parser will not accept it.
-```
-
-These fixtures ship with commit 4. The implementer wires them into a runtime parser test at execution time; the bats prose-greps in `test-verifier-dispatch-contract.bats` (Step 8) pin the documented contract independent of these fixtures.
 
 Then write the tests.
 
@@ -2318,8 +2295,7 @@ git -C /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plu
   tests/fixtures/issue-109/round-disabled-from-start/ \
   tests/fixtures/issue-109/menu-cases/ \
   tests/fixtures/issue-109/round-mixed-change-types/ \
-  tests/fixtures/issue-109/round-missing-tag/ \
-  tests/fixtures/issue-109/round-schema-violations/
+  tests/fixtures/issue-109/round-missing-tag/
 ```
 
 Verify the staging matches the file inventory:
