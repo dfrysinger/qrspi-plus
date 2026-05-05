@@ -241,7 +241,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer di
 
   The scope-reviewer's Step-1 Read of `skills/goals/owns-defers.md` delivers the Goals OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
-- **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (quality + scope) via shell pipelines. The `/tmp/codex-prompt-goals.md` temp-file pattern is retired; protocol and agent body flow via stdin:
+- **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (quality + scope) via shell pipelines. The legacy temp-file dispatch is retired; protocol and agent body flow via stdin:
 
   ```sh
   # Quality reviewer (Codex)

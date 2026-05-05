@@ -17,7 +17,7 @@ describes, so missing security requirements here mean missing security in code.
 ## Dispatch Parameters
 
 Your dispatch prompt provides:
-- `artifact_body` — wrapped body of `plan.md`, wrapped between `<<<UNTRUSTED-ARTIFACT-START id=plan>>>` / `<<<UNTRUSTED-ARTIFACT-END id=plan>>>` markers
+- `artifact_body` — wrapped body of `plan.md`, wrapped between `<<<UNTRUSTED-ARTIFACT-START id=plan.md>>>` / `<<<UNTRUSTED-ARTIFACT-END id=plan.md>>>` markers
 - `companion_goals` — wrapped body of `goals.md`
 - `companion_research` — wrapped body of `research/summary.md`
 - `companion_phasing` — wrapped body of `phasing.md`

@@ -24,7 +24,7 @@ setup() {
 @test "no migrated SKILL.md uses the legacy /tmp codex prompt-file pattern" {
   local skills=(goals questions research design structure phasing plan parallelize implement integrate replan test)
   for skill in "${skills[@]}"; do
-    ! grep -qE '<prompt_file>/tmp/codex-prompt-' "skills/${skill}/SKILL.md" \
+    ! grep -qE '/tmp/codex-prompt-' "skills/${skill}/SKILL.md" \
       || { echo "skills/${skill}/SKILL.md still uses /tmp/codex-prompt- dispatch pattern"; return 1; }
   done
 }
@@ -32,7 +32,7 @@ setup() {
 @test "no migrated SKILL.md uses the .codex-prompts worktree-local prompt-file pattern" {
   local skills=(goals questions research design structure phasing plan parallelize implement integrate replan test)
   for skill in "${skills[@]}"; do
-    ! grep -qE '<prompt_file>\.codex-prompts/codex-prompt-task-' "skills/${skill}/SKILL.md" \
+    ! grep -qE '\.codex-prompts/codex-prompt-task-' "skills/${skill}/SKILL.md" \
       || { echo "skills/${skill}/SKILL.md still uses .codex-prompts/ dispatch pattern"; return 1; }
   done
 }
