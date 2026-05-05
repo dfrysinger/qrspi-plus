@@ -1,0 +1,25 @@
+some preamble Codex emitted before the first finding (must be discarded)
+<<<FINDING-BOUNDARY>>>
+---
+finding_id: R3-F01
+severity: high
+change_type: correctness
+referenced_files: [skills/design/SKILL.md]
+artifact: design
+round: 3
+reviewer: quality-codex
+---
+
+First finding body prose.
+<<<FINDING-BOUNDARY>>>
+---
+finding_id: R3-F02
+severity: medium
+change_type: clarity
+referenced_files: [docs/qrspi/example/design.md]
+artifact: design
+round: 3
+reviewer: quality-codex
+---
+
+Second finding body prose.

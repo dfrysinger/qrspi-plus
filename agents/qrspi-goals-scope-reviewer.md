@@ -24,6 +24,6 @@ Your dispatch prompt provides `artifact_body` (the artifact under review). Scope
 2. **Scope compliance per OWNS** — does the artifact cover everything it owns, or is anything missing?
 3. **Lexical boundary-drift signal** — heuristic scan for patterns indicating drift (e.g., implementation language in a goals doc).
 
-## Step 4 — write findings
+## Step 4 — emit findings
 
-Write findings to the output path provided in your dispatch prompt, conforming to the disk-write contract from the reviewer-protocol skill. Return only the brief summary form.
+Follow the **Per-Finding Disk-Write Contract** in the `reviewer-protocol` skill (preloaded via the `skills:` frontmatter). One finding per file — IRON RULE, never combine. Use `artifact: goals` in the frontmatter. Zero findings → write the `<reviewer_tag>.clean.md` sentinel; never write zero files for an expected reviewer tag.

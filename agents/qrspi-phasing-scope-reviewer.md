@@ -14,7 +14,7 @@ The cross-cutting reviewer protocol is loaded as the `reviewer-protocol` skill. 
 
 Read `skills/phasing/owns-defers.md` for the Phasing OWNS / Phasing DEFERS rule set. This is your authoritative scope rule for this artifact.
 
-**Fail-closed on malformed rules.** If `skills/phasing/owns-defers.md` is missing, unreadable, or the `## Phasing OWNS / Phasing DEFERS` section is missing or malformed (cannot be parsed into a non-empty OWNS list and a non-empty DEFERS list), STOP. Emit a single finding with `severity: high` and `change_type: correctness` describing the malformation, write that finding to the output path per the disk-write contract, and refuse to perform Steps 2–4. Silent continuation on malformed rules would produce scope findings against an unverifiable boundary — that is a fail-closed condition.
+**Fail-closed on malformed rules.** If `skills/phasing/owns-defers.md` is missing, unreadable, or the `## Phasing OWNS / Phasing DEFERS` section is missing or malformed (cannot be parsed into a non-empty OWNS list and a non-empty DEFERS list), STOP. Emit a single finding with `severity: high` and `change_type: correctness` describing the malformation, write that finding per the per-finding contract, and refuse to perform Steps 2–4. Silent continuation on malformed rules would produce scope findings against an unverifiable boundary — that is a fail-closed condition.
 
 ## Step 2 — load the artifact
 
@@ -26,6 +26,6 @@ Your dispatch prompt provides `artifact_body` (the artifact under review). Scope
 2. **Scope compliance per OWNS** — does the artifact cover everything it owns, or is anything missing?
 3. **Lexical boundary-drift signal** — heuristic scan for patterns indicating drift (e.g., architecture re-litigation, file paths, or task specs in a phasing doc).
 
-## Step 4 — write findings
+## Step 4 — emit findings
 
-Write findings to the output path provided in your dispatch prompt, conforming to the disk-write contract from the reviewer-protocol skill. Return only the brief summary form.
+Follow the **Per-Finding Disk-Write Contract** in the `reviewer-protocol` skill (preloaded via the `skills:` frontmatter). One finding per file — IRON RULE, never combine. Use `artifact: phasing` in the frontmatter. Zero findings → write the `<reviewer_tag>.clean.md` sentinel; never write zero files for an expected reviewer tag.

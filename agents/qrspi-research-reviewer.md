@@ -31,6 +31,6 @@ Your dispatch prompt provides:
 - **Web sources cited** — `[web]` and `[hybrid]` research includes URLs and source attribution for every factual claim; uncited web assertions are a finding.
 - **summary.md is a verbatim collation** — `research/summary.md` must be a verbatim extraction of the per-question `## Summary` blocks from the `q*.md` files; any paraphrasing, editorializing, or synthesis introduced during collation is a finding.
 
-## Step 3 — write findings
+## Step 3 — emit findings
 
-Write findings to the output path provided in your dispatch prompt, conforming to the disk-write contract from the reviewer-protocol skill. Return only the brief summary form.
+Follow the **Per-Finding Disk-Write Contract** in the `reviewer-protocol` skill (preloaded via the `skills:` frontmatter). One finding per file — IRON RULE, never combine. Use `artifact: research` in the frontmatter. Zero findings → write the `<reviewer_tag>.clean.md` sentinel; never write zero files for an expected reviewer tag.
