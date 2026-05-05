@@ -884,7 +884,9 @@ if [[ "$verifier_enabled" != "true" ]]; then
 fi
 ```
 
-Step 4 (verifier dispatch) instructs main chat to issue one Task tool call per finding-file in parallel, with the `qrspi-finding-verifier` subagent type and an explicit prompt that supplies the 5 input parameters spec §1 enumerates. Concrete dispatch sketch (this is the sub-block to paste into the Apply-fix protocol body, with the 5 parameters resolved at runtime per the rules below):
+Step 4 (verifier dispatch) instructs main chat to issue one Task tool call per finding-file in parallel, with the `qrspi-finding-verifier` subagent type and an explicit prompt that supplies the 5 input parameters spec §1 enumerates VERBATIM. The parameter shapes below are copied from spec §1 (`agents/qrspi-finding-verifier.md` `## Input contract`); the implementer MUST NOT alter them — `<diff_file_path>` is the per-round diff file (round-NN.diff), NOT the prior-round fixes file, and `<upstream_paths>` is a newline-separated list that includes SKILL paths the verifier may lazy-Read.
+
+Concrete dispatch sketch (sub-block to paste into the Apply-fix protocol body):
 
 ```markdown
 Step 4 — parallel verifier dispatch.
@@ -897,15 +899,42 @@ For each finding-file enumerated in Step 1, dispatch one Task call:
     finding_file_path: <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md
     sidecar_path:      <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.score.yml
     artifact_path:     <abs_path>/<step>.md
-    diff_file_path:    <abs_path>/reviews/{step}/round-(NN-1)-fixes.md   # round 1: omit; round 2+: prior round's fixes
-    upstream_paths:    [<abs_path>/<upstream-1>.md, <abs_path>/<upstream-2>.md, ...]   # see derivation rule below
+    diff_file_path:    <abs_path>/reviews/{step}/round-NN.diff   # empty string on round 1
+    upstream_paths: |
+      <abs_path>/<upstream-artifact-1>.md
+      <abs_path>/<upstream-artifact-2>.md
+      ...
+      skills/<step>/SKILL.md
+      skills/using-qrspi/SKILL.md
 
-Parameter derivation:
+Parameter derivation (per spec §1 `## Input contract`, verbatim):
   - finding_file_path: enumerated by Step 1's nullglob loop (absolute path).
-  - sidecar_path:      finding_file_path with `.md` → `.score.yml` (rule from spec §1 verifier `## Input contract`).
-  - artifact_path:     `<run_dir>/<step>.md` where <step> ∈ {goals, questions, research, design, phasing, structure, parallelize, replan}.
-  - diff_file_path:    omitted on round 1 (no prior fixes file). Round 2+: `<run_dir>/reviews/{step}/round-(NN-1)-fixes.md`.
-  - upstream_paths:    the artifacts the current step CONSUMES per the QRSPI pipeline order. For Goals: []. Questions: [goals.md]. Research: [goals.md, questions.md]. Design: [goals.md, questions.md, research/summary.md]. Phasing: [goals.md, design.md]. Structure: [goals.md, design.md, phasing.md]. Parallelize: [goals.md, design.md, structure.md]. Replan: [plan.md, replan-trigger-source].
+  - sidecar_path:      finding_file_path with `.md` → `.score.yml`.
+  - artifact_path:     `<run_dir>/<step>.md` where <step> ∈
+                       {goals, questions, research, design, phasing,
+                        structure, parallelize, replan}.
+  - diff_file_path:    `<run_dir>/reviews/{step}/round-NN.diff`. Empty
+                       string on round 1 (no prior round, no diff yet);
+                       round 2+ uses the diff file produced by Step 1's
+                       diff-handling protocol against the prior round's
+                       fixes.
+  - upstream_paths:    NEWLINE-separated list. Includes (a) the upstream
+                       artifacts the current step consumes per the QRSPI
+                       pipeline order, AND (b) the SKILL paths the
+                       verifier may lazy-Read for context (the dispatching
+                       skill's SKILL.md and skills/using-qrspi/SKILL.md).
+                       Per-step upstream-artifact lists:
+                         Goals:       (no upstream artifacts; SKILL paths only)
+                         Questions:   goals.md
+                         Research:    goals.md, questions.md
+                         Design:      goals.md, questions.md, research/summary.md
+                         Phasing:     goals.md, design.md
+                         Structure:   goals.md, design.md, phasing.md
+                         Parallelize: goals.md, design.md, structure.md
+                         Replan:      plan.md, replan-trigger-source
+                       SKILL paths appended on every step:
+                         skills/<step>/SKILL.md
+                         skills/using-qrspi/SKILL.md
 ```
 
 Each Task subagent returns a brief `<reviewer_tag>.<finding_id>: <score>` line (or `: VERIFY_FAILED:<reason>` on failure); main chat ignores the return text (the sidecar on disk is the source of truth) but does inspect for the `VERIFY_FAILED:` prefix to route into the §3 menu. Spec §1 (`agents/qrspi-finding-verifier.md` `## Procedure`) defines the verifier's internal behavior; this dispatch sketch only documents the orchestrator side.
