@@ -47,6 +47,7 @@
 - `tests/fixtures/issue-109/menu-cases/{verify-failed,missing-codex-output,missing-claude-output,missing-sidecar}/round-NN/` — four abnormality-class fixtures backing test #5 (spec §5 explicitly: "Fixture covers each abnormality the menu handles (VERIFY_FAILED, missing reviewer output, missing sidecar)"). Each fixture is a populated `round-NN/` subdir exhibiting one abnormality.
 - `tests/fixtures/issue-109/round-mixed-change-types/round-04/` — populated `round-NN/` directory with findings spanning all five `change_type` values (style, clarity, correctness, scope, intent) plus matching `.score.yml` sidecars; backs test #9 (spec §5: "Fixture verified.md with mixed `change_type`s + assertion of routing").
 - `tests/fixtures/issue-109/round-missing-tag/round-05/` — round directory missing one expected tag's output (no `quality-codex.*` files); backs test #10's negative-fixture failure path (spec §5: "Negative fixtures assert the failure path").
+- `tests/fixtures/issue-109/round-schema-violations/round-03/` — five per-file fixtures covering spec §1 step 2's schema-guard branches: malformed YAML frontmatter, missing required field, malformed `change_type` enum value, unrouted reviewer-tag, and trailing-newline malformation. The implementer wires these into a runtime parser test at commit-4 time; the bats prose-greps in `test-verifier-dispatch-contract.bats` pin the documented contract independent of these fixtures.
 
 ### Modified files (commit 4 — atomic cutover)
 
@@ -956,7 +957,20 @@ Verification: the test-config-verifier-enabled-field.bats expansion (Task 5 step
 Add a new bold-paragraph subsection `**Verifier-round failure menu.**` directly under the Apply-fix protocol you just rewrote in step 2 (matching the local `**Apply-fix protocol.**` / `**Diff handling between rounds.**` style of the surrounding `## Review Output Handling` H2 — do NOT introduce a `### ` H3 here, since this region uses bold-paragraph subheaders). Body sourced verbatim from spec §3 (`§3 Failure handling (single generic menu)`). Include:
 
 - The full menu text with the three options (`skip`, `retry`, `stop`) and their exact semantics:
-  - `skip` — proceed without scoring THIS ROUND (kept-all assembly), writes `reviews/{step}/round-NN-verifier-disabled.md`, does NOT mutate `config.md`.
+  - `skip` — proceed without scoring THIS ROUND (kept-all assembly), writes `reviews/{step}/round-NN-verifier-disabled.md` with the concrete YAML body shape below (per spec §3: "timestamp + reason + finding count"), does NOT mutate `config.md`.
+
+  The `round-NN-verifier-disabled.md` write contract (paste this YAML body shape verbatim into the failure-menu prose so the implementer has an unambiguous template):
+
+  ```yaml
+  ---
+  timestamp: <ISO-8601 UTC, e.g. 2026-05-05T15:30:00Z>
+  reason: <one-line summary identical to the menu's diagnostic line>
+  finding_count: <integer total of *.finding-*.md files in the round directory>
+  abnormality_class: <one of: VERIFY_FAILED | reviewer_no_output | sidecar_missing>
+  ---
+  ```
+
+  Three fields are mandatory per spec §3 (timestamp, reason, finding_count); `abnormality_class` is added by the plan to give the audit record a routable taxonomy that mirrors the menu's diagnostic-line classes (the menu prose uses the same four classes; a fifth would indicate a menu/protocol drift). The file is written exactly once per round at `skip` selection. `skip` is a during-round control flow, not a cross-round signal: after the file is written, the same Apply-fix invocation jumps to step 5 (kept-all assembly with no sidecars on disk). The next round starts fresh from step 1 and re-reads `config.md` at step 3 — if `verifier_enabled: true`, the next round IS verifier-enabled. The `round-NN-verifier-disabled.md` artifact is purely the audit record of what happened on the round it was written for; it does not affect any subsequent round's gate behavior.
   - `retry` — re-dispatch only the failing verifiers; for "reviewer produced no output", delete the tag's stale `*.finding-*.md`, `*.score.yml`, `*.clean.md` first, then re-prompt the reviewer.
   - `stop` — abort the protocol with no commit; round directory remains on disk.
 - The four abnormality classes the menu's diagnostic line covers:
@@ -1073,6 +1087,38 @@ skills/replan/SKILL.md
 (a) Update the dispatch-parameter list to pass the role-distinct `reviewer_tag` value to each reviewer dispatch — `quality-claude` / `quality-codex` for the artifact-quality reviewer pair, `scope-claude` / `scope-codex` for the dedicated scope-reviewer pair (where present per the Expected-Reviewer Matrix). This replaces today's collapsed `claude` / `codex` values.
 
 (b) Update the dispatch-parameter list to pass `<round_subdir>` (the absolute path to `reviews/{step}/round-NN/`) instead of the legacy `Output file:` single-file path.
+
+(a)+(b) Concrete before→after replacement shape (the implementer locates each pre-cutover dispatch block in the 8 skill files and applies this transform). The exact YAML keys may differ between skills (some use `output:` not `Output file:`; some embed the value inline) — the contract is structural: replace any line/key that names a per-tag SINGLE FILE PATH with a per-tag DIRECTORY PATH, and rename `claude`/`codex` to `quality-claude`/`quality-codex` (or `scope-claude`/`scope-codex` for scope-reviewer dispatches).
+
+```diff
+ # Pre-cutover dispatch (representative — exact keys vary per skill):
+-  reviewer_tag: claude
+-  output: reviews/{step}/round-NN-claude.md
++  reviewer_tag: quality-claude
++  round_subdir: reviews/{step}/round-NN/
+ ...
+-  reviewer_tag: codex
+-  output: reviews/{step}/round-NN-codex.md
++  reviewer_tag: quality-codex
++  round_subdir: reviews/{step}/round-NN/
+
+ # And for skills that ALSO have a scope-reviewer dispatch
+ # (goals, design, phasing, structure, parallelize, replan):
+-  reviewer_tag: scope-claude
+-  output: reviews/{step}/round-NN-scope-claude.md
++  reviewer_tag: scope-claude
++  round_subdir: reviews/{step}/round-NN/
+ ...
+-  reviewer_tag: scope-codex
+-  output: reviews/{step}/round-NN-scope-codex.md
++  reviewer_tag: scope-codex
++  round_subdir: reviews/{step}/round-NN/
+```
+
+Notes:
+- The `scope-claude` / `scope-codex` tags do NOT change names (they were already role-distinct on the scope side); only the quality-side `claude` / `codex` rename to `quality-claude` / `quality-codex` for the role-distinct symmetry the spec calls "load-bearing" (per spec §1 "The role-distinct rename is load-bearing").
+- The `round_subdir` value is the SAME for every reviewer in a given round — they all write into the same directory. Per-finding filenames carry the role-distinct prefix, so directory collision is eliminated.
+- If a pre-cutover skill embedded the output path inline inside a Codex prompt (rather than as a separate `output:` parameter), the inline reference must also be removed; the role-distinct `<reviewer_tag>` is the only path-component the post-cutover prompt needs to mention (the splitter is told the round_subdir separately at invocation time per sub-step (d) below).
 
 (c) Inject the per-finding-file format + `NO_FINDINGS` sentinel + `<<<FINDING-BOUNDARY>>>` delimiter into the Codex reviewer prompt. Paste the following block VERBATIM into each of the 8 dispatching skills — the worked example uses concrete `design` / `quality-codex` values that all 8 skills inherit literally; the example is a teaching artifact, not a per-skill template. (Reviewers reading the prompt understand that real findings vary the `artifact:` and `reviewer:` fields per the dispatcher's parameters; the literal example does not need to be skill-specific.)
 
@@ -1400,7 +1446,56 @@ setup() {
 @test "step 2 schema guard catches the await-non-zero / splitter-malformed path" {
   echo "$PROTOCOL" | grep -qiE 'expected tag.*no output|expected tag produced no output|expected tag with zero'
 }
+
+# Spec §1 step 2 enumerates FIVE schema-guard branches that must fail loud
+# (or normalize, in the trailing-newline case). One was pinned above; the
+# remaining four below pin the branches Codex r6-F05 flagged as missing.
+# These tests grep the prose body of the Apply-fix step-2 paragraph for the
+# documented behavior — they enforce the spec contract is COMMUNICATED to the
+# implementer, not that the bash code is semantically correct (that's the job
+# of the implementer's runtime tests at execution time, but those tests cannot
+# exist until the prose says what to test against).
+
+@test "step 2 schema guard fails loud on malformed YAML frontmatter" {
+  # Spec §1 step 2: "Step 2 also fails loud on: malformed YAML, ..."
+  echo "$PROTOCOL" | grep -qiE 'malformed YAML|invalid YAML|YAML.*malformed'
+}
+
+@test "step 2 schema guard fails loud on missing required fields" {
+  # Spec §1 step 2: "...missing required fields, ..."
+  echo "$PROTOCOL" | grep -qiE 'missing required field|required field.*missing|missing field'
+}
+
+@test "step 2 schema guard fails loud on malformed change_type enum" {
+  # Spec §1 step 2: "...malformed change_type enum, ..."
+  echo "$PROTOCOL" | grep -qiE 'change_type.*enum|out-of-enum.*change_type|invalid change_type'
+}
+
+@test "step 2 schema guard fails loud on unrouted (step, tag) route" {
+  # Spec §1 step 2: "...unrouted (step, tag) route."
+  echo "$PROTOCOL" | grep -qiE 'unrouted|route.*not found|no route|unknown route'
+}
+
+@test "step 2 normalizes trailing-newline malformations with audit warning (NOT hard fail)" {
+  # Spec §1 step 2: "Trailing-newline malformations are normalized
+  # (deterministic strip+append-`\n`) with a one-line audit warning, NOT a
+  # hard fail." Pin both directions: the normalize action AND the warning,
+  # AND the explicit non-fail.
+  echo "$PROTOCOL" | grep -qiE 'trailing.newline.*normaliz|normaliz.*trailing.newline'
+  echo "$PROTOCOL" | grep -qiE 'audit warning|warning.*audit|one.line.*warning'
+  echo "$PROTOCOL" | grep -qiE 'NOT.*hard fail|not.*hard.fail|warn.*not.*fail'
+}
 ```
+
+The five new schema-guard tests need ONE additional fixture covering the malformed-YAML + missing-field + bad-change_type + unrouted-tag input cases (the trailing-newline case is tested via the prose-grep alone, since the normalization is on disk content not in the prose itself). Add this fixture inventory to commit 4's File Structure:
+
+- `tests/fixtures/issue-109/round-schema-violations/round-03/quality-claude.finding-F01.md` — malformed YAML frontmatter (e.g. unclosed `---`, tab where space expected). One file per branch is sufficient because step 2 fails on the first violation it sees and the test's purpose is to PIN the prose contract, not exercise the runtime parser.
+- `tests/fixtures/issue-109/round-schema-violations/round-03/quality-claude.finding-F02.md` — missing required field (`change_type:` line removed from frontmatter).
+- `tests/fixtures/issue-109/round-schema-violations/round-03/quality-claude.finding-F03.md` — bad-enum `change_type: maintenance` (out of `style|clarity|correctness|scope|intent`).
+- `tests/fixtures/issue-109/round-schema-violations/round-03/quality-unknown.finding-F01.md` — unrouted reviewer-tag (`quality-unknown` is not in the Routing Table).
+- `tests/fixtures/issue-109/round-schema-violations/round-03/quality-claude.finding-F04.md` — trailing-newline malformation (file ends with `\n\n` or no `\n`).
+
+(These fixtures are NOT consumed by the bats prose-greps above — those are pure documentation tests against `using-qrspi/SKILL.md`. The fixtures exist so the implementer can wire them into a runtime parser test at commit-4 implementation time. Tracking them in the staging list ensures they ship with the cutover commit, not as orphans.)
 
 - [ ] **Step 9: Create `tests/unit/test-failure-menu.bats` + the four `menu-cases/` fixtures**
 
@@ -1425,7 +1520,12 @@ tests/fixtures/issue-109/menu-cases/<case>/
 Create `tests/fixtures/issue-109/menu-cases/verify-failed/`:
 - `cited-diagnostic.txt` — single line: `VERIFY_FAILED`
 - `round-03/quality-claude.finding-F01.md` (frontmatter `change_type: correctness`, sample body)
-- `round-03/quality-claude.finding-F01.score.yml` (`score: VERIFY_FAILED:upstream-not-readable`)
+- `round-03/quality-claude.finding-F01.score.yml` — two-line YAML per spec §1 (sidecar shape, NOT the brief-return shape):
+  ```yaml
+  score: VERIFY_FAILED
+  reason: upstream not readable
+  ```
+  Per spec §1, the failure sidecar is always exactly these two fields. The single-scalar form `score: VERIFY_FAILED:<reason>` is the brief-return shape (returned by the verifier subagent over stdout to main chat) and is NOT what lands on disk. The Apply-fix step-5 assembly grep `^score: VERIFY_FAILED` matches both prefixes, but pinning the wrong sidecar shape in the fixture would push the implementer's parser away from spec.
 
 Create `tests/fixtures/issue-109/menu-cases/missing-codex-output/`:
 - `cited-diagnostic.txt` — single line: `wrote no per-finding files|await.*exit|--artifact-dir`
@@ -1467,6 +1567,19 @@ setup() {
 @test "skip writes round-NN-verifier-disabled.md and does NOT mutate config.md" {
   echo "$MENU" | grep -qF 'verifier-disabled.md'
   echo "$MENU" | grep -qE 'does NOT mutate.*config\.md|no config\.md mutation'
+}
+
+@test "skip's round-NN-verifier-disabled.md write contract pins the four required fields" {
+  # Spec §3: "timestamp + reason + finding count". Plan adds abnormality_class
+  # for routable audit taxonomy. The bats test pins all four fields are
+  # documented in the menu prose (which is sourced from the spec text the
+  # implementer pasted into using-qrspi/SKILL.md). If a future edit drops one
+  # of these fields from the documented schema, this test fails — preventing
+  # the implementer from authoring a schema-incomplete write contract.
+  echo "$MENU" | grep -qE 'timestamp:|^[[:space:]]*timestamp\b'
+  echo "$MENU" | grep -qE 'reason:|^[[:space:]]*reason\b'
+  echo "$MENU" | grep -qE 'finding_count:|finding count'
+  echo "$MENU" | grep -qE 'abnormality_class:|abnormality class'
 }
 
 @test "retry for reviewer-no-output deletes stale tag files before re-dispatch" {
@@ -1779,6 +1892,32 @@ Create `tests/fixtures/issue-109/round-missing-tag/round-05/` populated as:
 
 Expected schema-guard verdict: at least one expected tag has zero files → would route to §3 menu.
 
+Create `tests/fixtures/issue-109/round-schema-violations/round-03/` populated as five per-file fixtures, one per spec §1 step-2 schema-guard branch:
+
+- `quality-claude.finding-F01.md` — malformed YAML frontmatter. Body starts with `---` but no closing `---` before the prose body; the YAML parser must reject this.
+- `quality-claude.finding-F02.md` — missing required field. Frontmatter has `finding_id`, `severity`, `referenced_files`, `artifact`, `round`, `reviewer` — but NO `change_type` line.
+- `quality-claude.finding-F03.md` — bad-enum `change_type: maintenance`. All other fields well-formed; the enum check must reject the unknown value.
+- `quality-unknown.finding-F01.md` — unrouted reviewer-tag. Filename uses `quality-unknown` (not in the Routing Table); per-finding contents may be well-formed YAML.
+- `quality-claude.finding-F04.md` — trailing-newline malformation. Either no trailing `\n` at all, or `\n\n` (two trailing newlines). Per spec §1 step 2 this is normalized + warning, NOT a hard fail.
+
+Sample first fixture (the others follow the same shape, varying only the violation):
+
+```yaml
+---
+finding_id: R3-F01
+severity: high
+change_type: correctness
+referenced_files: [skills/design/SKILL.md]
+artifact: design
+round: 3
+reviewer: quality-claude
+# (missing closing --- to trigger the malformed-YAML branch)
+
+Sample finding body — the YAML above is unclosed so a parser will not accept it.
+```
+
+These fixtures ship with commit 4. The implementer wires them into a runtime parser test at execution time; the bats prose-greps in `test-verifier-dispatch-contract.bats` (Step 8) pin the documented contract independent of these fixtures.
+
 Then write the tests.
 
 `tests/unit/test-change-type-partition.bats`:
@@ -2078,30 +2217,42 @@ read NUM < /tmp/issue-109-followup-num.txt
 (b) Substitute the token across the working tree (including untracked files), excluding the plan and the spec themselves (which keep the literal token as documentation), the `.git/` directory, and the smoke run-bundles in `/tmp/issue-109-smoke/`:
 
 ```bash
-grep -rlF '${FOLLOWUP_ISSUE}' /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus \
-  --exclude-dir=.git \
-  --exclude-dir=node_modules \
-  --exclude-dir=reviews \
-  --exclude='*/docs/superpowers/plans/2026-05-04-109-sonnet-haiku-verifier.md' \
-  --exclude='*/docs/superpowers/specs/2026-05-04-109-sonnet-haiku-verifier-design.md' \
+# Use find for path-shape exclusion (grep --exclude is glob-shaped per file basename
+# and does NOT honor full paths reliably across GNU/BSD); pipe candidate files into
+# a token-presence grep, then substitute only files that contain the token. The
+# plan and spec themselves are excluded by exact-path -not -path tests, NOT by
+# basename globs (which would silently miss files whose basenames happened to match).
+REPO=/Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus
+find "$REPO" \
+  -type f \
+  -not -path "*/.git/*" \
+  -not -path "*/node_modules/*" \
+  -not -path "$REPO/reviews/*" \
+  -not -path "$REPO/docs/superpowers/plans/2026-05-04-109-sonnet-haiku-verifier.md" \
+  -not -path "$REPO/docs/superpowers/specs/2026-05-04-109-sonnet-haiku-verifier-design.md" \
+  -print0 \
+  | xargs -0 grep -lF '${FOLLOWUP_ISSUE}' \
   | xargs -I{} sed -i.bak "s/\${FOLLOWUP_ISSUE}/${NUM}/g" "{}"
 # Clean up sed-backup siblings.
-find /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus \
-  -name '*.bak' -newer /tmp/issue-109-followup-num.txt -delete
+find "$REPO" -name '*.bak' -newer /tmp/issue-109-followup-num.txt -delete
 ```
 
-The `--exclude-dir=reviews` is essential: the `reviews/plan-109/` directory carries past-round finding records that QUOTE the plan's literal `${FOLLOWUP_ISSUE}` token. Substituting it there would corrupt the audit record of those rounds and pollute `git status` with modified-but-unstaged files an implementer might mistake for legitimate cutover changes.
+The `reviews/` exclusion is essential: the `reviews/plan-109/` directory carries past-round finding records that QUOTE the plan's literal `${FOLLOWUP_ISSUE}` token. Substituting it there would corrupt the audit record of those rounds and pollute `git status` with modified-but-unstaged files an implementer might mistake for legitimate cutover changes.
 
-(c) Verify the literal token is gone from the shipping working tree (excluding the plan, spec, and reviews — all of which retain it as documentation/audit):
+(c) Verify BOTH literal tokens are gone from the shipping working tree (excluding the plan, spec, and reviews — all of which retain them as documentation/audit). The two-token check is load-bearing because the helper at sub-step (d) substitutes both `${FOLLOWUP_ISSUE}` and `${SMOKE_FOLLOWUP_ISSUE}` whenever it runs; if Tasks 6/Final author files containing only the smoke token, a single-token verification would not catch a regression in the helper or a file authored after the helper ran:
 
 ```bash
-grep -rF '${FOLLOWUP_ISSUE}' /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus \
-  --exclude-dir=.git \
-  --exclude-dir=reviews \
-  --exclude='*/docs/superpowers/plans/2026-05-04-109-sonnet-haiku-verifier.md' \
-  --exclude='*/docs/superpowers/specs/2026-05-04-109-sonnet-haiku-verifier-design.md' \
-  && { echo "literal token still present — substitution failed"; exit 1; } \
-  || echo "all '\${FOLLOWUP_ISSUE}' tokens (outside plan/spec/reviews) substituted with #${NUM}"
+REPO=/Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus
+LEAKED=$(find "$REPO" \
+  -type f \
+  -not -path "*/.git/*" \
+  -not -path "$REPO/reviews/*" \
+  -not -path "$REPO/docs/superpowers/plans/2026-05-04-109-sonnet-haiku-verifier.md" \
+  -not -path "$REPO/docs/superpowers/specs/2026-05-04-109-sonnet-haiku-verifier-design.md" \
+  -print0 \
+  | xargs -0 grep -lE '\$\{FOLLOWUP_ISSUE\}|\$\{SMOKE_FOLLOWUP_ISSUE\}' || true)
+[[ -z "$LEAKED" ]] || { echo "literal token(s) still present — substitution failed in: $LEAKED"; exit 1; }
+echo "all '\${FOLLOWUP_ISSUE}' and '\${SMOKE_FOLLOWUP_ISSUE}' tokens (outside plan/spec/reviews) substituted with their issue numbers"
 ```
 
 (d) **Reusable helper for Tasks 6 and Final integration.** Save the substitution logic as `/tmp/issue-109-substitute-followup.sh` so Task 6 (CHANGELOG) and Final integration (PR body) can re-run it after they author new files containing the token:
@@ -2167,7 +2318,8 @@ git -C /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plu
   tests/fixtures/issue-109/round-disabled-from-start/ \
   tests/fixtures/issue-109/menu-cases/ \
   tests/fixtures/issue-109/round-mixed-change-types/ \
-  tests/fixtures/issue-109/round-missing-tag/
+  tests/fixtures/issue-109/round-missing-tag/ \
+  tests/fixtures/issue-109/round-schema-violations/
 ```
 
 Verify the staging matches the file inventory:
@@ -2208,14 +2360,20 @@ What lands:
   retry-cleanup contract, always-on footer, and reviewer-kind-branched
   diagnostic line.
 
-Pre-merge smoke matrix (7 cases) ran clean:
-1. Questions/Research no-scope path
-2. Goals/Design full 4-reviewer set
-3. verifier_enabled: false from start (kept-all fall-through)
-4. codex_reviews: false
-5. Splitter malformed input → §3 menu (Codex branch)
-6. VERIFY_FAILED → skip
-7. VERIFY_FAILED → retry
+Pre-merge smoke matrix (7 cases):
+1. Questions/Research no-scope path — real review round (PASS)
+2. Goals/Design full 4-reviewer set — real review round (PASS)
+3. verifier_enabled: false from start (kept-all fall-through) — real review round (PASS)
+4. codex_reviews: false — real review round (PASS)
+5. Splitter malformed input → §3 menu (Codex branch) — PASS-via-unit
+   (test-codex-splitter.bats + test-failure-menu.bats pin the behavior;
+   real-round execution requires a Codex stdout override outside #109's
+   cutover scope; tracked in #${SMOKE_FOLLOWUP_ISSUE})
+6. VERIFY_FAILED → skip — PASS-via-unit
+   (test-failure-menu.bats + test-disabled-mode-fallthrough.bats; same
+   tracking as case 5)
+7. VERIFY_FAILED → retry — PASS-via-unit
+   (test-failure-menu.bats; same tracking as case 5)
 
 Tests landing in this commit (10 total under tests/unit/):
 - test-codex-splitter.bats expanded with the dispatching-skill greps.
@@ -2231,6 +2389,15 @@ reviewers (5 plan-artifact + plan quality/scope + 8 per-task + implement-gate
 remain on the legacy single-file contract via the renamed Legacy section.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+The commit message above references `${SMOKE_FOLLOWUP_ISSUE}` (case 5's tracking note). Substitute the follow-up issue number into the commit-message file before committing — `git commit -F` does not expand shell variables, so the literal token would otherwise land in permanent history. Re-use the helper from Task 5 step 16(d):
+
+```bash
+/tmp/issue-109-substitute-followup.sh /tmp/commit-msg-109-c04.txt
+grep -E '\$\{FOLLOWUP_ISSUE\}|\$\{SMOKE_FOLLOWUP_ISSUE\}' /tmp/commit-msg-109-c04.txt \
+  && { echo "follow-up token(s) not substituted in commit message"; exit 1; } \
+  || echo "commit message: both follow-up tokens substituted"
 ```
 
 ```bash
@@ -2314,8 +2481,9 @@ sed -i.bak "s/2026-05-DD/${TODAY}/g" /Users/dfrysinger/Library/CloudStorage/Drop
 Verify both substitutions landed:
 
 ```bash
-grep -F '${FOLLOWUP_ISSUE}' /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus/docs/qrspi/CHANGELOG.md && { echo "FOLLOWUP_ISSUE not substituted"; exit 1; } || true
-grep -F '2026-05-DD' /Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus/docs/qrspi/CHANGELOG.md && { echo "date placeholder not substituted"; exit 1; } || true
+CHANGELOG=/Users/dfrysinger/Library/CloudStorage/Dropbox/claude-workspace/qrspi-plus/docs/qrspi/CHANGELOG.md
+grep -E '\$\{FOLLOWUP_ISSUE\}|\$\{SMOKE_FOLLOWUP_ISSUE\}' "$CHANGELOG" && { echo "follow-up issue token(s) not substituted in CHANGELOG"; exit 1; } || true
+grep -F '2026-05-DD' "$CHANGELOG" && { echo "date placeholder not substituted"; exit 1; } || true
 ```
 
 - [ ] **Step 3: Commit**
@@ -2403,7 +2571,7 @@ Follow-ups:
 (d) Verify the substitution landed:
 
 ```bash
-grep -F '${FOLLOWUP_ISSUE}' /tmp/issue-109-pr-body.md && { echo "FOLLOWUP_ISSUE not substituted in PR body"; exit 1; } || echo "PR body substitution OK"
+grep -E '\$\{FOLLOWUP_ISSUE\}|\$\{SMOKE_FOLLOWUP_ISSUE\}' /tmp/issue-109-pr-body.md && { echo "follow-up issue token(s) not substituted in PR body"; exit 1; } || echo "PR body substitution OK (both follow-up tokens replaced)"
 ```
 
 (e) Open the PR:
