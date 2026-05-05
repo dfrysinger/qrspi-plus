@@ -76,3 +76,22 @@ setup() {
   ! echo "$frontmatter" | grep -qE '^skills:' \
     || { echo "qrspi-replan-analyzer.md must NOT declare a skills: preload — it is a worker, not a reviewer"; return 1; }
 }
+
+# Regression test for the round-3 + round-4 fix to the Plan loop-back target.
+# Acceptance-criteria-only Major changes route to Plan per the strip-from-goals
+# contract — the analyzer's payload schema must allow representing that.
+# Without these assertions, the per-change `Type` field and the summary's
+# earliest-loop-back-target enum could regress to omitting Plan, leaving
+# criteria-only Major changes unrepresentable in the analyzer payload.
+
+@test "replan analyzer per-change Type field includes Plan" {
+  grep -qE 'Type.*Major \(\[Goals\|Design\|Phasing\|Structure\|Plan\]\)' \
+    agents/qrspi-replan-analyzer.md \
+    || { echo "qrspi-replan-analyzer.md output schema's per-change Type field must include Plan in the alternation"; return 1; }
+}
+
+@test "replan analyzer summary earliest-loop-back-target enum includes Plan" {
+  grep -qE 'Earliest loop-back target.*\[Goals \| Design \| Phasing \| Structure \| Plan \| none\]' \
+    agents/qrspi-replan-analyzer.md \
+    || { echo "qrspi-replan-analyzer.md summary's earliest-loop-back-target enum must include Plan"; return 1; }
+}

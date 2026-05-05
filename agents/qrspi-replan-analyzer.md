@@ -66,7 +66,7 @@ Structure your response as:
 For each proposed change:
 
 #### Change [N]: [short title]
-- **Type:** Minor | Major ([Goals|Design|Phasing|Structure])
+- **Type:** Minor | Major ([Goals|Design|Phasing|Structure|Plan])
 - **Trigger:** [what discovery drives this change]
 - **Proposal:** [specific action — reorder task N before M, split task K into K1+K2, modify task J's test expectations, etc.]
 - **Affected tasks:** [list of task numbers]
@@ -77,7 +77,7 @@ For each proposed change:
 
 - Minor changes: [count] — [brief list]
 - Major changes: [count] — [brief list with loop-back targets]
-- Earliest loop-back target (if any major): [Goals | Design | Phasing | Structure | none]
+- Earliest loop-back target (if any major): [Goals | Design | Phasing | Structure | Plan | none]
 ```
 
 ## Red Flags — STOP
