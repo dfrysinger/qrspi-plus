@@ -488,7 +488,7 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 
 - Claude reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (one file per finding; `<reviewer_tag>` is e.g. `quality-claude`, `scope-claude`)
 - Claude scope-reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (same shape; dedicated `qrspi-{name}-scope-reviewer` agents per #110)
-- Codex reviewer (async) → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (filled via `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId>` stdout redirection per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill)
+- Codex reviewer (async) → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (filled via `scripts/codex-companion-bg.sh await <jobId>` stdout redirection per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill)
 - Clean-round sentinel → `reviews/{step}/round-NN/<reviewer_tag>.clean.md` (one file per reviewer when zero findings)
 - Main chat fix-apply summary → `reviews/{step}/round-NN-fixes.md`
 
@@ -659,15 +659,14 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
 10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-verified.md`, and `round-NN-fixes.md`. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
 
-**Verifier-round failure menu.** Any abnormality during Apply-fix (VERIFY_FAILED from one or more verifiers; Codex reviewer no-output — cite `await` exit + wrapper `--artifact-dir`; Claude reviewer no-output — cite verbatim subagent return; sidecar missing for a finding) dispatches the same 3-option menu:
+**Verifier-round failure menu.** Any abnormality during Apply-fix (VERIFY_FAILED from one or more verifiers; Codex reviewer no-output — cite `await` exit code; Claude reviewer no-output — cite verbatim subagent return; sidecar missing for a finding) dispatches the same 3-option menu:
 
 ```
 QRSPI verifier round failure
 ─────────────────────────────
 {one-line diagnostic summary of the abnormality, e.g.:
   - "Verifier returned VERIFY_FAILED for 2 findings"
-  - "Reviewer quality-codex produced no output (await exit 12;
-    inspection: <wrapper --artifact-dir>)"
+  - "Reviewer quality-codex produced no output (await exit 13)"
   - "Reviewer quality-claude wrote no per-finding files
     (subagent return: '<verbatim brief-return text>')"
   - "Sidecar missing for finding quality-claude.R3-F02"}

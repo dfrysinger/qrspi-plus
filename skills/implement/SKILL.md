@@ -472,7 +472,7 @@ Thoroughness reviewers (deep mode only):
 } | scripts/codex-companion-bg.sh launch
 ```
 
-The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints. After every dispatched Codex `launch` returns its jobId, await each one and redirect stdout directly to that dispatch's output file per the shared launch-await pattern (`scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId> > <output_file>`); finding text never enters main chat. Both Claude and Codex findings feed the convergence and fix loops — neither is privileged. The consolidated `reviews/tasks/task-NN-review.md` log records the reference path to each round's Codex file under the matching reviewer's heading (see § Review Log Artifact below); apply-fix dispatch reads each referenced Codex file and merges its findings with the Claude findings to construct the implementer-fix prompt.
+The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints. After every dispatched Codex `launch` returns its jobId, await each one and redirect stdout directly to that dispatch's output file per the shared launch-await pattern (`scripts/codex-companion-bg.sh await <jobId> > <output_file>`); finding text never enters main chat. Both Claude and Codex findings feed the convergence and fix loops — neither is privileged. The consolidated `reviews/tasks/task-NN-review.md` log records the reference path to each round's Codex file under the matching reviewer's heading (see § Review Log Artifact below); apply-fix dispatch reads each referenced Codex file and merges its findings with the Claude findings to construct the implementer-fix prompt.
 
 ### Review Log Artifact
 
@@ -546,10 +546,10 @@ code-quality-reviewer, silent-failure-hunter, security-reviewer}
 #### Codex
 
 **Output file:** `reviews/tasks/task-NN/round-NN/<reviewer_tag>.finding-F<NN>.md`
-**Status:** {success | ceiling-hit | crash | audit-fail | launch-fail}
+**Status:** {success | ceiling-hit | crash | infra-fail | launch-fail}
 ```
 
-The per-reviewer per-round Codex file (filled by `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId> > ...` redirection in the embedded launch-await pattern) holds the verbatim Codex stdout on exit-0; per the shared launch-await pattern, on non-zero exit codes (10 ceiling-hit / 11 crash / 12 audit-fail) the **orchestrator** (main chat — not the wrapper) writes the corresponding explicit ceiling/crash/audit-fail note into the same per-round Codex file before recording Status. Apply-fix dispatch reads each referenced Codex file at dispatch time to merge findings with the Claude reviewer findings.
+The per-reviewer per-round Codex file (filled by `scripts/codex-companion-bg.sh await <jobId> > ...` redirection in the embedded launch-await pattern) holds the verbatim Codex stdout on exit-0; per the shared launch-await pattern, on non-zero exit codes (10 ceiling-hit / 11 crash / 13|14 infra-fail) the **orchestrator** (main chat — not the wrapper) writes the corresponding explicit ceiling/crash/infra-fail note into the same per-round Codex file before recording Status. Apply-fix dispatch reads each referenced Codex file at dispatch time to merge findings with the Claude reviewer findings.
 
 **Rules:**
 
@@ -645,7 +645,7 @@ Each wrapped body is bracketed between `<<<UNTRUSTED-ARTIFACT-START id={artifact
 } | scripts/codex-companion-bg.sh launch
 ```
 
-After the Claude reviewer returns, await the captured jobId and redirect stdout directly to the Codex output file per the shared launch-await pattern (`scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId> > <output_file>`); finding text never enters main chat.
+After the Claude reviewer returns, await the captured jobId and redirect stdout directly to the Codex output file per the shared launch-await pattern (`scripts/codex-companion-bg.sh await <jobId> > <output_file>`); finding text never enters main chat.
 
 ### Batch Gate Red Flags — STOP
 
