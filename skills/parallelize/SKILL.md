@@ -47,7 +47,7 @@ If any required artifact is missing or not approved, refuse to run and tell the 
 Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Parallelize validates `pipeline` and `route`.
 
 <HARD-GATE>
-Do NOT mark `parallelization.md` approved while parallel groups overlap on files.
+Do NOT mark `parallelization.md` approved while Waves overlap on files.
 Do NOT include forward-only dependencies (task-N depending on task-M where M > N within a sequential chain) in the Dependency Analysis.
 Do NOT name a Base in the Branch Map that the Branch Model does not authorize (see Branch Model below).
 This applies regardless of how simple the phase appears.
@@ -58,8 +58,8 @@ This applies regardless of how simple the phase appears.
 | Mode | When | Branch Map shape |
 |------|------|------------------|
 | Sequential | Tasks form a chain (A→B→C) | Each task's base is the previous task's tip |
-| Parallel | Tasks are independent and file-disjoint | Every task in the group shares the group's base |
-| Hybrid | Mix of independent and dependent tasks | Parallel groups share a base; downstream groups fork from a stage commit, a single prior tip, or `task-00` per the Branch Model |
+| Parallel | Tasks are independent and file-disjoint | Every task in the Wave shares the Wave's base |
+| Hybrid | Mix of independent and dependent tasks | Waves share a base; downstream Waves fork from a stage commit, a single prior tip, or `task-00` per the Branch Model |
 
 ## Branch Model (Symbolic — Resolved by Implement)
 
@@ -67,38 +67,38 @@ This applies regardless of how simple the phase appears.
 
 1. **Feature branch:** `qrspi/{slug}/main` (e.g., `qrspi/user-auth/main`). Created by Implement from the current branch (typically `main`) at the start of the first phase. For subsequent phases, the feature branch already exists.
 
-   **Why `/main`, not bare `qrspi/{slug}`** (F-14): git stores refs hierarchically and cannot have both a leaf ref `qrspi/{slug}` and a namespace `qrspi/{slug}/...` simultaneously. Naming the feature branch `qrspi/{slug}/main` makes it a sibling of the task branches under the `qrspi/{slug}/` namespace — all four kinds of branches (feature `main`, `task-NN`, `task-NNa`, `stage-after-G{N}`) coexist as namespace siblings. Bare `qrspi/{slug}` would deadlock the very first task-branch creation with `fatal: cannot lock ref ... 'refs/heads/qrspi/{slug}' exists`.
+   **Why `/main`, not bare `qrspi/{slug}`** (F-14): git stores refs hierarchically and cannot have both a leaf ref `qrspi/{slug}` and a namespace `qrspi/{slug}/...` simultaneously. Naming the feature branch `qrspi/{slug}/main` makes it a sibling of the task branches under the `qrspi/{slug}/` namespace — all four kinds of branches (feature `main`, `task-NN`, `task-NNa`, `stage-after-W{N}`) coexist as namespace siblings. Bare `qrspi/{slug}` would deadlock the very first task-branch creation with `fatal: cannot lock ref ... 'refs/heads/qrspi/{slug}' exists`.
 2. **Task branches — base depends on execution mode:**
-   - **Terminology — Parallel Group vs Dispatch Wave.** A *parallel group* is a set of tasks that share a base AND have no file overlap; group membership is purely a base-and-disjointness statement, not a dispatch-ordering statement. A *dispatch wave* is the set of tasks Implement fires concurrently at a given moment; a wave can contain multiple parallel groups (each with its own base), provided no inter-group logical dependency or file overlap exists. Group numbering does not imply dispatch ordering — concurrency is governed by inter-group dependencies, not by group numbers.
-   - **Parallel group:** Every task in the group shares the group's *base tip* (see Hybrid below for groups beyond Group 1; Group 1's base is the feature branch tip). Tasks in a parallel group are independent by construction (no file overlap, no logical dependency).
+   - **Wave:** A set of tasks that share a base AND have no file overlap. Wave numbering does not imply dispatch ordering — Implement's runtime rule is "dispatch every Wave whose dependencies are satisfied each tick."
+   - **Parallel Wave:** Every task in the Wave shares the Wave's *base tip* (see Hybrid below for Waves beyond Wave 1; Wave 1's base is the feature branch tip). Tasks in a Wave are independent by construction (no file overlap, no logical dependency).
    - **Sequential chain:** Task-N's base is task-(N-1)'s tip — *not* the feature branch. This is required because sequential dependencies mean task-N imports types/factories/actions/migrations introduced by task-(N-1), and the feature branch does not yet contain task-(N-1)'s work (Integrate runs once at phase end, not per-task).
-   - **Hybrid (multi-parent):** When a downstream task or group depends on more than one task from a prior parallel group, the symbolic base is `stage-after-G{N}`. Implement creates the intermediate stage commit `qrspi/{slug}/stage-after-G{N}` by merging the prior group's tips into a temporary branch; the next group then forks from that commit. Stage branches are scratch infrastructure created by Implement; their lifecycle end (merge semantics + cleanup) is Integrate's concern — see `integrate/SKILL.md` → `Merge Strategy`.
-   - **Single-parent across groups:** When a downstream task depends on exactly one task from a prior group, name that task's tip directly as the base — no stage commit needed.
+   - **Hybrid (multi-parent):** When a downstream task or Wave depends on more than one task from a prior Wave, the symbolic base is `stage-after-W{N}`. Implement creates the intermediate stage commit `qrspi/{slug}/stage-after-W{N}` by merging the prior Wave's tips into a temporary branch; the next Wave then forks from that commit. Stage branches are scratch infrastructure created by Implement; their lifecycle end (merge semantics + cleanup) is Integrate's concern — see `integrate/SKILL.md` → `Merge Strategy`.
+   - **Single-parent across Waves:** When a downstream task depends on exactly one task from a prior Wave, name that task's tip directly as the base — no stage commit needed.
    - **Baseline fix (`task-00`) interaction:** When Implement's baseline tests fail and the user chooses Auto-fix (see `implement/SKILL.md` → "Baseline Tests"), `task-00` is injected as a phase-level predecessor. `task-00`'s base is the feature branch tip; every other task in the phase then takes `task-00`'s tip as its base (or as one of its parents in the multi-parent case). This injection happens at runtime — Parallelize does not anticipate it. Implement persists the injection by appending a `task-00` row to the Branch Map *and* writing a `## Runtime Adjustments` section to `parallelization.md` that lists every task whose effective base changed; the original Branch Map rows are not rewritten. Readers (human or agent) reconstruct effective bases by reading the Branch Map and overlaying `## Runtime Adjustments`.
    - **Re-fork semantics (re-run, fix-round, replan):** Once a task branch exists, it is canonical for that task. Implementer-fix-round dispatches reuse the existing branch and add commits. Re-forking only happens at fresh worktree creation: a new task in a new phase, a replan-introduced task, or an explicit user-requested reset. Never re-fork an existing task branch silently — downstream task branches that descend from it would be invalidated.
    - **Symbolic base vocabulary** (the only values allowed in the `Base` column):
      - `feature branch tip` — the tip of `qrspi/{slug}/main` at runtime
-     - `task-NN tip` — the tip of `qrspi/{slug}/task-NN` (for single-parent forks across groups, or sequential-chain predecessors)
-     - `stage-after-G{N}` — the stage commit Implement creates by merging Group N's leaves before forking the next group
+     - `task-NN tip` — the tip of `qrspi/{slug}/task-NN` (for single-parent forks across Waves, or sequential-chain predecessors)
+     - `stage-after-W{N}` — the stage commit Implement creates by merging Wave N's leaves before forking the next Wave
      - `task-00 tip` — the tip of the baseline-fix branch (only after Implement injects `task-00`)
-   - Branch naming (informational — Implement creates the branches): `qrspi/{slug}/task-NN`; stage branches `qrspi/{slug}/stage-after-G{N}`.
+   - Branch naming (informational — Implement creates the branches): `qrspi/{slug}/task-NN`; stage branches `qrspi/{slug}/stage-after-W{N}`.
 3. **Merge target:** Integrate merges all task branches into the feature branch **once at phase end**, not per-task. The feature branch only changes via Integrate. (See `integrate/SKILL.md` → "Merge Strategy" for how Integrate handles dependency-ordered merges and stage-commit dedup.)
 4. **PR target:** Test creates the PR from the feature branch to the base branch.
 
-> **Why the base-naming rule matters.** A common misread is *"all task branches always fork from the feature branch."* That works for parallel-only phases but breaks sequential dependencies — task-N's worktree would start without task-(N-1)'s code. The correct rule is base-from-feature-tip for Group 1 parallel members, base-from-previous-tip for sequential-chain members, base-from-stage-commit when a group has multi-parent dependencies, base-from-task-NN-tip when a downstream task has a single prior-group parent, and base-from-task-00-tip after a baseline fix is injected. Parallelize records the symbolic name; Implement resolves it to a concrete commit and creates stage commits as needed.
+> **Why the base-naming rule matters.** A common misread is *"all task branches always fork from the feature branch."* That works for parallel-only phases but breaks sequential dependencies — task-N's worktree would start without task-(N-1)'s code. The correct rule is base-from-feature-tip for Wave 1 parallel members, base-from-previous-tip for sequential-chain members, base-from-stage-commit when a Wave has multi-parent dependencies, base-from-task-NN-tip when a downstream task has a single prior-Wave parent, and base-from-task-00-tip after a baseline fix is injected. Parallelize records the symbolic name; Implement resolves it to a concrete commit and creates stage commits as needed.
 
 ## Process Steps
 
-**Compaction checkpoint: pre-fanout.** Steps 2–8 below read every current-phase task spec, synthesize the dependency graph + parallel groups + Branch Map, and render the Mermaid diagram into `parallelization.md`. The synthesis subagent (or inline synthesis) reads many tasks and produces large output. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+**Compaction checkpoint: pre-fanout.** Steps 2–8 below read every current-phase task spec, synthesize the dependency graph + Waves + Branch Map, and render the Mermaid diagram into `parallelization.md`. The synthesis subagent (or inline synthesis) reads many tasks and produces large output. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
 Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — parallelize", description: "pre-fanout: dependency-graph synthesis reads every current-phase task spec; large output. User decides whether to /compact." })`.
 
 1. Identify current phase's tasks from `plan.md` phase definitions
 2. For each task, list dependencies and files-touched (read each `tasks/task-NN.md` or `fixes/{type}-round-NN/*.md`)
-3. Group tasks into parallel groups (independent + file-disjoint share a group; otherwise separate groups)
+3. Group tasks into Waves (independent + file-disjoint share a Wave; otherwise separate Waves)
 4. Determine execution mode (sequential / parallel / hybrid) — pick the simplest mode the dependency graph supports
-5. For each group, decide its symbolic base per the Branch Model. For multi-parent dependencies, name a stage commit (`stage-after-G{N}`); for single prior-group parents, name that task's tip; for sequential chains, name the previous task's tip.
-6. Compute dispatch waves: Wave 1 contains all groups that depend only on the feature branch tip; subsequent waves contain groups whose dependencies are satisfied by completed prior waves. Multiple groups can share a wave when they have no inter-group dependency or file overlap.
+5. For each Wave, decide its symbolic base per the Branch Model. For multi-parent dependencies, name a stage commit (`stage-after-W{N}`); for single prior-Wave parents, name that task's tip; for sequential chains, name the previous task's tip.
+6. Build the Wave dependency graph: Wave 1 contains all Waves whose only dependency is the feature branch tip; downstream Waves declare their prerequisite Waves. Implement's runtime rule dispatches every Wave whose dependencies are satisfied each tick — concurrency derives from the dependency graph at runtime, not from Wave numbering.
 7. Write `parallelization.md` with the required sections (Dependency Analysis table, Branch Map table, Stage Commits table if any, Execution Order narrative)
 8. Render the Mermaid dependency graph into the same file (do not paste the diagram into the terminal — the user opens the file to view it)
 9. Present the plan to the user for approval
@@ -108,10 +108,10 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — parallelize", d
 `parallelization.md` — written with `status: draft` in YAML frontmatter. Required sections:
 
 - **Execution Mode** — sequential / parallel / hybrid with one-sentence rationale
-- **Dependency Analysis** — table with columns: Task / Dependencies / Files / Parallel Group
-- **Branch Map** — table with columns: Task / Branch / Base. The `Base` column uses *only* the symbolic vocabulary defined in the Branch Model (`feature branch tip`, `task-NN tip`, `stage-after-G{N}`, `task-00 tip`). Do not embed concrete commit hashes — Implement resolves these at runtime.
-- **Stage Commits** — table (only present when any group has multi-parent dependencies) with columns: Stage branch / Composition / Created before
-- **Execution Order** — narrative describing the dispatch waves (which groups fire concurrently, what gates the next wave)
+- **Dependency Analysis** — table with columns: Task / Dependencies / Files / Wave
+- **Branch Map** — table with columns: Task / Branch / Base. The `Base` column uses *only* the symbolic vocabulary defined in the Branch Model (`feature branch tip`, `task-NN tip`, `stage-after-W{N}`, `task-00 tip`). Do not embed concrete commit hashes — Implement resolves these at runtime.
+- **Stage Commits** — table (only present when any Wave has multi-parent dependencies) with columns: Stage branch / Composition / Created before
+- **Execution Order** — narrative describing the Wave dependency graph (which Waves can fire concurrently when their dependencies are satisfied, what gates downstream Waves)
 - **Mermaid dependency graph** — written inline in the file
 
 `review_depth` and `review_mode` are runtime concerns and live in `config.md` (written by Implement at phase start), not in `parallelization.md`.
@@ -128,10 +128,10 @@ Execution mode: Hybrid
 Branch map (symbolic — Implement resolves at runtime):
   task-01  →  qrspi/{slug}/task-01   base: feature branch tip
   task-02  →  qrspi/{slug}/task-02   base: feature branch tip
-  task-03  →  qrspi/{slug}/task-03   base: stage-after-G1
+  task-03  →  qrspi/{slug}/task-03   base: stage-after-W1
 
-Parallel Group 1: task-01, task-02 (no file overlap)
-Group 2: task-03 (depends on task-01 + task-02 → stage-after-G1)
+Wave 1: task-01, task-02 (no file overlap; base = feature branch tip)
+Wave 2: task-03 (depends on task-01 + task-02 → stage-after-W1)
 ```
 
 On approval, write `status: approved` in frontmatter and commit (artifact + review file).
@@ -246,8 +246,8 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — parallelize", 
 Granular TodoWrite items covering the user-visible Process Steps. Numbering below is local TodoWrite enumeration; each item names the Process Step it covers.
 
 1. Read tasks and analyze dependencies (covers Process Steps 1–2)
-2. Group into parallel groups, decide execution mode (covers Process Steps 3–4)
-3. Assign symbolic bases and dispatch waves (covers Process Steps 5–6)
+2. Group into Waves, decide execution mode (covers Process Steps 3–4)
+3. Assign symbolic bases and Wave dependency graph (covers Process Steps 5–6)
 4. Write parallelization.md (covers Process Steps 7–8)
 5. Run review round (Claude + Codex if enabled)
 6. Present parallelization plan (covers Process Step 9)
@@ -256,11 +256,11 @@ Mark each task in_progress when starting, completed when done.
 
 ## Red Flags — STOP
 
-- A parallel group has tasks that touch overlapping files
+- A Wave has tasks that touch overlapping files
 - A `Base` column entry is something other than the four symbolic values defined in the Branch Model (no commit hashes, no improvised names)
 - The Branch Map names a stage commit but no Stage Commits table exists
 - A task is placed in Wave N but one of its dependencies is in Wave N or later
-- `parallelization.md` is marked approved while a group has unresolved file overlap
+- `parallelization.md` is marked approved while a Wave has unresolved file overlap
 - Embedding concrete commit hashes — that is Implement's job at runtime
 - Including baseline-fix `task-00` in the initial Branch Map (it does not yet exist; Implement decides whether to inject it)
 - Asking review depth or review mode here — those are runtime questions Implement owns
@@ -286,22 +286,22 @@ status: draft
 
 ## Execution Mode: Hybrid
 
-Rationale: Tasks 1 and 2 are independent (file-disjoint) so they share Group 1. Task 3 depends on both → stage-after-G1. Task 4 depends only on Task 1 → forks directly from task-01.
+Rationale: Tasks 1 and 2 are independent (file-disjoint) so they share Wave 1. Task 3 depends on both → stage-after-W1. Task 4 depends only on Task 1 → forks directly from task-01.
 
 ## Dependency Analysis
 
-| Task | Dependencies | Files | Parallel Group |
-|------|-------------|-------|----------------|
-| Task 1: Auth types + DB schema | none | `src/types/auth.ts`, `prisma/schema.prisma` | Group 1 (base: feature branch tip) |
-| Task 2: API middleware | none | `src/middleware/auth.ts`, `src/middleware/rate-limit.ts` | Group 1 (base: feature branch tip) |
-| Task 3: Auth endpoints | Task 1, Task 2 | `src/routes/auth.ts`, `src/routes/auth.test.ts` | Group 2 (base: stage-after-G1, multi-parent) |
-| Task 4: Profile endpoints | Task 1 | `src/routes/profile.ts`, `src/routes/profile.test.ts` | Group 3 (base: task-01 tip, single-parent) |
+| Task | Dependencies | Files | Wave |
+|------|-------------|-------|------|
+| Task 1: Auth types + DB schema | none | `src/types/auth.ts`, `prisma/schema.prisma` | Wave 1 (base: feature branch tip) |
+| Task 2: API middleware | none | `src/middleware/auth.ts`, `src/middleware/rate-limit.ts` | Wave 1 (base: feature branch tip) |
+| Task 3: Auth endpoints | Task 1, Task 2 | `src/routes/auth.ts`, `src/routes/auth.test.ts` | Wave 2 (base: stage-after-W1, multi-parent) |
+| Task 4: Profile endpoints | Task 1 | `src/routes/profile.ts`, `src/routes/profile.test.ts` | Wave 3 (base: task-01 tip, single-parent) |
 
 ## Execution Order
 
-**Wave 1:** Tasks 1 and 2 dispatch concurrently inside Group 1 (shared base = feature branch tip; no file overlap). Once both finish, Implement creates the stage commit `stage-after-G1` (merge of task-01 + task-02 tips).
+**Wave 1:** Tasks 1 and 2 dispatch concurrently (shared base = feature branch tip; no file overlap). Once both finish, Implement creates the stage commit `stage-after-W1` (merge of task-01 + task-02 tips).
 
-**Wave 2:** Group 2 (Task 3) forks from `stage-after-G1`. Group 3 (Task 4) forks directly from task-01's tip (single-parent shortcut — no stage commit needed). Both groups dispatch in the same wave because they have no inter-group file overlap and no logical dependency on each other.
+**Wave 2 and Wave 3 (concurrent):** Wave 2 (Task 3) forks from `stage-after-W1`. Wave 3 (Task 4) forks directly from task-01's tip (single-parent shortcut — no stage commit needed). Both Waves dispatch concurrently when their dependencies are satisfied (each has no file overlap with the other and no logical dependency on the other), per Implement's runtime rule.
 
 ## Branch Map
 
@@ -309,14 +309,14 @@ Rationale: Tasks 1 and 2 are independent (file-disjoint) so they share Group 1. 
 |------|--------|------|
 | task-01 | qrspi/user-auth/task-01 | feature branch tip |
 | task-02 | qrspi/user-auth/task-02 | feature branch tip |
-| task-03 | qrspi/user-auth/task-03 | stage-after-G1 |
+| task-03 | qrspi/user-auth/task-03 | stage-after-W1 |
 | task-04 | qrspi/user-auth/task-04 | task-01 tip |
 
 ## Stage Commits
 
 | Stage branch | Composition | Created before |
 |--------------|-------------|----------------|
-| qrspi/user-auth/stage-after-G1 | merge(task-01, task-02) | task-03 worktree creation |
+| qrspi/user-auth/stage-after-W1 | merge(task-01, task-02) | task-03 worktree creation |
 ```
 
 ## Worked Example — Bad
@@ -345,8 +345,8 @@ All tasks run in parallel.
 
 The two override-critical rules for Parallelize, restated at end:
 
-1. **NO TASK DISPATCH WITHOUT AN APPROVED PARALLELIZATION PLAN.** Parallelize produces and gates the plan; Implement consumes and enforces it. Approving a plan with unresolved file overlap inside any parallel group breaks the dispatch contract.
+1. **NO TASK DISPATCH WITHOUT AN APPROVED PARALLELIZATION PLAN.** Parallelize produces and gates the plan; Implement consumes and enforces it. Approving a plan with unresolved file overlap inside any Wave breaks the dispatch contract.
 
-2. **The `Base` column uses ONLY symbolic vocabulary** — `feature branch tip`, `task-NN tip`, `stage-after-G{N}`, `task-00 tip`. No concrete commit hashes, no improvised names. Implement resolves at runtime; Parallelize records only the symbolic contract.
+2. **The `Base` column uses ONLY symbolic vocabulary** — `feature branch tip`, `task-NN tip`, `stage-after-W{N}`, `task-00 tip`. No concrete commit hashes, no improvised names. Implement resolves at runtime; Parallelize records only the symbolic contract.
 
 Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

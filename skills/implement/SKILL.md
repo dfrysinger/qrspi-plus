@@ -133,10 +133,10 @@ In full pipeline mode, Implement consumes the symbolic Branch Map from `parallel
 |---------------|--------------------|
 | `feature branch tip` | The current tip of `qrspi/{slug}/main` |
 | `task-NN tip` | The current tip of `qrspi/{slug}/task-NN` (must already exist before forking — enforce wave ordering) |
-| `stage-after-G{N}` | A new branch `qrspi/{slug}/stage-after-G{N}` created by merging the tips of every task in Group N (composition listed in `parallelization.md` § Stage Commits). Create on demand, before forking any task whose `Base` names it. |
+| `stage-after-W{N}` | A new branch `qrspi/{slug}/stage-after-W{N}` created by merging the tips of every task in Wave N (composition listed in `parallelization.md` § Stage Commits). Create on demand, before forking any task whose `Base` names it. |
 | `task-00 tip` | The current tip of `qrspi/{slug}/task-00` (only valid after baseline-fix injection — see "Baseline Tests" below) |
 
-**Stage commit creation order:** walk the Branch Map in dispatch-wave order. Before starting a wave, verify every `stage-after-G{N}` referenced by any task in that wave exists; if not, create it from the named composition. Stage branches are scratch infrastructure — Integrate deletes them after merging the leaves (see `integrate/SKILL.md` § Merge Strategy).
+**Stage commit creation order:** walk the Branch Map in Wave-dispatch order. Before starting a Wave, verify every `stage-after-W{N}` referenced by any task in that Wave exists; if not, create it from the named composition. Stage branches are scratch infrastructure — Integrate deletes them after merging the leaves (see `integrate/SKILL.md` § Merge Strategy).
 
 **Re-fork prohibition.** Once a task branch exists, it is canonical. Fix-round dispatches reuse the existing branch and add commits. Do not silently re-fork.
 
@@ -159,7 +159,7 @@ Branch on mode (derived from `config.md.route` per § Overview) at the start. Bo
 1. **Read inputs.** Full pipeline: read `parallelization.md` (Branch Map + Stage Commits + Execution Order narrative; if a `## Runtime Adjustments` section exists from a prior session, load its overrides into the in-memory base-resolution table). Quick fix: read every `tasks/*.md` OR every `fixes/{type}-round-NN/*.md` per the dispatch shape — see § Batch Gate Definition for the two quick-fix main-dispatch shapes plus the isolated baseline-fix dispatch event (`references/fix-task-routing.md` for fix-task dispatch specifics). Each dispatch reads one set, not both.
 2. **Ask phase config** (`review_depth`, `review_mode`), write to `config.md` (skip on fix-task dispatches — reuse existing values).
 3. **Create feature branch** `qrspi/{slug}/main` from the current branch if it does not exist (first phase only in full pipeline; first batch only in quick fix). Naming it `/main` (not bare `qrspi/{slug}`) is required so task branches `qrspi/{slug}/task-NN` can coexist as namespace siblings — see Branch Model in `parallelize/SKILL.md` § F-14 note.
-4. **Run baseline tests** in a single throwaway worktree at `.worktrees/{slug}/baseline/` forked from the feature branch tip. **Resume precondition:** if `.worktrees/{slug}/baseline/` already exists when this step starts, delete it first — the prior baseline result is not trusted across sessions because the feature branch tip may have advanced. (One check is sufficient in full pipeline: every Group 1 task forks from this same commit, so per-task baselines would be identical; downstream-group bases derive from task work that hasn't happened yet and is validated by per-task reviewers. In quick fix the same logic holds trivially — every task forks from the feature branch tip.) See "Baseline Tests" below for the 3 options when failures occur. **Invariant:** if the pipeline continues past this step, the baseline worktree must be gone before any per-task worktree exists.
+4. **Run baseline tests** in a single throwaway worktree at `.worktrees/{slug}/baseline/` forked from the feature branch tip. **Resume precondition:** if `.worktrees/{slug}/baseline/` already exists when this step starts, delete it first — the prior baseline result is not trusted across sessions because the feature branch tip may have advanced. (One check is sufficient in full pipeline: every Wave 1 task forks from this same commit, so per-task baselines would be identical; downstream-Wave bases derive from task work that hasn't happened yet and is validated by per-task reviewers. In quick fix the same logic holds trivially — every task forks from the feature branch tip.) See "Baseline Tests" below for the 3 options when failures occur. **Invariant:** if the pipeline continues past this step, the baseline worktree must be gone before any per-task worktree exists.
 5. **If baseline failed and the user chose Auto-fix:**
     - Delete `.worktrees/{slug}/baseline/` (per Step 4's invariant).
     - **Full pipeline:** dispatch `task-00` first, in isolation. Write the `task-00` Branch Map row and the `## Runtime Adjustments` section to `parallelization.md` (see "Baseline Tests" Auto-fix path). Create only the `task-00` worktree at `.worktrees/{slug}/task-00/`, forked from feature branch tip. Run the per-task TDD + review flow (see § Per-Task Execution) for `task-00`, wait for terminal state. Once `task-00` is in terminal state, proceed to Step 6 with the in-memory resolution table now overlaying Runtime Adjustments (so dependents resolve to `task-00 tip`).
@@ -167,13 +167,13 @@ Branch on mode (derived from `config.md.route` per § Overview) at the start. Bo
 6. **Dispatch tasks.**
     - **Full pipeline — for each wave** in the Execution Order, in order:
         - Resolve every task's effective base: read the Branch Map's `Base` column, then apply `## Runtime Adjustments` overrides on top.
-        - Create any required `stage-after-G{N}` branch (merging the named Group's leaves).
+        - Create any required `stage-after-W{N}` branch (merging the named Wave's leaves).
         - Create the per-task worktree at `.worktrees/{slug}/task-NN/`. Verify `.worktrees/` is in `.gitignore`.
 
           **Resume precondition.** Before attempting `git worktree add`, if any leftover state exists for `task-NN` (worktree dir or branch already present), see `references/resume-preconditions.md` for the four-case classification table and the inspect-and-decide procedure. The leftover-state handling differs from the baseline worktree's silent-delete rule because the baseline worktree contains no user work, while task branches and worktrees can.
         - Fire the wave's per-task flows concurrently — for each task, dispatch the implementer subagent (multiple Agent tool calls in a single message; each with the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt) per § Per-Task Execution.
         - Wait for every task in the wave to reach a terminal status (per the per-task fix loop).
-        - If the next wave needs a `stage-after-G{N}` stage commit composed from this wave's leaves, create it now.
+        - If the next Wave needs a `stage-after-W{N}` stage commit composed from this Wave's leaves, create it now.
     - **Quick fix:** for each task in the batch (no waves):
         - Create the per-task worktree at `.worktrees/{slug}/task-NN/`, forked from feature branch tip. Verify `.worktrees/` is in `.gitignore`. Apply the same Resume precondition behavior as full pipeline (see `references/resume-preconditions.md`).
         - Dispatch the implementer subagent per § Per-Task Execution (multiple in parallel if the batch has multiple fix tasks; they are file-disjoint by quick-fix construction).
@@ -190,7 +190,7 @@ If tests fail, present failure summary with 3 options:
 - **(a) Auto-fix (recommended):** Inject baseline fix task `task-00` with all others depending on it. Implement writes `task-00.md` with `status: approved` in frontmatter (this is a runtime-generated task, not a Plan output, so the approval is asserted by Implement at write time so the Iron Law gate passes on dispatch). `task-00` uses `task: 0` in frontmatter and inherits the run's mode in its `pipeline` field (`pipeline: full` in full-pipeline runs, `pipeline: quick` in quick-fix runs) so per-task input gating matches the artifacts that actually exist.
     - **Full pipeline:** Update `parallelization.md`:
       - Append one row to the Branch Map: `task-00 → qrspi/{slug}/task-00 (base: feature branch tip)` (without rewriting existing rows — they remain the approved record of the original plan).
-      - Append a new `## Runtime Adjustments` section listing every task whose effective base changed because of the injection: `task-NN: new base = task-00 tip` (or `task-NN: new base = stage-after-G{N} re-merged on top of task-00 tip`, when the original base was a stage commit). This section is informational and does not change `status: approved` — it is the persistent record of Implement's runtime base-resolution decisions, so a fresh agent reading `parallelization.md` after a session restart can rebuild the resolution table without guessing.
+      - Append a new `## Runtime Adjustments` section listing every task whose effective base changed because of the injection: `task-NN: new base = task-00 tip` (or `task-NN: new base = stage-after-W{N} re-merged on top of task-00 tip`, when the original base was a stage commit). This section is informational and does not change `status: approved` — it is the persistent record of Implement's runtime base-resolution decisions, so a fresh agent reading `parallelization.md` after a session restart can rebuild the resolution table without guessing.
       - On every subsequent dispatch in this run, Implement resolves bases by reading the Branch Map first, then applying `## Runtime Adjustments` overrides on top.
       Dispatched through the per-task flow like any other task.
 
@@ -227,7 +227,7 @@ In full pipeline mode, dispatch tasks in the wave order Parallelize specified. F
 
 If a wave grows past ~3 concurrent tasks, prefer splitting it into smaller waves at Parallelize time rather than scaling main-chat tracking — the flat dispatch model trades a layer of subagent-level context isolation for parallelism, and that trade-off is bounded by what main chat can keep distinct without cross-contaminating tasks.
 5. Mark each wave's tasks `completed` in TodoWrite.
-6. If the next wave depends on a stage commit (`stage-after-G{N}`), create it now from the just-completed group's tips.
+6. If the next Wave depends on a stage commit (`stage-after-W{N}`), create it now from the just-completed Wave's tips.
 7. Move to the next wave.
 
 In quick fix mode, there are no waves — Step 6 of Process Steps dispatches the entire batch concurrently (or sequentially if the user prefers; tasks are file-disjoint by quick-fix construction so concurrency is safe).
@@ -682,7 +682,7 @@ Granular TodoWrite items covering the user-visible Process Steps. Numbering belo
 2. Create feature branch / verify exists (covers Process Step 3).
 3. Run baseline tests in throwaway worktree (covers Process Step 4).
 4. [conditional — only if Auto-fix chosen on baseline failure] Dispatch task-00 in isolation (covers Process Step 5).
-5. Dispatch tasks (covers Process Step 6). In full pipeline mode, create one TodoWrite task per wave (e.g., "Wave 1 / G1: T01, T02 — resolve bases, create worktrees, dispatch implementer + reviewer flow concurrently"). In quick fix mode, create one TodoWrite task per per-task dispatch (typically one task; possibly several if the batch includes fix tasks). Mark `in_progress` at dispatch; mark `completed` when every task in that wave (full) or that dispatch (quick) reaches a terminal state.
+5. Dispatch tasks (covers Process Step 6). In full pipeline mode, create one TodoWrite task per Wave (e.g., "Wave 1: T01, T02 — resolve bases, create worktrees, dispatch implementer + reviewer flow concurrently"). In quick fix mode, create one TodoWrite task per per-task dispatch (typically one task; possibly several if the batch includes fix tasks). Mark `in_progress` at dispatch; mark `completed` when every task in that Wave (full) or that dispatch (quick) reaches a terminal state.
 6. Present batch gate (covers Process Step 7).
 7. Invoke next route step (covers Process Step 8).
 
@@ -696,9 +696,9 @@ Given the Worked Example in `parallelize/SKILL.md`:
 
 **Wave 1.** Implement reads the Branch Map. Tasks 1 and 2 both have `Base = feature branch tip` and are file-disjoint. Resolve `feature branch tip` to the current tip of `qrspi/user-auth/main`, create worktrees `.worktrees/user-auth/task-01/` and `.worktrees/user-auth/task-02/` from that commit, dispatch both implementer subagents concurrently (Agent tool; each with its task's worktree path named in the prompt). When task-01's implementer returns DONE, main chat dispatches task-01's reviewer set in parallel; same for task-02. Wait for both per-task flows to reach a terminal status.
 
-**Stage commit creation.** Both Wave 1 tasks now in terminal state. Implement sees Wave 2 needs `stage-after-G1`. Create branch `qrspi/user-auth/stage-after-G1` by merging task-01 and task-02 tips. (Composition is documented in `parallelization.md` § Stage Commits.)
+**Stage commit creation.** Both Wave 1 tasks now in terminal state. Implement sees Wave 2 needs `stage-after-W1`. Create branch `qrspi/user-auth/stage-after-W1` by merging task-01 and task-02 tips. (Composition is documented in `parallelization.md` § Stage Commits.)
 
-**Wave 2.** Task 3's `Base = stage-after-G1` resolves to the freshly-created stage commit. Task 4's `Base = task-01 tip` resolves to the current tip of `qrspi/user-auth/task-01`. Create both worktrees, dispatch both implementer subagents concurrently, run their per-task flows, wait for both terminal statuses.
+**Wave 2 and Wave 3 (concurrent).** Task 3's `Base = stage-after-W1` resolves to the freshly-created stage commit. Task 4's `Base = task-01 tip` resolves to the current tip of `qrspi/user-auth/task-01`. Wave 2 and Wave 3 dispatch concurrently because their dependencies are satisfied (no inter-Wave file overlap, no logical dependency on each other) — create both worktrees, dispatch both implementer subagents concurrently, run their per-task flows, wait for both terminal statuses.
 
 **Batch gate.** All four tasks are now in terminal state. Present the batch gate; on "continue," invoke the next route step (Integrate).
 
@@ -733,7 +733,7 @@ Quick-fix run with one task at `tasks/task-01.md`:
 | "Baseline tests failed but they're probably flaky" | Present to user. They decide, not you. |
 | "Single task, skip the batch gate" | Single-task batches still get the batch gate (trivial but consistent — the gate is the only point where Implement hands control back). |
 | "Quick fix has only one task — skip baseline" | Baseline failures masquerade as task failures; baseline runs in both modes. |
-| "I can resolve `stage-after-G1` to a hash and write it back into `parallelization.md`" | The symbolic name is the contract; appending a hash drifts the artifact away from its approved form. Resolve in-memory. |
+| "I can resolve `stage-after-W1` to a hash and write it back into `parallelization.md`" | The symbolic name is the contract; appending a hash drifts the artifact away from its approved form. Resolve in-memory. |
 | "Just integrate this task now while the others run — it'll save time" | No. Integrate runs once per phase, after the batch gate releases. Per-task integration breaks the cross-task review's premise. |
 | "The implementer's self-review was clean — skip the reviewer dispatch" | No. Self-review catches obvious issues before review; it does not substitute for the formal reviewer dispatch. Role separation is the design intent. |
 

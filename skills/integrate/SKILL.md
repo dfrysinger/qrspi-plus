@@ -73,15 +73,15 @@ This applies regardless of how simple the fix appears.
 `parallelization.md` lists every task branch (with symbolic bases per `parallelize/SKILL.md`'s Branch Model). Implement creates any stage commits between groups at runtime; Integrate merges in this order:
 
 1. **Sequential chains: merge the leaf only.** When tasks form a sequential chain (task-N forks from task-(N-1)'s tip), task-N's branch already contains every ancestor's commits. Merging the leaf brings the entire chain in via fast-forward or a single merge commit; merging each member individually is redundant and produces noisy history.
-2. **Parallel groups: merge each leaf.** When a parallel group has independent leaves (no downstream task depends on more than one of them), merge each leaf into the feature branch in dependency order. Git's merge-base resolution handles any shared ancestors automatically.
+2. **Parallel Waves: merge each leaf.** When a Wave has independent leaves (no downstream task depends on more than one of them), merge each leaf into the feature branch in dependency order. Git's merge-base resolution handles any shared ancestors automatically.
 3. **Hybrid with stage commits: merge leaves only; stage commits flow in transitively.** Each leaf descends from the stage commit it forked from, so merging the leaf brings the stage commit's ancestry along. **Do not merge stage branches directly** — they are scratch infrastructure Implement created for downstream forks; merging them separately produces duplicate history with the leaves and increases the chance of spurious conflicts.
-4. **Conflict-free invariant.** Because parallel-group members are file-disjoint by construction (Parallelize's analysis enforces no file overlap, and Implement re-verifies at runtime) and sequential dependencies are linear, the merge sequence above should be conflict-free. If it isn't, a parallelization-plan invariant was violated upstream — STOP and present the conflict to the user with file-level details rather than auto-resolving.
+4. **Conflict-free invariant.** Because Wave members are file-disjoint by construction (Parallelize's analysis enforces no file overlap, and Implement re-verifies at runtime) and sequential dependencies are linear, the merge sequence above should be conflict-free. If it isn't, a parallelization-plan invariant was violated upstream — STOP and present the conflict to the user with file-level details rather than auto-resolving.
 
-After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/stage-after-G*`) since they have no further role; the feature branch tip now contains everything.
+After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/stage-after-W*`) since they have no further role; the feature branch tip now contains everything.
 
 ## Process Steps
 
-1. **Merge task branches** into the feature branch using `parallelization.md` branch map and the Merge Strategy above (leaf-only for chains; each leaf for parallel groups; never merge stage branches directly). **STOP if merge conflicts** — present conflicts to user with file-level details. Do not attempt auto-resolution.
+1. **Merge task branches** into the feature branch using `parallelization.md` branch map and the Merge Strategy above (leaf-only for chains; each leaf for parallel Waves; never merge stage branches directly). **STOP if merge conflicts** — present conflicts to user with file-level details. Do not attempt auto-resolution.
 2. **Integration reviews** — follows **Review Pattern 2 (Outer Loop)**.
 
    **Compaction checkpoint: pre-fanout.** Reviewer fan-out (integration + security, plus Codex parallels when enabled) reads merged code + `design.md` + `structure.md` + companion task-review findings; saturated context produces shallow findings on the cross-task surface. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
