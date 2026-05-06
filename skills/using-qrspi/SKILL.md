@@ -186,7 +186,8 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   │   ├── security-claude.finding-F01.md
     │   │   ├── integration-codex.finding-F01.md
     │   │   ├── security-codex.clean.md
-    │   │   └── implement-gate-claude.finding-F01.md   (when "Re-run all reviews" at Implement batch gate)
+    │   │   ├── implement-gate-claude.finding-F01.md   (when "Re-run all reviews" at Implement batch gate)
+    │   │   └── implement-gate-codex.finding-F01.md    (same condition; only when codex_reviews: true)
     │   └── round-NN-fixes.md
     ├── ci/
     │   └── round-NN-review.md
