@@ -392,8 +392,8 @@ setup() {
 
 @test "[140] per-task Implement narrow decision selects <ref>=HEAD~1" {
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
-  grep -qE '<ref>=HEAD~1|narrow.*HEAD~1|HEAD~1.*narrow' "$impl" \
-    || { echo "implement/SKILL.md narrow decision does not select <ref>=HEAD~1"; return 1; }
+  grep -qF '<ref>=HEAD~1' "$impl" \
+    || { echo "implement/SKILL.md narrow decision does not select literal <ref>=HEAD~1"; return 1; }
 }
 
 @test "[140] per-task Implement anchor file path is reviews/tasks/task-NN/round-NN-commit.txt" {
@@ -416,9 +416,10 @@ setup() {
 @test "[140] per-task Implement broaden fallback fires on anchor mismatch" {
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
   # When HEAD~1 mismatches the anchor, the narrow decision falls through to
-  # broaden with a one-line diagnostic.
-  grep -qiE 'broaden.*diagnostic|broaden.*mismatch|fall through to.*broaden|HEAD~1 is not' "$impl" \
-    || { echo "implement/SKILL.md missing anchor-mismatch broaden fallback"; return 1; }
+  # broaden with a one-line diagnostic. Pin to the literal phrase emitted in
+  # both SKILL.md files so the assertion catches phrasing drift.
+  grep -qF 'is not the prior per-round commit' "$impl" \
+    || { echo "implement/SKILL.md missing anchor-mismatch broaden fallback diagnostic"; return 1; }
 }
 
 @test "[140] per-task Implement backward-loop flag path is reviews/tasks/task-NN/round-NN-backward-loop.flag" {
@@ -452,6 +453,38 @@ setup() {
     || { echo "implement/SKILL.md missing comma-separated \$SCOPE_HINT format"; return 1; }
 }
 
+@test "[140] per-task Implement convergence subsection asserts no-silent-broaden / fail-loud" {
+  # Negative-case assertion: the convergence subsection must contain at least
+  # one explicit no-silent-broaden / fail-loud signal so a future edit cannot
+  # silently regress to "broaden anyway, swallow the error".
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  local section
+  section=$(awk '
+    /^### Per-Task Convergence Narrowing/ { in_section=1; print; next }
+    in_section && /^### / { in_section=0 }
+    in_section { print }
+  ' "$impl")
+  echo "$section" | grep -qE 'do NOT silently broaden|fail-loud|Fail-loud' \
+    || { echo "implement/SKILL.md per-task convergence subsection missing fail-loud / no-silent-broaden assertion"; return 1; }
+}
+
+@test "[140] per-task Implement convergence subsection preserves I10 distinguishability with per-task paths" {
+  # I10: when broadening due to a missing scope-set, the diagnostic must
+  # distinguish "round NN-1 missing" from "round NN missing" using the
+  # per-task literal paths (NOT the artifact-level using-qrspi paths).
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  local section
+  section=$(awk '
+    /^### Per-Task Convergence Narrowing/ { in_section=1; print; next }
+    in_section && /^### / { in_section=0 }
+    in_section { print }
+  ' "$impl")
+  echo "$section" | grep -qE 'I10|distinguishability' \
+    || { echo "implement/SKILL.md per-task convergence subsection missing I10 / distinguishability reference"; return 1; }
+  echo "$section" | grep -qE 'reviews/tasks/task-NN' \
+    || { echo "implement/SKILL.md per-task convergence subsection missing per-task reviews/tasks/task-NN paths in I10 context"; return 1; }
+}
+
 # -----------------------------------------------------------------------------
 # 20. #140 — Integrate convergence narrowing
 # -----------------------------------------------------------------------------
@@ -465,8 +498,8 @@ setup() {
 
 @test "[140] Integrate narrow decision selects <ref>=HEAD~1" {
   local intg="$REPO_ROOT/skills/integrate/SKILL.md"
-  grep -qE '<ref>=HEAD~1|narrow.*HEAD~1|HEAD~1.*narrow' "$intg" \
-    || { echo "integrate/SKILL.md narrow decision does not select <ref>=HEAD~1"; return 1; }
+  grep -qF '<ref>=HEAD~1' "$intg" \
+    || { echo "integrate/SKILL.md narrow decision does not select literal <ref>=HEAD~1"; return 1; }
 }
 
 @test "[140] Integrate anchor file path is reviews/integration/round-NN-commit.txt" {
@@ -485,8 +518,8 @@ setup() {
 
 @test "[140] Integrate broaden fallback fires on anchor mismatch" {
   local intg="$REPO_ROOT/skills/integrate/SKILL.md"
-  grep -qiE 'broaden.*diagnostic|broaden.*mismatch|fall through to.*broaden|HEAD~1 is not' "$intg" \
-    || { echo "integrate/SKILL.md missing anchor-mismatch broaden fallback"; return 1; }
+  grep -qF 'is not the prior per-round commit' "$intg" \
+    || { echo "integrate/SKILL.md missing anchor-mismatch broaden fallback diagnostic"; return 1; }
 }
 
 @test "[140] Integrate backward-loop flag path is reviews/integration/round-NN-backward-loop.flag" {
@@ -513,6 +546,44 @@ setup() {
     || { echo "integrate/SKILL.md missing \$SCOPE_HINT shell variable"; return 1; }
   grep -qiE 'comma-separated|comma.separated|joined with.*,' "$intg" \
     || { echo "integrate/SKILL.md missing comma-separated \$SCOPE_HINT format"; return 1; }
+}
+
+@test "[140] Integrate convergence subsection asserts no-silent-broaden / fail-loud" {
+  # Negative-case assertion: the convergence subsection must contain at least
+  # one explicit no-silent-broaden / fail-loud signal so a future edit cannot
+  # silently regress to "broaden anyway, swallow the error". Integrate's
+  # convergence subsection is indented (nested under a numbered list); the
+  # awk pattern strips leading whitespace before matching the heading.
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  local section
+  section=$(awk '
+    /^[[:space:]]*### Integrate Convergence Narrowing/ { in_section=1; print; next }
+    in_section && /^[[:space:]]*### / { in_section=0 }
+    in_section && /^[[:space:]]*## / { in_section=0 }
+    in_section && /^[0-9]+\. \*\*/ { in_section=0 }
+    in_section { print }
+  ' "$intg")
+  echo "$section" | grep -qE 'do NOT silently broaden|fail-loud|Fail-loud' \
+    || { echo "integrate/SKILL.md Integrate convergence subsection missing fail-loud / no-silent-broaden assertion"; return 1; }
+}
+
+@test "[140] Integrate convergence subsection preserves I10 distinguishability with Integrate paths" {
+  # I10: when broadening due to a missing scope-set, the diagnostic must
+  # distinguish "round NN-1 missing" from "round NN missing" using the
+  # Integrate literal paths (NOT the artifact-level using-qrspi paths).
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  local section
+  section=$(awk '
+    /^[[:space:]]*### Integrate Convergence Narrowing/ { in_section=1; print; next }
+    in_section && /^[[:space:]]*### / { in_section=0 }
+    in_section && /^[[:space:]]*## / { in_section=0 }
+    in_section && /^[0-9]+\. \*\*/ { in_section=0 }
+    in_section { print }
+  ' "$intg")
+  echo "$section" | grep -qE 'I10|distinguishability' \
+    || { echo "integrate/SKILL.md Integrate convergence subsection missing I10 / distinguishability reference"; return 1; }
+  echo "$section" | grep -qE 'reviews/integration' \
+    || { echo "integrate/SKILL.md Integrate convergence subsection missing reviews/integration paths in I10 context"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
