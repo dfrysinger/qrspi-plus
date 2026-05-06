@@ -260,7 +260,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   - `companion_goals`, `companion_research`, `companion_phasing` (always present)
   - `companion_design`, `companion_structure` (full pipeline only — omit on `route: quick`)
   - `route`: `full` or `quick`
-  - `output`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN-claude.md` (interpolate absolute path and round number)
+  - `output`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/` (interpolate absolute path and round number)
   - `round`: NN
   - `reviewer_tag`: `claude`
 
@@ -268,17 +268,17 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
 
 - **Claude plan-artifact reviewers (five)** — dispatch the five plan-artifact reviewers in parallel with the unified plan-quality reviewer above. Each dispatch reuses the **full plan-reviewer dispatch schema** (artifact_body + companions + route key + output + round + reviewer_tag) — they share companion delivery because they all consume the same plan + companion context. Per-template checks live in each agent body.
 
-  - `Agent({ subagent_type: "qrspi-plan-spec-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN-spec-claude.md`
-  - `Agent({ subagent_type: "qrspi-plan-security-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN-security-claude.md`
-  - `Agent({ subagent_type: "qrspi-plan-silent-failure-hunter", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN-silent-failure-claude.md`
-  - `Agent({ subagent_type: "qrspi-plan-goal-traceability-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN-goal-traceability-claude.md`
-  - `Agent({ subagent_type: "qrspi-plan-test-coverage-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN-test-coverage-claude.md`
+  - `Agent({ subagent_type: "qrspi-plan-spec-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`
+  - `Agent({ subagent_type: "qrspi-plan-security-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`
+  - `Agent({ subagent_type: "qrspi-plan-silent-failure-hunter", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`
+  - `Agent({ subagent_type: "qrspi-plan-goal-traceability-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`
+  - `Agent({ subagent_type: "qrspi-plan-test-coverage-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`
 
   Each prompt body carries: `artifact_body` (wrapped `plan.md`); `companion_goals`, `companion_research`, `companion_phasing` (always); `companion_design`, `companion_structure` (full pipeline only); `route`; `output` (per the bullets above); `round`: NN; `reviewer_tag`: `claude`. The reviewer protocol arrives via each agent's `skills: [reviewer-protocol]` preload; the agent body carries the per-template checks. Zero rules content in main chat.
 
 - **Claude scope-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-plan-scope-reviewer", model: "sonnet" })` in parallel with the quality + plan-artifact reviewers, with a prompt containing only:
   - `artifact_body`: same untrusted-data-wrapped `plan.md` body
-  - `output`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN-scope-claude.md` (interpolate absolute path and round number)
+  - `output`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/` (interpolate absolute path and round number)
   - `round`: NN
   - `reviewer_tag`: `claude`
 
@@ -291,7 +291,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: codex\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
 
@@ -299,7 +299,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-spec-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s-spec-codex.md\nround: %s\nreviewer_tag: codex\n' \
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: codex\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
 
@@ -307,7 +307,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-security-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s-security-codex.md\nround: %s\nreviewer_tag: codex\n' \
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: codex\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
 
@@ -315,7 +315,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-silent-failure-hunter.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s-silent-failure-codex.md\nround: %s\nreviewer_tag: codex\n' \
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: codex\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
 
@@ -323,7 +323,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-goal-traceability-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s-goal-traceability-codex.md\nround: %s\nreviewer_tag: codex\n' \
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: codex\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
 
@@ -331,7 +331,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-test-coverage-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s-test-coverage-codex.md\nround: %s\nreviewer_tag: codex\n' \
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: codex\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
 
@@ -339,7 +339,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-scope-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s-scope-codex.md\nround: %s\nreviewer_tag: codex\n' \
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: codex\n' \
       "<untrusted-data-wrapped plan.md body>" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
   ```

@@ -161,11 +161,14 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   └── ...
 └── reviews/
     ├── goals/
-    │   ├── round-01-claude.md
-    │   ├── round-01-scope-claude.md
-    │   ├── round-01-codex.md
-    │   ├── round-01-scope-codex.md
-    │   └── round-01-fixes.md      (main-chat-authored: what was fixed this round)
+    │   ├── round-01/
+    │   │   ├── quality-claude.finding-F01.md
+    │   │   ├── quality-claude.finding-F02.md   (one file per finding)
+    │   │   ├── scope-claude.clean.md            (zero findings → clean sentinel)
+    │   │   ├── quality-codex.finding-F01.md
+    │   │   └── scope-codex.clean.md
+    │   ├── round-01-verified.md               (main-chat-authored: verifier assembly)
+    │   └── round-01-fixes.md                  (main-chat-authored: what was fixed this round)
     ├── questions/                 (same shape; no scope reviewer for questions)
     ├── research/                  (same shape; no scope reviewer for research)
     ├── design/                    (same shape as goals/)
@@ -178,19 +181,23 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     ├── tasks/
     │   └── ...
     ├── integration/
-    │   ├── round-NN-integration-claude.md
-    │   ├── round-NN-security-claude.md
-    │   ├── round-NN-integration-codex.md
-    │   ├── round-NN-security-codex.md
-    │   ├── round-NN-implement-gate-claude.md   (when "Re-run all reviews" selected at Implement batch gate)
-    │   └── round-NN-implement-gate-codex.md    (same condition; only when codex_reviews: true)
+    │   ├── round-NN/
+    │   │   ├── integration-claude.finding-F01.md
+    │   │   ├── security-claude.finding-F01.md
+    │   │   ├── integration-codex.finding-F01.md
+    │   │   ├── security-codex.clean.md
+    │   │   └── implement-gate-claude.finding-F01.md   (when "Re-run all reviews" at Implement batch gate)
+    │   └── round-NN-fixes.md
     ├── ci/
     │   └── round-NN-review.md
     └── test/
-        ├── round-NN-goal-traceability-claude.md
-        ├── round-NN-spec-claude.md
-        ├── round-NN-code-quality-claude.md
-        ├── round-NN-{template}-codex.md   (per-template Codex stdout)
+        ├── round-NN/
+        │   ├── spec-claude.finding-F01.md
+        │   ├── code-quality-claude.clean.md
+        │   ├── goal-traceability-claude.finding-F01.md
+        │   ├── spec-codex.finding-F01.md
+        │   ├── code-quality-codex.clean.md
+        │   └── goal-traceability-codex.finding-F01.md
         ├── round-NN-results.md            (main-chat-authored test results)
         └── baseline-failures.md           (Test baseline)
 ```
@@ -476,53 +483,32 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 
 **Disk-write contract (artifact-level reviews).** Each artifact-level reviewer subagent writes its findings directly to disk and returns only a brief structured summary to main chat. Main chat never receives finding text in subagent return values. This keeps reviewer output out of main chat's conversation history (where it would re-bill as cache reads on every subsequent turn) until main chat explicitly reads the file to apply fixes — at which point the standard `/compact` after fix-apply (see "Compaction at Step Transitions" + per-skill apply-fix recommendations) sheds it.
 
-**Per-reviewer file paths.** Each reviewer writes to its own per-round per-reviewer file under `reviews/{step}/`:
+**Per-finding file paths.** Each reviewer writes one file per finding into a per-round directory under `reviews/{step}/`:
 
-- Claude reviewer subagent → `reviews/{step}/round-NN-claude.md`
-- Claude scope-reviewer subagent → `reviews/{step}/round-NN-scope-claude.md` (one per scope-reviewed artifact; dedicated `qrspi-{name}-scope-reviewer` agents per #110)
-- Codex reviewer (async) → `reviews/{step}/round-NN-codex.md` (filled by `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId>` stdout redirection — see per-skill Codex dispatch language)
-- Codex scope-reviewer (async) → `reviews/{step}/round-NN-scope-codex.md` (when `codex_reviews: true` and the artifact has a dedicated scope-reviewer)
+- Claude reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (one file per finding; `<reviewer_tag>` is e.g. `quality-claude`, `scope-claude`)
+- Claude scope-reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (same shape; dedicated `qrspi-{name}-scope-reviewer` agents per #110)
+- Codex reviewer (async) → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (filled via `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId>` stdout redirection per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill)
+- Clean-round sentinel → `reviews/{step}/round-NN/<reviewer_tag>.clean.md` (one file per reviewer when zero findings)
 - Main chat fix-apply summary → `reviews/{step}/round-NN-fixes.md`
 
-`{step}` is the canonical step name (e.g. `goals`, `design`, `plan`, `replan`). `NN` is the zero-padded round number. Per-reviewer parallelism is preserved: each reviewer writes its own file, so two reviewers running concurrently never race on the same file.
+`{step}` is the canonical step name (e.g. `goals`, `design`, `plan`, `replan`). `NN` is the zero-padded round number. Per-reviewer parallelism is preserved: each reviewer writes its own files into the shared round directory, and per-finding filenames are unique by reviewer tag + finding number so concurrent reviewers never race on the same file.
 
-**Per-reviewer file format** (each Claude-or-scope reviewer authors a file in this shape):
+**Per-finding file format.** Each finding file conforms to the 5-field schema defined in the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill. The finding-file format, clean-file format, and sidecar (`.score.yml`) format are specified there; this skill defers to that contract rather than re-enumerating.
 
-```markdown
----
-artifact: {step}
-round: NN
-reviewer: claude   # or "codex"; the runtime, not the role. Scope-reviewer outputs land in round-NN-scope-{reviewer}.md filenames.
----
-
-# {Step} review — round NN — {reviewer}
-
-## Summary
-
-- Total findings: N
-- Severity: high=X, medium=Y, low=Z
-- Auto-apply (style/clarity/correctness): A
-- Paused (scope/intent): P
-
-## Findings
-
-{Findings emitted as a list, each conforming to the 5-field schema in `skills/reviewer-protocol/SKILL.md` `## Finding Schema`. "No issues found" is a valid body when N=0.}
-```
-
-**Subagent return value (brief).** After writing the per-reviewer file, the reviewer subagent returns a single brief summary string to main chat. The summary MUST NOT include the finding text — main chat reads the file when it needs the details. Required summary form:
+**Subagent return value (brief).** After writing per-finding files, the reviewer subagent returns a single brief summary string to main chat. The summary MUST NOT include the finding text — main chat reads the files when it needs the details. Required summary form:
 
 ```
 Round NN {reviewer-tag} review complete.
 Findings: N (high=X, medium=Y, low=Z)
 Auto-apply: A | Paused: P
-Written to: reviews/{step}/round-NN-{reviewer-tag}.md
+Written to: reviews/{step}/round-NN/
 ```
 
 This brevity is load-bearing for the optimization: the savings in cache-read accumulation across subsequent main-chat turns depend on the subagent's return text being ~30 tokens, not 3K-30K.
 
-**Subagent guardrail compatibility.** The per-reviewer filename pattern `round-NN-{reviewer}.md` does not match the Claude Code 2.1.x subagent-write blocklist (`^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$`, case-insensitive at filename stem start). Subagents can `Write` these files directly without hitting the guardrail. (For comparison, the research-step `summary.md` DOES match the blocklist, which is why that file goes through orchestrator-write — see `research/SKILL.md` for the exception.)
+**Subagent guardrail compatibility.** The per-finding filename pattern `<reviewer_tag>.finding-F<NN>.md` does not match the Claude Code 2.1.x subagent-write blocklist (`^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$`, case-insensitive at filename stem start). Subagents can `Write` these files directly without hitting the guardrail. (For comparison, the research-step `summary.md` DOES match the blocklist, which is why that file goes through orchestrator-write — see `research/SKILL.md` for the exception.)
 
-**Codex output handling.** Codex reviews run as bash-launched background jobs via `scripts/codex-companion-bg.sh`. The `await` step's stdout is redirected to `reviews/{step}/round-NN-codex.md` directly (see optimization-plan item #8 and per-skill Codex dispatch language) — main chat never paste-backs Codex stdout into its own conversation. Main chat does write a one-line "Codex exit M, see reviews/{step}/round-NN-codex.md" status note when needed, but the bulk findings live on disk only.
+**Codex output handling.** Codex reviews run as bash-launched background jobs via `scripts/codex-companion-bg.sh`. The `await` step's stdout is redirected directly into the per-round directory per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill (see per-skill Codex dispatch language) — main chat never paste-backs Codex stdout into its own conversation. Main chat does write a one-line status note when needed, but the bulk findings live on disk only.
 
 **Apply-fix protocol.** When main chat applies fixes after a round:
 

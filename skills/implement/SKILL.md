@@ -392,17 +392,17 @@ Per-task reviewers are agent-file subagents. Main chat dispatches them via `Agen
 
 Correctness reviewers (always run):
 
-- `Agent({ subagent_type: "qrspi-spec-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN-spec-reviewer-round-NN-claude.md`
-- `Agent({ subagent_type: "qrspi-code-quality-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN-code-quality-reviewer-round-NN-claude.md`
-- `Agent({ subagent_type: "qrspi-silent-failure-hunter", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN-silent-failure-hunter-round-NN-claude.md` (no `-reviewer` suffix — naming convention exception)
-- `Agent({ subagent_type: "qrspi-security-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN-security-reviewer-round-NN-claude.md`
+- `Agent({ subagent_type: "qrspi-spec-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`
+- `Agent({ subagent_type: "qrspi-code-quality-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`
+- `Agent({ subagent_type: "qrspi-silent-failure-hunter", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception)
+- `Agent({ subagent_type: "qrspi-security-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`
 
 Thoroughness reviewers (deep mode only):
 
-- `Agent({ subagent_type: "qrspi-goal-traceability-reviewer", model: "sonnet" })` — additional companions: `companion_plan`, `companion_goals`. Output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN-goal-traceability-reviewer-round-NN-claude.md`
-- `Agent({ subagent_type: "qrspi-test-coverage-reviewer", model: "sonnet" })` — additional companions: `companion_plan`, `companion_test_expectations`. Output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN-test-coverage-reviewer-round-NN-claude.md`
-- `Agent({ subagent_type: "qrspi-type-design-analyzer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN-type-design-analyzer-round-NN-claude.md` (no `-reviewer` suffix — naming convention exception). Skip dispatch entirely when no new types are introduced; record skip in the review log per § Review Log Artifact.
-- `Agent({ subagent_type: "qrspi-code-simplifier", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN-code-simplifier-round-NN-claude.md` (no `-reviewer` suffix — naming convention exception)
+- `Agent({ subagent_type: "qrspi-goal-traceability-reviewer", model: "sonnet" })` — additional companions: `companion_plan`, `companion_goals`. Output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`
+- `Agent({ subagent_type: "qrspi-test-coverage-reviewer", model: "sonnet" })` — additional companions: `companion_plan`, `companion_test_expectations`. Output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`
+- `Agent({ subagent_type: "qrspi-type-design-analyzer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception). Skip dispatch entirely when no new types are introduced; record skip in the review log per § Review Log Artifact.
+- `Agent({ subagent_type: "qrspi-code-simplifier", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception)
 
 **Codex parallels (if `codex_enabled_per_task: true` per § Per-Task Routing — i.e., `config.codex_reviews && task_type == code`).** For every Claude reviewer dispatched this round/tier, dispatch a non-blocking Codex parallel via shell pipeline. Lightweight tasks skip every per-task Codex launch site below regardless of `config.codex_reviews`. The reviewer-protocol body and the agent body flow via stdin — no per-task scratch files on disk:
 
@@ -411,7 +411,7 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-spec-reviewer.md;
-  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s-spec-reviewer-round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: codex\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 
@@ -419,7 +419,7 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-code-quality-reviewer.md;
-  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s-code-quality-reviewer-round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: codex\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 
@@ -427,7 +427,7 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-silent-failure-hunter.md;
-  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s-silent-failure-hunter-round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: codex\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 
@@ -435,7 +435,7 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-security-reviewer.md;
-  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s-security-reviewer-round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: codex\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 
@@ -443,7 +443,7 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-goal-traceability-reviewer.md;
-  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s-goal-traceability-reviewer-round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: codex\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "$NN" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 
@@ -451,7 +451,7 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-test-coverage-reviewer.md;
-  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\ncompanion_plan: %s\ncompanion_test_expectations: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s-test-coverage-reviewer-round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\ncompanion_plan: %s\ncompanion_test_expectations: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: codex\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped test-expectations block>" "$NN" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 
@@ -459,7 +459,7 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-type-design-analyzer.md;
-  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s-type-design-analyzer-round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: codex\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 
@@ -467,7 +467,7 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-code-simplifier.md;
-  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s-code-simplifier-round-%s-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: codex\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 ```
@@ -545,7 +545,7 @@ code-quality-reviewer, silent-failure-hunter, security-reviewer}
 
 #### Codex
 
-**Output file:** `reviews/tasks/task-NN-spec-reviewer-round-NN-codex.md`
+**Output file:** `reviews/tasks/task-NN/round-NN/<reviewer_tag>.finding-F<NN>.md`
 **Status:** {success | ceiling-hit | crash | audit-fail | launch-fail}
 ```
 
@@ -628,7 +628,7 @@ Dispatch parameters:
 - `subject_code` — concatenated wrapped bodies of every task's code-changes diff for the current wave (one wrapped block per task, each tagged with the task's slug/number)
 - `companion_task_specs` — concatenated wrapped bodies of every task's `tasks/task-NN.md` for the current wave
 - `companion_test_results` — concatenated wrapped bodies of every task's test-output transcripts for the current wave
-- `output` — `<ABS_ARTIFACT_DIR>/reviews/integration/round-NN-implement-gate-claude.md`
+- `output` — `<ABS_ARTIFACT_DIR>/reviews/integration/round-NN/`
 - `round`: NN
 - `reviewer_tag`: `claude`
 
@@ -640,7 +640,7 @@ Each wrapped body is bracketed between `<<<UNTRUSTED-ARTIFACT-START id={artifact
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-implement-gate-reviewer.md;
-  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_task_specs: %s\ncompanion_test_results: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s-implement-gate-codex.md\nround: %s\nreviewer_tag: codex\n' \
+  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_task_specs: %s\ncompanion_test_results: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: codex\n' \
     "<concatenated wrapped per-task code-changes blocks>" "<concatenated wrapped per-task task spec bodies>" "<concatenated wrapped per-task test-output transcripts>" "$ROUND" "$ROUND";
 } | scripts/codex-companion-bg.sh launch
 ```
