@@ -453,7 +453,7 @@ After the first review round completes and fixes are applied, ask ONCE:
 
 > `1) Present for review  2) Loop until clean (recommended)`
 >
-> Before responding, consider running `/compact` — context may be saturated. (You can decline; this is a reminder, not a gate.)
+> Before responding, consider running `/compact` — context may be saturated.
 
 - **1 (Present):** Proceed to the human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The artifact may still have issues." The user can still approve, but they make an informed choice.
 - **2 (Loop — recommended):** Loop autonomously — run review → fix → review → fix without re-prompting the user. Stop ONLY when a round finds zero issues across all reviewers ("Reviews passed clean") or 10 rounds are reached ("Hit 10-round review cap — presenting for your review."). Then proceed to the human gate.
@@ -711,7 +711,7 @@ What would you like to do?
 (no default; user must pick)
 ```
 
-Before responding, consider running `/compact` — context may be saturated. (You can decline; this is a reminder, not a gate.)
+Before responding, consider running `/compact` — context may be saturated.
 
 If the same path keeps failing, picking `skip` is the safe escape.
 
@@ -751,7 +751,7 @@ For each paused finding, present:
 3) Loop back to upstream artifact — cascade the change backward (W2/W3/W4 cascade per Backward Loops)
 ```
 
-Before responding, consider running `/compact` — context may be saturated. (You can decline; this is a reminder, not a gate.)
+Before responding, consider running `/compact` — context may be saturated.
 
 **Loop back to upstream artifact (W2/W3/W4 cascade):** The skill identifies the earliest affected upstream artifact based on the finding's `referenced_files` and the cascade map (W2 = Goals; W3 = Goals + Questions; W4 = Goals + Questions + Research + Design). The skill MUST display the resolved upstream target name in the menu BEFORE the user picks option 3 (e.g., "Loop back to: phasing.md") and MUST request explicit confirmation (`Confirm rewind to {artifact}? (y/n)`) before initiating the cascade. If the finding's `referenced_files` resolves to ambiguous upstreams, the menu lists the candidates and asks the user to pick.
 
@@ -811,7 +811,7 @@ Mark the task `completed` once the user responds either way. The TaskCreate make
 
 **Piggyback-pause format.** Existing user-input prompts gain a one-line addition (typically the last bullet or last sentence of the prompt):
 
-`Before responding, consider running `/compact` — context may be saturated. (You can decline; this is a reminder, not a gate.)`
+`Before responding, consider running `/compact` — context may be saturated.`
 
 The user-facing line stands on its own; do not append a "See `## Compaction Checkpoints`" cite to it (the cite is for skill authors reading SKILL.md, not for the user reading the rendered prompt). The Iron Rule itself is NOT restated at per-site labels or piggyback-pause additions — the canonical contract above is the single source of truth. Per-site rationale stays specific to the moment (e.g., "Reviewer fan-out reads synthesis state; saturated context produces truncated findings"), the Iron Rule stays shared.
 
