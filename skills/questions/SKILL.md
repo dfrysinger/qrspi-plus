@@ -72,7 +72,9 @@ status: draft
 
 ### Review Round
 
-> **IMPORTANT — Compaction recommended (pre-review-loop).** The Question Generation subagent has just returned `questions.md`. Before dispatching the Claude reviewer (and Codex reviewer in parallel, if enabled), run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load `questions.md` + `goals.md` + the agent-embedded reviewer protocol; running them on a saturated context produces shallow findings.
+**Compaction checkpoint: pre-fanout.** Reviewer dispatch reads `questions.md` + `goals.md` + the agent-embedded reviewer protocol; saturated context produces shallow findings. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — questions", description: "pre-fanout: reviewer dispatch reads questions.md + goals.md. User decides whether to /compact." })`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Questions has no scope-reviewer (canonical artifact-tree contract — Questions is not in the scope-reviewer topology). Only the quality reviewer runs.
 
@@ -153,11 +155,11 @@ On rejection, write the user's feedback to `feedback/questions-round-{NN}.md` (s
 
 If the artifact directory is inside a git repository, commit the approved `questions.md` and the `reviews/questions/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)").
 
-> **IMPORTANT — Compaction recommended (terminal state).** Questions approved. This is a good point to compact context before the next step. Recommend the user run `/compact` if context utilization may exceed ~50%.
+**Compaction checkpoint: pre-handoff.** Questions approved; the next skill (typically Research) reads `questions.md` + every prior approved artifact + reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — questions", description: "pre-handoff: next skill reads questions.md + prior artifacts + reviewer findings. User decides whether to /compact." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `questions`.
-
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill, run `/compact` if context utilization may exceed ~50%. The next skill (typically Research, per the Full route) reads `questions.md` + every prior approved artifact + reviewer findings; entering it on a saturated context degrades the synthesis quality of downstream research subagents.
 
 ## Red Flags — STOP
 

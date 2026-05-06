@@ -103,7 +103,9 @@ For each of `goals.md`, `questions.md`, `research/summary.md`, `design.md`:
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel reviewer dispatches per artifact per round (quality + scope). Phasing-specific reviewer instructions:
 
-> **IMPORTANT — Compaction recommended.** Reviewers run in parallel and emit findings against the full ten-artifact set. If context utilization may exceed ~50% before this dispatch, run `/compact` first.
+**Compaction checkpoint: pre-fanout.** Parallel reviewer dispatch reads the full ten-artifact set (phasing.md + roadmap + 4 pruned + 4 future-* + snapshots); saturated context produces shallow findings on this large input set. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — phasing", description: "pre-fanout: parallel reviewer dispatch reads ten-artifact set. User decides whether to /compact." })`.
 
 - **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-phasing-reviewer", model: "sonnet" })` with a prompt containing only:
   - `artifact_body`: `phasing.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=phasing.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=phasing.md>>>` markers
@@ -204,13 +206,11 @@ On rejection, write the user's feedback to `feedback/phasing-round-{NN}.md` (usi
 
 ### Terminal State
 
-> **IMPORTANT — Compaction recommended.** Phasing approval is a high-water mark for context size: the conversation has carried Goals + Questions + Research + Design + Phasing artifacts. Run `/compact` before invoking Structure if context utilization may exceed ~50%. Cross-skill transitions are a known compaction pressure moment.
-
 Commit the approved `phasing.md`, `roadmap.md`, the four pruned artifacts, the four `future-*.md` artifacts, and the `reviews/phasing/` directory (per-round per-reviewer files) to git.
 
-Recommend compaction: "Phasing approved. This is a good point to compact context before the next step (`/compact`)."
+**Compaction checkpoint: pre-handoff.** Phasing approval is a high-water mark for context size — the conversation has carried Goals + Questions + Research + Design + Phasing artifacts; the next skill (typically Structure) reads phasing.md + roadmap.md + pruned design.md on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-> **IMPORTANT — Cross-skill transition.** The next step (Structure) consumes `phasing.md` + `roadmap.md` for phase scoping and the pruned `design.md` for architecture. Confirm both artifacts are approved and committed before invoking Structure. Compaction at this transition is strongly recommended.
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — phasing", description: "pre-handoff: next skill reads phasing.md + roadmap.md + pruned design.md after a 5-artifact build-up. User decides whether to /compact." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `phasing` (typically `structure`).
 

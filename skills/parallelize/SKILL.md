@@ -89,7 +89,9 @@ This applies regardless of how simple the phase appears.
 
 ## Process Steps
 
-> **IMPORTANT — Compaction recommended (pre-large-subagent-dispatch — dependency-graph synthesis).** Steps 2–8 below read every current-phase task spec, synthesize the dependency graph + parallel groups + Branch Map, and render the Mermaid diagram into `parallelization.md`. If a synthesis subagent is dispatched to perform this work (delegated dependency-graph synthesis subagent), or if the inline synthesis itself reads many tasks, expected output is large. Run `/compact` before this work if context utilization may exceed ~50%.
+**Compaction checkpoint: pre-fanout.** Steps 2–8 below read every current-phase task spec, synthesize the dependency graph + parallel groups + Branch Map, and render the Mermaid diagram into `parallelization.md`. The synthesis subagent (or inline synthesis) reads many tasks and produces large output. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — parallelize", description: "pre-fanout: dependency-graph synthesis reads every current-phase task spec; large output. User decides whether to /compact." })`.
 
 1. Identify current phase's tasks from `plan.md` phase definitions
 2. For each task, list dependencies and files-touched (read each `tasks/task-NN.md` or `fixes/{type}-round-NN/*.md`)
@@ -138,11 +140,11 @@ On rejection, write the user's feedback to `feedback/parallelize-round-{NN}.md` 
 
 ## Review Round
 
-> **IMPORTANT — Compaction recommended (pre-review-loop).** The dependency-graph synthesis above plus the rendered Mermaid diagram and Branch Map can push utilization. Run `/compact` before dispatching reviewers if context utilization may exceed ~50%.
+**Compaction checkpoint: pre-fanout.** Reviewer fan-out (quality + scope, plus Codex parallels when enabled) reads `parallelization.md` plus referenced inputs after the dependency-graph synthesis + Mermaid render; each reviewer may produce >10K tokens of findings output. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — parallelize", description: "pre-fanout: quality + scope reviewer fan-out after dependency-graph synthesis. User decides whether to /compact." })`.
 
 After writing `parallelization.md` (and after every revision), run one review round per the standard QRSPI review-round flow (see `using-qrspi/SKILL.md` → "Review Round Flow"). Two parallel reviewer dispatches per artifact per round (quality + scope) — same artifact, complementary lenses, all emitting 5-field findings (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`).
-
-> **IMPORTANT — Compaction recommended (pre-large-subagent-dispatch).** The Claude quality-reviewer and scope-reviewer subagents below each consume `parallelization.md` plus referenced inputs and may produce >10K tokens of findings output. Run `/compact` before dispatching if context utilization may exceed ~50%.
 
 1. **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-parallelize-reviewer", model: "sonnet" })` with a prompt containing only:
    - `artifact_body`: `parallelization.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=parallelization.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=parallelization.md>>>` markers
@@ -233,11 +235,9 @@ After writing `parallelization.md` (and after every revision), run one review ro
 
 ## Terminal State
 
-> **IMPORTANT — Compaction recommended (terminal-state).** Parallelization plan approved. This is a good point to compact context before the next step. Run `/compact` if context utilization may exceed ~50%.
+**Compaction checkpoint: pre-handoff.** Parallelization plan approved; the next skill (typically Implement) will create worktrees, run baseline tests, and dispatch implementer + reviewer subagents per task — a new high-context phase that should start fresh. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-Recommend compaction: "Parallelization plan approved. This is a good point to compact context before the next step (`/compact`)."
-
-> **IMPORTANT — Compaction recommended (cross-skill-transition).** The next skill (`implement` in the standard full-pipeline route) will create worktrees, run baseline tests, and dispatch implementer + reviewer subagents per task — a new high-context phase. Run `/compact` before invoking the next skill if context utilization may exceed ~50%.
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — parallelize", description: "pre-handoff: Implement begins worktrees + baseline tests + per-task subagent dispatch. User decides whether to /compact." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `parallelize` (in the standard full-pipeline route, this is `implement`).
 

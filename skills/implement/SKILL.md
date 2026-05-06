@@ -207,7 +207,9 @@ If tests fail, present failure summary with 3 options:
 
 ## Wave Dispatch (Full Pipeline)
 
-> **IMPORTANT — Compaction recommended (pre-large-subagent-dispatch).** The per-task flow dispatches an implementer subagent (which can return >10K tokens of TDD transcript) and reviewer subagents (whose findings drive the fix loop). Before firing any wave (full pipeline) or quick-fix batch dispatch, run `/compact` if context utilization may exceed ~50% — the per-task work degrades sharply when input pressure compounds output size, and a saturated context will silently swallow critical reviewer signal.
+**Compaction checkpoint: pre-fanout.** Per-task wave fan-out dispatches an implementer subagent (>10K tokens of TDD transcript) plus reviewer subagents whose findings drive the fix loop; saturated context here silently swallows critical reviewer signal. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — implement", description: "pre-fanout: per-task wave fan-out (implementer + reviewers); large output and reviewer signal at risk. User decides whether to /compact." })`.
 
 In full pipeline mode, dispatch tasks in the wave order Parallelize specified. For each wave:
 
@@ -653,14 +655,14 @@ After the Claude reviewer returns, await the captured jobId and redirect stdout 
 
 ## Terminal State
 
-> **IMPORTANT — Compaction recommended (terminal state).** Implement batch complete. This is a good point to compact context before the next route step. Recommend the user run `/compact` if context utilization may exceed ~50%.
+**Compaction checkpoint: pre-handoff.** Implement batch complete; the next route step (typically Integrate in full pipeline; Test in quick fix) reads `parallelization.md` (or task specs) + every prior approved artifact + per-task reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — implement", description: "pre-handoff: next route step reads parallelization.md + prior artifacts + per-task reviewer findings. User decides whether to /compact." })`.
 
 When the user chooses "continue" at the batch gate, compute the next skill to invoke as follows:
 
 1. Find the index of `implement` in `config.md.route`.
 2. Invoke `route[index+1]` (typically `integrate` in full pipeline; `test` in quick fix).
-
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next route step, run `/compact` if context utilization may exceed ~50%. The next skill (typically Integrate in full pipeline; Test in quick fix) reads `parallelization.md` (or task specs in quick fix) + every prior approved artifact + per-task reviewer findings; entering it on a saturated context degrades cross-task review and fix-routing quality.
 
 **Edge case — `implement` is the last entry.** If `implement` has no successor in the route, the route is malformed (every full-pipeline route should end with `test` after `integrate`; every quick-fix route should end with `test`). Refuse to advance and tell the user: "Cannot continue — `config.md` route ends at `implement`. Add `test` (and `integrate` if this is a full-pipeline route) and re-invoke."
 

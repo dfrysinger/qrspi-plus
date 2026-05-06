@@ -102,7 +102,9 @@ During phase transitions, Replan reads `roadmap.md` to determine which goals bel
 
 ## Review Round
 
-> **IMPORTANT — Compaction recommended (pre-review-loop).** The Replan analyzer has just returned its proposed changes + severity classifications. Before dispatching the Claude reviewer, scope-reviewer, and Codex reviewers in parallel (if enabled), run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load the proposals + `goals.md` + `plan.md` + `design.md` + every prior phase's review findings; running them on a saturated context produces shallow severity-classification findings, which is the load-bearing signal for major-vs-minor routing.
+**Compaction checkpoint: pre-fanout.** Reviewer fan-out (Claude + scope + Codex parallels when enabled) reads the analyzer's proposals + `goals.md` + `plan.md` + `design.md` + every prior phase's review findings; saturated context here degrades the severity-classification signal that drives major-vs-minor routing. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — replan", description: "pre-fanout: reviewer fan-out reads proposals + goals + plan + design + prior phase findings. User decides whether to /compact." })`.
 
 **Companion preparation.** Construct the wrapped companion bodies once and reuse the analyzer's response payload across both Claude dispatches:
 
@@ -233,8 +235,6 @@ Phase snapshots do NOT happen on the major backward-loop path. The minor path ap
 
 ### Archive-and-Populate Sequence (Minor Path)
 
-> **IMPORTANT — Compaction recommended (pre-archive-and-populate).** Before running the five-step archive-and-populate sequence below (which reads the roadmap, every `future-*.md` artifact, and writes four next-phase drafts), recommend `/compact` if context utilization may exceed ~50%. The downstream Goals invocation reads the populated drafts immediately at start; entering it on a saturated context degrades the next-phase Restart Mode dialogue.
-
 After the Phase Snapshot completes (snapshot + promote), Replan runs the **five-step archive-and-populate sequence** to set up the next phase's working artifacts. This sequence is the operational form of the "Phase-transition execution" entry in `## Replan OWNS / Replan DEFERS` above — it OWNS the mechanics; Phasing OWNS the prior decisions encoded in `roadmap.md` and the `future-*.md` artifacts.
 
 1. **Archive** — copy the completed phase's four synthesizing artifacts (`goals.md`, `questions.md`, `research/summary.md`, `design.md`) into the runtime archive path `docs/qrspi/{slug}/phases/phase-NN/` where `{slug}` is the project slug from `config.md` and `NN` is the zero-padded completed phase number. (The destination is the runtime artifact path under `docs/qrspi/`, not the skill-package path.) The four-file archive is the as-completed-and-amended snapshot consumed by future audit and review tooling. **Fail-closed:** If the destination directory `docs/qrspi/{slug}/phases/phase-NN/` cannot be created (permission denied, ENOSPC, or any I/O error), or if any of the four source files (`goals.md`, `questions.md`, `research/summary.md`, `design.md`) is missing or unreadable, ABORT — surface the error to the user and refuse to proceed. Do not partially-archive.
@@ -275,13 +275,13 @@ Recommend compaction before invoking target skill.
 
 ## Terminal State
 
-> **IMPORTANT — Compaction recommended (terminal state).** Replan analysis complete. This is a good point to compact context before the cross-skill transition (next-phase Goals on the Minor path; loop-back target on the Major path). Recommend the user run `/compact` if context utilization may exceed ~50%.
+**Compaction checkpoint: pre-handoff.** Replan analysis complete; the next skill (next-phase Goals on the Minor path; loop-back target — Goals, Design, Phasing, Structure, or Plan — on the Major path) reads every prior approved artifact + every `feedback/replan-phase-*-round-*.md` file on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-**Minor path:** Delete `replan-pending.md`, recommend compaction, then invoke `qrspi:goals` for the next phase. (Rationale: `artifact_promote_next_phase` deleted `structure.md`, `plan.md`, `tasks/` and reset goals/research/design frontmatter to `draft`. Parallelize cannot run without an approved `plan.md` and `tasks/*.md`, so the next phase must restart from Goals — which re-approves the promoted goals via its "Next-Phase Restart Mode" (see `goals/SKILL.md` → "Next-Phase Restart Mode"), then cascades through Questions/Research/Design/Phasing/Structure/Plan/Parallelize/Implement in turn. Pipeline progression is derived from artifact frontmatter — there is no state cache file to reconcile.)
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — replan", description: "pre-handoff: next-phase Goals (Minor) or loop-back target (Major) reads prior artifacts + replan feedback. User decides whether to /compact." })`.
 
-**Major path:** Delete `replan-pending.md`, recommend compaction, invoke the loop-back target skill (Goals, Design, Phasing, Structure, or Plan). Replan exits — the normal pipeline takes over from the loop-back target forward. The `replan-pending.md` deletion happens before the loop-back invocation because Replan's analytical work is complete; the cascade is standard pipeline execution.
+**Minor path:** Delete `replan-pending.md`, then invoke `qrspi:goals` for the next phase. (Rationale: `artifact_promote_next_phase` deleted `structure.md`, `plan.md`, `tasks/` and reset goals/research/design frontmatter to `draft`. Parallelize cannot run without an approved `plan.md` and `tasks/*.md`, so the next phase must restart from Goals — which re-approves the promoted goals via its "Next-Phase Restart Mode" (see `goals/SKILL.md` → "Next-Phase Restart Mode"), then cascades through Questions/Research/Design/Phasing/Structure/Plan/Parallelize/Implement in turn. Pipeline progression is derived from artifact frontmatter — there is no state cache file to reconcile.)
 
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill (next-phase Goals on the Minor path; the loop-back target — Goals, Design, Phasing, Structure, or Plan — on the Major path), run `/compact` if context utilization may exceed ~50%. Loop-back targets read every prior approved artifact + every `feedback/replan-phase-*-round-*.md` file; entering them on a saturated context degrades the cascade's re-approval quality.
+**Major path:** Delete `replan-pending.md`, invoke the loop-back target skill (Goals, Design, Phasing, Structure, or Plan). Replan exits — the normal pipeline takes over from the loop-back target forward. The `replan-pending.md` deletion happens before the loop-back invocation because Replan's analytical work is complete; the cascade is standard pipeline execution.
 
 ## Model Selection Guidance
 

@@ -101,7 +101,9 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
 
 3. **Review test code** — follows **Review Pattern 1 (Inner Loop)** with 3 reviewers (reused per-task reviewers from Implement).
 
-   > **IMPORTANT — Compaction recommended (pre-review-loop).** The test-writer subagent has just returned the test code. Before dispatching the goal-traceability-reviewer, spec-reviewer, and code-quality-reviewer (and Codex reviewers in parallel, if enabled), run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load the test code + `plan.md` (acceptance-criteria source) + `goals.md` (upstream traceability anchor); running them on a saturated context produces shallow findings.
+   **Compaction checkpoint: pre-fanout.** Three-reviewer fan-out (goal-traceability + spec + code-quality, plus Codex parallels when enabled) reads the test code + `plan.md` + `goals.md`; saturated context produces shallow findings on the test-traceability surface. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+   Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — test", description: "pre-fanout: three-reviewer fan-out reads test code + plan.md + goals.md. User decides whether to /compact." })`.
 
    **Companion preparation.** Construct the wrapped companion bodies once and reuse them across all three Claude dispatches:
 
@@ -283,14 +285,14 @@ If the user presses Enter or provides no input: skip silently.
 
 ## Terminal State — Phase Routing
 
-> **IMPORTANT — Compaction recommended (terminal state).** Acceptance tests passed. This is a good point to compact context before phase routing (PR creation, then either pipeline completion or Replan dispatch). Recommend the user run `/compact` if context utilization may exceed ~50%.
+**Compaction checkpoint: pre-handoff.** Acceptance tests passed; the next route step (PR creation, then either pipeline completion or `qrspi:replan` when more phases remain) reads `goals.md` + `design.md` + `plan.md` + every prior phase's review findings + `future-goals.md` on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — test", description: "pre-handoff: phase routing (PR + optional Replan); Replan severity classification depends on uncluttered context. User decides whether to /compact." })`.
 
 **Every phase gets a PR.** After acceptance testing passes, prepare a PR for the current phase: draft title (including phase number for multi-phase projects), summary referencing artifacts in `docs/qrspi/YYYY-MM-DD-{slug}/`. Show user for confirmation. On confirmation, create PR via `gh pr create`. If user declines (e.g., wants to review locally first), skip PR creation — code stays on the feature branch.
 
 - **Last phase?** → Pipeline complete. Announce completion.
 - **More phases?** → Write `replan-pending.md` to the artifact directory (marker for resume detection: contains current phase number and timestamp), then invoke `qrspi:replan` to update remaining tasks based on phase learnings before starting the next phase.
-
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill (`qrspi:replan` when more phases remain), run `/compact` if context utilization may exceed ~50%. Replan reads `goals.md` + `design.md` + `plan.md` + every prior phase's review findings + `future-goals.md`; entering it on a saturated context degrades the severity-classification quality and risks misrouting major-vs-minor updates.
 
 ## Model Selection Guidance
 

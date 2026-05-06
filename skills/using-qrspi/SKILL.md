@@ -452,6 +452,8 @@ A "review round" consists of:
 After the first review round completes and fixes are applied, ask ONCE:
 
 > `1) Present for review  2) Loop until clean (recommended)`
+>
+> Before responding, consider running `/compact` — context may be saturated. (You can decline; this is a reminder, not a gate.) See `## Compaction Checkpoints`.
 
 - **1 (Present):** Proceed to the human gate, but clearly state the review status: "Note: reviews found issues which were fixed but have not been re-verified in a clean round. The artifact may still have issues." The user can still approve, but they make an informed choice.
 - **2 (Loop — recommended):** Loop autonomously — run review → fix → review → fix without re-prompting the user. Stop ONLY when a round finds zero issues across all reviewers ("Reviews passed clean") or 10 rounds are reached ("Hit 10-round review cap — presenting for your review."). Then proceed to the human gate.
@@ -709,6 +711,8 @@ What would you like to do?
 (no default; user must pick)
 ```
 
+Before responding, consider running `/compact` — context may be saturated. (You can decline; this is a reminder, not a gate.) See `## Compaction Checkpoints`.
+
 If the same path keeps failing, picking `skip` is the safe escape.
 
 No option mutates `config.md`. `retry` is bounded by the underlying operation. There is no retry counter — repeated retries surface the menu repeatedly so the user can switch to `skip` whenever.
@@ -746,6 +750,8 @@ For each paused finding, present:
 2) Skip finding — drop the finding, do not modify the artifact, continue the loop
 3) Loop back to upstream artifact — cascade the change backward (W2/W3/W4 cascade per Backward Loops)
 ```
+
+Before responding, consider running `/compact` — context may be saturated. (You can decline; this is a reminder, not a gate.) See `## Compaction Checkpoints`.
 
 **Loop back to upstream artifact (W2/W3/W4 cascade):** The skill identifies the earliest affected upstream artifact based on the finding's `referenced_files` and the cascade map (W2 = Goals; W3 = Goals + Questions; W4 = Goals + Questions + Research + Design). The skill MUST display the resolved upstream target name in the menu BEFORE the user picks option 3 (e.g., "Loop back to: phasing.md") and MUST request explicit confirmation (`Confirm rewind to {artifact}? (y/n)`) before initiating the cascade. If the finding's `referenced_files` resolves to ambiguous upstreams, the menu lists the candidates and asks the user to pick.
 
@@ -846,9 +852,7 @@ These thoughts mean the pipeline is being bypassed. Stop and follow the process:
 
 ## Skill Invocation
 
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking `qrspi:goals` (or any next-skill invocation in any QRSPI skill), run `/compact` if context utilization may exceed ~50%. Every downstream skill reads its declared inputs + every prior approved artifact + reviewer findings; entering it on a saturated context degrades synthesis, review, and gate-decision quality across the pipeline.
-
-When QRSPI applies, invoke the Goals skill to begin:
+When QRSPI applies, invoke the Goals skill to begin. Per `## Compaction Checkpoints` above, the umbrella hosts the canonical Iron Rule contract — per-skill `pre-fanout` / `pre-handoff` labels cite this contract rather than restating it.
 
 **REQUIRED SKILL:** Use `qrspi:goals` to start the pipeline.
 
