@@ -324,7 +324,7 @@ They can:
   > 3. Loop until clean (autonomous review cycles)
   > 4. Approve (I'm satisfied, skip reviews)
   >
-  > Before responding, consider running `/compact` — context may be saturated. (You can decline; this is a reminder, not a gate.) See using-qrspi `## Compaction Checkpoints`.
+  > Before responding, consider running `/compact` — context may be saturated. (You can decline; this is a reminder, not a gate.)
 
   Omit option 2 if Codex is disabled in config.md. Omit the "fix issues" options (options 2 and 3) if there are no issues to fix.
 
