@@ -551,13 +551,17 @@ setup() {
   # Locally (CI unset), `skip` is acceptable for developer convenience —
   # a shallow clone or a checkout without the base ref reachable simply
   # opts out of the additions scan rather than blocking the run.
-  local base="a1db28d"
-  if ! git -C "$REPO_ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
+  # Derive the base dynamically so the test stays valid after merge:
+  # pre-merge, merge-base(origin/main, HEAD) === the divergence point;
+  # post-merge, it === the merge commit, which still gives a meaningful
+  # additions-vs-base scan for PR-1 forward-reference leakage.
+  local base
+  if ! base=$(git -C "$REPO_ROOT" merge-base origin/main HEAD 2>/dev/null) || [ -z "$base" ]; then
     if [ -n "${CI:-}" ]; then
-      printf 'FAIL: base commit %s not reachable in CI (fetch full history, e.g. actions/checkout@v4 fetch-depth: 0)\n' "$base" >&2
+      printf 'FAIL: could not derive merge-base origin/main HEAD in CI (fetch full history)\n' >&2
       return 1
     fi
-    skip "base commit $base not reachable from this checkout"
+    skip "merge-base origin/main HEAD not derivable from this checkout"
   fi
   local additions
   # Lines that begin with `+` but not `+++` — i.e. content additions, not

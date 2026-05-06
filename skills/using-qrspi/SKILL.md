@@ -169,7 +169,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   │   └── scope-codex.clean.md
     │   ├── round-01.diff                      (orchestrator-emitted: `git diff <base-branch> -- goals.md` redirected to file; reviewer dispatches Read it via `<diff_file_path>`)
     │   ├── round-01-verified.md               (main-chat-authored: verifier assembly)
-    │   └── round-01-fixes.md                  (main-chat-authored: what was fixed this round)
+    │   └── round-01-dispositions.md                  (main-chat-authored: what was fixed this round)
     ├── questions/                 (same shape; no scope reviewer for questions)
     ├── research/                  (same shape; no scope reviewer for research)
     ├── design/                    (same shape as goals/)
@@ -189,7 +189,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   │   ├── security-codex.clean.md
     │   │   ├── implement-gate-claude.finding-F01.md   (when "Re-run all reviews" at Implement batch gate)
     │   │   └── implement-gate-codex.finding-F01.md    (same condition; only when codex_reviews: true)
-    │   └── round-NN-fixes.md
+    │   └── round-NN-dispositions.md
     ├── ci/
     │   └── round-NN-review.md
     └── test/
@@ -458,9 +458,9 @@ A "review round" consists of:
 
    **Fail-loud diff-emission contract (orchestrator preconditions).** Per-step prose may defer to this canonical contract by reference. The orchestrator MUST follow this exact sequence:
 
-   1. **Precondition: the artifact must be tracked in git.** When `<artifact_path>` is provided, check `git -C "<repo>" ls-files --error-unmatch -- "<artifact_path>"`; non-zero exit means the artifact is untracked. Surface a one-line diagnostic ("artifact <path> is untracked — commit before reviewer dispatch") and abort dispatch. Reviewer findings against an untracked artifact would be empty and produce a spurious clean. Skip this precondition when the orchestrator's diff covers the entire feature branch (no single `<artifact_path>` to check) — the integrate step is the canonical example; the other 5 preconditions still apply.
+   1. **Precondition: each artifact path must be tracked in git.** When the redirect names one or more `<artifact_path>` arguments, run `git -C "<repo>" ls-files --error-unmatch -- "<artifact_path>"` for EACH path; any non-zero exit means that path is untracked. Surface a one-line diagnostic ("artifact <path> is untracked — commit before reviewer dispatch") and abort dispatch. Reviewer findings against an untracked artifact (or an untracked file under a tracked directory like `tasks/task-NN.md`) would be missing from the diff and produce a spurious clean. The `plan` step is multi-path (`plan.md` + `tasks/`) and each path must be checked. Skip this precondition only when the redirect covers the entire feature branch with no `<artifact_path>` argument (the integrate step is the canonical example); the other 5 preconditions still apply.
    2. **Create the per-round directory.** Run `mkdir -p "<ABS_ARTIFACT_DIR>/reviews/{step}"` before the redirect (precondition for the redirect to succeed and a guard against half-written files). Capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.mkdir.stderr"`. Check `$?`. Fail loud on non-zero exit: surface the stderr to main chat as a single line ("mkdir exited <code>: <stderr>") and abort dispatch. Common failure modes (permission-denied on the parent, ENOSPC) would otherwise surface only indirectly when the redirect at step 4 fails with a misleading "no such file or directory".
-   3. **Hard-overwrite any pre-existing target as a regular file.** Run `rm -f "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff"`. This neutralises the symlink-target write-through hazard (a stale symlink at the target path would otherwise have the redirect write through to its referent). Capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.rm.stderr"`. Check `$?`. Fail loud on non-zero exit: surface the stderr to main chat as a single line ("rm exited <code>: <stderr>") and abort dispatch. (Notable failure mode: `rm -f` on a directory at the target path returns "Is a directory" non-zero — the redirect at step 4 would otherwise fail with a misleading diagnostic.)
+   3. **Hard-overwrite any pre-existing target as a regular file.** Run `rm -f "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff"`. This neutralises the leaf-file write-through hazard (a stale symlink at the diff-file path would otherwise have the redirect write through to its referent); note that the parent `reviews/{step}/` directory is NOT symlink-hardened — `mkdir -p` follows symlinked directories — so a symlink at the parent path would still write through, but the realistic threat is low because the orchestrator owns its working directory. Capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.rm.stderr"`. Check `$?`. Fail loud on non-zero exit: surface the stderr to main chat as a single line ("rm exited <code>: <stderr>") and abort dispatch. (Notable failure mode: `rm -f` on a directory at the target path returns "Is a directory" non-zero — the redirect at step 4 would otherwise fail with a misleading diagnostic.)
    4. **Emit the diff with all placeholders double-quoted.** Run `git -C "<repo>" diff "<base-branch>" -- "<artifact_path>" > "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff"` (capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff.stderr"`). Quoting prevents tokenization on whitespace inside slugs or paths. The stderr file lives next to the diff file as per-run scratch — avoid `/tmp/...` here (multi-tenant clobber across concurrent runs; not portable across all sandboxes).
    5. **Check `$?`. Fail loud on non-zero exit.** Surface the stderr to main chat as a single line ("git diff exited <code>: <stderr>") and abort dispatch. Do NOT proceed to reviewer dispatch on a non-zero exit (stale base ref, unfetched ref, malformed `<artifact_path>`, etc. would otherwise produce a misleading empty diff).
    6. **A zero-byte diff file after a successful exit is a valid signal in steady state** (no changes vs base). Do NOT abort on this case; reviewer dispatch proceeds normally.
@@ -501,9 +501,9 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 
 - Claude reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (one file per finding; `<reviewer_tag>` is e.g. `quality-claude`, `scope-claude`)
 - Claude scope-reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (same shape; dedicated `qrspi-{name}-scope-reviewer` agents per #110)
-- Codex reviewer (async) → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (filled via `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId>` stdout redirection per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill)
+- Codex reviewer (async) → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (filled via `scripts/codex-companion-bg.sh await <jobId>` stdout redirection per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill)
 - Clean-round sentinel → `reviews/{step}/round-NN/<reviewer_tag>.clean.md` (one file per reviewer when zero findings)
-- Main chat fix-apply summary → `reviews/{step}/round-NN-fixes.md`
+- Main chat fix-apply summary → `reviews/{step}/round-NN-dispositions.md`
 
 `{step}` is the canonical step name (e.g. `goals`, `design`, `plan`, `replan`). `NN` is the zero-padded round number. Per-reviewer parallelism is preserved: each reviewer writes its own files into the shared round directory, and per-finding filenames are unique by reviewer tag + finding number so concurrent reviewers never race on the same file.
 
@@ -665,11 +665,11 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
    Out-of-enum `change_type` values are loud failures from step 2's schema guard (already caught before reaching step 7).
 
-8. **Write** `reviews/{step}/round-NN-fixes.md` (main-chat-authored, ≤30 lines) listing what was changed and why.
+8. **Write** `reviews/{step}/round-NN-dispositions.md` (main-chat-authored, ≤30 lines) listing what was changed and why.
 
 9. **`/compact`** to shed the verified-file Read content from main chat's transcript.
 
-10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-verified.md`, and `round-NN-fixes.md`. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
+10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-verified.md`, and `round-NN-dispositions.md`. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
 
 **Verifier-round failure menu.** Any abnormality during Apply-fix (VERIFY_FAILED from one or more verifiers; Codex reviewer no-output — cite `await` exit + wrapper `--artifact-dir`; Claude reviewer no-output — cite verbatim subagent return; sidecar missing for a finding) dispatches the same 3-option menu:
 
