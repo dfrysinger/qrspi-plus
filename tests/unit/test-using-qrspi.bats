@@ -25,9 +25,10 @@ bats_require_minimum_version 1.5.0
 #
 #   3. Audit-naming reconciliation — using-qrspi:161 currently lists
 #      `audit-task-NN.jsonl`, which no hook actually writes.
-#      `hooks/lib/audit.sh` writes `audit.jsonl`; `scripts/codex-companion-bg.sh`
-#      writes `audit-codex-review.jsonl`. The artifact-tree section must
-#      list the canonical names that match the runtime.
+#      `hooks/lib/audit.sh` writes `audit.jsonl`. The artifact-tree
+#      section must list the canonical name that matches the runtime.
+#      (The codex-companion audit-write surface was deleted in #114
+#      v0.5; no scripts/codex-companion-bg.sh audit row file exists.)
 
 setup() {
   export PLUGIN_ROOT
@@ -36,7 +37,6 @@ setup() {
   export STATE_SH="$PLUGIN_ROOT/hooks/lib/state.sh"
   export SESSION_START="$PLUGIN_ROOT/hooks/session-start"
   export AUDIT_SH="$PLUGIN_ROOT/hooks/lib/audit.sh"
-  export CODEX_BG="$PLUGIN_ROOT/scripts/codex-companion-bg.sh"
 }
 
 # extract_h2_section <file> <h2-heading>
@@ -161,14 +161,6 @@ extract_h3_section() {
   grep -qF '/.qrspi/audit.jsonl' "$AUDIT_SH"
   # using-qrspi must list audit.jsonl in the artifact tree.
   run grep -F "audit.jsonl" "$USING_QRSPI"
-  [ "$status" -eq 0 ]
-}
-
-@test "using-qrspi artifact tree lists audit-codex-review.jsonl (canonical codex audit)" {
-  # scripts/codex-companion-bg.sh writes audit-codex-review.jsonl.
-  [ -f "$CODEX_BG" ]
-  grep -qF 'audit-codex-review.jsonl' "$CODEX_BG"
-  run grep -F "audit-codex-review.jsonl" "$USING_QRSPI"
   [ "$status" -eq 0 ]
 }
 

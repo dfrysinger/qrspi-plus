@@ -70,7 +70,7 @@ After Plan is approved, the route is locked. Changing it after that point requir
 
 - **Pipeline step ordering:** The PreToolUse hook blocks artifact writes that skip prerequisites. You cannot write `design.md` before `goals.md` is approved -- the hook rejects the tool call with an actionable error message.
 - **Asymmetric target-based enforcement:** The PreToolUse hook treats main chat and dispatched subagents differently based on the dispatch envelope. Main-chat tool calls go through pipeline-ordering checks only. Subagent tool calls (any agent dispatched via the Agent tool) are additionally walled to their assigned worktree at `.worktrees/{slug}/(task-NN[a-z]?|baseline)/` — Write/Edit targets and Bash write targets outside that path are blocked. Enforcement keys on the operation's target path, not on the agent's CWD, so it survives subagent CWD inheritance quirks.
-- **Audit logging:** Hook-driven writes append to `<artifact_dir>/.qrspi/audit.jsonl` (one line per allowed/blocked Write, Edit, or Bash call inside QRSPI scope), and Codex review jobs append to `<artifact_dir>/.qrspi/audit-codex-review.jsonl`. Block decisions are logged alongside allow decisions.
+- **Audit logging:** Hook-driven writes append to `<artifact_dir>/.qrspi/audit.jsonl` (one line per allowed/blocked Write, Edit, or Bash call inside QRSPI scope). Block decisions are logged alongside allow decisions.
 - **Fail-closed security model:** All error paths in the hooks block with actionable messages rather than silently allowing violations.
 - **State management:** `.qrspi/state.json` tracks pipeline progress and the artifact map. `.qrspi/task-NN-runtime.json` files capture mid-task user decisions as runtime overrides.
 
@@ -837,8 +837,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 └── .qrspi/
     ├── state.json
     ├── task-NN-runtime.json
-    ├── audit.jsonl
-    └── audit-codex-review.jsonl
+    └── audit.jsonl
 ```
 
 ---
