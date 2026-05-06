@@ -42,7 +42,9 @@ Fix only the cited defects; do NOT extend scope beyond what the original questio
 
 Use the `Write` tool to save your report to `output_path`.
 
-The report MUST begin with this exact structure (the `## Summary` block at the top is mandatory — downstream collation and Design read it as the canonical at-a-glance summary; do not omit or rename its subsections):
+The report MUST begin with this exact structure (the `## Summary` block at the top is mandatory — downstream collation and Design read it as the canonical at-a-glance summary; do not omit or rename its subsections).
+
+**Authoring note:** investigate first, draft the body, write the summary block last — then place it at the top of the file. Do not generate the summary from intent.
 
 ```
 ---
