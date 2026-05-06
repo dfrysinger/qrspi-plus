@@ -9,7 +9,7 @@ description: Use when starting a new QRSPI pipeline run — captures user intent
 
 **Announce at start:** "I'm using the QRSPI Goals skill to capture what you want to build."
 
-**If auto-mode is detected** (presence of `## Auto Mode Active` system-reminder in current context), surface to the user before the first interactive step: "This skill is collaborative — turn-by-turn dialogue produces better Goals quality than autonomous execution. Recommend exiting auto-mode (`Esc` → off) for this phase. I'll proceed in either mode if you prefer."
+**If auto-mode is detected** (presence of `## Auto Mode Active` system-reminder in current context), surface to the user before the first interactive step: "This skill is collaborative — turn-by-turn dialogue produces better Goals quality than autonomous execution. Recommend exiting auto-mode (`Shift+Tab` to cycle modes) for this phase. I'll proceed in either mode if you prefer."
 
 Do not force the user out of auto-mode; respect their choice. Surface the recommendation explicitly at start.
 
