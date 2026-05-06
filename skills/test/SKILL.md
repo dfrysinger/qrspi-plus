@@ -103,6 +103,8 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
 
    **Diff-file wiring opt-out (#112 PR-1).** Test-step reviewers analyze test quality (assertion meaningfulness, flake risk, plan-criterion traceability) — not "where in the diff." The orchestrator does NOT emit a `round-NN.diff` for the test step and does NOT pass `diff_file_path` to the dispatches below. This is an intentional opt-out from the #112 Mechanism A wiring applied to the other 12 in-scope steps; the per-§2.6-applicability table in spec #112 marks the test step as out-of-scope for diff-file dispatch.
 
+   **Scope-tagger + convergence opt-out (#112 PR-2).** Same rationale extends to PR-2 Mechanism B: the test step does NOT dispatch the scope-tagger (no `round-NN-scope-set.txt` is emitted), step 7.5's convergence comparison does not fire for the test step, and reviewer dispatches do NOT carry `scope_hint`. The opt-out is independent of `scope_tagger_enabled` in `config.md` — even when the run-level config has the tagger enabled, the test step skips both step 5.5 dispatch and step 7.5 narrowing for its own reviewers.
+
    **Compaction checkpoint: pre-fanout.** Three-reviewer fan-out (goal-traceability + spec + code-quality, plus Codex parallels when enabled) reads the test code + `plan.md` + `goals.md`; saturated context produces shallow findings on the test-traceability surface. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
    Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — test", description: "pre-fanout: three-reviewer fan-out reads test code + plan.md + goals.md. User decides whether to /compact." })`.

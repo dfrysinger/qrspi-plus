@@ -245,7 +245,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — plan", descript
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel reviewer dispatches per artifact per round (one unified quality + five plan-artifact + one scope). Plan-specific reviewer instructions:
 
-**Pre-dispatch diff-file emission (#112 PR-1 Mechanism A).** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<base-branch>" -- "<ABS_ARTIFACT_DIR>/plan.md" "<ABS_ARTIFACT_DIR>/tasks/" > "<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff"` as a Bash redirect (the diff content never enters main-chat context). Each of the seven reviewer dispatches carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository. The orchestrator follows the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1 (preconditions: artifact tracked in git, mkdir-p, rm-f, quoted placeholders, exit-code check).
+**Pre-dispatch diff-file emission (#112 PR-1 Mechanism A + PR-2 Mechanism B).** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<ref>" -- "<ABS_ARTIFACT_DIR>/plan.md" "<ABS_ARTIFACT_DIR>/tasks/" > "<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff"` as a Bash redirect (the diff content never enters main-chat context). `<ref>` is `<base-branch>` by default and `HEAD~1` only when using-qrspi step 7.5 narrowed for this round. Each of the seven reviewer dispatches carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill, and (when narrowed) `scope_hint: <scope_set as comma-separated tag list>` as advisory focus. Plan is a multi-file artifact (`plan.md` + `tasks/*.md`), so scope-tagger emits file paths as tags from `referenced_files`. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository. The orchestrator follows the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1 (preconditions: artifact tracked in git, mkdir-p, rm-f, quoted placeholders, exit-code check).
 
 **Route detection.** Read `config.md` to determine the `route` field (`full` or `quick`). Pass `route: full` or `route: quick` as an explicit dispatch param to every quality + plan-artifact dispatch below — the agent body uses it to gate the design/structure traceability checks. Scope-reviewer takes no `route` param.
 
@@ -266,6 +266,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   - `round`: NN
   - `reviewer_tag`: `quality-claude`
   - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` (omit when the artifact directory is not in a git repo)
+  - `scope_hint`: `<scope_set as comma-separated tag list>` (#112 PR-2 — optional; include ONLY when using-qrspi step 7.5 narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
 
   The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Plan-specific quality checks (completeness, criterion authoring, no-scope-creep, no-placeholders, task sizing, interpretation, phase alignment, design/structure traceability on full route) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
@@ -277,7 +278,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   - `Agent({ subagent_type: "qrspi-plan-goal-traceability-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `goal-traceability-claude`
   - `Agent({ subagent_type: "qrspi-plan-test-coverage-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `test-coverage-claude`
 
-  Each prompt body carries: `artifact_body` (wrapped `plan.md`); `companion_goals`, `companion_research`, `companion_phasing` (always); `companion_design`, `companion_structure` (full pipeline only); `route`; `output` and `reviewer_tag` (per the bullets above); `round`: NN; `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` (omit when the artifact directory is not in a git repo). The reviewer protocol arrives via each agent's `skills: [reviewer-protocol]` preload; the agent body carries the per-template checks. Zero rules content in main chat.
+  Each prompt body carries: `artifact_body` (wrapped `plan.md`); `companion_goals`, `companion_research`, `companion_phasing` (always); `companion_design`, `companion_structure` (full pipeline only); `route`; `output` and `reviewer_tag` (per the bullets above); `round`: NN; `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` (omit when the artifact directory is not in a git repo); `scope_hint`: `<scope_set as comma-separated tag list>` (#112 PR-2 — optional; include ONLY when using-qrspi step 7.5 narrowed for this round). The reviewer protocol arrives via each agent's `skills: [reviewer-protocol]` preload; the agent body carries the per-template checks. Zero rules content in main chat.
 
 - **Claude scope-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-plan-scope-reviewer", model: "sonnet" })` in parallel with the quality + plan-artifact reviewers, with a prompt containing only:
   - `artifact_body`: same untrusted-data-wrapped `plan.md` body
@@ -285,6 +286,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   - `round`: NN
   - `reviewer_tag`: `scope-claude`
   - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` (omit when the artifact directory is not in a git repo)
+  - `scope_hint`: `<scope_set as comma-separated tag list>` (#112 PR-2 — optional; include ONLY when using-qrspi step 7.5 narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
 
   The scope-reviewer's Step-1 Read of `skills/plan/owns-defers.md` delivers the Plan OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt. Scope-reviewer takes NO companions and NO `route` param.
 
@@ -295,56 +297,56 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: %s\n' \
+      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
 
   # Plan-artifact reviewer: spec (Codex)
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-spec-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: spec-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: spec-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: %s\n' \
+      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
 
   # Plan-artifact reviewer: security (Codex)
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-security-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: security-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: security-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: %s\n' \
+      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
 
   # Plan-artifact reviewer: silent-failure-hunter (Codex)
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-silent-failure-hunter.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: silent-failure-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: silent-failure-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: %s\n' \
+      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
 
   # Plan-artifact reviewer: goal-traceability (Codex)
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-goal-traceability-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: goal-traceability-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: goal-traceability-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: %s\n' \
+      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
 
   # Plan-artifact reviewer: test-coverage (Codex)
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-test-coverage-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: test-coverage-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: test-coverage-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: %s\n' \
+      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
 
   # Scope-reviewer (Codex)
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-scope-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\n' \
-      "<untrusted-data-wrapped plan.md body>" "$ROUND" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: %s\n' \
+      "<untrusted-data-wrapped plan.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
   ```
 

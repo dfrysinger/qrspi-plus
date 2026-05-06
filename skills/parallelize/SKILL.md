@@ -146,7 +146,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — parallelize", d
 
 After writing `parallelization.md` (and after every revision), run one review round per the standard QRSPI review-round flow (see `using-qrspi/SKILL.md` → "Review Round Flow"). Two parallel reviewer dispatches per artifact per round (quality + scope) — same artifact, complementary lenses, all emitting 5-field findings (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`).
 
-**Pre-dispatch diff-file emission (#112 PR-1 Mechanism A).** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<base-branch>" -- "<ABS_ARTIFACT_DIR>/parallelization.md" > "<ABS_ARTIFACT_DIR>/reviews/parallelize/round-NN.diff"` as a Bash redirect (the diff content never enters main-chat context). Each reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository. The orchestrator follows the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1 (preconditions: artifact tracked in git, mkdir-p, rm-f, quoted placeholders, exit-code check).
+**Pre-dispatch diff-file emission (#112 PR-1 Mechanism A + PR-2 Mechanism B).** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<ref>" -- "<ABS_ARTIFACT_DIR>/parallelization.md" > "<ABS_ARTIFACT_DIR>/reviews/parallelize/round-NN.diff"` as a Bash redirect (the diff content never enters main-chat context). `<ref>` is `<base-branch>` by default and `HEAD~1` only when using-qrspi step 7.5 narrowed for this round. Each reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill, and (when narrowed) `scope_hint: <scope_set as comma-separated tag list>` as advisory focus. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository. The orchestrator follows the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1 (preconditions: artifact tracked in git, mkdir-p, rm-f, quoted placeholders, exit-code check).
 
 1. **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-parallelize-reviewer", model: "sonnet" })` with a prompt containing only:
    - `artifact_body`: `parallelization.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=parallelization.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=parallelization.md>>>` markers
@@ -156,6 +156,7 @@ After writing `parallelization.md` (and after every revision), run one review ro
    - `round`: NN
    - `reviewer_tag`: `quality-claude`
    - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/parallelize/round-NN.diff` (omit when the artifact directory is not in a git repo)
+   - `scope_hint`: `<scope_set as comma-separated tag list>` (#112 PR-2 — optional; include ONLY when using-qrspi step 7.5 narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
 
    The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Parallelize-specific checks (file-overlap, symbolic-base vocabulary, stage commits, completeness) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
@@ -165,6 +166,7 @@ After writing `parallelization.md` (and after every revision), run one review ro
    - `round`: NN
    - `reviewer_tag`: `scope-claude`
    - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/parallelize/round-NN.diff` (omit when the artifact directory is not in a git repo)
+   - `scope_hint`: `<scope_set as comma-separated tag list>` (#112 PR-2 — optional; include ONLY when using-qrspi step 7.5 narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
 
    The scope-reviewer's Step-1 Read of `skills/parallelize/owns-defers.md` delivers the Parallelize OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
@@ -204,16 +206,16 @@ After writing `parallelization.md` (and after every revision), run one review ro
    { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
      printf '\n\n---\n\n';
      awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-parallelize-reviewer.md;
-     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_plan: %s\ncompanion_tasks: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s.diff\n' \
-       "<untrusted-data-wrapped parallelization.md body>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped tasks bodies>" "$ROUND" "$ROUND" "$ROUND";
+     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_plan: %s\ncompanion_tasks: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s.diff\nscope_hint: %s\n' \
+       "<untrusted-data-wrapped parallelization.md body>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped tasks bodies>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
    } | scripts/codex-companion-bg.sh launch
 
    # Scope-reviewer (Codex)
    { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
      printf '\n\n---\n\n';
      awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-parallelize-scope-reviewer.md;
-     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s.diff\n' \
-       "<untrusted-data-wrapped parallelization.md body>" "$ROUND" "$ROUND" "$ROUND";
+     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s.diff\nscope_hint: %s\n' \
+       "<untrusted-data-wrapped parallelization.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
    } | scripts/codex-companion-bg.sh launch
    ```
 

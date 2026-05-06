@@ -128,7 +128,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — design", descri
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel reviewer dispatches per artifact per round (quality + scope). Design-specific reviewer instructions:
 
-**Pre-dispatch diff-file emission (#112 PR-1 Mechanism A).** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<base-branch>" -- "<ABS_ARTIFACT_DIR>/design.md" > "<ABS_ARTIFACT_DIR>/reviews/design/round-NN.diff"` as a Bash redirect (the diff content never enters main-chat context). Each reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/design/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository. The orchestrator follows the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1 (preconditions: artifact tracked in git, mkdir-p, rm-f, quoted placeholders, exit-code check).
+**Pre-dispatch diff-file emission (#112 PR-1 Mechanism A + PR-2 Mechanism B).** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<ref>" -- "<ABS_ARTIFACT_DIR>/design.md" > "<ABS_ARTIFACT_DIR>/reviews/design/round-NN.diff"` as a Bash redirect (the diff content never enters main-chat context). `<ref>` is `<base-branch>` by default and `HEAD~1` only when using-qrspi step 7.5 narrowed for this round. Each reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/design/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill, and (when narrowed) `scope_hint: <scope_set as comma-separated tag list>` as advisory focus. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository. The orchestrator follows the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1 (preconditions: artifact tracked in git, mkdir-p, rm-f, quoted placeholders, exit-code check).
 
 **On-demand inputs apply to the quality reviewer only.** Only the Claude quality-reviewer subagent (`qrspi-design-reviewer`) inherits the read-on-demand permission for `research/q*.md` defined in `## Artifact Gating` — NOT the scope-reviewer. When `design.md` cites a specific `q*.md` file (e.g., "per `research/q07-codebase.md`") to justify a decision, the quality reviewer needs to be able to verify that citation against its source — without on-demand permission the audit loop cannot close. Scope-reviewers evaluate boundary/scope only against the OWNS/DEFERS rule and have no citation-verification need; granting them the same permission would dilute the "scope-reviewers only Read OWNS/DEFERS" invariant. The required quality-reviewer inputs remain `design.md` + `goals.md` + `research/summary.md`; `research/q*.md` is permissive for the quality reviewer alone (read only when verifying a synthesis citation or checking a decision against compressed source detail), not required, and does not enter the untrusted-data wrapper list unless actually loaded. Same anti-prophylactic discipline applies: do NOT load `q*.md` files prophylactically.
 
@@ -140,6 +140,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   - `round`: NN
   - `reviewer_tag`: `quality-claude`
   - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/design/round-NN.diff` (omit when the artifact directory is not in a git repo)
+  - `scope_hint`: `<scope_set as comma-separated tag list>` (#112 PR-2 — optional; include ONLY when using-qrspi step 7.5 narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
 
   The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Design-specific checks (addresses all goals, trade-offs, YAGNI, diagram, no phasing checks) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
@@ -149,6 +150,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   - `round`: NN
   - `reviewer_tag`: `scope-claude`
   - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/design/round-NN.diff` (omit when the artifact directory is not in a git repo)
+  - `scope_hint`: `<scope_set as comma-separated tag list>` (#112 PR-2 — optional; include ONLY when using-qrspi step 7.5 narrowed for this round)
 
   The scope-reviewer's Step-1 Read of `skills/design/owns-defers.md` delivers the Design OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
@@ -188,20 +190,20 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-design-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/design/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/design/round-%s.diff\n' \
-      "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "$ROUND" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/design/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/design/round-%s.diff\nscope_hint: %s\n' \
+      "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
 
   # Scope-reviewer (Codex)
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-design-scope-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/design/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/design/round-%s.diff\n' \
-      "<untrusted-data-wrapped design.md body>" "$ROUND" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/design/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/design/round-%s.diff\nscope_hint: %s\n' \
+      "<untrusted-data-wrapped design.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
   ```
 
-  The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints.
+  The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints. `$SCOPE_HINT` is the comma-separated tag list when using-qrspi step 7.5 narrowed this round, OR the empty string when broadened/round-1-or-2/scope_tagger_enabled=false.
 
   After `await` returns, on exit 0 run the splitter to split Codex output into per-finding files:
 
