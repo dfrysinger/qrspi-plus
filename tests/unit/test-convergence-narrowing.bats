@@ -374,3 +374,164 @@ setup() {
     | grep -qE 'git -C "<repo>" diff "<ref>"' \
     || { echo "Standard Review Loop step 1 does not use dynamic <ref> in git diff command"; return 1; }
 }
+
+# -----------------------------------------------------------------------------
+# 19. #140 — per-task Implement convergence narrowing
+# -----------------------------------------------------------------------------
+#
+# These assertions ground on the per-task ref-selection contract: default
+# <ref>=<task-base-commit> (worktree-relative); narrow → HEAD~1 with anchor
+# verification against the prior round's commit-SHA file.
+
+@test "[140] per-task Implement default <ref> is <task-base-commit>" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  [ -f "$impl" ]
+  grep -qE '<ref>.*<task-base-commit>|<task-base-commit>.*default|default.*<task-base-commit>' "$impl" \
+    || { echo "implement/SKILL.md does not document <task-base-commit> as the per-task default <ref>"; return 1; }
+}
+
+@test "[140] per-task Implement narrow decision selects <ref>=HEAD~1" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  grep -qE '<ref>=HEAD~1|narrow.*HEAD~1|HEAD~1.*narrow' "$impl" \
+    || { echo "implement/SKILL.md narrow decision does not select <ref>=HEAD~1"; return 1; }
+}
+
+@test "[140] per-task Implement anchor file path is reviews/tasks/task-NN/round-NN-commit.txt" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  grep -qF 'reviews/tasks/task-NN/round-NN-commit.txt' "$impl" \
+    || { echo "implement/SKILL.md missing per-task per-round commit anchor path"; return 1; }
+}
+
+@test "[140] per-task Implement narrow decision verifies HEAD~1 against the anchor file" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  # The narrow path must mention rev-parse HEAD~1 against the prior round's
+  # round-(NN-1)-commit.txt anchor.
+  grep -qiE 'rev-parse HEAD~1|HEAD~1.*anchor|anchor.*HEAD~1' "$impl" \
+    || { echo "implement/SKILL.md narrow decision missing HEAD~1 anchor verification"; return 1; }
+  # And must reference the prior-round commit file.
+  grep -qE 'round-\(NN-1\)-commit\.txt|round-NN-commit\.txt' "$impl" \
+    || { echo "implement/SKILL.md narrow decision missing prior-round commit file reference"; return 1; }
+}
+
+@test "[140] per-task Implement broaden fallback fires on anchor mismatch" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  # When HEAD~1 mismatches the anchor, the narrow decision falls through to
+  # broaden with a one-line diagnostic.
+  grep -qiE 'broaden.*diagnostic|broaden.*mismatch|fall through to.*broaden|HEAD~1 is not' "$impl" \
+    || { echo "implement/SKILL.md missing anchor-mismatch broaden fallback"; return 1; }
+}
+
+@test "[140] per-task Implement backward-loop flag path is reviews/tasks/task-NN/round-NN-backward-loop.flag" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  grep -qF 'reviews/tasks/task-NN/round-NN-backward-loop.flag' "$impl" \
+    || { echo "implement/SKILL.md missing per-task backward-loop flag path"; return 1; }
+}
+
+@test "[140] per-task Implement respects scope_tagger_enabled=false opt-out" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  grep -qiE 'scope_tagger_enabled.*false|scope_tagger_enabled: false|no-op.*scope_tagger_enabled' "$impl" \
+    || { echo "implement/SKILL.md does not document scope_tagger_enabled=false opt-out"; return 1; }
+}
+
+@test "[140] per-task Implement defers to using-qrspi convergence rule table" {
+  # Per-task uses the SAME convergence rule table from using-qrspi step 7.5;
+  # implement.SKILL.md must reference that contract rather than restate the
+  # full table.
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  grep -qE 'using-qrspi.*step 7\.5|step 7\.5.*using-qrspi|convergence-rule table from using-qrspi|using-qrspi/SKILL\.md.*7\.5' "$impl" \
+    || { echo "implement/SKILL.md does not reference using-qrspi step 7.5 convergence rule"; return 1; }
+}
+
+@test "[140] per-task Implement \$SCOPE_HINT is populated from scope_set on narrow" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  # Variable population: SCOPE_HINT carries the comma-separated tag list when
+  # narrowed, empty when broadened.
+  grep -qE '\$SCOPE_HINT' "$impl" \
+    || { echo "implement/SKILL.md missing \$SCOPE_HINT shell variable"; return 1; }
+  grep -qiE 'comma-separated|comma.separated|joined with.*,' "$impl" \
+    || { echo "implement/SKILL.md missing comma-separated \$SCOPE_HINT format"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 20. #140 — Integrate convergence narrowing
+# -----------------------------------------------------------------------------
+
+@test "[140] Integrate default <ref> is <base-branch>" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  [ -f "$intg" ]
+  grep -qE '<ref>.*<base-branch>|<base-branch>.*default|default.*<base-branch>' "$intg" \
+    || { echo "integrate/SKILL.md does not document <base-branch> as the default <ref>"; return 1; }
+}
+
+@test "[140] Integrate narrow decision selects <ref>=HEAD~1" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qE '<ref>=HEAD~1|narrow.*HEAD~1|HEAD~1.*narrow' "$intg" \
+    || { echo "integrate/SKILL.md narrow decision does not select <ref>=HEAD~1"; return 1; }
+}
+
+@test "[140] Integrate anchor file path is reviews/integration/round-NN-commit.txt" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qF 'reviews/integration/round-NN-commit.txt' "$intg" \
+    || { echo "integrate/SKILL.md missing per-round commit anchor path"; return 1; }
+}
+
+@test "[140] Integrate narrow decision verifies HEAD~1 against the anchor file" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qiE 'rev-parse HEAD~1|HEAD~1.*anchor|anchor.*HEAD~1' "$intg" \
+    || { echo "integrate/SKILL.md narrow decision missing HEAD~1 anchor verification"; return 1; }
+  grep -qE 'round-\(NN-1\)-commit\.txt|round-NN-commit\.txt' "$intg" \
+    || { echo "integrate/SKILL.md narrow decision missing prior-round commit file reference"; return 1; }
+}
+
+@test "[140] Integrate broaden fallback fires on anchor mismatch" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qiE 'broaden.*diagnostic|broaden.*mismatch|fall through to.*broaden|HEAD~1 is not' "$intg" \
+    || { echo "integrate/SKILL.md missing anchor-mismatch broaden fallback"; return 1; }
+}
+
+@test "[140] Integrate backward-loop flag path is reviews/integration/round-NN-backward-loop.flag" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qF 'reviews/integration/round-NN-backward-loop.flag' "$intg" \
+    || { echo "integrate/SKILL.md missing backward-loop flag path"; return 1; }
+}
+
+@test "[140] Integrate respects scope_tagger_enabled=false opt-out" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qiE 'scope_tagger_enabled.*false|scope_tagger_enabled: false|no-op.*scope_tagger_enabled' "$intg" \
+    || { echo "integrate/SKILL.md does not document scope_tagger_enabled=false opt-out"; return 1; }
+}
+
+@test "[140] Integrate defers to using-qrspi convergence rule table" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qE 'using-qrspi.*step 7\.5|step 7\.5.*using-qrspi|convergence-rule table from using-qrspi|using-qrspi/SKILL\.md.*7\.5' "$intg" \
+    || { echo "integrate/SKILL.md does not reference using-qrspi step 7.5 convergence rule"; return 1; }
+}
+
+@test "[140] Integrate \$SCOPE_HINT is populated from scope_set on narrow" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qE '\$SCOPE_HINT' "$intg" \
+    || { echo "integrate/SKILL.md missing \$SCOPE_HINT shell variable"; return 1; }
+  grep -qiE 'comma-separated|comma.separated|joined with.*,' "$intg" \
+    || { echo "integrate/SKILL.md missing comma-separated \$SCOPE_HINT format"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 21. #140 — both flows use the same convergence rule cases
+# -----------------------------------------------------------------------------
+
+@test "[140] both per-task and Integrate reference the equal/subset/superset/partial/disjoint rule cases" {
+  # Both flows defer to using-qrspi step 7.5's table — no rule restatement
+  # required, but the prose must at least cite the rule cases (equal,
+  # proper-subset, superset, partial, disjoint, <full>, empty).
+  for skill in implement integrate; do
+    local skill_path="$REPO_ROOT/skills/$skill/SKILL.md"
+    grep -qiE 'equal.*proper-subset|proper-subset.*narrow|equal.*subset.*narrow' "$skill_path" \
+      || { echo "skill $skill: missing equal/proper-subset narrow case"; return 1; }
+    grep -qiE 'superset.*broaden|partial.*broaden|disjoint.*broaden' "$skill_path" \
+      || { echo "skill $skill: missing superset/partial/disjoint broaden cases"; return 1; }
+    grep -qE '<full>' "$skill_path" \
+      || { echo "skill $skill: missing <full> reserved-token case"; return 1; }
+    grep -qiE 'either set empty|set empty.*broaden|empty.*broaden' "$skill_path" \
+      || { echo "skill $skill: missing 'either set empty -> broaden' case"; return 1; }
+  done
+}
