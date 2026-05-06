@@ -90,7 +90,7 @@ Tags: N (multi-file=X, h2=Y, full-artifact=Z)
 
 - **Cannot read a kept finding** (file missing, malformed YAML): write a warning comment to the scope-set file (`# warning: could not read <path>`) and skip that finding. Do NOT abort the whole tagging run; partial scope-sets are acceptable (one missing tag conservatively widens the set, matching the `<full>` semantics).
 - **Cannot parse the artifact body for H2 headings** (single-file case, no `^## ` lines found): emit `<full>` for every finding and a top-of-file warning comment (`# warning: artifact has no H2 headings; all findings tagged as full-artifact`). Convergence detection will treat the round as "covers everything" — same conservative path as the line-range-missing fallback.
-- **Empty `kept_findings` list**: write the scope-set file with the header comments and zero tag lines. Convergence detection treats an empty scope-set as "no findings this round" — the orchestrator's narrowing rule already handles this case (no findings = nothing to narrow against).
+- **Empty `kept_findings` list**: write the scope-set file with the header comments and zero tag lines (header-only file is the canonical "scope-set was computed but empty" artifact). The orchestrator's convergence rule (using-qrspi step 7.5) treats an empty set as a broaden trigger — see the explicit "either set empty → broaden" precondition in step 7.5's table. The file is present-but-header-only on disk; this is distinct from "scope-set absent" (tagger dispatch skipped or failed) which step 7.5 also broadens via a separate rule.
 
 ## Why a dedicated subagent
 

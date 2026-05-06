@@ -706,7 +706,7 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
    - `round_subdir`: same as the verifier dispatch round_subdir.
    - `output_path`: `<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN-scope-set.txt` (sibling of `round-NN-verified.md` and the round directory).
    - `artifact_path` / `artifact_body`: per-step shape — single-file artifacts (`goals`, `questions`, `design`, `phasing`, `structure`, `parallelize`, `replan`) pass the artifact path + wrapped body; multi-file artifacts (`integrate`, `implement-per-task`, `plan` + `tasks/`, `research/`) pass the literal string `null` for both.
-   - `kept_findings`: newline-separated list of finding-files that survived the verifier filter from step 5's assembly — i.e. the set of `*.finding-*.md` paths NOT in the `dropped` partition. Empty list is acceptable (an all-clean round produces an empty scope-set with header comments only).
+   - `kept_findings`: newline-separated list of finding-files that survived the verifier filter from step 5's assembly — i.e. the set of `*.finding-*.md` paths NOT in the `dropped` partition. Empty list is acceptable: the tagger writes a header-only scope-set file (no tag lines), and step 7.5's table treats an empty scope-set as a broaden trigger via the explicit "either set empty → broaden" precondition. (Header-only file present is distinct from scope-set absent — step 7.5 has separate rules for each, and both broaden.)
 
    The tagger writes ONLY the scope-set file. It returns a brief two-line summary (`Scope-set for round NN written.\nTags: N (multi-file=X, h2=Y, full-artifact=Z)`); main chat ignores the return text — the file on disk is the source of truth — but inspects the breakdown for one-line diagnostics. The tagger is per-spec out-of-scope for the §3 verifier failure menu: a tagger failure leaves the scope-set file absent, which step 7.5 treats as "no scope-set this round" (broaden — same as if the round had no findings).
 
@@ -724,7 +724,7 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
 10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-scope-set.txt` (when emitted by step 5.5), `round-NN-verified.md`, and `round-NN-dispositions.md`. If looping, proceed to step 7.5.
 
-7.5. **Convergence comparison + ref selection for round NN+1 (#112 PR-2 Mechanism B).** Run AFTER step 10's per-round commit, BEFORE dispatching round NN+1 reviewers. Computes the next round's `<ref>` and optional `<scope_hint>` from the scope-sets emitted by step 5.5.
+7.5. **Convergence comparison + ref selection for round NN+1 (#112 PR-2 Mechanism B) — executes AFTER step 10's per-round commit.** The "7.5" label reflects logical placement within the apply-fix sequence (it consumes the verifier-filtered scope-sets that step 5.5 emits and decides the dispatch parameters for round NN+1), but in *document* / execution order this step runs after step 10's per-round commit and before dispatching round NN+1's reviewers. Computes the next round's `<ref>` and optional `<scope_hint>` from the scope-sets emitted by step 5.5.
 
    **Skip when scope_tagger_enabled=false.** Read `scope_tagger_enabled` from `config.md` (with the same backfill semantics step 5.5 applies). When `false`, this step is a no-op: round NN+1 dispatches with `<ref>=<base-branch>` (PR-1 default) and no `<scope_hint>`.
 
@@ -732,17 +732,21 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
    **Skip when round NN's scope-set is missing.** If `reviews/{step}/round-NN-scope-set.txt` is absent (tagger dispatch skipped, tagger failure left the file unwritten, or the round had zero kept findings), treat the round as full-scope: round NN+1 dispatches with `<ref>=<base-branch>` and no `<scope_hint>` (broaden — same as if a new tag appeared). Do NOT abort the round on a missing scope-set; the conservative-broaden path keeps reviews moving.
 
-   **Convergence rule (compare round NN vs round NN-1).** Read both scope-set files; tag lines are non-comment lines (lines NOT starting with `#`). Compute `scope_set(NN)` and `scope_set(NN-1)` as set-of-strings. Decide:
+   **Convergence rule (compare round NN vs round NN-1).** Read both scope-set files; tag lines are lines NOT starting with `# ` (literal hash followed by a space — the orchestrator's comment marker). H2 heading tags begin with `## ` (double hash + space) and are PRESERVED by this rule; only the `# scope-set for round N` / `# generated_by:` / `# total_findings_kept:` / `# warning:` orchestrator-comment lines start with `# ` (single hash + space) and are skipped. Compute `scope_set(NN)` and `scope_set(NN-1)` as set-of-strings. Comparison is **byte-exact** — the tagger MUST strip trailing whitespace from H2 tag lines before write so a whitespace-only edit does not silently flip a relation. Apply the rules below in order; the first matching rule wins:
 
-   | Relation between sets | Decision for round NN+1 |
+   | Precondition / relation | Decision for round NN+1 |
    |---|---|
+   | `<full>` ∈ scope_set(NN) OR `<full>` ∈ scope_set(NN-1) | **Broaden** — `<full>` is a reserved literal token; either set contains it → cover-everything semantics |
+   | scope_set(NN) is empty OR scope_set(NN-1) is empty | **Broaden** — empty set means "no findings to converge on"; do NOT treat ∅ as a proper subset |
    | `scope_set(NN) == scope_set(NN-1)` | **Narrow** to that set |
-   | `scope_set(NN) ⊂ scope_set(NN-1)` (proper subset) | **Narrow** to the broader set (= `scope_set(NN-1)`) — safety margin |
+   | `scope_set(NN) ⊂ scope_set(NN-1)` (proper subset; both non-empty) | **Narrow** to the broader set (= `scope_set(NN-1)`) — safety margin |
    | `scope_set(NN) ⊃ scope_set(NN-1)` (proper superset; new tags) | **Broaden** — back to full-scope |
    | Partial overlap | **Broaden** — back to full-scope |
    | Disjoint | **Broaden** — back to full-scope |
 
    The proper-subset case narrows to the BROADER set as a safety margin — the round NN findings settled on a smaller surface, but the round NN-1 surface is still the recently-converged-on neighborhood and is the conservative narrowing target.
+
+   **`<full>` is a reserved literal token.** The literal three-character sequence `<full>` on a tag line (no leading `## `, no surrounding whitespace) is the whole-artifact marker emitted by the tagger when a finding's line-range citation is missing or the artifact has no H2 headings (single-file fallback). Real H2 heading tags always carry the `## ` prefix; real multi-file file paths cannot collide with `<full>` because file paths cannot equal that literal sequence. This rule is invariant — H2 headings whose visible text is the string `<full>` are still emitted as `## <full>` (with the prefix), so no collision is possible.
 
    **Apply the decision.**
    - **Narrow to set `S`:** round NN+1 dispatches with `<ref>=HEAD~1` (this round's delta only, vs the per-round commit step 10 just made — so the diff file shrinks naturally), and `<scope_hint>=S` (a list of tags) is injected into reviewer dispatch prompts as advisory focus per `skills/reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract.
