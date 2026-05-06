@@ -118,6 +118,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — phasing", descr
   - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/phasing/round-NN/` (interpolate absolute path and round number)
   - `round`: NN
   - `reviewer_tag`: `quality-claude`
+  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/phasing/round-NN.diff` (omit when the artifact directory is not in a git repo)
 
   The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Phasing-specific checks (Iron Law 1, Phase 1 PoC guideline, pruning procedure, goal-ID consistency) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
@@ -126,6 +127,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — phasing", descr
   - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/phasing/round-NN/` (interpolate absolute path and round number)
   - `round`: NN
   - `reviewer_tag`: `scope-claude`
+  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/phasing/round-NN.diff` (omit when the artifact directory is not in a git repo)
 
   The scope-reviewer's Step-1 Read of `skills/phasing/owns-defers.md` delivers the Phasing OWNS/DEFERS contract at runtime. **Fail-closed on malformed OWNS/DEFERS:** if the `## Phasing OWNS / Phasing DEFERS` section is missing or malformed, the scope-reviewer MUST emit a finding with `severity: high` and `change_type: correctness` and refuse to proceed (the schema only permits severity ∈ {low, medium, high}). Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
@@ -165,16 +167,16 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — phasing", descr
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-phasing-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_roadmap: %s\ncompanion_pruned_pairs: %s\ncompanion_goals_snapshot: %s\ncompanion_design_snapshot: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/phasing/round-%s/\nround: %s\nreviewer_tag: quality-codex\n' \
-      "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped roadmap.md body>" "<untrusted-data-wrapped pruned-pairs bodies>" "<untrusted-data-wrapped goals-snapshot body>" "<untrusted-data-wrapped design-snapshot body>" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_roadmap: %s\ncompanion_pruned_pairs: %s\ncompanion_goals_snapshot: %s\ncompanion_design_snapshot: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/phasing/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/phasing/round-%s.diff\n' \
+      "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped roadmap.md body>" "<untrusted-data-wrapped pruned-pairs bodies>" "<untrusted-data-wrapped goals-snapshot body>" "<untrusted-data-wrapped design-snapshot body>" "$ROUND" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
 
   # Scope-reviewer (Codex)
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-phasing-scope-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/phasing/round-%s/\nround: %s\nreviewer_tag: scope-codex\n' \
-      "<untrusted-data-wrapped phasing.md body>" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/phasing/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/phasing/round-%s.diff\n' \
+      "<untrusted-data-wrapped phasing.md body>" "$ROUND" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
   ```
 

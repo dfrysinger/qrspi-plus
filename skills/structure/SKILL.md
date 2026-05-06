@@ -142,6 +142,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/structure/round-NN/` (interpolate absolute path and round number)
   - `round`: NN
   - `reviewer_tag`: `quality-claude`
+  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/structure/round-NN.diff` (omit when the artifact directory is not in a git repo)
 
   The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Structure-specific checks (structure matches design, YAGNI, interfaces well-defined) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
@@ -150,6 +151,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/structure/round-NN/` (interpolate absolute path and round number)
   - `round`: NN
   - `reviewer_tag`: `scope-claude`
+  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/structure/round-NN.diff` (omit when the artifact directory is not in a git repo)
 
   The scope-reviewer's Step-1 Read of `skills/structure/owns-defers.md` delivers the Structure OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
@@ -189,16 +191,16 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-structure-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_design: %s\ncompanion_phasing: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/structure/round-%s/\nround: %s\nreviewer_tag: quality-codex\n' \
-      "<untrusted-data-wrapped structure.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped phasing.md body>" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_design: %s\ncompanion_phasing: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/structure/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/structure/round-%s.diff\n' \
+      "<untrusted-data-wrapped structure.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped phasing.md body>" "$ROUND" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
 
   # Scope-reviewer (Codex)
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-structure-scope-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/structure/round-%s/\nround: %s\nreviewer_tag: scope-codex\n' \
-      "<untrusted-data-wrapped structure.md body>" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/structure/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/structure/round-%s.diff\n' \
+      "<untrusted-data-wrapped structure.md body>" "$ROUND" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
   ```
 

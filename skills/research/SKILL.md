@@ -110,6 +110,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **n
   - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/research/round-NN/` (interpolate absolute path and round number)
   - `round`: NN
   - `reviewer_tag`: `quality-claude`
+  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/research/round-NN.diff` (omit when the artifact directory is not in a git repo)
 
   The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Research-specific quality checks (objective findings, no factual gaps, codebase `file:line` specificity, web URL citation, verbatim-collation of `## Summary` blocks) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
@@ -151,8 +152,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **n
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-research-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_qfiles: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/research/round-%s/\nround: %s\nreviewer_tag: quality-codex\n' \
-      "<untrusted-data-wrapped research/summary.md body>" "<concatenated per-file untrusted-data-wrapped research/q*.md bodies>" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_qfiles: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/research/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/research/round-%s.diff\n' \
+      "<untrusted-data-wrapped research/summary.md body>" "<concatenated per-file untrusted-data-wrapped research/q*.md bodies>" "$ROUND" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
   ```
 

@@ -155,6 +155,7 @@ After writing `parallelization.md` (and after every revision), run one review ro
    - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/parallelize/round-NN/` (interpolate absolute path and round number)
    - `round`: NN
    - `reviewer_tag`: `quality-claude`
+   - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/parallelize/round-NN.diff` (omit when the artifact directory is not in a git repo)
 
    The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Parallelize-specific checks (file-overlap, symbolic-base vocabulary, stage commits, completeness) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
@@ -163,6 +164,7 @@ After writing `parallelization.md` (and after every revision), run one review ro
    - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/parallelize/round-NN/` (interpolate absolute path and round number)
    - `round`: NN
    - `reviewer_tag`: `scope-claude`
+   - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/parallelize/round-NN.diff` (omit when the artifact directory is not in a git repo)
 
    The scope-reviewer's Step-1 Read of `skills/parallelize/owns-defers.md` delivers the Parallelize OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
 
@@ -202,16 +204,16 @@ After writing `parallelization.md` (and after every revision), run one review ro
    { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
      printf '\n\n---\n\n';
      awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-parallelize-reviewer.md;
-     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_plan: %s\ncompanion_tasks: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s/\nround: %s\nreviewer_tag: quality-codex\n' \
-       "<untrusted-data-wrapped parallelization.md body>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped tasks bodies>" "$ROUND" "$ROUND";
+     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_plan: %s\ncompanion_tasks: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s.diff\n' \
+       "<untrusted-data-wrapped parallelization.md body>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped tasks bodies>" "$ROUND" "$ROUND" "$ROUND";
    } | scripts/codex-companion-bg.sh launch
 
    # Scope-reviewer (Codex)
    { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
      printf '\n\n---\n\n';
      awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-parallelize-scope-reviewer.md;
-     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s/\nround: %s\nreviewer_tag: scope-codex\n' \
-       "<untrusted-data-wrapped parallelization.md body>" "$ROUND" "$ROUND";
+     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s.diff\n' \
+       "<untrusted-data-wrapped parallelization.md body>" "$ROUND" "$ROUND" "$ROUND";
    } | scripts/codex-companion-bg.sh launch
    ```
 
