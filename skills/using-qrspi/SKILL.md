@@ -372,6 +372,7 @@ route:
 review_depth: deep  # or: quick — added by Implement at phase start
 review_mode: loop   # or: single — added by Implement at phase start
 verifier_enabled: true  # set at run creation; edit directly between rounds to disable for the whole run
+scope_tagger_enabled: true  # set at run creation; edit directly between rounds to disable convergence narrowing for the whole run
 ---
 ```
 
@@ -432,7 +433,9 @@ Skills must not:
 
 ### Exceptions to the no-silent-defaults rule
 
-- **`verifier_enabled` runtime backfill.** If the field is missing from `config.md` on the first verifier-aware Apply-fix invocation in a resumed run created before the verifier landed, the runtime treats it as `true`, surfaces a one-line stderr warning once per resume (form: `verifier_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`. This is the only carve-out from the no-silent-defaults rule (`### No silent defaults` above). The carve-out exists because pre-existing run directories on disk pre-date the field's introduction and the alternative — failing the run on a missing field — would prevent users from resuming any in-flight run after upgrading.
+- **`verifier_enabled` runtime backfill.** If the field is missing from `config.md` on the first verifier-aware Apply-fix invocation in a resumed run created before the verifier landed, the runtime treats it as `true`, surfaces a one-line stderr warning once per resume (form: `verifier_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`. The carve-out exists because pre-existing run directories on disk pre-date the field's introduction and the alternative — failing the run on a missing field — would prevent users from resuming any in-flight run after upgrading.
+
+- **`scope_tagger_enabled` runtime backfill.** Same shape as `verifier_enabled` above: if the field is missing from `config.md` on the first scope-tagger-aware Apply-fix invocation in a resumed run created before the tagger landed, the runtime treats it as `true`, surfaces a one-line stderr warning once per resume (form: `scope_tagger_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`. The two `*_enabled` backfills are the only carve-outs from the no-silent-defaults rule (`### No silent defaults` above).
 
 ### Fields that affect pipeline behavior (must be validated)
 
@@ -445,6 +448,8 @@ Skills must not:
 | `review_mode` | Implement | `single` or `loop` — set by Implement at phase start |
 
 - **`verifier_enabled`** (boolean, default `true`) — when `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` (Haiku) per finding-file in parallel and filters style/clarity/correctness findings at score ≥80 before applying. When `false`, the protocol skips verifier dispatch entirely (no sidecars are written) and keeps all findings via the "no sidecar → keep" branch in step 7. The field is durable across `/compact`, pause, resume, and re-entry within the run directory under `docs/qrspi/<date>-<bundle>/`. Fresh run directories start with `verifier_enabled: true` (set by the `using-qrspi` run-init code at run creation). The §3 menu's `skip` option disables the verifier for the CURRENT round only (it does NOT mutate `config.md`); to disable across the whole run, edit `config.md` directly between rounds. CLI-flag opt-out at `/qrspi` invocation is out of scope for #109 (deferred).
+
+- **`scope_tagger_enabled`** (boolean, default `true`) — when `true`, step 5.5 of the Apply-fix protocol dispatches one `qrspi-scope-tagger` (Haiku) per round to derive a scope-set, and step 7.5 compares scope-sets across rounds to drive the narrow-vs-broaden decision for the next round's diff `<ref>` and optional `<scope_hint>` advisory. When `false`, step 5.5 is skipped (no tagger dispatch, no scope-set file emitted) and step 7.5's convergence comparison treats every round as full-scope (no narrowing fires); reviewer dispatch falls through to PR-1's full-base-diff behavior. The field is durable across `/compact`, pause, resume, and re-entry within the run directory under `docs/qrspi/<date>-<bundle>/`. Fresh run directories start with `scope_tagger_enabled: true` (set by the `using-qrspi` run-init code at run creation). To disable convergence narrowing across a whole run, edit `config.md` directly between rounds. The test step (`skills/test/SKILL.md`) opts out of convergence narrowing entirely — see §"Per-step applicability" in the spec; that opt-out is independent of `scope_tagger_enabled`.
 
 ### Fields that do NOT require validation (informational only)
 
