@@ -221,7 +221,9 @@ status: draft
 
 ### Review Round
 
-**IMPORTANT:** the synthesis subagent has just returned `goals.md` and three reviewer dispatches are about to run in parallel. If context utilization is high, recommend `/compact` BEFORE dispatching reviewers — once dispatched, each reviewer inherits the current context and any bloat is multiplied across the parallel set.
+**Compaction checkpoint: pre-fanout.** Parallel reviewer dispatch (up to four) reads `goals.md` + the agent-embedded reviewer protocol; saturated context multiplies bloat across the parallel set. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — goals", description: "pre-fanout: parallel reviewer dispatch (up to four) reads goals.md. User decides whether to /compact." })`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer dispatches run in parallel on Goals (two Claude + two Codex when `codex_reviews: true`; two Claude when Codex is disabled):
 
@@ -321,6 +323,8 @@ They can:
   > 2. Single review round (run Claude + Codex once, see findings)
   > 3. Loop until clean (autonomous review cycles)
   > 4. Approve (I'm satisfied, skip reviews)
+  >
+  > Before responding, consider running `/compact` — context may be saturated.
 
   Omit option 2 if Codex is disabled in config.md. Omit the "fix issues" options (options 2 and 3) if there are no issues to fix.
 
@@ -328,7 +332,9 @@ They can:
 
 If the artifact directory is inside a git repository, commit the approved `goals.md`, `config.md`, and the `reviews/goals/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)" for the detection rule). Otherwise, skip the commit — the approved frontmatter on disk is the durable record.
 
-**IMPORTANT:** Goals is approved. This is a high-value compaction moment — the dialogue transcript and review-loop context are no longer needed downstream. Recommend `/compact` to the user: "Goals approved. This is a good point to compact context before the next step (`/compact`)."
+**Compaction checkpoint: pre-handoff.** Goals approved; the dialogue transcript and review-loop context are no longer load-bearing — the next skill (typically Questions) reads `goals.md` on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — goals", description: "pre-handoff: next skill reads goals.md on a fresh context; dialogue transcript no longer load-bearing. User decides whether to /compact." })`.
 
 **IRON RULE — REQUIRED:** Invoke the next skill in the `config.md` route after `goals` (typically `qrspi:questions`). Do NOT skip the route handoff or invoke a different skill out of order. The route is locked at run start and the cross-skill transition is the salience point where downstream isolation begins (Questions must not see this conversation's content beyond `goals.md`).
 

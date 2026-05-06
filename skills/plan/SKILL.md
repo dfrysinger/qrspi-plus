@@ -64,6 +64,8 @@ Each task implements **exactly one observable behavior** — one request handler
 - Target: ~100 LOC (matches OpenAI AGENTS.md guidance for autonomous-agent task scope)
 - Policy ceiling: 200 LOC — split unless a `sizing_exception` (post-split frontmatter) or **Sizing exception** bullet (in-plan) names one of: schema migration, CI scaffolding, reusable primitives
 
+**"LOC" = implementation source only** (counted across files in `Target files:` excluding `tests/`). Test code has no ceiling but should be roughly proportional to behaviors covered (rule of thumb: 1.5–2× impl LOC for full-behavior coverage). A task with 100 src LOC and 250 test LOC is fine; one with 250 src LOC needs a `sizing_exception` or split.
+
 **Why:** SWE-Bench Pro reports a median patch size of 107 LOC / 4.1 files, with frontier-model success around 23% at that size (GPT-5, Opus 4.1). OpenAI's AGENTS.md guidance targets ~100 lines per agentic task. Our 100-LOC target matches that guidance; the 200-LOC ceiling sits at the lower bound of Cisco/SmartBear's code-review sweet spot (200-400 LOC) and gives margin for QRSPI's enhanced scaffolding (fresh-context subagents, structured task specs, TDD cycle, multi-reviewer loop). Multi-feature task titles like `auth + allowlist + rename + admin` are the visible symptom of oversized tasks; the underlying cause is bundling N request handlers into one task, which re-couples slices that vertical-slice decomposition exists to separate.
 
 **Splitting protocol.** A task estimated >200 LOC splits into N tasks at or below the ~100-LOC target, each implementing one handler with explicit dependency ordering. The closed exception set is: schema migration, CI scaffolding, reusable primitives. Mark `sizing_exception: <reason>` in the task frontmatter (post-split) or the **Sizing exception** bullet inside the in-plan task spec (pre-split), and explain in the Description.
@@ -116,7 +118,9 @@ The review round, human gate, and approval process are identical to full pipelin
 
 ### Sub-Subagent Dispatch (Large Plans Only)
 
-> **IMPORTANT — Compaction recommended.** The per-task spec-generation sub-subagent dispatch fans out to one subagent per task (or related group) and each writes a self-contained `tasks/task-NN.md`. Aggregate sub-subagent output is large and the orchestrator must hold all returned task files plus the merged plan.md in context for the upcoming review round. Run `/compact` before dispatching if context utilization may exceed ~50%. **Iron Rule:** do NOT dispatch the per-task spec-generation fan-out without first checking utilization at this site — losing earlier conversation history mid-merge corrupts the single-source-of-truth invariant.
+**Compaction checkpoint: pre-fanout.** Per-task spec-generation sub-subagent fan-out: one subagent per task; aggregate output is large and the orchestrator must hold all returned task files plus the merged plan.md for the upcoming review round. Saturated context at this site corrupts the single-source-of-truth invariant on merge. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — plan", description: "pre-fanout: per-task spec-generation fan-out; orchestrator merges all returned task files. User decides whether to /compact." })`.
 
 For large plans, farm task spec writing to sub-subagents:
 
@@ -235,9 +239,9 @@ Seven reviewer dispatches run in parallel as part of the review round (one unifi
 
 ### Review Round
 
-> **IMPORTANT — Compaction recommended (pre-review-loop).** The merged `plan.md` plus `goals.md` + `research/summary.md` + `design.md` + `structure.md` are about to be handed to the review-round dispatch. Reviewer findings only land cleanly on a context that still holds the synthesis decisions; if utilization may exceed ~50%, run `/compact` now — before reviewers dispatch — so the upcoming cross-file consistency checks have headroom. **Iron Rule:** review-round dispatch is the highest-leverage compaction moment in Plan; do not skip this check.
+**Compaction checkpoint: pre-fanout.** Reviewer fan-out reads merged `plan.md` + `goals.md` + `research/summary.md` + `design.md` + `structure.md`; up to seven parallel Claude dispatches (unified quality + five plan-artifact + scope) plus seven non-blocking Codex parallels when `codex_reviews: true`. Saturated context here produces truncated findings on the cross-file consistency checks — the highest-leverage compaction moment in Plan. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-> **IMPORTANT — Compaction recommended (pre-large-subagent-dispatch).** Seven Claude subagent dispatches run in parallel during the review round (unified plan-quality reviewer + five plan-artifact reviewers + scope-reviewer), plus seven non-blocking Codex parallels when `codex_reviews: true`. Aggregate reviewer output is large. RED FLAG: dispatching the parallel reviewer fan-out on a near-full context produces truncated findings and missed cross-file inconsistencies — run `/compact` if utilization may exceed ~50% before launching any dispatch.
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — plan", description: "pre-fanout: reviewer fan-out (7 Claude + up to 7 Codex) reads merged plan.md + 4 prior artifacts. User decides whether to /compact." })`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel reviewer dispatches per artifact per round (one unified quality + five plan-artifact + one scope). Plan-specific reviewer instructions:
 
@@ -426,11 +430,11 @@ At plan.md approval time, capture the current HEAD SHA into plan.md frontmatter'
 
 ### Terminal State
 
-> **IMPORTANT — Compaction recommended (terminal state).** Plan has just split tasks into individual files and committed the approved artifacts. The conversation history from the synthesis + review rounds is no longer load-bearing for downstream skills (Parallelize, Implement, Integrate read the artifacts, not the chat). Run `/compact` here if utilization is non-trivial. **Iron Rule:** carrying Plan's full review history into Parallelize burns context the next skill needs for dependency-graph reasoning.
-
 If the artifact directory is inside a git repository, commit the approved `plan.md`, all `tasks/task-NN.md` files, and the `reviews/plan/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)").
 
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill in the `config.md` route, run `/compact` if utilization may exceed ~50%. The next skill (typically Parallelize) starts a fresh dependency-analysis flow; it does not need Plan's reviewer transcripts or sub-subagent dispatch traces. **Iron Rule:** the cross-skill boundary is the canonical compaction moment — do not invoke the next skill on a saturated context.
+**Compaction checkpoint: pre-handoff.** Plan has just split tasks into individual files and committed the approved artifacts; conversation history from the synthesis + review rounds is no longer load-bearing. The next skill (typically Parallelize) reads the artifacts on a fresh context for dependency-graph reasoning. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — plan", description: "pre-handoff: next skill reads plan.md + tasks/*.md on a fresh context; review history no longer load-bearing. User decides whether to /compact." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `plan`.
 

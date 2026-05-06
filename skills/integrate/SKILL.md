@@ -84,7 +84,9 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
 1. **Merge task branches** into the feature branch using `parallelization.md` branch map and the Merge Strategy above (leaf-only for chains; each leaf for parallel groups; never merge stage branches directly). **STOP if merge conflicts** — present conflicts to user with file-level details. Do not attempt auto-resolution.
 2. **Integration reviews** — follows **Review Pattern 2 (Outer Loop)**.
 
-   > **IMPORTANT — Compaction recommended (pre-review-loop).** Task branches have just been merged into the feature branch. Before dispatching the integration-reviewer + security-integration-reviewer (and Codex reviewers in parallel, if enabled), run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load the merged code + `design.md` + `structure.md` + companion task-review findings; running them on a saturated context produces shallow findings.
+   **Compaction checkpoint: pre-fanout.** Reviewer fan-out (integration + security, plus Codex parallels when enabled) reads merged code + `design.md` + `structure.md` + companion task-review findings; saturated context produces shallow findings on the cross-task surface. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+   Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — integrate", description: "pre-fanout: integration + security reviewer fan-out reads merged code + design + structure + task findings. User decides whether to /compact." })`.
 
    **Companion preparation.** Construct the wrapped companion bodies once and reuse them across both Claude dispatches (they share inputs):
 
@@ -224,11 +226,11 @@ If the user presses Enter or provides no input: skip silently.
 
 ## Terminal State
 
-> **IMPORTANT — Compaction recommended (terminal state).** Integration complete. This is a good point to compact context before the next step. Recommend the user run `/compact` if context utilization may exceed ~50%.
+**Compaction checkpoint: pre-handoff.** Integration complete; the next skill (typically Test) reads the merged feature branch + every prior approved artifact + integration reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — integrate", description: "pre-handoff: next skill reads merged branch + prior artifacts + integration findings. User decides whether to /compact." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `integrate`.
-
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill, run `/compact` if context utilization may exceed ~50%. The next skill (typically Test, per the Full route) reads the merged feature branch + every prior approved artifact + integration reviewer findings; entering it on a saturated context degrades acceptance-test quality.
 
 ## Model Selection Guidance
 

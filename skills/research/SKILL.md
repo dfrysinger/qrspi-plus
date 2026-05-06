@@ -92,7 +92,9 @@ Dispatch parameters:
 
 ### Review Round
 
-> **IMPORTANT — Compaction recommended (pre-review-loop).** The collation subagent has just written `research/_collated.md` and the orchestrator has renamed it to `research/summary.md`. Before dispatching the Claude reviewer (and Codex reviewer in parallel, if enabled), run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load `research/summary.md` + every `research/q*.md` file + the agent-embedded reviewer protocol; running them on a saturated context produces shallow findings.
+**Compaction checkpoint: pre-fanout.** Reviewer dispatch reads `research/summary.md` + every `research/q*.md` file + the agent-embedded reviewer protocol; saturated context produces shallow findings. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — research", description: "pre-fanout: reviewer dispatch reads research/summary.md + all q*.md files. User decides whether to /compact." })`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **no scope-reviewer** per canonical artifact-tree topology — only the quality reviewer runs (one Claude dispatch + one Codex dispatch when `codex_reviews: true`).
 
@@ -188,11 +190,11 @@ On approval, if reviews have not passed clean, note this and ask if they'd like 
 
 If the artifact directory is inside a git repository, commit the approved `research/summary.md`, all `research/q*.md` files, and the `reviews/research/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)").
 
-> **IMPORTANT — Compaction recommended (terminal state).** Research approved. This is a good point to compact context before the next step. Recommend the user run `/compact` if context utilization may exceed ~50%.
+**Compaction checkpoint: pre-handoff.** Research approved; the next skill (typically Design) reads `research/summary.md` + every prior approved artifact + reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — research", description: "pre-handoff: next skill reads research/summary.md + prior artifacts + reviewer findings. User decides whether to /compact." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `research`.
-
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill, run `/compact` if context utilization may exceed ~50%. The next skill (typically Design, per the Full route) reads `research/summary.md` + every prior approved artifact + reviewer findings; entering it on a saturated context degrades the architecture-proposal quality.
 
 ## Red Flags — STOP
 

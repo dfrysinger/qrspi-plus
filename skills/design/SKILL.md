@@ -109,7 +109,9 @@ status: draft
 
 ### Review Round
 
-> **IMPORTANT — Compaction recommended (pre-review-loop).** The Design synthesis subagent has just returned a full design.md with rationale, trade-offs, test strategy, and a Mermaid diagram. Before dispatching the Claude reviewer, scope-reviewer, and Codex reviewer in parallel, run `/compact` if context utilization may exceed ~50%. Reviewer prompts each load `design.md` + `goals.md` + `research/summary.md` + the agent-embedded reviewer protocol; running them on a saturated context produces shallow findings.
+**Compaction checkpoint: pre-fanout.** Quality + scope reviewer fan-out reads `design.md` + `goals.md` + `research/summary.md` + the agent-embedded reviewer protocol; saturated context produces shallow findings. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — design", description: "pre-fanout: parallel reviewer dispatch reads design.md + goals.md + research/summary.md. User decides whether to /compact." })`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel reviewer dispatches per artifact per round (quality + scope). Design-specific reviewer instructions:
 
@@ -216,11 +218,11 @@ On rejection, write the user's feedback to `feedback/design-round-{NN}.md` (usin
 
 If the artifact directory is inside a git repository, commit the approved `design.md` and the `reviews/design/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)").
 
-> **IMPORTANT — Compaction recommended (terminal state).** Design approved. This is a good point to compact context before the next step. Recommend the user run `/compact` if context utilization may exceed ~50%.
+**Compaction checkpoint: pre-handoff.** Design approved; the next skill (typically Phasing) reads `design.md` + every prior approved artifact + reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — design", description: "pre-handoff: next skill reads design.md + prior artifacts + reviewer findings. User decides whether to /compact." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `design`.
-
-> **IMPORTANT — Compaction recommended (cross-skill transition).** Before invoking the next skill, run `/compact` if context utilization may exceed ~50%. The next skill (typically Phasing, per the Full route) reads `design.md` + every prior approved artifact + reviewer findings; entering it on a saturated context degrades the slice-authoring and phase-split quality.
 
 ## Red Flags — STOP
 
