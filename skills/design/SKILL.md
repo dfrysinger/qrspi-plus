@@ -9,6 +9,10 @@ description: Use when research/summary.md is approved and the QRSPI pipeline nee
 
 **Announce at start:** "I'm using the QRSPI Design skill to explore approaches and define the architecture."
 
+**If auto-mode is detected** (presence of `## Auto Mode Active` system-reminder in current context), surface to the user before the first interactive step: "This skill is collaborative — turn-by-turn dialogue produces better Design quality than autonomous execution. Recommend exiting auto-mode (`Esc` → off) for this phase. I'll proceed in either mode if you prefer."
+
+Do not force the user out of auto-mode; respect their choice. Surface the recommendation explicitly at start.
+
 ## Overview
 
 Translate research findings into an architecture through interactive discussion. Propose approaches with trade-offs, surface key architectural decisions with rationale, and include a test strategy at the design level. The discussion happens conversationally; a subagent synthesizes `design.md` per round.
@@ -44,7 +48,16 @@ Do NOT proceed to Structure without user approval of the design.
 
 ### Interactive Design Discussion
 
-1. Propose 2-3 design approaches with trade-offs, lead with recommendation
+**Phase 1 — per-goal:**
+
+1. **For each goal in `goals.md`, in order:**
+   1. Surface the relevant research findings from `research/summary.md` (and on-demand from `research/q*.md` if a decision depends on details).
+   2. Propose 2–3 candidate approaches; lead with recommendation; explain trade-offs.
+   3. Open Q&A — user asks back, you ask back, until the goal's design is settled.
+   4. Move to the next goal. Do **not** dump multiple goals' designs in one turn.
+
+**Phase 2 — cross-cutting (after all goals settled):**
+
 2. Include test strategy at the design level: what types of tests (unit, integration, E2E), what layers get tested, what frameworks. Assertion text and test file layout are deferred (see DEFERS).
 3. Include high-level Mermaid system diagram showing major components, relationships, and data flow
 4. Surface key architectural decisions with rationale (approach selection, technical trade-offs, data-flow boundaries). Phasing concerns — vertical slice authoring, phase boundaries, replan-gate criteria, PoC scoping — are owned by `qrspi:phasing` and not authored here.
@@ -233,6 +246,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — design", descr
 - Approach rationale missing — chosen approach stated but trade-offs not explained
 - "We might need X later" as justification for including X now
 - Design embeds DEFERS-list content (full DDL, full function signatures, full assertion text, line-by-line logic) — this content is owned downstream by Plan / Implement
+- Batch-presenting designs for multiple goals in one turn — pace the discussion goal-by-goal.
 
 ## Common Rationalizations — STOP
 
