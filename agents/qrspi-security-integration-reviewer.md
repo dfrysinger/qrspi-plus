@@ -15,7 +15,7 @@ Your dispatch prompt provides:
 - `companion_design` — wrapped body of `design.md` (approach and security-relevant decisions)
 - `companion_structure` — wrapped body of `structure.md` (interface definitions and data flow)
 - `companion_task_review_findings` — concatenated wrapped bodies of all current-phase task review files in `reviews/tasks/`
-- `output` — absolute path (`<ABS_ARTIFACT_DIR>/reviews/integration/round-NN-security-claude.md`)
+- `output` — absolute path to the round directory (`<ABS_ARTIFACT_DIR>/reviews/integration/round-NN/`); the reviewer constructs per-finding filenames per the disk-write contract from the reviewer-protocol skill
 - `round` — round number
 - `reviewer_tag` — `claude` or `codex`
 

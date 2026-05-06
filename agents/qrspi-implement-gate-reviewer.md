@@ -16,7 +16,7 @@ Your dispatch prompt provides:
 - `subject_code` — wrapped bodies of every task's code-changes diff for the current wave (concatenated, one wrapped block per task)
 - `companion_task_specs` — wrapped bodies of every task's `tasks/task-NN.md` for the current wave (concatenated)
 - `companion_test_results` — wrapped bodies of every task's test-output transcripts for the current wave (concatenated)
-- `output` — absolute path (`<ABS_ARTIFACT_DIR>/reviews/integration/round-NN-implement-gate-claude.md`)
+- `output` — absolute path to the round directory (`<ABS_ARTIFACT_DIR>/reviews/integration/round-NN/`); the reviewer constructs per-finding filenames per the disk-write contract from the reviewer-protocol skill
 - `round` — round number
 - `reviewer_tag` — `claude` or `codex`
 

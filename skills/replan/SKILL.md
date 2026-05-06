@@ -269,7 +269,7 @@ Recommend compaction before invoking target skill.
 
 ## Artifacts
 
-- `reviews/replan/round-NN-{reviewer}.md` — per-round per-reviewer review findings (`{reviewer}` is `claude`, `scope`, or `codex`); reviewer-authored per the disk-write contract
+- `reviews/replan/round-NN/<reviewer_tag>.finding-F<NN>.md` — per-finding files (one per reviewer-emitted finding); `<reviewer_tag>` is `quality-claude`, `scope-claude`, `quality-codex`, or `scope-codex`; reviewer-authored per the disk-write contract from the reviewer-protocol skill
 - `feedback/replan-phase-NN-round-MM.md` — replan proposals for backward loops (major changes)
 - `feedback/replan-minor-phase-NN-round-MM.md` — rejection feedback for minor change revisions
 
