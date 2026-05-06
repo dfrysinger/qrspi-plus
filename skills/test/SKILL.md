@@ -101,6 +101,8 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
 
 3. **Review test code** — follows **Review Pattern 1 (Inner Loop)** with 3 reviewers (reused per-task reviewers from Implement).
 
+   **Diff-file wiring opt-out (#112 PR-1).** Test-step reviewers analyze test quality (assertion meaningfulness, flake risk, plan-criterion traceability) — not "where in the diff." The orchestrator does NOT emit a `round-NN.diff` for the test step and does NOT pass `diff_file_path` to the dispatches below. This is an intentional opt-out from the #112 Mechanism A wiring applied to the other 12 in-scope steps; the per-§2.6-applicability table in spec #112 marks the test step as out-of-scope for diff-file dispatch.
+
    **Compaction checkpoint: pre-fanout.** Three-reviewer fan-out (goal-traceability + spec + code-quality, plus Codex parallels when enabled) reads the test code + `plan.md` + `goals.md`; saturated context produces shallow findings on the test-traceability surface. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
    Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — test", description: "pre-fanout: three-reviewer fan-out reads test code + plan.md + goals.md. User decides whether to /compact." })`.

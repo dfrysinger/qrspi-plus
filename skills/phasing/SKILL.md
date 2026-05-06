@@ -103,6 +103,8 @@ For each of `goals.md`, `questions.md`, `research/summary.md`, `design.md`:
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel reviewer dispatches per artifact per round (quality + scope). Phasing-specific reviewer instructions:
 
+**Pre-dispatch diff-file emission (#112 PR-1 Mechanism A).** Before dispatching the round's reviewers, the orchestrator runs `git diff <base-branch> -- <ABS_ARTIFACT_DIR>/phasing.md > <ABS_ARTIFACT_DIR>/reviews/phasing/round-NN.diff` as a Bash redirect (the diff content never enters main-chat context). Each reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/phasing/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository.
+
 **Compaction checkpoint: pre-fanout.** Parallel reviewer dispatch reads the full ten-artifact set (phasing.md + roadmap + 4 pruned + 4 future-* + snapshots); saturated context produces shallow findings on this large input set. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
 Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — phasing", description: "pre-fanout: parallel reviewer dispatch reads ten-artifact set. User decides whether to /compact." })`.

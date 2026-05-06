@@ -131,6 +131,8 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — structure", des
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel reviewer dispatches per artifact per round (quality + scope). Structure-specific reviewer instructions:
 
+**Pre-dispatch diff-file emission (#112 PR-1 Mechanism A).** Before dispatching the round's reviewers, the orchestrator runs `git diff <base-branch> -- <ABS_ARTIFACT_DIR>/structure.md > <ABS_ARTIFACT_DIR>/reviews/structure/round-NN.diff` as a Bash redirect (the diff content never enters main-chat context). Each reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/structure/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository.
+
 - **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-structure-reviewer", model: "sonnet" })` with a prompt containing only:
   - `artifact_body`: `structure.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=structure.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=structure.md>>>` markers
   - `companion_goals`: `goals.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=goals.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=goals.md>>>` markers

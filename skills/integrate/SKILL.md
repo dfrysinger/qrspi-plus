@@ -88,6 +88,8 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
 
    Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — integrate", description: "pre-fanout: integration + security reviewer fan-out reads merged code + design + structure + task findings. User decides whether to /compact." })`.
 
+   **Pre-dispatch diff-file emission (#112 PR-1 Mechanism A).** Before dispatching the round's reviewers, the orchestrator runs `git -C <repo> diff <base-branch> > <ABS_ARTIFACT_DIR>/reviews/integration/round-NN.diff` as a Bash redirect (the diff content never enters main-chat context — Integrate's diff covers the entire merged feature branch against the base branch, not a single artifact file). Each reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/integration/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository.
+
    **Companion preparation.** Construct the wrapped companion bodies once and reuse them across both Claude dispatches (they share inputs):
 
    - `subject_code` — concatenated wrapped bodies of every file changed across the merged task branches (one wrapped block per file, each tagged with its repo-relative path between `<<<UNTRUSTED-ARTIFACT-START id={file_path}>>>` and `<<<UNTRUSTED-ARTIFACT-END id={file_path}>>>` markers)

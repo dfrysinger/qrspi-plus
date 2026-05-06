@@ -102,6 +102,8 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — research", desc
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **no scope-reviewer** per canonical artifact-tree topology — only the quality reviewer runs (one Claude dispatch + one Codex dispatch when `codex_reviews: true`).
 
+**Pre-dispatch diff-file emission (#112 PR-1 Mechanism A).** Before dispatching the round's reviewers, the orchestrator runs `git diff <base-branch> -- <ABS_ARTIFACT_DIR>/research/summary.md > <ABS_ARTIFACT_DIR>/reviews/research/round-NN.diff` as a Bash redirect (the diff content never enters main-chat context). The reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/research/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository.
+
 - **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-research-reviewer", model: "sonnet" })` with a prompt containing only:
   - `artifact_body`: `research/summary.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=research/summary.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=research/summary.md>>>` markers
   - `companion_qfiles`: a single concatenated payload containing every `research/q*.md` file, each wrapped between its own `<<<UNTRUSTED-ARTIFACT-START id=q01.md>>>` / `<<<UNTRUSTED-ARTIFACT-END id=q01.md>>>` fences (per-file id matches the filename so the reviewer can cite specific `q*.md` defects)
