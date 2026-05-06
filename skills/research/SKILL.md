@@ -64,6 +64,10 @@ Dispatch parameters (per specialist):
 - `question_ids`: comma-separated numeric IDs the report should cover (e.g., `3` or `3,7`)
 - `defect_summary` (re-dispatch via Rejection path 2 only): orchestrator-authored sanitized defect summary; goal-bearing/intent-bearing language stripped
 
+**Direct-write contract (unambiguous default).** Per-researcher subagents write their `q*.md` report directly to `output_path` via the `Write` tool. They do **not** return report content as text. Text-return is not used anywhere in the research pipeline — the collation subagent also direct-writes (to the `research/_collated.md` staging filename, which the orchestrator then renames to `research/summary.md`). The staging-filename pattern exists precisely to avoid text-return through main chat. If the orchestrator ever omits `output_path` from a per-researcher dispatch, that is a dispatch defect — fix the orchestrator, do not fall back to text-return.
+
+**Summary-last authoring order.** The per-question report template places the structured summary block (TL;DR / key findings / surprises / caveats) at the **top** of the file — that is the consumer-facing reading order. Authoring order is the inverse: investigate first, draft the full report body, then author the summary block **last**, then place it at the top of the file. Do not generate the summary from intent before the body is complete.
+
 **Research-isolation invariant** — the specialist dispatch carries NO `companion_goals`, NO other-question content, and NO `feedback/research-round-*.md` files. This is structurally enforced — the agent body refuses goals.md / cross-question content if it ever appears in the dispatch prompt. Research isolation prevents confirmation bias.
 
 ### Collation Subagent (verbatim extraction, not synthesis)
