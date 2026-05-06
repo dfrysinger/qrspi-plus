@@ -390,4 +390,4 @@ The two override-critical rules for Test, restated at end:
 
 2. **Every test maps to a specific acceptance criterion in `plan.md`'s task-spec `## Test Expectations` block or `plan.md`'s per-phase acceptance block; `goals.md` provides the upstream traceability anchor only. Tests that don't trace to a criterion are out of scope.** Vacuous assertions (e.g., `expect(true).toBe(true)`) fail this rule because they prove nothing about the criterion.
 
-Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

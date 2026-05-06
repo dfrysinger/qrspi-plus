@@ -452,4 +452,4 @@ The three override-critical rules for Replan, restated at end:
 
 3. **DO NOT update approved artifacts before user approval.** On the Major path, proposals are written to a feedback file and target artifacts are reset to `draft` — they are NOT amended. On the Minor path, present diffs and require re-approval before setting `status: approved`.
 
-Behavioral directives D1-D3 (encourage reviews after changes, no shortcuts for speed, no time-pressure skips) apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+Behavioral directives D1-D4 (encourage reviews after changes, no shortcuts for speed, no time-pressure skips, jargon-free user-facing text) apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

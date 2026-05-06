@@ -491,4 +491,4 @@ The override-critical rules for Goals, restated at end:
 
 3. **Goals is problem-framed, not solution-prescribing.** Each goal carries the `type` field (`known-fix | exploratory`) and exactly the three subsections — Problem, Why we care, What we know so far. No top-level `Out of Scope` or acceptance-criteria sections exist. Solution candidates are framed as **possibilities for Design to weigh**, never as commitments. The "Goals OWNS / Goals DEFERS" section is the locked scope contract; the scope-reviewer dispatches against it.
 
-Behavioral directives D1-D3 (encourage reviews after changes, no shortcuts for speed, no time-pressure skips) apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+Behavioral directives D1-D4 (encourage reviews after changes, no shortcuts for speed, no time-pressure skips, jargon-free user-facing text) apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
