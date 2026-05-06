@@ -209,6 +209,44 @@ setup() {
     || { echo "step 5.5 missing <full>-fallback transcript diagnostic"; return 1; }
 }
 
+@test "[112-PR2] B8 diagnostic covers both line-range-omitted and no-H2 causes" {
+  # The diagnostic must distinguish/cover both root causes — a regression that
+  # loses H2 headings from an artifact would otherwise silently broaden.
+  echo "$PROTOCOL" | grep -qF 'no H2 headings' \
+    || { echo "B8 diagnostic does not cover the no-H2-headings cause"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 18b. Literal-token diagnostic pinning (anchor mismatch, I10 distinguish, backward-loop delete-fail)
+# -----------------------------------------------------------------------------
+
+@test "[112-PR2] anchor-mismatch broaden-fallback pins literal diagnostic" {
+  echo "$PROTOCOL" | grep -qF 'is not the prior per-round commit' \
+    || { echo "step 7.5 missing anchor-mismatch literal diagnostic"; return 1; }
+}
+
+@test "[112-PR2] I10 distinguishability emits a 'resumed run pre-tagger?' diagnostic" {
+  echo "$PROTOCOL" | grep -qF 'resumed run pre-tagger?' \
+    || { echo "step 7.5 missing I10 'resumed run pre-tagger' literal diagnostic"; return 1; }
+}
+
+@test "[112-PR2] I10 distinguishability emits a 'scope-set absent' diagnostic" {
+  echo "$PROTOCOL" | grep -qF 'scope-set absent' \
+    || { echo "step 7.5 missing I10 'scope-set absent' literal diagnostic"; return 1; }
+}
+
+@test "[112-PR2] I10 fires on rounds 1-2 too (round-1/2 silent fall-through fix)" {
+  # Codex round-2 review: tagger failure on rounds 1 or 2 must surface a
+  # diagnostic; it cannot rely on the round-3-only branch.
+  echo "$PROTOCOL" | grep -qF 'rounds 1–2 broaden by default' \
+    || { echo "step 7.5 missing rounds 1-2 missing-scope-set diagnostic"; return 1; }
+}
+
+@test "[112-PR2] backward-loop flag delete-failure surfaces a diagnostic" {
+  echo "$PROTOCOL" | grep -qF 'backward-loop flag delete failed' \
+    || { echo "step 7.5 missing backward-loop delete-fail diagnostic"; return 1; }
+}
+
 # -----------------------------------------------------------------------------
 # 3. Earliest-narrowing boundary: rounds 1-2 broaden
 # -----------------------------------------------------------------------------
