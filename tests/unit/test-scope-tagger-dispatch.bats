@@ -437,8 +437,9 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
   # Per-task is multi-file by construction — both artifact_path and artifact_body
   # pass the literal `null` so the tagger fires its multi-file branch. Pin to
-  # the artifact_path null token (the load-bearing dispatch parameter).
-  grep -qE 'artifact_path.*null' "$impl" \
+  # the canonical phrase to avoid spurious matches on prose that happens to
+  # contain both tokens.
+  grep -qF 'artifact_path` / `artifact_body`: both literal `null`' "$impl" \
     || { echo "implement/SKILL.md missing per-task artifact_path: null tagger branch"; return 1; }
 }
 
@@ -459,7 +460,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
 
 @test "[140] Integrate tagger dispatch is multi-file (artifact_path: null)" {
   local intg="$REPO_ROOT/skills/integrate/SKILL.md"
-  grep -qE 'artifact_path.*null' "$intg" \
+  grep -qF 'artifact_path` / `artifact_body`: both literal `null`' "$intg" \
     || { echo "integrate/SKILL.md missing artifact_path: null tagger branch"; return 1; }
 }
 
