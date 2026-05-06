@@ -159,7 +159,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **n
   After `await` returns, on exit 0 run the splitter to split Codex output into per-finding files:
 
   ```sh
-  scripts/codex-companion-bg.sh await --artifact-dir <ABS_DIR> <jobId> > /tmp/codex-stdout-<jobId>.txt
+  scripts/codex-companion-bg.sh await <jobId> > /tmp/codex-stdout-<jobId>.txt
   if [[ $? -eq 0 ]]; then
     scripts/codex-finding-splitter.sh /tmp/codex-stdout-<jobId>.txt reviews/research/round-NN/ quality-codex
   fi

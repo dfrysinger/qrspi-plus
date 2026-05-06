@@ -243,7 +243,7 @@ fix_type: test
 ## Artifacts
 
 - `reviews/test/round-NN-{template}-claude.md` — per-template per-round Claude reviewer findings (`{template}` is `goal-traceability`, `spec`, or `code-quality`); reviewer-authored per the disk-write contract
-- `reviews/test/round-NN-{template}-codex.md` — per-template per-round Codex stdout (filled by `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId> > ...` redirection)
+- `reviews/test/round-NN-{template}-codex.md` — per-template per-round Codex stdout (filled by `scripts/codex-companion-bg.sh await <jobId> > ...` redirection)
 - `reviews/test/round-NN-results.md` — main-chat-authored summary of test execution results (pass/fail) and acceptance coverage table
 - `reviews/test/baseline-failures.md` — baseline test failures logged when user chooses "proceed anyway" (if applicable)
 - `replan-pending.md` — marker file written before invoking Replan, deleted by Replan on completion (used for resume detection in `using-qrspi`)

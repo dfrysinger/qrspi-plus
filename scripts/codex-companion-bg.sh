@@ -8,26 +8,17 @@
 #                                 not be a TTY). The legacy --prompt-file
 #                                 path-arg form was retired in commit 21/22
 #                                 of the #110 migration sequence.
-#   await --artifact-dir <abs_path> <jobId>
-#                                 Poll status (5s/30s with backoff at 120s),
+#   await <jobId>                 Poll status (5s/30s with backoff at 120s),
 #                                 fetch result on completion, write review
 #                                 markdown to stdout; ceiling at 1200s.
-#                                 --artifact-dir is required (absolute path);
-#                                 audit rows are written canonically under
-#                                 <abs_path>/.qrspi/.
 #
 # Exit codes:
 #   0   success
 #   1   generic / launch failures
 #   10  await ceiling hit
 #   11  await: job-not-found
-#   12  audit-log integrity failure (write/lock/perm)
 #   13  await: status/result hard error or launch bad JSON
 #   14  await: malformed JSON from status/result
-#
-# Lock primitive: `mkdir <lockdir>` is atomic on POSIX and portable to macOS
-# (no flock(1)). Audit rows are well under PIPE_BUF (4096), so POSIX guarantees
-# `O_APPEND` writes are atomic — the mkdir lock is defense-in-depth.
 
 set -u
 # NOT -e: we inspect non-zero rcs from subprocesses (status legitimately exits
@@ -38,17 +29,6 @@ set -u
 : "${QRSPI_CODEX_POLL_BACKOFF_AFTER:=120}"
 : "${QRSPI_CODEX_CEILING_SECONDS:=1200}"
 : "${QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS:=5}"
-
-# Audit-path lockdown: the audit dir, file, and lock names are NOT
-# environment-overridable. The dir is resolved at runtime from `await`'s
-# trusted-caller --artifact-dir CLI flag via resolve_audit_dir() — there is
-# no env-var escape hatch. Any attacker-controlled $QRSPI_AUDIT_DIR /
-# $QRSPI_AUDIT_FILE / $QRSPI_AUDIT_LOCK_DIR they may inject is ignored.
-# Trust boundary: the QRSPI orchestrator (the Claude Code agent driving the
-# Bash tool) supplies --artifact-dir; auto-mode + Claude judgment is the
-# governing safety surface per the broader hooks-removal contract.
-readonly QRSPI_AUDIT_FILENAME="audit-codex-review.jsonl"
-readonly QRSPI_AUDIT_LOCK_NAME="audit-codex-review.lock"
 
 # ---------------------------------------------------------------------------
 # Companion path resolution: explicit $CODEX_COMPANION wins; else glob the
@@ -83,15 +63,6 @@ resolve_codex_companion() {
   printf '%s\n' "$picked"
 }
 
-# ---------------------------------------------------------------------------
-# Cross-platform mtime epoch for a path. macOS: stat -f %m; Linux: stat -c %Y.
-file_mtime_epoch() {
-  local path="$1"
-  local m
-  m=$(stat -f %m "$path" 2>/dev/null) || m=$(stat -c %Y "$path" 2>/dev/null) || return 1
-  printf '%s' "$m"
-}
-
 now_iso() {
   local v
   if ! v=$(date -u "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null) || [ -z "$v" ]; then
@@ -108,187 +79,6 @@ now_epoch() {
     return 1
   fi
   printf '%s' "$v"
-}
-
-# ---------------------------------------------------------------------------
-# resolve_audit_dir <artifact_dir>
-#
-# Validate the trusted-caller-supplied artifact_dir and echo the canonicalized
-# audit-dir path on stdout. The caller (await_subcommand) obtains artifact_dir
-# from its own --artifact-dir CLI flag.
-#
-# Hardening retained from the prior state.json-based resolver:
-#   - artifact_dir must be absolute and exist as a directory
-#   - realpath canonicalization (resolves any symlink in the ancestor chain
-#     before we open files for append, e.g. /tmp → /private/tmp on macOS)
-#   - returns 12 on any validation failure with a clear stderr message
-#
-# Hardening NOT retained (intentional, threat-model change):
-#   - state.json existence/parse checks (file is gone)
-#   - "no env override" property (replaced by "trusted-caller-supplied
-#     CLI flag", which is the QRSPI orchestrator's responsibility per
-#     auto-mode + Claude judgment)
-resolve_audit_dir() {
-  local artifact_dir="${1:-}"
-  if [ -z "$artifact_dir" ]; then
-    printf 'codex-companion-bg: resolve_audit_dir called with empty artifact_dir\n' >&2
-    return 12
-  fi
-  case "$artifact_dir" in
-    /*) ;;
-    *)
-      printf 'codex-companion-bg: artifact_dir must be absolute, got: %s\n' "$artifact_dir" >&2
-      return 12
-      ;;
-  esac
-  if [ ! -d "$artifact_dir" ]; then
-    printf 'codex-companion-bg: artifact_dir does not exist or is not a directory: %s\n' \
-      "$artifact_dir" >&2
-    return 12
-  fi
-  local canon
-  if ! canon=$(realpath "$artifact_dir" 2>/dev/null) || [ -z "$canon" ]; then
-    printf 'codex-companion-bg: realpath failed for artifact_dir %s\n' "$artifact_dir" >&2
-    return 12
-  fi
-  printf '%s/.qrspi' "$canon"
-}
-
-# ---------------------------------------------------------------------------
-# emit_audit_row job_id elapsed_seconds completion_status timestamp artifact_dir
-#
-# Append one JSONL row to <artifact_dir>/.qrspi/audit-codex-review.jsonl,
-# where <artifact_dir> is the trusted-caller value supplied via await's
-# --artifact-dir CLI flag (NOT from any env var, NOT from state.json).
-# Acquires mkdir-lock with bounded retry; reaps locks older than 30s via
-# cross-platform stat. Returns 0 on success, 12 on any integrity failure
-# (artifact_dir validation, perm, symlink, lock leak, append).
-emit_audit_row() {
-  local job_id="$1" elapsed="$2" status="$3" ts="$4" artifact_dir="$5"
-
-  # Resolve audit dir from caller-supplied artifact_dir (security-critical:
-  # no env override). Any failure here is a hard 12 — we refuse to write to
-  # a fallback location because that would mask the configuration error.
-  local audit_dir
-  if ! audit_dir=$(resolve_audit_dir "$artifact_dir"); then
-    return 12
-  fi
-  local audit_file="$audit_dir/$QRSPI_AUDIT_FILENAME"
-  local lock_dir="$audit_dir/$QRSPI_AUDIT_LOCK_NAME"
-
-  # Spec line 14: audit dir must be 0700. Create it if missing; if it already
-  # exists with looser perms, repair via chmod — and HARD FAIL if chmod fails
-  # (silent-failure C2). Do not silently honor an insecure dir.
-  if [ ! -d "$audit_dir" ]; then
-    if ! mkdir -m 0700 "$audit_dir" 2>/dev/null; then
-      printf 'codex-companion-bg: could not create audit dir %s\n' "$audit_dir" >&2
-      return 12
-    fi
-  else
-    local chmod_err
-    chmod_err=$(chmod 0700 "$audit_dir" 2>&1) || {
-      printf 'codex-companion-bg: audit dir %s exists with insecure permissions; chmod 0700 failed: %s\n' \
-        "$audit_dir" "$chmod_err" >&2
-      return 12
-    }
-  fi
-
-  # Acquire mkdir-lock with bounded retry (~10s under heavy contention).
-  # Stale-reap: if existing lockdir is older than 30s, treat as crashed-writer
-  # leftover and remove it. Uses cross-platform stat (BSD `find -mmin +0.5` is
-  # unsupported on macOS — would silently return nothing → wedge).
-  local attempts=0
-  while ! mkdir "$lock_dir" 2>/dev/null; do
-    attempts=$((attempts + 1))
-    if [ -d "$lock_dir" ]; then
-      local lock_mtime current age
-      if lock_mtime=$(file_mtime_epoch "$lock_dir") && current=$(now_epoch); then
-        age=$((current - lock_mtime))
-        if [ "$age" -gt 30 ]; then
-          if ! rmdir "$lock_dir" 2>/dev/null; then
-            if ! rm -rf "$lock_dir" 2>/dev/null; then
-              printf 'codex-companion-bg: could not reap stale lockdir %s (age=%ds)\n' \
-                "$lock_dir" "$age" >&2
-            fi
-          fi
-        fi
-      fi
-    fi
-    if [ "$attempts" -gt 400 ]; then
-      printf 'codex-companion-bg: failed to acquire audit lock after %d attempts\n' "$attempts" >&2
-      return 12
-    fi
-    sleep 0.05
-  done
-
-  # Build JSON via jq (handles control chars / quotes / backslashes correctly).
-  # jq is already a hard dependency for the bats suite and downstream callers.
-  local row
-  if ! row=$(jq -nc \
-      --arg job_id "$job_id" \
-      --argjson elapsed "$elapsed" \
-      --arg status "$status" \
-      --arg ts "$ts" \
-      '{job_id:$job_id, elapsed_seconds:$elapsed, completion_status:$status, timestamp:$ts}'); then
-    rmdir "$lock_dir" 2>/dev/null
-    printf 'codex-companion-bg: failed to encode audit JSON via jq\n' >&2
-    return 12
-  fi
-
-  # PIPE_BUF guard: POSIX guarantees `O_APPEND` writes ≤ PIPE_BUF (4096 bytes
-  # on Linux/macOS) are atomic — the foundation of the lock-free concurrency
-  # property. The mkdir lock is defense-in-depth, not a serialization layer
-  # for arbitrarily large rows. If the row plus its trailing newline exceeds
-  # 4096 bytes we fail-closed: silently truncating or interleaving would
-  # break the per-row JSONL invariant downstream consumers depend on.
-  #
-  # [CodexF2-resolved] Use `wc -c` for a true BYTE count rather than bash's
-  # ${#row}, which counts CHARACTERS in the active locale. In UTF-8 locales
-  # a multibyte char (e.g. a 4-byte emoji) counts as 1 in ${#row} but as 4
-  # bytes against PIPE_BUF, so a row with multibyte content could pass the
-  # char-check while exceeding 4096 actual bytes on append. printf '%s\n'
-  # adds the trailing newline so wc's count equals what we will write.
-  local row_len
-  row_len=$(printf '%s\n' "$row" | wc -c)
-  row_len=${row_len//[[:space:]]/}   # wc -c on macOS prefixes spaces
-  if [ "$row_len" -gt 4096 ]; then
-    rmdir "$lock_dir" 2>/dev/null
-    printf 'codex-companion-bg: audit row would be %d bytes (>4096 PIPE_BUF cap); refusing to append\n' \
-      "$row_len" >&2
-    return 12
-  fi
-
-  # Symlink lockdown (R1 Codex-S2 / task-29). If the audit-file path itself is
-  # a symlink, refuse to follow it — an attacker could plant a symlink at
-  # <audit_dir>/audit-codex-review.jsonl pointing at /etc/passwd or a sibling
-  # workspace's secrets file, and a naive `>>` append would dereference it and
-  # corrupt that target. We use `[ -L ... ]` (lstat semantics) AFTER taking
-  # the mkdir lock so the check is race-free against concurrent writers in
-  # this process group; cross-process attackers planting between this check
-  # and the append are bounded by the directory's 0700 perm we just enforced.
-  if [ -L "$audit_file" ]; then
-    rmdir "$lock_dir" 2>/dev/null
-    printf 'codex-companion-bg: audit file %s is a symlink; refusing to follow (path-injection guard)\n' \
-      "$audit_file" >&2
-    return 12
-  fi
-
-  # Capture append stderr so errno survives — never silently lose failure cause.
-  local append_err
-  if ! append_err=$(printf '%s\n' "$row" 2>&1 >>"$audit_file"); then
-    rmdir "$lock_dir" 2>/dev/null
-    printf 'codex-companion-bg: audit append failed for %s: %s\n' "$audit_file" "$append_err" >&2
-    return 12
-  fi
-
-  # Lock release on the success path. If rmdir fails, the lock is leaked and
-  # the next writer will block until stale-reap (≥30s wait) — surface as a
-  # hard integrity failure rather than pretending success.
-  if ! rmdir "$lock_dir" 2>/dev/null; then
-    printf 'codex-companion-bg: lock release failed for %s (lock leaked)\n' "$lock_dir" >&2
-    return 12
-  fi
-  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -476,9 +266,9 @@ launch_subcommand() {
 #   malformed
 #   error
 #
-# The `completed:<terminal>` form lets await_subcommand record the real terminal
-# status in its audit row without re-invoking `node ... status` a second time
-# (one fewer subprocess per terminal job).
+# The `completed:<terminal>` form lets the caller distinguish the real terminal
+# status (completed vs failed vs cancelled) without re-invoking `node ... status`
+# a second time (one fewer subprocess per terminal job).
 poll_status() {
   local companion="$1" job_id="$2"
   local tmp_out tmp_err
@@ -608,25 +398,12 @@ fetch_result() {
 # ---------------------------------------------------------------------------
 # await_subcommand
 #
-# Parse `--artifact-dir <abs_path>` (required, order-tolerant relative to the
-# positional <jobId>) and the positional jobId, then poll/await/emit audit.
+# Parse the positional jobId, then poll/await and stream the result markdown
+# to stdout.
 await_subcommand() {
   local job_id=""
-  local artifact_dir=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --artifact-dir)
-        if [ "$#" -lt 2 ]; then
-          printf 'await: --artifact-dir requires a value\n' >&2
-          return 1
-        fi
-        artifact_dir="$2"
-        shift 2
-        ;;
-      --artifact-dir=*)
-        artifact_dir="${1#--artifact-dir=}"
-        shift
-        ;;
       --)
         shift
         if [ "$#" -ge 1 ] && [ -z "$job_id" ]; then
@@ -654,22 +431,9 @@ await_subcommand() {
     printf 'await: jobId argument is required\n' >&2
     return 1
   fi
-  if [ -z "$artifact_dir" ]; then
-    printf 'await: --artifact-dir <abs_path> is required\n' >&2
-    return 1
-  fi
 
   local companion
   if ! companion=$(resolve_codex_companion); then
-    # Distinguish infrastructure failure (no companion installed) from
-    # malformed (companion returned bad JSON). Audit row still emitted so the
-    # caller's log isn't silent.
-    local ts
-    ts=$(now_iso) || ts="1970-01-01T00:00:00Z"
-    if ! emit_audit_row "$job_id" 0 "infrastructure-failure" "$ts" "$artifact_dir"; then
-      printf 'await: audit-row write failed during infrastructure-failure path for job %s\n' "$job_id" >&2
-      return 12
-    fi
     return 1
   fi
 
@@ -680,7 +444,6 @@ await_subcommand() {
   local fast_int="$QRSPI_CODEX_POLL_INTERVAL_FAST"
   local slow_int="$QRSPI_CODEX_POLL_INTERVAL_SLOW"
 
-  local final_status=""
   local final_rc=0
 
   while :; do
@@ -689,7 +452,6 @@ await_subcommand() {
     elapsed=$((now_e - start_epoch))
 
     if [ "$elapsed" -ge "$ceiling" ]; then
-      final_status="ceiling-hit"
       final_rc=10
       break
     fi
@@ -715,60 +477,38 @@ await_subcommand() {
         ;;
       completed:*)
         # Terminal status arrives encoded by poll_status as
-        # "completed:<terminal>" so we don't need a second `node ... status`
-        # subprocess to learn whether the job ended successful/failed/cancelled.
-        local terminal_status="${outcome#completed:}"
-
+        # "completed:<terminal>"; we don't currently need to differentiate
+        # the terminal status here — fetch_result handles all three.
         local res_rc=0
         if fetch_result "$companion" "$job_id"; then
-          case "$terminal_status" in
-            failed)    final_status="failed" ;;
-            cancelled) final_status="cancelled" ;;
-            *)         final_status="success" ;;
-          esac
           final_rc=0
         else
           res_rc=$?
           case "$res_rc" in
-            11) final_status="job-not-found"; final_rc=11 ;;
-            14) final_status="malformed";     final_rc=14 ;;
-            *)  final_status="malformed";     final_rc=13 ;;
+            11) final_rc=11 ;;
+            14) final_rc=14 ;;
+            *)  final_rc=13 ;;
           esac
         fi
         break
         ;;
       not-found)
-        final_status="job-not-found"
         final_rc=11
         printf 'await: job %s not found by companion\n' "$job_id" >&2
         break
         ;;
       malformed)
-        final_status="malformed"
         final_rc=14
         printf 'await: malformed status JSON for job %s\n' "$job_id" >&2
         break
         ;;
       error|*)
-        final_status="malformed"
         final_rc=13
         printf 'await: hard error from status for job %s\n' "$job_id" >&2
         break
         ;;
     esac
   done
-
-  local end_epoch elapsed_total
-  end_epoch=$(now_epoch) || return 1
-  elapsed_total=$((end_epoch - start_epoch))
-
-  local ts
-  ts=$(now_iso) || return 1
-
-  if ! emit_audit_row "$job_id" "$elapsed_total" "$final_status" "$ts" "$artifact_dir"; then
-    printf 'await: audit-row write failed for job %s\n' "$job_id" >&2
-    return 12
-  fi
 
   return "$final_rc"
 }
@@ -779,7 +519,7 @@ main() {
     cat >&2 <<'USAGE'
 Usage:
   codex-companion-bg.sh launch          (pipe prompt on stdin)
-  codex-companion-bg.sh await --artifact-dir <abs_path> <jobId>
+  codex-companion-bg.sh await <jobId>
 USAGE
     return 1
   fi
