@@ -19,7 +19,7 @@ setup() {
                 'Bash assembly' \
                 'Read.*round-NN-verified\.md' \
                 'Filter and dispatch' \
-                'Write.*round-NN-fixes\.md' \
+                'Write.*round-NN-dispositions\.md' \
                 '/compact' \
                 'Per-round commit'; do
     local pos

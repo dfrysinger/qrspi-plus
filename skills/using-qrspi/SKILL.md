@@ -168,7 +168,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   │   ├── quality-codex.finding-F01.md
     │   │   └── scope-codex.clean.md
     │   ├── round-01-verified.md               (main-chat-authored: verifier assembly)
-    │   └── round-01-fixes.md                  (main-chat-authored: what was fixed this round)
+    │   └── round-01-dispositions.md           (main-chat-authored: per-finding dispositions this round)
     ├── questions/                 (same shape; no scope reviewer for questions)
     ├── research/                  (same shape; no scope reviewer for research)
     ├── design/                    (same shape as goals/)
@@ -188,7 +188,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   │   ├── security-codex.clean.md
     │   │   ├── implement-gate-claude.finding-F01.md   (when "Re-run all reviews" at Implement batch gate)
     │   │   └── implement-gate-codex.finding-F01.md    (same condition; only when codex_reviews: true)
-    │   └── round-NN-fixes.md
+    │   └── round-NN-dispositions.md
     ├── ci/
     │   └── round-NN-review.md
     └── test/
@@ -490,7 +490,7 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 - Claude scope-reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (same shape; dedicated `qrspi-{name}-scope-reviewer` agents per #110)
 - Codex reviewer (async) → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (filled via `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId>` stdout redirection per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill)
 - Clean-round sentinel → `reviews/{step}/round-NN/<reviewer_tag>.clean.md` (one file per reviewer when zero findings)
-- Main chat fix-apply summary → `reviews/{step}/round-NN-fixes.md`
+- Main chat fix-apply summary → `reviews/{step}/round-NN-dispositions.md`
 
 `{step}` is the canonical step name (e.g. `goals`, `design`, `plan`, `replan`). `NN` is the zero-padded round number. Per-reviewer parallelism is preserved: each reviewer writes its own files into the shared round directory, and per-finding filenames are unique by reviewer tag + finding number so concurrent reviewers never race on the same file.
 
@@ -653,11 +653,11 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
    Out-of-enum `change_type` values are loud failures from step 2's schema guard (already caught before reaching step 7).
 
-8. **Write** `reviews/{step}/round-NN-fixes.md` (main-chat-authored, ≤30 lines) listing what was changed and why.
+8. **Write** `reviews/{step}/round-NN-dispositions.md` (main-chat-authored, ≤30 lines) listing the per-finding disposition (fixed, no-action with rationale, deferred) for this round.
 
 9. **`/compact`** to shed the verified-file Read content from main chat's transcript.
 
-10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-verified.md`, and `round-NN-fixes.md`. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
+10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-verified.md`, and `round-NN-dispositions.md`. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
 
 **Verifier-round failure menu.** Any abnormality during Apply-fix (VERIFY_FAILED from one or more verifiers; Codex reviewer no-output — cite `await` exit + wrapper `--artifact-dir`; Claude reviewer no-output — cite verbatim subagent return; sidecar missing for a finding) dispatches the same 3-option menu:
 
@@ -706,7 +706,7 @@ No option mutates `config.md`. `retry` is bounded by the underlying operation. T
 
 **Diff handling between rounds (round 2+).** Round NN+1 reviewers see a focused diff — not the full artifact pasted into the prompt — and main chat never reads diff content into its own context. Three steps:
 
-1. **Per-round commit on the artifact.** After step 4 (writing `round-NN-fixes.md`) and before dispatching round NN+1, commit the round-NN fixes when the artifact directory is inside a git repository: `git -C <repo> commit -m "qrspi: {step} round NN fixes"` covering the artifact and `reviews/{step}/round-NN-*.md`. The commit becomes the round's diff anchor (`HEAD~1` after the round-NN+1 fixes commit) and provides a free rollback point. When the artifact directory is not in a git repo, skip the commit step and the diff-file step below — round NN+1 reviewers see the full artifact, the same as round 1 (the per-reviewer file path savings still apply; only the diff-narrowing optimization degrades).
+1. **Per-round commit on the artifact.** After step 4 (writing `round-NN-dispositions.md`) and before dispatching round NN+1, commit the round-NN fixes when the artifact directory is inside a git repository: `git -C <repo> commit -m "qrspi: {step} round NN fixes"` covering the artifact and `reviews/{step}/round-NN-*.md`. The commit becomes the round's diff anchor (`HEAD~1` after the round-NN+1 fixes commit) and provides a free rollback point. When the artifact directory is not in a git repo, skip the commit step and the diff-file step below — round NN+1 reviewers see the full artifact, the same as round 1 (the per-reviewer file path savings still apply; only the diff-narrowing optimization degrades).
 
 2. **Orchestrator writes the diff to a file via redirect.** Before dispatching round NN+1, run a Bash call that emits no stdout: `git -C <repo> diff <ref> -- <artifact_path> > <ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff`. `<ref>` selects scope: typically `HEAD~1` for round NN+1's narrow delta; `<base-branch>` to force a fresh full-scope round (post-backward-loop, user-requested re-broaden). Bash exits 0 with no stdout — the diff content never enters main chat's transcript. Round 1 has no prior round and writes no diff file; round-1 reviewers see the full artifact only.
 
