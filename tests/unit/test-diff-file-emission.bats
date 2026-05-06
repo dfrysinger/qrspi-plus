@@ -33,6 +33,57 @@
 setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/../.."
   export REPO_ROOT
+  # The PR-1 changeset surface is enumerated symmetrically across both
+  # negative scans below. Globbing agents/qrspi-*-reviewer.md is overbroad;
+  # this list mirrors the positive Read-pattern enumeration above so
+  # positive and negative assertions are scope-aligned.
+  PR1_CHANGESET_SURFACE=(
+    skills/using-qrspi/SKILL.md
+    skills/reviewer-protocol/SKILL.md
+    skills/goals/SKILL.md
+    skills/questions/SKILL.md
+    skills/research/SKILL.md
+    skills/design/SKILL.md
+    skills/phasing/SKILL.md
+    skills/structure/SKILL.md
+    skills/parallelize/SKILL.md
+    skills/replan/SKILL.md
+    skills/plan/SKILL.md
+    skills/integrate/SKILL.md
+    skills/implement/SKILL.md
+    skills/test/SKILL.md
+    agents/qrspi-goals-reviewer.md
+    agents/qrspi-goals-scope-reviewer.md
+    agents/qrspi-questions-reviewer.md
+    agents/qrspi-research-reviewer.md
+    agents/qrspi-design-reviewer.md
+    agents/qrspi-design-scope-reviewer.md
+    agents/qrspi-phasing-reviewer.md
+    agents/qrspi-phasing-scope-reviewer.md
+    agents/qrspi-structure-reviewer.md
+    agents/qrspi-structure-scope-reviewer.md
+    agents/qrspi-parallelize-reviewer.md
+    agents/qrspi-parallelize-scope-reviewer.md
+    agents/qrspi-replan-reviewer.md
+    agents/qrspi-replan-scope-reviewer.md
+    agents/qrspi-plan-reviewer.md
+    agents/qrspi-plan-scope-reviewer.md
+    agents/qrspi-plan-spec-reviewer.md
+    agents/qrspi-plan-security-reviewer.md
+    agents/qrspi-plan-goal-traceability-reviewer.md
+    agents/qrspi-plan-test-coverage-reviewer.md
+    agents/qrspi-plan-silent-failure-hunter.md
+    agents/qrspi-implement-gate-reviewer.md
+    agents/qrspi-integration-reviewer.md
+    agents/qrspi-security-integration-reviewer.md
+    agents/qrspi-spec-reviewer.md
+    agents/qrspi-code-quality-reviewer.md
+    agents/qrspi-goal-traceability-reviewer.md
+    agents/qrspi-security-reviewer.md
+    agents/qrspi-silent-failure-hunter.md
+    agents/qrspi-code-simplifier.md
+    agents/qrspi-type-design-analyzer.md
+  )
 }
 
 # -----------------------------------------------------------------------------
@@ -45,8 +96,12 @@ setup() {
   # Literal path the orchestrator writes.
   grep -qF "round-NN.diff" "$f"
   # The git-diff-against-base-branch redirect is the load-bearing mechanic.
-  # Co-occurrence on a single line: `git diff` + `<base-branch>` + redirect.
-  grep -E "git diff.*<base-branch>.*>.*round-NN\.diff" "$f" >/dev/null
+  # Co-occurrence on a single line: `git diff` (or `git -C ... diff`) +
+  # `<base-branch>` + redirect into round-NN.diff. Tolerate both the
+  # un-quoted prose form and the fail-loud quoted-placeholder form
+  # introduced by BLOCKING-3 (`git -C "<repo>" diff "<base-branch>" --
+  # "<artifact_path>" > "<ABS_ARTIFACT_DIR>/...round-NN.diff"`).
+  grep -E "git( -C [^ ]*)? diff.*<base-branch>.*>.*round-NN\.diff" "$f" >/dev/null
 }
 
 @test "[112-PR1] using-qrspi/SKILL.md artifact-tree includes round-NN.diff entry" {
@@ -136,11 +191,14 @@ setup() {
   fi
 }
 
-@test "[112-PR1] every in-scope per-step SKILL.md cites the #112 PR-1 marker phrase" {
-  # Tighten the per-step prose check to the marker phrase used in the PR-1
-  # implementation so a sweep that drops the dispatch wiring while leaving
-  # an unrelated round-NN.diff mention (e.g. in a comment or table) is
-  # surfaced as a regression.
+@test "[112-PR1] every in-scope per-step SKILL.md names diff_file_path on the contract surface" {
+  # Couple the per-step prose check to the contract parameter name itself
+  # (diff_file_path) rather than the PR-identifier marker phrase. Three
+  # occurrences is the floor: 1 prose mention + ≥1 Claude-dispatch bullet
+  # + ≥1 Codex printf. A SKILL that drops the dispatch wiring while leaving
+  # the prose paragraph would fall below the floor and surface as a
+  # regression. test/SKILL.md is excluded by the opt-out and asserted
+  # separately at floor=1.
   local in_scope=(
     goals
     questions
@@ -158,12 +216,118 @@ setup() {
   local skill
   for skill in "${in_scope[@]}"; do
     local f="$REPO_ROOT/skills/${skill}/SKILL.md"
-    if ! grep -qF "#112 PR-1 Mechanism A" "$f"; then
+    local n
+    n=$(grep -c "diff_file_path" "$f")
+    if [ "$n" -lt 3 ]; then
+      missing+=("$f (count=$n)")
+    fi
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    printf 'FAIL: per-step SKILL.md has fewer than 3 diff_file_path occurrences (1 prose + Claude bullet + Codex printf):\n%s\n' "${missing[@]}" >&2
+    return 1
+  fi
+}
+
+@test "[112-PR1] every in-scope per-step SKILL.md wires diff_file_path into Claude dispatch bullets" {
+  # Per-step assertion: each in-scope SKILL.md must carry at least one
+  # bulleted `- \`diff_file_path\`:` parameter line in the dispatch parameter
+  # block (the per-reviewer Agent({...}) bullets). This is the load-bearing
+  # surface BLOCKING-1 caught: it is possible for a SKILL.md to contain a
+  # round-NN.diff prose mention without ever wiring the parameter into the
+  # actual dispatch.
+  local in_scope=(
+    goals
+    questions
+    research
+    design
+    phasing
+    structure
+    parallelize
+    replan
+    plan
+    integrate
+    implement
+  )
+  local missing=()
+  local skill
+  for skill in "${in_scope[@]}"; do
+    local f="$REPO_ROOT/skills/${skill}/SKILL.md"
+    # Bulleted form: leading whitespace, dash, optional whitespace, then a
+    # backticked or bare `diff_file_path` followed by a colon.
+    if ! grep -qE '^[[:space:]]*-[[:space:]]+`?diff_file_path`?:' "$f"; then
       missing+=("$f")
     fi
   done
   if [ "${#missing[@]}" -gt 0 ]; then
-    printf 'FAIL: per-step SKILL.md missing #112 PR-1 Mechanism A marker:\n%s\n' "${missing[@]}" >&2
+    printf 'FAIL: per-step SKILL.md missing bulleted diff_file_path dispatch parameter:\n%s\n' "${missing[@]}" >&2
+    return 1
+  fi
+}
+
+@test "[112-PR1] every in-scope per-step SKILL.md wires diff_file_path into Codex printf format strings" {
+  # Per-step assertion: when a SKILL.md contains a Codex `printf '...##
+  # Dispatch parameters\n...' ...` payload, the format string MUST embed
+  # `diff_file_path:` so the Codex pipeline carries the parameter alongside
+  # the Claude bullets. This is the second half of the BLOCKING-1 surface.
+  local in_scope=(
+    goals
+    questions
+    research
+    design
+    phasing
+    structure
+    parallelize
+    replan
+    plan
+    integrate
+    implement
+  )
+  local missing=()
+  local skill
+  for skill in "${in_scope[@]}"; do
+    local f="$REPO_ROOT/skills/${skill}/SKILL.md"
+    # Find lines that are Codex printf dispatch parameter blocks and assert
+    # they carry diff_file_path. Lines look like:
+    #   printf '...## Dispatch parameters...reviewer_tag: <tag>\ndiff_file_path: ...\n' ...
+    local printf_lines
+    printf_lines=$(grep -E "printf '.*## Dispatch parameters" "$f" || true)
+    if [ -z "$printf_lines" ]; then
+      # No Codex printf block in this SKILL — skip (e.g. some SKILLs may
+      # delegate Codex dispatch differently). Plan/integrate/implement all
+      # carry printf blocks; if all 11 in-scope SKILLs lacked them this
+      # assertion would silently no-op, which is acceptable here because
+      # the previous bulleted-Claude assertion already covers the dispatch
+      # surface and the diff_file_path-count floor catches the case.
+      continue
+    fi
+    # Each printf line that mentions `## Dispatch parameters` AND a
+    # `reviewer_tag:` (i.e. is a reviewer dispatch, not a worker/analyzer
+    # like replan's qrspi-replan-analyzer which is a non-reviewer worker
+    # with no reviewer_tag and no diff_file_path) MUST also carry
+    # `diff_file_path:` somewhere in its format string. A reviewer printf
+    # block missing diff_file_path is a regression.
+    local bad
+    bad=$(grep -E "printf '.*## Dispatch parameters" "$f" | grep -E "reviewer_tag:" | grep -vE "diff_file_path:" || true)
+    if [ -n "$bad" ]; then
+      missing+=("$f")
+    fi
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    printf 'FAIL: per-step SKILL.md has Codex printf block without diff_file_path:\n%s\n' "${missing[@]}" >&2
+    return 1
+  fi
+}
+
+@test "[112-PR1] skills/test/SKILL.md Codex printf blocks do NOT carry diff_file_path" {
+  # Defense-in-depth on the test-step opt-out: any Codex printf dispatch
+  # parameter block in skills/test/SKILL.md must NOT carry diff_file_path,
+  # because the test step is explicitly out-of-scope for #112 Mechanism A.
+  local f="$REPO_ROOT/skills/test/SKILL.md"
+  [ -f "$f" ]
+  local bad
+  bad=$(grep -E "printf '.*## Dispatch parameters" "$f" | grep -E "diff_file_path:" || true)
+  if [ -n "$bad" ]; then
+    printf 'FAIL: skills/test/SKILL.md Codex printf carries diff_file_path (opt-out broken):\n%s\n' "$bad" >&2
     return 1
   fi
 }
@@ -325,37 +489,18 @@ setup() {
 # (e.g. CHANGELOG, prior round notes). The negative scan is anchored to the
 # PR-1 changeset surface to avoid false positives.
 
-@test "[112-PR1] PR-1 changeset surface contains no qrspi-scope-tagger / scope_tagger_enabled mentions" {
-  local files=(
-    "$REPO_ROOT/skills/using-qrspi/SKILL.md"
-    "$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
-    "$REPO_ROOT/skills/goals/SKILL.md"
-    "$REPO_ROOT/skills/questions/SKILL.md"
-    "$REPO_ROOT/skills/research/SKILL.md"
-    "$REPO_ROOT/skills/design/SKILL.md"
-    "$REPO_ROOT/skills/phasing/SKILL.md"
-    "$REPO_ROOT/skills/structure/SKILL.md"
-    "$REPO_ROOT/skills/parallelize/SKILL.md"
-    "$REPO_ROOT/skills/replan/SKILL.md"
-    "$REPO_ROOT/skills/plan/SKILL.md"
-    "$REPO_ROOT/skills/integrate/SKILL.md"
-    "$REPO_ROOT/skills/implement/SKILL.md"
-    "$REPO_ROOT/skills/test/SKILL.md"
-  )
-  # Reviewer agents touched by PR-1.
-  local agent
-  for agent in "$REPO_ROOT"/agents/qrspi-*-reviewer.md \
-               "$REPO_ROOT"/agents/qrspi-*-scope-reviewer.md \
-               "$REPO_ROOT/agents/qrspi-silent-failure-hunter.md" \
-               "$REPO_ROOT/agents/qrspi-code-simplifier.md" \
-               "$REPO_ROOT/agents/qrspi-type-design-analyzer.md" \
-               "$REPO_ROOT/agents/qrspi-plan-silent-failure-hunter.md"; do
-    [ -f "$agent" ] && files+=("$agent")
-  done
+# Symmetric scoping — both negative scans below enumerate the SAME PR-1
+# changeset surface (the 14 SKILLs and 31 reviewer agents) via the
+# `PR1_CHANGESET_SURFACE` array initialized in setup() above. Globbing
+# agents/qrspi-*-reviewer.md would be overbroad; the explicit enumeration
+# keeps positive and negative assertions scope-aligned.
 
+@test "[112-PR1] PR-1 changeset surface contains no qrspi-scope-tagger / scope_tagger_enabled mentions" {
   local hits=()
-  local f
-  for f in "${files[@]}"; do
+  local rel
+  for rel in "${PR1_CHANGESET_SURFACE[@]}"; do
+    local f="$REPO_ROOT/$rel"
+    [ -f "$f" ] || continue
     if grep -lE "qrspi-scope-tagger|scope_tagger_enabled" "$f" >/dev/null 2>&1; then
       hits+=("$f")
     fi
@@ -366,38 +511,38 @@ setup() {
   fi
 }
 
-@test "[112-PR1] PR-1 changeset surface contains no scope_hint / scope-set mentions" {
-  # scope_hint is the PR-2 reviewer-prompt parameter; scope-set is the
-  # tagger output file — both belong exclusively to PR-2.
-  local files=(
-    "$REPO_ROOT/skills/using-qrspi/SKILL.md"
-    "$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
-    "$REPO_ROOT/skills/goals/SKILL.md"
-    "$REPO_ROOT/skills/questions/SKILL.md"
-    "$REPO_ROOT/skills/research/SKILL.md"
-    "$REPO_ROOT/skills/design/SKILL.md"
-    "$REPO_ROOT/skills/phasing/SKILL.md"
-    "$REPO_ROOT/skills/structure/SKILL.md"
-    "$REPO_ROOT/skills/parallelize/SKILL.md"
-    "$REPO_ROOT/skills/replan/SKILL.md"
-    "$REPO_ROOT/skills/plan/SKILL.md"
-    "$REPO_ROOT/skills/integrate/SKILL.md"
-    "$REPO_ROOT/skills/implement/SKILL.md"
-    "$REPO_ROOT/skills/test/SKILL.md"
-  )
-
-  local hits=()
-  local f
-  for f in "${files[@]}"; do
-    # scope_hint as a token (avoid matching `scope_hint` substrings inside
-    # unrelated identifiers — there are none expected, but we anchor on
-    # word-boundary-ish bracketing to be safe).
-    if grep -qE "scope_hint|scope-set" "$f"; then
-      hits+=("$f")
-    fi
-  done
-  if [ "${#hits[@]}" -gt 0 ]; then
-    printf 'FAIL: PR-1 changeset surface mentions PR-2 scope_hint/scope-set:\n%s\n' "${hits[@]}" >&2
+@test "[112-PR1] PR-1 additions contain no scope_hint / scope-set / convergence / narrowing / HEAD~1 tokens" {
+  # PR-2 forward-reference tokens that must remain absent from PR-1
+  # additions. scope_hint is the PR-2 reviewer-prompt parameter; scope-set
+  # is the tagger output file; convergence and narrowing describe the
+  # PR-2 round-NN-vs-round-(NN-1) ref-selection mechanic; HEAD~1 is the
+  # ref shorthand PR-2 will introduce.
+  #
+  # This test scans PR-1 additions only via `git diff <base>..HEAD` rather
+  # than the whole file, because pre-existing prose unrelated to #112
+  # (e.g. fix-loop convergence in implement/integrate, the 5-round
+  # converge-in-1-2-rounds note in using-qrspi) legitimately contains the
+  # `converg` substring. Anchoring on additions catches any new PR-2
+  # leakage without flagging benign pre-existing copy.
+  #
+  # Skip gracefully if the test is run outside a git checkout (e.g. CI on
+  # a tarball) or if the base commit is not reachable.
+  local base="a1db28d"
+  if ! git -C "$REPO_ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
+    skip "base commit $base not reachable from this checkout"
+  fi
+  local additions
+  # Lines that begin with `+` but not `+++` — i.e. content additions, not
+  # the unified-diff `+++ b/<path>` file headers. Use awk for portability
+  # across BSD/GNU grep regex dialect differences.
+  additions=$(git -C "$REPO_ROOT" diff "$base..HEAD" -- ':!tests/' | awk '/^\+\+\+/{next} /^\+/{print}')
+  if [ -z "$additions" ]; then
+    skip "no PR-1 additions to scan"
+  fi
+  local hits
+  hits=$(echo "$additions" | grep -iE 'scope_hint|scope-set|qrspi-scope-tagger|scope_tagger_enabled|converg|narrowing|HEAD~1' || true)
+  if [ -n "$hits" ]; then
+    printf 'FAIL: PR-1 additions contain PR-2 forward-reference token:\n%s\n' "$hits" >&2
     return 1
   fi
 }
