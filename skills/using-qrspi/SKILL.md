@@ -556,7 +556,7 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
        finding_file_path: <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md
        sidecar_path:      <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.score.yml
        artifact_path:     <abs_path>/<step>.md
-       diff_file_path:    <abs_path>/reviews/{step}/round-NN.diff   # empty string on round 1
+       diff_file_path:    <abs_path>/reviews/{step}/round-NN.diff
        upstream_paths: |
          <abs_path>/<upstream-artifact-1>.md
          <abs_path>/<upstream-artifact-2>.md
@@ -570,11 +570,10 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
      - artifact_path:     `<run_dir>/<step>.md` where <step> ∈
                           {goals, questions, research, design, phasing,
                            structure, parallelize, replan}.
-     - diff_file_path:    `<run_dir>/reviews/{step}/round-NN.diff`. Empty
-                          string on round 1 (no prior round, no diff yet);
-                          round 2+ uses the diff file produced by Step 1's
-                          diff-handling protocol against the prior round's
-                          fixes.
+     - diff_file_path:    `<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff`
+                          — the diff file emitted by Step 1's diff-handling
+                          protocol. Omit the parameter when the artifact
+                          directory is not inside a git repository.
      - upstream_paths:    NEWLINE-separated list. Includes (a) the upstream
                           artifacts the current step consumes per the QRSPI
                           pipeline order, AND (b) the SKILL paths the
