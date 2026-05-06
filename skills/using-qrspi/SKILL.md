@@ -167,6 +167,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   │   ├── scope-claude.clean.md            (zero findings → clean sentinel)
     │   │   ├── quality-codex.finding-F01.md
     │   │   └── scope-codex.clean.md
+    │   ├── round-01.diff                      (orchestrator-emitted: `git diff <base-branch> -- goals.md` redirected to file; reviewer dispatches Read it via `<diff_file_path>`)
     │   ├── round-01-verified.md               (main-chat-authored: verifier assembly)
     │   └── round-01-dispositions.md           (main-chat-authored: per-finding dispositions this round)
     ├── questions/                 (same shape; no scope reviewer for questions)
@@ -453,9 +454,10 @@ Skills must not:
 ## Standard Review Loop
 
 A "review round" consists of:
-1. Claude review subagent runs → issues found are fixed
-2. If Codex enabled: Codex review runs → issues found are fixed
-3. If Codex errors during execution, report the error to the user and continue without blocking
+1. **Orchestrator emits the round's diff file** before dispatching reviewers. Run `git diff <base-branch> -- <artifact_path> > <ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff` as a Bash redirect — the diff content never enters main-chat context. Reviewer dispatches then carry `<diff_file_path>` as a string parameter and reviewers Read the diff file directly. Round-1 reviewers and round-NN+1 reviewers see the same redirect-against-base-branch output (a single git op per round, byte-identical input across Claude and Codex). When the artifact directory is not inside a git repository, skip the diff-file step — reviewers fall back to the wrapped artifact body in their dispatch prompt. (See `## Review Output Handling` → "Diff handling between rounds" for the canonical mechanic.)
+2. Claude review subagent runs → issues found are fixed
+3. If Codex enabled: Codex review runs → issues found are fixed
+4. If Codex errors during execution, report the error to the user and continue without blocking
 
 After the first review round completes and fixes are applied, ask ONCE:
 
