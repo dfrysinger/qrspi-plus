@@ -88,6 +88,8 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
 
    Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — integrate", description: "pre-fanout: integration + security reviewer fan-out reads merged code + design + structure + task findings. User decides whether to /compact." })`.
 
+   **Pre-dispatch diff-file emission (#112 PR-1 Mechanism A).** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<base-branch>" > "<ABS_ARTIFACT_DIR>/reviews/integration/round-NN.diff"` as a Bash redirect (the diff content never enters main-chat context — Integrate's diff covers the entire merged feature branch against the base branch, not a single artifact file). Each reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/integration/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository. The orchestrator follows the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1 (preconditions: mkdir-p, rm-f, quoted placeholders, exit-code check). Integrate's diff covers the entire feature branch — there is no single `<artifact_path>`, so skip the artifact-tracked-in-git precondition (step 1.1); the other 5 preconditions still apply.
+
    **Companion preparation.** Construct the wrapped companion bodies once and reuse them across both Claude dispatches (they share inputs):
 
    - `subject_code` — concatenated wrapped bodies of every file changed across the merged task branches (one wrapped block per file, each tagged with its repo-relative path between `<<<UNTRUSTED-ARTIFACT-START id={file_path}>>>` and `<<<UNTRUSTED-ARTIFACT-END id={file_path}>>>` markers)
@@ -102,6 +104,7 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
      - `output`: `<ABS_ARTIFACT_DIR>/reviews/integration/round-NN/`
      - `round`: NN
      - `reviewer_tag`: `integration-claude`
+     - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/integration/round-NN.diff` (omit when the artifact directory is not in a git repo)
 
      The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling) arrives via the agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The cross-task integration checks (interface match, data flow, integration test coverage, dependency ordering) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
@@ -110,6 +113,7 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
      - `output`: `<ABS_ARTIFACT_DIR>/reviews/integration/round-NN/`
      - `round`: NN
      - `reviewer_tag`: `security-claude`
+     - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/integration/round-NN.diff` (omit when the artifact directory is not in a git repo)
 
      Same `skills: [reviewer-protocol]` preload delivers the protocol; the cross-task security checks (auth boundary integrity, data-flow secrets handling, fail-closed under composition) arrive via the agent body. Zero rules content in main chat.
 
@@ -120,16 +124,16 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-integration-reviewer.md;
-       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: integration-codex\n' \
-         "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped structure.md body>" "<concatenated wrapped task-review-findings blocks>" "$ROUND" "$ROUND";
+       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: integration-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s.diff\n' \
+         "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped structure.md body>" "<concatenated wrapped task-review-findings blocks>" "$ROUND" "$ROUND" "$ROUND";
      } | scripts/codex-companion-bg.sh launch
 
      # Security-integration reviewer (Codex)
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-security-integration-reviewer.md;
-       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: security-codex\n' \
-         "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped structure.md body>" "<concatenated wrapped task-review-findings blocks>" "$ROUND" "$ROUND";
+       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: security-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s.diff\n' \
+         "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped structure.md body>" "<concatenated wrapped task-review-findings blocks>" "$ROUND" "$ROUND" "$ROUND";
      } | scripts/codex-companion-bg.sh launch
      ```
 

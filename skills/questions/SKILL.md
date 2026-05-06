@@ -78,12 +78,15 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — questions", des
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Questions has no scope-reviewer (canonical artifact-tree contract — Questions is not in the scope-reviewer topology). Only the quality reviewer runs.
 
+**Pre-dispatch diff-file emission (#112 PR-1 Mechanism A).** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<base-branch>" -- "<ABS_ARTIFACT_DIR>/questions.md" > "<ABS_ARTIFACT_DIR>/reviews/questions/round-NN.diff"` as a Bash redirect (the diff content never enters main-chat context). The reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/questions/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository. The orchestrator follows the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1 (preconditions: artifact tracked in git, mkdir-p, rm-f, quoted placeholders, exit-code check).
+
 - **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-questions-reviewer", model: "sonnet" })` with a prompt containing only:
   - `artifact_body`: `questions.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=questions.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=questions.md>>>` markers
   - `companion_goals`: `goals.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=goals.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=goals.md>>>` markers
   - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/questions/round-NN/` (interpolate absolute path and round number)
   - `round`: NN
   - `reviewer_tag`: `quality-claude`
+  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/questions/round-NN.diff` (omit when the artifact directory is not in a git repo)
 
   The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Questions-specific checks (goal leakage, comprehensiveness, objectivity, research type tags, hybrid scrutiny) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
@@ -123,8 +126,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Questions has no
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-questions-reviewer.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/questions/round-%s/\nround: %s\nreviewer_tag: quality-codex\n' \
-      "<untrusted-data-wrapped questions.md body>" "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND";
+    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/questions/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/questions/round-%s.diff\n' \
+      "<untrusted-data-wrapped questions.md body>" "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND" "$ROUND";
   } | scripts/codex-companion-bg.sh launch
   ```
 
