@@ -228,13 +228,19 @@ setup() {
   fi
 }
 
-@test "[112-PR1] every in-scope per-step SKILL.md wires diff_file_path into Claude dispatch bullets" {
-  # Per-step assertion: each in-scope SKILL.md must carry at least one
-  # bulleted `- \`diff_file_path\`:` parameter line in the dispatch parameter
-  # block (the per-reviewer Agent({...}) bullets). This is the load-bearing
-  # surface BLOCKING-1 caught: it is possible for a SKILL.md to contain a
-  # round-NN.diff prose mention without ever wiring the parameter into the
-  # actual dispatch.
+@test "[112-PR1] every in-scope per-step SKILL.md wires diff_file_path into Claude dispatch bullets (per-dispatch)" {
+  # Per-DISPATCH assertion: for each in-scope SKILL.md the count of bulleted
+  # `- diff_file_path:` parameter lines MUST be >= the count of bulleted
+  # `- reviewer_tag:` parameter lines. The reviewer_tag bullet uniquely
+  # identifies a reviewer dispatch's parameter block (the analyzer/worker
+  # in replan has no reviewer_tag and is correctly excluded). Earlier
+  # iterations of this test required only ONE diff_file_path bullet per
+  # SKILL — for multi-dispatch SKILLs (plan, implement, integrate, design,
+  # phasing, structure, parallelize, replan) a future edit could drop the
+  # bullet from all but one Claude dispatch and still pass; the per-dispatch
+  # parity check below catches that regression. Mirrors the per-printf
+  # parity check below (which iterates each Codex `printf '...##
+  # Dispatch parameters'` line filtered by reviewer_tag).
   local in_scope=(
     goals
     questions
@@ -252,14 +258,24 @@ setup() {
   local skill
   for skill in "${in_scope[@]}"; do
     local f="$REPO_ROOT/skills/${skill}/SKILL.md"
-    # Bulleted form: leading whitespace, dash, optional whitespace, then a
-    # backticked or bare `diff_file_path` followed by a colon.
-    if ! grep -qE '^[[:space:]]*-[[:space:]]+`?diff_file_path`?:' "$f"; then
-      missing+=("$f")
+    # Bulleted reviewer_tag — leading whitespace, dash, optional whitespace,
+    # then backticked or bare `reviewer_tag:`. Excludes Codex printf-format
+    # occurrences (those are not bulleted list items).
+    local n_tag n_diff
+    n_tag=$(grep -cE '^[[:space:]]*-[[:space:]]+`?reviewer_tag`?:' "$f" || true)
+    n_diff=$(grep -cE '^[[:space:]]*-[[:space:]]+`?diff_file_path`?:' "$f" || true)
+    if [ "$n_tag" -eq 0 ]; then
+      # No bulleted reviewer dispatch in this SKILL. The per-step round-NN.diff
+      # prose check + the floor-of-3 diff_file_path-count check + the Codex
+      # printf check together cover the surface; nothing to assert here.
+      continue
+    fi
+    if [ "$n_diff" -lt "$n_tag" ]; then
+      missing+=("$f (reviewer_tag bullets=$n_tag, diff_file_path bullets=$n_diff)")
     fi
   done
   if [ "${#missing[@]}" -gt 0 ]; then
-    printf 'FAIL: per-step SKILL.md missing bulleted diff_file_path dispatch parameter:\n%s\n' "${missing[@]}" >&2
+    printf 'FAIL: per-step SKILL.md has fewer diff_file_path bullets than reviewer_tag bullets (per-dispatch parity broken):\n%s\n' "${missing[@]}" >&2
     return 1
   fi
 }
@@ -525,10 +541,22 @@ setup() {
   # `converg` substring. Anchoring on additions catches any new PR-2
   # leakage without flagging benign pre-existing copy.
   #
-  # Skip gracefully if the test is run outside a git checkout (e.g. CI on
-  # a tarball) or if the base commit is not reachable.
+  # CI-aware skip policy: in CI (`$CI` non-empty — set by GitHub Actions,
+  # GitLab CI, CircleCI, etc.) the negative-token scan is load-bearing and a
+  # missing base ref or empty additions diff is a setup error, not a no-op.
+  # Fail loud in that case so CI flags the broken assertion instead of
+  # greening silently. CI is expected to fetch full history (e.g.
+  # `actions/checkout@v4` with `fetch-depth: 0`); if that's not configured
+  # the test will fail and the diagnostic points to the checkout config.
+  # Locally (CI unset), `skip` is acceptable for developer convenience —
+  # a shallow clone or a checkout without the base ref reachable simply
+  # opts out of the additions scan rather than blocking the run.
   local base="a1db28d"
   if ! git -C "$REPO_ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
+    if [ -n "${CI:-}" ]; then
+      printf 'FAIL: base commit %s not reachable in CI (fetch full history, e.g. actions/checkout@v4 fetch-depth: 0)\n' "$base" >&2
+      return 1
+    fi
     skip "base commit $base not reachable from this checkout"
   fi
   local additions
@@ -537,6 +565,10 @@ setup() {
   # across BSD/GNU grep regex dialect differences.
   additions=$(git -C "$REPO_ROOT" diff "$base..HEAD" -- ':!tests/' | awk '/^\+\+\+/{next} /^\+/{print}')
   if [ -z "$additions" ]; then
+    if [ -n "${CI:-}" ]; then
+      printf 'FAIL: no PR-1 additions to scan in CI (expected non-empty diff vs base %s)\n' "$base" >&2
+      return 1
+    fi
     skip "no PR-1 additions to scan"
   fi
   local hits

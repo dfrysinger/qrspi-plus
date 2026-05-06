@@ -169,7 +169,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   │   └── scope-codex.clean.md
     │   ├── round-01.diff                      (orchestrator-emitted: `git diff <base-branch> -- goals.md` redirected to file; reviewer dispatches Read it via `<diff_file_path>`)
     │   ├── round-01-verified.md               (main-chat-authored: verifier assembly)
-    │   └── round-01-dispositions.md           (main-chat-authored: per-finding dispositions this round)
+    │   └── round-01-fixes.md                  (main-chat-authored: what was fixed this round)
     ├── questions/                 (same shape; no scope reviewer for questions)
     ├── research/                  (same shape; no scope reviewer for research)
     ├── design/                    (same shape as goals/)
@@ -189,7 +189,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   │   ├── security-codex.clean.md
     │   │   ├── implement-gate-claude.finding-F01.md   (when "Re-run all reviews" at Implement batch gate)
     │   │   └── implement-gate-codex.finding-F01.md    (same condition; only when codex_reviews: true)
-    │   └── round-NN-dispositions.md
+    │   └── round-NN-fixes.md
     ├── ci/
     │   └── round-NN-review.md
     └── test/
@@ -454,7 +454,18 @@ Skills must not:
 ## Standard Review Loop
 
 A "review round" consists of:
-1. **Orchestrator emits the round's diff file** before dispatching reviewers. Run `git diff <base-branch> -- <artifact_path> > <ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff` as a Bash redirect — the diff content never enters main-chat context. Reviewer dispatches then carry `<diff_file_path>` as a string parameter and reviewers Read the diff file directly. Round-1 reviewers and round-NN+1 reviewers see the same redirect-against-base-branch output (a single git op per round, byte-identical input across Claude and Codex). When the artifact directory is not inside a git repository, skip the diff-file step — reviewers fall back to the wrapped artifact body in their dispatch prompt. (See `## Review Output Handling` → "Diff handling between rounds" for the canonical mechanic.)
+1. **Orchestrator emits the round's diff file** before dispatching reviewers. The diff content never enters main-chat context. Reviewer dispatches then carry `<diff_file_path>` as a string parameter and reviewers Read the diff file directly. Round-1 reviewers and round-NN+1 reviewers see the same redirect-against-base-branch output (a single git op per round, byte-identical input across Claude and Codex). When the artifact directory is not inside a git repository, skip the diff-file step — reviewers fall back to the wrapped artifact body in their dispatch prompt.
+
+   **Fail-loud diff-emission contract (orchestrator preconditions).** Per-step prose may defer to this canonical contract by reference. The orchestrator MUST follow this exact sequence:
+
+   1. **Precondition: the artifact must be tracked in git.** When `<artifact_path>` is provided, check `git -C "<repo>" ls-files --error-unmatch -- "<artifact_path>"`; non-zero exit means the artifact is untracked. Surface a one-line diagnostic ("artifact <path> is untracked — commit before reviewer dispatch") and abort dispatch. Reviewer findings against an untracked artifact would be empty and produce a spurious clean. Skip this precondition when the orchestrator's diff covers the entire feature branch (no single `<artifact_path>` to check) — the integrate step is the canonical example; the other 5 preconditions still apply.
+   2. **Create the per-round directory.** Run `mkdir -p "<ABS_ARTIFACT_DIR>/reviews/{step}"` before the redirect (precondition for the redirect to succeed and a guard against half-written files). Capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.mkdir.stderr"`. Check `$?`. Fail loud on non-zero exit: surface the stderr to main chat as a single line ("mkdir exited <code>: <stderr>") and abort dispatch. Common failure modes (permission-denied on the parent, ENOSPC) would otherwise surface only indirectly when the redirect at step 4 fails with a misleading "no such file or directory".
+   3. **Hard-overwrite any pre-existing target as a regular file.** Run `rm -f "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff"`. This neutralises the symlink-target write-through hazard (a stale symlink at the target path would otherwise have the redirect write through to its referent). Capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.rm.stderr"`. Check `$?`. Fail loud on non-zero exit: surface the stderr to main chat as a single line ("rm exited <code>: <stderr>") and abort dispatch. (Notable failure mode: `rm -f` on a directory at the target path returns "Is a directory" non-zero — the redirect at step 4 would otherwise fail with a misleading diagnostic.)
+   4. **Emit the diff with all placeholders double-quoted.** Run `git -C "<repo>" diff "<base-branch>" -- "<artifact_path>" > "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff"` (capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff.stderr"`). Quoting prevents tokenization on whitespace inside slugs or paths. The stderr file lives next to the diff file as per-run scratch — avoid `/tmp/...` here (multi-tenant clobber across concurrent runs; not portable across all sandboxes).
+   5. **Check `$?`. Fail loud on non-zero exit.** Surface the stderr to main chat as a single line ("git diff exited <code>: <stderr>") and abort dispatch. Do NOT proceed to reviewer dispatch on a non-zero exit (stale base ref, unfetched ref, malformed `<artifact_path>`, etc. would otherwise produce a misleading empty diff).
+   6. **A zero-byte diff file after a successful exit is a valid signal in steady state** (no changes vs base). Do NOT abort on this case; reviewer dispatch proceeds normally.
+
+   See `## Review Output Handling` → "Diff handling between rounds" for the in-context narrative restatement.
 2. Claude review subagent runs → issues found are fixed
 3. If Codex enabled: Codex review runs → issues found are fixed
 4. If Codex errors during execution, report the error to the user and continue without blocking
@@ -490,9 +501,9 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 
 - Claude reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (one file per finding; `<reviewer_tag>` is e.g. `quality-claude`, `scope-claude`)
 - Claude scope-reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (same shape; dedicated `qrspi-{name}-scope-reviewer` agents per #110)
-- Codex reviewer (async) → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (filled via `scripts/codex-companion-bg.sh await <jobId>` stdout redirection per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill)
+- Codex reviewer (async) → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (filled via `scripts/codex-companion-bg.sh await --artifact-dir <ABS_ARTIFACT_DIR> <jobId>` stdout redirection per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill)
 - Clean-round sentinel → `reviews/{step}/round-NN/<reviewer_tag>.clean.md` (one file per reviewer when zero findings)
-- Main chat fix-apply summary → `reviews/{step}/round-NN-dispositions.md`
+- Main chat fix-apply summary → `reviews/{step}/round-NN-fixes.md`
 
 `{step}` is the canonical step name (e.g. `goals`, `design`, `plan`, `replan`). `NN` is the zero-padded round number. Per-reviewer parallelism is preserved: each reviewer writes its own files into the shared round directory, and per-finding filenames are unique by reviewer tag + finding number so concurrent reviewers never race on the same file.
 
@@ -654,20 +665,21 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
    Out-of-enum `change_type` values are loud failures from step 2's schema guard (already caught before reaching step 7).
 
-8. **Write** `reviews/{step}/round-NN-dispositions.md` (main-chat-authored, ≤30 lines) listing the per-finding disposition (fixed, no-action with rationale, deferred) for this round.
+8. **Write** `reviews/{step}/round-NN-fixes.md` (main-chat-authored, ≤30 lines) listing what was changed and why.
 
 9. **`/compact`** to shed the verified-file Read content from main chat's transcript.
 
-10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-verified.md`, and `round-NN-dispositions.md`. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
+10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-verified.md`, and `round-NN-fixes.md`. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
 
-**Verifier-round failure menu.** Any abnormality during Apply-fix (VERIFY_FAILED from one or more verifiers; Codex reviewer no-output — cite `await` exit code; Claude reviewer no-output — cite verbatim subagent return; sidecar missing for a finding) dispatches the same 3-option menu:
+**Verifier-round failure menu.** Any abnormality during Apply-fix (VERIFY_FAILED from one or more verifiers; Codex reviewer no-output — cite `await` exit + wrapper `--artifact-dir`; Claude reviewer no-output — cite verbatim subagent return; sidecar missing for a finding) dispatches the same 3-option menu:
 
 ```
 QRSPI verifier round failure
 ─────────────────────────────
 {one-line diagnostic summary of the abnormality, e.g.:
   - "Verifier returned VERIFY_FAILED for 2 findings"
-  - "Reviewer quality-codex produced no output (await exit 13)"
+  - "Reviewer quality-codex produced no output (await exit 12;
+    inspection: <wrapper --artifact-dir>)"
   - "Reviewer quality-claude wrote no per-finding files
     (subagent return: '<verbatim brief-return text>')"
   - "Sidecar missing for finding quality-claude.R3-F02"}
@@ -704,15 +716,15 @@ If the same path keeps failing, picking `skip` is the safe escape.
 
 No option mutates `config.md`. `retry` is bounded by the underlying operation. There is no retry counter — repeated retries surface the menu repeatedly so the user can switch to `skip` whenever.
 
-**Diff handling between rounds (round 2+).** Round NN+1 reviewers see a focused diff — not the full artifact pasted into the prompt — and main chat never reads diff content into its own context. Three steps:
+**Diff handling between rounds.** Every round (including round 1) emits a diff file before reviewer dispatch, and main chat never reads diff content into its own context. Two steps:
 
-1. **Per-round commit on the artifact.** After step 4 (writing `round-NN-dispositions.md`) and before dispatching round NN+1, commit the round-NN fixes when the artifact directory is inside a git repository: `git -C <repo> commit -m "qrspi: {step} round NN fixes"` covering the artifact and `reviews/{step}/round-NN-*.md`. The commit becomes the round's diff anchor (`HEAD~1` after the round-NN+1 fixes commit) and provides a free rollback point. When the artifact directory is not in a git repo, skip the commit step and the diff-file step below — round NN+1 reviewers see the full artifact, the same as round 1 (the per-reviewer file path savings still apply; only the diff-narrowing optimization degrades).
+1. **Orchestrator writes the diff to a file via redirect.** Run the fail-loud diff-emission contract specified in `## Standard Review Loop` step 1 above (precondition: artifact tracked in git; mkdir -p; rm -f; quoted-placeholder `git -C "<repo>" diff "<base-branch>" -- "<artifact_path>"` redirected to `<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff`; check `$?` and abort with a one-line diagnostic on non-zero). The ref is always `<base-branch>` for the current PR-1 mechanism (#112) — every round sees the full artifact-vs-base delta. Bash exits 0 with no stdout — the diff content never enters main chat's transcript. When the artifact directory is not inside a git repository, skip the diff-file step entirely; reviewers fall back to the wrapped artifact body in their dispatch prompt.
 
-2. **Orchestrator writes the diff to a file via redirect.** Before dispatching round NN+1, run a Bash call that emits no stdout: `git -C <repo> diff <ref> -- <artifact_path> > <ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff`. `<ref>` selects scope: typically `HEAD~1` for round NN+1's narrow delta; `<base-branch>` to force a fresh full-scope round (post-backward-loop, user-requested re-broaden). Bash exits 0 with no stdout — the diff content never enters main chat's transcript. Round 1 has no prior round and writes no diff file; round-1 reviewers see the full artifact only.
+2. **Reviewer dispatches reference the diff file by path.** Reviewer prompts (Claude reviewer, scope reviewer, Codex prompt-file) carry `<diff_file_path>` as a string parameter pointing at the round-NN.diff written in step 1; reviewers Read the diff file directly. Single git op per round (vs one per reviewer), byte-identical input across Claude and Codex, and main chat sees no diff text on dispatch or return.
 
-3. **Reviewer dispatches reference the diff file by path.** Round NN+1 reviewer prompts (Claude reviewer, scope reviewer, Codex prompt-file) carry `<diff_file_path>` as a string parameter pointing at the round-NN.diff written in step 2; reviewers Read the diff file directly. Single git op per round (vs one per reviewer), byte-identical input across Claude and Codex, and main chat sees no diff text on dispatch or return.
+**PR-2 forward-reference.** A follow-up PR on issue #112 will refine the ref-selection policy so reviewers can see a smaller per-round delta gated by a per-round fixes commit. Until that ships, `<base-branch>` is the only ref — there is no per-round commit, and round-1 vs round-NN+1 dispatches are identical in the diff-file mechanic.
 
-This protocol is the canonical statement of the diff-handling policy. Per-skill SKILL.md files defer to it via the Standard Review Loop reference; they do not need to repeat the diff-redirect mechanics inline.
+This protocol is the canonical statement of the diff-handling policy. Per-skill SKILL.md files defer to it via the Standard Review Loop reference (specifically `using-qrspi/SKILL.md` § Standard Review Loop step 1's fail-loud preconditions); per-step prose paragraphs can stay terse and need not duplicate the precondition list inline.
 
 **Per-task review logs differ.** The `implement` skill's per-task review log at `reviews/tasks/task-NN-review.md` follows a different shape (verbatim prompts and responses are captured for diagnostic purposes, and main chat aggregates per-reviewer responses). The disk-write contract above applies only to **artifact-level** reviews (Goals, Questions, Research, Design, Phasing, Structure, Plan, Parallelize, Replan). See `implement/SKILL.md` § Review Log Artifact for the per-task shape.
 
@@ -801,15 +813,6 @@ Mark the task `completed` once the user responds either way. The TaskCreate make
 `Before responding, consider running `/compact` — context may be saturated.`
 
 The user-facing line stands on its own; do not append a "See `## Compaction Checkpoints`" cite to it (the cite is for skill authors reading SKILL.md, not for the user reading the rendered prompt). The Iron Rule itself is NOT restated at per-site labels or piggyback-pause additions — the canonical contract above is the single source of truth. Per-site rationale stays specific to the moment (e.g., "Reviewer fan-out reads synthesis state; saturated context produces truncated findings"), the Iron Rule stays shared.
-
-### TaskCreate naming for QRSPI hierarchy
-
-Claude Code's TaskCreate has no native nested-task UI. To make QRSPI's hierarchy visible in the task list, use this naming convention:
-
-- **Phase / Wave parent task:** `Phase 2 / Wave 3 — auth endpoints`
-- **Sub-task under a Wave:** `  └─ task-04: validate JWT signature`
-
-Two leading spaces + the box-drawing tee (`└─`) indents the sub-task one level visually. The convention is naming-only — TaskCreate has no schema for nesting; orchestrators set parent status manually as sub-tasks complete. Do not introduce extra indentation levels (no `  ├─ ` or three-deep nesting); QRSPI is two levels max in the TaskCreate surface.
 
 ## Feedback File Format
 
