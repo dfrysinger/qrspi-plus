@@ -26,6 +26,11 @@ The dispatch prompt provides:
 
 1. **Read each kept finding** in `kept_findings` one at a time (small files; YAML frontmatter + prose body).
 2. **Extract the line-range citation** from each finding's `referenced_files` field. Per the line-range citation requirement formalized in `skills/reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract, every finding tied to a specific location MUST cite a line range (e.g. `path/to/file.md:120-145`, `goals.md:L42`, `skills/design/SKILL.md:L120-L134`).
+
+   **Citation schema (I9 path-traversal / malformed-input guard).** The tagger MUST validate each `referenced_files` entry against a strict schema before deriving a tag:
+   - **Path component:** non-empty; no embedded whitespace; no embedded `\n`; no `..` path segments (path-traversal guard); no leading `/` (the path MUST be repo-relative or already-absolute under the artifact directory — both shapes are accepted, but a leading `/` outside the artifact tree is rejected).
+   - **Range component (when present):** matches one of `:\d+`, `:\d+-\d+`, `:L\d+`, or `:L\d+-L\d+` after the path. (The "L" prefix is accepted because reviewer prose has historically used both forms.)
+   - **On malformed input** (path-traversal, embedded newline, range-form not matching the regex): emit a warning comment `# warning: <finding_id> has malformed referenced_files entry '<verbatim>': <reason>; tagged as full-artifact` and tag with `<full>`. Do NOT abort the tagging run; the conservative-broaden path keeps reviews moving and the warning surfaces in the brief-return's `full-artifact > 0` count, which main chat lifts into a one-line transcript diagnostic.
 3. **Branch on artifact shape:**
    - **Multi-file case** (`artifact_path == null` and `artifact_body == null`): emit `scope_tag = file path` from the finding's `referenced_files`. The path is already canonical — no derivation work, just deduplication.
    - **Single-file case** (`artifact_path` and `artifact_body` are provided):
