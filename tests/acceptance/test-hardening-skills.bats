@@ -301,11 +301,11 @@ teardown() {
 # the skill refactor — it contradicts global CLAUDE.md "default to no comments"
 # guidance. Test removed (the directive shouldn't be reintroduced).
 
-# M26 — Obs 10 (TodoWrite per parallel group) in implement SKILL.md
+# M26 — Obs 10 (TodoWrite per Wave) in implement SKILL.md
 @test "[M26][Obs10] implement SKILL.md references batch gate before parallel dispatch" {
-  # AC: Obs 10 — TodoWrite / task tracking should be set up per parallel group
+  # AC: Obs 10 — TodoWrite / task tracking should be set up per Wave
   local skill_file="$SKILLS_DIR/implement/SKILL.md"
-  grep -qi "TodoWrite\|batch.*gate\|batch gate\|parallel.*group\|dispatch" "$skill_file"
+  grep -qi "TodoWrite\|batch.*gate\|batch gate\|wave\|dispatch" "$skill_file"
 }
 
 # M26 — Obs 12 (conditional batch gate) in implement SKILL.md

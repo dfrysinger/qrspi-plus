@@ -14,5 +14,5 @@ This is the locked rule set the scope-reviewer dispatch loads at review time (Re
 - **Architecture, key decisions, system diagram, test strategy** → owned by Design. Phasing consumes design.md; it does NOT re-litigate architectural choices.
 - **File paths, module boundaries, interface contracts, file maps** → owned by Structure. Phasing names slices and phases; it does NOT enumerate files or function signatures.
 - **Task specs, LOC estimates, ordered task lists, per-task test expectations** → owned by Plan. Phasing produces the input Plan reads from (slice list + phase grouping); it does NOT write task specs.
-- **Dependency graph, parallel-group decisions, branch maps** → owned by Parallelize.
+- **Dependency graph, Wave decisions, branch maps** → owned by Parallelize.
 - **Implementation prose, code, hook syntax, subagent dispatch verbs** → owned by Implement and downstream skills. Skill-implementation jargon is a boundary-drift signal in phasing.md.

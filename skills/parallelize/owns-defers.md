@@ -3,8 +3,8 @@ This is the locked rule set the scope-reviewer dispatch consumes (Read by the `q
 ### Parallelize OWNS
 
 - The dependency graph between current-phase tasks (logical task-to-task dependencies recorded in the Dependency Analysis table).
-- File-overlap analysis across tasks (the file-disjointness check that distinguishes parallel groups from collisions inside a group).
-- Parallel execution groups (group membership, group bases, dispatch waves, the symbolic Branch Map, the Stage Commits table when multi-parent dependencies require stage commits).
+- File-overlap analysis across tasks (the file-disjointness check that distinguishes Waves from collisions inside a Wave).
+- Wave membership and Wave bases, the Wave dependency graph, the symbolic Branch Map, and the Stage Commits table when multi-parent dependencies require stage commits.
 - The Mermaid dependency graph rendered into `parallelization.md`.
 - The Execution Mode decision (sequential / parallel / hybrid) with one-sentence rationale.
 
