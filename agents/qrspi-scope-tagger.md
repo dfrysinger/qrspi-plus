@@ -43,7 +43,11 @@ The dispatch prompt provides:
    - Tag the finding with the literal whole-file marker `<full>`.
    - **Convergence implication:** a single `<full>` tag in the scope-set causes convergence detection to treat the round as "covers everything." Narrowing will not fire that round — this is the conservative behavior. Do NOT silently swallow the missing line-range; emit the warning so the round is auditable.
 5. **Deduplicate** the tag list — the same H2 heading or file path may map from multiple findings; emit each unique tag once.
-6. **Write `output_path`** with the schema below. Trailing newline required.
+6. **Normalize before write (I2 + I1 + I8 invariants).**
+   - **Whitespace (I2):** strip trailing whitespace from every tag line before write. The orchestrator's convergence rule does byte-exact set comparison; a stray trailing space would silently flip equality.
+   - **Comma in H2 headings (I1):** the `scope_hint` parameter the orchestrator emits is a comma-separated tag list. An H2 heading whose visible text contains a literal comma (e.g. `## Goals, Why, and What`) would corrupt the comma-separation when concatenated. Detect commas in the tagged H2 heading text and emit `<full>` + a top-of-file warning comment (`# warning: <finding_id> heading contains comma; tagged as full-artifact`) instead — DO NOT emit a tag line that contains a comma. (The conservative-broaden behavior matches the line-range-missing fallback.)
+   - **Reserved literal `<full>` token (I8):** the literal three-character sequence `<full>` on a tag line, with no leading `## ` and no surrounding whitespace, is reserved as the whole-file marker. Real H2 heading tags always carry the `## ` prefix, so an H2 whose visible text is the string `<full>` is emitted as `## <full>` (with the prefix); collision with the reserved token is structurally impossible.
+7. **Write `output_path`** with the schema below. Trailing newline required.
 
 ## Output schema
 

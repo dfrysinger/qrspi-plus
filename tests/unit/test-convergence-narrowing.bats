@@ -80,29 +80,133 @@ setup() {
 
 @test "[112-PR2] convergence rule covers proper subset → narrow to BROADER set" {
   # Spec §2.4: proper subset narrows to the BROADER set as safety margin.
-  # Both directions must be present: "proper subset" + "broader set"/"safety margin".
-  echo "$PROTOCOL" | grep -qiE 'proper subset' \
-    || { echo "proper-subset case missing"; return 1; }
+  # B10: bind relation+decision in a single regex per row so a regression
+  # that flips "Proper subset | Narrow" -> "Proper subset | Broaden" fails.
+  echo "$PROTOCOL" | grep -qiE 'proper subset.*\*\*[Nn]arrow' \
+    || { echo "proper-subset case missing or not bound to **Narrow** in same row"; return 1; }
   # And the BROADER-set safety-margin narrowing semantics:
   echo "$PROTOCOL" | grep -qiE 'broader set|safety margin' \
     || { echo "proper-subset case missing 'broader set' or 'safety margin' rationale"; return 1; }
 }
 
 @test "[112-PR2] convergence rule covers proper superset → broaden (auto-broaden on new tag)" {
-  echo "$PROTOCOL" | grep -qiE 'proper superset|new tag' \
-    || { echo "proper-superset / new-tag case missing"; return 1; }
-  echo "$PROTOCOL" | grep -qiE 'broaden' \
-    || { echo "broaden direction missing"; return 1; }
+  # B10: bind relation+decision per row.
+  echo "$PROTOCOL" | grep -qiE 'proper superset.*\*\*[Bb]roaden|new tags.*\*\*[Bb]roaden' \
+    || { echo "proper-superset case missing or not bound to **Broaden** in same row"; return 1; }
 }
 
 @test "[112-PR2] convergence rule covers partial overlap → broaden" {
-  echo "$PROTOCOL" | grep -qiE 'partial overlap' \
-    || { echo "partial-overlap case missing"; return 1; }
+  # B10: bind relation+decision per row.
+  echo "$PROTOCOL" | grep -qiE 'partial overlap.*\*\*[Bb]roaden' \
+    || { echo "partial-overlap case missing or not bound to **Broaden** in same row"; return 1; }
 }
 
 @test "[112-PR2] convergence rule covers disjoint → broaden" {
-  echo "$PROTOCOL" | grep -qiE 'disjoint' \
-    || { echo "disjoint case missing"; return 1; }
+  # B10: bind relation+decision per row. A regression that flips
+  # "Disjoint | Broaden" to "Disjoint | Narrow" would silently pass under
+  # the old loose grep; this regex requires both tokens in the same line.
+  echo "$PROTOCOL" | grep -qiE 'disjoint.*\*\*[Bb]roaden' \
+    || { echo "disjoint case missing or not bound to **Broaden** in same row"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 11. <full> reserved-token invariant (B3 + I8)
+# -----------------------------------------------------------------------------
+
+@test "[112-PR2] <full> is documented as a reserved literal token" {
+  echo "$PROTOCOL" | grep -qE '<full>' \
+    || { echo "step 7.5 missing <full> reference"; return 1; }
+  echo "$PROTOCOL" | grep -qiE 'reserved literal token|reserved.*token|literal token' \
+    || { echo "step 7.5 missing 'reserved literal token' invariant"; return 1; }
+}
+
+@test "[112-PR2] <full> in either set forces broaden (B3 precondition row)" {
+  # Either set containing <full> -> broaden, regardless of relation.
+  echo "$PROTOCOL" | grep -qE '<full>.*\*\*[Bb]roaden' \
+    || { echo "step 7.5 missing '<full> in either set -> broaden' precondition row"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 12. Empty-set precondition (I3)
+# -----------------------------------------------------------------------------
+
+@test "[112-PR2] either set empty -> broaden precondition row (I3)" {
+  echo "$PROTOCOL" | grep -qiE 'empty.*\*\*[Bb]roaden|either.*empty|set.*empty' \
+    || { echo "step 7.5 missing 'either set empty -> broaden' precondition row"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 13. Comment-skip parser preserves H2 tags (B1)
+# -----------------------------------------------------------------------------
+
+@test "[112-PR2] comment-skip parser rule preserves H2 tags (B1)" {
+  # The parser MUST skip "# " (single hash + space) but PRESERVE "## " H2
+  # heading lines. Documented as "lines NOT starting with # " (with space).
+  echo "$PROTOCOL" | grep -qE 'NOT starting with .#' \
+    || { echo "step 7.5 missing comment-skip parser rule"; return 1; }
+  # Must explicitly note H2 (## ) tags are preserved.
+  echo "$PROTOCOL" | grep -qiE '## .*PRESERVED|preserve.*## |H2 heading tags begin' \
+    || { echo "step 7.5 parser rule does not explicitly preserve H2 tags (## )"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 14. Byte-exact + trailing-whitespace strip rule (I2)
+# -----------------------------------------------------------------------------
+
+@test "[112-PR2] convergence comparison is byte-exact with trailing-ws strip (I2)" {
+  echo "$PROTOCOL" | grep -qiE 'byte-exact|byte exact' \
+    || { echo "step 7.5 missing byte-exact comparison rule"; return 1; }
+  echo "$PROTOCOL" | grep -qiE 'trailing whitespace|strip.*whitespace' \
+    || { echo "step 7.5 missing trailing-whitespace-strip rule"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 15. HEAD~1 anchor invariant (B5)
+# -----------------------------------------------------------------------------
+
+@test "[112-PR2] step 10 captures per-round commit SHA for HEAD~1 anchor (B5)" {
+  # Step 10's per-round commit must capture the SHA into round-NN-commit.txt
+  # so step 7.5 can assert HEAD~1 matches before narrowing.
+  echo "$PROTOCOL" | grep -qE 'round-NN-commit\.txt|round-.*-commit\.txt' \
+    || { echo "step 10 does not capture per-round commit SHA into round-NN-commit.txt"; return 1; }
+}
+
+@test "[112-PR2] step 7.5 narrow decision asserts HEAD~1 matches the captured anchor (B5)" {
+  echo "$PROTOCOL" | grep -qiE 'rev-parse HEAD~1|HEAD~1.*anchor|anchor.*HEAD~1' \
+    || { echo "step 7.5 narrow decision missing HEAD~1 anchor assertion"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 16. Backward-loop persistent flag (B6)
+# -----------------------------------------------------------------------------
+
+@test "[112-PR2] backward-loop reset uses a persistent on-disk flag file (B6)" {
+  # The pause-gate option-3 cascade writes round-NN-backward-loop.flag;
+  # step 7.5 reads + deletes the flag (consume-once).
+  echo "$PROTOCOL" | grep -qE 'round-NN-backward-loop\.flag|backward-loop\.flag' \
+    || { echo "step 7.5 missing backward-loop.flag file mention"; return 1; }
+  echo "$PROTOCOL" | grep -qiE 'consume-once|delete the flag|deletes the flag' \
+    || { echo "step 7.5 missing consume-once / delete-flag semantics"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 17. Tagger malformed-output fail-loud (B4)
+# -----------------------------------------------------------------------------
+
+@test "[112-PR2] step 5.5 structurally validates the scope-set file (B4 fail-loud)" {
+  echo "$PROTOCOL" | grep -qiE 'structural validation|structurally valid|malformed scope-set' \
+    || { echo "step 5.5 missing structural-validation block"; return 1; }
+  echo "$PROTOCOL" | grep -qiE 'failure menu|verifier-round failure' \
+    || { echo "step 5.5 structural failure does not route to verifier-round failure menu"; return 1; }
+}
+
+# -----------------------------------------------------------------------------
+# 18. <full> fallback transcript diagnostic (B8)
+# -----------------------------------------------------------------------------
+
+@test "[112-PR2] step 5.5 emits transcript diagnostic on <full> fallback (B8)" {
+  echo "$PROTOCOL" | grep -qiE 'fell back to <full>|<full>.*fall.*back|<full> for.*finding' \
+    || { echo "step 5.5 missing <full>-fallback transcript diagnostic"; return 1; }
 }
 
 # -----------------------------------------------------------------------------

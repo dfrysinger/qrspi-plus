@@ -219,3 +219,161 @@ setup() {
   grep -qE 'skipped.*tagger|skip[a-z ]*step 5\.5|tagger dispatch is skipped' "$USING_QRSPI" \
     || { echo "disabled-mode fall-through not documented"; return 1; }
 }
+
+# -----------------------------------------------------------------------------
+# 5. Per-printf and per-bullet scope_hint rigor (B9)
+# -----------------------------------------------------------------------------
+#
+# Mirrors test-diff-file-emission.bats's per-step sweeps for diff_file_path
+# (PR-1 invariant). Each sweep covers a different surface to bind the wiring
+# to the code, not just to prose.
+
+# The in-scope skill list (excludes test/SKILL.md per spec §2.6 opt-out and
+# excludes implementer-protocol/reviewer-protocol/using-qrspi which do not
+# emit reviewer dispatches).
+SCOPED_SKILLS_LIST=(goals questions research design phasing structure parallelize plan replan integrate implement)
+
+@test "[112-PR2] every in-scope per-step SKILL.md wires scope_hint into Codex printf format strings" {
+  # B9: every Codex printf block carrying reviewer_tag MUST also carry
+  # scope_hint with the wrapper.
+  for skill in goals questions research design phasing structure parallelize plan replan integrate implement; do
+    skill_path="$REPO_ROOT/skills/$skill/SKILL.md"
+    [ -f "$skill_path" ] || { echo "missing $skill_path"; return 1; }
+
+    # Every printf line that emits a reviewer_tag must also carry scope_hint.
+    # Count them and assert equality (per-tag dispatch parity).
+    rt_count=$(grep -cE "reviewer_tag: [a-z-]+\\\\n" "$skill_path" || true)
+    sh_count=$(grep -cE "scope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\\\\n" "$skill_path" || true)
+    if [[ "$rt_count" != "$sh_count" ]]; then
+      echo "skill $skill: reviewer_tag count ($rt_count) != scope_hint count ($sh_count) in printf format strings"
+      return 1
+    fi
+    if [[ "$sh_count" -lt 1 ]]; then
+      echo "skill $skill: zero scope_hint printf format strings (expected at least 1)"
+      return 1
+    fi
+  done
+}
+
+@test "[112-PR2] every in-scope per-step SKILL.md wraps scope_hint values in untrusted-data markers (B2)" {
+  # The wrapper contract from B2: every scope_hint value MUST be wrapped
+  # between <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>> and
+  # <<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>.
+  for skill in goals questions research design phasing structure parallelize plan replan integrate implement; do
+    skill_path="$REPO_ROOT/skills/$skill/SKILL.md"
+    grep -qF '<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>' "$skill_path" \
+      || { echo "skill $skill: missing UNTRUSTED-SCOPE-HINT-START marker"; return 1; }
+    grep -qF '<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>' "$skill_path" \
+      || { echo "skill $skill: missing UNTRUSTED-SCOPE-HINT-END marker"; return 1; }
+  done
+}
+
+@test "[112-PR2] every in-scope reviewer agent has a ## Scope Hint section (B9)" {
+  # Every in-scope reviewer agent MUST have a ## Scope Hint section
+  # documenting the absence + empty-value-equivalence semantics.
+  agents=(
+    qrspi-goals-reviewer qrspi-goals-scope-reviewer
+    qrspi-questions-reviewer
+    qrspi-research-reviewer
+    qrspi-design-reviewer qrspi-design-scope-reviewer
+    qrspi-phasing-reviewer qrspi-phasing-scope-reviewer
+    qrspi-structure-reviewer qrspi-structure-scope-reviewer
+    qrspi-parallelize-reviewer qrspi-parallelize-scope-reviewer
+    qrspi-replan-reviewer qrspi-replan-scope-reviewer
+    qrspi-plan-reviewer qrspi-plan-scope-reviewer qrspi-plan-spec-reviewer
+    qrspi-plan-security-reviewer qrspi-plan-silent-failure-hunter
+    qrspi-plan-goal-traceability-reviewer qrspi-plan-test-coverage-reviewer
+    qrspi-implement-gate-reviewer
+    qrspi-integration-reviewer qrspi-security-integration-reviewer
+    qrspi-spec-reviewer qrspi-code-quality-reviewer qrspi-silent-failure-hunter
+    qrspi-security-reviewer qrspi-goal-traceability-reviewer
+    qrspi-type-design-analyzer qrspi-code-simplifier
+  )
+  for agent in "${agents[@]}"; do
+    agent_path="$REPO_ROOT/agents/$agent.md"
+    [ -f "$agent_path" ] || { echo "missing $agent_path"; return 1; }
+    grep -qE '^## Scope Hint' "$agent_path" \
+      || { echo "agent $agent: missing ## Scope Hint section"; return 1; }
+  done
+}
+
+@test "[112-PR2] every in-scope reviewer agent documents empty-value equivalence (B7)" {
+  agents=(
+    qrspi-goals-reviewer qrspi-goals-scope-reviewer
+    qrspi-questions-reviewer
+    qrspi-research-reviewer
+    qrspi-design-reviewer qrspi-design-scope-reviewer
+    qrspi-phasing-reviewer qrspi-phasing-scope-reviewer
+    qrspi-structure-reviewer qrspi-structure-scope-reviewer
+    qrspi-parallelize-reviewer qrspi-parallelize-scope-reviewer
+    qrspi-replan-reviewer qrspi-replan-scope-reviewer
+    qrspi-plan-reviewer qrspi-plan-scope-reviewer qrspi-plan-spec-reviewer
+    qrspi-plan-security-reviewer qrspi-plan-silent-failure-hunter
+    qrspi-plan-goal-traceability-reviewer qrspi-plan-test-coverage-reviewer
+    qrspi-implement-gate-reviewer
+    qrspi-integration-reviewer qrspi-security-integration-reviewer
+    qrspi-spec-reviewer qrspi-code-quality-reviewer qrspi-silent-failure-hunter
+    qrspi-security-reviewer qrspi-goal-traceability-reviewer
+    qrspi-type-design-analyzer qrspi-code-simplifier
+  )
+  for agent in "${agents[@]}"; do
+    agent_path="$REPO_ROOT/agents/$agent.md"
+    grep -qiE 'empty value|empty-value|empty.*value|empty.*scope_hint|scope_hint.*empty' "$agent_path" \
+      || { echo "agent $agent: missing empty-value-equivalence prose"; return 1; }
+  done
+}
+
+@test "[112-PR2] test step opts out: skills/test/SKILL.md has no scope_hint printf (B9)" {
+  test_skill="$REPO_ROOT/skills/test/SKILL.md"
+  [ -f "$test_skill" ]
+  grep -qE 'scope_hint: %s' "$test_skill" \
+    && { echo "skills/test/SKILL.md should NOT carry scope_hint printf (test-step opt-out)"; return 1; } \
+    || true
+  grep -qF 'scope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>' "$test_skill" \
+    && { echo "skills/test/SKILL.md should NOT carry the wrapped scope_hint printf"; return 1; } \
+    || true
+  return 0
+}
+
+@test "[112-PR2] qrspi-test-coverage-reviewer has NO ## Scope Hint section (test-step opt-out)" {
+  agent_path="$REPO_ROOT/agents/qrspi-test-coverage-reviewer.md"
+  [ -f "$agent_path" ]
+  grep -qE '^## Scope Hint' "$agent_path" \
+    && { echo "qrspi-test-coverage-reviewer should NOT have ## Scope Hint section"; return 1; } \
+    || true
+  return 0
+}
+
+# -----------------------------------------------------------------------------
+# 6. Tagger normalization invariants (I1, I2, I8)
+# -----------------------------------------------------------------------------
+
+@test "[112-PR2] tagger documents trailing-whitespace strip (I2)" {
+  body=$(awk '/^---$/{n++; next} n>=2{print}' "$AGENT")
+  echo "$body" | grep -qiE 'trailing whitespace|strip.*whitespace' \
+    || { echo "tagger missing trailing-whitespace-strip rule"; return 1; }
+}
+
+@test "[112-PR2] tagger forbids comma in H2 heading tags (I1)" {
+  body=$(awk '/^---$/{n++; next} n>=2{print}' "$AGENT")
+  echo "$body" | grep -qiE 'comma|contains comma' \
+    || { echo "tagger missing comma-handling rule for H2 headings"; return 1; }
+  # Must also describe the conservative-broaden fallback.
+  echo "$body" | grep -qiE 'tagged as full-artifact|tag with <full>|<full>' \
+    || { echo "tagger missing comma -> <full> fallback"; return 1; }
+}
+
+@test "[112-PR2] tagger documents <full> as reserved literal token (I8)" {
+  body=$(awk '/^---$/{n++; next} n>=2{print}' "$AGENT")
+  echo "$body" | grep -qiE 'reserved.*token|literal token' \
+    || { echo "tagger missing <full> reserved-literal-token invariant"; return 1; }
+  # Must explain why H2 headings cannot collide.
+  echo "$body" | grep -qiE 'always carry the .## . prefix|H2.*prefix|## .*prefix' \
+    || { echo "tagger missing 'H2 always carries ## prefix -> no collision' rationale"; return 1; }
+}
+
+@test "[112-PR2] tagger documents path-traversal / malformed-citation guard (I9)" {
+  body=$(awk '/^---$/{n++; next} n>=2{print}' "$AGENT")
+  echo "$body" | grep -qiE 'path.traversal|\\.\\.|charset|range form' \
+    || { echo "tagger missing citation-schema guard (path traversal / charset / range form)"; return 1; }
+}
