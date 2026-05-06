@@ -167,7 +167,8 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   │   ├── scope-claude.clean.md            (zero findings → clean sentinel)
     │   │   ├── quality-codex.finding-F01.md
     │   │   └── scope-codex.clean.md
-    │   ├── round-01.diff                      (orchestrator-emitted: `git diff <base-branch> -- goals.md` redirected to file; reviewer dispatches Read it via `<diff_file_path>`)
+    │   ├── round-01.diff                      (orchestrator-emitted: `git diff <ref> -- goals.md` redirected to file; reviewer dispatches Read it via `<diff_file_path>`. `<ref>` is `<base-branch>` (PR-1 default) or `HEAD~1` when the convergence rule narrows for round NN+1 — see §"Diff handling between rounds")
+    │   ├── round-01-scope-set.txt             (tagger-emitted: per-round scope_tag list for the convergence comparison; absent when scope_tagger_enabled=false or tagger dispatch skipped)
     │   ├── round-01-verified.md               (main-chat-authored: verifier assembly)
     │   └── round-01-dispositions.md                  (main-chat-authored: what was fixed this round)
     ├── questions/                 (same shape; no scope reviewer for questions)
@@ -656,6 +657,53 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
    } > "$D/../round-NN-verified.md"
    ```
    The boundary HTML comments give a single-pass reader an unambiguous record delimiter without the verifier writing into the finding file. Sidecars are emitted only when present on disk, so the disabled-from-start path (no sidecars created) and the sidecar-absent edge case both produce a well-formed verified file. Header field semantics: `verifier_enabled` mirrors `config.md`; `scored` = sidecars with integer score; `failed` = sidecars with `score: VERIFY_FAILED`; `dropped` = sidecars with score < 80 AND `change_type` ∈ `style|clarity|correctness`; `kept` = (findings - dropped) — everything that survives to step 7's Edit/pause routing (sidecar score ≥80, sidecar absent, sidecar VERIFY_FAILED, scope/intent change-type, and verifier-disabled-round findings all funnel into `kept`); `clean` = count of `*.clean.md` files.
+
+5.5. **Scope-tagger dispatch (#112 PR-2 Mechanism B).** After step 5 assembles the round, dispatch ONE `qrspi-scope-tagger` Task subagent against the kept finding-files. The tagger derives one `scope_tag` per kept finding and writes `reviews/{step}/round-NN-scope-set.txt` for the orchestrator's convergence comparison in step 7.5 below.
+
+   **Scope-tagger-enabled gate.** Read `scope_tagger_enabled` from `config.md`:
+   ```bash
+   cfg=docs/qrspi/<bundle>/config.md   # absolute path resolved at runtime
+   scope_tagger_enabled=$(awk -F': *' '/^scope_tagger_enabled:/ {print $2; exit}' "$cfg")
+   if [[ -z "$scope_tagger_enabled" ]]; then
+     echo "scope_tagger_enabled missing from config.md — backfilling default 'true' for this run" >&2
+     # config.md's trailing-newline invariant lets us append directly without a
+     # leading \n. (If the invariant ever breaks, the YAML parser still tolerates
+     # the missing newline — the backfill is correctness-soft on this edge.)
+     printf 'scope_tagger_enabled: true\n' >> "$cfg"
+     scope_tagger_enabled=true
+   fi
+   if [[ "$scope_tagger_enabled" != "true" ]]; then
+     : # scope_tagger_enabled=false — skip dispatch; no scope-set file emitted.
+       # Step 7.5's convergence comparison treats every round as full-scope
+       # (no narrowing fires); reviewer dispatch falls through to PR-1's
+       # full-base-diff behavior.
+   fi
+   ```
+
+   When the gate is `true`, dispatch ONE Task call:
+
+   ```markdown
+     subagent_type: qrspi-scope-tagger
+     description:   tag scope set for round NN
+     prompt: |
+       round_subdir:    <abs_path>/reviews/{step}/round-NN/
+       step:            <step>
+       output_path:     <abs_path>/reviews/{step}/round-NN-scope-set.txt
+       artifact_path:   <abs_path>/<step>.md   # or `null` for multi-file artifacts
+       artifact_body:   <untrusted-data-wrapped artifact body>   # or `null` for multi-file
+       kept_findings: |
+         <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md
+         <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<MM>.md
+         ...
+   ```
+
+   Parameter derivation:
+   - `round_subdir`: same as the verifier dispatch round_subdir.
+   - `output_path`: `<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN-scope-set.txt` (sibling of `round-NN-verified.md` and the round directory).
+   - `artifact_path` / `artifact_body`: per-step shape — single-file artifacts (`goals`, `questions`, `design`, `phasing`, `structure`, `parallelize`, `replan`) pass the artifact path + wrapped body; multi-file artifacts (`integrate`, `implement-per-task`, `plan` + `tasks/`, `research/`) pass the literal string `null` for both.
+   - `kept_findings`: newline-separated list of finding-files that survived the verifier filter from step 5's assembly — i.e. the set of `*.finding-*.md` paths NOT in the `dropped` partition. Empty list is acceptable (an all-clean round produces an empty scope-set with header comments only).
+
+   The tagger writes ONLY the scope-set file. It returns a brief two-line summary (`Scope-set for round NN written.\nTags: N (multi-file=X, h2=Y, full-artifact=Z)`); main chat ignores the return text — the file on disk is the source of truth — but inspects the breakdown for one-line diagnostics. The tagger is per-spec out-of-scope for the §3 verifier failure menu: a tagger failure leaves the scope-set file absent, which step 7.5 treats as "no scope-set this round" (broaden — same as if the round had no findings).
 
 6. **Read** `reviews/{step}/round-NN-verified.md` exactly once.
 
