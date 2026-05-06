@@ -101,7 +101,7 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
      - `subject_code`, `companion_design`, `companion_structure`, `companion_task_review_findings` (constructed above)
      - `output`: `<ABS_ARTIFACT_DIR>/reviews/integration/round-NN/`
      - `round`: NN
-     - `reviewer_tag`: `claude`
+     - `reviewer_tag`: `integration-claude`
 
      The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling) arrives via the agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The cross-task integration checks (interface match, data flow, integration test coverage, dependency ordering) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
 
@@ -109,7 +109,7 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
      - `subject_code`, `companion_design`, `companion_structure`, `companion_task_review_findings` (same constructed bodies)
      - `output`: `<ABS_ARTIFACT_DIR>/reviews/integration/round-NN/`
      - `round`: NN
-     - `reviewer_tag`: `claude`
+     - `reviewer_tag`: `security-claude`
 
      Same `skills: [reviewer-protocol]` preload delivers the protocol; the cross-task security checks (auth boundary integrity, data-flow secrets handling, fail-closed under composition) arrive via the agent body. Zero rules content in main chat.
 
@@ -120,7 +120,7 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-integration-reviewer.md;
-       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: codex\n' \
+       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: integration-codex\n' \
          "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped structure.md body>" "<concatenated wrapped task-review-findings blocks>" "$ROUND" "$ROUND";
      } | scripts/codex-companion-bg.sh launch
 
@@ -128,7 +128,7 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-security-integration-reviewer.md;
-       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: codex\n' \
+       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: security-codex\n' \
          "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped structure.md body>" "<concatenated wrapped task-review-findings blocks>" "$ROUND" "$ROUND";
      } | scripts/codex-companion-bg.sh launch
      ```
