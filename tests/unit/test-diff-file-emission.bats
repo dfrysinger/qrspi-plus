@@ -95,13 +95,13 @@ setup() {
   [ -f "$f" ]
   # Literal path the orchestrator writes.
   grep -qF "round-NN.diff" "$f"
-  # The git-diff-against-base-branch redirect is the load-bearing mechanic.
-  # Co-occurrence on a single line: `git diff` (or `git -C ... diff`) +
-  # `<base-branch>` + redirect into round-NN.diff. Tolerate both the
-  # un-quoted prose form and the fail-loud quoted-placeholder form
-  # introduced by BLOCKING-3 (`git -C "<repo>" diff "<base-branch>" --
-  # "<artifact_path>" > "<ABS_ARTIFACT_DIR>/...round-NN.diff"`).
-  grep -E "git( -C [^ ]*)? diff.*<base-branch>.*>.*round-NN\.diff" "$f" >/dev/null
+  # The git-diff redirect is the load-bearing mechanic. PR-2 made <ref>
+  # dynamic (rounds 1-2 always use <base-branch>; HEAD~1 only fires when
+  # the convergence rule narrows). Co-occurrence on a single line:
+  # `git diff` (or `git -C ... diff`) + `<ref>` placeholder OR `<base-branch>`
+  # (PR-1's static literal still appears in some prose paragraphs that
+  # describe the broaden case) + redirect into round-NN.diff.
+  grep -E "git( -C [^ ]*)? diff.*<(ref|base-branch)>.*>.*round-NN\.diff" "$f" >/dev/null
 }
 
 @test "[112-PR1] using-qrspi/SKILL.md artifact-tree includes round-NN.diff entry" {
@@ -492,93 +492,30 @@ setup() {
 }
 
 # -----------------------------------------------------------------------------
-# 6. Self-review checklist — PR-1 must contain ZERO mention of PR-2 surfaces
+# 6. PR-2-forbidden-token negative scans — REMOVED in PR-2
 # -----------------------------------------------------------------------------
 #
-# Per the spec self-review checklist, PR-1 must contain ZERO mention of:
-#   qrspi-scope-tagger, scope_tagger_enabled, scope-set, scope_hint,
-#   convergence, narrowing, HEAD~1.
+# PR-1 originally carried two negative scans asserting that PR-1 changes did
+# not mention PR-2's forward-reference tokens (qrspi-scope-tagger,
+# scope_tagger_enabled, scope-set, scope_hint, convergence, narrowing,
+# HEAD~1). Those scans were correct in the PR-1 timeframe — they prevented
+# scope creep from PR-2 leaking back into PR-1.
 #
-# These tests scan ONLY the files PR-1 touches (using-qrspi, reviewer-protocol,
-# the 12 in-scope step SKILLs, and the 31 reviewer agents we added the note
-# to) — they do NOT scan unrelated tree files where these terms may appear
-# (e.g. CHANGELOG, prior round notes). The negative scan is anchored to the
-# PR-1 changeset surface to avoid false positives.
-
-# Symmetric scoping — both negative scans below enumerate the SAME PR-1
-# changeset surface (the 14 SKILLs and 31 reviewer agents) via the
-# `PR1_CHANGESET_SURFACE` array initialized in setup() above. Globbing
-# agents/qrspi-*-reviewer.md would be overbroad; the explicit enumeration
-# keeps positive and negative assertions scope-aligned.
-
-@test "[112-PR1] PR-1 changeset surface contains no qrspi-scope-tagger / scope_tagger_enabled mentions" {
-  local hits=()
-  local rel
-  for rel in "${PR1_CHANGESET_SURFACE[@]}"; do
-    local f="$REPO_ROOT/$rel"
-    [ -f "$f" ] || continue
-    if grep -lE "qrspi-scope-tagger|scope_tagger_enabled" "$f" >/dev/null 2>&1; then
-      hits+=("$f")
-    fi
-  done
-  if [ "${#hits[@]}" -gt 0 ]; then
-    printf 'FAIL: PR-1 changeset surface mentions PR-2 tagger/config:\n%s\n' "${hits[@]}" >&2
-    return 1
-  fi
-}
-
-@test "[112-PR1] PR-1 additions contain no scope_hint / scope-set / convergence / narrowing / HEAD~1 tokens" {
-  # PR-2 forward-reference tokens that must remain absent from PR-1
-  # additions. scope_hint is the PR-2 reviewer-prompt parameter; scope-set
-  # is the tagger output file; convergence and narrowing describe the
-  # PR-2 round-NN-vs-round-(NN-1) ref-selection mechanic; HEAD~1 is the
-  # ref shorthand PR-2 will introduce.
-  #
-  # This test scans PR-1 additions only via `git diff <base>..HEAD` rather
-  # than the whole file, because pre-existing prose unrelated to #112
-  # (e.g. fix-loop convergence in implement/integrate, the 5-round
-  # converge-in-1-2-rounds note in using-qrspi) legitimately contains the
-  # `converg` substring. Anchoring on additions catches any new PR-2
-  # leakage without flagging benign pre-existing copy.
-  #
-  # CI-aware skip policy: in CI (`$CI` non-empty — set by GitHub Actions,
-  # GitLab CI, CircleCI, etc.) the negative-token scan is load-bearing and a
-  # missing base ref or empty additions diff is a setup error, not a no-op.
-  # Fail loud in that case so CI flags the broken assertion instead of
-  # greening silently. CI is expected to fetch full history (e.g.
-  # `actions/checkout@v4` with `fetch-depth: 0`); if that's not configured
-  # the test will fail and the diagnostic points to the checkout config.
-  # Locally (CI unset), `skip` is acceptable for developer convenience —
-  # a shallow clone or a checkout without the base ref reachable simply
-  # opts out of the additions scan rather than blocking the run.
-  # Derive the base dynamically so the test stays valid after merge:
-  # pre-merge, merge-base(origin/main, HEAD) === the divergence point;
-  # post-merge, it === the merge commit, which still gives a meaningful
-  # additions-vs-base scan for PR-1 forward-reference leakage.
-  local base
-  if ! base=$(git -C "$REPO_ROOT" merge-base origin/main HEAD 2>/dev/null) || [ -z "$base" ]; then
-    if [ -n "${CI:-}" ]; then
-      printf 'FAIL: could not derive merge-base origin/main HEAD in CI (fetch full history)\n' >&2
-      return 1
-    fi
-    skip "merge-base origin/main HEAD not derivable from this checkout"
-  fi
-  local additions
-  # Lines that begin with `+` but not `+++` — i.e. content additions, not
-  # the unified-diff `+++ b/<path>` file headers. Use awk for portability
-  # across BSD/GNU grep regex dialect differences.
-  additions=$(git -C "$REPO_ROOT" diff "$base..HEAD" -- ':!tests/' | awk '/^\+\+\+/{next} /^\+/{print}')
-  if [ -z "$additions" ]; then
-    if [ -n "${CI:-}" ]; then
-      printf 'FAIL: no PR-1 additions to scan in CI (expected non-empty diff vs base %s)\n' "$base" >&2
-      return 1
-    fi
-    skip "no PR-1 additions to scan"
-  fi
-  local hits
-  hits=$(echo "$additions" | grep -iE 'scope_hint|scope-set|qrspi-scope-tagger|scope_tagger_enabled|converg|narrowing|HEAD~1' || true)
-  if [ -n "$hits" ]; then
-    printf 'FAIL: PR-1 additions contain PR-2 forward-reference token:\n%s\n' "$hits" >&2
-    return 1
-  fi
-}
+# PR-2 IS now introducing those tokens by design: the agent file
+# qrspi-scope-tagger.md, the scope_tagger_enabled config field, the
+# scope_hint reviewer dispatch parameter, the round-NN-scope-set.txt
+# output file, the convergence rule (step 7.5), the auto-broaden semantics,
+# and HEAD~1 as the narrowed-round diff ref are all PR-2 surfaces. Keeping
+# the scans here would block every PR-2 commit on a tautological violation.
+#
+# The PR-2 surface is now positively asserted in two new bats files:
+#   - tests/unit/test-scope-tagger-dispatch.bats (20 tests)
+#   - tests/unit/test-convergence-narrowing.bats (18 tests)
+#
+# Those files take over the responsibility this scan held — the
+# enumeration is positive ("the spec mechanic IS documented in the right
+# places") rather than negative ("PR-1 didn't mention PR-2"). Negative
+# scans were a temporal artifact; positive scans are the durable contract.
+#
+# The PR1_CHANGESET_SURFACE array in setup() is retained because tests 1-14
+# above still use it for positive PR-1 surface assertions.
