@@ -119,7 +119,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
      - `subject_code`, `companion_plan`, `companion_goals` (constructed above)
      - `output`: `<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`
      - `round`: NN
-     - `reviewer_tag`: `claude`
+     - `reviewer_tag`: `spec-claude`
 
      The reviewer protocol arrives via the agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Test-phase branch of the agent body checks: do the assertions verify what they claim? Are they meaningful, not vacuous?
 
@@ -127,7 +127,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
      - `subject_code`, `companion_plan`, `companion_goals`
      - `output`: `<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`
      - `round`: NN
-     - `reviewer_tag`: `claude`
+     - `reviewer_tag`: `code-quality-claude`
 
      Test-phase branch checks: is the test reliable? Flaky setup? Race conditions? Proper cleanup?
 
@@ -135,7 +135,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
      - `subject_code`, `companion_plan`, `companion_goals`
      - `output`: `<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`
      - `round`: NN
-     - `reviewer_tag`: `claude`
+     - `reviewer_tag`: `goal-traceability-claude`
 
      Test-phase branch checks: does each test map to a `plan.md` criterion? Does each plan-level criterion trace upstream to a goal? Any untested criteria?
 
@@ -148,7 +148,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-spec-reviewer.md;
-       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/test/round-%s/\nround: %s\nreviewer_tag: codex\n' \
+       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/test/round-%s/\nround: %s\nreviewer_tag: spec-codex\n' \
          "<concatenated wrapped test-file blocks>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND";
      } | scripts/codex-companion-bg.sh launch
 
@@ -156,7 +156,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-code-quality-reviewer.md;
-       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/test/round-%s/\nround: %s\nreviewer_tag: codex\n' \
+       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/test/round-%s/\nround: %s\nreviewer_tag: code-quality-codex\n' \
          "<concatenated wrapped test-file blocks>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND";
      } | scripts/codex-companion-bg.sh launch
 
@@ -164,7 +164,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-goal-traceability-reviewer.md;
-       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/test/round-%s/\nround: %s\nreviewer_tag: codex\n' \
+       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/test/round-%s/\nround: %s\nreviewer_tag: goal-traceability-codex\n' \
          "<concatenated wrapped test-file blocks>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND";
      } | scripts/codex-companion-bg.sh launch
      ```
