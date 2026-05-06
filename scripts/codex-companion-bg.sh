@@ -266,9 +266,9 @@ launch_subcommand() {
 #   malformed
 #   error
 #
-# The `completed:<terminal>` form lets await_subcommand record the real terminal
-# status in its audit row without re-invoking `node ... status` a second time
-# (one fewer subprocess per terminal job).
+# The `completed:<terminal>` form lets the caller distinguish the real terminal
+# status (completed vs failed vs cancelled) without re-invoking `node ... status`
+# a second time (one fewer subprocess per terminal job).
 poll_status() {
   local companion="$1" job_id="$2"
   local tmp_out tmp_err
