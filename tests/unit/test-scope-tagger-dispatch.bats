@@ -377,3 +377,128 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   echo "$body" | grep -qiE 'path.traversal|\\.\\.|charset|range form' \
     || { echo "tagger missing citation-schema guard (path traversal / charset / range form)"; return 1; }
 }
+
+# -----------------------------------------------------------------------------
+# 7. #140 — per-task Implement and Integrate convergence narrowing
+# -----------------------------------------------------------------------------
+#
+# #140 lifts the DEFERRED status from per-task Implement and Integrate, wiring
+# scope-tagger dispatch + convergence narrowing for both surfaces. These
+# assertions ground on the per-flow scope-set output paths, the absence of the
+# DEFERRED token, the per-round commit anchor file paths, and the implement-
+# gate opt-out decision.
+
+@test "[140] skills/implement/SKILL.md per-task review section drops the DEFERRED framing" {
+  # The line-383 paragraph MUST no longer claim the per-task narrowing is
+  # DEFERRED. Scope is the per-task review section only — match against the
+  # phrase "per-task narrowing DEFERRED" (the original DEFERRED label) plus
+  # any "DEFERRED to a follow-up" hedge.
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  [ -f "$impl" ]
+  if grep -qE 'per-task narrowing DEFERRED|narrowing.*DEFERRED|DEFERRED to a follow-up' "$impl"; then
+    echo "implement/SKILL.md still carries DEFERRED framing for per-task narrowing"
+    return 1
+  fi
+}
+
+@test "[140] skills/integrate/SKILL.md drops the DEFERRED framing" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  [ -f "$intg" ]
+  if grep -qE 'Integrate-side narrowing DEFERRED|narrowing.*DEFERRED|DEFERRED to a follow-up' "$intg"; then
+    echo "integrate/SKILL.md still carries DEFERRED framing for Integrate narrowing"
+    return 1
+  fi
+}
+
+@test "[140] per-task Implement scope-set emission path is reviews/tasks/task-NN/round-NN-scope-set.txt" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  grep -qF 'reviews/tasks/task-NN/round-NN-scope-set.txt' "$impl" \
+    || { echo "implement/SKILL.md missing per-task scope-set emission path"; return 1; }
+}
+
+@test "[140] per-task Implement dispatches qrspi-scope-tagger" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  # Either an explicit qrspi-scope-tagger reference in the per-task convergence
+  # subsection, OR a reference to using-qrspi step 5.5 (which does the dispatch).
+  grep -qE 'qrspi-scope-tagger' "$impl" \
+    || { echo "implement/SKILL.md missing qrspi-scope-tagger reference"; return 1; }
+  # Must also reference using-qrspi step 5.5 as the canonical contract.
+  grep -qE 'step.*5\.5|5\.5.*step' "$impl" \
+    || { echo "implement/SKILL.md does not reference using-qrspi step 5.5"; return 1; }
+}
+
+@test "[140] per-task Implement carries kept_findings parameter for tagger dispatch" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  grep -qE 'kept_findings' "$impl" \
+    || { echo "implement/SKILL.md missing kept_findings parameter"; return 1; }
+}
+
+@test "[140] per-task Implement carries multi-file tagger branch (artifact_path: null)" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  # Per-task is multi-file by construction — both artifact_path and artifact_body
+  # pass the literal `null` so the tagger fires its multi-file branch. Pin to
+  # the canonical phrase to avoid spurious matches on prose that happens to
+  # contain both tokens.
+  grep -qF 'artifact_path` / `artifact_body`: both literal `null`' "$impl" \
+    || { echo "implement/SKILL.md missing per-task artifact_path: null tagger branch"; return 1; }
+}
+
+@test "[140] Integrate scope-set emission path is reviews/integration/round-NN-scope-set.txt" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qF 'reviews/integration/round-NN-scope-set.txt' "$intg" \
+    || { echo "integrate/SKILL.md missing scope-set emission path"; return 1; }
+}
+
+@test "[140] Integrate dispatches qrspi-scope-tagger" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qE 'qrspi-scope-tagger' "$intg" \
+    || { echo "integrate/SKILL.md missing qrspi-scope-tagger reference"; return 1; }
+  # Must also reference using-qrspi step 5.5 as the canonical contract.
+  grep -qE 'step.*5\.5|5\.5.*step' "$intg" \
+    || { echo "integrate/SKILL.md does not reference using-qrspi step 5.5"; return 1; }
+}
+
+@test "[140] Integrate tagger dispatch is multi-file (artifact_path: null)" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qF 'artifact_path` / `artifact_body`: both literal `null`' "$intg" \
+    || { echo "integrate/SKILL.md missing artifact_path: null tagger branch"; return 1; }
+}
+
+@test "[140] implement-gate reviewer is documented as opt-out (single-shot, no narrowing)" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  # The opt-out must mention either implement-gate-reviewer with opt-out semantics,
+  # OR implement-gate-scope-set explicitly absent. The current decision is opt-out.
+  grep -qiE 'implement.gate.*opt.out|implement.gate.*single.shot|single.shot.*implement.gate|implement-gate.*not.*multi.round' "$impl" \
+    || { echo "implement/SKILL.md missing implement-gate opt-out documentation"; return 1; }
+  # Negative regression: there should be NO scope-set emission path under
+  # reviews/integration/round-NN-implement-gate-scope-set.txt
+  if grep -qF 'round-NN-implement-gate-scope-set.txt' "$impl"; then
+    echo "implement/SKILL.md should NOT emit a scope-set for implement-gate (opt-out)"
+    return 1
+  fi
+}
+
+@test "[140] per-task Implement structural-validation guard is referenced (B4)" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  # B4 fail-loud guard: malformed scope-set routes through verifier-round failure menu.
+  grep -qiE 'structural validation|structurally valid|malformed scope-set|fail.loud' "$impl" \
+    || { echo "implement/SKILL.md missing per-task B4 structural-validation reference"; return 1; }
+}
+
+@test "[140] Integrate structural-validation guard is referenced (B4)" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qiE 'structural validation|structurally valid|malformed scope-set|fail.loud' "$intg" \
+    || { echo "integrate/SKILL.md missing B4 structural-validation reference"; return 1; }
+}
+
+@test "[140] per-task Implement full-artifact-fallback diagnostic is referenced (B8)" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  grep -qiE 'full-artifact|<full>.*fall.*back|fell back to <full>|full-artifact-fallback' "$impl" \
+    || { echo "implement/SKILL.md missing per-task B8 full-artifact-fallback diagnostic"; return 1; }
+}
+
+@test "[140] Integrate full-artifact-fallback diagnostic is referenced (B8)" {
+  local intg="$REPO_ROOT/skills/integrate/SKILL.md"
+  grep -qiE 'full-artifact|<full>.*fall.*back|fell back to <full>|full-artifact-fallback' "$intg" \
+    || { echo "integrate/SKILL.md missing B8 full-artifact-fallback diagnostic"; return 1; }
+}
