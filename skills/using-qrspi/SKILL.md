@@ -802,6 +802,15 @@ Mark the task `completed` once the user responds either way. The TaskCreate make
 
 The user-facing line stands on its own; do not append a "See `## Compaction Checkpoints`" cite to it (the cite is for skill authors reading SKILL.md, not for the user reading the rendered prompt). The Iron Rule itself is NOT restated at per-site labels or piggyback-pause additions — the canonical contract above is the single source of truth. Per-site rationale stays specific to the moment (e.g., "Reviewer fan-out reads synthesis state; saturated context produces truncated findings"), the Iron Rule stays shared.
 
+### TaskCreate naming for QRSPI hierarchy
+
+Claude Code's TaskCreate has no native nested-task UI. To make QRSPI's hierarchy visible in the task list, use this naming convention:
+
+- **Phase / Wave parent task:** `Phase 2 / Wave 3 — auth endpoints`
+- **Sub-task under a Wave:** `  └─ task-04: validate JWT signature`
+
+Two leading spaces + the box-drawing tee (`└─`) indents the sub-task one level visually. The convention is naming-only — TaskCreate has no schema for nesting; orchestrators set parent status manually as sub-tasks complete. Do not introduce extra indentation levels (no `  ├─ ` or three-deep nesting); QRSPI is two levels max in the TaskCreate surface.
+
 ## Feedback File Format
 
 When a user rejects an artifact, the feedback is captured in `{artifact-dir}/feedback/{step}-round-{NN}.md`:
