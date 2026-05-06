@@ -460,18 +460,18 @@ Skills must not:
 ## Standard Review Loop
 
 A "review round" consists of:
-1. **Orchestrator emits the round's diff file** before dispatching reviewers. The diff content never enters main-chat context. Reviewer dispatches then carry `<diff_file_path>` as a string parameter and reviewers Read the diff file directly. Round-1 reviewers and round-NN+1 reviewers see the same redirect-against-base-branch output (a single git op per round, byte-identical input across Claude and Codex). When the artifact directory is not inside a git repository, skip the diff-file step — reviewers fall back to the wrapped artifact body in their dispatch prompt.
+1. **Orchestrator emits the round's diff file** before dispatching reviewers. The diff content never enters main-chat context. Reviewer dispatches then carry `<diff_file_path>` as a string parameter and reviewers Read the diff file directly. The orchestrator picks `<ref>` per the convergence rule (PR-2 Mechanism B) — see "Diff handling between rounds" below for the rule, but in summary: rounds 1 and 2 always use `<ref>=<base-branch>`; round NN+1 uses `<ref>=HEAD~1` only when step 7.5's convergence comparison fires "narrow" against round NN, and falls back to `<ref>=<base-branch>` otherwise (broaden, scope_tagger_enabled=false, missing scope-set, or after a backward-loop reset). When the artifact directory is not inside a git repository, skip the diff-file step — reviewers fall back to the wrapped artifact body in their dispatch prompt.
 
    **Fail-loud diff-emission contract (orchestrator preconditions).** Per-step prose may defer to this canonical contract by reference. The orchestrator MUST follow this exact sequence:
 
    1. **Precondition: each artifact path must be tracked in git.** When the redirect names one or more `<artifact_path>` arguments, run `git -C "<repo>" ls-files --error-unmatch -- "<artifact_path>"` for EACH path; any non-zero exit means that path is untracked. Surface a one-line diagnostic ("artifact <path> is untracked — commit before reviewer dispatch") and abort dispatch. Reviewer findings against an untracked artifact (or an untracked file under a tracked directory like `tasks/task-NN.md`) would be missing from the diff and produce a spurious clean. The `plan` step is multi-path (`plan.md` + `tasks/`) and each path must be checked. Skip this precondition only when the redirect covers the entire feature branch with no `<artifact_path>` argument (the integrate step is the canonical example); the other 5 preconditions still apply.
    2. **Create the per-round directory.** Run `mkdir -p "<ABS_ARTIFACT_DIR>/reviews/{step}"` before the redirect (precondition for the redirect to succeed and a guard against half-written files). Capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.mkdir.stderr"`. Check `$?`. Fail loud on non-zero exit: surface the stderr to main chat as a single line ("mkdir exited <code>: <stderr>") and abort dispatch. Common failure modes (permission-denied on the parent, ENOSPC) would otherwise surface only indirectly when the redirect at step 4 fails with a misleading "no such file or directory".
    3. **Hard-overwrite any pre-existing target as a regular file.** Run `rm -f "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff"`. This neutralises the leaf-file write-through hazard (a stale symlink at the diff-file path would otherwise have the redirect write through to its referent); note that the parent `reviews/{step}/` directory is NOT symlink-hardened — `mkdir -p` follows symlinked directories — so a symlink at the parent path would still write through, but the realistic threat is low because the orchestrator owns its working directory. Capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.rm.stderr"`. Check `$?`. Fail loud on non-zero exit: surface the stderr to main chat as a single line ("rm exited <code>: <stderr>") and abort dispatch. (Notable failure mode: `rm -f` on a directory at the target path returns "Is a directory" non-zero — the redirect at step 4 would otherwise fail with a misleading diagnostic.)
-   4. **Emit the diff with all placeholders double-quoted.** Run `git -C "<repo>" diff "<base-branch>" -- "<artifact_path>" > "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff"` (capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff.stderr"`). Quoting prevents tokenization on whitespace inside slugs or paths. The stderr file lives next to the diff file as per-run scratch — avoid `/tmp/...` here (multi-tenant clobber across concurrent runs; not portable across all sandboxes).
-   5. **Check `$?`. Fail loud on non-zero exit.** Surface the stderr to main chat as a single line ("git diff exited <code>: <stderr>") and abort dispatch. Do NOT proceed to reviewer dispatch on a non-zero exit (stale base ref, unfetched ref, malformed `<artifact_path>`, etc. would otherwise produce a misleading empty diff).
-   6. **A zero-byte diff file after a successful exit is a valid signal in steady state** (no changes vs base). Do NOT abort on this case; reviewer dispatch proceeds normally.
+   4. **Emit the diff with all placeholders double-quoted.** Run `git -C "<repo>" diff "<ref>" -- "<artifact_path>" > "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff"` (capture stderr separately, e.g. `2> "<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff.stderr"`). `<ref>` is `<base-branch>` by default and `HEAD~1` only when step 7.5's convergence comparison narrows for this round — see "Diff handling between rounds" below for the selection rule. Quoting prevents tokenization on whitespace inside slugs or paths. The stderr file lives next to the diff file as per-run scratch — avoid `/tmp/...` here (multi-tenant clobber across concurrent runs; not portable across all sandboxes).
+   5. **Check `$?`. Fail loud on non-zero exit.** Surface the stderr to main chat as a single line ("git diff exited <code>: <stderr>") and abort dispatch. Do NOT proceed to reviewer dispatch on a non-zero exit (stale `<ref>`, unfetched ref, malformed `<artifact_path>`, etc. would otherwise produce a misleading empty diff).
+   6. **A zero-byte diff file after a successful exit is a valid signal in steady state** (no changes vs `<ref>`). Do NOT abort on this case; reviewer dispatch proceeds normally.
 
-   See `## Review Output Handling` → "Diff handling between rounds" for the in-context narrative restatement.
+   See `## Review Output Handling` → "Diff handling between rounds" for the in-context narrative restatement and the convergence rule that drives `<ref>` selection.
 2. Claude review subagent runs → issues found are fixed
 3. If Codex enabled: Codex review runs → issues found are fixed
 4. If Codex errors during execution, report the error to the user and continue without blocking
@@ -722,7 +722,37 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
 9. **`/compact`** to shed the verified-file Read content from main chat's transcript.
 
-10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-verified.md`, and `round-NN-dispositions.md`. If looping, dispatch round NN+1 reviewers — they start with clean main-chat context.
+10. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-scope-set.txt` (when emitted by step 5.5), `round-NN-verified.md`, and `round-NN-dispositions.md`. If looping, proceed to step 7.5.
+
+7.5. **Convergence comparison + ref selection for round NN+1 (#112 PR-2 Mechanism B).** Run AFTER step 10's per-round commit, BEFORE dispatching round NN+1 reviewers. Computes the next round's `<ref>` and optional `<scope_hint>` from the scope-sets emitted by step 5.5.
+
+   **Skip when scope_tagger_enabled=false.** Read `scope_tagger_enabled` from `config.md` (with the same backfill semantics step 5.5 applies). When `false`, this step is a no-op: round NN+1 dispatches with `<ref>=<base-branch>` (PR-1 default) and no `<scope_hint>`.
+
+   **Skip on rounds 1–2.** The convergence rule needs scope-sets from rounds N and N-1, so the earliest narrowing decision can fire is for round 3 (compares scope_set(2) vs scope_set(1)). For round 2's dispatch (i.e. computing the ref for round 2 after round 1 completes), `<ref>=<base-branch>` and no `<scope_hint>`.
+
+   **Skip when round NN's scope-set is missing.** If `reviews/{step}/round-NN-scope-set.txt` is absent (tagger dispatch skipped, tagger failure left the file unwritten, or the round had zero kept findings), treat the round as full-scope: round NN+1 dispatches with `<ref>=<base-branch>` and no `<scope_hint>` (broaden — same as if a new tag appeared). Do NOT abort the round on a missing scope-set; the conservative-broaden path keeps reviews moving.
+
+   **Convergence rule (compare round NN vs round NN-1).** Read both scope-set files; tag lines are non-comment lines (lines NOT starting with `#`). Compute `scope_set(NN)` and `scope_set(NN-1)` as set-of-strings. Decide:
+
+   | Relation between sets | Decision for round NN+1 |
+   |---|---|
+   | `scope_set(NN) == scope_set(NN-1)` | **Narrow** to that set |
+   | `scope_set(NN) ⊂ scope_set(NN-1)` (proper subset) | **Narrow** to the broader set (= `scope_set(NN-1)`) — safety margin |
+   | `scope_set(NN) ⊃ scope_set(NN-1)` (proper superset; new tags) | **Broaden** — back to full-scope |
+   | Partial overlap | **Broaden** — back to full-scope |
+   | Disjoint | **Broaden** — back to full-scope |
+
+   The proper-subset case narrows to the BROADER set as a safety margin — the round NN findings settled on a smaller surface, but the round NN-1 surface is still the recently-converged-on neighborhood and is the conservative narrowing target.
+
+   **Apply the decision.**
+   - **Narrow to set `S`:** round NN+1 dispatches with `<ref>=HEAD~1` (this round's delta only, vs the per-round commit step 10 just made — so the diff file shrinks naturally), and `<scope_hint>=S` (a list of tags) is injected into reviewer dispatch prompts as advisory focus per `skills/reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract.
+   - **Broaden:** round NN+1 dispatches with `<ref>=<base-branch>` (PR-1 default) and no `<scope_hint>` parameter.
+
+   **`<scope_hint>` is advisory, not a hard restriction.** Reviewers MAY surface findings outside the hint — that's exactly the signal the orchestrator needs. A new tag in round NN+1's scope-set causes the next convergence comparison to fire "broaden," automatically widening the diff back to base-branch on round NN+2.
+
+   **Backward-loop reset.** When the Review-Loop Pause Gate's "Loop back to upstream artifact" option (3-option menu) cascades a rewrite of an upstream artifact, the next round of the CURRENT artifact MUST reset `<ref>` to `<base-branch>`. The artifact has been rewritten; prior round's `HEAD~1` anchor is stale. Discard the prior round's scope-set for the convergence comparison — round NN+1 starts from a fresh base-branch diff regardless of the round NN scope-set's relation to round NN-1's.
+
+   **Per-step opt-out.** The `test` step (`skills/test/SKILL.md`) opts out of convergence narrowing entirely — its reviewers analyze test quality (assertion meaningfulness, flake risk, plan-criterion traceability), not "where in the diff." That opt-out lives alongside the test-step's #112 PR-1 diff-file wiring opt-out.
 
 **Verifier-round failure menu.** Any abnormality during Apply-fix (VERIFY_FAILED from one or more verifiers; Codex reviewer no-output — cite `await` exit + wrapper `--artifact-dir`; Claude reviewer no-output — cite verbatim subagent return; sidecar missing for a finding) dispatches the same 3-option menu:
 
@@ -769,13 +799,24 @@ If the same path keeps failing, picking `skip` is the safe escape.
 
 No option mutates `config.md`. `retry` is bounded by the underlying operation. There is no retry counter — repeated retries surface the menu repeatedly so the user can switch to `skip` whenever.
 
-**Diff handling between rounds.** Every round (including round 1) emits a diff file before reviewer dispatch, and main chat never reads diff content into its own context. Two steps:
+**Diff handling between rounds.** Every round (including round 1) emits a diff file before reviewer dispatch, and main chat never reads diff content into its own context. Three steps:
 
-1. **Orchestrator writes the diff to a file via redirect.** Run the fail-loud diff-emission contract specified in `## Standard Review Loop` step 1 above (precondition: artifact tracked in git; mkdir -p; rm -f; quoted-placeholder `git -C "<repo>" diff "<base-branch>" -- "<artifact_path>"` redirected to `<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff`; check `$?` and abort with a one-line diagnostic on non-zero). The ref is always `<base-branch>` for the current PR-1 mechanism (#112) — every round sees the full artifact-vs-base delta. Bash exits 0 with no stdout — the diff content never enters main chat's transcript. When the artifact directory is not inside a git repository, skip the diff-file step entirely; reviewers fall back to the wrapped artifact body in their dispatch prompt.
+1. **Orchestrator writes the diff to a file via redirect.** Run the fail-loud diff-emission contract specified in `## Standard Review Loop` step 1 above (precondition: artifact tracked in git; mkdir -p; rm -f; quoted-placeholder `git -C "<repo>" diff "<ref>" -- "<artifact_path>"` redirected to `<ABS_ARTIFACT_DIR>/reviews/{step}/round-NN.diff`; check `$?` and abort with a one-line diagnostic on non-zero). `<ref>` is `<base-branch>` by default and `HEAD~1` only when step 7.5's convergence rule narrows for this round (see §"Ref selection rule" below). Bash exits 0 with no stdout — the diff content never enters main chat's transcript. When the artifact directory is not inside a git repository, skip the diff-file step entirely; reviewers fall back to the wrapped artifact body in their dispatch prompt.
 
 2. **Reviewer dispatches reference the diff file by path.** Reviewer prompts (Claude reviewer, scope reviewer, Codex prompt-file) carry `<diff_file_path>` as a string parameter pointing at the round-NN.diff written in step 1; reviewers Read the diff file directly. Single git op per round (vs one per reviewer), byte-identical input across Claude and Codex, and main chat sees no diff text on dispatch or return.
 
-**PR-2 forward-reference.** A follow-up PR on issue #112 will refine the ref-selection policy so reviewers can see a smaller per-round delta gated by a per-round fixes commit. Until that ships, `<base-branch>` is the only ref — there is no per-round commit, and round-1 vs round-NN+1 dispatches are identical in the diff-file mechanic.
+3. **When the round narrowed, dispatches also carry `<scope_hint>`.** A one-line advisory listing the tags in `scope_set(NN)` (or `scope_set(NN-1)` for the proper-subset safety-margin case): "This round's diff is narrowed to: {scope_hint}. Focus your review on this surface but flag anything significant outside it." When the round broadened, the parameter is omitted. See `skills/reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract for the parameter contract.
+
+**Ref selection rule (#112 PR-2 Mechanism B).** Step 7.5 of the Apply-fix protocol owns the choice. In summary:
+
+- **Round 1, round 2:** `<ref>=<base-branch>`, no `<scope_hint>`. (Convergence needs two consecutive scope-sets.)
+- **`scope_tagger_enabled: false`** in `config.md`: `<ref>=<base-branch>`, no `<scope_hint>`. (Step 5.5's tagger dispatch is skipped; step 7.5 is a no-op.)
+- **Test step:** Always `<ref>=<base-branch>`, no `<scope_hint>` (per-step opt-out — reviewers analyze test quality, not "where in the diff").
+- **Backward-loop edit just rewrote an upstream artifact:** Reset `<ref>=<base-branch>`, no `<scope_hint>`. The prior round's `HEAD~1` anchor is stale.
+- **Round NN's scope-set is missing** (tagger dispatch skipped, tagger failure, or zero kept findings): `<ref>=<base-branch>`, no `<scope_hint>` (conservative broaden).
+- **Otherwise** (round NN ≥ 2 with both scope_set(NN) and scope_set(NN-1) present): apply the convergence-rule table in step 7.5 — equal/proper-subset narrows; superset/partial-overlap/disjoint broadens.
+
+**Auto-broaden on new tag.** A `<scope_hint>` is advisory; reviewers can surface findings outside it. The next round's scope-set will include those new tags, the convergence comparison will fire "broaden," and `<ref>` resets to `<base-branch>` for the round after that. This makes the narrowing safe by construction — a missed surface in round NN's hint surfaces in round NN+1 and resets the ref for round NN+2.
 
 This protocol is the canonical statement of the diff-handling policy. Per-skill SKILL.md files defer to it via the Standard Review Loop reference (specifically `using-qrspi/SKILL.md` § Standard Review Loop step 1's fail-loud preconditions); per-step prose paragraphs can stay terse and need not duplicate the precondition list inline.
 
