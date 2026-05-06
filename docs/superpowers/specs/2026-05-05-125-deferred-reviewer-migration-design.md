@@ -177,6 +177,7 @@ The squash merges these into one cutover commit on main. Developmentally splitti
 - **Extending the `scope_tag` field** (#112) — not a precondition for cutover. Lands in a separate PR after #125 merges.
 - **Renaming `round-NN-fixes.md` → `round-NN-dispositions.md`** (#113) — the `round-NN-fixes.md` filename is the fix-round per-finding-disposition file, downstream of reviewer findings. Independent of this migration.
 - **Adding new reviewer tags or splitting existing ones.** Migration only — preserves the current reviewer-tag set.
+- **Centralizing duplicated reviewer-dispatch wrapper-marker boilerplate via `!cat`** (#130, v0.6) — the wrapper-marker prose duplicated across Plan/Implement/Integrate/Test/Replan lives on different lines than what this cutover edits. Folding it in would roughly double the diff and review burden. Cleaner sequencing: #125 atomic cutover lands first, #130 refactors the centralization on top.
 - **Performance work** on the parallel-dispatch fan-out. Per-finding emission is structurally faster than legacy single-file (no rewriting one file per finding) but quantifying that is not a §10 deliverable.
 
 ## 11. Closes
