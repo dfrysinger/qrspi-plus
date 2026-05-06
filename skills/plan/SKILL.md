@@ -518,4 +518,4 @@ The three override-critical rules for Plan, restated at end:
 
 3. **One task = one observable behavior, ~100-LOC target / ≤200 LOC ceiling.** Split before approving any task that exceeds the policy ceiling unless the task documents a `sizing_exception` (post-split frontmatter) or **Sizing exception** bullet (in-plan) naming one of the closed exception set: schema migration, CI scaffolding, reusable primitives. Multi-feature task titles (`+` joining feature names, two distinct verbs joined by `and`) are the canary — they almost always mean multiple request handlers bundled into one task. SWE-Bench Pro reports ~23% frontier-model success at the 107-LOC median patch size; OpenAI AGENTS.md guidance targets ~100 lines; our 200-LOC ceiling sits at the lower bound of Cisco/SmartBear's code-review sweet spot with margin for QRSPI's enhanced scaffolding. See "Task Sizing" earlier in this skill for full rules including the floor.
 
-Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

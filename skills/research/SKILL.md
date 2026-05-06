@@ -250,4 +250,4 @@ The two override-critical rules for Research, restated at end:
 
 2. **Facts only — no opinions, no recommendations, no value judgments.** Codebase findings cite specific `file:line` references; web findings cite URLs. "Should", "best", "better than" are forbidden in research output — those interpretations belong in Design.
 
-Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

@@ -749,4 +749,4 @@ NO TASK DISPATCH WITHOUT APPROVED INPUTS
 
 **Role separation.** Implementer subagents and reviewer subagents are separate dispatches with fixed roles. Main chat dispatches a fresh subagent for each transition; the formal reviewer dispatch is never skipped on the assumption the implementer's self-review covers it, and reviewer subagents never modify code. **Why:** separation of perspective is the design intent — without it, the model rationalizes "self-review was clean, skip the reviewer" and silent quality regressions slip through.
 
-Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

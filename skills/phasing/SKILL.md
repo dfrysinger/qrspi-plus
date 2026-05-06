@@ -344,4 +344,4 @@ The override-critical rule plus the strong recommendation for Phasing, restated 
 
 2. **Phase 1 PoC guideline — prove the full stack end-to-end when possible.** Phase 1 is the PoC; it should exercise every layer the project touches whenever practical. Backend-only Phase 1 tends to hide cross-layer issues until Phase 2+, where they are more expensive to surface — so the default is full-stack. Departures are fine when the phasing discussion names a real reason; the goal is deliberate scoping, not horizontal layering by accident. Phasing owns phase boundaries.
 
-Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".

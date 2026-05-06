@@ -311,4 +311,4 @@ The three override-critical rules for Integrate, restated at end:
 
 3. **No production code fixes from Integrate.** All fixes route through Implement → back to Integrate. Writing code directly here bypasses the per-task TDD/review pipeline and breaks the invariant.
 
-Behavioral directives D1-D3 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
