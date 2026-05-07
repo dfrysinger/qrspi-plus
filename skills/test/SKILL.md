@@ -152,6 +152,8 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-spec-reviewer.md;
+       printf '\n\n---\n\n';
+       cat skills/reviewer-protocol/codex-emission-override.md;
        printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/test/round-%s/\nround: %s\nreviewer_tag: spec-codex\n' \
          "<concatenated wrapped test-file blocks>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND";
      } | scripts/codex-companion-bg.sh launch
@@ -160,6 +162,8 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-code-quality-reviewer.md;
+       printf '\n\n---\n\n';
+       cat skills/reviewer-protocol/codex-emission-override.md;
        printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/test/round-%s/\nround: %s\nreviewer_tag: code-quality-codex\n' \
          "<concatenated wrapped test-file blocks>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND";
      } | scripts/codex-companion-bg.sh launch
@@ -168,12 +172,35 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-goal-traceability-reviewer.md;
+       printf '\n\n---\n\n';
+       cat skills/reviewer-protocol/codex-emission-override.md;
        printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/test/round-%s/\nround: %s\nreviewer_tag: goal-traceability-codex\n' \
          "<concatenated wrapped test-file blocks>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND";
      } | scripts/codex-companion-bg.sh launch
      ```
 
      The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints. None of the three Codex dispatches passes `task_definition` — the absence selects Test-phase reuse on the agent body, matching the Claude dispatches above.
+
+     After `await` returns for each dispatched jobId, on exit 0 run the splitter to split Codex output into per-finding files:
+
+     ```sh
+     scripts/codex-companion-bg.sh await <specJobId> > /tmp/codex-stdout-<specJobId>.txt
+     if [[ $? -eq 0 ]]; then
+       scripts/codex-finding-splitter.sh /tmp/codex-stdout-<specJobId>.txt reviews/test/round-NN/ spec-codex
+     fi
+     # On either failure path (await non-zero OR splitter non-zero), the round
+     # directory has zero output for the tag — step 2's schema guard catches it.
+
+     scripts/codex-companion-bg.sh await <codeQualityJobId> > /tmp/codex-stdout-<codeQualityJobId>.txt
+     if [[ $? -eq 0 ]]; then
+       scripts/codex-finding-splitter.sh /tmp/codex-stdout-<codeQualityJobId>.txt reviews/test/round-NN/ code-quality-codex
+     fi
+
+     scripts/codex-companion-bg.sh await <goalTraceabilityJobId> > /tmp/codex-stdout-<goalTraceabilityJobId>.txt
+     if [[ $? -eq 0 ]]; then
+       scripts/codex-finding-splitter.sh /tmp/codex-stdout-<goalTraceabilityJobId>.txt reviews/test/round-NN/ goal-traceability-codex
+     fi
+     ```
 
    - First pass clean (across both Claude and Codex if enabled) → proceed to coverage gate. Issues found → converge, fix all, re-converge. Up to 3 fix cycles — if unresolved, present to user at coverage gate. Test code fixes stay inside the Test skill — not production code, so the HARD GATE doesn't apply.
 4. **Coverage approval gate** — present to user:

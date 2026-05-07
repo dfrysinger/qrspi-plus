@@ -10,7 +10,7 @@ This skill is the single consolidated reviewer-shared content asset for the QRSP
 **Delivery.** This skill is delivered to reviewer subagents two ways:
 
 1. **Claude reviewer subagents** load it via the `skills: [reviewer-protocol]` frontmatter field on every `agents/qrspi-*-reviewer.md` agent file — Claude Code preloads the body of this SKILL.md at agent activation, so reviewer dispatches need not embed it in their prompts.
-2. **Codex reviewer dispatches** load it by piping `awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md` (frontmatter-stripped body) followed by the agent body and dispatch params into `scripts/codex-companion-bg.sh launch` on stdin. The shape is identical at both delivery sites.
+2. **Codex reviewer dispatches** load it by piping `awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md` (frontmatter-stripped body) followed by the agent body, then the **Codex emission override** (`cat skills/reviewer-protocol/codex-emission-override.md`), then the dispatch params, into `scripts/codex-companion-bg.sh launch` on stdin. The override appears AFTER the agent body so it supersedes the agent body's "Use the Write tool" directive — Codex runs in a read-only sandbox and must emit findings on stdout for the orchestrator's `scripts/codex-finding-splitter.sh` to materialize.
 
 This file is **designed to grow**. Future reviewer-shared content (reviewer tone guidance, fact-vs-opinion guardrails, severity rubric reminders, etc.) is added as **additional sections** to this same file rather than as new files. The path is stable across edits so the `skills:` preload field and the Codex pipeline never need to change.
 
@@ -164,7 +164,7 @@ The `{artifact_name}` parameter is a short stable identifier for the embedded so
 
 ## Per-Finding Disk-Write Contract
 
-All reviewer subagents use this per-finding contract — there is no bifurcation, and no per-tag routing.
+All reviewer subagents emit per-finding output under this contract; the on-disk schema is identical for every reviewer tag. **Emission path differs by environment:** Claude reviewers (Write tool available) Write the per-finding files and clean sentinel directly per the contract below. Codex reviewers (read-only sandbox) cannot Write — they emit findings on stdout per the **Codex Emission Override** (`skills/reviewer-protocol/codex-emission-override.md`, piped into every Codex dispatch after the agent body), and the orchestrator's `scripts/codex-finding-splitter.sh` materializes the same files on the reviewer's behalf. There is no per-tag routing — the path forks on environment, not on `<reviewer_tag>`.
 
 > **IRON RULE — exactly one finding per file. Never combine findings.** The Apply-fix protocol dispatches one Haiku verifier per `*.finding-*.md` file in parallel; combining findings causes the verifier to score them as a unit, which breaks the change-type partition (style/clarity/correctness score-filtering applies to the bundle instead of each finding). Two findings = two files, every time. Zero findings → write one `<reviewer_tag>.clean.md` sentinel (defined below). Never write zero files for an expected reviewer tag — the schema-violation guard at apply-fix step 2 surfaces the §3 menu when an expected tag emits no output.
 

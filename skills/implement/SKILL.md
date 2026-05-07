@@ -413,6 +413,8 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-spec-reviewer.md;
+  printf '\n\n---\n\n';
+  cat skills/reviewer-protocol/codex-emission-override.md;
   printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: spec-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND" "$NN" "$ROUND" "$SCOPE_HINT";
 } | scripts/codex-companion-bg.sh launch
@@ -421,6 +423,8 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-code-quality-reviewer.md;
+  printf '\n\n---\n\n';
+  cat skills/reviewer-protocol/codex-emission-override.md;
   printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: code-quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND" "$NN" "$ROUND" "$SCOPE_HINT";
 } | scripts/codex-companion-bg.sh launch
@@ -429,6 +433,8 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-silent-failure-hunter.md;
+  printf '\n\n---\n\n';
+  cat skills/reviewer-protocol/codex-emission-override.md;
   printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: silent-failure-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND" "$NN" "$ROUND" "$SCOPE_HINT";
 } | scripts/codex-companion-bg.sh launch
@@ -437,6 +443,8 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-security-reviewer.md;
+  printf '\n\n---\n\n';
+  cat skills/reviewer-protocol/codex-emission-override.md;
   printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: security-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND" "$NN" "$ROUND" "$SCOPE_HINT";
 } | scripts/codex-companion-bg.sh launch
@@ -445,6 +453,8 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-goal-traceability-reviewer.md;
+  printf '\n\n---\n\n';
+  cat skills/reviewer-protocol/codex-emission-override.md;
   printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\ncompanion_plan: %s\ncompanion_goals: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: goal-traceability-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "$NN" "$ROUND" "$ROUND" "$NN" "$ROUND" "$SCOPE_HINT";
 } | scripts/codex-companion-bg.sh launch
@@ -453,6 +463,8 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-test-coverage-reviewer.md;
+  printf '\n\n---\n\n';
+  cat skills/reviewer-protocol/codex-emission-override.md;
   printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\ncompanion_plan: %s\ncompanion_test_expectations: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: test-coverage-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped test-expectations block>" "$NN" "$ROUND" "$ROUND" "$NN" "$ROUND" "$SCOPE_HINT";
 } | scripts/codex-companion-bg.sh launch
@@ -461,6 +473,8 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-type-design-analyzer.md;
+  printf '\n\n---\n\n';
+  cat skills/reviewer-protocol/codex-emission-override.md;
   printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: type-design-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND" "$NN" "$ROUND" "$SCOPE_HINT";
 } | scripts/codex-companion-bg.sh launch
@@ -469,12 +483,29 @@ Thoroughness reviewers (deep mode only):
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-code-simplifier.md;
+  printf '\n\n---\n\n';
+  cat skills/reviewer-protocol/codex-emission-override.md;
   printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: code-simplifier-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
     "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND" "$NN" "$ROUND" "$SCOPE_HINT";
 } | scripts/codex-companion-bg.sh launch
 ```
 
-The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints. After every dispatched Codex `launch` returns its jobId, await each one and redirect stdout directly to that dispatch's output file per the shared launch-await pattern (`scripts/codex-companion-bg.sh await <jobId> > <output_file>`); finding text never enters main chat. Both Claude and Codex findings feed the convergence and fix loops — neither is privileged. The consolidated `reviews/tasks/task-NN-review.md` log records the reference path to each round's Codex file under the matching reviewer's heading (see § Review Log Artifact below); apply-fix dispatch reads each referenced Codex file and merges its findings with the Claude findings to construct the implementer-fix prompt.
+The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints. After every dispatched Codex `launch` returns its jobId, await each one, redirect stdout to a temp file, then run the splitter to materialize per-finding files / clean sentinel under `reviews/tasks/task-NN/round-NN/`:
+
+```sh
+scripts/codex-companion-bg.sh await <specJobId> > /tmp/codex-stdout-<specJobId>.txt
+if [[ $? -eq 0 ]]; then
+  scripts/codex-finding-splitter.sh /tmp/codex-stdout-<specJobId>.txt reviews/tasks/task-NN/round-NN/ spec-codex
+fi
+# Repeat the same await + splitter pair for every dispatched jobId this round:
+#   - code-quality-codex, silent-failure-codex, security-codex (correctness — always)
+#   - goal-traceability-codex, test-coverage-codex, type-design-codex, code-simplifier-codex (thoroughness — deep mode only;
+#     skip type-design-codex when no new types are introduced this task)
+# On either failure path (await non-zero OR splitter non-zero), the round
+# directory has zero output for the tag — step 2's schema guard catches it.
+```
+
+Finding text never enters main chat — the await output is redirected to a tmp file, and the splitter run is exit-code-only as far as main chat is concerned. Both Claude and Codex findings feed the convergence and fix loops — neither is privileged. The consolidated `reviews/tasks/task-NN-review.md` log records the per-finding files written under the matching reviewer's heading (see § Review Log Artifact below); apply-fix dispatch reads each finding file and merges Claude + Codex findings to construct the implementer-fix prompt.
 
 ### Per-Task Convergence Narrowing (#112 Mechanism B)
 
@@ -668,12 +699,25 @@ Each wrapped body is bracketed between `<<<UNTRUSTED-ARTIFACT-START id={artifact
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
   printf '\n\n---\n\n';
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-implement-gate-reviewer.md;
+  printf '\n\n---\n\n';
+  cat skills/reviewer-protocol/codex-emission-override.md;
   printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_task_specs: %s\ncompanion_test_results: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: implement-gate-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
     "<concatenated wrapped per-task code-changes blocks>" "<concatenated wrapped per-task task spec bodies>" "<concatenated wrapped per-task test-output transcripts>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
 } | scripts/codex-companion-bg.sh launch
 ```
 
-After the Claude reviewer returns, await the captured jobId and redirect stdout directly to the Codex output file per the shared launch-await pattern (`scripts/codex-companion-bg.sh await <jobId> > <output_file>`); finding text never enters main chat.
+After the Claude reviewer returns, await the captured jobId, redirect stdout to a temp file, then run the splitter to materialize per-finding files / clean sentinel under `reviews/integration/round-NN/`:
+
+```sh
+scripts/codex-companion-bg.sh await <gateJobId> > /tmp/codex-stdout-<gateJobId>.txt
+if [[ $? -eq 0 ]]; then
+  scripts/codex-finding-splitter.sh /tmp/codex-stdout-<gateJobId>.txt reviews/integration/round-NN/ implement-gate-codex
+fi
+# On either failure path (await non-zero OR splitter non-zero), the round
+# directory has zero output for the tag — step 2's schema guard catches it.
+```
+
+Finding text never enters main chat.
 
 ### Batch Gate Red Flags — STOP
 
