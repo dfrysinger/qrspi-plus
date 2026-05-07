@@ -126,6 +126,8 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-integration-reviewer.md;
+       printf '\n\n---\n\n';
+       cat skills/reviewer-protocol/codex-emission-override.md;
        printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: integration-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
          "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped structure.md body>" "<concatenated wrapped task-review-findings blocks>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
      } | scripts/codex-companion-bg.sh launch
@@ -134,12 +136,30 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
      { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
        printf '\n\n---\n\n';
        awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-security-integration-reviewer.md;
+       printf '\n\n---\n\n';
+       cat skills/reviewer-protocol/codex-emission-override.md;
        printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: security-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
          "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped structure.md body>" "<concatenated wrapped task-review-findings blocks>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
      } | scripts/codex-companion-bg.sh launch
      ```
 
      The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints.
+
+     After `await` returns for each dispatched jobId, on exit 0 run the splitter to split Codex output into per-finding files:
+
+     ```sh
+     scripts/codex-companion-bg.sh await <integrationJobId> > /tmp/codex-stdout-<integrationJobId>.txt
+     if [[ $? -eq 0 ]]; then
+       scripts/codex-finding-splitter.sh /tmp/codex-stdout-<integrationJobId>.txt reviews/integration/round-NN/ integration-codex
+     fi
+     # On either failure path (await non-zero OR splitter non-zero), the round
+     # directory has zero output for the tag — step 2's schema guard catches it.
+
+     scripts/codex-companion-bg.sh await <securityJobId> > /tmp/codex-stdout-<securityJobId>.txt
+     if [[ $? -eq 0 ]]; then
+       scripts/codex-finding-splitter.sh /tmp/codex-stdout-<securityJobId>.txt reviews/integration/round-NN/ security-codex
+     fi
+     ```
 
    Reviewer outputs are now four per-round files per the contract (integration-claude, security-claude, integration-codex, security-codex). Present to user regardless of outcome — the user can read any per-reviewer file directly.
    - **Clean:** User chooses: re-run reviews (confidence check), continue to CI gate, or stop.

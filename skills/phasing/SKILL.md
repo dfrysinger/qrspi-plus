@@ -169,6 +169,8 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — phasing", descr
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-phasing-reviewer.md;
+    printf '\n\n---\n\n';
+    cat skills/reviewer-protocol/codex-emission-override.md;
     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_roadmap: %s\ncompanion_pruned_pairs: %s\ncompanion_goals_snapshot: %s\ncompanion_design_snapshot: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/phasing/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/phasing/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
       "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped roadmap.md body>" "<untrusted-data-wrapped pruned-pairs bodies>" "<untrusted-data-wrapped goals-snapshot body>" "<untrusted-data-wrapped design-snapshot body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
@@ -177,6 +179,8 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — phasing", descr
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-phasing-scope-reviewer.md;
+    printf '\n\n---\n\n';
+    cat skills/reviewer-protocol/codex-emission-override.md;
     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/phasing/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/phasing/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
       "<untrusted-data-wrapped phasing.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch

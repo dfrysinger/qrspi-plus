@@ -127,6 +127,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Questions has no
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-questions-reviewer.md;
+    printf '\n\n---\n\n';
+    cat skills/reviewer-protocol/codex-emission-override.md;
     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/questions/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/questions/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
       "<untrusted-data-wrapped questions.md body>" "<untrusted-data-wrapped goals.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch

@@ -297,6 +297,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-reviewer.md;
+    printf '\n\n---\n\n';
+    cat skills/reviewer-protocol/codex-emission-override.md;
     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
@@ -305,6 +307,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-spec-reviewer.md;
+    printf '\n\n---\n\n';
+    cat skills/reviewer-protocol/codex-emission-override.md;
     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: spec-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
@@ -313,6 +317,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-security-reviewer.md;
+    printf '\n\n---\n\n';
+    cat skills/reviewer-protocol/codex-emission-override.md;
     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: security-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
@@ -321,6 +327,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-silent-failure-hunter.md;
+    printf '\n\n---\n\n';
+    cat skills/reviewer-protocol/codex-emission-override.md;
     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: silent-failure-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
@@ -329,6 +337,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-goal-traceability-reviewer.md;
+    printf '\n\n---\n\n';
+    cat skills/reviewer-protocol/codex-emission-override.md;
     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: goal-traceability-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
@@ -337,6 +347,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-test-coverage-reviewer.md;
+    printf '\n\n---\n\n';
+    cat skills/reviewer-protocol/codex-emission-override.md;
     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: test-coverage-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
       "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
@@ -345,12 +357,55 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
     printf '\n\n---\n\n';
     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-scope-reviewer.md;
+    printf '\n\n---\n\n';
+    cat skills/reviewer-protocol/codex-emission-override.md;
     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
       "<untrusted-data-wrapped plan.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
   } | scripts/codex-companion-bg.sh launch
   ```
 
   The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints.
+
+  After `await` returns for each dispatched jobId, on exit 0 run the splitter to split Codex output into per-finding files:
+
+  ```sh
+  scripts/codex-companion-bg.sh await <qualityJobId> > /tmp/codex-stdout-<qualityJobId>.txt
+  if [[ $? -eq 0 ]]; then
+    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<qualityJobId>.txt reviews/plan/round-NN/ quality-codex
+  fi
+  # On either failure path (await non-zero OR splitter non-zero), the round
+  # directory has zero output for the tag — step 2's schema guard catches it.
+
+  scripts/codex-companion-bg.sh await <specJobId> > /tmp/codex-stdout-<specJobId>.txt
+  if [[ $? -eq 0 ]]; then
+    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<specJobId>.txt reviews/plan/round-NN/ spec-codex
+  fi
+
+  scripts/codex-companion-bg.sh await <securityJobId> > /tmp/codex-stdout-<securityJobId>.txt
+  if [[ $? -eq 0 ]]; then
+    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<securityJobId>.txt reviews/plan/round-NN/ security-codex
+  fi
+
+  scripts/codex-companion-bg.sh await <silentFailureJobId> > /tmp/codex-stdout-<silentFailureJobId>.txt
+  if [[ $? -eq 0 ]]; then
+    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<silentFailureJobId>.txt reviews/plan/round-NN/ silent-failure-codex
+  fi
+
+  scripts/codex-companion-bg.sh await <goalTraceabilityJobId> > /tmp/codex-stdout-<goalTraceabilityJobId>.txt
+  if [[ $? -eq 0 ]]; then
+    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<goalTraceabilityJobId>.txt reviews/plan/round-NN/ goal-traceability-codex
+  fi
+
+  scripts/codex-companion-bg.sh await <testCoverageJobId> > /tmp/codex-stdout-<testCoverageJobId>.txt
+  if [[ $? -eq 0 ]]; then
+    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<testCoverageJobId>.txt reviews/plan/round-NN/ test-coverage-codex
+  fi
+
+  scripts/codex-companion-bg.sh await <scopeJobId> > /tmp/codex-stdout-<scopeJobId>.txt
+  if [[ $? -eq 0 ]]; then
+    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<scopeJobId>.txt reviews/plan/round-NN/ scope-codex
+  fi
+  ```
 
 - The default-option-2 recommendation in the Standard Review Loop is especially important here because plan reviews catch cross-file consistency / forward dependencies / migration ordering across 10+ task specs that the human cannot feasibly verify by hand.
 
