@@ -359,6 +359,24 @@ them via `scripts/run-smoke-checks.mjs` after the build passes:
 
 Tasks without a `smoke_checks:` block skip this step.
 
+### Shared-Base Impact Analysis (Per Task, Post-Fix)
+
+After a fix-cycle modifies any file outside `tasks/task-NN/`, run the
+shared-base impact analyzer:
+
+`node scripts/sibling-impact.mjs --task-id NN --commit <fix-commit-sha> --base <base-branch>`
+
+The analyzer:
+1. Diffs the fix-commit against the base branch.
+2. For each modified file outside `tasks/task-NN/`, computes the set of
+   sibling task branches that import or reference the changed symbols.
+3. Writes notification entries to `tasks/task-MM/notifications/` for each
+   affected sibling per the [notifications protocol](../implementer-protocol/notifications.md).
+
+The analyzer is advisory: false positives can be marked n/a by the sibling
+implementer. Skipping the analyzer is permitted only if the fix touched no
+files outside `tasks/task-NN/`.
+
 ### Implementer Status Reporting
 
 The implementer subagent returns one of the statuses below. The Action column names what main chat does next — every Action involves dispatching another subagent, never main-chat execution.
