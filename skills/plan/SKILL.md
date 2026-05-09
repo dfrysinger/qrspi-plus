@@ -221,12 +221,14 @@ Per-phase criteria observable at this phase's boundary (same authoring rules as 
 
 **Conformance reminder for the per-task spec writer.** Each task spec must satisfy: required-section presence (every bullet header above is required); claim-line length ≤ 250 chars per bullet; description paragraph ≤ 150 words; section ≤ 300 words total before bullets are split; no brevity directives anywhere ("be concise", "brief summary", "≤ N lines" are forbidden — see the lint allowlist for the legitimate length-target exceptions). The DEFERS list above tells the writer what NOT to put in the spec; this conformance reminder tells the writer how to structure what they DO put in.
 
+**Smoke-check requirement.** Any task adding or modifying a route, page, layout, or user-facing component MUST include a `smoke_checks:` block per the smoke-spec convention ([`smoke-spec.md`](smoke-spec.md)). Tasks that only modify internal libraries (no route or component surface) MAY omit it.
+
 ### Project Environment Fields
 
 Every plan declares the commands the implementer gate uses to verify a task:
 
 - `build_command` — the command that produces the project's build artifact, run after tests pass during per-task verification. Examples: `pnpm build` (Next.js, Vite), `cargo build --release`, `go build ./...`, `tsc -p .` (lib-only). Set to the literal string `'none'` only for pure-script projects with no build step; include a one-line rationale next to the field when set to `'none'`.
-- `dev_command` — *(reserved for the smoke-check gate added by a sibling task; see [`smoke-spec.md`](smoke-spec.md))*. Plans that opt into smoke checks declare this; plans that don't may omit it.
+- `dev_command` — the command that starts the dev server, used by the smoke-check gate. Required when any task in the plan declares a `smoke_checks:` block; optional otherwise. Examples: `pnpm dev`, `cargo run`, `python manage.py runserver`. Plans that opt into smoke checks also declare `smoke_auth:` per [`smoke-spec.md`](smoke-spec.md).
 
 The implementer reads these from the plan and runs them at the per-task gate (see `skills/implement/SKILL.md`).
 

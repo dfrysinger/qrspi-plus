@@ -342,6 +342,23 @@ After tests pass, run the project's `build_command` (declared in the plan's proj
 
 A non-zero exit fails the task. The build's stdout+stderr is captured in the implementer's report. The implementer does NOT modify the build configuration to make it pass — surface the failure for review like any other test failure. If the failure is a spec contradiction (e.g., the spec says "export this constant" but the framework forbids it), report BLOCKED with the spec-contradiction reason.
 
+### Smoke-Check Verification (per task)
+
+If the task spec includes a `smoke_checks:` block, the implementer runs
+them via `scripts/run-smoke-checks.mjs` after the build passes:
+
+1. Start the dev server using the plan's `dev_command` in the worktree.
+2. Wait for the configured port to listen (default 30 s timeout).
+3. Invoke `node scripts/run-smoke-checks.mjs --task-spec tasks/task-NN.md`
+   from the worktree root.
+4. Stop the dev server (the helper script handles this on its own clean
+   exit; the implementer ensures it on a crash via a cleanup hook).
+5. A smoke-check failure fails the task. The implementer fixes the
+   underlying code; the implementer does NOT modify the smoke spec to
+   make it pass.
+
+Tasks without a `smoke_checks:` block skip this step.
+
 ### Implementer Status Reporting
 
 The implementer subagent returns one of the statuses below. The Action column names what main chat does next — every Action involves dispatching another subagent, never main-chat execution.
