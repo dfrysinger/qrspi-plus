@@ -71,21 +71,39 @@ reading `error.targetId` must narrow to the `kind: 'target'` arm.
 
 ## At-task-start protocol
 
-At the start of any task run, list `tasks/task-NN/notifications/`. If
-non-empty:
+At the start of any task run, list `tasks/task-NN/notifications/`. A
+notification is **unaddressed** iff its frontmatter has no `resolution`
+field (or `resolution: pending`). If any unaddressed notification is
+present:
 
-1. Surface each notification in the implementer's spec-context block.
+1. Surface each unaddressed notification in the implementer's
+   spec-context block.
 2. Treat each as a checklist item that must be either:
-   - **addressed** — with a one-line reason describing what was changed in
-     this task to refit the contract, OR
-   - **n/a** — with a one-line reason describing why this task is not
-     affected (e.g., "this task no longer imports the changed symbol").
+   - **addressed** — change this task's code to refit the contract, OR
+   - **n/a** — confirm this task is not affected (e.g., "this task no
+     longer imports the changed symbol").
+
+## Recording the resolution
+
+When an unaddressed notification is handled, the implementer edits the
+notification file in place, adding two frontmatter fields:
+
+- `resolution: addressed | n/a`
+- `resolution_reason: <one short sentence>`
+
+Optional: `resolution_commit: <sha>` if the resolution landed in a
+specific commit on this task's branch.
+
+A file with `resolution: addressed` or `resolution: n/a` is considered
+**resolved** and is ignored by the at-task-start protocol on subsequent
+dispatches. The file is kept on disk for traceability — do not delete
+resolved notifications.
 
 Unaddressed notifications block DONE. The implementer cannot mark a task
 DONE while any notification is in pending state. If a notification cannot
 be resolved within the task's scope (e.g., the refit requires a separate
 plan), report DONE_WITH_CONCERNS and explicitly name the deferred
-notification.
+notification — it stays unresolved for the next round to pick up.
 
 ## Source-side: writing notifications
 

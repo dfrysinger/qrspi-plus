@@ -47,3 +47,29 @@ setup_file() {
   run grep -F 'sibling-impact' "$REPO_ROOT/skills/implement/SKILL.md"
   [ "$status" -eq 0 ]
 }
+
+@test "notifications.md specifies resolution recording via frontmatter" {
+  # Resolution-recording section exists with a 'resolution' frontmatter
+  # field that takes 'addressed' or 'n/a'.
+  run awk '/^## Recording the resolution/{found=1} found && /^## /{print; if(seen){exit} seen=1; next} found' \
+    "$REPO_ROOT/skills/implementer-protocol/notifications.md"
+  [ "$status" -eq 0 ]
+  awk '/^## Recording the resolution/{found=1} found && /^## / && !/^## Recording/{exit} found' \
+    "$REPO_ROOT/skills/implementer-protocol/notifications.md" \
+    | grep -E -i 'resolution: addressed|resolution: n/a|resolution.*addressed'
+  [ "$?" -eq 0 ]
+}
+
+@test "implement/SKILL.md has round-level notification sweep section" {
+  # The round-level sweep section must exist and tell the orchestrator
+  # to dispatch a fix-cycle for tasks with unaddressed notifications,
+  # even when they had no review findings.
+  awk '/^### Round-Level Notification Sweep/{found=1} found && /^### / && !/^### Round-Level/{exit} found' \
+    "$REPO_ROOT/skills/implement/SKILL.md" \
+    | grep -E -i 'unaddressed|no review findings|even if'
+  [ "$?" -eq 0 ]
+  awk '/^### Round-Level Notification Sweep/{found=1} found && /^### / && !/^### Round-Level/{exit} found' \
+    "$REPO_ROOT/skills/implement/SKILL.md" \
+    | grep -E -i 'fix-cycle implementer|fix-cycle dispatch|dispatch.*implementer'
+  [ "$?" -eq 0 ]
+}

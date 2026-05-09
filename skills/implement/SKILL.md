@@ -377,6 +377,32 @@ The analyzer is advisory: false positives can be marked n/a by the sibling
 implementer. Skipping the analyzer is permitted only if the fix touched no
 files outside `tasks/task-NN/`.
 
+### Round-Level Notification Sweep
+
+Writing a notification file is not enough on its own — a sibling that was
+already DONE-and-clean does not get re-dispatched by the regular review
+findings loop, and would never read its own notifications.
+
+**After running sibling-impact for every task that had a fix-cycle in
+this round, before declaring the round complete, scan every task's
+`tasks/task-NN/notifications/` directory.** A notification is unaddressed
+when its frontmatter has no `resolution` field (or `resolution: pending`)
+per the [notifications protocol](../implementer-protocol/notifications.md).
+For each task with at least one unaddressed notification, dispatch a
+fix-cycle implementer for that task this round, even if it had no review
+findings of its own.
+
+The `companion_review_findings` payload for such a dispatch is the set of
+unaddressed notification files; the implementer addresses or marks-n/a
+each one and records the resolution in the notification file's
+frontmatter.
+
+A notification-only fix-cycle still runs sibling-impact on its own commit
+afterward — it can produce further notifications. Iterate the sweep until
+no task has unaddressed notifications, capped at the configured fix-cycle
+round limit. If the cap is hit with notifications still outstanding,
+escalate to the user rather than declare the round complete.
+
 ### Implementer Status Reporting
 
 The implementer subagent returns one of the statuses below. The Action column names what main chat does next — every Action involves dispatching another subagent, never main-chat execution.
