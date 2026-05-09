@@ -29,7 +29,7 @@ setup_file() {
 }
 
 @test "templates/tsc-probe.ts exports tscProbe function" {
-  run grep -E 'export.*function tscProbe|export.*tscProbe' "$REPO_ROOT/templates/tsc-probe.ts"
+  run grep -E '^export.*function tscProbe' "$REPO_ROOT/templates/tsc-probe.ts"
   [ "$status" -eq 0 ]
 }
 

@@ -44,7 +44,7 @@ export function tscProbe(options: TscProbeOptions): TscProbeResult {
     writeFileSync(probeFile, options.source, 'utf8');
 
     const tsconfigBody = {
-      extends: options.projectTsconfig ?? '../tsconfig.json',
+      extends: options.projectTsconfig ?? join(process.cwd(), 'tsconfig.json'),
       compilerOptions: {
         noEmit: true,
         skipLibCheck: true,
