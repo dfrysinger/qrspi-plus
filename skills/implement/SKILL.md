@@ -336,6 +336,12 @@ All steps below run inside the **implementer subagent**. Main chat does not run 
 
    **Multi-line commit messages (F-17):** Per-task subagents should keep commit-message scratch files inside the worktree to avoid path confusion: `Write .qrspi-commit-msg.txt` inside the worktree, then `git -C .worktrees/{slug}/task-NN/ commit -F .qrspi-commit-msg.txt`. Delete the file after commit (`rm .qrspi-commit-msg.txt` — it's not auto-ignored, and you don't want it in the next diff).
 
+### Build Verification (per task)
+
+After tests pass, run the project's `build_command` (declared in the plan's project-environment fields). If `build_command` is `'none'`, skip this step.
+
+A non-zero exit fails the task. The build's stdout+stderr is captured in the implementer's report. The implementer does NOT modify the build configuration to make it pass — surface the failure for review like any other test failure. If the failure is a spec contradiction (e.g., the spec says "export this constant" but the framework forbids it), report BLOCKED with the spec-contradiction reason.
+
 ### Implementer Status Reporting
 
 The implementer subagent returns one of the statuses below. The Action column names what main chat does next — every Action involves dispatching another subagent, never main-chat execution.

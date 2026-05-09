@@ -117,6 +117,18 @@ Path-specific self-review checks (TDD verify-fail discipline, lightweight scope 
 
 If you find issues during self-review, fix them now before reporting.
 
+### Done Signal
+
+"Done" requires all four to be green:
+1. Tests pass (suite the plan declared, no skips, no flake-retries)
+2. Build passes (`build_command` from the plan; skipped only if the plan declares `'none'`)
+3. Typecheck passes (when the project has one — TypeScript, mypy, etc.)
+4. Lint passes (when the project has one)
+
+Any one failing fails the task. Status DONE means all four green; DONE_WITH_CONCERNS means all four green but with explicit doubts; BLOCKED means a check failed in a way the implementer cannot resolve.
+
+tests green AND build green AND typecheck green AND lint green — all are required.
+
 ## Report Format
 
 When done, report:
