@@ -20,7 +20,7 @@ setup_file() {
 }
 
 @test "parallelize/SKILL.md states validation is non-blocking (advisory)" {
-  run grep -E -i 'does not block|not.*blocking|advisory|non.blocking' "$REPO_ROOT/skills/parallelize/SKILL.md"
+  run bash -c "awk '/^### Worktree-Aware Setup Validation/{found=1} found && /^###/ && !/^### Worktree-Aware Setup Validation/{exit} found' \"\$REPO_ROOT/skills/parallelize/SKILL.md\" | grep -E -i 'does not block|not.*blocking|advisory|non.blocking'"
   [ "$status" -eq 0 ]
 }
 
