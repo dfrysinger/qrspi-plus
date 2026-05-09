@@ -127,8 +127,6 @@ If you find issues during self-review, fix them now before reporting.
 
 Any one failing fails the task. Status DONE means all four green; DONE_WITH_CONCERNS means all four green but with explicit doubts; BLOCKED means a check failed in a way the implementer cannot resolve.
 
-tests green AND build green AND typecheck green AND lint green — all are required.
-
 ## Report Format
 
 When done, report:

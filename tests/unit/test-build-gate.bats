@@ -21,11 +21,14 @@ setup_file() {
 }
 
 @test "implement/SKILL.md fails the task when build exits non-zero" {
-  run grep -E -i 'non-zero.*exit.*fail|fail.*task.*build|build.*fail.*task' "$REPO_ROOT/skills/implement/SKILL.md"
+  # Tighten: require the build-verification context so a stale doc that mentions
+  # "non-zero exit" elsewhere (e.g., Codex error codes) doesn't satisfy this.
+  # Uses flag-based awk (not range /pat/,/pat/) because start and end share "^###".
+  run bash -c "awk '/^### Build Verification/{found=1} found && /^###/ && !/^### Build Verification/{exit} found' '$REPO_ROOT/skills/implement/SKILL.md' | grep -E -i 'non-zero exit fails the task|fail.*task.*build|non-zero.*exit.*captur'"
   [ "$status" -eq 0 ]
 }
 
 @test "implementer-protocol/SKILL.md states all-green rule" {
-  run grep -E -i 'tests green AND build green|all four checks|tests.*build.*typecheck.*lint' "$REPO_ROOT/skills/implementer-protocol/SKILL.md"
+  run bash -c "awk '/^### Done Signal/,/^##[^#]/' '$REPO_ROOT/skills/implementer-protocol/SKILL.md' | grep -E -i 'four|tests.*build.*typecheck|all green|all (are )?required'"
   [ "$status" -eq 0 ]
 }
