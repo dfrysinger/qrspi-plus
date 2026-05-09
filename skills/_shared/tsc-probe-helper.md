@@ -13,9 +13,9 @@ tsconfig's glob, and parallel `tsc` invocations cross over each other (one
 test's tsc invocation sees another test's mid-flight probe → first test's
 "compiles cleanly" assertion fails on the second test's intentional errors).
 
-The pattern from keeplii task-04, task-14, task-16 — using the project
-tsconfig — is **deprecated**. Tasks using the tsc-probe pattern MUST use the
-helper template at `templates/tsc-probe.ts`, vendored into the project's
+The legacy pattern — running probes through the project tsconfig — is
+**deprecated**. Tasks using the tsc-probe pattern MUST use the helper
+template at `templates/tsc-probe.ts`, vendored into the project's
 `tests/_qrspi-helpers/tsc-probe.ts` on first use.
 
 ## Why the helper is safe

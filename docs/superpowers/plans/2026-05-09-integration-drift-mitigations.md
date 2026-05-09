@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add four harness-level checks to QRSPI to catch the 11 drift classes that surfaced during the keeplii-simplified Phase 1 integrate phase. After this plan lands, future QRSPI runs catch SWC build failures, missing global stylesheet imports, sibling-task type drift, worktree-aware lint noise, and several flavors of "vitest green ≠ runtime works" before integrate.
+**Goal:** Add four harness-level checks to QRSPI to catch a known cluster of cross-task drift classes that surfaced in a prior Phase 1 integrate. After this plan lands, future QRSPI runs catch SWC build failures, missing global stylesheet imports, sibling-task type drift, worktree-aware lint noise, and several flavors of "vitest green ≠ runtime works" before integrate.
 
 **Architecture:** Four conceptual items split across seven tasks. Items 1 and 4 are skill-prose edits + small bats tests. Items 2 and 3 add Node scripts under `scripts/` plus skill conventions plus bats end-to-end tests against the scripts. The whole branch lands as one PR; tasks commit independently for traceability.
 
@@ -10,7 +10,7 @@
 
 **Spec:** [`docs/integration-drift-mitigations.md`](../../integration-drift-mitigations.md) (in this same worktree).
 
-**Source drifts (with `integration-notes.md` anchor):** task-08/10/11 Server-Actions export rule (Item 1), task-03 globals.css missing (Item 2), task-08/11 magic-link redirect/PKCE (Item 2 + future Item 5), task-04/09 unwired nav (Item 2), task-29 vs 30/32 SweepError shape (Item 3), task-16 requireAuth collision (Item 3), task-01 worktree lint noise (Item 4), task-04/14/16 tsc-probe race (Item 4).
+**Source drift classes addressed:** Server-Actions SWC export rule (Item 1), missing global stylesheet import (Item 2), magic-link redirect/PKCE (Item 2 + future Item 5), unwired navigation (Item 2), sibling-task exported-type shape drift (Item 3), helper-name/signature collision across siblings (Item 3), worktree lint noise (Item 4), tsc-probe parallel race (Item 4).
 
 ---
 
@@ -188,7 +188,7 @@ git -C /private/tmp/qrspi-drift commit -m "feat(implement): add build-gate verif
 
 1. Before scheduling parallel task branches, the parallelize skill checks the project's lint/typecheck/test configs for `.worktrees/**` and framework-build-dir (e.g., `.next/`) exclusions.
 2. If a check fails, the skill emits a remediation patch suggestion (added to `parallelization.md` or surfaced to the human in the review round) and a notification to the planner. The skill does NOT block parallelization on a missing exclusion — the worktree-noise problem is recoverable; halting the pipeline is overkill.
-3. The skill prose names at minimum: `eslint` ignore, `tsconfig` exclude, `vitest` / `jest` test exclude. Other framework configs (Cargo target/, Go vendor/, etc.) can be added later; Phase 1 covers the JS/TS flavors that hit keeplii.
+3. The skill prose names at minimum: `eslint` ignore, `tsconfig` exclude, `vitest` / `jest` test exclude. Other framework configs (Cargo target/, Go vendor/, etc.) can be added later; Phase 1 covers the JS/TS flavors.
 
 - [ ] **Step 1: Read context**
 
@@ -280,7 +280,7 @@ git -C /private/tmp/qrspi-drift commit -m "feat(parallelize): add worktree-aware
 
 **Contracts to satisfy:**
 
-1. The convention doc deprecates the project-tsconfig-glob tsc-probe pattern (used by keeplii task-04, task-14, task-16) and points implementers at the helper template.
+1. The convention doc deprecates the project-tsconfig-glob tsc-probe pattern and points implementers at the helper template.
 2. The helper template, when copied into a project as `tests/_qrspi-helpers/tsc-probe.ts`, exposes a function `tscProbe({ source, expectError }: { source: string; expectError?: RegExp | string })` that:
    - Writes the source to a temp file with a UUID-suffixed name (e.g., `__qrspi_probe_${uuid}.ts`) under a temp directory the helper creates.
    - Writes a one-off `tsconfig.probe-${uuid}.json` next to the probe whose `include` array contains ONLY the probe file and whose `compilerOptions` extends or duplicates the project's settings.
@@ -366,9 +366,9 @@ tsconfig's glob, and parallel `tsc` invocations cross over each other (one
 test's tsc invocation sees another test's mid-flight probe → first test's
 "compiles cleanly" assertion fails on the second test's intentional errors).
 
-The pattern from keeplii task-04, task-14, task-16 — using the project
-tsconfig — is **deprecated**. Tasks using the tsc-probe pattern MUST use the
-helper template at `templates/tsc-probe.ts`, vendored into the project's
+The legacy pattern — running probes through the project tsconfig — is
+**deprecated**. Tasks using the tsc-probe pattern MUST use the helper
+template at `templates/tsc-probe.ts`, vendored into the project's
 `tests/_qrspi-helpers/tsc-probe.ts` on first use.
 
 ## Why the helper is safe
@@ -1045,10 +1045,12 @@ description: Sibling-notification protocol — how cross-task contract changes s
 # Sibling notifications
 
 Tasks running in parallel QRSPI worktrees can drift apart when one task's
-fix-cycle changes a contract another task depends on. The keeplii-simplified
-SweepError-shape drift (task-29 vs task-30/task-32) and the requireAuth
-collision (task-08 vs task-16) are canonical examples: the surface only
-appeared at integrate.
+fix-cycle changes a contract another task depends on. Two canonical
+shapes: a sibling renames or reshapes an exported type that other tasks
+emit or consume, and two siblings independently introduce a helper with
+the same name and a slightly different signature. In both cases the
+divergence only surfaces at integrate, after both tasks have already
+been signed off as DONE in their own worktrees.
 
 This protocol surfaces those drifts at the source: when task-N's fix-cycle
 modifies a file outside its own scope, the implementer skill computes a

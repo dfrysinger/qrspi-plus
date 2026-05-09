@@ -6,10 +6,12 @@ description: Sibling-notification protocol — how cross-task contract changes s
 # Sibling notifications
 
 Tasks running in parallel QRSPI worktrees can drift apart when one task's
-fix-cycle changes a contract another task depends on. The keeplii-simplified
-SweepError-shape drift (task-29 vs task-30/task-32) and the requireAuth
-collision (task-08 vs task-16) are canonical examples: the surface only
-appeared at integrate.
+fix-cycle changes a contract another task depends on. Two canonical
+shapes: a sibling renames or reshapes an exported type that other tasks
+emit or consume, and two siblings independently introduce a helper with
+the same name and a slightly different signature. In both cases the
+divergence only surfaces at integrate, after both tasks have already
+been signed off as DONE in their own worktrees.
 
 This protocol surfaces those drifts at the source: when task-N's fix-cycle
 modifies a file outside its own scope, the implementer skill computes a
