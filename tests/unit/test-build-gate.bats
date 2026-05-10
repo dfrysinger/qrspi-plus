@@ -29,6 +29,6 @@ setup_file() {
 }
 
 @test "implementer-protocol/SKILL.md states all-green rule" {
-  run bash -c "awk '/^### Done Signal/,/^##[^#]/' '$REPO_ROOT/skills/implementer-protocol/SKILL.md' | grep -E -i 'four|tests.*build.*typecheck|all green|all (are )?required'"
+  run bash -c "awk '/^### Done Signal/,/^##[^#]/' '$REPO_ROOT/skills/implementer-protocol/SKILL.md' | grep -E -i 'four|five|tests.*build.*typecheck|all (four|five)? ?green|all (are )?required'"
   [ "$status" -eq 0 ]
 }

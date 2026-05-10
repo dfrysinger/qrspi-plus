@@ -119,6 +119,7 @@ Review your work with fresh eyes. Ask yourself:
 - Did I avoid overbuilding (YAGNI)?
 - Did I only build what was requested?
 - Did I follow existing patterns in the codebase?
+- Did I commit the round's changes? (`git -C <worktree> status --porcelain` empty AND `git -C <worktree> rev-parse HEAD` distinct from the round's base commit) — see § Commit Before Reporting
 
 Path-specific self-review checks (TDD verify-fail discipline, lightweight scope adherence, etc.) live in the individual agent files. Apply this shared block first, then your agent's mode-specific block.
 
@@ -126,18 +127,34 @@ If you find issues during self-review, fix them now before reporting.
 
 ### Done Signal
 
-"Done" requires all four to be green:
+"Done" requires all five to be green:
 1. Tests pass (suite the plan declared, no skips, no flake-retries)
 2. Build passes (`build_command` from the plan; skipped only if the plan declares `'none'`)
 3. Typecheck passes (when the project has one — TypeScript, mypy, etc.)
 4. Lint passes (when the project has one)
+5. **Commit landed in the worktree.** All round changes are committed in the task's worktree git (see § Commit Before Reporting below). `git -C <worktree> status --porcelain` is empty, and `git -C <worktree> rev-parse HEAD` is a NEW SHA — distinct from the base commit (round 1) or the prior round's commit (fix rounds). Reporting DONE without a commit is the same correctness failure as reporting DONE with failing tests: the orchestrator emits a stale diff to the next round's reviewers and the two review tiers can silently disagree.
 
-Any one failing fails the task. Status DONE means all four green; DONE_WITH_CONCERNS means all four green but with explicit doubts; BLOCKED means a check failed in a way the implementer cannot resolve.
+Any one failing fails the task. Status DONE means all five green; DONE_WITH_CONCERNS means all five green but with explicit doubts; BLOCKED means a check failed in a way the implementer cannot resolve.
+
+## Commit Before Reporting
+
+Before returning a DONE or DONE_WITH_CONCERNS terminal status, commit every modified and added file in the worktree to its git history. Skipping the commit produces a "stale diff" — the orchestrator emits the prior round's diff to the next round's reviewers, who flag work as scope drift in good faith. This is a correctness defect, not a cosmetic one (see PR #153 / issue #156 for the original incident).
+
+**Procedure (per `implement/SKILL.md` § TDD Process step 6 multi-line message convention):**
+
+1. `git -C <worktree> status --porcelain` to confirm there is something to commit.
+2. Write a multi-line commit message to `<worktree>/.qrspi-commit-msg.txt` using the Write tool. The message MUST reference the round number and (for fix mode) the findings being addressed — e.g., `fix(task-NN/round-3): server-side bytes/mime check (closes security-codex.F01)`.
+3. `git -C <worktree> add -A && git -C <worktree> commit -F .qrspi-commit-msg.txt`
+4. `rm <worktree>/.qrspi-commit-msg.txt` (the scratch file is not gitignored and you don't want it in the next round's diff).
+5. Capture the resulting SHA: `git -C <worktree> rev-parse HEAD`. Include it as `commit_sha:` in your terminal-status report.
+
+**If you have nothing to commit** (e.g., a pure-prose review-feedback round produced no edits because the finding was already addressed in the prior round), report `BLOCKED` or `DONE_WITH_CONCERNS` and explain — do not silently proceed. The orchestrator's HEAD-advanced verification will fail-loud regardless, so reporting truthfully is faster than recovering from the abort.
 
 ## Report Format
 
 When done, report:
 - **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+- **commit_sha:** `<full SHA returned by git rev-parse HEAD after your commit>` (DONE / DONE_WITH_CONCERNS only — required so the orchestrator can verify HEAD advanced before emitting the next round's diff)
 - What you implemented (or what you attempted, if blocked)
 - What you tested and test results (number passing/failing)
 - Files changed (created/modified)
