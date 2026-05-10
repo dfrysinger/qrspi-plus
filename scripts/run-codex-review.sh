@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
 # run-codex-review.sh — single entrypoint for Codex reviewer dispatches.
 #
-# Collapses the duplicated 9-15 line shell block (frontmatter-stripping awk
-# + emission-override cat + dispatch-parameters printf + pipe to launch)
-# that previously appeared at ~37 sites across the qrspi-plus skills.
-# Every emitter now invokes this wrapper instead, so the dispatch shape
-# drifts in exactly one file. Surfaced as PR #153 issue (cross-skill
-# contract bridge #11 — the highest-leverage structural fix).
+# Assembles a Codex reviewer prompt by concatenating the reviewer-protocol
+# body, the named agent body (frontmatter stripped), the codex-emission
+# override, and a Dispatch parameters block; pipes the result to
+# scripts/codex-companion-bg.sh launch. The dispatch shape lives here so
+# every step skill calls one entrypoint instead of duplicating the
+# assembly inline.
 #
 # Usage:
 #   scripts/run-codex-review.sh \
 #     --agent-file agents/qrspi-spec-reviewer.md \
 #     --reviewer-tag spec-codex \
-#     --output-dir <ABS>/reviews/tasks/task-18/round-1/ \
-#     --round 1 \
-#     --subject-code src/lib/cas/artifacts.ts \
-#     [--subject-code src/lib/actions/memory.ts] ... \
-#     [--task-def tasks/task-18.md] \
+#     --output-dir <ABS>/reviews/tasks/task-NN/round-N/ \
+#     --round N \
+#     --subject-code <repo-relative path> \
+#     [--subject-code <repo-relative path> ...] \
+#     [--task-def tasks/task-NN.md] \
 #     [--companion-plan plan.md] \
 #     [--companion-goals goals.md] \
 #     [--companion-test-expectations-file <path>] \
-#     [--diff-file <ABS>/reviews/tasks/task-18/round-1.diff] \
-#     [--scope-hint 'src/lib/cas/artifacts.ts, src/lib/actions/memory.ts'] \
+#     [--diff-file <ABS>/reviews/tasks/task-NN/round-N.diff] \
+#     [--scope-hint 'path/a.ts, path/b.ts'] \
 #     [--dry-run]
 #
 # All path-style flags (`--subject-code`, `--task-def`, `--companion-plan`,
@@ -38,8 +38,8 @@
 # `--scope-hint` takes a comma-separated string OR an empty value. When
 # omitted entirely, no `scope_hint:` line is emitted (broaden semantics
 # per reviewer-protocol § Reviewer Dispatch Contract). When passed with
-# an empty value, an empty-wrapped scope_hint line is emitted (Codex
-# pattern; reviewers treat it as semantically equivalent to absence).
+# an empty value, an empty-wrapped scope_hint line is emitted (semantically
+# equivalent to absence; reviewers treat them the same).
 #
 # `--dry-run` prints the assembled prompt to stdout instead of piping
 # to codex-companion-bg.sh. Used for testing the wrapper's prompt shape

@@ -592,10 +592,10 @@ Thoroughness reviewers (deep mode only):
 
 **Codex parallels (if `codex_enabled_per_task: true` per § Per-Task Routing — i.e., `config.codex_reviews && task_type == code`).** For every Claude reviewer dispatched this round/tier, dispatch a non-blocking Codex parallel. Lightweight tasks skip every per-task Codex launch site below regardless of `config.codex_reviews`.
 
-Use `scripts/run-codex-review.sh` (the canonical reviewer dispatch wrapper). It internalizes the frontmatter-stripping, emission-override concatenation, dispatch-parameter assembly, and pipe-to-`codex-companion-bg.sh launch` — so the dispatch shape lives in exactly one place. Spec reviewer is shown migrated below as the canonical form; the remaining seven reviewer blocks (still in legacy shell-pipeline form pending the migration sweep tracked as a follow-up to PR #153) are byte-for-byte equivalent — translate any of them to wrapper form by mapping `agents/qrspi-{name}-reviewer.md` to `--agent-file`, the reviewer tag to `--reviewer-tag`, and any companion files (`companion_plan`, `companion_goals`, `companion_test_expectations`) to their matching `--companion-*` flags.
+Use `scripts/run-codex-review.sh` — the canonical reviewer dispatch wrapper. It assembles the reviewer-protocol body, the named agent body (frontmatter stripped), the emission-override, and the Dispatch parameters block, then pipes to `codex-companion-bg.sh launch`. Every reviewer dispatch in this skill (and the other step skills) calls this wrapper. To translate any reviewer block to wrapper form, map `agents/qrspi-{name}-reviewer.md` to `--agent-file`, the reviewer tag to `--reviewer-tag`, and any companion files (`companion_plan`, `companion_goals`, `companion_test_expectations`) to their matching `--companion-*` flags. The spec reviewer is shown below; the remaining reviewers in this section follow the same shape with the agent file and reviewer tag swapped.
 
 ```sh
-# Spec reviewer (Codex) — canonical wrapper form
+# Spec reviewer (Codex)
 scripts/run-codex-review.sh \
   --agent-file agents/qrspi-spec-reviewer.md \
   --reviewer-tag spec-codex \
