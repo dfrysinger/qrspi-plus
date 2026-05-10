@@ -770,16 +770,18 @@ EOF
 }
 
 @test "skill-load: unsupported skills: shapes (block-list, scalar) are rejected loudly" {
-  # Block-list YAML
-  #   skills:
+  # Block-list YAML and scalar YAML are structurally different shapes from
+  # the inline-list form the parser supports. A silent skip would produce
+  # exactly the failure mode the additional-skills load chain exists to
+  # prevent: the agent declares a dependency on a shared skill, the
+  # wrapper drops it, and the assembled Codex prompt is missing a
+  # structurally important section. The wrapper must reject any
+  # unsupported shape before composing the prompt.
+  #
+  # Block-list:                      Scalar:
+  #   skills:                          skills: reviewer-protocol
   #     - reviewer-protocol
   #     - research-isolation
-  # is a structurally different shape from the inline-list form the parser
-  # supports. A silent skip would produce exactly the failure mode the
-  # additional-skills load chain exists to prevent: the agent declares a
-  # dependency on a shared skill, the wrapper drops it, and the assembled
-  # Codex prompt is missing a structurally important section. The wrapper
-  # must reject the unsupported shape before composing the prompt.
   cat > "$TMP_DIR/agent-block-list.md" <<'EOF'
 ---
 name: test-block-list
@@ -795,6 +797,27 @@ Body.
 EOF
   run "$WRAPPER" \
     --agent-file "$TMP_DIR/agent-block-list.md" \
+    --reviewer-tag test-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "inline-list" ]]
+
+  cat > "$TMP_DIR/agent-scalar.md" <<'EOF'
+---
+name: test-scalar
+description: agent using unsupported scalar skills form
+model: sonnet
+tools: Read, Write
+skills: reviewer-protocol
+---
+
+Body.
+EOF
+  run "$WRAPPER" \
+    --agent-file "$TMP_DIR/agent-scalar.md" \
     --reviewer-tag test-codex \
     --output-dir /tmp/out \
     --round 1 \
@@ -842,7 +865,17 @@ EOF
   # the no-skills path works on every supported bash. We invoke the
   # wrapper explicitly under /bin/bash to defend against the path where
   # CI runs under bash 5 (which would mask the regression) but a
-  # contributor's local run hits the system shell.
+  # contributor's local run hits the system shell. The skip below
+  # prevents this test from giving false confidence on Linux runners
+  # where `/bin/bash` is bash 4/5 — the regression only exists on
+  # bash 3.x's empty-array semantics.
+  if [ ! -x /bin/bash ]; then
+    skip "/bin/bash not present on this system"
+  fi
+  bin_bash_major=$(/bin/bash -c 'echo ${BASH_VERSINFO[0]}')
+  if [ "$bin_bash_major" -ge 4 ]; then
+    skip "/bin/bash is bash $bin_bash_major; the empty-array set-u crash only affects bash 3.x"
+  fi
   cat > "$TMP_DIR/agent-noskills-explicit.md" <<'EOF'
 ---
 name: test-noskills-bash3
@@ -853,9 +886,6 @@ tools: Read, Write
 
 Body.
 EOF
-  if [ ! -x /bin/bash ]; then
-    skip "/bin/bash not present on this system"
-  fi
   run /bin/bash "$WRAPPER" \
     --agent-file "$TMP_DIR/agent-noskills-explicit.md" \
     --reviewer-tag test-codex \

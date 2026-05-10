@@ -301,9 +301,13 @@ extract_skill_names() {
 # substitution would discard it). The wrapper does not use `set -e`,
 # so check the exit status explicitly: a nonzero awk exit means the
 # parser detected an unsupported `skills:` shape and already wrote a
-# diagnostic to stderr.
-if ! SKILL_NAMES_OUTPUT="$(extract_skill_names "$AGENT_FILE_ABS")"; then
-  exit 1
+# diagnostic to stderr. Re-emit awk's exit status verbatim so callers
+# can distinguish parser-shape failures (exit 2) from other wrapper
+# errors (exit 1).
+SKILL_NAMES_OUTPUT="$(extract_skill_names "$AGENT_FILE_ABS")"
+extract_status=$?
+if [ "$extract_status" -ne 0 ]; then
+  exit "$extract_status"
 fi
 
 ADDITIONAL_SKILL_PATHS=()

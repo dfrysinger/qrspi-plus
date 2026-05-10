@@ -41,14 +41,18 @@ setup_file() {
 @test "fail-loud: each research agent loads research-isolation via skills frontmatter" {
   # Match the canonical inline-list shape `skills: [..., research-isolation, ...]`
   # and require the skill name to be bounded by an actual YAML list separator
-  # — `[`, `,`, or whitespace before; `]`, `,`, or whitespace after — so a
-  # hypothetical `skills: [research-isolation-mock]` entry does not falsely
-  # satisfy the assertion. Generic word-boundary anchors (\<\>) treat `-`
-  # as a non-word character on both BSD and GNU grep, so `\<research-isolation\>`
-  # would mismatch `research-isolation-mock` at the `n-` boundary and
-  # falsely pass.
+  # — `[`, `,`, whitespace, or a wrapping quote (single/double) before; `]`,
+  # `,`, whitespace, or a wrapping quote after — so a hypothetical
+  # `skills: [research-isolation-mock]` entry does not falsely satisfy the
+  # assertion, but the quoted form `skills: ["research-isolation"]` does
+  # (the wrapper's awk parser strips quotes, so CI must accept the same
+  # shapes the runtime accepts; a one-sided gate would let a quoted-form
+  # agent file fail CI even though dispatch would work, or vice versa).
+  # Generic word-boundary anchors (\<\>) treat `-` as a non-word character
+  # on both BSD and GNU grep, so `\<research-isolation\>` would mismatch
+  # `research-isolation-mock` at the `n-` boundary and falsely pass.
   for agent in qrspi-research-specialist qrspi-research-collator qrspi-research-reviewer; do
-    run grep -E "^skills:[[:space:]]*\[(.*[[:space:],]|[[:space:]]*)research-isolation([[:space:],].*|[[:space:]]*)\]" "$REPO_ROOT/agents/$agent.md"
+    run grep -E "^skills:[[:space:]]*\[(.*[[:space:],\"']|[[:space:]\"']*)research-isolation([[:space:],\"'].*|[[:space:]\"']*)\]" "$REPO_ROOT/agents/$agent.md"
     [ "$status" -eq 0 ]
   done
 }

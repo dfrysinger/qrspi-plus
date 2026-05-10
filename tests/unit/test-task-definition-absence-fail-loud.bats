@@ -106,14 +106,17 @@ setup_file() {
   # The Phase Routing contract is preloaded automatically when the
   # reviewer-protocol skill is named here. Match the canonical inline-list
   # shape and require the skill name to be bounded by an actual YAML list
-  # separator — `[`, `,`, or whitespace before; `]`, `,`, or whitespace
-  # after — so a hypothetical `skills: [reviewer-protocol-mock]` entry
-  # does not falsely satisfy the assertion. Generic word-boundary anchors
-  # (\<\>) treat `-` as a non-word character on both BSD and GNU grep, so
+  # separator — `[`, `,`, whitespace, or a wrapping quote (single/double)
+  # before; `]`, `,`, whitespace, or a wrapping quote after — so a
+  # hypothetical `skills: [reviewer-protocol-mock]` entry does not falsely
+  # satisfy the assertion, but the quoted form `skills: ["reviewer-protocol"]`
+  # does (the wrapper's awk parser strips quotes, so CI must accept the
+  # same shapes the runtime accepts). Generic word-boundary anchors (\<\>)
+  # treat `-` as a non-word character on both BSD and GNU grep, so
   # `\<reviewer-protocol\>` would mismatch `reviewer-protocol-mock` at
   # the `l-` boundary and falsely pass.
   for agent in qrspi-spec-reviewer qrspi-code-quality-reviewer qrspi-goal-traceability-reviewer; do
-    run grep -E "^skills:[[:space:]]*\[(.*[[:space:],]|[[:space:]]*)reviewer-protocol([[:space:],].*|[[:space:]]*)\]" "$REPO_ROOT/agents/$agent.md"
+    run grep -E "^skills:[[:space:]]*\[(.*[[:space:],\"']|[[:space:]\"']*)reviewer-protocol([[:space:],\"'].*|[[:space:]\"']*)\]" "$REPO_ROOT/agents/$agent.md"
     [ "$status" -eq 0 ]
   done
 }
