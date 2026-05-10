@@ -105,6 +105,53 @@ be resolved within the task's scope (e.g., the refit requires a separate
 plan), report DONE_WITH_CONCERNS and explicitly name the deferred
 notification — it stays unresolved for the next round to pick up.
 
+## Main-chat n/a authoring (orchestrator shortcut)
+
+The default resolution path is implementer-driven: an in-batch implementer
+dispatches and writes `resolution: addressed` or `resolution: n/a` per the
+section above. That path is correct when the notification has any chance of
+producing a code change in the current task's worktree.
+
+When the notification is **clearly** out of the current batch's scope and
+no code change is possible — typical example: an integrate-time contract
+delta whose resolution can only happen at merge — main chat MAY write
+`resolution: n/a` directly into the notification file's frontmatter
+without dispatching an implementer subagent. This is treated as artifact
+metadata authoring (notifications live under `tasks/task-NN/notifications/`,
+inside the artifact directory) and does NOT violate the
+"main chat does not edit target-project source files" rule in
+`implement/SKILL.md` § Per-Task Execution → Orchestration Boundary.
+
+**Criteria — all must hold:**
+
+1. The notification's `target_file` is not modified by any task in the
+   current batch (full pipeline: tasks listed in `parallelization.md`
+   for the current phase; quick fix: tasks in the main dispatch event).
+2. The notification's `change_shape` requires no in-batch code change:
+   the resolution is genuinely "wait for integrate" or
+   "no longer relevant — current-batch scope does not import the symbol."
+3. The user has assented (the shortcut is not unilateral — main chat
+   surfaces the proposed n/a resolution and the reason at the
+   Round-Level Notification Sweep step and proceeds only on user
+   acknowledgement).
+
+**Required frontmatter fields when authored by main chat:**
+
+```yaml
+resolution: n/a
+resolution_reason: <one short sentence>
+resolution_author: orchestrator   # distinguishes main-chat-authored n/a from implementer-authored
+```
+
+The `resolution_author: orchestrator` field is REQUIRED on this path so
+that audit trails (and any future verifier pass) can distinguish
+orchestrator-authored n/a from implementer-authored n/a. Implementer-authored
+resolutions omit this field.
+
+If any criterion fails, fall back to the default implementer-fix dispatch
+path. Drift created by an inappropriate orchestrator shortcut is harder to
+unwind than the cost of a single 75-second implementer dispatch.
+
 ## Source-side: writing notifications
 
 The Implement skill's per-task verification step runs the shared-base
