@@ -190,27 +190,31 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
 
   ```sh
   # Quality reviewer (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-structure-reviewer.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_design: %s\ncompanion_phasing: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/structure/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/structure/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped structure.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped phasing.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-structure-reviewer.md \
+    --reviewer-tag quality-codex \
+    --output-dir "<ABS_ARTIFACT_DIR>/reviews/structure/round-${ROUND}/" \
+    --round "$ROUND" \
+    --artifact-body structure.md \
+    --companion companion_goals=goals.md \
+    --companion companion_research=research/summary.md \
+    --companion companion_design=design.md \
+    --companion companion_phasing=phasing.md \
+    --diff-file "<ABS_ARTIFACT_DIR>/reviews/structure/round-${ROUND}.diff" \
+    --scope-hint "$SCOPE_HINT"
 
-  # Scope-reviewer (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-structure-scope-reviewer.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/structure/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/structure/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped structure.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  # Scope reviewer (Codex)
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-structure-scope-reviewer.md \
+    --reviewer-tag scope-codex \
+    --output-dir "<ABS_ARTIFACT_DIR>/reviews/structure/round-${ROUND}/" \
+    --round "$ROUND" \
+    --artifact-body structure.md \
+    --diff-file "<ABS_ARTIFACT_DIR>/reviews/structure/round-${ROUND}.diff" \
+    --scope-hint "$SCOPE_HINT"
   ```
 
-  The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints.
+  Main chat sees only the jobIds Codex prints.
 
   After `await` returns, on exit 0 run the splitter to split Codex output into per-finding files:
 

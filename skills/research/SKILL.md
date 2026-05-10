@@ -150,17 +150,19 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **n
 
   ```sh
   # Quality reviewer (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-research-reviewer.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_qfiles: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/research/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/research/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped research/summary.md body>" "<concatenated per-file untrusted-data-wrapped research/q*.md bodies>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-research-reviewer.md \
+    --reviewer-tag quality-codex \
+    --output-dir "<ABS_ARTIFACT_DIR>/reviews/research/round-${ROUND}/" \
+    --round "$ROUND" \
+    --artifact-body research/summary.md \
+    --companion companion_qfiles=research/q01-{tag}.md \
+    [--companion companion_qfiles=research/q02-{tag}.md ...] \
+    --diff-file "<ABS_ARTIFACT_DIR>/reviews/research/round-${ROUND}.diff" \
+    --scope-hint "$SCOPE_HINT"
   ```
 
-  The awk strips YAML frontmatter (everything up through the second `---` line). The Codex dispatch carries the same isolation invariant as the Claude dispatch — `companion_qfiles` only, NO `companion_goals` and NO `companion_questions`. Main chat sees only the jobId Codex prints. `$SCOPE_HINT` is the comma-separated tag list when using-qrspi step 7.5 narrowed this round, OR the empty string when broadened/round-1-or-2/scope_tagger_enabled=false.
+  The Codex dispatch carries the same isolation invariant as the Claude dispatch — `companion_qfiles` only, NO `companion_goals` and NO `companion_questions`. Main chat sees only the jobId Codex prints. `$SCOPE_HINT` is the comma-separated tag list when using-qrspi step 7.5 narrowed this round, OR the empty string when broadened/round-1-or-2/scope_tagger_enabled=false.
 
   After `await` returns, on exit 0 run the splitter to split Codex output into per-finding files:
 

@@ -220,27 +220,30 @@ After writing `parallelization.md` (and after every revision), run one review ro
 
    ```sh
    # Quality reviewer (Codex)
-   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-     printf '\n\n---\n\n';
-     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-parallelize-reviewer.md;
-     printf '\n\n---\n\n';
-     cat skills/reviewer-protocol/codex-emission-override.md;
-     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_plan: %s\ncompanion_tasks: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-       "<untrusted-data-wrapped parallelization.md body>" "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped tasks bodies>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-   } | scripts/codex-companion-bg.sh launch
+   scripts/run-codex-review.sh \
+     --agent-file agents/qrspi-parallelize-reviewer.md \
+     --reviewer-tag quality-codex \
+     --output-dir "<ABS_ARTIFACT_DIR>/reviews/parallelize/round-${ROUND}/" \
+     --round "$ROUND" \
+     --artifact-body parallelization.md \
+     --companion companion_plan=plan.md \
+     --companion companion_tasks=tasks/task-NN-1.md \
+     [--companion companion_tasks=tasks/task-NN-2.md ...] \
+     --diff-file "<ABS_ARTIFACT_DIR>/reviews/parallelize/round-${ROUND}.diff" \
+     --scope-hint "$SCOPE_HINT"
 
-   # Scope-reviewer (Codex)
-   { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-     printf '\n\n---\n\n';
-     awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-parallelize-scope-reviewer.md;
-     printf '\n\n---\n\n';
-     cat skills/reviewer-protocol/codex-emission-override.md;
-     printf '\n\n## Dispatch parameters\n\nartifact_body: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/parallelize/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-       "<untrusted-data-wrapped parallelization.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-   } | scripts/codex-companion-bg.sh launch
+   # Scope reviewer (Codex)
+   scripts/run-codex-review.sh \
+     --agent-file agents/qrspi-parallelize-scope-reviewer.md \
+     --reviewer-tag scope-codex \
+     --output-dir "<ABS_ARTIFACT_DIR>/reviews/parallelize/round-${ROUND}/" \
+     --round "$ROUND" \
+     --artifact-body parallelization.md \
+     --diff-file "<ABS_ARTIFACT_DIR>/reviews/parallelize/round-${ROUND}.diff" \
+     --scope-hint "$SCOPE_HINT"
    ```
 
-   The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints.
+   Main chat sees only the jobIds Codex prints.
 
    After `await` returns, on exit 0 run the splitter to split Codex output into per-finding files:
 
