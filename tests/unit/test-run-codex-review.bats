@@ -101,7 +101,7 @@ teardown() {
   [[ "$output" =~ "task_definition:" ]]
   [[ "$output" =~ "reviewer_tag: spec-codex" ]]
   [[ "$output" =~ "round: 1" ]]
-  [[ "$output" =~ "output: /tmp/out" ]]
+  [[ "$output" =~ "round_subdir: /tmp/out" ]]
 }
 
 @test "untrusted-artifact wrappers are present around subject_code and task_definition" {
@@ -131,8 +131,8 @@ teardown() {
     --output-dir /tmp/out \
     --round 1 \
     --subject-code "$TMP_DIR/src/foo.ts" \
-    --companion-plan "$TMP_DIR/plan.md" \
-    --companion-goals "$TMP_DIR/goals.md" \
+    --companion "companion_plan=$TMP_DIR/plan.md" \
+    --companion "companion_goals=$TMP_DIR/goals.md" \
     --dry-run
   [ "$status" -eq 0 ]
   # task_definition: line MUST NOT appear — its absence is load-bearing for
@@ -234,7 +234,109 @@ teardown() {
   [[ "$output" =~ "export const y = 2" ]]
 }
 
-@test "companion_test_expectations appears as wrapped block when --companion-test-expectations-file passed" {
+@test "--field NAME=VALUE emits 'NAME: VALUE' as a plain scalar (no wrapping)" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-plan-reviewer.md" \
+    --reviewer-tag quality-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --artifact-body "$TMP_DIR/plan.md" \
+    --field route=full \
+    --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "route: full" ]]
+  ! [[ "$output" =~ "<<<UNTRUSTED-ARTIFACT-START id=route" ]]
+}
+
+@test "errors when --field lacks NAME=VALUE form" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --field "no_equals" \
+    --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "NAME=VALUE" ]]
+}
+
+@test "primary field uses artifact_body when --artifact-body is passed" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-design-reviewer.md" \
+    --reviewer-tag quality-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --artifact-body "$TMP_DIR/plan.md" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "artifact_body:" ]]
+  ! [[ "$output" =~ "subject_code:" ]]
+  [[ "$output" =~ "<<<UNTRUSTED-ARTIFACT-START id=$TMP_DIR/plan.md>>>" ]]
+}
+
+@test "errors when both --subject-code and --artifact-body are passed (mutex)" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --artifact-body "$TMP_DIR/plan.md" \
+    --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "mutually exclusive" ]]
+}
+
+@test "errors when --companion lacks NAME=PATH form" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --companion "no_equals_sign" \
+    --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "NAME=PATH" ]]
+}
+
+@test "errors when --companion NAME contains invalid characters" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --companion "bad-name=$TMP_DIR/plan.md" \
+    --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "NAME must match" ]]
+}
+
+@test "multiple --companion paths under same NAME concatenate as wrapped blocks" {
+  echo "Spec body 1" > "$TMP_DIR/spec-1.md"
+  echo "Spec body 2" > "$TMP_DIR/spec-2.md"
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-implement-gate-reviewer.md" \
+    --reviewer-tag implement-gate-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --companion "companion_task_specs=$TMP_DIR/spec-1.md" \
+    --companion "companion_task_specs=$TMP_DIR/spec-2.md" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  # Field header appears exactly once, both wrapped blocks follow.
+  count=$(echo "$output" | grep -c "^companion_task_specs:$")
+  [ "$count" -eq 1 ]
+  [[ "$output" =~ "<<<UNTRUSTED-ARTIFACT-START id=$TMP_DIR/spec-1.md>>>" ]]
+  [[ "$output" =~ "<<<UNTRUSTED-ARTIFACT-START id=$TMP_DIR/spec-2.md>>>" ]]
+  [[ "$output" =~ "Spec body 1" ]]
+  [[ "$output" =~ "Spec body 2" ]]
+}
+
+@test "companion_test_expectations appears as wrapped block under generic --companion flag" {
   run "$WRAPPER" \
     --agent-file "$REPO_ROOT/agents/qrspi-test-coverage-reviewer.md" \
     --reviewer-tag test-coverage-codex \
@@ -242,12 +344,13 @@ teardown() {
     --round 1 \
     --subject-code "$TMP_DIR/src/foo.ts" \
     --task-def "$TMP_DIR/tasks/task-99.md" \
-    --companion-plan "$TMP_DIR/plan.md" \
-    --companion-test-expectations-file /tmp/test-exp-fixture.md \
+    --companion "companion_plan=$TMP_DIR/plan.md" \
+    --companion "companion_test_expectations=/tmp/test-exp-fixture.md" \
     --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" =~ "companion_test_expectations:" ]]
-  [[ "$output" =~ "<<<UNTRUSTED-ARTIFACT-START id=test-expectations>>>" ]]
+  # id defaults to the path the caller passed (no special hardcode)
+  [[ "$output" =~ "<<<UNTRUSTED-ARTIFACT-START id=/tmp/test-exp-fixture.md>>>" ]]
   [[ "$output" =~ "Test expectations block" ]]
 }
 

@@ -14,26 +14,37 @@
 #     --reviewer-tag spec-codex \
 #     --output-dir <ABS>/reviews/tasks/task-NN/round-N/ \
 #     --round N \
-#     --subject-code <repo-relative path> \
-#     [--subject-code <repo-relative path> ...] \
-#     [--task-def tasks/task-NN.md] \
-#     [--companion-plan plan.md] \
-#     [--companion-goals goals.md] \
-#     [--companion-test-expectations-file <path>] \
+#     (--subject-code <path> | --artifact-body <path>) \
+#     [--subject-code <path> ...]    # repeatable, all wrap under same field
+#     [--task-def tasks/task-NN.md]  # emits task_definition: (absence is
+#                                    # load-bearing — see test-phase reuse) \
+#     [--companion <name>=<path> ...] # generic, repeatable; multiple paths
+#                                    # with the same name concatenate under
+#                                    # one field. e.g. --companion plan=plan.md \
+#     [--field <name>=<value> ...]   # generic, repeatable; emits `<name>: <value>`
+#                                    # as a plain (non-wrapped) scalar field.
+#                                    # Used for fields like `route:` that pass
+#                                    # configuration values, not artifact bodies. \
 #     [--diff-file <ABS>/reviews/tasks/task-NN/round-N.diff] \
 #     [--scope-hint 'path/a.ts, path/b.ts'] \
 #     [--dry-run]
 #
-# All path-style flags (`--subject-code`, `--task-def`, `--companion-plan`,
-# `--companion-goals`, `--diff-file`, `--agent-file`) are repo-relative
-# (the wrapper Cwd is the qrspi-plus repo root) UNLESS they contain a
-# leading `/` (absolute path) — in that case the wrapper uses them verbatim.
-# The `--output-dir` flag must be absolute (the orchestrator already
-# computes `<ABS_ARTIFACT_DIR>/reviews/...` so this is naturally absolute).
+# Field naming. Most step skills emit the primary-artifact field as
+# `artifact_body:`; implement / integrate / test emit it as `subject_code:`
+# (per reviewer-protocol § Dispatch Contract — the two are synonyms with
+# per-step convention). Pass either `--subject-code` or `--artifact-body`
+# accordingly; both are repeatable and concatenate wrapped blocks under
+# the chosen field. Exactly one of the two must be present.
 #
-# `--companion-test-expectations-file` takes a path because the test-
-# expectations block is extracted from plan.md by the orchestrator and
-# spelled out into a tempfile (no canonical location to wrap-by-path).
+# Companions. `--companion <name>=<path>` emits the field `<name>:` followed
+# by the wrapped file body. The flag is repeatable; multiple paths sharing
+# the same name concatenate (used for fields like `companion_task_specs`
+# that aggregate per-task wrapped blocks).
+#
+# All path-style flags are repo-relative (the wrapper's reference is the
+# qrspi-plus repo root) UNLESS they contain a leading `/` (absolute path) —
+# in that case the wrapper uses them verbatim. The `--output-dir` flag must
+# be absolute (the orchestrator already computes `<ABS_ARTIFACT_DIR>/...`).
 #
 # `--scope-hint` takes a comma-separated string OR an empty value. When
 # omitted entirely, no `scope_hint:` line is emitted (broaden semantics
@@ -72,31 +83,80 @@ REVIEWER_TAG=""
 OUTPUT_DIR=""
 ROUND=""
 TASK_DEF=""
-COMPANION_PLAN=""
-COMPANION_GOALS=""
-COMPANION_TEST_EXP_FILE=""
 DIFF_FILE=""
 SCOPE_HINT=""
 SCOPE_HINT_SET="false"
 DRY_RUN="false"
 
-# Repeating flag: --subject-code can appear N times.
+# Primary-artifact field. Exactly one of subject_code or artifact_body is
+# emitted (both flags collect into separate arrays so we can detect misuse).
 SUBJECT_CODE_PATHS=()
+ARTIFACT_BODY_PATHS=()
+
+# Companion fields. Parallel arrays (name, path); multiple paths with the
+# same name concatenate under one field. Bash 3-compatible — no associative.
+COMPANION_NAMES=()
+COMPANION_PATHS=()
+
+# Plain scalar fields — emitted as `name: value` with no wrapping.
+SCALAR_NAMES=()
+SCALAR_VALUES=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --agent-file)                       AGENT_FILE="$2"; shift 2 ;;
-    --reviewer-tag)                     REVIEWER_TAG="$2"; shift 2 ;;
-    --output-dir)                       OUTPUT_DIR="$2"; shift 2 ;;
-    --round)                            ROUND="$2"; shift 2 ;;
-    --subject-code)                     SUBJECT_CODE_PATHS+=("$2"); shift 2 ;;
-    --task-def)                         TASK_DEF="$2"; shift 2 ;;
-    --companion-plan)                   COMPANION_PLAN="$2"; shift 2 ;;
-    --companion-goals)                  COMPANION_GOALS="$2"; shift 2 ;;
-    --companion-test-expectations-file) COMPANION_TEST_EXP_FILE="$2"; shift 2 ;;
-    --diff-file)                        DIFF_FILE="$2"; shift 2 ;;
-    --scope-hint)                       SCOPE_HINT="$2"; SCOPE_HINT_SET="true"; shift 2 ;;
-    --dry-run)                          DRY_RUN="true"; shift ;;
+    --agent-file)     AGENT_FILE="$2"; shift 2 ;;
+    --reviewer-tag)   REVIEWER_TAG="$2"; shift 2 ;;
+    --output-dir)     OUTPUT_DIR="$2"; shift 2 ;;
+    --round)          ROUND="$2"; shift 2 ;;
+    --subject-code)   SUBJECT_CODE_PATHS+=("$2"); shift 2 ;;
+    --artifact-body)  ARTIFACT_BODY_PATHS+=("$2"); shift 2 ;;
+    --task-def)       TASK_DEF="$2"; shift 2 ;;
+    --companion)
+      # Expect NAME=PATH. Split on the first `=`.
+      if [[ "$2" != *=* ]]; then
+        echo "error: --companion requires NAME=PATH (got: $2)" >&2
+        exit 1
+      fi
+      cname="${2%%=*}"
+      cpath="${2#*=}"
+      if [[ -z "$cname" || -z "$cpath" ]]; then
+        echo "error: --companion NAME=PATH must have non-empty NAME and PATH (got: $2)" >&2
+        exit 1
+      fi
+      # Restrict NAME to valid identifier chars to keep the emitted dispatch
+      # parameter line well-formed.
+      if [[ ! "$cname" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+        echo "error: --companion NAME must match [A-Za-z_][A-Za-z0-9_]* (got: $cname)" >&2
+        exit 1
+      fi
+      COMPANION_NAMES+=("$cname")
+      COMPANION_PATHS+=("$cpath")
+      shift 2
+      ;;
+    --field)
+      # Expect NAME=VALUE. Same NAME validation as --companion (kept consistent
+      # so the emitted field-name is well-formed). VALUE may be empty.
+      if [[ "$2" != *=* ]]; then
+        echo "error: --field requires NAME=VALUE (got: $2)" >&2
+        exit 1
+      fi
+      fname="${2%%=*}"
+      fvalue="${2#*=}"
+      if [[ -z "$fname" ]]; then
+        echo "error: --field NAME=VALUE must have non-empty NAME (got: $2)" >&2
+        exit 1
+      fi
+      if [[ ! "$fname" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+        echo "error: --field NAME must match [A-Za-z_][A-Za-z0-9_]* (got: $fname)" >&2
+        exit 1
+      fi
+      SCALAR_NAMES+=("$fname")
+      SCALAR_VALUES+=("$fvalue")
+      shift 2
+      ;;
+    --diff-file)      DIFF_FILE="$2"; shift 2 ;;
+    --scope-hint)     SCOPE_HINT="$2"; SCOPE_HINT_SET="true"; shift 2 ;;
+    --dry-run)        DRY_RUN="true"; shift ;;
     *)
       echo "error: unrecognized flag: $1" >&2
       exit 1
@@ -122,9 +182,21 @@ require_flag "reviewer-tag" "$REVIEWER_TAG"
 require_flag "output-dir"   "$OUTPUT_DIR"
 require_flag "round"        "$ROUND"
 
-if [[ ${#SUBJECT_CODE_PATHS[@]} -eq 0 ]]; then
-  echo "error: at least one --subject-code required" >&2
+# Exactly one of --subject-code or --artifact-body must be present.
+if [[ ${#SUBJECT_CODE_PATHS[@]} -eq 0 && ${#ARTIFACT_BODY_PATHS[@]} -eq 0 ]]; then
+  echo "error: at least one --subject-code or --artifact-body required" >&2
   exit 1
+fi
+if [[ ${#SUBJECT_CODE_PATHS[@]} -gt 0 && ${#ARTIFACT_BODY_PATHS[@]} -gt 0 ]]; then
+  echo "error: --subject-code and --artifact-body are mutually exclusive (pick the per-step name)" >&2
+  exit 1
+fi
+if [[ ${#SUBJECT_CODE_PATHS[@]} -gt 0 ]]; then
+  PRIMARY_FIELD="subject_code"
+  PRIMARY_PATHS=("${SUBJECT_CODE_PATHS[@]}")
+else
+  PRIMARY_FIELD="artifact_body"
+  PRIMARY_PATHS=("${ARTIFACT_BODY_PATHS[@]}")
 fi
 
 # Resolve a flag's path: if absolute, use verbatim; otherwise resolve against REPO_ROOT.
@@ -156,38 +228,31 @@ assert_file_exists "reviewer-protocol/SKILL.md" "$REVIEWER_PROTOCOL_ABS"
 EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md"
 assert_file_exists "codex-emission-override.md" "$EMISSION_OVERRIDE_ABS"
 
-# Resolve subject_code files (repeating)
-SUBJECT_CODE_ABS=()
-for sc in "${SUBJECT_CODE_PATHS[@]}"; do
+# Resolve primary-artifact files (repeating). PRIMARY_PATHS holds either
+# the --subject-code or --artifact-body inputs per the field selection above.
+PRIMARY_ABS=()
+for sc in "${PRIMARY_PATHS[@]}"; do
   abs="$(resolve_path "$sc")"
-  assert_file_exists "subject-code" "$abs"
-  SUBJECT_CODE_ABS+=("$abs")
+  assert_file_exists "$PRIMARY_FIELD" "$abs"
+  PRIMARY_ABS+=("$abs")
 done
 
-# Resolve optional files
+# Resolve optional task-def
 TASK_DEF_ABS=""
 if [[ -n "$TASK_DEF" ]]; then
   TASK_DEF_ABS="$(resolve_path "$TASK_DEF")"
   assert_file_exists "task-def" "$TASK_DEF_ABS"
 fi
 
-COMPANION_PLAN_ABS=""
-if [[ -n "$COMPANION_PLAN" ]]; then
-  COMPANION_PLAN_ABS="$(resolve_path "$COMPANION_PLAN")"
-  assert_file_exists "companion-plan" "$COMPANION_PLAN_ABS"
-fi
-
-COMPANION_GOALS_ABS=""
-if [[ -n "$COMPANION_GOALS" ]]; then
-  COMPANION_GOALS_ABS="$(resolve_path "$COMPANION_GOALS")"
-  assert_file_exists "companion-goals" "$COMPANION_GOALS_ABS"
-fi
-
-COMPANION_TEST_EXP_ABS=""
-if [[ -n "$COMPANION_TEST_EXP_FILE" ]]; then
-  COMPANION_TEST_EXP_ABS="$(resolve_path "$COMPANION_TEST_EXP_FILE")"
-  assert_file_exists "companion-test-expectations-file" "$COMPANION_TEST_EXP_ABS"
-fi
+# Resolve companions (parallel arrays)
+COMPANION_ABS=()
+for i in "${!COMPANION_PATHS[@]}"; do
+  cpath="${COMPANION_PATHS[$i]}"
+  cname="${COMPANION_NAMES[$i]}"
+  abs="$(resolve_path "$cpath")"
+  assert_file_exists "companion[$cname]" "$abs"
+  COMPANION_ABS+=("$abs")
+done
 
 # diff_file is absolute by convention (orchestrator emits to ABS_ARTIFACT_DIR)
 if [[ -n "$DIFF_FILE" ]]; then
@@ -222,12 +287,11 @@ emit_untrusted_artifact() {
 emit_dispatch_parameters() {
   printf '\n\n## Dispatch parameters\n\n'
 
-  # Required: subject_code (one wrapped block per file, concatenated).
-  printf 'subject_code:\n'
-  for i in "${!SUBJECT_CODE_ABS[@]}"; do
-    local path="${SUBJECT_CODE_ABS[$i]}"
-    local id="${SUBJECT_CODE_PATHS[$i]}"
-    emit_untrusted_artifact "$path" "$id"
+  # Required: primary artifact field (subject_code OR artifact_body) — one
+  # wrapped block per path, concatenated under a single field header.
+  printf '%s:\n' "$PRIMARY_FIELD"
+  for i in "${!PRIMARY_ABS[@]}"; do
+    emit_untrusted_artifact "${PRIMARY_ABS[$i]}" "${PRIMARY_PATHS[$i]}"
     printf '\n'
   done
 
@@ -239,24 +303,34 @@ emit_dispatch_parameters() {
     printf '\n'
   fi
 
-  # Optional: companion_plan / companion_goals (goal-traceability, test-coverage).
-  if [[ -n "$COMPANION_PLAN_ABS" ]]; then
-    printf 'companion_plan:\n'
-    emit_untrusted_artifact "$COMPANION_PLAN_ABS" "$COMPANION_PLAN"
-    printf '\n'
-  fi
-  if [[ -n "$COMPANION_GOALS_ABS" ]]; then
-    printf 'companion_goals:\n'
-    emit_untrusted_artifact "$COMPANION_GOALS_ABS" "$COMPANION_GOALS"
-    printf '\n'
-  fi
-  if [[ -n "$COMPANION_TEST_EXP_ABS" ]]; then
-    printf 'companion_test_expectations:\n'
-    emit_untrusted_artifact "$COMPANION_TEST_EXP_ABS" "test-expectations"
-    printf '\n'
-  fi
+  # Companions: walk parallel arrays, emit each unique field name once
+  # (header), then concatenate every wrapped block whose name matches.
+  # Preserves caller-given order. Bash 3-compatible (no associative array).
+  emitted_names=" "
+  for i in "${!COMPANION_NAMES[@]}"; do
+    name="${COMPANION_NAMES[$i]}"
+    if [[ "$emitted_names" != *" $name "* ]]; then
+      printf '%s:\n' "$name"
+      emitted_names="${emitted_names}${name} "
+      # Walk all entries with this name in caller order.
+      for j in "${!COMPANION_NAMES[@]}"; do
+        if [[ "${COMPANION_NAMES[$j]}" == "$name" ]]; then
+          emit_untrusted_artifact "${COMPANION_ABS[$j]}" "${COMPANION_PATHS[$j]}"
+          printf '\n'
+        fi
+      done
+    fi
+  done
 
-  printf 'output: %s\n' "$OUTPUT_DIR"
+  # Plain scalar fields (no wrapping) — emitted in caller-given order.
+  for i in "${!SCALAR_NAMES[@]}"; do
+    printf '%s: %s\n' "${SCALAR_NAMES[$i]}" "${SCALAR_VALUES[$i]}"
+  done
+
+  # Canonical field name per reviewer-protocol/SKILL.md § Reviewer Dispatch
+  # Contract. The 4 step skills that previously emitted `output:` (an
+  # undocumented per-step alias) are normalized via the wrapper.
+  printf 'round_subdir: %s\n' "$OUTPUT_DIR"
   printf 'round: %s\n' "$ROUND"
   printf 'reviewer_tag: %s\n' "$REVIEWER_TAG"
 
@@ -265,9 +339,9 @@ emit_dispatch_parameters() {
   fi
 
   if [[ "$SCOPE_HINT_SET" == "true" ]]; then
-    # Codex pattern emits the line unconditionally with the wrapper, even when
-    # the value is empty (broaden semantics). Reviewers treat empty-value as
-    # semantically identical to absence per reviewer-protocol contract.
+    # Wrapper emits the line unconditionally when --scope-hint was passed,
+    # even with empty value (semantically equivalent to absence; reviewers
+    # treat the empty-wrapped form and the omitted form the same).
     printf 'scope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' "$SCOPE_HINT"
   fi
 }
