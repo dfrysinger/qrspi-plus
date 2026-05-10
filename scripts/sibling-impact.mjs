@@ -15,7 +15,10 @@
 // branches (e.g. artifacts in Dropbox, code in ~/code/<repo>). When omitted,
 // the script falls back to deriving projectRoot from `<tasksDir>/..` (the
 // recommended sibling layout per `using-qrspi/SKILL.md` § Recommended
-// Workspace Layout). See PR #153 issue #157 for the original incident.
+// Workspace Layout). The fallback is a convenience for the common
+// co-located case; the explicit env var is the safe path for split
+// workspaces where the artifact tree and the target repo live on
+// unrelated filesystem branches.
 //
 // Pure Node 18+ stdlib. No npm dependencies.
 
@@ -146,7 +149,7 @@ function main() {
   // Derive project root.
   // - When --code-path is provided, use it verbatim. This supports split-workspace
   //   layouts where the QRSPI artifact directory and the target code repo live on
-  //   different filesystem branches (issue #157).
+  //   different filesystem branches.
   // - When --code-path is omitted, fall back to `<tasksDir>/..` — the recommended
   //   sibling layout per `using-qrspi/SKILL.md` § Recommended Workspace Layout.
   let projectRoot;

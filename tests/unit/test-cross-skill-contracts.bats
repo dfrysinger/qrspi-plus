@@ -6,9 +6,11 @@
 # skill prose. If a future edit drops one side without updating the other, the
 # test fails — surfacing the silent regression early.
 #
-# Background: PR #153 issue #156 surfaced when implementer-protocol's "implementer
-# commits before DONE" assumption was silently relied on by implement/SKILL.md's
-# diff emission, with no enforcement bridge. Tests in this file pin similar
+# Background: cross-skill contracts are easy to drop silently. The canonical
+# example is "implementer commits before DONE" — an implementer-protocol
+# rule that implement/SKILL.md's diff emission depends on. Without an
+# enforcement bridge, a future edit can drop either side and reviewers
+# read stale diffs while CI stays green. Tests in this file pin those
 # bridges so the next such drift fails loudly.
 #
 # Style: every test is a loose-grep — the goal is "does the contract still
@@ -43,8 +45,8 @@ setup_file() {
 # Contract 2 — Implementer commit → orchestrator HEAD-advanced verification
 # Side A: implementer-protocol requires commit before DONE + commit_sha report.
 # Side B: implement orchestrator verifies HEAD advanced before emitting diff.
-# Failure mode: stale-diff defect (PR #153 issue #156) — reviewer tiers see
-# different rounds and silently disagree.
+# Failure mode: stale-diff defect — reviewer tiers see different rounds
+# and silently disagree.
 # ---------------------------------------------------------------------------
 @test "contract-02: commit_sha bridge between implementer-protocol and implement" {
   # Side A: implementer-protocol requires commit + commit_sha

@@ -138,7 +138,7 @@ Any one failing fails the task. Status DONE means all five green; DONE_WITH_CONC
 
 ## Commit Before Reporting
 
-Before returning a DONE or DONE_WITH_CONCERNS terminal status, commit every modified and added file in the worktree to its git history. Skipping the commit produces a "stale diff" — the orchestrator emits the prior round's diff to the next round's reviewers, who flag work as scope drift in good faith. This is a correctness defect, not a cosmetic one (see PR #153 / issue #156 for the original incident).
+Before returning a DONE or DONE_WITH_CONCERNS terminal status, commit every modified and added file in the worktree to its git history. Skipping the commit produces a "stale diff" — the orchestrator emits the prior round's diff to the next round's reviewers, who flag work as scope drift in good faith. This is a correctness defect, not a cosmetic one: an uncommitted round's findings are read from a diff that does not reflect the implementer's intent, and the resulting fix-loop iterations chase phantom regressions while real changes go unreviewed.
 
 **Procedure (per `implement/SKILL.md` § TDD Process step 6 multi-line message convention):**
 

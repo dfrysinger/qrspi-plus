@@ -659,3 +659,112 @@ EOF
   marker_count=$(printf '%s\n' "$output" | grep -c '^<<<AGENT-BODY-END>>>$' || true)
   [ "$marker_count" -eq 1 ]
 }
+
+# ---------------------------------------------------------------------------
+# Skill-frontmatter load chain — the wrapper must materialize every
+# additional skill named in the agent's `skills:` frontmatter into the
+# assembled Codex prompt. Claude-side dispatches preload skills via the
+# Claude Code agent-activation mechanism; the Codex wrapper is the only
+# delivery path on the Codex side, so a missing load is a silent
+# semantic loss.
+# ---------------------------------------------------------------------------
+
+@test "skill-load: research-isolation/SKILL.md content reaches the assembled prompt for research-reviewer" {
+  # qrspi-research-reviewer.md declares `skills: [reviewer-protocol, research-isolation]`.
+  # The reviewer-protocol skill is hardcoded; research-isolation must come
+  # from the agent's frontmatter via dynamic loading.
+  echo "## Summary" > "$TMP_DIR/q01.md"
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-research-reviewer.md" \
+    --reviewer-tag research-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --artifact-body "$TMP_DIR/q01.md" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  # Canonical content from skills/research-isolation/SKILL.md must be present
+  [[ "$output" =~ "RESEARCH-ISOLATION-VIOLATION:" ]]
+  [[ "$output" =~ "Field-name leakage" ]]
+  [[ "$output" =~ "Goal-framing triplet" ]]
+  [[ "$output" =~ "Why isolation matters" ]]
+  # And the canonical lowercase tokens for the orchestrator's pattern→repair table
+  [[ "$output" =~ "field-name-leakage" ]]
+  [[ "$output" =~ "questions-compendium-leakage" ]]
+}
+
+@test "skill-load: agents with no skills: frontmatter still dispatch successfully" {
+  # An agent file without any `skills:` field is a valid degenerate case.
+  # The wrapper must not crash on the empty additional-skills list.
+  cat > "$TMP_DIR/agent-noskills.md" <<'EOF'
+---
+name: test-no-skills
+description: agent without skills frontmatter
+model: sonnet
+tools: Read, Write
+---
+
+Body content.
+EOF
+  run "$WRAPPER" \
+    --agent-file "$TMP_DIR/agent-noskills.md" \
+    --reviewer-tag test-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  # The reviewer-protocol body is still loaded (hardcoded path) and the
+  # agent body is present.
+  [[ "$output" =~ "Body content." ]]
+}
+
+@test "skill-load: agents listing only [reviewer-protocol] do not get extra skills" {
+  # Per-task reviewers list `skills: [reviewer-protocol]`. Since the wrapper
+  # already hardcodes reviewer-protocol, the dynamic loader skips it (to
+  # avoid double-load), and no other skill body should appear. In particular,
+  # research-isolation content must NOT leak into a per-task reviewer's
+  # prompt — that prose is research-step specific and could mis-cue an
+  # agent that is reviewing test code or task code.
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --task-def "$TMP_DIR/tasks/task-99.md" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  # Reviewer-protocol body landed (hardcoded)
+  [[ "$output" =~ "Phase Routing" ]]
+  # research-isolation content must NOT appear (specialist/collator/reviewer
+  # are the only agents that need it)
+  ! [[ "$output" =~ "RESEARCH-ISOLATION-VIOLATION:" ]]
+  ! [[ "$output" =~ "Why isolation matters" ]]
+}
+
+@test "skill-load: missing skill named in frontmatter fails with diagnostic" {
+  # If an agent declares a skill that doesn't exist on disk, the wrapper
+  # must fail loudly with a path diagnostic — silently skipping a missing
+  # skill would replicate the very semantic-loss bug this load chain fixes.
+  cat > "$TMP_DIR/agent-bogus-skill.md" <<'EOF'
+---
+name: test-bogus-skill
+description: agent declaring a nonexistent skill
+model: sonnet
+tools: Read, Write
+skills: [reviewer-protocol, this-skill-does-not-exist]
+---
+
+Body.
+EOF
+  run "$WRAPPER" \
+    --agent-file "$TMP_DIR/agent-bogus-skill.md" \
+    --reviewer-tag test-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "this-skill-does-not-exist" ]]
+  [[ "$output" =~ "not found" ]]
+}

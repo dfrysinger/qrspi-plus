@@ -104,9 +104,10 @@ setup_file() {
 
 @test "agent-side: each reusable reviewer loads reviewer-protocol via skills frontmatter" {
   # The Phase Routing contract is preloaded automatically when the
-  # reviewer-protocol skill is named here.
+  # reviewer-protocol skill is named here. Match the canonical inline-list
+  # shape with word boundaries around the skill name.
   for agent in qrspi-spec-reviewer qrspi-code-quality-reviewer qrspi-goal-traceability-reviewer; do
-    run grep -E "^skills:.*reviewer-protocol" "$REPO_ROOT/agents/$agent.md"
+    run grep -E "^skills:[[:space:]]*\[[^]]*\<reviewer-protocol\>[^]]*\]" "$REPO_ROOT/agents/$agent.md"
     [ "$status" -eq 0 ]
   done
 }

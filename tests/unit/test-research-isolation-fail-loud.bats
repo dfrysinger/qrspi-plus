@@ -39,8 +39,12 @@ setup_file() {
 # ---------------------------------------------------------------------------
 
 @test "fail-loud: each research agent loads research-isolation via skills frontmatter" {
+  # Match the canonical inline-list shape `skills: [..., research-isolation, ...]`
+  # with word boundaries around the skill name so a hypothetical
+  # `skills: [research-isolation-mock]` entry does not falsely satisfy
+  # the assertion.
   for agent in qrspi-research-specialist qrspi-research-collator qrspi-research-reviewer; do
-    run grep -E "^skills:.*research-isolation" "$REPO_ROOT/agents/$agent.md"
+    run grep -E "^skills:[[:space:]]*\[[^]]*\<research-isolation\>[^]]*\]" "$REPO_ROOT/agents/$agent.md"
     [ "$status" -eq 0 ]
   done
 }

@@ -260,6 +260,45 @@ assert_file_exists "reviewer-protocol/SKILL.md" "$REVIEWER_PROTOCOL_ABS"
 EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md"
 assert_file_exists "codex-emission-override.md" "$EMISSION_OVERRIDE_ABS"
 
+# Parse the agent's `skills:` frontmatter field to discover additional
+# shared skills the agent depends on. Claude-side dispatches preload
+# these via Claude Code's frontmatter mechanism; the Codex wrapper has
+# no equivalent, so we load them here. Each named skill resolves to
+# `skills/<name>/SKILL.md` and is concatenated before the agent body in
+# `compose_prompt`. The hardcoded `reviewer-protocol` is skipped to
+# avoid double-loading.
+#
+# Supports the two YAML inline list forms commonly used in this repo:
+#   skills: [reviewer-protocol]
+#   skills: [reviewer-protocol, research-isolation]
+#
+# (Block-list form `skills:\n  - a\n  - b` is not currently used; if
+# adopted, extend the awk parser below.)
+extract_skill_names() {
+  awk '
+    /^---$/ { n++; if (n == 2) exit; next }
+    n == 1 && /^skills:[[:space:]]*\[/ {
+      sub(/^skills:[[:space:]]*\[/, "")
+      sub(/\].*$/, "")
+      gsub(/[[:space:]]/, "")
+      n_items = split($0, items, ",")
+      for (i = 1; i <= n_items; i++) {
+        if (items[i] != "") print items[i]
+      }
+    }
+  ' "$1"
+}
+
+ADDITIONAL_SKILL_PATHS=()
+while read -r skill_name; do
+  if [[ -z "$skill_name" || "$skill_name" == "reviewer-protocol" ]]; then
+    continue
+  fi
+  skill_path="$REPO_ROOT/skills/$skill_name/SKILL.md"
+  assert_file_exists "skill[$skill_name]" "$skill_path"
+  ADDITIONAL_SKILL_PATHS+=("$skill_path")
+done < <(extract_skill_names "$AGENT_FILE_ABS")
+
 # Resolve primary-artifact files (repeating). PRIMARY_PATHS holds either
 # the --subject-code or --artifact-body inputs per the field selection above.
 PRIMARY_ABS=()
@@ -448,6 +487,10 @@ emit_dispatch_parameters() {
 compose_prompt() {
   strip_frontmatter "$REVIEWER_PROTOCOL_ABS"
   printf '\n\n---\n\n'
+  for skill_path in "${ADDITIONAL_SKILL_PATHS[@]}"; do
+    strip_frontmatter "$skill_path"
+    printf '\n\n---\n\n'
+  done
   strip_frontmatter "$AGENT_FILE_ABS"
   printf '\n\n---\n\n'
   cat "$EMISSION_OVERRIDE_ABS"
