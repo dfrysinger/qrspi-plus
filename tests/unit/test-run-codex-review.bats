@@ -782,6 +782,14 @@ EOF
   #   skills:                          skills: reviewer-protocol
   #     - reviewer-protocol
   #     - research-isolation
+  #
+  # Both shapes hit the same awk-parser shape-rejection branch, which
+  # emits `exit 2` (parser-shape failure) — distinct from the wrapper's
+  # generic `exit 1`. The assertions below pin both the substring contract
+  # ("inline-list" in the diagnostic) and the exit-code contract (=2, not
+  # merely nonzero) — pinning the value is what makes the propagation
+  # observable from the suite. A non-vacuous test: collapsing the wrapper
+  # back to `exit 1` would flip these from passing to failing.
   cat > "$TMP_DIR/agent-block-list.md" <<'EOF'
 ---
 name: test-block-list
@@ -802,7 +810,7 @@ EOF
     --round 1 \
     --subject-code "$TMP_DIR/src/foo.ts" \
     --dry-run
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 2 ]
   [[ "$output" =~ "inline-list" ]]
 
   cat > "$TMP_DIR/agent-scalar.md" <<'EOF'
@@ -823,7 +831,7 @@ EOF
     --round 1 \
     --subject-code "$TMP_DIR/src/foo.ts" \
     --dry-run
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 2 ]
   [[ "$output" =~ "inline-list" ]]
 }
 
