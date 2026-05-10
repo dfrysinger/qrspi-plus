@@ -590,18 +590,23 @@ Thoroughness reviewers (deep mode only):
 - `Agent({ subagent_type: "qrspi-type-design-analyzer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception), reviewer_tag: `type-design-claude`. Skip dispatch entirely when no new types are introduced; record skip in the review log per § Review Log Artifact.
 - `Agent({ subagent_type: "qrspi-code-simplifier", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception), reviewer_tag: `code-simplifier-claude`
 
-**Codex parallels (if `codex_enabled_per_task: true` per § Per-Task Routing — i.e., `config.codex_reviews && task_type == code`).** For every Claude reviewer dispatched this round/tier, dispatch a non-blocking Codex parallel via shell pipeline. Lightweight tasks skip every per-task Codex launch site below regardless of `config.codex_reviews`. The reviewer-protocol body and the agent body flow via stdin — no per-task scratch files on disk:
+**Codex parallels (if `codex_enabled_per_task: true` per § Per-Task Routing — i.e., `config.codex_reviews && task_type == code`).** For every Claude reviewer dispatched this round/tier, dispatch a non-blocking Codex parallel. Lightweight tasks skip every per-task Codex launch site below regardless of `config.codex_reviews`.
+
+Use `scripts/run-codex-review.sh` (the canonical reviewer dispatch wrapper). It internalizes the frontmatter-stripping, emission-override concatenation, dispatch-parameter assembly, and pipe-to-`codex-companion-bg.sh launch` — so the dispatch shape lives in exactly one place. Spec reviewer is shown migrated below as the canonical form; the remaining seven reviewer blocks (still in legacy shell-pipeline form pending the migration sweep tracked as a follow-up to PR #153) are byte-for-byte equivalent — translate any of them to wrapper form by mapping `agents/qrspi-{name}-reviewer.md` to `--agent-file`, the reviewer tag to `--reviewer-tag`, and any companion files (`companion_plan`, `companion_goals`, `companion_test_expectations`) to their matching `--companion-*` flags.
 
 ```sh
-# Spec reviewer (Codex)
-{ awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-  printf '\n\n---\n\n';
-  awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-spec-reviewer.md;
-  printf '\n\n---\n\n';
-  cat skills/reviewer-protocol/codex-emission-override.md;
-  printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ntask_definition: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s/\nround: %s\nreviewer_tag: spec-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/tasks/task-%s/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-    "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped tasks/task-NN.md body>" "$NN" "$ROUND" "$ROUND" "$NN" "$ROUND" "$SCOPE_HINT";
-} | scripts/codex-companion-bg.sh launch
+# Spec reviewer (Codex) — canonical wrapper form
+scripts/run-codex-review.sh \
+  --agent-file agents/qrspi-spec-reviewer.md \
+  --reviewer-tag spec-codex \
+  --output-dir "<ABS_ARTIFACT_DIR>/reviews/tasks/task-${NN}/round-${ROUND}/" \
+  --round "$ROUND" \
+  --subject-code "<repo-relative path 1>" \
+  [--subject-code "<repo-relative path 2>" ...] \
+  --task-def "tasks/task-${NN}.md" \
+  --diff-file "<ABS_ARTIFACT_DIR>/reviews/tasks/task-${NN}/round-${ROUND}.diff" \
+  --scope-hint "$SCOPE_HINT"
+# stdout: jobId (captured by main chat for the await + splitter pair below)
 
 # Code-quality reviewer (Codex)
 { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
