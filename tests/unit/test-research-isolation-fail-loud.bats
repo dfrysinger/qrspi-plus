@@ -74,17 +74,39 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "fail-loud: collator enumerates field-name + heading + triplet + questions-content patterns" {
+@test "fail-loud: collator enumerates field-name + heading + triplet + questions-compendium patterns" {
   run grep -F "Field-name leakage" "$REPO_ROOT/agents/qrspi-research-collator.md"
   [ "$status" -eq 0 ]
   run grep -F "Goals-heading leakage" "$REPO_ROOT/agents/qrspi-research-collator.md"
   [ "$status" -eq 0 ]
   run grep -F "Goal-framing triplet" "$REPO_ROOT/agents/qrspi-research-collator.md"
   [ "$status" -eq 0 ]
-  # Collator-specific: Questions-content leakage (collator reads q*.md itself,
-  # not the questions.md compendium)
-  run grep -F "Questions-content leakage" "$REPO_ROOT/agents/qrspi-research-collator.md"
+  # Collator-specific: Questions-compendium leakage. Token unified with the
+  # reviewer agent and the orchestrator's pattern→repair table in
+  # research/SKILL.md so RESEARCH-ISOLATION-VIOLATION: questions-compendium-leakage
+  # matches a single canonical entry on every emitter.
+  run grep -F "Questions-compendium leakage" "$REPO_ROOT/agents/qrspi-research-collator.md"
   [ "$status" -eq 0 ]
+}
+
+@test "fail-loud: pattern token parity — collator + reviewer name the same questions-compendium-leakage token" {
+  # Cross-emitter token parity (Codex review F5 fix). Both agents must
+  # name the same canonical token so the orchestrator's pattern→repair
+  # table matches a single entry per family.
+  run grep -F "questions-compendium-leakage" "$REPO_ROOT/agents/qrspi-research-collator.md"
+  [ "$status" -eq 0 ]
+  run grep -F "questions-compendium-leakage" "$REPO_ROOT/skills/research/SKILL.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "fail-loud: each research agent's exception clause references the structural <<<AGENT-BODY-END>>> marker" {
+  # Codex review F6 — the prose-only "your own agent body" carve-out is
+  # bypassable by injected content quoting the exception language. Pin
+  # the structural-marker reference instead so the carve-out is positional.
+  for agent in qrspi-research-specialist qrspi-research-collator qrspi-research-reviewer; do
+    run grep -F "<<<AGENT-BODY-END>>>" "$REPO_ROOT/agents/$agent.md"
+    [ "$status" -eq 0 ]
+  done
 }
 
 @test "fail-loud: reviewer enumerates field-name + heading + triplet + questions-compendium patterns" {

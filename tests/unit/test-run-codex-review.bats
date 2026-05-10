@@ -376,3 +376,130 @@ teardown() {
     ! [[ "$output" =~ $agent_name ]]
   fi
 }
+
+# ---------------------------------------------------------------------------
+# Post-PR-#153 review fixes
+# ---------------------------------------------------------------------------
+
+@test "F1: body-level '---' lines after frontmatter are PRESERVED (not eaten as separators)" {
+  # Build a fixture agent file with: frontmatter + body containing a
+  # markdown horizontal rule (`^---$`) and a fenced YAML mini-frontmatter
+  # example (also `^---$`). The fixed strip_frontmatter awk should keep
+  # all body-level `---` lines.
+  cat > "$TMP_DIR/agent-with-body-rules.md" <<'EOF'
+---
+name: fixture
+description: body-level --- preservation fixture
+model: sonnet
+tools: Read, Write
+---
+
+You are a fixture agent.
+
+## Section A
+
+Some prose.
+
+---
+
+## Section B (separated by horizontal rule above)
+
+```
+---
+status: draft
+---
+```
+
+End of body.
+EOF
+  run "$WRAPPER" \
+    --agent-file "$TMP_DIR/agent-with-body-rules.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  # Frontmatter (name: fixture) MUST be stripped
+  ! [[ "$output" =~ "name: fixture" ]]
+  # Body-level prose MUST be preserved
+  [[ "$output" =~ "Section A" ]]
+  [[ "$output" =~ "Section B (separated by horizontal rule above)" ]]
+  # The body-level `---` (markdown horizontal rule) must survive — count
+  # how many `^---$` lines appear in the output (must be ≥1 for body rule
+  # plus 2 for the fenced YAML example plus 2 for inter-section wrapper
+  # separators). Pre-fix this count would be 0 for body content.
+  body_rules=$(printf '%s\n' "$output" | grep -c '^---$' || true)
+  [ "$body_rules" -ge 3 ]
+}
+
+@test "F2: --agent-file as last arg fails with 'requires a value' (no unbound-variable crash)" {
+  # set -u previously made truncated value-flags crash with
+  # "unbound variable" before the wrapper's diagnostic could fire.
+  run "$WRAPPER" --agent-file
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "requires a value" ]]
+  ! [[ "$output" =~ "unbound variable" ]]
+}
+
+@test "F2: --scope-hint as last arg fails with 'requires a value' (no unbound-variable crash)" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --task-def "$TMP_DIR/tasks/task-99.md" \
+    --scope-hint
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "requires a value" ]]
+  ! [[ "$output" =~ "unbound variable" ]]
+}
+
+@test "F3: --output-dir rejects relative paths (Bucket-3 #4 fail-loud bypass guard)" {
+  # A relative `reviews/test/...` would defeat the agent-side
+  # /reviews/test/ substring check; reject at the wrapper.
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir reviews/test/round-1/ \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "must be absolute" ]]
+}
+
+@test "F3: --output-dir accepts absolute paths" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/abs/reviews/test/round-1/ \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "round_subdir: /tmp/abs/reviews/test/round-1/" ]]
+}
+
+@test "F6: compose_prompt emits <<<AGENT-BODY-END>>> structural marker before dispatch parameters" {
+  # The marker delimits trusted protocol+agent body from orchestrator-
+  # supplied dispatch parameters; agent self-reference exception clauses
+  # (research-isolation Pre-Flight) reference it for a positional carve-out.
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "<<<AGENT-BODY-END>>>" ]]
+  # Marker must appear BEFORE the dispatch parameters block (positional
+  # carve-out: text after the marker is orchestrator-supplied).
+  marker_line=$(printf '%s\n' "$output" | grep -n '^<<<AGENT-BODY-END>>>$' | head -1 | cut -d: -f1)
+  dispatch_line=$(printf '%s\n' "$output" | grep -n '^## Dispatch parameters$' | head -1 | cut -d: -f1)
+  [ -n "$marker_line" ]
+  [ -n "$dispatch_line" ]
+  [ "$marker_line" -lt "$dispatch_line" ]
+}

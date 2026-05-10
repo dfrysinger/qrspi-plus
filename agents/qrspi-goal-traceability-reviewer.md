@@ -41,6 +41,8 @@ The presence of `task_definition` in your dispatch is the load-bearing signal th
 
 If `task_definition` is present AND your `output` (or `round_subdir`) parameter contains the substring `/reviews/test/`, the dispatch is malformed — task_definition was added to a test-step dispatch.
 
+(Convention-coupled signal: `skills/test/SKILL.md` emits test-step dispatches under `<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`; if that path convention is renamed, this substring check must be updated in step. The bats CI gate at `tests/unit/test-task-definition-absence-fail-loud.bats` is the primary regression guard — this agent-side check is defense-in-depth.)
+
 **Refusal procedure:**
 
 1. Do NOT call the `Write` tool. Do NOT emit findings or sentinels. Do NOT proceed to the Traceability Analysis below.

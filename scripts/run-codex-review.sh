@@ -43,8 +43,12 @@
 #
 # All path-style flags are repo-relative (the wrapper's reference is the
 # qrspi-plus repo root) UNLESS they contain a leading `/` (absolute path) —
-# in that case the wrapper uses them verbatim. The `--output-dir` flag must
-# be absolute (the orchestrator already computes `<ABS_ARTIFACT_DIR>/...`).
+# in that case the wrapper uses them verbatim. `--output-dir` MUST be
+# absolute and is enforced (the orchestrator already computes
+# `<ABS_ARTIFACT_DIR>/...`; a relative value would also defeat the
+# Bucket-3 #4 agent-side `/reviews/test/` substring fail-loud check).
+# `--diff-file` is documented as absolute by convention (orchestrator
+# emits to `<ABS_ARTIFACT_DIR>`); only a file-existence check enforces it.
 #
 # `--scope-hint` takes a comma-separated string OR an empty value. When
 # omitted entirely, no `scope_hint:` line is emitted (broaden semantics
@@ -102,16 +106,29 @@ COMPANION_PATHS=()
 SCALAR_NAMES=()
 SCALAR_VALUES=()
 
+# Helper: ensure a value-taking flag has its value present in argv. With
+# `set -u` enabled, dereferencing `$2` for a flag passed as the last arg
+# would otherwise crash with `unbound variable` instead of the wrapper's
+# documented `error:` diagnostic.
+require_value() {
+  # $1 = flag name (for diagnostic), $2 = $# from the caller's scope
+  if [[ "$2" -lt 2 ]]; then
+    echo "error: $1 requires a value" >&2
+    exit 1
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --agent-file)     AGENT_FILE="$2"; shift 2 ;;
-    --reviewer-tag)   REVIEWER_TAG="$2"; shift 2 ;;
-    --output-dir)     OUTPUT_DIR="$2"; shift 2 ;;
-    --round)          ROUND="$2"; shift 2 ;;
-    --subject-code)   SUBJECT_CODE_PATHS+=("$2"); shift 2 ;;
-    --artifact-body)  ARTIFACT_BODY_PATHS+=("$2"); shift 2 ;;
-    --task-def)       TASK_DEF="$2"; shift 2 ;;
+    --agent-file)     require_value "--agent-file"   "$#"; AGENT_FILE="$2"; shift 2 ;;
+    --reviewer-tag)   require_value "--reviewer-tag" "$#"; REVIEWER_TAG="$2"; shift 2 ;;
+    --output-dir)     require_value "--output-dir"   "$#"; OUTPUT_DIR="$2"; shift 2 ;;
+    --round)          require_value "--round"        "$#"; ROUND="$2"; shift 2 ;;
+    --subject-code)   require_value "--subject-code" "$#"; SUBJECT_CODE_PATHS+=("$2"); shift 2 ;;
+    --artifact-body)  require_value "--artifact-body" "$#"; ARTIFACT_BODY_PATHS+=("$2"); shift 2 ;;
+    --task-def)       require_value "--task-def"     "$#"; TASK_DEF="$2"; shift 2 ;;
     --companion)
+      require_value "--companion" "$#"
       # Expect NAME=PATH. Split on the first `=`.
       if [[ "$2" != *=* ]]; then
         echo "error: --companion requires NAME=PATH (got: $2)" >&2
@@ -134,6 +151,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --field)
+      require_value "--field" "$#"
       # Expect NAME=VALUE. Same NAME validation as --companion (kept consistent
       # so the emitted field-name is well-formed). VALUE may be empty.
       if [[ "$2" != *=* ]]; then
@@ -154,8 +172,8 @@ while [[ $# -gt 0 ]]; do
       SCALAR_VALUES+=("$fvalue")
       shift 2
       ;;
-    --diff-file)      DIFF_FILE="$2"; shift 2 ;;
-    --scope-hint)     SCOPE_HINT="$2"; SCOPE_HINT_SET="true"; shift 2 ;;
+    --diff-file)      require_value "--diff-file"  "$#"; DIFF_FILE="$2"; shift 2 ;;
+    --scope-hint)     require_value "--scope-hint" "$#"; SCOPE_HINT="$2"; SCOPE_HINT_SET="true"; shift 2 ;;
     --dry-run)        DRY_RUN="true"; shift ;;
     *)
       echo "error: unrecognized flag: $1" >&2
@@ -181,6 +199,18 @@ require_flag "agent-file"   "$AGENT_FILE"
 require_flag "reviewer-tag" "$REVIEWER_TAG"
 require_flag "output-dir"   "$OUTPUT_DIR"
 require_flag "round"        "$ROUND"
+
+# --output-dir must be absolute. The orchestrator already computes
+# <ABS_ARTIFACT_DIR>/... at every dispatch site, so a non-absolute value
+# is always a mistake. This is also load-bearing for the agent-side
+# Phase Routing fail-loud check (Bucket-3 #4): per-task reviewer agents
+# detect the contradiction `task_definition supplied + output dir contains
+# /reviews/test/`. A relative `reviews/test/...` would defeat the
+# substring check; rejecting non-absolute values closes the bypass.
+if [[ "$OUTPUT_DIR" != /* ]]; then
+  echo "error: --output-dir must be absolute (got: $OUTPUT_DIR)" >&2
+  exit 1
+fi
 
 # Exactly one of --subject-code or --artifact-body must be present.
 if [[ ${#SUBJECT_CODE_PATHS[@]} -eq 0 && ${#ARTIFACT_BODY_PATHS[@]} -eq 0 ]]; then
@@ -266,10 +296,15 @@ fi
 # Wrapping helpers
 # ---------------------------------------------------------------------------
 
-# Strip YAML frontmatter (everything up through the second `---` line) and
-# print the body. Matches the awk pattern used at every prior dispatch site.
+# Strip ONLY the leading YAML frontmatter block (between the file's first
+# two `^---$` lines), then print the body verbatim. The earlier pattern
+# (`/^---$/{n++; next} n>=2{print}`) ate every `^---$` line, including
+# body-level horizontal rules and fenced YAML mini-frontmatter examples
+# (e.g., `skills/reviewer-protocol/SKILL.md` body and the `## Output`
+# template inside `agents/qrspi-research-{specialist,collator}.md`).
+# Silent body corruption — fixed here by gating `next` on `n<2`.
 strip_frontmatter() {
-  awk '/^---$/{n++; next} n>=2{print}' "$1"
+  awk '/^---$/ && n<2 {n++; next} n>=2 {print}' "$1"
 }
 
 # Emit a single UNTRUSTED-ARTIFACT block: header, file body, footer.
@@ -356,6 +391,14 @@ compose_prompt() {
   strip_frontmatter "$AGENT_FILE_ABS"
   printf '\n\n---\n\n'
   cat "$EMISSION_OVERRIDE_ABS"
+  # Structural boundary marker (Bucket-3 #7 hardening). Everything BEFORE
+  # this marker is the trusted protocol/agent body assembled by the
+  # wrapper; everything AFTER is orchestrator-supplied dispatch parameters.
+  # Agent self-reference exception clauses (e.g., research agents' Pre-Flight
+  # Isolation Check) reference this marker so the carve-out is positional,
+  # not prose-only — closing the "leak quotes the exception language" bypass
+  # surface flagged in PR review.
+  printf '\n\n<<<AGENT-BODY-END>>>\n'
   emit_dispatch_parameters
 }
 
