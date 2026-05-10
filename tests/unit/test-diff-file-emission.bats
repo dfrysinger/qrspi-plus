@@ -192,13 +192,12 @@ setup() {
 }
 
 @test "[112-PR1] every in-scope per-step SKILL.md names diff_file_path on the contract surface" {
-  # Couple the per-step prose check to the contract parameter name itself
-  # (diff_file_path) rather than the PR-identifier marker phrase. Three
-  # occurrences is the floor: 1 prose mention + ≥1 Claude-dispatch bullet
-  # + ≥1 Codex printf. A SKILL that drops the dispatch wiring while leaving
-  # the prose paragraph would fall below the floor and surface as a
-  # regression. test/SKILL.md is excluded by the opt-out and asserted
-  # separately at floor=1.
+  # Couple the per-step prose check to the contract parameter name itself.
+  # After the run-codex-review.sh migration, Codex dispatches use `--diff-file`
+  # instead of the literal `diff_file_path:` printf format, but the contract
+  # surface is the union: prose mentions + Claude dispatch bullets (still
+  # `diff_file_path:`) + Codex wrapper invocations (`--diff-file`). Floor:
+  # 3 combined occurrences (1 prose + ≥1 Claude bullet + ≥1 Codex --diff-file).
   local in_scope=(
     goals
     questions
@@ -216,14 +215,16 @@ setup() {
   local skill
   for skill in "${in_scope[@]}"; do
     local f="$REPO_ROOT/skills/${skill}/SKILL.md"
-    local n
-    n=$(grep -c "diff_file_path" "$f")
+    local n_diff_file_path n_diff_file_flag n
+    n_diff_file_path=$(grep -c "diff_file_path" "$f")
+    n_diff_file_flag=$(grep -cE '^\s*--diff-file ' "$f")
+    n=$((n_diff_file_path + n_diff_file_flag))
     if [ "$n" -lt 3 ]; then
-      missing+=("$f (count=$n)")
+      missing+=("$f (combined count=$n: diff_file_path=$n_diff_file_path, --diff-file=$n_diff_file_flag)")
     fi
   done
   if [ "${#missing[@]}" -gt 0 ]; then
-    printf 'FAIL: per-step SKILL.md has fewer than 3 diff_file_path occurrences (1 prose + Claude bullet + Codex printf):\n%s\n' "${missing[@]}" >&2
+    printf 'FAIL: per-step SKILL.md has fewer than 3 combined diff_file_path/--diff-file occurrences (1 prose + Claude bullet + Codex wrapper invocation):\n%s\n' "${missing[@]}" >&2
     return 1
   fi
 }
@@ -280,11 +281,14 @@ setup() {
   fi
 }
 
-@test "[112-PR1] every in-scope per-step SKILL.md wires diff_file_path into Codex printf format strings" {
-  # Per-step assertion: when a SKILL.md contains a Codex `printf '...##
-  # Dispatch parameters\n...' ...` payload, the format string MUST embed
-  # `diff_file_path:` so the Codex pipeline carries the parameter alongside
-  # the Claude bullets. This is the second half of the BLOCKING-1 surface.
+@test "[112-PR1] every in-scope per-step SKILL.md wires --diff-file into Codex wrapper invocations" {
+  # Per-step assertion: every Codex reviewer dispatch (run-codex-review.sh
+  # invocation) in in-scope SKILLs MUST carry the --diff-file flag. After the
+  # wrapper migration, the dispatch shape is `scripts/run-codex-review.sh \`
+  # followed by flags including `--diff-file`. Plan/SKILL.md uses elision
+  # (`[...same flags as above...]`) for repeated reviewer blocks; those
+  # elided blocks inherit --diff-file from their canonical sibling and don't
+  # need a literal flag — so the floor is "≥1 --diff-file per skill".
   local in_scope=(
     goals
     questions
@@ -302,48 +306,38 @@ setup() {
   local skill
   for skill in "${in_scope[@]}"; do
     local f="$REPO_ROOT/skills/${skill}/SKILL.md"
-    # Find lines that are Codex printf dispatch parameter blocks and assert
-    # they carry diff_file_path. Lines look like:
-    #   printf '...## Dispatch parameters...reviewer_tag: <tag>\ndiff_file_path: ...\n' ...
-    local printf_lines
-    printf_lines=$(grep -E "printf '.*## Dispatch parameters" "$f" || true)
-    if [ -z "$printf_lines" ]; then
-      # No Codex printf block in this SKILL — skip (e.g. some SKILLs may
-      # delegate Codex dispatch differently). Plan/integrate/implement all
-      # carry printf blocks; if all 11 in-scope SKILLs lacked them this
-      # assertion would silently no-op, which is acceptable here because
-      # the previous bulleted-Claude assertion already covers the dispatch
-      # surface and the diff_file_path-count floor catches the case.
+    local n_wrapper n_diff_flag
+    n_wrapper=$(grep -cE '^\s*scripts/run-codex-review\.sh \\$' "$f" || true)
+    n_diff_flag=$(grep -cE '^\s*--diff-file ' "$f" || true)
+    if [ "$n_wrapper" -lt 1 ]; then
+      missing+=("$f (zero run-codex-review.sh invocations)")
       continue
     fi
-    # Each printf line that mentions `## Dispatch parameters` AND a
-    # `reviewer_tag:` (i.e. is a reviewer dispatch, not a worker/analyzer
-    # like replan's qrspi-replan-analyzer which is a non-reviewer worker
-    # with no reviewer_tag and no diff_file_path) MUST also carry
-    # `diff_file_path:` somewhere in its format string. A reviewer printf
-    # block missing diff_file_path is a regression.
-    local bad
-    bad=$(grep -E "printf '.*## Dispatch parameters" "$f" | grep -E "reviewer_tag:" | grep -vE "diff_file_path:" || true)
-    if [ -n "$bad" ]; then
-      missing+=("$f")
+    if [ "$n_diff_flag" -lt 1 ]; then
+      missing+=("$f (zero --diff-file flags but $n_wrapper wrapper invocations)")
     fi
   done
   if [ "${#missing[@]}" -gt 0 ]; then
-    printf 'FAIL: per-step SKILL.md has Codex printf block without diff_file_path:\n%s\n' "${missing[@]}" >&2
+    printf 'FAIL: per-step SKILL.md missing --diff-file in Codex wrapper invocations:\n%s\n' "${missing[@]}" >&2
     return 1
   fi
 }
 
-@test "[112-PR1] skills/test/SKILL.md Codex printf blocks do NOT carry diff_file_path" {
-  # Defense-in-depth on the test-step opt-out: any Codex printf dispatch
-  # parameter block in skills/test/SKILL.md must NOT carry diff_file_path,
-  # because the test step is explicitly out-of-scope for #112 Mechanism A.
+@test "[112-PR1] skills/test/SKILL.md Codex wrapper invocations do NOT carry --diff-file" {
+  # Defense-in-depth on the test-step opt-out: skills/test/SKILL.md is
+  # explicitly out-of-scope for #112 Mechanism A, so its run-codex-review.sh
+  # invocations must NOT pass --diff-file (Test-phase reuse signal).
   local f="$REPO_ROOT/skills/test/SKILL.md"
   [ -f "$f" ]
-  local bad
-  bad=$(grep -E "printf '.*## Dispatch parameters" "$f" | grep -E "diff_file_path:" || true)
-  if [ -n "$bad" ]; then
-    printf 'FAIL: skills/test/SKILL.md Codex printf carries diff_file_path (opt-out broken):\n%s\n' "$bad" >&2
+  local n_wrapper n_diff_flag
+  n_wrapper=$(grep -cE '^\s*scripts/run-codex-review\.sh \\$' "$f" || true)
+  n_diff_flag=$(grep -cE '^\s*--diff-file ' "$f" || true)
+  if [ "$n_wrapper" -lt 1 ]; then
+    echo "FAIL: skills/test/SKILL.md has zero run-codex-review.sh invocations (expected ≥1)"
+    return 1
+  fi
+  if [ "$n_diff_flag" -ne 0 ]; then
+    printf 'FAIL: skills/test/SKILL.md has %d --diff-file flag(s) (opt-out broken; expected 0)\n' "$n_diff_flag" >&2
     return 1
   fi
 }

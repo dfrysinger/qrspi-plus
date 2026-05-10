@@ -45,3 +45,4 @@ If you catch yourself doing any of these, stop immediately and correct course:
 - Editing files outside `Target files` because they "felt related"
 - Introducing a new heuristic or rule the spec didn't define
 - Treating "Test expectations" as a request to write test code instead of as a checklist of observable artifact properties
+- **Reporting DONE without committing the round's changes** — `git -C <worktree> rev-parse HEAD` should be a new SHA distinct from the round's base. Uncommitted work in the worktree at DONE produces a stale diff for the next reviewer round (see implementer-protocol § Commit Before Reporting)

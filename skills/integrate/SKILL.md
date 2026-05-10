@@ -119,31 +119,41 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
 
      Same `skills: [reviewer-protocol]` preload delivers the protocol; the cross-task security checks (auth boundary integrity, data-flow secrets handling, fail-closed under composition) arrive via the agent body. Zero rules content in main chat.
 
-   - **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (integration + security-integration) via shell pipelines. The legacy temp-file prompt pattern is retired; protocol and agent body flow via stdin:
+   - **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (integration + security-integration) via the wrapper:
 
      ```sh
      # Integration reviewer (Codex)
-     { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-       printf '\n\n---\n\n';
-       awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-integration-reviewer.md;
-       printf '\n\n---\n\n';
-       cat skills/reviewer-protocol/codex-emission-override.md;
-       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: integration-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-         "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped structure.md body>" "<concatenated wrapped task-review-findings blocks>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-     } | scripts/codex-companion-bg.sh launch
+     scripts/run-codex-review.sh \
+       --agent-file agents/qrspi-integration-reviewer.md \
+       --reviewer-tag integration-codex \
+       --output-dir "<ABS_ARTIFACT_DIR>/reviews/integration/round-${ROUND}/" \
+       --round "$ROUND" \
+       --subject-code "<merged-tasks code path 1>" \
+       [--subject-code "<merged-tasks code path 2>" ...] \
+       --companion companion_design=design.md \
+       --companion companion_structure=structure.md \
+       --companion companion_task_review_findings=<path to task-NN-1 review-findings file> \
+       [--companion companion_task_review_findings=<path to task-NN-2 review-findings file> ...] \
+       --diff-file "<ABS_ARTIFACT_DIR>/reviews/integration/round-${ROUND}.diff" \
+       --scope-hint "$SCOPE_HINT"
 
      # Security-integration reviewer (Codex)
-     { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-       printf '\n\n---\n\n';
-       awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-security-integration-reviewer.md;
-       printf '\n\n---\n\n';
-       cat skills/reviewer-protocol/codex-emission-override.md;
-       printf '\n\n## Dispatch parameters\n\nsubject_code: %s\ncompanion_design: %s\ncompanion_structure: %s\ncompanion_task_review_findings: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s/\nround: %s\nreviewer_tag: security-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/integration/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-         "<concatenated wrapped subject_code blocks>" "<untrusted-data-wrapped design.md body>" "<untrusted-data-wrapped structure.md body>" "<concatenated wrapped task-review-findings blocks>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-     } | scripts/codex-companion-bg.sh launch
+     scripts/run-codex-review.sh \
+       --agent-file agents/qrspi-security-integration-reviewer.md \
+       --reviewer-tag security-codex \
+       --output-dir "<ABS_ARTIFACT_DIR>/reviews/integration/round-${ROUND}/" \
+       --round "$ROUND" \
+       --subject-code "<merged-tasks code path 1>" \
+       [--subject-code "<merged-tasks code path 2>" ...] \
+       --companion companion_design=design.md \
+       --companion companion_structure=structure.md \
+       --companion companion_task_review_findings=<path to task-NN-1 review-findings file> \
+       [--companion companion_task_review_findings=<path to task-NN-2 review-findings file> ...] \
+       --diff-file "<ABS_ARTIFACT_DIR>/reviews/integration/round-${ROUND}.diff" \
+       --scope-hint "$SCOPE_HINT"
      ```
 
-     The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints.
+     Main chat sees only the jobIds Codex prints.
 
      After `await` returns for each dispatched jobId, on exit 0 run the splitter to split Codex output into per-finding files:
 

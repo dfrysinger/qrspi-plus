@@ -45,19 +45,34 @@ setup() {
 }
 
 @test "replan quality reviewer Codex pipeline DOES preload reviewer-protocol" {
+  # After the run-codex-review.sh migration, the reviewer-protocol body is
+  # preloaded inside the wrapper script (not via a literal awk + cat in the
+  # SKILL.md). Assert the quality reviewer block dispatches via the wrapper,
+  # and that the wrapper itself reads reviewer-protocol/SKILL.md.
   local quality_block
-  quality_block=$(awk '/Replan quality reviewer \(Codex\)/,/codex-companion-bg.sh launch/' \
+  quality_block=$(awk '/Replan quality reviewer \(Codex\)/,/--scope-hint/' \
     skills/replan/SKILL.md)
-  echo "$quality_block" | grep -qE 'skills/reviewer-protocol/SKILL\.md' \
-    || { echo "quality reviewer Codex pipeline must preload reviewer-protocol"; return 1; }
+  echo "$quality_block" | grep -qE 'scripts/run-codex-review\.sh' \
+    || { echo "quality reviewer Codex pipeline must dispatch via run-codex-review.sh wrapper"; return 1; }
+  # The wrapper concatenates reviewer-protocol/SKILL.md into the prompt.
+  grep -qE 'skills/reviewer-protocol/SKILL\.md|REVIEWER_PROTOCOL_ABS' \
+    scripts/run-codex-review.sh \
+    || { echo "run-codex-review.sh must reference reviewer-protocol/SKILL.md"; return 1; }
 }
 
 @test "replan scope reviewer Codex pipeline DOES preload reviewer-protocol" {
+  # After the run-codex-review.sh migration, the reviewer-protocol body is
+  # preloaded inside the wrapper script (not via a literal awk + cat in the
+  # SKILL.md). Assert the scope reviewer block dispatches via the wrapper,
+  # and that the wrapper itself reads reviewer-protocol/SKILL.md.
   local scope_block
-  scope_block=$(awk '/Replan scope-reviewer \(Codex\)/,/codex-companion-bg.sh launch/' \
+  scope_block=$(awk '/Replan scope reviewer \(Codex\)/,/--scope-hint/' \
     skills/replan/SKILL.md)
-  echo "$scope_block" | grep -qE 'skills/reviewer-protocol/SKILL\.md' \
-    || { echo "scope reviewer Codex pipeline must preload reviewer-protocol"; return 1; }
+  echo "$scope_block" | grep -qE 'scripts/run-codex-review\.sh' \
+    || { echo "scope reviewer Codex pipeline must dispatch via run-codex-review.sh wrapper"; return 1; }
+  grep -qE 'skills/reviewer-protocol/SKILL\.md|REVIEWER_PROTOCOL_ABS' \
+    scripts/run-codex-review.sh \
+    || { echo "run-codex-review.sh must reference reviewer-protocol/SKILL.md"; return 1; }
 }
 
 @test "replan SKILL documents await-and-capture before reviewer dispatch" {

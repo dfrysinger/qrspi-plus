@@ -56,6 +56,7 @@ If you catch yourself doing any of these, stop immediately and correct course:
 - Fixing a failing test by weakening the assertion
 - Skipping the "verify fail" step
 - Committing without all tests passing
+- **Reporting DONE without committing the round's changes** — `git -C <worktree> rev-parse HEAD` should be a new SHA distinct from the round's base. Uncommitted work in the worktree at DONE produces a stale diff for the next reviewer round (see implementer-protocol § Commit Before Reporting)
 - 3+ attempts to pass the same test without changing approach — report BLOCKED
 
 ## Common Rationalizations

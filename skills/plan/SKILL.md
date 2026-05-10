@@ -221,6 +221,17 @@ Per-phase criteria observable at this phase's boundary (same authoring rules as 
 
 **Conformance reminder for the per-task spec writer.** Each task spec must satisfy: required-section presence (every bullet header above is required); claim-line length ≤ 250 chars per bullet; description paragraph ≤ 150 words; section ≤ 300 words total before bullets are split; no brevity directives anywhere ("be concise", "brief summary", "≤ N lines" are forbidden — see the lint allowlist for the legitimate length-target exceptions). The DEFERS list above tells the writer what NOT to put in the spec; this conformance reminder tells the writer how to structure what they DO put in.
 
+**Smoke-check requirement.** Any task adding or modifying a route, page, layout, or user-facing component MUST include a `smoke_checks:` block per the smoke-spec convention ([`smoke-spec.md`](smoke-spec.md)). Tasks that only modify internal libraries (no route or component surface) MAY omit it.
+
+### Project Environment Fields
+
+Every plan declares the commands the implementer gate uses to verify a task:
+
+- `build_command` — the command that produces the project's build artifact, run after tests pass during per-task verification. Examples: `pnpm build` (Next.js, Vite), `cargo build --release`, `go build ./...`, `tsc -p .` (lib-only). Set to the literal string `'none'` only for pure-script projects with no build step; include a one-line rationale next to the field when set to `'none'`.
+- `dev_command` — the command that starts the dev server, used by the smoke-check gate. Required when any task in the plan declares a `smoke_checks:` block; optional otherwise. Examples: `pnpm dev`, `cargo run`, `python manage.py runserver`. Plans that opt into smoke checks also declare `smoke_auth:` per [`smoke-spec.md`](smoke-spec.md).
+
+The implementer reads these from the plan and runs them at the per-task gate (see `skills/implement/SKILL.md`).
+
 ### Plan Reviewer Agents
 
 Seven reviewer dispatches run in parallel as part of the review round (one unified plan-quality reviewer + five plan-artifact reviewers + one scope-reviewer). All seven run always — neither quick-fix nor full-pipeline mode gates any reviewer. Plan-artifact reviewers that require `design.md` or `structure.md` emit "NOT APPLICABLE — quick-fix route" for those checks when those files are absent (the `route` dispatch param tells each agent which checklist to run).
@@ -292,79 +303,67 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
 
 - **Codex reviews** (if `codex_reviews: true`) — dispatch SEVEN non-blocking Codex reviews in parallel (one unified quality + five plan-artifact + one scope) via shell pipelines:
 
+  All six artifact-quality reviewers below share the same companion set (`companion_goals`, `companion_research`, `companion_phasing`, `companion_design`, `companion_structure`) and the same `route` field; only the agent file and reviewer tag differ. On quick-fix routes, omit `--companion companion_design=...` and `--companion companion_structure=...` (those artifacts don't exist on the route).
+
   ```sh
   # Unified plan-quality reviewer (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-reviewer.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-plan-reviewer.md \
+    --reviewer-tag quality-codex \
+    --output-dir "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}/" \
+    --round "$ROUND" \
+    --artifact-body plan.md \
+    --companion companion_goals=goals.md \
+    --companion companion_research=research/summary.md \
+    --companion companion_phasing=phasing.md \
+    --companion companion_design=design.md \
+    --companion companion_structure=structure.md \
+    --field route="$ROUTE" \
+    --diff-file "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}.diff" \
+    --scope-hint "$SCOPE_HINT"
 
-  # Plan-artifact reviewer: spec (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-spec-reviewer.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: spec-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  # Plan-artifact reviewer: spec (Codex) — same shape, --agent-file/--reviewer-tag swapped
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-plan-spec-reviewer.md \
+    --reviewer-tag spec-codex \
+    [...same flags as above except agent-file + reviewer-tag...]
 
   # Plan-artifact reviewer: security (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-security-reviewer.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: security-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-plan-security-reviewer.md \
+    --reviewer-tag security-codex \
+    [...same flags as above...]
 
   # Plan-artifact reviewer: silent-failure-hunter (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-silent-failure-hunter.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: silent-failure-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-plan-silent-failure-hunter.md \
+    --reviewer-tag silent-failure-codex \
+    [...same flags as above...]
 
   # Plan-artifact reviewer: goal-traceability (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-goal-traceability-reviewer.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: goal-traceability-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-plan-goal-traceability-reviewer.md \
+    --reviewer-tag goal-traceability-codex \
+    [...same flags as above...]
 
   # Plan-artifact reviewer: test-coverage (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-test-coverage-reviewer.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_goals: %s\ncompanion_research: %s\ncompanion_phasing: %s\ncompanion_design: %s\ncompanion_structure: %s\nroute: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: test-coverage-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped plan.md body>" "<untrusted-data-wrapped goals.md body>" "<untrusted-data-wrapped research/summary.md body>" "<untrusted-data-wrapped phasing.md body>" "<untrusted-data-wrapped design.md body or empty on quick>" "<untrusted-data-wrapped structure.md body or empty on quick>" "$ROUTE" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-plan-test-coverage-reviewer.md \
+    --reviewer-tag test-coverage-codex \
+    [...same flags as above...]
 
-  # Scope-reviewer (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-plan-scope-reviewer.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\noutput: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s/\nround: %s\nreviewer_tag: scope-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/plan/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped plan.md body>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  # Scope reviewer (Codex) — no companions
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-plan-scope-reviewer.md \
+    --reviewer-tag scope-codex \
+    --output-dir "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}/" \
+    --round "$ROUND" \
+    --artifact-body plan.md \
+    --diff-file "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}.diff" \
+    --scope-hint "$SCOPE_HINT"
   ```
 
-  The awk strips YAML frontmatter (everything up through the second `---` line). Main chat sees only the jobIds Codex prints.
+  Main chat sees only the jobIds Codex prints.
 
   After `await` returns for each dispatched jobId, on exit 0 run the splitter to split Codex output into per-finding files:
 

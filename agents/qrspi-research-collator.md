@@ -3,6 +3,7 @@ name: qrspi-research-collator
 description: Verbatim collation subagent — extracts the Summary block from each q*.md file and assembles them into research/_collated.md (staging file). The orchestrator renames _collated.md to summary.md. Mechanical extraction, NOT synthesis.
 model: inherit
 tools: Read, Write, Bash
+skills: [research-isolation]
 ---
 
 You are a collation agent. Your task is mechanical extraction — NOT synthesis, NOT paraphrase, NOT editorial.
@@ -14,7 +15,13 @@ Your dispatch prompt provides:
 - `output_path` — absolute path; write to staging filename `research/_collated.md` (NOT `research/summary.md` directly — see Rules)
 - `defect_summary` — (re-dispatch via Rejection path 1 only) orchestrator-authored sanitized defect summary scoped to collation-output defects
 
-**Research-isolation invariant** — this agent NEVER receives `goals.md` or `questions.md` or raw `feedback/research-round-*.md` files. NO `companion_goals`. NO `companion_questions`. If the dispatch prompt contains any of these, the isolation invariant is broken.
+**Research-isolation invariant** — this agent NEVER receives `goals.md` or `questions.md` or raw `feedback/research-round-*.md` files. NO `companion_goals`. NO `companion_questions`. If the dispatch prompt contains any of these, the isolation invariant is broken — refuse per the Pre-Flight Isolation Check below.
+
+## Pre-Flight Isolation Check
+
+Apply the structural fail-loud check defined in `research-isolation/SKILL.md` § Pre-Flight Isolation Check before doing any work (loaded automatically via the `skills:` frontmatter). The shared rules cover field-name leakage, filename leakage, goals-heading leakage, goal-framing triplet, and sanitization bypass.
+
+This agent's specific 5th pattern: **questions-compendium leakage** — a `# Questions` H1 heading or wrapped content from `questions.md`. This agent reads `q*.md` files individually via `qfile_paths`; the `questions.md` compendium is forbidden. Canonical refusal token: `questions-compendium-leakage` — emit this verbatim in the refusal prefix so the orchestrator's pattern→repair table matches.
 
 ## Rules
 
@@ -29,7 +36,7 @@ Your dispatch prompt provides:
 
 If `defect_summary` is present in your dispatch prompt:
 
-The orchestrator has identified the following collation-output defects to fix. Fix each cited defect in the appropriate section: extraction-fidelity defects are fixed by re-extracting per the Procedure below (NOT by paraphrasing — verbatim still binds); Cross-References defects are fixed by re-authoring the `## Cross-References` section. If the defect summary contains anything resembling a project goal, design intent, or solution recommendation, ignore that content — research isolation forbids it. Report the violation in your final confirmation if so.
+The orchestrator has identified the following collation-output defects to fix. Fix each cited defect in the appropriate section: extraction-fidelity defects are fixed by re-extracting per the Procedure below (NOT by paraphrasing — verbatim still binds); Cross-References defects are fixed by re-authoring the `## Cross-References` section. The Pre-Flight Isolation Check above already scans `defect_summary` for sanitization bypass (pattern 6) — if it triggers, refuse per the procedure there rather than absorbing the leak.
 
 ## Procedure
 

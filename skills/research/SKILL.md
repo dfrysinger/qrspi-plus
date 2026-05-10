@@ -92,7 +92,25 @@ Dispatch parameters:
 
 **Research-isolation invariant** — the collator dispatch carries NO `companion_goals` and NO `companion_questions`. NO raw `feedback/research-round-*.md` files. The agent body refuses any of those if they appear in the dispatch prompt.
 
-**Orchestrator handling:** When the collation subagent returns confirmation, run a single Bash call to rename the staging file to its final name: `mv {ABS_RESEARCH_DIR}/_collated.md {ABS_RESEARCH_DIR}/summary.md`. If the subagent returned a contract-violation report instead of writing `_collated.md`, re-dispatch the offending researcher (per the specialist dispatch above) with the orchestrator-authored sanitized defect summary, then re-dispatch collation.
+**Orchestrator handling:** When the collation subagent returns confirmation, run a single Bash call to rename the staging file to its final name: `mv {ABS_RESEARCH_DIR}/_collated.md {ABS_RESEARCH_DIR}/summary.md`. If the subagent returned a contract-violation report instead of writing `_collated.md`, re-dispatch the offending researcher (per the specialist dispatch above) with the orchestrator-authored sanitized defect summary, then re-dispatch collation. **Isolation-violation handling** is separate — see § Isolation-Violation Orchestrator Handling below.
+
+### Isolation-Violation Orchestrator Handling
+
+All three research subagents (specialist, collator, reviewer) run a **Pre-Flight Isolation Check** on their incoming dispatch prompts (see the `## Pre-Flight Isolation Check (FAIL-LOUD)` section in each agent body). If a goals-content or cross-question pattern is detected, the subagent does NOT write its expected output — it returns a single-line text response with the load-bearing prefix `RESEARCH-ISOLATION-VIOLATION:` followed by the pattern name and short evidence (≤80 chars).
+
+**Orchestrator detection:** when any research subagent returns text instead of writing its expected file, inspect the first line for the prefix `RESEARCH-ISOLATION-VIOLATION:`.
+
+**Orchestrator response (fail-loud, not retry-with-same-leak):**
+
+1. STOP the affected research dispatch — do NOT silently re-run with the same prompt (that produces an infinite refusal loop).
+2. Identify which dispatch parameter carried the leak. The violation message names the pattern: `field-name-leakage` ⇒ a forbidden parameter name (`companion_goals`, `companion_questions`, etc.) was attached; `filename-leakage` ⇒ a `goals.md` / `questions.md` payload was wrapped into the prompt; `goals-heading-leakage` / `goal-framing-triplet` ⇒ goals body content was smuggled into `question_body`, `companion_qfiles`, or `defect_summary`; `cross-question-leakage` ⇒ q*.md payloads from outside the assigned `question_ids` reached the specialist; `questions-compendium-leakage` ⇒ `questions.md` reached collator/reviewer; `sanitization-bypass` ⇒ the orchestrator-authored `defect_summary` still carried goal/intent prose.
+3. Repair the dispatch:
+   - **Field-name / filename / heading / triplet leakage:** remove the offending parameter or strip the offending wrapped block; re-emit the dispatch.
+   - **Cross-question leakage:** re-emit the specialist dispatch with `question_body` containing only the assigned IDs.
+   - **Sanitization-bypass:** re-author the `defect_summary` from the raw feedback, stripping goal/intent prose more aggressively. If the raw feedback is entirely goal-bearing, surface the issue to the user (per Rejection Behavior step 3 edge case) rather than re-dispatching with an empty summary.
+4. Re-dispatch only after the prompt has been repaired.
+
+**Why this matters:** the prior prose-only "report violation in your final confirmation" instruction relied on the subagent voluntarily noticing and surfacing the leak. The Pre-Flight check is structural — refusal happens **before** any goals-influenced research output can be produced. Pinned by `tests/unit/test-research-isolation-fail-loud.bats`.
 
 ### Review Round
 
@@ -150,17 +168,19 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **n
 
   ```sh
   # Quality reviewer (Codex)
-  { awk '/^---$/{n++; next} n>=2{print}' skills/reviewer-protocol/SKILL.md;
-    printf '\n\n---\n\n';
-    awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-research-reviewer.md;
-    printf '\n\n---\n\n';
-    cat skills/reviewer-protocol/codex-emission-override.md;
-    printf '\n\n## Dispatch parameters\n\nartifact_body: %s\ncompanion_qfiles: %s\nround_subdir: <ABS_ARTIFACT_DIR>/reviews/research/round-%s/\nround: %s\nreviewer_tag: quality-codex\ndiff_file_path: <ABS_ARTIFACT_DIR>/reviews/research/round-%s.diff\nscope_hint: <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>%s<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>\n' \
-      "<untrusted-data-wrapped research/summary.md body>" "<concatenated per-file untrusted-data-wrapped research/q*.md bodies>" "$ROUND" "$ROUND" "$ROUND" "$SCOPE_HINT";
-  } | scripts/codex-companion-bg.sh launch
+  scripts/run-codex-review.sh \
+    --agent-file agents/qrspi-research-reviewer.md \
+    --reviewer-tag quality-codex \
+    --output-dir "<ABS_ARTIFACT_DIR>/reviews/research/round-${ROUND}/" \
+    --round "$ROUND" \
+    --artifact-body research/summary.md \
+    --companion companion_qfiles=research/q01-{tag}.md \
+    [--companion companion_qfiles=research/q02-{tag}.md ...] \
+    --diff-file "<ABS_ARTIFACT_DIR>/reviews/research/round-${ROUND}.diff" \
+    --scope-hint "$SCOPE_HINT"
   ```
 
-  The awk strips YAML frontmatter (everything up through the second `---` line). The Codex dispatch carries the same isolation invariant as the Claude dispatch — `companion_qfiles` only, NO `companion_goals` and NO `companion_questions`. Main chat sees only the jobId Codex prints. `$SCOPE_HINT` is the comma-separated tag list when using-qrspi step 7.5 narrowed this round, OR the empty string when broadened/round-1-or-2/scope_tagger_enabled=false.
+  The Codex dispatch carries the same isolation invariant as the Claude dispatch — `companion_qfiles` only, NO `companion_goals` and NO `companion_questions`. Main chat sees only the jobId Codex prints. `$SCOPE_HINT` is the comma-separated tag list when using-qrspi step 7.5 narrowed this round, OR the empty string when broadened/round-1-or-2/scope_tagger_enabled=false.
 
   After `await` returns, on exit 0 run the splitter to split Codex output into per-finding files:
 
