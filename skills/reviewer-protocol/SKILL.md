@@ -162,6 +162,49 @@ The `{artifact_name}` parameter is a short stable identifier for the embedded so
 
 **Interaction with the secondary-escalation rule.** Per `## Change-Type Classifier` → "Trigger surface": the secondary-escalation rule fires only on a reviewer's own emitted `referenced_files` / `message` (a reviewer-authored citation), never on content found INSIDE a `feedback/*.md` body that the reviewer is reading through the wrapper. The wrapper is what makes that distinction enforceable.
 
+## Phase Routing
+
+Three per-task reviewer agents (`qrspi-spec-reviewer`, `qrspi-code-quality-reviewer`, `qrspi-goal-traceability-reviewer`) are dispatched in two distinct phases of the QRSPI pipeline:
+
+- **Implement-phase dispatch** — the reviewer evaluates a task's production code against the task spec.
+- **Test-phase dispatch** — the same agent is reused to evaluate generated test code against the plan's per-task test expectations (no production code under review).
+
+Each phase requires a different review checklist; running the wrong checklist silently inverts the meaning of the review (production-code questions applied to test files, or vice versa).
+
+### Phase Signal — `task_definition`
+
+The presence of the `task_definition` parameter in the dispatch is the load-bearing signal that selects between the two checklists:
+
+- `task_definition` **present** → Implement-phase mode. Review production code against the task spec (each agent's "Verification" / "Review Criteria" / "Traceability Analysis" checklist).
+- `task_definition` **absent** → Test-phase reuse mode. Review test code with `companion_plan` / `companion_goals` as the criterion source (do the assertions verify what they claim? meaningful, not vacuous?).
+
+Test-phase dispatches deliberately omit `task_definition` because the criterion source is the plan's per-task `## Test Expectations` block, not the task spec body.
+
+### Contradiction Refusal (FAIL-LOUD)
+
+A future "for clarity" edit could silently add `task_definition` to a test-phase dispatch site — the agent would then route to the Implement-phase checklist and review test files as if they were production code. Both checklists would pass for very different reasons, masking the contract drift.
+
+Detect the contradiction structurally on every dispatch:
+
+> If `task_definition` is present AND the `output` (or `round_subdir`) parameter contains the substring `/reviews/test/`, the dispatch is malformed — `task_definition` was added to a test-phase dispatch site.
+
+The `/reviews/test/` substring is convention-coupled to the test-step output directory layout (`<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`); if that path convention is renamed, this check must be updated in step. The primary regression guard is the bats CI gate at `tests/unit/test-task-definition-absence-fail-loud.bats`, which pins the absence of `--task-def` and `task_definition:` bullets in test-phase dispatch sites at PR time. The agent-side check is defense-in-depth.
+
+### Refusal Procedure
+
+On contradiction detection:
+
+1. Do NOT call the `Write` tool. Do NOT emit findings or sentinels. Do NOT proceed to the agent's review checklist.
+2. Return a single-line text response with this load-bearing prefix (the orchestrator detects it):
+
+   ```
+   PHASE-ROUTING-VIOLATION: task_definition supplied for test-phase output dir
+   ```
+
+3. End the turn. The orchestrator repairs the dispatch (removes `task_definition` per the absence-as-signal contract) and re-dispatches.
+
+Silent fall-through is forbidden — running the wrong checklist masks the contract drift exactly when it most needs to be visible.
+
 ## Per-Finding Disk-Write Contract
 
 All reviewer subagents emit per-finding output under this contract; the on-disk schema is identical for every reviewer tag. **Emission path differs by environment:** Claude reviewers (Write tool available) Write the per-finding files and clean sentinel directly per the contract below. Codex reviewers (read-only sandbox) cannot Write — they emit findings on stdout per the **Codex Emission Override** (`skills/reviewer-protocol/codex-emission-override.md`, piped into every Codex dispatch after the agent body), and the orchestrator's `scripts/codex-finding-splitter.sh` materializes the same files on the reviewer's behalf. There is no per-tag routing — the path forks on environment, not on `<reviewer_tag>`.

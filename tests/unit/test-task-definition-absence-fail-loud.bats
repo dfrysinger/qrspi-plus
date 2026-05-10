@@ -1,10 +1,11 @@
 #!/usr/bin/env bats
 #
-# task_definition absence fail-loud contract (Bucket-3 #4).
+# task_definition absence fail-loud contract.
 #
-# Promotes cross-skill contract #4 (test-phase reuse via task_definition
-# absence) from Bucket-1 prose-only ("absence is the load-bearing signal")
-# to Bucket-3 fail-loud at two layers:
+# Pins the test-phase reuse contract — the absence of task_definition
+# is the load-bearing signal that selects test-phase mode on the three
+# reusable per-task reviewer agents (spec, code-quality, goal-traceability).
+# Enforced at two layers:
 #
 #   1. CI gate (primary) — pin that skills/test/SKILL.md test-step
 #      dispatches do NOT carry task_definition (Claude bullets) or
@@ -87,35 +88,31 @@ setup_file() {
 }
 
 # ---------------------------------------------------------------------------
-# Agent-side defense-in-depth: each reusable reviewer carries the
-# Phase Routing section with the contradiction-refusal contract.
+# Agent-side defense-in-depth: each reusable reviewer carries a Phase
+# Routing stub naming both branches and references the canonical contract
+# in reviewer-protocol/SKILL.md (loaded via `skills:` frontmatter). The
+# full contradiction-refusal procedure lives in the shared skill, NOT
+# duplicated inline in each agent.
 # ---------------------------------------------------------------------------
 
-@test "agent-side: spec-reviewer has Phase Routing (FAIL-LOUD) section" {
-  run grep -F "Phase Routing (FAIL-LOUD)" "$REPO_ROOT/agents/qrspi-spec-reviewer.md"
-  [ "$status" -eq 0 ]
-}
-
-@test "agent-side: code-quality-reviewer has Phase Routing (FAIL-LOUD) section" {
-  run grep -F "Phase Routing (FAIL-LOUD)" "$REPO_ROOT/agents/qrspi-code-quality-reviewer.md"
-  [ "$status" -eq 0 ]
-}
-
-@test "agent-side: goal-traceability-reviewer has Phase Routing (FAIL-LOUD) section" {
-  run grep -F "Phase Routing (FAIL-LOUD)" "$REPO_ROOT/agents/qrspi-goal-traceability-reviewer.md"
-  [ "$status" -eq 0 ]
-}
-
-@test "agent-side: each reusable reviewer documents the contradiction signal (output dir contains /reviews/test/)" {
+@test "agent-side: each reusable reviewer has a Phase Routing section" {
   for agent in qrspi-spec-reviewer qrspi-code-quality-reviewer qrspi-goal-traceability-reviewer; do
-    run grep -F "/reviews/test/" "$REPO_ROOT/agents/$agent.md"
+    run grep -F "## Phase Routing" "$REPO_ROOT/agents/$agent.md"
+    [ "$status" -eq 0 ]
+  done
+}
+
+@test "agent-side: each reusable reviewer loads reviewer-protocol via skills frontmatter" {
+  # The Phase Routing contract is preloaded automatically when the
+  # reviewer-protocol skill is named here.
+  for agent in qrspi-spec-reviewer qrspi-code-quality-reviewer qrspi-goal-traceability-reviewer; do
+    run grep -E "^skills:.*reviewer-protocol" "$REPO_ROOT/agents/$agent.md"
     [ "$status" -eq 0 ]
   done
 }
 
 @test "agent-side: each reusable reviewer documents both branches (task_definition present vs absent)" {
   for agent in qrspi-spec-reviewer qrspi-code-quality-reviewer qrspi-goal-traceability-reviewer; do
-    # Implement-phase signal (present) and Test-phase signal (absent) both named
     run grep -E "task_definition.*present|present.*task_definition|task_definition\` present" "$REPO_ROOT/agents/$agent.md"
     [ "$status" -eq 0 ]
     run grep -E "task_definition.*absent|absent.*task_definition|task_definition\` absent" "$REPO_ROOT/agents/$agent.md"
@@ -123,18 +120,24 @@ setup_file() {
   done
 }
 
-@test "agent-side: each reusable reviewer specifies PHASE-ROUTING-VIOLATION refusal prefix" {
-  for agent in qrspi-spec-reviewer qrspi-code-quality-reviewer qrspi-goal-traceability-reviewer; do
-    run grep -F "PHASE-ROUTING-VIOLATION:" "$REPO_ROOT/agents/$agent.md"
-    [ "$status" -eq 0 ]
-  done
+# ---------------------------------------------------------------------------
+# Shared contract: reviewer-protocol/SKILL.md owns the fail-loud
+# detection signal, refusal prefix, and refusal procedure once.
+# ---------------------------------------------------------------------------
+
+@test "shared: reviewer-protocol/SKILL.md documents the contradiction signal (output dir contains /reviews/test/)" {
+  run grep -F "/reviews/test/" "$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
+  [ "$status" -eq 0 ]
 }
 
-@test "agent-side: each reusable reviewer's refusal procedure forbids the Write tool" {
-  for agent in qrspi-spec-reviewer qrspi-code-quality-reviewer qrspi-goal-traceability-reviewer; do
-    run grep -E "Do NOT call the .Write. tool|Do NOT proceed to" "$REPO_ROOT/agents/$agent.md"
-    [ "$status" -eq 0 ]
-  done
+@test "shared: reviewer-protocol/SKILL.md specifies the PHASE-ROUTING-VIOLATION refusal prefix" {
+  run grep -F "PHASE-ROUTING-VIOLATION:" "$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "shared: reviewer-protocol/SKILL.md refusal procedure forbids the Write tool" {
+  run grep -E "Do NOT call the .Write. tool|Do NOT proceed to" "$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
+  [ "$status" -eq 0 ]
 }
 
 # ---------------------------------------------------------------------------

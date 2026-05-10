@@ -46,7 +46,8 @@
 # in that case the wrapper uses them verbatim. `--output-dir` MUST be
 # absolute and is enforced (the orchestrator already computes
 # `<ABS_ARTIFACT_DIR>/...`; a relative value would also defeat the
-# Bucket-3 #4 agent-side `/reviews/test/` substring fail-loud check).
+# agent-side `/reviews/test/` substring fail-loud check from
+# reviewer-protocol § Phase Routing).
 # `--diff-file` is documented as absolute by convention (orchestrator
 # emits to `<ABS_ARTIFACT_DIR>`); only a file-existence check enforces it.
 #
@@ -203,7 +204,8 @@ require_flag "round"        "$ROUND"
 # --output-dir must be absolute. The orchestrator already computes
 # <ABS_ARTIFACT_DIR>/... at every dispatch site, so a non-absolute value
 # is always a mistake. This is also load-bearing for the agent-side
-# Phase Routing fail-loud check (Bucket-3 #4): per-task reviewer agents
+# Phase Routing fail-loud check (reviewer-protocol § Phase Routing):
+# per-task reviewer agents
 # detect the contradiction `task_definition supplied + output dir contains
 # /reviews/test/`. A relative `reviews/test/...` would defeat the
 # substring check; rejecting non-absolute values closes the bypass.
@@ -293,18 +295,18 @@ if [[ -n "$DIFF_FILE" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Marker-injection guard (Bucket-3 #7 — closes F6 bypass).
+# Marker-injection guard.
 #
 # `compose_prompt` emits `<<<AGENT-BODY-END>>>` between the trusted
 # protocol/agent-body sections and the orchestrator-supplied dispatch
-# parameters; agent self-reference exception clauses (research-isolation
-# Pre-Flight) reference that marker for a positional carve-out.
+# parameters; agent self-reference exception clauses (e.g.
+# research-isolation Pre-Flight) reference that marker for a positional
+# carve-out.
 #
 # An attacker- or drift-controlled artifact body containing the literal
 # marker would emit a SECOND occurrence inside an UNTRUSTED-ARTIFACT
 # block, after which the agent — looking only for the marker name — could
-# treat post-second-marker content as trusted, re-opening the bypass F6
-# was meant to close.
+# treat post-second-marker content as trusted, defeating the carve-out.
 #
 # Refuse the dispatch if any orchestrator-supplied input contains the
 # literal marker. The marker is a wrapper-private invariant; legitimate
@@ -316,7 +318,7 @@ MARKER_LITERAL="<<<AGENT-BODY-END>>>"
 reject_if_contains_marker_file() {
   # $1 = label for diagnostic, $2 = file path
   if grep -F -q -- "$MARKER_LITERAL" "$2" 2>/dev/null; then
-    echo "error: ${1} contains the wrapper-private marker '${MARKER_LITERAL}' (path: $2). This would re-open the F6 carve-out bypass; reject the input." >&2
+    echo "error: ${1} contains the wrapper-private marker '${MARKER_LITERAL}' (path: $2). This would defeat the agent-body carve-out; reject the input." >&2
     exit 1
   fi
 }
@@ -324,7 +326,7 @@ reject_if_contains_marker_file() {
 reject_if_contains_marker_value() {
   # $1 = label for diagnostic, $2 = value (string)
   if [[ "$2" == *"$MARKER_LITERAL"* ]]; then
-    echo "error: ${1} contains the wrapper-private marker '${MARKER_LITERAL}'. This would re-open the F6 carve-out bypass; reject the input." >&2
+    echo "error: ${1} contains the wrapper-private marker '${MARKER_LITERAL}'. This would defeat the agent-body carve-out; reject the input." >&2
     exit 1
   fi
 }
@@ -449,13 +451,13 @@ compose_prompt() {
   strip_frontmatter "$AGENT_FILE_ABS"
   printf '\n\n---\n\n'
   cat "$EMISSION_OVERRIDE_ABS"
-  # Structural boundary marker (Bucket-3 #7 hardening). Everything BEFORE
-  # this marker is the trusted protocol/agent body assembled by the
-  # wrapper; everything AFTER is orchestrator-supplied dispatch parameters.
-  # Agent self-reference exception clauses (e.g., research agents' Pre-Flight
-  # Isolation Check) reference this marker so the carve-out is positional,
-  # not prose-only — closing the "leak quotes the exception language" bypass
-  # surface flagged in PR review.
+  # Structural boundary marker. Everything BEFORE this marker is the
+  # trusted protocol/agent body assembled by the wrapper; everything
+  # AFTER is orchestrator-supplied dispatch parameters. Agent
+  # self-reference exception clauses (e.g., research agents' Pre-Flight
+  # Isolation Check) reference this marker so the carve-out is
+  # positional, not prose-only — closing the "leak quotes the exception
+  # language" bypass surface.
   #
   # Marker uniqueness is enforced by the marker-injection guard above:
   # any orchestrator-supplied input containing this literal string is
