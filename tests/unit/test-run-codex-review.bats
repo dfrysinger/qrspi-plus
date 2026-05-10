@@ -768,3 +768,101 @@ EOF
   [[ "$output" =~ "this-skill-does-not-exist" ]]
   [[ "$output" =~ "not found" ]]
 }
+
+@test "skill-load: block-list YAML form is rejected loudly (silent skip would reintroduce the FA1 bug pattern)" {
+  # Block-list YAML
+  #   skills:
+  #     - reviewer-protocol
+  #     - research-isolation
+  # is a structurally different shape from the inline-list form the parser
+  # supports. A silent skip would produce exactly the failure mode the
+  # additional-skills load chain exists to prevent: the agent declares a
+  # dependency on a shared skill, the wrapper drops it, and the assembled
+  # Codex prompt is missing a structurally important section. The wrapper
+  # must reject the unsupported shape before composing the prompt.
+  cat > "$TMP_DIR/agent-block-list.md" <<'EOF'
+---
+name: test-block-list
+description: agent using unsupported block-list skills form
+model: sonnet
+tools: Read, Write
+skills:
+  - reviewer-protocol
+  - research-isolation
+---
+
+Body.
+EOF
+  run "$WRAPPER" \
+    --agent-file "$TMP_DIR/agent-block-list.md" \
+    --reviewer-tag test-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "inline-list" ]]
+}
+
+@test "skill-load: quoted skill names are accepted (quotes stripped before path resolution)" {
+  # Some YAML emitters quote inline-list items: `skills: ["a", "b"]`. The
+  # static frontmatter regex in the bats suite accepts the quoted form, so
+  # the wrapper must accept it too — otherwise a quoted-form agent file
+  # would pass CI but fail at dispatch time. The parser strips one layer
+  # of surrounding quotes so the path resolution lands on the unquoted
+  # `skills/<name>/SKILL.md`.
+  cat > "$TMP_DIR/agent-quoted-skills.md" <<'EOF'
+---
+name: test-quoted
+description: agent using quoted skills inline-list
+model: sonnet
+tools: Read, Write
+skills: ["reviewer-protocol", "research-isolation"]
+---
+
+Body.
+EOF
+  run "$WRAPPER" \
+    --agent-file "$TMP_DIR/agent-quoted-skills.md" \
+    --reviewer-tag test-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  # research-isolation content must reach the prompt — confirms the parser
+  # stripped quotes and resolved the unquoted path.
+  [[ "$output" =~ "RESEARCH-ISOLATION-VIOLATION:" ]]
+}
+
+@test "skill-load: empty additional-skills array does not crash on bash 3.2 set -u" {
+  # macOS system /bin/bash is 3.2.57. Under `set -u`, expanding an empty
+  # array (e.g. `for x in "${arr[@]}"`) errors with `arr[@]: unbound
+  # variable`. The compose_prompt loop must be gated on array length so
+  # the no-skills path works on every supported bash. We invoke the
+  # wrapper explicitly under /bin/bash to defend against the path where
+  # CI runs under bash 5 (which would mask the regression) but a
+  # contributor's local run hits the system shell.
+  cat > "$TMP_DIR/agent-noskills-explicit.md" <<'EOF'
+---
+name: test-noskills-bash3
+description: agent without skills frontmatter
+model: sonnet
+tools: Read, Write
+---
+
+Body.
+EOF
+  if [ ! -x /bin/bash ]; then
+    skip "/bin/bash not present on this system"
+  fi
+  run /bin/bash "$WRAPPER" \
+    --agent-file "$TMP_DIR/agent-noskills-explicit.md" \
+    --reviewer-tag test-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  ! [[ "$output" =~ "unbound variable" ]]
+}

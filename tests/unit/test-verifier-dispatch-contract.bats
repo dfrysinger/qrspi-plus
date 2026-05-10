@@ -55,8 +55,8 @@ setup() {
 }
 
 # Spec §1 step 2 enumerates FIVE schema-guard branches that must fail loud
-# (or normalize, in the trailing-newline case). One was pinned above; the
-# remaining four below pin the branches Codex r6-F05 flagged as missing.
+# (or normalize, in the trailing-newline case). One is pinned above; the
+# remaining four below pin the previously untested schema-guard branches.
 # These tests grep the prose body of the Apply-fix step-2 paragraph for the
 # documented behavior — they enforce the spec contract is COMMUNICATED to the
 # implementer, not that the bash code is semantically correct (that's the job

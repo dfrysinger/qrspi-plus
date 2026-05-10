@@ -40,11 +40,15 @@ setup_file() {
 
 @test "fail-loud: each research agent loads research-isolation via skills frontmatter" {
   # Match the canonical inline-list shape `skills: [..., research-isolation, ...]`
-  # with word boundaries around the skill name so a hypothetical
-  # `skills: [research-isolation-mock]` entry does not falsely satisfy
-  # the assertion.
+  # and require the skill name to be bounded by an actual YAML list separator
+  # — `[`, `,`, or whitespace before; `]`, `,`, or whitespace after — so a
+  # hypothetical `skills: [research-isolation-mock]` entry does not falsely
+  # satisfy the assertion. Generic word-boundary anchors (\<\>) treat `-`
+  # as a non-word character on both BSD and GNU grep, so `\<research-isolation\>`
+  # would mismatch `research-isolation-mock` at the `n-` boundary and
+  # falsely pass.
   for agent in qrspi-research-specialist qrspi-research-collator qrspi-research-reviewer; do
-    run grep -E "^skills:[[:space:]]*\[[^]]*\<research-isolation\>[^]]*\]" "$REPO_ROOT/agents/$agent.md"
+    run grep -E "^skills:[[:space:]]*\[(.*[[:space:],]|[[:space:]]*)research-isolation([[:space:],].*|[[:space:]]*)\]" "$REPO_ROOT/agents/$agent.md"
     [ "$status" -eq 0 ]
   done
 }

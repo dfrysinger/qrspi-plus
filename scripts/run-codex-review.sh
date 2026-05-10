@@ -268,19 +268,27 @@ assert_file_exists "codex-emission-override.md" "$EMISSION_OVERRIDE_ABS"
 # `compose_prompt`. The hardcoded `reviewer-protocol` is skipped to
 # avoid double-loading.
 #
-# Supports the two YAML inline list forms commonly used in this repo:
+# Supported shape (the only shape this parser accepts):
 #   skills: [reviewer-protocol]
 #   skills: [reviewer-protocol, research-isolation]
 #
-# (Block-list form `skills:\n  - a\n  - b` is not currently used; if
-# adopted, extend the awk parser below.)
+# Any other `skills:` frontmatter form (block-list `skills:\n  - a`,
+# scalar `skills: foo`, etc.) is rejected loudly with exit code 2 — a
+# silent skip would replicate the very semantic-loss bug this load
+# chain exists to fix. Surrounding quotes on individual names are
+# tolerated and stripped (so `["a", "b"]` and `[a, b]` are equivalent
+# inputs).
 extract_skill_names() {
   awk '
     /^---$/ { n++; if (n == 2) exit; next }
-    n == 1 && /^skills:[[:space:]]*\[/ {
+    n == 1 && /^skills:/ {
+      if ($0 !~ /^skills:[[:space:]]*\[/) {
+        printf "error: skills: frontmatter must use inline-list form `skills: [a, b, c]`; other forms (block-list, scalar) are not supported.\n" > "/dev/stderr"
+        exit 2
+      }
       sub(/^skills:[[:space:]]*\[/, "")
       sub(/\].*$/, "")
-      gsub(/[[:space:]]/, "")
+      gsub(/[[:space:]"'\'']/, "")
       n_items = split($0, items, ",")
       for (i = 1; i <= n_items; i++) {
         if (items[i] != "") print items[i]
@@ -289,15 +297,24 @@ extract_skill_names() {
   ' "$1"
 }
 
+# Capture into a variable so the awk exit code propagates (process
+# substitution would discard it). The wrapper does not use `set -e`,
+# so check the exit status explicitly: a nonzero awk exit means the
+# parser detected an unsupported `skills:` shape and already wrote a
+# diagnostic to stderr.
+if ! SKILL_NAMES_OUTPUT="$(extract_skill_names "$AGENT_FILE_ABS")"; then
+  exit 1
+fi
+
 ADDITIONAL_SKILL_PATHS=()
-while read -r skill_name; do
+while IFS= read -r skill_name; do
   if [[ -z "$skill_name" || "$skill_name" == "reviewer-protocol" ]]; then
     continue
   fi
   skill_path="$REPO_ROOT/skills/$skill_name/SKILL.md"
   assert_file_exists "skill[$skill_name]" "$skill_path"
   ADDITIONAL_SKILL_PATHS+=("$skill_path")
-done < <(extract_skill_names "$AGENT_FILE_ABS")
+done <<< "$SKILL_NAMES_OUTPUT"
 
 # Resolve primary-artifact files (repeating). PRIMARY_PATHS holds either
 # the --subject-code or --artifact-body inputs per the field selection above.
@@ -487,10 +504,14 @@ emit_dispatch_parameters() {
 compose_prompt() {
   strip_frontmatter "$REVIEWER_PROTOCOL_ABS"
   printf '\n\n---\n\n'
-  for skill_path in "${ADDITIONAL_SKILL_PATHS[@]}"; do
-    strip_frontmatter "$skill_path"
-    printf '\n\n---\n\n'
-  done
+  # Gate on length to avoid `unbound variable` under `set -u` on Bash 3.2
+  # (macOS system /bin/bash) when the additional-skills array is empty.
+  if (( ${#ADDITIONAL_SKILL_PATHS[@]} > 0 )); then
+    for skill_path in "${ADDITIONAL_SKILL_PATHS[@]}"; do
+      strip_frontmatter "$skill_path"
+      printf '\n\n---\n\n'
+    done
+  fi
   strip_frontmatter "$AGENT_FILE_ABS"
   printf '\n\n---\n\n'
   cat "$EMISSION_OVERRIDE_ABS"
