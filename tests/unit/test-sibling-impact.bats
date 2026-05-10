@@ -107,3 +107,40 @@ teardown() {
   [ ! -d "$TMP_DIR/tasks/task-02/notifications" ] || \
     [ "$(ls $TMP_DIR/tasks/task-02/notifications | wc -l)" -eq 0 ]
 }
+
+@test "--code-path overrides tasksDir/.. derivation for split-workspace layouts" {
+  # Simulate a split-workspace: artifacts in one tree (no git), code in a separate tree (with git).
+  ARTIFACTS_DIR="$(mktemp -d)"
+  mkdir -p "$ARTIFACTS_DIR/tasks/task-01" "$ARTIFACTS_DIR/tasks/task-02" "$ARTIFACTS_DIR/tasks/task-03"
+  echo "Task 01 — modifies src/lib/types.ts" > "$ARTIFACTS_DIR/tasks/task-01/spec.md"
+  echo "Task 02 — references src/lib/types.ts" > "$ARTIFACTS_DIR/tasks/task-02/spec.md"
+  echo "Task 03 — does not touch types.ts" > "$ARTIFACTS_DIR/tasks/task-03/spec.md"
+
+  # Source tasks/task-01/notifications-permission probe is unrelated; the parent
+  # dir of $ARTIFACTS_DIR/tasks is intentionally NOT a git repo. Without
+  # --code-path, the script would try to run `git diff` from $ARTIFACTS_DIR
+  # (the derived projectRoot) and fail. With --code-path pointing at $TMP_DIR
+  # (the git repo from setup), it should succeed.
+
+  run node "$REPO_ROOT/scripts/sibling-impact.mjs" \
+    --task-id 01 --commit "$TASK_01_SHA" --base base \
+    --tasks-dir "$ARTIFACTS_DIR/tasks" \
+    --code-path "$TMP_DIR"
+  [ "$status" -eq 0 ]
+
+  # task-02 references types.ts → notification expected at the artifact tree.
+  run bash -c "ls $ARTIFACTS_DIR/tasks/task-02/notifications/*.md 2>/dev/null | wc -l"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+
+  rm -rf "$ARTIFACTS_DIR"
+}
+
+@test "--code-path errors clearly when path does not exist" {
+  run node "$REPO_ROOT/scripts/sibling-impact.mjs" \
+    --task-id 01 --commit "$TASK_01_SHA" --base base \
+    --tasks-dir "$TMP_DIR/tasks" \
+    --code-path "/nonexistent-code-path-for-sibling-impact-test"
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "code-path not found" ]]
+}

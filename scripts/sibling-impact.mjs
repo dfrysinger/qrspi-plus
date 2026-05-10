@@ -2,11 +2,20 @@
 // sibling-impact.mjs — QRSPI cross-task drift detector.
 //
 // Usage:
-//   node scripts/sibling-impact.mjs --task-id <NN> --commit <SHA> [--base <branch>] [--tasks-dir <path>]
+//   node scripts/sibling-impact.mjs --task-id <NN> --commit <SHA> \
+//       [--base <branch>] [--tasks-dir <path>] [--code-path <path>]
 //
 // Diffs <base>..<commit>, finds sibling task dirs whose spec/code files
 // reference changed files (substring match), and writes notification entries
 // to those siblings' notifications/ directories.
+//
+// `--code-path` is the absolute path to the target code repository whose git
+// history holds <commit>. Used to support split-workspace layouts where the
+// QRSPI artifact directory and the target repo live on different filesystem
+// branches (e.g. artifacts in Dropbox, code in ~/code/<repo>). When omitted,
+// the script falls back to deriving projectRoot from `<tasksDir>/..` (the
+// recommended sibling layout per `using-qrspi/SKILL.md` § Recommended
+// Workspace Layout). See PR #153 issue #157 for the original incident.
 //
 // Pure Node 18+ stdlib. No npm dependencies.
 
@@ -25,6 +34,7 @@ function parseArgs(argv) {
     commit: null,
     base: 'main',
     tasksDir: 'tasks/',
+    codePath: null,
   };
   let i = 0;
   while (i < argv.length) {
@@ -40,6 +50,9 @@ function parseArgs(argv) {
       i += 2;
     } else if (arg === '--tasks-dir' && i + 1 < argv.length) {
       args.tasksDir = argv[i + 1];
+      i += 2;
+    } else if (arg === '--code-path' && i + 1 < argv.length) {
+      args.codePath = argv[i + 1];
       i += 2;
     } else {
       i++;
@@ -130,8 +143,31 @@ function main() {
     exit(1);
   }
 
-  // Derive project root: parent of tasksDir when absolute, else cwd
-  const projectRoot = resolve(tasksDir, '..');
+  // Derive project root.
+  // - When --code-path is provided, use it verbatim. This supports split-workspace
+  //   layouts where the QRSPI artifact directory and the target code repo live on
+  //   different filesystem branches (issue #157).
+  // - When --code-path is omitted, fall back to `<tasksDir>/..` — the recommended
+  //   sibling layout per `using-qrspi/SKILL.md` § Recommended Workspace Layout.
+  let projectRoot;
+  if (args.codePath) {
+    projectRoot = isAbsolute(args.codePath)
+      ? args.codePath
+      : resolve(process.cwd(), args.codePath);
+    let codePathStat;
+    try {
+      codePathStat = statSync(projectRoot);
+    } catch (err) {
+      console.error(`error: code-path not found: ${projectRoot}`);
+      exit(1);
+    }
+    if (!codePathStat.isDirectory()) {
+      console.error(`error: code-path is not a directory: ${projectRoot}`);
+      exit(1);
+    }
+  } else {
+    projectRoot = resolve(tasksDir, '..');
+  }
 
   // Run git diff to get changed files.
   // Diff the commit vs its immediate parent (commit^) to capture only what
