@@ -769,7 +769,7 @@ EOF
   [[ "$output" =~ "not found" ]]
 }
 
-@test "skill-load: block-list YAML form is rejected loudly (silent skip would reintroduce the FA1 bug pattern)" {
+@test "skill-load: unsupported skills: shapes (block-list, scalar) are rejected loudly" {
   # Block-list YAML
   #   skills:
   #     - reviewer-protocol
