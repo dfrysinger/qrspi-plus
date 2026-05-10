@@ -293,6 +293,64 @@ if [[ -n "$DIFF_FILE" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Marker-injection guard (Bucket-3 #7 — closes F6 bypass).
+#
+# `compose_prompt` emits `<<<AGENT-BODY-END>>>` between the trusted
+# protocol/agent-body sections and the orchestrator-supplied dispatch
+# parameters; agent self-reference exception clauses (research-isolation
+# Pre-Flight) reference that marker for a positional carve-out.
+#
+# An attacker- or drift-controlled artifact body containing the literal
+# marker would emit a SECOND occurrence inside an UNTRUSTED-ARTIFACT
+# block, after which the agent — looking only for the marker name — could
+# treat post-second-marker content as trusted, re-opening the bypass F6
+# was meant to close.
+#
+# Refuse the dispatch if any orchestrator-supplied input contains the
+# literal marker. The marker is a wrapper-private invariant; legitimate
+# inputs have no reason to carry it. (Trusted body files — agent file,
+# reviewer-protocol, emission-override — are NOT scanned: their content
+# IS the agent body the marker delimits.)
+MARKER_LITERAL="<<<AGENT-BODY-END>>>"
+
+reject_if_contains_marker_file() {
+  # $1 = label for diagnostic, $2 = file path
+  if grep -F -q -- "$MARKER_LITERAL" "$2" 2>/dev/null; then
+    echo "error: ${1} contains the wrapper-private marker '${MARKER_LITERAL}' (path: $2). This would re-open the F6 carve-out bypass; reject the input." >&2
+    exit 1
+  fi
+}
+
+reject_if_contains_marker_value() {
+  # $1 = label for diagnostic, $2 = value (string)
+  if [[ "$2" == *"$MARKER_LITERAL"* ]]; then
+    echo "error: ${1} contains the wrapper-private marker '${MARKER_LITERAL}'. This would re-open the F6 carve-out bypass; reject the input." >&2
+    exit 1
+  fi
+}
+
+# Scan every orchestrator-supplied path-style input.
+for p in "${PRIMARY_ABS[@]}"; do
+  reject_if_contains_marker_file "${PRIMARY_FIELD}" "$p"
+done
+if [[ -n "$TASK_DEF_ABS" ]]; then
+  reject_if_contains_marker_file "task-def" "$TASK_DEF_ABS"
+fi
+for i in "${!COMPANION_ABS[@]}"; do
+  reject_if_contains_marker_file "companion[${COMPANION_NAMES[$i]}]" "${COMPANION_ABS[$i]}"
+done
+if [[ -n "$DIFF_FILE" ]]; then
+  reject_if_contains_marker_file "diff-file" "$DIFF_FILE"
+fi
+# Scan inline scalar values too (--scope-hint, --field VALUE).
+if [[ "$SCOPE_HINT_SET" == "true" ]]; then
+  reject_if_contains_marker_value "scope-hint" "$SCOPE_HINT"
+fi
+for i in "${!SCALAR_NAMES[@]}"; do
+  reject_if_contains_marker_value "field[${SCALAR_NAMES[$i]}]" "${SCALAR_VALUES[$i]}"
+done
+
+# ---------------------------------------------------------------------------
 # Wrapping helpers
 # ---------------------------------------------------------------------------
 
@@ -398,6 +456,13 @@ compose_prompt() {
   # Isolation Check) reference this marker so the carve-out is positional,
   # not prose-only — closing the "leak quotes the exception language" bypass
   # surface flagged in PR review.
+  #
+  # Marker uniqueness is enforced by the marker-injection guard above:
+  # any orchestrator-supplied input containing this literal string is
+  # rejected before we get here, so the marker emitted on this line is
+  # the only occurrence in the assembled prompt. Without that guard, an
+  # injected literal could produce a SECOND marker inside an UNTRUSTED-
+  # ARTIFACT block, re-opening the bypass.
   printf '\n\n<<<AGENT-BODY-END>>>\n'
   emit_dispatch_parameters
 }

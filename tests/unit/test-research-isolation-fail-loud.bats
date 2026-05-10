@@ -89,11 +89,18 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "fail-loud: pattern token parity — collator + reviewer name the same questions-compendium-leakage token" {
-  # Cross-emitter token parity (Codex review F5 fix). Both agents must
-  # name the same canonical token so the orchestrator's pattern→repair
-  # table matches a single entry per family.
+@test "fail-loud: pattern token parity — collator + reviewer + orchestrator name the same questions-compendium-leakage token" {
+  # Cross-emitter token parity. The canonical token must match across
+  # all three emitters so the orchestrator's pattern→repair table matches
+  # a single entry per family:
+  #   (a) collator agent prose
+  #   (b) reviewer agent prose  ← previously omitted; second-pass review F8 gap
+  #   (c) orchestrator handler in skills/research/SKILL.md
+  # A regression renaming the token in any one of these would silently
+  # break the RESEARCH-ISOLATION-VIOLATION detection chain.
   run grep -F "questions-compendium-leakage" "$REPO_ROOT/agents/qrspi-research-collator.md"
+  [ "$status" -eq 0 ]
+  run grep -F "questions-compendium-leakage" "$REPO_ROOT/agents/qrspi-research-reviewer.md"
   [ "$status" -eq 0 ]
   run grep -F "questions-compendium-leakage" "$REPO_ROOT/skills/research/SKILL.md"
   [ "$status" -eq 0 ]

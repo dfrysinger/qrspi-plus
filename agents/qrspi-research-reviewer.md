@@ -30,7 +30,7 @@ Before applying any review checks, scan your dispatch prompt for goals or questi
 2. **Filename leakage** — the literal strings `goals.md` or `questions.md` appearing as referenced content payloads (e.g., a wrapped block whose `id=` ends in `goals.md` or `questions.md`).
 3. **Goals-heading leakage** — `# Goals` (H1), `## Goal \d+:`, `### Goal \d+:`, or `## Environmental Context`.
 4. **Goal-framing triplet** — the per-goal subsection trio `Problem` / `Why we care` / `What we know so far` co-occurring within one section.
-5. **Questions-compendium leakage** — a `# Questions` H1 heading or a wrapped block from `questions.md` (the per-question `q*.md` payloads inside `companion_qfiles` are expected; the compendium is forbidden).
+5. **Questions-compendium leakage** — a `# Questions` H1 heading or a wrapped block from `questions.md` (the per-question `q*.md` payloads inside `companion_qfiles` are expected; the compendium is forbidden). Canonical token: `questions-compendium-leakage` — emit this verbatim in the refusal prefix so the orchestrator's pattern→repair table matches.
 
 **Exception — intentional contract references are NOT violations (structural carve-out):**
 
