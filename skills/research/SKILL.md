@@ -92,7 +92,25 @@ Dispatch parameters:
 
 **Research-isolation invariant** — the collator dispatch carries NO `companion_goals` and NO `companion_questions`. NO raw `feedback/research-round-*.md` files. The agent body refuses any of those if they appear in the dispatch prompt.
 
-**Orchestrator handling:** When the collation subagent returns confirmation, run a single Bash call to rename the staging file to its final name: `mv {ABS_RESEARCH_DIR}/_collated.md {ABS_RESEARCH_DIR}/summary.md`. If the subagent returned a contract-violation report instead of writing `_collated.md`, re-dispatch the offending researcher (per the specialist dispatch above) with the orchestrator-authored sanitized defect summary, then re-dispatch collation.
+**Orchestrator handling:** When the collation subagent returns confirmation, run a single Bash call to rename the staging file to its final name: `mv {ABS_RESEARCH_DIR}/_collated.md {ABS_RESEARCH_DIR}/summary.md`. If the subagent returned a contract-violation report instead of writing `_collated.md`, re-dispatch the offending researcher (per the specialist dispatch above) with the orchestrator-authored sanitized defect summary, then re-dispatch collation. **Isolation-violation handling** is separate — see § Isolation-Violation Orchestrator Handling below.
+
+### Isolation-Violation Orchestrator Handling
+
+All three research subagents (specialist, collator, reviewer) run a **Pre-Flight Isolation Check** on their incoming dispatch prompts (see the `## Pre-Flight Isolation Check (FAIL-LOUD)` section in each agent body). If a goals-content or cross-question pattern is detected, the subagent does NOT write its expected output — it returns a single-line text response with the load-bearing prefix `RESEARCH-ISOLATION-VIOLATION:` followed by the pattern name and short evidence (≤80 chars).
+
+**Orchestrator detection:** when any research subagent returns text instead of writing its expected file, inspect the first line for the prefix `RESEARCH-ISOLATION-VIOLATION:`.
+
+**Orchestrator response (fail-loud, not retry-with-same-leak):**
+
+1. STOP the affected research dispatch — do NOT silently re-run with the same prompt (that produces an infinite refusal loop).
+2. Identify which dispatch parameter carried the leak. The violation message names the pattern: `field-name-leakage` ⇒ a forbidden parameter name (`companion_goals`, `companion_questions`, etc.) was attached; `filename-leakage` ⇒ a `goals.md` / `questions.md` payload was wrapped into the prompt; `goals-heading-leakage` / `goal-framing-triplet` ⇒ goals body content was smuggled into `question_body`, `companion_qfiles`, or `defect_summary`; `cross-question-leakage` ⇒ q*.md payloads from outside the assigned `question_ids` reached the specialist; `questions-compendium-leakage` ⇒ `questions.md` reached collator/reviewer; `sanitization-bypass` ⇒ the orchestrator-authored `defect_summary` still carried goal/intent prose.
+3. Repair the dispatch:
+   - **Field-name / filename / heading / triplet leakage:** remove the offending parameter or strip the offending wrapped block; re-emit the dispatch.
+   - **Cross-question leakage:** re-emit the specialist dispatch with `question_body` containing only the assigned IDs.
+   - **Sanitization-bypass:** re-author the `defect_summary` from the raw feedback, stripping goal/intent prose more aggressively. If the raw feedback is entirely goal-bearing, surface the issue to the user (per Rejection Behavior step 3 edge case) rather than re-dispatching with an empty summary.
+4. Re-dispatch only after the prompt has been repaired.
+
+**Why this matters:** the prior prose-only "report violation in your final confirmation" instruction relied on the subagent voluntarily noticing and surfacing the leak. The Pre-Flight check is structural — refusal happens **before** any goals-influenced research output can be produced. Pinned by `tests/unit/test-research-isolation-fail-loud.bats`.
 
 ### Review Round
 
