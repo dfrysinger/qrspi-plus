@@ -172,22 +172,30 @@ case "$FIELD" in
     # consuming skills — this validator fires when the user explicitly invokes
     # validation on a present-but-invalid value.
     if ! field_present "visual_fidelity_required"; then
-      echo "config.md has no \`visual_fidelity_required\` field."
-      echo ""
-      echo "  1) Add \`visual_fidelity_required: false\` to config.md (default — binding chain off)"
-      echo "  2) Add \`visual_fidelity_required: true\` to config.md (opt into the binding chain)"
-      echo "  3) Re-run Goals to regenerate config.md"
-      echo "  4) Abort"
+      echo "config.md has no \`visual_fidelity_required\` field." >&2
+      echo "" >&2
+      echo "  1) Add \`visual_fidelity_required: false\` to config.md (default — binding chain off)" >&2
+      echo "  2) Add \`visual_fidelity_required: true\` to config.md (opt into the binding chain)" >&2
+      echo "  3) Re-run Goals to regenerate config.md" >&2
+      echo "  4) Abort" >&2
       exit 1
     fi
     VALUE="$(extract_field visual_fidelity_required)"
+    if [[ -z "$VALUE" ]]; then
+      # field_present succeeded but extract_field returned empty — this is a
+      # structural anomaly (e.g., a partial-read or malformed frontmatter
+      # boundary). Surface the root cause distinctly instead of misclassifying
+      # as an invalid-value error.
+      echo "could not read field value from config: \`visual_fidelity_required\` is present but extraction returned empty" >&2
+      exit 1
+    fi
     if [[ "$VALUE" != "true" && "$VALUE" != "false" ]]; then
-      echo "config.md has an invalid value for \`visual_fidelity_required\`: $VALUE"
-      echo "Expected: \`true\` or \`false\`"
-      echo ""
-      echo "  1) Edit config.md and set \`visual_fidelity_required: true\` or \`visual_fidelity_required: false\`"
-      echo "  2) Re-run Goals to regenerate config.md"
-      echo "  3) Abort"
+      echo "config.md has an invalid value for \`visual_fidelity_required\`: $VALUE" >&2
+      echo "Expected: \`true\` or \`false\`" >&2
+      echo "" >&2
+      echo "  1) Edit config.md and set \`visual_fidelity_required: true\` or \`visual_fidelity_required: false\`" >&2
+      echo "  2) Re-run Goals to regenerate config.md" >&2
+      echo "  3) Abort" >&2
       exit 1
     fi
     ;;

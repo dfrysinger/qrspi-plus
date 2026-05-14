@@ -5,10 +5,24 @@
 # protocol authored in `using-qrspi/SKILL.md` requires this field to land in
 # seven coordinated surfaces, and this file asserts the presence of each one.
 
+bats_require_minimum_version 1.5.0
+
 setup() {
   USING_QRSPI="skills/using-qrspi/SKILL.md"
   GOALS="skills/goals/SKILL.md"
   VALIDATOR="tests/fixtures/validate-config-field.sh"
+}
+
+teardown() {
+  # Guaranteed post-test cleanup of any per-test tmpdir created by tests below.
+  # Bats invokes teardown after every test (pass or fail), so this fires even
+  # when an assertion short-circuits the test body. The explicit `return 0`
+  # ensures teardown succeeds even when no tmpdir was created (most tests in
+  # this file are file-grep only and never set tmpdir).
+  if [[ -n "${tmpdir:-}" && -d "${tmpdir:-}" ]]; then
+    rm -rf "$tmpdir"
+  fi
+  return 0
 }
 
 @test "visual_fidelity_required: false appears in a Full-format YAML fence in using-qrspi/SKILL.md" {
@@ -111,12 +125,14 @@ EOF
   [ "$status" -eq 0 ] || { echo "expected exit 0 for visual_fidelity_required=false, got $status: $output"; return 1; }
 
   sed -i.bak 's/visual_fidelity_required: false/visual_fidelity_required: yesplease/' "$tmpdir/config.md"
-  run bash "$VALIDATOR" visual_fidelity_required "$tmpdir"
+  # Separate stderr from stdout: the validator writes its invalid-value
+  # diagnostic to stderr (per task-01 spec line 34), so assert against $stderr.
+  run --separate-stderr bash "$VALIDATOR" visual_fidelity_required "$tmpdir"
   [ "$status" -ne 0 ] || { echo "expected non-zero exit for invalid value, got 0"; return 1; }
-  echo "$output" | grep -qE 'invalid value for .*visual_fidelity_required|Expected.*true.*false' \
-    || { echo "expected standard invalid-value error, got: $output"; return 1; }
+  echo "$stderr" | grep -qE 'invalid value for .*visual_fidelity_required|Expected.*true.*false' \
+    || { echo "expected standard invalid-value error on stderr, got stdout=$output stderr=$stderr"; return 1; }
 
-  rm -rf "$tmpdir"
+  # Cleanup is handled by teardown().
 }
 
 @test "missing-field menu and exceptions both describe the backfill behavior consistently" {
