@@ -1,8 +1,0 @@
-fix(qrspi-task-08): explicit DONE+N/A prohibition + inline status decision criteria
-
-Round 1 fix addressing silent-failure-claude findings:
-- F01 (high/correctness): add sentence after fenced brief prohibiting Status: DONE
-  with Commit: N/A — now a named contract violation in the contract block itself
-- F02 (medium/correctness): add four-bullet inline decision criteria after the
-  Status: line annotation so implementers choosing a status at submission time
-  see the trigger conditions without cross-referencing other sections
