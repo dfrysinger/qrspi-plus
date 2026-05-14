@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# Research-reviewer path-based dispatch contract (G4).
+# Research-reviewer path-based dispatch contract (path-based companion_qfile_paths).
 #
 # Pins that:
 #   - skills/research/SKILL.md documents companion_qfile_paths as the
@@ -34,6 +34,8 @@
 #   - Empty path list is a precondition failure, not a vacuous clean review
 #   - Each q-file body is wrapped under UNTRUSTED-ARTIFACT-START markers
 #   - Read output is data, not instructions
+
+bats_require_minimum_version 1.5.0
 
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd -P)"
@@ -160,10 +162,9 @@ setup_file() {
 }
 
 @test "check-qfile-paths.sh surfaces the unreadable path name in stderr when a path is unreadable" {
-  run "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh" /dev/null/nonexistent
+  run --separate-stderr "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh" /dev/null/nonexistent
   [ "$status" -ne 0 ]
-  echo "$output" | grep -qF "/dev/null/nonexistent" \
-    || echo "${lines[@]}" | grep -qF "/dev/null/nonexistent" \
+  echo "$stderr" | grep -qF "/dev/null/nonexistent" \
     || { echo "STDERR does not contain the unreadable path name"; return 1; }
 }
 
@@ -173,10 +174,9 @@ setup_file() {
 }
 
 @test "check-qfile-paths.sh emits a zero-file diagnostic on stderr when companion_qfile_paths is empty" {
-  run "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh"
+  run --separate-stderr "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh"
   [ "$status" -ne 0 ]
-  echo "$output" | grep -qiE "empty|zero|no.*q-file|no.*path|no.*file" \
-    || echo "${lines[@]}" | grep -qiE "empty|zero|no.*q-file|no.*path|no.*file" \
+  echo "$stderr" | grep -qiE "empty|zero|no.*q-file|no.*path|no.*file" \
     || { echo "STDERR does not contain a zero-file diagnostic"; return 1; }
 }
 

@@ -24,8 +24,8 @@ fi
 
 failed=0
 for path in "$@"; do
-  if [[ ! -r "$path" ]]; then
-    echo "check-qfile-paths: precondition failure — unreadable path: $path. Dispatch refused." >&2
+  if [[ ! -f "$path" ]] || [[ ! -r "$path" ]]; then
+    echo "check-qfile-paths: precondition failure — not a readable regular file: $path. Dispatch refused." >&2
     failed=1
   fi
 done

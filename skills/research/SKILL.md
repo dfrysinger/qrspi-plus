@@ -124,7 +124,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **n
 
 - **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-research-reviewer", model: "sonnet" })` with a prompt containing only:
 
-  **Precondition assertion before dispatch:** Enumerate every `research/q*.md` file in the artifact directory. If the resulting list is empty (zero q-files), refuse dispatch and emit a diagnostic naming the zero-file condition — do not proceed with a vacuous review. For each path in the list, assert the path resolves to a readable file before constructing the dispatch prompt. If any path in `companion_qfile_paths` is unreadable, refuse dispatch and surface the unreadable path by name in the diagnostic — no silent skip, no truncated dispatch.
+  **Precondition assertion before dispatch:** Enumerate every `research/q*.md` file in the artifact directory. If the resulting list is empty (zero q-files), refuse dispatch and emit a diagnostic naming the zero-file condition — do not proceed with a vacuous review. For each path in the list, assert the path resolves to a readable file before constructing the dispatch prompt. If any path in `companion_qfile_paths` is unreadable, refuse dispatch and surface the unreadable path by name in the diagnostic — no silent skip, no truncated dispatch. On non-zero exit from `check-qfile-paths.sh`, the orchestrator MUST surface the script's stderr output to main-chat context (e.g., via a `TaskCreate` error message or direct output) before halting — capturing and discarding the diagnostic is a silent-failure shape this gate exists to block.
 
   ```sh
   # Precondition check — run before dispatch; refuse on non-zero exit
