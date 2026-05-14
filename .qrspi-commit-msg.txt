@@ -1,0 +1,6 @@
+feat(implementer-protocol/round-1): replace Report Format with five-line brief contract
+
+Replace the free-prose Report Format block with a two-paragraph + fenced-block
+contract: implementer writes a full structured report to disk at
+reviews/tasks/task-NN/round-NN-implementer.md before returning, then returns
+only the five-line brief (Status / Commit / Files / Tests / Report) to main chat.
