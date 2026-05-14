@@ -63,7 +63,7 @@
 //                          job.errorMessage and storedJob.errorMessage. New
 //                          tests should prefer the specific variables.
 //
-// G7 phase-fallback variables (task-20):
+// Phase-fallback variables:
 //   STUB_PHASE_ONLY        when set (non-empty), `status` emits a payload that
 //                          carries only job.phase (not job.status), simulating
 //                          the broker-omitting-job.status pattern.  The value
@@ -163,7 +163,7 @@ function handleStatus() {
   state.polls = (state.polls || 0) + 1;
   if (stateFile) writeState(stateFile, state);
 
-  // G7: STUB_NO_STATUS_NO_PHASE — emit a payload with neither field.
+  // STUB_NO_STATUS_NO_PHASE — emit a payload with neither job.status nor job.phase.
   if (process.env.STUB_NO_STATUS_NO_PHASE === "1") {
     const payload = {
       workspaceRoot: process.cwd(),
@@ -178,7 +178,7 @@ function handleStatus() {
     return;
   }
 
-  // G7: STUB_PHASE_ONLY / STUB_PHASE_ONLY_UNTIL_POLL — emit phase-only payload.
+  // STUB_PHASE_ONLY / STUB_PHASE_ONLY_UNTIL_POLL — emit phase-only payload (no job.status).
   const phaseOnlyUntil = process.env.STUB_PHASE_ONLY_UNTIL_POLL
     ? Number(process.env.STUB_PHASE_ONLY_UNTIL_POLL)
     : 0;

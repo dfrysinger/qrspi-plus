@@ -2,13 +2,13 @@
 # ============================================================================
 # Regression + reproduction tests for v0.6 companion-wrapper fixes.
 #
-# G7 — codex-companion phase-allowlist fallback in status parser
+# phase-fallback — codex-companion phase-allowlist fallback in status parser
 #   These tests pin the post-fix behavior of poll_status when job.status
 #   is absent from the companion JSON payload.  The canonical phase→lifecycle
-#   mapping lives in design.md § G7 and is reproduced here as the single
+#   mapping lives in design.md and is reproduced here as the single
 #   test-side source of truth.
 #
-# Phase → lifecycle mapping (design.md § G7):
+# Phase → lifecycle mapping:
 #   finalizing | done | reviewing          → completed:completed (exits 0 in await)
 #   starting | running | investigating |
 #     editing | verifying                  → running  (continues polling in await)
@@ -48,10 +48,10 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
-# G7 — primary path: job.status present and recognized → no fallback consulted
+# phase-fallback — primary path: job.status present and recognized → no fallback consulted
 # ---------------------------------------------------------------------------
 
-@test "G7: primary path — job.status 'running' → emits running lifecycle, exits 0 on completion" {
+@test "phase-fallback: primary path — job.status 'running' → emits running lifecycle, exits 0 on completion" {
   # job.status is present; the phase fallback must not change anything.
   echo '{"jobId":"job-g7-primary-running","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=2
@@ -62,7 +62,7 @@ teardown() {
   [[ "$output" == *"G7 primary running review"* ]]
 }
 
-@test "G7: primary path — job.status 'completed' → emits completed lifecycle, exits 0" {
+@test "phase-fallback: primary path — job.status 'completed' → emits completed lifecycle, exits 0" {
   # job.status is present and resolved to "completed"; fallback must not fire.
   echo '{"jobId":"job-g7-primary-completed","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=1
@@ -73,7 +73,7 @@ teardown() {
   [[ "$output" == *"G7 primary completed review"* ]]
 }
 
-@test "G7: primary path — job.status unrecognized value → malformed (exit 14), fallback never fires" {
+@test "phase-fallback: primary path — job.status unrecognized value → malformed (exit 14), fallback never fires" {
   # When job.status IS present but carries an unknown value the wrapper must
   # still emit malformed.  The phase fallback must not be consulted at all
   # when job.status is present.
@@ -86,12 +86,12 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
-# G7 — phase fallback: job.status absent, job.phase recognized
+# phase-fallback — phase fallback: job.status absent, job.phase recognized
 # ---------------------------------------------------------------------------
 
-@test "G7: canonical repro — job.status absent, job.phase 'finalizing' → exits 0, emits completed:completed" {
-  # This is the canonical reproduction case documented in design.md § G7 and
-  # task-20.md Test Expectations.  Before the fix the wrapper emitted malformed
+@test "phase-fallback: canonical repro — job.status absent, job.phase 'finalizing' → exits 0, emits completed:completed" {
+  # This is the canonical reproduction case for the phase-fallback feature.
+  # Before the fix the wrapper emitted malformed
   # (exit 14); after the fix it must exit 0 via the completed lifecycle.
   echo '{"jobId":"job-g7-finalizing","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY="finalizing"
@@ -102,7 +102,7 @@ teardown() {
   [[ "$output" == *"G7 finalizing review"* ]]
 }
 
-@test "G7: job.status absent, job.phase 'done' → exits 0, emits completed lifecycle" {
+@test "phase-fallback: job.status absent, job.phase 'done' → exits 0, emits completed lifecycle" {
   echo '{"jobId":"job-g7-done","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY="done"
   export STUB_RESULT_RAW="# G7 done review"
@@ -112,7 +112,7 @@ teardown() {
   [[ "$output" == *"G7 done review"* ]]
 }
 
-@test "G7: job.status absent, job.phase 'reviewing' → exits 0, emits completed lifecycle" {
+@test "phase-fallback: job.status absent, job.phase 'reviewing' → exits 0, emits completed lifecycle" {
   echo '{"jobId":"job-g7-reviewing","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY="reviewing"
   export STUB_RESULT_RAW="# G7 reviewing review"
@@ -122,7 +122,7 @@ teardown() {
   [[ "$output" == *"G7 reviewing review"* ]]
 }
 
-@test "G7: job.status absent, job.phase 'running' → emits running lifecycle (poll continues), then completes" {
+@test "phase-fallback: job.status absent, job.phase 'running' → emits running lifecycle (poll continues), then completes" {
   # Phase 'running' maps to the running lifecycle; the await loop continues
   # polling.  We use STUB_COMPLETE_AT_POLL so the stub transitions from
   # phase-only running to a real job.status completed after 2 polls.
@@ -137,7 +137,7 @@ teardown() {
   [[ "$output" == *"G7 phase-running completed"* ]]
 }
 
-@test "G7: job.status absent, job.phase 'starting' → running lifecycle (poll continues), then completes" {
+@test "phase-fallback: job.status absent, job.phase 'starting' → running lifecycle (poll continues), then completes" {
   echo '{"jobId":"job-g7-starting","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY_UNTIL_POLL=2
   export STUB_PHASE_ONLY="starting"
@@ -149,7 +149,7 @@ teardown() {
   [[ "$output" == *"G7 starting completed"* ]]
 }
 
-@test "G7: job.status absent, job.phase 'investigating' → running lifecycle, then completes" {
+@test "phase-fallback: job.status absent, job.phase 'investigating' → running lifecycle, then completes" {
   echo '{"jobId":"job-g7-investigating","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY_UNTIL_POLL=2
   export STUB_PHASE_ONLY="investigating"
@@ -161,7 +161,7 @@ teardown() {
   [[ "$output" == *"G7 investigating completed"* ]]
 }
 
-@test "G7: job.status absent, job.phase 'editing' → running lifecycle, then completes" {
+@test "phase-fallback: job.status absent, job.phase 'editing' → running lifecycle, then completes" {
   echo '{"jobId":"job-g7-editing","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY_UNTIL_POLL=2
   export STUB_PHASE_ONLY="editing"
@@ -173,7 +173,7 @@ teardown() {
   [[ "$output" == *"G7 editing completed"* ]]
 }
 
-@test "G7: job.status absent, job.phase 'verifying' → running lifecycle, then completes" {
+@test "phase-fallback: job.status absent, job.phase 'verifying' → running lifecycle, then completes" {
   echo '{"jobId":"job-g7-verifying","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY_UNTIL_POLL=2
   export STUB_PHASE_ONLY="verifying"
@@ -186,10 +186,10 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
-# G7 — terminal cases: both absent, or phase unrecognized
+# phase-fallback — terminal cases: both absent, or phase unrecognized
 # ---------------------------------------------------------------------------
 
-@test "G7: both job.status and job.phase absent → exit 14 (malformed), genuine protocol violation" {
+@test "phase-fallback: both job.status and job.phase absent → exit 14 (malformed), genuine protocol violation" {
   # When neither field is present the existing malformed terminal case must be
   # preserved unchanged — this is not a phase the wrapper is asked to recover.
   echo '{"jobId":"job-g7-both-absent","polls":0}' > "$STUB_STATE_FILE"
@@ -199,7 +199,7 @@ teardown() {
   [ "$status" -eq 14 ]
 }
 
-@test "G7: job.status absent, job.phase empty string → exit 14 (falls through to malformed)" {
+@test "phase-fallback: job.status absent, job.phase empty string → exit 14 (falls through to malformed)" {
   # Empty string is outside the mapping table; the wrapper must not treat it as
   # a recognized phase.  Falls through to existing malformed terminal case.
   echo '{"jobId":"job-g7-empty-phase","polls":0}' > "$STUB_STATE_FILE"
@@ -210,7 +210,7 @@ teardown() {
   [ "$status" -eq 14 ]
 }
 
-@test "G7: job.status absent, job.phase unknown literal → exit 14 (falls through to malformed)" {
+@test "phase-fallback: job.status absent, job.phase unknown literal → exit 14 (falls through to malformed)" {
   # An unknown literal (not in the mapping table) must fall through to malformed.
   echo '{"jobId":"job-g7-unknown-phase","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY="some-future-phase-not-in-table"
@@ -220,10 +220,10 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
-# G7 — stderr visibility line on fallback
+# phase-fallback — stderr visibility line on fallback
 # ---------------------------------------------------------------------------
 
-@test "G7: phase fallback emits stderr line of form '[codex-companion-bg] phase fallback active: <phase> → <lifecycle>'" {
+@test "phase-fallback: phase fallback emits stderr line of form '[codex-companion-bg] phase fallback active: <phase> → <lifecycle>'" {
   # The first fallback invocation per wrapper process must emit the audit line
   # to stderr.  Callers MUST NOT rely on this line being present or absent;
   # it is for operational monitoring only.
@@ -240,10 +240,10 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
-# G7 — stdout/exit surface identical between primary and fallback paths
+# phase-fallback — stdout/exit surface identical between primary and fallback paths
 # ---------------------------------------------------------------------------
 
-@test "G7: stdout and exit code on phase-recovered path identical to primary-read success path" {
+@test "phase-fallback: stdout and exit code on phase-recovered path identical to primary-read success path" {
   # A caller that parses only stdout and exit code must observe no difference
   # between a broker-served job.status result and a phase-recovered result.
   # We verify this by running two await invocations: one with a real job.status
@@ -275,10 +275,10 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
-# G7 — non-status subcommands unchanged
+# phase-fallback — non-status subcommands unchanged
 # ---------------------------------------------------------------------------
 
-@test "G7: launch subcommand behavior is unchanged by the phase-fallback addition" {
+@test "phase-fallback: launch subcommand behavior is unchanged by the phase-fallback addition" {
   run bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
   [ "$status" -eq 0 ]
   [[ "$output" =~ ^task-stub-[0-9]+-[0-9]+$ ]]
