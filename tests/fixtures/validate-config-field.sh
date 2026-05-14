@@ -164,6 +164,34 @@ case "$FIELD" in
     fi
     ;;
 
+  visual_fidelity_required)
+    # Same shape as the codex_reviews branch above: boolean field, accepts
+    # true|false, prints the standard invalid-value menu on anything else.
+    # The runtime-backfill carve-out for resumed runs lives in
+    # `using-qrspi/SKILL.md` § Exceptions and is handled at read time by the
+    # consuming skills — this validator fires when the user explicitly invokes
+    # validation on a present-but-invalid value.
+    if ! field_present "visual_fidelity_required"; then
+      echo "config.md has no \`visual_fidelity_required\` field."
+      echo ""
+      echo "  1) Add \`visual_fidelity_required: false\` to config.md (default — binding chain off)"
+      echo "  2) Add \`visual_fidelity_required: true\` to config.md (opt into the binding chain)"
+      echo "  3) Re-run Goals to regenerate config.md"
+      echo "  4) Abort"
+      exit 1
+    fi
+    VALUE="$(extract_field visual_fidelity_required)"
+    if [[ "$VALUE" != "true" && "$VALUE" != "false" ]]; then
+      echo "config.md has an invalid value for \`visual_fidelity_required\`: $VALUE"
+      echo "Expected: \`true\` or \`false\`"
+      echo ""
+      echo "  1) Edit config.md and set \`visual_fidelity_required: true\` or \`visual_fidelity_required: false\`"
+      echo "  2) Re-run Goals to regenerate config.md"
+      echo "  3) Abort"
+      exit 1
+    fi
+    ;;
+
   *)
     echo "Unknown field: $FIELD" >&2
     exit 2
