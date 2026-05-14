@@ -62,6 +62,22 @@
 //                          variables above are both unset, populates BOTH
 //                          job.errorMessage and storedJob.errorMessage. New
 //                          tests should prefer the specific variables.
+//
+// G7 phase-fallback variables (task-20):
+//   STUB_PHASE_ONLY        when set (non-empty), `status` emits a payload that
+//                          carries only job.phase (not job.status), simulating
+//                          the broker-omitting-job.status pattern.  The value
+//                          becomes job.phase in the emitted JSON.
+//   STUB_PHASE_ONLY_UNTIL_POLL
+//                          when set, `status` emits phase-only payloads for the
+//                          first N polls (1-indexed), then reverts to the normal
+//                          job.status path governed by STUB_COMPLETE_AT_POLL.
+//   STUB_NO_STATUS_NO_PHASE
+//                          if "1", `status` emits a payload with neither
+//                          job.status nor job.phase — the genuine protocol
+//                          violation case that must still exit 14.
+//   STUB_EMPTY_PHASE       if "1", `status` emits job.phase: "" (empty string)
+//                          instead of the value in STUB_PHASE_ONLY.
 // ----------------------------------------------------------------------------
 
 import fs from "node:fs";
@@ -146,6 +162,56 @@ function handleStatus() {
   const state = stateFile ? readState(stateFile) : { polls: 0 };
   state.polls = (state.polls || 0) + 1;
   if (stateFile) writeState(stateFile, state);
+
+  // G7: STUB_NO_STATUS_NO_PHASE — emit a payload with neither field.
+  if (process.env.STUB_NO_STATUS_NO_PHASE === "1") {
+    const payload = {
+      workspaceRoot: process.cwd(),
+      job: {
+        id: argv[1] || state.jobId || "unknown",
+        title: "stub task",
+        summary: "stub",
+        pid: null
+      }
+    };
+    process.stdout.write(JSON.stringify(payload) + "\n");
+    return;
+  }
+
+  // G7: STUB_PHASE_ONLY / STUB_PHASE_ONLY_UNTIL_POLL — emit phase-only payload.
+  const phaseOnlyUntil = process.env.STUB_PHASE_ONLY_UNTIL_POLL
+    ? Number(process.env.STUB_PHASE_ONLY_UNTIL_POLL)
+    : 0;
+  const phaseOnlyAlways = process.env.STUB_PHASE_ONLY !== undefined &&
+    process.env.STUB_PHASE_ONLY_UNTIL_POLL === undefined &&
+    process.env.STUB_NO_STATUS_NO_PHASE !== "1";
+
+  const usePhaseOnly = phaseOnlyAlways ||
+    (phaseOnlyUntil > 0 && state.polls <= phaseOnlyUntil);
+
+  if (usePhaseOnly) {
+    // Emit a payload with job.phase but NO job.status.
+    let phase;
+    if (process.env.STUB_EMPTY_PHASE === "1") {
+      phase = "";
+    } else {
+      phase = process.env.STUB_PHASE_ONLY || "finalizing";
+    }
+    const jobObj = {
+      id: argv[1] || state.jobId || "unknown",
+      phase,
+      title: "stub task",
+      summary: "stub",
+      pid: null
+    };
+    // Deliberately omit job.status to simulate the broker-omitting-status pattern.
+    const payload = {
+      workspaceRoot: process.cwd(),
+      job: jobObj
+    };
+    process.stdout.write(JSON.stringify(payload) + "\n");
+    return;
+  }
 
   let jobStatus = "running";
   if (process.env.STUB_NEVER_COMPLETE !== "1") {

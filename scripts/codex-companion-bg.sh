@@ -24,6 +24,12 @@ set -u
 # NOT -e: we inspect non-zero rcs from subprocesses (status legitimately exits
 # 1 to signal job-not-found). pipefail is similarly off.
 
+# Global guard for the phase-fallback audit line.  Set to 0 at script init so
+# that the first poll_status invocation that triggers the job.phase fallback
+# emits the stderr note exactly once per wrapper process; subsequent
+# invocations within the same process suppress the line to avoid log-spam.
+_CODEX_PHASE_FALLBACK_LOGGED=0
+
 : "${QRSPI_CODEX_POLL_INTERVAL_FAST:=5}"
 : "${QRSPI_CODEX_POLL_INTERVAL_SLOW:=30}"
 : "${QRSPI_CODEX_POLL_BACKOFF_AFTER:=120}"
@@ -298,6 +304,44 @@ poll_status() {
   # Parse `.job.status` (mjs:840-857; job-control.mjs:242-254 v1.0.4).
   local job_status
   if ! job_status=$(extract_json_field "$stdout_text" "job.status"); then
+    # job.status is absent from the payload.  Attempt the job.phase fallback
+    # before falling through to the malformed terminal case.
+    #
+    # Phase → lifecycle mapping (design.md § G7, single source of truth):
+    #   finalizing | done | reviewing                          → completed:completed
+    #   starting | running | investigating | editing | verifying → running
+    #   anything else (incl. absent or empty)                  → malformed (exit 14)
+    local job_phase
+    if job_phase=$(extract_json_field "$stdout_text" "job.phase") && [ -n "$job_phase" ]; then
+      case "$job_phase" in
+        finalizing|done|reviewing)
+          # Emit the audit line once per wrapper process to stderr so monitoring
+          # harnesses can detect broker-omitting-job.status patterns over time.
+          # Subsequent invocations within the same process suppress the line.
+          # The stderr surface is NOT part of the caller contract; callers MUST
+          # parse only stdout and exit code.
+          if [ "${_CODEX_PHASE_FALLBACK_LOGGED:-0}" -eq 0 ]; then
+            printf '[codex-companion-bg] phase fallback active: %s → completed\n' \
+              "$job_phase" >&2
+            _CODEX_PHASE_FALLBACK_LOGGED=1
+          fi
+          printf 'completed:completed\n'
+          return
+          ;;
+        starting|running|investigating|editing|verifying)
+          if [ "${_CODEX_PHASE_FALLBACK_LOGGED:-0}" -eq 0 ]; then
+            printf '[codex-companion-bg] phase fallback active: %s → running\n' \
+              "$job_phase" >&2
+            _CODEX_PHASE_FALLBACK_LOGGED=1
+          fi
+          printf 'running\n'
+          return
+          ;;
+      esac
+    fi
+    # Both job.status and job.phase are absent, or job.phase carries a value
+    # outside the mapping table.  Fall through to the existing malformed terminal
+    # case — this is a genuine protocol violation, not a recoverable phase.
     printf '%s' "$stdout_text" >&2
     printf 'malformed\n'
     return
