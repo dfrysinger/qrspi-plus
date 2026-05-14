@@ -190,3 +190,76 @@ setup_file() {
   rm -f "$tmpfile"
   [ "$exit_status" -eq 0 ]
 }
+
+@test "check-qfile-paths.sh exits non-zero for a symlink pointing to a directory" {
+  # A symlink to a directory is readable but is NOT a regular file (-f).
+  # This pins the -f guard added in round-01: removing -f and keeping only -r
+  # would cause this test to fail (the symlink would be treated as valid).
+  local tmpdir
+  tmpdir="$(mktemp -d /tmp/test-qfile-symlink-XXXXXX)"
+  local symlink_path="$tmpdir/link-to-dir"
+  ln -s "$tmpdir" "$symlink_path"
+  run "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh" "$symlink_path"
+  local exit_status="$status"
+  rm -rf "$tmpdir"
+  [ "$exit_status" -ne 0 ]
+}
+
+@test "check-qfile-paths.sh names the symlink-to-directory path in stderr" {
+  local tmpdir
+  tmpdir="$(mktemp -d /tmp/test-qfile-symlink-XXXXXX)"
+  local symlink_path="$tmpdir/link-to-dir"
+  ln -s "$tmpdir" "$symlink_path"
+  run --separate-stderr "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh" "$symlink_path"
+  local exit_status="$status"
+  local captured_stderr="$stderr"
+  rm -rf "$tmpdir"
+  [ "$exit_status" -ne 0 ]
+  echo "$captured_stderr" | grep -qF "$symlink_path" \
+    || { echo "STDERR does not contain the symlink path name: $symlink_path"; return 1; }
+}
+
+@test "check-qfile-paths.sh exits non-zero for a FIFO (named pipe)" {
+  # A FIFO is not a regular file (-f returns false) so the -f guard must
+  # reject it even though it may be readable.  Removing -f and keeping only
+  # -r would allow a FIFO through, breaking the regular-file invariant.
+  local tmpdir
+  tmpdir="$(mktemp -d /tmp/test-qfile-fifo-XXXXXX)"
+  local fifo_path="$tmpdir/test.fifo"
+  mkfifo "$fifo_path"
+  run "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh" "$fifo_path"
+  local exit_status="$status"
+  rm -rf "$tmpdir"
+  [ "$exit_status" -ne 0 ]
+}
+
+@test "check-qfile-paths.sh names the FIFO path in stderr" {
+  local tmpdir
+  tmpdir="$(mktemp -d /tmp/test-qfile-fifo-XXXXXX)"
+  local fifo_path="$tmpdir/test.fifo"
+  mkfifo "$fifo_path"
+  run --separate-stderr "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh" "$fifo_path"
+  local exit_status="$status"
+  local captured_stderr="$stderr"
+  rm -rf "$tmpdir"
+  [ "$exit_status" -ne 0 ]
+  echo "$captured_stderr" | grep -qF "$fifo_path" \
+    || { echo "STDERR does not contain the FIFO path name: $fifo_path"; return 1; }
+}
+
+@test "check-qfile-paths.sh exits non-zero when one of multiple paths is unreadable and names the bad path" {
+  # Pins the accumulate-and-defer behavior: the script should process all
+  # paths before exiting, not fail-fast on the first bad path.  A single-bad-
+  # path test cannot distinguish accumulate-and-defer from fail-fast; this
+  # mixed test (one good, one bad) does.
+  local tmpfile
+  tmpfile="$(mktemp /tmp/test-qfile-XXXXXX.md)"
+  echo "# good q-file" > "$tmpfile"
+  run --separate-stderr "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh" "$tmpfile" /dev/null/nonexistent
+  local exit_status="$status"
+  local captured_stderr="$stderr"
+  rm -f "$tmpfile"
+  [ "$exit_status" -ne 0 ]
+  echo "$captured_stderr" | grep -qF "/dev/null/nonexistent" \
+    || { echo "STDERR does not contain the bad path name"; return 1; }
+}
