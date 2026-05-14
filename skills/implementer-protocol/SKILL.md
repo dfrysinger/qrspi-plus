@@ -164,6 +164,14 @@ Tests: <N> passing / <M> failing
 Report: reviews/tasks/task-NN/round-NN-implementer.md
 ```
 
-The `Status:` line must be one of the four literal values shown. The `Commit:` line carries the full SHA when a commit was produced (DONE / DONE_WITH_CONCERNS) and the literal `N/A` otherwise. The `Files:` line carries the count followed by the literal phrase `created/modified`. The `Tests:` line carries passing and failing counts in `<N> passing / <M> failing` form (use `0 passing / 0 failing` for lightweight tasks with no test suite). The `Report:` line carries the relative on-disk path where the full report was written.
+The `Status:` line must be one of the four literal values shown. Choose based on these conditions:
+- `DONE` — all five Done Signal conditions are green and you have no doubts
+- `DONE_WITH_CONCERNS` — all five Done Signal conditions are green but you have explicit concerns to flag
+- `BLOCKED` — a check failed in a way you cannot resolve
+- `NEEDS_CONTEXT` — required information was not provided in the dispatch
+
+`Status: DONE` with `Commit: N/A` is a contract violation — DONE means a commit was made, full stop. If no commit was made, status MUST be `BLOCKED` or `NEEDS_CONTEXT`.
+
+The `Commit:` line carries the full SHA when a commit was produced (DONE / DONE_WITH_CONCERNS) and the literal `N/A` otherwise. The `Files:` line carries the count followed by the literal phrase `created/modified`. The `Tests:` line carries passing and failing counts in `<N> passing / <M> failing` form (use `0 passing / 0 failing` for lightweight tasks with no test suite). The `Report:` line carries the relative on-disk path where the full report was written.
 
 The on-disk path and the five-line brief together form the implementer return contract. Never silently produce work you are unsure about.
