@@ -91,26 +91,6 @@ Ask: Is there any cross-task dependency that could fail due to ordering?
 - Security (handled by qrspi-security-integration-reviewer — separate agent)
 - Test quality for individual task tests (already reviewed)
 
-## Report Format
-
-## Integration Review
-
-### Cross-Task Issues
-
-#### Issue N: {title}
-- **Severity:** {Critical / High / Medium / Low}
-- **Files:** {file:line references for both sides of the issue}
-- **Tasks involved:** {which tasks' code is affected}
-- **Description:** {what the integration issue is, with specifics}
-- **Recommendation:** {how to fix}
-
-### No Issues Found
-{If clean, state: "No cross-task integration issues found. All interfaces match, data flows are correct, and integration points are covered by tests."}
-
-### Assessment
-{Approved — no integration issues}
-{Issues found — N issues (M critical, K high, ...)}
-
 ## Red Flags
 
 If you catch yourself doing any of these, stop and correct:

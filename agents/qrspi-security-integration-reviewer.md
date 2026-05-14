@@ -104,27 +104,6 @@ Ask: Is there any shared state between tasks where a race condition could allow 
 - Code quality or style
 - Non-security integration issues (handled by qrspi-integration-reviewer)
 
-## Report Format
-
-## Security Integration Review
-
-### Cross-Task Security Issues
-
-#### Issue N: {title}
-- **Severity:** {Critical / High / Medium / Low}
-- **CWE:** {CWE-NNN if applicable}
-- **Files:** {file:line references for the vulnerability path}
-- **Tasks involved:** {which tasks' code creates the vulnerability}
-- **Attack scenario:** {how an attacker could exploit this}
-- **Recommendation:** {how to fix}
-
-### No Issues Found
-{If clean, state: "No cross-task security vulnerabilities found. Access control boundaries are consistent, data flow between tasks is properly protected, and no new attack surfaces were created by the merge."}
-
-### Assessment
-{Approved — no cross-task security issues}
-{Issues found — N issues (M critical, K high, ...)}
-
 ## Red Flags
 
 If you catch yourself doing any of these, stop and correct:
