@@ -44,7 +44,7 @@ If any required artifact is missing or not approved, refuse to run and tell the 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Parallelize validates `pipeline` and `route`.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Parallelize validates `pipeline`, `route`, and (when `pipeline: quick`) `question_budget`.
 
 <HARD-GATE>
 Do NOT mark `parallelization.md` approved while Waves overlap on files.
