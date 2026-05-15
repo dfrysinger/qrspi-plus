@@ -795,6 +795,22 @@ _write_disk_failed_fixtures() {
   run --separate-stderr "$WRAPPER" await "$job_id"
   [ "$status" -eq 11 ]
   [[ "$stderr" != *"await: recovered"* ]]
+
+  # Structural: verify the wrapper contains an explicit path-resolution hard-stop
+  # for absent/empty CLAUDE_PLUGIN_DATA — confirming no file under /tmp or any
+  # relative path is read when the env var is unset.  This pins the guard contract
+  # against regression: if the guard is removed the assertion fails explicitly,
+  # naming the broken invariant rather than relying on incidental ENOENT behavior.
+  grep -qE '\[ -z.*CLAUDE_PLUGIN_DATA' "$WRAPPER" \
+    || { printf 'CLAUDE_PLUGIN_DATA path-resolution hard-stop guard absent from wrapper\n' >&2; return 1; }
+  # The guard must be immediately followed by a bare return (not a path assignment or
+  # /tmp fallback).  Extract the two lines after the guard and assert return 1 is present.
+  local guard_line_num
+  guard_line_num=$(grep -n '\[ -z.*CLAUDE_PLUGIN_DATA' "$WRAPPER" | head -1 | cut -d: -f1)
+  local after_guard
+  after_guard=$(sed -n "$((guard_line_num+1)),$((guard_line_num+2))p" "$WRAPPER")
+  printf '%s\n' "$after_guard" | grep -qE 'return 1' \
+    || { printf 'CLAUDE_PLUGIN_DATA guard does not immediately return 1 — /tmp or relative path construction possible\n' >&2; return 1; }
 }
 
 @test "disk-state fallback: CLAUDE_PLUGIN_DATA empty string → exits 11 without reading any disk file" {
