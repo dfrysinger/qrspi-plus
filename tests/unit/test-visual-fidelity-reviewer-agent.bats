@@ -325,13 +325,42 @@ setup() {
 }
 
 # ---------------------------------------------------------------------------
-# 17. round_subdir allow-prefix validation before Write (disp C)
+# 17. round_subdir traversal-marker scan before Write (disp C, reframed)
+#
+# The dispatch contract does not include an allow_prefix parameter, so the
+# agent can only perform a syntactic traversal-marker scan on round_subdir.
+# These tests pin the enumerated markers and the architectural-residual
+# acknowledgment parallel to the symlink-honest-framing pattern.
 # ---------------------------------------------------------------------------
 
-@test "agent body documents that round_subdir is validated against the allow-prefix before writing" {
+@test "agent body documents round_subdir traversal-marker scan enumerating dot-dot sequences" {
   awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
-    | grep -qiE 'round_subdir.*allow.prefix|round_subdir.*valid|valid.*round_subdir' \
-    || { echo "$AGENT body does not document allow-prefix validation of round_subdir before Write calls"; return 1; }
+    | grep -qiE 'round_subdir.*\.\.|round_subdir.*traversal|traversal.*round_subdir|traversal.*marker.*round_subdir|round_subdir.*traversal.*marker' \
+    || { echo "$AGENT body does not document dot-dot traversal-marker scan for round_subdir"; return 1; }
+}
+
+@test "agent body documents round_subdir traversal-marker scan covering leading tilde home-directory expansion" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'round_subdir.*tilde|tilde.*round_subdir|leading.*~|~.*home|home.*expand' \
+    || { echo "$AGENT body does not document leading-tilde (home-directory expansion) as a round_subdir traversal marker"; return 1; }
+}
+
+@test "agent body documents round_subdir traversal-marker scan covering URI scheme prefixes" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'URI.*scheme|file://|scheme.*prefix|http://' \
+    || { echo "$AGENT body does not document URI scheme prefixes as round_subdir traversal markers"; return 1; }
+}
+
+@test "agent body documents round_subdir architectural residual acknowledging orchestrator as primary defense" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'round_subdir.*primary defense|primary defense.*round_subdir|primary defense.*write|write.*primary defense' \
+    || { echo "$AGENT body does not acknowledge the orchestrator as the primary defense for round_subdir path validation"; return 1; }
+}
+
+@test "agent body documents that the agent CANNOT verify round_subdir physical containment without canonicalization" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'CANNOT.*contain|cannot.*physical.*contain|cannot.*verify.*round_subdir|physical.*contain.*round_subdir' \
+    || { echo "$AGENT body does not state the agent CANNOT detect physical containment for round_subdir without canonicalization"; return 1; }
 }
 
 # ---------------------------------------------------------------------------

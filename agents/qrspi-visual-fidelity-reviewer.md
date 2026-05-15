@@ -85,12 +85,22 @@ validate each supplied path before reading it:
   the literal path string itself contains explicit traversal markers (`..`, `./`, leading `/`
   outside the orchestrator-supplied prefix). If the path string itself appears valid but
   resolves via a physical symlink, the agent cannot detect or prevent the traversal.
-- **Validate `round_subdir` against the allow-prefix before writing**: `round_subdir` is
-  itself subject to allow-prefix validation before any Write call fires. Confirm that
-  `round_subdir` is an absolute path contained within the orchestrator-supplied allow-prefix
-  (the same artifact directory tree used for read-path validation). If `round_subdir` fails
-  this check, halt without writing any output and surface a WRITE-FAILURE entry in the brief
-  naming the invalid path. Do NOT write any finding file or sentinel to an unvalidated path.
+- **Validate `round_subdir` via traversal-marker scan before writing — honest framing**: The
+  dispatch contract does not supply an `allow_prefix` parameter, so semantic containment
+  checks ("is `round_subdir` inside the artifact tree?") are not enforceable by this agent at
+  runtime. The orchestrator's pre-validation gate is the primary defense against a malformed
+  `round_subdir` value. The agent's belt-and-suspenders scan for `round_subdir` is limited to
+  syntactic traversal markers: if `round_subdir` contains any `..` sequences, a leading `~`
+  (home-directory expansion), a null byte, or any URI scheme prefix (`file://`, `http://`,
+  etc.), the agent halts BEFORE any Write call and surfaces a WRITE-FAILURE entry in the
+  five-line brief naming the malformed `round_subdir` value. Do NOT write any finding file or
+  sentinel to a path that fails this marker scan. **Architectural residual**: the orchestrator's
+  pre-validation gate is the PRIMARY defense against a malformed `round_subdir` write-path —
+  the traversal-marker scan alone cannot detect a lexically valid absolute path that points
+  outside the artifact directory (e.g., `/tmp/attacker-owned/`). The agent CANNOT verify
+  physical containment of `round_subdir` within the artifact tree without a canonicalization
+  primitive. This is a documented architectural residual; the orchestrator must perform
+  allow-prefix canonicalization of `round_subdir` before dispatch.
 - **Partial rejection — CLEAN sentinel MUST NEVER be emitted when any path was rejected**: if
   ANY single path in `wireframe_paths` or `screenshot_paths` fails the allow-prefix check, the
   agent halts review of all paths and emits a `high`-severity finding with `change_type: scope`
