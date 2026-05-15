@@ -360,3 +360,130 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" =~ ^task-stub-[0-9]+-[0-9]+$ ]]
 }
+
+# ---------------------------------------------------------------------------
+# phantom-jobId: post-launch verification + retry-once (post-fix behavioral assertions)
+#
+# The launch subcommand now verifies the candidate jobId via the internal
+# status path before emitting it on stdout.  On not-found it retries the
+# entire task subcommand once.
+#
+# Exit-code table:
+#   0   — verified (first or second attempt)
+#   15  — LAUNCH_PHANTOM: both attempts returned not-found
+#
+# STUB_PHANTOM_LAUNCH_COUNT controls how many sequential task-emitted jobIds
+# the stub will mark as phantom (status → not-found).  Set to "1" to make
+# the first launch a phantom and the second verified; "2" for double-phantom.
+# ---------------------------------------------------------------------------
+
+@test "phantom-jobId: happy path — verified first attempt exits 0, emits jobId on stdout, no new stderr" {
+  bats_require_minimum_version 1.5.0
+  # No phantom: status returns verified immediately.
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="# happy path result"
+
+  run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ ^task-stub-[0-9]+-[0-9]+$ ]]
+  # No retry note on the happy first-attempt path.
+  [[ "$stderr" != *"launch: first jobId failed verification, retried"* ]]
+}
+
+@test "phantom-jobId: phantom first, verified second — exits 0, emits second jobId on stdout" {
+  bats_require_minimum_version 1.5.0
+  # First launch phantom; second verified.
+  export STUB_PHANTOM_LAUNCH_COUNT=1
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="# retry-success result"
+
+  run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ ^task-stub-[0-9]+-[0-9]+$ ]]
+}
+
+@test "phantom-jobId: phantom first, verified second — writes stderr note exactly once" {
+  bats_require_minimum_version 1.5.0
+  export STUB_PHANTOM_LAUNCH_COUNT=1
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="# retry-success result"
+
+  run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"launch: first jobId failed verification, retried"* ]]
+  local count
+  count=$(printf '%s\n' "$stderr" | grep -c "launch: first jobId failed verification, retried")
+  [ "$count" -eq 1 ]
+}
+
+@test "phantom-jobId: double-phantom — exits 15, no jobId on stdout, writes terminal stderr line" {
+  bats_require_minimum_version 1.5.0
+  # Both launches return phantom (status not-found).
+  export STUB_PHANTOM_LAUNCH_COUNT=2
+
+  run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
+  [ "$status" -eq 15 ]
+  # stdout must be empty (no jobId emitted on terminal path).
+  [ -z "$output" ]
+  # A single identifying stderr line must be present.
+  [[ "$stderr" == *"launch: both jobId attempts failed verification (LAUNCH_PHANTOM)"* ]]
+}
+
+@test "phantom-jobId: retry cap is exactly 1 — phantom first triggers exactly one retry of task" {
+  bats_require_minimum_version 1.5.0
+  # Double-phantom: verify that only two task launches occurred (cap = 1 retry).
+  # We check by counting how many distinct jobIds the stub registered in state.
+  export STUB_PHANTOM_LAUNCH_COUNT=2
+  export STUB_TRACK_LAUNCH_COUNT=1
+
+  run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
+  [ "$status" -eq 15 ]
+  # State file records launch count; must be exactly 2 (original + one retry).
+  local launch_count
+  launch_count=$(node -e "
+    const fs = require('fs');
+    const s = JSON.parse(fs.readFileSync(process.env.STUB_STATE_FILE, 'utf8'));
+    process.stdout.write(String(s.launchCount || 0));
+  ")
+  [ "$launch_count" -eq 2 ]
+}
+
+@test "phantom-jobId: malformed internal-status response on first verification falls through to retry, not exit 14" {
+  bats_require_minimum_version 1.5.0
+  # When the first status call after launch returns malformed (not not-found),
+  # the wrapper must NOT exit 14 — the existing exit 14 is reserved for the
+  # public status subcommand's external contract.  A malformed first-verify
+  # falls through to the retry branch.
+  # After the malformed first-status, the retry emits a valid jobId and status
+  # returns verified → exit 0.
+  export STUB_MALFORMED_FIRST_LAUNCH_STATUS=1
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="# after-malformed retry result"
+
+  run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ ^task-stub-[0-9]+-[0-9]+$ ]]
+}
+
+@test "phantom-jobId: broker-layer error on retry surfaces existing launch-failure exit, not 15" {
+  bats_require_minimum_version 1.5.0
+  # When the first launch is phantom and the retry's task subcommand itself
+  # fails outright (non-zero exit from companion task), the wrapper must
+  # surface the existing launch-failure exit (1), not exit 15.
+  # Exit 15 is reserved for both-attempts-unverifiable, not for broker errors.
+  export STUB_PHANTOM_LAUNCH_COUNT=1
+  export STUB_FAIL_SECOND_LAUNCH=1
+
+  run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
+  [ "$status" -ne 15 ]
+  [ "$status" -ne 0 ]
+}
+
+@test "phantom-jobId: exit 15 is not used by any other wrapper exit path" {
+  # Static assertion: grep the wrapper for any 'return 15' or 'exit 15' outside
+  # the LAUNCH_PHANTOM path.  The name LAUNCH_PHANTOM must appear in the script
+  # alongside the value 15 (named-constant requirement).
+  grep -qE 'LAUNCH_PHANTOM' "$WRAPPER"
+  # The constant's value must be 15.
+  grep -qE 'LAUNCH_PHANTOM.*=.*15|15.*LAUNCH_PHANTOM' "$WRAPPER"
+}

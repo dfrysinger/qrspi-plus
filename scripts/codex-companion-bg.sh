@@ -8,6 +8,12 @@
 #                                 not be a TTY). The legacy --prompt-file
 #                                 path-arg form was retired in commit 21/22
 #                                 of the #110 migration sequence.
+#                                 Post-launch verification: the jobId is
+#                                 verified via an internal status call before
+#                                 being emitted; on phantom (not-found or
+#                                 malformed), the task subcommand is retried
+#                                 exactly once. Exit 15 (LAUNCH_PHANTOM) on
+#                                 double-phantom.
 #   await <jobId>                 Poll status (5s/30s with backoff at 120s),
 #                                 fetch result on completion, write review
 #                                 markdown to stdout; ceiling at 1200s.
@@ -19,10 +25,18 @@
 #   11  await: job-not-found
 #   13  await: status/result hard error or launch bad JSON
 #   14  await: malformed JSON from status/result
+#   15  launch: LAUNCH_PHANTOM — both jobId attempts failed verification
 
 set -u
 # NOT -e: we inspect non-zero rcs from subprocesses (status legitimately exits
 # 1 to signal job-not-found). pipefail is similarly off.
+
+# Named exit constants — all values must be distinct and must not collide with
+# any POSIX-reserved or existing wrapper exit codes (0/1/10/11/13/14).
+#   LAUNCH_PHANTOM (15): both post-launch verification attempts returned
+#   not-found or malformed.  Exit 15 is reserved exclusively for this case.
+#   Callers MUST NOT emit any jobId on stdout when exiting 15.
+readonly LAUNCH_PHANTOM=15
 
 # Global guard for the phase-fallback audit line.  Set to 0 at script init so
 # that the first poll_status invocation that triggers the job.phase fallback
@@ -185,12 +199,90 @@ parse_launch_output() {
 }
 
 # ---------------------------------------------------------------------------
+# run_task_once <companion> <prompt_file>
+#
+# Execute one `companion task --background --prompt-file <prompt_file> --json`
+# call within the launch timeout.  Echoes the extracted jobId on stdout (rc=0)
+# or returns non-zero on any failure (timeout, non-zero companion exit, bad JSON,
+# missing jobId).  The caller is responsible for removing prompt_file.
+run_task_once() {
+  local companion="$1" prompt_file="$2"
+
+  local stdout_file stderr_file
+  stdout_file=$(mktemp -t codex-companion-bg.XXXXXX) || { printf 'launch: mktemp failed\n' >&2; return 1; }
+  stderr_file=$(mktemp -t codex-companion-bg.XXXXXX) || { rm -f "$stdout_file"; printf 'launch: mktemp failed\n' >&2; return 1; }
+
+  local SPAWN_RC=0 SPAWN_TIMED_OUT=0
+  spawn_with_timeout "$QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS" "$stdout_file" "$stderr_file" \
+    node "$companion" task --background --prompt-file "$prompt_file" --json
+
+  if [ "$SPAWN_TIMED_OUT" -eq 1 ]; then
+    printf 'launch: companion did not return within %ds (job-create hung)\n' \
+      "$QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS" >&2
+    rm -f "$stdout_file" "$stderr_file"
+    return 1
+  fi
+
+  if [ "$SPAWN_RC" -ne 0 ]; then
+    if [ -s "$stderr_file" ]; then
+      cat "$stderr_file" >&2
+    fi
+    printf 'launch: companion `task --background` exited %d\n' "$SPAWN_RC" >&2
+    rm -f "$stdout_file" "$stderr_file"
+    return "$SPAWN_RC"
+  fi
+
+  local stdout_text
+  stdout_text=$(cat "$stdout_file")
+  rm -f "$stdout_file" "$stderr_file"
+
+  local job_id
+  if ! job_id=$(parse_launch_output "$stdout_text"); then
+    return 1
+  fi
+  printf '%s' "$job_id"
+}
+
+# ---------------------------------------------------------------------------
+# verify_job_id <companion> <job_id>
+#
+# Issue a single poll_status call to verify the jobId is known to the broker.
+# Returns 0 (verified) when the lifecycle is anything except not-found; returns
+# 1 (unverified) on not-found or malformed.  A verified lifecycle includes
+# running, completed:*, or any phase-fallback-recovered value.
+#
+# Design note: malformed falls through to the retry branch (does not exit 14)
+# because exit 14 is reserved for the public `status` subcommand's external
+# contract; the internal verification step is not a caller-visible path.
+verify_job_id() {
+  local companion="$1" job_id="$2"
+  local lifecycle
+  lifecycle=$(poll_status "$companion" "$job_id")
+  case "$lifecycle" in
+    not-found|malformed)
+      return 1
+      ;;
+    *)
+      # running, completed:*, error — treat as verified (broker knows the job).
+      # error is still a broker acknowledgement: it means a hard-error from
+      # the status call, not job absence.
+      return 0
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # launch_subcommand
 #
 # The launch subcommand reads the prompt from stdin (path-arg form retired in
 # commit 21/22 of the #110 migration sequence). Any positional/flag argument
 # is rejected — including the legacy --prompt-file form — to keep the
 # trust boundary tight and prevent silent fallback to a stale path-arg caller.
+#
+# Post-launch verification: after capturing the candidate jobId from the broker
+# response, one internal status call verifies the job is known.  On phantom
+# (not-found or malformed), the entire task subcommand is retried exactly once.
+# Retry cap: 1 (maximum 2 total launches per invocation).
 launch_subcommand() {
   if [ "$#" -gt 0 ]; then
     printf 'launch: unrecognised argument: %s (path-arg form retired; pipe prompt on stdin)\n' "$1" >&2
@@ -221,45 +313,45 @@ launch_subcommand() {
     return 1
   fi
 
-  local stdout_file stderr_file
-  stdout_file=$(mktemp -t codex-companion-bg.XXXXXX) || { rm -f "$stdin_temp"; printf 'launch: mktemp failed\n' >&2; return 1; }
-  stderr_file=$(mktemp -t codex-companion-bg.XXXXXX) || { rm -f "$stdin_temp" "$stdout_file"; printf 'launch: mktemp failed\n' >&2; return 1; }
+  # --- Attempt 1 ---
+  local job_id_1
+  if ! job_id_1=$(run_task_once "$companion" "$prompt_file"); then
+    rm -f "$stdin_temp"
+    return 1
+  fi
 
-  local SPAWN_RC=0 SPAWN_TIMED_OUT=0
-  # The companion reads --prompt-file synchronously inside spawn_with_timeout;
-  # stdin_temp (if set) remains on disk until after spawn_with_timeout returns.
-  spawn_with_timeout "$QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS" "$stdout_file" "$stderr_file" \
-    node "$companion" task --background --prompt-file "$prompt_file" --json
+  if verify_job_id "$companion" "$job_id_1"; then
+    # Happy path: first attempt verified.  Emit jobId, no additional stderr.
+    rm -f "$stdin_temp"
+    printf '%s\n' "$job_id_1"
+    return 0
+  fi
 
-  # stdin_temp no longer needed: companion has read the file (or timed out).
+  # --- Retry (attempt 2) ---
+  # First attempt returned phantom (not-found or malformed).  Retry once.
+  local job_id_2
+  if ! job_id_2=$(run_task_once "$companion" "$prompt_file"); then
+    # Broker-layer error on the retry launch: surface the existing launch-failure
+    # exit unchanged.  This is not the double-phantom case (exit 15); the task
+    # subcommand itself failed, which is a different failure mode.
+    rm -f "$stdin_temp"
+    return 1
+  fi
+
   rm -f "$stdin_temp"
 
-  if [ "$SPAWN_TIMED_OUT" -eq 1 ]; then
-    printf 'launch: companion did not return within %ds (job-create hung)\n' \
-      "$QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS" >&2
-    rm -f "$stdout_file" "$stderr_file"
-    return 1
+  if verify_job_id "$companion" "$job_id_2"; then
+    # Retry-success path: emit the second jobId and write the distinguishing
+    # stderr note.  This note is written only on the retry-success path.
+    printf 'launch: first jobId failed verification, retried\n' >&2
+    printf '%s\n' "$job_id_2"
+    return 0
   fi
 
-  if [ "$SPAWN_RC" -ne 0 ]; then
-    if [ -s "$stderr_file" ]; then
-      cat "$stderr_file" >&2
-    fi
-    printf 'launch: companion `task --background` exited %d\n' "$SPAWN_RC" >&2
-    rm -f "$stdout_file" "$stderr_file"
-    return "$SPAWN_RC"
-  fi
-
-  local stdout_text
-  stdout_text=$(cat "$stdout_file")
-  rm -f "$stdout_file" "$stderr_file"
-
-  local job_id
-  if ! job_id=$(parse_launch_output "$stdout_text"); then
-    return 1
-  fi
-  printf '%s\n' "$job_id"
-  return 0
+  # Double-phantom: both attempts unverifiable.  Exit LAUNCH_PHANTOM (15).
+  # No jobId is emitted on stdout.
+  printf 'launch: both jobId attempts failed verification (LAUNCH_PHANTOM)\n' >&2
+  return "$LAUNCH_PHANTOM"
 }
 
 # ---------------------------------------------------------------------------

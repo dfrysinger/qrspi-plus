@@ -23,7 +23,21 @@
 //
 // Behaviour is controlled via the following environment variables (set by
 // the bats test before invoking the wrapper, which propagates them to the
-// stub via CODEX_COMPANION):
+// stub via CODEX_COMPANION).
+//
+// Phantom-jobId variables (post-launch verification + retry-once):
+//   STUB_PHANTOM_LAUNCH_COUNT  integer N — status returns "No job found" for
+//                              the first N sequential jobIds emitted by task.
+//                              Subsequent launches are verified normally.
+//   STUB_TRACK_LAUNCH_COUNT    if "1", persist a `launchCount` field in state
+//                              so tests can assert exactly two launches occurred.
+//   STUB_FAIL_SECOND_LAUNCH    if "1", the second task invocation fails
+//                              (exit 1) to test broker-layer error on retry.
+//   STUB_MALFORMED_FIRST_LAUNCH_STATUS
+//                              if "1", status returns malformed JSON exactly
+//                              once for the first jobId emitted by task; the
+//                              next status call (for the retried jobId) behaves
+//                              normally per STUB_COMPLETE_AT_POLL.
 //
 //   STUB_STATE_FILE        path to JSON file used to persist {jobId, polls}
 //                          across subprocess invocations within a single test
@@ -120,6 +134,16 @@ async function handleTask() {
   const hangMs = Number(process.env.STUB_LAUNCH_HANG_MS || 0);
   if (hangMs > 0) await sleep(hangMs);
 
+  // Phantom-jobId: read current state to determine launch count.
+  const stateNow = stateFile ? readState(stateFile) : { polls: 0 };
+  const prevLaunchCount = stateNow.launchCount || 0;
+  const thisLaunchNumber = prevLaunchCount + 1;
+
+  // STUB_FAIL_SECOND_LAUNCH: fail the second task invocation outright.
+  if (process.env.STUB_FAIL_SECOND_LAUNCH === "1" && thisLaunchNumber === 2) {
+    fail("simulated broker failure on retry launch", 1);
+  }
+
   const exitCode = Number(process.env.STUB_LAUNCH_EXIT || 0);
   if (exitCode !== 0) fail("simulated launch failure", exitCode);
 
@@ -130,7 +154,28 @@ async function handleTask() {
 
   // Generate a deterministic job id; persist for status/result.
   const jobId = `task-stub-${process.pid}-${Date.now()}`;
-  if (stateFile) writeState(stateFile, { jobId, polls: 0 });
+
+  // Phantom-jobId: track which jobIds are phantom (status → not-found).
+  const phantomCount = Number(process.env.STUB_PHANTOM_LAUNCH_COUNT || 0);
+  const isPhantom = thisLaunchNumber <= phantomCount;
+  const trackLaunch = process.env.STUB_TRACK_LAUNCH_COUNT === "1";
+
+  // Build updated state preserving polls counter for status polling.
+  // Preserve firstJobId and malformedEmitted across launches so that
+  // STUB_MALFORMED_FIRST_LAUNCH_STATUS fires only for the first jobId
+  // even when a retry launch occurs.
+  const newState = {
+    jobId,
+    polls: 0,
+    launchCount: trackLaunch ? thisLaunchNumber : (stateNow.launchCount || thisLaunchNumber),
+    phantomJobIds: [
+      ...(stateNow.phantomJobIds || []),
+      ...(isPhantom ? [jobId] : [])
+    ],
+    firstJobId: stateNow.firstJobId || undefined,
+    malformedEmitted: stateNow.malformedEmitted || false
+  };
+  if (stateFile) writeState(stateFile, newState);
 
   if (process.env.STUB_LAUNCH_NO_JOBID === "1") {
     process.stdout.write(
@@ -167,6 +212,33 @@ function handleStatus() {
   }
 
   const state = stateFile ? readState(stateFile) : { polls: 0 };
+  const queriedJobId = argv[1] || state.jobId || "unknown";
+
+  // Phantom-jobId: if the queried jobId is in the phantom list, return not-found.
+  const phantomJobIds = state.phantomJobIds || [];
+  if (phantomJobIds.includes(queriedJobId)) {
+    fail(`No job found for "${queriedJobId}". Run /codex:status to inspect known jobs.`, 1);
+  }
+
+  // STUB_MALFORMED_FIRST_LAUNCH_STATUS: return malformed JSON exactly once for
+  // the first jobId registered (to test that malformed first-verify falls through
+  // to retry, not to exit 14).
+  if (process.env.STUB_MALFORMED_FIRST_LAUNCH_STATUS === "1") {
+    const firstJobId = state.firstJobId || null;
+    if (firstJobId === null) {
+      // First status call ever for this test — remember which jobId is "first".
+      state.firstJobId = queriedJobId;
+      state.malformedEmitted = false;
+      if (stateFile) writeState(stateFile, state);
+    }
+    if (queriedJobId === state.firstJobId && !state.malformedEmitted) {
+      state.malformedEmitted = true;
+      if (stateFile) writeState(stateFile, state);
+      process.stdout.write("not-json-malformed-payload\n");
+      return;
+    }
+  }
+
   state.polls = (state.polls || 0) + 1;
   if (stateFile) writeState(stateFile, state);
 
