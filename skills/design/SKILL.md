@@ -109,7 +109,9 @@ status: draft
 
 ## Test Strategy
 
-<!-- Per-section guidance: design-level test strategy only — types (unit / integration / E2E), layers covered, frameworks chosen. Bullets for type/layer/framework triples. Do NOT include assertion text, do NOT include per-test-file layout — those are DEFERS (Implement / TDD). -->
+<!-- Per-section guidance: design-level test strategy only — types (unit / integration / E2E), layers covered, frameworks chosen. Bullets for type/layer/framework triples. Do NOT include assertion text, do NOT include per-test-file layout — those are DEFERS (Implement / TDD).
+
+Visual-fidelity binding subsection (when config carries `visual_fidelity_required: true`): this section MUST include a `### Visual-Fidelity Binding` subsection that names the wireframe artifacts constituting the visual contract for the run — Figma URLs, embedded PNGs under a run-local artifact path, or both. Absence of this subsection when the flag is enabled is a PRECONDITION FAILURE at design-approval time, NOT a reviewer finding raised during design review; the design-approval gate rejects the artifact before any reviewer subagent is dispatched. When `visual_fidelity_required: false` (or the flag is absent), the binding subsection is not required and this rule is inert — do not add a placeholder subsection. -->
 
 {Test types, layers, frameworks}
 
@@ -228,6 +230,8 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
   ```
 
 ### Human Gate
+
+**Visual-fidelity binding precondition (check before presenting).** When `config.md` carries `visual_fidelity_required: true`, verify that `design.md` contains a `### Visual-Fidelity Binding` subsection under `## Test Strategy` that names at least one wireframe artifact (Figma URL, embedded PNG under a run-local artifact path, or both). If the subsection is absent, **do not present `design.md` to the user and do not dispatch reviewers** — this is a precondition failure, not a reviewer finding. Surface the error: "design.md is missing the required `### Visual-Fidelity Binding` subsection under `## Test Strategy`. Add it before approval." When `visual_fidelity_required: false` (or the field is absent), this check is skipped entirely and the binding subsection is not required.
 
 Present `design.md` to the user — "hammer on it" review point. **Always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified."
 
