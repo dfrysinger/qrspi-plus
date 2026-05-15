@@ -94,17 +94,14 @@ setup() {
 
 @test "agent body documents round dispatch parameter" {
   awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
-    | grep -qE '\bround\b' \
-    || { echo "$AGENT body does not document the 'round' dispatch parameter"; return 1; }
+    | grep -qE '^[-*][[:space:]]+`round`' \
+    || { echo "$AGENT body does not document the 'round' dispatch parameter as a bullet entry"; return 1; }
 }
 
 @test "agent body documents reviewer_tag set to visual-fidelity-claude" {
   awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
-    | grep -qE '\breviewer_tag\b' \
-    || { echo "$AGENT body does not document the 'reviewer_tag' dispatch parameter"; return 1; }
-  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
-    | grep -qE 'visual-fidelity-claude' \
-    || { echo "$AGENT body does not document reviewer_tag value 'visual-fidelity-claude'"; return 1; }
+    | grep -qE 'reviewer_tag.*visual-fidelity-claude|visual-fidelity-claude.*reviewer_tag' \
+    || { echo "$AGENT body does not document 'reviewer_tag' with value 'visual-fidelity-claude' in the same context"; return 1; }
 }
 
 @test "agent body documents diff_file_path dispatch parameter" {
@@ -170,34 +167,42 @@ setup() {
 #    (task spec requires these to be BATS-pinned, not just prose)
 # ---------------------------------------------------------------------------
 
-@test "using-qrspi/SKILL.md documents skipped.md as a valid third sentinel form" {
-  grep -qE 'skipped\.md' "$USING_QRSPI" \
-    || { echo "$USING_QRSPI does not document the '.skipped.md' sentinel form"; return 1; }
+@test "using-qrspi/SKILL.md documents skipped.md as a valid third sentinel form in the apply-fix section" {
+  # Section-scoped: grep only within the visual-fidelity-claude apply-fix block
+  awk '/visual-fidelity-claude.*tag.*third valid sentinel/,/This schema mirrors/' "$USING_QRSPI" \
+    | grep -qE 'skipped\.md' \
+    || { echo "$USING_QRSPI apply-fix section does not document the '.skipped.md' sentinel form"; return 1; }
 }
 
-@test "using-qrspi/SKILL.md documents the skip_reason: frontmatter field" {
-  grep -qE 'skip_reason' "$USING_QRSPI" \
-    || { echo "$USING_QRSPI does not document the 'skip_reason:' frontmatter schema"; return 1; }
+@test "using-qrspi/SKILL.md documents the skip_reason: frontmatter field in the apply-fix section" {
+  # Section-scoped: grep only within the visual-fidelity-claude apply-fix block
+  awk '/visual-fidelity-claude.*tag.*third valid sentinel/,/This schema mirrors/' "$USING_QRSPI" \
+    | grep -qE 'skip_reason' \
+    || { echo "$USING_QRSPI apply-fix section does not document the 'skip_reason:' frontmatter schema"; return 1; }
 }
 
-@test "using-qrspi/SKILL.md documents the visual_fidelity_required_false skip_reason value" {
-  grep -qE 'visual_fidelity_required_false' "$USING_QRSPI" \
-    || { echo "$USING_QRSPI does not document skip_reason value 'visual_fidelity_required_false'"; return 1; }
+@test "using-qrspi/SKILL.md documents the visual_fidelity_required_false skip_reason value in the apply-fix section" {
+  awk '/visual-fidelity-claude.*tag.*third valid sentinel/,/This schema mirrors/' "$USING_QRSPI" \
+    | grep -qE 'visual_fidelity_required_false' \
+    || { echo "$USING_QRSPI apply-fix section does not document skip_reason value 'visual_fidelity_required_false'"; return 1; }
 }
 
-@test "using-qrspi/SKILL.md documents the missing_visual_fidelity_check skip_reason value" {
-  grep -qE 'missing_visual_fidelity_check' "$USING_QRSPI" \
-    || { echo "$USING_QRSPI does not document skip_reason value 'missing_visual_fidelity_check'"; return 1; }
+@test "using-qrspi/SKILL.md documents the missing_visual_fidelity_check skip_reason value in the apply-fix section" {
+  awk '/visual-fidelity-claude.*tag.*third valid sentinel/,/This schema mirrors/' "$USING_QRSPI" \
+    | grep -qE 'missing_visual_fidelity_check' \
+    || { echo "$USING_QRSPI apply-fix section does not document skip_reason value 'missing_visual_fidelity_check'"; return 1; }
 }
 
-@test "using-qrspi/SKILL.md documents the empty_wireframe_paths skip_reason value" {
-  grep -qE 'empty_wireframe_paths' "$USING_QRSPI" \
-    || { echo "$USING_QRSPI does not document skip_reason value 'empty_wireframe_paths'"; return 1; }
+@test "using-qrspi/SKILL.md documents the empty_wireframe_paths skip_reason value in the apply-fix section" {
+  awk '/visual-fidelity-claude.*tag.*third valid sentinel/,/This schema mirrors/' "$USING_QRSPI" \
+    | grep -qE 'empty_wireframe_paths' \
+    || { echo "$USING_QRSPI apply-fix section does not document skip_reason value 'empty_wireframe_paths'"; return 1; }
 }
 
-@test "using-qrspi/SKILL.md documents the empty_screenshot_paths skip_reason value" {
-  grep -qE 'empty_screenshot_paths' "$USING_QRSPI" \
-    || { echo "$USING_QRSPI does not document skip_reason value 'empty_screenshot_paths'"; return 1; }
+@test "using-qrspi/SKILL.md documents the empty_screenshot_paths skip_reason value in the apply-fix section" {
+  awk '/visual-fidelity-claude.*tag.*third valid sentinel/,/This schema mirrors/' "$USING_QRSPI" \
+    | grep -qE 'empty_screenshot_paths' \
+    || { echo "$USING_QRSPI apply-fix section does not document skip_reason value 'empty_screenshot_paths'"; return 1; }
 }
 
 # ---------------------------------------------------------------------------
@@ -213,6 +218,72 @@ setup() {
 }
 
 @test "using-qrspi/SKILL.md documents that a malformed skipped.md is logged as a bypass attempt" {
-  grep -qiE 'bypass.attempt|bypass attempt' "$USING_QRSPI" \
+  grep -qiE 'bypass[- ]attempt|bypass attempt' "$USING_QRSPI" \
     || { echo "$USING_QRSPI does not document that a malformed skipped.md is logged as a bypass attempt"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 9. Partial-rejection emits finding with change_type: scope (disposition B)
+# ---------------------------------------------------------------------------
+
+@test "agent body documents that partial path rejection emits a finding with change_type scope" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'change_type.*scope|scope.*change_type' \
+    || { echo "$AGENT body does not document emitting a change_type: scope finding on partial path rejection"; return 1; }
+}
+
+@test "agent body documents that CLEAN sentinel is never emitted when any path was rejected" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'clean.*never|never.*clean|clean.*must not|must not.*clean|CLEAN.*reject|reject.*CLEAN' \
+    || { echo "$AGENT body does not document that CLEAN sentinel is never emitted when any path was rejected"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 10. Every image must load — partial-load requires finding (disposition C)
+# ---------------------------------------------------------------------------
+
+@test "agent body documents that EVERY image in both lists must load successfully" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'every.*image|every.*path|every.*wireframe|all.*image.*load|every.*load|each.*load' \
+    || { echo "$AGENT body does not document that every image in both lists must load successfully"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 11. Write-confirmation contract (disposition D)
+# ---------------------------------------------------------------------------
+
+@test "agent body documents Write tool success verification before returning brief" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'write.*success|confirm.*write|write.*fail|write.*confirm|verify.*write' \
+    || { echo "$AGENT body does not document verifying Write tool success before returning the five-line brief"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 12. Symlink-traversal refusal with canonicalization (disposition E)
+# ---------------------------------------------------------------------------
+
+@test "agent body documents symlink-traversal refusal with canonical path check" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'symlink|canonical|derefer' \
+    || { echo "$AGENT body does not document symlink-traversal refusal or canonical path check"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 13. Image content as untrusted data (disposition F)
+# ---------------------------------------------------------------------------
+
+@test "agent body frames image content as untrusted data not instructions" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'image.*content.*untrusted|visual.*content.*data|treat.*image.*data|image.*data.*never.*instruct|embedded.*text.*image' \
+    || { echo "$AGENT body does not frame visual/image content as untrusted data distinct from instructions"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 14. Sentinel exclusive-writer contract (disposition G)
+# ---------------------------------------------------------------------------
+
+@test "agent body documents that this agent is exclusive writer of finding and clean sentinel files" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'exclusive.*writer|exclusive writer' \
+    || { echo "$AGENT body does not document the exclusive-writer contract for finding and clean sentinel files"; return 1; }
 }
