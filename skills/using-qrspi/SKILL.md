@@ -494,6 +494,8 @@ Skills must not:
 
 ## Standard Review Loop
 
+**Round-directory precondition (before dispatching round-NN reviewers).** Before dispatching round-NN reviewers, the orchestrator confirms `reviews/tasks/task-NN/round-NN/` either does not exist or is empty. If files pre-exist in that path, the orchestrator halts and reports a precondition violation (orchestrator state corruption or task-author tampering) — do not proceed to reviewer dispatch. The round directory is orchestrator-write-only by convention; reviewer dispatches Read it only via the dispatched subagents' Write outputs. A pre-existing round directory with content cannot be trusted as this round's output.
+
 A "review round" consists of:
 1. **Orchestrator emits the round's diff file** before dispatching reviewers. The diff content never enters main-chat context. Reviewer dispatches then carry `<diff_file_path>` as a string parameter and reviewers Read the diff file directly. The orchestrator picks `<ref>` per the convergence rule (PR-2 Mechanism B) — see "Diff handling between rounds" below for the rule, but in summary: rounds 1 and 2 always use `<ref>=<base-branch>`; round NN+1 uses `<ref>=HEAD~1` only when step 7.5's convergence comparison fires "narrow" against round NN, and falls back to `<ref>=<base-branch>` otherwise (broaden, scope_tagger_enabled=false, missing scope-set, or after a backward-loop reset). When the artifact directory is not inside a git repository, skip the diff-file step — reviewers fall back to the wrapped artifact body in their dispatch prompt.
 
@@ -589,7 +591,11 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
    - `empty_wireframe_paths` — after path validation, the `wireframe_paths` list was empty
    - `empty_screenshot_paths` — after path validation, the `screenshot_paths` list was empty
 
-   A `visual-fidelity-claude.skipped.md` sentinel that lacks the `skip_reason:` field, or carries a value not in the closed set above, is treated as absent by this guard (the tag-produced-no-output schema violation fires as if the file were not present), and the malformed sentinel is logged as a bypass attempt in the per-task review output. This schema mirrors the `round-NN-verifier-disabled.md` marker contract: a required structured field whose closed value set distinguishes legitimate operational states from malformed-or-absent outputs.
+   The sentinel MUST also carry a `path_filtered:` frontmatter field:
+   - `path_filtered: true` — when the `empty_wireframe_paths` or `empty_screenshot_paths` trigger fired as a result of path-validation dropping entries (the `path-filtered.md` audit record was written for this round). Distinguishes "all refs rejected by path validation" from "task genuinely had no refs."
+   - `path_filtered: false` — default; set when no paths were dropped by validation.
+
+   A `visual-fidelity-claude.skipped.md` sentinel that lacks the `skip_reason:` field, or carries a value not in the closed set above, is treated as absent by this guard (the tag-produced-no-output schema violation fires as if the file were not present), and the malformed sentinel is logged as a bypass attempt in the orchestrator's main-chat output AND appended as a `visual-fidelity-claude.bypass-attempt.md` finding-shaped record under the round directory (severity: high, change_type: correctness). This schema mirrors the `round-NN-verifier-disabled.md` marker contract: a required structured field whose closed value set distinguishes legitimate operational states from malformed-or-absent outputs.
 
 3. **Verifier-enabled gate.** Read `verifier_enabled` from `config.md`:
    ```bash
