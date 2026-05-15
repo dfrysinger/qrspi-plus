@@ -400,6 +400,19 @@ teardown() {
   run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
   [ "$status" -eq 0 ]
   [[ "$output" =~ ^task-stub-[0-9]+-[0-9]+$ ]]
+  # R2-F03: assert the emitted jobId is NOT the phantom (first) jobId.
+  # Without this, a regression that silently emits job_id_1 (the unverified
+  # phantom) would still pass the regex check above, since both jobIds match
+  # task-stub-<pid>-<ts>. Verify against the phantomJobIds list the stub
+  # persists in state (stub-codex-companion.mjs line ~171).
+  local phantom_ids
+  phantom_ids=$(node -e "
+    const fs = require('fs');
+    const s = JSON.parse(fs.readFileSync(process.env.STUB_STATE_FILE, 'utf8'));
+    process.stdout.write((s.phantomJobIds || []).join('\n'));
+  ")
+  # The emitted jobId (output) must not appear in the phantom list.
+  ! printf '%s\n' "$phantom_ids" | grep -qFx "$output"
 }
 
 @test "phantom-jobId: phantom first, verified second — writes stderr note exactly once" {
@@ -448,6 +461,30 @@ teardown() {
   [ "$launch_count" -eq 2 ]
 }
 
+@test "phantom-jobId: hard-error internal-status response on first verification falls through to retry (R2-F01)" {
+  bats_require_minimum_version 1.5.0
+  # R2-F01: a companion crash / network timeout / permissions failure during
+  # the first verification call must NOT be treated as a broker acknowledgement.
+  # poll_status emits 'error' lifecycle on any non-zero status exit whose
+  # stderr does NOT match /No (finished )?job found/. verify_job_id MUST
+  # treat 'error' as unverified (not as the broker confirming the job).
+  #
+  # Setup: the first jobId emitted by task is NOT phantom (no STUB_PHANTOM_*),
+  # but the very first status call hard-errors. The retry's task launches a
+  # second jobId which verifies cleanly. Expected: exit 0, second jobId on
+  # stdout, retry note on stderr.
+  export STUB_ERROR_FIRST_LAUNCH_STATUS=1
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="# after-hard-error retry result"
+
+  run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ ^task-stub-[0-9]+-[0-9]+$ ]]
+  # The retry note proves the wrapper went through the retry path (rather than
+  # silently emitting the unverified first jobId).
+  [[ "$stderr" == *"launch: first jobId failed verification, retried"* ]]
+}
+
 @test "phantom-jobId: malformed internal-status response on first verification falls through to retry, not exit 14" {
   bats_require_minimum_version 1.5.0
   # When the first status call after launch returns malformed (not not-found),
@@ -475,15 +512,30 @@ teardown() {
   export STUB_FAIL_SECOND_LAUNCH=1
 
   run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
+  # R2-F02: positive assertion. The negative-only checks below would silently
+  # accept e.g. exit 13 or 14, which would indicate the wrapper misroutes the
+  # retry-launch failure through a different error handler. The stub's
+  # STUB_FAIL_SECOND_LAUNCH path calls fail(..., 1); run_task_once propagates
+  # the companion's exit (return "$SPAWN_RC"); launch_subcommand returns 1.
+  [ "$status" -eq 1 ]
   [ "$status" -ne 15 ]
   [ "$status" -ne 0 ]
 }
 
-@test "phantom-jobId: exit 15 is not used by any other wrapper exit path" {
-  # Static assertion: grep the wrapper for any 'return 15' or 'exit 15' outside
-  # the LAUNCH_PHANTOM path.  The name LAUNCH_PHANTOM must appear in the script
-  # alongside the value 15 (named-constant requirement).
+@test "phantom-jobId: LAUNCH_PHANTOM constant exists, equals 15, and no other exit path emits 15 (R2-CQ-F01)" {
+  # The name LAUNCH_PHANTOM must appear in the script (named-constant requirement).
   grep -qE 'LAUNCH_PHANTOM' "$WRAPPER"
   # The constant's value must be 15.
   grep -qE 'LAUNCH_PHANTOM.*=.*15|15.*LAUNCH_PHANTOM' "$WRAPPER"
+
+  # R2-CQ-F01: actively assert no other code path emits exit 15. Strip comments
+  # (anything from '#' to end-of-line) before scanning so that prose mentions
+  # of "exit 15" in comments don't trip the assertion. The only legitimate
+  # path to exit 15 must go through "$LAUNCH_PHANTOM".
+  local bare_15_lines
+  bare_15_lines=$(sed 's/#.*$//' "$WRAPPER" | grep -nE '(\<return\>|\<exit\>)[[:space:]]+15(\>|$)' || true)
+  if [ -n "$bare_15_lines" ]; then
+    printf 'unexpected bare return/exit 15 outside LAUNCH_PHANTOM:\n%s\n' "$bare_15_lines" >&2
+    return 1
+  fi
 }

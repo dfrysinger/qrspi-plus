@@ -38,6 +38,15 @@
 //                              once for the first jobId emitted by task; the
 //                              next status call (for the retried jobId) behaves
 //                              normally per STUB_COMPLETE_AT_POLL.
+//   STUB_ERROR_FIRST_LAUNCH_STATUS
+//                              if "1", status exits non-zero with a hard error
+//                              message (NOT a job-not-found message) exactly
+//                              once for the first jobId emitted by task. This
+//                              simulates a companion crash / network timeout /
+//                              permissions failure during the first verification
+//                              call. Used to pin R2-F01: verify_job_id must
+//                              treat 'error' lifecycle as unverified, not as
+//                              a broker acknowledgement.
 //
 //   STUB_STATE_FILE        path to JSON file used to persist {jobId, polls}
 //                          across subprocess invocations within a single test
@@ -161,19 +170,28 @@ async function handleTask() {
   const trackLaunch = process.env.STUB_TRACK_LAUNCH_COUNT === "1";
 
   // Build updated state preserving polls counter for status polling.
-  // Preserve firstJobId and malformedEmitted across launches so that
-  // STUB_MALFORMED_FIRST_LAUNCH_STATUS fires only for the first jobId
-  // even when a retry launch occurs.
+  // Preserve firstJobId, malformedEmitted, and errorEmitted across launches
+  // so that the once-per-test STUB_*_FIRST_LAUNCH_STATUS guards fire only
+  // for the first jobId even when a retry launch occurs.
+
+  // R2-F02 / R2-F04: extract launchCount expression for readability and to
+  // make the dual-branch intent explicit. When trackLaunch is false we
+  // intentionally still write the field — preserving the existing value when
+  // present, otherwise seeding with the current launch number. (Both branches
+  // write a value; do NOT "fix" the non-tracking branch to omit the field, as
+  // the once-per-test guards above rely on launchCount being readable.)
+  const preservedLaunchCount = stateNow.launchCount || thisLaunchNumber;
   const newState = {
     jobId,
     polls: 0,
-    launchCount: trackLaunch ? thisLaunchNumber : (stateNow.launchCount || thisLaunchNumber),
+    launchCount: trackLaunch ? thisLaunchNumber : preservedLaunchCount,
     phantomJobIds: [
       ...(stateNow.phantomJobIds || []),
       ...(isPhantom ? [jobId] : [])
     ],
     firstJobId: stateNow.firstJobId || undefined,
-    malformedEmitted: stateNow.malformedEmitted || false
+    malformedEmitted: stateNow.malformedEmitted || false,
+    errorEmitted: stateNow.errorEmitted || false
   };
   if (stateFile) writeState(stateFile, newState);
 
@@ -236,6 +254,28 @@ function handleStatus() {
       if (stateFile) writeState(stateFile, state);
       process.stdout.write("not-json-malformed-payload\n");
       return;
+    }
+  }
+
+  // STUB_ERROR_FIRST_LAUNCH_STATUS: exit non-zero with a hard error message
+  // (NOT a job-not-found message) exactly once for the first jobId registered.
+  // This simulates a companion crash / network timeout during the first
+  // verification call. Pin for R2-F01: verify_job_id must treat poll_status
+  // 'error' lifecycle as unverified (not as a broker acknowledgement).
+  // The message deliberately does NOT match /No (finished )?job found/, so
+  // poll_status will route through the generic-error branch (returning 'error'
+  // lifecycle) rather than the not-found branch.
+  if (process.env.STUB_ERROR_FIRST_LAUNCH_STATUS === "1") {
+    const firstJobId = state.firstJobId || null;
+    if (firstJobId === null) {
+      state.firstJobId = queriedJobId;
+      state.errorEmitted = false;
+      if (stateFile) writeState(stateFile, state);
+    }
+    if (queriedJobId === state.firstJobId && !state.errorEmitted) {
+      state.errorEmitted = true;
+      if (stateFile) writeState(stateFile, state);
+      fail("simulated companion hard-error during verification (network timeout)", 1);
     }
   }
 
