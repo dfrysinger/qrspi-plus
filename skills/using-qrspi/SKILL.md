@@ -384,6 +384,8 @@ visual_fidelity_required: false  # set at run creation; when true, activates the
 - `route`: ordered list of skill names this run will execute (see Route Templates above)
 - `review_depth`: `quick` (4 correctness reviewers) or `deep` (all 8 reviewers) — written by Implement at phase start
 - `review_mode`: `single` or `loop` — written alongside `review_depth`
+- `verifier_enabled`: boolean, default `true`. When `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` per finding-file in parallel and filters style/clarity/correctness findings at score ≥80 before applying. When `false`, the protocol skips verifier dispatch entirely and keeps all findings via the "no sidecar → keep" branch. Set at run creation by Goals; edit `config.md` directly between rounds to disable for the whole run. See "Fields that affect pipeline behavior" below for the full behavioral contract.
+- `scope_tagger_enabled`: boolean, default `true`. When `true`, the Apply-fix protocol dispatches one `qrspi-scope-tagger` per round and uses the resulting scope-set to drive narrow-vs-broaden convergence comparisons across rounds. When `false`, no tagger dispatch fires and reviewer dispatch falls through to full-base-diff behavior. Set at run creation by Goals; edit `config.md` directly between rounds to disable convergence narrowing for the whole run. See "Fields that affect pipeline behavior" below for the full behavioral contract.
 - `visual_fidelity_required`: boolean, default `false`. When `true`, the run opts into the visual-fidelity binding chain (Design must include a wireframe binding subsection, Phasing must cite wireframe artifacts per UI phase, Plan must populate `visual_fidelity_check` on UI-producing tasks, and Implement dispatches the visual-fidelity reviewer). When `false`, the chain is silent — no dispatch, no extra gates.
 
 **Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. Goals also writes `verifier_enabled: true`, `scope_tagger_enabled: true`, and `visual_fidelity_required: false` (or `true` if the user opted into the visual-fidelity binding chain) at run creation — these fields are present on disk from the start of every fresh run. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
@@ -430,7 +432,15 @@ Stop and present the field-specific menu below. For an invalid value, also name 
 2. Re-run Goals to regenerate config.md
 3. Abort
 
-(Note: the missing-on-read case in a resumed run created before this field landed is covered by the runtime-backfill carve-out below; this menu fires when the field is invalid or absent in a fresh-run context where backfill does not apply.)
+**If `verifier_enabled` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `verifier_enabled: true` or `verifier_enabled: false`
+2. Abort
+
+**If `scope_tagger_enabled` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `scope_tagger_enabled: true` or `scope_tagger_enabled: false`
+2. Abort
+
+(Note: the missing-on-read case in a resumed run created before any of `verifier_enabled`, `scope_tagger_enabled`, or `visual_fidelity_required` landed is covered by the runtime-backfill carve-outs below; these menus fire when the field has an invalid value — e.g. `verifier_enabled: yes`, `scope_tagger_enabled: disabled` — or is absent in a fresh-run context where backfill does not apply.)
 
 ### No silent defaults
 
@@ -448,6 +458,8 @@ Skills must not:
 
 - **`visual_fidelity_required` runtime backfill.** Same shape as `verifier_enabled` above: if the field is missing from `config.md` on the first visual-fidelity-aware skill invocation in a resumed run created before the field landed, the runtime treats it as `false` (the default — the binding chain stays silent for legacy runs), surfaces a one-line stderr warning once per resume (form: `visual_fidelity_required missing from config.md — backfilling default 'false' for this run`), and writes the field back to `config.md`. The carve-out exists because pre-existing run directories on disk pre-date the field's introduction and the alternative — failing the run on a missing field — would prevent users from resuming any in-flight run after upgrading. The three `*_enabled` / `*_required` backfills (`verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`) are the only carve-outs from the no-silent-defaults rule (`### No silent defaults` above).
 
+- **Hard-stop on write-back failure (applies to all three backfills above).** The write-back to `config.md` is part of the carve-out's contract, not a best-effort side effect. If the write fails for any reason (read-only filesystem, permission error, lock contention, disk full, etc.), the runtime MUST surface a one-line diagnostic (form: `failed to write <field> to config.md — resolve before continuing`) and **abort the current invocation**. Do NOT silently proceed with the in-memory default after a failed write: an in-memory value that differs from the on-disk state means the next invocation re-fires the backfill (re-warns, re-attempts the write) indefinitely, and any cross-invocation behavior change in the default would silently produce inconsistent results across rounds. Hard-stop is the only correct path; the user resolves the underlying write failure and re-invokes.
+
 ### Fields that affect pipeline behavior (must be validated)
 
 | Field | Skills that validate it | Valid values |
@@ -457,6 +469,8 @@ Skills must not:
 | `codex_reviews` | Goals, Plan, Design, Phasing, Structure, Replan, Implement, Integrate, Test | `true` or `false` |
 | `review_depth` | Implement | `quick` or `deep` — set by Implement at phase start |
 | `review_mode` | Implement | `single` or `loop` — set by Implement at phase start |
+| `verifier_enabled` | Goals, Implement | `true` or `false` — set at run creation; gates per-finding verifier dispatch in the Apply-fix protocol |
+| `scope_tagger_enabled` | Goals, Implement | `true` or `false` — set at run creation; gates per-round scope-tagger dispatch and convergence narrowing |
 | `visual_fidelity_required` | Goals, Design, Phasing, Plan, Implement | `true` or `false` — set at run creation; gates the visual-fidelity binding chain |
 
 - **`verifier_enabled`** (boolean, default `true`) — when `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` (Haiku) per finding-file in parallel and filters style/clarity/correctness findings at score ≥80 before applying. When `false`, the protocol skips verifier dispatch entirely (no sidecars are written) and keeps all findings via the "no sidecar → keep" branch in step 7. The field is durable across `/compact`, pause, resume, and re-entry within the run directory under `docs/qrspi/<date>-<bundle>/`. Fresh run directories start with `verifier_enabled: true` (set by the `using-qrspi` run-init code at run creation). The §3 menu's `skip` option disables the verifier for the CURRENT round only (it does NOT mutate `config.md`); to disable across the whole run, edit `config.md` directly between rounds. CLI-flag opt-out at `/qrspi` invocation is out of scope for #109 (deferred).
