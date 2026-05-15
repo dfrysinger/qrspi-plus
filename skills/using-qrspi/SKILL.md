@@ -458,7 +458,16 @@ Skills must not:
 
 - **`visual_fidelity_required` runtime backfill.** Same shape as `verifier_enabled` above: if the field is missing from `config.md` on the first visual-fidelity-aware skill invocation in a resumed run created before the field landed, the runtime treats it as `false` (the default — the binding chain stays silent for legacy runs), surfaces a one-line stderr warning once per resume (form: `visual_fidelity_required missing from config.md — backfilling default 'false' for this run`), and writes the field back to `config.md`. The carve-out exists because pre-existing run directories on disk pre-date the field's introduction and the alternative — failing the run on a missing field — would prevent users from resuming any in-flight run after upgrading. The three `*_enabled` / `*_required` backfills (`verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`) are the only carve-outs from the no-silent-defaults rule (`### No silent defaults` above).
 
-- **Hard-stop on write-back failure (applies to all three backfills above).** The write-back to `config.md` is part of the carve-out's contract, not a best-effort side effect. If the write fails for any reason (read-only filesystem, permission error, lock contention, disk full, etc.), the runtime MUST surface a one-line diagnostic (form: `failed to write <field> to config.md — resolve before continuing`) and **abort the current invocation**. Do NOT silently proceed with the in-memory default after a failed write: an in-memory value that differs from the on-disk state means the next invocation re-fires the backfill (re-warns, re-attempts the write) indefinitely, and any cross-invocation behavior change in the default would silently produce inconsistent results across rounds. Hard-stop is the only correct path; the user resolves the underlying write failure and re-invokes.
+- **Hard-stop on write-back failure (applies to all three backfills above).** The write-back to `config.md` is part of the carve-out's contract, not a best-effort side effect. If the write fails for any reason (read-only filesystem, permission error, lock contention, disk full, etc.), the runtime MUST stop issuing tool calls and present the following to the user (the same "Stop and present" pattern used by the validation menus in `### When config.md is missing entirely` and `### When a required field is missing or has an invalid value` above — message to the user in main chat, not stderr or a tool-call log line, then wait for the user's selection):
+
+  > Stop and present:
+  >
+  >   failed to write `<field>` to config.md — resolve before continuing
+  >
+  >   1) Resolve the underlying write failure (fix permissions, free disk space, release the lock) and re-invoke the current skill to retry
+  >   2) Abort
+
+  Do NOT silently fall back to the in-memory default after a failed write: an in-memory value that differs from the on-disk state means the next invocation re-fires the backfill (re-warns, re-attempts the write) indefinitely, and any cross-invocation behavior change in the default would silently produce inconsistent results across rounds. Hard-stop is the only correct path; the user resolves the underlying write failure and re-invokes the skill.
 
 ### Fields that affect pipeline behavior (must be validated)
 
