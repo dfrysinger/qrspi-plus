@@ -137,6 +137,26 @@ The word "round" is used in three subtly different ways across QRSPI prose; pin 
 
 **Implication for batch-gate decisions.** Mis-counting a notification-driven dispatch as a separate round biases the batch gate toward "accept-with-issues" or "escalate" when "do another fix iteration" is still on the table. Always verify the round counter against `reviews/tasks/task-NN/round-*/` directories on disk: the highest round-NN with finding files is the current iteration's review pass; the highest round-NN.diff with no matching round-NN/ directory is a freshly-emitted-but-not-yet-dispatched diff (still in iteration NN). Do not infer the counter from chat history.
 
+## Implement-Entry Smoke Check (One-Shot, Per Phase)
+
+Before dispatching the first per-task wave — and before any per-task worktree creation — the orchestrator runs this one-shot precondition check once per phase. The check is not repeated on subsequent waves or fix-round dispatches within the same phase. On any failure the phase is aborted with a diagnostic naming the specific missing precondition; no per-task dispatch fires.
+
+The smoke check asserts three conditions, in order:
+
+1. **Verifier agent exists and is readable.** `agents/qrspi-finding-verifier.md` must exist on disk and be readable by the orchestrator. Failure diagnostic: `"Implement smoke check failed: agents/qrspi-finding-verifier.md not found or not readable — verifier wiring cannot be activated for this phase. Resolve the missing agent file before re-invoking Implement."`.
+
+2. **Sidecar write path is reachable.** The parent path `reviews/tasks/` under the run's artifact directory must be a writable directory (or must be creatable). The orchestrator performs a test write (e.g., a zero-byte probe file, immediately deleted) to confirm the path is reachable before the first finding is emitted. Failure diagnostic: `"Implement smoke check failed: sidecar write path <ABS_ARTIFACT_DIR>/reviews/tasks/ is not reachable for writes — verifier sidecars cannot be written. Check directory permissions or disk state."`.
+
+3. **`config.md` carries a parseable `verifier_enabled` field.** Read `config.md` and parse the `verifier_enabled` field. The field must be present and must parse to a boolean (`true` or `false`). A missing field, an unrecognized value (neither `true` nor `false`), or a parse error is a smoke-check failure. Failure diagnostic: `"Implement smoke check failed: config.md is missing a parseable verifier_enabled field (found: <raw value or 'absent'>). Add verifier_enabled: true or verifier_enabled: false to config.md before re-invoking Implement."`. Note: the runtime-backfill carve-out in `using-qrspi/SKILL.md` covers older runs; this smoke check is the enforcement point that ensures new phases do not silently proceed without the field.
+
+When all three conditions pass, the smoke check is complete. Log one line to the orchestrator's in-session output: `"Implement smoke check passed — verifier_enabled: <value>."`. Proceed to the first wave.
+
+When `config.md: verifier_enabled: false`, conditions 1 and 2 are still checked (the agent file and write path must be reachable regardless of the enabled flag, so that re-enabling the flag mid-run is safe). Only condition 3's parse requirement is relaxed: `false` is a valid parseable value and the check passes. The verifier dispatch steps and HARD-GATE (described in §§ Verifier Dispatch and Sidecar-Presence HARD-GATE below) are then inactive for this phase, but the agent file and path must exist regardless.
+
+<HARD-GATE>
+Do NOT dispatch the first per-task wave before the Implement-Entry Smoke Check completes with all three conditions passing (or explicitly noting verifier_enabled: false for condition 3's relaxed path). A smoke-check failure halts the phase immediately — no per-task worktrees are created, no implementer subagents are dispatched, and the diagnostic naming the failing precondition is surfaced to the user before any further action.
+</HARD-GATE>
+
 ## Branch Model — Runtime Resolution (Full Pipeline)
 
 In full pipeline mode, Implement consumes the symbolic Branch Map from `parallelization.md` (see `parallelize/SKILL.md` § Branch Model). At runtime, Implement resolves each `Base` value as follows:
@@ -502,12 +522,35 @@ All reviewer and fix work is dispatched via subagents; main chat only aggregates
 1. **Main chat: dispatch reviewer groups** per `review_depth_effective` from § Per-Task Routing (quick = correctness only; deep = correctness then thoroughness; lightweight tasks always force quick regardless of `config.review_depth`). Reviewers run as subagents in parallel within their group.
 2. First pass clean → task clean.
 3. Issues → **main chat re-dispatches reviewers** on the same code to build a complete list (up to 3 convergence rounds).
-4. **Implementer-fix dispatch (with persistence):**
+4. **Verifier dispatch (after reviewers emit per-finding files).** When `config.md: verifier_enabled: true`, after the reviewer fan-out completes and per-finding files are present under `reviews/tasks/task-NN/round-NN/`, dispatch `qrspi-finding-verifier` in parallel — one dispatch per `<reviewer_tag>.finding-FNN.md` file in the round directory. Each dispatch writes its sidecar to `reviews/tasks/task-NN/round-NN/<reviewer_tag>.finding-FNN.score.yml` (same schema as the artifact-level sidecars per `agents/qrspi-finding-verifier.md`). All verifier dispatches for a round fire concurrently; wait for all to complete before proceeding. When `config.md: verifier_enabled: false`, this step is skipped entirely — no verifier dispatches fire.
+
+5. **Sidecar-presence HARD-GATE (before any fix lands on task code).** For every kept finding the orchestrator is about to act on, assert that one of the following conditions holds on disk before dispatching the implementer-fix subagent:
+
+   **(a)** A matching `<reviewer_tag>.finding-FNN.score.yml` sidecar exists in `reviews/tasks/task-NN/round-NN/`, written by the verifier dispatch in step 4.
+
+   **(b)** A `round-NN-verifier-disabled.md` marker exists in `reviews/tasks/task-NN/round-NN/`. This marker is schema-validated before acceptance: it is accepted only when all three of the following frontmatter fields are present and valid:
+   - `reason:` — a non-empty string naming the human approver's rationale for disabling the verifier this round.
+   - `round:` — an integer that matches the current applying round's NN exactly (a marker with `round: 2` is not accepted when the current round is 3 — the HARD-GATE halts as if the marker were absent).
+   - `created_by:` — a non-empty string identifying who created the marker.
+
+   A marker file that is zero bytes, lacks any of these three fields, carries a `round:` value that does not match the current round, or is otherwise malformed is treated as absent — the HARD-GATE halts. The malformed-marker event is logged in the per-task review output (`reviews/tasks/task-NN-review.md`) as a malformed-bypass attempt, not as a normal gate pass, so the audit trail surfaces the deliberate skip attempt.
+
+   When a valid marker is present and accepted, the gate logs the bypass event in the per-task review output as a distinct `verifier-bypass` entry (not as a normal gate pass): `"Round NN verifier bypass via round-NN-verifier-disabled.md: reason=<reason field value>, created_by=<created_by field value>."` This makes the deliberate skip visible in the audit trail.
+
+   **(c)** `config.md` carries `verifier_enabled: false`. In this case, no sidecars were written (step 4 was skipped) and no marker is required — the config flag is the authoritative bypass.
+
+   **On HARD-GATE failure:** the round halts before any Edit lands on task code. Surface the missing sidecar by its exact filename — `"Sidecar-presence HARD-GATE failed for task NN round NN: no .score.yml sidecar, no valid round-NN-verifier-disabled.md marker, and config.md does not carry verifier_enabled: false. Missing sidecar: <reviewer_tag>.finding-FNN.score.yml. Resolve by re-running the verifier, adding a valid round-NN-verifier-disabled.md marker, or setting verifier_enabled: false in config.md."` Do not dispatch the implementer-fix subagent until all kept findings satisfy one of the three conditions above.
+
+   <HARD-GATE>
+   Do NOT dispatch the implementer-fix subagent for any round unless every kept finding satisfies condition (a), (b), or (c) above. A finding without a matching sidecar, a valid marker, or a config-level bypass is a HARD-GATE failure — the round halts and the missing sidecar is surfaced by name before any Edit lands.
+   </HARD-GATE>
+
+6. **Implementer-fix dispatch (with persistence):**
     - **First fix cycle:** Main chat dispatches an implementer-fix subagent via fresh `Agent({ subagent_type: "<implementer_subagent>", model: "<model>" })` call (both resolved per § Per-Task Routing — same variant + model the implement-mode dispatch used) (with `mode: fix`, the task's worktree path `.worktrees/{slug}/task-NN/` named in the prompt, and `companion_review_findings` carrying the consolidated issue list per § Dispatching the Implementer) → fix subagent writes the fixes inside that worktree → main chat re-dispatches reviewers (same worktree pinning) on fixed code. Capture and retain the implementer-fix subagent's agent ID, indexed by task — when running concurrent fix loops in a wave, do NOT mix agent IDs across tasks.
     - **Subsequent fix cycles:** Main chat uses `SendMessage` to continue the SAME implementer-fix subagent (using the retained agent ID) with the new issue list, preserving its context across cycles. Why: by cycle 2, the implementer has full context of what was tried, what reviewers flagged, and which fixes worked or didn't — re-dispatching loses that. Reviewers stay re-dispatched fresh each round (they don't need cross-cycle continuity; the convergence loop already handles their stochasticity).
     - **BLOCKED escape hatch:** If the persisted implementer-fix subagent reports BLOCKED (per the status table above), main chat's escalation actions require a fresh `Agent({ subagent_type: "qrspi-implementer", ... })` dispatch: model switch (model is fixed at spawn time and cannot change via `SendMessage`), or task decomposition (an intentional clean-context reset to escape the stuck approach — `SendMessage` could redirect the same agent with a new scope, but the point of the escape is fresh context, not just new instructions). The escape explicitly breaks persistence.
-5. Up to 3 fix cycles. If unresolved after 3, flag and move on.
-6. **Single round mode:** skip convergence, dispatch once (fresh `Agent({ subagent_type: "qrspi-implementer" })` for the first fix), re-dispatch reviewers once, flag if still issues. (Persistence is only meaningful when there are multiple fix cycles, so single-round mode never uses `SendMessage`.)
+7. Up to 3 fix cycles. If unresolved after 3, flag and move on.
+8. **Single round mode:** skip convergence, dispatch once (fresh `Agent({ subagent_type: "qrspi-implementer" })` for the first fix), re-dispatch reviewers once, flag if still issues. (Persistence is only meaningful when there are multiple fix cycles, so single-round mode never uses `SendMessage`.)
 
 **Main chat never runs reviewers, verifiers, or fixers itself** — each round is a subagent dispatch.
 
