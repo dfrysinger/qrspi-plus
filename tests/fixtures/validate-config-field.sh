@@ -200,6 +200,46 @@ case "$FIELD" in
     fi
     ;;
 
+  question_budget)
+    # Integer-valued field: positive integers only (1, 2, …). Zero, negative,
+    # decimal, and non-numeric values all reject with the standard
+    # invalid-value menu. The field is written to config.md only on quick-
+    # pipeline runs (per `using-qrspi/SKILL.md` § Config File and Goals'
+    # run-creation writer); on full-pipeline runs the field is absent and
+    # this branch fires only when a user has explicitly set an out-of-range
+    # value or when a quick-pipeline run is missing the field.
+    if ! field_present "question_budget"; then
+      echo "config.md has no \`question_budget\` field." >&2
+      echo "" >&2
+      echo "  1) Add \`question_budget: 5\` to config.md (default — caps Research specialist dispatch at 5)" >&2
+      echo "  2) Add \`question_budget: <N>\` with a different positive integer to config.md" >&2
+      echo "  3) Re-run Goals to regenerate config.md" >&2
+      echo "  4) Abort" >&2
+      exit 1
+    fi
+    VALUE="$(extract_field question_budget)"
+    if [[ -z "$VALUE" ]]; then
+      # Same structural-anomaly branch the visual_fidelity_required case
+      # exposes: field present in frontmatter but extraction returned empty
+      # (malformed boundary, partial read). Surface the root cause so a
+      # downstream invalid-value menu does not mask it.
+      echo "could not read field value from config: \`question_budget\` is present but extraction returned empty" >&2
+      exit 1
+    fi
+    # Positive-integer pattern: one or more decimal digits, no sign, no decimal
+    # point, and the leading digit is non-zero (rejects "0", "00", "01" etc.).
+    # Bash regex (POSIX ERE under [[ =~ ]]) — anchored implicitly by ^/$.
+    if [[ ! "$VALUE" =~ ^[1-9][0-9]*$ ]]; then
+      echo "config.md has an invalid value for \`question_budget\`: $VALUE" >&2
+      echo "Expected: a positive integer (e.g. \`5\`, \`12\`)" >&2
+      echo "" >&2
+      echo "  1) Edit config.md and set \`question_budget\` to a positive integer (e.g. \`5\`)" >&2
+      echo "  2) Re-run Goals to regenerate config.md" >&2
+      echo "  3) Abort" >&2
+      exit 1
+    fi
+    ;;
+
   *)
     echo "Unknown field: $FIELD" >&2
     exit 2
