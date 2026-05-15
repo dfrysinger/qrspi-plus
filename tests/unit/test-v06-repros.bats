@@ -748,7 +748,7 @@ _write_disk_failed_fixtures() {
 # contains invalid JSON → exit 11, no recovery note
 # ---------------------------------------------------------------------------
 
-@test "disk-state fallback: per-job record invalid JSON → exits 14 (malformed), stderr diagnostic, no recovery note" {
+@test "disk-state fallback: per-job record invalid JSON → exits 11 (miss), stderr diagnostic, no recovery note" {
   bats_require_minimum_version 1.5.0
 
   local plugin_data="$TEST_ROOT/plugin-data"
@@ -768,10 +768,12 @@ _write_disk_failed_fixtures() {
   export STUB_JOB_NOT_FOUND=1
 
   run --separate-stderr "$WRAPPER" await "$job_id"
-  # Invalid JSON in the per-job record means extract_json_field("status") fails.
-  # The round-04 fix treats this as malformed (exit 14), not as a miss (exit 11),
-  # with an actionable stderr diagnostic.
-  [ "$status" -eq 14 ]
+  # Spec bullet 9: invalid JSON in the per-job record is treated as a miss
+  # equivalent to jobId-not-in-state-json → exit 11 (terminal not-found).
+  # A stderr diagnostic is permitted (not the "disk-recovery note"); the
+  # "without emitting the disk-recovery stderr note" clause bars only the
+  # "await: recovered <jobId> from disk..." success-recovery line.
+  [ "$status" -eq 11 ]
   [[ "$stderr" == *"malformed status field"* ]]
   [[ "$stderr" != *"await: recovered"* ]]
 }

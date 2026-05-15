@@ -768,13 +768,14 @@ process.stdin.on('end', () => {
   #
   # Read the job's lifecycle status first so _status_to_exit_code can map it
   # to the correct exit code when no output payload is extractable.
-  # A parse failure here is not a miss — it indicates a malformed record, so
-  # we emit a diagnostic and exit 14 (malformed) rather than silently treating
-  # the failure as "unknown status → miss".
+  # A parse failure here is treated as a miss (exit 11) per spec bullet 9:
+  # invalid JSON on the per-job record is equivalent to an absent record.
+  # We emit a stderr diagnostic for operator visibility (this is not the
+  # "disk-recovery stderr note" barred by spec bullet 9).
   local job_status
   if ! job_status=$(extract_json_field "$job_json" "status"); then
     printf 'await: disk record at %s has malformed status field\n' "$state_dir/jobs/$job_id.json" >&2
-    return 14
+    return 11
   fi
   local raw
   # (a) result.rawOutput
