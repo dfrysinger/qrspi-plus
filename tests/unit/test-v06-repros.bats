@@ -433,6 +433,7 @@ teardown() {
   bats_require_minimum_version 1.5.0
   # Both launches return phantom (status not-found).
   export STUB_PHANTOM_LAUNCH_COUNT=2
+  export STUB_TRACK_LAUNCH_COUNT=1
 
   run --separate-stderr bash -c 'cat "$PROMPT_FILE" | "$WRAPPER" launch'
   [ "$status" -eq 15 ]
@@ -440,11 +441,22 @@ teardown() {
   [ -z "$output" ]
   # A single identifying terminal stderr line must be present.
   [[ "$stderr" == *"launch: both jobId attempts failed verification (LAUNCH_PHANTOM)"* ]]
-  # The terminal line must appear exactly once — one retry was made; there must
-  # not be multiple LAUNCH_PHANTOM notices (which would indicate a cap violation).
+  # Pins that the LAUNCH_PHANTOM terminal stderr line is emitted EXACTLY ONCE (the wrapper
+  # exits at the terminal cap, not after multiple internal terminations). Combined with the
+  # launchCount == 2 stub-state assertion below, this jointly pins the retry-cap contract:
+  # exactly 2 launch attempts (1 initial + 1 retry), exactly 1 LAUNCH_PHANTOM terminal
+  # stderr line.
   local phantom_note_count
   phantom_note_count=$(printf '%s\n' "$stderr" | grep -c "launch: both jobId attempts failed verification (LAUNCH_PHANTOM)")
   [ "$phantom_note_count" -eq 1 ]
+  # State file records launch count; must be exactly 2 (original + one retry).
+  local launch_count
+  launch_count=$(node -e "
+    const fs = require('fs');
+    const s = JSON.parse(fs.readFileSync(process.env.STUB_STATE_FILE, 'utf8'));
+    process.stdout.write(String(s.launchCount || 0));
+  ")
+  [ "$launch_count" -eq 2 ]
 }
 
 @test "phantom-jobId: retry cap is exactly 1 — phantom first triggers exactly one retry of task" {
