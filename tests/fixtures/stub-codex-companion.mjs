@@ -78,6 +78,13 @@
 //                          violation case that must still exit 14.
 //   STUB_EMPTY_PHASE       if "1", `status` emits job.phase: "" (empty string)
 //                          instead of the value in STUB_PHASE_ONLY.
+//   STUB_NULL_PHASE        if "1", `status` emits job.phase: null (JSON null,
+//                          not a string) — covers brokers that serialize unset
+//                          optional fields as null rather than omitting them.
+//   STUB_PHASE_NUMERIC     when set to a number, `status` emits job.phase as a
+//                          JSON number (e.g. 42) instead of a string — covers
+//                          the case where extract_json_field would stringify the
+//                          number and the case statement falls to the wildcard arm.
 // ----------------------------------------------------------------------------
 
 import fs from "node:fs";
@@ -169,6 +176,41 @@ function handleStatus() {
       workspaceRoot: process.cwd(),
       job: {
         id: argv[1] || state.jobId || "unknown",
+        title: "stub task",
+        summary: "stub",
+        pid: null
+      }
+    };
+    process.stdout.write(JSON.stringify(payload) + "\n");
+    return;
+  }
+
+  // STUB_NULL_PHASE — emit a phase-only payload where job.phase is JSON null.
+  // Covers brokers that serialize unset optional fields as null rather than omitting.
+  if (process.env.STUB_NULL_PHASE === "1") {
+    const payload = {
+      workspaceRoot: process.cwd(),
+      job: {
+        id: argv[1] || state.jobId || "unknown",
+        phase: null,
+        title: "stub task",
+        summary: "stub",
+        pid: null
+      }
+    };
+    process.stdout.write(JSON.stringify(payload) + "\n");
+    return;
+  }
+
+  // STUB_PHASE_NUMERIC — emit a phase-only payload where job.phase is a JSON number.
+  // extract_json_field stringifies numbers, so the case statement receives e.g. "42"
+  // which does not appear in the mapping table and must fall through to malformed.
+  if (process.env.STUB_PHASE_NUMERIC !== undefined) {
+    const payload = {
+      workspaceRoot: process.cwd(),
+      job: {
+        id: argv[1] || state.jobId || "unknown",
+        phase: Number(process.env.STUB_PHASE_NUMERIC),
         title: "stub task",
         summary: "stub",
         pid: null

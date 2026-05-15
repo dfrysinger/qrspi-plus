@@ -235,8 +235,28 @@ teardown() {
 
   run --separate-stderr "$WRAPPER" await job-g7-stderr
   [ "$status" -eq 0 ]
-  [[ "$stderr" == *"[codex-companion-bg] phase fallback active: finalizing"* ]]
-  [[ "$stderr" == *"completed"* ]]
+  [[ "$stderr" == *"[codex-companion-bg] phase fallback active: finalizing → completed"* ]]
+}
+
+@test "phase-fallback: stderr audit line emitted only once per process despite multiple phase-only polls" {
+  # The spec requires single-emit semantics: "subsequent invocations within the
+  # same process suppress the line to avoid log-spam."  CODEX_PHASE_FALLBACK_LOGGED
+  # is initialized at script startup and set to 1 after the first emit.
+  # We exercise 3 phase-only polls before the stub transitions to a real
+  # completed job.status, then assert the audit line appears exactly once.
+  bats_require_minimum_version 1.5.0
+
+  echo '{"jobId":"job-single-emit","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_PHASE_ONLY_UNTIL_POLL=3
+  export STUB_PHASE_ONLY="finalizing"
+  export STUB_COMPLETE_AT_POLL=4
+  export STUB_RESULT_RAW="# single-emit result"
+
+  run --separate-stderr "$WRAPPER" await job-single-emit
+  [ "$status" -eq 0 ]
+  local count
+  count=$(printf '%s\n' "$stderr" | grep -c '\[codex-companion-bg\] phase fallback active')
+  [ "$count" -eq 1 ]
 }
 
 # ---------------------------------------------------------------------------
@@ -272,6 +292,49 @@ teardown() {
 
   [ "$primary_status" -eq "$fallback_status" ]
   [ "$primary_output" = "$fallback_output" ]
+}
+
+# ---------------------------------------------------------------------------
+# phase-fallback — edge-case phase values: null, whitespace, numeric
+# ---------------------------------------------------------------------------
+
+@test "phase-fallback: job.phase JSON null → exit 14 (falls through to malformed)" {
+  # Some JSON serializers emit null for unset optional fields.  The wrapper
+  # must route this to malformed, not to a recognized lifecycle.
+  # extract_json_field exits 1 on null, causing the phase-fallback guard to
+  # fail and execution to fall through to the existing malformed terminal case.
+  # STUB_RESULT_RAW is set so a normal status:completed path would succeed
+  # (exit 0), making this test fail if the stub accidentally skips the
+  # null-phase payload and falls back to a regular completed response.
+  echo '{"jobId":"job-g7-null-phase","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_NULL_PHASE=1
+  export STUB_RESULT_RAW="# null phase result — should not be reached"
+
+  run "$WRAPPER" await job-g7-null-phase
+  [ "$status" -eq 14 ]
+}
+
+@test "phase-fallback: job.phase whitespace-padded string → exit 14 (falls through to malformed)" {
+  # A whitespace-padded value like ' finalizing' does not match the exact-match
+  # case pattern and must fall through to malformed.
+  echo '{"jobId":"job-g7-ws-phase","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_PHASE_ONLY=" finalizing"
+
+  run "$WRAPPER" await job-g7-ws-phase
+  [ "$status" -eq 14 ]
+}
+
+@test "phase-fallback: job.phase numeric value → exit 14 (falls through to malformed)" {
+  # A numeric phase (e.g. 42) is stringified to '42' by extract_json_field.
+  # '42' does not appear in the mapping table and must fall through to malformed.
+  # STUB_RESULT_RAW is set so a normal status:completed path would succeed
+  # (exit 0), making this test fail if the stub skips the numeric-phase payload.
+  echo '{"jobId":"job-g7-num-phase","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_PHASE_NUMERIC=42
+  export STUB_RESULT_RAW="# numeric phase result — should not be reached"
+
+  run "$WRAPPER" await job-g7-num-phase
+  [ "$status" -eq 14 ]
 }
 
 # ---------------------------------------------------------------------------
