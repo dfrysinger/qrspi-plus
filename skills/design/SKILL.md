@@ -111,7 +111,7 @@ status: draft
 
 <!-- Per-section guidance: design-level test strategy only — types (unit / integration / E2E), layers covered, frameworks chosen. Bullets for type/layer/framework triples. Do NOT include assertion text, do NOT include per-test-file layout — those are DEFERS (Implement / TDD).
 
-Visual-fidelity binding subsection (when config carries `visual_fidelity_required: true`): this section MUST include a `### Visual-Fidelity Binding` subsection that names the wireframe artifacts constituting the visual contract for the run — Figma URLs, embedded PNGs under a run-local artifact path, or both. Absence of this subsection when the flag is enabled is a PRECONDITION FAILURE at design-approval time, NOT a reviewer finding raised during design review; the design-approval gate rejects the artifact before any reviewer subagent is dispatched. When `visual_fidelity_required: false` (or the flag is absent), the binding subsection is not required and this rule is inert — do not add a placeholder subsection. -->
+Visual-fidelity binding subsection (when config carries `visual_fidelity_required: true`): this section MUST include a `### Visual-Fidelity Binding` subsection that names the wireframe artifacts constituting the visual contract for the run — Figma URLs, embedded PNGs under a run-local artifact path, or both. The subsection must name at least one concrete artifact; a heading with placeholder text (`{Wireframe artifacts}`, a blank body, or a comment-only body) does not satisfy the requirement. Absence of the subsection — OR a structurally-present subsection that names zero concrete wireframe artifacts — when the flag is enabled is a PRECONDITION FAILURE at design-approval time, NOT a reviewer finding raised during design review; the precondition gate (see `### Precondition Checks`, which runs upstream of `### Review Round`) rejects the artifact before any reviewer subagent is dispatched and before the compaction checkpoint fires. When `visual_fidelity_required: false` (or the flag is absent), the binding subsection is not required and this rule is inert — do not add a placeholder subsection. -->
 
 {Test types, layers, frameworks}
 
@@ -121,6 +121,19 @@ Visual-fidelity binding subsection (when config carries `visual_fidelity_require
 
 {Mermaid diagram}
 ````
+
+### Precondition Checks
+
+Run this gate AFTER the synthesis subagent emits `design.md` and BEFORE the `### Review Round` block (i.e., before the pre-fanout compaction checkpoint, before the reviewer diff-file emission, and before any reviewer subagent dispatch). The gate is structural — it asserts properties the artifact must hold for downstream review to be meaningful, and on failure it short-circuits the cycle so reviewers do not consume context against an artifact that must be regenerated.
+
+**Visual-fidelity binding precondition.** When `config.md` carries `visual_fidelity_required: true`, verify both of the following against `design.md`:
+
+1. `## Test Strategy` contains a `### Visual-Fidelity Binding` subsection.
+2. That subsection names at least one concrete wireframe artifact — a Figma URL, an embedded PNG path under the run-local artifact directory, or both. A subsection whose body is empty, contains only whitespace, contains only an HTML comment, or contains only template-placeholder text (e.g., `{Wireframe artifacts}`) does NOT satisfy this check; structural presence without concrete content fails the gate the same way absence does.
+
+If either condition fails, do **not** emit the reviewer diff file, do **not** run the pre-fanout compaction checkpoint, and do **not** dispatch any reviewer subagent. Surface the error to the user: "design.md is missing the required `### Visual-Fidelity Binding` subsection under `## Test Strategy` (or the subsection is present but names zero concrete wireframe artifacts). Add at least one Figma URL or embedded PNG path before approval." Then loop back to `### Interactive Design Discussion` / `### Design Synthesis Subagent` to regenerate; do not proceed to `### Review Round` until the gate passes.
+
+When `visual_fidelity_required: false` (or the field is absent), this check is skipped entirely and the binding subsection is not required.
 
 ### Review Round
 
@@ -231,7 +244,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
 
 ### Human Gate
 
-**Visual-fidelity binding precondition (check before presenting).** When `config.md` carries `visual_fidelity_required: true`, verify that `design.md` contains a `### Visual-Fidelity Binding` subsection under `## Test Strategy` that names at least one wireframe artifact (Figma URL, embedded PNG under a run-local artifact path, or both). If the subsection is absent, **do not present `design.md` to the user and do not dispatch reviewers** — this is a precondition failure, not a reviewer finding. Surface the error: "design.md is missing the required `### Visual-Fidelity Binding` subsection under `## Test Strategy`. Add it before approval." When `visual_fidelity_required: false` (or the field is absent), this check is skipped entirely and the binding subsection is not required.
+**Visual-fidelity binding precondition (re-check before presenting).** The structural gate for the `### Visual-Fidelity Binding` subsection is the upstream `### Precondition Checks` block, which runs before reviewer dispatch and is the load-bearing enforcement point. Re-assert the same gate here as a defense-in-depth check before presenting `design.md` to the user: when `config.md` carries `visual_fidelity_required: true`, verify the subsection is present under `## Test Strategy` AND names at least one concrete wireframe artifact (Figma URL, embedded PNG under a run-local artifact path, or both); a structurally-present subsection with empty / whitespace-only / comment-only / placeholder-only body fails the check the same way absence does. If the check fails here, **do not present `design.md` to the user** — this is a precondition failure, not a reviewer finding. Surface the error: "design.md is missing the required `### Visual-Fidelity Binding` subsection under `## Test Strategy` (or the subsection is present but names zero concrete wireframe artifacts). Add at least one Figma URL or embedded PNG path before approval." Then loop back to re-synthesis (the upstream `### Precondition Checks` should have caught this; reaching it here means an earlier step was skipped). When `visual_fidelity_required: false` (or the field is absent), this check is skipped entirely and the binding subsection is not required.
 
 Present `design.md` to the user — "hammer on it" review point. **Always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified."
 
