@@ -413,7 +413,7 @@ poll_status() {
     # job.status is absent from the payload.  Attempt the job.phase fallback
     # before falling through to the malformed terminal case.
     #
-    # Phase → lifecycle mapping (design.md § G7, single source of truth):
+    # Phase → lifecycle mapping (design.md phase-fallback section, single source of truth):
     #   finalizing | done | reviewing                          → completed:completed
     #   starting | running | investigating | editing | verifying → running
     #   anything else (incl. absent or empty)                  → malformed (exit 14)
@@ -680,10 +680,28 @@ const slugSource = path.basename(canonicalRoot) || 'workspace';
 const slug = slugSource.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+\$/g, '') || 'workspace';
 const hash = crypto.createHash('sha256').update(canonicalRoot).digest('hex').slice(0, 16);
 const resolvedStateDir = path.join(canonicalPluginData, 'state', slug + '-' + hash);
-// Containment check: ensure the computed path lives within canonicalPluginData.
+// Primary containment check: the string-computed state-dir path must lie within
+// canonicalPluginData (defense-in-depth against future changes to the path
+// computation that could introduce '..'-like sequences).
 if (!resolvedStateDir.startsWith(canonicalPluginData + path.sep) &&
     resolvedStateDir !== canonicalPluginData) {
   process.stderr.write('disk_state_fallback: state dir escaped plugin data root\n');
+  process.exit(1);
+}
+// Secondary containment check: if the state-dir slot already exists, canonicalize
+// it via realpathSync to detect symlink escapes inside CLAUDE_PLUGIN_DATA.
+// An attacker who can write inside CLAUDE_PLUGIN_DATA might replace the state-dir
+// slot with a symlink pointing to an arbitrary location; realpathSync reveals that.
+let canonicalStateDir;
+try { canonicalStateDir = fs.realpathSync(resolvedStateDir); }
+catch (_) {
+  // State dir does not yet exist (normal on first access) — no symlink to check.
+  canonicalStateDir = null;
+}
+if (canonicalStateDir !== null &&
+    !canonicalStateDir.startsWith(canonicalPluginData + path.sep) &&
+    canonicalStateDir !== canonicalPluginData) {
+  process.stderr.write('disk_state_fallback: state dir symlink escapes plugin data root\n');
   process.exit(1);
 }
 process.stdout.write(resolvedStateDir);
@@ -750,8 +768,14 @@ process.stdin.on('end', () => {
   #
   # Read the job's lifecycle status first so _status_to_exit_code can map it
   # to the correct exit code when no output payload is extractable.
+  # A parse failure here is not a miss — it indicates a malformed record, so
+  # we emit a diagnostic and exit 14 (malformed) rather than silently treating
+  # the failure as "unknown status → miss".
   local job_status
-  job_status=$(extract_json_field "$job_json" "status") || job_status=""
+  if ! job_status=$(extract_json_field "$job_json" "status"); then
+    printf 'await: disk record at %s has malformed status field\n' "$state_dir/jobs/$job_id.json" >&2
+    return 14
+  fi
   local raw
   # (a) result.rawOutput
   if raw=$(extract_json_field "$job_json" "result.rawOutput") && [ -n "$raw" ]; then
@@ -777,15 +801,33 @@ process.stdin.on('end', () => {
   # status → exit mapping shared with the broker-served terminal branch.
   if raw=$(extract_json_field "$job_json" "errorMessage") && [ -n "$raw" ]; then
     printf '%s\n' "$raw" >&2
-    _status_to_exit_code "$job_status"
-    return $?
+    local ec
+    _status_to_exit_code "$job_status"; ec=$?
+    # _status_to_exit_code returns 1 for unknown status strings.  On the disk
+    # path this indicates a corrupt or future-version record — treat as malformed
+    # (exit 14) rather than silently falling through to not-found (exit 11).
+    if [ "$ec" -eq 1 ]; then
+      printf 'await: disk record at %s/jobs/%s.json reported unknown status %s; treating as malformed (exit 14)\n' \
+        "$state_dir" "$job_id" "$job_status" >&2
+      ec=14
+    fi
+    return "$ec"
   fi
 
   # No extractable output from any source.  Map status → exit code so that
   # cancelled/failed disk records with no payload still diverge from a plain
   # miss (exit 1) rather than silently returning not-found (exit 11).
-  _status_to_exit_code "$job_status"
-  return $?
+  local ec
+  _status_to_exit_code "$job_status"; ec=$?
+  # Unknown status on disk path: emit actionable diagnostic and exit 14 (malformed),
+  # not the silent fallthrough to exit 11 that would mislead an operator into
+  # thinking the job was never launched.
+  if [ "$ec" -eq 1 ]; then
+    printf 'await: disk record at %s/jobs/%s.json reported unknown status %s; treating as malformed (exit 14)\n' \
+      "$state_dir" "$job_id" "$job_status" >&2
+    ec=14
+  fi
+  return "$ec"
 }
 
 # ---------------------------------------------------------------------------
@@ -913,8 +955,9 @@ await_subcommand() {
             final_rc=13
             ;;
           14)
-            # Job found on disk, status completed but no extractable output;
-            # treat as malformed (mirrors broker-served fetch_result rc=14).
+            # Job found on disk but record is malformed: status completed with
+            # no extractable output, unknown/future status string, or unparseable
+            # status field.  Mirrors broker-served fetch_result rc=14 semantics.
             final_rc=14
             ;;
           *)

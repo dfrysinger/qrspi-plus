@@ -53,35 +53,35 @@ teardown() {
 
 @test "phase-fallback: primary path — job.status 'running' → emits running lifecycle, exits 0 on completion" {
   # job.status is present; the phase fallback must not change anything.
-  echo '{"jobId":"job-g7-primary-running","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-primary-running","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=2
-  export STUB_RESULT_RAW="# G7 primary running review"
+  export STUB_RESULT_RAW="# phase-fallback primary running review"
 
-  run "$WRAPPER" await job-g7-primary-running
+  run "$WRAPPER" await job-phase-primary-running
   [ "$status" -eq 0 ]
-  [[ "$output" == *"G7 primary running review"* ]]
+  [[ "$output" == *"phase-fallback primary running review"* ]]
 }
 
 @test "phase-fallback: primary path — job.status 'completed' → emits completed lifecycle, exits 0" {
   # job.status is present and resolved to "completed"; fallback must not fire.
-  echo '{"jobId":"job-g7-primary-completed","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-primary-completed","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=1
-  export STUB_RESULT_RAW="# G7 primary completed review"
+  export STUB_RESULT_RAW="# phase-fallback primary completed review"
 
-  run "$WRAPPER" await job-g7-primary-completed
+  run "$WRAPPER" await job-phase-primary-completed
   [ "$status" -eq 0 ]
-  [[ "$output" == *"G7 primary completed review"* ]]
+  [[ "$output" == *"phase-fallback primary completed review"* ]]
 }
 
 @test "phase-fallback: primary path — job.status unrecognized value → malformed (exit 14), fallback never fires" {
   # When job.status IS present but carries an unknown value the wrapper must
   # still emit malformed.  The phase fallback must not be consulted at all
   # when job.status is present.
-  echo '{"jobId":"job-g7-badstatus","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-badstatus","polls":0}' > "$STUB_STATE_FILE"
   export STUB_TERMINAL_STATUS="unknown-status-value"
   export STUB_COMPLETE_AT_POLL=1
 
-  run "$WRAPPER" await job-g7-badstatus
+  run "$WRAPPER" await job-phase-badstatus
   [ "$status" -eq 14 ]
 }
 
@@ -93,96 +93,96 @@ teardown() {
   # This is the canonical reproduction case for the phase-fallback feature.
   # Before the fix the wrapper emitted malformed
   # (exit 14); after the fix it must exit 0 via the completed lifecycle.
-  echo '{"jobId":"job-g7-finalizing","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-finalizing","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY="finalizing"
-  export STUB_RESULT_RAW="# G7 finalizing review"
+  export STUB_RESULT_RAW="# phase-fallback finalizing review"
 
-  run "$WRAPPER" await job-g7-finalizing
+  run "$WRAPPER" await job-phase-finalizing
   [ "$status" -eq 0 ]
-  [[ "$output" == *"G7 finalizing review"* ]]
+  [[ "$output" == *"phase-fallback finalizing review"* ]]
 }
 
 @test "phase-fallback: job.status absent, job.phase 'done' → exits 0, emits completed lifecycle" {
-  echo '{"jobId":"job-g7-done","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-done","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY="done"
-  export STUB_RESULT_RAW="# G7 done review"
+  export STUB_RESULT_RAW="# phase-fallback done review"
 
-  run "$WRAPPER" await job-g7-done
+  run "$WRAPPER" await job-phase-done
   [ "$status" -eq 0 ]
-  [[ "$output" == *"G7 done review"* ]]
+  [[ "$output" == *"phase-fallback done review"* ]]
 }
 
 @test "phase-fallback: job.status absent, job.phase 'reviewing' → exits 0, emits completed lifecycle" {
-  echo '{"jobId":"job-g7-reviewing","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-reviewing","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY="reviewing"
-  export STUB_RESULT_RAW="# G7 reviewing review"
+  export STUB_RESULT_RAW="# phase-fallback reviewing review"
 
-  run "$WRAPPER" await job-g7-reviewing
+  run "$WRAPPER" await job-phase-reviewing
   [ "$status" -eq 0 ]
-  [[ "$output" == *"G7 reviewing review"* ]]
+  [[ "$output" == *"phase-fallback reviewing review"* ]]
 }
 
 @test "phase-fallback: job.status absent, job.phase 'running' → emits running lifecycle (poll continues), then completes" {
   # Phase 'running' maps to the running lifecycle; the await loop continues
   # polling.  We use STUB_COMPLETE_AT_POLL so the stub transitions from
   # phase-only running to a real job.status completed after 2 polls.
-  echo '{"jobId":"job-g7-phase-running","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-phase-running","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY_UNTIL_POLL=2
   export STUB_PHASE_ONLY="running"
   export STUB_COMPLETE_AT_POLL=3
-  export STUB_RESULT_RAW="# G7 phase-running completed"
+  export STUB_RESULT_RAW="# phase-fallback phase-running completed"
 
-  run "$WRAPPER" await job-g7-phase-running
+  run "$WRAPPER" await job-phase-phase-running
   [ "$status" -eq 0 ]
-  [[ "$output" == *"G7 phase-running completed"* ]]
+  [[ "$output" == *"phase-fallback phase-running completed"* ]]
 }
 
 @test "phase-fallback: job.status absent, job.phase 'starting' → running lifecycle (poll continues), then completes" {
-  echo '{"jobId":"job-g7-starting","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-starting","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY_UNTIL_POLL=2
   export STUB_PHASE_ONLY="starting"
   export STUB_COMPLETE_AT_POLL=3
-  export STUB_RESULT_RAW="# G7 starting completed"
+  export STUB_RESULT_RAW="# phase-fallback starting completed"
 
-  run "$WRAPPER" await job-g7-starting
+  run "$WRAPPER" await job-phase-starting
   [ "$status" -eq 0 ]
-  [[ "$output" == *"G7 starting completed"* ]]
+  [[ "$output" == *"phase-fallback starting completed"* ]]
 }
 
 @test "phase-fallback: job.status absent, job.phase 'investigating' → running lifecycle, then completes" {
-  echo '{"jobId":"job-g7-investigating","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-investigating","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY_UNTIL_POLL=2
   export STUB_PHASE_ONLY="investigating"
   export STUB_COMPLETE_AT_POLL=3
-  export STUB_RESULT_RAW="# G7 investigating completed"
+  export STUB_RESULT_RAW="# phase-fallback investigating completed"
 
-  run "$WRAPPER" await job-g7-investigating
+  run "$WRAPPER" await job-phase-investigating
   [ "$status" -eq 0 ]
-  [[ "$output" == *"G7 investigating completed"* ]]
+  [[ "$output" == *"phase-fallback investigating completed"* ]]
 }
 
 @test "phase-fallback: job.status absent, job.phase 'editing' → running lifecycle, then completes" {
-  echo '{"jobId":"job-g7-editing","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-editing","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY_UNTIL_POLL=2
   export STUB_PHASE_ONLY="editing"
   export STUB_COMPLETE_AT_POLL=3
-  export STUB_RESULT_RAW="# G7 editing completed"
+  export STUB_RESULT_RAW="# phase-fallback editing completed"
 
-  run "$WRAPPER" await job-g7-editing
+  run "$WRAPPER" await job-phase-editing
   [ "$status" -eq 0 ]
-  [[ "$output" == *"G7 editing completed"* ]]
+  [[ "$output" == *"phase-fallback editing completed"* ]]
 }
 
 @test "phase-fallback: job.status absent, job.phase 'verifying' → running lifecycle, then completes" {
-  echo '{"jobId":"job-g7-verifying","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-verifying","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY_UNTIL_POLL=2
   export STUB_PHASE_ONLY="verifying"
   export STUB_COMPLETE_AT_POLL=3
-  export STUB_RESULT_RAW="# G7 verifying completed"
+  export STUB_RESULT_RAW="# phase-fallback verifying completed"
 
-  run "$WRAPPER" await job-g7-verifying
+  run "$WRAPPER" await job-phase-verifying
   [ "$status" -eq 0 ]
-  [[ "$output" == *"G7 verifying completed"* ]]
+  [[ "$output" == *"phase-fallback verifying completed"* ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -192,30 +192,30 @@ teardown() {
 @test "phase-fallback: both job.status and job.phase absent → exit 14 (malformed), genuine protocol violation" {
   # When neither field is present the existing malformed terminal case must be
   # preserved unchanged — this is not a phase the wrapper is asked to recover.
-  echo '{"jobId":"job-g7-both-absent","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-both-absent","polls":0}' > "$STUB_STATE_FILE"
   export STUB_NO_STATUS_NO_PHASE=1
 
-  run "$WRAPPER" await job-g7-both-absent
+  run "$WRAPPER" await job-phase-both-absent
   [ "$status" -eq 14 ]
 }
 
 @test "phase-fallback: job.status absent, job.phase empty string → exit 14 (falls through to malformed)" {
   # Empty string is outside the mapping table; the wrapper must not treat it as
   # a recognized phase.  Falls through to existing malformed terminal case.
-  echo '{"jobId":"job-g7-empty-phase","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-empty-phase","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY=""
   export STUB_EMPTY_PHASE=1
 
-  run "$WRAPPER" await job-g7-empty-phase
+  run "$WRAPPER" await job-phase-empty-phase
   [ "$status" -eq 14 ]
 }
 
 @test "phase-fallback: job.status absent, job.phase unknown literal → exit 14 (falls through to malformed)" {
   # An unknown literal (not in the mapping table) must fall through to malformed.
-  echo '{"jobId":"job-g7-unknown-phase","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-unknown-phase","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY="some-future-phase-not-in-table"
 
-  run "$WRAPPER" await job-g7-unknown-phase
+  run "$WRAPPER" await job-phase-unknown-phase
   [ "$status" -eq 14 ]
 }
 
@@ -229,11 +229,11 @@ teardown() {
   # it is for operational monitoring only.
   bats_require_minimum_version 1.5.0
 
-  echo '{"jobId":"job-g7-stderr","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-stderr","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY="finalizing"
-  export STUB_RESULT_RAW="# G7 stderr test"
+  export STUB_RESULT_RAW="# phase-fallback stderr test"
 
-  run --separate-stderr "$WRAPPER" await job-g7-stderr
+  run --separate-stderr "$WRAPPER" await job-phase-stderr
   [ "$status" -eq 0 ]
   [[ "$stderr" == *"[codex-companion-bg] phase fallback active: finalizing → completed"* ]]
 }
@@ -274,19 +274,19 @@ teardown() {
   bats_require_minimum_version 1.5.0
 
   # Primary path: job.status = "completed"
-  echo '{"jobId":"job-g7-primary-cmp","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-primary-cmp","polls":0}' > "$STUB_STATE_FILE"
   export STUB_COMPLETE_AT_POLL=1
   export STUB_RESULT_RAW="# identical output"
-  run --separate-stderr "$WRAPPER" await job-g7-primary-cmp
+  run --separate-stderr "$WRAPPER" await job-phase-primary-cmp
   local primary_status="$status"
   local primary_output="$output"
 
   # Reset state for fallback path: job.status absent, job.phase = "finalizing"
-  echo '{"jobId":"job-g7-fallback-cmp","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-fallback-cmp","polls":0}' > "$STUB_STATE_FILE"
   unset STUB_COMPLETE_AT_POLL
   export STUB_PHASE_ONLY="finalizing"
   export STUB_RESULT_RAW="# identical output"
-  run --separate-stderr "$WRAPPER" await job-g7-fallback-cmp
+  run --separate-stderr "$WRAPPER" await job-phase-fallback-cmp
   local fallback_status="$status"
   local fallback_output="$output"
 
@@ -306,21 +306,21 @@ teardown() {
   # STUB_RESULT_RAW is set so a normal status:completed path would succeed
   # (exit 0), making this test fail if the stub accidentally skips the
   # null-phase payload and falls back to a regular completed response.
-  echo '{"jobId":"job-g7-null-phase","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-null-phase","polls":0}' > "$STUB_STATE_FILE"
   export STUB_NULL_PHASE=1
   export STUB_RESULT_RAW="# null phase result — should not be reached"
 
-  run "$WRAPPER" await job-g7-null-phase
+  run "$WRAPPER" await job-phase-null-phase
   [ "$status" -eq 14 ]
 }
 
 @test "phase-fallback: job.phase whitespace-padded string → exit 14 (falls through to malformed)" {
   # A whitespace-padded value like ' finalizing' does not match the exact-match
   # case pattern and must fall through to malformed.
-  echo '{"jobId":"job-g7-ws-phase","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-ws-phase","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_ONLY=" finalizing"
 
-  run "$WRAPPER" await job-g7-ws-phase
+  run "$WRAPPER" await job-phase-ws-phase
   [ "$status" -eq 14 ]
 }
 
@@ -329,11 +329,11 @@ teardown() {
   # '42' does not appear in the mapping table and must fall through to malformed.
   # STUB_RESULT_RAW is set so a normal status:completed path would succeed
   # (exit 0), making this test fail if the stub skips the numeric-phase payload.
-  echo '{"jobId":"job-g7-num-phase","polls":0}' > "$STUB_STATE_FILE"
+  echo '{"jobId":"job-phase-num-phase","polls":0}' > "$STUB_STATE_FILE"
   export STUB_PHASE_NUMERIC=42
   export STUB_RESULT_RAW="# numeric phase result — should not be reached"
 
-  run "$WRAPPER" await job-g7-num-phase
+  run "$WRAPPER" await job-phase-num-phase
   [ "$status" -eq 14 ]
 }
 
@@ -748,7 +748,7 @@ _write_disk_failed_fixtures() {
 # contains invalid JSON → exit 11, no recovery note
 # ---------------------------------------------------------------------------
 
-@test "disk-state fallback: per-job record invalid JSON → exits 11, no recovery note" {
+@test "disk-state fallback: per-job record invalid JSON → exits 14 (malformed), stderr diagnostic, no recovery note" {
   bats_require_minimum_version 1.5.0
 
   local plugin_data="$TEST_ROOT/plugin-data"
@@ -768,7 +768,11 @@ _write_disk_failed_fixtures() {
   export STUB_JOB_NOT_FOUND=1
 
   run --separate-stderr "$WRAPPER" await "$job_id"
-  [ "$status" -eq 11 ]
+  # Invalid JSON in the per-job record means extract_json_field("status") fails.
+  # The round-04 fix treats this as malformed (exit 14), not as a miss (exit 11),
+  # with an actionable stderr diagnostic.
+  [ "$status" -eq 14 ]
+  [[ "$stderr" == *"malformed status field"* ]]
   [[ "$stderr" != *"await: recovered"* ]]
 }
 
@@ -1292,18 +1296,119 @@ _write_disk_failed_fixtures() {
 }
 
 # ---------------------------------------------------------------------------
+# disk-state fallback — completed disk record with no extractable output → exit 14
+# (pins the disk_rc=14 arm in await_subcommand's not-found handler)
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: completed disk record with no extractable output → exit 14, stderr diagnostic" {
+  bats_require_minimum_version 1.5.0
+  command -v jq >/dev/null 2>&1 || skip "jq not on PATH — required for fixture construction"
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-completed-no-output"
+  export STUB_JOB_NOT_FOUND=1
+
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  # state.json lists the job as completed
+  jq -n --arg id "$job_id" \
+    '{"version":1,"config":{},"jobs":[{"id":$id,"status":"completed"}]}' \
+    > "$state_dir/state.json"
+  # Per-job record: status completed, but NO result.rawOutput, result.codex.stdout,
+  # rendered, or errorMessage field — no extractable output from any source.
+  jq -n --arg id "$job_id" \
+    '{"id":$id,"status":"completed"}' \
+    > "$state_dir/jobs/$job_id.json"
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  # _status_to_exit_code("completed") → 14; disk_rc=14 → final_rc=14.
+  [ "$status" -eq 14 ]
+  # Nothing on stdout (no recovered output).
+  [ -z "$output" ]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — unknown status in disk record → exit 14, stderr diagnostic
+# (unknown-status must not silently map to exit 11 "not found")
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: unknown status in disk record (e.g. 'paused') → exit 14, stderr diagnostic" {
+  bats_require_minimum_version 1.5.0
+  command -v jq >/dev/null 2>&1 || skip "jq not on PATH — required for fixture construction"
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-unknown-status"
+  export STUB_JOB_NOT_FOUND=1
+
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  jq -n --arg id "$job_id" \
+    '{"version":1,"config":{},"jobs":[{"id":$id,"status":"paused"}]}' \
+    > "$state_dir/state.json"
+  # Per-job record with a future/unknown status — no output fields.
+  jq -n --arg id "$job_id" \
+    '{"id":$id,"status":"paused"}' \
+    > "$state_dir/jobs/$job_id.json"
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  # Unknown status must map to exit 14 (malformed/unrecognized), NOT exit 11 (not-found).
+  # This distinguishes "job record present with unrecognized status" from "job not found".
+  [ "$status" -eq 14 ]
+  # Stderr must carry an actionable diagnostic mentioning the unknown status.
+  [[ "$stderr" == *"paused"* ]]
+  # Nothing on stdout.
+  [ -z "$output" ]
+}
+
+# ---------------------------------------------------------------------------
 # disk-state fallback — jq guard: tests that use jq skip cleanly when jq absent
-# (structural guard at section level)
+# Structural lint: count of jq-call-using tests must not exceed guard occurrences.
 # ---------------------------------------------------------------------------
 
 @test "disk-state fallback: jq guard fires when jq is unavailable (structural test)" {
-  # This test verifies the guard pattern by checking that each jq-dependent test
-  # function contains the jq guard. It is a structural lint, not a runtime skip.
-  # Verifies that the new cancelled-status tests include the guard.
-  grep -c 'command -v jq' "$BATS_TEST_FILENAME" | grep -qE '^[0-9]+$'
-  local guard_count
-  guard_count=$(grep -c 'command -v jq' "$BATS_TEST_FILENAME")
-  [ "$guard_count" -ge 1 ]
+  # Structural lint: each @test block that calls jq (jq -n or jq -r) must include
+  # the jq guard so it skips cleanly when jq is absent.  Uses awk to count @test
+  # blocks containing jq calls and compare against @test blocks containing guards.
+  # The counts must be equal: no jq-using test without a guard, no spare guards.
+  #
+  # Helper functions (_write_disk_*_fixtures, _disk_state_dir) use jq internally
+  # but are not @test blocks; tests that invoke them include the guard explicitly.
+  # Those helper jq calls are intentionally excluded from this count because it is
+  # the @test-level guard that controls skip behaviour, not a guard inside helpers.
+  local jq_test_count guard_test_count
+  # Count @test blocks that use jq — either directly (jq -n / jq -r calls) or
+  # indirectly via the fixture-writing helpers (_write_disk_*_fixtures) which
+  # themselves invoke jq.  _disk_state_dir uses Node, not jq, so it is excluded.
+  jq_test_count=$(awk '
+    /^@test / { in_test=1; has_jq=0; has_guard=0 }
+    in_test && (/jq -[nr]/ || /_write_disk_(completed|failed)_fixtures/) { has_jq=1 }
+    in_test && /command -v jq/ { has_guard=1 }
+    /^}$/ && in_test { if (has_jq) count++; in_test=0 }
+    END { print count+0 }
+  ' "$BATS_TEST_FILENAME")
+  guard_test_count=$(awk '
+    /^@test / { in_test=1; has_guard=0 }
+    in_test && /command -v jq/ { has_guard=1 }
+    /^}$/ && in_test { if (has_guard) count++; in_test=0 }
+    END { print count+0 }
+  ' "$BATS_TEST_FILENAME")
+  # Counts must be equal: every jq-needing test must have exactly one guard,
+  # and no guard should appear in a test that does not need jq.  Adding a new
+  # jq-dependent test (direct or via helper) without a guard increases
+  # jq_test_count above guard_test_count, tripping this assertion.
+  [ "$jq_test_count" -eq "$guard_test_count" ]
 }
 
 # ---------------------------------------------------------------------------
@@ -1324,6 +1429,7 @@ _write_disk_failed_fixtures() {
   local real_dir sym_dir
   real_dir=$(mktemp -d -t real-workspace-XXXXXX)
   sym_dir=$(mktemp -d -t sym-workspace-XXXXXX)
+  trap 'rm -rf "$real_dir" "$sym_dir"' EXIT
   # Remove the mktemp-created sym_dir placeholder and replace with symlink
   rm -r "$sym_dir"
   ln -s "$real_dir" "$sym_dir"
@@ -1331,7 +1437,6 @@ _write_disk_failed_fixtures() {
   local canonical_path
   canonical_path=$(cd "$real_dir" && pwd -P)
   local sym_path
-  sym_path=$(ls -la "$sym_dir" 2>/dev/null && echo "$sym_dir" || echo "$sym_dir")
   sym_path="$sym_dir"
 
   # Assert the symlink path differs from the canonical path (non-vacuous test).
@@ -1374,46 +1479,73 @@ _write_disk_failed_fixtures() {
 }
 
 # ---------------------------------------------------------------------------
-# disk-state fallback — real containment rejection: CLAUDE_PLUGIN_DATA resolves
-# outside the canonical prefix via symlink escape (containment check exercised)
+# disk-state fallback — real containment rejection: state-dir symlink inside
+# CLAUDE_PLUGIN_DATA that escapes the canonical prefix (containment check exercised)
+#
+# The containment check fires when the state-dir slot inside CLAUDE_PLUGIN_DATA
+# is itself a symlink pointing OUTSIDE the canonical plugin-data tree.  The
+# wrapper canonicalizes the resolved state-dir path and rejects it when it lies
+# outside canonicalPluginData, preventing reads from attacker-controlled paths.
+#
+# Inversion property: removing the containment guard from production code would
+# cause the wrapper to follow the symlink and successfully read the planted
+# fixtures (exit 0), making this test fail — the guard is the only barrier.
 # ---------------------------------------------------------------------------
 
-@test "disk-state fallback: CLAUDE_PLUGIN_DATA symlink escaping canonical prefix → containment check fires" {
+@test "disk-state fallback: state-dir slot symlink escaping canonical plugin-data prefix → containment check fires, exit 11" {
   bats_require_minimum_version 1.5.0
+  command -v jq >/dev/null 2>&1 || skip "jq not on PATH — required for fixture construction"
 
-  # Create two real directories: one is the intended plugin-data root,
-  # the other is outside it (the attacker-controlled "escape" target).
-  local real_plugin_data
-  real_plugin_data=$(mktemp -d -t plugin-data-XXXXXX)
-  local outside_dir
-  outside_dir=$(mktemp -d -t outside-plugin-XXXXXX)
+  # real_plugin_data: the canonical CLAUDE_PLUGIN_DATA root (the intended prefix).
+  # outside_dir: separate real directory outside real_plugin_data (escape target).
+  # Both are placed under TEST_ROOT so teardown() cleans them up unconditionally.
+  local real_plugin_data outside_dir
+  real_plugin_data="$TEST_ROOT/containment-plugin-data"
+  outside_dir="$TEST_ROOT/containment-escape-target"
+  mkdir -p "$real_plugin_data"
+  mkdir -p "$outside_dir"
 
-  # CLAUDE_PLUGIN_DATA points to a symlink that resolves to outside_dir,
-  # which is outside real_plugin_data. The containment check must reject.
-  local sym_plugin_data
-  sym_plugin_data=$(mktemp -d -t sym-plugin-XXXXXX)
-  rm -r "$sym_plugin_data"
-  ln -s "$outside_dir" "$sym_plugin_data"
+  export CLAUDE_PLUGIN_DATA="$real_plugin_data"
 
-  export CLAUDE_PLUGIN_DATA="$sym_plugin_data"
+  # Compute the state-dir slot the wrapper will look for (based on workspace root).
+  # The wrapper runs from cwd = worktree root (test harness invokes bats from there).
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local expected_state_dir
+  expected_state_dir=$(_disk_state_dir "$real_plugin_data" "$workspace")
 
-  local job_id="job-containment-check"
+  # Create the CLAUDE_PLUGIN_DATA/state/ prefix, but make the specific state-dir
+  # slot (the per-workspace directory) a symlink pointing OUTSIDE real_plugin_data.
+  # This is the escape scenario: an attacker who can write inside CLAUDE_PLUGIN_DATA
+  # replaces the state-dir slot with a symlink to an arbitrary location.
+  mkdir -p "$(dirname "$expected_state_dir")"
+  ln -s "$outside_dir" "$expected_state_dir"
+
+  # Plant valid completed fixtures at the symlink target (outside_dir).
+  # If the containment guard were absent, the wrapper would follow the symlink,
+  # find these fixtures, and exit 0.  The guard must prevent this.
+  local job_id="job-containment-escape"
   export STUB_JOB_NOT_FOUND=1
+  mkdir -p "$outside_dir/jobs"
+  jq -n --arg id "$job_id" \
+    '{"version":1,"config":{},"jobs":[{"id":$id,"status":"completed"}]}' \
+    > "$outside_dir/state.json"
+  jq -n --arg id "$job_id" --arg raw "escaped output must not appear" \
+    '{"id":$id,"status":"completed","result":{"rawOutput":$raw}}' \
+    > "$outside_dir/jobs/$job_id.json"
 
-  # The wrapper canonicalizes CLAUDE_PLUGIN_DATA → outside_dir.
-  # The computed state dir is inside outside_dir, not inside real_plugin_data.
-  # This tests the containment check (not an ENOENT path) because outside_dir exists.
+  # The wrapper's Node snippet computes the state dir as a string path inside
+  # real_plugin_data, but then canonicalizes that path (realpathSync) to detect
+  # the symlink escape.  The canonical result is outside_dir (outside
+  # real_plugin_data), so the containment guard must fire and exit non-zero.
   run --separate-stderr "$WRAPPER" await "$job_id"
-  # Must exit with not-found (11) because the containment check fires.
-  # (The state dir path is valid and inside outside_dir but the test verifies
-  # the wrapper does not proceed to read disk from outside_dir's subtree when
-  # it has escaped the originally-intended prefix.)
-  # In practice here the containment check passes (outside_dir IS the canonical prefix)
-  # so this exercises the normal miss path. The canonical test is below.
-  # This variant: just verifies wrapper handles a symlinked CLAUDE_PLUGIN_DATA gracefully.
-  [ "$status" -eq 11 ] || [ "$status" -eq 0 ]
 
-  rm -rf "$real_plugin_data" "$outside_dir" "$sym_plugin_data"
+  # Containment guard fires → wrapper exits 11 (miss) — NOT 0 (recovery).
+  [ "$status" -eq 11 ]
+  # The escaped fixture output must NOT appear on stdout.
+  [[ "$output" != *"escaped output"* ]]
+  # No recovery note (containment rejection not equal to successful disk recovery).
+  [[ "$stderr" != *"await: recovered"* ]]
 }
 
 @test "disk-state fallback: CLAUDE_PLUGIN_DATA with dotdot resolves to nonexistent path → exit 11" {
