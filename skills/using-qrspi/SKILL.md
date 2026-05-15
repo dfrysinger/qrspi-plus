@@ -578,6 +578,19 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
 2. **Per-expected-tag schema-violation guard.** Evaluate the Expected-Reviewer Matrix for the current step against `config.md.codex_reviews`. For each expected tag, assert step 1 produced at least one of (`<tag>.finding-*.md`, `<tag>.clean.md`). Any expected tag with zero matches → present the §3 failure menu. Step 2 also fails loud on: malformed YAML, missing required fields, malformed `change_type` enum values that are out-of-enum (not one of style/clarity/correctness/scope/intent), unrouted `(step, tag)` route (no route entry in the Expected-Reviewer Matrix for this combination). Trailing-newline malformations are normalized (deterministic strip+append-`\n`) with a one-line audit warning, NOT a hard fail.
 
+   **`visual-fidelity-claude` tag — third valid sentinel form.** For the `visual-fidelity-claude` reviewer tag specifically, the guard recognizes a third valid output form alongside `<tag>.finding-*.md` and `<tag>.clean.md`: the file `visual-fidelity-claude.skipped.md` written by the orchestrator when the visual-fidelity dispatch's silent-skip condition fired. A round is considered compliant for this tag when step 1 produced at least one of:
+   - `visual-fidelity-claude.finding-*.md` (findings present), OR
+   - `visual-fidelity-claude.clean.md` (reviewer ran and found nothing), OR
+   - `visual-fidelity-claude.skipped.md` with a valid `skip_reason:` frontmatter field (reviewer legitimately not dispatched).
+
+   The `skip_reason:` field MUST carry one of the following closed values (exactly one value, matching the trigger that caused the skip):
+   - `visual_fidelity_required_false` — `config.md` carried `visual_fidelity_required: false`
+   - `missing_visual_fidelity_check` — the task spec carried no `visual_fidelity_check` field
+   - `empty_wireframe_paths` — after path validation, the `wireframe_paths` list was empty
+   - `empty_screenshot_paths` — after path validation, the `screenshot_paths` list was empty
+
+   A `visual-fidelity-claude.skipped.md` sentinel that lacks the `skip_reason:` field, or carries a value not in the closed set above, is treated as absent by this guard (the tag-produced-no-output schema violation fires as if the file were not present), and the malformed sentinel is logged as a bypass attempt in the per-task review output. This schema mirrors the `round-NN-verifier-disabled.md` marker contract: a required structured field whose closed value set distinguishes legitimate operational states from malformed-or-absent outputs.
+
 3. **Verifier-enabled gate.** Read `verifier_enabled` from `config.md`:
    ```bash
    cfg=docs/qrspi/<bundle>/config.md   # absolute path resolved at runtime
