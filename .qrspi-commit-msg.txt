@@ -1,0 +1,25 @@
+fix(task-16): tighten auto-approve verifier-gate trust model across Q/R/Plan
+
+Round-02 fix addressing all 6 findings from round-01 review:
+
+SEC-F01 (HIGH): Replace sidecar-existence check with sidecar-content check —
+gate now requires every sidecar to evaluate to no kept-blocker findings;
+excludes zero-byte sidecars and any sidecar scoring keep: true.
+
+SEC-F02 (HIGH): Tighten verifier-disabled marker to require T13-mandated
+schema fields (reason:, round: matching current round, created_by:); stale
+markers with mismatched round: are treated as absent.
+
+SEC-F03 (HIGH): Add mandatory audit-log entry requirement when
+verifier_enabled: false satisfies the gate; abort with named diagnostic if
+audit write fails (fail-loud).
+
+SEC-F04 (MEDIUM): Add schema-level <=50 ceiling reference and named-diagnostic
+halt for out-of-range question_budget values in Research dispatch cap.
+
+SF-F01 (MEDIUM): Add explicit config.md missing/unreadable fallback — auto-
+approve branch does NOT fire; falls through to human-approval gate with named
+diagnostic (fail-loud in all three skills).
+
+SF-F02 (MEDIUM): Document question_budget absent-at-runtime behavior in
+Research — dispatch halts with named diagnostic; no silent default.
