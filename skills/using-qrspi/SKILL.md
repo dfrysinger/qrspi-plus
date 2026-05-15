@@ -386,7 +386,7 @@ visual_fidelity_required: false  # set at run creation; when true, activates the
 - `review_mode`: `single` or `loop` — written alongside `review_depth`
 - `visual_fidelity_required`: boolean, default `false`. When `true`, the run opts into the visual-fidelity binding chain (Design must include a wireframe binding subsection, Phasing must cite wireframe artifacts per UI phase, Plan must populate `visual_fidelity_check` on UI-producing tasks, and Implement dispatches the visual-fidelity reviewer). When `false`, the chain is silent — no dispatch, no extra gates.
 
-**Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
+**Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. Goals also writes `verifier_enabled: true`, `scope_tagger_enabled: true`, and `visual_fidelity_required: false` (or `true` if the user opted into the visual-fidelity binding chain) at run creation — these fields are present on disk from the start of every fresh run. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
 
 **Codex detection:** Check if `codex:rescue` is available by globbing for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`. If the file doesn't exist, skip the Codex question silently and write `codex_reviews: false`. If available, ask:
 
