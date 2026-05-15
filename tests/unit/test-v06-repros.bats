@@ -539,3 +539,365 @@ teardown() {
     return 1
   fi
 }
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — G9: await recovers from broker not-found via on-disk state
+#
+# The disk-fallback path activates only when:
+#   1. The `await` subcommand polls a jobId and poll_status returns not-found.
+#   2. $CLAUDE_PLUGIN_DATA is set and non-empty.
+#   3. The resolved broker state-file path is absolute.
+#
+# Path layout mirrors the broker (lib/state.mjs:29-43):
+#   $CLAUDE_PLUGIN_DATA/state/<slug>-<sha256(realpath)[:16]>/state.json
+#   $CLAUDE_PLUGIN_DATA/state/<slug>-<sha256(realpath)[:16]>/jobs/<jobId>.json
+#
+# Helper: write_g9_disk_fixtures <plugin_data_dir> <job_id> <job_json>
+#   Computes the broker state-dir path for the wrapper's cwd, then writes
+#   state.json (listing the jobId) and jobs/<jobId>.json (the per-job record).
+# ---------------------------------------------------------------------------
+
+# Compute the broker state-dir path the same way lib/state.mjs does, from a
+# given realpath-canonical workspace root.  Emits the absolute state-dir path
+# on stdout (no trailing slash).
+_g9_state_dir() {
+  local plugin_data="$1" workspace_realpath="$2"
+  node -e "
+const crypto = require('crypto');
+const path = require('path');
+const pluginData = process.argv[1];
+const workspaceRealpath = process.argv[2];
+const slugSource = path.basename(workspaceRealpath) || 'workspace';
+const slug = slugSource.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/, '') || 'workspace';
+const hash = crypto.createHash('sha256').update(workspaceRealpath).digest('hex').slice(0, 16);
+process.stdout.write(path.join(pluginData, 'state', slug + '-' + hash));
+" -- "$plugin_data" "$workspace_realpath"
+}
+
+# Write valid disk fixtures for a completed job at the broker-canonical path.
+# Args: <plugin_data_dir> <job_id> <raw_output_text> [<workspace_realpath>]
+# The wrapper runs from $REPO_ROOT; we use its realpath as the workspace root.
+_g9_write_completed_fixtures() {
+  local plugin_data="$1" job_id="$2" raw_output="$3"
+  local workspace="${4:-$(cd "$REPO_ROOT" && pwd -P)}"
+  local state_dir
+  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  # state.json: jobs array with an entry whose id matches jobId
+  printf '%s\n' "{\"version\":1,\"config\":{\"stopReviewGate\":false},\"jobs\":[{\"id\":\"$job_id\",\"status\":\"completed\",\"updatedAt\":\"2026-05-14T00:00:00.000Z\",\"createdAt\":\"2026-05-14T00:00:00.000Z\"}]}" \
+    > "$state_dir/state.json"
+  # jobs/<jobId>.json: per-job record with result.rawOutput
+  printf '%s\n' "{\"id\":\"$job_id\",\"status\":\"completed\",\"result\":{\"rawOutput\":\"$raw_output\"}}" \
+    > "$state_dir/jobs/$job_id.json"
+}
+
+# Write disk fixtures for a failed job (no rawOutput, has errorMessage).
+_g9_write_failed_fixtures() {
+  local plugin_data="$1" job_id="$2" error_message="$3"
+  local workspace="${4:-$(cd "$REPO_ROOT" && pwd -P)}"
+  local state_dir
+  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  printf '%s\n' "{\"version\":1,\"config\":{\"stopReviewGate\":false},\"jobs\":[{\"id\":\"$job_id\",\"status\":\"failed\",\"updatedAt\":\"2026-05-14T00:00:00.000Z\",\"createdAt\":\"2026-05-14T00:00:00.000Z\"}]}" \
+    > "$state_dir/state.json"
+  printf '%s\n' "{\"id\":\"$job_id\",\"status\":\"failed\",\"errorMessage\":\"$error_message\"}" \
+    > "$state_dir/jobs/$job_id.json"
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — hit path: state.json lists jobId, jobs/<id>.json
+# has status completed and populated rawOutput → exit 0, recovered output,
+# recovery note on stderr
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: recovers completed jobId from disk on broker not-found (hit path)" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-g9-hit-completed"
+  # Broker always returns not-found for this jobId.
+  export STUB_JOB_NOT_FOUND=1
+
+  # Write valid completed fixtures to disk.
+  _g9_write_completed_fixtures "$plugin_data" "$job_id" "# G9 recovered review output"
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"G9 recovered review output"* ]]
+  [[ "$stderr" == *"await: recovered $job_id from disk (broker reported not-found)"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — miss path: state.json absent → exit 11, no recovery
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: state.json absent → exits 11, no recovery note" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-g9-no-state-file"
+  export STUB_JOB_NOT_FOUND=1
+  # No fixtures written: state.json does not exist.
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 11 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — miss path: state.json contains invalid JSON → exit 11
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: invalid JSON in state.json → exits 11, no recovery note" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-g9-invalid-state-json"
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  printf 'not valid json at all' > "$state_dir/state.json"
+
+  export STUB_JOB_NOT_FOUND=1
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 11 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — miss path: state.json valid but jobId not in jobs[]
+# → exit 11
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: jobId absent from state.json jobs array → exits 11, no recovery note" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-g9-not-in-jobs-array"
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  # state.json lists a different jobId
+  printf '%s\n' '{"version":1,"config":{},"jobs":[{"id":"some-other-job-id","status":"completed"}]}' \
+    > "$state_dir/state.json"
+
+  export STUB_JOB_NOT_FOUND=1
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 11 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — miss path: state.json lists jobId but jobs/<id>.json
+# absent → exit 11, no recovery note
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: per-job record absent when jobId in state.json → exits 11, no recovery note" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-g9-job-file-absent"
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  # state.json lists the jobId, but jobs/<id>.json does not exist
+  printf '%s\n' "{\"version\":1,\"config\":{},\"jobs\":[{\"id\":\"$job_id\",\"status\":\"completed\"}]}" \
+    > "$state_dir/state.json"
+  # Intentionally NO jobs/$job_id.json
+
+  export STUB_JOB_NOT_FOUND=1
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 11 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — miss path: state.json lists jobId but jobs/<id>.json
+# contains invalid JSON → exit 11, no recovery note
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: per-job record invalid JSON → exits 11, no recovery note" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-g9-job-file-bad-json"
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  printf '%s\n' "{\"version\":1,\"config\":{},\"jobs\":[{\"id\":\"$job_id\",\"status\":\"completed\"}]}" \
+    > "$state_dir/state.json"
+  printf 'not valid json' > "$state_dir/jobs/$job_id.json"
+
+  export STUB_JOB_NOT_FOUND=1
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 11 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — $CLAUDE_PLUGIN_DATA unset → path unresolvable, exit 11,
+# no file read attempt (path-resolution hard-stop)
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: CLAUDE_PLUGIN_DATA unset → exits 11 without reading any disk file" {
+  bats_require_minimum_version 1.5.0
+
+  # Unset CLAUDE_PLUGIN_DATA so the fallback cannot resolve the state path.
+  unset CLAUDE_PLUGIN_DATA
+
+  local job_id="job-g9-no-plugin-data"
+  export STUB_JOB_NOT_FOUND=1
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 11 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+@test "disk-state fallback: CLAUDE_PLUGIN_DATA empty string → exits 11 without reading any disk file" {
+  bats_require_minimum_version 1.5.0
+
+  export CLAUDE_PLUGIN_DATA=""
+
+  local job_id="job-g9-empty-plugin-data"
+  export STUB_JOB_NOT_FOUND=1
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 11 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — failed status in per-job record: exit matches
+# broker-served failed path, errorMessage on stderr, nothing on stdout
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: failed status in disk record → non-zero exit, errorMessage on stderr, nothing on stdout" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-g9-failed-disk-record"
+  export STUB_JOB_NOT_FOUND=1
+  _g9_write_failed_fixtures "$plugin_data" "$job_id" "G9 disk failed error message"
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  # Non-zero exit (failed path)
+  [ "$status" -ne 0 ]
+  # errorMessage surfaced on stderr
+  [[ "$stderr" == *"G9 disk failed error message"* ]]
+  # Nothing on stdout
+  [ -z "$output" ]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — happy path unchanged: broker-served completed result
+# does NOT consult state.json at all (no CLAUDE_PLUGIN_DATA read)
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: happy path (broker serves result) → no disk read, no recovery note" {
+  bats_require_minimum_version 1.5.0
+
+  # No CLAUDE_PLUGIN_DATA set; if the fallback fires incorrectly it will fail
+  # to resolve the path and could alter behavior.
+  unset CLAUDE_PLUGIN_DATA
+
+  echo '{"jobId":"job-g9-happy-path","polls":0}' > "$STUB_STATE_FILE"
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW="# G9 happy path broker result"
+
+  run --separate-stderr "$WRAPPER" await job-g9-happy-path
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"G9 happy path broker result"* ]]
+  # No recovery note in stderr
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — stderr-once semantics: recovery note emitted exactly
+# once per recovery event
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: recovery note emitted exactly once per recovery event" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-g9-stderr-once"
+  export STUB_JOB_NOT_FOUND=1
+  _g9_write_completed_fixtures "$plugin_data" "$job_id" "# G9 stderr once test"
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 0 ]
+
+  local count
+  count=$(printf '%s\n' "$stderr" | grep -c "await: recovered $job_id from disk")
+  [ "$count" -eq 1 ]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — disk-read budget: exactly 2 reads per not-found event
+# (verified by inspecting wrapper source for absence of glob/scan patterns)
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: no glob or directory-scan in the not-found fallback code path" {
+  # Structural assertion: the disk-state fallback must not use glob patterns,
+  # find, ls, or directory enumeration. Verify by inspecting the wrapper source.
+  # The fallback logic should only do targeted reads of state.json and
+  # jobs/<jobId>.json.
+  local fallback_code
+  fallback_code=$(sed 's/#.*$//' "$WRAPPER")
+  # Must not contain glob patterns (*/jobs/* or find/ls in context of G9)
+  # We check that the only path construction is a direct concatenation, not a glob.
+  ! printf '%s\n' "$fallback_code" | grep -qE 'jobs/\*|find.*jobs|ls.*jobs'
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — scope: direct poll_status callers are unaffected;
+# only await invokes the disk fallback
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: G7 phase-fallback branch is not modified by G9 path" {
+  # Structural: the G7 phase-fallback branch (job.phase extraction) and the
+  # G9 disk-state fallback are mutually independent. Verify that the G9
+  # implementation (disk_state_fallback function or equivalent) does not
+  # appear inside the poll_status function body.
+  # We do this by checking that the disk-state fallback helper is NOT called
+  # from poll_status.
+  local poll_body
+  poll_body=$(awk '/^poll_status\(\)/{found=1} found{print} /^}$/{if(found){exit}}' "$WRAPPER")
+  ! printf '%s\n' "$poll_body" | grep -qE 'disk_state_fallback|disk.*fallback|state\.json'
+}

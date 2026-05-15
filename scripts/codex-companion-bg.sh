@@ -551,6 +551,135 @@ fetch_result() {
 }
 
 # ---------------------------------------------------------------------------
+# disk_state_fallback <job_id>
+#
+# G9: consult the broker's on-disk state when poll_status returns not-found.
+# Invoked exclusively from await_subcommand's not-found branch.
+#
+# Path layout mirrors lib/state.mjs:29-43:
+#   $CLAUDE_PLUGIN_DATA/state/<slug>-<sha256(realpath)[:16]>/state.json
+#   $CLAUDE_PLUGIN_DATA/state/<slug>-<sha256(realpath)[:16]>/jobs/<jobId>.json
+#
+# Read budget: at most 2 file reads per call (state.json + jobs/<id>.json on hit).
+# No directory scan, glob, or re-read within the same call.
+#
+# Return codes (internal only — not part of the await public contract):
+#   0   Successful recovery: output written to stdout, recovery note on stderr.
+#   13  Job record found but status indicates failure (errorMessage on stderr,
+#       nothing on stdout).
+#   1   Miss: state.json absent/unreadable/invalid/jobId-absent, or per-job
+#       record absent/unreadable/invalid.  Caller falls through to existing
+#       terminal not-found exit (11).
+disk_state_fallback() {
+  local job_id="$1"
+
+  # Path-resolution hard-stop: $CLAUDE_PLUGIN_DATA must be set and non-empty.
+  # If absent, take the existing terminal not-found exit without any read.
+  if [ -z "${CLAUDE_PLUGIN_DATA:-}" ]; then
+    return 1
+  fi
+
+  # Compute the broker-canonical state-directory path (mirrors lib/state.mjs:29-43).
+  # Uses node to replicate the slug/hash construction exactly.
+  local state_dir
+  state_dir=$(node -e "
+const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const { execSync } = require('child_process');
+const pluginData = process.argv[1];
+// Resolve workspace root the same way the broker does: git rev-parse --show-toplevel
+// from the current working directory, falling back to cwd when not in a git repo.
+let workspaceRoot;
+try {
+  workspaceRoot = execSync('git rev-parse --show-toplevel', {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']
+  }).trim();
+} catch (_) {
+  workspaceRoot = process.cwd();
+}
+let canonicalRoot;
+try { canonicalRoot = fs.realpathSync(workspaceRoot); }
+catch (_) { canonicalRoot = workspaceRoot; }
+const slugSource = path.basename(workspaceRoot) || 'workspace';
+const slug = slugSource.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+\$/g, '') || 'workspace';
+const hash = crypto.createHash('sha256').update(canonicalRoot).digest('hex').slice(0, 16);
+process.stdout.write(path.join(pluginData, 'state', slug + '-' + hash));
+" -- "$CLAUDE_PLUGIN_DATA") || return 1
+
+  # Hard-stop: resolved path must be absolute.
+  case "$state_dir" in
+    /*) ;;
+    *)  return 1 ;;
+  esac
+
+  local state_file="$state_dir/state.json"
+
+  # Read 1: state.json — check whether jobId is listed in jobs[].
+  local state_json
+  if ! state_json=$(cat "$state_file" 2>/dev/null); then
+    return 1  # state.json absent or unreadable
+  fi
+
+  local job_listed
+  job_listed=$(printf '%s' "$state_json" | node -e "
+let chunks = [];
+process.stdin.on('data', c => chunks.push(c));
+process.stdin.on('end', () => {
+  const jobId = process.argv[1];
+  let state;
+  try { state = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch (_) { process.exit(1); }
+  if (!Array.isArray(state.jobs)) { process.exit(1); }
+  process.stdout.write(state.jobs.some(j => j.id === jobId) ? '1' : '0');
+});
+" -- "$job_id") || return 1
+
+  if [ "$job_listed" != "1" ]; then
+    return 1  # jobId absent from state.json jobs[]
+  fi
+
+  # Read 2: jobs/<jobId>.json — load and parse the per-job record.
+  local job_file="$state_dir/jobs/$job_id.json"
+  local job_json
+  if ! job_json=$(cat "$job_file" 2>/dev/null); then
+    return 1  # per-job file absent or unreadable
+  fi
+
+  # Apply the result-fallback chain to the disk-loaded record, mirroring the
+  # five-source chain used by fetch_result for broker-served records.
+  # (a) result.rawOutput
+  local raw
+  if raw=$(extract_json_field "$job_json" "result.rawOutput") && [ -n "$raw" ]; then
+    printf 'await: recovered %s from disk (broker reported not-found)\n' "$job_id" >&2
+    printf '%s' "$raw"
+    return 0
+  fi
+  # (b) result.codex.stdout
+  if raw=$(extract_json_field "$job_json" "result.codex.stdout") && [ -n "$raw" ]; then
+    printf 'await: recovered %s from disk (broker reported not-found)\n' "$job_id" >&2
+    printf '%s' "$raw"
+    return 0
+  fi
+  # (c) rendered
+  if raw=$(extract_json_field "$job_json" "rendered") && [ -n "$raw" ]; then
+    printf 'await: recovered %s from disk (broker reported not-found)\n' "$job_id" >&2
+    printf '%s' "$raw"
+    return 0
+  fi
+  # (d)/(e) errorMessage — job failed or cancelled with no output payload.
+  # Emit the errorMessage to stderr (not stdout) to signal job-level failure
+  # to the caller, consistent with the non-output failure paths in await.
+  if raw=$(extract_json_field "$job_json" "errorMessage") && [ -n "$raw" ]; then
+    printf '%s\n' "$raw" >&2
+    return 13
+  fi
+
+  # Nothing extractable from the disk record: treat as a miss.
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # await_subcommand
 #
 # Parse the positional jobId, then poll/await and stream the result markdown
@@ -648,8 +777,28 @@ await_subcommand() {
         break
         ;;
       not-found)
-        final_rc=11
-        printf 'await: job %s not found by companion\n' "$job_id" >&2
+        # G9: consult the broker's on-disk state before taking the terminal
+        # not-found exit.  disk_state_fallback reads at most 2 files per call
+        # and is invoked only from this branch (G7 and G8 branches untouched).
+        local disk_rc
+        disk_state_fallback "$job_id"; disk_rc=$?
+        case "$disk_rc" in
+          0)
+            # Successful disk recovery: output already written to stdout,
+            # recovery note already emitted to stderr.
+            final_rc=0
+            ;;
+          13)
+            # Job found on disk but was failed/cancelled; errorMessage already
+            # emitted to stderr.  Exit non-zero.
+            final_rc=13
+            ;;
+          *)
+            # Miss: take the existing terminal not-found exit unchanged.
+            final_rc=11
+            printf 'await: job %s not found by companion\n' "$job_id" >&2
+            ;;
+        esac
         break
         ;;
       malformed)
