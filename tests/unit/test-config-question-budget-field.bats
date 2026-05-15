@@ -148,8 +148,8 @@ teardown() {
   grep -qiE 'orchestrator.*(exclusive|only).*writ(es|er).*clean' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
     || { echo "missing orchestrator-exclusive-writer rule for clean.md sentinels"; return 1; }
 
-  grep -qiE 'reviewer.*(NEVER|never|not).*(write|emit).*clean' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
-    || { echo "missing explicit prohibition that reviewer subagents never write the clean sentinel"; return 1; }
+  grep -qiE 'reviewer subagent[s]?[[:space:]]+(MUST NOT|must not|SHALL NOT|shall not)[[:space:]]+(write|emit).*(cascade.*clean|clean.*sentinel)' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing explicit imperative prohibition (MUST NOT write/emit cascade clean sentinel) for reviewer subagents"; return 1; }
 
   grep -qiE 'in-session.*kept findings|kept findings.*count|sentinel.*audit-trail|audit-trail.*sentinel|NOT.*on-disk.*sentinel|not.*sentinel.*directly' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
     || { echo "missing rule that the cascade trigger reads the orchestrator's in-session kept-findings count, not the on-disk sentinel"; return 1; }
@@ -584,6 +584,26 @@ EOF
   [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=2.5, got 0"; return 1; }
   echo "$stderr" | grep -qE 'invalid value for .*question_budget|positive integer' \
     || { echo "expected standard invalid-value error on stderr for 2.5, got stdout=$output stderr=$stderr"; return 1; }
+}
+
+@test "validator rejects question_budget integer-overflow values (INT64_MAX+1 and 20-digit string)" {
+  # Arithmetic overflow guard: bash (( VALUE > 50 )) wraps on values larger than
+  # INT64_MAX. INT64_MAX+1 (9223372036854775808, 19 digits) wraps to a large
+  # negative number, making (( VALUE > 50 )) false and bypassing the cap entirely.
+  # The length check before the arithmetic catches any value > 3 digits before
+  # bash arithmetic can overflow.
+  tmpdir="$(mktemp -d)"
+  printf '%s\n' '---' 'created: 2026-05-15' 'pipeline: quick' 'codex_reviews: false' 'route:' '  - goals' '  - questions' 'question_budget: 9223372036854775808' '---' > "$tmpdir/config.md"
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=9223372036854775808 (INT64_MAX+1 overflow bypass), got 0"; return 1; }
+  echo "$stderr" | grep -qiE 'too many digits|invalid value.*question_budget|cap|upper bound|exceeds|out of range|50' \
+    || { echo "expected rejection error for INT64_MAX+1 overflow value, got stdout=$output stderr=$stderr"; return 1; }
+
+  printf '%s\n' '---' 'created: 2026-05-15' 'pipeline: quick' 'codex_reviews: false' 'route:' '  - goals' '  - questions' 'question_budget: 99999999999999999999' '---' > "$tmpdir/config.md"
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=99999999999999999999 (20-digit overflow value), got 0"; return 1; }
+  echo "$stderr" | grep -qiE 'too many digits|invalid value.*question_budget|cap|upper bound|exceeds|out of range|50' \
+    || { echo "expected rejection error for 20-digit overflow value, got stdout=$output stderr=$stderr"; return 1; }
 }
 
 @test "validator exits non-zero with named-field stderr warning when question_budget is absent from config.md" {

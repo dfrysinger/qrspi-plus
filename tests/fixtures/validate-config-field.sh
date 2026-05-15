@@ -246,6 +246,21 @@ case "$FIELD" in
     # if the rationale changes (e.g. orchestrator slots double), update this
     # constant and the matching text in `using-qrspi/SKILL.md` Field Definitions
     # and validation table together.
+    #
+    # Overflow guard: bash (( )) arithmetic uses 64-bit signed integers. Any
+    # value whose decimal string has more than 3 digits is at least 1000, which
+    # is always > 50. More critically, values near or beyond INT64_MAX (e.g.
+    # 9223372036854775808) wrap to large negative numbers and would bypass the
+    # (( VALUE > 50 )) check. The length check runs FIRST so arbitrarily large
+    # values are rejected before any arithmetic occurs.
+    if [[ ${#VALUE} -gt 3 ]]; then
+      echo "config.md error: question_budget value '$VALUE' has too many digits (max 3); upper bound is 50" >&2
+      echo "" >&2
+      echo "  1) Edit config.md and set \`question_budget\` to a positive integer between 1 and 50 inclusive (e.g. \`5\`)" >&2
+      echo "  2) Re-run Goals to regenerate config.md" >&2
+      echo "  3) Abort" >&2
+      exit 1
+    fi
     if (( VALUE > 50 )); then
       echo "config.md has an invalid value for \`question_budget\`: $VALUE" >&2
       echo "Expected: a positive integer between 1 and 50 inclusive (cap of 50 — Research specialist dispatch fan-out wider than 50 exhausts orchestrator subagent slots and yields diminishing-returns coverage)" >&2
