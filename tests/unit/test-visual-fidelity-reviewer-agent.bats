@@ -213,13 +213,17 @@ setup() {
 # ---------------------------------------------------------------------------
 
 @test "using-qrspi/SKILL.md documents that a skipped.md with missing or unrecognized skip_reason: is treated as absent" {
-  grep -qiE 'missing.*skip_reason|unrecognized.*skip_reason|skip_reason.*missing|skip_reason.*unrecognized' "$USING_QRSPI" \
-    || { echo "$USING_QRSPI does not document that a skipped.md with missing/unrecognized skip_reason: is treated as absent"; return 1; }
+  # Section-scoped: grep only within the visual-fidelity-claude apply-fix block
+  awk '/visual-fidelity-claude.*tag.*third valid sentinel/,/This schema mirrors/' "$USING_QRSPI" \
+    | grep -qiE 'missing.*skip_reason|unrecognized.*skip_reason|skip_reason.*missing|skip_reason.*unrecognized' \
+    || { echo "$USING_QRSPI apply-fix section does not document that a skipped.md with missing/unrecognized skip_reason: is treated as absent"; return 1; }
 }
 
 @test "using-qrspi/SKILL.md documents that a malformed skipped.md is logged as a bypass attempt" {
-  grep -qiE 'bypass[- ]attempt|bypass attempt' "$USING_QRSPI" \
-    || { echo "$USING_QRSPI does not document that a malformed skipped.md is logged as a bypass attempt"; return 1; }
+  # Section-scoped: grep only within the visual-fidelity-claude apply-fix block
+  awk '/visual-fidelity-claude.*tag.*third valid sentinel/,/This schema mirrors/' "$USING_QRSPI" \
+    | grep -qiE 'bypass[- ]attempt|bypass attempt' \
+    || { echo "$USING_QRSPI apply-fix section does not document that a malformed skipped.md is logged as a bypass attempt"; return 1; }
 }
 
 # ---------------------------------------------------------------------------
@@ -286,4 +290,66 @@ setup() {
   awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
     | grep -qiE 'exclusive.*writer|exclusive writer' \
     || { echo "$AGENT body does not document the exclusive-writer contract for finding and clean sentinel files"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 15. Honest symlink-trust framing — primary defense is orchestrator (disp A)
+# ---------------------------------------------------------------------------
+
+@test "agent body acknowledges orchestrator as primary defense against symlink traversal" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'primary defense|primary.defence' \
+    || { echo "$AGENT body does not acknowledge the orchestrator gate as the primary defense against symlink traversal"; return 1; }
+}
+
+@test "agent body explicitly states the agent CANNOT detect physical symlinks" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'cannot detect.*symlink|cannot.*canonicali|no.*canonicali.*primitive|does not.*canonicali' \
+    || { echo "$AGENT body does not explicitly state the agent cannot detect physical symlinks at the filesystem layer"; return 1; }
+}
+
+@test "agent body documents the residual trust boundary for symlinks as an architectural residual" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'residual|architectural.*residual|documented.*residual|residual.*trust' \
+    || { echo "$AGENT body does not document the symlink residual trust boundary as an architectural residual"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 16. EXIF metadata in untrusted-data framing (disp B)
+# ---------------------------------------------------------------------------
+
+@test "agent body mentions EXIF in the untrusted-data enumeration" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qE 'EXIF' \
+    || { echo "$AGENT body does not include the literal token 'EXIF' in the untrusted-data framing"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 17. round_subdir allow-prefix validation before Write (disp C)
+# ---------------------------------------------------------------------------
+
+@test "agent body documents that round_subdir is validated against the allow-prefix before writing" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'round_subdir.*allow.prefix|round_subdir.*valid|valid.*round_subdir' \
+    || { echo "$AGENT body does not document allow-prefix validation of round_subdir before Write calls"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 18. Write concrete success criterion (disp D)
+# ---------------------------------------------------------------------------
+
+@test "agent body specifies a concrete Write success criterion" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'File created successfully|file created' \
+    || { echo "$AGENT body does not specify a concrete Write success criterion (e.g. 'File created successfully')"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# 19. Image-injection finding change_type is correctness not scope (disp F)
+# ---------------------------------------------------------------------------
+
+@test "agent body documents image-injection-attempt findings with change_type correctness not scope" {
+  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
+    | grep -qiE 'inject.*change_type.*correctness|change_type.*correctness.*inject|inject.*correctness' \
+    || { echo "$AGENT body does not document change_type: correctness for image-injection-attempt findings (not scope)"; return 1; }
 }
