@@ -87,11 +87,11 @@ teardown() {
 }
 
 @test "Goals SKILL.md per-skill validation prose lists visual_fidelity_required" {
-  # Broadened per round-02 F05: scope to the "Config Validation" section and
-  # accept any line within that section that mentions the field. The prior
-  # pattern required the literal substring "Goals validates" adjacent to the
-  # field name, which was more restrictive than the spec ("lists the field …
-  # alongside the other validated fields").
+  # Scope to the "Config Validation" section and accept any line within that
+  # section that mentions the field. A narrower pattern requiring the literal
+  # substring "Goals validates" adjacent to the field name would be more
+  # restrictive than the spec ("lists the field … alongside the other
+  # validated fields").
   awk '
     /^### Config Validation \(when config.md exists\)/ { in_section=1; next }
     /^### / && in_section { in_section=0 }
@@ -131,8 +131,9 @@ EOF
   [ "$status" -eq 0 ] || { echo "expected exit 0 for visual_fidelity_required=true, got $status: $output"; return 1; }
 
   sed -i.bak 's/visual_fidelity_required: true/visual_fidelity_required: false/' "$tmpdir/config.md"
-  # Round-02 F06 guard: pin the silent-mismatch risk by asserting the sed
-  # transformation took effect before invoking the validator on the wrong input.
+  # Pin the silent-mismatch risk by asserting the sed transformation took
+  # effect before invoking the validator — otherwise a sed that no-ops would
+  # have us re-validating the prior value and reporting a false pass.
   grep -q '^visual_fidelity_required: false$' "$tmpdir/config.md" \
     || { echo "sed did not apply: expected 'visual_fidelity_required: false' in config.md"; return 1; }
   run bash "$VALIDATOR" visual_fidelity_required "$tmpdir"
@@ -148,10 +149,10 @@ EOF
   echo "$stderr" | grep -qE 'invalid value for .*visual_fidelity_required|Expected.*true.*false' \
     || { echo "expected standard invalid-value error on stderr, got stdout=$output stderr=$stderr"; return 1; }
 
-  # Round-02 F03: document the case-sensitive contract. `True` (capital T) is
-  # a plausible user mistake / YAML-parser pre-normalization edge; the
-  # validator's comparison is case-sensitive (`!= "true" && != "false"`) so
-  # `True` must be rejected with the standard invalid-value error on stderr.
+  # Document the case-sensitive contract. `True` (capital T) is a plausible
+  # user mistake / YAML-parser pre-normalization edge; the validator's
+  # comparison is case-sensitive (`!= "true" && != "false"`) so `True` must
+  # be rejected with the standard invalid-value error on stderr.
   sed -i.bak 's/visual_fidelity_required: yesplease/visual_fidelity_required: True/' "$tmpdir/config.md"
   grep -q '^visual_fidelity_required: True$' "$tmpdir/config.md" \
     || { echo "sed did not apply: expected 'visual_fidelity_required: True' in config.md"; return 1; }
@@ -164,9 +165,9 @@ EOF
 }
 
 @test "validator exits non-zero with named-field stderr warning when visual_fidelity_required is absent from config.md" {
-  # Round-02 F01 (test-coverage HIGH): cover the missing-field path at
-  # validator lines 174–181. Round 02 redirected the missing-field menu to
-  # stderr — without this test, that redirect could be silently reverted.
+  # Covers the missing-field path at validator lines 174–181; pins the
+  # stderr redirect on the missing-field menu so a future revert that sends
+  # it back to stdout would fail this test.
   tmpdir="$(mktemp -d)"
   cat > "$tmpdir/config.md" <<'EOF'
 ---
@@ -185,12 +186,11 @@ EOF
 }
 
 @test "validator exits non-zero with present-but-empty stderr warning when visual_fidelity_required value is blank" {
-  # Round-02 F02 + goal-traceability F01 (HIGH): cover the empty-value branch
-  # at validator lines 184–191. The "present but extraction returned empty"
-  # diagnostic is a distinct path from the standard invalid-value menu and
-  # exists precisely to surface malformed-frontmatter anomalies — without this
-  # test, a future refactor could silently collapse it back into the invalid-
-  # value branch.
+  # Covers the empty-value branch at validator lines 184–191. The "present
+  # but extraction returned empty" diagnostic is a distinct path from the
+  # standard invalid-value menu and exists precisely to surface malformed-
+  # frontmatter anomalies — without this test, a future refactor could
+  # silently collapse it back into the invalid-value branch.
   tmpdir="$(mktemp -d)"
   cat > "$tmpdir/config.md" <<'EOF'
 ---
@@ -207,19 +207,35 @@ EOF
   [ "$status" -ne 0 ] || { echo "expected non-zero exit for present-but-empty visual_fidelity_required value, got 0: stdout=$output stderr=$stderr"; return 1; }
   echo "$stderr" | grep -qF 'present but extraction returned empty' \
     || { echo "expected stderr to contain 'present but extraction returned empty', got stdout=$output stderr=$stderr"; return 1; }
+
+  # Whitespace-only sub-case: trailing spaces after the colon must collapse
+  # to the same empty-extraction branch (the validator's regex consumes
+  # leading whitespace greedily before capturing the value). If a future
+  # extraction-fn change broke that invariant, the field would silently
+  # extract as e.g. " " and slip past into the invalid-value branch instead
+  # of being surfaced as a malformed-frontmatter anomaly.
+  printf -- '---\ncreated: 2026-05-14\npipeline: full\ncodex_reviews: false\nroute:\n  - goals\n  - questions\nvisual_fidelity_required:   \n---\n' > "$tmpdir/config.md"
+  run --separate-stderr bash "$VALIDATOR" visual_fidelity_required "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for whitespace-only visual_fidelity_required value, got 0: stdout=$output stderr=$stderr"; return 1; }
+  # Pin the empty-extraction branch (not the invalid-value branch): the
+  # validator's regex eats the trailing whitespace greedily, so a string of
+  # spaces after the colon is indistinguishable from an empty value.
+  echo "$stderr" | grep -qF 'present but extraction returned empty' \
+    || { echo "expected stderr to contain 'present but extraction returned empty' (empty-extraction branch caught the whitespace-only value), got stdout=$output stderr=$stderr"; return 1; }
 }
 
 @test "using-qrspi/SKILL.md carve-out prose documents the runtime-backfill contract (behavioral test deferred to task-02)" {
-  # Round-02 F04 rename: this test is a prose-content check that the carve-out
-  # paragraph in `using-qrspi/SKILL.md` describes the two observable side
-  # effects (stderr warning + write-back). It does NOT exercise the runtime
-  # backfill code path — the consuming-skill backfill logic lands in a later
-  # task; the behavioral assertion (invoke the backfill path and verify the
-  # warning + appended default) is deferred to task-02 (the goals-skill update)
-  # or whichever later task introduces the read-time backfill consumer.
+  # This test is a prose-content check that the carve-out paragraph in
+  # `using-qrspi/SKILL.md` describes the two observable side effects (stderr
+  # warning + write-back). It does NOT exercise the runtime backfill code
+  # path — the consuming-skill backfill logic lands in a later task; the
+  # behavioral assertion (invoke the backfill path and verify the warning +
+  # appended default) is deferred to task-02 (the goals-skill update) or
+  # whichever later task introduces the read-time backfill consumer.
   awk '
     /^### Exceptions to the no-silent-defaults rule/ { in_section=1; next }
     /^### / && in_section { in_section=0 }
+    /^## / && in_section { in_section=0 }
     in_section { print }
   ' "$USING_QRSPI" \
     | awk '/visual_fidelity_required/,/^$/' \
@@ -229,6 +245,7 @@ EOF
   awk '
     /^### Exceptions to the no-silent-defaults rule/ { in_section=1; next }
     /^### / && in_section { in_section=0 }
+    /^## / && in_section { in_section=0 }
     in_section { print }
   ' "$USING_QRSPI" \
     | awk '/visual_fidelity_required/,/^$/' \
