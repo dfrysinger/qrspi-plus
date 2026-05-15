@@ -551,11 +551,39 @@ fetch_result() {
 }
 
 # ---------------------------------------------------------------------------
+# _status_to_exit_code <status>
+#
+# Single source of truth for the status-to-exit-code mapping used by
+# disk_state_fallback and await_subcommand's broker-served terminal branch.
+# Maps a job lifecycle status string to the wrapper's public exit code for
+# that terminal state when no output payload is extractable from the record.
+#
+# Mirrors the exit-code semantics of the broker-served happy path:
+#   completed  → 14  (terminal but no extractable output → malformed)
+#   failed     → 13  (hard error)
+#   cancelled  → 13  (hard error, same bucket as failed)
+#   *          → 1   (unknown status → caller treats as miss)
+#
+# Usage: _status_to_exit_code "$status_string"; local ec=$?
+_status_to_exit_code() {
+  case "$1" in
+    completed)  return 14 ;;
+    failed)     return 13 ;;
+    cancelled)  return 13 ;;
+    *)          return 1  ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # _emit_recovery_note <job_id>
 #
 # Single source of truth for the disk-recovery stderr note.  Called from each
 # successful source branch in disk_state_fallback so the wording is defined
 # in exactly one place.
+#
+# Single-emission discipline: each call site MUST be immediately followed by
+# `return 0` (or a terminal-exit path).  Do not invoke this helper from a
+# fall-through code path.
 _emit_recovery_note() {
   printf 'await: recovered %s from disk (broker reported not-found)\n' "$1" >&2
 }
@@ -603,9 +631,9 @@ disk_state_fallback() {
 
   # jobId format guard — belt-and-suspenders, independent of upstream verify_job_id.
   # job_id must be a safe filename component: no slashes, no '..' sequences,
-  # no empty string.
+  # no empty string, no leading-dot names (dotfiles are not valid broker jobIds).
   case "$job_id" in
-    '' | */* | *..*)
+    '' | */* | *..* | .*)
       printf 'await: malformed jobId rejected at disk-state fallback\n' >&2
       return 1
       ;;
@@ -719,6 +747,11 @@ process.stdin.on('end', () => {
 
   # Apply the result-fallback chain to the disk-loaded record, mirroring the
   # five-source chain used by fetch_result for broker-served records.
+  #
+  # Read the job's lifecycle status first so _status_to_exit_code can map it
+  # to the correct exit code when no output payload is extractable.
+  local job_status
+  job_status=$(extract_json_field "$job_json" "status") || job_status=""
   local raw
   # (a) result.rawOutput
   if raw=$(extract_json_field "$job_json" "result.rawOutput") && [ -n "$raw" ]; then
@@ -738,16 +771,21 @@ process.stdin.on('end', () => {
     printf '%s' "$raw"
     return 0
   fi
-  # failed/cancelled status: job has errorMessage but no output payload.
-  # Emit the errorMessage to stderr (not stdout) and return 13 (hard error —
-  # the same exit code await_subcommand uses for broker-served hard errors).
+  # (d) errorMessage — job failed/cancelled with an error payload but no output.
+  # Emit to stderr (not stdout) so the caller can surface it as a diagnostic.
+  # Use _status_to_exit_code for the exit code: single source of truth for the
+  # status → exit mapping shared with the broker-served terminal branch.
   if raw=$(extract_json_field "$job_json" "errorMessage") && [ -n "$raw" ]; then
     printf '%s\n' "$raw" >&2
-    return 13
+    _status_to_exit_code "$job_status"
+    return $?
   fi
 
-  # Nothing extractable from the disk record: treat as a miss.
-  return 1
+  # No extractable output from any source.  Map status → exit code so that
+  # cancelled/failed disk records with no payload still diverge from a plain
+  # miss (exit 1) rather than silently returning not-found (exit 11).
+  _status_to_exit_code "$job_status"
+  return $?
 }
 
 # ---------------------------------------------------------------------------
@@ -832,8 +870,10 @@ await_subcommand() {
         ;;
       completed:*)
         # Terminal status arrives encoded by poll_status as
-        # "completed:<terminal>"; we don't currently need to differentiate
-        # the terminal status here — fetch_result handles all three.
+        # "completed:<terminal>"; extract the terminal sub-status so that
+        # _status_to_exit_code can produce the correct exit code when
+        # fetch_result returns an unexpected error (single source of truth).
+        local terminal_status="${outcome#completed:}"
         local res_rc=0
         if fetch_result "$companion" "$job_id"; then
           final_rc=0
@@ -842,7 +882,14 @@ await_subcommand() {
           case "$res_rc" in
             11) final_rc=11 ;;
             14) final_rc=14 ;;
-            *)  final_rc=13 ;;
+            *)
+              # Use _status_to_exit_code so the broker-served hard-error exit
+              # shares the same status → exit mapping as disk_state_fallback.
+              _status_to_exit_code "$terminal_status"; final_rc=$?
+              # _status_to_exit_code returns 1 for unknown statuses; map that
+              # to the public hard-error exit (13) to preserve existing behavior.
+              [ "$final_rc" -eq 1 ] && final_rc=13
+              ;;
           esac
         fi
         break
@@ -861,12 +908,18 @@ await_subcommand() {
             final_rc=0
             ;;
           13)
-            # Job found on disk but was failed/cancelled; errorMessage already
-            # emitted to stderr.  Exit non-zero.
+            # Job found on disk, status failed/cancelled; diagnostic already
+            # emitted to stderr by disk_state_fallback via _status_to_exit_code.
             final_rc=13
             ;;
+          14)
+            # Job found on disk, status completed but no extractable output;
+            # treat as malformed (mirrors broker-served fetch_result rc=14).
+            final_rc=14
+            ;;
           *)
-            # Miss: take the existing terminal not-found exit unchanged.
+            # Miss (disk_rc=1) or other: take the existing terminal not-found
+            # exit unchanged.
             final_rc=11
             printf 'await: job %s not found by companion\n' "$job_id" >&2
             ;;
