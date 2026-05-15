@@ -438,8 +438,13 @@ teardown() {
   [ "$status" -eq 15 ]
   # stdout must be empty (no jobId emitted on terminal path).
   [ -z "$output" ]
-  # A single identifying stderr line must be present.
+  # A single identifying terminal stderr line must be present.
   [[ "$stderr" == *"launch: both jobId attempts failed verification (LAUNCH_PHANTOM)"* ]]
+  # The terminal line must appear exactly once — one retry was made; there must
+  # not be multiple LAUNCH_PHANTOM notices (which would indicate a cap violation).
+  local phantom_note_count
+  phantom_note_count=$(printf '%s\n' "$stderr" | grep -c "launch: both jobId attempts failed verification (LAUNCH_PHANTOM)")
+  [ "$phantom_note_count" -eq 1 ]
 }
 
 @test "phantom-jobId: retry cap is exactly 1 — phantom first triggers exactly one retry of task" {
