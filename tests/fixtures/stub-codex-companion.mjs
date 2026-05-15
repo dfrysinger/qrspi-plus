@@ -44,8 +44,8 @@
 //                              once for the first jobId emitted by task. This
 //                              simulates a companion crash / network timeout /
 //                              permissions failure during the first verification
-//                              call. Used to pin R2-F01: verify_job_id must
-//                              treat 'error' lifecycle as unverified, not as
+//                              call. Used to verify that verify_job_id
+//                              treats 'error' lifecycle as unverified, not as
 //                              a broker acknowledgement.
 //
 //   STUB_STATE_FILE        path to JSON file used to persist {jobId, polls}
@@ -174,12 +174,12 @@ async function handleTask() {
   // so that the once-per-test STUB_*_FIRST_LAUNCH_STATUS guards fire only
   // for the first jobId even when a retry launch occurs.
 
-  // R2-F02 / R2-F04: extract launchCount expression for readability and to
-  // make the dual-branch intent explicit. When trackLaunch is false we
-  // intentionally still write the field — preserving the existing value when
-  // present, otherwise seeding with the current launch number. (Both branches
-  // write a value; do NOT "fix" the non-tracking branch to omit the field, as
-  // the once-per-test guards above rely on launchCount being readable.)
+  // Extract launchCount expression for readability and to make the
+  // dual-branch intent explicit. When trackLaunch is false we intentionally
+  // still write the field — preserving the existing value when present,
+  // otherwise seeding with the current launch number. (Both branches write
+  // a value; do NOT "fix" the non-tracking branch to omit the field, as the
+  // once-per-test guards above rely on launchCount being readable.)
   const preservedLaunchCount = stateNow.launchCount || thisLaunchNumber;
   const newState = {
     jobId,
@@ -260,7 +260,7 @@ function handleStatus() {
   // STUB_ERROR_FIRST_LAUNCH_STATUS: exit non-zero with a hard error message
   // (NOT a job-not-found message) exactly once for the first jobId registered.
   // This simulates a companion crash / network timeout during the first
-  // verification call. Pin for R2-F01: verify_job_id must treat poll_status
+  // verification call. Used to verify that verify_job_id treats poll_status
   // 'error' lifecycle as unverified (not as a broker acknowledgement).
   // The message deliberately does NOT match /No (finished )?job found/, so
   // poll_status will route through the generic-error branch (returning 'error'

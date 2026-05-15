@@ -249,10 +249,10 @@ run_task_once() {
 # Issue a single poll_status call to verify the jobId is known to the broker.
 # Returns 0 (verified) when the lifecycle is a positive broker acknowledgement
 # (running or completed:*); returns 1 (unverified) on not-found, malformed,
-# or error.  An 'error' lifecycle (R2-F01) means the status call itself
-# crashed / timed out / hit a permissions failure — that does NOT prove the
-# broker knows the jobId, so it must fall through to the retry branch rather
-# than be silently emitted as a successful verification.
+# or error.  An 'error' lifecycle means the status call itself crashed /
+# timed out / hit a permissions failure — that does NOT prove the broker
+# knows the jobId, so it must fall through to the retry branch rather than
+# be silently emitted as a successful verification.
 #
 # Design note: malformed falls through to the retry branch (does not exit 14)
 # because exit 14 is reserved for the public `status` subcommand's external
@@ -265,7 +265,7 @@ verify_job_id() {
     not-found|malformed|error)
       # not-found: broker explicitly does not know this jobId.
       # malformed: response unparseable; cannot conclude either way.
-      # error:     status call crashed before it could check (R2-F01).
+      # error:     status call crashed before it could check.
       # All three force a retry.
       return 1
       ;;
@@ -319,9 +319,9 @@ launch_subcommand() {
     return 1
   fi
 
-  # R2-CQ-F03: stdin_temp is cleaned up at every exit point in this function
-  # rather than via a trap. This script deliberately runs without `set -e` /
-  # `set -o pipefail` (callers depend on numeric return codes propagating from
+  # stdin_temp is cleaned up at every exit point in this function rather than
+  # via a trap. This script deliberately runs without `set -e` / `set -o
+  # pipefail` (callers depend on numeric return codes propagating from
   # internal helpers), and a cleanup trap would need careful scope to avoid
   # firing in subshells spawned by command substitution. Repeating `rm -f` in
   # each branch is intentional — do NOT replace with a trap without auditing
@@ -342,7 +342,7 @@ launch_subcommand() {
   fi
 
   # --- Retry (attempt 2) ---
-  # First attempt returned phantom (not-found or malformed).  Retry once.
+  # First attempt unverified (not-found, malformed, or error).  Retry once.
   local job_id_2
   if ! job_id_2=$(run_task_once "$companion" "$prompt_file"); then
     # Broker-layer error on the retry launch: surface the existing launch-failure
