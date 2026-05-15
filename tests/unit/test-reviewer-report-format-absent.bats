@@ -25,7 +25,7 @@
 bats_require_minimum_version 1.5.0
 
 setup() {
-  cd "$BATS_TEST_DIRNAME/../.."
+  cd "$BATS_TEST_DIRNAME/../.." || return 1
   EXTRA_AGENTS=(
     "agents/qrspi-silent-failure-hunter.md"
     "agents/qrspi-type-design-analyzer.md"
@@ -37,6 +37,9 @@ setup() {
 # Precondition: each of the three explicit extras must exist on disk.
 # The test fails fast with a clear message naming the missing file so the
 # operator does not need to re-grep to locate the problem.
+#
+# NOTE: paths below mirror EXTRA_AGENTS[] in setup(); update both if the
+# scan set changes (adding a fourth agent, renaming one, etc.).
 # ---------------------------------------------------------------------------
 
 @test "agents/qrspi-silent-failure-hunter.md exists on disk" {
@@ -72,14 +75,25 @@ setup() {
     all_files+=("$f")
   done < <(find agents -name "qrspi-*-reviewer.md" -type f | sort)
 
+  # Guard: glob must match at least one file. An empty result means the
+  # agents/ directory is absent or the glob pattern is wrong — the scan
+  # set is incomplete and would produce a false-green result.
+  if [ "${#all_files[@]}" -eq 0 ]; then
+    echo "SCAN-SET ERROR: find returned no files for 'agents/qrspi-*-reviewer.md' — agents/ directory missing or glob matched zero files" >&2
+    return 1
+  fi
+
   for extra in "${EXTRA_AGENTS[@]}"; do
     all_files+=("$extra")
   done
 
   for f in "${all_files[@]}"; do
     if [ ! -f "$f" ]; then
-      # Already caught by the precondition tests above, but be safe.
-      continue
+      # Fail loudly: a missing file produces an incomplete scan set.
+      # Precondition tests guard the explicit extras; glob-matched files
+      # returned by find should always exist on disk at this point.
+      echo "SCAN-SET ERROR: required file '$f' is missing — scan incomplete" >&2
+      return 1
     fi
     local count
     count=$(grep -c "^## Report Format" "$f" || true)

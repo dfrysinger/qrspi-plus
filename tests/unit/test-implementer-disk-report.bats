@@ -22,7 +22,7 @@
 bats_require_minimum_version 1.5.0
 
 setup() {
-  cd "$BATS_TEST_DIRNAME/../.."
+  cd "$BATS_TEST_DIRNAME/../.." || return 1
   SKILL_FILE="skills/implementer-protocol/SKILL.md"
 }
 
@@ -56,29 +56,57 @@ setup() {
 # ---------------------------------------------------------------------------
 # 3-7. Each of the five brief-line key labels.
 #      One assertion per key so a failure names exactly which key is absent.
+#
+#      Greps are scoped to the code-block template in SKILL.md rather than
+#      the full file. "Status:", "Commit:", "Files:", "Tests:", and "Report:"
+#      are common English words that appear throughout the file in unrelated
+#      prose; an unanchored full-file grep would pass vacuously even if the
+#      actual five-line brief template were removed.
+#
+#      Extraction strategy: awk scans for the "five-line brief only" sentinel
+#      line (which immediately precedes the template code block), then captures
+#      lines inside the next fenced code block (``` ... ```). The result is
+#      written to ${BATS_TEST_TMPDIR}/brief_section.txt and each key-label
+#      assertion greps against that scoped region.
 # ---------------------------------------------------------------------------
 
-@test "SKILL.md documents the five-line brief key 'Status:'" {
-  grep -qF "Status:" "$SKILL_FILE" \
-    || { echo "MISSING KEY: 'Status:' not found in $SKILL_FILE"; return 1; }
+# Helper: extract the five-line brief template block from SKILL.md.
+# Called once per test; BATS_TEST_TMPDIR is per-test isolated scratch space.
+_extract_brief_section() {
+  awk '
+    /five-line brief only/ { found=1 }
+    found && /^```/ { in_block = !in_block; next }
+    found && in_block { print }
+    found && !in_block && NR > 1 && /^```/ { exit }
+  ' "$SKILL_FILE" > "${BATS_TEST_TMPDIR}/brief_section.txt"
 }
 
-@test "SKILL.md documents the five-line brief key 'Commit:'" {
-  grep -qF "Commit:" "$SKILL_FILE" \
-    || { echo "MISSING KEY: 'Commit:' not found in $SKILL_FILE"; return 1; }
+@test "SKILL.md documents the five-line brief key 'Status:' in the template block" {
+  _extract_brief_section
+  grep -qF "Status:" "${BATS_TEST_TMPDIR}/brief_section.txt" \
+    || { echo "MISSING KEY: 'Status:' not found in the five-line brief template block of $SKILL_FILE"; return 1; }
 }
 
-@test "SKILL.md documents the five-line brief key 'Files:'" {
-  grep -qF "Files:" "$SKILL_FILE" \
-    || { echo "MISSING KEY: 'Files:' not found in $SKILL_FILE"; return 1; }
+@test "SKILL.md documents the five-line brief key 'Commit:' in the template block" {
+  _extract_brief_section
+  grep -qF "Commit:" "${BATS_TEST_TMPDIR}/brief_section.txt" \
+    || { echo "MISSING KEY: 'Commit:' not found in the five-line brief template block of $SKILL_FILE"; return 1; }
 }
 
-@test "SKILL.md documents the five-line brief key 'Tests:'" {
-  grep -qF "Tests:" "$SKILL_FILE" \
-    || { echo "MISSING KEY: 'Tests:' not found in $SKILL_FILE"; return 1; }
+@test "SKILL.md documents the five-line brief key 'Files:' in the template block" {
+  _extract_brief_section
+  grep -qF "Files:" "${BATS_TEST_TMPDIR}/brief_section.txt" \
+    || { echo "MISSING KEY: 'Files:' not found in the five-line brief template block of $SKILL_FILE"; return 1; }
 }
 
-@test "SKILL.md documents the five-line brief key 'Report:'" {
-  grep -qF "Report:" "$SKILL_FILE" \
-    || { echo "MISSING KEY: 'Report:' not found in $SKILL_FILE"; return 1; }
+@test "SKILL.md documents the five-line brief key 'Tests:' in the template block" {
+  _extract_brief_section
+  grep -qF "Tests:" "${BATS_TEST_TMPDIR}/brief_section.txt" \
+    || { echo "MISSING KEY: 'Tests:' not found in the five-line brief template block of $SKILL_FILE"; return 1; }
+}
+
+@test "SKILL.md documents the five-line brief key 'Report:' in the template block" {
+  _extract_brief_section
+  grep -qF "Report:" "${BATS_TEST_TMPDIR}/brief_section.txt" \
+    || { echo "MISSING KEY: 'Report:' not found in the five-line brief template block of $SKILL_FILE"; return 1; }
 }
