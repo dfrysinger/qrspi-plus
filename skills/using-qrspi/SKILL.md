@@ -373,6 +373,8 @@ review_depth: deep  # or: quick — added by Implement at phase start
 review_mode: loop   # or: single — added by Implement at phase start
 verifier_enabled: true  # set at run creation; edit directly between rounds to disable for the whole run
 scope_tagger_enabled: true  # set at run creation; edit directly between rounds to disable convergence narrowing for the whole run
+visual_fidelity_required: false  # set at run creation; when true, activates the visual-fidelity binding chain (design → phasing → plan → implement reviewer)
+question_budget: 5  # integer; written only when pipeline: quick (caps Research specialist dispatch count for the run)
 ---
 ```
 
@@ -383,8 +385,22 @@ scope_tagger_enabled: true  # set at run creation; edit directly between rounds 
 - `route`: ordered list of skill names this run will execute (see Route Templates above)
 - `review_depth`: `quick` (4 correctness reviewers) or `deep` (all 8 reviewers) — written by Implement at phase start
 - `review_mode`: `single` or `loop` — written alongside `review_depth`
+- `verifier_enabled`: boolean, default `true`. When `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` per finding-file in parallel and filters style/clarity/correctness findings at score ≥80 before applying. When `false`, the protocol skips verifier dispatch entirely and keeps all findings via the "no sidecar → keep" branch. Set at run creation by Goals; edit `config.md` directly between rounds to disable for the whole run. See "Fields that affect pipeline behavior" below for the full behavioral contract.
+- `scope_tagger_enabled`: boolean, default `true`. When `true`, the Apply-fix protocol dispatches one `qrspi-scope-tagger` per round and uses the resulting scope-set to drive narrow-vs-broaden convergence comparisons across rounds. When `false`, no tagger dispatch fires and reviewer dispatch falls through to full-base-diff behavior. Set at run creation by Goals; edit `config.md` directly between rounds to disable convergence narrowing for the whole run. See "Fields that affect pipeline behavior" below for the full behavioral contract.
+- `visual_fidelity_required`: boolean, default `false`. When `true`, the run opts into the visual-fidelity binding chain (Design must include a wireframe binding subsection, Phasing must cite wireframe artifacts per UI phase, Plan must populate `visual_fidelity_check` on UI-producing tasks, and Implement dispatches the visual-fidelity reviewer). When `false`, the chain is silent — no dispatch, no extra gates.
+- `question_budget`: integer, default `5`, valid range 1–50 inclusive. Used by the Research skill to cap the number of research specialists dispatched in parallel when `pipeline: quick`. Written to `config.md` ONLY when the run is `pipeline: quick`; on full-pipeline runs the field is omitted from `config.md` entirely (no cap applies — Research dispatches per its own scaling rules). The lower cap exists because quick-fix mode trades research breadth for throughput; a small fixed budget keeps the autonomous Research step bounded so the cascade gate documented under the pipeline-mode behavioral semantics below stays cheap. The upper cap of 50 exists because Research specialist dispatch fan-out wider than 50 exhausts orchestrator subagent slots and produces diminishing-returns coverage; the validator fixture (`tests/fixtures/validate-config-field.sh`) enforces both bounds.
 
-**Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
+**Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. Goals also writes `verifier_enabled: true`, `scope_tagger_enabled: true`, and `visual_fidelity_required: false` (or `true` if the user opted into the visual-fidelity binding chain) at run creation — these fields are present on disk from the start of every fresh run. When the user selects `pipeline: quick`, Goals additionally writes `question_budget: 5` (the Research specialist dispatch cap); on `pipeline: full` the field is omitted entirely. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
+
+**Behavioral semantics — `pipeline: quick` (auto-approve cascade and surviving human gates):** The `pipeline: quick` mode is more than a route shortener — it changes how human approval is sequenced across the run. Three things hold under quick-fix mode:
+
+1. **Auto-approve cascade for Questions, Research, and Plan.** These three autonomous steps still run their full review loops (Claude reviewers, Codex reviewers when `codex_reviews: true`, the verifier when `verifier_enabled: true`), and findings still write to disk under `reviews/{step}/round-NN/`. What changes is the human gate after the loop. When a review round produces zero kept findings AFTER verifier filtering — either the initial round emerged clean, or the first fix round closed every kept finding from the prior round — the step writes `status: approved` automatically without prompting the user. The "zero kept findings" trigger is the post-verifier-filter count (the count after the artifact-level Apply-fix protocol applies the verifier's score-≥80 filter to style/clarity/correctness findings), NOT the pre-filter raw findings count emitted by reviewer subagents; this disambiguates the trigger so downstream cascade-branch implementations cannot diverge on whether a verifier-suppressed finding still counts toward the cascade gate. The cascade is a single hop per step (initial-clean OR first-fix-clean), not an unbounded loop; if the fix round still carries kept findings the step pauses for human input via the standard Review-Loop Pause Gate. The `question_budget` field (default `5`) caps Research specialist dispatch under this cascade so the autonomous Research step stays bounded. The line-by-line implementation of the cascade branch in each of these three skills is owned by the respective skill body — `using-qrspi/SKILL.md` is the contract surface that names the behavior; the per-skill implementations carry the wiring.
+
+   **Trust model — clean-sentinel forgery resistance.** The cascade auto-approve trigger reads the orchestrator's in-session "kept findings" count after fan-in completes; it does NOT read any on-disk `<reviewer-tag>.clean.md` sentinel directly to make the auto-approve decision. The on-disk sentinel is the audit-trail artifact, NOT the trigger. For the cascade-specific clean sentinel that records "this auto-approval fired against reviewer-tag X with zero kept findings", the orchestrator is the EXCLUSIVE writer — only the orchestrator writes the cascade clean sentinel after its in-session fan-in tally confirms zero kept findings AFTER verifier filtering for that reviewer tag. Reviewer subagents MUST NOT write the cascade clean sentinel (`<artifact_dir>/cascade-clean-<reviewer-tag>.md` or whatever the orchestrator names it); only the orchestrator writes it after its in-session fan-in tally confirms zero kept findings post-verifier-filter. Reviewer subagents emit per-finding files (`<reviewer-tag>.finding-FNN.md`) per their existing dispatch contract; any `<reviewer-tag>.clean.md` file a reviewer subagent emits under the existing dispatch surface is treated by the cascade as ADVISORY metadata, NOT as the auto-approve trigger. Without this two-layer rule (trigger-from-in-session-count + orchestrator-exclusive-writer for the cascade clean sentinel), a compromised or mis-prompted reviewer subagent could forge a `clean.md` sentinel and trick a sentinel-driven cascade into auto-approving without a real fan-in. Pinning the cascade trigger to the orchestrator's in-session count and pinning the cascade clean-sentinel write to the orchestrator closes the forgery surface end-to-end. This trust model mirrors the orchestrator-exclusive-writer framing already in place for `path-filtered.md` and `bypass-attempt-NN.md` records (see those sections for the parallel pattern).
+
+   **Cascade audit-log requirement.** Every cascade auto-approval event MUST write a `cascade-auto-approve` entry to an append-only audit log at `<artifact_dir>/cascade-audit.log` BEFORE the step writes `status: approved`. The entry records: artifact name, ISO-8601 timestamp (UTC), trigger round number, contributing reviewer tags + sentinel file paths, and the auto-approval rationale (one of `initial-clean` or `first-fix-clean`). JSON Lines format (one JSON object per line); the cascade-branch implementations in the downstream cascade skills MUST use this exact format for consistency across artifacts. Canonical entry example: `{"event": "cascade-auto-approve", "artifact": "questions", "timestamp": "2026-05-15T14:23:11Z", "trigger_round": 2, "rationale": "first-fix-clean", "reviewer_tags": ["quality-claude", "scope-claude"], "sentinel_files": ["reviews/questions/round-02/quality-claude.clean.md", "reviews/questions/round-02/scope-claude.clean.md"]}`. On audit-log write failure (read-only filesystem, permission error, disk full, etc.), HALT the cascade — do NOT silently skip the audit entry and do NOT proceed to write `status: approved`. The same hard-stop pattern used for the runtime-backfill write-back failures applies here: surface the failure to main chat, present the resolve/abort menu, and wait for user resolution before continuing. The audit log is append-only because the cascade is a high-leverage trust boundary (the only place the pipeline auto-writes `status: approved`); a cleanly auditable record across all auto-approvals is required for post-hoc trust verification.
+2. **Two mandatory human gates: Goals and Design (excluded from the cascade).** Goals and Design remain human-approved gates under `pipeline: quick`. They are NOT subject to the auto-approve cascade above. (Note: the canonical Quick-Fix route in `## Route Templates` does not include Design — quick-fix runs that elect Design must use a Full route variant; the exclusion-from-cascade contract applies whenever Design runs.) Goals captures user intent and Design captures the option-selection decision; both are framed as the irreducible places where human leverage adds value during a quick fix. Every other step routes around them with autonomous execution.
+3. **Test phase: binary ship/fix gate.** When Test runs under `pipeline: quick`, it presents a binary ship-or-fix decision rather than the multi-option per-failure menu used in full pipelines. On "ship" the run terminates as the canonical Test step does; on "fix" the routing-back target is **Plan** (not Goals or Design — the user has already approved both, and the fix is presumed to be a plan-level adjustment for the autonomous downstream steps to consume). The cascade resumes from Plan onward.
 
 **Codex detection:** Check if `codex:rescue` is available by globbing for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`. If the file doesn't exist, skip the Codex question silently and write `codex_reviews: false`. If available, ask:
 
@@ -423,6 +439,43 @@ Stop and present the field-specific menu below. For an invalid value, also name 
 1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
 2. Abort
 
+**If `visual_fidelity_required` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `visual_fidelity_required: true` or `visual_fidelity_required: false`
+2. Re-run Goals to regenerate config.md
+3. Abort
+
+**If `verifier_enabled` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `verifier_enabled: true` or `verifier_enabled: false`
+2. Abort
+
+**If `scope_tagger_enabled` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `scope_tagger_enabled: true` or `scope_tagger_enabled: false`
+2. Abort
+
+**If `question_budget` is missing, present-when-forbidden, or has an invalid value** (expected: a positive integer between 1 and 50 inclusive when `pipeline: quick`; absent entirely when `pipeline: full`). The four failure modes each present the same shape of menu:
+
+- **Missing-when-quick-required** (`pipeline: quick` but `question_budget` absent):
+  1. Re-run Goals to regenerate config.md with `question_budget: 5` (the default)
+  2. Edit config.md and add `question_budget: <N>` (positive integer between 1 and 50 inclusive)
+  3. Abort
+
+- **Present-when-full-forbidden** (`pipeline: full` but `question_budget` is set; the field has no meaning on full-pipeline runs and a stale value would mislead readers):
+  1. Edit config.md and remove the `question_budget` line entirely
+  2. Re-run Goals to regenerate config.md (full pipeline omits the field)
+  3. Abort
+
+- **Value zero or negative** (e.g. `question_budget: 0`, `question_budget: -3`):
+  1. Edit config.md and set `question_budget` to a positive integer between 1 and 50 inclusive (e.g. `5`)
+  2. Re-run Goals to regenerate config.md
+  3. Abort
+
+- **Value non-integer or out-of-range** (e.g. `question_budget: 2.5`, `question_budget: many`, `question_budget: 0x5`, or any value greater than 50; the cap of 50 exists because Research specialist dispatch fan-out wider than 50 exhausts orchestrator subagent slots and produces diminishing-returns coverage):
+  1. Edit config.md and set `question_budget` to a positive integer between 1 and 50 inclusive (e.g. `5`)
+  2. Re-run Goals to regenerate config.md
+  3. Abort
+
+(Note: the missing-on-read case in a resumed run created before any of `verifier_enabled`, `scope_tagger_enabled`, or `visual_fidelity_required` landed is covered by the runtime-backfill carve-outs below; these menus fire when the field has an invalid value — e.g. `verifier_enabled: yes`, `scope_tagger_enabled: disabled` — or is absent in a fresh-run context where backfill does not apply. The `question_budget` field has no runtime-backfill carve-out: the menu above fires for any missing/invalid case.)
+
 ### No silent defaults
 
 Skills must not:
@@ -435,7 +488,20 @@ Skills must not:
 
 - **`verifier_enabled` runtime backfill.** If the field is missing from `config.md` on the first verifier-aware Apply-fix invocation in a resumed run created before the verifier landed, the runtime treats it as `true`, surfaces a one-line stderr warning once per resume (form: `verifier_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`. The carve-out exists because pre-existing run directories on disk pre-date the field's introduction and the alternative — failing the run on a missing field — would prevent users from resuming any in-flight run after upgrading.
 
-- **`scope_tagger_enabled` runtime backfill.** Same shape as `verifier_enabled` above: if the field is missing from `config.md` on the first scope-tagger-aware Apply-fix invocation in a resumed run created before the tagger landed, the runtime treats it as `true`, surfaces a one-line stderr warning once per resume (form: `scope_tagger_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`. The two `*_enabled` backfills are the only carve-outs from the no-silent-defaults rule (`### No silent defaults` above).
+- **`scope_tagger_enabled` runtime backfill.** Same shape as `verifier_enabled` above: if the field is missing from `config.md` on the first scope-tagger-aware Apply-fix invocation in a resumed run created before the tagger landed, the runtime treats it as `true`, surfaces a one-line stderr warning once per resume (form: `scope_tagger_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`.
+
+- **`visual_fidelity_required` runtime backfill.** Same shape as `verifier_enabled` above: if the field is missing from `config.md` on the first visual-fidelity-aware skill invocation in a resumed run created before the field landed, the runtime treats it as `false` (the default — the binding chain stays silent for legacy runs), surfaces a one-line stderr warning once per resume (form: `visual_fidelity_required missing from config.md — backfilling default 'false' for this run`), and writes the field back to `config.md`. The carve-out exists because pre-existing run directories on disk pre-date the field's introduction and the alternative — failing the run on a missing field — would prevent users from resuming any in-flight run after upgrading. The three `*_enabled` / `*_required` backfills (`verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`) are the only carve-outs from the no-silent-defaults rule (`### No silent defaults` above).
+
+- **Hard-stop on write-back failure (applies to all three backfills above).** The write-back to `config.md` is part of the carve-out's contract, not a best-effort side effect. If the write fails for any reason (read-only filesystem, permission error, lock contention, disk full, etc.), the runtime MUST stop issuing tool calls and present the following to the user (the same "Stop and present" pattern used by the validation menus in `### When config.md is missing entirely` and `### When a required field is missing or has an invalid value` above — message to the user in main chat, not stderr or a tool-call log line, then wait for the user's selection):
+
+  > Stop and present:
+  >
+  >   failed to write `<field>` to config.md — resolve before continuing
+  >
+  >   1) Resolve the underlying write failure (fix permissions, free disk space, release the lock) and re-invoke the current skill to retry
+  >   2) Abort
+
+  Do NOT silently fall back to the in-memory default after a failed write: an in-memory value that differs from the on-disk state means the next invocation re-fires the backfill (re-warns, re-attempts the write) indefinitely, and any cross-invocation behavior change in the default would silently produce inconsistent results across rounds. Hard-stop is the only correct path; the user resolves the underlying write failure and re-invokes the skill.
 
 ### Fields that affect pipeline behavior (must be validated)
 
@@ -446,10 +512,16 @@ Skills must not:
 | `codex_reviews` | Goals, Plan, Design, Phasing, Structure, Replan, Implement, Integrate, Test | `true` or `false` |
 | `review_depth` | Implement | `quick` or `deep` — set by Implement at phase start |
 | `review_mode` | Implement | `single` or `loop` — set by Implement at phase start |
+| `verifier_enabled` | Goals, Implement | `true` or `false` — set at run creation; gates per-finding verifier dispatch in the Apply-fix protocol |
+| `scope_tagger_enabled` | Goals, Implement | `true` or `false` — set at run creation; gates per-round scope-tagger dispatch and convergence narrowing |
+| `visual_fidelity_required` | Goals, Design, Phasing, Plan, Implement | `true` or `false` — set at run creation; gates the visual-fidelity binding chain |
+| `question_budget` | Goals, Plan, Parallelize (validators); Research (runtime consumer — see note below) | positive integer between 1 and 50 inclusive (e.g. `5`, `12`) — present required when `pipeline: quick`, absent when `pipeline: full`; caps Research specialist dispatch count (cap of 50 exists because dispatch fan-out beyond 50 exhausts orchestrator subagent slots and yields diminishing-returns coverage) |
 
 - **`verifier_enabled`** (boolean, default `true`) — when `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` (Haiku) per finding-file in parallel and filters style/clarity/correctness findings at score ≥80 before applying. When `false`, the protocol skips verifier dispatch entirely (no sidecars are written) and keeps all findings via the "no sidecar → keep" branch in step 7. The field is durable across `/compact`, pause, resume, and re-entry within the run directory under `docs/qrspi/<date>-<bundle>/`. Fresh run directories start with `verifier_enabled: true` (set by the `using-qrspi` run-init code at run creation). The §3 menu's `skip` option disables the verifier for the CURRENT round only (it does NOT mutate `config.md`); to disable across the whole run, edit `config.md` directly between rounds. CLI-flag opt-out at `/qrspi` invocation is out of scope for #109 (deferred).
 
 - **`scope_tagger_enabled`** (boolean, default `true`) — when `true`, step 5.5 of the Apply-fix protocol dispatches one `qrspi-scope-tagger` (Haiku) per round to derive a scope-set, and step 7.5 compares scope-sets across rounds to drive the narrow-vs-broaden decision for the next round's diff `<ref>` and optional `<scope_hint>` advisory. When `false`, step 5.5 is skipped (no tagger dispatch, no scope-set file emitted) and step 7.5's convergence comparison treats every round as full-scope (no narrowing fires); reviewer dispatch falls through to PR-1's full-base-diff behavior. The field is durable across `/compact`, pause, resume, and re-entry within the run directory under `docs/qrspi/<date>-<bundle>/`. Fresh run directories start with `scope_tagger_enabled: true` (set by the `using-qrspi` run-init code at run creation). To disable convergence narrowing across a whole run, edit `config.md` directly between rounds. The test step (`skills/test/SKILL.md`) opts out of convergence narrowing entirely — see §"Per-step applicability" in the spec; that opt-out is independent of `scope_tagger_enabled`.
+
+- **`question_budget` runtime consumer note (Research).** The Research skill is the runtime CONSUMER of `question_budget` — it reads the field at dispatch time to cap specialist fan-out. Goals, Plan, and Parallelize validate the field on re-entry per the Config Validation Procedure (this is what the table's first column enumerates). Research's own per-skill validation list is NOT updated in this task because `skills/research/SKILL.md` is out of scope for the schema-migration task that adds the field. Adding `question_budget` to Research's per-skill validation list is a follow-on that lands alongside Research's auto-approve cascade-branch wiring (Slice 4); until then, Research's runtime read of the field is bounds-checked by the validator fixture invoked at re-entry by Goals/Plan/Parallelize before Research runs, so a corrupted on-disk value cannot reach Research's dispatcher uncaught.
 
 ### Fields that do NOT require validation (informational only)
 
@@ -458,6 +530,8 @@ Skills must not:
 | `created` | ISO date, informational only — missing is not an error |
 
 ## Standard Review Loop
+
+**Round-directory precondition (before dispatching round-NN reviewers).** Before dispatching round-NN reviewers, the orchestrator confirms `reviews/tasks/task-NN/round-NN/` either does not exist or is empty. If files pre-exist in that path, the orchestrator halts and reports a precondition violation (orchestrator state corruption or task-author tampering) — do not proceed to reviewer dispatch. If the existence/emptiness check fails with an IO error (EACCES, EIO, ELOOP, or any other error that prevents determination), the orchestrator halts and emits the following message template to main-chat output: `"IO error on round-directory check at <path>: <errno_or_exception_string>; cannot verify emptiness precondition. Resolve the IO condition and retry, or escalate to the user."` The message MUST contain the failing path and the IO error/exception string. Do NOT treat a failed check as "does not exist" and proceed. The orchestrator MUST NOT proceed to reviewer dispatch on an unverifiable precondition. The round directory is orchestrator-write-only by convention; reviewer dispatches Read it only via the dispatched subagents' Write outputs. A pre-existing round directory with content cannot be trusted as this round's output. TOCTOU on the emptiness check is mitigated by the orchestrator's exclusive write access during the round-start window; cross-process concurrent-writer scenarios are out of scope for the in-pipeline integrity guarantee (require filesystem-level access controls).
 
 A "review round" consists of:
 1. **Orchestrator emits the round's diff file** before dispatching reviewers. The diff content never enters main-chat context. Reviewer dispatches then carry `<diff_file_path>` as a string parameter and reviewers Read the diff file directly. The orchestrator picks `<ref>` per the convergence rule (PR-2 Mechanism B) — see "Diff handling between rounds" below for the rule, but in summary: rounds 1 and 2 always use `<ref>=<base-branch>`; round NN+1 uses `<ref>=HEAD~1` only when step 7.5's convergence comparison fires "narrow" against round NN, and falls back to `<ref>=<base-branch>` otherwise (broaden, scope_tagger_enabled=false, missing scope-set, or after a backward-loop reset). When the artifact directory is not inside a git repository, skip the diff-file step — reviewers fall back to the wrapped artifact body in their dispatch prompt.
@@ -542,6 +616,42 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
    Sidecars (`*.score.yml`) are intentionally not enumerated here; they're discovered per-finding at step 5.
 
 2. **Per-expected-tag schema-violation guard.** Evaluate the Expected-Reviewer Matrix for the current step against `config.md.codex_reviews`. For each expected tag, assert step 1 produced at least one of (`<tag>.finding-*.md`, `<tag>.clean.md`). Any expected tag with zero matches → present the §3 failure menu. Step 2 also fails loud on: malformed YAML, missing required fields, malformed `change_type` enum values that are out-of-enum (not one of style/clarity/correctness/scope/intent), unrouted `(step, tag)` route (no route entry in the Expected-Reviewer Matrix for this combination). Trailing-newline malformations are normalized (deterministic strip+append-`\n`) with a one-line audit warning, NOT a hard fail.
+
+   **`visual-fidelity-claude` tag — third valid sentinel form.** For the `visual-fidelity-claude` reviewer tag specifically, the guard recognizes a third valid output form alongside `<tag>.finding-*.md` and `<tag>.clean.md`: the file `visual-fidelity-claude.skipped.md` written by the orchestrator when the visual-fidelity dispatch's silent-skip condition fired. A round is considered compliant for this tag when step 1 produced at least one of:
+   - `visual-fidelity-claude.finding-*.md` (findings present), OR
+   - `visual-fidelity-claude.clean.md` (reviewer ran and found nothing), OR
+   - `visual-fidelity-claude.skipped.md` with a valid `skip_reason:` frontmatter field (reviewer legitimately not dispatched).
+
+   The `skip_reason:` field MUST carry one of the following closed values (exactly one value, matching the trigger that caused the skip):
+   - `visual_fidelity_required_false` — `config.md` carried `visual_fidelity_required: false`
+   - `missing_visual_fidelity_check` — the task spec carried no `visual_fidelity_check` field
+   - `empty_wireframe_paths` — after path validation, the `wireframe_paths` list was empty
+   - `empty_screenshot_paths` — after path validation, the `screenshot_paths` list was empty
+
+   The sentinel MUST also carry a `path_filtered:` frontmatter field:
+   - `path_filtered: true` — when the `empty_wireframe_paths` or `empty_screenshot_paths` trigger fired as a result of path-validation dropping entries (the `path-filtered.md` audit record was written for this round). Distinguishes "all refs rejected by path validation" from "task genuinely had no refs."
+   - `path_filtered: false` — default; set when no paths were dropped by validation.
+
+   A sentinel with a valid `skip_reason:` but a missing or unrecognized `path_filtered:` value is treated as `path_filtered: false` (conservative default — the apply-fix guard cannot distinguish "task genuinely had no refs" from "all refs rejected" without the field, so it surfaces no all-paths-rejected diagnostic).
+
+   When reading `path-filtered.md` to verify path drops, the apply-fix guard must respect the file's `path_encoding:` frontmatter field: dropped path strings are base64-encoded (and carry `path_encoding: base64`) when the path itself contained the closing UNTRUSTED-PATH-END marker sequence. Default is `path_encoding: literal`. The `base64` value refers to RFC 4648 §4 standard alphabet with padding (`+`, `/`, and `=` for padding). URL-safe (`-`, `_`) and unpadded variants are NOT recognized — they fall under the unrecognized-value rule and trigger a bypass-attempt. The apply-fix guard's `path_encoding:` value comparison is CASE-SENSITIVE. `path_encoding: BASE64`, `Base64`, `LITERAL`, etc. are unrecognized values (per the closed value set) and trigger a bypass-attempt. An audit record (`path-filtered.md`) carrying a `path_encoding:` value other than `base64` or `literal` (the closed value set) MUST be treated as a malformed audit record by the apply-fix guard: do NOT fall through to `literal` decoding (which would silently defeat the delimiter-injection protection). Halt and emit a `visual-fidelity-claude.bypass-attempt-NN.md` finding-shaped record describing the unrecognized value. See `skills/implement/SKILL.md` § Visual-fidelity reviewer → Path-drop audit record for the full delimiter-injection write contract.
+
+   **`path_filtered:` authority.** The orchestrator (main-chat) is the EXCLUSIVE writer of both `path-filtered.md` and the `path_filtered:` frontmatter field on `skipped.md`. The apply-fix guard derives `path_filtered:` state from the FRONTMATTER FIELD, not from `path-filtered.md` presence (the file may be present without all-rejected drops, e.g., partial-filter case). If the apply-fix guard observes `skipped.md` with `path_filtered: false` but also sees a `path-filtered.md` file in the round directory, it treats this as a schema inconsistency and surfaces a bypass-attempt record rather than silently trusting either source.
+
+   A `visual-fidelity-claude.skipped.md` sentinel that lacks the `skip_reason:` field, or carries a value not in the closed set above, is treated as absent by this guard (the tag-produced-no-output schema violation fires as if the file were not present), and the malformed sentinel is logged as a bypass attempt in the orchestrator's main-chat output AND written as a `visual-fidelity-claude.bypass-attempt-NN.md` finding-shaped record under the round directory (where `NN` is the 2-digit zero-padded per-round monotonic sequence number, e.g. `bypass-attempt-01.md`) with all five required schema fields:
+   - `finding_id: R{round}-bypass-{NN}` (where `{round}` is the current round number and `{NN}` is the 2-digit zero-padded per-round monotonic sequence number, e.g. `R3-bypass-01`; this form satisfies the schema-guard regex `^R\d+-(F|bypass-)\d+$`)
+   - `severity: high`
+   - `change_type: correctness`
+   - `referenced_files: [reviews/tasks/task-NN/round-NN/visual-fidelity-claude.skipped.md]` (the malformed sentinel file)
+   - `message`: one paragraph describing the malformation — "Sentinel file contains [missing|unrecognized] `skip_reason:` value `<value>`. Recognized values: visual_fidelity_required_false, missing_visual_fidelity_check, empty_wireframe_paths, empty_screenshot_paths."
+
+   **`bypass-attempt-NN.md` exclusive writer.** The orchestrator (main-chat) is the EXCLUSIVE writer of `bypass-attempt-NN.md` files. Reviewer subagents do NOT write to these files; their dispatch contract restricts their disk-write surface to `<reviewer_tag>.finding-FNN.md` and `<reviewer_tag>.clean.md` files. The apply-fix guard relies on this exclusivity to trust the file's contents at face value. The round-directory-empty precondition (which fires before any dispatch) closes the round-START forgery vector for this file.
+
+   FOLLOW-UP NEEDED (tracked outside this task): the `skills/reviewer-protocol/SKILL.md` dispatch contract should add an explicit write-restriction prohibiting reviewer subagents from writing files matching `*.bypass-attempt-NN.md` to the round directory. Until that follow-up lands, the orchestrator-exclusive-writer guarantee for bypass-attempt files relies on reviewer subagents respecting the dispatch contract's stated write surface (`<reviewer_tag>.finding-FNN.md` and `<reviewer_tag>.clean.md`). The round-directory-empty precondition closes the round-START forgery vector; in-round forgery by a compromised reviewer subagent is the residual risk this follow-up addresses.
+
+   Confirm the Write tool's response indicates the bypass-attempt-NN.md write succeeded — do not proceed on assumption. On Write failure, halt and report the failure in main-chat output (the bypass-attempt audit trail is the durable record; a silent Write failure leaves the bypass permanently unrecorded).
+
+   This schema mirrors the `round-NN-verifier-disabled.md` marker contract: a required structured field whose closed value set distinguishes legitimate operational states from malformed-or-absent outputs.
 
 3. **Verifier-enabled gate.** Read `verifier_enabled` from `config.md`:
    ```bash

@@ -40,7 +40,7 @@ Read `config.md` from the artifact directory to determine whether Codex reviews 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Plan validates `pipeline`, `route`, and `codex_reviews`.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Plan validates `pipeline`, `route`, `codex_reviews`, and (when `pipeline: quick`) `question_budget`.
 
 <HARD-GATE>
 Do NOT produce plan.md without all required artifacts approved (full: goals + research + design + structure; quick: goals + research).
