@@ -337,6 +337,20 @@ teardown() {
   [ "$status" -eq 14 ]
 }
 
+@test "stub: STUB_PHASE_NUMERIC set to non-numeric string → stub exits 1 with error on stderr (loud failure)" {
+  # Validates that the stub's isNaN guard converts the silent NaN→null collapse
+  # (where Number("abc")→NaN→JSON.stringify emits null, indistinguishable from
+  # STUB_NULL_PHASE=1) into a loud failure with a diagnostic stderr message.
+  # Without the guard, the stub exits 0 and emits a null-phase payload; with
+  # the guard it must exit 1 and write an error to stderr.
+  export STUB_STATE_FILE="$TEST_ROOT/stub-state.json"
+  export STUB_PHASE_NUMERIC=abc
+
+  run node "$STUB" status stub-job-id --json
+  [ "$status" -eq 1 ]
+  [[ "$stderr" =~ "STUB_PHASE_NUMERIC" ]] || [[ "$output" =~ "STUB_PHASE_NUMERIC" ]]
+}
+
 # ---------------------------------------------------------------------------
 # phase-fallback — non-status subcommands unchanged
 # ---------------------------------------------------------------------------

@@ -206,11 +206,16 @@ function handleStatus() {
   // extract_json_field stringifies numbers, so the case statement receives e.g. "42"
   // which does not appear in the mapping table and must fall through to malformed.
   if (process.env.STUB_PHASE_NUMERIC !== undefined) {
+    const numPhase = Number(process.env.STUB_PHASE_NUMERIC);
+    if (isNaN(numPhase)) {
+      process.stderr.write(`stub: STUB_PHASE_NUMERIC=${process.env.STUB_PHASE_NUMERIC} is not numeric\n`);
+      process.exit(1);
+    }
     const payload = {
       workspaceRoot: process.cwd(),
       job: {
         id: argv[1] || state.jobId || "unknown",
-        phase: Number(process.env.STUB_PHASE_NUMERIC),
+        phase: numPhase,
         title: "stub task",
         summary: "stub",
         pid: null
