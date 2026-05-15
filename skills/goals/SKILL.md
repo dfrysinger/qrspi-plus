@@ -138,7 +138,7 @@ route:
 verifier_enabled: true  # set at run creation; edit directly between rounds to disable for the whole run
 scope_tagger_enabled: true  # set at run creation; edit directly between rounds to disable convergence narrowing for the whole run
 visual_fidelity_required: false  # set at run creation; default false unless the user opted into the visual-fidelity binding chain
-question_budget: 5  # written ONLY on pipeline: quick — caps Research specialist dispatch count for this run
+question_budget: 5
 ---
 ```
 

@@ -81,32 +81,376 @@ teardown() {
 }
 
 @test "auto-approve cascade contract for quick pipeline names Questions, Research, Plan" {
-  # The behavioral semantics block must name all three autonomous steps that
-  # auto-approve under the cascade. We accept any prose that lists them
-  # together within a single section bounded by H2/H3 headings.
-  grep -nE 'Questions.*Research.*Plan|auto-approve cascade' "$USING_QRSPI" >/dev/null \
-    || { echo "no 'Questions, Research, Plan' grouping or 'auto-approve cascade' phrase found in $USING_QRSPI"; return 1; }
+  # Section-scoped grep: extract the behavioral-semantics block bounded by its
+  # leading bold marker and the next H2/H3 heading, then grep within. Without
+  # the section scoping, the three step names could happen to appear elsewhere
+  # in the file and produce a silent pass.
+  awk '
+    /^\*\*Behavioral semantics — `pipeline: quick`/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    /^### / && in_section { in_section=0 }
+    in_section { print }
+  ' "$USING_QRSPI" > "${BATS_TEST_TMPDIR}/cascade_section.txt"
 
-  grep -qiE 'auto-approve|auto approve|automatically approve' "$USING_QRSPI" \
-    || { echo "auto-approve language missing from $USING_QRSPI"; return 1; }
+  grep -nE 'Questions.*Research.*Plan|auto-approve cascade' "${BATS_TEST_TMPDIR}/cascade_section.txt" >/dev/null \
+    || { echo "no 'Questions, Research, Plan' grouping or 'auto-approve cascade' phrase in behavioral-semantics section"; return 1; }
 
-  grep -qiE 'zero kept findings|no kept findings|clean review|clean.*round' "$USING_QRSPI" \
-    || { echo "cascade trigger condition (clean review / zero kept findings) missing from $USING_QRSPI"; return 1; }
+  grep -qiE 'auto-approve|auto approve|automatically approve' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "auto-approve language missing from behavioral-semantics section"; return 1; }
+
+  grep -qiE 'zero kept findings|no kept findings|clean review|clean.*round' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "cascade trigger condition (clean review / zero kept findings) missing from behavioral-semantics section"; return 1; }
 }
 
 @test "two mandatory human gates Goals and Design are documented as excluded from cascade" {
-  # The block must call out Goals AND Design as the two surviving human gates
-  # under quick pipeline, distinct from the cascading autonomous steps.
-  grep -qiE 'Goals and Design|Goals.*Design.*human gate|human gate.*Goals.*Design|two.*human.*gate' "$USING_QRSPI" \
-    || { echo "Goals + Design two-gate exclusion language missing from $USING_QRSPI"; return 1; }
+  # Section-scoped (see test above) — the Goals + Design exclusion language must
+  # appear inside the behavioral-semantics block itself, not elsewhere.
+  awk '
+    /^\*\*Behavioral semantics — `pipeline: quick`/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    /^### / && in_section { in_section=0 }
+    in_section { print }
+  ' "$USING_QRSPI" > "${BATS_TEST_TMPDIR}/cascade_section.txt"
+
+  grep -qiE 'Goals and Design|Goals.*Design.*human gate|human gate.*Goals.*Design|two.*human.*gate' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "Goals + Design two-gate exclusion language missing from behavioral-semantics section"; return 1; }
 }
 
 @test "Test phase binary ship/fix gate documented; routes back to Plan on fix" {
-  grep -qiE 'binary.*ship.*fix|ship/fix|ship or fix' "$USING_QRSPI" \
-    || { echo "binary ship/fix gate language missing from $USING_QRSPI"; return 1; }
+  # Section-scoped (see tests above).
+  awk '
+    /^\*\*Behavioral semantics — `pipeline: quick`/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    /^### / && in_section { in_section=0 }
+    in_section { print }
+  ' "$USING_QRSPI" > "${BATS_TEST_TMPDIR}/cascade_section.txt"
 
-  grep -qiE 'route.*back.*Plan|routes.*back.*Plan|back to Plan' "$USING_QRSPI" \
-    || { echo "Test 'fix' routing back to Plan missing from $USING_QRSPI"; return 1; }
+  grep -qiE 'binary.*ship.*fix|ship/fix|ship or fix' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "binary ship/fix gate language missing from behavioral-semantics section"; return 1; }
+
+  grep -qiE 'route.*back.*Plan|routes?.*back.*Plan|routing.?back.*Plan|back to Plan|routes back to Plan' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "Test 'fix' routing back to Plan missing from behavioral-semantics section"; return 1; }
+}
+
+@test "cascade contract: orchestrator is exclusive writer of clean.md sentinels (forgery-resistance)" {
+  # The behavioral-semantics block must close the sentinel-forgery surface: a
+  # compromised reviewer subagent could otherwise emit a `<reviewer-tag>.clean.md`
+  # file and trick the cascade auto-approval into firing without orchestrator
+  # fan-in. Pin the explicit orchestrator-exclusive-writer rule and the
+  # in-session-count trigger.
+  awk '
+    /^\*\*Behavioral semantics — `pipeline: quick`/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    /^### / && in_section { in_section=0 }
+    in_section { print }
+  ' "$USING_QRSPI" > "${BATS_TEST_TMPDIR}/cascade_section.txt"
+
+  grep -qiE 'orchestrator.*(exclusive|only).*writ(es|er).*clean' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing orchestrator-exclusive-writer rule for clean.md sentinels"; return 1; }
+
+  grep -qiE 'reviewer.*(NEVER|never|not).*(write|emit).*clean' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing explicit prohibition that reviewer subagents never write the clean sentinel"; return 1; }
+
+  grep -qiE 'in-session.*kept findings|kept findings.*count|sentinel.*audit-trail|audit-trail.*sentinel|NOT.*on-disk.*sentinel|not.*sentinel.*directly' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing rule that the cascade trigger reads the orchestrator's in-session kept-findings count, not the on-disk sentinel"; return 1; }
+}
+
+@test "cascade contract: cascade-audit.log entry required per auto-approval event" {
+  # The behavioral-semantics block must require an append-only audit-log entry
+  # for every auto-approval: artifact name, timestamp, trigger round, contributing
+  # reviewer tags, rationale (initial-clean or first-fix-clean). On write
+  # failure, halt the cascade — no silent skip.
+  awk '
+    /^\*\*Behavioral semantics — `pipeline: quick`/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    /^### / && in_section { in_section=0 }
+    in_section { print }
+  ' "$USING_QRSPI" > "${BATS_TEST_TMPDIR}/cascade_section.txt"
+
+  grep -qiE 'cascade-audit\.log|cascade-auto-approve.*audit|audit-log.*cascade|audit log.*cascade' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing cascade-audit.log requirement in behavioral-semantics section"; return 1; }
+
+  grep -qiE 'append-only|append only' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing append-only requirement on cascade audit log"; return 1; }
+
+  grep -qiE 'ISO-8601|ISO 8601|timestamp' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing timestamp requirement in cascade audit-log entry"; return 1; }
+
+  grep -qiE 'initial-clean|first-fix-clean|initial clean|first fix clean' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing rationale enumeration (initial-clean vs first-fix-clean) in cascade audit-log entry"; return 1; }
+
+  grep -qiE 'halt.*cascade|cascade.*halt|do NOT silently skip|stop.*cascade' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing halt-on-write-failure rule for cascade audit-log entry"; return 1; }
+}
+
+@test "cascade trigger: zero kept findings is post-verifier-filtering, not raw" {
+  # Pin the post-verifier semantics so the downstream cascade-branch implementers do not diverge
+  # on whether the trigger reads pre-filter or post-filter counts.
+  awk '
+    /^\*\*Behavioral semantics — `pipeline: quick`/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    /^### / && in_section { in_section=0 }
+    in_section { print }
+  ' "$USING_QRSPI" > "${BATS_TEST_TMPDIR}/cascade_section.txt"
+
+  grep -qiE 'after verifier.*filter|post.?verifier.*filter|verifier.?filtered|after.*verifier.?filtering' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing 'zero kept findings AFTER verifier filtering' clarification (post-filter, not raw, count)"; return 1; }
+}
+
+@test "cascade contract: 'fix round' phrasing replaces round-count-bound 'second review round'" {
+  # The earlier prose said 'if the second review round still carries kept
+  # findings' — round-count-bound and ambiguous (round 2 vs. round 3). The
+  # round-count-agnostic phrase 'fix round' avoids the ambiguity.
+  ! grep -nE 'second review round' "$USING_QRSPI" \
+    || { echo "round-count-bound phrase 'second review round' still present in $USING_QRSPI — replace with round-count-agnostic 'fix round'"; return 1; }
+
+  awk '
+    /^\*\*Behavioral semantics — `pipeline: quick`/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    /^### / && in_section { in_section=0 }
+    in_section { print }
+  ' "$USING_QRSPI" > "${BATS_TEST_TMPDIR}/cascade_section.txt"
+
+  grep -qiE 'fix round.*kept findings|fix round.*carries' "${BATS_TEST_TMPDIR}/cascade_section.txt" \
+    || { echo "missing round-count-agnostic 'fix round' phrasing in behavioral-semantics pause-condition"; return 1; }
+}
+
+@test "canonical error menu in using-qrspi/SKILL.md covers question_budget (four cases)" {
+  # The 'When a required field is missing or has an invalid value' block lists
+  # one menu per validated field; question_budget must have a menu in the same
+  # shape as its sibling fields, covering the four failure modes:
+  # missing-when-quick-required, present-when-full-forbidden, value-zero-or-negative,
+  # value-non-integer.
+  awk '
+    /^### When a required field is missing or has an invalid value/ { in_section=1; next }
+    /^### / && in_section { in_section=0 }
+    /^## / && in_section { in_section=0 }
+    in_section { print }
+  ' "$USING_QRSPI" > "${BATS_TEST_TMPDIR}/menu_section.txt"
+
+  grep -qE '`question_budget`' "${BATS_TEST_TMPDIR}/menu_section.txt" \
+    || { echo "question_budget menu missing from canonical error-menu block"; return 1; }
+
+  grep -qiE 'missing.*pipeline.*quick|pipeline.*quick.*required|required.*pipeline.*quick' "${BATS_TEST_TMPDIR}/menu_section.txt" \
+    || { echo "missing 'missing-when-quick-required' case for question_budget"; return 1; }
+
+  grep -qiE 'present.*pipeline.*full|pipeline.*full.*forbidden|forbidden.*pipeline.*full|omit.*pipeline.*full' "${BATS_TEST_TMPDIR}/menu_section.txt" \
+    || { echo "missing 'present-when-full-forbidden' case for question_budget"; return 1; }
+
+  grep -qiE 'zero|negative|non-positive|positive integer' "${BATS_TEST_TMPDIR}/menu_section.txt" \
+    || { echo "missing zero/negative-value case for question_budget"; return 1; }
+
+  grep -qiE 'non-integer|not an integer|integer' "${BATS_TEST_TMPDIR}/menu_section.txt" \
+    || { echo "missing non-integer-value case for question_budget"; return 1; }
+}
+
+@test "validation table lists Research as a consumer-validator of question_budget" {
+  # Research is the runtime CONSUMER of question_budget; without naming Research
+  # as a validator (or at minimum a documented consumer dependency), a corrupted
+  # value would be consumed without bounds-checking. The validation table column
+  # for question_budget should mention Research alongside the other three skills.
+  awk '
+    /^### Fields that affect pipeline behavior/ { in_section=1; next }
+    /^### / && in_section { in_section=0 }
+    in_section { print }
+  ' "$USING_QRSPI" > "${BATS_TEST_TMPDIR}/table_section.txt"
+
+  awk '/`question_budget`/' "${BATS_TEST_TMPDIR}/table_section.txt" \
+    | grep -qiE 'Research' \
+    || { echo "Research not named as consumer/validator on question_budget validation table row"; return 1; }
+}
+
+@test "Goals writer fence emits question_budget: 5 with no inline comment that would break the validator" {
+  # The validator extracts the field value as everything after 'question_budget:'
+  # on the same line. An inline ' # comment' becomes part of the value and the
+  # positive-integer regex rejects it. The fence must emit '5' alone (any prose
+  # explanation of when the field is written belongs OUTSIDE the fence).
+  awk '
+    /^```/ { in_fence = !in_fence }
+    in_fence && /^[[:space:]]*question_budget:/ { print }
+  ' "$GOALS" > "${BATS_TEST_TMPDIR}/goals_qb_lines.txt"
+
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*question_budget:[[:space:]]*[1-9][0-9]*[[:space:]]*$ ]] \
+      || { echo "Goals writer fence line is not a clean 'question_budget: <int>' (inline-comment hazard): '$line'"; return 1; }
+  done < "${BATS_TEST_TMPDIR}/goals_qb_lines.txt"
+
+  [[ -s "${BATS_TEST_TMPDIR}/goals_qb_lines.txt" ]] \
+    || { echo "no question_budget line found inside any fenced block in $GOALS"; return 1; }
+}
+
+@test "validator rejects question_budget upper-bound violations (>50)" {
+  # Documented cap at 50 (Research specialist dispatch fan-out wider than 50
+  # exhausts orchestrator subagent slots and yields diminishing returns). The
+  # validator must reject 51, 100, and other above-cap values with the standard
+  # invalid-value error mentioning the cap.
+  tmpdir="$(mktemp -d)"
+  cat > "$tmpdir/config.md" <<'EOF'
+---
+created: 2026-05-15
+pipeline: quick
+codex_reviews: false
+route:
+  - goals
+  - questions
+question_budget: 51
+---
+EOF
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=51 (above cap of 50), got 0"; return 1; }
+  echo "$stderr" | grep -qiE 'invalid value.*question_budget|cap|upper bound|exceeds|out of range|50' \
+    || { echo "expected invalid-value error citing the cap for question_budget=51, got stdout=$output stderr=$stderr"; return 1; }
+
+  sed -i.bak 's/question_budget: 51/question_budget: 100/' "$tmpdir/config.md"
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=100 (above cap), got 0"; return 1; }
+  echo "$stderr" | grep -qiE 'invalid value.*question_budget|cap|upper bound|exceeds|out of range|50' \
+    || { echo "expected invalid-value error citing the cap for question_budget=100, got stdout=$output stderr=$stderr"; return 1; }
+}
+
+@test "validator accepts question_budget at the upper bound (=50) and one below (=49)" {
+  tmpdir="$(mktemp -d)"
+  cat > "$tmpdir/config.md" <<'EOF'
+---
+created: 2026-05-15
+pipeline: quick
+codex_reviews: false
+route:
+  - goals
+  - questions
+question_budget: 50
+---
+EOF
+  run bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -eq 0 ] || { echo "expected exit 0 for question_budget=50 (at cap), got $status: $output"; return 1; }
+
+  sed -i.bak 's/question_budget: 50/question_budget: 49/' "$tmpdir/config.md"
+  run bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -eq 0 ] || { echo "expected exit 0 for question_budget=49 (below cap), got $status: $output"; return 1; }
+}
+
+@test "validator rejects question_budget YAML-truthy variants (yes/no/on/off/True/False)" {
+  # YAML 1.1 truthy variants would be coerced to booleans by a permissive
+  # reader; the strict positive-integer validator must reject them all.
+  tmpdir="$(mktemp -d)"
+  for variant in yes no on off True False; do
+    cat > "$tmpdir/config.md" <<EOF
+---
+created: 2026-05-15
+pipeline: quick
+codex_reviews: false
+route:
+  - goals
+question_budget: $variant
+---
+EOF
+    run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+    [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=$variant (YAML-truthy), got 0"; return 1; }
+  done
+}
+
+@test "validator rejects question_budget scientific notation (1e2)" {
+  tmpdir="$(mktemp -d)"
+  cat > "$tmpdir/config.md" <<'EOF'
+---
+created: 2026-05-15
+pipeline: quick
+codex_reviews: false
+route:
+  - goals
+question_budget: 1e2
+---
+EOF
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=1e2 (scientific notation), got 0"; return 1; }
+}
+
+@test "validator rejects question_budget signed-positive (+5)" {
+  tmpdir="$(mktemp -d)"
+  cat > "$tmpdir/config.md" <<'EOF'
+---
+created: 2026-05-15
+pipeline: quick
+codex_reviews: false
+route:
+  - goals
+question_budget: +5
+---
+EOF
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=+5 (signed-positive), got 0"; return 1; }
+}
+
+@test "validator rejects question_budget leading-zero (05)" {
+  tmpdir="$(mktemp -d)"
+  cat > "$tmpdir/config.md" <<'EOF'
+---
+created: 2026-05-15
+pipeline: quick
+codex_reviews: false
+route:
+  - goals
+question_budget: 05
+---
+EOF
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=05 (leading-zero), got 0"; return 1; }
+}
+
+@test "validator rejects question_budget hex (0x5) and octal (010)" {
+  tmpdir="$(mktemp -d)"
+  cat > "$tmpdir/config.md" <<'EOF'
+---
+created: 2026-05-15
+pipeline: quick
+codex_reviews: false
+route:
+  - goals
+question_budget: 0x5
+---
+EOF
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=0x5 (hex), got 0"; return 1; }
+
+  sed -i.bak 's/question_budget: 0x5/question_budget: 010/' "$tmpdir/config.md"
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=010 (octal-like), got 0"; return 1; }
+}
+
+@test "validator rejects question_budget decimal-with-trailing-zero (5.0)" {
+  tmpdir="$(mktemp -d)"
+  cat > "$tmpdir/config.md" <<'EOF'
+---
+created: 2026-05-15
+pipeline: quick
+codex_reviews: false
+route:
+  - goals
+question_budget: 5.0
+---
+EOF
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=5.0 (decimal), got 0"; return 1; }
+}
+
+@test "validator rejects question_budget with inline comment ('5  # comment')" {
+  # The extractor returns everything after the colon (including trailing
+  # whitespace and comment text), so an inline ' # comment' becomes part of
+  # the captured value and must fail the integer-range check.
+  tmpdir="$(mktemp -d)"
+  cat > "$tmpdir/config.md" <<'EOF'
+---
+created: 2026-05-15
+pipeline: quick
+codex_reviews: false
+route:
+  - goals
+question_budget: 5  # inline comment that breaks the value
+---
+EOF
+  run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget with inline comment, got 0"; return 1; }
 }
 
 @test "Goals SKILL.md emits question_budget: 5 only inside the quick-pipeline writer fence" {

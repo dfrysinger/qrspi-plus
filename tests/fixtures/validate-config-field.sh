@@ -228,12 +228,29 @@ case "$FIELD" in
     fi
     # Positive-integer pattern: one or more decimal digits, no sign, no decimal
     # point, and the leading digit is non-zero (rejects "0", "00", "01" etc.).
-    # Bash regex (POSIX ERE under [[ =~ ]]) — anchored implicitly by ^/$.
+    # Bash regex under [[ =~ ]] is NOT implicitly anchored; the `^` and `$` in
+    # the pattern are explicit anchors and dropping either would let invalid
+    # values pass (e.g. "5abc" matches an unanchored ^[1-9][0-9]*).
     if [[ ! "$VALUE" =~ ^[1-9][0-9]*$ ]]; then
       echo "config.md has an invalid value for \`question_budget\`: $VALUE" >&2
-      echo "Expected: a positive integer (e.g. \`5\`, \`12\`)" >&2
+      echo "Expected: a positive integer between 1 and 50 inclusive (e.g. \`5\`, \`12\`)" >&2
       echo "" >&2
-      echo "  1) Edit config.md and set \`question_budget\` to a positive integer (e.g. \`5\`)" >&2
+      echo "  1) Edit config.md and set \`question_budget\` to a positive integer between 1 and 50 inclusive (e.g. \`5\`)" >&2
+      echo "  2) Re-run Goals to regenerate config.md" >&2
+      echo "  3) Abort" >&2
+      exit 1
+    fi
+    # Upper-bound check: cap at 50. Justification: Research specialist dispatch
+    # fan-out wider than 50 exhausts orchestrator subagent slots and produces
+    # diminishing-returns coverage. The cap is a soft limit on a budget field;
+    # if the rationale changes (e.g. orchestrator slots double), update this
+    # constant and the matching text in `using-qrspi/SKILL.md` Field Definitions
+    # and validation table together.
+    if (( VALUE > 50 )); then
+      echo "config.md has an invalid value for \`question_budget\`: $VALUE" >&2
+      echo "Expected: a positive integer between 1 and 50 inclusive (cap of 50 — Research specialist dispatch fan-out wider than 50 exhausts orchestrator subagent slots and yields diminishing-returns coverage)" >&2
+      echo "" >&2
+      echo "  1) Edit config.md and set \`question_budget\` to a positive integer between 1 and 50 inclusive (e.g. \`5\`)" >&2
       echo "  2) Re-run Goals to regenerate config.md" >&2
       echo "  3) Abort" >&2
       exit 1
