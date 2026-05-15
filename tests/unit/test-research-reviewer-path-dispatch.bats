@@ -248,18 +248,42 @@ setup_file() {
 }
 
 @test "check-qfile-paths.sh exits non-zero when one of multiple paths is unreadable and names the bad path" {
-  # Pins the accumulate-and-defer behavior: the script should process all
-  # paths before exiting, not fail-fast on the first bad path.  A single-bad-
-  # path test cannot distinguish accumulate-and-defer from fail-fast; this
-  # mixed test (one good, one bad) does.
-  local tmpfile
-  tmpfile="$(mktemp /tmp/test-qfile-XXXXXX.md)"
-  echo "# good q-file" > "$tmpfile"
-  run --separate-stderr "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh" "$tmpfile" /dev/null/nonexistent
+  # Two-bad-paths variant: a fail-fast impl would only emit the first bad path
+  # name in stderr and exit before processing the second; this test asserts
+  # BOTH bad path names appear in stderr, pinning the accumulate-and-defer
+  # contract.  The previous "one good, one bad" form was order-dependent and
+  # produced identical observable output for fail-fast vs accumulate-and-defer.
+  run --separate-stderr "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh" \
+    /dev/null/nonexistent1 /dev/null/nonexistent2
   local exit_status="$status"
   local captured_stderr="$stderr"
+  [ "$exit_status" -ne 0 ]
+  echo "$captured_stderr" | grep -qF "/dev/null/nonexistent1" \
+    || { echo "STDERR does not contain first bad path name (/dev/null/nonexistent1)"; return 1; }
+  echo "$captured_stderr" | grep -qF "/dev/null/nonexistent2" \
+    || { echo "STDERR does not contain second bad path name — fail-fast? (/dev/null/nonexistent2)"; return 1; }
+}
+
+@test "check-qfile-paths.sh exits non-zero for an unreadable regular file" {
+  # Exercises the -r clause of the compound guard at check-qfile-paths.sh:L27.
+  # A file that exists (passes -f) but has mode 000 (fails -r) must be
+  # rejected.  Removing the || [[ ! -r "$path" ]] clause would cause this test
+  # to fail, pinning both halves of the compound guard.
+  # Skip if running as root: chmod a-r is ineffective for root (root can read
+  # any file regardless of permission bits).
+  if [[ "$(id -u)" -eq 0 ]]; then
+    skip "running as root — chmod a-r is ineffective; -r guard cannot be pinned"
+  fi
+  local tmpfile
+  tmpfile="$(mktemp /tmp/test-qfile-XXXXXX.md)"
+  echo "# content" > "$tmpfile"
+  chmod 000 "$tmpfile"
+  run --separate-stderr "$REPO_ROOT/tests/fixtures/check-qfile-paths.sh" "$tmpfile"
+  local exit_status="$status"
+  local captured_stderr="$stderr"
+  chmod 644 "$tmpfile"
   rm -f "$tmpfile"
   [ "$exit_status" -ne 0 ]
-  echo "$captured_stderr" | grep -qF "/dev/null/nonexistent" \
-    || { echo "STDERR does not contain the bad path name"; return 1; }
+  echo "$captured_stderr" | grep -qF "$tmpfile" \
+    || { echo "STDERR does not contain the unreadable file path name"; return 1; }
 }
