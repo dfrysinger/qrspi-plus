@@ -231,7 +231,7 @@ Implement.
 
 The audit append is a **hard precondition for the skip**, not a best-effort emission. The skip branch only fires after a confirmed successful write. If the write fails, the phase does not proceed.
 
-After a confirmed successful audit append, the orchestrator proceeds directly to per-task dispatch for the single approved task, bypassing Parallelize and Integrate dispatch entirely. The remainder of the per-task TDD + review flow (per-task review fan-out, fix loop, verifier wiring from T13, reviewer-protocol contracts) is **unchanged** — the skip is additive at the entry-time orchestration layer only.
+After a confirmed successful audit append, the orchestrator proceeds directly to per-task dispatch for the single approved task, bypassing Parallelize and Integrate dispatch entirely. The remainder of the per-task TDD + review flow (per-task review fan-out, fix loop, verifier sidecar wiring, reviewer-protocol contracts) is **unchanged** — the skip is additive at the entry-time orchestration layer only.
 
 ### N>1 Branch — Full-Pipeline Behavior
 
