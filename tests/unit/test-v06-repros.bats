@@ -541,7 +541,7 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
-# disk-state fallback — G9: await recovers from broker not-found via on-disk state
+# disk-state fallback — await recovers from broker not-found via on-disk state
 #
 # The disk-fallback path activates only when:
 #   1. The `await` subcommand polls a jobId and poll_status returns not-found.
@@ -552,24 +552,25 @@ teardown() {
 #   $CLAUDE_PLUGIN_DATA/state/<slug>-<sha256(realpath)[:16]>/state.json
 #   $CLAUDE_PLUGIN_DATA/state/<slug>-<sha256(realpath)[:16]>/jobs/<jobId>.json
 #
-# Helper: write_g9_disk_fixtures <plugin_data_dir> <job_id> <job_json>
-#   Computes the broker state-dir path for the wrapper's cwd, then writes
-#   state.json (listing the jobId) and jobs/<jobId>.json (the per-job record).
+# Helpers: _disk_state_dir, _write_disk_completed_fixtures, _write_disk_failed_fixtures
+#   Compute the broker state-dir path and write test fixtures at that path.
 # ---------------------------------------------------------------------------
 
 # Compute the broker state-dir path the same way lib/state.mjs does, from a
 # given realpath-canonical workspace root.  Emits the absolute state-dir path
 # on stdout (no trailing slash).
-_g9_state_dir() {
+# Both slugSource and the hash use canonicalRoot (the argument) so the
+# computation matches the production code exactly.
+_disk_state_dir() {
   local plugin_data="$1" workspace_realpath="$2"
   node -e "
 const crypto = require('crypto');
 const path = require('path');
 const pluginData = process.argv[1];
-const workspaceRealpath = process.argv[2];
-const slugSource = path.basename(workspaceRealpath) || 'workspace';
+const canonicalRoot = process.argv[2];
+const slugSource = path.basename(canonicalRoot) || 'workspace';
 const slug = slugSource.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/, '') || 'workspace';
-const hash = crypto.createHash('sha256').update(workspaceRealpath).digest('hex').slice(0, 16);
+const hash = crypto.createHash('sha256').update(canonicalRoot).digest('hex').slice(0, 16);
 process.stdout.write(path.join(pluginData, 'state', slug + '-' + hash));
 " -- "$plugin_data" "$workspace_realpath"
 }
@@ -577,30 +578,36 @@ process.stdout.write(path.join(pluginData, 'state', slug + '-' + hash));
 # Write valid disk fixtures for a completed job at the broker-canonical path.
 # Args: <plugin_data_dir> <job_id> <raw_output_text> [<workspace_realpath>]
 # The wrapper runs from $REPO_ROOT; we use its realpath as the workspace root.
-_g9_write_completed_fixtures() {
+# Uses jq to build JSON so that metacharacter values in raw_output are safe.
+_write_disk_completed_fixtures() {
   local plugin_data="$1" job_id="$2" raw_output="$3"
   local workspace="${4:-$(cd "$REPO_ROOT" && pwd -P)}"
   local state_dir
-  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
   mkdir -p "$state_dir/jobs"
   # state.json: jobs array with an entry whose id matches jobId
-  printf '%s\n' "{\"version\":1,\"config\":{\"stopReviewGate\":false},\"jobs\":[{\"id\":\"$job_id\",\"status\":\"completed\",\"updatedAt\":\"2026-05-14T00:00:00.000Z\",\"createdAt\":\"2026-05-14T00:00:00.000Z\"}]}" \
+  jq -n --arg id "$job_id" \
+    '{"version":1,"config":{"stopReviewGate":false},"jobs":[{"id":$id,"status":"completed","updatedAt":"2026-05-14T00:00:00.000Z","createdAt":"2026-05-14T00:00:00.000Z"}]}' \
     > "$state_dir/state.json"
   # jobs/<jobId>.json: per-job record with result.rawOutput
-  printf '%s\n' "{\"id\":\"$job_id\",\"status\":\"completed\",\"result\":{\"rawOutput\":\"$raw_output\"}}" \
+  jq -n --arg id "$job_id" --arg raw "$raw_output" \
+    '{"id":$id,"status":"completed","result":{"rawOutput":$raw}}' \
     > "$state_dir/jobs/$job_id.json"
 }
 
 # Write disk fixtures for a failed job (no rawOutput, has errorMessage).
-_g9_write_failed_fixtures() {
+# Uses jq to build JSON so that metacharacter values in error_message are safe.
+_write_disk_failed_fixtures() {
   local plugin_data="$1" job_id="$2" error_message="$3"
   local workspace="${4:-$(cd "$REPO_ROOT" && pwd -P)}"
   local state_dir
-  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
   mkdir -p "$state_dir/jobs"
-  printf '%s\n' "{\"version\":1,\"config\":{\"stopReviewGate\":false},\"jobs\":[{\"id\":\"$job_id\",\"status\":\"failed\",\"updatedAt\":\"2026-05-14T00:00:00.000Z\",\"createdAt\":\"2026-05-14T00:00:00.000Z\"}]}" \
+  jq -n --arg id "$job_id" \
+    '{"version":1,"config":{"stopReviewGate":false},"jobs":[{"id":$id,"status":"failed","updatedAt":"2026-05-14T00:00:00.000Z","createdAt":"2026-05-14T00:00:00.000Z"}]}' \
     > "$state_dir/state.json"
-  printf '%s\n' "{\"id\":\"$job_id\",\"status\":\"failed\",\"errorMessage\":\"$error_message\"}" \
+  jq -n --arg id "$job_id" --arg err "$error_message" \
+    '{"id":$id,"status":"failed","errorMessage":$err}' \
     > "$state_dir/jobs/$job_id.json"
 }
 
@@ -622,7 +629,7 @@ _g9_write_failed_fixtures() {
   export STUB_JOB_NOT_FOUND=1
 
   # Write valid completed fixtures to disk.
-  _g9_write_completed_fixtures "$plugin_data" "$job_id" "# G9 recovered review output"
+  _write_disk_completed_fixtures "$plugin_data" "$job_id" "# G9 recovered review output"
 
   run --separate-stderr "$WRAPPER" await "$job_id"
   [ "$status" -eq 0 ]
@@ -665,7 +672,7 @@ _g9_write_failed_fixtures() {
   local workspace
   workspace=$(cd "$REPO_ROOT" && pwd -P)
   local state_dir
-  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
   mkdir -p "$state_dir/jobs"
   printf 'not valid json at all' > "$state_dir/state.json"
 
@@ -692,7 +699,7 @@ _g9_write_failed_fixtures() {
   local workspace
   workspace=$(cd "$REPO_ROOT" && pwd -P)
   local state_dir
-  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
   mkdir -p "$state_dir/jobs"
   # state.json lists a different jobId
   printf '%s\n' '{"version":1,"config":{},"jobs":[{"id":"some-other-job-id","status":"completed"}]}' \
@@ -721,7 +728,7 @@ _g9_write_failed_fixtures() {
   local workspace
   workspace=$(cd "$REPO_ROOT" && pwd -P)
   local state_dir
-  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
   mkdir -p "$state_dir/jobs"
   # state.json lists the jobId, but jobs/<id>.json does not exist
   printf '%s\n' "{\"version\":1,\"config\":{},\"jobs\":[{\"id\":\"$job_id\",\"status\":\"completed\"}]}" \
@@ -751,7 +758,7 @@ _g9_write_failed_fixtures() {
   local workspace
   workspace=$(cd "$REPO_ROOT" && pwd -P)
   local state_dir
-  state_dir=$(_g9_state_dir "$plugin_data" "$workspace")
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
   mkdir -p "$state_dir/jobs"
   printf '%s\n' "{\"version\":1,\"config\":{},\"jobs\":[{\"id\":\"$job_id\",\"status\":\"completed\"}]}" \
     > "$state_dir/state.json"
@@ -810,7 +817,7 @@ _g9_write_failed_fixtures() {
 
   local job_id="job-g9-failed-disk-record"
   export STUB_JOB_NOT_FOUND=1
-  _g9_write_failed_fixtures "$plugin_data" "$job_id" "G9 disk failed error message"
+  _write_disk_failed_fixtures "$plugin_data" "$job_id" "G9 disk failed error message"
 
   run --separate-stderr "$WRAPPER" await "$job_id"
   # Non-zero exit (failed path)
@@ -858,7 +865,7 @@ _g9_write_failed_fixtures() {
 
   local job_id="job-g9-stderr-once"
   export STUB_JOB_NOT_FOUND=1
-  _g9_write_completed_fixtures "$plugin_data" "$job_id" "# G9 stderr once test"
+  _write_disk_completed_fixtures "$plugin_data" "$job_id" "# G9 stderr once test"
 
   run --separate-stderr "$WRAPPER" await "$job_id"
   [ "$status" -eq 0 ]
@@ -880,7 +887,7 @@ _g9_write_failed_fixtures() {
   # jobs/<jobId>.json.
   local fallback_code
   fallback_code=$(sed 's/#.*$//' "$WRAPPER")
-  # Must not contain glob patterns (*/jobs/* or find/ls in context of G9)
+  # Must not contain glob patterns (*/jobs/* or find/ls in the disk fallback).
   # We check that the only path construction is a direct concatenation, not a glob.
   ! printf '%s\n' "$fallback_code" | grep -qE 'jobs/\*|find.*jobs|ls.*jobs'
 }
@@ -890,14 +897,322 @@ _g9_write_failed_fixtures() {
 # only await invokes the disk fallback
 # ---------------------------------------------------------------------------
 
-@test "disk-state fallback: G7 phase-fallback branch is not modified by G9 path" {
-  # Structural: the G7 phase-fallback branch (job.phase extraction) and the
-  # G9 disk-state fallback are mutually independent. Verify that the G9
-  # implementation (disk_state_fallback function or equivalent) does not
-  # appear inside the poll_status function body.
-  # We do this by checking that the disk-state fallback helper is NOT called
-  # from poll_status.
+@test "disk-state fallback: poll_status function does not invoke disk_state_fallback helper" {
+  # Structural: the phase-fallback branch (job.phase extraction) and the
+  # disk-state fallback are mutually independent. Verify that the
+  # disk_state_fallback helper is NOT called from poll_status.
   local poll_body
   poll_body=$(awk '/^poll_status\(\)/{found=1} found{print} /^}$/{if(found){exit}}' "$WRAPPER")
+  # Sanity guard: extraction must be non-empty and contain a known marker.
+  [ -n "$poll_body" ] || { echo "poll_body extraction failed — awk returned empty output"; return 1; }
+  printf '%s\n' "$poll_body" | grep -qE 'poll_interval|not-found|completed' \
+    || { echo "poll_body appears truncated — known marker absent; check awk extraction"; return 1; }
   ! printf '%s\n' "$poll_body" | grep -qE 'disk_state_fallback|disk.*fallback|state\.json'
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — symlinked-workspace regression: wrapper reads from
+# canonical path even when workspace root is accessed via a symlink
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: symlinked workspace root — broker writes to canonical path, wrapper reads correctly" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  # Create a real directory and a symlink to it.
+  local real_dir="$TEST_ROOT/real-workspace"
+  local sym_dir="$TEST_ROOT/sym-workspace"
+  mkdir -p "$real_dir"
+  ln -s "$real_dir" "$sym_dir"
+
+  local job_id="job-symlink-regression"
+  export STUB_JOB_NOT_FOUND=1
+
+  # Write fixtures using the canonical (real) path — as the broker would.
+  local canonical_path
+  canonical_path=$(cd "$real_dir" && pwd -P)
+  _disk_state_dir "$plugin_data" "$canonical_path"
+  local state_dir
+  state_dir=$(_disk_state_dir "$plugin_data" "$canonical_path")
+  mkdir -p "$state_dir/jobs"
+  jq -n --arg id "$job_id" --arg raw "symlink regression output" \
+    '{"version":1,"config":{},"jobs":[{"id":$id,"status":"completed"}]}' \
+    > "$state_dir/state.json"
+  jq -n --arg id "$job_id" --arg raw "symlink regression output" \
+    '{"id":$id,"status":"completed","result":{"rawOutput":$raw}}' \
+    > "$state_dir/jobs/$job_id.json"
+
+  # Run the wrapper from the symlinked path — the wrapper must resolve to
+  # canonical path and find the fixtures the broker wrote at canonical path.
+  run --separate-stderr env -C "$sym_dir" "$WRAPPER" await "$job_id"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"symlink regression output"* ]]
+  [[ "$stderr" == *"await: recovered $job_id from disk (broker reported not-found)"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — metacharacter-safe fixtures: rawOutput and
+# errorMessage containing JSON metacharacters survive fixture construction
+# and hit-path recovery
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: rawOutput containing JSON metacharacters recovered correctly" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-metachar-raw"
+  export STUB_JOB_NOT_FOUND=1
+
+  # Build fixtures with jq so metacharacters are properly escaped.
+  local raw_output
+  raw_output='output with "quotes" and \backslash and newline'
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  jq -n --arg id "$job_id" \
+    '{"version":1,"config":{},"jobs":[{"id":$id,"status":"completed"}]}' \
+    > "$state_dir/state.json"
+  jq -n --arg id "$job_id" --arg raw "$raw_output" \
+    '{"id":$id,"status":"completed","result":{"rawOutput":$raw}}' \
+    > "$state_dir/jobs/$job_id.json"
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'output with "quotes"'* ]]
+  [[ "$stderr" == *"await: recovered $job_id from disk (broker reported not-found)"* ]]
+}
+
+@test "disk-state fallback: errorMessage containing JSON metacharacters emitted correctly on stderr" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-metachar-err"
+  export STUB_JOB_NOT_FOUND=1
+
+  local error_message
+  error_message='failed with "quoted error" and \escape'
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  jq -n --arg id "$job_id" \
+    '{"version":1,"config":{},"jobs":[{"id":$id,"status":"failed"}]}' \
+    > "$state_dir/state.json"
+  jq -n --arg id "$job_id" --arg err "$error_message" \
+    '{"id":$id,"status":"failed","errorMessage":$err}' \
+    > "$state_dir/jobs/$job_id.json"
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 13 ]
+  [[ "$stderr" == *'failed with "quoted error"'* ]]
+  [ -z "$output" ]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — jobId traversal guard: malformed jobId values are
+# rejected at function entry without any disk read
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: jobId with path separator rejected even when state.json lists it" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  # A jobId with a slash: path-traversal attempt.
+  # The guard must fire even if an attacker has planted the traversal jobId in state.json.
+  local traversal_id="../etc/passwd"
+  export STUB_JOB_NOT_FOUND=1
+
+  # Seed a state.json that lists the traversal jobId (attacker-controlled state).
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  jq -n --arg id "$traversal_id" \
+    '{"version":1,"config":{},"jobs":[{"id":$id,"status":"completed"}]}' \
+    > "$state_dir/state.json"
+
+  run --separate-stderr "$WRAPPER" await "$traversal_id"
+  # Must exit with not-found (11) — jobId guard fires before file path construction.
+  [ "$status" -eq 11 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+@test "disk-state fallback: empty jobId is rejected by wrapper before disk read" {
+  bats_require_minimum_version 1.5.0
+
+  # Empty string jobId: the wrapper's argument parsing must reject this.
+  export STUB_JOB_NOT_FOUND=1
+
+  run --separate-stderr "$WRAPPER" await ""
+  # Wrapper requires a non-empty jobId; must exit non-zero
+  [ "$status" -ne 0 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+@test "disk-state fallback: jobId with dotdot sequence rejected even when state.json lists it" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local traversal_id="job..bad"
+  export STUB_JOB_NOT_FOUND=1
+
+  # Seed a state.json that lists the traversal jobId.
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  jq -n --arg id "$traversal_id" \
+    '{"version":1,"config":{},"jobs":[{"id":$id,"status":"completed"}]}' \
+    > "$state_dir/state.json"
+
+  run --separate-stderr "$WRAPPER" await "$traversal_id"
+  [ "$status" -eq 11 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — CLAUDE_PLUGIN_DATA traversal guard: path with ..
+# components is canonicalized and contained before any disk read
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: CLAUDE_PLUGIN_DATA with dotdot traversal is rejected" {
+  bats_require_minimum_version 1.5.0
+
+  # Set CLAUDE_PLUGIN_DATA to a path with .. components that resolves outside
+  # a controlled tree; the wrapper must reject or canonicalize it safely.
+  local real_plugin="$TEST_ROOT/plugin-data"
+  mkdir -p "$real_plugin"
+  # Construct a dotdot path that still resolves to real_plugin after normalization
+  # but also test a path that resolves to a different directory entirely.
+  export CLAUDE_PLUGIN_DATA="$TEST_ROOT/plugin-data/../other-dir"
+
+  local job_id="job-traversal-test"
+  export STUB_JOB_NOT_FOUND=1
+
+  # The traversal path resolves to /tmp/.../other-dir which does not exist.
+  # The wrapper should take the not-found exit (11) without reading disk.
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  [ "$status" -eq 11 ]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — state.json parse error emits diagnostic to stderr
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: corrupt state.json emits parse-error diagnostic to stderr" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-corrupt-state-json"
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  # Write a corrupt (non-JSON) state.json that is present but unparseable.
+  printf 'this is not valid json {{{' > "$state_dir/state.json"
+
+  export STUB_JOB_NOT_FOUND=1
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  # Must take the terminal not-found exit — corrupt state.json treated as miss.
+  [ "$status" -eq 11 ]
+  # Must emit a parse-error diagnostic on stderr (not silent).
+  [[ "$stderr" == *"state.json"* ]]
+  [[ "$stderr" != *"await: recovered"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — failed-status exit code is exact match (not just non-zero)
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: failed status in disk record → exact exit code 13" {
+  bats_require_minimum_version 1.5.0
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-exact-exit-failed"
+  export STUB_JOB_NOT_FOUND=1
+
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  jq -n --arg id "$job_id" \
+    '{"version":1,"config":{},"jobs":[{"id":$id,"status":"failed"}]}' \
+    > "$state_dir/state.json"
+  jq -n --arg id "$job_id" --arg err "exact exit test error" \
+    '{"id":$id,"status":"failed","errorMessage":$err}' \
+    > "$state_dir/jobs/$job_id.json"
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  # Exact exit code must be 13 (not merely non-zero).
+  [ "$status" -eq 13 ]
+  [[ "$stderr" == *"exact exit test error"* ]]
+  [ -z "$output" ]
+}
+
+# ---------------------------------------------------------------------------
+# disk-state fallback — permission-error diagnostic: file present but
+# unreadable emits a stderr note (EACCES vs ENOENT distinction)
+# ---------------------------------------------------------------------------
+
+@test "disk-state fallback: unreadable state.json emits permission-error diagnostic" {
+  bats_require_minimum_version 1.5.0
+
+  # Skip if running as root (root can read any file regardless of permissions).
+  if [ "$(id -u)" -eq 0 ]; then
+    skip "skipping permission test when running as root"
+  fi
+
+  local plugin_data="$TEST_ROOT/plugin-data"
+  mkdir -p "$plugin_data"
+  export CLAUDE_PLUGIN_DATA="$plugin_data"
+
+  local job_id="job-unreadable-state"
+  local workspace
+  workspace=$(cd "$REPO_ROOT" && pwd -P)
+  local state_dir
+  state_dir=$(_disk_state_dir "$plugin_data" "$workspace")
+  mkdir -p "$state_dir/jobs"
+  printf '{}' > "$state_dir/state.json"
+  chmod 000 "$state_dir/state.json"
+
+  export STUB_JOB_NOT_FOUND=1
+
+  run --separate-stderr "$WRAPPER" await "$job_id"
+  # Must take the terminal not-found exit.
+  [ "$status" -eq 11 ]
+  # Must emit a stderr note distinguishing presence-but-unreadable from absent.
+  [[ "$stderr" == *"state.json"* ]]
+  [[ "$stderr" != *"await: recovered"* ]]
+
+  chmod 644 "$state_dir/state.json"
 }

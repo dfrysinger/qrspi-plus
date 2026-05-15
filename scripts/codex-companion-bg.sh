@@ -551,9 +551,19 @@ fetch_result() {
 }
 
 # ---------------------------------------------------------------------------
+# _emit_recovery_note <job_id>
+#
+# Single source of truth for the disk-recovery stderr note.  Called from each
+# successful source branch in disk_state_fallback so the wording is defined
+# in exactly one place.
+_emit_recovery_note() {
+  printf 'await: recovered %s from disk (broker reported not-found)\n' "$1" >&2
+}
+
+# ---------------------------------------------------------------------------
 # disk_state_fallback <job_id>
 #
-# G9: consult the broker's on-disk state when poll_status returns not-found.
+# Consult the broker's on-disk state when poll_status returns not-found.
 # Invoked exclusively from await_subcommand's not-found branch.
 #
 # Path layout mirrors lib/state.mjs:29-43:
@@ -563,10 +573,22 @@ fetch_result() {
 # Read budget: at most 2 file reads per call (state.json + jobs/<id>.json on hit).
 # No directory scan, glob, or re-read within the same call.
 #
+# TOCTOU: state.json and jobs/<jobId>.json reads are non-atomic. An attacker with
+# write access to the state directory could swap the per-job file between reads.
+# Mitigated by the broker's exclusive ownership of the state directory at the
+# OS-permission level; not enforced in-wrapper.
+#
+# Trust boundary: rawOutput and errorMessage are read from a broker-controlled
+# state directory and emitted verbatim. Caller is responsible for terminal-escape
+# handling. We do not strip ANSI sequences because the broker-served happy-path
+# is also verbatim.
+#
 # Return codes (internal only — not part of the await public contract):
 #   0   Successful recovery: output written to stdout, recovery note on stderr.
 #   13  Job record found but status indicates failure (errorMessage on stderr,
-#       nothing on stdout).
+#       nothing on stdout).  Exit 13 mirrors the hard-error exit used by
+#       await_subcommand for broker-served non-recoverable errors (see fetch_result
+#       and await_subcommand's error-case mappings in this file).
 #   1   Miss: state.json absent/unreadable/invalid/jobId-absent, or per-job
 #       record absent/unreadable/invalid.  Caller falls through to existing
 #       terminal not-found exit (11).
@@ -579,8 +601,20 @@ disk_state_fallback() {
     return 1
   fi
 
+  # jobId format guard — belt-and-suspenders, independent of upstream verify_job_id.
+  # job_id must be a safe filename component: no slashes, no '..' sequences,
+  # no empty string.
+  case "$job_id" in
+    '' | */* | *..*)
+      printf 'await: malformed jobId rejected at disk-state fallback\n' >&2
+      return 1
+      ;;
+  esac
+
   # Compute the broker-canonical state-directory path (mirrors lib/state.mjs:29-43).
   # Uses node to replicate the slug/hash construction exactly.
+  # Both slugSource and the hash input are derived from canonicalRoot (realpathSync
+  # output) so the computed path matches what the broker wrote regardless of symlinks.
   local state_dir
   state_dir=$(node -e "
 const crypto = require('crypto');
@@ -598,16 +632,36 @@ try {
 } catch (_) {
   workspaceRoot = process.cwd();
 }
+// Canonicalize both slug and hash from realpathSync so they match the broker.
+// If realpathSync fails, propagate the error rather than silently using a
+// non-canonical path that would produce the wrong hash and a permanent miss.
 let canonicalRoot;
 try { canonicalRoot = fs.realpathSync(workspaceRoot); }
-catch (_) { canonicalRoot = workspaceRoot; }
-const slugSource = path.basename(workspaceRoot) || 'workspace';
+catch (e) {
+  process.stderr.write('disk_state_fallback: realpathSync failed: ' + e.message + '\n');
+  process.exit(1);
+}
+// Canonicalize pluginData and verify containment (guards against '..' in CLAUDE_PLUGIN_DATA).
+let canonicalPluginData;
+try { canonicalPluginData = fs.realpathSync(pluginData); }
+catch (e) {
+  process.stderr.write('disk_state_fallback: CLAUDE_PLUGIN_DATA canonicalization failed: ' + e.message + '\n');
+  process.exit(1);
+}
+const slugSource = path.basename(canonicalRoot) || 'workspace';
 const slug = slugSource.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+\$/g, '') || 'workspace';
 const hash = crypto.createHash('sha256').update(canonicalRoot).digest('hex').slice(0, 16);
-process.stdout.write(path.join(pluginData, 'state', slug + '-' + hash));
+const resolvedStateDir = path.join(canonicalPluginData, 'state', slug + '-' + hash);
+// Containment check: ensure the computed path lives within canonicalPluginData.
+if (!resolvedStateDir.startsWith(canonicalPluginData + path.sep) &&
+    resolvedStateDir !== canonicalPluginData) {
+  process.stderr.write('disk_state_fallback: state dir escaped plugin data root\n');
+  process.exit(1);
+}
+process.stdout.write(resolvedStateDir);
 " -- "$CLAUDE_PLUGIN_DATA") || return 1
 
-  # Hard-stop: resolved path must be absolute.
+  # Hard-stop: resolved path must be absolute (defense in depth after Node check).
   case "$state_dir" in
     /*) ;;
     *)  return 1 ;;
@@ -616,6 +670,12 @@ process.stdout.write(path.join(pluginData, 'state', slug + '-' + hash));
   local state_file="$state_dir/state.json"
 
   # Read 1: state.json — check whether jobId is listed in jobs[].
+  # Distinguish absent (ENOENT — silent miss) from present-but-unreadable
+  # (EACCES/EIO — emit a diagnostic so operators can distinguish the two cases).
+  if [ -e "$state_file" ] && [ ! -r "$state_file" ]; then
+    printf 'await: failed to read state.json at %s (permission denied); treating as miss\n' \
+      "$state_file" >&2
+  fi
   local state_json
   if ! state_json=$(cat "$state_file" 2>/dev/null); then
     return 1  # state.json absent or unreadable
@@ -629,8 +689,14 @@ process.stdin.on('end', () => {
   const jobId = process.argv[1];
   let state;
   try { state = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-  catch (_) { process.exit(1); }
-  if (!Array.isArray(state.jobs)) { process.exit(1); }
+  catch (e) {
+    process.stderr.write('disk_state_fallback: state.json parse error: ' + e.message + '\n');
+    process.exit(1);
+  }
+  if (!Array.isArray(state.jobs)) {
+    process.stderr.write('disk_state_fallback: state.json jobs field is not an array\n');
+    process.exit(1);
+  }
   process.stdout.write(state.jobs.some(j => j.id === jobId) ? '1' : '0');
 });
 " -- "$job_id") || return 1
@@ -641,6 +707,11 @@ process.stdin.on('end', () => {
 
   # Read 2: jobs/<jobId>.json — load and parse the per-job record.
   local job_file="$state_dir/jobs/$job_id.json"
+  # Distinguish absent from present-but-unreadable (same pattern as state.json above).
+  if [ -e "$job_file" ] && [ ! -r "$job_file" ]; then
+    printf 'await: failed to read jobs/%s.json at %s (permission denied); treating as miss\n' \
+      "$job_id" "$job_file" >&2
+  fi
   local job_json
   if ! job_json=$(cat "$job_file" 2>/dev/null); then
     return 1  # per-job file absent or unreadable
@@ -648,28 +719,28 @@ process.stdin.on('end', () => {
 
   # Apply the result-fallback chain to the disk-loaded record, mirroring the
   # five-source chain used by fetch_result for broker-served records.
-  # (a) result.rawOutput
   local raw
+  # (a) result.rawOutput
   if raw=$(extract_json_field "$job_json" "result.rawOutput") && [ -n "$raw" ]; then
-    printf 'await: recovered %s from disk (broker reported not-found)\n' "$job_id" >&2
+    _emit_recovery_note "$job_id"
     printf '%s' "$raw"
     return 0
   fi
   # (b) result.codex.stdout
   if raw=$(extract_json_field "$job_json" "result.codex.stdout") && [ -n "$raw" ]; then
-    printf 'await: recovered %s from disk (broker reported not-found)\n' "$job_id" >&2
+    _emit_recovery_note "$job_id"
     printf '%s' "$raw"
     return 0
   fi
   # (c) rendered
   if raw=$(extract_json_field "$job_json" "rendered") && [ -n "$raw" ]; then
-    printf 'await: recovered %s from disk (broker reported not-found)\n' "$job_id" >&2
+    _emit_recovery_note "$job_id"
     printf '%s' "$raw"
     return 0
   fi
-  # (d)/(e) errorMessage — job failed or cancelled with no output payload.
-  # Emit the errorMessage to stderr (not stdout) to signal job-level failure
-  # to the caller, consistent with the non-output failure paths in await.
+  # failed/cancelled status: job has errorMessage but no output payload.
+  # Emit the errorMessage to stderr (not stdout) and return 13 (hard error —
+  # the same exit code await_subcommand uses for broker-served hard errors).
   if raw=$(extract_json_field "$job_json" "errorMessage") && [ -n "$raw" ]; then
     printf '%s\n' "$raw" >&2
     return 13
@@ -777,9 +848,10 @@ await_subcommand() {
         break
         ;;
       not-found)
-        # G9: consult the broker's on-disk state before taking the terminal
+        # Consult the broker's on-disk state before taking the terminal
         # not-found exit.  disk_state_fallback reads at most 2 files per call
-        # and is invoked only from this branch (G7 and G8 branches untouched).
+        # and is invoked only from this branch (phase-fallback and launch-verify
+        # branches are untouched).
         local disk_rc
         disk_state_fallback "$job_id"; disk_rc=$?
         case "$disk_rc" in
