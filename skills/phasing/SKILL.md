@@ -208,40 +208,41 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — phasing", descr
   fi
   ```
 
-### Visual-Fidelity Precondition Assertion
-
-When `config.md` carries `visual_fidelity_required: true`, the orchestrator runs this assertion **after the review round completes and before writing `status: approved` to `phasing.md`**. When the flag is absent or `false`, the assertion is entirely inert and existing Phasing behavior is unchanged.
-
-**Assertion scope.** Every phase in `phasing.md` that produces UI work must have at least one wireframe artifact cited in its acceptance criteria. A "wireframe artifact" is any artifact named in the visual-fidelity binding subsection of `design.md` `## Test Strategy` — the orchestrator reads that subsection to discover the legal artifact names before evaluating citations. Phases that produce no UI work are exempt and pass through unchanged.
-
-**How to determine whether a phase produces UI work.** A phase produces UI work if its slice set (per `roadmap.md`) contains any slice whose description in `phasing.md` references user-facing rendering, UI components, screens, or visual output. Phases whose slices are exclusively backend, data-pipeline, or infrastructure work are exempt.
-
-**Assertion procedure.**
-
-1. Read `config.md`; if `visual_fidelity_required` is absent or `false`, skip the rest of this procedure.
-2. Read the visual-fidelity binding subsection of `design.md` `## Test Strategy`. If the subsection is missing while the flag is `true`, halt with: `"Visual-fidelity precondition failure: design.md ## Test Strategy has no visual-fidelity binding subsection but visual_fidelity_required is true. Phasing cannot be approved until design.md is updated."` Do not write `status: approved`.
-3. Collect the set of legal wireframe artifact names from the binding subsection.
-4. For each phase in `phasing.md`:
-   a. Determine whether the phase produces UI work (per the rule above). If not, skip it.
-   b. Inspect the phase's acceptance criteria text for at least one citation of any legal wireframe artifact name.
-   c. If no citation is found, record the phase as offending.
-5. If any offending phases were found:
-   - Write a failure diagnostic to `reviews/phasing/visual-fidelity-precondition.md` (creating the file if absent) and also emit it to stderr. The diagnostic names each offending phase and lists the wireframe artifact(s) that are required but uncited.
-   - Do **not** write `status: approved` to `phasing.md`. The status field remains at its pre-assertion value.
-   - Exit the assertion non-zero (halt the approval flow). The user must update the offending phases' acceptance criteria before re-running approval.
-6. If all UI-producing phases cite at least one wireframe artifact, the assertion passes silently and approval proceeds.
-
-**Precondition, not reviewer finding.** This assertion is part of the orchestrator's approval control flow. It is not delegated to a reviewer, a downstream skill, or an agent subagent. The binding gate is enforced exclusively at the Phasing approval boundary.
-
 ### Human Gate
 
 Present `phasing.md` and `roadmap.md` to the user — "hammer on it" review point. **Always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified."
 
 When presenting any Mermaid diagram (slice/phase visualization, if generated), write it to the artifact file and direct the user to open the file. Do not paste raw Mermaid syntax into terminal output.
 
-On approval, if reviews have not passed clean, note this and ask if they'd like a review loop before finalizing. Then write `status: approved` in the frontmatter of `phasing.md`, `roadmap.md`, the four pruned artifacts, and the four `future-*.md` artifacts.
+On approval, if reviews have not passed clean, note this and ask if they'd like a review loop before finalizing. Once the user has indicated approval, run the **Visual-Fidelity Precondition Assertion** (next subsection) before writing any `status: approved` field. Only after that assertion passes do you write `status: approved` in the frontmatter of `phasing.md`, `roadmap.md`, the four pruned artifacts, and the four `future-*.md` artifacts. If the assertion halts, do NOT write `status: approved` to any artifact — surface the diagnostic to the user and await their action (they will update the offending design or phasing artifacts and re-trigger approval).
 
 On rejection, write the user's feedback to `feedback/phasing-round-{NN}.md` (using the standard feedback file format from `using-qrspi`), then continue the conversation and re-synthesize with a new subagent that receives: `goals.md`, `questions.md`, `research/summary.md`, `design.md`, the latest phasing-discussion summary, and **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts.
+
+### Visual-Fidelity Precondition Assertion
+
+This assertion runs **after the user has indicated approval at the Human Gate and immediately before the orchestrator writes `status: approved`** to any of the phasing artifacts. It fires only when `config.md` carries `visual_fidelity_required: true`; when the flag is absent or `false`, the assertion is entirely inert and existing Phasing behavior is unchanged. Sequencing relative to the Human Gate is fixed: the user sees the artifacts and decides first; the assertion is the last gate the orchestrator clears before persisting the approval. It is not a pre-display check — failing this assertion never hides the artifact from the user; it only refuses to write the approval marker.
+
+**Assertion scope.** Every phase in `phasing.md` that produces UI work must cite at least one wireframe artifact in its replan gate criteria (the per-phase section labeled `**Replan gate criteria.**` in the `phasing.md` output template above; this is the section the rest of QRSPI refers to as the phase's acceptance criteria). A "wireframe artifact" is any artifact named in the visual-fidelity binding subsection of `design.md` `## Test Strategy` — the orchestrator reads that subsection to discover the legal artifact names before evaluating citations. Phases that produce no UI work are exempt and pass through unchanged.
+
+**How to determine whether a phase produces UI work.** A phase produces UI work if any of its slices involves user-visible output — anything a user would see in a browser, app, or other rendered surface — as opposed to exclusively backend, data-pipeline, infrastructure, or tooling work. The slice set per phase comes from `roadmap.md` (the canonical phase → slice mapping); each slice's description lives in `phasing.md`. Common UI vocabulary the orchestrator should treat as UI-producing includes (but is not limited to) user-facing rendering, UI components, screens, visual output, canvas, dashboard, widget, viewport, panel, form, dialog, modal, layout, template, theme, chart, visualization, view, page, overlay, and front-end / frontend work. The list is illustrative, not exhaustive — when in doubt, classify the phase as UI-producing and let the citation check run; a false positive surfaces a recoverable diagnostic, while a false negative silently approves an unbound phase.
+
+**Assertion procedure.**
+
+1. Read `config.md`; if `visual_fidelity_required` is absent or `false`, skip the rest of this procedure.
+2. Read the visual-fidelity binding subsection of `design.md` `## Test Strategy`. If the subsection is missing while the flag is `true`, halt with: `"Visual-fidelity precondition failure: design.md ## Test Strategy has no visual-fidelity binding subsection but visual_fidelity_required is true. Phasing cannot be approved until design.md is updated."` Do not write `status: approved`.
+2b. Collect the set of legal wireframe artifact names from the binding subsection. If the subsection is present but yields an empty set (zero artifact names — e.g., a stub heading with placeholder prose only), halt with: `"Visual-fidelity precondition failure: design.md binding subsection lists no wireframe artifact names. Add at least one artifact name before running Phasing approval."` Do not write `status: approved`. (Vacuously passing every phase against a zero-element legal set is not a valid approval — fail loudly here rather than silently waving phases through.)
+3. Read `roadmap.md` to obtain the canonical phase → slice mapping. For each phase in `phasing.md`, the slice set under evaluation is the set of slices that `roadmap.md` assigns to that phase; the slice descriptions themselves live in `phasing.md` `## Slices`.
+4. For each phase in `phasing.md`:
+   a. Determine whether the phase produces UI work by inspecting its slice descriptions in `phasing.md` (cross-referenced via `roadmap.md`) against the principle-based rule above. If the phase is exclusively backend / data-pipeline / infrastructure / tooling work, skip it.
+   b. Inspect the phase's replan gate criteria text (labeled `**Replan gate criteria.**` in the `phasing.md` output template) for at least one citation of any legal wireframe artifact name from step 2b's set.
+   c. If no citation is found, record the phase as offending.
+5. If any offending phases were found:
+   - Write a failure diagnostic to `reviews/phasing/visual-fidelity-precondition.md` (creating the file if absent) and also surface it to the user in main chat. The diagnostic names each offending phase and lists the wireframe artifact name(s) from step 2b's set that the phase's replan gate criteria must cite.
+   - Do **not** write `status: approved` to `phasing.md` or any of the other approval-marked artifacts. The `status` field remains at its pre-assertion value.
+   - Halt the approval flow — do NOT proceed to write `status: approved`. Surface the diagnostic to the user and await their action; the user must update the offending phases' replan gate criteria (or the design's binding subsection) before re-running approval.
+6. If all UI-producing phases cite at least one wireframe artifact, write a one-line pass sentinel to `reviews/phasing/visual-fidelity-precondition.md` of the form `"Visual-fidelity precondition: PASS — N UI-producing phase(s) checked against M legal wireframe artifact(s); all cited."` (creating the file if absent, overwriting any prior content from this approval attempt). The sentinel is the affirmative audit-trail signal that the assertion ran and found no violations — absence of this file on an approved phasing run means the assertion never executed. Approval then proceeds to write the `status: approved` markers.
+
+**Precondition, not reviewer finding.** This assertion is part of the orchestrator's approval control flow. It is not delegated to a reviewer, a downstream skill, or an agent subagent. The binding gate is enforced exclusively at the Phasing approval boundary.
 
 ### Terminal State
 
@@ -364,8 +365,8 @@ When `roadmap.md` already exists at Phasing entry — i.e., this is not the firs
 - `## Phasing OWNS / Phasing DEFERS` section malformed/missing — scope-reviewer fail-closed (emits `severity: high` per the schema).
 - Pasting Mermaid diagram syntax directly into terminal output (user cannot read it).
 - `visual_fidelity_required: true` is set but the visual-fidelity precondition assertion was not run before writing `status: approved` — approval of a phasing artifact without the per-phase wireframe citation check when the flag is active is a precondition violation, not a reviewer-finding-level concern.
-- A UI-producing phase's acceptance criteria do not cite any wireframe artifact from the design's binding subsection when `visual_fidelity_required: true` — pushing this finding into a reviewer instead of enforcing it as an orchestrator-side precondition assertion is a boundary violation; the assertion must halt approval, not surface as a suggestion.
-- Phasing approval written (`status: approved`) despite the visual-fidelity precondition assertion exiting non-zero — the assertion's non-zero exit is a hard stop; approval must not proceed while offending phases remain unresolved.
+- A UI-producing phase's replan gate criteria (the section labeled `**Replan gate criteria.**` in the phasing.md template, i.e. the phase's acceptance criteria) do not cite any wireframe artifact from the design's binding subsection when `visual_fidelity_required: true` — pushing this finding into a reviewer instead of enforcing it as an orchestrator-side precondition assertion is a boundary violation; the assertion must halt approval, not surface as a suggestion.
+- Phasing approval written (`status: approved`) despite the visual-fidelity precondition assertion halting — the assertion's halt is a hard stop on the approval flow; approval must not proceed while offending phases remain unresolved or while the design's binding subsection is missing or empty.
 
 ## Common Rationalizations — STOP
 
