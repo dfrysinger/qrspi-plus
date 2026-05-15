@@ -158,6 +158,22 @@ On approval, if reviews have not passed clean, note this and ask if they'd like 
 
 On rejection, write the user's feedback to `feedback/questions-round-{NN}.md` (see using-qrspi Feedback File Format), then launch a new subagent with `goals.md` + rejected `questions.md` + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts.
 
+### Quick-Fix Auto-Approve Branch
+
+When `config.md` carries `pipeline: quick`, the human-approval gate is skipped after any review round (initial or post-fix) that produces zero kept findings. When this branch fires, `status: approved` is written to `questions.md` frontmatter automatically without waiting for user input.
+
+**Verifier-gate precondition.** "Zero kept findings" is satisfied only when the verifier has affirmatively confirmed the count — a vacuously-zero count from an undispatched verifier does NOT satisfy the gate and surfaces the round to the user as unverified (matching the HARD-GATE contract in `skills/implement/SKILL.md`). The gate passes when ANY of the following hold for the current round's directory (`reviews/questions/round-NN/`):
+
+- At least one `.score.yml` sidecar file exists in the round directory, OR
+- A `round-NN-verifier-disabled.md` marker file is present in the round directory, OR
+- `config.md` carries `verifier_enabled: false`.
+
+When none of these hold (no sidecars, no disabled marker, and `verifier_enabled` is absent or `true`), the gate does NOT fire; the review round surfaces to the user as unverified and the standard human-approval gate runs.
+
+**Post-fix round behavior.** If a fix round still produces kept findings, the auto-approve branch does NOT fire. The orchestrator surfaces the remaining kept findings to the user. The branch fires only when the most recent review round — initial or post-fix — produces verifier-affirmed zero kept findings.
+
+**Full pipeline unchanged.** When `pipeline: full`, the human-approval gate runs as before — the branch is inert and the user must explicitly approve.
+
 ### Terminal State
 
 If the artifact directory is inside a git repository, commit the approved `questions.md` and the `reviews/questions/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)").

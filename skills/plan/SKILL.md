@@ -422,6 +422,24 @@ Present merged `plan.md` to the user — overview for approval, task details for
 
 **On rejection:** Write the user's feedback and the rejected artifact snapshot to `feedback/plan-round-{NN}.md` (using the standard feedback file format from `using-qrspi`), then launch a new subagent with original inputs + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts from the beginning (the "loop until clean" choice applies to the new round).
 
+### Quick-Fix Auto-Approve Branch
+
+When `config.md` carries `pipeline: quick`, the human-approval gate is skipped after any review round (initial or post-fix) that produces zero kept findings. When this branch fires, the split, `status: approved` write, and `phase_start_commit` capture proceed automatically without waiting for user input.
+
+**Verifier-gate precondition.** "Zero kept findings" is satisfied only when the verifier has affirmatively confirmed the count — a vacuously-zero count from an undispatched verifier does NOT satisfy the gate and surfaces the round to the user as unverified (matching the HARD-GATE contract in `skills/implement/SKILL.md`). The gate passes when ANY of the following hold for the current round's directory (`reviews/plan/round-NN/`):
+
+- At least one `.score.yml` sidecar file exists in the round directory, OR
+- A `round-NN-verifier-disabled.md` marker file is present in the round directory, OR
+- `config.md` carries `verifier_enabled: false`.
+
+When none of these hold (no sidecars, no disabled marker, and `verifier_enabled` is absent or `true`), the gate does NOT fire; the review round surfaces to the user as unverified and the standard human-approval gate runs.
+
+**Post-fix round behavior.** If a fix round still produces kept findings, the auto-approve branch does NOT fire. The orchestrator surfaces the remaining kept findings to the user. The branch fires only when the most recent review round — initial or post-fix — produces verifier-affirmed zero kept findings.
+
+**Relationship to existing single-task plan behavior.** The auto-approve branch supplements the quick-fix single-task plan behavior already documented in § Quick-Fix Plan Behavior. The single-task plan constraint continues to apply; the auto-approve branch adds only the conditional skip of the human-prompt step at the end of the existing approval flow.
+
+**Full pipeline unchanged.** When `pipeline: full`, the human-approval gate runs as before — the branch is inert and the user must explicitly approve.
+
 ### Merge/Split Mechanics
 
 - **Before review:** For large plans (6+ tasks), sub-subagents write `tasks/task-NN.md` files → Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files → single document is the only source of truth during review. For small plans (<6 tasks), the plan subagent writes the merged `plan.md` directly.

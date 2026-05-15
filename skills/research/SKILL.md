@@ -234,6 +234,24 @@ Present `research/summary.md` to the user. Note that this is ~200 lines — much
 
 On approval, if reviews have not passed clean, note this and ask if they'd like a review loop before finalizing. Then write `status: approved` in frontmatter.
 
+### Quick-Fix Auto-Approve Branch
+
+When `config.md` carries `pipeline: quick`, the human-approval gate is skipped after any review round (initial or post-fix) that produces zero kept findings. When this branch fires, `status: approved` is written to `research/summary.md` frontmatter automatically without waiting for user input.
+
+**Verifier-gate precondition.** "Zero kept findings" is satisfied only when the verifier has affirmatively confirmed the count — a vacuously-zero count from an undispatched verifier does NOT satisfy the gate and surfaces the round to the user as unverified (matching the HARD-GATE contract in `skills/implement/SKILL.md`). The gate passes when ANY of the following hold for the current round's directory (`reviews/research/round-NN/`):
+
+- At least one `.score.yml` sidecar file exists in the round directory, OR
+- A `round-NN-verifier-disabled.md` marker file is present in the round directory, OR
+- `config.md` carries `verifier_enabled: false`.
+
+When none of these hold (no sidecars, no disabled marker, and `verifier_enabled` is absent or `true`), the gate does NOT fire; the review round surfaces to the user as unverified and the standard human-approval gate runs.
+
+**Post-fix round behavior.** If a fix round still produces kept findings, the auto-approve branch does NOT fire. The orchestrator surfaces the remaining kept findings to the user. The branch fires only when the most recent review round — initial or post-fix — produces verifier-affirmed zero kept findings.
+
+**Specialist dispatch cap.** When `pipeline: quick`, the count of dispatched research specialists is capped at the `question_budget` value from `config.md`. If `questions.md` contains more questions than `question_budget`, the orchestrator dispatches at most `question_budget` specialists (grouping lower-priority questions into existing dispatches rather than adding new ones). This cap honors the quick-fix scope-tightening contract: the `question_budget` field is written to `config.md` by the Goals skill at run creation when `pipeline: quick` (default value: `5`).
+
+**Full pipeline unchanged.** When `pipeline: full`, the human-approval gate runs as before and no specialist dispatch cap applies — the branch is inert and the user must explicitly approve.
+
 ### Terminal State
 
 If the artifact directory is inside a git repository, commit the approved `research/summary.md`, all `research/q*.md` files, and the `reviews/research/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)").
