@@ -157,6 +157,171 @@ When `config.md: verifier_enabled: false`, conditions 1 and 2 are still checked 
 Do NOT dispatch the first per-task wave before the Implement-Entry Smoke Check completes with all three conditions passing (or explicitly noting verifier_enabled: false for condition 3's relaxed path). A smoke-check failure halts the phase and surfaces the diagnostic to the user; the orchestrator does NOT log-and-continue. No per-task worktrees are created, no implementer subagents are dispatched. Surface the diagnostic to the user and await a manual fix before re-invoking Implement.
 </HARD-GATE>
 
+## Implement-Entry Task-Count Read and Dynamic Skip
+
+**Placement in the entry sequence.** This step runs immediately after the Implement-Entry Smoke Check passes and before any per-task dispatch or any Parallelize / Integrate dispatch. It is a one-shot read per Implement entry; it is not repeated during fix-round dispatches within the same phase.
+
+### Count-Read Procedure
+
+**The count-read is a ONE-SHOT bind.** At step 5.5 entry, the orchestrator reads all matching files into an in-memory list, counts from that list, and binds the result to `N`. The same `N` value governs the rest of the entry sequence — subsequent additions to `tasks/` after the bind do NOT update N. The orchestrator must NOT re-glob `tasks/` between step 5.5's count-read and the completion of the first per-task dispatch; for the N=1 skip, the single task file's path is captured at count-read time and the dispatch at step 6 references that captured path, not a fresh glob.
+
+**Race-window acknowledgment.** QRSPI's task-spec lifecycle is not designed for concurrent writes to `tasks/` during Implement entry; the orchestrator treats `tasks/` as quiescent at step 5.5 and any concurrent write is operator error. As an optional cross-check: at step 6 entry, the orchestrator MAY re-read the count; if the recount differs from the bound `N`, emit a loud diagnostic naming the mismatch and halt — do not silently proceed with a stale `N`.
+
+Count the number of files matching the canonical glob `tasks/task-[0-9][0-9].md` (or `tasks/task-[0-9][0-9][a-z].md` for Plan-induced letter-suffix split tasks such as `task-07a`) in the run's artifact directory whose YAML frontmatter carries `status: approved`. Bind the result to `N`.
+
+- Include every file whose name matches `tasks/task-[0-9][0-9].md` or `tasks/task-[0-9][0-9][a-z].md` exactly, is readable, and has `status: approved` in frontmatter.
+- Exclude any file that is missing, unreadable, or lacks a parseable `status: approved` field.
+- Exclude `fixes/{type}-round-NN/task-NN.md` files — only the top-level canonical task glob is counted.
+- **Exclude `tasks/task-00*.md` files** (including `task-00.md`, `task-00a.md`, `task-00b.md`, and any other letter-suffix variant). Baseline-fix tasks (`task-00*.md`) are runtime-injected predecessor scaffolding written by Implement itself and are not counted as primary plan tasks. N counts only `tasks/task-NN.md` where NN is two or more decimal digits with the first digit non-zero (i.e., `task-01.md` through `task-99.md` excluding `task-00*.md`).
+- **Filename precondition.** Files in `tasks/` whose names do not match the canonical forms above — such as `tasks/task-readme.md`, `tasks/task-all-phases.md`, or `tasks/task-template.md` — MUST NOT satisfy the count even if they carry `status: approved`. A non-canonical filename is a precondition violation: emit a named diagnostic (`non-canonical-task-filename`) naming the offending file and halt. Do not silently include or exclude the file.
+
+**Filesystem error handling.** Before counting individual files, the orchestrator must verify the `tasks/` directory is readable:
+
+- If the `tasks/` directory itself is unreadable, missing, or the glob fails due to a filesystem error (permission denied, NFS mount failure, etc.), abort with a distinct diagnostic naming the I/O error AND the directory path:
+  ```
+  Implement entry halted: filesystem error reading <ABS_ARTIFACT_DIR>/tasks/ — <I/O error description>. Resolve the directory access issue before re-invoking Implement.
+  ```
+  This is a filesystem I/O error, NOT the N=0 precondition violation. Use audit-log branch label `halt-tasks-dir-io-error`.
+
+  **Audit append on halt-tasks-dir-io-error (symmetric with N=0).** Before aborting, the orchestrator attempts one append to `reviews/implement-entry-decisions.md` carrying the canonical three fields:
+
+  ```yaml
+  ---
+  timestamp: <ISO-8601 UTC timestamp at append time>
+  task_count: null
+  branch: halt-tasks-dir-io-error
+  ---
+  ```
+
+  `task_count` is `null` because `N` was never read — the directory enumeration failed before counting began. See § Audit Trail for the schema rule covering halt branches where `N` was not read at entry. The abort is unconditional regardless of audit-append outcome. If the audit append itself fails on top of the underlying directory I/O error (double-failure case — for example, `reviews/` is also unwritable, or the filesystem error is global), log a WARN to stderr in the canonical `audit-write-failed` format (see § N>1 Branch) and halt anyway, surfacing both the directory I/O diagnostic and the audit-write failure to the user. The audit append is best-effort on this path, matching the N=0 protocol; the halt fires regardless.
+- If the directory is readable but any individual canonical task file is unreadable, the orchestrator **halts BEFORE binding N** with a distinct diagnostic naming the unreadable file. WARN-and-exclude is insufficient here: silently excluding a single unreadable file from a two-task plan would shift `N` from 2 to 1 and trigger the N=1 dynamic-skip branch — bypassing Parallelize and Integrate on the basis of an I/O error rather than an operator decision. Use audit-log branch label `halt-unreadable-task-file`.
+
+  **Audit append on halt-unreadable-task-file (symmetric with halt-tasks-dir-io-error).** Before aborting, the orchestrator attempts one append to `reviews/implement-entry-decisions.md` carrying the canonical three fields:
+
+  ```yaml
+  ---
+  timestamp: <ISO-8601 UTC timestamp at append time>
+  task_count: null
+  branch: halt-unreadable-task-file
+  ---
+  ```
+
+  `task_count` is `null` because `N` was not bound — see § Audit Trail for the schema rule. The abort is unconditional regardless of audit-append outcome. If the audit append itself fails on top of the underlying file I/O error, emit the canonical `unreadable-task-file` WARN to stderr (template below) and halt anyway, surfacing both the file I/O diagnostic and the audit-write failure to the user. The stderr WARN template follows the same severity / branch-label / error-description discipline as the `audit-write-failed` WARN in § N>1 Branch:
+
+  ```
+  <ISO-8601 UTC timestamp> WARN unreadable-task-file path=<absolute file path> error=<errno description>
+  ```
+
+`N` is bound once from the in-memory list — only after every canonical task file has been successfully read — and is available for the rest of the Implement entry sequence.
+
+### N=0 Branch — Halt (Precondition Violation)
+
+> **Cross-reference:** Filesystem errors on `tasks/` enumeration are handled by the halt-tasks-dir-io-error path in the Count-Read Procedure above and do not reach this branch. This section covers only the case where the directory exists and is readable but contains zero approved canonical task files.
+
+When the canonical glob succeeds (directory is readable) but N=0, the orchestrator **aborts before any per-task dispatch** with the following named diagnostic:
+
+```
+Implement entry halted: no approved plan tasks found in <ABS_ARTIFACT_DIR>/tasks/.
+The canonical task glob (tasks/task-[0-9][0-9].md, tasks/task-[0-9][0-9][a-z].md)
+matched no files with status: approved frontmatter. This is a precondition violation —
+no plan tasks exist or all task specs are missing the required status: approved
+frontmatter field. Resolve the missing or unapproved task specs before re-invoking
+Implement.
+```
+
+Use audit-log branch label `halt-zero-tasks`.
+
+The N=0 path is a **precondition violation**, not a degenerate single-task run. It is treated with the same fail-loud philosophy as the smoke check: zero approved tasks means either no plan was produced or every task spec failed approval, and neither condition is safe to silently ignore.
+
+**Audit append on N=0.** Before aborting, the orchestrator appends one entry to `reviews/implement-entry-decisions.md` in the artifact directory:
+
+```yaml
+---
+timestamp: <ISO-8601 UTC timestamp at append time>
+task_count: 0
+branch: halt-zero-tasks
+---
+```
+
+If the append fails (directory missing, file unwritable, or any filesystem error), the orchestrator **still aborts** on the N=0 path — the abort is unconditional — but surfaces both the N=0 diagnostic and the audit-write failure to the user. Unlike the N=1 path (see below), the N=0 abort does not treat the audit-write failure as an additional precondition; the abort fires regardless.
+
+The N=0 branch is **not the same as the N=1 branch**. The skip branch fires only on N=1. N=0 is always a halt. A quick-fix run that produces zero approved tasks halts; a full-pipeline run that produces zero approved tasks halts. Neither is routed through the skip path.
+
+### N=1 Branch — Dynamic Skip of Parallelize and Integrate
+
+When `N` is exactly one, the orchestrator **skips both Parallelize and Integrate dispatch** for this Implement entry. No Parallelize artifact is produced and no Integrate artifact is produced for the run. The per-task implementation flow proceeds directly from the count-read to the single-task dispatch.
+
+**The skip is purely dynamic and count-based.** It does not depend on `config.md: pipeline: quick`.
+
+- A full-pipeline run (`pipeline: full`) that happens to yield exactly one approved task spec takes the skip branch — Parallelize and Integrate are not invoked.
+- A quick-fix run (`pipeline: quick`) that somehow yields N > 1 approved task specs (for example, after a Test "fix" routes back to Plan and Plan produces multiple fix tasks) takes the full-pipeline branch — Parallelize and Integrate run as in the N > 1 path.
+
+The mode (derived from `config.md.route` per § Overview) governs per-task orchestration shape and remains the source of truth for every other orchestration decision; the N=1 skip is a count-based override specifically on the Parallelize-and-Integrate dispatch layer.
+
+**Audit append — required precondition for the skip.** Before bypassing Parallelize and Integrate, the orchestrator **must successfully append** one entry to `reviews/implement-entry-decisions.md` in the artifact directory:
+
+```yaml
+---
+timestamp: <ISO-8601 UTC timestamp at append time>
+task_count: 1
+branch: skip-parallelize-integrate
+---
+```
+
+If the append fails for any filesystem reason — the `reviews/` directory is missing, the file is unwritable, or a concurrent write conflict produces an error — the orchestrator **aborts with a named diagnostic** rather than silently bypassing Parallelize and Integrate:
+
+```
+Implement N=1 skip branch aborted: audit append to
+<ABS_ARTIFACT_DIR>/reviews/implement-entry-decisions.md failed — <reason: directory
+missing | file unwritable | concurrent write conflict>. The audit append is a
+precondition for the skip branch. Resolve the filesystem issue and re-invoke
+Implement.
+```
+
+The audit append is a **hard precondition for the skip**, not a best-effort emission. The skip branch only fires after a confirmed successful write. If the write fails, the phase does not proceed.
+
+After a confirmed successful audit append, the orchestrator proceeds directly to per-task dispatch for the single approved task, bypassing Parallelize and Integrate dispatch entirely. The remainder of the per-task TDD + review flow (per-task review fan-out, fix loop, verifier sidecar wiring, reviewer-protocol contracts) is **unchanged** — the skip is additive at the entry-time orchestration layer only.
+
+**Artifact Gating suspension for N=1.** The standard Artifact Gating requirement for `parallelization.md` with `status: approved` (see § Artifact Gating — Full pipeline) is **suspended** when the N=1 skip branch fires. The absence of a Parallelize artifact is the expected consequence of the skip, not an error condition. The `branch: skip-parallelize-integrate` label in the audit append is the audit signal that this suspension is in effect — readers reconstruct the implication from the branch label and this prose section, not from additional audit fields. For the single-task dispatch, the task forks directly from the feature branch tip without a Branch Map — the same direct-dispatch pattern used in quick-fix mode.
+
+**Security tradeoff — cross-task integration review.** Integrate's primary role is cross-task integration and security review. An N=1 run has no cross-task interactions to review — single-task Integrate would re-run the same per-task gates that already ran in Implement. The N=1 skip therefore loses no review surface; per-task review remains the load-bearing gate. The `branch: skip-parallelize-integrate` label in the audit append is the audit signal that this Integrate-skip security tradeoff is in effect — operators can see that the Integrate gate was not invoked and verify the per-task reviewer suite ran to completion. Readers reconstruct this implication from the branch label and the prose in this section, not from additional audit fields.
+
+### N>1 Branch — Full-Pipeline Behavior
+
+When `N` is greater than one, the orchestrator **falls through to the existing full-pipeline behavior**: Parallelize runs before per-task dispatch and Integrate runs after the last task completes. No new gating is introduced beyond what the existing full-pipeline flow already provides.
+
+**Audit append on N>1.** The orchestrator appends one entry to `reviews/implement-entry-decisions.md`:
+
+```yaml
+---
+timestamp: <ISO-8601 UTC timestamp at append time>
+task_count: <N>
+branch: run-full-pipeline
+---
+```
+
+The N>1 audit append is best-effort — a write failure is logged to the orchestrator's in-session output but does not halt the phase (unlike the N=1 path, where the write is a hard precondition). If the append fails, the orchestrator logs a warning in the following canonical format so operators can grep for it:
+
+```
+<ISO-8601 UTC timestamp> WARN audit-write-failed: could not append to reviews/implement-entry-decisions.md — <error description>. Attempted payload: {timestamp: <ISO-8601>, task_count: <N>, branch: run-full-pipeline}. Proceeding to full-pipeline dispatch.
+```
+
+The log format is canonical: timestamp ISO-8601, severity `WARN`, branch label `audit-write-failed`, attempted-payload (the would-be audit-log entry), error description. Proceed to the Branch Model and wave dispatch steps below.
+
+### Audit Trail
+
+`reviews/implement-entry-decisions.md` in the artifact directory records one append per Implement entry. Each append carries exactly three fields:
+
+| Field | Values |
+|-------|--------|
+| `timestamp` | ISO-8601 UTC timestamp at append time |
+| `task_count` | The integer count `N` read at entry on branches where enumeration succeeded (`run-full-pipeline`, `skip-parallelize-integrate`, `halt-zero-tasks` — `0` is an observed count there, the directory was readable and contained zero approved canonical task files). `null` on halt branches where `N` was not read at entry (`halt-tasks-dir-io-error`, `halt-unreadable-task-file`) — enumeration failed or was aborted before binding `N`, so no observed count exists. Consumers aggregating on `task_count` must read `branch` first; treat `task_count` as an observed count only when `branch` ∈ {`run-full-pipeline`, `skip-parallelize-integrate`, `halt-zero-tasks`}. |
+| `branch` | `skip-parallelize-integrate` (N=1), `run-full-pipeline` (N>1), `halt-zero-tasks` (N=0), `halt-tasks-dir-io-error` (filesystem error on `tasks/` directory), or `halt-unreadable-task-file` (individual canonical task file unreadable) |
+
+This file is the audit surface for the skip behavior. An operator auditing a run can distinguish "N=0 empty plan that slipped through precondition gating" from "N=1 single-task quick-fix that legitimately skipped orchestration overhead" by reading the `branch` field. The file is append-only; do not overwrite prior entries from earlier Implement invocations in the same run. If the file does not exist, create it with the first append; if it exists, append below the last `---` marker.
+
+**Integrity limitation.** The audit log is best-effort; provenance hardening (append-only enforcement, hash-chained entries) is out of scope for this contract surface — operators relying on the audit log for forensic integrity should treat it as advisory, not tamper-evident. Subagent write-scope hardening (preventing a compromised subagent from forging audit entries) is a v0.6+ follow-up out of scope for this contract surface.
+
 ## Branch Model — Runtime Resolution (Full Pipeline)
 
 In full pipeline mode, Implement consumes the symbolic Branch Map from `parallelization.md` (see `parallelize/SKILL.md` § Branch Model). At runtime, Implement resolves each `Base` value as follows:
@@ -196,6 +361,7 @@ Branch on mode (derived from `config.md.route` per § Overview) at the start. Bo
     - Delete `.worktrees/{slug}/baseline/` (per Step 4's invariant).
     - **Full pipeline:** dispatch `task-00` first, in isolation. Write the `task-00` Branch Map row and the `## Runtime Adjustments` section to `parallelization.md` (see "Baseline Tests" Auto-fix path). Create only the `task-00` worktree at `.worktrees/{slug}/task-00/`, forked from feature branch tip. Run the per-task TDD + review flow (see § Per-Task Execution) for `task-00`, wait for terminal state. Once `task-00` is in terminal state, proceed to Step 6 with the in-memory resolution table now overlaying Runtime Adjustments (so dependents resolve to `task-00 tip`).
     - **Quick fix:** the baseline-fix task is dispatched as its own isolated dispatch event BEFORE the originally-requested dispatch (no `parallelization.md`, no Branch Map row to append). Write `tasks/task-00.md` with `status: approved`, create the `task-00` worktree forked from feature branch tip, run the per-task flow for `task-00`, wait for terminal state. The baseline-fix dispatch's task set is `{tasks/task-00.md}` (one task). Once `task-00` is in terminal state, proceed to Step 6 to dispatch the originally-requested task set as a separate isolated dispatch event — either the originally-requested `tasks/*.md` (normal entry, **excluding** the just-written `tasks/task-00*.md` baseline-fix singleton — the main dispatch reads only the originally-requested files) or `fixes/{type}-round-NN/*.md` (fix-task dispatch). Each dispatch event reads exactly one set; the baseline fix and the main dispatch are separate events, not a merged batch. (Note: in this skill, "batch" = the full set of tasks gated together at the human batch gate; "dispatch event" = one invocation of the per-task flow reading one task set. The isolated baseline-fix dispatch is its own dispatch event but is not a separate batch — it auto-continues to the main dispatch with no intermediate batch gate; only the main dispatch's batch gate fires at Step 7.)
+5.5. **Task-count read and dynamic skip.** Run the procedure in § Implement-Entry Task-Count Read and Dynamic Skip. This step fires once per Implement entry (not on subsequent fix-round dispatches within the same phase), after the smoke check and after any baseline-fix pre-dispatch, but **before** any per-task worktree creation and before any Parallelize or Integrate dispatch. Branch on the count (`N`) per that section: N=0 halts the phase; N=1 writes the audit append and skips to the single-task per-task dispatch (Step 6), bypassing Parallelize and Integrate; N>1 writes the audit append and falls through to Step 6's normal dispatch (full-pipeline wave dispatch or quick-fix per-task dispatch per mode).
 6. **Dispatch tasks.**
     - **Full pipeline — for each wave** in the Execution Order, in order:
         - Resolve every task's effective base: read the Branch Map's `Base` column, then apply `## Runtime Adjustments` overrides on top.
