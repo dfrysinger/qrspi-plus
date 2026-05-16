@@ -40,7 +40,7 @@ Read `config.md` from the artifact directory to determine whether Codex reviews 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Plan validates `pipeline`, `route`, and `codex_reviews`.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Plan validates `pipeline`, `route`, `codex_reviews`, and (when `pipeline: quick`) `question_budget`.
 
 <HARD-GATE>
 Do NOT produce plan.md without all required artifacts approved (full: goals + research + design + structure; quick: goals + research).
@@ -422,6 +422,24 @@ Present merged `plan.md` to the user — overview for approval, task details for
 
 **On rejection:** Write the user's feedback and the rejected artifact snapshot to `feedback/plan-round-{NN}.md` (using the standard feedback file format from `using-qrspi`), then launch a new subagent with original inputs + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts from the beginning (the "loop until clean" choice applies to the new round).
 
+### Quick-Fix Auto-Approve Branch
+
+When `config.md` carries `pipeline: quick`, the human-approval gate is skipped after any review round (initial or post-fix) that produces zero kept findings. When this branch fires, the split, `status: approved` write, and `phase_start_commit` capture proceed automatically without waiting for user input.
+
+**Verifier-gate precondition.** "Zero kept findings" is satisfied only when the verifier has affirmatively confirmed the count — a vacuously-zero count from an undispatched verifier does NOT satisfy the gate and surfaces the round to the user as unverified (matching the HARD-GATE contract in `skills/implement/SKILL.md`). If `config.md` is missing or unreadable when this branch is evaluated, the auto-approve branch does NOT fire — the orchestrator surfaces a named diagnostic and falls through to the standard human-approval gate (fail-loud, not silent fallback to either pipeline mode). The gate passes when ANY of the following hold for the current round's directory (`reviews/plan/round-NN/`):
+
+- At least one `.score.yml` sidecar file exists in the round directory AND every sidecar evaluates to no kept-blocker findings per the verifier's scoring rubric (see `agents/qrspi-finding-verifier.md` and `skills/implementer-protocol/SKILL.md`). A zero-byte sidecar does not constitute verifier affirmation and the gate does NOT pass. Full sidecar schema validation is the verifier's contract (see `agents/qrspi-finding-verifier.md`); this skill assumes well-formed sidecars. OR
+- A `round-NN-verifier-disabled.md` marker file is present in the round directory AND the marker conforms to the canonical schema defined in `skills/implement/SKILL.md` HARD-GATE (a marker failing schema validation, or whose round identifier does not match the current round, is treated as absent). OR
+- `config.md` carries `verifier_enabled: false`. When this condition satisfies the gate, the orchestrator MUST append an audit-log entry before writing the split, `status: approved`, and `phase_start_commit` capture — recording: timestamp, run slug, step name (`plan`), and branch label (`auto-approve-verifier-disabled-config`). The audit entry is written to the cascade audit log if one exists, otherwise to the round directory. An attempt to auto-approve via `verifier_enabled: false` without successfully writing this audit entry MUST abort with a named diagnostic (fail-loud, matching the audit-write precondition philosophy in `skills/implement/SKILL.md` HARD-GATE). This path is a deliberate operator-level configuration, not a default; the round appears in the review log as verifier-disabled, not as a normal clean round.
+
+When none of these hold (no sidecars with affirmative zero-kept-findings content, no valid schema-conforming marker for the current round, and `verifier_enabled` is absent or `true`), the gate does NOT fire; the review round surfaces to the user as unverified and the standard human-approval gate runs.
+
+**Post-fix round behavior.** If a fix round still produces kept findings, the auto-approve branch does NOT fire. The orchestrator surfaces the remaining kept findings to the user. The branch fires only when the most recent review round — initial or post-fix — produces verifier-affirmed zero kept findings.
+
+**Relationship to existing single-task plan behavior.** The auto-approve branch supplements the quick-fix single-task plan behavior already documented in § Quick-Fix Plan Behavior. The single-task plan constraint continues to apply; the auto-approve branch adds only the conditional skip of the human-prompt step at the end of the existing approval flow.
+
+**Full pipeline unchanged.** When `pipeline: full`, the human-approval gate runs as before — the branch is inert and the user must explicitly approve.
+
 ### Merge/Split Mechanics
 
 - **Before review:** For large plans (6+ tasks), sub-subagents write `tasks/task-NN.md` files → Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files → single document is the only source of truth during review. For small plans (<6 tasks), the plan subagent writes the merged `plan.md` directly.
@@ -444,6 +462,16 @@ model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Cla
 # sizing_exception: <one-line reason>
 # (Target files are aspirational; deviation discipline lives in the per-task
 #  spec reviewer.)
+#
+# Optional visual-fidelity binding block. MANDATORY only on UI-producing tasks
+# when `config.md` carries `visual_fidelity_required: true`; otherwise omit the
+# whole block. The Plan orchestrator's pre-fanout hard-gate (see "Red Flags"
+# below) consumes these fields to refuse plan-review dispatch when a
+# UI-producing task lacks wireframe citations.
+# visual_fidelity_check:
+#   wireframe_refs:           # one entry per cited wireframe artifact
+#     - <path-or-URL-to-wireframe>
+#   ui_producing: true        # true on tasks that emit UI output, false otherwise
 ---
 
 # Task NN: {name}
@@ -515,6 +543,17 @@ If compaction was not done before splitting (user declined), recommend it now: "
 - A task touches files from a different vertical slice without justification
 - Phase boundaries don't align with the design's phase definitions
 - Quick-fix plan has more than one task (quick fix = single task by definition)
+- `config.md` carries `visual_fidelity_required: true` and a task with `visual_fidelity_check.ui_producing: true` lacks a non-empty `visual_fidelity_check.wireframe_refs` list (refuses plan-review fan-out — see "Visual-fidelity hard-gate" below)
+
+### Visual-fidelity hard-gate (pre-fanout refusal condition)
+
+Before dispatching the plan-review reviewer fan-out (see "Review Round" above), the Plan orchestrator inspects `config.md` and the merged `plan.md`. The gate fires **only when** `config.md` carries `visual_fidelity_required: true` — runs with the flag unset, absent, or `false` are exempt entirely and the gate is a no-op. When the flag is on, the orchestrator walks every task spec in the merged `plan.md` and asserts that any task whose `visual_fidelity_check.ui_producing` field is `true` also carries a non-empty `visual_fidelity_check.wireframe_refs` list.
+
+**Failure mode.** If any UI-producing task fails the assertion, the round halts before reviewer dispatch. The halt message names the offending task by its task number and surfaces the assertion that failed (`visual_fidelity_check.wireframe_refs` missing or empty) — the assertion fires for the absent-key, empty-list, and null-value sub-cases alike, and the diagnostic preserves that distinction rather than misreporting empty/null as "missing." No reviewers are dispatched until the plan author repopulates the block and the merged `plan.md` is re-checked. Multiple offending tasks are reported together in one halt so the author fixes them in a single pass.
+
+**Exemptions.** Tasks that set `ui_producing: false` pass the gate regardless of whether `wireframe_refs` is populated. Whole-block omission — a task spec that carries no `visual_fidelity_check` block at all — is treated as `ui_producing: false` by design and passes the gate; the gate catches field-population errors inside a present block, not authoring slips that drop the whole block. The upstream invariant that catches "forgot to add the block on a UI task" lives elsewhere: the Split task file format template above seeds the block on every spec, and the per-task spec reviewer surfaces missing-block authoring errors against UI-producing task descriptions. **Present-block parse error.** A `visual_fidelity_check` block that is present but omits the `ui_producing` field entirely is a HARD parse error, not a falsy default: the gate halts, names the offending task by number, and surfaces the missing `visual_fidelity_check.ui_producing` field. Treating absence as `false` here would silently exempt UI-producing tasks whose author dropped a one-line boolean — exactly the failure mode the gate exists to catch. The gate's trigger condition is the `visual_fidelity_required` field in `config.md` (the same flag Goals writes at run creation and that the using-qrspi skill documents in its Config File section); the field is the single source of truth for whether the visual-fidelity binding chain is active on this run, and the gate consumes it by that exact name.
+
+This is documented as a Plan-skill hard-gate — not a per-task review-time check — so the wireframe-binding contract is enforced once at plan-review time rather than re-checked downstream during Implement on every UI task.
 
 ## Common Rationalizations — STOP
 

@@ -79,7 +79,7 @@ The user must explicitly choose quick fix or full pipeline before synthesis begi
 
 ### Config Validation (when config.md exists)
 
-If `config.md` already exists (resuming a run), apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Goals validates `route`, `pipeline`, `codex_reviews`, `verifier_enabled`, `scope_tagger_enabled`, and `visual_fidelity_required`.
+If `config.md` already exists (resuming a run), apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Goals validates `route`, `pipeline`, `codex_reviews`, `verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`, and (when `pipeline: quick`) `question_budget`.
 
 ## Process
 
@@ -121,12 +121,12 @@ After intent capture (the interactive dialogue above) but before synthesizing `g
 1. No Codex reviews
 2. Use Codex for second reviews this run
 
-Once you have answers, write `config.md` in the artifact directory:
+Once you have answers, write `config.md` in the artifact directory. The fence below shows the **quick-pipeline** writer output (the `pipeline: quick` route is the example). For a `pipeline: full` run, use the same fence shape but (a) substitute the full route from the Route Templates section, (b) substitute `pipeline: full`, and (c) **omit the `question_budget` line entirely** — that field is written ONLY when `pipeline: quick` (it caps Research specialist dispatch in the autonomous quick-pipeline cascade; full pipelines have no such cap).
 
 ```yaml
 ---
 created: YYYY-MM-DD
-pipeline: quick  # or full
+pipeline: quick
 codex_reviews: true  # or false
 route:
   - goals
@@ -138,6 +138,7 @@ route:
 verifier_enabled: true  # set at run creation; edit directly between rounds to disable for the whole run
 scope_tagger_enabled: true  # set at run creation; edit directly between rounds to disable convergence narrowing for the whole run
 visual_fidelity_required: false  # set at run creation; default false unless the user opted into the visual-fidelity binding chain
+question_budget: 5
 ---
 ```
 
