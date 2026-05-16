@@ -327,6 +327,24 @@ If the user presses Enter or provides no input: skip silently.
 
 Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — test", description: "pre-handoff: phase routing (PR + optional Replan); Replan severity classification depends on uncluttered context. User decides whether to /compact." })`.
 
+**Phase-Completion Decision Point.**
+
+**Quick-fix binary gate (activates when `config.md` carries `pipeline: quick`).**
+When `pipeline: quick` is present, the phase-completion decision point collapses to exactly two choices — no intermediate options are offered:
+
+```
+Tests passed. What would you like to do?
+  ship — create the PR and close this quick-fix run
+  fix  — return to Plan to revise the task plan
+```
+
+The gate MUST render only the two choices above. There is no third option in quick-fix mode; any intermediate menu entries present in the full-pipeline gate are removed from this surface.
+
+- **`ship`** → proceed to the existing PR-creation path unchanged (draft title, show for confirmation, `gh pr create`, announce completion). No change to PR-creation mechanics.
+- **`fix`** → route back to the **Plan** skill only. The quick-fix Test gate MUST NOT offer a route back to Goals and MUST NOT offer a route back to Design. Goals and Design are the two mandatory human-decision gates already cleared earlier in the quick-fix run; the design is fixed by the time Test runs. Plan is the sole fix-route target in quick-fix mode. Selecting `fix` invokes the Plan skill via the same cross-skill invocation pattern documented in `using-qrspi/SKILL.md` § Route Templates — the orchestrator transfers control by invoking the next skill in `config.md.route` (which, for `pipeline: quick`, is Plan). The user is NOT left at a bare prose message; the Plan skill receives control with context from the Test run's outcome (failure report, suggested-fix scope).
+
+**Silent-skip condition.** When `pipeline: quick` is absent from `config.md`, or when `config.md` carries `pipeline: full`, the binary gate above is not invoked. The existing full-pipeline phase-completion gate menu is presented verbatim and all full-pipeline options remain available unchanged. If `config.md` carries any other value for `pipeline` (typo, unrecognized future variant, malformed string), the binary gate does NOT activate AND the existing full-pipeline gate is also not auto-invoked — the orchestrator invokes the standard Config Validation Procedure (see `skills/using-qrspi/SKILL.md`) for the unrecognized `pipeline` value (fail-loud, no silent fallback to either mode).
+
 **Every phase gets a PR.** After acceptance testing passes, prepare a PR for the current phase: draft title (including phase number for multi-phase projects), summary referencing artifacts in `docs/qrspi/YYYY-MM-DD-{slug}/`. Show user for confirmation. On confirmation, create PR via `gh pr create`. If user declines (e.g., wants to review locally first), skip PR creation — code stays on the feature branch.
 
 - **Last phase?** → Pipeline complete. Announce completion.
