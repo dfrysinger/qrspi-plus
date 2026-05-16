@@ -1,0 +1,13 @@
+docs(qrspi-18): round-03 fix-cycle — correct cross-reference, align with Config Validation Procedure
+
+Addresses round-02 silent-failure findings:
+- R2-F01 MED: Replace broken `using-qrspi/SKILL.md § Route` cross-reference
+  with the actual section name `§ Route Templates` (verified to exist at
+  line 66 of using-qrspi/SKILL.md).
+- R2-F02 LOW: Replace the irrecoverable "aborts" phrasing for unrecognized
+  `pipeline` values with the standard Config Validation Procedure, aligning
+  the binary-gate behavior with the global config-validation pattern and
+  giving users the edit-and-retry path documented in using-qrspi/SKILL.md.
+
+Two literal tokens `ship` and `fix` and all 9 Test Expectations from
+task-18.md remain intact. No other skill edits.
