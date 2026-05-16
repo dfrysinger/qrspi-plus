@@ -8,6 +8,12 @@
 #                                 not be a TTY). The legacy --prompt-file
 #                                 path-arg form was retired in commit 21/22
 #                                 of the #110 migration sequence.
+#                                 Post-launch verification: the jobId is
+#                                 verified via an internal status call before
+#                                 being emitted; on phantom (not-found or
+#                                 malformed), the task subcommand is retried
+#                                 exactly once. Exit 15 (LAUNCH_PHANTOM) on
+#                                 double-phantom.
 #   await <jobId>                 Poll status (5s/30s with backoff at 120s),
 #                                 fetch result on completion, write review
 #                                 markdown to stdout; ceiling at 1200s.
@@ -19,10 +25,24 @@
 #   11  await: job-not-found
 #   13  await: status/result hard error or launch bad JSON
 #   14  await: malformed JSON from status/result
+#   15  launch: LAUNCH_PHANTOM — both jobId attempts failed verification
 
 set -u
 # NOT -e: we inspect non-zero rcs from subprocesses (status legitimately exits
 # 1 to signal job-not-found). pipefail is similarly off.
+
+# Named exit constants — all values must be distinct and must not collide with
+# any POSIX-reserved or existing wrapper exit codes (0/1/10/11/13/14).
+#   LAUNCH_PHANTOM (15): both post-launch verification attempts returned
+#   not-found or malformed.  Exit 15 is reserved exclusively for this case.
+#   Callers MUST NOT emit any jobId on stdout when exiting 15.
+readonly LAUNCH_PHANTOM=15
+
+# Global guard for the phase-fallback audit line.  Set to 0 at script init so
+# that the first poll_status invocation that triggers the job.phase fallback
+# emits the stderr note exactly once per wrapper process; subsequent
+# invocations within the same process suppress the line to avoid log-spam.
+CODEX_PHASE_FALLBACK_LOGGED=0
 
 : "${QRSPI_CODEX_POLL_INTERVAL_FAST:=5}"
 : "${QRSPI_CODEX_POLL_INTERVAL_SLOW:=30}"
@@ -179,12 +199,96 @@ parse_launch_output() {
 }
 
 # ---------------------------------------------------------------------------
+# run_task_once <companion> <prompt_file>
+#
+# Execute one `companion task --background --prompt-file <prompt_file> --json`
+# call within the launch timeout.  Echoes the extracted jobId on stdout (rc=0)
+# or returns non-zero on any failure (timeout, non-zero companion exit, bad JSON,
+# missing jobId).  The caller is responsible for removing prompt_file.
+run_task_once() {
+  local companion="$1" prompt_file="$2"
+
+  local stdout_file stderr_file
+  stdout_file=$(mktemp -t codex-companion-bg.XXXXXX) || { printf 'launch: mktemp failed\n' >&2; return 1; }
+  stderr_file=$(mktemp -t codex-companion-bg.XXXXXX) || { rm -f "$stdout_file"; printf 'launch: mktemp failed\n' >&2; return 1; }
+
+  local SPAWN_RC=0 SPAWN_TIMED_OUT=0
+  spawn_with_timeout "$QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS" "$stdout_file" "$stderr_file" \
+    node "$companion" task --background --prompt-file "$prompt_file" --json
+
+  if [ "$SPAWN_TIMED_OUT" -eq 1 ]; then
+    printf 'launch: companion did not return within %ds (job-create hung)\n' \
+      "$QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS" >&2
+    rm -f "$stdout_file" "$stderr_file"
+    return 1
+  fi
+
+  if [ "$SPAWN_RC" -ne 0 ]; then
+    if [ -s "$stderr_file" ]; then
+      cat "$stderr_file" >&2
+    fi
+    printf 'launch: companion `task --background` exited %d\n' "$SPAWN_RC" >&2
+    rm -f "$stdout_file" "$stderr_file"
+    return "$SPAWN_RC"
+  fi
+
+  local stdout_text
+  stdout_text=$(cat "$stdout_file")
+  rm -f "$stdout_file" "$stderr_file"
+
+  local job_id
+  if ! job_id=$(parse_launch_output "$stdout_text"); then
+    return 1
+  fi
+  printf '%s' "$job_id"
+}
+
+# ---------------------------------------------------------------------------
+# verify_job_id <companion> <job_id>
+#
+# Issue a single poll_status call to verify the jobId is known to the broker.
+# Returns 0 (verified) when the lifecycle is a positive broker acknowledgement
+# (running or completed:*); returns 1 (unverified) on not-found, malformed,
+# or error.  An 'error' lifecycle means the status call itself crashed /
+# timed out / hit a permissions failure — that does NOT prove the broker
+# knows the jobId, so it must fall through to the retry branch rather than
+# be silently emitted as a successful verification.
+#
+# Design note: malformed falls through to the retry branch (does not exit 14)
+# because exit 14 is reserved for the public `status` subcommand's external
+# contract; the internal verification step is not a caller-visible path.
+verify_job_id() {
+  local companion="$1" job_id="$2"
+  local lifecycle
+  lifecycle=$(poll_status "$companion" "$job_id")
+  case "$lifecycle" in
+    not-found|malformed|error)
+      # not-found: broker explicitly does not know this jobId.
+      # malformed: response unparseable; cannot conclude either way.
+      # error:     status call crashed before it could check.
+      # All three force a retry.
+      return 1
+      ;;
+    *)
+      # running, completed:*, or any phase-fallback-recovered value —
+      # the broker positively acknowledged the jobId.
+      return 0
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # launch_subcommand
 #
 # The launch subcommand reads the prompt from stdin (path-arg form retired in
 # commit 21/22 of the #110 migration sequence). Any positional/flag argument
 # is rejected — including the legacy --prompt-file form — to keep the
 # trust boundary tight and prevent silent fallback to a stale path-arg caller.
+#
+# Post-launch verification: after capturing the candidate jobId from the broker
+# response, one internal status call verifies the job is known.  On phantom
+# (not-found or malformed), the entire task subcommand is retried exactly once.
+# Retry cap: 1 (maximum 2 total launches per invocation).
 launch_subcommand() {
   if [ "$#" -gt 0 ]; then
     printf 'launch: unrecognised argument: %s (path-arg form retired; pipe prompt on stdin)\n' "$1" >&2
@@ -215,45 +319,53 @@ launch_subcommand() {
     return 1
   fi
 
-  local stdout_file stderr_file
-  stdout_file=$(mktemp -t codex-companion-bg.XXXXXX) || { rm -f "$stdin_temp"; printf 'launch: mktemp failed\n' >&2; return 1; }
-  stderr_file=$(mktemp -t codex-companion-bg.XXXXXX) || { rm -f "$stdin_temp" "$stdout_file"; printf 'launch: mktemp failed\n' >&2; return 1; }
+  # stdin_temp is cleaned up at every exit point in this function rather than
+  # via a trap. This script deliberately runs without `set -e` / `set -o
+  # pipefail` (callers depend on numeric return codes propagating from
+  # internal helpers), and a cleanup trap would need careful scope to avoid
+  # firing in subshells spawned by command substitution. Repeating `rm -f` in
+  # each branch is intentional — do NOT replace with a trap without auditing
+  # the subshell-spawning helpers (run_task_once, verify_job_id, poll_status).
 
-  local SPAWN_RC=0 SPAWN_TIMED_OUT=0
-  # The companion reads --prompt-file synchronously inside spawn_with_timeout;
-  # stdin_temp (if set) remains on disk until after spawn_with_timeout returns.
-  spawn_with_timeout "$QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS" "$stdout_file" "$stderr_file" \
-    node "$companion" task --background --prompt-file "$prompt_file" --json
+  # --- Attempt 1 ---
+  local job_id_1
+  if ! job_id_1=$(run_task_once "$companion" "$prompt_file"); then
+    rm -f "$stdin_temp"
+    return 1
+  fi
 
-  # stdin_temp no longer needed: companion has read the file (or timed out).
+  if verify_job_id "$companion" "$job_id_1"; then
+    # Happy path: first attempt verified.  Emit jobId, no additional stderr.
+    rm -f "$stdin_temp"
+    printf '%s\n' "$job_id_1"
+    return 0
+  fi
+
+  # --- Retry (attempt 2) ---
+  # First attempt unverified (not-found, malformed, or error).  Retry once.
+  local job_id_2
+  if ! job_id_2=$(run_task_once "$companion" "$prompt_file"); then
+    # Broker-layer error on the retry launch: surface the existing launch-failure
+    # exit unchanged.  This is not the double-phantom case (exit 15); the task
+    # subcommand itself failed, which is a different failure mode.
+    rm -f "$stdin_temp"
+    return 1
+  fi
+
   rm -f "$stdin_temp"
 
-  if [ "$SPAWN_TIMED_OUT" -eq 1 ]; then
-    printf 'launch: companion did not return within %ds (job-create hung)\n' \
-      "$QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS" >&2
-    rm -f "$stdout_file" "$stderr_file"
-    return 1
+  if verify_job_id "$companion" "$job_id_2"; then
+    # Retry-success path: emit the second jobId and write the distinguishing
+    # stderr note.  This note is written only on the retry-success path.
+    printf 'launch: first jobId failed verification, retried\n' >&2
+    printf '%s\n' "$job_id_2"
+    return 0
   fi
 
-  if [ "$SPAWN_RC" -ne 0 ]; then
-    if [ -s "$stderr_file" ]; then
-      cat "$stderr_file" >&2
-    fi
-    printf 'launch: companion `task --background` exited %d\n' "$SPAWN_RC" >&2
-    rm -f "$stdout_file" "$stderr_file"
-    return "$SPAWN_RC"
-  fi
-
-  local stdout_text
-  stdout_text=$(cat "$stdout_file")
-  rm -f "$stdout_file" "$stderr_file"
-
-  local job_id
-  if ! job_id=$(parse_launch_output "$stdout_text"); then
-    return 1
-  fi
-  printf '%s\n' "$job_id"
-  return 0
+  # Double-phantom: both attempts unverifiable.  Exit LAUNCH_PHANTOM (15).
+  # No jobId is emitted on stdout.
+  printf 'launch: both jobId attempts failed verification (LAUNCH_PHANTOM)\n' >&2
+  return "$LAUNCH_PHANTOM"
 }
 
 # ---------------------------------------------------------------------------
@@ -298,6 +410,49 @@ poll_status() {
   # Parse `.job.status` (mjs:840-857; job-control.mjs:242-254 v1.0.4).
   local job_status
   if ! job_status=$(extract_json_field "$stdout_text" "job.status"); then
+    # job.status is absent from the payload.  Attempt the job.phase fallback
+    # before falling through to the malformed terminal case.
+    #
+    # Phase → lifecycle mapping (design.md phase-fallback section, single source of truth):
+    #   finalizing | done | reviewing                          → completed:completed
+    #   starting | running | investigating | editing | verifying → running
+    #   anything else (incl. absent or empty)                  → malformed (exit 14)
+    local job_phase
+    if job_phase=$(extract_json_field "$stdout_text" "job.phase") && [ -n "$job_phase" ]; then
+      local lifecycle
+      case "$job_phase" in
+        finalizing|done|reviewing)
+          lifecycle=completed
+          ;;
+        starting|running|investigating|editing|verifying)
+          lifecycle=running
+          ;;
+        *)
+          lifecycle=
+          ;;
+      esac
+      if [ -n "$lifecycle" ]; then
+        # Emit the audit line once per wrapper process to stderr so monitoring
+        # harnesses can detect broker-omitting-job.status patterns over time.
+        # Subsequent invocations within the same process suppress the line.
+        # The stderr surface is NOT part of the caller contract; callers MUST
+        # parse only stdout and exit code.
+        if [ "$CODEX_PHASE_FALLBACK_LOGGED" -eq 0 ]; then
+          printf '[codex-companion-bg] phase fallback active: %s → %s\n' \
+            "$job_phase" "$lifecycle" >&2
+          CODEX_PHASE_FALLBACK_LOGGED=1
+        fi
+        if [ "$lifecycle" = completed ]; then
+          printf 'completed:completed\n'
+        else
+          printf 'running\n'
+        fi
+        return
+      fi
+    fi
+    # Both job.status and job.phase are absent, or job.phase carries a value
+    # outside the mapping table.  Fall through to the existing malformed terminal
+    # case — this is a genuine protocol violation, not a recoverable phase.
     printf '%s' "$stdout_text" >&2
     printf 'malformed\n'
     return
@@ -396,6 +551,287 @@ fetch_result() {
 }
 
 # ---------------------------------------------------------------------------
+# _status_to_exit_code <status>
+#
+# Single source of truth for the status-to-exit-code mapping used by
+# disk_state_fallback and await_subcommand's broker-served terminal branch.
+# Maps a job lifecycle status string to the wrapper's public exit code for
+# that terminal state when no output payload is extractable from the record.
+#
+# Mirrors the exit-code semantics of the broker-served happy path:
+#   completed  → 14  (terminal but no extractable output → malformed)
+#   failed     → 13  (hard error)
+#   cancelled  → 13  (hard error, same bucket as failed)
+#   *          → 1   (unknown status → caller treats as miss)
+#
+# Usage: _status_to_exit_code "$status_string"; local ec=$?
+_status_to_exit_code() {
+  case "$1" in
+    completed)  return 14 ;;
+    failed)     return 13 ;;
+    cancelled)  return 13 ;;
+    *)          return 1  ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# _emit_recovery_note <job_id>
+#
+# Single source of truth for the disk-recovery stderr note.  Called from each
+# successful source branch in disk_state_fallback so the wording is defined
+# in exactly one place.
+#
+# Single-emission discipline: each call site MUST be immediately followed by
+# `return 0` (or a terminal-exit path).  Do not invoke this helper from a
+# fall-through code path.
+_emit_recovery_note() {
+  printf 'await: recovered %s from disk (broker reported not-found)\n' "$1" >&2
+}
+
+# ---------------------------------------------------------------------------
+# disk_state_fallback <job_id>
+#
+# Consult the broker's on-disk state when poll_status returns not-found.
+# Invoked exclusively from await_subcommand's not-found branch.
+#
+# Path layout mirrors lib/state.mjs:29-43:
+#   $CLAUDE_PLUGIN_DATA/state/<slug>-<sha256(realpath)[:16]>/state.json
+#   $CLAUDE_PLUGIN_DATA/state/<slug>-<sha256(realpath)[:16]>/jobs/<jobId>.json
+#
+# Read budget: at most 2 file reads per call (state.json + jobs/<id>.json on hit).
+# No directory scan, glob, or re-read within the same call.
+#
+# TOCTOU: state.json and jobs/<jobId>.json reads are non-atomic. An attacker with
+# write access to the state directory could swap the per-job file between reads.
+# Mitigated by the broker's exclusive ownership of the state directory at the
+# OS-permission level; not enforced in-wrapper.
+#
+# Trust boundary: rawOutput and errorMessage are read from a broker-controlled
+# state directory and emitted verbatim. Caller is responsible for terminal-escape
+# handling. We do not strip ANSI sequences because the broker-served happy-path
+# is also verbatim.
+#
+# Return codes (internal only — not part of the await public contract):
+#   0   Successful recovery: output written to stdout, recovery note on stderr.
+#   13  Job record found but status indicates failure (errorMessage on stderr,
+#       nothing on stdout).  Exit 13 mirrors the hard-error exit used by
+#       await_subcommand for broker-served non-recoverable errors (see fetch_result
+#       and await_subcommand's error-case mappings in this file).
+#   1   Miss: state.json absent/unreadable/invalid/jobId-absent, or per-job
+#       record absent/unreadable/invalid.  Caller falls through to existing
+#       terminal not-found exit (11).
+disk_state_fallback() {
+  local job_id="$1"
+
+  # Path-resolution hard-stop: $CLAUDE_PLUGIN_DATA must be set and non-empty.
+  # If absent, take the existing terminal not-found exit without any read.
+  if [ -z "${CLAUDE_PLUGIN_DATA:-}" ]; then
+    return 1
+  fi
+
+  # jobId format guard — belt-and-suspenders, independent of upstream verify_job_id.
+  # job_id must be a safe filename component: no slashes, no '..' sequences,
+  # no empty string, no leading-dot names (dotfiles are not valid broker jobIds).
+  case "$job_id" in
+    '' | */* | *..* | .*)
+      printf 'await: malformed jobId rejected at disk-state fallback\n' >&2
+      return 1
+      ;;
+  esac
+
+  # Compute the broker-canonical state-directory path (mirrors lib/state.mjs:29-43).
+  # Uses node to replicate the slug/hash construction exactly.
+  # Both slugSource and the hash input are derived from canonicalRoot (realpathSync
+  # output) so the computed path matches what the broker wrote regardless of symlinks.
+  local state_dir
+  state_dir=$(node -e "
+const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const { execSync } = require('child_process');
+const pluginData = process.argv[1];
+// Resolve workspace root the same way the broker does: git rev-parse --show-toplevel
+// from the current working directory, falling back to cwd when not in a git repo.
+let workspaceRoot;
+try {
+  workspaceRoot = execSync('git rev-parse --show-toplevel', {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']
+  }).trim();
+} catch (_) {
+  workspaceRoot = process.cwd();
+}
+// Canonicalize both slug and hash from realpathSync so they match the broker.
+// If realpathSync fails, propagate the error rather than silently using a
+// non-canonical path that would produce the wrong hash and a permanent miss.
+let canonicalRoot;
+try { canonicalRoot = fs.realpathSync(workspaceRoot); }
+catch (e) {
+  process.stderr.write('disk_state_fallback: realpathSync failed: ' + e.message + '\n');
+  process.exit(1);
+}
+// Canonicalize pluginData and verify containment (guards against '..' in CLAUDE_PLUGIN_DATA).
+let canonicalPluginData;
+try { canonicalPluginData = fs.realpathSync(pluginData); }
+catch (e) {
+  process.stderr.write('disk_state_fallback: CLAUDE_PLUGIN_DATA canonicalization failed: ' + e.message + '\n');
+  process.exit(1);
+}
+const slugSource = path.basename(canonicalRoot) || 'workspace';
+const slug = slugSource.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+\$/g, '') || 'workspace';
+const hash = crypto.createHash('sha256').update(canonicalRoot).digest('hex').slice(0, 16);
+const resolvedStateDir = path.join(canonicalPluginData, 'state', slug + '-' + hash);
+// Primary containment check: the string-computed state-dir path must lie within
+// canonicalPluginData (defense-in-depth against future changes to the path
+// computation that could introduce '..'-like sequences).
+if (!resolvedStateDir.startsWith(canonicalPluginData + path.sep) &&
+    resolvedStateDir !== canonicalPluginData) {
+  process.stderr.write('disk_state_fallback: state dir escaped plugin data root\n');
+  process.exit(1);
+}
+// Secondary containment check: if the state-dir slot already exists, canonicalize
+// it via realpathSync to detect symlink escapes inside CLAUDE_PLUGIN_DATA.
+// An attacker who can write inside CLAUDE_PLUGIN_DATA might replace the state-dir
+// slot with a symlink pointing to an arbitrary location; realpathSync reveals that.
+let canonicalStateDir;
+try { canonicalStateDir = fs.realpathSync(resolvedStateDir); }
+catch (_) {
+  // State dir does not yet exist (normal on first access) — no symlink to check.
+  canonicalStateDir = null;
+}
+if (canonicalStateDir !== null &&
+    !canonicalStateDir.startsWith(canonicalPluginData + path.sep) &&
+    canonicalStateDir !== canonicalPluginData) {
+  process.stderr.write('disk_state_fallback: state dir symlink escapes plugin data root\n');
+  process.exit(1);
+}
+process.stdout.write(resolvedStateDir);
+" -- "$CLAUDE_PLUGIN_DATA") || return 1
+
+  # Hard-stop: resolved path must be absolute (defense in depth after Node check).
+  case "$state_dir" in
+    /*) ;;
+    *)  return 1 ;;
+  esac
+
+  local state_file="$state_dir/state.json"
+
+  # Read 1: state.json — check whether jobId is listed in jobs[].
+  # Distinguish absent (ENOENT — silent miss) from present-but-unreadable
+  # (EACCES/EIO — emit a diagnostic so operators can distinguish the two cases).
+  if [ -e "$state_file" ] && [ ! -r "$state_file" ]; then
+    printf 'await: failed to read state.json at %s (permission denied); treating as miss\n' \
+      "$state_file" >&2
+  fi
+  local state_json
+  if ! state_json=$(cat "$state_file" 2>/dev/null); then
+    return 1  # state.json absent or unreadable
+  fi
+
+  local job_listed
+  job_listed=$(printf '%s' "$state_json" | node -e "
+let chunks = [];
+process.stdin.on('data', c => chunks.push(c));
+process.stdin.on('end', () => {
+  const jobId = process.argv[1];
+  let state;
+  try { state = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch (e) {
+    process.stderr.write('disk_state_fallback: state.json parse error: ' + e.message + '\n');
+    process.exit(1);
+  }
+  if (!Array.isArray(state.jobs)) {
+    process.stderr.write('disk_state_fallback: state.json jobs field is not an array\n');
+    process.exit(1);
+  }
+  process.stdout.write(state.jobs.some(j => j.id === jobId) ? '1' : '0');
+});
+" -- "$job_id") || return 1
+
+  if [ "$job_listed" != "1" ]; then
+    return 1  # jobId absent from state.json jobs[]
+  fi
+
+  # Read 2: jobs/<jobId>.json — load and parse the per-job record.
+  local job_file="$state_dir/jobs/$job_id.json"
+  # Distinguish absent from present-but-unreadable (same pattern as state.json above).
+  if [ -e "$job_file" ] && [ ! -r "$job_file" ]; then
+    printf 'await: failed to read jobs/%s.json at %s (permission denied); treating as miss\n' \
+      "$job_id" "$job_file" >&2
+  fi
+  local job_json
+  if ! job_json=$(cat "$job_file" 2>/dev/null); then
+    return 1  # per-job file absent or unreadable
+  fi
+
+  # Apply the result-fallback chain to the disk-loaded record, mirroring the
+  # five-source chain used by fetch_result for broker-served records.
+  #
+  # Read the job's lifecycle status first so _status_to_exit_code can map it
+  # to the correct exit code when no output payload is extractable.
+  # A parse failure here is treated as a miss (exit 11) per spec bullet 9:
+  # invalid JSON on the per-job record is equivalent to an absent record.
+  # We emit a stderr diagnostic for operator visibility (this is not the
+  # "disk-recovery stderr note" barred by spec bullet 9).
+  local job_status
+  if ! job_status=$(extract_json_field "$job_json" "status"); then
+    printf 'await: disk record at %s has malformed status field\n' "$state_dir/jobs/$job_id.json" >&2
+    return 11
+  fi
+  local raw
+  # (a) result.rawOutput
+  if raw=$(extract_json_field "$job_json" "result.rawOutput") && [ -n "$raw" ]; then
+    _emit_recovery_note "$job_id"
+    printf '%s' "$raw"
+    return 0
+  fi
+  # (b) result.codex.stdout
+  if raw=$(extract_json_field "$job_json" "result.codex.stdout") && [ -n "$raw" ]; then
+    _emit_recovery_note "$job_id"
+    printf '%s' "$raw"
+    return 0
+  fi
+  # (c) rendered
+  if raw=$(extract_json_field "$job_json" "rendered") && [ -n "$raw" ]; then
+    _emit_recovery_note "$job_id"
+    printf '%s' "$raw"
+    return 0
+  fi
+  # (d) errorMessage — job failed/cancelled with an error payload but no output.
+  # Emit to stderr (not stdout) so the caller can surface it as a diagnostic.
+  # Use _status_to_exit_code for the exit code: single source of truth for the
+  # status → exit mapping shared with the broker-served terminal branch.
+  if raw=$(extract_json_field "$job_json" "errorMessage") && [ -n "$raw" ]; then
+    printf '%s\n' "$raw" >&2
+    local ec
+    _status_to_exit_code "$job_status"; ec=$?
+    # _status_to_exit_code returns 1 for unknown status strings.  On the disk
+    # path this indicates a corrupt or future-version record — treat as malformed
+    # (exit 14) rather than silently falling through to not-found (exit 11).
+    if [ "$ec" -eq 1 ]; then
+      printf 'await: disk record at %s/jobs/%s.json reported unknown status %s; treating as malformed (exit 14)\n' \
+        "$state_dir" "$job_id" "$job_status" >&2
+      ec=14
+    fi
+    return "$ec"
+  fi
+
+  # No extractable output from any source.  Map status → exit code so that
+  # cancelled/failed disk records with no payload still diverge from a plain
+  # miss (exit 1) rather than silently returning not-found (exit 11).
+  local ec
+  _status_to_exit_code "$job_status"; ec=$?
+  # Unknown status on disk path: emit actionable diagnostic and exit 14 (malformed),
+  # not the silent fallthrough to exit 11 that would mislead an operator into
+  # thinking the job was never launched.
+  if [ "$ec" -eq 1 ]; then
+    printf 'await: disk record at %s/jobs/%s.json reported unknown status %s; treating as malformed (exit 14)\n' \
+      "$state_dir" "$job_id" "$job_status" >&2
+    ec=14
+  fi
+  return "$ec"
+}
+
+# ---------------------------------------------------------------------------
 # await_subcommand
 #
 # Parse the positional jobId, then poll/await and stream the result markdown
@@ -477,8 +913,10 @@ await_subcommand() {
         ;;
       completed:*)
         # Terminal status arrives encoded by poll_status as
-        # "completed:<terminal>"; we don't currently need to differentiate
-        # the terminal status here — fetch_result handles all three.
+        # "completed:<terminal>"; extract the terminal sub-status so that
+        # _status_to_exit_code can produce the correct exit code when
+        # fetch_result returns an unexpected error (single source of truth).
+        local terminal_status="${outcome#completed:}"
         local res_rc=0
         if fetch_result "$companion" "$job_id"; then
           final_rc=0
@@ -487,14 +925,49 @@ await_subcommand() {
           case "$res_rc" in
             11) final_rc=11 ;;
             14) final_rc=14 ;;
-            *)  final_rc=13 ;;
+            *)
+              # Use _status_to_exit_code so the broker-served hard-error exit
+              # shares the same status → exit mapping as disk_state_fallback.
+              _status_to_exit_code "$terminal_status"; final_rc=$?
+              # _status_to_exit_code returns 1 for unknown statuses; map that
+              # to the public hard-error exit (13) to preserve existing behavior.
+              [ "$final_rc" -eq 1 ] && final_rc=13
+              ;;
           esac
         fi
         break
         ;;
       not-found)
-        final_rc=11
-        printf 'await: job %s not found by companion\n' "$job_id" >&2
+        # Consult the broker's on-disk state before taking the terminal
+        # not-found exit.  disk_state_fallback reads at most 2 files per call
+        # and is invoked only from this branch (phase-fallback and launch-verify
+        # branches are untouched).
+        local disk_rc
+        disk_state_fallback "$job_id"; disk_rc=$?
+        case "$disk_rc" in
+          0)
+            # Successful disk recovery: output already written to stdout,
+            # recovery note already emitted to stderr.
+            final_rc=0
+            ;;
+          13)
+            # Job found on disk, status failed/cancelled; diagnostic already
+            # emitted to stderr by disk_state_fallback via _status_to_exit_code.
+            final_rc=13
+            ;;
+          14)
+            # Job found on disk but record is malformed: status completed with
+            # no extractable output, unknown/future status string, or unparseable
+            # status field.  Mirrors broker-served fetch_result rc=14 semantics.
+            final_rc=14
+            ;;
+          *)
+            # Miss (disk_rc=1) or other: take the existing terminal not-found
+            # exit unchanged.
+            final_rc=11
+            printf 'await: job %s not found by companion\n' "$job_id" >&2
+            ;;
+        esac
         break
         ;;
       malformed)
