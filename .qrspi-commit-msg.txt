@@ -1,0 +1,5 @@
+fix(intfix-01-task-02): make phase backfill scan all phase-bearing artifacts
+
+Addresses round-01 spec and silent-failure findings by documenting deterministic phase backfill across smoke-probe and integration artifacts, including malformed/ambiguous halt behavior.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
