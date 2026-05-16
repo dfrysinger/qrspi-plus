@@ -182,17 +182,31 @@ Count the number of files matching the canonical glob `tasks/task-[0-9][0-9].md`
   Implement entry halted: filesystem error reading <ABS_ARTIFACT_DIR>/tasks/ — <I/O error description>. Resolve the directory access issue before re-invoking Implement.
   ```
   This is a filesystem I/O error, NOT the N=0 precondition violation. Use audit-log branch label `halt-tasks-dir-io-error`.
-- If the directory is readable but individual files are unreadable, emit a warning naming each unreadable file, exclude those files from the count, and continue counting the remaining files.
+
+  **Audit append on halt-tasks-dir-io-error (symmetric with N=0).** Before aborting, the orchestrator attempts one append to `reviews/implement-entry-decisions.md` carrying the canonical three fields:
+
+  ```yaml
+  ---
+  timestamp: <ISO-8601 UTC timestamp at append time>
+  task_count: 0
+  branch: halt-tasks-dir-io-error
+  ---
+  ```
+
+  The abort is unconditional regardless of audit-append outcome. If the audit append itself fails on top of the underlying directory I/O error (double-failure case — for example, `reviews/` is also unwritable, or the filesystem error is global), log a WARN to stderr in the canonical `audit-write-failed` format (see § N>1 Branch) and halt anyway, surfacing both the directory I/O diagnostic and the audit-write failure to the user. The audit append is best-effort on this path, matching the N=0 protocol; the halt fires regardless.
+- If the directory is readable but individual files are unreadable, emit a warning naming each unreadable file in the canonical format below, exclude those files from the count, and continue counting the remaining files. The warning format is canonical (matching the WARN template used in § N>1 Branch for `audit-write-failed`):
+
+  ```
+  <ISO-8601 UTC timestamp> WARN unreadable-task-file path=<absolute file path> error=<errno description> timestamp=<ISO-8601>
+  ```
 
 `N` is bound once from the in-memory list and is available for the rest of the Implement entry sequence.
 
 ### N=0 Branch — Halt (Precondition Violation)
 
-**Two distinct N=0 diagnostic paths.** The N=0 halt is only reached when the `tasks/` directory was readable (filesystem I/O errors are handled earlier in the Count-Read Procedure with the `halt-tasks-dir-io-error` branch label). Within N=0, distinguish:
+> **Cross-reference:** Filesystem errors on `tasks/` enumeration are handled by the halt-tasks-dir-io-error path in the Count-Read Procedure above and do not reach this branch. This section covers only the case where the directory exists and is readable but contains zero approved canonical task files.
 
-**(a) Filesystem error on the `tasks/` directory** — handled in the Count-Read Procedure above with `halt-tasks-dir-io-error`. Does NOT reach this branch.
-
-**(b) Directory exists and is readable but contains zero approved canonical task files.** When the canonical glob succeeds (directory is readable) but N=0, the orchestrator **aborts before any per-task dispatch** with the following named diagnostic:
+When the canonical glob succeeds (directory is readable) but N=0, the orchestrator **aborts before any per-task dispatch** with the following named diagnostic:
 
 ```
 Implement entry halted: no approved plan tasks found in <ABS_ARTIFACT_DIR>/tasks/.
@@ -256,9 +270,9 @@ The audit append is a **hard precondition for the skip**, not a best-effort emis
 
 After a confirmed successful audit append, the orchestrator proceeds directly to per-task dispatch for the single approved task, bypassing Parallelize and Integrate dispatch entirely. The remainder of the per-task TDD + review flow (per-task review fan-out, fix loop, verifier sidecar wiring, reviewer-protocol contracts) is **unchanged** — the skip is additive at the entry-time orchestration layer only.
 
-**Artifact Gating suspension for N=1.** The standard Artifact Gating requirement for `parallelization.md` with `status: approved` (see § Artifact Gating — Full pipeline) is **suspended** when the N=1 skip branch fires. The absence of a Parallelize artifact is the expected consequence of the skip, not an error condition. The orchestrator records this suspension in the audit-log append (no separate diagnostic). For the single-task dispatch, the task forks directly from the feature branch tip without a Branch Map — the same direct-dispatch pattern used in quick-fix mode.
+**Artifact Gating suspension for N=1.** The standard Artifact Gating requirement for `parallelization.md` with `status: approved` (see § Artifact Gating — Full pipeline) is **suspended** when the N=1 skip branch fires. The absence of a Parallelize artifact is the expected consequence of the skip, not an error condition. The `branch: skip-parallelize-integrate` label in the audit append is the audit signal that this suspension is in effect — readers reconstruct the implication from the branch label and this prose section, not from additional audit fields. For the single-task dispatch, the task forks directly from the feature branch tip without a Branch Map — the same direct-dispatch pattern used in quick-fix mode.
 
-**Security tradeoff — cross-task integration review.** Integrate's primary role is cross-task integration and security review. An N=1 run has no cross-task interactions to review — single-task Integrate would re-run the same per-task gates that already ran in Implement. The N=1 skip therefore loses no review surface; per-task review remains the load-bearing gate. This tradeoff is recorded in the audit-log append so operators can see that the Integrate gate was not invoked and can verify the per-task reviewer suite ran to completion.
+**Security tradeoff — cross-task integration review.** Integrate's primary role is cross-task integration and security review. An N=1 run has no cross-task interactions to review — single-task Integrate would re-run the same per-task gates that already ran in Implement. The N=1 skip therefore loses no review surface; per-task review remains the load-bearing gate. The `branch: skip-parallelize-integrate` label in the audit append is the audit signal that this Integrate-skip security tradeoff is in effect — operators can see that the Integrate gate was not invoked and verify the per-task reviewer suite ran to completion. Readers reconstruct this implication from the branch label and the prose in this section, not from additional audit fields.
 
 ### N>1 Branch — Full-Pipeline Behavior
 
@@ -294,7 +308,7 @@ The log format is canonical: timestamp ISO-8601, severity `WARN`, branch label `
 
 This file is the audit surface for the skip behavior. An operator auditing a run can distinguish "N=0 empty plan that slipped through precondition gating" from "N=1 single-task quick-fix that legitimately skipped orchestration overhead" by reading the `branch` field. The file is append-only; do not overwrite prior entries from earlier Implement invocations in the same run. If the file does not exist, create it with the first append; if it exists, append below the last `---` marker.
 
-**Integrity limitation.** The audit log is best-effort; provenance hardening (append-only enforcement, hash-chained entries) is out of scope for this contract surface — operators relying on the audit log for forensic integrity should treat it as advisory, not tamper-evident.
+**Integrity limitation.** The audit log is best-effort; provenance hardening (append-only enforcement, hash-chained entries) is out of scope for this contract surface — operators relying on the audit log for forensic integrity should treat it as advisory, not tamper-evident. Subagent write-scope hardening (preventing a compromised subagent from forging audit entries) is a v0.6+ follow-up out of scope for this contract surface.
 
 ## Branch Model — Runtime Resolution (Full Pipeline)
 
