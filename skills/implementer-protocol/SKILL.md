@@ -152,16 +152,26 @@ Before returning a DONE or DONE_WITH_CONCERNS terminal status, commit every modi
 
 ## Report Format
 
-When done, report:
-- **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
-- **commit_sha:** `<full SHA returned by git rev-parse HEAD after your commit>` (DONE / DONE_WITH_CONCERNS only — required so the orchestrator can verify HEAD advanced before emitting the next round's diff)
-- What you implemented (or what you attempted, if blocked)
-- What you tested and test results (number passing/failing)
-- Files changed (created/modified)
-- Self-review findings (if any)
-- Any issues or concerns
+**On-disk full report (write first).** Before returning to main chat, use the Write tool to write a full structured report to `reviews/tasks/task-NN/round-NN-implementer.md` (where `NN` matches the task and round numbers for this run). The full report contains: status, list of files created or modified, test results, self-review findings, and any concerns. Write this file before returning — do not defer it.
 
-Use DONE_WITH_CONCERNS if you completed the work but have doubts about correctness.
-Use BLOCKED if you cannot complete the task.
-Use NEEDS_CONTEXT if you need information that wasn't provided.
-Never silently produce work you're unsure about.
+**Main-chat return (five-line brief only).** After writing the on-disk report, return exactly this shape to main chat — no full report echo, no findings tables, no TDD walkthrough:
+
+```
+Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+Commit: <full SHA from git rev-parse HEAD, or N/A if no commit was produced>
+Files: <N> created/modified
+Tests: <N> passing / <M> failing
+Report: reviews/tasks/task-NN/round-NN-implementer.md
+```
+
+The `Status:` line must be one of the four literal values shown. Choose based on these conditions:
+- `DONE` — all five Done Signal conditions are green and you have no doubts
+- `DONE_WITH_CONCERNS` — all five Done Signal conditions are green but you have explicit concerns to flag
+- `BLOCKED` — a check failed in a way you cannot resolve
+- `NEEDS_CONTEXT` — required information was not provided in the dispatch
+
+`Status: DONE` with `Commit: N/A` is a contract violation — DONE means a commit was made, full stop. If no commit was made, status MUST be `BLOCKED` or `NEEDS_CONTEXT`.
+
+The `Commit:` line carries the full SHA when a commit was produced (DONE / DONE_WITH_CONCERNS) and the literal `N/A` otherwise. The `Files:` line carries the count followed by the literal phrase `created/modified`. The `Tests:` line carries passing and failing counts in `<N> passing / <M> failing` form (use `0 passing / 0 failing` for lightweight tasks with no test suite). The `Report:` line carries the relative on-disk path where the full report was written.
+
+The on-disk path and the five-line brief together form the implementer return contract. Never silently produce work you are unsure about.

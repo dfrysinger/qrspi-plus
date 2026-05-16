@@ -79,7 +79,7 @@ The user must explicitly choose quick fix or full pipeline before synthesis begi
 
 ### Config Validation (when config.md exists)
 
-If `config.md` already exists (resuming a run), apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Goals validates `route`, `pipeline`, `codex_reviews`, and `visual_fidelity_required`.
+If `config.md` already exists (resuming a run), apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Goals validates `route`, `pipeline`, `codex_reviews`, `verifier_enabled`, `scope_tagger_enabled`, and `visual_fidelity_required`.
 
 ## Process
 
@@ -135,6 +135,8 @@ route:
   - plan  # quick stops here before implement
   - implement
   - test
+verifier_enabled: true  # set at run creation; edit directly between rounds to disable for the whole run
+scope_tagger_enabled: true  # set at run creation; edit directly between rounds to disable convergence narrowing for the whole run
 visual_fidelity_required: false  # set at run creation; default false unless the user opted into the visual-fidelity binding chain
 ---
 ```

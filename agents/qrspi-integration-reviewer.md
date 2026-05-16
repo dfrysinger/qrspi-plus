@@ -91,26 +91,6 @@ Ask: Is there any cross-task dependency that could fail due to ordering?
 - Security (handled by qrspi-security-integration-reviewer — separate agent)
 - Test quality for individual task tests (already reviewed)
 
-## Report Format
-
-## Integration Review
-
-### Cross-Task Issues
-
-#### Issue N: {title}
-- **Severity:** {Critical / High / Medium / Low}
-- **Files:** {file:line references for both sides of the issue}
-- **Tasks involved:** {which tasks' code is affected}
-- **Description:** {what the integration issue is, with specifics}
-- **Recommendation:** {how to fix}
-
-### No Issues Found
-{If clean, state: "No cross-task integration issues found. All interfaces match, data flows are correct, and integration points are covered by tests."}
-
-### Assessment
-{Approved — no integration issues}
-{Issues found — N issues (M critical, K high, ...)}
-
 ## Red Flags
 
 If you catch yourself doing any of these, stop and correct:
@@ -119,8 +99,6 @@ If you catch yourself doing any of these, stop and correct:
 - Marking issues as "Low" when they involve type mismatches or missing error handling (those are High minimum)
 - Approving without tracing at least one data flow end-to-end across task boundaries
 - Reporting "no issues" without checking every shared interface
-
-Write findings to the `output` path provided in your dispatch prompt per the disk-write contract from the reviewer-protocol skill. Return only the brief summary form.
 
 ## Diff-File Read Pattern (#112 PR-1 Mechanism A)
 
