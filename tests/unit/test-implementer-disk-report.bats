@@ -72,13 +72,30 @@ setup() {
 
 # Helper: extract the five-line brief template block from SKILL.md.
 # Called once per test; BATS_TEST_TMPDIR is per-test isolated scratch space.
+#
+# Awk rules (no dead code):
+#   1. Set found=1 on the sentinel line and skip it.
+#   2. Once found, treat the first ``` as the opening fence (set in_block=1);
+#      treat the second ``` as the closing fence and `exit` immediately. This
+#      bounds extraction to exactly the one code block following the sentinel,
+#      preventing later code blocks in SKILL.md (which is "designed to grow")
+#      from leaking key labels into a vacuous-pass.
+#   3. Otherwise, print body lines while inside the block.
+#
+# Empty-extract guard: if the sentinel is missing (e.g., SKILL.md is
+# restructured and the phrase drifts), the awk produces an empty file. The
+# guard emits an actionable diagnostic naming the missing sentinel rather
+# than letting the five key-label tests fail with misleading MISSING KEY
+# messages.
 _extract_brief_section() {
-  awk '
-    /five-line brief only/ { found=1 }
-    found && /^```/ { in_block = !in_block; next }
-    found && in_block { print }
-    found && !in_block && NR > 1 && /^```/ { exit }
-  ' "$SKILL_FILE" > "${BATS_TEST_TMPDIR}/brief_section.txt"
+  awk '/five-line brief only/ { found = 1; next }
+       found && /^```/ { if (in_block) exit; in_block = 1; next }
+       found && in_block { print }' \
+    "$SKILL_FILE" > "${BATS_TEST_TMPDIR}/brief_section.txt"
+  if [ ! -s "${BATS_TEST_TMPDIR}/brief_section.txt" ]; then
+    echo "EXTRACTION ERROR: sentinel 'five-line brief only' not found in SKILL.md" >&2
+    return 1
+  fi
 }
 
 @test "SKILL.md documents the five-line brief key 'Status:' in the template block" {
