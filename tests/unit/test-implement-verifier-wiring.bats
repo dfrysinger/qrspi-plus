@@ -157,7 +157,7 @@ setup() {
 # false-positive matches — "round:" appears dozens of times throughout SKILL.md in unrelated
 # contexts (YAML dispatch examples, round-count prose, audit-log format strings, etc.).
 #
-# Structural exit anchor for the marker-schema sub-region (R2-F01):
+# Structural exit anchor for the marker-schema sub-region:
 #   The marker schema is a paragraph followed by exactly three nested bullets at a 3-space
 #   indent. The structural boundary AFTER the schema is the next top-level numbered list
 #   item (e.g., `6. **Implementer-fix dispatch...**`), OR the next `### `/`## ` heading,
