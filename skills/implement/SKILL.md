@@ -188,19 +188,31 @@ Count the number of files matching the canonical glob `tasks/task-[0-9][0-9].md`
   ```yaml
   ---
   timestamp: <ISO-8601 UTC timestamp at append time>
-  task_count: 0
+  task_count: null
   branch: halt-tasks-dir-io-error
   ---
   ```
 
-  The abort is unconditional regardless of audit-append outcome. If the audit append itself fails on top of the underlying directory I/O error (double-failure case — for example, `reviews/` is also unwritable, or the filesystem error is global), log a WARN to stderr in the canonical `audit-write-failed` format (see § N>1 Branch) and halt anyway, surfacing both the directory I/O diagnostic and the audit-write failure to the user. The audit append is best-effort on this path, matching the N=0 protocol; the halt fires regardless.
-- If the directory is readable but individual files are unreadable, emit a warning naming each unreadable file in the canonical format below, exclude those files from the count, and continue counting the remaining files. The warning format is canonical (matching the WARN template used in § N>1 Branch for `audit-write-failed`):
+  `task_count` is `null` because `N` was never read — the directory enumeration failed before counting began. See § Audit Trail for the schema rule covering halt branches where `N` was not read at entry. The abort is unconditional regardless of audit-append outcome. If the audit append itself fails on top of the underlying directory I/O error (double-failure case — for example, `reviews/` is also unwritable, or the filesystem error is global), log a WARN to stderr in the canonical `audit-write-failed` format (see § N>1 Branch) and halt anyway, surfacing both the directory I/O diagnostic and the audit-write failure to the user. The audit append is best-effort on this path, matching the N=0 protocol; the halt fires regardless.
+- If the directory is readable but any individual canonical task file is unreadable, the orchestrator **halts BEFORE binding N** with a distinct diagnostic naming the unreadable file. WARN-and-exclude is insufficient here: silently excluding a single unreadable file from a two-task plan would shift `N` from 2 to 1 and trigger the N=1 dynamic-skip branch — bypassing Parallelize and Integrate on the basis of an I/O error rather than an operator decision. Use audit-log branch label `halt-unreadable-task-file`.
+
+  **Audit append on halt-unreadable-task-file (symmetric with halt-tasks-dir-io-error).** Before aborting, the orchestrator attempts one append to `reviews/implement-entry-decisions.md` carrying the canonical three fields:
+
+  ```yaml
+  ---
+  timestamp: <ISO-8601 UTC timestamp at append time>
+  task_count: null
+  branch: halt-unreadable-task-file
+  ---
+  ```
+
+  `task_count` is `null` because `N` was not bound — see § Audit Trail for the schema rule. The abort is unconditional regardless of audit-append outcome. If the audit append itself fails on top of the underlying file I/O error, emit the canonical `unreadable-task-file` WARN to stderr (template below) and halt anyway, surfacing both the file I/O diagnostic and the audit-write failure to the user. The stderr WARN template follows the same severity / branch-label / error-description discipline as the `audit-write-failed` WARN in § N>1 Branch:
 
   ```
-  <ISO-8601 UTC timestamp> WARN unreadable-task-file path=<absolute file path> error=<errno description> timestamp=<ISO-8601>
+  <ISO-8601 UTC timestamp> WARN unreadable-task-file path=<absolute file path> error=<errno description>
   ```
 
-`N` is bound once from the in-memory list and is available for the rest of the Implement entry sequence.
+`N` is bound once from the in-memory list — only after every canonical task file has been successfully read — and is available for the rest of the Implement entry sequence.
 
 ### N=0 Branch — Halt (Precondition Violation)
 
@@ -303,8 +315,8 @@ The log format is canonical: timestamp ISO-8601, severity `WARN`, branch label `
 | Field | Values |
 |-------|--------|
 | `timestamp` | ISO-8601 UTC timestamp at append time |
-| `task_count` | The integer count `N` read at entry |
-| `branch` | `skip-parallelize-integrate` (N=1), `run-full-pipeline` (N>1), `halt-zero-tasks` (N=0), or `halt-tasks-dir-io-error` (filesystem error on `tasks/` directory) |
+| `task_count` | The integer count `N` read at entry on branches where enumeration succeeded (`run-full-pipeline`, `skip-parallelize-integrate`, `halt-zero-tasks` — `0` is an observed count there, the directory was readable and contained zero approved canonical task files). `null` on halt branches where `N` was not read at entry (`halt-tasks-dir-io-error`, `halt-unreadable-task-file`) — enumeration failed or was aborted before binding `N`, so no observed count exists. Consumers aggregating on `task_count` must read `branch` first; treat `task_count` as an observed count only when `branch` ∈ {`run-full-pipeline`, `skip-parallelize-integrate`, `halt-zero-tasks`}. |
+| `branch` | `skip-parallelize-integrate` (N=1), `run-full-pipeline` (N>1), `halt-zero-tasks` (N=0), `halt-tasks-dir-io-error` (filesystem error on `tasks/` directory), or `halt-unreadable-task-file` (individual canonical task file unreadable) |
 
 This file is the audit surface for the skip behavior. An operator auditing a run can distinguish "N=0 empty plan that slipped through precondition gating" from "N=1 single-task quick-fix that legitimately skipped orchestration overhead" by reading the `branch` field. The file is append-only; do not overwrite prior entries from earlier Implement invocations in the same run. If the file does not exist, create it with the first append; if it exists, append below the last `---` marker.
 
