@@ -462,6 +462,16 @@ model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Cla
 # sizing_exception: <one-line reason>
 # (Target files are aspirational; deviation discipline lives in the per-task
 #  spec reviewer.)
+#
+# Optional visual-fidelity binding block. MANDATORY only on UI-producing tasks
+# when `config.md` carries `visual_fidelity_required: true`; otherwise omit the
+# whole block. The Plan orchestrator's pre-fanout hard-gate (see "Red Flags"
+# below) consumes these fields to refuse plan-review dispatch when a
+# UI-producing task lacks wireframe citations.
+# visual_fidelity_check:
+#   wireframe_refs:           # one entry per cited wireframe artifact
+#     - <path-or-URL-to-wireframe>
+#   ui_producing: true        # true on tasks that emit UI output, false otherwise
 ---
 
 # Task NN: {name}
@@ -533,6 +543,17 @@ If compaction was not done before splitting (user declined), recommend it now: "
 - A task touches files from a different vertical slice without justification
 - Phase boundaries don't align with the design's phase definitions
 - Quick-fix plan has more than one task (quick fix = single task by definition)
+- `config.md` carries `visual_fidelity_required: true` and a task with `visual_fidelity_check.ui_producing: true` lacks a non-empty `visual_fidelity_check.wireframe_refs` list (refuses plan-review fan-out — see "Visual-fidelity hard-gate" below)
+
+### Visual-fidelity hard-gate (pre-fanout refusal condition)
+
+Before dispatching the plan-review reviewer fan-out (see "Review Round" above), the Plan orchestrator inspects `config.md` and the merged `plan.md`. The gate fires **only when** `config.md` carries `visual_fidelity_required: true` — runs with the flag unset, absent, or `false` are exempt entirely and the gate is a no-op. When the flag is on, the orchestrator walks every task spec in the merged `plan.md` and asserts that any task whose `visual_fidelity_check.ui_producing` field is `true` also carries a non-empty `visual_fidelity_check.wireframe_refs` list.
+
+**Failure mode.** If any UI-producing task fails the assertion, the round halts before reviewer dispatch. The halt message names the offending task by its task number and surfaces the missing field by name (`visual_fidelity_check.wireframe_refs`). No reviewers are dispatched until the plan author repopulates the block and the merged `plan.md` is re-checked. Multiple offending tasks are reported together in one halt so the author fixes them in a single pass.
+
+**Exemptions.** Tasks that set `ui_producing: false` pass the gate regardless of whether `wireframe_refs` is populated. Tasks that omit the `visual_fidelity_check` block entirely are treated as non-UI-producing and pass the gate — the block is mandatory only on UI-producing tasks. The gate's trigger condition is the `visual_fidelity_required` field in `config.md` (the same flag Goals writes at run creation and that the using-qrspi skill documents in its Config File section); the field is the single source of truth for whether the visual-fidelity binding chain is active on this run, and the gate consumes it by that exact name.
+
+This is documented as a Plan-skill hard-gate — not a per-task review-time check — so the wireframe-binding contract is enforced once at plan-review time rather than re-checked downstream during Implement on every UI task.
 
 ## Common Rationalizations — STOP
 
