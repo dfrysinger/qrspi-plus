@@ -55,9 +55,9 @@ assert_file_not_contains() {
   assert_file_contains "$VFR_AGENT" "finding"
 }
 
-@test "visual fidelity acceptance: v0.6 contract is wireframe-only" {
-  assert_file_matches "$IMPLEMENT_SKILL" "v0\.6.*wireframe-reference fidelity only|wireframe-reference fidelity only.*v0\.6" "wireframe-only visual fidelity contract"
-  assert_file_matches "$VFR_AGENT" "v0\.6.*wireframe-reference fidelity review only|wireframe-reference fidelity review only.*v0\.6" "wireframe-only visual fidelity contract"
+@test "visual fidelity acceptance: contract is wireframe-only" {
+  assert_file_contains "$IMPLEMENT_SKILL" "wireframe-reference fidelity only"
+  assert_file_contains "$VFR_AGENT" "wireframe-reference fidelity review only"
   assert_file_not_contains "$IMPLEMENT_SKILL" "screenshot_paths"
   assert_file_not_contains "$IMPLEMENT_SKILL" "empty_screenshot_paths"
   assert_file_not_contains "$VFR_AGENT" "screenshot_paths"

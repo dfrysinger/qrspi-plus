@@ -325,7 +325,7 @@ The log format is canonical: timestamp ISO-8601, severity `WARN`, branch label `
 
 This file is the audit surface for the skip behavior. An operator auditing a run can distinguish "N=0 empty plan that slipped through precondition gating" from "N=1 single-task quick-fix that legitimately skipped orchestration overhead" by reading the `branch` field. The file is append-only; do not overwrite prior entries from earlier Implement invocations in the same run. If the file does not exist, create it with the first append; if it exists, append below the last `---` marker.
 
-**Integrity limitation.** The audit log is best-effort; provenance hardening (append-only enforcement, hash-chained entries) is out of scope for this contract surface — operators relying on the audit log for forensic integrity should treat it as advisory, not tamper-evident. Subagent write-scope hardening (preventing a compromised subagent from forging audit entries) is a v0.6+ follow-up out of scope for this contract surface.
+**Integrity limitation.** The audit log is best-effort; provenance hardening (append-only enforcement, hash-chained entries) is out of scope for this contract surface — operators relying on the audit log for forensic integrity should treat it as advisory, not tamper-evident. Subagent write-scope hardening (preventing a compromised subagent from forging audit entries) is out of scope for this contract surface.
 
 ## Branch Model — Runtime Resolution (Full Pipeline)
 
@@ -810,7 +810,7 @@ Thoroughness reviewers (deep mode only):
 - `Agent({ subagent_type: "qrspi-type-design-analyzer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception), reviewer_tag: `type-design-claude`. Skip dispatch entirely when no new types are introduced; record skip in the review log per § Review Log Artifact.
 - `Agent({ subagent_type: "qrspi-code-simplifier", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception), reviewer_tag: `code-simplifier-claude`
 
-Visual-fidelity reviewer (conditional — dispatched in parallel with the other per-task reviewers when both clauses of the activation gate are true). v0.6 supports wireframe-reference fidelity only; screenshot diffing is deferred to v0.7+.
+Visual-fidelity reviewer (conditional — dispatched in parallel with the other per-task reviewers when both clauses of the activation gate are true). This reviewer supports wireframe-reference fidelity only; screenshot diffing is out of scope for this contract.
 
 - **Activation gate (two clauses, both must be true):** `config.md` carries `visual_fidelity_required: true` AND the task spec carries a non-empty `visual_fidelity_check` field. When either clause is false, do NOT dispatch the reviewer — see silent-skip condition below.
 
