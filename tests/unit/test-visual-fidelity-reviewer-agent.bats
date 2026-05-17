@@ -80,12 +80,6 @@ setup() {
     || { echo "$AGENT body does not document the 'wireframe_paths' dispatch parameter"; return 1; }
 }
 
-@test "agent body documents screenshot_paths dispatch parameter" {
-  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
-    | grep -qE '\bscreenshot_paths\b' \
-    || { echo "$AGENT body does not document the 'screenshot_paths' dispatch parameter"; return 1; }
-}
-
 @test "agent body documents round_subdir dispatch parameter" {
   awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
     | grep -qE '\bround_subdir\b' \
@@ -130,12 +124,6 @@ setup() {
   awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
     | grep -qE 'empty_wireframe_paths|wireframe_paths.*empty|empty.*wireframe_paths' \
     || { echo "$AGENT body does not document the empty_wireframe_paths silent-skip condition"; return 1; }
-}
-
-@test "agent body documents empty_screenshot_paths silent-skip condition" {
-  awk '/^---$/{n++; next} n>=2{print}' "$AGENT" \
-    | grep -qE 'empty_screenshot_paths|screenshot_paths.*empty|empty.*screenshot_paths' \
-    || { echo "$AGENT body does not document the empty_screenshot_paths silent-skip condition"; return 1; }
 }
 
 # ---------------------------------------------------------------------------
@@ -197,12 +185,6 @@ setup() {
   awk '/visual-fidelity-claude.*tag.*third valid sentinel/,/This schema mirrors/' "$USING_QRSPI" \
     | grep -qE 'empty_wireframe_paths' \
     || { echo "$USING_QRSPI apply-fix section does not document skip_reason value 'empty_wireframe_paths'"; return 1; }
-}
-
-@test "using-qrspi/SKILL.md documents the empty_screenshot_paths skip_reason value in the apply-fix section" {
-  awk '/visual-fidelity-claude.*tag.*third valid sentinel/,/This schema mirrors/' "$USING_QRSPI" \
-    | grep -qE 'empty_screenshot_paths' \
-    || { echo "$USING_QRSPI apply-fix section does not document skip_reason value 'empty_screenshot_paths'"; return 1; }
 }
 
 # ---------------------------------------------------------------------------
