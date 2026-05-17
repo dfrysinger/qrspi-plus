@@ -25,8 +25,19 @@
   fi
 }
 
-@test "regression #114: no state.json read in codex-companion-bg.sh" {
-  local non_comment
-  non_comment=$(grep -nE '^[^#]*state\.json' scripts/codex-companion-bg.sh 2>/dev/null || true)
-  [ -z "$non_comment" ]
+@test "regression #114: audit-write symbols absent from codex-companion-bg.sh" {
+  # #114 removed the audit-write surface which accessed state.json for audit
+  # logging.  disk_state_fallback (v0.6) intentionally re-introduces state.json
+  # reads as a recovery path, not as audit writes.
+  # This test guards against reappearance of the audit-specific access patterns
+  # (emit_audit_row, resolve_audit_dir, QRSPI_AUDIT_) rather than against all
+  # state.json reads, which would incorrectly block the intentional fallback feature.
+  local offenders
+  offenders=$(grep -nE 'emit_audit_row|resolve_audit_dir|QRSPI_AUDIT_' \
+    scripts/codex-companion-bg.sh 2>/dev/null || true)
+  if [ -n "$offenders" ]; then
+    echo "audit symbols (re)appeared in codex-companion-bg.sh:"
+    echo "$offenders"
+    return 1
+  fi
 }

@@ -158,6 +158,22 @@ On approval, if reviews have not passed clean, note this and ask if they'd like 
 
 On rejection, write the user's feedback to `feedback/questions-round-{NN}.md` (see using-qrspi Feedback File Format), then launch a new subagent with `goals.md` + rejected `questions.md` + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts.
 
+### Quick-Fix Auto-Approve Branch
+
+When `config.md` carries `pipeline: quick`, the human-approval gate is skipped after any review round (initial or post-fix) that produces zero kept findings. When this branch fires, `status: approved` is written to `questions.md` frontmatter automatically without waiting for user input.
+
+**Verifier-gate precondition.** "Zero kept findings" is satisfied only when the verifier has affirmatively confirmed the count — a vacuously-zero count from an undispatched verifier does NOT satisfy the gate and surfaces the round to the user as unverified (matching the HARD-GATE contract in `skills/implement/SKILL.md`). If `config.md` is missing or unreadable when this branch is evaluated, the auto-approve branch does NOT fire — the orchestrator surfaces a named diagnostic and falls through to the standard human-approval gate (fail-loud, not silent fallback to either pipeline mode). The gate passes when ANY of the following hold for the current round's directory (`reviews/questions/round-NN/`):
+
+- At least one `.score.yml` sidecar file exists in the round directory AND every sidecar evaluates to no kept-blocker findings per the verifier's scoring rubric (see `agents/qrspi-finding-verifier.md` and `skills/implementer-protocol/SKILL.md`). A zero-byte sidecar does not constitute verifier affirmation and the gate does NOT pass. Full sidecar schema validation is the verifier's contract (see `agents/qrspi-finding-verifier.md`); this skill assumes well-formed sidecars. OR
+- A `round-NN-verifier-disabled.md` marker file is present in the round directory AND the marker conforms to the canonical schema defined in `skills/implement/SKILL.md` HARD-GATE (a marker failing schema validation, or whose round identifier does not match the current round, is treated as absent). OR
+- `config.md` carries `verifier_enabled: false`. When this condition satisfies the gate, the orchestrator MUST append an audit-log entry before writing `status: approved` — recording: timestamp, run slug, step name (`questions`), and branch label (`auto-approve-verifier-disabled-config`). The audit entry is written to the cascade audit log if one exists, otherwise to the round directory. An attempt to auto-approve via `verifier_enabled: false` without successfully writing this audit entry MUST abort with a named diagnostic (fail-loud, matching the audit-write precondition philosophy in `skills/implement/SKILL.md` HARD-GATE). This path is a deliberate operator-level configuration, not a default; the round appears in the review log as verifier-disabled, not as a normal clean round.
+
+When none of these hold (no sidecars with affirmative zero-kept-findings content, no valid schema-conforming marker for the current round, and `verifier_enabled` is absent or `true`), the gate does NOT fire; the review round surfaces to the user as unverified and the standard human-approval gate runs.
+
+**Post-fix round behavior.** If a fix round still produces kept findings, the auto-approve branch does NOT fire. The orchestrator surfaces the remaining kept findings to the user. The branch fires only when the most recent review round — initial or post-fix — produces verifier-affirmed zero kept findings.
+
+**Full pipeline unchanged.** When `pipeline: full`, the human-approval gate runs as before — the branch is inert and the user must explicitly approve.
+
 ### Terminal State
 
 If the artifact directory is inside a git repository, commit the approved `questions.md` and the `reviews/questions/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)").

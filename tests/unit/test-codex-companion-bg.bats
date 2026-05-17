@@ -70,12 +70,25 @@ teardown() {
   # The wrapper still passes --prompt-file to the *underlying companion*
   # internally (after capturing stdin to a temp file). This test verifies the
   # internal handoff still works under the stdin-only public surface.
+  # The companion also handles the post-launch status verification call so the
+  # wrapper's verification step does not abort the launch.
   export STUB_ARGV_DUMP="$TEST_ROOT/argv.dump"
   cat > "$TEST_ROOT/companion-record.mjs" <<'EOF'
 #!/usr/bin/env node
 import fs from "node:fs";
-fs.writeFileSync(process.env.STUB_ARGV_DUMP, JSON.stringify(process.argv.slice(2)));
-process.stdout.write(JSON.stringify({ jobId: "task-stub-recorder", status: "queued", title: "x", summary: "y", logFile: "/tmp/x" }) + "\n");
+const argv = process.argv.slice(2);
+const sub = argv[0];
+if (sub === "task") {
+  // Dump argv only for the task subcommand; status calls must not overwrite it.
+  fs.writeFileSync(process.env.STUB_ARGV_DUMP, JSON.stringify(argv));
+  process.stdout.write(JSON.stringify({ jobId: "task-stub-recorder", status: "queued", title: "x", summary: "y", logFile: "/tmp/x" }) + "\n");
+} else if (sub === "status") {
+  // Return a valid completed status so the wrapper's verification step succeeds.
+  process.stdout.write(JSON.stringify({ workspaceRoot: process.cwd(), job: { id: argv[1] || "unknown", status: "completed" } }) + "\n");
+} else {
+  process.stderr.write("companion-record: unknown subcommand: " + sub + "\n");
+  process.exit(1);
+}
 EOF
   chmod +x "$TEST_ROOT/companion-record.mjs"
   export CODEX_COMPANION="$TEST_ROOT/companion-record.mjs"
@@ -387,8 +400,19 @@ EOF
   cat > "$TEST_ROOT/companion-stdin-record.mjs" <<'EOF'
 #!/usr/bin/env node
 import fs from "node:fs";
-fs.writeFileSync(process.env.STUB_ARGV_DUMP, JSON.stringify(process.argv.slice(2)));
-process.stdout.write(JSON.stringify({ jobId: "task-stub-stdin-recorder", status: "queued", title: "x", summary: "y", logFile: "/tmp/x" }) + "\n");
+const argv = process.argv.slice(2);
+const sub = argv[0];
+if (sub === "task") {
+  // Dump argv only for the task subcommand; status calls must not overwrite it.
+  fs.writeFileSync(process.env.STUB_ARGV_DUMP, JSON.stringify(argv));
+  process.stdout.write(JSON.stringify({ jobId: "task-stub-stdin-recorder", status: "queued", title: "x", summary: "y", logFile: "/tmp/x" }) + "\n");
+} else if (sub === "status") {
+  // Return a valid completed status so the wrapper's verification step succeeds.
+  process.stdout.write(JSON.stringify({ workspaceRoot: process.cwd(), job: { id: argv[1] || "unknown", status: "completed" } }) + "\n");
+} else {
+  process.stderr.write("companion-stdin-record: unknown subcommand: " + sub + "\n");
+  process.exit(1);
+}
 EOF
   chmod +x "$TEST_ROOT/companion-stdin-record.mjs"
 
