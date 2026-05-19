@@ -463,6 +463,18 @@ model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Cla
 # (Target files are aspirational; deviation discipline lives in the per-task
 #  spec reviewer.)
 #
+# Optional reference-gate binding. MANDATORY pair: when reference_gate: true is
+# set, reference_artifact must also be set; Plan refuses to write the task spec
+# when the pair is incomplete (see Refuse-to-Write Contract below).
+# reference_gate: true
+# reference_artifact: path/to/source-of-truth.md   # required when reference_gate: true
+#
+# Optional UI flag. When ui: true is set, the task emits user-visible UI output.
+# When ui: true AND lift_source: <path> are both set, the task body MUST include
+# a SPEC OVERRIDES SOURCE section (see SPEC OVERRIDES SOURCE below).
+# ui: true
+# lift_source: path/to/existing-source.md          # optional; pair with ui: true
+#
 # Optional visual-fidelity binding block. MANDATORY only on UI-producing tasks
 # when `config.md` carries `visual_fidelity_required: true`; otherwise omit the
 # whole block. The Plan orchestrator's pre-fanout hard-gate (see "Red Flags"
@@ -471,7 +483,8 @@ model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Cla
 # visual_fidelity_check:
 #   wireframe_refs:           # one entry per cited wireframe artifact
 #     - <path-or-URL-to-wireframe>
-#   ui_producing: true        # true on tasks that emit UI output, false otherwise
+#   ui: true                  # true on tasks that emit UI output, false otherwise
+#                             # (replaces the legacy ui_producing field — see Migration below)
 ---
 
 # Task NN: {name}
@@ -484,7 +497,44 @@ model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Cla
   - {behavior 1}
   - {edge case 1}
   - {error condition 1}
+
+<!-- SPEC OVERRIDES SOURCE section — REQUIRED when frontmatter carries both
+     ui: true and lift_source: <path>. List behaviors the implementer must NOT
+     copy from the source and the required target behavior for each.
+     Omit this section when lift_source: is absent. -->
 ```
+
+### SPEC OVERRIDES SOURCE authority
+
+When a per-task spec is authored in `plan.md` (or in a split `tasks/task-NN.md` produced by sub-subagent fan-out), that spec is the authoritative definition of the task's behavior. If a source file referenced by `lift_source:` carries frontmatter or body content that conflicts with the per-task spec — including a stale `visual_fidelity_check.ui_producing` field, a legacy `lift_source` value, or any field that contradicts the spec's stated behavior — **the spec wins**. The implementer rewrites the source to match the spec, not the reverse.
+
+This authority statement is load-bearing for every Slice 5 consumer: Structure (T25), Parallelize (T26), Implement (T27), the visual-fidelity reviewer (T28), and the reviewer-protocol/design-skill checklist (T29) all key on the per-task spec's frontmatter shape. When a source file's stale frontmatter disagrees with a spec's `ui: true` or `reference_gate: true` declaration, the implementer applies the spec's value and drops the source's conflicting field.
+
+### Refuse-to-Write Contract
+
+The Plan orchestrator refuses to write (or materialize post-approval) a task spec when either paired-field invariant is violated:
+
+**Pair 1 — Reference-gate pair:**
+- `reference_gate: true` is present in the task spec **AND** `reference_artifact:` is absent → refuse, surface: `"Plan refuse-to-write: task NN carries reference_gate: true without reference_artifact — add reference_artifact: <path> or remove reference_gate."`
+- `reference_artifact:` is present **AND** `reference_gate: true` is absent → refuse, surface: `"Plan refuse-to-write: task NN carries reference_artifact without reference_gate: true — add reference_gate: true or remove reference_artifact."`
+
+**Pair 2 — UI+lift-source pair:**
+- `ui: true` AND `lift_source: <path>` are both present **AND** the task body contains no `SPEC OVERRIDES SOURCE` section → refuse, surface: `"Plan refuse-to-write: task NN carries ui: true and lift_source: <path> without a SPEC OVERRIDES SOURCE body section — add the section listing behaviors not to copy and required target behavior."`
+
+Multiple violations in one plan are reported together before any task spec is written, so the author fixes them in a single pass. The refusal applies both to initial plan authoring and to the post-approval sub-subagent materialization of `tasks/task-NN.md` files.
+
+Task specs with **none** of `reference_gate:`, `reference_artifact:`, `ui:`, or `lift_source:` are written and processed without error, produce no paired-field diagnostic, trigger no reference-gate pause, and trigger no visual-fidelity reviewer dispatch — behaving identically to a pre-Slice-5 task spec.
+
+### Migration: `visual_fidelity_check.ui_producing` → top-level `ui:`
+
+Pre-Slice-5 task specs may carry a `visual_fidelity_check.ui_producing: true` field. When Plan encounters this field in a task spec during review or post-approval split:
+
+1. Promote the value to a top-level `ui: true` field in the task frontmatter.
+2. Remove the `ui_producing` field from inside the `visual_fidelity_check:` block.
+3. Preserve all other `visual_fidelity_check:` sub-fields (e.g., `wireframe_refs:`) unchanged.
+4. Log the migration in the DONE report as a one-line note per affected task.
+
+This is the one replacement-not-additive field change in Slice 5 per design Decision 10. After migration, the `visual_fidelity_check:` block no longer carries `ui_producing`; the canonical `ui:` top-level field is the single source of truth for whether a task emits UI output.
 
 **ID-Hygiene Contract.** QRSPI-internal traceability lives in the YAML frontmatter `goal_ids` field — the **metadata block** the implementer subagent reads but does NOT echo into the work product. The canonical surface list (strict surfaces and the comment/test split rule) lives in `agents/qrspi-implementer.md` § ID Hygiene and is reviewed by `agents/qrspi-code-quality-reviewer.md` § 11; this contract defers to those sites rather than re-enumerating, so the surface list has a single source of truth. Plan's responsibility here is upstream: do NOT add `Target satisfies:`, `Goals addressed:`, `Closes <goal-ID>`, `per <decision-ID>`, or similar QRSPI-internal-ID-bearing prose to the body of the task spec — those phrasings invite the implementer to copy IDs into the work product. The body's Description, Test expectations, and supporting bullets must read as standalone work specifications grounded in observable behavior; goal traceability is a metadata concern, not a body concern. PR-body `Closes #N` (external tracker IDs only) remains valid at commit/PR altitude.
 
@@ -544,6 +594,8 @@ If compaction was not done before splitting (user declined), recommend it now: "
 - Phase boundaries don't align with the design's phase definitions
 - Quick-fix plan has more than one task (quick fix = single task by definition)
 - `config.md` carries `visual_fidelity_required: true` and a task with `visual_fidelity_check.ui_producing: true` lacks a non-empty `visual_fidelity_check.wireframe_refs` list (refuses plan-review fan-out — see "Visual-fidelity hard-gate" below)
+- A task spec carries `reference_gate: true` without a matching `reference_artifact:` field, or carries `reference_artifact:` without `reference_gate: true` (paired-field violation — Plan refuses to write the task spec; see Refuse-to-Write Contract above)
+- A task spec carries both `ui: true` and `lift_source: <path>` without a `SPEC OVERRIDES SOURCE` body section (paired-field violation — Plan refuses to write the task spec; see Refuse-to-Write Contract above)
 
 ### Visual-fidelity hard-gate (pre-fanout refusal condition)
 
