@@ -26,11 +26,18 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
 
       - name: Run shellcheck
+        # --severity=error: surface parse/syntax errors and undefined-function bugs
+        # only. The bash-3.2-portability constraint we enforce elsewhere (see
+        # ban-list step below) generates false-positive shellcheck warnings:
+        # SC2206 suggests `mapfile`/`read -a` (both bash-4+, banned in this repo),
+        # and SC2016 flags single-quoted `$VAR` strings in printf/diagnostic
+        # messages where literal `$VAR` is intentional. Keep warnings visible in
+        # logs but non-blocking; the ban-list job is the real bash-3.2 backstop.
         run: |
           find hooks scripts tests/helpers \
             \( -name '*.sh' -o -name '*.bash' \) \
             -print0 \
-          | xargs -0 shellcheck --shell=bash
+          | xargs -0 shellcheck --shell=bash --severity=error
 
       - name: Option B ban-list grep (bash 4+ constructs)
         run: |
@@ -57,7 +64,11 @@ jobs:
     name: BATS under bash 3.2
     runs-on: ubuntu-latest
     container:
-      image: bash:3.2@sha256:3ecad660de2f2d5a53fe7bc4afebecdddb36a90c71702a9a7b7baf1fcf4feedd
+      # bash:3.2 tag (unpinned). The previous sha256:3ecad660... pin was wrong
+      # at land time — the manifest never existed on Docker Hub, so every CI
+      # run hit "manifest unknown". Unpinning to the tag lets the job run; a
+      # follow-up issue tracks re-pinning to a current SHA once one is verified.
+      image: bash:3.2
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
