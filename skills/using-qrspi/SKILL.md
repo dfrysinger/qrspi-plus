@@ -410,6 +410,101 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 
 **No legacy fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing or has missing/invalid fields, apply the **Config Validation Procedure** (see below). Skills do not silently default any field that affects pipeline behavior. There is no automatic derivation of the route — this avoids conditional branches in every skill. Existing runs can be migrated by manually adding `pipeline` and `route` fields to their config.md.
 
+### Dispatch routing blocks
+
+The following four blocks in `config.md` are consumed by Slice 1 dispatch sites (the dispatcher, the per-task routing chain, and role-frontmatter resolution). They are optional in the `config.md` frontmatter — their absence means dispatch falls back to agent-bundled defaults. When present, all four blocks are authoritative and override any agent-bundled default.
+
+#### `providers:` block
+
+A map of named provider entries. Each entry specifies how the dispatcher connects to one inference provider.
+
+```yaml
+providers:
+  my-provider:
+    base_url: https://api.example.com/v1
+    api_key_env: MY_PROVIDER_API_KEY
+    transport_type: openai-chat-completions   # or: codex-broker
+    supports_prompt_cache: false              # optional; default: false
+    emit_cache_control_markers: false         # optional; default: false; independent of supports_prompt_cache
+    default_headers:                          # optional map; merged into every request to this provider
+      X-Custom-Header: value
+```
+
+**Required fields per entry:**
+- `base_url`: The HTTP(S) endpoint root for this provider.
+- `api_key_env`: Name of the environment variable that holds the API key. The dispatcher reads the key from the environment at dispatch time; the key value is never written to `config.md`.
+- `transport_type`: Exactly one of two values:
+  - `openai-chat-completions` — the provider speaks the OpenAI Chat Completions wire format.
+  - `codex-broker` — the provider is accessed via the Codex broker shim.
+
+**Optional fields per entry:**
+- `supports_prompt_cache`: boolean, default `false`. Signals that the provider supports prompt caching at the protocol level.
+- `emit_cache_control_markers`: boolean, default `false`. **Independent of `supports_prompt_cache`.** The dispatcher emits `cache_control` fields in requests to this provider ONLY when BOTH `supports_prompt_cache: true` AND `emit_cache_control_markers: true` are set on the provider entry (the dual-flag gate). A `true`/`false` mismatch on either flag suppresses `cache_control` emission entirely — setting one flag without the other has no effect on dispatcher output.
+- `default_headers`: optional map of string key-value pairs merged into every HTTP request sent to this provider. Useful for vendor-specific auth headers beyond `Authorization`.
+
+#### `model_routing:` block
+
+Maps role names to provider-plus-model pairs. The dispatcher uses this block to resolve which model to call for a given role.
+
+```yaml
+model_routing:
+  researcher: my-provider/gpt-4o
+  reviewer:   my-provider/gpt-4o-mini
+  implementer: other-provider/claude-opus-4
+```
+
+Each value is `<provider-name>/<model-id>` where `<provider-name>` MUST refer to an entry in the `providers:` block. Using a provider name that is absent from `providers:` is a config validation error (the dispatcher halts and reports the unknown provider rather than falling back silently).
+
+#### `trusted_path:` block
+
+A flat list of agent file paths or role names that always win over `model_routing:`. When an agent-file path or role name matches an entry in `trusted_path:`, the dispatcher short-circuits ahead of the normal routing chain and routes to the agent-bundled default for that agent or role.
+
+```yaml
+trusted_path:
+  - agents/qrspi-implementer.md
+  - reviewer
+```
+
+Entries can be:
+- A relative path to an agent `.md` file (relative to the repo root, e.g. `agents/qrspi-implementer.md`).
+- A role name string (matches entries in `model_routing:`).
+
+`trusted_path:` is documented separately from the precedence chain below because it is a short-circuit, not a step in the chain — matching agents or roles bypass the chain entirely.
+
+#### `validators:` block
+
+Post-dispatch output gates applied after a dispatch returns. Currently supports one gate:
+
+```yaml
+validators:
+  citation_density_floor: 0.05   # default: 0.05
+```
+
+- `citation_density_floor`: float, default `0.05`. The minimum fraction of output tokens that must be citations (inline references to source material). When a dispatch's output falls below this floor, the validator triggers a trusted-model re-run: the same prompt is re-dispatched to the agent-bundled default model (bypassing `model_routing:`) and the re-run output replaces the original. The re-run is logged to main-chat output as a one-line note.
+
+#### Precedence chain
+
+When the dispatcher resolves which model to call for a task, it applies this precedence order (highest to lowest):
+
+1. **Per-task `model:` override** — the `model:` field on an individual task spec, when present.
+2. **Hardcoded dispatch-site `model:`** — a `model:` value hard-coded at the dispatch site in a skill's SKILL.md.
+3. **`model_routing:` role lookup** — the role name resolved via the `model_routing:` block in `config.md`.
+4. **Agent-bundled default** — the model bundled in the agent's own definition file.
+
+`trusted_path:` is a separate short-circuit outside this chain: when an agent-file path or role name matches a `trusted_path:` entry, the dispatcher skips steps 1–3 and routes directly to the agent-bundled default (step 4).
+
+#### Legacy-config warning (`model_routing:` absent on resume)
+
+When a run is resumed and `config.md` does not contain a `model_routing:` block, the dispatcher fires a one-time in-memory warning:
+
+> `model_routing: absent from config.md — using agent-bundled defaults for this session`
+
+**Backfill behavior:**
+- The warning fires **once per resumed session**. It re-fires on each subsequent resume of a legacy `config.md` (i.e., each new session that opens the same config).
+- The on-disk `config.md` is **never silently mutated** by the backfill. Dispatch defaults are applied in-memory only; the file on disk is unchanged.
+- No persistent marker is written to disk to track that the warning has already fired. Because no marker is written, there is no write-failure surface that could leave the on-disk config in an inconsistent state.
+- A resumed session always sees the backfill defaults applied in-memory without changing the file on disk.
+
 ## Config Validation Procedure
 
 Every skill that reads config.md applies this procedure before using any field.
