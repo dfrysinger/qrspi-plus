@@ -418,7 +418,26 @@ Present merged `plan.md` to the user — overview for approval, task details for
 
 2. **Recommend compaction before splitting:** "Plan approved. This is a good point to compact context (`/compact`) before I split tasks into individual files — the split is mechanical and doesn't need the full conversation history." Wait for the user to compact (or decline), then proceed.
 
-3. **Split:** Split task sections into individual `tasks/task-NN.md` files, then reduce `plan.md` to overview-only, then write `status: approved` in `plan.md` frontmatter. This ensures `tasks/*.md` files exist before `plan.md` is marked approved, avoiding a transient state where downstream skills see an approved plan but no task files.
+3. **Split (post-approval orchestration):** Fan out per-task spec writing, verify file set, reduce plan.md to overview-only, capture `phase_start_commit:`, then write `status: approved` — in this exact transactional order, so an approved `plan.md` is never observable on disk without all corresponding `tasks/task-NN.md` files present.
+
+   **N-threshold carve-out.** Let N = the number of tasks in the approved `plan.md` overview.
+
+   - **N >= 3 (sub-subagent fan-out):** Dispatch one sub-subagent per task in parallel. Each sub-subagent receives:
+     - The task section from `plan.md` (the single `### Task NN: {name}` block), wrapped as an untrusted artifact.
+     - The canonical task-file template (the `tasks/task-NN.md` format from the "Split task file format" section above), carrying all T24 Slice 5 frontmatter fields: `reference_gate:`, `reference_artifact:`, `ui:`, `lift_source:`, plus `conditional:` and `conditional_precondition:` (the T43 conditional-dispatch fields). Sub-subagents must carry these fields verbatim into the emitted `tasks/task-NN.md` frontmatter exactly as authored in the plan.
+     - The G7 ID-Hygiene Contract (the `goal_ids` field is metadata; do NOT echo IDs into the task body prose).
+     - The `output_path`: the absolute path to write (`<artifact_dir>/tasks/task-NN.md`).
+     Each sub-subagent writes exactly one `tasks/task-NN.md` file. Sub-subagents MUST NOT edit `plan.md`. This is the generation-side sub-subagent dispatch shape reused from `### Sub-Subagent Dispatch (Large Plans Only)` above.
+     Rationale: sub-subagent dispatch overhead is justified at N >= 3 because the context saving from parallelism and isolation exceeds the per-dispatch overhead; combined plan + specs for N >= 3 tasks exceeds the 600-line threshold from design line 157 at which main-chat inline writing saturates the review window.
+
+   - **N <= 2 (inline main-chat split):** Write both `tasks/task-01.md` and `tasks/task-02.md` (or just `tasks/task-01.md` for a single-task plan) directly in main chat without dispatching sub-subagents. Combined plan + specs for N <= 2 tasks is estimated at under 600 lines per design line 157; sub-subagent dispatch overhead exceeds the context saving below this threshold.
+
+   **File-count verification (exact-set check, applies to both paths).** After the fan-out (or inline write) completes, verify the exact set of `tasks/task-NN.md` files present. The expected set is `{task-01.md, task-02.md, ..., task-N.md}` with no gaps and no duplicates. Do NOT pass this check by counting files alone — enumerate the actual IDs:
+   - **Duplicate-ID condition:** Two or more files share the same `task-NN` identifier (e.g., two sub-subagents both wrote `tasks/task-03.md`). HALT with a named diagnostic listing the duplicated IDs: `"Split verification failed: duplicate task file(s) detected: task-03.md (2 copies). Resolve before proceeding."` Do NOT write `status: approved`.
+   - **Missing-ID condition:** One or more expected task IDs are absent (e.g., `task-04.md` was not written). HALT with a named diagnostic listing the missing IDs: `"Split verification failed: expected task files not written: task-04.md. Re-run split for missing tasks before proceeding."` Do NOT write `status: approved`.
+   Only when the exact set matches — every expected ID is present exactly once — proceed to the next step.
+
+   After passing verification: reduce `plan.md` to overview-only (remove the `## Task Specs` section and all `### Task NN` blocks — they now live in `tasks/`). Then capture `phase_start_commit:` in `plan.md` frontmatter (see `### phase_start_commit capture at approval time` below). Then write `status: approved` in `plan.md` frontmatter.
 
 **On rejection:** Write the user's feedback and the rejected artifact snapshot to `feedback/plan-round-{NN}.md` (using the standard feedback file format from `using-qrspi`), then launch a new subagent with original inputs + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts from the beginning (the "loop until clean" choice applies to the new round).
 
