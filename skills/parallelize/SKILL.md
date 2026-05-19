@@ -79,9 +79,10 @@ This applies regardless of how simple the phase appears.
    - **Symbolic base vocabulary** (the only values allowed in the `Base` column):
      - `feature branch tip` — the tip of `qrspi/{slug}/main` at runtime
      - `task-NN tip` — the tip of `qrspi/{slug}/task-NN` (for single-parent forks across Waves, or sequential-chain predecessors)
-     - `stage-after-W{N}` — the stage commit Implement creates by merging Wave N's leaves before forking the next Wave
+     - `stage-after-W{N}` — the stage commit Implement creates by merging Wave N's leaves before forking the next Wave (single stage per Wave)
+     - `stage-after-W{N}{suffix}` — when a Wave emits multiple stage commits (e.g., partial-merge checkpoints before different downstream Waves), each stage is distinguished by a single lowercase letter suffix: `a`, `b`, `c`, … The suffix alphabet is ordered (`a` first, then `b`, etc.) and scoped to the originating Wave index `{N}`. For example, Wave 2 with two downstream dependency groups produces `stage-after-W2a` and `stage-after-W2b`. The unsuffixed form `stage-after-W{N}` is the canonical choice when a Wave produces only one stage commit; the suffix is added only when multiple stages from the same Wave are required.
      - `task-00 tip` — the tip of the baseline-fix branch (only after Implement injects `task-00`)
-   - Branch naming (informational — Implement creates the branches): `qrspi/{slug}/task-NN`; stage branches `qrspi/{slug}/stage-after-W{N}`.
+   - Branch naming (informational — Implement creates the branches): `qrspi/{slug}/task-NN`; stage branches `qrspi/{slug}/stage-after-W{N}` and, when multiple stages per Wave are needed, `qrspi/{slug}/stage-after-W{N}{suffix}` (e.g., `qrspi/{slug}/stage-after-W2a`, `qrspi/{slug}/stage-after-W2b`).
 3. **Merge target:** Integrate merges all task branches into the feature branch **once at phase end**, not per-task. The feature branch only changes via Integrate. (See `integrate/SKILL.md` → "Merge Strategy" for how Integrate handles dependency-ordered merges and stage-commit dedup.)
 4. **PR target:** Test creates the PR from the feature branch to the base branch.
 
@@ -349,6 +350,55 @@ Rationale: Tasks 1 and 2 are independent (file-disjoint) so they share Wave 1. T
 | qrspi/user-auth/stage-after-W1 | merge(task-01, task-02) | task-03 worktree creation |
 ```
 
+## Worked Example — Multi-Stage Suffix
+
+When one Wave feeds two or more disjoint downstream dependency groups, Parallelize emits one suffixed stage commit per group using the `stage-after-W{N}{suffix}` grammar (`a`, `b`, `c`, …):
+
+```markdown
+---
+status: draft
+---
+
+# Parallelization Plan
+
+## Execution Mode: Hybrid
+
+Rationale: Tasks 1 and 2 are independent and share Wave 1. Task 3 depends on Task 1 only; Task 4 depends on Task 2 only. Because the two downstream Waves have different parent sets from Wave 1, two partial stage commits (stage-after-W1a from task-01, stage-after-W1b from task-02) are emitted instead of a full merge, keeping each downstream Wave's base minimal.
+
+## Dependency Analysis
+
+| Task | Dependencies | Files | Wave |
+|------|-------------|-------|------|
+| Task 1: DB schema | none | `prisma/schema.prisma` | Wave 1 (base: feature branch tip) |
+| Task 2: API types  | none | `src/types/api.ts` | Wave 1 (base: feature branch tip) |
+| Task 3: Schema migrations | Task 1 | `src/db/migrate.ts`, `tests/migrate.test.ts` | Wave 2 (base: stage-after-W1a, single-parent from W1) |
+| Task 4: API routes | Task 2 | `src/routes/api.ts`, `tests/api.test.ts` | Wave 2 (base: stage-after-W1b, single-parent from W1) |
+
+## Execution Order
+
+**Wave 1:** Tasks 1 and 2 dispatch concurrently (shared base = feature branch tip; no file overlap). Once each finishes, Implement creates the corresponding suffixed stage commit: `stage-after-W1a` wraps task-01's tip; `stage-after-W1b` wraps task-02's tip.
+
+**Wave 2 (Tasks 3 and 4 concurrent):** Task 3 forks from `stage-after-W1a`; Task 4 forks from `stage-after-W1b`. Both dispatch concurrently (file-disjoint, no logical dependency on each other).
+
+## Branch Map
+
+| Task | Branch | Base |
+|------|--------|------|
+| task-01 | qrspi/db-migration/task-01 | feature branch tip |
+| task-02 | qrspi/db-migration/task-02 | feature branch tip |
+| task-03 | qrspi/db-migration/task-03 | stage-after-W1a |
+| task-04 | qrspi/db-migration/task-04 | stage-after-W1b |
+
+## Stage Commits
+
+| Stage branch | Composition | Created before |
+|--------------|-------------|----------------|
+| qrspi/db-migration/stage-after-W1a | wrap(task-01) | task-03 worktree creation |
+| qrspi/db-migration/stage-after-W1b | wrap(task-02) | task-04 worktree creation |
+```
+
+**When to use the suffix form:** use `stage-after-W{N}{suffix}` only when the same Wave index `{N}` produces two or more stage commits for different downstream dependency groups. When a Wave produces exactly one stage commit (the common case), use the unsuffixed `stage-after-W{N}` form.
+
 ## Worked Example — Bad
 
 ```markdown
@@ -377,6 +427,6 @@ The two override-critical rules for Parallelize, restated at end:
 
 1. **NO TASK DISPATCH WITHOUT AN APPROVED PARALLELIZATION PLAN.** Parallelize produces and gates the plan; Implement consumes and enforces it. Approving a plan with unresolved file overlap inside any Wave breaks the dispatch contract.
 
-2. **The `Base` column uses ONLY symbolic vocabulary** — `feature branch tip`, `task-NN tip`, `stage-after-W{N}`, `task-00 tip`. No concrete commit hashes, no improvised names. Implement resolves at runtime; Parallelize records only the symbolic contract.
+2. **The `Base` column uses ONLY symbolic vocabulary** — `feature branch tip`, `task-NN tip`, `stage-after-W{N}`, `stage-after-W{N}{suffix}` (e.g., `stage-after-W2a`), `task-00 tip`. No concrete commit hashes, no improvised names. Implement resolves at runtime; Parallelize records only the symbolic contract.
 
 Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
