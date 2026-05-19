@@ -1,0 +1,122 @@
+{
+  "Overview": {
+    "line_start": 12,
+    "line_end": 15
+  },
+  "Plan OWNS / Plan DEFERS": {
+    "line_start": 16,
+    "line_end": 19
+  },
+  "Artifact Gating": {
+    "line_start": 20,
+    "line_end": 40
+  },
+  "Config Validation": {
+    "line_start": 41,
+    "line_end": 50
+  },
+  "Execution Model": {
+    "line_start": 51,
+    "line_end": 54
+  },
+  "Phase-Scoped Content Rules": {
+    "line_start": 55,
+    "line_end": 58
+  },
+  "Task Sizing": {
+    "line_start": 59,
+    "line_end": 80
+  },
+  "Process": {
+    "line_start": 81,
+    "line_end": 82
+  },
+  "Plan Overview Subagent": {
+    "line_start": 83,
+    "line_end": 106
+  },
+  "Quick-Fix Plan Behavior": {
+    "line_start": 107,
+    "line_end": 118
+  },
+  "Sub-Subagent Dispatch (Large Plans Only)": {
+    "line_start": 119,
+    "line_end": 133
+  },
+  "Per-Task Classification (`task_type` and `model`)": {
+    "line_start": 134,
+    "line_end": 163
+  },
+  "Plan Document Structure (During Review)": {
+    "line_start": 164,
+    "line_end": 225
+  },
+  "Project Environment Fields": {
+    "line_start": 226,
+    "line_end": 234
+  },
+  "Plan Reviewer Agents": {
+    "line_start": 235,
+    "line_end": 250
+  },
+  "Review Round": {
+    "line_start": 251,
+    "line_end": 410
+  },
+  "Human Gate": {
+    "line_start": 411,
+    "line_end": 424
+  },
+  "Quick-Fix Auto-Approve Branch": {
+    "line_start": 425,
+    "line_end": 442
+  },
+  "Merge/Split Mechanics": {
+    "line_start": 443,
+    "line_end": 506
+  },
+  "SPEC OVERRIDES SOURCE authority": {
+    "line_start": 507,
+    "line_end": 512
+  },
+  "Refuse-to-Write Contract": {
+    "line_start": 513,
+    "line_end": 527
+  },
+  "Migration: `visual_fidelity_check.ui_producing` \u2192 top-level `ui:`": {
+    "line_start": 528,
+    "line_end": 555
+  },
+  "Artifacts": {
+    "line_start": 556,
+    "line_end": 560
+  },
+  "`phase_start_commit` capture at approval time": {
+    "line_start": 561,
+    "line_end": 568
+  },
+  "Terminal State": {
+    "line_start": 569,
+    "line_end": 580
+  },
+  "Red Flags \u2014 STOP": {
+    "line_start": 581,
+    "line_end": 599
+  },
+  "Visual-fidelity hard-gate (pre-fanout refusal condition)": {
+    "line_start": 600,
+    "line_end": 609
+  },
+  "Common Rationalizations \u2014 STOP": {
+    "line_start": 610,
+    "line_end": 623
+  },
+  "Worked Example": {
+    "line_start": 624,
+    "line_end": 661
+  },
+  "Iron Laws \u2014 Final Reminder": {
+    "line_start": 662,
+    "line_end": 672
+  }
+}
