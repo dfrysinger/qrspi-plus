@@ -76,6 +76,8 @@ This applies regardless of how simple the phase appears.
    - **Single-parent across Waves:** When a downstream task depends on exactly one task from a prior Wave, name that task's tip directly as the base — no stage commit needed.
    - **Baseline fix (`task-00`) interaction:** When Implement's baseline tests fail and the user chooses Auto-fix (see `implement/SKILL.md` → "Baseline Tests"), `task-00` is injected as a phase-level predecessor. `task-00`'s base is the feature branch tip; every other task in the phase then takes `task-00`'s tip as its base (or as one of its parents in the multi-parent case). This injection happens at runtime — Parallelize does not anticipate it. Implement persists the injection by appending a `task-00` row to the Branch Map *and* writing a `## Runtime Adjustments` section to `parallelization.md` that lists every task whose effective base changed; the original Branch Map rows are not rewritten. Readers (human or agent) reconstruct effective bases by reading the Branch Map and overlaying `## Runtime Adjustments`.
    - **Re-fork semantics (re-run, fix-round, replan):** Once a task branch exists, it is canonical for that task. Implementer-fix-round dispatches reuse the existing branch and add commits. Re-forking only happens at fresh worktree creation: a new task in a new phase, a replan-introduced task, or an explicit user-requested reset. Never re-fork an existing task branch silently — downstream task branches that descend from it would be invalidated.
+   - **Reference-gate wave termination:** When a task carries `reference_gate: true` in its frontmatter (introduced by T24's per-task spec contract), it acts as a **wave-terminating task** — it ends its Wave, and no dependent task in any later Wave may dispatch until the reference-gated task clears. Concretely: (1) the reference-gated task occupies its own Wave (it cannot share a Wave with independent tasks, since independent tasks might otherwise dispatch in the same slot); (2) every task that depends on the reference-gated task lands in the next Wave at the earliest; (3) `parallelization.md` emits an explicit note for each reference-gated task (canonical shape: `Reference gate: task-NN ({task name}) — dependents waiting: task-XX, task-YY, task-ZZ`). If a plan contains a reference-gated task, Parallelize applies this rule automatically — it is not an operator override. A reference-gated task that has no dependents still terminates its Wave (it may not run in parallel with other tasks in its Wave), but the "dependents waiting" list is empty.
+
    - **Symbolic base vocabulary** (the only values allowed in the `Base` column):
      - `feature branch tip` — the tip of `qrspi/{slug}/main` at runtime
      - `task-NN tip` — the tip of `qrspi/{slug}/task-NN` (for single-parent forks across Waves, or sequential-chain predecessors)
@@ -131,6 +133,14 @@ The implementer running parallelize does NOT auto-apply patches. Patches are adv
 - **Stage Commits** — table (only present when any Wave has multi-parent dependencies) with columns: Stage branch / Composition / Created before
 - **Execution Order** — narrative describing the Wave dependency graph (which Waves can fire concurrently when their dependencies are satisfied, what gates downstream Waves)
 - **Mermaid dependency graph** — written inline in the file
+
+**Reference-gate notes (when applicable).** When any task in the phase carries `reference_gate: true`, `parallelization.md` MUST include one note per gated task immediately after the Branch Map table, using this canonical shape:
+
+```
+Reference gate: task-NN ({task name}) — dependents waiting: task-XX, task-YY, task-ZZ
+```
+
+Each note appears on its own line. The dependent task IDs list every task in the phase whose dependency chain passes through the gated task. When the gated task has no dependents, the field is `— dependents waiting: (none)`. Reviewers and downstream consumers (Implement) locate gates by scanning for lines matching `Reference gate: task-` — the prefix is the canonical detection pattern.
 
 `review_depth` and `review_mode` are runtime concerns and live in `config.md` (written by Implement at phase start), not in `parallelization.md`.
 
@@ -295,6 +305,8 @@ Mark each task in_progress when starting, completed when done.
 - Embedding concrete commit hashes — that is Implement's job at runtime
 - Including baseline-fix `task-00` in the initial Branch Map (it does not yet exist; Implement decides whether to inject it)
 - Asking review depth or review mode here — those are runtime questions Implement owns
+- `parallelization.md` contains a task with `reference_gate: true` but no `Reference gate: task-NN ...` note appears after the Branch Map table — the canonical note is required for every reference-gated task
+- A dependent of a reference-gated task is scheduled in the same Wave as the gate — this is a wave-termination violation; the dependent MUST land in the next Wave at the earliest
 
 ## Common Rationalizations — STOP
 
@@ -398,6 +410,58 @@ Rationale: Tasks 1 and 2 are independent and share Wave 1. Task 3 depends on Tas
 ```
 
 **When to use the suffix form:** use `stage-after-W{N}{suffix}` only when the same Wave index `{N}` produces two or more stage commits for different downstream dependency groups. When a Wave produces exactly one stage commit (the common case), use the unsuffixed `stage-after-W{N}` form.
+
+## Worked Example — Reference-Gate Wave Termination
+
+When a task carries `reference_gate: true`, it terminates its Wave and all dependents land in the next Wave. The canonical `Reference gate:` note appears after the Branch Map:
+
+```markdown
+---
+status: draft
+---
+
+# Parallelization Plan
+
+## Execution Mode: Hybrid
+
+Rationale: Tasks 1 and 2 are independent (Wave 1). Task 3 carries reference_gate: true — it terminates Wave 2 alone; Tasks 4 and 5 (which depend on Task 3) land in Wave 3.
+
+## Dependency Analysis
+
+| Task | Dependencies | Files | Wave |
+|------|-------------|-------|------|
+| Task 1: Config schema | none | `skills/using-qrspi/SKILL.md` | Wave 1 (base: feature branch tip) |
+| Task 2: Prompt utils lib | none | `scripts/lib/llm-prompt-utils.sh` | Wave 1 (base: feature branch tip) |
+| Task 3: Adapter contract doc (reference gate) | Task 1, Task 2 | `skills/implement/red-verification-adapters.md` | Wave 2 (base: stage-after-W1; reference_gate: true) |
+| Task 4: Adapter scripts | Task 3 | `scripts/red-verify/*.sh` | Wave 3 (base: task-03 tip) |
+| Task 5: Dual-mode test-writer | Task 3 | `agents/qrspi-test-writer.md` | Wave 3 (base: task-03 tip) |
+
+## Execution Order
+
+**Wave 1:** Tasks 1 and 2 dispatch concurrently (file-disjoint, base = feature branch tip). Implement creates `stage-after-W1`.
+
+**Wave 2:** Task 3 alone (reference_gate: true — wave-terminating; Tasks 4 and 5 cannot dispatch until Task 3 clears). Task 3 forks from `stage-after-W1`.
+
+**Wave 3:** Tasks 4 and 5 dispatch concurrently once Task 3 clears (both fork from task-03 tip; file-disjoint).
+
+## Branch Map
+
+| Task | Branch | Base |
+|------|--------|------|
+| task-01 | qrspi/feature/task-01 | feature branch tip |
+| task-02 | qrspi/feature/task-02 | feature branch tip |
+| task-03 | qrspi/feature/task-03 | stage-after-W1 |
+| task-04 | qrspi/feature/task-04 | task-03 tip |
+| task-05 | qrspi/feature/task-05 | task-03 tip |
+
+Reference gate: task-03 (Adapter contract doc) — dependents waiting: task-04, task-05
+
+## Stage Commits
+
+| Stage branch | Composition | Created before |
+|--------------|-------------|----------------|
+| qrspi/feature/stage-after-W1 | merge(task-01, task-02) | task-03 worktree creation |
+```
 
 ## Worked Example — Bad
 
