@@ -258,3 +258,17 @@ Written to: reviews/{step}/round-NN/
 (Partial-write failures — some finding files persisted, some not — are not separately signaled; mirrors `/code-review`. The schema-violation guard at apply-fix step 2 catches only the all-or-nothing case where the expected tag produced ZERO output.)
 
 **Trailing newline** — every per-finding file ends with exactly one `\n` (deterministic byte-level normalize-then-warn at apply-fix step 2 if malformed).
+
+## Quick-Tier Finding Disposition
+
+When the orchestrator invokes the quick-tier batch (a round that processes all findings together before the next reviewer pass), reviewers and the orchestrator apply this disposition rule to each finding:
+
+**High-severity findings** — inline-patch required. The orchestrator applies a fix for every `severity: high` finding before closing the quick-tier batch. Leaving a high-severity finding unpatched in a quick-tier close is a process violation; the orchestrator must surface a named diagnostic: `"quick-tier close blocked: unpatched high finding <finding_id> (tag: <reviewer_tag>)"`.
+
+**Correctness-medium findings** — inline-patch required. The orchestrator applies a fix for every `severity: medium` finding where `change_type: correctness` before closing the quick-tier batch. The inline-patch requirement for correctness-medium findings mirrors the high-severity rule; the rationale is that correctness findings at medium severity still affect observable behavior and cannot be deferred.
+
+**Low-severity findings** — acceptance without inline patch is permitted. Low-severity findings (`severity: low` regardless of `change_type`) may be accepted without an inline patch at the quick-tier stage. Accepted-without-patch findings are recorded in the round's `round-NN-dispositions.md` as `disposition: accepted-without-patch` with a one-line rationale.
+
+**Blanket quick-tier merge prohibition** — a quick-tier batch that accepts EVERY finding without patching any of them is a process violation regardless of severity distribution. At least one non-trivial finding in the batch must be actively patched before the orchestrator closes the quick-tier round. A batch with all-low findings and no patches is the boundary case: the orchestrator must confirm the all-low distribution is genuine (not a misclassification of correctness-medium findings as low) before closing. When the batch contains only one finding and it is genuinely `severity: low`, closing without a patch is permitted; the blanket prohibition targets multi-finding batches where no finding was patched.
+
+**Anchor:** this section is extractable via the heading anchor `## Quick-Tier Finding Disposition` per the standard section-anchor convention used by shared markdown helpers.

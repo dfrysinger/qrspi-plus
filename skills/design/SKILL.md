@@ -135,6 +135,13 @@ If either condition fails, do **not** emit the reviewer diff file, do **not** ru
 
 When `visual_fidelity_required: false` (or the field is absent), this check is skipped entirely and the binding subsection is not required.
 
+**Reference-gate checklist item.** When the design introduces a reviewer whose verdict depends on an external reference artifact — a prototype screenshot, a golden output file, a contract fixture, or a lifted prototype — the Design synthesis subagent and the orchestrator must confirm the following before proceeding to `### Review Round`:
+
+1. The producing task (the task that will implement the behavior the reference-dependent reviewer evaluates) is flagged `reference_gate: true` in the Plan task spec (per the T24 frontmatter contract in `skills/plan/SKILL.md` § Refuse-to-Write Contract).
+2. `design.md` records the **lift-verbatim-vs-re-derive decision** for the reference artifact: state explicitly whether the implementer should copy the artifact verbatim (lift-verbatim) or derive the output behavior independently (re-derive), and name the reference artifact path or URL. This decision is the structural input downstream Structure (T25) and the visual-fidelity reviewer (T28) consume to ground their judgments.
+
+Failure mode: if the design introduces a reference-dependent reviewer but `design.md` does not record the lift-verbatim-vs-re-derive decision, the precondition check fails. Surface the error to the user: `"design.md introduces a reference-dependent reviewer but does not record the lift-verbatim-vs-re-derive decision — add a decision statement under the relevant Key Decisions entry naming the reference artifact and the chosen decision (lift-verbatim or re-derive) before proceeding."` Then loop back to `### Design Synthesis Subagent` to update `design.md`; do not proceed to `### Review Round` until the check passes.
+
 ### Review Round
 
 **Compaction checkpoint: pre-fanout.** Quality + scope reviewer fan-out reads `design.md` + `goals.md` + `research/summary.md` + the agent-embedded reviewer protocol; saturated context produces shallow findings. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
