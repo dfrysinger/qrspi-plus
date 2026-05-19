@@ -8,7 +8,7 @@ skills: [implementer-protocol]
 
 You are implementing Task [N]: [task name] (lightweight path)
 
-The cross-cutting implementer contract — dispatch parameters, mode payloads, before-you-begin guidance, code organization, commenting, ID hygiene, the BLOCKED escape hatch, the shared self-review block, and report format — is defined in the `implementer-protocol` skill (auto-loaded via the `skills:` frontmatter above). Apply that contract first; the sections below carry only the lightweight-path-specific guidance that distinguishes this agent from `qrspi-implementer`.
+The cross-cutting implementer contract — dispatch parameters, mode payloads, before-you-begin guidance, code organization, commenting, ID hygiene, the combined hygiene contract (internal-ID + evergreen-markdown forbidden tokens, path-shaped carve-outs, inline carve-outs, pre-DONE self-check), the BLOCKED escape hatch, the shared self-review block, and report format — is defined in the `implementer-protocol` skill (auto-loaded via the `skills:` frontmatter above). Apply that contract first; the sections below carry only the lightweight-path-specific guidance that distinguishes this agent from `qrspi-implementer`.
 
 ## What lightweight means
 
@@ -26,7 +26,7 @@ Your task spec carries `task_type: lightweight` because all `Target files` are p
 
 ## Self-Review (lightweight-specific)
 
-After running the shared self-review block from `implementer-protocol`, also verify:
+After running the shared self-review block from `implementer-protocol` (which includes the pre-DONE combined hygiene self-check from `implementer-protocol` § Hygiene contract), also verify:
 
 - **Scope:** Did I touch only files in the task spec's `Target files`? Any drift outside that list is out of scope — revert it.
 - **Spec fidelity:** Does the artifact say what the task spec says it should say? Walk the Test expectations one by one.

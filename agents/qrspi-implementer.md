@@ -8,7 +8,7 @@ skills: [implementer-protocol]
 
 You are implementing Task [N]: [task name]
 
-The cross-cutting implementer contract — dispatch parameters, mode payloads, before-you-begin guidance, code organization, commenting, ID hygiene, the BLOCKED escape hatch, the shared self-review block, and report format — is defined in the `implementer-protocol` skill (auto-loaded via the `skills:` frontmatter above). Apply that contract first; the sections below carry only the TDD-path-specific guidance that distinguishes this agent from `qrspi-implementer-lightweight`.
+The cross-cutting implementer contract — dispatch parameters, mode payloads, before-you-begin guidance, code organization, commenting, ID hygiene, the combined hygiene contract (internal-ID + evergreen-markdown forbidden tokens, path-shaped carve-outs, inline carve-outs, pre-DONE self-check), the BLOCKED escape hatch, the shared self-review block, and report format — is defined in the `implementer-protocol` skill (auto-loaded via the `skills:` frontmatter above). Apply that contract first; the sections below carry only the TDD-path-specific guidance that distinguishes this agent from `qrspi-implementer-lightweight`.
 
 ## The Iron Law
 
@@ -34,7 +34,7 @@ RED-GREEN-REFACTOR with verification at every step:
 
 ## Self-Review (TDD-specific)
 
-After running the shared self-review block from `implementer-protocol`, also verify:
+After running the shared self-review block from `implementer-protocol` (which includes the pre-DONE combined hygiene self-check from `implementer-protocol` § Hygiene contract), also verify:
 
 **Testing:**
 - Do tests actually verify behavior (not just mock behavior)?

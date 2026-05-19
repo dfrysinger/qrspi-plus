@@ -87,6 +87,75 @@ The task spec you receive may carry **QRSPI-internal IDs** and **external tracke
 
 When tempted to comment `// implements <goal-ID>`, drop the ID and write only the substantive WHY (or write no comment at all).
 
+## Hygiene contract
+
+This section is the single source of truth for the combined ID-hygiene and evergreen-markdown hygiene rules. Both implementer agent variants load this section via the `implementer-protocol` preload. The pre-DONE self-check below is the combined gate that both agent variants run before reporting DONE.
+
+### Internal-ID forbidden tokens
+
+The following QRSPI-internal ID families MUST NOT appear in any added line of the commit diff across all edited files (git-tracked sources, markdown, config):
+
+| Family | Regex shape | Examples |
+|--------|-------------|---------|
+| Reviewer finding ID | `round-\d+\s+finding-\d+` or `R\d+-F\d+` | `R3-F01`, `round-2 finding-05` |
+| Task ID | `\bT\d{2}\b` | `T01`, `T14` |
+| Goal ID | `\bG\d+\b` (single capital G + digits, not in file path context) | `G1`, `G18` |
+| Question ID | `\bQ\d+\b` | `Q3`, `Q12` |
+| Future-goal ID | `\bF-\d+\b` | `F-1`, `F-23` |
+| Design decision ID | `\bD\d+\b` (single capital D + digits, not in file path context) | `D2`, `D15` |
+
+These IDs are routing and traceability metadata for the QRSPI run. They must not leak into the work product (code identifiers, runtime strings, prompt templates, comments, test names, fixture names, or anywhere outside `docs/qrspi/`).
+
+### Evergreen-markdown forbidden tokens
+
+The following token families MUST NOT appear in any added line of the commit diff **in edited markdown files only** (`.md` files):
+
+| Family | Regex shape | Examples |
+|--------|-------------|---------|
+| Release-version token | `v\d+\.\d+` | `v0.7`, `v1.2` |
+| Milestone wording | `in v\d+\.\d+`, `after this release`, `after the \w+ release` | `in v0.7`, `after this release` |
+| PR or issue reference as behavior justification | `(see|per|fixes|closes)\s+#\d+` used to justify current behavior | `per #42`, `see #172` |
+
+Evergreen-markdown rules apply only to edited `.md` files. They do not apply to code, shell scripts, YAML, JSON, or other non-markdown surfaces.
+
+### Path-shaped carve-outs
+
+The following surfaces are exempt from both rule sets above:
+
+| Exempt surface | Reason |
+|----------------|--------|
+| `docs/qrspi/**` | The QRSPI artifact directory IS internal addressing — goal IDs, task IDs, etc. belong in pipeline artifacts |
+| `agents/qrspi-*-reviewer.md` | Reviewer agent bodies document the finding-ID schema; those IDs must appear there |
+| Runtime-assembled prompt parameters | In-memory dispatch payloads (`wave_context:`, `companion_review_findings:`, etc.) are not git-tracked files; the rule applies to the diff, not to runtime values |
+| `docs/qrspi/YYYY-MM-DD-*/**` | Dated pipeline artifacts (goals.md, plan.md, tasks/*.md, etc.) — the artifact directory under its dated slug |
+| `CHANGELOG.md` | Version-of-record file; release-version tokens are the point |
+| `tests/fixtures/**` | Version-tagged fixtures may embed version strings for testing the version-detection behavior itself |
+
+### Inline carve-outs
+
+When a single line in a non-exempt surface legitimately needs to carry an otherwise-forbidden token, append the appropriate inline comment on that same line:
+
+| Comment | Applies to |
+|---------|-----------|
+| `<!-- id-hygiene-exempt -->` | Internal-ID forbidden tokens (suppresses the finding for that line only) |
+| `<!-- evergreen-exempt -->` | Evergreen-markdown forbidden tokens (suppresses the finding for that line only) |
+
+Both comments apply to the single line carrying the comment. They do not suppress findings on adjacent lines.
+
+### Pre-DONE self-check (combined hygiene scan)
+
+Before reporting DONE or DONE_WITH_CONCERNS, run one combined scan over the commit diff's added lines:
+
+1. Obtain the added lines: `git -C <worktree> diff HEAD~1 --unified=0 | grep '^+'`
+2. Apply the **internal-ID rule** to ALL added lines: scan for each of the six regex families in the Internal-ID forbidden tokens table. Exclude lines from exempt paths. Exclude lines carrying `<!-- id-hygiene-exempt -->`.
+3. Apply the **evergreen-markdown rule** to added lines **in `.md` files only**: scan for each of the three regex families in the Evergreen-markdown forbidden tokens table. Exclude lines from exempt paths. Exclude lines carrying `<!-- evergreen-exempt -->`.
+4. Emit one combined report listing any hits by line and regex family.
+
+**The scan is advisory.** The commit proceeds whether or not hits are present. However:
+- **Any retained hit MUST be explicitly acknowledged in the DONE report** with the line content, the regex that fired, and a brief rationale for why the hit is a false positive or intentional exception.
+- **Reviewer visibility is structurally enforced via two channels:** (a) the DONE-report file is passed as a companion parameter on every per-task reviewer dispatch, so the reviewer's pre-flight reads the DONE-report alongside the artifact under review; (b) the per-task reviewer dispatch site explicitly lists the DONE-report file path so reviewers can re-Read it directly. Both channels carry the unacknowledged-hit data, ensuring reviewer visibility is not nominal.
+- A reviewer that finds an unacknowledged hit in the artifact is expected to raise it as a finding. An acknowledged hit with stated rationale is resolved at the implementer's discretion.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work.
