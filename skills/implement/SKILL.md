@@ -511,6 +511,79 @@ dispatch: Agent({ subagent_type: implementer_subagent, model: <model> })
 
 **Gate-level reviewer (cross-task).** The Batch Gate's `qrspi-implement-gate-reviewer` runs at batch altitude across all tasks in a wave; it is gated by `config.codex_reviews` (config-level), not by per-task `task_type`. A wave that mixes `code` and `lightweight` tasks still gets the gate-level Codex parallel if config enables it.
 
+#### Four-Layer Model Resolution Chain (per dispatch)
+
+Every implementer and reviewer dispatch resolves its concrete `(provider, model)` pair via the chain below at the dispatch boundary, BEFORE the Agent({}) call is composed. The chain is evaluated in strict precedence order: the first layer that yields a value wins; later layers are not consulted.
+
+**Short-circuit: `trusted_path:` match.** Before entering the four-layer chain, main chat checks whether the dispatch target matches a `trusted_path:` entry in `config.md`'s `model_routing:` block (matched against either the agent file path under `agents/` OR the `model_role:` value from the agent's frontmatter). A `trusted_path:` hit short-circuits the chain — the trusted-path provider+model wins ahead of layers 1a/1b/2/3. This carve-out exists so safety-critical reviewer paths (e.g., security review, finding verifier) cannot be silently routed to a cheap model by a per-task override or a misconfigured routing table.
+
+When no `trusted_path:` match applies, the four-layer chain runs:
+
+1. **Layer 1a — per-task spec `model:` override.** If `tasks/task-NN.md` frontmatter carries a `model:` field, use its `(provider, model)` value verbatim. This is the highest-precedence non-trusted layer so plan-authored per-task escalations (e.g., "this task needs opus") win over routing-table defaults.
+
+2. **Layer 1b — hardcoded dispatch-site `model:` override.** If the dispatch call composes a per-call inline `model:` argument (e.g., a gate-reviewer that always wants `sonnet` regardless of routing), use that value. Layer 1b is a defense-in-depth surface for one-off site-specific pinning; most sites should NOT use it and instead rely on layer 2.
+
+3. **Layer 2 — `model_routing:` role-to-provider+model lookup.** Read the agent's `model_role:` frontmatter field, then look up `config.md`'s `model_routing:` table for that role. The lookup yields the `(provider, model)` pair the role currently maps to. This is the primary tuning surface — operators tune cost vs. quality by editing `model_routing:` in `config.md`, with no code changes.
+
+4. **Layer 3 — agent's bundled default.** If layers 1a/1b/2 all yield nothing (no per-task override, no dispatch-site override, no `model_routing:` entry for the role), fall back to the agent file's frontmatter `model:` default (typically `inherit` so the Agent({}) call inherits main chat's model — preserves pre-v0.7 behavior).
+
+**Legacy-config one-time warning.** When `model_routing:` is absent from `config.md` (a resumed run from a pre-v0.7 artifact directory), the chain emits exactly one warning at first dispatch and then proceeds with layers 1a/1b/3 only — see the `model_routing:` schema documentation in `skills/using-qrspi/SKILL.md` (T01) for the warning text and the runtime-backfill recovery contract. Do not re-derive or re-document the warning here; this section's role is to consume the legacy-config contract authored in T01.
+
+**Dispatch-site forwarding.** Once the chain resolves to `(provider, model)`, main chat forwards that pair to the dispatch transport:
+
+- **Claude-side dispatches** (`Agent({ subagent_type, model })`) pass the resolved `model` directly to the Agent({}) call.
+- **Third-party dispatches** (any provider with `transport_type: openai-chat-completions` OR `transport_type: codex-broker` in `config.md`) pipe their prompt to `scripts/run-third-party-llm.sh` with `--provider <resolved-provider> --model <resolved-model>`. The dispatcher resolves the transport branch from `config.md` per the universal-dispatcher contract (T03); the routing chain does NOT pass a transport flag.
+
+#### G5 Initial Routing Matrix (default `model_routing:` table)
+
+The table below is the initial G5 deliverable — the role-to-`(provider, model)` mapping that ships as the default `model_routing:` block in `config.md`. Each row's rationale is carried verbatim from the design.md G5 decision; operators may edit `config.md` to deviate per-run.
+
+| `model_role:` (agent class)         | Default route                       | Tier                             | Rationale (verbatim from design.md G5) |
+|-------------------------------------|-------------------------------------|----------------------------------|----------------------------------------|
+| `qrspi-research-collator`           | DeepSeek V3 (or current cheap tier) | cheap-model eligible             | Mechanical verbatim extraction; no synthesis. Cheap model is sufficient — the cost-per-collation dominates Wave fan-out at scale. |
+| `qrspi-implementer-lightweight`     | DeepSeek V3 (or current cheap tier) | cheap-model eligible             | Single-pass execution of well-specified lightweight tasks. Reviewer fan-out catches drift; routing the implementer to cheap saves dominant Wave token cost. |
+| `qrspi-research-specialist`         | DeepSeek V3, citation-density gated | cheap-model eligible (conditional) | Question-scoped research with structured output. Cheap model is sufficient WHEN citation density meets the floor; below-floor output triggers one re-run on the trusted model (see § Specialist Citation-Density Validator). |
+| general-purpose / Explore agent     | Sonnet (Claude)                     | trusted                          | General-purpose exploration that may surface ambiguous findings; cheap-model misreads here propagate through every downstream consumer. Stay trusted. |
+| `qrspi-test-writer`                 | Sonnet (Claude)                     | trusted                          | Test authoring is high-leverage — a bad test pins a wrong contract. Stay trusted; cost is dominated by reviewer fan-out, not test-writer dispatches. |
+
+The matrix is observable via the T07 `test-routing-matrix-application.bats` pin (which asserts each role resolves to its declared route under the default `model_routing:` block) and is the Slice 1 acceptance deliverable for G5. The Implement-skill consumes the matrix at every dispatch through the four-layer chain above; operator-edited `model_routing:` entries override the defaults without code changes.
+
+#### Specialist Citation-Density Validator (post-output, trusted-model re-run)
+
+Every `qrspi-research-specialist` dispatch is wrapped with a post-output validator that measures the citation density of the specialist's returned `q*.md` report against the `validators.citation_density_floor:` key in `config.md` (default `0.05`). The validator runs at the per-dispatch boundary, AFTER the specialist's report is written and BEFORE the report enters downstream collation:
+
+1. **Above-floor result.** The specialist's report proceeds unchanged to the collation step. No re-run, no telemetry rerun-count increment.
+
+2. **Below-floor result.** The dispatch re-runs the specialist EXACTLY ONCE on the trusted model (the role's `trusted_path:` route, or the matrix's trusted-tier default), with the same `question_body` and `question_ids` parameters. The rerun count is incremented in this task's telemetry record.
+
+3. **Second below-floor result (re-run also fails).** The validator emits a loud diagnostic naming the below-floor density value and exits non-zero, propagating a failure signal to the Implement orchestrator. The orchestrator treats the non-zero exit as a specialist-dispatch FAILURE (NOT a zero-exit-with-empty-body) — downstream consumers see the failure signal observably. The orchestrator may then choose to retry on a different topic angle, escalate to opus, or proceed with degraded output per the per-task BLOCKED escape hatch; the validator does NOT silently forward below-floor output to consumers.
+
+The validator-hook details (where in the specialist agent body the post-validation runs) are documented in `skills/research/SKILL.md` § Citation-Density Post-Validation Hook — that section cross-references the `validators.citation_density_floor:` config key by name. Implement consumes the hook through this dispatch-wrapping contract; the implementation lives in the specialist agent path, not in this skill.
+
+#### Per-Task Telemetry Emission (`reviews/telemetry/round-NN/task-NN.json`)
+
+Every task in every round emits a single JSON object summarizing its execution to `<ABS_ARTIFACT_DIR>/reviews/telemetry/round-NN/task-NN.json`. The emission happens at task-DONE time (after the per-task fix loop terminates), regardless of outcome (success, BLOCKED, escalated). The G5 living-config matrix is tuned from this corpus — without it, the routing decisions in the table above cannot be revised from real data.
+
+Required fields (every record):
+
+- `routing_decision`: object naming the resolved `(role, provider, model, layer)` for the implementer dispatch — `layer` is one of `trusted_path`, `1a`, `1b`, `2`, or `3` per the chain above. When the task ran multiple dispatches (implementer + N reviewers), the implementer's decision is the primary record; per-reviewer decisions are listed in a `reviewer_routing_decisions:` array using the same shape.
+- `fix_cycle_count`: integer (0 if the task converged on the first review; up to 3 per the hardcoded fix-loop ceiling).
+- `review_finding_category_counts`: object keyed by change-type (`style`, `clarity`, `correctness`, `scope`, `intent`) — values are integer counts of findings consolidated across all rounds of this task's fix loop.
+- `citation_density_rerun_count`: integer count of trusted-model re-runs the citation-density validator triggered for this task's research-specialist dispatches (0 for tasks that did not dispatch a specialist or whose specialist passed the floor on the first try).
+
+**Absence is a loud failure.** If a task reaches DONE without writing its telemetry file at the path above, the orchestrator MUST emit a named diagnostic and halt the batch — telemetry absence is NOT a silent skip. The G5 acceptance contract depends on the corpus being complete; a silently-missing task record would corrupt the matrix-tuning evidence.
+
+#### Per-Task Reviewer Dispatch: DONE-Report Companion Wiring
+
+Per the T15 implementer-protocol hygiene contract, every per-task reviewer dispatch carries the implementer's DONE-report body as a named companion parameter AND lists the DONE-report file path in the dispatch payload so reviewers can re-Read it during pre-flight. This closes the gap between the prose contract authored in `skills/implementer-protocol/SKILL.md` (T15) and the actual dispatch-site wiring here.
+
+Each per-task reviewer dispatch (correctness group AND thoroughness group, every round) MUST include:
+
+- `companion_done_report` — wrapped body of the implementer's DONE report from this round, bracketed between `<<<UNTRUSTED-ARTIFACT-START id=done-report>>>` and `<<<UNTRUSTED-ARTIFACT-END id=done-report>>>` markers.
+- `done_report_path` — absolute path to the DONE report on disk (the reviewer Reads this path during its hygiene pre-flight check; the wrapped companion above is the in-prompt copy for reviewers whose hygiene check operates on in-context content).
+
+A reviewer dispatch that omits either parameter is a hygiene-contract violation; the reviewer's pre-flight check fails loud per `skills/implementer-protocol/SKILL.md` § Unacknowledged Hygiene Hits.
+
 ### Dispatching the Implementer
 
 The implementer is an agent-file subagent: `Agent({ subagent_type: "<implementer_subagent>", model: "<model>" })` where both values are resolved per § Per-Task Routing from the task's frontmatter. The `qrspi-implementer` agent body carries the TDD process; the `qrspi-implementer-lightweight` agent body carries the single-pass discipline. Both load the shared `implementer-protocol` skill (status-reporting contract, ID-hygiene rules, dispatch-parameter contract) so main chat does not duplicate that content in the dispatch prompt. The agent file's frontmatter `model: inherit` is the default that the per-invocation override replaces.
