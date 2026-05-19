@@ -281,6 +281,22 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — structure", de
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `structure`.
 
+## Section-Anchor Index
+
+The Section-Anchor Index is the G4 Mechanism B contract — narrow, byte-identical reads of named H2 / H3 sections inside large SKILL.md artifacts. Mechanism B ships unconditionally in v0.7 and is consumed by skill authors who need a stable section slice (e.g., a reviewer that wants the `## Dispatch Contract` section of `skills/reviewer-protocol/SKILL.md` without rescanning the file for headings every dispatch).
+
+**Colocation convention.** Every indexed source artifact ships its index file colocated next to the source — `skills/<name>/SKILL.anchors.json` sits next to `skills/<name>/SKILL.md`. Future indexed artifacts MUST follow this convention so consumers can resolve the index path mechanically from the source path (`<source>.anchors.json`).
+
+**Manifest as the single registry.** The file `scripts/g4-section-anchor-manifest.json` is the single registry that gates which artifacts receive a maintained index. The refresh script (`scripts/g4-section-anchor-refresh.sh`) only regenerates the indexes named in the manifest; an artifact that wants an index MUST be added to the manifest. Indexes for artifacts NOT in the manifest are not maintained and MUST NOT be relied on by consumers — they can drift silently from their source.
+
+**Refresh ownership (regenerator output, not hand-authored).** Index files are the output of the refresh script. Hand-editing an index file is a contract violation — the next refresh-script invocation will overwrite hand edits without warning. To extend an index, edit the source artifact (add or rename a heading) and re-run the refresh script; the index will reflect the source's current state.
+
+**Consumer contract (index lookup + `Read(offset, limit)`).** An agent that wants section X of artifact Y consults `Y.anchors.json`, looks up the `{line_start, line_end}` range for the heading text matching X, then issues `Read(offset=line_start, limit=line_end - line_start + 1)` to retrieve the slice verbatim. Consumers MUST NOT re-scan the source for headings (that defeats the entire Mechanism B contract — re-scans cost the same as the original read). The byte-identical slice the index resolves to is the load-bearing property: a section's content is identical across consumers because everyone reads through the same `{line_start, line_end}` range.
+
+**Duplicate-heading-text invariant.** A source artifact MUST NOT contain two H2 or H3 headings whose text is identical — duplicates make `{heading_text → range}` lookups ambiguous and the refresh script exits non-zero with a loud diagnostic naming the offending artifact, the duplicate text, and the colliding line numbers. Resolution: rename one of the duplicate headings to disambiguate.
+
+Pin for the consumer contract: T36's `test-section-anchor-refresh.bats` asserts that the regenerated index reflects the source's current heading layout after a source heading is added, removed, or renamed.
+
 ## Red Flags — STOP
 
 - A file mentioned in the design has no entry in the file map
