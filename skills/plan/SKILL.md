@@ -135,6 +135,18 @@ Each sub-subagent writes `tasks/task-NN.md`. After all complete, the Plan skill 
 
 Every task spec — whether emitted by the merged-plan subagent or by a per-task sub-subagent — must set `task_type` and `model` in its frontmatter. Assign them in this order, per task. These flags drive Implement-skill routing: `task_type` selects between the TDD implementer and the lightweight implementer; `model` is forwarded as the per-invocation override on the implementer Agent dispatch.
 
+**`task_type` defaulting and dispatch-ordering note.** The `task_type` field drives which Implement-skill dispatch chain fires for the task:
+
+- **Absent `task_type:`** — defaults to the TDD path (test-writer dispatches before implementer, followed by the RED-verification gate; same behavior as `task_type: code`).
+- **`task_type: code`** — TDD path: test-writer dispatches first (authoring failing tests), then the RED-verification gate runs, then the implementer dispatches to reach GREEN. Dispatch order: test-writer → RED gate → implementer.
+- **`task_type: lightweight`** — lightweight-only dispatch: no test-writer, no RED gate. Implement dispatches `qrspi-implementer-lightweight` directly. Dispatch order: implementer only.
+
+Every per-task spec for a TDD task (`task_type: code` or absent) must carry an explicit dispatch-ordering note in its `## Description` or at the top of `## Test Expectations` so the Implement orchestrator reads the ordering without cross-referencing the plan classification section:
+
+> Dispatch order: test-writer first, implementer second (RED-verification gate between).
+
+Specs for `task_type: lightweight` tasks omit this note (no test-writer, no RED gate).
+
 **Step 1 — `task_type`.** Default `code`. Assign `task_type: lightweight` only when **all** target files match one of these globs:
 - `skills/**/SKILL.md`
 - `skills/**/templates/*.md`
