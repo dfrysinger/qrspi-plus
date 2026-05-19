@@ -205,12 +205,18 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
 
 ## CI Pipeline Gate (Sub-Gate Within Integrate)
 
-1. Push branch, trigger CI (GitHub Actions or equivalent)
-2. Wait for results: tests, linting, security scanning, build
-3. If failures: present to user. User chooses: dispatch fix tasks, accept, or stop.
-4. Write fix tasks to `fixes/ci-round-NN/`. Fix tasks include the **specific CI check/test that must pass** in the task spec. The implementer fixes the issue AND verifies the CI check passes locally before returning. Reviewers also verify it passes.
-5. Fix tasks route through Implement → back to Integrate → re-run CI. If CI still fails, present to user again (no cycle counting — user is in the loop each time).
-6. If no CI pipeline exists, skip this gate entirely.
+The canonical CI signal for this gate is the workflow defined in `.github/workflows/ci.yml`. All steps below refer to that specific workflow file as the authoritative source of CI status.
+
+1. Push the integrate branch to the remote and allow GitHub Actions to trigger the `.github/workflows/ci.yml` workflow on the head commit.
+2. Query the workflow run status for the head commit of the integrate branch via the `gh` CLI (for example, using `gh run list` or `gh run view` filtered to the workflow file path `.github/workflows/ci.yml` and the head commit SHA).
+
+   **Vacuous-success guard:** When the `gh` CLI query for the head commit returns zero workflow runs for `.github/workflows/ci.yml`, the gate FAILS with a named diagnostic identifying the missing run (e.g., `"No CI workflow run found for commit SHA <sha>; CI may not have triggered yet — push the branch or re-trigger the workflow before proceeding"`). The gate does NOT pass on a zero-runs result — vacuous success (no runs found ≠ all jobs passed) is closed so an Integrate session against a head commit whose CI has not yet been triggered cannot bypass the gate.
+
+3. Gate condition: all jobs in the workflow run must succeed. This includes both the `lint` job and the `bash32` job defined in `.github/workflows/ci.yml`. A run where any single job fails or is skipped-due-to-failure is a gate failure.
+4. If any job fails: present the failure output to the user. User chooses: dispatch fix tasks, accept, or stop.
+5. Write fix tasks to `fixes/ci-round-NN/`. Fix tasks include the **specific CI job and check that must pass** in the task spec. The implementer fixes the issue AND verifies the relevant check passes locally before returning. Reviewers also verify it passes.
+6. Fix tasks route through Implement → back to Integrate → re-run CI. If CI still fails, present to user again (no cycle counting — user is in the loop each time).
+7. If `.github/workflows/ci.yml` does not exist in the repository, skip this gate entirely and note the absence to the user.
 
 ## Fix Task File Format
 
