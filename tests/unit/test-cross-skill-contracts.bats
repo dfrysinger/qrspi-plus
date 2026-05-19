@@ -17,10 +17,14 @@
 # appear in BOTH skills?" not "is the prose byte-for-byte stable." Match
 # patterns are deliberately broad enough to survive cosmetic rewrites and
 # narrow enough to catch deletion of the contract itself.
+#
+# Task 22 migration: REPO_ROOT resolution replaced by require_repo_root from
+# the shared tests/helpers/skill-markdown.bash helper.
+
+load '../helpers/skill-markdown'
 
 setup_file() {
-  REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd -P)"
-  export REPO_ROOT
+  require_repo_root
 }
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,12 @@
 #!/usr/bin/env bats
+#
+# Task 22 migration: REPO_ROOT resolution replaced by require_repo_root from
+# the shared tests/helpers/skill-markdown.bash helper.
+
+load '../helpers/skill-markdown'
 
 setup_file() {
-  REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd -P)"
-  export REPO_ROOT
+  require_repo_root
 }
 
 @test "parallelize/SKILL.md mentions a worktree-aware setup-validation step" {

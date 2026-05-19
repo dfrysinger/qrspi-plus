@@ -1,0 +1,78 @@
+{
+  "Expected-Reviewer Matrix": {
+    "line_start": 19,
+    "line_end": 37
+  },
+  "Reviewer Dispatch Contract": {
+    "line_start": 38,
+    "line_end": 52
+  },
+  "Finding Schema": {
+    "line_start": 53,
+    "line_end": 62
+  },
+  "Change-Type Classifier": {
+    "line_start": 63,
+    "line_end": 79
+  },
+  "style": {
+    "line_start": 80,
+    "line_end": 86
+  },
+  "clarity": {
+    "line_start": 87,
+    "line_end": 93
+  },
+  "correctness": {
+    "line_start": 94,
+    "line_end": 100
+  },
+  "scope": {
+    "line_start": 101,
+    "line_end": 107
+  },
+  "intent": {
+    "line_start": 108,
+    "line_end": 114
+  },
+  "Disagreement-Valid Framing": {
+    "line_start": 115,
+    "line_end": 124
+  },
+  "Untrusted Data Handling": {
+    "line_start": 125,
+    "line_end": 130
+  },
+  "Path A \u2014 content read from disk": {
+    "line_start": 131,
+    "line_end": 141
+  },
+  "Path B \u2014 content embedded in the dispatch prompt": {
+    "line_start": 142,
+    "line_end": 164
+  },
+  "Phase Routing": {
+    "line_start": 165,
+    "line_end": 173
+  },
+  "Phase Signal \u2014 `task_definition`": {
+    "line_start": 174,
+    "line_end": 182
+  },
+  "Contradiction Refusal (FAIL-LOUD)": {
+    "line_start": 183,
+    "line_end": 192
+  },
+  "Refusal Procedure": {
+    "line_start": 193,
+    "line_end": 207
+  },
+  "Per-Finding Disk-Write Contract": {
+    "line_start": 208,
+    "line_end": 261
+  },
+  "Quick-Tier Finding Disposition": {
+    "line_start": 262,
+    "line_end": 274
+  }
+}

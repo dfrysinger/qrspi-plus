@@ -475,15 +475,98 @@ lint_no_brevity() {
 
 @test "[U14-scope] in-scope set excludes implement/integrate/test/replan/using-qrspi/research/questions/parallelize" {
   # Counter-assertion: no in-scope path should match these out-of-scope skill slugs.
+  # Uses slug_extractor (anchored to skills/<slug>/) to avoid false positives from
+  # ancestor directory names that happen to contain an exclusion token substring.
+  local excluded_slugs=(implement integrate test replan using-qrspi research questions parallelize)
   local f
   for f in "${IN_SCOPE_FILES[@]}"; do
-    [[ "$f" != *"/implement/"* ]]
-    [[ "$f" != *"/integrate/"* ]]
-    [[ "$f" != *"/test/"* ]]
-    [[ "$f" != *"/replan/"* ]]
-    [[ "$f" != *"/using-qrspi/"* ]]
-    [[ "$f" != *"/research/"* ]]
-    [[ "$f" != *"/questions/"* ]]
-    [[ "$f" != *"/parallelize/"* ]]
+    local slug
+    slug="$(slug_extractor "$f")"
+    local excl
+    for excl in "${excluded_slugs[@]}"; do
+      [[ "$slug" != "$excl" ]]
+    done
   done
+}
+
+# =============================================================================
+# Slug extractor — derives the skill slug from the path segment immediately
+# after `skills/`. Returns empty string when `skills/` is absent in the path.
+# This anchored extraction eliminates the false-positive class where an ancestor
+# directory name happens to contain an exclusion-token substring.
+# =============================================================================
+
+# slug_extractor <path>
+# Prints the path segment immediately following `skills/`, or nothing when
+# `skills/` is absent. No trailing slash in the output.
+slug_extractor() {
+  local path="$1"
+  # Use awk to split on "/" and find the segment after "skills".
+  printf '%s' "$path" | awk -F'/' '
+    {
+      for (i = 1; i < NF; i++) {
+        if ($i == "skills" && i+1 <= NF) {
+          print $(i+1)
+          exit
+        }
+      }
+    }
+  '
+}
+
+@test "[U14-slug] confusable-prefix: path with integrate in ancestor yields slug=goals (u14-lint passes)" {
+  # Fixture: tests/fixtures/u14-worktree-confusable/skills/goals/SKILL.md
+  # The ancestor directory u14-worktree-confusable contains the substring
+  # "integrate" but the skill slug resolves to "goals".
+  local confusable_path="$FIXTURE_DIR/u14-worktree-confusable/skills/goals/SKILL.md"
+  [ -f "$confusable_path" ] || skip "confusable fixture not found (expected at $confusable_path)"
+
+  local slug
+  slug="$(slug_extractor "$confusable_path")"
+  [ "$slug" = "goals" ]
+
+  # u14-lint (no-brevity) must PASS for this path — slug is "goals", not "integrate",
+  # so the exclusion does not fire.
+  local excluded_slugs=(implement integrate test replan using-qrspi research questions parallelize)
+  local excl
+  local slug_excluded=false
+  for excl in "${excluded_slugs[@]}"; do
+    if [ "$slug" = "$excl" ]; then
+      slug_excluded=true
+      break
+    fi
+  done
+  [ "$slug_excluded" = "false" ]
+}
+
+@test "[U14-slug] genuine-integrate: path under skills/integrate/ yields slug=integrate (u14-lint fails)" {
+  # Fixture: tests/fixtures/u14-genuine-integrate/skills/integrate/SKILL.md
+  # The skill slug resolves to "integrate" — the exclusion MUST fire.
+  local genuine_path="$FIXTURE_DIR/u14-genuine-integrate/skills/integrate/SKILL.md"
+  [ -f "$genuine_path" ] || skip "genuine-integrate fixture not found (expected at $genuine_path)"
+
+  local slug
+  slug="$(slug_extractor "$genuine_path")"
+  [ "$slug" = "integrate" ]
+
+  # Slug must match the exclusion list.
+  local excluded_slugs=(implement integrate test replan using-qrspi research questions parallelize)
+  local excl
+  local slug_excluded=false
+  for excl in "${excluded_slugs[@]}"; do
+    if [ "$slug" = "$excl" ]; then
+      slug_excluded=true
+      break
+    fi
+  done
+  [ "$slug_excluded" = "true" ]
+}
+
+@test "[U14-slug] no-skills-segment: path without skills/ yields empty slug (no exclusion match)" {
+  # Boundary case: a path that does not contain the skills/ segment at all
+  # must yield an empty slug so no exclusion fires.
+  local no_skills_path="/tmp/some/other/path/SKILL.md"
+  local slug
+  slug="$(slug_extractor "$no_skills_path")"
+  [ -z "$slug" ]
 }

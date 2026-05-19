@@ -2,6 +2,7 @@
 name: qrspi-research-specialist
 description: Per-question parallel researcher. Answers an assigned research question with objective, factual findings and writes the report directly to disk. Research-isolation invariant binding — never receives goals.md or other-question content.
 model: inherit
+model_role: research-specialist
 tools: Read, Write, Bash, WebFetch, Grep, Glob
 skills: [research-isolation]
 ---

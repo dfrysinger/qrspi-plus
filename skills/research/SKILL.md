@@ -70,6 +70,18 @@ Dispatch parameters (per specialist):
 
 **Research-isolation invariant** — the specialist dispatch carries NO `companion_goals`, NO other-question content, and NO `feedback/research-round-*.md` files. This is structurally enforced — the agent body refuses goals.md / cross-question content if it ever appears in the dispatch prompt. Research isolation prevents confirmation bias.
 
+### Citation-Density Post-Validation Hook (G5; trusted-model re-run path)
+
+Every `qrspi-research-specialist` dispatch is observed at the dispatch boundary by a post-output citation-density validator. The validator runs AFTER the specialist's `q*.md` report is written and BEFORE the report is read by the collation subagent or any downstream consumer. The floor that the validator measures against is the `validators.citation_density_floor:` key in `config.md` (default `0.05` — see the schema documentation in `skills/using-qrspi/SKILL.md` (T01) for the key's full semantics, the citation-counting rule, and the rationale for the default value).
+
+**Above-floor result.** The report proceeds unchanged. The collation subagent reads it on the same schedule as any other specialist output. No re-run, no diagnostic, no telemetry rerun-count increment.
+
+**Below-floor result (first occurrence).** The dispatch re-runs the specialist EXACTLY ONCE on the trusted model (the role's `trusted_path:` route from `config.md`'s `model_routing:` table, OR the trusted-tier default from the routing matrix in `skills/implement/SKILL.md` § G5 Initial Routing Matrix). The re-run carries identical `question_body` and `question_ids` parameters as the original dispatch — only the `(provider, model)` pair changes. The orchestrator increments the per-task `citation_density_rerun_count` field in this task's telemetry record (see `skills/implement/SKILL.md` § Per-Task Telemetry Emission).
+
+**Below-floor result (re-run also below floor).** The validator emits a loud diagnostic naming the below-floor density value, exits non-zero (propagating the failure signal to the Implement orchestrator), and does NOT silently forward the below-floor output to downstream consumers. The non-zero exit is observably distinct from the success path — it is NOT a zero-exit-with-empty-body. The Implement orchestrator treats the non-zero exit as a specialist-dispatch failure and may retry on a different topic angle, escalate to opus, or proceed with degraded output per its BLOCKED escape hatch; the validator never silently degrades.
+
+The dispatch-wrapping contract that consumes this hook (when the wrap fires, how the telemetry rerun-count is incremented, what the orchestrator does with the non-zero exit) is authored in `skills/implement/SKILL.md` § Specialist Citation-Density Validator. This Research section documents the producer-side hook contract that Implement consumes.
+
 ### Collation Subagent (verbatim extraction, not synthesis)
 
 After all per-question research completes, dispatch a **lightweight collation subagent** whose ONLY job is to extract the `## Summary` block from each `q*.md` file verbatim and assemble them into the staging file `research/_collated.md` (which the orchestrator subsequently renames to `research/summary.md` via a single `mv` Bash call). This is mechanical extraction — not synthesis, not re-prose. Each per-question report already carries a structured TL;DR / Key findings / Surprises / Caveats block at its head (see Per-Researcher Subagent template above); the assembled output is just those blocks stitched together in question order, plus a short Cross-References section.

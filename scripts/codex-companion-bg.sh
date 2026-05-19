@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 # codex-companion-bg.sh — non-blocking wrapper around codex-companion.mjs.
 #
+# Caller layout (post-T04, v0.7):
+#   The user-facing entrypoint for Codex reviewer dispatches is the universal
+#   dispatcher `scripts/run-third-party-llm.sh` (codex-broker transport branch).
+#   The dispatcher invokes this script as `launch` (forward stdin prompt) and
+#   then `await <jobId>` (block for the result) and writes the result body to
+#   its --output-file. The thin forwarder `scripts/run-codex-review.sh` no
+#   longer invokes this script directly; it pipes the assembled prompt to the
+#   dispatcher, which chains launch+await internally. This script's launch /
+#   await / JSONL lifecycle behavior is unchanged by the T04 migration; only
+#   the helper-script reference layout described in this header comment has
+#   moved.
+#
 # Subcommands:
 #   launch                        Fork companion `task --background` and print
 #                                 the captured jobId; exit 0 within ~5s.

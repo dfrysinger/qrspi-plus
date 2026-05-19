@@ -135,6 +135,18 @@ Each sub-subagent writes `tasks/task-NN.md`. After all complete, the Plan skill 
 
 Every task spec — whether emitted by the merged-plan subagent or by a per-task sub-subagent — must set `task_type` and `model` in its frontmatter. Assign them in this order, per task. These flags drive Implement-skill routing: `task_type` selects between the TDD implementer and the lightweight implementer; `model` is forwarded as the per-invocation override on the implementer Agent dispatch.
 
+**`task_type` defaulting and dispatch-ordering note.** The `task_type` field drives which Implement-skill dispatch chain fires for the task:
+
+- **Absent `task_type:`** — defaults to the TDD path (test-writer dispatches before implementer, followed by the RED-verification gate; same behavior as `task_type: code`).
+- **`task_type: code`** — TDD path: test-writer dispatches first (authoring failing tests), then the RED-verification gate runs, then the implementer dispatches to reach GREEN. Dispatch order: test-writer → RED gate → implementer.
+- **`task_type: lightweight`** — lightweight-only dispatch: no test-writer, no RED gate. Implement dispatches `qrspi-implementer-lightweight` directly. Dispatch order: implementer only.
+
+Every per-task spec for a TDD task (`task_type: code` or absent) must carry an explicit dispatch-ordering note in its `## Description` or at the top of `## Test Expectations` so the Implement orchestrator reads the ordering without cross-referencing the plan classification section:
+
+> Dispatch order: test-writer first, implementer second (RED-verification gate between).
+
+Specs for `task_type: lightweight` tasks omit this note (no test-writer, no RED gate).
+
 **Step 1 — `task_type`.** Default `code`. Assign `task_type: lightweight` only when **all** target files match one of these globs:
 - `skills/**/SKILL.md`
 - `skills/**/templates/*.md`
@@ -418,7 +430,28 @@ Present merged `plan.md` to the user — overview for approval, task details for
 
 2. **Recommend compaction before splitting:** "Plan approved. This is a good point to compact context (`/compact`) before I split tasks into individual files — the split is mechanical and doesn't need the full conversation history." Wait for the user to compact (or decline), then proceed.
 
-3. **Split:** Split task sections into individual `tasks/task-NN.md` files, then reduce `plan.md` to overview-only, then write `status: approved` in `plan.md` frontmatter. This ensures `tasks/*.md` files exist before `plan.md` is marked approved, avoiding a transient state where downstream skills see an approved plan but no task files.
+3. **Split (post-approval orchestration):** Fan out per-task spec writing, verify file set, reduce plan.md to overview-only, capture `phase_start_commit:`, then write `status: approved` — in this exact transactional order, so an approved `plan.md` is never observable on disk without all corresponding `tasks/task-NN.md` files present.
+
+   The formal per-sub-subagent input/output contract for the fan-out — including the wrapped task-section payload shape, the canonical task-file template, the G7 ID-hygiene contract, the exactly-one-file-per-dispatch output clause, the no-`plan.md`-edits clause, and the atomicity contract on partial returns — lives in `skills/plan/post-approval-split-contract.md`. This skill section is the orchestration site; the contract document is the single source of truth for the dispatch shape.
+
+   **N-threshold carve-out.** Let N = the number of tasks in the approved `plan.md` overview.
+
+   - **N >= 3 (sub-subagent fan-out):** Dispatch one sub-subagent per task in parallel. Each sub-subagent receives:
+     - The task section from `plan.md` (the single `### Task NN: {name}` block), wrapped as an untrusted artifact.
+     - The canonical task-file template (the `tasks/task-NN.md` format from the "Split task file format" section above), carrying all T24 Slice 5 frontmatter fields: `reference_gate:`, `reference_artifact:`, `ui:`, `lift_source:`, plus `conditional:` and `conditional_precondition:` (the T43 conditional-dispatch fields). Sub-subagents must carry these fields verbatim into the emitted `tasks/task-NN.md` frontmatter exactly as authored in the plan.
+     - The G7 ID-Hygiene Contract (the `goal_ids` field is metadata; do NOT echo IDs into the task body prose).
+     - The `output_path`: the absolute path to write (`<artifact_dir>/tasks/task-NN.md`).
+     Each sub-subagent writes exactly one `tasks/task-NN.md` file. Sub-subagents MUST NOT edit `plan.md`. This is the generation-side sub-subagent dispatch shape reused from `### Sub-Subagent Dispatch (Large Plans Only)` above.
+     Rationale: sub-subagent dispatch overhead is justified at N >= 3 because the context saving from parallelism and isolation exceeds the per-dispatch overhead; combined plan + specs for N >= 3 tasks exceeds the 600-line threshold from design line 157 at which main-chat inline writing saturates the review window.
+
+   - **N <= 2 (inline main-chat split):** Write both `tasks/task-01.md` and `tasks/task-02.md` (or just `tasks/task-01.md` for a single-task plan) directly in main chat without dispatching sub-subagents. Combined plan + specs for N <= 2 tasks is estimated at under 600 lines per design line 157; sub-subagent dispatch overhead exceeds the context saving below this threshold.
+
+   **File-count verification (exact-set check, applies to both paths).** After the fan-out (or inline write) completes, verify the exact set of `tasks/task-NN.md` files present. The expected set is `{task-01.md, task-02.md, ..., task-N.md}` with no gaps and no duplicates. Do NOT pass this check by counting files alone — enumerate the actual IDs:
+   - **Duplicate-ID condition:** Two or more files share the same `task-NN` identifier (e.g., two sub-subagents both wrote `tasks/task-03.md`). HALT with a named diagnostic listing the duplicated IDs: `"Split verification failed: duplicate task file(s) detected: task-03.md (2 copies). Resolve before proceeding."` Do NOT write `status: approved`.
+   - **Missing-ID condition:** One or more expected task IDs are absent (e.g., `task-04.md` was not written). HALT with a named diagnostic listing the missing IDs: `"Split verification failed: expected task files not written: task-04.md. Re-run split for missing tasks before proceeding."` Do NOT write `status: approved`.
+   Only when the exact set matches — every expected ID is present exactly once — proceed to the next step.
+
+   After passing verification: reduce `plan.md` to overview-only (remove the `## Task Specs` section and all `### Task NN` blocks — they now live in `tasks/`). Then capture `phase_start_commit:` in `plan.md` frontmatter (see `### phase_start_commit capture at approval time` below). Then write `status: approved` in `plan.md` frontmatter.
 
 **On rejection:** Write the user's feedback and the rejected artifact snapshot to `feedback/plan-round-{NN}.md` (using the standard feedback file format from `using-qrspi`), then launch a new subagent with original inputs + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts from the beginning (the "loop until clean" choice applies to the new round).
 
@@ -463,6 +496,18 @@ model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Cla
 # (Target files are aspirational; deviation discipline lives in the per-task
 #  spec reviewer.)
 #
+# Optional reference-gate binding. MANDATORY pair: when reference_gate: true is
+# set, reference_artifact must also be set; Plan refuses to write the task spec
+# when the pair is incomplete (see Refuse-to-Write Contract below).
+# reference_gate: true
+# reference_artifact: path/to/source-of-truth.md   # required when reference_gate: true
+#
+# Optional UI flag. When ui: true is set, the task emits user-visible UI output.
+# When ui: true AND lift_source: <path> are both set, the task body MUST include
+# a SPEC OVERRIDES SOURCE section (see SPEC OVERRIDES SOURCE below).
+# ui: true
+# lift_source: path/to/existing-source.md          # optional; pair with ui: true
+#
 # Optional visual-fidelity binding block. MANDATORY only on UI-producing tasks
 # when `config.md` carries `visual_fidelity_required: true`; otherwise omit the
 # whole block. The Plan orchestrator's pre-fanout hard-gate (see "Red Flags"
@@ -471,7 +516,8 @@ model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Cla
 # visual_fidelity_check:
 #   wireframe_refs:           # one entry per cited wireframe artifact
 #     - <path-or-URL-to-wireframe>
-#   ui_producing: true        # true on tasks that emit UI output, false otherwise
+#   ui: true                  # true on tasks that emit UI output, false otherwise
+#                             # (replaces the legacy ui_producing field — see Migration below)
 ---
 
 # Task NN: {name}
@@ -484,7 +530,44 @@ model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Cla
   - {behavior 1}
   - {edge case 1}
   - {error condition 1}
+
+<!-- SPEC OVERRIDES SOURCE section — REQUIRED when frontmatter carries both
+     ui: true and lift_source: <path>. List behaviors the implementer must NOT
+     copy from the source and the required target behavior for each.
+     Omit this section when lift_source: is absent. -->
 ```
+
+### SPEC OVERRIDES SOURCE authority
+
+When a per-task spec is authored in `plan.md` (or in a split `tasks/task-NN.md` produced by sub-subagent fan-out), that spec is the authoritative definition of the task's behavior. If a source file referenced by `lift_source:` carries frontmatter or body content that conflicts with the per-task spec — including a stale `visual_fidelity_check.ui_producing` field, a legacy `lift_source` value, or any field that contradicts the spec's stated behavior — **the spec wins**. The implementer rewrites the source to match the spec, not the reverse.
+
+This authority statement is load-bearing for every Slice 5 consumer: Structure (T25), Parallelize (T26), Implement (T27), the visual-fidelity reviewer (T28), and the reviewer-protocol/design-skill checklist (T29) all key on the per-task spec's frontmatter shape. When a source file's stale frontmatter disagrees with a spec's `ui: true` or `reference_gate: true` declaration, the implementer applies the spec's value and drops the source's conflicting field.
+
+### Refuse-to-Write Contract
+
+The Plan orchestrator refuses to write (or materialize post-approval) a task spec when either paired-field invariant is violated:
+
+**Pair 1 — Reference-gate pair:**
+- `reference_gate: true` is present in the task spec **AND** `reference_artifact:` is absent → refuse, surface: `"Plan refuse-to-write: task NN carries reference_gate: true without reference_artifact — add reference_artifact: <path> or remove reference_gate."`
+- `reference_artifact:` is present **AND** `reference_gate: true` is absent → refuse, surface: `"Plan refuse-to-write: task NN carries reference_artifact without reference_gate: true — add reference_gate: true or remove reference_artifact."`
+
+**Pair 2 — UI+lift-source pair:**
+- `ui: true` AND `lift_source: <path>` are both present **AND** the task body contains no `SPEC OVERRIDES SOURCE` section → refuse, surface: `"Plan refuse-to-write: task NN carries ui: true and lift_source: <path> without a SPEC OVERRIDES SOURCE body section — add the section listing behaviors not to copy and required target behavior."`
+
+Multiple violations in one plan are reported together before any task spec is written, so the author fixes them in a single pass. The refusal applies both to initial plan authoring and to the post-approval sub-subagent materialization of `tasks/task-NN.md` files.
+
+Task specs with **none** of `reference_gate:`, `reference_artifact:`, `ui:`, or `lift_source:` are written and processed without error, produce no paired-field diagnostic, trigger no reference-gate pause, and trigger no visual-fidelity reviewer dispatch — behaving identically to a pre-Slice-5 task spec.
+
+### Migration: `visual_fidelity_check.ui_producing` → top-level `ui:`
+
+Pre-Slice-5 task specs may carry a `visual_fidelity_check.ui_producing: true` field. When Plan encounters this field in a task spec during review or post-approval split:
+
+1. Promote the value to a top-level `ui: true` field in the task frontmatter.
+2. Remove the `ui_producing` field from inside the `visual_fidelity_check:` block.
+3. Preserve all other `visual_fidelity_check:` sub-fields (e.g., `wireframe_refs:`) unchanged.
+4. Log the migration in the DONE report as a one-line note per affected task.
+
+This is the one replacement-not-additive field change in Slice 5 per design Decision 10. After migration, the `visual_fidelity_check:` block no longer carries `ui_producing`; the canonical `ui:` top-level field is the single source of truth for whether a task emits UI output.
 
 **ID-Hygiene Contract.** QRSPI-internal traceability lives in the YAML frontmatter `goal_ids` field — the **metadata block** the implementer subagent reads but does NOT echo into the work product. The canonical surface list (strict surfaces and the comment/test split rule) lives in `agents/qrspi-implementer.md` § ID Hygiene and is reviewed by `agents/qrspi-code-quality-reviewer.md` § 11; this contract defers to those sites rather than re-enumerating, so the surface list has a single source of truth. Plan's responsibility here is upstream: do NOT add `Target satisfies:`, `Goals addressed:`, `Closes <goal-ID>`, `per <decision-ID>`, or similar QRSPI-internal-ID-bearing prose to the body of the task spec — those phrasings invite the implementer to copy IDs into the work product. The body's Description, Test expectations, and supporting bullets must read as standalone work specifications grounded in observable behavior; goal traceability is a metadata concern, not a body concern. PR-body `Closes #N` (external tracker IDs only) remains valid at commit/PR altitude.
 
@@ -544,6 +627,8 @@ If compaction was not done before splitting (user declined), recommend it now: "
 - Phase boundaries don't align with the design's phase definitions
 - Quick-fix plan has more than one task (quick fix = single task by definition)
 - `config.md` carries `visual_fidelity_required: true` and a task with `visual_fidelity_check.ui_producing: true` lacks a non-empty `visual_fidelity_check.wireframe_refs` list (refuses plan-review fan-out — see "Visual-fidelity hard-gate" below)
+- A task spec carries `reference_gate: true` without a matching `reference_artifact:` field, or carries `reference_artifact:` without `reference_gate: true` (paired-field violation — Plan refuses to write the task spec; see Refuse-to-Write Contract above)
+- A task spec carries both `ui: true` and `lift_source: <path>` without a `SPEC OVERRIDES SOURCE` body section (paired-field violation — Plan refuses to write the task spec; see Refuse-to-Write Contract above)
 
 ### Visual-fidelity hard-gate (pre-fanout refusal condition)
 

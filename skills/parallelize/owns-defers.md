@@ -7,6 +7,7 @@ This is the locked rule set the scope-reviewer dispatch consumes (Read by the `q
 - Wave membership and Wave bases, the Wave dependency graph, the symbolic Branch Map, and the Stage Commits table when multi-parent dependencies require stage commits.
 - The Mermaid dependency graph rendered into `parallelization.md`.
 - The Execution Mode decision (sequential / parallel / hybrid) with one-sentence rationale.
+- **Worktree-Aware Setup Validation (advisory surface only):** Parallelize surfaces remediation guidance when task file paths, branch-naming patterns, or worktree conventions indicate a setup prerequisite that Implement must satisfy before the first Wave can begin. Parallelize documents the finding in `parallelization.md` so Implement can act on it. Parallelize does NOT auto-patch `parallelization.md` or perform the setup itself — actual worktree creation, branch creation, baseline-test execution, and on-disk config edits remain with Implement (see DEFERS below).
 
 ### Parallelize DEFERS
 
@@ -16,3 +17,4 @@ This is the locked rule set the scope-reviewer dispatch consumes (Read by the `q
 - Phasing decisions, vertical slices, Iron Law 1 rationale, the Phase 1 PoC guideline, roadmap maintenance — owned by Phasing.
 - Concrete commit hashes, branch creation, worktree creation, baseline tests, runtime-injected `task-00` — owned by Implement at runtime; Parallelize records only symbolic bases.
 - `review_depth` / `review_mode` / other runtime-only review configuration — owned by Implement (written into `config.md` at phase start).
+- Worktree creation, branch creation, baseline-test execution, and on-disk `config.md` edits — owned by Implement even when Parallelize surfaces a Worktree-Aware Setup Validation finding. Parallelize's responsibility ends at surfacing the remediation guidance; Implement performs the work.
