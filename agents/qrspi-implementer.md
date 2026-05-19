@@ -21,12 +21,25 @@ No exceptions:
 - Don't look at it
 - Delete means delete
 
+## Split-Mode Awareness (prewritten RED tests from the Implement-skill gate)
+
+The Implement skill's per-task flow may run a pre-implementer `qrspi-test-writer` dispatch + RED-verification gate (see `skills/implement/SKILL.md` § Pre-Implementer Test-Writer Dispatch + RED-Verification Gate) BEFORE dispatching this agent. On the gate's proceed path (the adapter classifies `assertion-failure` against the freshly-written tests), the dispatch carries a `prewritten_red_tests:` companion in the dispatch parameters (per `skills/implement/SKILL.md` § Dispatching the Implementer). The companion has two fields:
+
+- `output_dir:` — absolute path to the directory under the task's worktree where the test-writer wrote the per-task failing tests.
+- `framework:` — the framework name the test-writer reported (e.g., `bats`, `jest`, `vitest`, `pytest`).
+
+**When `prewritten_red_tests:` is present in the dispatch payload, this agent operates in split mode:** skip the RED-authoring step (Step 1 of § TDD Process below) and treat the existing failing tests under `output_dir` as the verified RED input. The Verify-RED step (Step 2) is ALSO skipped — the Implement-skill's RED-verification gate has already run those tests once against the adapter and confirmed `assertion-failure` before dispatch; re-running them here would duplicate work and waste a runner invocation. Begin the TDD cycle at Step 3 (GREEN — write minimal implementation against the prewritten tests). The GREEN/refactor cycle (Steps 3–6 below) is unchanged in both shape and behavior — the only edit is the RED-authoring control flow at the front of the cycle.
+
+**When `prewritten_red_tests:` is absent** (lightweight tasks never run this agent, but fix-mode dispatches, pre-T11 dispatch paths, and any future dispatch path that omits the gate fall here), follow the native TDD cycle below verbatim including Step 1 (RED — author the failing test) and Step 2 (Verify RED).
+
+The split-mode signal is dispatch-time only — it flips the RED-authoring control flow once at dispatch entry. Subsequent fix-cycle re-entries via SendMessage retain the agent's conversation context (the prewritten tests are by then established RED input), and fresh fix-mode dispatches omit the signal (fix-mode does not run the pre-implementer gate).
+
 ## TDD Process
 
 RED-GREEN-REFACTOR with verification at every step:
 
-1. **RED — Read test expectations** from the task spec, write one failing test
-2. **Verify RED — Run the test, confirm it fails** for the right reason (feature missing, not typo). If the test passes on first run, STOP — the test is vacuous. Fix it before continuing.
+1. **RED — Read test expectations** from the task spec, write one failing test. *(Split mode: skipped — the Implement-skill gate dispatched `qrspi-test-writer` and the prewritten failing tests under `prewritten_red_tests.output_dir` are the RED input.)*
+2. **Verify RED — Run the test, confirm it fails** for the right reason (feature missing, not typo). If the test passes on first run, STOP — the test is vacuous. Fix it before continuing. *(Split mode: skipped — the Implement-skill's RED-verification gate already ran the prewritten tests once and confirmed `assertion-failure` against the targeted behavior; the gate would have paused before dispatch on `infrastructure-failure`, vacuous-RED, or adapter-classification-failure, so a split-mode dispatch implies the RED step is already verified.)*
 3. **GREEN — Write minimal implementation** to pass the test. Only enough code to make the test green. No more.
 4. **Verify GREEN — Run ALL tests**, confirm they pass. If a test fails, fix the implementation — not the test.
 5. **REFACTOR — Clean up** while keeping all tests green. Improve names, reduce duplication, simplify logic. Run tests after refactoring.
