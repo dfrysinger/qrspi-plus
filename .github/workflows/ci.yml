@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'qrspi/**'
+      - '*/issue-*'
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (shellcheck + bash32 ban-list)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: |
+          find hooks scripts tests/helpers \
+            \( -name '*.sh' -o -name '*.bash' \) \
+            -print0 \
+          | xargs -0 shellcheck --shell=bash
+
+      - name: Option B ban-list grep (bash 4+ constructs)
+        run: |
+          set +e
+          hits=$(find hooks scripts tests/helpers \
+            \( -name '*.sh' -o -name '*.bash' \) \
+            -print0 \
+          | xargs -0 grep -En \
+              -e '\bmapfile\b' \
+              -e '\bdeclare -A\b' \
+              -e '\$\{[^}]*,,\}' \
+              -e '\$\{[^}]*\^\^\}' \
+              -e '\bcoproc\b' \
+              -e '\bwait -n\b' \
+          2>/dev/null)
+          if [ -n "$hits" ]; then
+            echo "ban-list: bash 4+ constructs detected (bash 3.2 portability violation):"
+            echo "$hits"
+            exit 1
+          fi
+          echo "ban-list: clean"
+
+  bash32:
+    name: BATS under bash 3.2
+    runs-on: ubuntu-latest
+    container:
+      image: bash:3.2@sha256:3ecad660de2f2d5a53fe7bc4afebecdddb36a90c71702a9a7b7baf1fcf4feedd
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install runtime dependencies
+        run: |
+          apk add --no-cache \
+            bash \
+            bats \
+            jq \
+            yq \
+            coreutils \
+            grep \
+            findutils
+
+      - name: Run unit BATS suite
+        run: bats --tap tests/unit/
+
+      - name: Run acceptance BATS suite
+        run: bats --tap tests/acceptance/
