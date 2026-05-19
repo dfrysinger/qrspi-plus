@@ -13,7 +13,7 @@
   },
   "Route Templates": {
     "line_start": 66,
-    "line_end": 115
+    "line_end": 125
   },
   "Mid-Pipeline Route Change": {
     "line_start": 116,
@@ -49,7 +49,7 @@
   },
   "Mid-Pipeline Entry": {
     "line_start": 282,
-    "line_end": 285
+    "line_end": 305
   },
   "Validation and Repair": {
     "line_start": 286,
@@ -65,7 +65,7 @@
   },
   "Config File (`config.md`)": {
     "line_start": 349,
-    "line_end": 412
+    "line_end": 507
   },
   "Dispatch routing blocks": {
     "line_start": 413,
@@ -73,7 +73,7 @@
   },
   "Config Validation Procedure": {
     "line_start": 508,
-    "line_end": 511
+    "line_end": 626
   },
   "When config.md is missing entirely": {
     "line_start": 512,
@@ -101,7 +101,7 @@
   },
   "Standard Review Loop": {
     "line_start": 627,
-    "line_end": 662
+    "line_end": 670
   },
   "Fix-altitude rule (F-5)": {
     "line_start": 663,
@@ -113,7 +113,7 @@
   },
   "Review-Loop Pause Gate": {
     "line_start": 1056,
-    "line_end": 1059
+    "line_end": 1103
   },
   "BATCH-WITH-OVERRIDES UI contract": {
     "line_start": 1060,
@@ -143,7 +143,7 @@
     "line_start": 1144,
     "line_end": 1163
   },
-  "Common Rationalizations \u2014 STOP": {
+  "Common Rationalizations — STOP": {
     "line_start": 1164,
     "line_end": 1178
   },
@@ -151,7 +151,7 @@
     "line_start": 1179,
     "line_end": 1184
   },
-  "Pipeline Iron Laws \u2014 Final Reminder": {
+  "Pipeline Iron Laws — Final Reminder": {
     "line_start": 1185,
     "line_end": 1207
   }

@@ -105,8 +105,30 @@ const lines = fs.readFileSync(src, "utf8").split("\n");
 const totalLines = lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
 
 const headings = []; // {text, level, lineStart}
+// Track fenced-code-block state so that "## Heading" lines INSIDE a fenced
+// block (e.g., a markdown template example inside ```markdown ... ```) are
+// treated as content, not as document headings. A fence opener is a line
+// whose first non-space character sequence is exactly ``` or ~~~ (optionally
+// followed by an info string); the matching closer is the same fence char.
+let inFence = false;
+let fenceChar = "";
 for (let i = 0; i < lines.length; i++) {
   const line = lines[i];
+  const fenceMatch = /^(\s*)(```+|~~~+)(.*)$/.exec(line);
+  if (fenceMatch) {
+    const thisFenceChar = fenceMatch[2][0]; // "`" or "~"
+    if (!inFence) {
+      inFence = true;
+      fenceChar = thisFenceChar;
+    } else if (thisFenceChar === fenceChar) {
+      // Only a matching fence character closes the block; a ``` inside a
+      // ~~~ fence (or vice versa) is content, not a closer.
+      inFence = false;
+      fenceChar = "";
+    }
+    continue;
+  }
+  if (inFence) continue;
   const m2 = /^##\s+(.+)$/.exec(line);
   const m3 = /^###\s+(.+)$/.exec(line);
   if (m3) {

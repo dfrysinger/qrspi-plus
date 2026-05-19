@@ -9,7 +9,7 @@
   },
   "Artifact Gating": {
     "line_start": 20,
-    "line_end": 40
+    "line_end": 50
   },
   "Config Validation": {
     "line_start": 41,
@@ -29,7 +29,7 @@
   },
   "Process": {
     "line_start": 81,
-    "line_end": 82
+    "line_end": 613
   },
   "Plan Overview Subagent": {
     "line_start": 83,
@@ -45,78 +45,78 @@
   },
   "Per-Task Classification (`task_type` and `model`)": {
     "line_start": 134,
-    "line_end": 163
+    "line_end": 175
   },
   "Plan Document Structure (During Review)": {
-    "line_start": 164,
-    "line_end": 225
+    "line_start": 176,
+    "line_end": 237
   },
   "Project Environment Fields": {
-    "line_start": 226,
-    "line_end": 234
+    "line_start": 238,
+    "line_end": 246
   },
   "Plan Reviewer Agents": {
-    "line_start": 235,
-    "line_end": 250
+    "line_start": 247,
+    "line_end": 262
   },
   "Review Round": {
-    "line_start": 251,
-    "line_end": 410
+    "line_start": 263,
+    "line_end": 422
   },
   "Human Gate": {
-    "line_start": 411,
-    "line_end": 424
+    "line_start": 423,
+    "line_end": 457
   },
   "Quick-Fix Auto-Approve Branch": {
-    "line_start": 425,
-    "line_end": 442
+    "line_start": 458,
+    "line_end": 475
   },
   "Merge/Split Mechanics": {
-    "line_start": 443,
-    "line_end": 506
+    "line_start": 476,
+    "line_end": 539
   },
   "SPEC OVERRIDES SOURCE authority": {
-    "line_start": 507,
-    "line_end": 512
+    "line_start": 540,
+    "line_end": 545
   },
   "Refuse-to-Write Contract": {
-    "line_start": 513,
-    "line_end": 527
-  },
-  "Migration: `visual_fidelity_check.ui_producing` \u2192 top-level `ui:`": {
-    "line_start": 528,
-    "line_end": 555
-  },
-  "Artifacts": {
-    "line_start": 556,
+    "line_start": 546,
     "line_end": 560
   },
-  "`phase_start_commit` capture at approval time": {
+  "Migration: `visual_fidelity_check.ui_producing` → top-level `ui:`": {
     "line_start": 561,
-    "line_end": 568
+    "line_end": 588
+  },
+  "Artifacts": {
+    "line_start": 589,
+    "line_end": 593
+  },
+  "`phase_start_commit` capture at approval time": {
+    "line_start": 594,
+    "line_end": 601
   },
   "Terminal State": {
-    "line_start": 569,
-    "line_end": 580
+    "line_start": 602,
+    "line_end": 613
   },
-  "Red Flags \u2014 STOP": {
-    "line_start": 581,
-    "line_end": 599
+  "Red Flags — STOP": {
+    "line_start": 614,
+    "line_end": 642
   },
   "Visual-fidelity hard-gate (pre-fanout refusal condition)": {
-    "line_start": 600,
-    "line_end": 609
+    "line_start": 633,
+    "line_end": 642
   },
-  "Common Rationalizations \u2014 STOP": {
-    "line_start": 610,
-    "line_end": 623
+  "Common Rationalizations — STOP": {
+    "line_start": 643,
+    "line_end": 656
   },
   "Worked Example": {
-    "line_start": 624,
-    "line_end": 661
+    "line_start": 657,
+    "line_end": 694
   },
-  "Iron Laws \u2014 Final Reminder": {
-    "line_start": 662,
-    "line_end": 672
+  "Iron Laws — Final Reminder": {
+    "line_start": 695,
+    "line_end": 705
   }
 }
