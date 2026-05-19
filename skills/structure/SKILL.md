@@ -121,6 +121,23 @@ interface FooService {
 <!-- Per-section guidance: workflow file structure, test commands, lint config. Present only if Design noted CI setup. Bullets for the command list; one paragraph maximum for rationale. -->
 
 {Workflow file structure, test commands, lint config}
+
+## UI Reference Affordances (required when any task carries lift_source:; omit otherwise)
+
+<!-- Per-section guidance: record once per release; do NOT derive per-task. Three affordances required:
+     1. Sibling reference repo — path, pinned commit, or scratch directory where the coded prototype lives.
+     2. Lift-codemod transformation — token import codemod or mechanical lift recipe that translates source tokens into the target's design-system vocabulary.
+     3. Image-asset pipeline — where reference PNG/SVG/PDF artifacts live and how they reach the target tree.
+     Consumer contract: T28's visual-fidelity reviewer Reads this section to ground lift-verbatim-vs-re-derive judgments. -->
+
+### Sibling Reference Repo
+{Path to the sibling repo, scratch directory, or pinned upstream commit that serves as the coded-prototype source for lift tasks}
+
+### Lift-Codemod Transformation
+{Token import codemod or mechanical recipe (e.g., `sed -i 's/OldComponent/NewComponent/g'`) that translates source tokens to the target design-system vocabulary}
+
+### Image-Asset Pipeline
+{Location of reference PNG/SVG/PDF artifacts and the step that copies or links them into the target tree}
 ````
 
 ### Review Round
@@ -238,7 +255,15 @@ Present `structure.md` to the user — "hammer on it" review point alongside Des
 
 When presenting Mermaid diagrams (dependency graphs, architectural diagrams, parallelization plans), write the diagram to the artifact file (e.g., `structure.md` for architecture diagrams, `parallelization.md` for dependency graphs) and direct the user to open the file. Do not paste raw Mermaid syntax into terminal output — it renders as unreadable text in the terminal. Tell the user: "The architecture diagram is in `structure.md` — open it to view the rendered diagram."
 
-On approval, if reviews have not passed clean, note this and ask if they'd like a review loop before finalizing. Then write `status: approved` in frontmatter.
+On approval, if reviews have not passed clean, note this and ask if they'd like a review loop before finalizing.
+
+**`lift_source:` gate (before writing `status: approved`):** Before marking `structure.md` approved, scan the current release's task specs for any task carrying `lift_source:` in its frontmatter. If any such task exists and `structure.md` does NOT contain a `## UI Reference Affordances` section, REFUSE to write `status: approved` and emit a named refusal:
+
+> `structure: approval refused — plan contains a task with lift_source: but structure.md is missing the ## UI Reference Affordances section. Add the section (sibling reference repo, lift-codemod transformation, image-asset pipeline) before approving.`
+
+This refusal is non-negotiable. The Structure skill cannot mark `structure.md` approved while a `lift_source:` task exists without the affordances section that T28's visual-fidelity reviewer requires.
+
+Then write `status: approved` in frontmatter.
 
 On rejection, write the user's feedback and the rejected artifact snapshot to `feedback/structure-round-{NN}.md` (using the standard feedback file format from `using-qrspi`), then launch a new subagent with original inputs + **all** prior feedback files (not just the latest round). After re-generation, the review cycle restarts.
 
@@ -267,6 +292,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — structure", de
 - CI pipeline structure is needed (greenfield or no existing CI) but not defined
 - Interfaces use placeholder types ("any", "object", "TBD")
 - Pasting Mermaid diagram syntax directly into terminal output (user cannot read it)
+- Plan contains a task with `lift_source:` but `structure.md` lacks `## UI Reference Affordances` — do NOT approve; emit the named refusal (see Human Gate above)
 
 ## Common Rationalizations — STOP
 
