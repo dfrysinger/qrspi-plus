@@ -432,6 +432,8 @@ Present merged `plan.md` to the user — overview for approval, task details for
 
 3. **Split (post-approval orchestration):** Fan out per-task spec writing, verify file set, reduce plan.md to overview-only, capture `phase_start_commit:`, then write `status: approved` — in this exact transactional order, so an approved `plan.md` is never observable on disk without all corresponding `tasks/task-NN.md` files present.
 
+   The formal per-sub-subagent input/output contract for the fan-out — including the wrapped task-section payload shape, the canonical task-file template, the G7 ID-hygiene contract, the exactly-one-file-per-dispatch output clause, the no-`plan.md`-edits clause, and the atomicity contract on partial returns — lives in `skills/plan/post-approval-split-contract.md`. This skill section is the orchestration site; the contract document is the single source of truth for the dispatch shape.
+
    **N-threshold carve-out.** Let N = the number of tasks in the approved `plan.md` overview.
 
    - **N >= 3 (sub-subagent fan-out):** Dispatch one sub-subagent per task in parallel. Each sub-subagent receives:
