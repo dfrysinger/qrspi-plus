@@ -156,6 +156,27 @@ Before reporting DONE or DONE_WITH_CONCERNS, run one combined scan over the comm
 - **Reviewer visibility is structurally enforced via two channels:** (a) the DONE-report file is passed as a companion parameter on every per-task reviewer dispatch, so the reviewer's pre-flight reads the DONE-report alongside the artifact under review; (b) the per-task reviewer dispatch site explicitly lists the DONE-report file path so reviewers can re-Read it directly. Both channels carry the unacknowledged-hit data, ensuring reviewer visibility is not nominal.
 - A reviewer that finds an unacknowledged hit in the artifact is expected to raise it as a finding. An acknowledged hit with stated rationale is resolved at the implementer's discretion.
 
+## Commit hygiene invariants
+
+The three invariants below are architectural properties the implementer commit cycle MUST satisfy across every commit it produces. They compose — any one alone is fragile against the others being absent. They exist to eliminate the recurring regression where implementers accidentally committed `.qrspi-commit-msg.txt` (the commit-message scratch file) by staging it alongside the task's actual changes.
+
+The file-based commit-message convention (`git commit -F <scratch>`) is preserved. These invariants constrain the ordering and cleanup around that convention; they do not replace it with heredoc-based authoring.
+
+The procedural realization of these invariants (the literal git command sequence and worktree-setup step that honor them) lives in `skills/implement/SKILL.md` and in Plan-authored task specs. This section declares the architectural contract those procedures must satisfy — it does not duplicate the procedural prose.
+
+**Invariant 1 — staging-before-scratch.** The staging operation for a commit cycle completes before the commit-message scratch file is written to the worktree. Because the scratch file does not exist on disk when staging runs, it cannot be accidentally included in that commit's staged set, even when the staging command is broad (e.g., `git add -A`).
+
+**Invariant 2 — cleanup-after-commit.** The scratch file is removed after the commit completes and before any subsequent staging cycle begins. Even when the worktree-local exclude (Invariant 3) is absent — for example, in a worktree set up by a non-QRSPI mechanism — the next staging cycle finds no stale scratch file to include, because cleanup has already run.
+
+**Invariant 3 — worktree-local-exclude.** The scratch file path is excluded via the worktree-local `.git/info/exclude` entry added during worktree setup, independently of any per-commit ordering. This ensures `git status` reports remain deterministic between scratch-file write and removal, and the target repository's committed `.gitignore` is not polluted with QRSPI internals.
+
+**Composition.** The three invariants are designed to reinforce each other:
+- Invariant 1 alone fails when the scratch file is a leftover from a prior cycle (cleaned up by Invariant 2) or when `git add -A` picks up the file before it is removed.
+- Invariant 2 alone fails when the commit was interrupted or when the worktree is reused without re-setup (Invariant 3 catches that case).
+- Invariant 3 alone fails when the exclude entry is missing (non-QRSPI worktree) or when the ordering is wrong (Invariants 1 and 2 cover that).
+
+All three together make the scratch file un-committable by construction.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work.
