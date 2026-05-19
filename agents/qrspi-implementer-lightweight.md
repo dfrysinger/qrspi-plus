@@ -2,6 +2,7 @@
 name: qrspi-implementer-lightweight
 description: Per-task non-TDD implementation subagent for prose / prompt / doc / config tasks (task_type=lightweight). Single-pass implement, no test scaffolding. Per-task model selection is handled by the dispatcher via per-invocation override.
 model: inherit
+model_role: lightweight-implementer
 tools: Read, Write, Edit, Bash, Grep, Glob
 skills: [implementer-protocol]
 ---
