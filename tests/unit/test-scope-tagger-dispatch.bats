@@ -118,11 +118,11 @@ setup() {
 # 3. using-qrspi step 5.5 wires the dispatch
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] using-qrspi/SKILL.md has step 5.5 (scope-tagger dispatch)" {
+@test "[112-PR2] using-qrspi/SKILL.md has step 6 (scope-tagger dispatch)" {
   [ -f "$USING_QRSPI" ]
-  # Must have a numbered step 5.5 in the Apply-fix protocol body.
-  grep -qE '^5\.5\.' "$USING_QRSPI" \
-    || { echo "missing step 5.5 in using-qrspi/SKILL.md"; return 1; }
+  # Must have a numbered step 6 in the Apply-fix protocol body.
+  grep -qE '^6\. \*\*Scope-tagger dispatch' "$USING_QRSPI" \
+    || { echo "missing step 6 (scope-tagger dispatch) in using-qrspi/SKILL.md"; return 1; }
 }
 
 @test "[112-PR2] step 5.5 dispatches qrspi-scope-tagger as a subagent" {
@@ -469,9 +469,9 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   local intg="$REPO_ROOT/skills/integrate/SKILL.md"
   grep -qE 'qrspi-scope-tagger' "$intg" \
     || { echo "integrate/SKILL.md missing qrspi-scope-tagger reference"; return 1; }
-  # Must also reference using-qrspi step 5.5 as the canonical contract.
-  grep -qE 'step.*5\.5|5\.5.*step' "$intg" \
-    || { echo "integrate/SKILL.md does not reference using-qrspi step 5.5"; return 1; }
+  # Must also reference using-qrspi step 6 (scope-tagger dispatch) as the canonical contract.
+  grep -qE 'step 6 \(scope-tagger dispatch\)|step.*6.*scope-tagger' "$intg" \
+    || { echo "integrate/SKILL.md does not reference using-qrspi step 6 (scope-tagger dispatch)"; return 1; }
 }
 
 @test "[140] Integrate tagger dispatch is multi-file (artifact_path: null)" {

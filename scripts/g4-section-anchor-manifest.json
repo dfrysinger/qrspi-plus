@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "G4 Mechanism B section-anchor manifest. Lists every SKILL.md source file that has a colocated .anchors.json index. The T35 refresh script reads this manifest to know which sources to regenerate against. Add new entries here when extending Mechanism B to additional skill files.",
+  "description": "G4 section-anchor manifest. Lists every SKILL.md source file that has a colocated .anchors.json index. The refresh script reads this manifest to know which sources to regenerate against. Add new entries here when extending section-anchor indexing to additional skill files.",
   "entries": [
     {
       "source": "skills/reviewer-protocol/SKILL.md",

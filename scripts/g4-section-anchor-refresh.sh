@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# g4-section-anchor-refresh.sh — G4 Mechanism B section-anchor index refresh.
+# g4-section-anchor-refresh.sh — G4 section-anchor index refresh.
 #
 # Reads scripts/g4-section-anchor-manifest.json, walks every (source, index)
 # pair, regenerates the <source>.anchors.json file from the source artifact's

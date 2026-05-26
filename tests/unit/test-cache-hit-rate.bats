@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# T36 Slice 7 G4 Mechanism A unit pin — cache-hit-rate, path-conditional.
+# T36 Slice 7 cache-control unit pin — cache-hit-rate, path-conditional.
 #
 # Reads the T33 spike-report deliverable (docs/qrspi/2026-05-17-v07-release/
 # spikes/g4-cache-probe.md) to choose between Path A verification-only and

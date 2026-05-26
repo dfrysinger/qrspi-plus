@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# T36 Slice 7 G4 Mechanism B unit pin — section-anchor index JSON shape.
+# T36 Slice 7 section-anchor unit pin — section-anchor index JSON shape.
 #
 # For each .anchors.json in the T34 manifest (reviewer-protocol, using-qrspi,
 # plan), asserts:

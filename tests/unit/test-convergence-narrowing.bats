@@ -55,13 +55,13 @@ setup() {
 }
 
 # -----------------------------------------------------------------------------
-# 1. Step 7.5 exists with the convergence rule
+# 1. Step 12 exists with the convergence rule
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] using-qrspi has step 7.5 (convergence comparison + ref selection)" {
+@test "[112-PR2] using-qrspi has step 12 (convergence comparison + ref selection)" {
   [ -f "$USING_QRSPI" ]
-  grep -qE '^7\.5\.' "$USING_QRSPI" \
-    || { echo "missing step 7.5 in using-qrspi/SKILL.md"; return 1; }
+  grep -qE '^12\. \*\*Ref selection' "$USING_QRSPI" \
+    || { echo "missing step 12 (ref selection) in using-qrspi/SKILL.md"; return 1; }
 }
 
 @test "[112-PR2] step 7.5 references the convergence rule and ref selection" {
