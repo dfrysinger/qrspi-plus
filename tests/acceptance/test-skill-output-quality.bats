@@ -206,14 +206,11 @@ render_scope_reviewer_prompt() {
 
 # ── Task-31: subagent-prompt agents must not reference /tmp/ at all ──────────
 #
-# The asymmetric pre-tool-use hook walls subagents to
-# `.worktrees/{slug}/(task-NN[a-z]?|baseline)/`. Any subagent-prompt that
-# instructs a subagent to Write/launch from `/tmp/...` fails closed at the
-# hook every invocation. Post-migration (commit 19/22): subagent prompts
-# live in `agents/qrspi-*.md` (the implementer + reviewer agents dispatched
-# per task in a worktree). The cited behavior previously documented in
-# the legacy per-task-orchestrator template now lives in
-# skills/implement/SKILL.md (which orchestrates the per-task dispatch).
+# Subagents dispatched per task are expected to write within their assigned
+# worktree (`.worktrees/{slug}/(task-NN[a-z]?|baseline)/`), not into
+# `/tmp/...` scratch paths. Subagent prompts live in `agents/qrspi-*.md`
+# (the implementer + reviewer agents dispatched per task). This invariant
+# is documented in skills/implement/SKILL.md and asserted here.
 
 @test "task-31 — no implementer/reviewer subagent file under agents/ references /tmp/" {
   local agents_dir="$ROOT/agents"
@@ -224,12 +221,8 @@ render_scope_reviewer_prompt() {
 }
 
 @test "task-31 — implement SKILL.md does not reference /tmp/ scratch paths" {
-  # Post-migration (commit 19/22): the legacy per-task-orchestrator template
-  # (which formerly documented the worktree-local `.codex-prompts/` scratch
-  # path contract) no longer exists. The remaining load-bearing assertion
-  # is the negative one: the orchestrator must NOT direct subagents at
-  # `/tmp/...` paths, since the asymmetric pre-tool-use hook walls subagents
-  # to worktree-internal paths.
+  # The orchestrator must not direct subagents at `/tmp/...` paths;
+  # subagents write within their assigned worktree.
   local f="$ROOT/skills/implement/SKILL.md"
   [ -f "$f" ]
   run grep -n '/tmp/' "$f"
