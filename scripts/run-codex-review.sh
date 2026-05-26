@@ -174,9 +174,13 @@ require_flag "round"        "$ROUND"
 # New required flags for the dispatcher hand-off. Without --artifact-dir
 # the dispatcher would exit 1 per T03's required-flag contract — surface
 # that as a shim-side diagnostic so callers see the missing flag clearly.
-require_flag "model"        "$MODEL"
-require_flag "output-file"  "$OUTPUT_FILE"
-require_flag "artifact-dir" "$ARTIFACT_DIR"
+# Dispatch-only: --dry-run prints the assembled prompt and never invokes
+# the dispatcher, so these flags are optional in that path.
+if [[ "$DRY_RUN" != "true" ]]; then
+  require_flag "model"        "$MODEL"
+  require_flag "output-file"  "$OUTPUT_FILE"
+  require_flag "artifact-dir" "$ARTIFACT_DIR"
+fi
 
 # --output-dir must be absolute (load-bearing for agent-side Phase Routing
 # fail-loud substring check on /reviews/test/).

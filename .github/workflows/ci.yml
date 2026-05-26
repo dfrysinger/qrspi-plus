@@ -64,11 +64,9 @@ jobs:
     name: BATS under bash 3.2
     runs-on: ubuntu-latest
     container:
-      # bash:3.2 tag (unpinned). The previous sha256:3ecad660... pin was wrong
-      # at land time — the manifest never existed on Docker Hub, so every CI
-      # run hit "manifest unknown". Unpinning to the tag lets the job run; a
-      # follow-up issue tracks re-pinning to a current SHA once one is verified.
-      image: bash:3.2
+      # bash:3.2 manifest list (multi-arch) — verified against
+      # hub.docker.com/v2/repositories/library/bash/tags/3.2 (2026-04-18).
+      image: bash:3.2@sha256:a11f59667c0a9d51724e88ebebac74b208f4177e36a33ad80dd23436e70f6115
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2

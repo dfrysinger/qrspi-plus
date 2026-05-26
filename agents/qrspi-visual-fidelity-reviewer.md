@@ -196,7 +196,7 @@ validate each supplied path before reading it:
   sentinel to a path that fails this marker scan. **Architectural residual**: the orchestrator's
   pre-validation gate is the PRIMARY defense against a malformed `round_subdir` write-path —
   the traversal-marker scan alone cannot detect a lexically valid absolute path that points
-  outside the artifact directory (e.g., `/tmp/attacker-owned/`). The agent CANNOT verify
+  outside the artifact directory (e.g., `<attacker-controlled-absolute-path>`). The agent CANNOT verify
   physical containment of `round_subdir` within the artifact tree without a canonicalization
   primitive. This is a documented architectural residual; the orchestrator must perform
   allow-prefix canonicalization of `round_subdir` before dispatch.

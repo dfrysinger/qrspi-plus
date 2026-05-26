@@ -1156,10 +1156,12 @@ scripts/run-codex-review.sh \
 Each invocation prints a single jobId on stdout — main chat captures these for the await + splitter pair below. After every dispatched Codex `launch` returns its jobId, await each one, redirect stdout to a temp file, then run the splitter to materialize per-finding files / clean sentinel under `reviews/tasks/task-NN/round-NN/`:
 
 ```sh
-scripts/codex-companion-bg.sh await <specJobId> > /tmp/codex-stdout-<specJobId>.txt
+codex_stdout="$(mktemp)"
+scripts/codex-companion-bg.sh await <specJobId> > "$codex_stdout"
 if [[ $? -eq 0 ]]; then
-  scripts/codex-finding-splitter.sh /tmp/codex-stdout-<specJobId>.txt reviews/tasks/task-NN/round-NN/ spec-codex
+  scripts/codex-finding-splitter.sh "$codex_stdout" reviews/tasks/task-NN/round-NN/ spec-codex
 fi
+rm -f "$codex_stdout"
 # Repeat the same await + splitter pair for every dispatched jobId this round:
 #   - code-quality-codex, silent-failure-codex, security-codex (correctness — always)
 #   - goal-traceability-codex, test-coverage-codex, type-design-codex, code-simplifier-codex (thoroughness — deep mode only;
@@ -1434,10 +1436,12 @@ scripts/run-codex-review.sh \
 After the Claude reviewer returns, await the captured jobId, redirect stdout to a temp file, then run the splitter to materialize per-finding files / clean sentinel under `reviews/integration/round-NN/`:
 
 ```sh
-scripts/codex-companion-bg.sh await <gateJobId> > /tmp/codex-stdout-<gateJobId>.txt
+gate_stdout="$(mktemp)"
+scripts/codex-companion-bg.sh await <gateJobId> > "$gate_stdout"
 if [[ $? -eq 0 ]]; then
-  scripts/codex-finding-splitter.sh /tmp/codex-stdout-<gateJobId>.txt reviews/integration/round-NN/ implement-gate-codex
+  scripts/codex-finding-splitter.sh "$gate_stdout" reviews/integration/round-NN/ implement-gate-codex
 fi
+rm -f "$gate_stdout"
 # On either failure path (await non-zero OR splitter non-zero), the round
 # directory has zero output for the tag — step 2's schema guard catches it.
 ```

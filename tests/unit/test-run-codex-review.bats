@@ -77,6 +77,68 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
+# Dispatch-only flags: required at dispatch, optional under --dry-run
+#
+# These three pin tests document the design choice that --model,
+# --output-file, and --artifact-dir feed only the dispatcher hand-off
+# (see scripts/run-codex-review.sh near `if [[ "$DRY_RUN" != "true" ]]`).
+# --dry-run prints the assembled prompt and exits — it never invokes the
+# dispatcher — so requiring them in dry-run would conflate two scopes:
+# prompt-assembly invariants (what dry-run tests) vs dispatch invariants
+# (what these flags configure). Reverse this gating by reflex during a
+# future cleanup and you'll re-break the 38 dry-run prompt-shape tests
+# below; these pins surface the design intent at the test layer.
+# ---------------------------------------------------------------------------
+
+@test "dispatch-only flags: --dry-run succeeds without --model / --output-file / --artifact-dir" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "subject_code:" ]]
+}
+
+@test "dispatch-only flags: --model required when NOT --dry-run (dispatch path)" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts"
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "model" ]]
+}
+
+@test "dispatch-only flags: --output-file required when NOT --dry-run (dispatch path)" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --model gpt-5-mini
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "output-file" ]]
+}
+
+@test "dispatch-only flags: --artifact-dir required when NOT --dry-run (dispatch path)" {
+  run "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir /tmp/out \
+    --round 1 \
+    --subject-code "$TMP_DIR/src/foo.ts" \
+    --model gpt-5-mini \
+    --output-file "$TMP_DIR/out.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "artifact-dir" ]]
+}
+
+# ---------------------------------------------------------------------------
 # Prompt-shape assertions (all use --dry-run)
 # ---------------------------------------------------------------------------
 
