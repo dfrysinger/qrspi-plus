@@ -23,10 +23,14 @@
   grep -qE '^## Expected-Reviewer Matrix' skills/reviewer-protocol/SKILL.md
 }
 
-@test "Reviewer-Tag Routing Table enumerates the four #109 role-distinct tags" {
+@test "Expected-Reviewer Matrix enumerates the four #109 role-distinct tags" {
+  # The Routing Table was folded into the Expected-Reviewer Matrix
+  # post-#125 cutover (see test "reviewer-protocol skill carries no
+  # Reviewer-Tag Routing Table" in test-no-legacy-disk-write-references).
+  # All four role-distinct tags must remain enumerated under the Matrix.
   awk '
-    /^## Reviewer-Tag Routing Table/ { in_block=1 }
-    in_block && /^## / && !/Reviewer-Tag Routing Table/ { exit }
+    /^## Expected-Reviewer Matrix/ { in_block=1 }
+    in_block && /^## / && !/Expected-Reviewer Matrix/ { exit }
     in_block { print }
   ' skills/reviewer-protocol/SKILL.md > /tmp/routing.txt
   grep -qF 'quality-claude' /tmp/routing.txt
