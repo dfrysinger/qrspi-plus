@@ -654,17 +654,43 @@ Users can enter the pipeline mid-stream if they already have artifacts from prio
 
 ## Installation
 
-**From a local path:**
+qrspi-plus is a universal plugin: a single repository carrying manifests for
+multiple agentic CLIs. Pick the section for your CLI.
+
+### Claude Code
 
 ```bash
+# From a local path
 claude plugins add /path/to/qrspi-plus
-```
 
-**From GitHub (once published):**
-
-```bash
+# From GitHub (once published)
 claude plugins add github:dfrysinger/qrspi-plus
 ```
+
+Claude reads `.claude-plugin/plugin.json` and auto-discovers `agents/` and
+`skills/`.
+
+### GitHub Copilot CLI
+
+```bash
+copilot plugin install dfrysinger/qrspi-plus
+```
+
+Copilot CLI reads `.github/plugin/plugin.json`, enumerating the 16 skills
+under `skills/` and the 41 agents under `agents/`.
+
+> **Note on direct installs.** The Copilot CLI currently surfaces a
+> deprecation warning when installing from a repo or URL ("only
+> `plugin@marketplace` installs will be supported in a future release").
+> Once a hosting marketplace is published, the install command will become
+> `copilot plugin install qrspi@<marketplace>`. The repo already ships a
+> `.github/plugin/marketplace.json` to make that registration trivial.
+
+### Notes on cross-CLI behavior
+
+- **Agent frontmatter.** Agent files use the Claude scalar `tools: Read, Write, Bash, ...` form. Copilot CLI tolerates this. The same agents work in both CLIs.
+- **`skills:` auto-load directive.** A few agents declare `skills: [reviewer-protocol]` in frontmatter. This is a Claude convention; under Copilot CLI it is informational only and does not auto-load. The agent body still reads cleanly because it dispatches to the skill explicitly where needed.
+- **No hook layer.** qrspi-plus does not register any tool-lifecycle hooks. All enforcement (artifact gating, task allowlists, TDD discipline) is prompt-side, defined in the skills and agent files.
 
 After installation, the `using-qrspi` skill is the entry point. The pipeline activates whenever the user wants to build something.
 
@@ -714,8 +740,11 @@ review_mode: loop
 ```
 qrspi-plus/
 ├── .claude-plugin/
-│   ├── plugin.json                 # Plugin metadata
-│   └── marketplace.json            # Marketplace listing
+│   ├── plugin.json                 # Claude Code plugin manifest
+│   └── marketplace.json            # Claude Code marketplace listing
+├── .github/plugin/
+│   ├── plugin.json                 # GitHub Copilot CLI plugin manifest
+│   └── marketplace.json            # GitHub Copilot CLI marketplace listing
 ├── tests/
 │   ├── unit/                       # 308 unit tests (bats-core)
 │   ├── acceptance/                 # 134 acceptance tests (bats-core)

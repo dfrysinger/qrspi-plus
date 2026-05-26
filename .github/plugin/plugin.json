@@ -17,5 +17,26 @@
     "design",
     "planning",
     "implementation"
+  ],
+  "agents": [
+    "./agents"
+  ],
+  "skills": [
+    "./skills/design",
+    "./skills/goals",
+    "./skills/implement",
+    "./skills/implementer-protocol",
+    "./skills/integrate",
+    "./skills/parallelize",
+    "./skills/phasing",
+    "./skills/plan",
+    "./skills/questions",
+    "./skills/replan",
+    "./skills/research",
+    "./skills/research-isolation",
+    "./skills/reviewer-protocol",
+    "./skills/structure",
+    "./skills/test",
+    "./skills/using-qrspi"
   ]
 }

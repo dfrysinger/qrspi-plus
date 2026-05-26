@@ -1,0 +1,18 @@
+{
+  "name": "qrspi-plus",
+  "owner": {
+    "name": "Daniel Frysinger"
+  },
+  "metadata": {
+    "description": "QRSPI workflow plugin for agentic software development — Goals, Questions, Research, Design, Structure, Plan, Parallelize, Implement, Integrate, Test, Replan",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "qrspi",
+      "description": "QRSPI workflow plugin for agentic software development. 16 skills + 41 specialized reviewer/implementer agents implementing a phased pipeline with TDD enforcement, multi-tier review, and per-phase replan gates.",
+      "version": "0.2.0",
+      "source": "./"
+    }
+  ]
+}
