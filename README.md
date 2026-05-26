@@ -1,8 +1,8 @@
 # qrspi-plus
 
-**A structured agentic development pipeline for Claude Code.**
+**A structured agentic development pipeline for Claude Code and Copilot CLI.**
 
-qrspi-plus is a Claude Code plugin that implements QRSPI — a methodology for agentic software development where every phase produces a reviewable artifact, gets human approval, and runs in isolated context. Based on Human Layer's QRSPI framework, extended with parallelization planning, runtime worktree creation and per-task implementation, tiered code reviews, integration verification, acceptance testing, and between-phase replanning.
+qrspi-plus is a plugin that implements QRSPI — a methodology for agentic software development where every phase produces a reviewable artifact, gets human approval, and runs in isolated context. Based on Human Layer's QRSPI framework, extended with parallelization planning, runtime worktree creation and per-task implementation, tiered code reviews, integration verification, acceptance testing, and between-phase replanning.
 
 ---
 
