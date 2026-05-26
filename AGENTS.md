@@ -139,7 +139,7 @@ The canonical mint logic (any operator can implement this from scratch):
 **Labels** — combine where relevant:
 
 - **Type:** `bug` / `enhancement` / `question` / `documentation`
-- **Area** (where the change lives): `area:hooks`, `area:goals`,
+- **Area** (where the change lives): `area:goals`,
   `area:design`, `area:structure`, `area:plan`, `area:parallelize`,
   `area:implement`, `area:integrate`, `area:test`, `area:replan`,
   `area:state`, `area:codex`, `area:docs`, `area:harness`

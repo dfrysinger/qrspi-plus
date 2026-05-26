@@ -66,14 +66,6 @@ After Plan is approved, the route is locked. Changing it after that point requir
 
 **Structural enforcement over instructional discipline.** Where possible, constraints are enforced architecturally. Research agents never see the goals document (prevents confirmation bias). Implement cannot write production code without a failing test. Review patterns are codified, not suggested.
 
-**Hook-based deterministic enforcement.** Pipeline rules that were previously prompt-instructed are now code-enforced via Claude Code hooks that run on every tool call:
-
-- **Pipeline step ordering:** The PreToolUse hook blocks artifact writes that skip prerequisites. You cannot write `design.md` before `goals.md` is approved -- the hook rejects the tool call with an actionable error message.
-- **Asymmetric target-based enforcement:** The PreToolUse hook treats main chat and dispatched subagents differently based on the dispatch envelope. Main-chat tool calls go through pipeline-ordering checks only. Subagent tool calls (any agent dispatched via the Agent tool) are additionally walled to their assigned worktree at `.worktrees/{slug}/(task-NN[a-z]?|baseline)/` — Write/Edit targets and Bash write targets outside that path are blocked. Enforcement keys on the operation's target path, not on the agent's CWD, so it survives subagent CWD inheritance quirks.
-- **Audit logging:** Hook-driven writes append to `<artifact_dir>/.qrspi/audit.jsonl` (one line per allowed/blocked Write, Edit, or Bash call inside QRSPI scope). Block decisions are logged alongside allow decisions.
-- **Fail-closed security model:** All error paths in the hooks block with actionable messages rather than silently allowing violations.
-- **State management:** `.qrspi/state.json` tracks pipeline progress and the artifact map. `.qrspi/task-NN-runtime.json` files capture mid-task user decisions as runtime overrides.
-
 ---
 
 ## Pipeline Steps
@@ -230,7 +222,7 @@ flowchart LR
 
 ### Step 9: Implement
 
-Runtime owner of branch creation, worktrees, baseline tests, per-task TDD orchestration, and the batch gate. Resolves the symbolic Branch Map from `parallelization.md` to real commits, creates git worktrees forked from those bases, and runs baseline tests. Subagent containment is enforced by the asymmetric pre-tool-use hook (no per-worktree `.claude/settings.json` is written — the hook governs from the dispatch envelope). If baseline tests fail, the user can auto-fix (inject a task-00 that all others depend on), proceed with known failures, or stop. After baseline, Implement orchestrates each task in the wave directly — main chat dispatches an implementer subagent (TDD) and the configured reviewer subagents (parallel) per task, each running in its own worktree. When every task has returned, the batch gate presents the combined results and the user decides whether to release to Integrate (or re-run reviews, or dispatch fix tasks).
+Runtime owner of branch creation, worktrees, baseline tests, per-task TDD orchestration, and the batch gate. Resolves the symbolic Branch Map from `parallelization.md` to real commits, creates git worktrees forked from those bases, and runs baseline tests. If baseline tests fail, the user can auto-fix (inject a task-00 that all others depend on), proceed with known failures, or stop. After baseline, Implement orchestrates each task in the wave directly — main chat dispatches an implementer subagent (TDD) and the configured reviewer subagents (parallel) per task, each running in its own worktree. When every task has returned, the batch gate presents the combined results and the user decides whether to release to Integrate (or re-run reviews, or dispatch fix tasks).
 
 For fix-task batches, Parallelize is skipped. In full-pipeline runs, Implement appends new branch entries to `parallelization.md` directly per its Fix Task Routing rules. In quick-fix runs there is no `parallelization.md`; fix-task subagents fork directly from the feature-branch tip.
 
@@ -248,7 +240,7 @@ flowchart TD
     BF -->|auto-fix| BI["Run task-00 in isolation (baseline-fix),<br>then proceed; remaining tasks depend on its tip"]
     BI --> CW
     F -->|yes| CW[Create per-task worktrees from resolved bases]
-    CW --> H["Per task: dispatch implementer + reviewer subagents<br>(containment enforced by pre-tool-use hook,<br>no per-worktree settings written)"]
+    CW --> H["Per task: dispatch implementer + reviewer subagents"]
 
     subgraph pertask["Per Task"]
         PA[Read test expectations from task spec] --> PB[Write failing tests]
@@ -674,7 +666,7 @@ claude plugins add /path/to/qrspi-plus
 claude plugins add github:dfrysinger/qrspi-plus
 ```
 
-After installation, the plugin's session-start hook automatically loads the `using-qrspi` skill at the beginning of every conversation. The pipeline activates whenever the user wants to build something.
+After installation, the `using-qrspi` skill is the entry point. The pipeline activates whenever the user wants to build something.
 
 ---
 
@@ -724,25 +716,6 @@ qrspi-plus/
 ├── .claude-plugin/
 │   ├── plugin.json                 # Plugin metadata
 │   └── marketplace.json            # Marketplace listing
-├── hooks/
-│   ├── hooks.json                  # Hook registration (SessionStart, PreToolUse, PostToolUse)
-│   ├── run-hook.cmd                # Cross-platform polyglot wrapper
-│   ├── session-start               # Loads using-qrspi + injects skill content at session start
-│   ├── pre-tool-use                # Pipeline step ordering + L1 task boundary enforcement (blocking)
-│   ├── post-tool-use               # Artifact state sync + audit logging (non-blocking)
-│   ├── setup-project-hooks.sh      # Workaround for Claude Code bug #17688
-│   └── lib/                        # Shared hook library modules
-│       ├── artifact.sh             # Artifact path resolution, type detection, phase snapshot/promote
-│       ├── agent.sh                # Subagent vs main-chat detection (envelope agent_id)
-│       ├── artifact-map.sh         # Canonical step-to-file mapping (forward + reverse lookup)
-│       ├── audit.sh                # Target-based JSONL audit logging into <artifact_dir>/.qrspi/audit.jsonl
-│       ├── bash-detect.sh          # Bash file-write detection + universal/subagent destructive-pattern detection
-│       ├── frontmatter.sh          # Generic YAML frontmatter parser (scalars, lists, objects)
-│       ├── pipeline.sh             # Pipeline step definitions, ordering, cascade reset
-│       ├── protected.sh            # Protected path detection
-│       ├── state.sh                # .qrspi/state.json read/write with fail-closed validation
-│       ├── task.sh                 # Active task detection, allowlist resolution, runtime overrides
-│       └── worktree.sh             # Worktree path resolution
 ├── tests/
 │   ├── unit/                       # 308 unit tests (bats-core)
 │   ├── acceptance/                 # 134 acceptance tests (bats-core)
@@ -836,8 +809,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 │   └── phase-NN/              # Archived phase snapshots
 └── .qrspi/
     ├── state.json
-    ├── task-NN-runtime.json
-    └── audit.jsonl
+    └── task-NN-runtime.json
 ```
 
 ---
@@ -846,7 +818,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
 
 Each skill is a `SKILL.md` file containing structured instructions for Claude Code. Skills declare their name, description, required inputs (artifact gating), process flow, review criteria, human gate behavior, and terminal state. The plugin framework loads skills by directory convention -- any directory under `skills/` containing a `SKILL.md` file is registered as a skill.
 
-Skills are invoked with the `qrspi:` prefix (e.g., `qrspi:goals`, `qrspi:design`). The `using-qrspi` entry-point skill is loaded automatically at session start by the session-start hook. It establishes the pipeline context and invokes `qrspi:goals` to begin.
+Skills are invoked with the `qrspi:` prefix (e.g., `qrspi:goals`, `qrspi:design`). The `using-qrspi` entry-point skill establishes the pipeline context and invokes `qrspi:goals` to begin.
 
 Each skill follows a consistent pattern:
 
@@ -885,7 +857,7 @@ All skills include three behavioral directives that override any conversational 
   **Related framework precursors:**
   - [12-Factor Agents](https://hlyr.dev/12fa) — cited in ACE-FCA.
 
-- **Built as a Claude Code plugin** using the skills, hooks, and agent conventions of the Claude Code plugin system.
+- **Built as a Claude Code plugin** using the skills and agent conventions of the Claude Code plugin system.
 
 ### What qrspi-plus Adds
 
@@ -908,7 +880,7 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 | **Design** | Approach selection with rationale, key architectural decisions, trade-offs considered, design-level test strategy, Mermaid system diagrams. Vertical slicing and phase boundaries are owned by Phasing. |
 | **Structure** | Interface definitions (function/class signatures), create vs modify tracking, CI pipeline structure for greenfield projects, phase-scoped file maps |
 | **Plan** | Sub-subagent dispatch for large plans, merge/split lifecycle, quick-fix single-task mode, `pipeline` field on task files, 7 parallel reviewer subagents (1 unified plan-quality + 5 plan-artifact + dedicated `qrspi-plan-scope-reviewer`) |
-| **Parallelize + Implement (split from original Worktree)** | Plan-time dependency graph analysis with parallel/sequential/hybrid execution modes and a symbolic Branch Map (Parallelize); runtime branch resolution, single baseline worktree at `.worktrees/{slug}/baseline/`, baseline tests with auto-fix, per-task worktrees with hook-based subagent containment (no per-worktree settings), per-task implementer dispatch, and batch gate (Implement). Splitting plan-time and runtime restores QRSPI's "one skill = one artifact + one human gate" symmetry. |
+| **Parallelize + Implement (split from original Worktree)** | Plan-time dependency graph analysis with parallel/sequential/hybrid execution modes and a symbolic Branch Map (Parallelize); runtime branch resolution, single baseline worktree at `.worktrees/{slug}/baseline/`, baseline tests with auto-fix, per-task worktrees, per-task implementer dispatch, and batch gate (Implement). Splitting plan-time and runtime restores QRSPI's "one skill = one artifact + one human gate" symmetry. |
 | **Implement** | TDD iron law (no code without failing test), 8 specialized reviewers in correctness/thoroughness tiers, configurable review depth per phase, WHY-not-WHAT commenting discipline with non-technical-reader orientation lean, verbatim review result persistence |
 
 **Infrastructure additions:**
@@ -929,8 +901,6 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 | **Feedback-driven re-generation** | Rejected artifacts capture user feedback + rejected snapshot, new subagent receives full rejection history |
 | **Behavioral directives** | D1 (encourage reviews), D2 (never skip steps), D3 (resist time-pressure shortcuts) defined canonically in `using-qrspi` and applied across all 12 pipeline skills (Goals, Questions, Research, Design, Phasing, Structure, Plan, Parallelize, Implement, Integrate, Test, Replan) |
 | **Durable resume detection** | `replan-pending.md` marker + mid-pipeline entry via artifact scanning for crash recovery |
-| **Hook-based enforcement** | PreToolUse/PostToolUse hooks enforce pipeline ordering, task boundaries, and audit logging deterministically on every tool call -- 11 library modules, fail-closed security model, `.qrspi/state.json` state tracking |
-| **442 hook tests** | 308 unit + 134 acceptance tests using bats-core, covering all enforcement paths and library modules |
 
 ---
 

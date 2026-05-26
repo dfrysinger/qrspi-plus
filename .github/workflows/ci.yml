@@ -34,7 +34,7 @@ jobs:
         # messages where literal `$VAR` is intentional. Keep warnings visible in
         # logs but non-blocking; the ban-list job is the real bash-3.2 backstop.
         run: |
-          find hooks scripts tests/helpers \
+          find scripts tests/helpers \
             \( -name '*.sh' -o -name '*.bash' \) \
             -print0 \
           | xargs -0 shellcheck --shell=bash --severity=error
@@ -42,7 +42,7 @@ jobs:
       - name: Option B ban-list grep (bash 4+ constructs)
         run: |
           set +e
-          hits=$(find hooks scripts tests/helpers \
+          hits=$(find scripts tests/helpers \
             \( -name '*.sh' -o -name '*.bash' \) \
             -print0 \
           | xargs -0 grep -En \

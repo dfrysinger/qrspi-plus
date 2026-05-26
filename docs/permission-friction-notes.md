@@ -1,6 +1,12 @@
 # Permission-Friction Notes
 
-**Status:** Working notes. Not authoritative — open questions need verification before any of this becomes policy. To be expanded after Config Validation menu cleanup completes.
+**Status:** Historical working notes — much of this document premises the
+QRSPI hook layer (`hooks/pre-tool-use`, `hooks/post-tool-use`, `.qrspi/state.json`,
+`.qrspi/audit.jsonl`), which was retired in #191 (follow-up to #108). Category 3
+(QRSPI hook denials), the dangerous-skip table row for it, and the "QRSPI hook
+ergonomics review" mitigation are no longer applicable. The remaining four
+permission-prompt categories described here are still accurate. Preserved for
+context on the original thinking.
 
 **Originated:** 2026-04-25 conversation about reducing approval-prompt interruptions during long agentic sessions.
 

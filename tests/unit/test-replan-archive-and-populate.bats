@@ -398,14 +398,13 @@ extract_step() {
 # ── Task 40: Step 2 reads roadmap from snapshot path, not deleted live path ─
 
 @test "Step 2 (Read roadmap) reads from snapshot path, not the deleted live path" {
-  # Round-3 integration M-1 / cross-cutting F-1: artifact_promote_next_phase
-  # (hooks/lib/artifact.sh) deletes roadmap.md during phase-promote, BEFORE
-  # the archive-and-populate sequence's step 2 runs. The fail-closed clause
-  # ("If roadmap.md is missing OR has no next-phase entries … ABORT") would
-  # fire deterministically every minor-path run if step 2 read from the live
-  # path. artifact_snapshot_phase copies roadmap.md into
-  # phases/phase-{completed_NN}/roadmap.md prior to promote, so step 2 must
-  # read from that snapshot path.
+  # Round-3 integration M-1 / cross-cutting F-1: phase-promote deletes
+  # roadmap.md BEFORE the archive-and-populate sequence's step 2 runs. The
+  # fail-closed clause ("If roadmap.md is missing OR has no next-phase
+  # entries … ABORT") would fire deterministically every minor-path run if
+  # step 2 read from the live path. The snapshot routine copies roadmap.md
+  # into phases/phase-{completed_NN}/roadmap.md prior to promote, so step 2
+  # must read from that snapshot path.
   local step
   step="$(extract_step 2)"
   [ -n "$step" ]
