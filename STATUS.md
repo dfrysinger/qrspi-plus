@@ -1,7 +1,7 @@
 # Active QRSPI-plus agent work
 
 > Each agent edits this file when it starts and finishes a task.
-> See `AGENTS.md` for the full protocol.
+> See `CONTRIBUTING.md` for the full protocol.
 
 ## Active work
 
