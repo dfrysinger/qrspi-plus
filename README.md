@@ -679,7 +679,9 @@ copilot plugin marketplace add dfrysinger/qrspi-plus
 copilot plugin install qrspi@qrspi-plus
 ```
 
-Or install the repo directly:
+Or install the repo directly (shows a deprecation warning — direct
+repo/URL installs are slated for removal in a future Copilot CLI
+release):
 
 ```bash
 copilot plugin install dfrysinger/qrspi-plus
