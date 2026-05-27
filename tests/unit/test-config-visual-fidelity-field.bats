@@ -50,10 +50,10 @@ teardown() {
 @test "visual_fidelity_required is a row in the Fields-that-affect-pipeline-behavior table" {
   awk '
     /^### Fields that affect pipeline behavior/ { in_section=1; next }
-    /^### / && in_section { in_section=0 }
+    /^### / { in_section=0 }
     in_section { print }
   ' "$USING_QRSPI" \
-    | grep -qE '\`visual_fidelity_required\`' \
+    | grep -qE '`visual_fidelity_required`' \
     || { echo "visual_fidelity_required missing from Fields-that-affect-pipeline-behavior validation table or bullet list"; return 1; }
 }
 

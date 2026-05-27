@@ -73,10 +73,10 @@ teardown() {
 @test "question_budget is a row in the Fields-that-affect-pipeline-behavior table" {
   awk '
     /^### Fields that affect pipeline behavior/ { in_section=1; next }
-    /^### / && in_section { in_section=0 }
+    /^### / { in_section=0 }
     in_section { print }
   ' "$USING_QRSPI" \
-    | grep -qE '\`question_budget\`' \
+    | grep -qE '`question_budget`' \
     || { echo "question_budget missing from Fields-that-affect-pipeline-behavior validation table"; return 1; }
 }
 
