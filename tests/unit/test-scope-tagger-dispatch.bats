@@ -216,7 +216,7 @@ setup() {
 @test "[112-PR2] disabled-mode fall-through is documented (skip step 6, no narrowing)" {
   # When scope_tagger_enabled=false: step 6 skipped, step 12 no-op,
   # reviewers fall through to PR-1's full-base-diff behavior.
-  grep -qE 'skipped.*tagger|skip[a-z ]*step 5\.5|tagger dispatch is skipped' "$USING_QRSPI" \
+  grep -qE 'skipped.*tagger|step 6 is skipped|tagger dispatch is skipped' "$USING_QRSPI" \
     || { echo "disabled-mode fall-through not documented"; return 1; }
 }
 
