@@ -79,7 +79,7 @@ setup() {
   echo "$body" | grep -B1 -A1 -F 'Citation-verification Read exception' \
     | grep -qE 'research/q\*\.md' \
     || { echo "design-reviewer body must place 'Citation-verification Read exception' adjacent to research/q*.md scope"; return 1; }
-  # #112 PR-1 carve-out: round-NN.diff Read pattern.
-  echo "$body" | grep -qF 'Diff-File Read Pattern (#112 PR-1 Mechanism A)' \
-    || { echo "design-reviewer body must document the #112 PR-1 diff-file Read pattern"; return 1; }
+  # Diff-file Read pattern carve-out (from #112 PR-1, now named "Diff-File Read Pattern").
+  echo "$body" | grep -qF 'Diff-File Read Pattern' \
+    || { echo "design-reviewer body must document the Diff-File Read Pattern"; return 1; }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# T36 Slice 7 G4 Mechanism A unit pin — dual-flag cache_control emission gate
+# T36 Slice 7 cache-control unit pin — dual-flag cache_control emission gate
 # observed via direct invocation of the T03 universal dispatcher.
 #
 # Invokes scripts/run-third-party-llm.sh against fixture providers exercising

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# T36 Slice 7 G4 Mechanism B unit pin — narrow-read byte-identical contract.
+# T36 Slice 7 section-anchor unit pin — narrow-read byte-identical contract.
 #
 # For each indexed artifact (T34 manifest), fetches at least three sample
 # headings — one near the start (small line_start), one from the middle,

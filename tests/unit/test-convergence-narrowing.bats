@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #
 # #112 PR-2 Mechanism B regression: orchestrator convergence-rule
-# documentation in using-qrspi/SKILL.md step 7.5 + the diff-handling
+# documentation in using-qrspi/SKILL.md step 12 + the diff-handling
 # section.
 #
 # The orchestrator logic is documented prose (executed by main chat at
@@ -10,7 +10,7 @@
 # branch surfaces here.
 #
 # Test scope (per PR-2 spec test plan, table-driven over §2.4 cases):
-#   1. Step 7.5 exists and has the convergence-rule table.
+#   1. Step 12 (ref selection for round NN+1) exists and has the convergence-rule table.
 #   2. Each of the five §2.4 relations is covered:
 #        equal           → narrow to that set
 #        proper subset   → narrow to the BROADER set (safety margin)
@@ -22,7 +22,7 @@
 #   5. Backward-loop reset: reset <ref> to <base-branch> after upstream
 #      cascade.
 #   6. Per-step opt-out: test step never narrows.
-#   7. scope_tagger_enabled=false short-circuits step 7.5 to broaden.
+#   7. scope_tagger_enabled=false short-circuits step 12 to broaden.
 #   8. Missing scope-set short-circuits to broaden (conservative).
 #   9. <ref> selection is dynamic per the table:
 #        narrow → HEAD~1
@@ -37,7 +37,7 @@ setup() {
   export REVIEWER_PROTOCOL="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
 
   # Pull the apply-fix protocol body up through the failure-menu prose so
-  # step 7.5 is in scope (step 7.5 sits between step 10 and the failure menu).
+  # step 12 is in scope (step 12 sits between step 11 and the failure menu).
   PROTOCOL=$(awk '
     /\*\*Apply-fix protocol\.\*\*/ { in_block=1 }
     in_block && /\*\*Verifier-round failure menu/ { exit }
@@ -55,18 +55,18 @@ setup() {
 }
 
 # -----------------------------------------------------------------------------
-# 1. Step 7.5 exists with the convergence rule
+# 1. Step 12 exists with the convergence rule
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] using-qrspi has step 7.5 (convergence comparison + ref selection)" {
+@test "[112-PR2] using-qrspi has step 12 (convergence comparison + ref selection)" {
   [ -f "$USING_QRSPI" ]
-  grep -qE '^7\.5\.' "$USING_QRSPI" \
-    || { echo "missing step 7.5 in using-qrspi/SKILL.md"; return 1; }
+  grep -qE '^12\. \*\*Ref selection' "$USING_QRSPI" \
+    || { echo "missing step 12 (ref selection) in using-qrspi/SKILL.md"; return 1; }
 }
 
-@test "[112-PR2] step 7.5 references the convergence rule and ref selection" {
+@test "[112-PR2] step 12 references the convergence rule and ref selection" {
   echo "$PROTOCOL" | grep -qiE 'convergence' \
-    || { echo "step 7.5 missing 'convergence' reference"; return 1; }
+    || { echo "step 12 missing 'convergence' reference"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
@@ -115,15 +115,15 @@ setup() {
 
 @test "[112-PR2] <full> is documented as a reserved literal token" {
   echo "$PROTOCOL" | grep -qE '<full>' \
-    || { echo "step 7.5 missing <full> reference"; return 1; }
+    || { echo "step 12 missing <full> reference"; return 1; }
   echo "$PROTOCOL" | grep -qiE 'reserved literal token|reserved.*token|literal token' \
-    || { echo "step 7.5 missing 'reserved literal token' invariant"; return 1; }
+    || { echo "step 12 missing 'reserved literal token' invariant"; return 1; }
 }
 
 @test "[112-PR2] <full> in either set forces broaden (B3 precondition row)" {
   # Either set containing <full> -> broaden, regardless of relation.
   echo "$PROTOCOL" | grep -qE '<full>.*\*\*[Bb]roaden' \
-    || { echo "step 7.5 missing '<full> in either set -> broaden' precondition row"; return 1; }
+    || { echo "step 12 missing '<full> in either set -> broaden' precondition row"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
@@ -132,7 +132,7 @@ setup() {
 
 @test "[112-PR2] either set empty -> broaden precondition row (I3)" {
   echo "$PROTOCOL" | grep -qiE 'empty.*\*\*[Bb]roaden|either.*empty|set.*empty' \
-    || { echo "step 7.5 missing 'either set empty -> broaden' precondition row"; return 1; }
+    || { echo "step 12 missing 'either set empty -> broaden' precondition row"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
@@ -143,10 +143,10 @@ setup() {
   # The parser MUST skip "# " (single hash + space) but PRESERVE "## " H2
   # heading lines. Documented as "lines NOT starting with # " (with space).
   echo "$PROTOCOL" | grep -qE 'NOT starting with .#' \
-    || { echo "step 7.5 missing comment-skip parser rule"; return 1; }
+    || { echo "step 12 missing comment-skip parser rule"; return 1; }
   # Must explicitly note H2 (## ) tags are preserved.
   echo "$PROTOCOL" | grep -qiE '## .*PRESERVED|preserve.*## |H2 heading tags begin' \
-    || { echo "step 7.5 parser rule does not explicitly preserve H2 tags (## )"; return 1; }
+    || { echo "step 12 parser rule does not explicitly preserve H2 tags (## )"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
@@ -155,25 +155,25 @@ setup() {
 
 @test "[112-PR2] convergence comparison is byte-exact with trailing-ws strip (I2)" {
   echo "$PROTOCOL" | grep -qiE 'byte-exact|byte exact' \
-    || { echo "step 7.5 missing byte-exact comparison rule"; return 1; }
+    || { echo "step 12 missing byte-exact comparison rule"; return 1; }
   echo "$PROTOCOL" | grep -qiE 'trailing whitespace|strip.*whitespace' \
-    || { echo "step 7.5 missing trailing-whitespace-strip rule"; return 1; }
+    || { echo "step 12 missing trailing-whitespace-strip rule"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
 # 15. HEAD~1 anchor invariant (B5)
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] step 10 captures per-round commit SHA for HEAD~1 anchor (B5)" {
-  # Step 10's per-round commit must capture the SHA into round-NN-commit.txt
-  # so step 7.5 can assert HEAD~1 matches before narrowing.
+@test "[112-PR2] step 11 captures per-round commit SHA for HEAD~1 anchor (B5)" {
+  # Step 11's per-round commit must capture the SHA into round-NN-commit.txt
+  # so step 12 can assert HEAD~1 matches before narrowing.
   echo "$PROTOCOL" | grep -qE 'round-NN-commit\.txt|round-.*-commit\.txt' \
-    || { echo "step 10 does not capture per-round commit SHA into round-NN-commit.txt"; return 1; }
+    || { echo "step 11 does not capture per-round commit SHA into round-NN-commit.txt"; return 1; }
 }
 
-@test "[112-PR2] step 7.5 narrow decision asserts HEAD~1 matches the captured anchor (B5)" {
+@test "[112-PR2] step 12 narrow decision asserts HEAD~1 matches the captured anchor (B5)" {
   echo "$PROTOCOL" | grep -qiE 'rev-parse HEAD~1|HEAD~1.*anchor|anchor.*HEAD~1' \
-    || { echo "step 7.5 narrow decision missing HEAD~1 anchor assertion"; return 1; }
+    || { echo "step 12 narrow decision missing HEAD~1 anchor assertion"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
@@ -182,31 +182,31 @@ setup() {
 
 @test "[112-PR2] backward-loop reset uses a persistent on-disk flag file (B6)" {
   # The pause-gate option-3 cascade writes round-NN-backward-loop.flag;
-  # step 7.5 reads + deletes the flag (consume-once).
+  # step 12 reads + deletes the flag (consume-once).
   echo "$PROTOCOL" | grep -qE 'round-NN-backward-loop\.flag|backward-loop\.flag' \
-    || { echo "step 7.5 missing backward-loop.flag file mention"; return 1; }
+    || { echo "step 12 missing backward-loop.flag file mention"; return 1; }
   echo "$PROTOCOL" | grep -qiE 'consume-once|delete the flag|deletes the flag' \
-    || { echo "step 7.5 missing consume-once / delete-flag semantics"; return 1; }
+    || { echo "step 12 missing consume-once / delete-flag semantics"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
 # 17. Tagger malformed-output fail-loud (B4)
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] step 5.5 structurally validates the scope-set file (B4 fail-loud)" {
+@test "[112-PR2] step 6 structurally validates the scope-set file (B4 fail-loud)" {
   echo "$PROTOCOL" | grep -qiE 'structural validation|structurally valid|malformed scope-set' \
-    || { echo "step 5.5 missing structural-validation block"; return 1; }
+    || { echo "step 6 missing structural-validation block"; return 1; }
   echo "$PROTOCOL" | grep -qiE 'failure menu|verifier-round failure' \
-    || { echo "step 5.5 structural failure does not route to verifier-round failure menu"; return 1; }
+    || { echo "step 6 structural failure does not route to verifier-round failure menu"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
 # 18. <full> fallback transcript diagnostic (B8)
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] step 5.5 emits transcript diagnostic on <full> fallback (B8)" {
+@test "[112-PR2] step 6 emits transcript diagnostic on <full> fallback (B8)" {
   echo "$PROTOCOL" | grep -qiE 'fell back to <full>|<full>.*fall.*back|<full> for.*finding' \
-    || { echo "step 5.5 missing <full>-fallback transcript diagnostic"; return 1; }
+    || { echo "step 6 missing <full>-fallback transcript diagnostic"; return 1; }
 }
 
 @test "[112-PR2] B8 diagnostic covers both line-range-omitted and no-H2 causes" {
@@ -222,29 +222,29 @@ setup() {
 
 @test "[112-PR2] anchor-mismatch broaden-fallback pins literal diagnostic" {
   echo "$PROTOCOL" | grep -qF 'is not the prior per-round commit' \
-    || { echo "step 7.5 missing anchor-mismatch literal diagnostic"; return 1; }
+    || { echo "step 12 missing anchor-mismatch literal diagnostic"; return 1; }
 }
 
 @test "[112-PR2] I10 distinguishability emits a 'resumed run pre-tagger?' diagnostic" {
   echo "$PROTOCOL" | grep -qF 'resumed run pre-tagger?' \
-    || { echo "step 7.5 missing I10 'resumed run pre-tagger' literal diagnostic"; return 1; }
+    || { echo "step 12 missing I10 'resumed run pre-tagger' literal diagnostic"; return 1; }
 }
 
 @test "[112-PR2] I10 distinguishability emits a 'scope-set absent' diagnostic" {
   echo "$PROTOCOL" | grep -qF 'scope-set absent' \
-    || { echo "step 7.5 missing I10 'scope-set absent' literal diagnostic"; return 1; }
+    || { echo "step 12 missing I10 'scope-set absent' literal diagnostic"; return 1; }
 }
 
 @test "[112-PR2] I10 fires on rounds 1-2 too (round-1/2 silent fall-through fix)" {
   # Codex round-2 review: tagger failure on rounds 1 or 2 must surface a
   # diagnostic; it cannot rely on the round-3-only branch.
   echo "$PROTOCOL" | grep -qF 'rounds 1–2 broaden by default' \
-    || { echo "step 7.5 missing rounds 1-2 missing-scope-set diagnostic"; return 1; }
+    || { echo "step 12 missing rounds 1-2 missing-scope-set diagnostic"; return 1; }
 }
 
 @test "[112-PR2] backward-loop flag delete-failure surfaces a diagnostic" {
   echo "$PROTOCOL" | grep -qF 'backward-loop flag delete failed' \
-    || { echo "step 7.5 missing backward-loop delete-fail diagnostic"; return 1; }
+    || { echo "step 12 missing backward-loop delete-fail diagnostic"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
@@ -273,7 +273,7 @@ setup() {
   # surface findings outside the hint; that triggers auto-broaden on the
   # next round."
   echo "$PROTOCOL" | grep -qiE 'advisory|not a hard restriction|MAY surface' \
-    || { echo "scope_hint advisory-not-restrictive semantics not documented in step 7.5"; return 1; }
+    || { echo "scope_hint advisory-not-restrictive semantics not documented in step 12"; return 1; }
   # Also pin in reviewer-protocol contract.
   awk '
     /^## Reviewer Dispatch Contract/ { in_section=1; print; next }
@@ -293,7 +293,7 @@ setup() {
   # a downstream artifact, the orchestrator must reset <ref> to base-branch
   # on the next round.
   echo "$PROTOCOL" | grep -qiE 'backward.loop|backward loop' \
-    || { echo "backward-loop reset not documented in step 7.5"; return 1; }
+    || { echo "backward-loop reset not documented in step 12"; return 1; }
   echo "$PROTOCOL" | grep -qE 'reset.*<base-branch>|reset.*<ref>' \
     || { echo "backward-loop reset to <base-branch> not documented"; return 1; }
 }
@@ -314,23 +314,23 @@ setup() {
 # 7. scope_tagger_enabled gate short-circuit
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] step 7.5 short-circuits to broaden when scope_tagger_enabled=false" {
+@test "[112-PR2] step 12 short-circuits to broaden when scope_tagger_enabled=false" {
   echo "$PROTOCOL" | grep -qiE 'scope_tagger_enabled.*false|false.*scope_tagger_enabled' \
-    || { echo "step 7.5 missing scope_tagger_enabled=false short-circuit"; return 1; }
+    || { echo "step 12 missing scope_tagger_enabled=false short-circuit"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
 # 8. Missing scope-set short-circuit
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] step 7.5 short-circuits to broaden on missing scope-set (conservative)" {
+@test "[112-PR2] step 12 short-circuits to broaden on missing scope-set (conservative)" {
   # When the round's scope-set file is absent (tagger dispatch skipped, tagger
-  # failure, or zero kept findings), step 7.5 broadens.
+  # failure, or zero kept findings), step 12 broadens.
   echo "$PROTOCOL" | grep -qiE 'scope.set.*missing|missing.*scope.set' \
-    || { echo "step 7.5 missing 'missing scope-set' short-circuit"; return 1; }
+    || { echo "step 12 missing 'missing scope-set' short-circuit"; return 1; }
   # Conservative-broaden semantics:
   echo "$PROTOCOL" | grep -qiE 'conservative|do NOT abort' \
-    || { echo "step 7.5 missing conservative-broaden semantics"; return 1; }
+    || { echo "step 12 missing conservative-broaden semantics"; return 1; }
 }
 
 # -----------------------------------------------------------------------------
@@ -435,12 +435,12 @@ setup() {
 }
 
 @test "[140] per-task Implement defers to using-qrspi convergence rule table" {
-  # Per-task uses the SAME convergence rule table from using-qrspi step 7.5;
+  # Per-task uses the SAME convergence rule table from using-qrspi step 12;
   # implement.SKILL.md must reference that contract rather than restate the
   # full table.
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
-  grep -qE 'using-qrspi.*step 7\.5|step 7\.5.*using-qrspi|convergence-rule table from using-qrspi|using-qrspi/SKILL\.md.*7\.5' "$impl" \
-    || { echo "implement/SKILL.md does not reference using-qrspi step 7.5 convergence rule"; return 1; }
+  grep -qE 'using-qrspi.*step 12|step 12.*using-qrspi|convergence-rule table from using-qrspi step 12' "$impl" \
+    || { echo "implement/SKILL.md does not reference using-qrspi step 12 convergence rule"; return 1; }
 }
 
 @test "[140] per-task Implement \$SCOPE_HINT is populated from scope_set on narrow" {
@@ -536,8 +536,8 @@ setup() {
 
 @test "[140] Integrate defers to using-qrspi convergence rule table" {
   local intg="$REPO_ROOT/skills/integrate/SKILL.md"
-  grep -qE 'using-qrspi.*step 7\.5|step 7\.5.*using-qrspi|convergence-rule table from using-qrspi|using-qrspi/SKILL\.md.*7\.5' "$intg" \
-    || { echo "integrate/SKILL.md does not reference using-qrspi step 7.5 convergence rule"; return 1; }
+  grep -qE 'using-qrspi.*step 12|step 12.*using-qrspi|convergence-rule table from using-qrspi step 12' "$intg" \
+    || { echo "integrate/SKILL.md does not reference using-qrspi step 12 convergence rule"; return 1; }
 }
 
 @test "[140] Integrate \$SCOPE_HINT is populated from scope_set on narrow" {
@@ -591,7 +591,7 @@ setup() {
 # -----------------------------------------------------------------------------
 
 @test "[140] both per-task and Integrate reference the equal/subset/superset/partial/disjoint rule cases" {
-  # Both flows defer to using-qrspi step 7.5's table — no rule restatement
+  # Both flows defer to using-qrspi step 12's table — no rule restatement
   # required, but the prose must at least cite the rule cases (equal,
   # proper-subset, superset, partial, disjoint, <full>, empty).
   for skill in implement integrate; do

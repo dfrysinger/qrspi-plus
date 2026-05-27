@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# T36 Slice 7 G4 Mechanism B unit pin — anchor-refresh script contract.
+# T36 Slice 7 section-anchor unit pin — anchor-refresh script contract.
 #
 # Against a fixture corpus where:
 #   - one source has a new heading added

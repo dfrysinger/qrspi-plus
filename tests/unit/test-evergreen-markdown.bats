@@ -226,3 +226,186 @@ setup_file() {
   [ -n "$REPO_ROOT" ]
   [ -d "$REPO_ROOT" ]
 }
+
+# ===========================================================================
+# Jargon scan (skills/** + agents/**)
+#
+# Catches non-evergreen vocabulary that drifts into the canonical orchestrator
+# and step skills. Scope is intentionally narrower than the repo-wide
+# release-version scan above: historical surfaces (docs/qrspi/YYYY-MM-DD-*/,
+# docs/superpowers/, reviews/, CHANGELOG.md) preserve past protocol state
+# as snapshots and are not scanned.
+#
+# Forbidden-token families (regex):
+#   - bare-paren-pr-ref : \(#[0-9]+               (e.g. "(#112 PR-1 ...)")
+#   - mechanism-codename: \bMechanism [A-Z]\b     (e.g. "Mechanism A")
+#   - b-code-in-parens  : \(B[0-9]+[a-z]?\)       (e.g. "(B5)", "(B5a)")
+#   - half-step-number  : \b[sS][tT][eE][pP] (5\.5|7\.5)\b  (e.g. "step 5.5", "Step 7.5", "STEP 7.5")
+#                         Only the two retired half-step labels are forbidden;
+#                         legitimate hierarchical sub-step numbering (e.g.
+#                         "step 5.2", "step 1.1") is allowed.
+#
+# Inline carve-out: lines ending with <!-- evergreen-exempt --> are skipped.
+# ---------------------------------------------------------------------------
+
+_check_file_for_jargon() {
+  local abs_path="$1"
+  local rel_path="$2"
+
+  local hits
+  hits="$(awk -v rp="$rel_path" '
+    /<!-- evergreen-exempt -->/ { next }
+    /\(#[0-9]+/ {
+      printf "JARGON HIT: %s:%d [bare-paren-pr-ref]: %s\n", rp, NR, $0
+      found = 1
+    }
+    /(^|[^A-Za-z])Mechanism [A-Z]([^A-Za-z]|$)/ {
+      printf "JARGON HIT: %s:%d [mechanism-codename]: %s\n", rp, NR, $0
+      found = 1
+    }
+    /\(B[0-9]+[a-z]?\)/ {
+      printf "JARGON HIT: %s:%d [b-code-in-parens]: %s\n", rp, NR, $0
+      found = 1
+    }
+    /(^|[^A-Za-z])[sS][tT][eE][pP] (5\.5|7\.5)([^0-9]|$)/ {
+      printf "JARGON HIT: %s:%d [half-step-number]: %s\n", rp, NR, $0
+      found = 1
+    }
+    END { exit (found ? 1 : 0) }
+  ' "$abs_path")"
+
+  if [ -n "$hits" ]; then
+    printf '%s\n' "$hits"
+    return 1
+  fi
+  return 0
+}
+
+@test "[jargon] positive fixture: bare-paren PR ref triggers detection" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-pr-XXXXXX.md)"
+  printf '# Heading\n\nSee details (#112 PR-1 background) for context.\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "bare-paren-pr-ref"
+}
+
+@test "[jargon] positive fixture: Mechanism codename triggers detection" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-mech-XXXXXX.md)"
+  printf '# Heading\n\nThe Mechanism A pathway is the canonical entry.\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "mechanism-codename"
+}
+
+@test "[jargon] negative fixture: 'Mechanism' table header (no trailing letter) does NOT trigger" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-mech-neg-XXXXXX.md)"
+  printf '# Heading\n\n| Mechanism | Trigger |\n|---|---|\n| foo | bar |\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "[jargon] positive fixture: B-code in parens triggers detection" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-bcode-XXXXXX.md)"
+  printf '# Heading\n\nThe anchor invariant (B5) governs ref selection.\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "b-code-in-parens"
+}
+
+@test "[jargon] positive fixture: half-step numbering triggers detection" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-halfstep-XXXXXX.md)"
+  printf '# Heading\n\nReferenced from step 5.5 (scope-tagger).\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "half-step-number"
+}
+
+@test "[jargon] positive fixture: capitalized Step 7.5 triggers detection" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-halfstep-cap-XXXXXX.md)"
+  printf '# Heading\n\nReferenced from Step 7.5 (ref selection).\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "half-step-number"
+}
+
+@test "[jargon] positive fixture: all-caps STEP 7.5 triggers detection" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-halfstep-allcaps-XXXXXX.md)"
+  printf '# Heading\n\nReferenced from STEP 7.5 (ref selection).\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "half-step-number"
+}
+
+@test "[jargon] negative fixture: full integer step number does NOT trigger" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-int-XXXXXX.md)"
+  printf '# Heading\n\nReferenced from step 6 (scope-tagger dispatch).\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "[jargon] negative fixture: hierarchical sub-step numbering (step 5.2, step 1.1) does NOT trigger" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-substep-XXXXXX.md)"
+  printf '# Heading\n\nSee step 5.2 (HARD-GATE check) and step 1.1 (precondition).\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "[jargon] inline evergreen-exempt comment suppresses jargon hit" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-exempt-XXXXXX.md)"
+  printf '# Heading\n\nLegacy note: see Mechanism A behavior. <!-- evergreen-exempt -->\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "[jargon] skills/** + agents/** scan — no jargon hits" {
+  require_repo_root
+  local all_hits=""
+  local tmp_list
+  tmp_list="$(mktemp /tmp/jargon-mdlist-XXXXXX.txt)"
+
+  git -C "$REPO_ROOT" ls-files 'skills/*.md' 'skills/**/*.md' 'agents/*.md' 'agents/**/*.md' 2>/dev/null > "$tmp_list"
+
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    local abs_path="$REPO_ROOT/$rel"
+    [ -f "$abs_path" ] || continue
+
+    local file_hits
+    file_hits="$(_check_file_for_jargon "$abs_path" "$rel")" || true
+    if [ -n "$file_hits" ]; then
+      all_hits="${all_hits}${file_hits}
+"
+    fi
+  done < "$tmp_list"
+
+  rm -f "$tmp_list"
+
+  if [ -n "$all_hits" ]; then
+    printf 'Jargon violations found in skills/** + agents/**:\n%s\n' "$all_hits" >&2
+    return 1
+  fi
+}
