@@ -20,5 +20,5 @@ _(none)_
 
 <!--
 Format:
-- #NNN — short reason it's blocked (waiting on whom / what)
+- #NNN: short reason it's blocked (waiting on whom / what)
 -->

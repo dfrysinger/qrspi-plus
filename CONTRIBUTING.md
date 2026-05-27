@@ -1,29 +1,29 @@
 # Contributing to qrspi-plus
 
-Thanks for working on qrspi-plus. This file is the agent + maintainer
-protocol for this repository — issue triage conventions, branch and
-commit rules, CI expectations, and the optional parallel-agent
-workflow pattern. The slim `AGENTS.md` at the repo root points
-Copilot CLI / Claude Code sessions to this file when they auto-load.
+Thanks for working on qrspi-plus. This file is the agent and
+maintainer protocol for this repository: issue triage conventions,
+branch and commit rules, CI expectations, and the optional
+parallel-agent workflow pattern. The slim `AGENTS.md` at the repo
+root points Copilot CLI and Claude Code sessions to this file when
+they auto-load.
 
 ## Issue triage
 
 Every new issue and PR should carry the following labels (the
 maintainer adds them on triage if you don't):
 
-- **One type label** — `bug`, `enhancement`, `documentation`, or
+- **One type label**: `bug`, `enhancement`, `documentation`, or
   `question`.
-- **One `area:*` label** — the QRSPI step or surface the change
-  touches. Valid areas: `area:goals`, `area:questions`, `area:research`,
-  `area:design`, `area:phasing`, `area:structure`, `area:plan`,
-  `area:parallelize`, `area:implement`, `area:integrate`, `area:test`,
-  `area:replan`, `area:state`, `area:codex`, `area:docs`,
+- **One `area:*` label**: the QRSPI step or surface the change
+  touches. Valid areas: `area:goals`, `area:design`, `area:structure`,
+  `area:plan`, `area:parallelize`, `area:implement`, `area:integrate`,
+  `area:test`, `area:replan`, `area:state`, `area:codex`, `area:docs`,
   `area:harness`, `area:hooks`.
-- **One `priority:*` label** — `priority:high`, `priority:medium`, or
+- **One `priority:*` label**: `priority:high`, `priority:medium`, or
   `priority:low`.
-- **`needs-triage`** — until a maintainer has reviewed and accepted
-  the issue, this label stays. Maintainers remove it after applying
-  type + area + priority and adding the issue to the project board.
+- **`needs-triage`**: applied until a maintainer has reviewed and
+  accepted the issue. Maintainers remove it after applying type,
+  area, priority, and adding the issue to the project board.
 
 Milestones are inherently time-bound, not evergreen: a milestone
 appears on an issue only when a maintainer has scheduled it for a
@@ -34,16 +34,16 @@ do not reassign milestones; that's a maintainer call.
 
 Use descriptive prefixes that signal intent:
 
-- `feat/<slug>` — new feature or capability.
-- `fix/<slug>` — bug fix.
-- `docs/<slug>` — documentation only.
-- `refactor/<slug>` — restructuring with no behavior change.
-- `test/<slug>` — test-only changes.
-- `chore/<slug>` — tooling, CI, dependencies, cleanup.
+- `feat/<slug>`: new feature or capability.
+- `fix/<slug>`: bug fix.
+- `docs/<slug>`: documentation only.
+- `refactor/<slug>`: restructuring with no behavior change.
+- `test/<slug>`: test-only changes.
+- `chore/<slug>`: tooling, CI, dependencies, cleanup.
 
 If you are running multiple parallel agent sessions on this repo (see
 the "Parallel agents" section below), prefix branches with your agent
-handle so concurrent work is visually separable: e.g.
+handle so concurrent work is visually separable, e.g.
 `my-handle/fix/cli-help-text`.
 
 ## Commits and pull requests
@@ -64,20 +64,24 @@ handle so concurrent work is visually separable: e.g.
 
 ## CI expectations
 
-Every PR runs the following checks:
+Every PR runs the following checks (see `.github/workflows/ci.yml`
+for the source of truth):
 
-- **Lint** — `shellcheck` + a bash:3.2 ban-list grep across `scripts/`,
-  `agents/`, and `skills/`. The ban-list catches bash 4+ constructs
-  that break in the bash:3.2 alpine harness (e.g. `${var,,}`,
-  `mapfile`, `readarray`, `declare -A`).
-- **BATS under bash 3.2** — the full unit + acceptance test suites
-  run inside an alpine `bash:3.2` Docker image to guarantee no test
-  silently relies on a bash 4+ feature.
-- **CodeQL** — JavaScript/TypeScript + GitHub Actions analysis.
+- **Lint (shellcheck + bash32 ban-list)**: `shellcheck --severity=error`
+  plus a grep ban-list applied to `*.sh` and `*.bash` files under
+  `scripts/` and `tests/helpers/`. The ban-list rejects bash 4+
+  constructs that break under the bash:3.2 alpine harness: `mapfile`,
+  `declare -A`, `${var,,}` / `${var^^}` lowercasing/uppercasing,
+  `coproc`, and `wait -n`.
+- **BATS under bash 3.2**: the full unit and acceptance suites run
+  inside an alpine `bash:3.2` Docker image, so no test silently
+  relies on a bash 4+ feature.
+- **CodeQL**: JavaScript/TypeScript and GitHub Actions analysis.
 
-All checks must be green before merge. If a CI failure looks
-unrelated to your change, mention it in the PR body so the maintainer
-can confirm.
+CI runs on every pull request. Pushes to feature branches do not
+trigger CI; open a PR (draft is fine) to see check results. All
+checks must be green before merge. If a CI failure looks unrelated to
+your change, mention it in the PR body so the maintainer can confirm.
 
 ## Parallel agents (optional pattern)
 
@@ -101,7 +105,7 @@ distinct issues in parallel. The pattern, in the most generic form:
 3. Use the agent handle as the branch prefix
    (`<your-agent-handle>/fix/...`) so concurrent branches don't
    collide.
-4. Push under your normal `gh auth` token — no extra setup.
+4. Push under your normal `gh auth` token, no extra setup required.
 
 This pattern requires no extra infrastructure beyond a working
 `gh auth` session.
@@ -121,5 +125,3 @@ These items apply only to the repository maintainer:
   `gh project item-add 1 --owner dfrysinger --url <url>`.
 - Milestone assignment is at the maintainer's discretion; agents
   don't self-assign.
-- The dual-review skill (`/dual-review-local`) is the canonical
-  pre-merge review step for non-trivial diffs.
