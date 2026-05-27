@@ -435,12 +435,12 @@ setup() {
 }
 
 @test "[140] per-task Implement defers to using-qrspi convergence rule table" {
-  # Per-task uses the SAME convergence rule table from using-qrspi step 7.5;
+  # Per-task uses the SAME convergence rule table from using-qrspi step 12;
   # implement.SKILL.md must reference that contract rather than restate the
   # full table.
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
-  grep -qE 'using-qrspi.*step 7\.5|step 7\.5.*using-qrspi|convergence-rule table from using-qrspi|using-qrspi/SKILL\.md.*7\.5' "$impl" \
-    || { echo "implement/SKILL.md does not reference using-qrspi step 7.5 convergence rule"; return 1; }
+  grep -qE 'using-qrspi.*step 12|step 12.*using-qrspi|convergence-rule table from using-qrspi step 12' "$impl" \
+    || { echo "implement/SKILL.md does not reference using-qrspi step 12 convergence rule"; return 1; }
 }
 
 @test "[140] per-task Implement \$SCOPE_HINT is populated from scope_set on narrow" {
@@ -536,8 +536,8 @@ setup() {
 
 @test "[140] Integrate defers to using-qrspi convergence rule table" {
   local intg="$REPO_ROOT/skills/integrate/SKILL.md"
-  grep -qE 'using-qrspi.*step 7\.5|step 7\.5.*using-qrspi|convergence-rule table from using-qrspi|using-qrspi/SKILL\.md.*7\.5' "$intg" \
-    || { echo "integrate/SKILL.md does not reference using-qrspi step 7.5 convergence rule"; return 1; }
+  grep -qE 'using-qrspi.*step 12|step 12.*using-qrspi|convergence-rule table from using-qrspi step 12' "$intg" \
+    || { echo "integrate/SKILL.md does not reference using-qrspi step 12 convergence rule"; return 1; }
 }
 
 @test "[140] Integrate \$SCOPE_HINT is populated from scope_set on narrow" {
