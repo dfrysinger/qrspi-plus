@@ -240,7 +240,7 @@ setup_file() {
 #   - bare-paren-pr-ref : \(#[0-9]+               (e.g. "(#112 PR-1 ...)")
 #   - mechanism-codename: \bMechanism [A-Z]\b     (e.g. "Mechanism A")
 #   - b-code-in-parens  : \(B[0-9]+[a-z]?\)       (e.g. "(B5)", "(B5a)")
-#   - half-step-number  : \b[sS]tep (5\.5|7\.5)\b  (e.g. "step 5.5", "Step 7.5")
+#   - half-step-number  : \b[sS][tT][eE][pP] (5\.5|7\.5)\b  (e.g. "step 5.5", "Step 7.5", "STEP 7.5")
 #                         Only the two retired half-step labels are forbidden;
 #                         legitimate hierarchical sub-step numbering (e.g.
 #                         "step 5.2", "step 1.1") is allowed.
@@ -267,7 +267,7 @@ _check_file_for_jargon() {
       printf "JARGON HIT: %s:%d [b-code-in-parens]: %s\n", rp, NR, $0
       found = 1
     }
-    /(^|[^A-Za-z])[Ss]tep (5\.5|7\.5)([^0-9]|$)/ {
+    /(^|[^A-Za-z])[sS][tT][eE][pP] (5\.5|7\.5)([^0-9]|$)/ {
       printf "JARGON HIT: %s:%d [half-step-number]: %s\n", rp, NR, $0
       found = 1
     }
@@ -335,6 +335,16 @@ _check_file_for_jargon() {
   local fixture
   fixture="$(mktemp /tmp/jargon-halfstep-cap-XXXXXX.md)"
   printf '# Heading\n\nReferenced from Step 7.5 (ref selection).\n' > "$fixture"
+  run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "half-step-number"
+}
+
+@test "[jargon] positive fixture: all-caps STEP 7.5 triggers detection" {
+  local fixture
+  fixture="$(mktemp /tmp/jargon-halfstep-allcaps-XXXXXX.md)"
+  printf '# Heading\n\nReferenced from STEP 7.5 (ref selection).\n' > "$fixture"
   run _check_file_for_jargon "$fixture" "skills/fake/SKILL.md"
   rm -f "$fixture"
   [ "$status" -ne 0 ]
