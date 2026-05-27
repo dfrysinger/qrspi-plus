@@ -164,11 +164,11 @@ setup() {
 # 15. HEAD~1 anchor invariant (B5)
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] step 10 captures per-round commit SHA for HEAD~1 anchor (B5)" {
-  # Step 10's per-round commit must capture the SHA into round-NN-commit.txt
+@test "[112-PR2] step 11 captures per-round commit SHA for HEAD~1 anchor (B5)" {
+  # Step 11's per-round commit must capture the SHA into round-NN-commit.txt
   # so step 12 can assert HEAD~1 matches before narrowing.
   echo "$PROTOCOL" | grep -qE 'round-NN-commit\.txt|round-.*-commit\.txt' \
-    || { echo "step 10 does not capture per-round commit SHA into round-NN-commit.txt"; return 1; }
+    || { echo "step 11 does not capture per-round commit SHA into round-NN-commit.txt"; return 1; }
 }
 
 @test "[112-PR2] step 12 narrow decision asserts HEAD~1 matches the captured anchor (B5)" {
