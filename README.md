@@ -672,17 +672,14 @@ Claude reads `.claude-plugin/plugin.json` and auto-discovers `agents/` and
 
 ### GitHub Copilot CLI
 
-**Recommended — install from the qrspi-plus self-marketplace** (no
-deprecation warning):
+Install from the qrspi-plus self-marketplace:
 
 ```bash
 copilot plugin marketplace add dfrysinger/qrspi-plus
 copilot plugin install qrspi@qrspi-plus
 ```
 
-**Alternative — direct repo install** (surfaces a deprecation warning
-because direct repo/URL installs will eventually require a marketplace
-backing in a future Copilot CLI release):
+Or install the repo directly:
 
 ```bash
 copilot plugin install dfrysinger/qrspi-plus
@@ -695,8 +692,8 @@ marketplace listing).
 
 ### Notes on cross-CLI behavior
 
-- **Agent frontmatter.** Agent files use the Claude scalar `tools: Read, Write, Bash, ...` form. Copilot CLI accepts this form as-is — no rewrite needed. The same agents work in both CLIs.
-- **`skills:` auto-load directive.** A few agents declare `skills: [reviewer-protocol]` in frontmatter. Both Claude Code and Copilot CLI honor this and preload the listed skill bodies into the agent's context at activation.
+- **Agent frontmatter.** Agent files use the Claude scalar `tools: Read, Write, Bash, ...` form. Both CLIs accept it.
+- **`skills:` auto-load directive.** A few agents declare `skills: [reviewer-protocol]` in frontmatter. Both CLIs preload the listed skill bodies into the agent's context at activation.
 - **No hook layer.** qrspi-plus does not register any tool-lifecycle hooks. All enforcement (artifact gating, task allowlists, TDD discipline) is prompt-side, defined in the skills and agent files.
 
 After installation, the `using-qrspi` skill is the entry point. The pipeline activates whenever the user wants to build something.
