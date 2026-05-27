@@ -88,7 +88,9 @@ jobs:
             yq \
             coreutils \
             grep \
-            findutils
+            findutils \
+            nodejs \
+            perl
 
       - name: Run unit BATS suite
         run: bats --tap tests/unit/
