@@ -755,7 +755,7 @@ qrspi-plus/
 │   ├── unit/                       # 308 unit tests (bats-core)
 │   ├── acceptance/                 # 134 acceptance tests (bats-core)
 │   └── fixtures/                   # Test fixtures and mock data
-├── agents/                         # 37 Claude Code agent files (per #110)
+├── agents/                         # First-class Claude Code / Copilot CLI agent files
 │   ├── qrspi-{goals,questions,research,design,structure,phasing,plan,parallelize,replan}-reviewer.md
 │   ├── qrspi-{goals,design,structure,phasing,plan,parallelize,replan}-scope-reviewer.md
 │   ├── qrspi-plan-{spec,security,goal-traceability,test-coverage}-reviewer.md
@@ -922,7 +922,7 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 
 | Addition | What it adds |
 |----------|-------------|
-| **Specialized reviewer agents (per #110)** | 9 quality reviewers (one per artifact: goals, questions, research, design, structure, phasing, plan, parallelize, replan) + 7 dedicated scope-reviewers (`qrspi-{name}-scope-reviewer` for goals, design, structure, phasing, plan, parallelize, replan) + 5 plan-artifact reviewers (spec, security, silent-failure-hunter, goal-traceability, test-coverage) + 8 per-task implementation reviewers (spec, code quality, silent failures, security, goal traceability, test coverage, type design, simplification) + 2 integration reviewers (integration, security-integration) + 1 implement-gate reviewer. Each lives as a first-class `agents/qrspi-*.md` file with the cross-cutting protocol preloaded via `skills: [reviewer-protocol]`. |
+| **Specialized reviewer agents** | 9 quality reviewers (one per artifact: goals, questions, research, design, structure, phasing, plan, parallelize, replan) + 7 dedicated scope-reviewers (`qrspi-{name}-scope-reviewer` for goals, design, structure, phasing, plan, parallelize, replan) + 5 plan-artifact reviewers (spec, security, silent-failure-hunter, goal-traceability, test-coverage) + 8 per-task implementation reviewers (spec, code quality, silent failures, security, goal traceability, test coverage, type design, simplification) + 2 integration reviewers (integration, security-integration) + 1 implement-gate reviewer. Each lives as a first-class `agents/qrspi-*.md` file with the cross-cutting protocol preloaded via `skills: [reviewer-protocol]`. |
 | **5 canonical review patterns** | Inner Loop (autonomous per-task), Outer Loop (user-confirmed), Deterministic (run once), Artifact Synthesis (subagent produce + review loop), Architectural Plan (7 parallel reviewer subagents: 1 unified plan-quality + 5 plan-artifact + dedicated `qrspi-plan-scope-reviewer`) |
 | **Route-based routing** | `config.md` with route field as single source of truth, replacing hardcoded skill-to-skill invocations |
 | **Config validation** | Numbered-option menus for missing/invalid config fields -- never silent defaults |

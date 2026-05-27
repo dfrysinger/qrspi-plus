@@ -149,14 +149,22 @@ The canonical mint logic (any operator can implement this from scratch):
 
 **Milestones:**
 
-- `v0.2` — closed; historical (Phase 4 Hardening, shipped 2026-04-28).
-- `v0.3` — active (general5 prompt-improvements run).
-- `v0.4` — active (general4 F-8/F-26 + general2 F-31 — the next release).
-- `v0.5` / `v0.6` / `v0.7` — planning placeholders. Humans assign; agents
-  leave milestones alone unless told otherwise.
-- `Icebox` — explicitly deferred (Formal goals scoped to a future phase).
-- **No milestone** = needs-triage. Will be scoped into a release on the
-  next planning pass.
+Milestones reflect the live planning state and change over time —
+query the canonical list with:
+
+```
+gh api repos/dfrysinger/qrspi-plus/milestones --jq '.[] | {title,state}'
+```
+
+Conventions agents should follow:
+
+- **`Icebox`** is the standing bucket for issues that are explicitly
+  deferred (formal goals scoped to a future phase). Treat it as a
+  durable label, not a release.
+- **No milestone assigned** = `needs-triage`. The human will scope it
+  into a release on the next planning pass.
+- Agents do not reassign milestones (see "Never" above) — leave the
+  field as the human set it, including leaving it unset.
 
 **When creating a new issue:** assign `needs-triage`, the relevant
 `area:*`, and `priority:*` if known. **Leave the milestone unset** unless

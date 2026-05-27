@@ -171,7 +171,7 @@ Edge cases:
 
 **Operator override.** Both fields are editable by the operator before plan approval. The heuristic is a default, not a contract. A user who knows a single-file task is high-stakes can flip `model: opus` manually; a user who knows a 4-file task is mechanical can flip it back to `sonnet`.
 
-**Defaults on legacy plans.** Plan files written before this schema have neither field. Implement reads missing fields as `code`/`sonnet` and logs a warning — no hard failure, no forced rewrite.
+**Defaults when fields are absent.** Plan files that omit `task_type:` and `model_role:` are read by Implement as `code` / `sonnet` with a one-line warning at dispatch — no hard failure, no forced rewrite.
 
 ### Plan Document Structure (During Review)
 

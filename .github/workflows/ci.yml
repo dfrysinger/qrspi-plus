@@ -45,14 +45,15 @@ jobs:
           hits=$(find scripts tests/helpers \
             \( -name '*.sh' -o -name '*.bash' \) \
             -print0 \
-          | xargs -0 grep -En \
+          | xargs -0 grep --color=never -En \
               -e '\bmapfile\b' \
               -e '\bdeclare -A\b' \
               -e '\$\{[^}]*,,\}' \
               -e '\$\{[^}]*\^\^\}' \
               -e '\bcoproc\b' \
               -e '\bwait -n\b' \
-          2>/dev/null)
+          2>/dev/null \
+          | grep -Ev '^.*:[0-9]+:[[:space:]]*#')
           if [ -n "$hits" ]; then
             echo "ban-list: bash 4+ constructs detected (bash 3.2 portability violation):"
             echo "$hits"
@@ -68,6 +69,13 @@ jobs:
       # hub.docker.com/v2/repositories/library/bash/tags/3.2 (2026-04-18).
       image: bash:3.2@sha256:a11f59667c0a9d51724e88ebebac74b208f4177e36a33ad80dd23436e70f6115
     steps:
+      - name: Install git for actions/checkout
+        # The bash:3.2 alpine image has no git binary. Without git on PATH,
+        # actions/checkout falls back to a REST API tarball that lacks .git/,
+        # which breaks any tests (e.g. tests/helpers/skill-markdown.bash's
+        # require_repo_root) that depend on the .git directory or `git`.
+        run: apk add --no-cache git ca-certificates
+
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
@@ -80,7 +88,24 @@ jobs:
             yq \
             coreutils \
             grep \
-            findutils
+            findutils \
+            gawk \
+            nodejs \
+            perl-utils
+          # alpine ships `awk` as a busybox applet. Tests rely on GNU awk
+          # semantics (e.g. POSIX character-class regexes inside `/.../`,
+          # multi-statement actions), so replace the busybox symlink with
+          # gawk's binary on PATH.
+          rm -f /usr/bin/awk
+          ln -s /usr/bin/gawk /usr/bin/awk
+          awk --version | head -1
+
+      - name: Configure git for actions/checkout workspace
+        # actions/checkout owns /__w/<repo> as a different uid than the
+        # container runtime user. Newer git (>=2.35) refuses to operate on
+        # "unsafe" repos with status 128, breaking tests like the
+        # evergreen-markdown scan that shell out to `git ls-files`.
+        run: git config --global --add safe.directory '*'
 
       - name: Run unit BATS suite
         run: bats --tap tests/unit/

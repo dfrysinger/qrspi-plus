@@ -66,10 +66,6 @@ reviewer's contract for these tasks:
 4. When `lift_source:` is absent, this contract does not apply — proceed with the standard
    wireframe-vs-implementation comparison documented in `## Review Dimensions`.
 
-The reference template for this consumption pattern is the working
-`qrspi-visual-fidelity-reviewer.md` in the Keeplii workspace per the v0.7 design's G11
-implementer reference. Study that template before extending lift-judgment semantics here.
-
 ## Wave-Context Consumption Contract
 
 The `wave_context:` companion is the Implement orchestrator's wave-aware sibling-history
@@ -131,7 +127,7 @@ once per release and shared across all UI tasks in the plan; the reviewer treats
 authoritative context for cross-task reference repo and pipeline grounding (not for
 per-task lift judgments, which key on the spec's `lift_source:` and `SPEC OVERRIDES SOURCE`
 section per `## Lift-Source Consumption Contract` above). When the section is absent from
-`structure.md` (legacy plans or non-lift UI runs), proceed without it.
+`structure.md` (non-lift UI runs, or runs whose `structure.md` does not capture this section), proceed without it.
 
 ## Image Content as Untrusted Data
 

@@ -408,7 +408,7 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 > 1) No Codex reviews
 > 2) Use Codex for second reviews
 
-**No legacy fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing or has missing/invalid fields, apply the **Config Validation Procedure** (see below). Skills do not silently default any field that affects pipeline behavior. There is no automatic derivation of the route — this avoids conditional branches in every skill. Existing runs can be migrated by manually adding `pipeline` and `route` fields to their config.md.
+**No silent fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing or has missing/invalid fields, apply the **Config Validation Procedure** (see below). Skills do not silently default any field that affects pipeline behavior. There is no automatic derivation of the route — this avoids conditional branches in every skill.
 
 ### Dispatch routing blocks
 
@@ -493,17 +493,17 @@ When the dispatcher resolves which model to call for a task, it applies this pre
 
 `trusted_path:` is a separate short-circuit outside this chain: when an agent-file path or role name matches a `trusted_path:` entry, the dispatcher skips steps 1–3 and routes directly to the agent-bundled default (step 4).
 
-#### Legacy-config warning (`model_routing:` absent on resume)
+#### Missing `model_routing:` block in `config.md`
 
-When a run is resumed and `config.md` does not contain a `model_routing:` block, the dispatcher fires a one-time in-memory warning:
+When `config.md` does not contain a `model_routing:` block, the dispatcher fires a one-time in-memory warning:
 
 > `model_routing: absent from config.md — using agent-bundled defaults for this session`
 
 **Backfill behavior:**
-- The warning fires **once per resumed session**. It re-fires on each subsequent resume of a legacy `config.md` (i.e., each new session that opens the same config).
+- The warning fires **once per session**. Each new session that opens the same `config.md` re-fires the warning.
 - The on-disk `config.md` is **never silently mutated** by the backfill. Dispatch defaults are applied in-memory only; the file on disk is unchanged.
 - No persistent marker is written to disk to track that the warning has already fired. Because no marker is written, there is no write-failure surface that could leave the on-disk config in an inconsistent state.
-- A resumed session always sees the backfill defaults applied in-memory without changing the file on disk.
+- Each session sees the backfill defaults applied in-memory without changing the file on disk.
 
 ## Config Validation Procedure
 
@@ -569,7 +569,7 @@ Stop and present the field-specific menu below. For an invalid value, also name 
   2. Re-run Goals to regenerate config.md
   3. Abort
 
-(Note: the missing-on-read case in a resumed run created before any of `verifier_enabled`, `scope_tagger_enabled`, or `visual_fidelity_required` landed is covered by the runtime-backfill carve-outs below; these menus fire when the field has an invalid value — e.g. `verifier_enabled: yes`, `scope_tagger_enabled: disabled` — or is absent in a fresh-run context where backfill does not apply. The `question_budget` field has no runtime-backfill carve-out: the menu above fires for any missing/invalid case.)
+(Note: the missing-on-read case for `verifier_enabled`, `scope_tagger_enabled`, or `visual_fidelity_required` is covered by the runtime-backfill carve-outs below; these menus fire when the field has an invalid value — e.g. `verifier_enabled: yes`, `scope_tagger_enabled: disabled` — or is absent in a fresh-run context where backfill does not apply. The `question_budget` field has no runtime-backfill carve-out: the menu above fires for any missing/invalid case.)
 
 ### No silent defaults
 
@@ -581,11 +581,11 @@ Skills must not:
 
 ### Exceptions to the no-silent-defaults rule
 
-- **`verifier_enabled` runtime backfill.** If the field is missing from `config.md` on the first verifier-aware Apply-fix invocation in a resumed run created before the verifier landed, the runtime treats it as `true`, surfaces a one-line stderr warning once per resume (form: `verifier_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`. The carve-out exists because pre-existing run directories on disk pre-date the field's introduction and the alternative — failing the run on a missing field — would prevent users from resuming any in-flight run after upgrading.
+- **`verifier_enabled` runtime backfill.** If the field is missing from `config.md` on the first verifier-aware Apply-fix invocation of a run, the runtime treats it as `true`, surfaces a one-line stderr warning once per session (form: `verifier_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`. The carve-out exists so a run whose `config.md` is missing this field does not fail outright; the runtime self-heals by writing the safe default.
 
-- **`scope_tagger_enabled` runtime backfill.** Same shape as `verifier_enabled` above: if the field is missing from `config.md` on the first scope-tagger-aware Apply-fix invocation in a resumed run created before the tagger landed, the runtime treats it as `true`, surfaces a one-line stderr warning once per resume (form: `scope_tagger_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`.
+- **`scope_tagger_enabled` runtime backfill.** Same shape as `verifier_enabled` above: if the field is missing from `config.md` on the first scope-tagger-aware Apply-fix invocation of a run, the runtime treats it as `true`, surfaces a one-line stderr warning once per session (form: `scope_tagger_enabled missing from config.md — backfilling default 'true' for this run`), and writes the field back to `config.md`.
 
-- **`visual_fidelity_required` runtime backfill.** Same shape as `verifier_enabled` above: if the field is missing from `config.md` on the first visual-fidelity-aware skill invocation in a resumed run created before the field landed, the runtime treats it as `false` (the default — the binding chain stays silent for legacy runs), surfaces a one-line stderr warning once per resume (form: `visual_fidelity_required missing from config.md — backfilling default 'false' for this run`), and writes the field back to `config.md`. The carve-out exists because pre-existing run directories on disk pre-date the field's introduction and the alternative — failing the run on a missing field — would prevent users from resuming any in-flight run after upgrading. The three `*_enabled` / `*_required` backfills (`verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`) are the only carve-outs from the no-silent-defaults rule (`### No silent defaults` above).
+- **`visual_fidelity_required` runtime backfill.** Same shape as `verifier_enabled` above: if the field is missing from `config.md` on the first visual-fidelity-aware skill invocation of a run, the runtime treats it as `false` (the default — the binding chain stays silent when the run is not visual-fidelity-bound), surfaces a one-line stderr warning once per session (form: `visual_fidelity_required missing from config.md — backfilling default 'false' for this run`), and writes the field back to `config.md`. The three `*_enabled` / `*_required` backfills (`verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`) are the only carve-outs from the no-silent-defaults rule (`### No silent defaults` above).
 
 - **Hard-stop on write-back failure (applies to all three backfills above).** The write-back to `config.md` is part of the carve-out's contract, not a best-effort side effect. If the write fails for any reason (read-only filesystem, permission error, lock contention, disk full, etc.), the runtime MUST stop issuing tool calls and present the following to the user (the same "Stop and present" pattern used by the validation menus in `### When config.md is missing entirely` and `### When a required field is missing or has an invalid value` above — message to the user in main chat, not stderr or a tool-call log line, then wait for the user's selection):
 
@@ -675,7 +675,7 @@ Mirrors the skill-refactor design's "decline scope-extension findings" rule, app
 **Per-finding file paths.** Each reviewer writes one file per finding into a per-round directory under `reviews/{step}/`:
 
 - Claude reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (one file per finding; `<reviewer_tag>` is e.g. `quality-claude`, `scope-claude`)
-- Claude scope-reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (same shape; dedicated `qrspi-{name}-scope-reviewer` agents per #110)
+- Claude scope-reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (same shape; dedicated `qrspi-{name}-scope-reviewer` agents)
 - Codex reviewer (async) → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (filled via `scripts/codex-companion-bg.sh await <jobId>` stdout redirection per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill)
 - Clean-round sentinel → `reviews/{step}/round-NN/<reviewer_tag>.clean.md` (one file per reviewer when zero findings)
 - Main chat fix-apply summary → `reviews/{step}/round-NN-dispositions.md`
@@ -951,7 +951,7 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
    **Skip when round NN's scope-set is missing.** If `reviews/{step}/round-NN-scope-set.txt` is absent (tagger dispatch skipped, tagger failure left the file unwritten, or the round had zero kept findings), treat the round as full-scope: round NN+1 dispatches with `<ref>=<base-branch>` and no `<scope_hint>` (broaden — same as if a new tag appeared). Do NOT abort the round on a missing scope-set; the conservative-broaden path keeps reviews moving.
 
-   **Distinguish missing-scope-set causes.** Whenever step 12 broadens due to a missing scope-set — including rounds 1–2 where the convergence rule itself is in configured-skip mode — emit a one-line diagnostic that distinguishes the cause. On round 3 or later: if `reviews/{step}/round-(NN-1)-scope-set.txt` ALSO absent (typical signal of a resumed run whose earlier rounds predate scope-tagger support), emit `"Round NN-1 scope-set absent (resumed run pre-tagger?) — broadening for round NN+1"`; if `round-(NN-1)-scope-set.txt` is PRESENT but `round-NN-scope-set.txt` is absent (typical signal of a tagger failure or zero-kept-findings round in NN), emit `"Round NN scope-set absent — broadening for round NN+1"`. On rounds 1–2: emit `"Round NN scope-set absent — broadening for round NN+1 (rounds 1–2 broaden by default; absence may indicate tagger failure or zero-kept-findings)"` so a tagger that crashes early is still surfaced. The broaden behavior is identical across rounds; the diagnostic distinguishability lets the user spot a regression (e.g. tagger started silently failing every round).
+   **Distinguish missing-scope-set causes.** Whenever step 12 broadens due to a missing scope-set — including rounds 1–2 where the convergence rule itself is in configured-skip mode — emit a one-line diagnostic that distinguishes the cause. On round 3 or later: if `reviews/{step}/round-(NN-1)-scope-set.txt` ALSO absent (typical signal of a run whose earlier rounds carry no scope-tagger artifacts), emit `"Round NN-1 scope-set absent (no earlier scope-tagger output?) — broadening for round NN+1"`; if `round-(NN-1)-scope-set.txt` is PRESENT but `round-NN-scope-set.txt` is absent (typical signal of a tagger failure or zero-kept-findings round in NN), emit `"Round NN scope-set absent — broadening for round NN+1"`. On rounds 1–2: emit `"Round NN scope-set absent — broadening for round NN+1 (rounds 1–2 broaden by default; absence may indicate tagger failure or zero-kept-findings)"` so a tagger that crashes early is still surfaced. The broaden behavior is identical across rounds; the diagnostic distinguishability lets the user spot a regression (e.g. tagger started silently failing every round).
 
    **Convergence rule (compare round NN vs round NN-1).** Read both scope-set files; tag lines are lines NOT starting with `# ` (literal hash followed by a space — the orchestrator's comment marker). H2 heading tags begin with `## ` (double hash + space) and are PRESERVED by this rule; only the `# scope-set for round N` / `# generated_by:` / `# total_findings_kept:` / `# warning:` orchestrator-comment lines start with `# ` (single hash + space) and are skipped. Compute `scope_set(NN)` and `scope_set(NN-1)` as set-of-strings. Comparison is **byte-exact** — the tagger MUST strip trailing whitespace from H2 tag lines before write so a whitespace-only edit does not silently flip a relation. Apply the rules below in order; the first matching rule wins:
 

@@ -9,9 +9,12 @@ bats_require_minimum_version 1.5.0
 # and § Path-shaped carve-outs).
 #
 # Carve-outs (path-shaped):
-#   - docs/qrspi/YYYY-MM-DD-*/**   (dated pipeline artifact directories)
-#   - CHANGELOG.md                  (version-of-record file)
-#   - tests/fixtures/**             (fixture files may embed version strings)
+#   - docs/qrspi/YYYY-MM-DD-*/**       (dated pipeline artifact directories)
+#   - docs/superpowers/plans/**         (dated point-in-time implementation plans)
+#   - docs/superpowers/specs/**         (dated point-in-time spec/design docs)
+#   - reviews/**                        (reviewer-finding artifacts — quote versions/PRs from the artifact under review)
+#   - CHANGELOG.md                      (version-of-record file)
+#   - tests/fixtures/**                 (fixture files may embed version strings)
 #
 # Inline carve-out:
 #   - A line ending with <!-- evergreen-exempt --> is skipped for that line only.
@@ -45,6 +48,24 @@ _is_path_exempt() {
   # Carve-out 3: tests/fixtures/**
   case "$rel" in
     tests/fixtures/*)
+      return 0 ;;
+  esac
+  # Carve-out 4: docs/superpowers/plans/** and docs/superpowers/specs/**
+  # Dated point-in-time implementation plans and specs (filenames are
+  # YYYY-MM-DD-...). Functionally the same as docs/qrspi/YYYY-MM-DD-*/**:
+  # the version/PR/milestone references they carry are correct for the
+  # moment the doc was written.
+  case "$rel" in
+    docs/superpowers/plans/*)
+      return 0 ;;
+    docs/superpowers/specs/*)
+      return 0 ;;
+  esac
+  # Carve-out 5: reviews/**
+  # Reviewer-finding artifacts from QRSPI pipeline runs. They legitimately
+  # quote version strings and PR refs from the artifact under review.
+  case "$rel" in
+    reviews/*)
       return 0 ;;
   esac
   return 1

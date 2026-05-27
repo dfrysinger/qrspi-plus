@@ -112,9 +112,9 @@ The following token families MUST NOT appear in any added line of the commit dif
 
 | Family | Regex shape | Examples |
 |--------|-------------|---------|
-| Release-version token | `v\d+\.\d+` | `v0.7`, `v1.2` |
-| Milestone wording | `in v\d+\.\d+`, `after this release`, `after the \w+ release` | `in v0.7`, `after this release` |
-| PR or issue reference as behavior justification | `(see|per|fixes|closes)\s+#\d+` used to justify current behavior | `per #42`, `see #172` |
+| Release-version token | `v\d+\.\d+` | `v0.7`, `v1.2` | <!-- evergreen-exempt -->
+| Milestone wording | `in v\d+\.\d+`, `after this release`, `after the \w+ release` | `in v0.7`, `after this release` | <!-- evergreen-exempt -->
+| PR or issue reference as behavior justification | `(see|per|fixes|closes)\s+#\d+` used to justify current behavior | `per #42`, `see #172` | <!-- evergreen-exempt -->
 
 Evergreen-markdown rules apply only to edited `.md` files. They do not apply to code, shell scripts, YAML, JSON, or other non-markdown surfaces.
 
@@ -128,6 +128,9 @@ The following surfaces are exempt from both rule sets above:
 | `agents/qrspi-*-reviewer.md` | Reviewer agent bodies document the finding-ID schema; those IDs must appear there |
 | Runtime-assembled prompt parameters | In-memory dispatch payloads (`wave_context:`, `companion_review_findings:`, etc.) are not git-tracked files; the rule applies to the diff, not to runtime values |
 | `docs/qrspi/YYYY-MM-DD-*/**` | Dated pipeline artifacts (goals.md, plan.md, tasks/*.md, etc.) — the artifact directory under its dated slug |
+| `docs/superpowers/plans/**` | Dated point-in-time implementation plans (filenames `YYYY-MM-DD-...`); milestone/PR refs are correct as-of when the plan was written |
+| `docs/superpowers/specs/**` | Dated point-in-time specs/design docs (filenames `YYYY-MM-DD-...`); milestone/PR refs are correct as-of when the spec was written |
+| `reviews/**` | Reviewer-finding artifacts from QRSPI pipeline runs; they legitimately quote version strings and PR refs from the artifact under review |
 | `CHANGELOG.md` | Version-of-record file; release-version tokens are the point |
 | `tests/fixtures/**` | Version-tagged fixtures may embed version strings for testing the version-detection behavior itself |
 
