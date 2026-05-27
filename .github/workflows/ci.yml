@@ -92,6 +92,13 @@ jobs:
             gawk \
             nodejs \
             perl-utils
+          # alpine ships `awk` as a busybox applet. Tests rely on GNU awk
+          # semantics (e.g. POSIX character-class regexes inside `/.../`,
+          # multi-statement actions), so replace the busybox symlink with
+          # gawk's binary on PATH.
+          rm -f /usr/bin/awk
+          ln -s /usr/bin/gawk /usr/bin/awk
+          awk --version | head -1
 
       - name: Configure git for actions/checkout workspace
         # actions/checkout owns /__w/<repo> as a different uid than the
