@@ -10,7 +10,7 @@
 # branch surfaces here.
 #
 # Test scope (per PR-2 spec test plan, table-driven over §2.4 cases):
-#   1. Step 7.5 exists and has the convergence-rule table.
+#   1. Step 12 (ref selection for round NN+1) exists and has the convergence-rule table.
 #   2. Each of the five §2.4 relations is covered:
 #        equal           → narrow to that set
 #        proper subset   → narrow to the BROADER set (safety margin)
