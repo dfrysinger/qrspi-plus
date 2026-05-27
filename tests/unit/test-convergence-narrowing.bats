@@ -37,7 +37,7 @@ setup() {
   export REVIEWER_PROTOCOL="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
 
   # Pull the apply-fix protocol body up through the failure-menu prose so
-  # step 12 is in scope (step 12 sits between step 10 and the failure menu).
+  # step 12 is in scope (step 12 sits between step 11 and the failure menu).
   PROTOCOL=$(awk '
     /\*\*Apply-fix protocol\.\*\*/ { in_block=1 }
     in_block && /\*\*Verifier-round failure menu/ { exit }
