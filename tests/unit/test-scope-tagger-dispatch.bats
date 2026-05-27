@@ -439,7 +439,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   grep -qE 'qrspi-scope-tagger' "$impl" \
     || { echo "implement/SKILL.md missing qrspi-scope-tagger reference"; return 1; }
   # Must also reference using-qrspi step 6 (scope-tagger dispatch) as the canonical contract.
-  grep -qE 'using-qrspi step 6 \(scope-tagger dispatch\)|step 6 \(scope-tagger dispatch\)' "$impl" \
+  grep -qE 'using-qrspi step 6 \(scope-tagger dispatch\)' "$impl" \
     || { echo "implement/SKILL.md does not reference using-qrspi step 6 (scope-tagger dispatch)"; return 1; }
 }
 
@@ -470,7 +470,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   grep -qE 'qrspi-scope-tagger' "$intg" \
     || { echo "integrate/SKILL.md missing qrspi-scope-tagger reference"; return 1; }
   # Must also reference using-qrspi step 6 (scope-tagger dispatch) as the canonical contract.
-  grep -qE 'step 6 \(scope-tagger dispatch\)|step.*6.*scope-tagger' "$intg" \
+  grep -qE 'using-qrspi step 6 \(scope-tagger dispatch\)' "$intg" \
     || { echo "integrate/SKILL.md does not reference using-qrspi step 6 (scope-tagger dispatch)"; return 1; }
 }
 
