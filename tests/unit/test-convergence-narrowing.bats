@@ -225,9 +225,9 @@ setup() {
     || { echo "step 12 missing anchor-mismatch literal diagnostic"; return 1; }
 }
 
-@test "[112-PR2] I10 distinguishability emits a 'resumed run pre-tagger?' diagnostic" {
-  echo "$PROTOCOL" | grep -qF 'resumed run pre-tagger?' \
-    || { echo "step 12 missing I10 'resumed run pre-tagger' literal diagnostic"; return 1; }
+@test "[112-PR2] I10 distinguishability emits a 'no earlier scope-tagger output?' diagnostic" {
+  echo "$PROTOCOL" | grep -qF 'no earlier scope-tagger output?' \
+    || { echo "step 12 missing I10 'no earlier scope-tagger output' literal diagnostic"; return 1; }
 }
 
 @test "[112-PR2] I10 distinguishability emits a 'scope-set absent' diagnostic" {

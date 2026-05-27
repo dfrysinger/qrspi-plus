@@ -103,7 +103,7 @@ Evaluate each area. Cite specific file:line references for any issues found.
 
 **Comments and test surfaces — apply the split rule:**
 - **QRSPI-internal IDs** — G/R/D/T/Q-prefixed numeric tokens: forbidden in code comments, test names, `describe` / `it` blocks, and fixture names — flag every occurrence outside `docs/qrspi/`, regardless of how scoped the comment is.
-- **External tracker IDs (e.g., `#123`, `JIRA-456`):** flag bare references like `// fixes #123` that add no signal. Scoped references with a stated reason are valid.
+- **External tracker IDs (e.g., `#123`, `JIRA-456`):** flag bare references like `// fixes #123` that add no signal. Scoped references with a stated reason are valid. <!-- evergreen-exempt -->
 
 **Out-of-scope surfaces** (do NOT flag): PR-body `Closes #N`, commit-message tracker references, the task-spec frontmatter `goal_ids` field, content under `docs/qrspi/`.
 

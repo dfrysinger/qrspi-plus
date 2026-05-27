@@ -100,16 +100,16 @@ setup_file() {
 }
 
 # ---------------------------------------------------------------------------
-# Legacy-config one-time warning when model_routing: absent on resume.
+# Missing-model_routing one-time warning when the block is absent from config.md.
 # ---------------------------------------------------------------------------
 
-@test "legacy-config warning: documented as one-time per resumed session" {
-  out="$(_extract_h4 "$USING" 'Legacy-config warning (`model_routing:` absent on resume)')"
-  [[ "$out" == *"once per resumed session"* ]] || [[ "$out" == *"one-time"* ]]
+@test "missing-model_routing warning: documented as one-time per session" {
+  out="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
+  [[ "$out" == *"once per session"* ]] || [[ "$out" == *"one-time"* ]]
 }
 
-@test "legacy-config warning: in-memory only, on-disk config never silently mutated" {
-  out="$(_extract_h4 "$USING" 'Legacy-config warning (`model_routing:` absent on resume)')"
+@test "missing-model_routing warning: in-memory only, on-disk config never silently mutated" {
+  out="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
   [[ "$out" == *"never silently mutated"* ]]
   [[ "$out" == *"in-memory"* ]]
 }

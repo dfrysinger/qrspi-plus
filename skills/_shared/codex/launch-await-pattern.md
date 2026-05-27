@@ -3,7 +3,7 @@
 
 ## Dispatch form
 
-All Codex dispatches use the **stdin pipeline** form. The legacy `launch --prompt-file <path>` form is retired (commit 21/22 of #110 migration); all live callers were migrated by commit 18 of that sequence to assemble the prompt body inline and pipe it to the wrapper.
+All Codex dispatches use the **stdin pipeline** form. The wrapper does not accept a `--prompt-file <path>` form — callers assemble the prompt body inline and pipe it to the wrapper.
 
 ### Canonical dispatch shape
 
