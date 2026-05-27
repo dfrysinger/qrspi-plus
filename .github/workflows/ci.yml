@@ -89,8 +89,16 @@ jobs:
             coreutils \
             grep \
             findutils \
+            gawk \
             nodejs \
-            perl
+            perl-utils
+
+      - name: Configure git for actions/checkout workspace
+        # actions/checkout owns /__w/<repo> as a different uid than the
+        # container runtime user. Newer git (>=2.35) refuses to operate on
+        # "unsafe" repos with status 128, breaking tests like the
+        # evergreen-markdown scan that shell out to `git ls-files`.
+        run: git config --global --add safe.directory '*'
 
       - name: Run unit BATS suite
         run: bats --tap tests/unit/
