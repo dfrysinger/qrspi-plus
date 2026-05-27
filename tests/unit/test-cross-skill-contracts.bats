@@ -135,7 +135,7 @@ setup_file() {
 
 # ---------------------------------------------------------------------------
 # Contract 6 — round-NN-commit.txt anchor file: implement (per-task) and
-# integrate write it; using-qrspi step 7.5 reads it for HEAD~1 reconciliation
+# integrate write it; using-qrspi step 12 reads it for HEAD~1 reconciliation
 # in the convergence-narrow decision.
 # Failure mode: anchor file path renamed or capture site removed; convergence
 # narrow can't validate prior-round commit; rounds silently broaden, eroding
@@ -148,7 +148,7 @@ setup_file() {
   # Producer side — integrate
   run grep -F "round-NN-commit.txt" "$REPO_ROOT/skills/integrate/SKILL.md"
   [ "$status" -eq 0 ]
-  # Consumer side — using-qrspi step 7.5 reads the anchor
+  # Consumer side — using-qrspi step 12 reads the anchor
   run grep -F "round-NN-commit.txt" "$REPO_ROOT/skills/using-qrspi/SKILL.md"
   [ "$status" -eq 0 ]
   run grep -F "rev-parse HEAD~1" "$REPO_ROOT/skills/using-qrspi/SKILL.md"
@@ -177,7 +177,7 @@ setup_file() {
 
 # ---------------------------------------------------------------------------
 # Contract 8 — Backward-loop sentinel: zero-byte flag file written by the
-# Pause Gate (option 3 cascade), read AND deleted by step 7.5 (consume-once).
+# Pause Gate (option 3 cascade), read AND deleted by step 12 (consume-once).
 # Failure mode: writer side keeps the flag but reader side stops deleting,
 # so subsequent rounds repeatedly broaden against an already-resolved upstream
 # rewrite — or vice versa.
@@ -186,7 +186,7 @@ setup_file() {
   # Writer side — using-qrspi (Pause Gate option 3) names the flag
   run grep -F "backward-loop.flag" "$REPO_ROOT/skills/using-qrspi/SKILL.md"
   [ "$status" -eq 0 ]
-  # Reader side — using-qrspi step 7.5 consumes-once
+  # Reader side — using-qrspi step 12 consumes-once
   run grep -E "DELETE the flag|consume-once" "$REPO_ROOT/skills/using-qrspi/SKILL.md"
   [ "$status" -eq 0 ]
   # Per-task implement also handles the flag for its own rounds

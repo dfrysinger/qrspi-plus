@@ -498,7 +498,7 @@ setup() {
 # PR-2 IS now introducing those tokens by design: the agent file
 # qrspi-scope-tagger.md, the scope_tagger_enabled config field, the
 # scope_hint reviewer dispatch parameter, the round-NN-scope-set.txt
-# output file, the convergence rule (step 7.5), the auto-broaden semantics,
+# output file, the convergence rule (step 12), the auto-broaden semantics,
 # and HEAD~1 as the narrowed-round diff ref are all PR-2 surfaces. Keeping
 # the scans here would block every PR-2 commit on a tautological violation.
 #

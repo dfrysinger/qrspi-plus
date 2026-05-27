@@ -9,7 +9,7 @@
 #   2. The agent body documents the multi-file vs single-file tag derivation
 #      branches, the line-range-missing warning behavior, the deduplication
 #      requirement, and the write-only output discipline.
-#   3. using-qrspi/SKILL.md step 5.5 is present, dispatches the tagger,
+#   3. using-qrspi/SKILL.md step 6 is present, dispatches the tagger,
 #      and references the scope-set output file.
 #   4. The scope_tagger_enabled gate + backfill is documented (mirrors
 #      verifier_enabled exactly).
@@ -115,7 +115,7 @@ setup() {
 }
 
 # -----------------------------------------------------------------------------
-# 3. using-qrspi step 5.5 wires the dispatch
+# 3. using-qrspi step 6 wires the dispatch
 # -----------------------------------------------------------------------------
 
 @test "[112-PR2] using-qrspi/SKILL.md has step 6 (scope-tagger dispatch)" {
@@ -125,7 +125,7 @@ setup() {
     || { echo "missing step 6 (scope-tagger dispatch) in using-qrspi/SKILL.md"; return 1; }
 }
 
-@test "[112-PR2] step 5.5 dispatches qrspi-scope-tagger as a subagent" {
+@test "[112-PR2] step 6 dispatches qrspi-scope-tagger as a subagent" {
   local protocol
   protocol=$(awk '
     /\*\*Apply-fix protocol\.\*\*/ { in_block=1 }
@@ -133,10 +133,10 @@ setup() {
     in_block { print }
   ' "$USING_QRSPI")
   echo "$protocol" | grep -qF 'subagent_type: qrspi-scope-tagger' \
-    || { echo "step 5.5 does not dispatch qrspi-scope-tagger"; return 1; }
+    || { echo "step 6 does not dispatch qrspi-scope-tagger"; return 1; }
 }
 
-@test "[112-PR2] step 5.5 documents the kept_findings parameter (post-verifier filter)" {
+@test "[112-PR2] step 6 documents the kept_findings parameter (post-verifier filter)" {
   local protocol
   protocol=$(awk '
     /\*\*Apply-fix protocol\.\*\*/ { in_block=1 }
@@ -144,10 +144,10 @@ setup() {
     in_block { print }
   ' "$USING_QRSPI")
   echo "$protocol" | grep -qE 'kept_findings' \
-    || { echo "step 5.5 missing kept_findings parameter"; return 1; }
+    || { echo "step 6 missing kept_findings parameter"; return 1; }
 }
 
-@test "[112-PR2] step 5.5 references the round-NN-scope-set.txt output" {
+@test "[112-PR2] step 6 references the round-NN-scope-set.txt output" {
   grep -qF 'round-NN-scope-set.txt' "$USING_QRSPI" \
     || { echo "using-qrspi/SKILL.md missing round-NN-scope-set.txt reference"; return 1; }
 }
@@ -184,7 +184,7 @@ setup() {
     || { echo "scope_tagger_enabled runtime-backfill carve-out not in ### Exceptions section"; return 1; }
 }
 
-@test "[112-PR2] step 5.5 reads scope_tagger_enabled and applies the verifier-style backfill" {
+@test "[112-PR2] step 6 reads scope_tagger_enabled and applies the verifier-style backfill" {
   local protocol
   protocol=$(awk '
     /\*\*Apply-fix protocol\.\*\*/ { in_block=1 }
@@ -192,9 +192,9 @@ setup() {
     in_block { print }
   ' "$USING_QRSPI")
   echo "$protocol" | grep -qF 'scope_tagger_enabled' \
-    || { echo "step 5.5 does not read scope_tagger_enabled"; return 1; }
+    || { echo "step 6 does not read scope_tagger_enabled"; return 1; }
   echo "$protocol" | grep -qE 'scope_tagger_enabled missing from config\.md|backfilling default' \
-    || { echo "step 5.5 missing backfill diagnostic"; return 1; }
+    || { echo "step 6 missing backfill diagnostic"; return 1; }
 }
 
 @test "[112-PR2] fresh-run config init includes scope_tagger_enabled: true alongside verifier_enabled and route" {
@@ -213,8 +213,8 @@ setup() {
     || { echo "no fenced code block has 'route:' + 'verifier_enabled: true' + 'scope_tagger_enabled: true' together (run-init template fence missing)"; return 1; }
 }
 
-@test "[112-PR2] disabled-mode fall-through is documented (skip step 5.5, no narrowing)" {
-  # When scope_tagger_enabled=false: step 5.5 skipped, step 7.5 no-op,
+@test "[112-PR2] disabled-mode fall-through is documented (skip step 6, no narrowing)" {
+  # When scope_tagger_enabled=false: step 6 skipped, step 12 no-op,
   # reviewers fall through to PR-1's full-base-diff behavior.
   grep -qE 'skipped.*tagger|skip[a-z ]*step 5\.5|tagger dispatch is skipped' "$USING_QRSPI" \
     || { echo "disabled-mode fall-through not documented"; return 1; }
@@ -435,12 +435,12 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
 @test "[140] per-task Implement dispatches qrspi-scope-tagger" {
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
   # Either an explicit qrspi-scope-tagger reference in the per-task convergence
-  # subsection, OR a reference to using-qrspi step 5.5 (which does the dispatch).
+  # subsection, OR a reference to using-qrspi step 6 (which does the dispatch).
   grep -qE 'qrspi-scope-tagger' "$impl" \
     || { echo "implement/SKILL.md missing qrspi-scope-tagger reference"; return 1; }
-  # Must also reference using-qrspi step 5.5 as the canonical contract.
-  grep -qE 'step.*5\.5|5\.5.*step' "$impl" \
-    || { echo "implement/SKILL.md does not reference using-qrspi step 5.5"; return 1; }
+  # Must also reference using-qrspi step 6 (scope-tagger dispatch) as the canonical contract.
+  grep -qE 'using-qrspi step 6 \(scope-tagger dispatch\)|step 6 \(scope-tagger dispatch\)' "$impl" \
+    || { echo "implement/SKILL.md does not reference using-qrspi step 6 (scope-tagger dispatch)"; return 1; }
 }
 
 @test "[140] per-task Implement carries kept_findings parameter for tagger dispatch" {
