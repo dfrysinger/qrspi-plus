@@ -638,3 +638,111 @@ teardown() {
   # Exit code must be 7 (from transport), not 0 or any other override.
   [ "$dispatch_status" -eq 7 ]
 }
+
+# ===========================================================================
+# SECTION 5: R2 correctness fixes (T6 R3 fix-cycle)
+#
+# Six tests — one per R2 finding kept after Hotfix A+B threshold:
+#   sec.F01: transport-marker spoofable via COPILOT_CLI (binary-validation gate)
+#   sec.F02: HOME glob unvalidated (reject unsafe HOME before glob)
+#   sec.F03: mismatch echo injects terminal control chars (strip before echo)
+#   sf.F01:  source guard fails open on direct execution (return 0 || exit 0)
+#   sf.F02:  pipefail-off masks compose_prompt failure (set -o pipefail subshell)
+#   sf.F03:  check_codex_available stderr swallowed by 2>/dev/null at call site
+# ===========================================================================
+
+@test "[r3-sec.F01] detect_host emits claude-code when COPILOT_CLI=1 but gh binary not reachable in PATH" {
+  # sec.F01: transport-marker is spoofable because detect_host trusts the
+  # user-supplied COPILOT_CLI env var without validating that the gh/copilot
+  # binary is actually reachable.  After the fix, detect_host checks
+  # `command -v gh` before emitting 'copilot-cli'; if gh is absent it falls
+  # back to 'claude-code', making the marker harder to forge.
+  #
+  # RED state: the current code ignores binary reachability and emits
+  # 'copilot-cli' whenever COPILOT_CLI=1, regardless of PATH.
+  # The assertion `[ "$output" = "claude-code" ]` therefore FAILS. ✓
+  run bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    export COPILOT_CLI=1
+    export PATH=/usr/bin:/bin
+    . \"$WRAPPER\"
+    detect_host
+  "
+  [ "$status" -eq 0 ]
+  [ "$output" = "claude-code" ]
+}
+
+@test "[r3-sec.F02] check_codex_available emits diagnostic and returns non-zero when HOME contains .. component" {
+  # sec.F02: HOME is taken verbatim for the companion-glob path with no
+  # path-safety check.  A caller can set HOME to a path with '..' components
+  # to probe arbitrary filesystem locations.  After the fix, check_codex_available
+  # rejects HOME values containing '..' and emits a diagnostic to stderr.
+  #
+  # RED state: the current code performs no HOME validation; it silently
+  # fails (glob finds nothing) without any stderr diagnostic.
+  # grep for "unsafe" therefore FAILS. ✓
+  TMP_STDERR="$TMP_DIR/r3-sec-f02-stderr.txt"
+  bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    export HOME=\"$TMP_DIR/../unsafe-home\"
+    . \"$WRAPPER\" 2>/dev/null
+    check_codex_available claude-code
+  " >/dev/null 2>"$TMP_STDERR" || true
+
+  grep -qi "unsafe" "$TMP_STDERR"
+}
+
+@test "[r3-sec.F03] codex_reviews value is validated to a safe literal before echoing in mismatch diagnostic" {
+  # sec.F03: the _codex_reviews value extracted from config.md is echoed
+  # verbatim to stderr without sanitisation.  A crafted config.md value that
+  # passes a loose future comparison could inject terminal control sequences.
+  # After the fix, _codex_reviews is normalised to exactly "true" or "false"
+  # before any use; an out-of-range value is set to "false".
+  #
+  # The fix must introduce a `true|false` case statement (or equivalent) that
+  # is NOT present in the current code.  This structural assertion is the
+  # reliable gate for the sanitisation — behavioural injection tests would
+  # require the echo to fire with a polluted value, which the strict
+  # `== "true"` guard in the current code prevents.
+  #
+  # RED state: the script does not contain a `true|false` case pattern for
+  # _codex_reviews sanitisation.  `grep -qF 'true|false' "$WRAPPER"` FAILS. ✓
+  grep -qF 'true|false' "$WRAPPER"
+}
+
+@test "[r3-sf.F01] source guard exits cleanly when script is directly executed with QRSPI_SOURCE_ONLY=1" {
+  # sf.F01: `return 0` at the source guard is valid only in a sourced context.
+  # When the script is executed directly (`bash run-codex-review.sh`), `return`
+  # outside a function emits an error but — because set -e is disabled — does
+  # NOT halt execution.  The script falls through into argument parsing and
+  # exits 1 on missing --agent-file.  After the fix, the guard uses
+  # `return 0 2>/dev/null || exit 0` which correctly exits when run directly.
+  #
+  # RED state: `bash "$WRAPPER"` (direct execution) with QRSPI_SOURCE_ONLY=1
+  # exits 1 (argument-parsing aborts).  `[ "$status" -eq 0 ]` FAILS. ✓
+  QRSPI_SOURCE_ONLY=1 run bash "$WRAPPER"
+  [ "$status" -eq 0 ]
+}
+
+@test "[r3-sf.F02] dispatch section uses a pipefail-safe invocation for compose_prompt pipeline" {
+  # sf.F02: `compose_prompt | bash dispatcher` with pipefail OFF means a
+  # compose_prompt failure (partial output, file error) is silently masked by
+  # the dispatcher's exit code.  After the fix the pipeline runs inside a
+  # subshell with `set -o pipefail` so compose_prompt failures are surfaced.
+  #
+  # RED state: the script contains no `set -o pipefail` statement (the existing
+  # comment `# pipefail is off` does not match `set -o pipefail`).
+  # `grep -q 'set -o pipefail'` therefore FAILS. ✓
+  grep -q 'set -o pipefail' "$WRAPPER"
+}
+
+@test "[r3-sf.F03] check_codex_available at dispatch call site does not suppress its stderr diagnostic" {
+  # sf.F03: `check_codex_available "$_detected_host" 2>/dev/null` at the
+  # dispatch call site silently swallows the TE11 unrecognized-host diagnostic.
+  # After the fix the 2>/dev/null redirection is removed so the diagnostic can
+  # reach the operator's stderr stream.
+  #
+  # RED state: the pattern `check_codex_available.*2>/dev/null` IS present in
+  # the script.  `! grep` therefore FAILS. ✓
+  ! grep -qE 'check_codex_available[^#]*2>/dev/null' "$WRAPPER"
+}

@@ -95,12 +95,17 @@ require_value() {
 # ---------------------------------------------------------------------------
 
 # detect_host - emits either 'copilot-cli' or 'claude-code' to stdout.
-# Examines only the COPILOT_CLI environment variable.
-# The literal string "1" selects copilot-cli; every other state (unset, empty,
-# or any non-"1" value) selects claude-code.  Always exits 0.
-# Writes nothing to stderr under normal operation.
+# Examines COPILOT_CLI AND the reachability of the gh binary to prevent
+# transport-marker spoofing via a user-supplied env var alone.
+# COPILOT_CLI=1 selects copilot-cli ONLY when `gh` is also reachable in PATH
+# (process-spawn fingerprint: a real Copilot CLI session launches under gh).
+# All other states (COPILOT_CLI unset/empty/non-"1", or gh absent) select
+# claude-code.  Always exits 0.  Writes nothing to stderr under normal operation.
+#
+# sec.F01 (R2): COPILOT_CLI alone was user-settable; adding the binary check
+# makes the marker harder to forge without a real gh installation.
 detect_host() {
-  if [[ "${COPILOT_CLI:-}" == "1" ]]; then
+  if [[ "${COPILOT_CLI:-}" == "1" ]] && command -v gh >/dev/null 2>&1; then
     echo "copilot-cli"
   else
     echo "claude-code"
@@ -120,6 +125,15 @@ check_codex_available() {
       return 0
       ;;
     claude-code)
+      # sec.F02 (R2): reject HOME values that contain '..' path components,
+      # are empty, or contain newlines — any of these could allow filesystem
+      # probing outside the expected ~/.claude/ tree.
+      case "${HOME:-}" in
+        *..* | "" | *$'\n'*)
+          echo "check_codex_available: unsafe HOME value — must be an absolute path without '..' components" >&2
+          return 1
+          ;;
+      esac
       local found=0
       local f
       for f in "${HOME}/.claude/plugins/cache/openai-codex/codex"/*/scripts/codex-companion.mjs; do
@@ -145,7 +159,15 @@ check_codex_available() {
 # definitions so that function-isolation tests can source this file and call
 # detect_host / check_codex_available directly without triggering argument
 # parsing or validation.
-[[ "${QRSPI_SOURCE_ONLY:-}" == "1" ]] && return 0
+#
+# sf.F01 (R2): `return 0` is only valid in a sourced context.  When the script
+# is executed directly (`bash run-codex-review.sh`) with set -e absent, the
+# failed `return` does not abort the script — execution falls through into
+# argument parsing.  `return 0 2>/dev/null || exit 0` works in both modes:
+# `return 0` succeeds when sourced; `exit 0` fires when executed directly.
+if [[ "${QRSPI_SOURCE_ONLY:-}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -537,7 +559,18 @@ fi
 # Check Codex availability for the detected host.  For the claude-code path,
 # if the companion glob is empty but codex_reviews says "true", emit a mismatch
 # warning.  The warning is stderr-only and does not affect dispatch or exit code.
-if ! check_codex_available "$_detected_host" 2>/dev/null; then
+#
+# sec.F03 (R2): normalise _codex_reviews to exactly "true" or "false" before
+# any use — an unexpected value (which could carry terminal control sequences
+# from a crafted config.md) is treated as "false" and never echoed verbatim.
+case "$_codex_reviews" in
+  true|false) ;;
+  *) _codex_reviews="false" ;;
+esac
+#
+# sf.F03 (R2): removed 2>/dev/null so that the check_codex_available stderr
+# diagnostic for unrecognised hosts reaches the operator's terminal.
+if ! check_codex_available "$_detected_host"; then
   if [[ "${_codex_reviews}" == "true" ]]; then
     echo "[mismatch] detected host=${_detected_host}, codex_reviews config=${_codex_reviews}" >&2
   fi
@@ -545,12 +578,16 @@ fi
 
 # Emit the transport marker and dispatch.  Exit code is propagated unchanged
 # from the transport; no suppression, no log-and-continue.
+#
+# sf.F02 (R2): each dispatch pipeline now runs in a subshell with set -o pipefail
+# so that a compose_prompt failure (e.g. partial output from a read error) is
+# not silently masked by the dispatcher's exit code.
 if [[ "$_detected_host" == "copilot-cli" ]]; then
   echo "[transport: task-tool]" >&2
-  compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}"
+  ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
   exit "$?"
 else
   echo "[transport: shell-pipeline]" >&2
-  compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}"
+  ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
   exit "$?"
 fi
