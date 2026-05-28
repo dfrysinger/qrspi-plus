@@ -448,3 +448,78 @@ EOF
   # After migration, the inline function definition must be absent.
   ! grep -q "^extract_review_round()" "$patterns_file"
 }
+
+# =============================================================================
+# sf.F01: awk crash produces distinct "awk failed (exit N)" diagnostic
+# (NOT "not found in")
+# =============================================================================
+
+@test "[sf-F01] extract_section_fence_aware: awk crash emits 'awk failed (exit' diagnostic, not 'not found in'" {
+  # sf.F01 (score 100, correctness): awk's exit status was swallowed in the
+  # original implementation.  A crash (non-zero exit from awk) was reported as
+  # "anchor not found", silently masking exec failures, OOM kills, etc.
+  # After the fix the function must:
+  #   - return 1
+  #   - emit a message containing "awk failed (exit" on stderr
+  #   - NOT emit the misleading "not found in" phrase
+  #
+  # Technique: shadow awk in PATH with a script that always exits 2.
+  local fake_bin="$FIXTURE_DIR/fake-bin"
+  mkdir -p "$fake_bin"
+  printf '#!/bin/sh\nexit 2\n' > "$fake_bin/awk"
+  chmod +x "$fake_bin/awk"
+
+  cat > "$FIXTURE_DIR/any.md" <<'EOF'
+### Some Section
+content here
+EOF
+
+  # Run with the fake awk first in PATH so the real awk is never reached.
+  run env PATH="$fake_bin:$PATH" bash -c '
+    load_dir="'"$BATS_TEST_DIRNAME"'/../helpers"
+    # shellcheck source=tests/helpers/skill-markdown.bash
+    source "$load_dir/skill-markdown.bash"
+    extract_section_fence_aware "'"$FIXTURE_DIR/any.md"'" "### Some Section"
+  '
+
+  # Must exit non-zero
+  [ "$status" -ne 0 ]
+  # Must contain the new distinct diagnostic
+  [[ "$output" == *"awk failed (exit"* ]]
+  # Must NOT fall through to the misleading anchor-not-found message
+  [[ "$output" != *"not found in"* ]]
+}
+
+# =============================================================================
+# sf.F03: empty fenced block (delimiters only) treated as content, not FOUND_EMPTY
+# =============================================================================
+
+@test "[sf-F03] extract_section_fence_aware: section containing only an empty fenced block returns 0 with fence delimiters in stdout" {
+  # sf.F03 (score 88, correctness): the /^```/ rule inside the awk script set
+  # fence state and printed the delimiter line but never set has_content=1.
+  # A section whose body was an empty fenced code block (two ``` delimiter lines
+  # with nothing between them) was therefore misclassified as FOUND_EMPTY and
+  # its output silently discarded.
+  #
+  # After the fix, fence delimiter lines inside the target section must set
+  # has_content=1, so the function returns 0 and emits both delimiter lines.
+  cat > "$FIXTURE_DIR/empty-fence.md" <<'EOF'
+### Target Section
+```
+```
+### Next Section
+other content
+EOF
+
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/empty-fence.md" "### Target Section")"
+  local rc=$?
+
+  # Pre-fix: returns 1 (FOUND_EMPTY). Post-fix: must return 0.
+  [ "$rc" -eq 0 ]
+  # Both fence delimiter lines must appear in the output.
+  [[ "$out" == *'```'* ]]
+  # Verify the anchor line is present (anchor-inclusive contract).
+  [[ "$out" == *"### Target Section"* ]]
+  # The next section's content must not bleed through.
+  [[ "$out" != *"other content"* ]]
+}

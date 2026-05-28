@@ -241,7 +241,10 @@ extract_section_fence_aware() {
 
     /^```/ {
       fence = !fence
-      if (in_b) print
+      if (in_b) {
+        print
+        has_content = 1
+      }
       next
     }
 
@@ -271,6 +274,13 @@ extract_section_fence_aware() {
       }
     }
   ' "$file")"
+  local awk_status=$?
+  if [ "$awk_status" -ne 0 ]; then
+    printf 'extract_section_fence_aware: awk failed (exit %d) processing %s\n' \
+      "$awk_status" "$file" >&2
+    rm -f "$signal_tmp"
+    return 1
+  fi
 
   local signal=""
   if [ -r "$signal_tmp" ]; then
