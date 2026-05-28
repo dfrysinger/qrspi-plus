@@ -1,0 +1,247 @@
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/research/summary.md b/docs/qrspi/2026-05-27-v071-hardening/research/summary.md
+new file mode 100644
+index 0000000..5e0b92a
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/research/summary.md
+@@ -0,0 +1,241 @@
++---
++status: draft
++---
++
++# Research Summary
++
++## Q01: Control-character detection routine in `scripts/run-third-party-llm.sh`
++
++**TL;DR:** The control-character detection routine lives in the "Security pre-flight" block (lines 558–569) and uses `printf '%s' … | grep -qP '[\x00-\x1f\x7f]'` to test each provider `default_headers` name and value for C0 control characters (0x00–0x1F) and DEL (0x7F). Detection is gated behind the `openai-chat-completions` transport type and, on a positive match, terminates the script immediately via `die` with exit code 1 before any network call is made.
++
++**Key findings:**
++- **Tool**: `grep` with flags `-q` (quiet/no output) and `-P` (Perl-compatible regex / PCRE). The full invocation is `grep -qP`.
++- **Pattern**: `[\x00-\x1f\x7f]` — a character class covering all 32 C0 ASCII control characters (U+0000–U+001F) plus the DEL character (U+007F).
++- **Piped input**: Each header name (`_hname`) and header value (`_hval`) is passed individually via `printf '%s' "$_hname" | grep -qP …` and `printf '%s' "$_hval" | grep -qP …`.
++- **Gating condition 1 — transport type**: The entire check (lines 530–571) only executes when `TRANSPORT_TYPE = "openai-chat-completions"`; the `codex-broker` path skips this block entirely.
++- **Gating condition 2 — detection result**: When either the header name or header value matches the pattern, `die "header-validation: default_headers for provider '$PROVIDER' contains a control character in header '$_hname'"` is called, printing the message to stderr and exiting with code 1. If no match is found for all headers, execution falls through to API-key resolution (line 574 onward) and then network dispatch.
++- **Silent fallback**: Both `grep -qP` invocations include `2>/dev/null`. If the host `grep` does not support `-P` (e.g., BSD grep on macOS), the commands fail silently; the `if` condition evaluates to false and the check is effectively skipped.
++
++**Surprises:** The `2>/dev/null` suppression means that on platforms where `grep -P` is unsupported (including macOS's system grep), the control-character check silently produces a false-negative (no detection) rather than failing loudly. There is no fallback detection path for that scenario.
++
++**Caveats:** Only `scripts/run-third-party-llm.sh` was examined. No other files in the repo were checked for duplicate or analogous control-character detection logic.
++
++## Q2: POSIX-portable shell techniques for detecting control characters in strings
++
++**TL;DR:** The POSIX character class `[[:cntrl:]]` (matching U+0000–U+001F and U+007F) is broadly supported by `grep`, `sed`, `awk`, `tr`, and shell `case` patterns on macOS BSD tools, GNU/Linux tools, and Alpine BusyBox — making it the most portable single idiom. The most significant portability divergence is `grep -P` (PCRE), which is present only in GNU grep and absent from both macOS BSD grep and default BusyBox builds. Three critical behavioral edge cases cut across all platforms: LF (0x0a) is invisible to standard line-oriented `grep`, NUL (0x00) triggers binary-mode in `grep`, and multibyte locales cause `${#var}` to count codepoints rather than bytes.
++
++**Key findings:**
++- `[[:cntrl:]]` covers bytes 0x00–0x1F and 0x7F (DEL) per POSIX; C1 controls (0x80–0x9F) are **not** included under any tested locale.
++- macOS BSD `grep` 2.6.0-FreeBSD: no `-P`/`--perl-regexp`; supports `[[:cntrl:]]`, `\x` hex escapes in regex, and `-z` (NUL-delimited mode).
++- GNU `grep`: adds `-P '[\x01-\x1f\x7f]'` and Unicode `\p{Cc}` via PCRE.
++- Alpine BusyBox `grep`: `[[:cntrl:]]` works; `-P` requires a compile-time PCRE option and is absent in most distro images; `-z` is not supported.
++- `tr`, `sed`, and `awk` with `[[:cntrl:]]`/`[:cntrl:]` behave consistently across macOS BSD, GNU, and BusyBox.
++- Shell `case *[[:cntrl:]]*` works in bash, dash, and Alpine ash — confirmed by direct testing.
++- `grep` silently misses LF (0x0a) because it is the per-line record delimiter; `grep -z` (NUL-delimited) catches it on macOS and GNU but not BusyBox.
++- NUL (0x00): `grep` treats input containing NUL as binary (prints "Binary file … matches", exits 0); `-a` forces text mode. `tr` removes NUL silently.
++- Length-difference detection (`${#orig}` vs `${#clean}`) is unreliable in multibyte locales unless `LC_ALL=C` is set or byte counts via `wc -c` are used.
++- The `od -An -to1 | awk` pipeline is the maximally portable fallback, working on every tested platform including POSIX sh environments without bash.
++
++**Surprises:**
++- macOS BSD `sed` **does** support `\x` hex escapes in regex patterns (e.g., `/\x01/`) — this is commonly assumed to be a GNU-only feature.
++- macOS BSD `tr` also accepts `\x01`-style hex escapes in operands, which is not guaranteed by POSIX.
++- `dash` (and Alpine `ash`) support `[[:cntrl:]]` in `case` patterns — this was verified by direct test; earlier assumptions that POSIX sh `case` glob lacked character-class support were wrong for current implementations.
++- LF is definitively absent from `grep [[:cntrl:]]` matches (count showed only 30 of 31 C0 chars matched, with 0x0a being the miss).
++
++**Caveats:**
++- BusyBox behaviors documented based on published source/documentation and known Alpine package configurations; no live Alpine container was available for direct testing.
++- GNU grep/sed/tr/awk behavior documented from published specifications and known behavior; this machine runs macOS, not Linux, so GNU tools were not directly executed.
++- POSIX says behavior of character classes in multibyte locales is "implementation-defined"; all locale testing was done with `C` and `en_US.UTF-8` on macOS 26.5.
++- `grep -z` behavior on BusyBox is documented as unsupported; older versions of macOS grep may differ from the 2.6.0-FreeBSD tested here.
++
++## Q03: Step-by-step commit procedure in `skills/implementer-protocol/SKILL.md`
++
++**TL;DR:** The commit procedure in `skills/implementer-protocol/SKILL.md` § "Commit Before Reporting" is a five-step sequence. The scratch file (`.qrspi-commit-msg.txt`) is **written first** (step 2), then `git add -A` is run, then `git commit -F` is invoked — both as a single chained shell command in step 3. This ordering appears to contradict "Invariant 1 — staging-before-scratch" declared earlier in the same file; the contradiction is resolved by Invariant 3, which excludes the scratch file via `.git/info/exclude` so `git add -A` cannot accidentally stage it.
++
++**Key findings:**
++- The five-step procedure lives at `skills/implementer-protocol/SKILL.md` lines 238–242 under § "Commit Before Reporting".
++- **Step order:** (1) `git status --porcelain` preflight → (2) Write scratch file via Write tool → (3) `git add -A && git commit -F .qrspi-commit-msg.txt` (single chained command) → (4) `rm .qrspi-commit-msg.txt` → (5) `git rev-parse HEAD` to capture SHA.
++- `git add -A` and `git commit -F` are specified as a single `&&`-chained command; there is no separate step between writing the scratch file and running `git add`.
++- Three architectural invariants (lines 170–181) govern the overall commit cycle; Invariant 1 says staging must complete *before* the scratch file is written, but the § "Commit Before Reporting" procedure writes the scratch file first, relying on Invariant 3 (`.git/info/exclude` entry for the scratch path) to prevent accidental staging.
++- The scratch file is named `.qrspi-commit-msg.txt` and lives in the worktree root.
++- After `git commit -F`, the scratch file is explicitly deleted (step 4) before any subsequent staging cycle, fulfilling Invariant 2.
++
++**Surprises:** The concrete procedure (scratch file written *before* `git add -A`) is the reverse of what Invariant 1 literally states ("staging completes before the scratch file is written"). The file itself acknowledges this by noting that the procedural realization lives in the procedure sections and that Invariants 2 and 3 cover the cases where Invariant 1 alone would be insufficient.
++
++**Caveats:** The file references `skills/implement/SKILL.md` § "TDD Process step 6 multi-line message convention" as the canonical source for the convention; that file was not read for this report. The procedure text in `implementer-protocol/SKILL.md` is taken as authoritative for this question.
++
++## Q4: What paths and glob patterns does the repo's `.gitignore` currently match, and what categories of generated artifacts (test outputs, review staging, broker scratch, lock files) do those entries cover?
++
++**TL;DR:** The root `.gitignore` (the only one in the repo) contains four active entries covering three categories: pipeline broker scratch (`.worktrees/`), editor/IDE config (`.vscode/`), and macOS OS metadata (`.DS_Store` and `**/.DS_Store`). None of the named artifact categories — test outputs, review staging, or lock files — are covered by the current entries. A fifth entry, `.codex-prompts/`, was present from the initial `.gitignore` commit but was removed in commit `eea2c6e` (2026-05-04) when the Codex prompt-file staging mechanism was retired.
++
++**Key findings:**
++- The `.gitignore` file is a single root-level file at `/.gitignore`; there are no sub-directory `.gitignore` files anywhere in the repo.
++- **Active entries (4):**
++  1. `.worktrees/` — matches the top-level git worktree directory created by the qrspi pipeline for per-task subagent isolation. This directory does not currently exist on disk (no active worktrees).
++  2. `.vscode/` — matches the VS Code / IDE settings directory. Added in commit `720bc56` (2026-05-02) to exclude per-user IDE config such as `claudeCode.allowDangerouslySkipPermissions`.
++  3. `.DS_Store` — matches macOS Finder metadata at the root.
++  4. `**/.DS_Store` — glob pattern matching macOS metadata files at any depth in the tree. Three such files are currently ignored on disk: `.DS_Store`, `docs/.DS_Store`, `docs/qrspi/.DS_Store`.
++- **Historical entry (removed):** `.codex-prompts/` was added in the initial `.gitignore` commit (`4d6d2f1`, 2026-05-02) to exclude per-task Codex reviewer prompt staging directories written inside worktrees at `.worktrees/{slug}/task-NN/.codex-prompts/`. It was removed in `eea2c6e` (2026-05-04) when PR #110 ("all subagents in agent files") retired the file-based Codex prompt dispatch in favor of a stdin-pipeline form, eliminating the scratch directories entirely.
++- **Not covered by any current entry:** test outputs, review staging directories, lock files (`*.lock`, `Pipfile.lock`, `package-lock.json`, etc.). No such files were found on disk in the repo either.
++
++**Surprises:** The `.codex-prompts/` entry was removed rather than kept as a safety net. Its removal was explicitly called out in the migration plan (`docs/superpowers/plans/2026-05-04-110-subagents-in-agent-files.md:982`) and design spec (`docs/superpowers/specs/2026-05-04-110-subagents-in-agent-files-design.md:615`) as a deliberate cleanup step, not merely incidental.
++
++**Caveats:** Investigation was limited to the single root `.gitignore`; no `.gitattributes` or `.git/info/exclude` files were checked for additional ignore patterns. Lock files and test outputs were searched on disk (`find`) but not found, so their absence from `.gitignore` may simply reflect that no such artifacts are generated by this repo's toolchain.
++
++---
++
++## Q5, Q13: `skill-markdown.bash` exported functions, `extract_section` contracts, and `extract_review_round` definition and call-sites
++
++**TL;DR:** `tests/helpers/skill-markdown.bash` exports four public functions — `extract_section`, `extract_and_grep`, `assert_section_contains`, and `require_repo_root` — plus two internal helpers prefixed `_skill_md_`. `extract_section` uses a single-pass awk implementation; a section ends at the next same-level heading line outside of any nesting rule, or at EOF. The `extract_review_round` helper referenced in Q13 is not in the shared helper file; it is a local function defined inline in `tests/unit/test-skill-md-content-patterns.bats` (lines 167–176), is fence-aware (tracks `` ``` `` blocks to avoid false-positive boundary matches), and has only two call sites, both in that same file.
++
++**Key findings:**
++- `skill-markdown.bash` exports exactly four public functions: `extract_section`, `extract_and_grep`, `assert_section_contains`, and `require_repo_root`. The private helpers `_skill_md_die` and `_skill_md_prefix_for_level` are also defined there but are not part of the public contract.
++- `extract_section` accepts three positional args (`file`, `heading_level` ∈ {H2, H3}, `heading_text`). It prints lines strictly *between* the matching heading and the next same-level heading (boundary lines excluded), or through EOF. Section end is determined by a single-pass awk: a line beginning with the exact level prefix (`## ` or `### `) whose character immediately after the prefix is neither `#` nor empty terminates the section. H3 children inside an H2 section are thus included, not treated as H2 boundaries.
++- `extract_section` has three failure-return behaviors (all rc=1, `skill-markdown:` diagnostic to stderr): file unreadable; heading anchor not found (detected via awk sentinel on stderr); extract is empty (silent-pass guard).
++- `extract_review_round` is **not** in `tests/helpers/skill-markdown.bash`; it is defined locally in `tests/unit/test-skill-md-content-patterns.bats` (lines 167–176). Its presence in the shared helper was explicitly rejected in the file's own commentary: "extract_review_round is retained as a local helper (fence-aware, not replaceable by the generic extract_section)."
++- `extract_review_round` takes one parameter (`file`), includes the `### Review Round` heading line itself in its output, tracks code-fence state (```` ``` ```` toggle), and exits at the first out-of-fence `### ` or `## ` line. It has no error-checking (no unreadable-file or empty-extract guard).
++- `extract_review_round` has exactly two call sites, both in `tests/unit/test-skill-md-content-patterns.bats`: line 185 and line 206, both in `[T36-1]` tests operating on `$DESIGN_FILE` (`skills/design/SKILL.md`).
++- `run_review_round` (defined in `tests/unit/test-change-type-classification.bats`) is a completely different, unrelated helper that simulates a review-loop dispatch round; it is not a section-extraction helper.
++
++**Surprises:** `extract_review_round` includes the `### Review Round` heading line itself in its output (unlike `extract_section`, which always excludes the target heading from the extract). The function's existence as a local helper rather than a shared one is explicitly documented inline.
++
++**Caveats:** Only `tests/helpers/`, `tests/unit/`, `tests/integration/`, `tests/acceptance/`, and `scripts/` were searched. No other helper directories exist in the repo tree at the time of this investigation.
++
++## Q6, Q14: Branch Map Table Structure and Reviewer Linting Rules
++
++**TL;DR:** The Branch Map table in `skills/parallelize/SKILL.md` has exactly three columns — `Task`, `Branch`, `Base` — with one row per task and no Wave column (wave assignment lives in the separate Dependency Analysis table and in an Execution Order prose section). The only reviewer that enforces Branch Map rules is `agents/qrspi-parallelize-reviewer.md`; `agents/qrspi-plan-reviewer.md` and all files under `skills/plan/` contain zero Branch Map references.
++
++**Key findings:**
++- Branch Map table is always three columns: `Task | Branch | Base` — consistent across all three worked examples in `skills/parallelize/SKILL.md`.
++- Wave information is presented **both** in the `Wave` column of the Dependency Analysis table (as a cell value like `Wave 1 (base: feature branch tip)`) **and** in a separate `## Execution Order` section written as bold-prefaced prose (`**Wave 1:** ...`, `**Wave 2:** ...`).
++- The Branch Map itself has no Wave column; wave assignment is only in the Dependency Analysis table.
++- All Branch Map linting rules are declared in `agents/qrspi-parallelize-reviewer.md` (lines 28–34). No Branch Map rules exist in `agents/qrspi-plan-reviewer.md` or anywhere under `skills/plan/`.
++- The parallelize reviewer enforces: symbolic-base vocabulary, required sections presence, Dependency Analysis vs. Branch Map consistency, and row-completeness (every plan task must appear as a Branch Map row). There are **no explicit column-set ordering rules, no header-ordering rules, and no wave-numbering convention rules** beyond what is in the skill's Branch Model definition.
++
++**Surprises:** `agents/qrspi-plan-reviewer.md` enforces zero rules about the Branch Map — it does not mention `parallelization.md` or the Branch Map at all. The question's phrase "Plan-step reviewer" does not map to the plan reviewer agent; the Branch Map is exclusively owned by the parallelize reviewer agent.
++
++**Caveats:** Only `agents/qrspi-parallelize-reviewer.md` and `agents/qrspi-plan-reviewer.md` were examined in detail for Branch Map linting. All other agents under `agents/` were scanned by grep and confirmed to contain no `Branch Map` text except the parallelize reviewer. `skills/plan/SKILL.md` was scanned by grep and confirmed to contain no Branch Map references.
++
++## Q7, Q16: Evergreen-markdown lint enforcement in `test-evergreen-markdown.bats`
++
++**TL;DR:** `tests/unit/test-evergreen-markdown.bats` enforces two families of lint — an evergreen-markdown token scan (repo-wide `*.md`) with 7 forbidden-token patterns and 5 path-shaped carve-out groups plus one inline marker syntax, and a jargon scan (scoped to `skills/**` + `agents/**`) with 4 additional token families. When both carve-outs and inline markers are fully disabled, there are exactly 5 violations across 2 files, all in the evergreen scan; the jargon scan has 0 violations.
++
++**Key findings:**
++- The evergreen scan enforces 3 regex families: `release-version`, `milestone-wording`, and `pr-issue-ref`.
++- The jargon scan enforces 4 regex families: `bare-paren-pr-ref`, `mechanism-codename`, `b-code-in-parens`, and `half-step-number`.
++- Path-shaped carve-outs are 5 groups (6 `case` patterns) implemented in `_is_path_exempt()`. The `CHANGELOG.md` carve-out matches only the exact repo-root path; `docs/qrspi/CHANGELOG.md` is technically not covered by any carve-out (but has no violations).
++- The inline exemption syntax is exactly `<!-- evergreen-exempt -->` as the literal string on the line (awk: `/<!-- evergreen-exempt -->/ { next }`).
++- All 5 violations outside carve-outs already carry `<!-- evergreen-exempt -->` markers; with carve-outs disabled but inline markers active they would still pass. With both disabled, they fail.
++
++**Surprises:** `docs/qrspi/CHANGELOG.md` is not covered by any path-shaped carve-out (the `CHANGELOG.md` carve-out requires an exact bare filename match), yet it contains no violations.
++
++**Caveats:** The scan was performed against the current git-tracked files (233 `.md` files total). The awk patterns in this report are transcribed directly from the bats file; no pattern-equivalence testing was done.
++
++## Q8, Q15: Codex availability detection in `using-qrspi/SKILL.md` and `run-third-party-llm.sh` call sites
++
++**TL;DR:** `skills/using-qrspi/SKILL.md` detects Codex availability by globbing a single filesystem path under `~/.claude/plugins/` for `codex-companion.mjs`; on a hit the Goals skill asks the user a 2-option question and writes `codex_reviews: true/false` to `config.md`, which gates every subsequent reviewer dispatch. `scripts/run-third-party-llm.sh` is reached from exactly three call sites: `scripts/run-codex-review.sh` (the primary path invoked from 14 skill files), `scripts/g4-cache-probe.sh` (a Plan-time spike script), and the main-chat dispatch contract described in `skills/implement/SKILL.md`; none of these call sites are gated on a host-specific signal.
++
++**Key findings:**
++
++- **Filesystem path probed (Q8):** `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs` (glob, wildcard version segment). `SKILL.md` line 405 and `scripts/codex-companion-bg.sh` lines 70–93 use the same pattern.
++- **Config key inspected (Q8):** `codex_reviews` in `config.md`. The Goals skill writes `codex_reviews: true` or `codex_reviews: false` depending on detection result and user choice. All downstream review steps read this key before deciding whether to dispatch `run-codex-review.sh`.
++- **Dispatch code path on positive detection (Q8):** Goals asks the user a 2-option prompt; user selecting option 2 causes `codex_reviews: true` to be written to `config.md`. All review rounds in every pipeline step then gate a `scripts/run-codex-review.sh` dispatch on `codex_reviews: true`.
++- **Primary call site for `run-third-party-llm.sh` (Q15):** `scripts/run-codex-review.sh` line 454. Called from 14 distinct skill SKILL.md files (Goals, Research, Plan, Design, Phasing, Parallelize/Structure, Implement, Integrate, Test, Replan, Questions, Research-isolation, Reviewer-protocol — see full list below). All are gated on `codex_reviews: true`.
++- **Secondary call site (Q15):** `scripts/g4-cache-probe.sh` line 159. Calls `run-third-party-llm.sh` directly with `--provider anthropic-probe`. No `codex_reviews` gate; this is an operator-run spike script.
++- **Tertiary call site (Q15):** `skills/implement/SKILL.md` line 537 documents that main-chat dispatches for any provider with `transport_type: openai-chat-completions` or `transport_type: codex-broker` pipe to `run-third-party-llm.sh`. This is not a shell script invocation but an instruction to the orchestrating LLM.
++- **Host-specific gating (Q15):** None. No call site checks for Copilot CLI vs. Claude Code or any other host-environment signal before invoking `run-third-party-llm.sh`. The only environment-specific carve-out in the script itself is the `QRSPI_ALLOW_LOCALHOST_BASE_URL=1` env-var override for test environments.
++- **Stale doc:** `skills/reviewer-protocol/SKILL.md` line 13 describes `run-codex-review.sh` as piping to `scripts/codex-companion-bg.sh launch` on stdin — pre-T04 wording. Post-T04, `run-codex-review.sh` pipes to `run-third-party-llm.sh` instead.
++
++**Surprises:** The `reviewer-protocol/SKILL.md` description of the Codex dispatch path (line 13) is stale relative to the actual shell script implementation — it still refers to the pre-T04 `codex-companion-bg.sh launch` chaining, while the script itself (post-T04) routes through `run-third-party-llm.sh`. Also, `g4-cache-probe.sh` invokes `run-third-party-llm.sh` directly for an Anthropic (not Codex) provider, making it a completely independent call site unrelated to the Codex review path.
++
++**Caveats:** Only SKILL.md files and shell scripts were searched for call sites. Agent `.md` files and test BATS files were found to reference `run-third-party-llm.sh` only in test fixtures or in the context of this investigation's own `questions.md`. The `skills/implement/SKILL.md` mention (line 537) is a prose instruction to the LLM orchestrator, not a concrete shell invocation. The `reviewer-protocol/SKILL.md` stale description was noted but not further traced to verify whether the shell script behavior was updated in all places.
++
++## Q9: GitHub Copilot CLI Subprocess Environment Variables and Host-Detection Signal
++
++**TL;DR:** GitHub Copilot CLI (the new standalone `github/copilot-cli`, not the deprecated `gh-copilot` extension) sets `COPILOT_CLI=1` in every subprocess it spawns—explicitly documented since v0.0.421 (2026-03-03) as the mechanism for detecting Copilot CLI subprocesses. In addition, shell-tool subprocesses and MCP servers receive `COPILOT_AGENT_SESSION_ID`, and agent shell sessions receive `GITHUB_TOKEN`. Plugin hooks receive additional plugin-scoped variables. The cloud-agent sandbox provides its own distinct set.
++
++**Key findings:**
++- **`COPILOT_CLI=1`** is the primary, documented, stable host-detection signal. The changelog states explicitly: "Git hooks can detect Copilot CLI subprocesses via the `COPILOT_CLI=1` environment variable to skip interactive prompts" (v0.0.421, 2026-03-03).
++- **`COPILOT_AGENT_SESSION_ID`** is set in shell-tool subprocesses and MCP servers since v1.0.29 (2026-04-16), carrying the session UUID.
++- **`GITHUB_TOKEN`** is passed into agent shell sessions since v0.0.404 (2026-02-05).
++- Plugin hooks receive `PLUGIN_ROOT`, `COPILOT_PLUGIN_ROOT`, `CLAUDE_PLUGIN_ROOT` (v1.0.26) and `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_DATA` (v1.0.12).
++- The cloud-agent sandbox sets `GITHUB_COPILOT_API_TOKEN`, `GITHUB_COPILOT_GIT_TOKEN`, and `COPILOT_AGENT_PROMPT`.
++- The documented general environment-variable table for the CLI itself (not subprocess injection) lists 20+ variables including `COPILOT_GITHUB_TOKEN`, `COPILOT_HOME`, `COPILOT_MODEL`, `GH_TOKEN`, and others.
++
++**Surprises:**
++- `COPILOT_CLI=1` is the *only* env var explicitly documented as a subprocess-detection/host-identification signal. `COPILOT_AGENT_SESSION_ID` identifies the session but is secondary to `COPILOT_CLI=1` for host detection.
++- The old `gh-copilot` extension (deprecated October 2025) had no documented subprocess env var for host detection; `COPILOT_CLI=1` was introduced only in the new standalone CLI.
++- `NODE_ENV` was previously set in the shell tool environment but was explicitly removed in v0.0.355 (2025-11-12).
++
++**Caveats:**
++- Source is the public `github/copilot-cli` changelog and `docs.github.com` reference pages (as of 2026-05-27, latest release v1.0.54). The binary is closed-source; no source-code inspection of subprocess spawning was possible.
++- "Stability" is assessed from the changelog's explicit intent language, not a formal API-stability commitment.
++- The hooks reference and command reference cover cloud-agent and CLI contexts separately; some variables only apply to one context.
++
++## Q10: Full footprint of the prompt-cache mechanism
++
++**TL;DR:** The prompt-cache mechanism spans five files: the provider-schema documentation in `skills/using-qrspi/SKILL.md` (lines 427–428 and 441–442), the dual-flag gate implementation in `scripts/run-third-party-llm.sh` (lines 196–221 and 499–512), a dedicated cache-probe script at `scripts/g4-cache-probe.sh`, a stub spike-report document at `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md`, and two BATS unit suites: `tests/unit/test-cache-control-capability-gate.bats` and `tests/unit/test-cache-hit-rate.bats`. The 4-cell truth-table gate (only `supports_prompt_cache: true` AND `emit_cache_control_markers: true` together emit `cache_control`) is also duplicated as 4 named tests in `tests/unit/test-run-third-party-llm.bats`.
++
++**Key findings:**
++- `supports_prompt_cache` appears in 4 load-bearing locations: SKILL.md YAML example (line 427), SKILL.md description bullet (line 441), dispatcher `run-third-party-llm.sh` shell variable assignment (line 511), and three BATS fixture-writer helpers.
++- `emit_cache_control_markers` appears in 4 parallel load-bearing locations: SKILL.md YAML example (line 428), SKILL.md description bullet (line 442), dispatcher shell variable assignment (line 512), and three BATS fixture-writer helpers. Additionally referenced in `test-cache-hit-rate.bats` at lines 167–170 and 183.
++- The gate logic in `run-third-party-llm.sh`: both shell variables default to `"false"` (lines 499–500); `_dispatch_openai_chat` at line 205 evaluates `[ "$SUPPORTS_PROMPT_CACHE" = "true" ] && [ "$EMIT_CACHE_CONTROL_MARKERS" = "true" ]` to set a local `emit_cache` variable; if true, a Node.js snippet at lines 215–225 appends `msg.cache_control = { type: 'ephemeral' }` to the request JSON.
++- One dedicated cache-probe script: `scripts/g4-cache-probe.sh` — issues 3 sequential Anthropic dispatches with a byte-identical system-prefix, extracts `cache_creation_input_tokens` / `cache_read_input_tokens` from a sidecar `.usage.json` file, derives a Path A / Path B / "Metadata not exposed" decision, and writes the report atomically with a co-located lock file.
++- One spike-report evidence document (stub state): `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` — `run_id: stub-pending-live-execution`, Decision section reads "Pending — operator runs scripts/g4-cache-probe.sh against live Anthropic API before this decision lands."
++- Two dedicated BATS unit files and one general dispatcher test file reference cache-control behavior, for a total of 13 named `@test` blocks (5 in `test-cache-control-capability-gate.bats`, 4 in `test-run-third-party-llm.bats`, and 4 path-conditional + precondition tests in `test-cache-hit-rate.bats`).
++
++**Surprises:** `test-run-third-party-llm.bats` contains a full duplicate of the 4-cell truth-table (identical test bodies to `test-cache-control-capability-gate.bats`) — the gate is pinned in two separate BATS suites.
++
++**Caveats:** The `goals.md` file was not read (isolation invariant). The search covered all non-hidden files under the repo root. No acceptance-suite files outside `tests/unit/` reference these flags.
++
++## Q11: `model:` values in `agents/*.md` YAML frontmatter and which dispatching skills/scripts read or act on that field
++
++**TL;DR:** Across 41 `agents/*.md` files, three concrete model values (`sonnet`, `haiku`, `opus`) and one sentinel value (`inherit`) are declared. The `model:` field is consumed as the lowest-priority "Layer 3" fallback in a four-layer routing chain documented in `skills/implement/SKILL.md` and `skills/using-qrspi/SKILL.md`; most dispatch sites in the skill files hard-code `model: "sonnet"` inline (Layer 1b), meaning the bundled default is bypassed at those sites. No shell script reads `model:` from agent frontmatter — `run-codex-review.sh` parses only the `skills:` field.
++
++**Key findings:**
++- **33 agents** declare `model: sonnet` (all reviewer and analyzer agents except the three exceptions below).
++- **5 agents** declare `model: inherit` (`qrspi-implementer`, `qrspi-implementer-lightweight`, `qrspi-research-specialist`, `qrspi-research-collator`, `qrspi-test-writer`) — the Agent call inherits the orchestrator's current model unless overridden.
++- **2 agents** declare `model: haiku` (`qrspi-finding-verifier`, `qrspi-scope-tagger`) — designated cheap/fast model for mechanical per-finding scoring and scope tagging.
++- **1 agent** declares `model: opus` (`qrspi-replan-analyzer`) — but the dispatch site in `skills/replan/SKILL.md:77` hard-codes `model: "sonnet"`, so the bundled `opus` value is overridden at runtime.
++- The agent-bundled `model:` is **Layer 3** (lowest-precedence non-trusted layer) in the routing chain defined at `skills/implement/SKILL.md:524–530`; it is reached only when no per-task override (Layer 1a), no dispatch-site inline override (Layer 1b), and no `model_routing:` table entry (Layer 2) yields a value.
++- A `trusted_path:` short-circuit in `config.md` can bypass all four layers and route directly to the agent-bundled default — specifically documented as a protection for safety-critical roles (e.g., finding verifier, security reviewer): `skills/implement/SKILL.md:520`.
++- `scripts/run-codex-review.sh` strips agent frontmatter entirely (`strip_frontmatter`); it parses only the `skills:` field from frontmatter and accepts `--model` as an externally-supplied CLI flag (`run-codex-review.sh:99, 180, 445`).
++
++**Surprises:** `qrspi-replan-analyzer` carries `model: opus` in its frontmatter (`agents/qrspi-replan-analyzer.md:4`) but the only dispatch site in `skills/replan/SKILL.md:77` passes `model: "sonnet"` inline, making the bundled `opus` value effectively dead in normal pipeline operation.
++
++**Caveats:** Investigation covered all 41 `agents/*.md` files and the primary skill files (`implement`, `using-qrspi`, `plan`, `replan`, `research`, `design`, `goals`, `parallelize`, `phasing`, `structure`, `questions`, `integrate`, `test`) plus `scripts/run-codex-review.sh` and `scripts/run-third-party-llm.sh`. Template files in `templates/` were not separately scanned for dispatch calls. The `config.md` run-instance file (not a repo-tracked skill) is where the `model_routing:` table and `trusted_path:` entries live at runtime; the actual role-to-model mappings applied depend on operator edits to that file.
++
++## Q12: Multi-host AI-agent plugin projects — model selection in agent manifests
++
++**TL;DR:** Multi-host AI-agent plugin projects that target two or more of Claude Code, Copilot CLI, Cursor, and Codex CLI fall into two categories: (1) context-only compilers that deliberately omit model selection from their shared manifest, and (2) multi-host orchestrators (primarily `gentle-ai`) that use a three-tier Claude alias vocabulary (`haiku/sonnet/opus`) as a platform-agnostic abstraction layer, translating to native host identifiers at sync time. The only platform that defines a *formal* in-manifest model vocabulary is Claude Code, using `haiku`, `sonnet`, `opus`, and `inherit` as short tier names in agent `.md` file frontmatter. GitHub Copilot agents use an ad-hoc mix of OpenAI and Anthropic model strings with no enforced vocabulary. Codex CLI and Cursor carry model selection outside the AGENTS.md/rules files (in `config.toml` and session settings, respectively).
++
++**Key findings:**
++- **Claude Code agent frontmatter** (`model:` field in `.md` files) accepts four values: `haiku`, `sonnet`, `opus`, and `inherit`. Full versioned IDs (e.g., `claude-opus-4-5`) are also accepted as of a recent changelog fix. Source: official `anthropics/claude-code` plugin repository and CHANGELOG.
++- **GitHub Copilot agents** (`*.agent.md` frontmatter in `github/awesome-copilot`) use a `model:` field with no standard vocabulary: observed values include `gpt-4o`, `GPT-5`, `gpt-4`, `GPT-4.1`, `GPT-4.1 (copilot)`, `Claude Sonnet 4.5`, `claude-sonnet-4-6`, and `GPT-5.3-Codex`. Approximately 77% of sampled agents do not specify a model field at all.
++- **Kiro IDE agents** (targeted by `gentle-ai`) use a `model:` frontmatter field with native versioned IDs: `claude-opus-4.6`, `claude-sonnet-4.6`, `claude-haiku-4.5`.
++- **Codex CLI** carries model selection in `config.toml` (`model = "string"` at profile level, `model_provider` for routing); AGENTS.md itself has no model field in the Codex format.
++- **Cursor** does not expose a `model:` field in `.cursor/agents/` markdown files per available evidence; sub-agent dispatch relies on the `description` field for routing; model selection is a session-level setting.
++- **Context-only compilers** (`guorunjie/skillpack-forge`, `parada1104/ai-specs-cli`, `obielin/agentsync`, `MonadWorks/agentify`, `madeburo/contextai`, `fernandomenuk/openspec`): These target 2–5 hosts simultaneously but include no model selection in their shared manifests. Their `targets:` or `[agents].enabled` arrays control which host files are generated, but model identity is left to each host's runtime.
++- **`Gentleman-Programming/gentle-ai`** is the most explicit multi-host model-routing project: it uses `opus|sonnet|haiku` as a three-tier alias vocabulary internally (`ClaudeModelAlias` type in Go), defines named presets (`balanced`, `performance`, `economy`), maps aliases to Kiro-native IDs at sync time (`opus→claude-opus-4.6`, `sonnet→claude-sonnet-4.6`, `haiku→claude-haiku-4.5`), and routes OpenCode/Kilo Code phases via `provider/model` pairs (e.g., `anthropic/claude-haiku-3.5-20241022`). Reasoning effort levels (`low|medium|high`) are tracked separately for models that support them.
++- **Per-phase dispatch** is the dominant multi-host convention: architecture/orchestration phases → `opus`; implementation/validation phases → `sonnet`; lightweight mechanical tasks (archiving, formatting) → `haiku`.
++
++**Surprises:**
++- No multi-host project targeting all four specified hosts (Claude Code, Copilot CLI, Cursor, Codex CLI) simultaneously creates a unified model-vocabulary that works at the manifest level across all four. Cross-platform model selection is handled at the tooling/sync layer, not in a shared manifest field.
++- `github/awesome-copilot` agents include non-existent or speculative model names such as `GPT-5.3-Codex` and `GPT-5` alongside real ones, with no validation enforced by the schema.
++- The Copilot agent schema (`.schemas/collection.schema.json` and `tools.schema.json` in `github/awesome-copilot`) does not define or validate the `model:` field — it is a free-form string with no enum constraint.
++- Claude Code's `inherit` tier name — which defers to the active session model rather than pinning a specific tier — has no equivalent in the Copilot, Codex, or Cursor manifest formats observed.
++
++**Caveats:**
++- The GitHub Search API code-search results for `.cursor/agents/` model fields returned no hits, so Cursor's native sub-agent model field support could not be confirmed or denied from live examples. The `gentle-ai` documentation mentions Cursor uses `description`-based routing only.
++- The Codex CLI developer documentation is hosted at `developers.openai.com` and is not publicly curl-accessible; all Codex model information is derived from the `config.schema.json` in the `openai/codex` repository and the project's own `AGENTS.md`.
++- The `github/awesome-copilot` agent sample covers approximately 23 of 214 total agent files; the model-field prevalence statistics are therefore approximate.
++- The Copilot CLI (the terminal `gh copilot` extension) is architecturally distinct from VS Code Copilot Agents; this report covers VS Code Copilot Agents (the `.agent.md` format in `github/awesome-copilot`), which is the plugin surface most analogous to Claude Code agents. The `gh copilot` CLI itself does not expose an agent manifest format with model selection.
++
++## Cross-References
++
++- **Q01 ↔ Q02**: Q02 documents that `grep -P` is absent from macOS BSD grep and default BusyBox builds — the same `grep -qP` invocation Q01 found at `scripts/run-third-party-llm.sh:558-569`. Q02's portability table catalogs `LC_ALL=C grep -q '[[:cntrl:]]'` and `tr -d '[:cntrl:]'` + byte-count as portable techniques present in the toolchains where `-P` is not.
++- **Q08/Q15 ↔ Q09**: Q08/Q15 found zero host-specific gating across all `scripts/run-third-party-llm.sh` call sites. Q09 documents that `COPILOT_CLI=1` (set in all subprocesses since v0.0.421) and `COPILOT_AGENT_SESSION_ID` (set in shell-tool subprocesses and MCP servers since v1.0.29) are the subprocess-level host-identification signals available in the Copilot CLI environment.
++- **Q10 ↔ Q08/Q15**: `scripts/g4-cache-probe.sh` (fully catalogued in Q10 as the second `run-third-party-llm.sh` call site) is also the secondary call site identified in Q08/Q15 — both questions converge on the same script as an operator-run Anthropic-provider spike that bypasses the `codex_reviews` gate entirely.
++- **Q11 ↔ Q12**: The `haiku`/`sonnet`/`opus`/`inherit` tier vocabulary used in this repo's `agents/*.md` frontmatter (Q11) is independently validated by Q12 as the de facto cross-project standard for Claude Code agent manifests, confirmed by Anthropic's own plugin examples and by `gentle-ai`'s internal alias type. The `qrspi-replan-analyzer` `model: opus` / dispatch-site `sonnet` mismatch (Q11) has no analogue in the external projects surveyed (Q12), where phase-level model assignments are either explicit or absent.
++- **Q03 ↔ Q04**: The commit procedure relies on `.git/info/exclude` (not `.gitignore`) to prevent `.qrspi-commit-msg.txt` from being staged by `git add -A` (Q03). Q04 confirms that `.gitignore` has no entry for the scratch file — the safety net is entirely in the worktree-local exclude file, which is invisible to other tooling that scans only `.gitignore`.
++- **Q05/Q13 ↔ Q07**: `tests/helpers/skill-markdown.bash` (Q05/Q13) is the shared helper loaded by `test-evergreen-markdown.bats` (Q07), linking the section-extraction infrastructure directly to the evergreen lint enforcement suite.
