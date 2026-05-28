@@ -487,6 +487,13 @@ agents/
 
 Correctness checks if code is right and safe — it always runs. Thoroughness checks if it's complete, well-typed, and clean — it runs in deep mode only AND only on `task_type: code` tasks (lightweight tasks force quick mode regardless of `config.review_depth` — see § Per-Task Routing). Execution order: spec-reviewer first (gate), remaining correctness in parallel, then thoroughness in parallel (deep + code only). Three thoroughness reviewers (`qrspi-silent-failure-hunter`, `qrspi-type-design-analyzer`, `qrspi-code-simplifier`) drop the `-reviewer` suffix for historical naming reasons — substitute the literal filenames when constructing dispatch shell pipelines.
 
+> ⚠ **RED FLAG — Within-round continuation on spec-gate CLEAN.** When per-task spec-reviewer returns CLEAN in round NN, the orchestrator MUST continue round NN by dispatching the remaining reviewer set per `review_depth_effective` IN THE SAME ROUND. Do NOT advance the round counter. Do NOT declare the task terminal CLEAN until the full depth-required reviewer set has completed for this task:
+>
+> - **Quick mode:** spec-reviewer (CLEAN) → cq + sf + sec in parallel → if all CLEAN, task terminal CLEAN.
+> - **Deep mode:** spec-reviewer (CLEAN) → cq + sf + sec in parallel → if CLEAN, gt + tc + tda + cs in parallel → if all CLEAN, task terminal CLEAN.
+>
+> A task that ping-pongs spec-reviewer across multiple rounds (round 1: spec dirty → fix → round 2: spec dirty → fix → ... → round N: spec CLEAN) MUST still receive the full fan-out in round N before any terminal-CLEAN declaration. Declaring task terminal CLEAN with only spec-gate evidence is a **P0 process violation** — it ships task code without the depth-mode safety net the user configured, which is especially catastrophic on security-relevant tasks. Round 5 of a 5-round spec-gate loop is no different from round 1: spec-CLEAN must immediately trigger the same in-round fan-out the SKILL would have triggered if spec had cleared in round 1.
+
 ### Per-Task Routing (`task_type` and `model`)
 
 Before dispatching the implementer for a task, main chat reads `task_type` and `model` from the task's `tasks/task-NN.md` frontmatter and resolves three per-task flags:
