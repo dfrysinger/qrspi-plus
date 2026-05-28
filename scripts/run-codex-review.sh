@@ -97,15 +97,24 @@ require_value() {
 # detect_host - emits either 'copilot-cli' or 'claude-code' to stdout.
 # Examines COPILOT_CLI AND the reachability of the gh binary to prevent
 # transport-marker spoofing via a user-supplied env var alone.
-# COPILOT_CLI=1 selects copilot-cli ONLY when `gh` is also reachable in PATH
+# COPILOT_CLI=1 selects copilot-cli ONLY when `gh` resolves to a path under
+# a system-controlled prefix (/usr/*, /opt/*, /Applications/*).
 # (process-spawn fingerprint: a real Copilot CLI session launches under gh).
-# All other states (COPILOT_CLI unset/empty/non-"1", or gh absent) select
-# claude-code.  Always exits 0.  Writes nothing to stderr under normal operation.
+# All other states (COPILOT_CLI unset/empty/non-"1", gh absent, or gh in an
+# untrusted prefix) select claude-code.  Always exits 0.  Writes nothing to
+# stderr under normal operation.
 #
 # sec.F01 (R2): COPILOT_CLI alone was user-settable; adding the binary check
 # makes the marker harder to forge without a real gh installation.
+# sec.F01 (R5): `command -v gh` trusted PATH blindly; an attacker who can set
+# COPILOT_CLI=1 can equally prepend PATH with a fake gh directory.  Resolving
+# the path and validating it against trusted prefixes closes that gap.
 detect_host() {
-  if [[ "${COPILOT_CLI:-}" == "1" ]] && command -v gh >/dev/null 2>&1; then
+  local _gh_path
+  _gh_path="$(command -v gh 2>/dev/null)"
+  if [[ "${COPILOT_CLI:-}" == "1" ]] && \
+     [[ -n "$_gh_path" ]] && \
+     [[ "$_gh_path" == /usr/* || "$_gh_path" == /opt/* || "$_gh_path" == /Applications/* ]]; then
     echo "copilot-cli"
   else
     echo "claude-code"
@@ -134,6 +143,14 @@ check_codex_available() {
           return 1
           ;;
       esac
+      # sec.F02 (R5): the case guard above does not check for a leading '/'.
+      # A relative HOME value (e.g. HOME=relative-dir) would pass all case arms
+      # and cause the companion glob to expand relative to the process CWD.
+      # Enforce that HOME starts with '/' before any filesystem probe.
+      if [[ "${HOME}" != /* ]]; then
+        echo "check_codex_available: HOME must be an absolute path (got: relative path)" >&2
+        return 1
+      fi
       local found=0
       local f
       for f in "${HOME}/.claude/plugins/cache/openai-codex/codex"/*/scripts/codex-companion.mjs; do
