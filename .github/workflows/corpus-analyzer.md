@@ -306,8 +306,11 @@ when Step 5 deferred an other-target observation into this issue per the
 entirely.)
 
 ≤1 sentence naming the suspected upstream skill or shared component and
-the nature of the ambiguity, e.g.:
-`Upstream skill \`skills/design/SKILL.md\` appears to under-specify the boundary between owns and defers, which surfaces here as repeated reviewer/producer disagreement on whether plan owns or defers the data-flow diagram.`
+the nature of the ambiguity. Write your own sentence; do not copy the
+example below verbatim. Example shape:
+
+> Upstream skill `<path>` appears to <one-sentence ambiguity>, which
+> surfaces here as <observed reviewer/producer pattern in this cluster>.
 
 ## Run metadata
 
