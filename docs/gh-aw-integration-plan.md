@@ -54,7 +54,7 @@ Mining these is the unlock for measurable output-quality improvements.
 - Reads `reviews/**` from the qrspi-plus repo (no external corpus yet).
 - `mcp-scripts` tools:
   - `analyze-rounds` (Python): per-run rounds count, reviewer set, convergence signal, file paths.
-  - `cluster-findings` (JS, calls GPT-5): cluster reviewer findings by structural type, return frequency + producer-fix suggestions.
+  - `cluster-findings` (JS, calls gpt-5 via the Copilot gateway per the *Gateway & secrets convention* below): cluster reviewer findings by structural type, return frequency + producer-fix suggestions.
 - Designer agent (Claude Opus): cross-references each cluster against the corresponding artifact and the relevant `skills/<step>/SKILL.md` or `agents/qrspi-<step>-reviewer.md`. Categorizes each as producer / reviewer / spec problem.
 - Files up to 8 issues labeled `corpus-finding` + `prompt-improvement`, each with:
   - cluster name, frequency, 3 verbatim quotes
@@ -197,7 +197,7 @@ One tracking issue per qrspi run. Labels = state. Comments = artifact summaries.
 | Parallelize | gemini | Cheap, mechanical |
 | Implement (worker) | copilot | TDD + repo idioms |
 | Implement (reviewer A) | claude-opus | Hostile correctness |
-| Implement (reviewer B) | gpt-5 | Adversarial diversity from another family |
+| Implement (reviewer B) | gpt-5 (via Copilot gateway) | Adversarial diversity from another family |
 | Integrate | claude-opus | Multi-branch coherence |
 | Test (acceptance) | copilot | Test execution + log reading |
 | Replan | claude | Strategic re-scoping |
@@ -210,7 +210,7 @@ Don't rewrite all 17 skills at once. Start with **Implement**, because it's wher
 2. User opens "ready-to-implement" issue, labels `qrspi:implement`.
 3. `implement-dispatcher.md` reads `parallelization.md`, creates sub-issue per task labeled `qrspi:task-ready`, opens draft integration PR.
 4. `worker.md` (engine: copilot, TDD-strict): triggered per `qrspi:task-ready`, pushes to `qrspi/<n>/task-NN`, labels `qrspi:ready-for-review`.
-5. `reviewer-a.md` (claude-opus) and `reviewer-b.md` (gpt-5): triggered on PR, post review comments, label `work-approved` or `work-rejected`.
+5. `reviewer-a.md` (claude-opus) and `reviewer-b.md` (gpt-5 via Copilot gateway): triggered on PR, post review comments, label `work-approved` or `work-rejected`.
 6. `batch-gate.md`: on any `work-approved`, mcp-script checks siblings, if all approved labels parent `qrspi:integrate-ready`.
 7. `integrate.md`: merges branches, runs integration review, updates integration PR.
 
@@ -230,6 +230,18 @@ Don't async-ify. Keep Design as a local Claude/Copilot session. Hybrid pipeline:
 
 ---
 
+## Gateway & secrets convention
+
+To avoid per-phase decisions about which API key to wire into which critic, all workflows in this plan follow one default:
+
+- **Copilot-routed access via `COPILOT_GITHUB_TOKEN`** is the default gateway for every model call that is *not* the primary `engine:` of a workflow. That includes adversarial critic mcp-scripts (e.g. `cluster-findings`), tier worker secondary models, and any helper LLM invoked from a script.
+- **Primary `engine:` keys** (`ANTHROPIC_API_KEY` for `engine: claude`, `OPENAI_API_KEY` for `engine: codex`, `GEMINI_API_KEY` for `engine: gemini`) are wired only when that engine is the workflow's primary agent. Workflows that use `engine: copilot` need only `COPILOT_GITHUB_TOKEN`.
+- **Escape hatch:** a phase may use a direct provider API key for a critic only if it documents a specific capability gap in Copilot routing (e.g. a model version not yet routed, a feature only the native API exposes). Default answer is "no, use Copilot routing."
+- **Secret inventory** for this repo today (must be confirmed before Phase 1 runs):
+  - `COPILOT_GITHUB_TOKEN`: required for `engine: copilot` and for all secondary model calls per the rule above.
+  - `ANTHROPIC_API_KEY`: required only for workflows with `engine: claude` (Phase 1, Phase 4 reviewer A, Phase 7 designer).
+- **Why this lives in the plan, not in each workflow:** before this convention, Phase 1's workflow author (this agent) had to ask which gateway to use for `cluster-findings`. That's a spec ambiguity that propagates to every future phase. The convention removes the question; phases that genuinely need an exception state it explicitly.
+
 ## Cost guardrails (apply from day 1, both tracks)
 
 - `max-runs: 100` per workflow (well below the 500 default).
@@ -243,7 +255,7 @@ Don't async-ify. Keep Design as a local Claude/Copilot session. Hybrid pipeline:
 
 - Each agent works in `~/Library/CloudStorage/Dropbox/copilot-workspace/agent-<nato>/qrspi-plus/`.
 - Worktrees fork from `agent-delta/qrspi-plus` (the canonical clone).
-- Branch names: `agent-<nato>/<topic>` (e.g. `agent-hotel/gh-aw-integration`).
+- Branch names follow `CONTRIBUTING.md`: `<handle>/<type>/<slug>` (e.g. `agent-hotel/feat/corpus-analyzer`). The umbrella `agent-hotel/gh-aw-integration` branch this plan was committed to predates this clarification and stays as-is; subsequent per-phase branches use the canonical form.
 - Per-clone `git config --local user.name "agent-<nato>"` + dfrysinger noreply email; PRs attribute to dfrysinger's account with distinguishable author.
 
 ## Sequencing checklist
