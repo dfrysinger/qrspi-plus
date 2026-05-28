@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Goals: qrspi-plus v0.7.1 hardening
