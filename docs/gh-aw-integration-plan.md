@@ -52,33 +52,32 @@ Mining these is the unlock for measurable output-quality improvements.
 **Scope:**
 - Triggered weekly + on `corpus:run` label.
 - Reads `reviews/plan-109/` only (single corpus; multi-corpus scan deferred to Phase 3).
-- **Engine:** Claude Opus (`engine: claude`) doing both structural extraction and clustering in one pass. No mcp-scripts, no second-model critic — adversarial diversity is deferred to Phase 1.5 (see below).
-- Tools: `bash: true` (to read corpus files), `github` toolset (issues + repository), default network allowlist.
-- Cross-references each cluster against the corresponding artifact (e.g. `tasks/plan-109/`) and the relevant `skills/<step>/SKILL.md` or `agents/qrspi-<step>-reviewer.md`. Categorizes each as producer / reviewer / spec problem.
+- **Engine:** Copilot (`engine: copilot`, the gh-aw default) doing both structural extraction and clustering in one pass. Authenticates via `COPILOT_GITHUB_TOKEN`. Model is unpinned at the engine level — gh-aw uses Copilot's default; the prompt can spawn task-tool sub-agents with explicit models when it wants adversarial diversity (see Phase 1.1).
+- Tools: `bash` allowlist (`ls`, `cat`, `wc`, `head`, `tail`, `grep`, `echo`) plus gh-aw safe defaults and read-only `mcp__github__*` for context; `safe-outputs.create-issue` for the actual writes.
+- Cross-references each cluster against the corresponding artifact (e.g. `tasks/plan-109/`) and the relevant `skills/<step>/SKILL.md` or `agents/qrspi-<step>-reviewer.md`. Categorizes each as producer / reviewer (spec clusters are rerouted into a "Deferred upstream observation" subsection of a plan-target issue per Step 4 of the workflow).
 - Files up to 8 issues labeled `corpus-finding` + `prompt-improvement`, each with:
   - cluster name, frequency, 3 verbatim quotes
-  - inferred category (producer / reviewer / spec)
+  - inferred category (producer / reviewer; never `spec`)
   - proposed exact diff against the relevant skill/agent file
   - back-links to source corpus files for verification
-- Convergence-signal detection: an empty (~12 byte) terminal review file means APPROVED. Reported as run metadata in each issue.
+- Convergence-signal detection: a terminal review file ≤ 16 bytes means APPROVED. Reported as run metadata in each issue.
 
-**Out of scope for Phase 1:** external corpus collection, user-submitted tarballs, smoke validation of proposed diffs, multi-corpus aggregation, mcp-scripts, second-model critic.
+**Out of scope for Phase 1:** external corpus collection, user-submitted tarballs, smoke validation of proposed diffs, multi-corpus aggregation, multi-model adversarial analysis (see Phase 1.1).
 
 **Success criteria:**
-- Compiles cleanly with `gh aw compile` (produces `.lock.yml`).
-- Runs end-to-end against `reviews/plan-109/`.
+- Compiles cleanly with `gh aw compile --validate --actionlint --zizmor --poutine` (produces `.lock.yml`).
+- Runs end-to-end against `reviews/plan-109/` under `COPILOT_GITHUB_TOKEN`.
 - Produces at least 3 issues whose proposed diffs survive human review.
 
-### A1.5. Phase 1.5 — Adversarial-critic infrastructure spike (gating Phase 2+)
+### A1.1. Phase 1.1 — Multi-model adversarial analysis via Copilot task tool
 
-**Ship:** small proof workflow + a documented pattern for "call a non-primary-engine model from an mcp-script."
+**Ship:** a single follow-up edit to the Phase 1 prompt body adding an "adversarial pass" step that uses the Copilot task tool to spawn N parallel sub-agents (Claude Opus + GPT-5 + Codex) against each high-stakes cluster, then reconciles their outputs before filing the issue.
 
-**Why this is its own phase:** the *Gateway & secrets convention* section below documents the intent, but gh-aw does not natively expose a "call any routed model from an mcp-script" primitive. The two paths worth proving out before any later phase relies on adversarial critics:
+**Why this replaces the previously-planned Phase 1.5 spike:** `engine: copilot` exposes the same `task` tool that the local Copilot CLI uses, and gh-aw documents `engine.agent` for binding a custom agent file in `.github/agents/`. The `/dual-review` pattern (Claude Opus high + GPT-5.5 in parallel, structural merge by verbatim-quote bucket, severity-highest-wins) is the proven blueprint. No new infrastructure spike is needed — it's a prompt-level capability and an optional `.github/agents/corpus-analyzer-critic.agent.md` file. No additional secrets beyond `COPILOT_GITHUB_TOKEN`.
 
-1. **Raw HTTP from an mcp-script** to a documented Copilot Chat completions endpoint (or the GitHub Models inference API), using `COPILOT_GITHUB_TOKEN`. Needs endpoint + auth-header validation.
-2. **Two-workflow fan-out** where workflow A files an artifact + label, workflow B (different `engine:`) consumes it and writes back. Heavier, slower iteration, but uses only documented primitives.
-
-**Success criteria:** one of the two patterns proven with a reproducible call from a Python mcp-script returning a structured response from a non-Anthropic model. Document in `docs/gh-aw-integration-plan.md` and link from any phase that needs it.
+**Success criteria:**
+- One scheduled analyzer run that fires the multi-model pass on at least one cluster, with the reconciled output visible in the filed issue (per-reviewer findings + merge decision).
+- Token cost stays within the Phase 1 `max-effective-tokens` budget (2.5M) or the budget is explicitly raised with rationale.
 
 ### A2. Phase 2 — Dogfood smoke runs (Week 2)
 
@@ -244,15 +243,23 @@ Don't async-ify. Keep Design as a local Claude/Copilot session. Hybrid pipeline:
 
 ## Gateway & secrets convention
 
-To avoid per-phase decisions about which API key to wire into which critic, all workflows in this plan follow one default:
+**One secret runs everything:** `COPILOT_GITHUB_TOKEN`.
 
-- **For the primary `engine:` of a workflow**, wire only that engine's required secret: `ANTHROPIC_API_KEY` for `engine: claude`, `OPENAI_API_KEY` for `engine: codex`, `GEMINI_API_KEY` for `engine: gemini`, `COPILOT_GITHUB_TOKEN` for `engine: copilot`.
-- **For secondary model calls** (adversarial critic mcp-scripts, helper LLM invocations, tier worker secondaries) the *intent* is to route through `COPILOT_GITHUB_TOKEN` so that we keep one secret per repo, billed through Copilot.
-- **Status of secondary-model routing today: unproven.** gh-aw exposes `engine.api-target` and `*_BASE_URL` overrides for *primary engine* calls, but does not document a primitive for an mcp-script to call an arbitrary routed model. Phase 1.5 (above) exists to prove out either a raw-HTTP-to-Copilot pattern or a two-workflow fan-out pattern before any later phase relies on adversarial critics.
-- **Until Phase 1.5 ships**, no workflow in this plan SHALL include an adversarial-critic mcp-script. Phase 1 explicitly does not include one; Phase 2 and beyond reference Phase 1.5 as a prerequisite where applicable.
-- **Secret inventory** for this repo today (must be confirmed before Phase 1 runs):
-  - `ANTHROPIC_API_KEY`: required for Phase 1 and any later workflow with `engine: claude`.
-  - `COPILOT_GITHUB_TOKEN`: required for any workflow with `engine: copilot` and for Phase 1.5's spike.
+All gh-aw work in this plan defaults to `engine: copilot` because the Copilot engine:
+
+1. Authenticates with `COPILOT_GITHUB_TOKEN` — the single secret already provisioned at the org level for work projects (no per-engine Anthropic / OpenAI / Gemini keys needed).
+2. Exposes the same model-agnostic task tool the local Copilot CLI uses, so any workflow prompt can spawn sub-agents with different models (Claude Opus, GPT-5, Codex, …) entirely through `COPILOT_GITHUB_TOKEN`. This is what makes the Phase 1.1 adversarial-critic pattern straightforward — no separate infrastructure spike required.
+3. Per the gh-aw engine feature matrix, supports the broadest set of advanced features: `engine.agent` (custom agent files), `engine.harness` (custom Node.js wrapper), `max-continuations` (autopilot mode), tools allowlist. Claude's engine has none of those.
+4. Supports model pinning via `engine.model:` when a workflow has a specific reason to require one model family (e.g., `model: gpt-5` or `model: claude-opus-4.7`).
+
+**When to deviate from `engine: copilot`:**
+
+- A workflow needs a Claude-only feature (`max-turns` — fine-grained per-run iteration cap). Only known use: very long reasoning sessions where the autopilot model on Copilot would over-spend. Provision `ANTHROPIC_API_KEY` only on those workflows and document why in the workflow's body.
+- A workflow needs Codex-native features (`tools.web-search` opt-in form). Provision `OPENAI_API_KEY` and document why.
+
+**No personal-account keys.** All gh-aw work is on work-org repos; personal Anthropic / OpenAI accounts are not wired into Actions secrets. If a future workflow truly needs a Claude- or Codex-direct path, file a separate issue to provision the work-org key.
+
+**Track B engine assignment matrix (B3 below)** is aspirational and predates the Copilot-engine pivot. Treat its per-step engine recommendations as *model* recommendations to use *via* Copilot's task tool when adversarial diversity matters, rather than as `engine:` field choices.
 
 ## Cost guardrails (apply from day 1, both tracks)
 
@@ -274,8 +281,9 @@ To avoid per-phase decisions about which API key to wire into which critic, all 
 
 - [x] Set up `agent-hotel/qrspi-plus` worktree on `agent-hotel/gh-aw-integration` branch.
 - [x] Write this plan to `docs/gh-aw-integration-plan.md`.
-- [ ] **Phase 1: corpus-analyzer.md** targeting `reviews/plan-109/` only (no mcp-scripts; Claude Opus single-pass).
-- [ ] **Phase 1.5: adversarial-critic infrastructure spike** (raw-HTTP-from-mcp-script OR two-workflow fan-out). Gates all later phases that need adversarial critics.
+- [x] **Phase 1: corpus-analyzer.md** targeting `reviews/plan-109/` only (single-engine Copilot, single-pass).
+- [ ] Provision `COPILOT_GITHUB_TOKEN` as a repo (or org-inherited) Actions secret on `dfrysinger/qrspi-plus`. Verify a manual `workflow_dispatch` run completes end-to-end.
+- [ ] **Phase 1.1: multi-model adversarial pass via Copilot task tool** for high-stakes clusters (prompt-level capability layered on the Phase 1 workflow; no separate infrastructure spike needed).
 - [ ] Phase 2: smoke-run.md + 2 scenarios with goldens.
 - [ ] Phase 3: `qrspi corpus submit` script + analyzer extended to consume tarballs.
 - [ ] Phase 4: `policy.yml` + one tier worker proof (borrowed from issue-autofix).

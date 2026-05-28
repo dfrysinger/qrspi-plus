@@ -25,8 +25,7 @@ concurrency:
   cancel-in-progress: false
 
 engine:
-  id: claude
-  max-turns: 25
+  id: copilot
 
 max-runs: 50
 max-effective-tokens: 2500000
