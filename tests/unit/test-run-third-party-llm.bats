@@ -878,3 +878,55 @@ _extract_ctrl_check_fn() {
   run grep -F 'default_headers' <<< "$_saved_output"
   [ "$status" -ne 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# _cc_safe_hname variable must follow the _cc_ prefix convention used by all
+# other locals in _control_char_check (_cc_hname, _cc_hval, _cc_count), and
+# the sanitisation assignment must include a fallback clause so that a
+# tr-pipeline failure (SIGPIPE, locale fault, resource exhaustion) produces a
+# meaningful diagnostic rather than silently producing an empty string.
+# ---------------------------------------------------------------------------
+
+@test "[script-hygiene] _cc_safe_hname assignment has fallback clause for tr-pipeline failure" {
+  # Guards against two regressions:
+  # 1. The local variable must be named _cc_safe_hname (not _safe_hname) to
+  #    match the _cc_ prefix convention used by the other locals in the helper.
+  # 2. The assignment must have a fallback (|| ...) so that a tr-pipeline
+  #    failure does not silently produce an empty string in the die message.
+  run grep -F '_cc_safe_hname=$(printf' "$BATS_TEST_DIRNAME/../../scripts/run-third-party-llm.sh"
+  [ "$status" -eq 0 ]
+  run grep -E '\|\| _cc_safe_hname=' "$BATS_TEST_DIRNAME/../../scripts/run-third-party-llm.sh"
+  [ "$status" -eq 0 ]
+}
+
+@test "[control-char-detect] tr-pipeline failure in _cc_safe_hname assignment produces fallback diagnostic string" {
+  # Guards against silent loss of the field name in die messages when the
+  # sanitisation pipeline fails (SIGPIPE, locale fault, resource exhaustion).
+  # Without the fallback, set -o pipefail + assignment failure leaves
+  # _cc_safe_hname empty, stripping the field name from the operator message.
+  local fn_file="$FIXTURE_DIR/ctrl_fn.sh"
+  _extract_ctrl_check_fn "$fn_file"
+  [ -s "$fn_file" ]
+
+  # Stub tr to exit 1 (simulates pipeline failure) via a PATH-prepended shim.
+  local stub_dir="$FIXTURE_DIR/stubs"
+  mkdir -p "$stub_dir"
+  printf '#!/bin/sh\nexit 1\n' > "$stub_dir/tr"
+  chmod +x "$stub_dir/tr"
+
+  # Invoke _control_char_check with a control byte in the value so the helper
+  # reaches the die path.  The stubbed tr will fail the sanitisation pipeline.
+  # The fallback string must appear in the die output.
+  run bash -c "
+    die() { printf '%s\n' \"\$1\" >&2; exit 1; }
+    export PATH='$stub_dir:\$PATH'
+    . '$fn_file'
+    _control_char_check 'X-Header' \"\$(printf 'bad\001val')\"
+  "
+  [ "$status" -eq 1 ]
+  # The fallback message must appear in the output (either fragment suffices).
+  local _found=0
+  printf '%s' "$output" | grep -qF '(field name unavailable' && _found=1
+  printf '%s' "$output" | grep -qF 'sanitisation pipeline failed' && _found=1
+  [ "$_found" -eq 1 ]
+}
