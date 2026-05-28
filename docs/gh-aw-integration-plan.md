@@ -51,22 +51,34 @@ Mining these is the unlock for measurable output-quality improvements.
 
 **Scope:**
 - Triggered weekly + on `corpus:run` label.
-- Reads `reviews/**` from the qrspi-plus repo (no external corpus yet).
-- `mcp-scripts` tools:
-  - `analyze-rounds` (Python): per-run rounds count, reviewer set, convergence signal, file paths.
-  - `cluster-findings` (JS, calls gpt-5 via the Copilot gateway per the *Gateway & secrets convention* below): cluster reviewer findings by structural type, return frequency + producer-fix suggestions.
-- Designer agent (Claude Opus): cross-references each cluster against the corresponding artifact and the relevant `skills/<step>/SKILL.md` or `agents/qrspi-<step>-reviewer.md`. Categorizes each as producer / reviewer / spec problem.
+- Reads `reviews/plan-109/` only (single corpus; multi-corpus scan deferred to Phase 3).
+- **Engine:** Claude Opus (`engine: claude`) doing both structural extraction and clustering in one pass. No mcp-scripts, no second-model critic — adversarial diversity is deferred to Phase 1.5 (see below).
+- Tools: `bash: true` (to read corpus files), `github` toolset (issues + repository), default network allowlist.
+- Cross-references each cluster against the corresponding artifact (e.g. `tasks/plan-109/`) and the relevant `skills/<step>/SKILL.md` or `agents/qrspi-<step>-reviewer.md`. Categorizes each as producer / reviewer / spec problem.
 - Files up to 8 issues labeled `corpus-finding` + `prompt-improvement`, each with:
   - cluster name, frequency, 3 verbatim quotes
   - inferred category (producer / reviewer / spec)
   - proposed exact diff against the relevant skill/agent file
   - back-links to source corpus files for verification
+- Convergence-signal detection: an empty (~12 byte) terminal review file means APPROVED. Reported as run metadata in each issue.
 
-**Out of scope for Phase 1:** external corpus collection, user-submitted tarballs, smoke validation of proposed diffs.
+**Out of scope for Phase 1:** external corpus collection, user-submitted tarballs, smoke validation of proposed diffs, multi-corpus aggregation, mcp-scripts, second-model critic.
 
 **Success criteria:**
-- Runs end-to-end against `reviews/plan-109/` only.
+- Compiles cleanly with `gh aw compile` (produces `.lock.yml`).
+- Runs end-to-end against `reviews/plan-109/`.
 - Produces at least 3 issues whose proposed diffs survive human review.
+
+### A1.5. Phase 1.5 — Adversarial-critic infrastructure spike (gating Phase 2+)
+
+**Ship:** small proof workflow + a documented pattern for "call a non-primary-engine model from an mcp-script."
+
+**Why this is its own phase:** the *Gateway & secrets convention* section below documents the intent, but gh-aw does not natively expose a "call any routed model from an mcp-script" primitive. The two paths worth proving out before any later phase relies on adversarial critics:
+
+1. **Raw HTTP from an mcp-script** to a documented Copilot Chat completions endpoint (or the GitHub Models inference API), using `COPILOT_GITHUB_TOKEN`. Needs endpoint + auth-header validation.
+2. **Two-workflow fan-out** where workflow A files an artifact + label, workflow B (different `engine:`) consumes it and writes back. Heavier, slower iteration, but uses only documented primitives.
+
+**Success criteria:** one of the two patterns proven with a reproducible call from a Python mcp-script returning a structured response from a non-Anthropic model. Document in `docs/gh-aw-integration-plan.md` and link from any phase that needs it.
 
 ### A2. Phase 2 — Dogfood smoke runs (Week 2)
 
@@ -234,13 +246,13 @@ Don't async-ify. Keep Design as a local Claude/Copilot session. Hybrid pipeline:
 
 To avoid per-phase decisions about which API key to wire into which critic, all workflows in this plan follow one default:
 
-- **Copilot-routed access via `COPILOT_GITHUB_TOKEN`** is the default gateway for every model call that is *not* the primary `engine:` of a workflow. That includes adversarial critic mcp-scripts (e.g. `cluster-findings`), tier worker secondary models, and any helper LLM invoked from a script.
-- **Primary `engine:` keys** (`ANTHROPIC_API_KEY` for `engine: claude`, `OPENAI_API_KEY` for `engine: codex`, `GEMINI_API_KEY` for `engine: gemini`) are wired only when that engine is the workflow's primary agent. Workflows that use `engine: copilot` need only `COPILOT_GITHUB_TOKEN`.
-- **Escape hatch:** a phase may use a direct provider API key for a critic only if it documents a specific capability gap in Copilot routing (e.g. a model version not yet routed, a feature only the native API exposes). Default answer is "no, use Copilot routing."
+- **For the primary `engine:` of a workflow**, wire only that engine's required secret: `ANTHROPIC_API_KEY` for `engine: claude`, `OPENAI_API_KEY` for `engine: codex`, `GEMINI_API_KEY` for `engine: gemini`, `COPILOT_GITHUB_TOKEN` for `engine: copilot`.
+- **For secondary model calls** (adversarial critic mcp-scripts, helper LLM invocations, tier worker secondaries) the *intent* is to route through `COPILOT_GITHUB_TOKEN` so that we keep one secret per repo, billed through Copilot.
+- **Status of secondary-model routing today: unproven.** gh-aw exposes `engine.api-target` and `*_BASE_URL` overrides for *primary engine* calls, but does not document a primitive for an mcp-script to call an arbitrary routed model. Phase 1.5 (above) exists to prove out either a raw-HTTP-to-Copilot pattern or a two-workflow fan-out pattern before any later phase relies on adversarial critics.
+- **Until Phase 1.5 ships**, no workflow in this plan SHALL include an adversarial-critic mcp-script. Phase 1 explicitly does not include one; Phase 2 and beyond reference Phase 1.5 as a prerequisite where applicable.
 - **Secret inventory** for this repo today (must be confirmed before Phase 1 runs):
-  - `COPILOT_GITHUB_TOKEN`: required for `engine: copilot` and for all secondary model calls per the rule above.
-  - `ANTHROPIC_API_KEY`: required only for workflows with `engine: claude` (Phase 1, Phase 4 reviewer A, Phase 7 designer).
-- **Why this lives in the plan, not in each workflow:** before this convention, Phase 1's workflow author (this agent) had to ask which gateway to use for `cluster-findings`. That's a spec ambiguity that propagates to every future phase. The convention removes the question; phases that genuinely need an exception state it explicitly.
+  - `ANTHROPIC_API_KEY`: required for Phase 1 and any later workflow with `engine: claude`.
+  - `COPILOT_GITHUB_TOKEN`: required for any workflow with `engine: copilot` and for Phase 1.5's spike.
 
 ## Cost guardrails (apply from day 1, both tracks)
 
@@ -262,7 +274,8 @@ To avoid per-phase decisions about which API key to wire into which critic, all 
 
 - [x] Set up `agent-hotel/qrspi-plus` worktree on `agent-hotel/gh-aw-integration` branch.
 - [x] Write this plan to `docs/gh-aw-integration-plan.md`.
-- [ ] **Phase 1: corpus-analyzer.md** targeting `reviews/plan-109/` only.
+- [ ] **Phase 1: corpus-analyzer.md** targeting `reviews/plan-109/` only (no mcp-scripts; Claude Opus single-pass).
+- [ ] **Phase 1.5: adversarial-critic infrastructure spike** (raw-HTTP-from-mcp-script OR two-workflow fan-out). Gates all later phases that need adversarial critics.
 - [ ] Phase 2: smoke-run.md + 2 scenarios with goldens.
 - [ ] Phase 3: `qrspi corpus submit` script + analyzer extended to consume tarballs.
 - [ ] Phase 4: `policy.yml` + one tier worker proof (borrowed from issue-autofix).
