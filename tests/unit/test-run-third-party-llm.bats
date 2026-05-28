@@ -519,6 +519,10 @@ _extract_ctrl_check_fn() {
 #               variable assignment, so it never reaches HEADER_VALUES).
 #   LF  (0x0A): _extract_ctrl_check_fn function-extraction path (LF is awk's
 #               record delimiter and splits the config line during parsing).
+#   CR  (0x0D): _extract_ctrl_check_fn function-extraction path (CR in a header
+#               value can be treated as a line-ending by CRLF-aware awk
+#               implementations, silently truncating the value before
+#               _control_char_check sees it).
 #   All other C0 bytes: _write_ctrl_config + _run_ctrl_check integration path.
 # Iterates all 32 bytes; each iteration asserts exit-code 1 AND presence of
 # "header-validation" in output, with the byte hex printed on failure to
@@ -562,9 +566,11 @@ _extract_ctrl_check_fn() {
         [[ "$output" == *"header-validation"* ]] \
           || { printf 'FAIL: 0x%s in VALUE — missing header-validation in output\n' "$_byte_hex" >&2; return 1; }
         ;;
-      012)
-        # LF: cannot survive awk line-based config parse into HEADER_VALUES;
-        # exercise _control_char_check directly via function-extraction path.
+      012|015)
+        # LF/CR: cannot survive awk record splitting cleanly; exercise
+        # _control_char_check directly via function-extraction path.
+        # LF is awk's record delimiter; CR can be treated as a line-ending by
+        # CRLF-aware awk, silently truncating the value before detection.
         local _fn_file_val="$FIXTURE_DIR/ctrl_fn_val_${_byte_hex}.sh"
         _extract_ctrl_check_fn "$_fn_file_val"
         [ -s "$_fn_file_val" ] \
@@ -577,12 +583,12 @@ _extract_ctrl_check_fn() {
           printf '_control_char_check %s ' "'x-param-val-header'"
           printf "'"
           printf 'safe'
-          printf '\012'
+          printf "\\$_byte_octal"
           printf "injected'\n"
         } > "$_ts_val"
         run bash "$_ts_val"
         [ "$status" -eq 1 ] \
-          || { printf 'FAIL: LF (0x%s) in VALUE did not cause exit 1\n' "$_byte_hex" >&2; return 1; }
+          || { printf 'FAIL: byte 0x%s in VALUE did not cause exit 1\n' "$_byte_hex" >&2; return 1; }
         [[ "$output" == *"header-validation"* ]] \
           || { printf 'FAIL: 0x%s in VALUE — missing header-validation in output\n' "$_byte_hex" >&2; return 1; }
         ;;
