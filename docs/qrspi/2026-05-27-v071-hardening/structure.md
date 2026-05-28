@@ -63,10 +63,11 @@ Each table row names one concrete file, its action, a one-line boundary responsi
 | `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` | Delete | Remove the stub spike report | G7a |
 | `tests/unit/test-cache-control-capability-gate.bats` | Delete | Remove the dual-flag cache-control capability-gate unit suite | G7a |
 | `tests/unit/test-cache-hit-rate.bats` | Delete | Remove the cache-hit-rate path-conditional unit suite | G7a |
-| `skills/using-qrspi/SKILL.md` | Modify | Remove `supports_prompt_cache` and `emit_cache_control_markers` from the providers block (both the YAML example values and the description bullets) | G7a |
+| `skills/using-qrspi/SKILL.md` | Modify | Remove `cache_control`, `supports_prompt_cache`, and `emit_cache_control_markers` from the providers block (both the YAML example values and the description bullets) | G7a |
 | `scripts/run-third-party-llm.sh` | Modify | Remove the `cache_control` marker emission branch from `_dispatch_openai_chat` | G7a |
 | `tests/unit/test-run-third-party-llm.bats` | Modify | Remove the cache-control truth-table assertions that duplicate the deleted `test-cache-control-capability-gate.bats` suite | G7a |
 | `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` | Modify | Drop the `SPIKE` export pointing at the deleted spike report and the `run_pin` invocations for the deleted cache unit suites | G7a |
+| `tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats` | Create | external-grep verifier for SPIKE export and run_pin invocation absence in test-phase1-acceptance.bats (avoids self-referential grep) | G7a |
 
 ### Slice 8: Agent model-field deletion with tier vocabulary preserved (G7b)
 

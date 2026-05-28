@@ -1,0 +1,13 @@
+--- a/plan.md
++++ b/plan.md
+@@ -221,8 +221,8 @@
+   - When `check_codex_available` returns non-zero for the detected host, the dispatch surface emits a single-line diagnostic to stderr and propagates non-zero exit (no log-and-continue)
+   - The acceptance test assertion for the Copilot CLI path passes when `COPILOT_CLI=1` is set and fails (RED) when it is absent
+   - The acceptance test assertion for the Claude Code path passes when `COPILOT_CLI` is unset and fails (RED) when the Copilot CLI signal is active
+-  - For the Copilot CLI path: the mocked task-tool dispatch exits with code 0 and captured stdout provides evidence that the dispatch invoked the mock transport rather than falling back to a different code path; exit code 0 alone is insufficient proof.
+-  - For the Claude Code path: the mocked `scripts/run-codex-review.sh` dispatch exits with code 0 and captured stdout provides evidence that the dispatch invoked the mock transport rather than falling back to a different code path; exit code 0 alone is insufficient proof.
++  - For the Copilot CLI path: the mocked task-tool dispatch exits with code 0 and captured stdout contains a distinguishable marker string emitted by the mock transport (a value the mock produces and no other code path produces), proving the dispatch invoked the mock rather than falling back; exit code 0 alone is insufficient proof.
++  - For the Claude Code path: the mocked `scripts/run-codex-review.sh` dispatch exits with code 0 and captured stdout contains a distinguishable marker string emitted by the mock transport (a value the mock produces and no other code path produces), proving the dispatch invoked the mock rather than falling back; exit code 0 alone is insufficient proof.
+   - When the mocked transport command (correctly-routed, Codex available) exits with a non-zero exit code, the dispatch surface propagates that same non-zero exit code to the caller -- no suppression, no log-and-continue.
+   - When the dispatch-surface detects a mismatch (warning emitted) and then invokes a mocked transport that exits with a non-zero exit code, the dispatch surface propagates that same non-zero exit code to the caller. The mismatch warning path does not suppress dispatch failures.
+ 

@@ -1,0 +1,196 @@
+--- a/docs/qrspi/2026-05-27-v071-hardening/plan.md
++++ b/docs/qrspi/2026-05-27-v071-hardening/plan.md
+@@ -23,6 +23,7 @@
+ - Task 7 (G6 SKILL prose + acceptance test): requires Task 6 (host-detection functions must exist before the prose references them and before the acceptance test can exercise them).
+ - Task 8 (G7a cache retirement): requires Task 1 (co-modifies `run-third-party-llm.sh` and its test suite) and Task 7 (co-modifies `using-qrspi/SKILL.md` and the acceptance test).
+ - Task 10 (G7b model_routing table + SKILL prose): requires Task 8 (sequencing of `using-qrspi/SKILL.md`) and Task 9 (the structural lint test file created by Task 9 is extended by Task 10).
++- Tasks 4 and 9 both touch `agents/qrspi-parallelize-reviewer.md` (Task 4: body prose; Task 9: YAML frontmatter `model:` line). Edits are line-disjoint and will not conflict. Parallelize should treat them as compatible same-wave candidates.
+ 
+ **Slice-to-task mapping:**
+ 
+@@ -37,7 +38,7 @@
+ 
+ ## Phase 1: v0.7.1 Hardening Release
+ 
+-All 10 tasks are in Phase 1. The single-phase structure is warranted because each slice carries its own targeted test layer (unit, integration, structural lint, or smoke), the 8 slices are independent hardening changes with no cross-slice shared new mechanism, and the one genuine cross-cutting integration risk (host-detection consistency between G6 and G7b) is resolved by Tasks 6, 7, and 10 sharing one detection implementation as directed by Design DKR10.
++Phase boundary and replan-gate criteria are defined in phasing.md; this Phase 1 section maps each replan-gate criterion to its observable acceptance form.
+ 
+ Ordering rationale: Tasks 1-6 and Task 9 have no blocking dependencies and may dispatch in any order or in parallel. Task 7 follows Task 6. Task 8 follows Tasks 1 and 7. Task 10 follows Tasks 8 and 9.
+ 
+@@ -80,15 +81,17 @@
+ - **task_type:** code
+ - **model:** sonnet
+ - **goal_ids:** [G1]
+-- **Description:** The control-char detection routine inside the `openai-chat-completions` security pre-flight block is replaced by a dedicated internal helper function that is POSIX-clean and produces correct results on BSD grep (macOS system grep without PCRE). The replacement catches all 33 control bytes -- the 32 C0 characters (0x00-0x1F) plus DEL (0x7F) -- including LF, which the prior `grep -qP` pattern missed silently. The current `2>/dev/null` suppression that caused the detection to become a no-op when grep lacks `-P` support is eliminated. The helper is called for each header name and each header value in the pre-flight loop; a positive detection result triggers the existing `die` path before any network call. Extended test coverage pins each of the 33 control bytes as a die-path trigger and adds an explicit LF regression guard that would have caught the prior false-negative. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Description:** The control-char detection routine inside the `openai-chat-completions` security pre-flight block is replaced by a dedicated internal helper function that is POSIX-clean and produces correct results on BSD grep (macOS system grep without PCRE). The replacement catches all 33 control bytes -- the 32 C0 characters (0x00-0x1F) plus DEL (0x7F) -- including LF, which the prior `grep -qP` pattern missed silently. The current `2>/dev/null` suppression that caused the detection to become a no-op when grep lacks `-P` support is eliminated. Every header name and every header value is screened before any network call; any control-character match causes the script to abort with the existing die-path diagnostic naming the offending provider and header. Extended test coverage pins each of the 33 control bytes as a die-path trigger and adds an explicit LF regression guard that would have caught the prior false-negative. The `codex-broker` transport path has no configurable `default_headers` surface and is therefore out of scope for this task. Dispatch order: test-writer first, implementer second (RED-verification gate between).
+ - **Test expectations:**
+   - Every C0 control byte (0x00 through 0x1F) supplied as a header value causes the script to exit before reaching any network dispatch call
+   - Every C0 control byte supplied as a header name causes the script to exit before reaching any network dispatch call
+   - DEL (0x7F) in a header value causes the script to exit before any network dispatch
++  - DEL (0x7F) in a header NAME (not just value) causes the script to exit before any network dispatch
+   - LF (0x0A / 0x0a) in a header value causes the script to exit -- this is the explicit regression guard for the prior grep gap where LF was silently missed because it is grep's record delimiter
+   - NUL (0x00) in a header value causes exit, not a silent skip or binary-mode false negative
++  - An empty header name and an empty header value do not trigger the die path (no false positive on empty input)
+   - A header containing only printable ASCII characters (0x20 through 0x7E) does not trigger the die path and allows execution to continue
+-  - The detection produces correct results when invoked in an environment where `grep -P` is unavailable (BSD grep without PCRE support)
++  - The `_control_char_check` helper is implemented without any `grep -P` invocation (structural code-pattern assertion)
+   - The die message identifies the offending provider and header name, matching the existing message format
+ 
+ ### Task 2: Add scratch commit-message filename to committed gitignore
+@@ -104,7 +107,7 @@
+ - **Test expectations:**
+   - The string `.qrspi-commit-msg.txt` appears verbatim in the content of the committed root `.gitignore` file
+   - When a scratch commit-message file is present on disk and `git add -A` is executed in a simulated commit flow, the scratch file path does not appear in the resulting staged index
+-  - The assertion holds in a context that simulates a fresh clone (no `.git/info/exclude` entry for the scratch path)
++  - The fresh-clone simulation uses a temporary scratch git directory created via `mktemp -d` + `git init` with no `.git/info/exclude` entry for the scratch path; the test asserts the staged-index behavior independently of any per-clone exclude file
+   - Existing commit-hygiene invariant assertions in the test suite continue to pass with no changes
+ 
+ ### Task 3: Promote fence-aware section extractor to shared test-helper library
+@@ -116,11 +119,12 @@
+ - **task_type:** code
+ - **model:** sonnet
+ - **goal_ids:** [G3]
+-- **Description:** A new exported fence-aware section-extraction function is added to `tests/helpers/skill-markdown.bash` alongside the existing heading-anchored `extract_section`. The new function tracks code-fence state so that heading-shaped lines inside fenced blocks are not treated as section boundaries; it exits at the next out-of-fence section boundary (a same-level heading outside a fence) or at EOF; it includes the anchor line in its output (matching the contract of the inline `extract_review_round` it replaces); and it emits a named diagnostic to stderr with a non-zero exit code when the extraction is empty. The two call sites of the inline `extract_review_round` helper in `tests/unit/test-skill-md-content-patterns.bats` are migrated to the new shared function, and the inline definition of `extract_review_round` is removed. New unit coverage in `tests/unit/test-helpers-skill-markdown.bats` pins fence-toggle correctness, exit-on-fence, exit-on-heading, empty-extract diagnostic, and anchor-line inclusion behaviors. The implementation must be bash-3.2 portable (no nameref, no `declare -A` outside functions, no `$'...'` ANSI-C strings in load-bearing paths). Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Description:** A new fence-aware section-extraction function is added to the shared test-helper library alongside the existing heading-anchored `extract_section`. The new function correctly handles heading-shaped lines inside code fences; emits a named diagnostic to stderr with a non-zero exit code when extraction is empty; and produces output equivalent to the inline `extract_review_round` helper it replaces. The two call sites of the inline helper migrate to the new shared function and the inline definition is removed. Coverage in `tests/unit/test-helpers-skill-markdown.bats` pins the behavioral contract. Bash-3.2 portable. Dispatch order: test-writer first, implementer second (RED-verification gate between).
+ - **Test expectations:**
+   - The new shared function returns content from the anchor line (inclusive) through the last line before the next out-of-fence section boundary
+   - A `### ` or `## ` heading line that appears inside an open code fence is not treated as a section boundary and does not terminate the extraction
+   - Exiting a code fence (closing triple-backtick line) restores heading-boundary detection for subsequent lines in the same extraction
++  - When the target section extends to end-of-file with no subsequent section boundary, the function extracts content from the anchor line through the last line of the file
+   - When the extraction from anchor to boundary produces no content lines, the function emits a diagnostic message to stderr and exits with a non-zero return code
+   - The anchor line itself is included in the function output (consistent with the prior `extract_review_round` contract)
+   - Both migrated call sites in `test-skill-md-content-patterns.bats` produce output identical to the prior inline `extract_review_round` output for the same input files
+@@ -156,12 +160,13 @@
+ - **task_type:** code
+ - **model:** sonnet
+ - **goal_ids:** [G5]
+-- **Description:** All five path-shaped exemption groups (six `case` patterns total) are deleted from the `_is_path_exempt()` function in `tests/unit/test-evergreen-markdown.bats`. The inline `<!-- evergreen-exempt -->` comment mechanism is retained as the sole remaining escape hatch; none of the five pre-existing violations that already carry inline markers are disturbed. After this change the evergreen scan covers its intended surface unconditionally: no directory tree is silently exempted by path. The test-writer writes a structural assertion verifying that `_is_path_exempt()` contains no path-shaped `case` branches (RED when branches are present, GREEN after deletion). Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Description:** All five path-shaped exemption groups (six `case` patterns total) are deleted from the `_is_path_exempt()` function in `tests/unit/test-evergreen-markdown.bats`. The inline `<!-- evergreen-exempt -->` comment mechanism is retained as the sole remaining escape hatch; none of the five pre-existing violations that already carry inline markers are disturbed. After this change the evergreen scan covers its intended surface unconditionally: no directory tree is silently exempted by path. The carve-out removal is validated by the existing evergreen-lint job in CI, which is the design-stated test surface (Design DKR5).
+ - **Test expectations:**
+-  - `_is_path_exempt()` in `tests/unit/test-evergreen-markdown.bats` contains no path-shaped `case` pattern branches after the modification
+   - The evergreen scan executed against all repo-tracked markdown files reports zero violations (the five pre-existing violations all carry `<!-- evergreen-exempt -->` inline markers and are suppressed without relying on path carve-outs)
++  - The five existing `<!-- evergreen-exempt -->` inline markers remain intact in their original locations after the modification
+   - No new violations are introduced by the removal of the carve-out groups (verified by running the scan after the edit)
+   - The jargon scan (scoped to `skills/**` and `agents/**`) is unaffected and continues to report zero violations
++  - The existing evergreen-lint job in CI reports zero violations after carve-out removal
+ 
+ ### Task 6: Implement host-aware Codex availability detection in Codex dispatch helper
+ 
+@@ -172,16 +177,18 @@
+ - **task_type:** code
+ - **model:** sonnet
+ - **goal_ids:** [G6]
+-- **Description:** Two new functions are added to `scripts/run-codex-review.sh`: a host-identification function that probes the `COPILOT_CLI=1` environment variable and emits either `copilot-cli` or `claude-code` to stdout, and a per-host Codex availability check that returns success under Copilot CLI (where Codex is a natively routable model requiring no filesystem probe) and under Claude Code probes the companion-script glob path. These two functions are the single shared host-probe implementation required by Design DKR10; Task 7 (SKILL prose) and Task 10 (model_routing prose) both reference this implementation. A new unit test file covers both functions under mocked environment signals: correct detection with the variable set, correct detection with the variable absent, availability success on Copilot CLI (no filesystem probe path exercised), availability success on Claude Code when the glob matches, and availability failure on Claude Code when the glob produces no match. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Description:** Two new functions are added to `scripts/run-codex-review.sh`: a host-identification function (`detect_host`) that probes the `COPILOT_CLI` environment variable and emits either `copilot-cli` or `claude-code` to stdout, and a per-host Codex availability check (`check_codex_available`) that returns success under Copilot CLI (where Codex is a natively routable model requiring no filesystem probe) and under Claude Code probes the companion-script glob path. When the detected host disagrees with the `codex_reviews` config value, the dispatch surface emits a single-line diagnostic to stderr identifying both the detected host and the config value, then returns non-zero. These two functions are the single shared host-probe implementation required by Design DKR10; Task 7 (SKILL prose) and Task 10 (model_routing prose) both reference this implementation. A new unit test file covers both functions under mocked environment signals. Both functions are bash-3.2 portable (no nameref, no `declare -A` outside functions, no `$'...'` ANSI-C strings); the CI bash-3.2 job is the enforcement surface. Dispatch order: test-writer first, implementer second (RED-verification gate between).
+ - **Test expectations:**
+-  - The host-identification function emits `copilot-cli` to stdout when `COPILOT_CLI=1` is present in the environment
+-  - The host-identification function emits `claude-code` to stdout when `COPILOT_CLI` is unset or set to empty
+-  - The host-identification function produces the same result regardless of other unrelated environment variables being set or unset
+-  - The Codex availability check returns exit code 0 (success) when called with `copilot-cli` as the host argument, without requiring any filesystem path to exist
+-  - The Codex availability check returns exit code 0 (success) when called with `claude-code` and the companion-script glob resolves to at least one existing file path
+-  - The Codex availability check returns a non-zero exit code when called with `claude-code` and the companion-script glob resolves to no file paths
++  - `detect_host` emits `copilot-cli` to stdout when `COPILOT_CLI=1` is present in the environment
++  - `detect_host` emits `claude-code` to stdout when `COPILOT_CLI` is unset
++  - `detect_host` with `COPILOT_CLI` set to any non-empty value other than `1` (e.g., `COPILOT_CLI=0`, `COPILOT_CLI=true`) returns non-zero and emits a single-line diagnostic to stderr naming the rejected value -- does NOT silently treat the value as `claude-code` or `copilot-cli`
++  - `detect_host` produces the same result regardless of other unrelated environment variables being set or unset
++  - `check_codex_available` returns exit code 0 (success) when called with `copilot-cli` as the host argument, without requiring any filesystem path to exist
++  - `check_codex_available` returns exit code 0 (success) when called with `claude-code` and the companion-script glob resolves to at least one existing file path
++  - `check_codex_available` returns a non-zero exit code when called with `claude-code` and the companion-script glob resolves to no file paths
++  - `check_codex_available` called with an unrecognized host argument returns non-zero and emits a single-line diagnostic to stderr identifying the unsupported host value
++  - Under a mocked mismatch between `detect_host` output and the `codex_reviews` config value, the dispatch surface emits a single line to stderr identifying both the detected host and the config value, and returns non-zero exit code
+   - Neither function writes to stderr under normal (non-error) operation
+-  - Both functions are bash-3.2 portable (no bash 4+ features)
+ 
+ ### Task 7: Update using-qrspi skill with per-host Codex dispatch transport routing
+ 
+@@ -192,36 +199,41 @@
+ - **task_type:** code
+ - **model:** opus
+ - **goal_ids:** [G6]
+-- **Description:** The Codex detection section in `skills/using-qrspi/SKILL.md` is updated to name both dispatch transports explicitly with per-host conditional prose. Under Copilot CLI the dispatch uses the native task tool with `agent_type: code-review` and `model: gpt-5.3-codex`. Under Claude Code the dispatch uses the shell pipeline via `scripts/run-codex-review.sh`. A one-line diagnostic hook is described at the detection boundary; it fires when the detected host disagrees with the `codex_reviews` config value, identifying the specific disagreement so the operator can reconcile. The acceptance test gains two new end-to-end host-detection assertions: one verifying that the Copilot CLI transport annotation is selected when the Copilot CLI host signal is active, and one verifying that the shell-pipeline transport is selected under the Claude Code default. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Description:** The Codex detection section in `skills/using-qrspi/SKILL.md` is updated to name both dispatch transports explicitly with per-host conditional prose. Under Copilot CLI the dispatch uses the native task tool with `agent_type: code-review` and `model: gpt-5.3-codex`. Under Claude Code the dispatch uses the shell pipeline via `scripts/run-codex-review.sh`. The skill prose documents that when the detected host output disagrees with the `codex_reviews` config value, the dispatch surface (implemented in Task 6) emits a single-line diagnostic to stderr identifying both the detected host and the config value. The acceptance test gains end-to-end host-detection assertions exercising the dispatch surface under mocked conditions for each host path. Dispatch order: test-writer first, implementer second (RED-verification gate between).
+ - **Test expectations:**
+   - `skills/using-qrspi/SKILL.md` Codex detection section contains conditional prose that explicitly names both the Copilot CLI task-tool transport and the Claude Code shell-pipeline transport
+   - The SKILL prose specifies `agent_type: code-review` and `model: gpt-5.3-codex` as the parameters for Copilot CLI Codex dispatch
+   - The SKILL prose names `scripts/run-codex-review.sh` as the Claude Code Codex dispatch mechanism
+-  - `skills/using-qrspi/SKILL.md` contains a mismatch-diagnostic description that fires when the host detected by the probe disagrees with the `codex_reviews` config value
++  - `skills/using-qrspi/SKILL.md` contains prose documenting that when the detected host disagrees with the `codex_reviews` config value, the dispatch surface emits a single-line diagnostic to stderr identifying both the detected host and the config value
++  - With `COPILOT_CLI=1` set, the acceptance test exercises a mocked Codex dispatch via `run-codex-review.sh` and asserts the dispatch returns a recognizable success signal (zero exit + non-empty stdout capture)
++  - With `COPILOT_CLI` unset and the Claude Code transport mocked, the dispatch surface routes through the `codex-broker` transport and again returns a recognizable success signal (zero exit + non-empty stdout capture)
++  - When `check_codex_available` returns non-zero for the detected host, the dispatch surface emits a single-line diagnostic to stderr and propagates non-zero exit (no log-and-continue)
+   - The acceptance test assertion for the Copilot CLI path passes when `COPILOT_CLI=1` is set and fails (RED) when it is absent
+   - The acceptance test assertion for the Claude Code path passes when `COPILOT_CLI` is unset and fails (RED) when the Copilot CLI signal is active
+ 
+ ### Task 8: Retire prompt-cache mechanism from dispatcher, skill, and test infrastructure
+ 
+ - **Phase:** 1
+-- **Target files:** `scripts/g4-cache-probe.sh` (delete), `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` (delete), `tests/unit/test-cache-control-capability-gate.bats` (delete), `tests/unit/test-cache-hit-rate.bats` (delete), `skills/using-qrspi/SKILL.md` (modify), `scripts/run-third-party-llm.sh` (modify), `tests/unit/test-run-third-party-llm.bats` (modify), `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` (modify), `tests/unit/test-cache-mechanism-retired.bats` (create)
++- **Target files:** `scripts/g4-cache-probe.sh` (delete), `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` (delete), `tests/unit/test-cache-control-capability-gate.bats` (delete), `tests/unit/test-cache-hit-rate.bats` (delete), `skills/using-qrspi/SKILL.md` (modify), `scripts/run-third-party-llm.sh` (modify), `tests/unit/test-run-third-party-llm.bats` (modify), `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` (modify)
+ - **Dependencies:** Task 1, Task 7
+ - **LOC estimate:** ~150
++- **Sizing exception:** mechanism retirement -- deletions and removals are tightly coupled because the prompt-cache mechanism boundary must close atomically across script + spike + unit tests + skill prose + acceptance suite; splitting would create transient intermediate states where the mechanism is half-retired. Validated by CI-green per Design DKR8 (mechanical deletion / no new design surface).
+ - **task_type:** code
+ - **model:** opus
+ - **goal_ids:** [G7a]
+-- **Description:** The prompt-cache mechanism is fully retired: four files are deleted and cache-related content is removed from four modified files. Deleted: `scripts/g4-cache-probe.sh` (the cache-probe script), `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` (the stub spike report), `tests/unit/test-cache-control-capability-gate.bats` (the dual-flag capability-gate unit suite), and `tests/unit/test-cache-hit-rate.bats` (the path-conditional cache-hit-rate suite). Modified: `skills/using-qrspi/SKILL.md` loses `supports_prompt_cache` and `emit_cache_control_markers` from the providers block (both the YAML example values and their description bullets); `scripts/run-third-party-llm.sh` loses the `cache_control` marker emission branch from `_dispatch_openai_chat`; `tests/unit/test-run-third-party-llm.bats` loses the four cache-control truth-table assertions that duplicate the deleted capability-gate suite; `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` loses the `SPIKE` export pointing at the deleted spike report and the two `run_pin` invocations for the deleted unit suites. A new structural test file asserts the post-retirement invariants (deleted files absent, patterns absent from modified files); these assertions fail RED against current state and pass GREEN after all deletions and removals land. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Description:** The prompt-cache mechanism is fully retired: four files are deleted and cache-related content is removed from four modified files. Deleted: `scripts/g4-cache-probe.sh` (the cache-probe script), `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` (the stub spike report), `tests/unit/test-cache-control-capability-gate.bats` (the dual-flag capability-gate unit suite), and `tests/unit/test-cache-hit-rate.bats` (the path-conditional cache-hit-rate suite). Modified: `skills/using-qrspi/SKILL.md` loses `supports_prompt_cache` and `emit_cache_control_markers` from the providers block (both the YAML example values and their description bullets); `scripts/run-third-party-llm.sh` loses the `cache_control` marker emission branch from `_dispatch_openai_chat`; `tests/unit/test-run-third-party-llm.bats` loses the four cache-control truth-table assertions that duplicate the deleted capability-gate suite; `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` loses the `SPIKE` export pointing at the deleted spike report and the two `run_pin` invocations for the deleted unit suites. Deletions and removals are a mechanical sweep with no new design surface; CI-green is the acceptance gate per Design DKR8.
+ - **Test expectations:**
+-  - `scripts/g4-cache-probe.sh` does not exist in the repository after the task completes
+-  - `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` does not exist in the repository after the task completes
+-  - `tests/unit/test-cache-control-capability-gate.bats` does not exist in the repository after the task completes
+-  - `tests/unit/test-cache-hit-rate.bats` does not exist in the repository after the task completes
++  - `scripts/g4-cache-probe.sh` does not exist in the repository after the task completes (filesystem absence)
++  - `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` does not exist in the repository after the task completes (filesystem absence)
++  - `tests/unit/test-cache-control-capability-gate.bats` does not exist in the repository after the task completes (filesystem absence)
++  - `tests/unit/test-cache-hit-rate.bats` does not exist in the repository after the task completes (filesystem absence)
+   - `skills/using-qrspi/SKILL.md` contains no references to `supports_prompt_cache` or `emit_cache_control_markers` after modification
+   - `scripts/run-third-party-llm.sh` contains no `cache_control` key emission logic after modification
+   - `tests/unit/test-run-third-party-llm.bats` contains no cache-control truth-table test blocks after modification
+   - `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` contains no `SPIKE` variable export referencing the deleted spike file and no `run_pin` invocations referencing the deleted suite files after modification
++  - After Task 8 modifications, `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` still contains the G6 host-detection acceptance assertions added by Task 7 (specifically, the `COPILOT_CLI=1` Copilot CLI path assertion and the `COPILOT_CLI` unset Claude Code path assertion)
++  - The `git diff --name-only` output for the Task 8 commit does not list any path under `docs/qrspi/2026-04-29-v0.4-bundle/` or `docs/superpowers/`; a path-scope assertion in the modify-pass verifies historical run-record directories are not touched
+   - The full CI suite (Lint job + BATS-under-bash-3.2 job) passes after all deletions and removals land with no regressions
+-  - Historical run records under `docs/qrspi/2026-04-29-v0.4-bundle/` and `docs/superpowers/` are unmodified
+ 
+ ### Task 9: Remove model: field from all agent frontmatters with structural lint coverage
+ 
+@@ -237,7 +249,7 @@
+ - **Test expectations:**
+   - `tests/unit/test-agent-frontmatter-no-model.bats` contains a test that sweeps every file matching `agents/qrspi-*.md` and fails if any frontmatter block carries a standalone top-level `model:` key
+   - After all 41 agent files are modified, the structural lint test passes with zero violations reported
+-  - Tier-name strings (haiku, sonnet, opus, inherit) appearing in the body prose or inline dispatch annotations of each agent file remain intact after the frontmatter deletion
++  - The strings `haiku`, `sonnet`, and `opus` appearing in agent body prose (outside the YAML frontmatter block, in dispatcher prose or `<!-- model: -->`-style inline annotations) are preserved with identical line content before and after the frontmatter deletion. The per-file diff for each of the 41 modifications shows exactly one deletion (the `model:` frontmatter line).
+   - All other frontmatter keys (`skills:`, `description:`, `name:`, and any agent-specific keys) are unmodified
+   - The structural lint test fails clearly in RED for each file that still carries a `model:` key, providing a useful per-file failure message
+ 
+@@ -250,11 +262,25 @@
+ - **task_type:** code
+ - **model:** opus
+ - **goal_ids:** [G7b]
+-- **Description:** The `model_routing:` table in `docs/qrspi/2026-05-27-v071-hardening/config.md` is populated with per-host concrete model ID entries covering all three tier names (haiku, sonnet, opus) for both the `claude-code` and `copilot-cli` host values produced by the `detect_host` function from Task 6. The copilot-cli entries use fully-versioned Copilot-native model identifiers that do not trigger "model not available" warnings; the claude-code entries use the corresponding Anthropic versioned identifiers. `skills/using-qrspi/SKILL.md` gains a Model Routing section documenting how dispatcher prose resolves agent tier names against the `model_routing` table: the `detect_host` output selects the per-host column, and the tier name selects the row, yielding the concrete model ID for that dispatch. The structural lint test created in Task 9 is extended with assertions verifying that the `model_routing` table contains entries for the required host/tier combinations and that none of the copilot-cli entries are bare Claude short-form tier names. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Description:** The `model_routing:` table in `docs/qrspi/2026-05-27-v071-hardening/config.md` is populated with per-host concrete model ID entries covering all four tier names (haiku, sonnet, opus, inherit) for both the `claude-code` and `copilot-cli` host values produced by the `detect_host` function from Task 6. The six versioned tier entries are: claude-code/haiku: `claude-haiku-4.5`; claude-code/sonnet: `claude-sonnet-4.6`; claude-code/opus: `claude-opus-4.7-high`; copilot-cli/haiku: `claude-haiku-4.5`; copilot-cli/sonnet: `claude-sonnet-4.6`; copilot-cli/opus: `claude-opus-4.7-high`. The `inherit` tier resolves to `claude-sonnet-4.6` for both hosts (matching Claude's resolver default for custom agents without explicit `model:`). Copilot CLI accepts fully-versioned Claude model IDs and routes them through its model proxy; using full IDs avoids the "model not available" warning that bare tier names trigger. `skills/using-qrspi/SKILL.md` gains a Model Routing section documenting how dispatcher prose resolves agent tier names against the `model_routing` table: the `detect_host` output selects the per-host column, and the tier name selects the row, yielding the concrete model ID for that dispatch. The structural lint test created in Task 9 is extended with assertions verifying that the `model_routing` table contains the exact required host/tier entries. Dispatch order: test-writer first, implementer second (RED-verification gate between).
+ - **Test expectations:**
+-  - `docs/qrspi/2026-05-27-v071-hardening/config.md` contains a `model_routing:` table with at least one concrete model identifier entry for each of the three tier names (haiku, sonnet, opus) under the `claude-code` host
+-  - `docs/qrspi/2026-05-27-v071-hardening/config.md` contains at least one concrete model identifier entry for each of the three tier names under the `copilot-cli` host
+-  - No entry in the `copilot-cli` column of the `model_routing:` table is a bare Claude tier short-form (the strings "haiku", "sonnet", or "opus" alone) that would trigger a Copilot CLI "model not available" warning
++  - `docs/qrspi/2026-05-27-v071-hardening/config.md` contains `claude-haiku-4.5` as the haiku-tier entry in the `model_routing` table for both the `claude-code` and `copilot-cli` host columns
++  - `docs/qrspi/2026-05-27-v071-hardening/config.md` contains `claude-sonnet-4.6` as the sonnet-tier entry in the `model_routing` table for both the `claude-code` and `copilot-cli` host columns
++  - `docs/qrspi/2026-05-27-v071-hardening/config.md` contains `claude-opus-4.7-high` as the opus-tier entry in the `model_routing` table for both the `claude-code` and `copilot-cli` host columns
++  - `docs/qrspi/2026-05-27-v071-hardening/config.md` contains `claude-sonnet-4.6` as the inherit-tier entry in the `model_routing` table for both the `claude-code` and `copilot-cli` host columns
++  - No entry in the `copilot-cli` column of the `model_routing:` table is a bare Claude tier short-form (the strings `haiku`, `sonnet`, or `opus` alone) that would trigger a Copilot CLI "model not available" warning
+   - `skills/using-qrspi/SKILL.md` contains a Model Routing section that names `detect_host` output as the host-selection input and the `model_routing` table as the per-tier resolution source
+   - The extended structural lint assertions in `tests/unit/test-agent-frontmatter-no-model.bats` fail in RED when the `model_routing` table is absent or missing a required host/tier entry, and pass GREEN when all required entries are present
+-  - A freshly installed copy of the plugin on Copilot CLI emits zero "model not available" warnings when an agent dispatch resolves through the `model_routing` table
++  - A freshly installed copy of the plugin on Copilot CLI emits zero "model not available" warnings when an agent dispatch resolves through the `model_routing` table (manual smoke check; Design Test Strategy labels this as manual)
++
++---
++
++## Reviewer Findings Set Aside
++
++The following findings from round-01 reviews are acknowledged here with rationale for why they are not addressed by fixes in this rewrite.
++
++**security-codex F02** -- Codex auth/token validation: out of G6 scope. G6 addresses host probe and dispatch transport selection; it is not an auth gate. Token validation for Codex API access is a separate concern handled upstream of the dispatch surface this plan touches. No fix applied.
++
++**testcov-claude F06** -- bash-3.2 portability as a test expectation: resolved by fix 15. The portability requirement is moved from Task 6 test expectations into the Task 6 description, naming the CI bash-3.2 job as the enforcement surface. This is the correct placement: portability is an implementation constraint verified by the existing CI job, not a bespoke BATS assertion. Fully resolved; not deferred.
++
++**scope-codex PLAN-SCOPE-002 / scope-claude SC-1** -- plan length under-specification: resolved naturally by the above expansions (fixes 1-17). The plan grew from ~260 lines to its current length as a direct result of the description and test-expectation expansions required by the convergent fixes. No targeted fix was applied; the length advisory was satisfied by the substantive content additions.
