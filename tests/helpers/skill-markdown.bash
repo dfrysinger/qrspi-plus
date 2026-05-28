@@ -232,8 +232,12 @@ extract_section_fence_aware() {
   fi
 
   # Signal file: awk writes FOUND_WITH_CONTENT or FOUND_EMPTY after processing.
-  # Using a PID-scoped name to avoid collisions with concurrent callers.
-  local signal_tmp="/tmp/skill-md-fence-signal-$$"
+  # Use mktemp to generate an unguessable unique path — a predictable PID-scoped
+  # name (/tmp/skill-md-fence-signal-$$) is vulnerable to TOCTOU / symlink
+  # attacks by any local user who can pre-create the path in world-writable /tmp.
+  # mktemp creates the file with mode 0600 and an unguessable suffix (sec.F01 fix).
+  local signal_tmp
+  signal_tmp="$(mktemp "${TMPDIR:-/tmp}/skill-md-fence-signal-XXXXXXXX")"
 
   local awk_out
   awk_out="$(awk -v anchor="$anchor" -v signal_tmp="$signal_tmp" '

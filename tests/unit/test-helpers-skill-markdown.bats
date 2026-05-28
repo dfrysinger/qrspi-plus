@@ -491,6 +491,58 @@ EOF
 }
 
 # =============================================================================
+# sec.F01: predictable signal-tmp path TOCTOU/symlink attack hardening
+# =============================================================================
+
+@test "[sec-F01] extract_section_fence_aware: mktemp-generated signal-tmp does not follow pre-planted symlink (TOCTOU fix)" {
+  # sec.F01 (score 78, correctness): signal_tmp was computed as
+  # /tmp/skill-md-fence-signal-$$ — predictable before the process starts.
+  # A local attacker can pre-create a symlink at that path pointing at an
+  # arbitrary target; awk's END block then overwrites the symlink target.
+  #
+  # After the fix (mktemp generates an unguessable unique path), the
+  # pre-planted symlink at the old predictable path is never touched, so
+  # the attack target file retains its original content.
+  #
+  # RED rationale: pre-fix, awk writes FOUND_WITH_CONTENT to the predictable
+  # path which follows the symlink and overwrites attack_target; the assertion
+  # that attack_target == ORIGINAL_CONTENT therefore FAILS (RED).
+  # Post-fix, mktemp creates a distinct path; the symlink is untouched;
+  # the assertion PASSES (GREEN).
+
+  # Create the attack target with known content.
+  local attack_target="$FIXTURE_DIR/sec-f01-attack-target"
+  printf 'ORIGINAL_CONTENT\n' > "$attack_target"
+
+  # Plant the symlink at the predictable path (uses $$ = bats process PID;
+  # extract_section_fence_aware runs in the same process so its $$ matches).
+  local predictable_path="/tmp/skill-md-fence-signal-$$"
+  ln -sf "$attack_target" "$predictable_path"
+
+  # Fixture file with a valid non-empty section so awk reaches its END block
+  # and writes FOUND_WITH_CONTENT to whatever signal_tmp resolves to.
+  cat > "$FIXTURE_DIR/valid.md" <<'EOF'
+### Some Section
+content line that is not empty
+EOF
+
+  # Direct call (no `run`) so the function executes in this shell where $$
+  # equals the bats PID — same value the function uses to build the
+  # predictable path if it has not yet been fixed.
+  extract_section_fence_aware "$FIXTURE_DIR/valid.md" "### Some Section" \
+    >/dev/null 2>&1 || true
+
+  # Remove the symlink regardless of outcome (test-level cleanup).
+  rm -f "$predictable_path"
+
+  # Post-fix: attack target must contain its original content (symlink was
+  # never followed because mktemp generated a unique path).
+  local content
+  content="$(cat "$attack_target")"
+  [ "$content" = "ORIGINAL_CONTENT" ]
+}
+
+# =============================================================================
 # sf.F03: empty fenced block (delimiters only) treated as content, not FOUND_EMPTY
 # =============================================================================
 
