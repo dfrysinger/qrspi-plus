@@ -571,6 +571,13 @@ _extract_ctrl_check_fn() {
   _run_ctrl_check "$FIXTURE_DIR"
   [ "$status" -eq 1 ]
   [[ "$output" == *"header-validation"* ]]
+  # Diagnostic precision: NUL die message names the provider but is carved out
+  # from the header-name requirement, because bash strips NUL at variable
+  # assignment so the file-scope pre-flight scan runs before the awk parse can
+  # extract header names. See task-01.md test-expectations bullet on die
+  # message format for the NUL carve-out rationale.
+  [[ "$output" == *"ctrl-test-prov"* ]]
+  [[ "$output" == *"NUL"* ]]
 }
 
 # ---------------------------------------------------------------------------
