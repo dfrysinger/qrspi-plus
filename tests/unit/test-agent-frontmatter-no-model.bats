@@ -75,39 +75,67 @@ _frontmatter() {
 }
 
 @test "[agent-frontmatter-no-model] per-file failure message names the offending file path" {
-  # Test expectation: the structural lint fails clearly in RED for each
-  # file that still carries a model: key, providing a useful per-file
-  # failure message. This test pins the message shape: when violations
-  # exist, the rendered output must include each offending file path on
-  # its own line so a downstream reader (operator or RED-verification
-  # adapter) can locate every site without re-running the sweep.
-  local f
-  local sample_offender=""
-  for f in agents/qrspi-*.md; do
-    [ -f "$f" ] || continue
-    if _frontmatter "$f" | grep -qE '^model:'; then
-      sample_offender="$f"
-      break
-    fi
-  done
+  # Test expectation: the sweep's per-file error message must include the
+  # offending file's path verbatim. A regression that drops the "${f}:"
+  # prefix from the message format must cause this test to fail.
+  #
+  # Unlike the prior tautological implementation (which constructed a local
+  # `rendered` string from $sample_offender and then checked it contained
+  # $sample_offender — always true), this test uses a synthetic fixture and
+  # a real sweep invocation via `run` so the assertion exercises actual
+  # output from the code path under test.
 
-  if [ -z "$sample_offender" ]; then
-    # GREEN state: no offenders exist, so there is no message-shape claim
-    # to verify. Skip rather than vacuously pass.
-    skip "no offenders present; message-shape pin is only meaningful while violations exist"
-  fi
+  # 1. Create a synthetic fixture carrying model: in its frontmatter so this
+  #    test is independent of the state of the real agent files.
+  local fixture
+  fixture="${BATS_TEST_TMPDIR}/qrspi-test-frontmatter-msg-shape.md"
+  cat >"$fixture" <<'EOF'
+---
+name: qrspi-test-fixture
+model: sonnet
+description: "Synthetic fixture for message-shape test"
+tools: Read
+---
 
-  # Re-render the same per-file message shape the main sweep uses and
-  # assert it contains the offending file path verbatim.
-  local rendered
-  rendered="${sample_offender}: forbidden top-level frontmatter key 'model:'"
-  case "$rendered" in
-    *"$sample_offender"*) : ;;
-    *)
-      echo "per-file failure message does not name the offending path: $rendered"
-      return 1
-      ;;
-  esac
+Body text does not affect the lint.
+EOF
+
+  # 2. Write a one-file sweep script that mirrors the real sweep's per-file
+  #    detection and message construction. `run` captures its stdout, letting
+  #    us assert the rendered text without coupling to real agent file state.
+  local sweep_script
+  sweep_script="${BATS_TEST_TMPDIR}/sweep-one-file.sh"
+  cat >"$sweep_script" <<'SCRIPT'
+#!/usr/bin/env bash
+# Mirrors the per-file detection + message construction used in the main
+# sweep test. Any regression that drops the "${f}:" path prefix from the
+# real sweep must also update this script, breaking the assertion below.
+_frontmatter() {
+  awk '/^---$/{n++;if(n==1){next}if(n==2){exit}}n==1{print}' "$1"
+}
+f="$1"
+offending_line=$(_frontmatter "$f" | grep -nE '^model:' || true)
+if [ -n "$offending_line" ]; then
+  echo "${f}: forbidden top-level frontmatter key 'model:' -> ${offending_line}"
+fi
+SCRIPT
+  chmod +x "$sweep_script"
+
+  # 3. Invoke the sweep on the fixture; run captures stdout into $output.
+  run bash "$sweep_script" "$fixture"
+
+  # 4. The rendered message must include the fixture path verbatim.
+  #    This assertion fails if the sweep drops the "${f}:" path prefix.
+  [[ "$output" == *"$fixture"* ]] || {
+    echo "sweep output did not include fixture path; got: $output"
+    return 1
+  }
+
+  # 5. The rendered message must include the literal error format marker.
+  [[ "$output" == *"forbidden top-level frontmatter key 'model:'"* ]] || {
+    echo "sweep output did not include error format text; got: $output"
+    return 1
+  }
 }
 
 @test "[agent-frontmatter-no-model] lint scope is the frontmatter block, not body prose" {
