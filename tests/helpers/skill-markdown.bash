@@ -237,7 +237,11 @@ extract_section_fence_aware() {
   # attacks by any local user who can pre-create the path in world-writable /tmp.
   # mktemp creates the file with mode 0600 and an unguessable suffix (sec.F01 fix).
   local signal_tmp
-  signal_tmp="$(mktemp "${TMPDIR:-/tmp}/skill-md-fence-signal-XXXXXXXX")"
+  signal_tmp="$(mktemp "${TMPDIR:-/tmp}/skill-md-fence-signal-XXXXXXXX")" || {
+    printf 'extract_section_fence_aware: mktemp failed (TMPDIR=%s)\n' \
+      "${TMPDIR:-/tmp}" >&2
+    return 1
+  }
 
   local awk_out
   awk_out="$(awk -v anchor="$anchor" -v signal_tmp="$signal_tmp" '
