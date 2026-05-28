@@ -221,8 +221,8 @@ teardown() {
   fresh_dir="$(mktemp -d)"
   trap 'rm -rf "$fresh_dir"' RETURN
   git -C "$fresh_dir" init -q -b main
-  git -C "$fresh_dir" config user.email "t02g2@example.com"
-  git -C "$fresh_dir" config user.name "T02-G2 Fixture"
+  git -C "$fresh_dir" config user.email "commit-hygiene@example.com"
+  git -C "$fresh_dir" config user.name "Commit-Hygiene Fixture"
   # Pre-condition: no .git/info/exclude entry for the scratch path exists.
   # A real fresh clone has an empty (or absent) info/exclude file.
   if [ -f "$fresh_dir/.git/info/exclude" ]; then
