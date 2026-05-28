@@ -1,0 +1,42 @@
+diff --git a/docs/qrspi/2026-05-17-v07-release/questions.md b/docs/qrspi/2026-05-17-v07-release/questions.md
+new file mode 100644
+index 0000000..bdb7aaf
+--- /dev/null
++++ b/docs/qrspi/2026-05-17-v07-release/questions.md
+@@ -0,0 +1,36 @@
++---
++status: draft
++---
++
++# Research Questions
++
++1. [codebase] How do the existing subagent dispatch sites across `skills/**/SKILL.md` and `agents/qrspi-*.md` currently express model choice (frontmatter, inline override, env var, or hardcoded default), and which surfaces are read at dispatch time vs. at session start?
++2. [web] How do open-source plugin and agent frameworks (Claude Code plugins, OpenDevin, AutoGen, LangGraph, Aider) express per-component model-routing policies in configuration, and what schema shapes are common in their published configs?
++3. [codebase] What is the call shape, error handling, and stdout/stderr contract of `scripts/run-codex-review.sh` and `scripts/codex-companion-bg.sh`, and how does main chat or a dispatching skill consume their output?
++4. [web] What OpenAI Chat Completions compatibility surfaces do current third-party LLM endpoints expose, including request/response shape, streaming semantics, and error-code conventions, as of 2026-05?
++5. [web] What patterns do public developer writeups describe for invoking third-party LLM endpoints from CLI-driven or agent harnesses, and what concerns recur across those writeups?
++6. [codebase] How does `skills/plan/SKILL.md` currently structure its generation-side sub-subagent dispatch (input bounds, output contract, ID-hygiene expectations, status reporting), and where in the SKILL flow does the post-approval split-into-task-files step live today?
++7. [codebase] What are the canonical task-file templates under `templates/` or referenced by `skills/plan/SKILL.md` for `tasks/task-NN.md`, and what frontmatter/section contracts must any mechanical split preserve?
++8. [codebase] Which dispatch sites across `skills/` and `agents/` repeatedly include the same long stable files in prompt composition, and how is that composition currently assembled?
++9. [web] What mechanisms do agent frameworks use to reduce repeated context input across dispatches when the same long, stable files would otherwise be re-read every turn?
++10. [codebase] How does the TDD cycle inside `skills/implement/SKILL.md` and `agents/qrspi-implementer.md` currently sequence test-writing and production-code writing within a single dispatch, and where does `agents/qrspi-test-writer.md` already plug in (per `test-test-writer-tool-grant.bats`)?
++11. [web] What does published research and developer-tooling literature say about quality and failure-mode differences when test authoring is split from production-code authoring in LLM coding agents?
++12. [codebase] How does `skills/implementer-protocol/SKILL.md` thread reviewer-finding and task identifiers into fix-cycle implementer prompts?
++13. [codebase] What worktree-related pre-flight checks does `skills/parallelize/SKILL.md` mandate in its process steps, and how does `skills/parallelize/owns-defers.md` partition responsibilities between Parallelize and downstream skills around worktree concerns?
++14. [codebase] What Branch Map vocabulary is canonical in `skills/parallelize/SKILL.md` Branch Model and Worked Example, and what Branch Map vocabulary, if any, is defined or assumed in `agents/qrspi-parallelize-reviewer.md` and `skills/reviewer-protocol/SKILL.md`?
++15. [codebase] Where in the QRSPI pipeline (Plan, Parallelize, Implement, reviewer agents) do dispatch prompts treat a reference artifact (screenshot, golden file, fixture) as ground truth?
++16. [codebase] How does `agents/qrspi-visual-fidelity-reviewer.md` (if present in the repo) handle the relationship between task specs and the reference source they cite, and how do current task-spec templates surface intentional deviations from a referenced source?
++17. [codebase] How does `skills/implementer-protocol/SKILL.md` sequence the steps of its commit procedure, and what does the qrspi-plus repo's `.gitignore` currently exclude from staging?
++18. [codebase] How does `tests/unit/test-u14-lint.bats` construct its file-path scan and excluded-skill substring check, and how do other BATS tests in `tests/unit/` derive skill identity from file paths?
++19. [codebase] What awk/grep section-extraction patterns recur across `tests/unit/test-skill-md-content-patterns.bats`, `test-cross-skill-contracts.bats`, and similar SKILL-body assertion tests, and what `REPO_ROOT`, empty-extract, and structural-anchor conventions do they share?
++20. [codebase] What boundary, if any, does `skills/replan/SKILL.md` currently draw between Replan's mechanical phase-snapshot work and the interactive scope-capture work owned by `skills/goals/SKILL.md`, and how does Replan today handle informal "Ideas" surfaced during a phase?
++21. [codebase] What is the current Branch Map and Execution Order presentation shape in `parallelization.md` artifacts (per `skills/parallelize/SKILL.md` Worked Example and any test fixtures under `tests/fixtures/`), and how do reviewer templates lint that shape?
++22. [web] What current GitHub Actions patterns (2025–2026) exist for running BATS test suites and shell linting on `ubuntu-latest`, including dependency installation, matrix strategies, and caching?
++23. [codebase] What branch-naming conventions are documented in `AGENTS.md` and `skills/implement/SKILL.md` Branch Model, and how do those namespaces appear in current scripts or templates?
++24. [codebase] Which `skills/**/SKILL.md` and `agents/qrspi-*.md` files in the current `main` branch contain release-version tokens or milestone references, and what dated or version-tagged file paths exist today that should be exempted from any prose-rot scan?
++25. [web] What lint or CI patterns do other markdown-driven prompt or skill libraries use to detect and prevent release-version-token rot in evergreen contract files?
++26. [codebase] What dispatcher classes exist today across `skills/` and `agents/`, and what is the input/output shape of each?
++27. [web] What methodologies does published research describe for A/B-comparing outputs of LLM coding agents — replay harnesses, golden-output comparison, blind grading rubrics — and what failure modes do those methodologies surface?
++28. [web] What freshness and accuracy contracts are published for derived or condensed prompt inputs (summaries, indices, embeddings, caching layers) used in agent frameworks?
++29. [codebase] What in-file token or identifier conventions, if any, do existing QRSPI implementer agents and protocols document?
++30. [codebase] How does the QRSPI pipeline today validate or version reference artifacts that downstream reviewers compare against?

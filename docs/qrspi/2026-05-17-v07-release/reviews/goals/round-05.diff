@@ -1,0 +1,27 @@
+diff --git a/docs/qrspi/2026-05-17-v07-release/goals.md b/docs/qrspi/2026-05-17-v07-release/goals.md
+index cb83036..afd2cbc 100644
+--- a/docs/qrspi/2026-05-17-v07-release/goals.md
++++ b/docs/qrspi/2026-05-17-v07-release/goals.md
+@@ -1,5 +1,5 @@
+ ---
+-status: approved
++status: draft
+ ---
+ 
+ # Goals: qrspi-plus v0.7 release
+@@ -105,7 +105,6 @@ The dispatcher-tolerance leaves account for a meaningful share of QRSPI's fan-ou
+ - Research specialist output feeds downstream Design decisions, so quality regression has high blast radius even if each specialist is scoped to one isolated question. The collator is more mechanical and may be lower risk if its output remains verbatim extraction.
+ - General-purpose and Explore dispatches often perform read-and-summarize research, but some may perform mid-level judgment such as bug localization. The routing policy needs a carve-out or escalation path for those contexts.
+ - The Medium article (https://medium.com/@kunalbhardwaj598/i-was-burning-through-claude-codes-weekly-limit-in-3-days-here-s-how-i-fixed-it-0344c555abda) is prior art for outsourcing simpler dispatched work to cheaper LLMs and should be consulted for the dispatcher-tolerance question.
+-- Replay or A/B validation is referenced by the source issues as the way to determine which dispatcher/task combinations tolerate cheaper models.
+ 
+ ### G6 — Test-writer subagent investigation
+ 
+@@ -120,7 +119,6 @@ The test-writer split is a process-design boundary along which work could be sep
+ #### What we know so far
+ - This investigation depends on G1's policy schema and G2's call mechanism if the answer turns out to be "split and route cheap." If the answer is "split and keep on trusted path" or "do not split," neither G1 nor G2 is on the critical path.
+ - The bounded scope of test-writing — produce tests against a specified plan-task spec — is the property that makes the cost-opt question worth asking. Bounded tasks are more likely to tolerate cheaper models without quality regression.
+-- A/B replay is the candidate validation methodology: write both code and tests in the unified subagent, then re-run with the split shape and compare outputs. Design should weigh how to structure that comparison.
+ - The Medium article (https://medium.com/@kunalbhardwaj598/i-was-burning-through-claude-codes-weekly-limit-in-3-days-here-s-how-i-fixed-it-0344c555abda) is prior art for outsourcing simpler dispatched work to cheaper LLMs and should be consulted for the test-writer cost-opt sub-question.
+ - Quality risks to weigh include: does the test-writer need to see production code while writing? Does loss of shared context lead to tests that pass by accident? Are there test types (acceptance, boundary, integration) that tolerate the split better than others?
+ 

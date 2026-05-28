@@ -1,0 +1,317 @@
+diff --git a/docs/qrspi/2026-05-17-v07-release/parallelization.md b/docs/qrspi/2026-05-17-v07-release/parallelization.md
+new file mode 100644
+index 0000000..e186ea5
+--- /dev/null
++++ b/docs/qrspi/2026-05-17-v07-release/parallelization.md
+@@ -0,0 +1,311 @@
++---
++status: draft
++---
++
++# Parallelization Plan — v0.7 Release (Phase 1)
++
++## Execution Mode
++
++Hybrid — twelve Wave-1 tasks run in parallel from the feature branch tip, followed by eight more waves that mix parallel fan-out (where file sets are disjoint) with sequential chains (where a single file is edited by successive tasks across waves).
++
++## Dependency Analysis
++
++| Task | Dependencies | Files | Wave |
++|------|-------------|-------|------|
++| task-01: Config schema in using-qrspi | none | `skills/using-qrspi/SKILL.md` | Wave 1 |
++| task-02: Shared prompt-utils library | none | `scripts/lib/llm-prompt-utils.sh` | Wave 1 |
++| task-09: RED-verification adapter contract doc | none | `skills/implement/red-verification-adapters.md` | Wave 1 |
++| task-14: CI workflow (lint + bash32 jobs) | none | `.github/workflows/ci.yml` | Wave 1 |
++| task-15: Combined G7+G18 hygiene contract | none | `skills/implementer-protocol/SKILL.md`, `agents/qrspi-implementer.md`, `agents/qrspi-implementer-lightweight.md` | Wave 1 |
++| task-20: Parallelize OWNS addition + cross-skill audit | none | `skills/parallelize/owns-defers.md`, `docs/qrspi/future-goals.md` | Wave 1 |
++| task-21: Multi-stage suffix grammar + reviewer align | none | `skills/parallelize/SKILL.md`, `agents/qrspi-parallelize-reviewer.md` | Wave 1 |
++| task-24: Plan spec frontmatter contract (reference_gate, ui) | none | `skills/plan/SKILL.md` | Wave 1 |
++| task-29: Reviewer-protocol quick-tier + design checklist | none | `skills/reviewer-protocol/SKILL.md`, `skills/design/SKILL.md` | Wave 1 |
++| task-34: G4 Mechanism B three anchor index files + manifest | none | `skills/reviewer-protocol/SKILL.anchors.json`, `skills/using-qrspi/SKILL.anchors.json`, `skills/plan/SKILL.anchors.json`, `scripts/g4-section-anchor-manifest.json` | Wave 1 |
++| task-40: u14-lint slug-extraction update + fixtures | none | `tests/unit/test-u14-lint.bats`, `tests/fixtures/u14-worktree-confusable/skills/goals/SKILL.md`, `tests/fixtures/u14-genuine-integrate/skills/integrate/SKILL.md` | Wave 1 |
++| task-41: Replan boundary-with-Goals section + OWNS | none | `skills/replan/SKILL.md`, `skills/replan/owns-defers.md` | Wave 1 |
++| task-03: Universal dispatcher script | task-01, task-02 | `scripts/run-third-party-llm.sh` | Wave 2 |
++| task-06: model_role frontmatter on three agents | task-01, task-15 (file-overlap chain) | `agents/qrspi-research-specialist.md`, `agents/qrspi-research-collator.md`, `agents/qrspi-implementer-lightweight.md` | Wave 2 |
++| task-08: Dual-mode qrspi-test-writer agent | task-01 | `agents/qrspi-test-writer.md` | Wave 2 |
++| task-10: Four RED-verification adapter scripts | task-09 | `scripts/red-verify/bats-adapter.sh`, `scripts/red-verify/vitest-adapter.sh`, `scripts/red-verify/jest-adapter.sh`, `scripts/red-verify/pytest-adapter.sh` | Wave 2 |
++| task-16: Integrate CI-gate consumer update | task-14 | `skills/integrate/SKILL.md` | Wave 2 |
++| task-25: Structure-skill UI Reference Affordances | task-24 | `skills/structure/SKILL.md` | Wave 2 |
++| task-26: Parallelize reference-gate wave termination | task-24, task-21 (file-overlap chain) | `skills/parallelize/SKILL.md` | Wave 2 |
++| task-31: Plan post-approval split orchestration | task-24 | `skills/plan/SKILL.md` | Wave 2 |
++| task-38: Three commit-hygiene invariants in implementer-protocol | task-15 | `skills/implementer-protocol/SKILL.md` | Wave 2 |
++| task-04: Retire codex-shim to thin forwarder | task-03 | `scripts/run-codex-review.sh`, `scripts/codex-companion-bg.sh` | Wave 3 |
++| task-05: Implement-skill routing chain + telemetry | task-01, task-03 | `skills/implement/SKILL.md`, `skills/research/SKILL.md` | Wave 3 |
++| task-33: G4 cache-probe script + spike report | task-03 | `scripts/g4-cache-probe.sh`, `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` | Wave 3 |
++| task-35: Anchor-refresh script + structure Section-Anchor Index | task-34, task-25 (file-overlap chain) | `scripts/g4-section-anchor-refresh.sh`, `skills/structure/SKILL.md` | Wave 3 |
++| task-11: Implement-skill pre-implementer dispatch + RED gate | task-08, task-10, task-05 (file-overlap chain) | `skills/implement/SKILL.md`, `agents/qrspi-implementer.md` | Wave 4 |
++| task-12: Plan-skill dispatch-order note + task_type defaulting | task-11 | `skills/plan/SKILL.md` | Wave 5 |
++| task-27: Implement-skill reference-gate pause + wave_context + VFR dispatch | task-24, task-26, task-05, task-11 (file-overlap chain) | `skills/implement/SKILL.md` | Wave 5 |
++| task-13: Shared BATS helper skill-markdown.bash + Slice 2 pins | task-08, task-11, task-12 | `tests/helpers/skill-markdown.bash`, `tests/unit/test-helpers-skill-markdown.bats`, `tests/unit/test-test-writer-dual-mode.bats`, `tests/unit/test-red-verification-gate.bats`, `tests/unit/test-tdd-dispatch-order.bats` | Wave 6 |
++| task-28: Refine qrspi-visual-fidelity-reviewer | task-24, task-27 | `agents/qrspi-visual-fidelity-reviewer.md` | Wave 6 |
++| task-17: test-evergreen-markdown.bats | task-13, task-14, task-15 | `tests/unit/test-evergreen-markdown.bats` | Wave 7 |
++| task-18: test-hygiene-self-check.bats | task-13, task-15 | `tests/unit/test-hygiene-self-check.bats` | Wave 7 |
++| task-19: test-ci-workflow-shape.bats + test-bash32-runtime-coverage.bats | task-13, task-14 | `tests/unit/test-ci-workflow-shape.bats`, `tests/unit/test-bash32-runtime-coverage.bats` | Wave 7 |
++| task-22: Migrate three existing BATS files to helper | task-13 | `tests/unit/test-skill-md-content-patterns.bats`, `tests/unit/test-cross-skill-contracts.bats`, `tests/unit/test-worktree-aware-defaults.bats` | Wave 7 |
++| task-23: New Slice 4 pins (owns-defers + vocab) | task-13, task-20, task-21 | `tests/unit/test-parallelize-owns-defers.bats`, `tests/unit/test-parallelize-vocab.bats` | Wave 7 |
++| task-30: Five Slice 5 BATS pins | task-13, task-24, task-25, task-26, task-27, task-28, task-29 | `tests/unit/test-reference-gate-fields.bats`, `tests/unit/test-ui-task-fields.bats`, `tests/unit/test-wave-context-shape.bats`, `tests/unit/test-quick-tier-wording.bats`, `tests/integration/test-reference-gate-pause.bats` | Wave 7 |
++| task-32: Plan post-approval split contract + pin | task-13, task-31 | `skills/plan/post-approval-split-contract.md`, `tests/unit/test-plan-post-approval-split.bats` | Wave 7 |
++| task-37: test-no-summary-shim-dispatches.bats | task-13 | `tests/unit/test-no-summary-shim-dispatches.bats` | Wave 7 |
++| task-39: Implement-skill worktree-exclude append + commit-hygiene pin | task-13, task-38 | `skills/implement/SKILL.md`, `tests/unit/test-commit-hygiene-invariants.bats` | Wave 7 |
++| task-42: test-replan-boundary-with-goals pin + fixture | task-13, task-41 | `tests/unit/test-replan-boundary-with-goals.bats`, `tests/fixtures/future-goals-mixed-shape.md` | Wave 7 |
++| task-07: Slice 1 unit pins (five BATS files) | task-03, task-05, task-06 | `tests/unit/test-run-third-party-llm.bats`, `tests/unit/test-config-model-routing.bats`, `tests/unit/test-citation-density-validator.bats`, `tests/unit/test-routing-matrix-application.bats`, `tests/unit/test-g5-telemetry-emission.bats` | Wave 8 |
++| task-36: Slice 7 G4 unit pins (five BATS files) | task-13, task-33, task-34, task-35 | `tests/unit/test-cache-hit-rate.bats`, `tests/unit/test-cache-control-capability-gate.bats`, `tests/unit/test-section-anchor-index-shape.bats`, `tests/unit/test-section-anchor-narrow-read.bats`, `tests/unit/test-section-anchor-refresh.bats` | Wave 8 |
++| task-43: G4 Path B cache_control activation (conditional) | task-33, task-36 | `docs/qrspi/2026-05-17-v07-release/config.md` | Wave 9 |
++
++## Same-wave file-disjointness audit
++
++For each multi-task wave, the union of all task file sets must be pairwise disjoint (no two tasks in the same wave touch the same file). Trivially satisfied for single-task waves.
++
++- **Wave 1** (12 tasks: T01, T02, T09, T14, T15, T20, T21, T24, T29, T34, T40, T41): union = 23 paths, pairwise intersection = ∅
++- **Wave 2** (9 tasks: T03, T06, T08, T10, T16, T25, T26, T31, T38): union = 14 paths, pairwise intersection = ∅
++- **Wave 3** (4 tasks: T04, T05, T33, T35): union = 8 paths, pairwise intersection = ∅ (T05 edits `skills/implement/SKILL.md`, T35 edits `skills/structure/SKILL.md` — no overlap)
++- **Wave 4** (1 task: T11): disjointness trivially satisfied
++- **Wave 5** (2 tasks: T12, T27): union = 2 paths, pairwise intersection = ∅ (T12 edits `skills/plan/SKILL.md`, T27 edits `skills/implement/SKILL.md`)
++- **Wave 6** (2 tasks: T13, T28): union = 6 paths, pairwise intersection = ∅ (T13 creates BATS helper + test files, T28 edits `agents/qrspi-visual-fidelity-reviewer.md`)
++- **Wave 7** (10 tasks: T17, T18, T19, T22, T23, T30, T32, T37, T39, T42): union = 21 paths, pairwise intersection = ∅ (each task creates new test files or touches a distinct skill/agent file; T39 alone edits `skills/implement/SKILL.md`)
++- **Wave 8** (2 tasks: T07, T36): union = 10 paths, pairwise intersection = ∅ (both create distinct new BATS test files)
++- **Wave 9** (1 task: T43): disjointness trivially satisfied
++
++## Cross-wave repeated-file chain confirmations
++
++For each file edited by tasks in two or more waves, the chain below confirms that each task's base reaches the prior task's tip.
++
++- **`skills/implement/SKILL.md`** edited in: W3:task-05 → W4:task-11 (base stage-after-W3 ✓) → W5:task-27 (base task-11 tip ✓) → W7:task-39 (base stage-after-W6 ✓ — captures W5); each task's base reaches the prior tip.
++- **`skills/plan/SKILL.md`** edited in: W1:task-24 → W2:task-31 (base task-24 tip ✓) → W5:task-12 (base task-11 tip — chain via T11→T12 deps; T11's stage-after-W3 reaches T31 via stage-after-W2 ✓); each task's base reaches the prior tip.
++- **`skills/structure/SKILL.md`** edited in: W2:task-25 → W3:task-35 (base stage-after-W2 ✓ — corrected from task-34 tip; stage-after-W2 includes W2 task-25); each task's base reaches the prior tip.
++- **`skills/implementer-protocol/SKILL.md`** edited in: W1:task-15 → W2:task-38 (base task-15 tip ✓); each task's base reaches the prior tip.
++- **`agents/qrspi-implementer-lightweight.md`** edited in: W1:task-15 → W2:task-06 (base stage-after-W1 ✓ — corrected from task-01 tip; stage-after-W1 includes W1 task-15); each task's base reaches the prior tip.
++- **`agents/qrspi-implementer.md`** edited in: W1:task-15 → W4:task-11 (base stage-after-W3 ✓); each task's base reaches the prior tip.
++- **`skills/parallelize/SKILL.md`** edited in: W1:task-21 → W2:task-26 (base stage-after-W1 ✓ — corrected from task-24 tip; stage-after-W1 includes W1 task-21); each task's base reaches the prior tip.
++
++All other tasks edit a file edited by only one task across all waves; no further cross-wave chains exist.
++
++## Execution Order
++
++**Wave 1** fires first with all 12 independent tasks in parallel: T01 (config schema), T02 (prompt-utils library), T09 (RED-verification adapter contract), T14 (CI workflow), T15 (hygiene contract), T20 (Parallelize OWNS addition), T21 (multi-stage grammar), T24 (Plan spec frontmatter), T29 (reviewer-protocol quick-tier + design checklist), T34 (anchor index files), T40 (u14-lint slug fix), T41 (Replan boundary section). These share no files and have no inter-dependencies. Wave 1 completion gates Wave 2.
++
++**Wave 2** fires after Wave 1 with 9 tasks in parallel: T03 (universal dispatcher, forked from T01+T02 stage), T06 (agent model_role frontmatter), T08 (dual-mode test-writer), T10 (four RED adapter scripts), T16 (Integrate CI gate), T25 (Structure UI affordances), T26 (Parallelize reference-gate wave termination), T31 (Plan post-approval split orchestration), T38 (commit-hygiene invariants). No internal file overlaps. Wave 2 completion gates Wave 3.
++
++**Wave 3** fires after Wave 2 with 4 tasks in parallel: T04 (codex-shim retirement), T05 (Implement routing chain + telemetry, forked from T01+T03 stage), T33 (G4 cache-probe script + spike report), T35 (anchor-refresh script + structure Section-Anchor spec). T05 touches `skills/implement/SKILL.md`; no other Wave 3 task does. T35 touches `skills/structure/SKILL.md`; T25 (Wave 2) also touched it, so T35's base is `stage-after-W2` (which includes T25's edits) to ensure the file-overlap chain is satisfied. Wave 3 completion gates Wave 4.
++
++**Wave 4** fires after Wave 3 with 1 task: T11 (Implement-skill RED-verification gate + implementer split-mode awareness, forked from `stage-after-W3`). T11's base is `stage-after-W3` (multi-parent: depends on T05+T08+T10 via the `skills/implement/SKILL.md` file-overlap chain — T05 edits that file in Wave 3, so T11 must include T05's changes). T11 must be isolated in its own wave because it edits `skills/implement/SKILL.md` (also edited by T05 in Wave 3 and T27 in Wave 5) and `agents/qrspi-implementer.md` (also edited by T15 in Wave 1, different wave). Wave 4 completion gates Wave 5.
++
++**Wave 5** fires after Wave 4 with 2 tasks in parallel: T12 (Plan dispatch-order note, single-parent chain from T11) and T27 (Implement reference-gate pause + VFR dispatch, forked from `task-11 tip`). T27's base is `task-11 tip` — T11 is the only Wave 4 task, so task-11 tip equals stage-after-W4; no separate stage commit is needed (single-parent shortcut). This base captures the full `skills/implement/SKILL.md` chain T05→T11 plus T24+T26 from earlier waves. T12 edits `skills/plan/SKILL.md`; T27 edits `skills/implement/SKILL.md` — no overlap. Both Wave 5 tasks have disjoint file sets. Wave 5 completion gates Wave 6.
++
++**Wave 6** fires after Wave 5 with 2 tasks in parallel: T13 (shared BATS helper + Slice 2 pins, multi-parent from T08+T11+T12 stage) and T28 (visual-fidelity reviewer refinement, multi-parent from T24+T27 stage). No file overlap between T13 and T28. Wave 6 is the critical convergence point — T13's output gates the majority of Wave 7. Wave 6 completion gates Wave 7.
++
++**Wave 7** fires after Wave 6 with 10 tasks in parallel: T17, T18, T19 (three Slice 3 BATS pins), T22 (helper migration), T23 (Slice 4 pins), T30 (Slice 5 pins), T32 (plan post-approval split pin), T37 (no-summary-shim pin), T39 (worktree-exclude append + commit-hygiene pin), T42 (replan boundary pin). All 10 tasks have disjoint file sets — each creates new test files or touches distinct skill/agent files. T39 edits `skills/implement/SKILL.md`, which was last touched by T27 in Wave 5; no other Wave 7 task touches it. Wave 7 is the largest parallel fan-out in the plan. Wave 7 completion gates Wave 8.
++
++**Wave 8** fires after Wave 7 with 2 tasks in parallel: T07 (Slice 1 unit pins, multi-parent from T03+T05+T06 stage) and T36 (Slice 7 G4 pins, multi-parent from T13+T33+T34+T35 stage). Both create new BATS test files with no overlaps. Wave 8 completion gates Wave 9.
++
++**Wave 9** fires last with 1 conditional task: T43 (G4 Path B cache_control activation). T43 is a NO-OP if the T33 spike report records Path A; the Implement orchestrator evaluates the precondition before dispatch. T43 edits `docs/qrspi/2026-05-17-v07-release/config.md`, which no other task touches.
++
++Waves that can fire concurrently at the same logical level are listed within each wave above. No wave-to-wave skipping is permitted — each wave depends on the prior wave's merge commit (or stage commit) to be complete.
++
++## Branch Map
++
++| Task | Branch | Base |
++|------|--------|------|
++| task-01 | `qrspi/v07-release/task-01` | `feature branch tip` |
++| task-02 | `qrspi/v07-release/task-02` | `feature branch tip` |
++| task-09 | `qrspi/v07-release/task-09` | `feature branch tip` |
++| task-14 | `qrspi/v07-release/task-14` | `feature branch tip` |
++| task-15 | `qrspi/v07-release/task-15` | `feature branch tip` |
++| task-20 | `qrspi/v07-release/task-20` | `feature branch tip` |
++| task-21 | `qrspi/v07-release/task-21` | `feature branch tip` |
++| task-24 | `qrspi/v07-release/task-24` | `feature branch tip` |
++| task-29 | `qrspi/v07-release/task-29` | `feature branch tip` |
++| task-34 | `qrspi/v07-release/task-34` | `feature branch tip` |
++| task-40 | `qrspi/v07-release/task-40` | `feature branch tip` |
++| task-41 | `qrspi/v07-release/task-41` | `feature branch tip` |
++| task-03 | `qrspi/v07-release/task-03` | `stage-after-W1` |
++| task-06 | `qrspi/v07-release/task-06` | `stage-after-W1` |
++| task-08 | `qrspi/v07-release/task-08` | `task-01 tip` |
++| task-10 | `qrspi/v07-release/task-10` | `task-09 tip` |
++| task-16 | `qrspi/v07-release/task-16` | `task-14 tip` |
++| task-25 | `qrspi/v07-release/task-25` | `task-24 tip` |
++| task-26 | `qrspi/v07-release/task-26` | `stage-after-W1` |
++| task-31 | `qrspi/v07-release/task-31` | `task-24 tip` |
++| task-38 | `qrspi/v07-release/task-38` | `task-15 tip` |
++| task-04 | `qrspi/v07-release/task-04` | `task-03 tip` |
++| task-05 | `qrspi/v07-release/task-05` | `stage-after-W2` |
++| task-33 | `qrspi/v07-release/task-33` | `task-03 tip` |
++| task-35 | `qrspi/v07-release/task-35` | `stage-after-W2` |
++| task-11 | `qrspi/v07-release/task-11` | `stage-after-W3` |
++| task-12 | `qrspi/v07-release/task-12` | `task-11 tip` |
++| task-27 | `qrspi/v07-release/task-27` | `task-11 tip` |
++| task-13 | `qrspi/v07-release/task-13` | `stage-after-W5` |
++| task-28 | `qrspi/v07-release/task-28` | `stage-after-W5` |
++| task-17 | `qrspi/v07-release/task-17` | `stage-after-W6` |
++| task-18 | `qrspi/v07-release/task-18` | `stage-after-W6` |
++| task-19 | `qrspi/v07-release/task-19` | `stage-after-W6` |
++| task-22 | `qrspi/v07-release/task-22` | `task-13 tip` |
++| task-23 | `qrspi/v07-release/task-23` | `stage-after-W6` |
++| task-30 | `qrspi/v07-release/task-30` | `stage-after-W6` |
++| task-32 | `qrspi/v07-release/task-32` | `stage-after-W6` |
++| task-37 | `qrspi/v07-release/task-37` | `task-13 tip` |
++| task-39 | `qrspi/v07-release/task-39` | `stage-after-W6` |
++| task-42 | `qrspi/v07-release/task-42` | `stage-after-W6` |
++| task-07 | `qrspi/v07-release/task-07` | `stage-after-W3` |
++| task-36 | `qrspi/v07-release/task-36` | `stage-after-W6` |
++| task-43 | `qrspi/v07-release/task-43` | `stage-after-W8` |
++
++## Stage Commits
++
++| Stage branch | Composition | Created before |
++|-------------|-------------|----------------|
++| `stage-after-W1` | Merge of all Wave 1 task branches (task-01 through task-41, 12 tasks) | task-03 dispatch |
++| `stage-after-W2` | Merge of stage-after-W1 + all Wave 2 task branches (task-03, task-06, task-08, task-10, task-16, task-25, task-26, task-31, task-38) | task-05 dispatch |
++| `stage-after-W3` | Merge of stage-after-W2 + all Wave 3 task branches (task-04, task-05, task-33, task-35) | task-07, task-11 dispatch |
++| `stage-after-W5` | Merge of stage-after-W2 + Wave 3 + Wave 4 (task-11) + Wave 5 (task-12, task-27) task branches | task-13, task-28 dispatch |
++| `stage-after-W6` | Merge of stage-after-W5 + Wave 6 task branches (task-13, task-28) | task-17, task-18, task-19, task-23, task-30, task-32, task-36, task-39, task-42 dispatch |
++| `stage-after-W8` | Merge of stage-after-W6 + Wave 7 (all 10 tasks) + Wave 8 (task-07, task-36) task branches | task-43 dispatch |
++
++## Worktree-aware setup validation
++
++This is a pure script-and-markdown project — there are no JavaScript/TypeScript build artifacts, no `node_modules`, no compiled output, and no framework-specific build directories. No `.worktrees/**` path exclusions are needed in `.gitignore` or CI configuration. Per-task worktrees created by Implement will hold only shell scripts, markdown files, BATS test files, and JSON artifacts; none of these produce derivative build output that would need to be excluded from other worktrees' views of the repository. The worktree-local `.git/info/exclude` append for `.qrspi-commit-msg.txt` (authored by task-39) is the only per-worktree filesystem advisory needed for this release.
++
++## Mermaid dependency graph
++
++```mermaid
++graph TD
++  subgraph Wave1["Wave 1 — feature branch tip"]
++    t01["task-01"]
++    t02["task-02"]
++    t09["task-09"]
++    t14["task-14"]
++    t15["task-15"]
++    t20["task-20"]
++    t21["task-21"]
++    t24["task-24"]
++    t29["task-29"]
++    t34["task-34"]
++    t40["task-40"]
++    t41["task-41"]
++  end
++
++  subgraph Wave2["Wave 2"]
++    t03["task-03"]
++    t06["task-06"]
++    t08["task-08"]
++    t10["task-10"]
++    t16["task-16"]
++    t25["task-25"]
++    t26["task-26"]
++    t31["task-31"]
++    t38["task-38"]
++  end
++
++  subgraph Wave3["Wave 3"]
++    t04["task-04"]
++    t05["task-05"]
++    t33["task-33"]
++    t35["task-35"]
++  end
++
++  subgraph Wave4["Wave 4"]
++    t11["task-11"]
++  end
++
++  subgraph Wave5["Wave 5"]
++    t12["task-12"]
++    t27["task-27"]
++  end
++
++  subgraph Wave6["Wave 6"]
++    t13["task-13"]
++    t28["task-28"]
++  end
++
++  subgraph Wave7["Wave 7"]
++    t17["task-17"]
++    t18["task-18"]
++    t19["task-19"]
++    t22["task-22"]
++    t23["task-23"]
++    t30["task-30"]
++    t32["task-32"]
++    t37["task-37"]
++    t39["task-39"]
++    t42["task-42"]
++  end
++
++  subgraph Wave8["Wave 8"]
++    t07["task-07"]
++    t36["task-36"]
++  end
++
++  subgraph Wave9["Wave 9 — conditional"]
++    t43["task-43"]
++  end
++
++  t01 --> t03
++  t02 --> t03
++  t01 --> t06
++  t15 --> t06
++  t01 --> t08
++  t09 --> t10
++  t14 --> t16
++  t24 --> t25
++  t24 --> t26
++  t21 --> t26
++  t24 --> t31
++  t15 --> t38
++  t03 --> t04
++  t01 --> t05
++  t03 --> t05
++  t03 --> t33
++  t34 --> t35
++  t25 --> t35
++  t08 --> t11
++  t10 --> t11
++  t05 --> t11
++  t11 --> t12
++  t24 --> t27
++  t26 --> t27
++  t11 --> t27
++  t05 --> t27
++  t08 --> t13
++  t11 --> t13
++  t12 --> t13
++  t24 --> t28
++  t27 --> t28
++  t13 --> t17
++  t14 --> t17
++  t15 --> t17
++  t13 --> t18
++  t15 --> t18
++  t13 --> t19
++  t14 --> t19
++  t13 --> t22
++  t13 --> t23
++  t20 --> t23
++  t21 --> t23
++  t13 --> t30
++  t24 --> t30
++  t25 --> t30
++  t26 --> t30
++  t27 --> t30
++  t28 --> t30
++  t29 --> t30
++  t13 --> t32
++  t31 --> t32
++  t13 --> t37
++  t13 --> t39
++  t38 --> t39
++  t13 --> t42
++  t41 --> t42
++  t03 --> t07
++  t05 --> t07
++  t06 --> t07
++  t13 --> t36
++  t33 --> t36
++  t34 --> t36
++  t35 --> t36
++  t33 --> t43
++  t36 --> t43
++```

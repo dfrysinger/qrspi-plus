@@ -1,0 +1,2 @@
+score: 95
+reason: The file map (Slice 2, line 45) explicitly tags `tests/unit/test-test-writer-dual-mode.bats` with `G6, G14` and documents it "Uses `skill-markdown.bash`"; the diagram's `G14Consumers` node (lines 475–476) lists six consumers but omits this file, creating a factual gap in the dependency graph representation.

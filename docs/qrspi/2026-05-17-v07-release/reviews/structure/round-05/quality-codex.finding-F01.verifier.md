@@ -1,0 +1,2 @@
+score: 75
+reason: Design G6 (lines 327-337) explicitly requires the implementer to NOT author duplicate RED tests when dispatched after test-writer in split-mode (line 333), but Slice 2 (the TDD split feature) does not update `agents/qrspi-implementer.md` or add split-mode documentation to `skills/implementer-protocol/SKILL.md`; Slice 3's protocol update is scoped to hygiene only (G7, G18), leaving no explicit dispatch signal or behavior guidance for the split-mode contract.

@@ -1,0 +1,2 @@
+score: 78
+reason: Design.md (line 269, 291, 300) explicitly requires capturing fix-cycle counts, review-finding categories, and rerun events per task as "production tuning" instrumentation for a "living config" — this is documented as a required test case. Structure.md's G5 file map (lines 15, 20, 21, 27, 28) allocates files for routing dispatch, citation-density validation, and their tests, but does NOT allocate any file/module for instrumentation capture or a test verifying telemetry is recorded. The gap is real and load-bearing for the design's stated tuning mechanism.

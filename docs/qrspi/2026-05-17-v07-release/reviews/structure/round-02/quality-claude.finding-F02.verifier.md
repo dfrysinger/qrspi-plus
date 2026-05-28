@@ -1,0 +1,2 @@
+score: 75
+reason: Design G11 (line 594) explicitly states "Plan tasks reference this section" of Structure's UI Reference Affordances — a read dependency, not a runtime dispatch. The solid arrow `PlanSkill5 --> StructureSkill5` (line 455) misrepresents this as dispatch direction; it should be dotted/labeled or inverted per diagram conventions shown in other reference/provision arrows (e.g., line 459 `DesignSkill5 -.checklist.-> PlanSkill5`). The finding correctly identifies a substantive semantic error in the diagram.

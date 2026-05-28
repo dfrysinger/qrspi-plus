@@ -1,0 +1,2 @@
+score: 75
+reason: The finding correctly identifies a genuine logical contradiction in structure.md Slice 4: agents/qrspi-parallelize-scope-reviewer.md is listed with Action=Modify, but its Responsibility text explicitly states "no body edit beyond regenerated runtime reads," and design.md § G8 confirms only owns-defers.md and parallelize-reviewer.md receive edits. This mismatch will generate a spurious Plan/Implement task.

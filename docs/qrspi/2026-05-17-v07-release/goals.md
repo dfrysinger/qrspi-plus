@@ -1,0 +1,312 @@
+---
+status: approved
+---
+
+# Goals: qrspi-plus v0.7 release
+
+## Purpose
+
+v0.7 is a multi-surface release covering cost+context optimization, prompt-bug fixes, interface and process improvements, and evergreen-prose enforcement. The release frames the next set of risks and opportunities after v0.6 without committing the design to any single implementation path.
+
+## Constraints
+
+- The plugin's Anthropic-native API integration stays in place; routing to third-party cheaper LLM endpoints is purely additive, so cost-opt changes must not break existing Sonnet/Opus dispatch paths.
+- Shell-side scripts must remain compatible with the repo's existing bash/BATS conventions, including bash 3.2+ portability where applicable and no new node/python runtime dependency unless Design explicitly justifies the dependency boundary.
+- BATS test additions should follow the existing unit/acceptance harness style, use loud diagnostics for empty or missing fixtures, and avoid absolute-path assumptions that break under QRSPI worktrees.
+- Dispatch changes must fit Claude Code's subagent/sub-subagent model and preserve QRSPI's existing status-reporting, finding-file, and batch-gate contracts.
+- Any new field added to `config.md` must support runtime-backfill defaults for resumed runs created before the field landed; the pattern is one-time backfill plus warning, not perpetual compatibility shims.
+- v0.7 is the next release after v0.6, which shipped on 2026-05-17 via PR #178; there is no hard deadline.
+- Evergreen-prose enforcement must be automated rather than relying only on per-PR human review; the specific mechanism (lint, CI gate, reviewer-side check, or a layered combination) is deferred to Design.
+
+## Goals
+
+### G1 — Cost-opt routing policy schema
+
+- **type:** `exploratory`
+
+#### Problem
+QRSPI has no shared policy layer that decides which dispatch sites route to cheaper third-party LLM endpoints (DeepSeek-V3, Kimi K2, and similar) and which stay on the trusted Anthropic-native path. This goal's job is to design the *shape* of that policy layer — the configuration schema, override precedence rules, and trusted-path carve-out vocabulary — so any dispatch site can declare its cheap-model eligibility through a single, well-defined contract. G1 produces the empty policy framework; G5 produces the empirical data that fills it in; G2 produces the call mechanism the policy targets. Without G1, each cost-opt experiment in this release — the dispatch mechanism in G2, the tolerance research in G5, and any future leaf — would invent its own routing rules, override semantics, and trusted-path carve-outs. The result would be duplicated logic across skills and agents and no single place for the user to reason about where cheap-model routing applies.
+
+#### Why we care
+Routing decisions are the load-bearing rules surface for the entire P1 tier. Once the schema is in place, the leaves (G2 mechanism, G5 tolerance research, and any later cost-opt work) consume it instead of redefining their own routing logic. A coherent policy also keeps the trusted-path carve-outs explicit so cost optimization does not silently degrade the load-bearing parts of the pipeline.
+
+#### What we know so far
+- One candidate framework shape Design should weigh is a schema definition — what fields exist, what values are legal, how overrides compose — possibly with placeholder defaults or example entries to validate the shape. The empirical "which dispatcher uses which model" decisions belong to G5 (dispatcher tolerance research), not to this goal.
+- Candidate keys for Design to weigh include subagent class, plan task type, fix-round depth, and per-run defaults.
+- Override behavior is part of the schema: per-task overrides, per-run overrides, and trusted-path carve-outs that pin certain dispatches to Anthropic-native models. Design should weigh override precedence.
+- The schema shape is open. Candidates include a per-subagent default with per-task override fields, a per-run config block with a defaults map, or a layered combination. Source issue #169 framed this as "per-subagent + per-task + per-run defaults"; Design should weigh which layers are required.
+- Most third-party providers expose the OpenAI Chat Completions API surface, so the implementation will likely speak that protocol; the policy itself is provider-agnostic and describes routing decisions, not wire format.
+
+### G2 — Cost-opt dispatch mechanism
+
+- **type:** `exploratory`
+
+#### Problem
+Even with G1's routing policy in place, QRSPI has no shared call mechanism that a subagent dispatch site can use to actually invoke a third-party LLM endpoint. Without a shared mechanism, each cost-opt leaf would write its own shell-out or in-process wrapper to talk to the third-party API, with its own error handling, API-key plumbing, and session-state propagation. That would duplicate non-trivial integration code and fragment the failure surface across the pipeline.
+
+#### Why we care
+Consolidating the call mechanism prevents the leaves of P1 from each reinventing the same shim. The dynamic-opt-in requirement — that any subagent or task can adopt cheap-model routing at runtime via configuration rather than code edits — only works if there is one mechanism every dispatch site can call. Pairing the mechanism (G2) with the policy (G1) gives the release a clean rules-versus-call separation: G1 decides where, G2 does the call.
+
+#### What we know so far
+- Candidate shape: a shell shim, in the style of the existing `scripts/run-codex-review.sh` pattern, that takes a model identifier and a prompt and returns the model's response. Design should weigh whether shell is the right surface or whether an in-process wrapper (Node.js or Python) is preferable for streaming, error handling, or session-state propagation.
+- The Medium article "I was burning through Claude Code's weekly limit in 3 days — here's how I fixed it" (https://medium.com/@kunalbhardwaj598/i-was-burning-through-claude-codes-weekly-limit-in-3-days-here-s-how-i-fixed-it-0344c555abda) is a research input Design should consult for script-implementation patterns, especially around session-state propagation, error handling, and API-key management.
+- Dynamic opt-in is a hard constraint. Any subagent or task must be able to opt in to cheap-model routing through configuration (frontmatter field, per-run flag, or similar data-driven surface), not by editing the dispatch site's code. Design should weigh exactly which configuration layer carries the opt-in signal — it likely ties into G1's policy schema.
+- API-key management is part of the mechanism's scope. Candidates include environment variables resolved at call time, a 1Password-style indirection, or a per-provider config block. Design should weigh both security and ergonomics.
+- The mechanism must surface errors loudly enough for the dispatch site to fail safely back to the trusted Anthropic path when G1's policy allows fallback, and to abort when the policy requires the cheap path specifically.
+
+### G3 — Plan post-approval split → sub-subagent
+
+- **type:** `known-fix`
+
+#### Problem
+The Plan skill already uses sub-subagents when generating large plans, but after a user approves the merged `plan.md`, the terminal split back into individual `tasks/task-NN.md` files runs in main chat. That split is mechanical extraction and rewrite work, yet it happens in the most expensive and context-heavy part of the session, often after the full Plan conversation and artifact body have accumulated.
+
+#### Why we care
+Every full-pipeline run with a multi-task plan pays this cost once, and large releases can require dozens of sequential writes from saturated main-chat context. The step is expensive relative to the judgment required, and the existing `/compact` recommendation is only a partial mitigation. Moving the mechanical split out of main chat saves cost while preserving the user's approval gate and the transactional status update.
+
+#### What we know so far
+- The generation-side sub-subagent pattern already exists in `skills/plan/SKILL.md`; Design should weigh reusing the same dispatch shape for the post-approval split.
+- The source issue identifies bounded inputs for a split agent: the merged `plan.md` body, the canonical split task-file format template, and the ID-hygiene contract.
+- The candidate output contract is mechanical: write the `tasks/task-NN.md` files, rewrite `plan.md` to overview-only content, and return a summary of files written so main chat can verify before committing.
+- The source issue recommends keeping `phase_start_commit:` capture and `status: approved` writes in main chat because those small operations gate progression and need to remain transactional.
+- Quick-fix or one-task plans are a candidate carve-out, since the overhead of sub-subagent dispatch may exceed the split cost.
+
+### G4 — Context optimization for repeated long-file reads
+
+- **type:** `exploratory`
+
+#### Problem
+Several QRSPI dispatch patterns repeatedly read the same long, stable artifacts when composing prompts, inflating context cost without changing the underlying work. Specific repeated-read sites: (a) main chat composing dispatch prompts that include skill bodies, agent bodies, and reviewer-protocol on every dispatch even though those files are stable across rounds; (b) per-task implementers re-reading the task spec and adjacent files across each fix cycle within a task; (c) reviewers re-reading the artifact across each review round on the same task. These reads are correct — the agents need the content — but the full-file form is wasteful when only a section or summary is actually used in the current step.
+
+#### Why we care
+Repeated long-file reads are a context-cost amplifier distinct from per-dispatch model cost. Even with G1 and G2 in place to route some dispatch sites to cheaper models, the input volume on the dispatches that stay on Sonnet/Opus is dominated by re-reading the same artifacts. Reducing input volume on those reads has compounding effects across a multi-phase run and is independent of which model handles a given dispatch.
+
+#### What we know so far
+- Candidate (a): summary shim. A deterministic mechanism that produces a compact summary of a stable artifact, used as a prompt input where a full read would otherwise be composed. Design should weigh this candidate. Explicit risk: summaries must NOT replace source-of-truth reads. When an agent needs to make a decision or edit a file, it must Read the real file; the summary is a prompt-composition input only, suitable for previews, routing decisions, or context the agent does not directly reason against. Design should describe how the contract enforces that separation.
+- Candidate (b): file index. A pre-computed table of section anchors with line ranges, so an agent can Read a narrow slice of a long file rather than the whole thing. This carries less risk than summaries because the content the agent sees is verbatim — just sliced — but it requires the indexer to track section anchors as files evolve.
+- Implementations may layer both: an index for navigation and narrow Reads, plus a summary used only for routing or preview surfaces where exact content is not load-bearing.
+- The candidates differ on freshness requirements. A summary that drifts from the source is dangerous; a stale index simply causes the agent to Read a slightly wider range than necessary. Design should weigh the freshness contract for each candidate.
+- Determining whether a given repeated-read site is best served by the summary, the index, or a full Read is itself part of the policy surface; the goal is exploratory because the right mechanism likely varies by site.
+
+### G5 — Dispatcher tolerance research
+
+- **type:** `exploratory`
+
+#### Problem
+Several high-volume dispatcher classes currently route to Sonnet/Opus even though their work often looks like bounded reading, summarization, prose editing, or mechanical collation. This goal's job is to empirically determine *which* third-party cheaper LLM each dispatcher class can tolerate on which work, and to produce the populated tolerance matrix that fills G1's schema with concrete entries — G1 owns the schema, G5 owns the data that goes in it. The main candidates today are the lightweight implementer for prose/doc/config tasks, the research specialist and collator, and general-purpose exploration dispatches. They share a cost-optimization mechanism (via G2) and a routing-policy surface (via G1), but their failure modes differ: prose quality, factual accuracy, citation handling, tool use, and hidden judgment work are not interchangeable risks.
+
+#### Why we care
+The dispatcher-tolerance leaves account for a meaningful share of QRSPI's fan-out cost, and routing them naively through G1's policy could degrade downstream Design decisions, task outputs, or exploratory findings. Treating the existing three (lightweight implementer, research specialist, general-purpose) as one research surface lets the release produce a coherent tolerance matrix rather than isolated model swaps.
+
+#### What we know so far
+- Implementation routes through G1's policy schema and G2's call mechanism; this goal should not invent its own routing, API-key, or budget logic.
+- The target is any third-party cheaper LLM endpoint, with DeepSeek-V3 and Kimi K2 as exemplars. Design should keep model and provider selection configurable via G1.
+- Lightweight implementer tasks are prose/doc/config oriented and exclude the judgment-heavy TDD implementer. The source issue suggests preserving existing tool access, model overrides, and implementer protocol status reporting.
+- Research specialist output feeds downstream Design decisions, so quality regression has high blast radius even if each specialist is scoped to one isolated question. The collator is more mechanical and may be lower risk if its output remains verbatim extraction.
+- General-purpose and Explore dispatches often perform read-and-summarize research, but some may perform mid-level judgment such as bug localization. The routing policy needs a carve-out or escalation path for those contexts.
+- The Medium article (https://medium.com/@kunalbhardwaj598/i-was-burning-through-claude-codes-weekly-limit-in-3-days-here-s-how-i-fixed-it-0344c555abda) is prior art for outsourcing simpler dispatched work to cheaper LLMs and should be consulted for the dispatcher-tolerance question.
+
+### G6 — Test-writer subagent investigation
+
+- **type:** `exploratory`
+
+#### Problem
+Implement's TDD cycle currently puts test-writing and production-code writing in the same subagent prompt. Whether that should split into its own test-writer subagent — and whether that subagent is itself a cost-opt surface — is an open process-design question with cost-opt implications. The two sub-questions are coupled: the answer to "should we split?" determines whether "is the split a cheap-model surface?" is even reachable, but the cost-opt framing is part of why the split is worth investigating now rather than later.
+
+#### Why we care
+The test-writer split is a process-design boundary along which work could be separated from the more expensive TDD implementer, with both quality and cost implications to investigate. Splitting may improve test quality through separation of concerns (the test-writer reasons only about the spec, not about implementation choices it has just made), or hurt it through loss of shared context (the implementer-of-tests no longer sees the production code being written). If splitting helps, the test-writer is a candidate cost-opt surface: its work is bounded (write tests against a specified task spec) and may tolerate a cheaper model. The answer space is genuinely open: "yes split / yes route cheap," "yes split / keep on trusted path," or "do not split."
+
+#### What we know so far
+- This investigation depends on G1's policy schema and G2's call mechanism if the answer turns out to be "split and route cheap." If the answer is "split and keep on trusted path" or "do not split," neither G1 nor G2 is on the critical path.
+- The bounded scope of test-writing — produce tests against a specified plan-task spec — is the property that makes the cost-opt question worth asking. Bounded tasks are more likely to tolerate cheaper models without quality regression.
+- The Medium article (https://medium.com/@kunalbhardwaj598/i-was-burning-through-claude-codes-weekly-limit-in-3-days-here-s-how-i-fixed-it-0344c555abda) is prior art for outsourcing simpler dispatched work to cheaper LLMs and should be consulted for the test-writer cost-opt sub-question.
+- Quality risks to weigh include: does the test-writer need to see production code while writing? Does loss of shared context lead to tests that pass by accident? Are there test types (acceptance, boundary, integration) that tolerate the split better than others?
+
+### G7 — Fix-cycle ID-hygiene leak
+
+- **type:** `known-fix`
+
+#### Problem
+Fix-cycle implementer prompts include reviewer finding IDs and task IDs, and implementers have carried those QRSPI-internal tokens into shipped skill files, agent files, and tests while patching prose or comments. Initial implementation prompts do not expose the same surface because no reviewer-finding IDs exist yet; the leak appears specifically when a fix-cycle asks the implementer to reason about a finding and edit downstream artifacts.
+
+#### Why we care
+ID-hygiene leaks create prompt-prose and test-artifact noise, but the immediate operational impact is fix-cycle budget. Each leak is easy to remove after review catches it, yet under a three-fix cap a predictable hygiene leak can consume a scarce iteration and push an otherwise-correct task toward cap exit. The problem also harms traceability by mixing internal review IDs into runtime-facing files.
+
+#### What we know so far
+- The source issue proposes adding explicit fix-cycle ID-hygiene guidance to both `agents/qrspi-implementer.md` and `agents/qrspi-implementer-lightweight.md`; Design should weigh exact placement and wording.
+- The candidate guidance names forbidden token families such as `R<N>-F<NN>`, `T<NN>`, and goal/question/design IDs, and instructs implementers to describe intent by content rather than by internal IDs.
+- A corresponding lint or verification step in implementer-protocol is a possibility Design should evaluate, likely grepping edited files before commit for the forbidden token patterns.
+- Cross-references by skill name, file path, contract surface, or canonical field name are acceptable alternatives to internal QRSPI IDs.
+
+### G8 — Parallelize / owns-defers gap
+
+- **type:** `known-fix`
+
+#### Problem
+The Parallelize skill's process steps require Worktree-Aware Setup Validation and instruct the skill to surface results in `parallelization.md`, but `skills/parallelize/owns-defers.md` does not list that validation as an owned responsibility. The scope reviewer uses `owns-defers.md` as its source of truth and therefore flags the skill-mandated section as scope drift on every run.
+
+#### Why we care
+This is a guaranteed false-positive review finding. Because the finding is classified as scope, the normal review loop pauses for explicit user resolution even though the artifact is following the skill's own process. That adds avoidable human-gate friction and undermines trust in Parallelize review results.
+
+#### What we know so far
+- The likely bounded fix is to add Worktree-Aware Setup Validation to the OWNS list in `skills/parallelize/owns-defers.md`; Design should weigh the exact language.
+- The source issue suggests framing the validation as advisory: Parallelize inspects lint/typecheck/test configuration for `.worktrees/**` exclusions and surfaces remediation suggestions, but does not auto-apply patches.
+- The DEFERS side should still reserve worktree creation, branch creation, and baseline-test execution for Implement. The gap is about configuration-level pre-flight validation, not runtime worktree management.
+- The issue also surfaces a broader audit pattern: SKILL process steps and `owns-defers.md` can drift, and this release may need a way to prevent similar reviewer false positives.
+
+### G9 — Parallelize reviewer vocabulary
+
+- **type:** `known-fix`
+
+#### Problem
+The Parallelize reviewer or its preloaded protocol uses Branch Map vocabulary that contradicts the canonical vocabulary in `skills/parallelize/SKILL.md`. It flags valid values such as `feature branch tip`, `task-NN tip`, and `stage-after-W{N}` as style violations because it expects hyphenated or integer-suffixed forms that are not canonical.
+
+#### Why we care
+The reviewer produces recurring false positives against correct `parallelization.md` artifacts. Even when severity is low, the findings cost disposition time, confuse readers about which vocabulary is authoritative, and make review output less trustworthy. The issue is especially damaging because Parallelize artifacts are intended to remove ambiguity before Implement resolves symbolic bases.
+
+#### What we know so far
+- The canonical source is `skills/parallelize/SKILL.md` Branch Model and Worked Example; Design should align the reviewer or protocol vocabulary with that source.
+- Valid terms include `feature branch tip`, `task-NN tip`, `stage-after-W{N}`, and `task-00 tip`, using the spacing and wave-suffixed stage form described by the skill.
+- The v0.6 run exposed a multi-stage-per-Wave case using `stage-after-W4a/b/c`. The vocabulary spec needs to be closed under real plan shapes, either by documenting that suffix pattern or defining another canonical disambiguation form.
+- The candidate fix may live in `agents/qrspi-parallelize-reviewer.md`, `skills/reviewer-protocol/SKILL.md`, or another preloaded vocabulary source; Design should locate the actual authority before editing.
+
+### G10 — Human-gate reviewer reference inputs
+
+- **type:** `known-fix`
+
+#### Problem
+QRSPI can ask downstream reviewers to treat a reference artifact as ground truth, such as a prototype screenshot, golden output file, or contract fixture, without any gate that verifies the reference itself. In Keeplii, prototype-reference PNGs were wrong, but the visual-fidelity reviewer compared against those wrong PNGs and passed the work. Downstream tasks then implemented, reviewed, and deployed against an invalid reference.
+
+#### Why we care
+A reviewer is only as trustworthy as its reference input. If the reference artifact is wrong, the per-task reviewer chain can produce a clean result while validating the wrong target, and the batch gate fires too late because dependent tasks have already shipped against the bad input. This creates expensive rework and makes green CI or reviewer pass status misleading for reference-driven work.
+
+#### What we know so far
+- The source issue proposes a new per-task `reference_gate: true` concept; Design should weigh the field name, lifecycle, and exact gate semantics.
+- Candidate Plan responsibilities include requiring the task's Test Expectations to produce the reference artifact and marking the task as reference-gated when downstream reviewers consume it.
+- Candidate Parallelize responsibilities include treating reference-gated tasks as wave boundaries so dependent tasks cannot dispatch until the gate releases.
+- Candidate Implement responsibilities include halting after the producing task reaches terminal state, showing the reference artifact to the user, and requiring explicit approval before dependents are eligible.
+- Design may need an advisory checklist for systems that introduce reviewers whose verdict depends on external references.
+
+### G11 — Apply Keeplii harness lessons
+
+- **type:** `exploratory`
+
+#### Problem
+Keeplii's UI lift work exposed harness-level lessons that are broader than one project: implementers over-index on external source fidelity when specs include explicit deltas, and re-deriving visual surfaces from prose loses important information that already exists in CSS, HTML, PNG, or SVG artifacts. The QRSPI workflow does not yet have a structured way to capture those lessons in Design, Structure, Plan, or reviewer prompts.
+
+#### Why we care
+These were real production findings, not hypothetical process tweaks. Without harness changes, future port/lift projects are likely to rediscover the same failure modes: implementers may copy source behavior that the spec said to drop, omit target-specific keep rules, or re-create visuals from prose when verbatim lift would have been cheaper and more faithful. Encoding the lessons improves both quality and cost on reference-driven projects.
+
+#### What we know so far
+- A clearly delimited `SPEC OVERRIDES SOURCE` or `DELTAS FROM SOURCE` section in lift-style task specs is a possibility Design should evaluate, especially if reviewers are prompted to check it explicitly.
+- A wave-aware reviewer brief is a candidate mechanism for carrying lessons from early wave findings into later sibling tasks without waiting for a separate replan.
+- Quick-tier review wording may need clarification: the observed useful pattern was inline-patch high and correctness-medium findings while accepting lows, not blindly merge or escalate every quick-tier task.
+- A Design-step heuristic could ask whether an external visual artifact should be lifted verbatim or re-derived from prose; the source issue argues lift-verbatim is often cheaper and more faithful when a real visual reference exists.
+- Structure could record a sibling reference repo path and lift mechanic once, such as a token import codemod, so Plan tasks do not each re-derive the same transformation.
+- A dedicated lift task shape or `task_type: lift` is a possibility for Design to evaluate. The user's memory also notes a working Keeplii `qrspi-visual-fidelity-reviewer.md` reference that should be studied before authoring related reviewer work.
+
+### G12 — Commit-message scratch staging
+
+- **type:** `known-fix`
+
+#### Problem
+The implementer-protocol commit procedure writes a commit message to `<worktree>/.qrspi-commit-msg.txt` and then runs staging while that scratch file remains on disk. Because `git add -A` sees the scratch file, implementers can accidentally commit it unless they explicitly remove it first. This happened repeatedly in v0.6 task branches.
+
+#### Why we care
+The bug is low severity but noisy and recurrent. It pollutes task branches with scratch-file commits, requires cleanup commits or extra hygiene steps, and wastes implementer/reviewer attention on a problem the protocol can prevent. The recurrence shows that relying on individual prompts to remember cleanup is brittle.
+
+#### What we know so far
+- One candidate is to gitignore the scratch path or move the scratch file under a path already excluded by the repo's conventions; Design should weigh whether the skill package can safely ship that ignore behavior.
+- Another candidate is to reorder the protocol so the scratch file is removed before staging, with an explicit note explaining why order matters.
+- The source issue says either structural gitignore protection or protocol reordering is sufficient, with the gitignore option being more robust if practical.
+- User-global instructions prefer commit messages via a file rather than heredocs, so any protocol change should preserve file-based commit-message support while eliminating staged scratch noise.
+
+### G13 — u14-lint worktree false positive
+
+- **type:** `known-fix`
+
+#### Problem
+`tests/unit/test-u14-lint.bats` has a test that scans absolute file paths for excluded skill-name substrings such as `/integrate/`. When BATS runs from a QRSPI integrate worktree, the checkout path itself legitimately contains `/integrate/`, so the test fails even though the in-scope file set is correct. The assertion is checking the working directory path rather than the skill slug it meant to validate.
+
+#### Why we care
+The false positive bites at exactly the wrong time: QRSPI baseline or integration testing can run from an integrate worktree and report a phantom failure. That wastes operator time, contaminates baseline-failure classification, and makes the CI/test gate look less reliable even though the underlying lint scope is fine.
+
+#### What we know so far
+- The recommended candidate fix is to scope by skill-name basename extracted from the path under `skills/`, not by substring matching the absolute path.
+- A less preferred option is to strip a known repo prefix before checking. The source issue calls this more brittle than extracting the intended skill slug.
+- Documenting that BATS must not run from a worktree is explicitly a bad fit for QRSPI because worktree-based execution is core to the pipeline.
+- The fix should preserve the intended failure mode: if an in-scope file actually lives under an excluded skill slug, the test should still fail.
+
+### G14 — BATS test helper
+
+- **type:** `known-fix`
+
+#### Problem
+Multiple v0.6 tasks independently hand-rolled the same BATS pattern for extracting sections from skill markdown and grepping for contract-bearing phrases. The repeated pattern included section-scoped awk, structural exit anchors, empty-extract guards, named diagnostics, exit-before-print behavior, and `REPO_ROOT` guards. Because each task reimplemented it, reviewers spent time catching the same classes of structural-lint issues.
+
+#### Why we care
+The system is correct today only because repeated review rounds converged on a stable pattern. Without a shared helper, the next test-pin task will likely pay the same review cost and risk silent passes from malformed extracts. Factoring the pattern amortizes those lessons and makes future skill-markdown tests more reliable.
+
+#### What we know so far
+- A shared BATS helper library for skill-markdown section extraction and grep-in-section assertions is a candidate Design should weigh. Helper boundaries, function names, and the file location belong to Structure/Plan once the candidate is selected.
+- The helper should fail loudly on empty extracts or missing section anchors, use structural boundaries rather than content-only anchors, and avoid swallowing boundary lines.
+- Migrating the existing T09, T14, and T19 BATS files is a possible same-release application, but Design should decide whether migration is required for the initial helper or left as follow-up.
+
+### G15 — Replan ↔ Goals coordination
+
+- **type:** `exploratory`
+
+#### Problem
+The Replan skill needs a clearer boundary with Goals. Replan's phase-boundary job is mechanical: analyze the completed phase, snapshot state, promote existing Formal goals that already have IDs and criteria, and hand off. It should not convert informal Ideas into formal goals on its own, because that creative scoping belongs in the interactive Goals conversation.
+
+#### Why we care
+If Replan starts formalizing Ideas, it can expand scope at a phase boundary without the deliberate user intent capture that Goals is designed to provide. That blurs ownership between skills, weakens goal traceability, and risks turning phase completion into an implicit new-requirements session.
+
+#### What we know so far
+- The source issue proposes adding a `Boundary with Goals` section to `replan/SKILL.md`; Design should weigh whether that is sufficient or whether other protocol surfaces need the same boundary.
+- The candidate boundary says Replan promotes only existing Formal goals with assigned IDs and criteria. Informal Ideas remain informal until the user invokes Goals and decides to include them.
+- The intended workflow is Replan completes the phase snapshot, then the user invokes Goals if an Idea should become future work. Goals then decides whether to formalize the Idea into a new goal with an ID.
+- The issue is low severity but has a real process-design dimension, so the release should treat it as a coordination question rather than only a one-line wording patch.
+
+### G17 — GitHub Actions CI for qrspi-plus
+
+- **type:** `known-fix`
+
+#### Problem
+qrspi-plus does not yet have a GitHub Actions CI pipeline that runs its own BATS test suites and shell linting. As a result, the Integrate skill's CI gate can be ambiguous or skipped for this repo, even though the project itself needs a reliable external signal for BATS, acceptance tests, and shell-script quality.
+
+#### Why we care
+A real CI pipeline gives QRSPI's own Integrate gate something concrete to check and helps catch regressions before merge. It also exercises the same CI-gate assumptions that qrspi-plus recommends to downstream projects, reducing ambiguity around what "green CI" means for this repo.
+
+#### What we know so far
+- The source issue proposes `.github/workflows/ci.yml`; Design should weigh exact job layout, runner setup, and dependency installation details.
+- Candidate scope includes BATS unit tests, BATS acceptance tests, ShellCheck on `hooks/` and `hooks/lib/`, and installation of dependencies such as `jq` and `yq`.
+- Candidate triggers include pushes to `main` and pull requests to `main`. The branch-namespace surface that pushes should fire on is not yet settled: the QRSPI feature/task branch convention is `qrspi/{slug}/...` (per `skills/implement/SKILL.md` Branch Model), but the repo's agent-handle convention is `{handle}/issue-{NNN}-{slug}` (per `AGENTS.md`). Design should weigh whether the workflow targets one, the other, or both.
+- The issue is related to prior CI-gate ambiguity work and should preserve compatibility with QRSPI worktree branch patterns.
+
+### G18 — Evergreen-prose requirement for skills/agents
+
+- **type:** `known-fix`
+
+#### Problem
+Skill `SKILL.md` files and QRSPI agent markdown files are evergreen contract surfaces, but release-version tokens and milestone references can rot in those files after the release moves on. v0.6 cleanup found multiple references such as `v0.6`, `v0.7+`, and older sequencing anchors that had survived existing reviewer rounds. The current review topology has no reliable check for this class of prose rot.
+
+#### Why we care
+Rotting prompt prose creates phantom context for both humans and LLMs. Readers can chase stale release assumptions, infer current limitations that no longer exist, or trust a milestone reference that was only true during a past implementation. This is a prompt-quality guardrail, not a feature, and it needs automation because human review already missed the defect class.
+
+#### What we know so far
+- A BATS pin that scans `skills/**/SKILL.md` and `agents/qrspi-*.md` for release-version tokens is the lowest-cost candidate Design should weigh first.
+- The source issue suggests regex coverage for forms like `v0.6`, `v0.6.0`, and `0.6+`, with loud diagnostics per file.
+- Legitimate carve-outs include version-tagged test files and dated pipeline artifacts under `docs/qrspi/YYYY-MM-DD-{slug}/`, which are outside the evergreen runtime surface.
+- Reviewer-side enforcement is a second layer to evaluate if the BATS pin proves too late or too noisy. Options include extending existing scope reviewers with an evergreen-prose check or creating a dedicated evergreen-prose reviewer.
+- Broader prose-rot patterns such as dates, TODO/FIXME markers, and PR or issue references are possible future expansions, but the initial requirement should not rely on manual per-PR human review.
+
+## Cross-Cutting Notes
+
+- G1, G2, and G5 form the cost-opt routing trio with three distinct jobs to be done. G1 defines the *schema* (where cheap-model dispatch is eligible and how overrides compose) — an empty framework. G2 defines the *mechanism* (how a dispatch site actually invokes the third-party endpoint) — the call layer. G5 produces the *populated matrix* (which specific dispatcher uses which specific model on which work) — the empirical data that fills G1's schema, validated through G2's mechanism.
+- G6 (test-writer subagent investigation) is adjacent to the cost-opt routing trio: if the investigation concludes "split and route cheap," G6 consumes G1 and G2 like a fifth tolerance leaf; if it concludes "do not split" or "split but keep on trusted path," G6 is independent of the routing trio.
+- G3 and G4 are cost+context leaves outside the routing trio. G3 (Plan post-approval split) is independent of routing. G4 (context optimization) may produce inputs the routing trio consumes, since reduced re-read volume changes the tolerance math for cheap-model routing.
+- G8 and G9 are both reviewer false-positive fixes in Parallelize. They come from source-of-truth drift between SKILL process/vocabulary and reviewer protocol inputs.
+- G10 and G11 both come from Keeplii harness lessons around reference-driven work. G10 addresses gating the reference itself; G11 addresses how specs, structure, and reviewers should handle lift-style implementation work.
+- G12, G13, G14, and G18 all harden repo-level process quality by turning repeated manual lessons into protocol or test-harness checks. G7 (fix-cycle ID hygiene) is adjacent because it is also a runtime-prose hygiene problem with a similar lint-or-CI-gate solution shape, but it ships as agent-prompt guidance rather than a CI gate.
+- G7, G15, and G17 are intentionally standalone — listed here so that absence-of-mention in earlier bullets is not read as incomplete enumeration. (G7 = fix-cycle ID hygiene, G15 = Replan↔Goals coordination, G17 = GitHub Actions CI.)

@@ -1,0 +1,2 @@
+score: 78
+reason: The claim is factually correct — design.md line 827 explicitly lists `\bdeclare -A\b` on Option B's ban-list, so structure.md's assertion that "ban-list-only scan misses it" is contradicted by the design. The test fixture would not prove the Option A' distinction. FD-02 already identified this exact problem at design round-18 and recommended either rewriting to a contrapositive assertion or using a truly non-listed construct; structure.md does not apply FD-02's fix, perpetuating the known issue into the implementation surface.

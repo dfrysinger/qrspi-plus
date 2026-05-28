@@ -1,0 +1,2 @@
+score: 78
+reason: Finding accurately identifies a genuine scope boundary inconsistency—line 53 embeds the literal "docker run --rm bash:3.2 bats tests/" container-launch command in the File Map Responsibility cell, which directly contradicts line 309's explicit deferral of "container-launch command shape" to Plan/Implement. The proposed fix (boundary-level description instead of prescriptive command) is sound. This violates consistency within a single artifact, though marked "low" severity by the reviewer, suggesting it's correctable without major restructuring.
