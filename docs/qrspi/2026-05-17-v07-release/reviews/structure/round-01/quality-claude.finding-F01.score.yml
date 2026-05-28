@@ -1,0 +1,2 @@
+score: 85
+reason: Both sub-claims verified: (a) Arrow direction is inverted—BATS test files source the helper, not skill files; diagram code at lines 477-481 incorrectly encodes "SkillMdHelper sourced by [skill]" when direction should point FROM tests TO helper. (b) TestWriter agent file wrongly listed—only the BATS test for dual-mode (test-test-writer-dual-mode.bats) consumes the helper per design.md Decision 7's canonical G14 set {G8,G9,G11,G15}, excluding G6 agent. Issue will mislead Plan/Implement agents on actual runtime dependency structure.

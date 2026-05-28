@@ -1,0 +1,2 @@
+score: 75
+reason: The artifact's Interfaces block (lines 305-332) includes concrete YAML keys, job IDs, and specific docker command syntax (including `apk add` package install steps), which contradicts both the stated claim of "behavioral signature only" at line 307 and the explicit DEFERS at lines 485-488 that reserves "container-launch command shape and in-image package install steps" for Plan/Implement. This is a documented boundary drift per Structure's own OWNS/DEFERS contract and the SKILL.md's Artifact Gating section.

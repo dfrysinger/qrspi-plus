@@ -1,0 +1,2 @@
+score: 78
+reason: Design G2 mandates "at call time" config.md resolution via the --provider parameter, but the interface lacks any --config-file or --artifact-dir parameter and provides no documented implicit resolution mechanism (env var, CWD, etc.), creating a genuine implementation gap for multi-artifact and resumed-run scenarios.

@@ -1,0 +1,2 @@
+score: 12
+reason: Design.md's "Both A and B (accepted)" and test strategy describe mechanism philosophy and conditional-path tests, not unconditional v0.7 scope; phasing.md explicitly gates downstream implementation on spike measurement outcome (Iron Law 1 departure), which structure.md correctly reflects via Path-B follow-up deferral. The documents are consistent, and R2-F02 verifier's score-10 rationale was sound.

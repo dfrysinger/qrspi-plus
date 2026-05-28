@@ -1,0 +1,2 @@
+score: 12
+reason: Design line 228 states "Both A and B (accepted)" but phasing.md Slice 7 explicitly frames G4 as a measurement spike that gates Mechanism B implementation ("downstream implementation work is either green-lit-by-measurement or scoped against the gap"), and structure.md line 107 marks the section-anchor index as "Path-B follow-up" — not a v0.7 requirement. The design philosophy accepts both mechanisms; phasing.md's spike contract makes Mechanism B conditional on measurement outcomes.

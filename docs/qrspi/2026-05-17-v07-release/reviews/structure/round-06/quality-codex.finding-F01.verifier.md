@@ -1,0 +1,2 @@
+score: 85
+reason: Design.md explicitly establishes both Mechanism A and B as unconditionally accepted (lines 228, 232), with Path A/B deciding only Mechanism A's cache_control markers. Structure.md Slice 7 incorrectly ties Mechanism B (section-anchor index) to "Path B follow-up" instead of treating it as independent of the path decision — a genuine structural misrouting that would cause Mechanism B work to be deferred or skipped if Path A succeeds.

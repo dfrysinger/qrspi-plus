@@ -1,0 +1,2 @@
+score: 85
+reason: The finding identifies a genuine conflict between the structure responsibility (preserve literal command sequence) and the design G12 requirement (staging-before-scratch invariant requires reordering the procedure). The design explicitly delegates line-by-line procedure to Implement so it CAN change to satisfy invariants; the structure's "preserve literal sequence" language would block this necessary change and perpetuate the bug.

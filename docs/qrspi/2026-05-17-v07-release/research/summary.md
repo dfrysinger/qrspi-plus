@@ -1,0 +1,386 @@
+---
+status: approved
+---
+
+# Research Summary
+
+
+## Q1, Q26: Subagent model-choice surfaces and dispatcher classes
+
+**TL;DR:** Existing subagent dispatches express model choice through two layers: agent-file frontmatter (`model: sonnet|inherit|haiku|opus`) and dispatch-time overrides in `Agent({ ..., model: ... })` calls. The dominant dispatch-time pattern is a hardcoded inline `model: "sonnet"`; the two dynamic dispatch-time exceptions are Implement reading each task's `model` frontmatter and Test reading `plan.md`'s `test_writer_model` frontmatter. Dispatcher shapes fall into a small set of classes: research specialist/collator/reviewer, artifact reviewers, implementers, per-task/test reviewers, visual-fidelity reviewer, replan analyzer, verifier, scope-tagger, Codex wrapper dispatches, and SendMessage continuation for retained fix agents.
+
+**Key findings:**
+- Agent frontmatter is a session/agent-activation surface: `reviewer-protocol` and `implementer-protocol` state Claude Code preloads skill bodies via agent frontmatter at activation, so `model:` and `skills:` are agent-file metadata rather than prompt parameters (`skills/reviewer-protocol/SKILL.md:10-15`, `skills/implementer-protocol/SKILL.md:10-12`).
+- Inline `Agent(..., model: "sonnet")` is the standard dispatch-time override across research, artifact review, implement review, integration, test review, and replan sites (`skills/research/SKILL.md:58`, `skills/implement/SKILL.md:736`, `skills/test/SKILL.md:126-146`, `skills/replan/SKILL.md:77`).
+- Implement dispatch is task-frontmatter driven at dispatch time: main chat reads `task_type` and `model` from `tasks/task-NN.md` immediately before dispatch and forwards `model` as the per-invocation override (`skills/implement/SKILL.md:488-516`). Plan is the authoring site for the default heuristic and operator override (`skills/plan/SKILL.md:134-162`).
+- Test-writer dispatch is plan-frontmatter driven at dispatch time: Test reads `test_writer_model` from `plan.md` and defaults to sonnet (`skills/test/SKILL.md:90-100`); Plan's template defines `test_writer_model: sonnet` as `sonnet|opus` (`skills/plan/SKILL.md:168-172`).
+- Verifier and scope-tagger are frontmatter-only Haiku agents, dispatched by generic Task/Agent prompt shapes without an inline `model` field in the documented dispatch snippets (`agents/qrspi-finding-verifier.md:1-6`, `agents/qrspi-scope-tagger.md:1-6`, `skills/using-qrspi/SKILL.md:673-721`, `skills/using-qrspi/SKILL.md:776-819`).
+- One mismatch exists between an agent-file default and a dispatch override: `qrspi-replan-analyzer.md` declares `model: opus`, but `replan/SKILL.md` dispatches it with inline `model: "sonnet"` (`agents/qrspi-replan-analyzer.md:1-4`, `skills/replan/SKILL.md:75-93`).
+
+**Surprises:** The codebase contains no model-selection environment-variable dispatch surface in the searched `skills/`, `agents/`, `scripts/`, `hooks/`, and `tests/` paths; environment/config fields found in dispatch-adjacent code gate whether dispatches occur, not which model is used.
+
+**Caveats:** This report is based on `skills/**/SKILL.md`, `agents/qrspi-*.md`, and dispatch-adjacent `scripts/`, `hooks/`, and `tests/` grep searches. I did not execute the QRSPI pipeline, so “read at session start” is inferred from documented Claude Code preload/activation contracts rather than runtime traces.
+
+
+## Q2: How do open-source plugin and agent frameworks express per-component model-routing policies in configuration, and what schema shapes are common in their published configs?
+
+**TL;DR:** The named frameworks express per-component model routing mostly through per-agent/per-role model fields or injected model-client objects, not through one universal routing DSL. Claude Code plugins and OpenHands expose explicit per-agent `model`/`llm_config` style fields, AutoGen and LangGraph commonly bind a model client/model argument at agent construction time, and Aider uses flat role-specific config keys for main/editor/weak models. Common schema shapes are: frontmatter fields on component files, TOML named profiles referenced by agents, Python constructor injection, JSON/YAML `provider` + `config.model` component objects, and flat CLI/YAML role keys.
+
+**Key findings:**
+- Claude Code plugin agents support a `model` frontmatter field; plugin `settings.json` can also select one plugin agent as the main thread, applying that agent's prompt, tools, and model.
+- OpenHands has both TOML named LLM configs (`[llm.<name>]`) referenced by agent sections through `llm_config`, and SDK-level `LLM(usage_id=...)` / `LLMRegistry` / router-object patterns.
+- AutoGen stable AgentChat routes models by passing `model_client` per `AssistantAgent`; AutoGen's component config shape serializes clients as `{provider, config: {model: ...}}`.
+- LangGraph's prebuilt `create_react_agent` accepts `model` as a string, language-model object, or callable that can return a model per state/runtime; multi-agent routing is usually achieved by constructing different agents/nodes with different model arguments.
+- Aider does not expose per-agent routing; it exposes flat per-role options such as `model`, `weak-model`, and `editor-model` in CLI/env/YAML config.
+
+**Surprises:** Claude Code plugin hooks include `prompt` and `agent` hook types, but the plugin hook schema researched here did not show a per-hook model field; model selection is documented on plugin agents rather than hooks.
+
+**Caveats:** This was a web/documentation-source investigation, not an exhaustive source-code audit. Some LangGraph documentation pages redirected or failed through WebFetch, so the LangGraph finding relies on the public GitHub source signature for `create_react_agent` plus framework documentation behavior surfaced by available pages. OpenDevin is now OpenHands; findings cite current OpenHands docs/source rather than legacy OpenDevin docs.
+
+
+## Q3: Call shape, error handling, and stdout/stderr contract of `scripts/run-codex-review.sh` and `scripts/codex-companion-bg.sh`, and consumer wiring
+
+**TL;DR:** `run-codex-review.sh` is a pure prompt-assembly wrapper: it validates flags, resolves files (repo-relative unless absolute), strips YAML frontmatter from the protocol/agent/skill bodies, emits a `AGENT-BODY-END (3-angle-bracket form)` boundary marker, appends a `## Dispatch parameters` block of `UNTRUSTED-ARTIFACT`-wrapped fields, and pipes the result to `codex-companion-bg.sh launch` on stdin (or prints to stdout under `--dry-run`). `codex-companion-bg.sh` has two subcommands: `launch` (reads prompt from stdin, forks the codex companion `task --background --json`, verifies the returned jobId via one internal status call with one retry, prints the verified jobId on stdout, exits 0 within ~5 s) and `await <jobId>` (polls status with 5 s/30 s backoff, falls back to `job.phase` and to on-disk state when needed, fetches result via a 5-step extraction chain, streams review markdown to stdout). Both scripts adhere to a numbered exit-code contract (0, 1, 10, 11, 13, 14, 15). Consumers — every step skill (`research`, `plan`, `implement`, `integrate`, `test`, `design`, `goals`, `questions`, `phasing`, `parallelize`, `structure`, `replan`) plus the shared `skills/_shared/codex/launch-await-pattern.md` template — capture the printed jobId from the Bash tool's stdout output (no shell command substitution) and later run `codex-companion-bg.sh await <jobId> > <output_file>` so finding text is redirected to disk and never enters main chat.
+
+**Key findings:**
+- `run-codex-review.sh` flag surface (`scripts/run-codex-review.sh:122-184`): `--agent-file`, `--reviewer-tag`, `--output-dir` (must be absolute, validated `:212-215`), `--round`, `--subject-code`/`--artifact-body` (mutually exclusive, repeatable, exactly one required `:217-232`), `--task-def`, `--companion NAME=PATH` (repeatable, name must match `[A-Za-z_][A-Za-z0-9_]*` `:146-149`), `--field NAME=VALUE` (plain scalar `:154-175`), `--diff-file`, `--scope-hint`, `--dry-run`.
+- Path resolution: repo-relative paths resolve against `REPO_ROOT` derived from the script's own location (`:82-84`, overridable via `QRSPI_REPO_ROOT`); absolute paths are used verbatim (`:235-242`).
+- Frontmatter handling: `strip_frontmatter` strips only the leading YAML block between the first two `^---$` lines, gated by `n<2` so body-level `---` rules survive (`:426-428`).
+- Skills frontmatter loading: parses inline-list `skills: [a, b]` form from the agent file, loads each `skills/<name>/SKILL.md`; non-inline shapes exit 2 (`:281-311`); the hardcoded `reviewer-protocol` skill is always loaded and never double-loaded.
+- Marker-injection guard: every orchestrator-supplied file body and inline scalar is scanned for the literal `AGENT-BODY-END (3-angle-bracket form)`; presence aborts with exit 1 to protect the agent-body carve-out (`:376-413`).
+- Prompt composition (`compose_prompt`, `:508-538`): protocol body → additional skills → agent body → emission-override → `AGENT-BODY-END (3-angle-bracket form)` marker → dispatch-parameters block.
+- Dispatch-parameters emission (`emit_dispatch_parameters`, `:442-502`): emits `<PRIMARY_FIELD>:` block(s), optional `task_definition:`, companion field groups (multiple paths under one field concatenate), plain scalar fields, then mandatory `round_subdir:`, `round:`, `reviewer_tag:`, optional `diff_file_path:` and `scope_hint:` (the latter wrapped in `UNTRUSTED-SCOPE-HINT-{START,END}` regardless of empty/non-empty value when the flag is set).
+- `run-codex-review.sh` exit codes: 0 (success or `--dry-run` prompt on stdout), 1 (validation: missing flag, bad NAME, missing file, non-absolute `--output-dir`, mutually-exclusive primary fields, marker injection, etc.), 2 (unsupported `skills:` frontmatter shape), and any non-zero from `codex-companion-bg.sh launch` propagates verbatim (`:556`).
+- `run-codex-review.sh` stdout: the assembled prompt under `--dry-run`; otherwise the verified jobId line emitted by `codex-companion-bg.sh launch`. Stderr: per-flag `error: …` diagnostics, all to `>&2` (`:117-120, :180-184, :213-251`).
+- `codex-companion-bg.sh launch` (`scripts/codex-companion-bg.sh:292-369`): rejects extra args and TTY stdin (`:293-301`), captures stdin to a temp prompt-file (`:303-313`), runs codex companion `task --background --prompt-file <tmp> --json` with a 5 s timeout (`QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS`, `:51, :216-223`), parses jobId via `extract_json_field` (`:117-141, :186-199`), performs a single `verify_job_id` poll, retries the whole task call once on not-found/malformed/error (`:330-364`); on retry-success writes the stderr note `launch: first jobId failed verification, retried`; double-phantom exits 15 with no jobId on stdout.
+- `codex-companion-bg.sh await` (`:839-987`): defaults — ceiling 1200 s (`QRSPI_CODEX_CEILING_SECONDS`), fast interval 5 s, slow interval 30 s, backoff after 120 s, all env-overridable (`:47-51`). Loops over `poll_status` (`:384-468`); on `completed:*` invokes `fetch_result` (`:491-551`); on `not-found` consults `disk_state_fallback` (`:623-832`).
+- `poll_status` output strings: `running`, `completed:completed`, `completed:failed`, `completed:cancelled`, `not-found`, `malformed`, `error`; falls back from `job.status` to `job.phase` mapping (`finalizing|done|reviewing → completed:completed`, `starting|running|investigating|editing|verifying → running`, else malformed) and emits a one-shot `[codex-companion-bg] phase fallback active:` audit line to stderr (`:415-468`).
+- `fetch_result` five-source chain (`:516-546`): `storedJob.result.rawOutput` → `storedJob.result.codex.stdout` → `storedJob.rendered` → `job.errorMessage` → `storedJob.errorMessage`. First non-empty wins; if all empty/absent, exit 14.
+- `disk_state_fallback` (`:623-832`): reads at most two files (`state.json`, `jobs/<jobId>.json`) under `$CLAUDE_PLUGIN_DATA/state/<slug>-<sha256[:16]>/`, mirrors the same five-source extraction chain on the disk record; emits `await: recovered <jobId> from disk (broker reported not-found)` to stderr on success.
+- `codex-companion-bg.sh` exit-code table (`:21-28`): 0 success, 1 generic/launch failures, 10 await ceiling hit, 11 await job-not-found, 13 status/result hard error or launch bad JSON, 14 malformed JSON from status/result, 15 LAUNCH_PHANTOM.
+- Consumer pattern is captured in `skills/_shared/codex/launch-await-pattern.md`: capture the jobId from the Bash tool's stdout, paste it literally into the matching `await` call, redirect `await <jobId> > <output_file>` so review markdown never enters main chat; on non-zero exit codes the orchestrator (not the wrapper) writes ceiling/crash/infra-fail notes to the output file.
+- Research-skill consumption splits Codex output further: after `codex-companion-bg.sh await <jobId> > /tmp/codex-stdout-<jobId>.txt` and exit 0, `scripts/codex-finding-splitter.sh` materializes per-finding files (`skills/research/SKILL.md:205-212`).
+- `skills/implement/SKILL.md:1135` documents that the wrapper does NOT write the ceiling/crash/infra-fail notes itself — main-chat orchestration writes them into the per-round Codex file on non-zero exits before recording task status.
+
+**Surprises:**
+- The legacy `launch --prompt-file <path>` argument form is retired; `launch` accepts the prompt only on stdin (commit 21/22 of the #110 migration; `codex-companion-bg.sh:6-12, :293-301`). Passing any positional/flag argument exits 1.
+- `extract_json_field` invokes `node -e` for JSON parsing (no `jq` dependency); `node -e`'s argv quirk (no script-path entry) is explicitly worked around with a leading `--` separator (`codex-companion-bg.sh:117-141`).
+- A bug-fix gate guards `strip_frontmatter` from eating body-level `---` rules — the older `awk '/^---$/{n++; next} n>=2{print}'` form silently corrupted YAML mini-frontmatter inside SKILL.md examples; the fix gates `next` on `n<2` (`run-codex-review.sh:421-428`).
+- The wrapper's `fetch_result` deliberately diverges from codex companion's `render.mjs:421-445` header-block formatting — for failed/cancelled jobs it emits just `errorMessage` verbatim rather than the `# <title>\nJob: …\nStatus: …` block (the `[CodexF1-resolved-by-comment]` note, `:526-540`).
+- `disk_state_fallback` reproduces the broker's state-directory naming exactly (slug + `sha256(realpath(workspace))[:16]`) and performs two containment checks — string-prefix and `realpathSync` — against `$CLAUDE_PLUGIN_DATA` to defend against symlink escapes (`:645-708`).
+
+**Caveats:** Only the two scripts plus the consuming skill files referenced above were read in full. The companion `codex-companion.mjs`, `scripts/codex-finding-splitter.sh`, `lib/state.mjs`, and `lib/render.mjs` were not opened — their behaviors are reflected only via the wrapper's documented assumptions and inline citations to them. Hook integrations (`hooks/lib/audit.sh`, `hooks/lib/protected.sh` matched the grep) were not investigated. Historical/spec/plan markdown that mentions the scripts was not read beyond what was needed to enumerate consumer patterns.
+
+
+## Q4, Q5: OpenAI-compatible third-party LLM endpoints and CLI/agent invocation patterns
+
+**TL;DR:** Current third-party LLM endpoints commonly expose an OpenAI-style `POST /v1/chat/completions` surface with `model`, `messages`, OpenAI-like generation controls, `choices[]`, `usage`, and SSE streaming terminated by `data: [DONE]`. Compatibility is uneven: providers add reasoning/search/cost/performance fields, silently ignore some OpenAI parameters, or reject unsupported parameters with `400`/validation errors. Public CLI and agent-harness writeups repeatedly use the same integration pattern: configure a provider key plus OpenAI-compatible base URL, keep an OpenAI SDK or OpenAI-shaped client, route model names through provider-specific prefixes/aliases, and account for streaming, tools, token limits, cost, and per-provider feature drift.
+
+**Key findings:**
+- DeepSeek, Mistral, Together, Fireworks, xAI, Groq, Anthropic, and several aggregator/hosted APIs document OpenAI-style Chat Completions compatibility, usually centered on `messages`, `model`, OpenAI-like optional parameters, `choices`, `usage`, and SSE chunks.
+- Streaming semantics are highly consistent across fetched provider docs: `stream: true` returns `text/event-stream` / SSE chunks, usually object type `chat.completion.chunk`, with deltas under `choices[].delta`, and a terminal `data: [DONE]` sentinel.
+- Error conventions are less consistent than request/response shape: Together documents OpenAI-like `error.message/type/param/code`; Fireworks and Perplexity expose validation-style `422` bodies; Groq documents `400` for unsupported fields; Anthropic says it preserves OpenAI-compatible error format but not identical detailed messages.
+- CLI/agent harness writeups converge on base-URL/key configuration, model aliases or provider-prefixed model IDs, OpenAI SDK reuse, and per-provider compatibility checks for tool calling, streaming, JSON/structured output, rate limits, context windows, and cost.
+
+**Surprises:** Anthropic's compatibility layer is explicitly positioned as a testing/comparison layer rather than a production-ready long-term interface, and it documents many ignored OpenAI fields rather than hard errors. Groq's OpenAI compatibility page states unsupported supplied fields produce `400`, while Anthropic states most unsupported fields are silently ignored.
+
+**Caveats:** No WebSearch tool was available in this environment; investigation used WebFetch and source URLs. WebFetch intermittently failed for some source pages because the safety classifier was temporarily unavailable, so Q5 includes cited public documentation pages and source-attributed patterns but is not an exhaustive survey of all public writeups. Provider docs change frequently; findings are as of the fetched documentation during this run.
+
+
+## Q6, Q7: Plan-skill sub-subagent dispatch, post-approval split step, and task-file templates
+
+**TL;DR:** `skills/plan/SKILL.md` orchestrates plan generation in two regimes: small plans (<6 tasks) where one "Plan Overview Subagent" writes the merged `plan.md` directly, and large plans (6+ tasks) where the overview subagent emits an overview-only `plan.md` and then fans out per-task generation to sub-subagents (one per task) that each write a `tasks/task-NN.md` file. The post-approval split step lives in the "Human Gate → On approval → step 3" section of the SKILL flow (SKILL.md lines 416–423) and is mirrored in the "Merge/Split Mechanics" section (lines 443–447). There is no separate template file under `templates/` — the canonical task-file template is embedded inline in `skills/plan/SKILL.md` under "Split task file format" (lines 449–487), and the in-plan task-spec template is embedded under "Plan Document Structure (During Review)" (lines 168–218). The `templates/` directory at the repo root contains only `tsc-probe.ts` (not a markdown template).
+
+**Key findings:**
+- Sub-subagent dispatch is documented in "Sub-Subagent Dispatch (Large Plans Only)" (SKILL.md lines 119–132). It is gated by plan size (≥6 tasks), uses one sub-subagent per task (or related group), and each sub-subagent writes `tasks/task-NN.md` consuming `plan.md` overview + relevant `structure.md` sections + `design.md`.
+- The orchestrator (Plan skill) then reads all returned task files, appends them as sections to `plan.md`, and deletes the individual files — creating a single source of truth during review (SKILL.md line 132).
+- A compaction checkpoint ("pre-fanout") is documented at lines 121–123 with a `TaskCreate` recommendation before the fan-out.
+- The post-approval split step is in "Human Gate" → "On approval" step 3 (lines 421–423): "Split task sections into individual `tasks/task-NN.md` files, then reduce `plan.md` to overview-only, then write `status: approved` in `plan.md` frontmatter." The ordering is explicit to avoid a transient state where downstream skills see an approved plan but no task files.
+- Quick-Fix mode bypasses sub-subagent dispatch (lines 107–117): a single-task plan is produced directly; after approval the single task is still written to `tasks/task-01.md`.
+- The canonical `tasks/task-NN.md` frontmatter (lines 451–475) declares: `status`, `task`, `phase`, `pipeline`, `goal_ids` (list), `task_type` (code | lightweight, default code), `model` (sonnet | opus, default sonnet), optional `sizing_exception`, and optional `visual_fidelity_check` block (with `wireframe_refs` list and `ui_producing` boolean).
+- The canonical body section contract for `tasks/task-NN.md` (lines 477–487) requires: `# Task NN: {name}` H1, then bullet sections **Target files**, **Dependencies**, **LOC estimate**, **Description**, and **Test expectations** (sub-bulleted behavior / edge case / error condition).
+- The in-plan (during-review) task-spec template differs slightly (lines 204–215): bullets include **Phase**, **Target files**, **Dependencies**, **LOC estimate**, optional **Sizing exception**, **Description**, **Test expectations**.
+- Fix-task files (lines 499–504) additionally carry `fix_type: integration | ci | test` and live under `fixes/{type}-round-NN/`.
+- Smoke-check binding: tasks adding/modifying routes, pages, layouts, or user-facing components must include a `smoke_checks:` block per `skills/plan/smoke-spec.md`.
+- Visual-fidelity binding: when `config.md` carries `visual_fidelity_required: true`, UI-producing tasks must include `visual_fidelity_check.wireframe_refs` — enforced by a pre-fanout hard-gate (lines 548–556).
+
+**Surprises:**
+- The repository's top-level `templates/` directory holds only one file, `tsc-probe.ts`, and does not contain any markdown task template. All task-file templates are inline in `skills/plan/SKILL.md`.
+- The in-plan task-spec template and the split task-file template are not identical: the in-plan version uses `### Task N` headings with a **Phase** bullet, while the split per-file version uses an `# Task NN` H1 with `phase:` in frontmatter instead.
+
+**Caveats:** Investigation scope was limited to `skills/plan/` (SKILL.md, owns-defers.md, smoke-spec.md) and the repo's `templates/` directory. I did not exhaustively trace downstream consumers (`skills/implement/`, `agents/qrspi-implementer*.md`, `skills/test/`, `skills/integrate/`, `skills/parallelize/`) for additional template constraints they impose on `tasks/task-NN.md`. Field semantics described above are quoted from `skills/plan/SKILL.md`; conformance against downstream readers was not verified.
+
+
+## Q8: How is prompt composition currently assembled at dispatch sites across `skills/` and `agents/`, and what inputs are typically composed at each site?
+
+**TL;DR:** Prompt composition in qrspi-plus is split between two transport paths but governed by the same parameter contract (`skills/reviewer-protocol/SKILL.md:38-51`). Claude-side dispatches assemble parameters inline as `Agent({ subagent_type: ..., model: ... })` calls whose prompt body is "only" a structured Dispatch-parameters block — `artifact_body` (or `subject_code`), zero-to-many `companion_*` artifacts, plus `round_subdir`/`round`/`reviewer_tag`/`diff_file_path`/`scope_hint` — with all artifact bodies fenced between `<<<UNTRUSTED-ARTIFACT-START id=...>>>` / `<<<UNTRUSTED-ARTIFACT-END id=...>>>` markers and the reviewer-protocol body delivered out-of-band via the agent file's `skills: [reviewer-protocol]` frontmatter preload. Codex-side dispatches use one canonical assembler — `scripts/run-codex-review.sh` (`scripts/run-codex-review.sh:1-557`) — which concatenates the frontmatter-stripped reviewer-protocol body, any additional agent-declared `skills:` bodies, the agent body, the Codex emission override, a structural `AGENT-BODY-END (3-angle-bracket form)` marker, and a generated `## Dispatch parameters` block, then pipes the whole prompt to `scripts/codex-companion-bg.sh launch`. Non-reviewer dispatch sites (per-question research specialist, research collator, replan analyzer, test-writer, implementer) follow the same wrap-in-markers convention but use site-specific parameter names (`question_body`, `qfile_paths`, `output_path`, `mode`, `task_definition`, `companion_pipeline_inputs`, `companion_review_findings`, `companion_codebase_context`, etc.).
+
+**Key findings:**
+- The shared "Reviewer Dispatch Contract" enumerates five always-present parameters and one optional (`artifact_body`/`subject_code`, `round_subdir`, `round`, `reviewer_tag`, `diff_file_path`, optional `scope_hint`) and is the canonical schema every reviewer dispatch site emits (`skills/reviewer-protocol/SKILL.md:38-51`).
+- Claude dispatches embed `Agent({ subagent_type: "qrspi-{tag}-reviewer", model: "sonnet" })` literals inside per-skill SKILL.md prose with a bulleted "prompt containing only" parameter list (e.g. `skills/goals/SKILL.md:240-258`, `skills/design/SKILL.md:150-170`, `skills/structure/SKILL.md:136-158`, `skills/phasing/SKILL.md:112-134`, `skills/plan/SKILL.md:271-302`, `skills/parallelize/SKILL.md:168-188`, `skills/replan/SKILL.md:121-140`, `skills/questions/SKILL.md:83-92`, `skills/research/SKILL.md:125-154`, `skills/integrate/SKILL.md:102-120`, `skills/implement/SKILL.md:797-811,872-901`, `skills/test/SKILL.md:126-150`).
+- Codex dispatches all funnel through one wrapper (`scripts/run-codex-review.sh`) whose `compose_prompt()` function (`scripts/run-codex-review.sh:508-538`) concatenates: (1) frontmatter-stripped `skills/reviewer-protocol/SKILL.md`, (2) frontmatter-stripped bodies of every additional skill named in the agent file's `skills:` frontmatter, (3) frontmatter-stripped agent body, (4) `skills/reviewer-protocol/codex-emission-override.md`, (5) the literal `AGENT-BODY-END (3-angle-bracket form)` boundary marker, (6) `## Dispatch parameters` with wrapped artifact + companion blocks plus scalar fields.
+- The wrapper's `emit_dispatch_parameters()` (`scripts/run-codex-review.sh:442-502`) emits the primary-artifact field (`subject_code` or `artifact_body`) first, then `task_definition` (only when `--task-def` is passed; absence is load-bearing per `skills/reviewer-protocol/SKILL.md:170-204`), then companions concatenated under one field-name (parallel arrays so repeats merge), then scalar `--field` values, then always `round_subdir`/`round`/`reviewer_tag`, then optional `diff_file_path` and `scope_hint` (the latter wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers).
+- Reviewer-protocol material is delivered **out-of-band** in both paths: Claude reviewers preload it via the agent file's `skills: [reviewer-protocol]` frontmatter (preload mechanism — every reviewer agent file carries this field, e.g. `agents/qrspi-design-reviewer.md:6`); Codex pipelines load it via the wrapper's concatenation. Per-skill SKILL.md prose explicitly states "do NOT embed reviewer-protocol content in the dispatch prompt" at every reviewer dispatch site (e.g. `skills/design/SKILL.md:160`, `skills/goals/SKILL.md:248`).
+- A `AGENT-BODY-END (3-angle-bracket form)` boundary marker emitted by the wrapper (`scripts/run-codex-review.sh:536`) separates the trusted protocol/agent body from orchestrator-supplied dispatch parameters; orchestrator-supplied inputs are rejected if they contain the literal marker (`scripts/run-codex-review.sh:357-413`).
+- Per-question research specialists receive a different shape: `question_body` (the wrapped q*.md body), `output_path`, `question_ids`, and (on re-dispatch only) `defect_summary` — explicitly NO `companion_goals` and NO sibling questions (`skills/research/SKILL.md:58-71`).
+- Research collator receives `qfile_paths` (paths, not bodies — collator Reads them itself) plus `output_path` (the staging filename `_collated.md`, renamed to `summary.md` by the orchestrator post-dispatch) (`skills/research/SKILL.md:85-95`).
+- Implementer dispatch carries `mode` (`implement`|`fix`), `task_definition` (wrapped task spec), `companion_pipeline_inputs` (concatenated wrapped upstream-artifact bodies per the task's `pipeline` field), and `companion_review_findings` (fix-mode only, wrapped reviewer-finding bodies) (`skills/implement/SKILL.md:514-525`).
+- Replan analyzer uses a path-vs-body split: large fan-out inputs (completed phase code, fixes/, reviews/, tasks/) travel as absolute paths the analyzer Reads at runtime; small fixed artifacts (plan/design/phasing) travel as wrapped bodies; NO `goals.md` (`skills/replan/SKILL.md:77-93`).
+- The verifier (`qrspi-finding-verifier`) and scope-tagger (`qrspi-scope-tagger`) dispatches in `using-qrspi/SKILL.md` (lines 673-721, 798-821) pass file paths only — finding/sidecar/artifact/diff paths plus a newline-separated `upstream_paths` list of upstream-artifact + SKILL paths the verifier may lazy-Read.
+- The test-writer dispatch (`skills/test/SKILL.md:92-100`) composes 5 wrapped companions (`companion_plan`, `companion_goals`, `companion_design_or_research`, `companion_fix_history`, `companion_codebase_context`) plus an `output_dir`; no reviewer-protocol involvement.
+
+**Surprises:**
+- The reviewer-protocol body is also concatenated for non-reviewer agents whose `skills:` frontmatter names other shared skills (e.g. `qrspi-research-collator.md`, `qrspi-research-specialist.md` declare `skills: [research-isolation]`); the wrapper's `extract_skill_names()` (`scripts/run-codex-review.sh:281-321`) appends each named skill's body before the agent body and skips the hardcoded `reviewer-protocol` only — there is no opt-out for callers that do not want reviewer-protocol concatenation.
+- A single `--companion NAME=PATH` flag passed multiple times with the same NAME results in concatenation under one field header rather than overwrite (`scripts/run-codex-review.sh:464-478`); this is how `companion_qfiles`, `companion_tasks`, `companion_task_review_findings`, etc., are emitted as multi-block sections in plan/integrate/parallelize/research dispatches.
+- The replan-analyzer Codex pipeline is hand-rolled in-line in `skills/replan/SKILL.md:146-148` (an `awk … printf …` heredoc that pipes directly to `scripts/codex-companion-bg.sh launch`) rather than using `run-codex-review.sh`, because the analyzer is a worker, not a reviewer — it does NOT preload `reviewer-protocol` and does NOT pass `reviewer_tag`/`output`/`round`.
+- The Research reviewer dispatch is the only reviewer that passes companions as **paths, not bodies**: `companion_qfile_paths` is a list of absolute paths the agent Reads directly; the orchestrator does NOT embed file bodies inline (`skills/research/SKILL.md:139-145`).
+- The visual-fidelity reviewer dispatch passes `wireframe_paths` as a YAML list of paths (not wrapped bodies) and is the only reviewer that performs upstream path-validation, audit-record emission, and silent-skip-sentinel writing as part of dispatch preparation (`skills/implement/SKILL.md:817-870`).
+
+**Caveats:** Investigation enumerated dispatch blocks across all 13 step skills + the shared reviewer-protocol + using-qrspi orchestration patterns + the Codex wrapper script. The 4 owns-defers.md sidecars (one per scope-reviewed step), the implementer-protocol skill body, and the per-agent body files were not exhaustively read — only the prompt-composition surface (skill-side dispatch instructions and the wrapper's assembly code) was traced. The exact runtime mechanism Claude Code uses to preload `skills: [reviewer-protocol]` frontmatter at agent activation was not source-traced; the skill prose names it as "preload" (`skills/reviewer-protocol/SKILL.md:11-13`).
+
+
+## Q9, Q28: Large stable inputs and freshness contracts for derived prompt inputs
+
+**TL;DR:** Agent frameworks and model APIs commonly handle large recurring inputs with prompt/context caching, persisted thread or memory objects, retrieval-backed memory stores, and chat-history reducers that trim or summarize older context. Published contracts are strongest for provider-level prompt/context caches: vendors specify token thresholds, exact-prefix matching, TTLs or retention windows, isolation boundaries, and usage counters. Published freshness and accuracy contracts for derived or condensed prompt inputs are weaker: frameworks generally describe when summaries, extracted facts, or reduced histories are produced, but do not guarantee lossless or accurate condensation.
+
+**Key findings:**
+- Anthropic prompt caching uses explicit or automatic cache breakpoints over the ordered prefix hierarchy `tools -> system -> messages`, with 5-minute and 1-hour ephemeral TTLs, minimum cacheable-prefix token thresholds, organization/workspace isolation, and usage counters for cache reads and writes.
+- Azure OpenAI prompt caching is enabled by default for supported models, works on identical initial prompt prefixes of at least 1,024 tokens, reports `cached_tokens`, and has in-memory retention usually cleared after 5-10 minutes of inactivity and always within one hour of last use; newer/eligible models can use extended retention up to 24 hours.
+- Vertex AI context caching supports explicit reusable cached content for Gemini prompts, with a default 60-minute TTL, update support limited to expiration/TTL, minimum token thresholds, `cachedContentTokenCount` usage metadata, and a warning not to mutate Cloud Storage source objects before cache expiry or deletion.
+- LangChain/LangGraph-style and Semantic Kernel-style frameworks manage recurring context by persisting conversation state, trimming messages, summarizing older turns, or using memory stores; the available documentation found no explicit accuracy guarantees for summaries.
+- CrewAI publishes a more operational memory contract than most frameworks: memory recall ranks by semantic similarity, recency decay, and importance; `recall()` waits for pending background writes before searching; and failures fall back to simpler storage or retrieval paths.
+
+**Surprises:** Provider cache documentation is relatively explicit about TTLs and matching, but most framework documentation for summaries and extracted memories does not publish quantitative accuracy/fidelity contracts for the condensed content.
+
+**Caveats:** WebFetch could not access some sources due to redirects, 403s, 404s, 504s, or transient tool availability. OpenAI platform docs returned HTTP 403, so Azure OpenAI and OpenAI's public prompt-caching announcement were used for OpenAI-family caching behavior. LangGraph and Letta source coverage was limited by inaccessible pages.
+
+
+## Q10: How does the TDD cycle inside `skills/implement/SKILL.md` and `agents/qrspi-implementer.md` currently sequence test-writing and production-code writing within a single dispatch, and where does `agents/qrspi-test-writer.md` already plug in (per `test-test-writer-tool-grant.bats`)?
+
+**TL;DR:** Inside the Implement skill, the entire TDD cycle (write failing test → verify fail → write minimal production code → verify pass → refactor → commit) runs **inside a single `qrspi-implementer` subagent dispatch per task**; main chat does not split test-writing and production-code into separate subagents. The separate `qrspi-test-writer` agent is **not invoked by Implement at all** — it is the test-writer for the **Test phase (QRSPI Step 11)**, dispatched by `skills/test/SKILL.md` after implementation is complete to author acceptance / integration / e2e / boundary tests against `plan.md` criteria. The bats file `tests/unit/test-test-writer-tool-grant.bats` is a structural frontmatter pin on the `qrspi-test-writer.md` agent file (Read, Write, Grep, Glob in `tools:` and "Survey existing tests before writing" sentence in the body) — it does not assert anything about Implement-phase wiring.
+
+**Key findings:**
+- **Single-dispatch TDD inside Implement.** `skills/implement/SKILL.md:529-541` ("TDD Process (inside the implementer subagent)") lists 6 numbered steps — read test expectations, write failing tests, run tests verify fail, write minimal implementation, run tests verify pass, sanity check + commit — all prefixed "Implementer:". The header line states explicitly: "All steps below run inside the **implementer subagent**. Main chat does not run tests, write code, or commit directly."
+- **`qrspi-implementer.md` carries the same cycle as RED-GREEN-REFACTOR.** `agents/qrspi-implementer.md:24-33` defines the cycle as: (1) RED — read expectations, write one failing test; (2) Verify RED — run, confirm fail-for-right-reason, abort if vacuous; (3) GREEN — write minimal implementation; (4) Verify GREEN — run ALL tests; (5) REFACTOR — clean up while green; (6) Repeat. Both test-writing and production-code writing happen in the same subagent's context, one test at a time.
+- **The Iron Law forbids the alternative.** `agents/qrspi-implementer.md:14-22` and `skills/implement/SKILL.md:442-446` both pin "NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST" — and the implementer's Red-Flags table at `agents/qrspi-implementer.md:48-60` explicitly forbids "Writing production code before a failing test exists" and "Writing test and implementation in the same step."
+- **`qrspi-test-writer` plugs in only at the Test phase (Step 11), not Implement (Step 9).** `skills/test/SKILL.md:28` lists Test Writer as the first of four Test-phase subagent dispatches; `skills/test/SKILL.md:90-100` is the dispatch site ("Write tests — dispatch the test-writer subagent" with `Agent({ subagent_type: "qrspi-test-writer", model: "<plan.test_writer_model || 'sonnet'>" })`). Implement never references `qrspi-test-writer` — `grep -n "test-writer" skills/implement/SKILL.md` returns zero hits.
+- **The bats file is a frontmatter pin, not a wiring assertion.** `tests/unit/test-test-writer-tool-grant.bats:1-106` asserts only: (a) `agents/qrspi-test-writer.md` exists, (b) the frontmatter `tools:` line contains all four of Read, Write, Grep, Glob (order-independent), and (c) the body retains the sentence "Survey existing tests before writing". It does NOT assert that the Test phase or Implement phase dispatches the agent.
+- **`qrspi-test-writer` agent body confirms its own scope is Test-phase.** `agents/qrspi-test-writer.md:8` states: "You are writing acceptance tests that verify the implementation meets the original goals. You do NOT fix code — you write tests and report failures." Its Iron Law (line 26-27) is "YOU WRITE TESTS AND REPORT COVERAGE. YOU DO NOT FIX CODE OR RUN TESTS." Its dispatch parameters (`agents/qrspi-test-writer.md:11-22`) include `companion_plan`, `companion_goals`, `companion_design_or_research`, `companion_fix_history`, `companion_codebase_context`, `output_dir` — matching exactly what `skills/test/SKILL.md:92-99` sends; none of these match the Implement-phase implementer-protocol dispatch contract (`mode`, `task_definition`, `companion_pipeline_inputs`, `companion_review_findings`).
+
+**Surprises:** None — the Implement TDD cycle and Test-phase test-writer are cleanly separated by skill, by dispatch contract, and by agent body.
+
+**Caveats:** Did not exhaust the entire 1355-line `skills/implement/SKILL.md` — read lines 1-300 and 438-700 (the relevant TDD and Per-Task Execution sections) plus the full `qrspi-implementer.md`, full `qrspi-test-writer.md`, full bats file, and lines 1-130 of `skills/test/SKILL.md` plus lines 1-200 of `skills/implementer-protocol/SKILL.md`. Grepped the full implement SKILL for any `test-writer` reference and confirmed zero hits.
+
+
+## Q11, Q27: LLM coding-agent test/code role splits and A/B evaluation methodologies
+
+**TL;DR:** Published work supports a distinction between code-producing agents and independent validation or testing mechanisms, but the literature found here more often studies role-structured multi-agent workflows and external benchmark tests than a clean controlled experiment where one LLM writes production code and another independently authors tests. The recurring quality finding is that independent or staged validation exposes correctness gaps hidden by weak tests, while role separation is reported to reduce inconsistency and cascading hallucination in multi-agent workflows. For A/B comparisons, the dominant methodologies are benchmark replay harnesses, unit-test or hidden-test pass rates, benchmark hardening, and patch-validation workflows.
+
+**Key findings:**
+- Multi-agent software-development systems such as ChatDev and MetaGPT use separated roles or staged responsibilities across design, coding, and testing, and report that structure is intended to reduce hallucination, inconsistency, and workflow fragmentation.
+- Independent or strengthened test suites, as in EvalPlus, materially reduce reported pass rates and can change model rankings, showing that weak tests overstate coding quality.
+- SWE-bench-style replay harnesses compare agents by applying generated patches to real repositories and checking whether issue-linked tests pass.
+- Agentless reports that benchmark quality itself can confound A/B comparisons; SWE-bench Lite contained cases with patch leakage or insufficient/misleading issue descriptions, motivating a cleaned SWE-bench Lite-S subset.
+- Execution-feedback harnesses such as InterCode evaluate agents through iterative code execution, surfacing failures that static prompt-to-code evaluation can miss.
+
+**Surprises:** The searched literature contained more evidence about independent validation and role-structured agent workflows than about a direct head-to-head comparison of “same agent writes code and tests” versus “separate agent writes tests.”
+
+**Caveats:** WebFetch rate limits prevented fetching several additional candidate sources, including some leaderboard and benchmark pages. Findings are based on the fetched sources listed below and general published-paper metadata available at those URLs.
+
+
+## Q12, Q29: Implementer fix-cycle identifiers and in-file token conventions
+
+**TL;DR:** `skills/implementer-protocol/SKILL.md` threads fix-cycle reviewer findings through a dedicated `companion_review_findings` dispatch parameter and threads task identity through `tasks/task-NN.md` / `fixes/{type}-round-NN/task-NN.md` paths, notification paths, report paths, and commit-message examples. The implementer protocol itself does not define a rich reviewer-finding schema; the concrete finding identifiers originate in `skills/reviewer-protocol/SKILL.md` as `R{round}-F{NN}` finding IDs and `<reviewer_tag>.finding-F<NN>.md` filenames, and Implement orchestration says those prior-round Claude and Codex finding files are wrapped into `companion_review_findings`. Existing implementer agents document in-file ID hygiene chiefly as a negative convention: QRSPI-internal `G/R/D/T/Q` numeric tokens and external tracker IDs must not leak into code identifiers, runtime strings, prompt strings, comments, test names, or fixtures except under documented exceptions.
+
+**Key findings:**
+- Fix-mode dispatch is explicitly represented by `mode: fix`; prior review findings arrive in `companion_review_findings`, and the implementer is instructed to address each finding, re-run tests, and block on unanticipated architectural decisions (`skills/implementer-protocol/SKILL.md:31-35`).
+- Task identity is encoded by task-spec paths and artifact paths such as `tasks/task-NN.md`, `fixes/{type}-round-NN/task-NN.md`, `tasks/task-NN/notifications/`, `reviews/tasks/task-NN/round-NN-implementer.md`, and the five-line `Report:` path (`skills/implementer-protocol/SKILL.md:16-20`, `skills/implementer-protocol/SKILL.md:24-29`, `skills/implementer-protocol/SKILL.md:153-165`).
+- Round and finding references are required in implementer fix commits: the commit-message scratch step says the message must reference the round number and, for fix mode, the findings being addressed, with example `fix(task-NN/round-3): ... (closes security-codex.F01)` (`skills/implementer-protocol/SKILL.md:143-149`).
+- The dispatching Implement skill expands `companion_review_findings` to prior-round Claude reviewer findings plus referenced Codex per-round files, and notes that apply-fix reads Codex files from disk and merges Claude and Codex findings into the implementer-fix prompt (`skills/implement/SKILL.md:518-525`).
+- Existing implementer agents (`qrspi-implementer.md`, `qrspi-implementer-lightweight.md`) load `skills: [implementer-protocol]` and delegate cross-cutting dispatch, ID hygiene, and report-format conventions to that protocol (`agents/qrspi-implementer.md:1-11`, `agents/qrspi-implementer-lightweight.md:1-10`).
+
+**Surprises:** The implementer protocol's `Report Format` prose requires the main-chat brief to include a `Commit:` line, while the earlier commit procedure says to include the resulting SHA as `commit_sha:` in the terminal-status report; this is an in-file naming mismatch across `skills/implementer-protocol/SKILL.md:149` and `skills/implementer-protocol/SKILL.md:153-175`.
+
+**Caveats:** Investigation focused on `skills/implementer-protocol/`, the two implementer agent files, and directly related Implement/Reviewer protocol sections that define dispatch construction and finding identifiers. I did not exhaustively inspect every historical QRSPI artifact or generated `tasks/` and `reviews/` instance file in the repository.
+
+
+## Q13, Q14, Q21: Parallelize worktree checks, Branch Map vocabulary, and artifact shape
+
+**TL;DR:** `skills/parallelize/SKILL.md` contains an explicit advisory Worktree-Aware Setup Validation step that checks project-root lint/typecheck/test config exclusions for `.worktrees/**` and framework build directories before scheduling parallel task branches. The canonical Branch Map `Base` vocabulary in the Parallelize skill is space-separated symbolic text (`feature branch tip`, `task-NN tip`, `stage-after-W{N}`, `task-00 tip`), but `agents/qrspi-parallelize-reviewer.md` currently states a different hyphenated/older vocabulary (`feature-branch-tip`, `stage-{N}`, `task-NN-tip`). The Worked Example presents `parallelization.md` as frontmatter plus Execution Mode, Dependency Analysis, Execution Order, Branch Map, Stage Commits, and Mermaid sections; the only fixture under `tests/fixtures/` is a deliberate out-of-scope seed with a malformed Branch Map including concrete commits.
+
+**Key findings:**
+- Parallelize owns symbolic planning artifacts and defers concrete branch/worktree creation, baseline tests, runtime `task-00`, and commit hashes to Implement.
+- Worktree-aware validation checks eslint, tsconfig, vitest/jest, and recursive framework build-dir ignores from the project root; missing exclusions are advisory and get surfaced in `parallelization.md` plus a notification line.
+- Canonical Parallelize `Base` values are `feature branch tip`, `task-NN tip`, `stage-after-W{N}`, and `task-00 tip`.
+- The quality reviewer’s symbolic-base check does not match the canonical vocabulary in `skills/parallelize/SKILL.md`.
+- `skills/reviewer-protocol/SKILL.md` does not define Branch Map vocabulary; it defines cross-cutting reviewer mechanics, schema, dispatch contracts, and untrusted-data rules.
+- Reviewer linting of artifact shape is split between quality checks in `qrspi-parallelize-reviewer.md` and scope/boundary checks in `qrspi-parallelize-scope-reviewer.md`.
+
+**Surprises:** The Parallelize skill’s canonical Branch Map vocabulary is space-separated, while the parallelize quality reviewer names hyphenated and older-looking forms (`feature-branch-tip`, `stage-{N}`, `task-NN-tip`) and omits `task-00 tip`.
+
+**Caveats:** Investigation covered the files named in the questions plus `agents/qrspi-parallelize-scope-reviewer.md`, the visible `tests/fixtures/` fixture set, and grep searches under `tests/`. It did not inspect every non-fixture test implementation in full.
+
+
+## Q15, Q16, Q30: Reference-artifact treatment in the QRSPI pipeline
+
+**TL;DR:** The only explicit ground-truth reference-artifact path found in the current pipeline is the optional visual-fidelity binding chain: Design names wireframe artifacts as the visual contract, Phasing requires UI phases to cite those legal artifact names, Plan stores per-task `visual_fidelity_check.wireframe_refs`, and Implement dispatches `qrspi-visual-fidelity-reviewer` with validated local wireframe paths. Outside visual fidelity, the codebase uses other reference-like artifacts, such as `parallelization.md` symbolic branch references and per-round git diffs, but those are not described as external reference artifacts that downstream reviewers compare against as ground truth.
+
+**Key findings:**
+- `agents/qrspi-visual-fidelity-reviewer.md` explicitly states that wireframe references are ground truth and limits its review surface to `visual_fidelity_check.wireframe_refs` plus corresponding code under review.
+- Present reference-artifact kinds in the visual-fidelity chain are Figma URLs and embedded PNG paths in Design, artifact names cited in Phasing, and path-or-URL `wireframe_refs` in Plan; Implement only dispatches local absolute paths after canonicalization and allow-prefix filtering.
+- Current Plan task-spec template surfaces `wireframe_refs` and `ui_producing` only; it does not include a task-spec field for intentional visual deviations from the cited reference source.
+- Current validation/versioning is mostly structural and path-based: non-empty binding checks, legal-name citation checks, non-empty per-task refs, canonicalization/existence/allow-prefix validation, skip/path-filter audit records, and git commit/diff anchoring for QRSPI artifacts. I found no content hash, explicit version field, or Figma revision pin for the wireframe artifacts themselves.
+
+**Surprises:** The visual-fidelity reviewer has strong ground-truth language, but the task-spec template provides no corresponding intentional-deviation field for cases where implementation is meant to differ from a cited wireframe.
+
+**Caveats:** Investigation focused on `/Users/dfrysinger/Documents/claude-workspace/qrspi-marketplace/qrspi-plus` skills, agents, templates, and targeted tests/searches for reference/wireframe/deviation terms. It did not exhaustively read every historical doc under `docs/` beyond search hits, and it did not execute the QRSPI pipeline.
+
+
+## Q17: How does `skills/implementer-protocol/SKILL.md` sequence the steps of its commit procedure, and what does the qrspi-plus repo's `.gitignore` currently exclude from staging?
+
+**TL;DR:** `skills/implementer-protocol/SKILL.md` § Commit Before Reporting prescribes a five-step ordered procedure: status check, write commit message to a scratch file, `git add -A && git commit -F`, remove the scratch file, then capture the resulting SHA. The repo's `.gitignore` contains five effective lines excluding the `.worktrees/` directory, the `.vscode/` editor directory, and macOS `.DS_Store` metadata files (both top-level and recursive).
+
+**Key findings:**
+- The commit procedure is defined in § Commit Before Reporting at lines 139–151 of `skills/implementer-protocol/SKILL.md`, with the numbered steps at lines 145–149.
+- Step 1 is `git -C <worktree> status --porcelain` to confirm there is something to commit (line 145).
+- Step 2 writes a multi-line commit message to `<worktree>/.qrspi-commit-msg.txt` via the Write tool; the message MUST reference the round number and (for fix mode) the findings being addressed (line 146).
+- Step 3 is `git -C <worktree> add -A && git -C <worktree> commit -F .qrspi-commit-msg.txt` (line 147).
+- Step 4 is `rm <worktree>/.qrspi-commit-msg.txt`, with the rationale that the scratch file is not gitignored and would otherwise appear in the next round's diff (line 148).
+- Step 5 captures the resulting SHA via `git -C <worktree> rev-parse HEAD` and includes it as `commit_sha:` in the terminal-status report (line 149).
+- The procedure cross-references `implement/SKILL.md` § TDD Process step 6's "multi-line message convention" as its source (line 143).
+- A nothing-to-commit clause at line 151 directs the agent to report `BLOCKED` or `DONE_WITH_CONCERNS` rather than proceeding silently.
+- The `.gitignore` at the repo root is 9 lines, 84 bytes, last modified May 4. It contains three pattern groups: `.worktrees/` (line 1), an "Editor / IDE" group with `.vscode/` (lines 3–4), and a "macOS metadata files" group with `.DS_Store` and `**/.DS_Store` (lines 6–8).
+
+**Surprises:** The .gitignore does NOT exclude `.qrspi-commit-msg.txt` — the scratch file the commit procedure uses — and the procedure explicitly calls this out at line 148 as the reason step 4 (the `rm`) is required.
+
+**Caveats:** Only the repo-root `.gitignore` was inspected. The investigation did not survey `.gitignore` files that may exist in subdirectories or in worktrees, nor global excludes (e.g., `core.excludesFile`).
+
+
+## Q18, Q19: Unit BATS path scanning and SKILL-body extraction patterns
+
+**TL;DR:** `tests/unit/test-u14-lint.bats` does not dynamically scan all skills; it hardcodes a five-file `IN_SCOPE_FILES` array and applies each lint by iterating that array. Its excluded-skill check is a negative substring assertion over each path, while other unit tests that derive skill identity from paths use `basename "$(dirname "$path")"` after grepping `skills/*/SKILL.md`. Across SKILL-body assertion tests, the dominant convention is to extract a heading-bounded block with `awk`, then grep only the extracted slice to avoid whole-file false positives.
+
+**Key findings:**
+- Q18: `test-u14-lint.bats` builds scope from five explicit absolute paths rooted at `REPO_ROOT`, not from `find`, globbed all-skill discovery, or `grep -l` output.
+- Q18: The U14 excluded-skill check loops over `IN_SCOPE_FILES` and asserts each file path does not contain excluded directory substrings such as `"/implement/"`, `"/research/"`, or `"/parallelize/"`.
+- Q18: `test-using-qrspi.bats` is the clearest adjacent pattern for deriving skill identity from file paths: after `grep -l... "$skills_root"/*/SKILL.md`, it uses `basename "$(dirname "$path")"` to convert a `skills/<slug>/SKILL.md` path into `<slug>`.
+- Q19: Repeated extraction helpers use exact heading-line matches (`$0 == h`) to enter a block and `^## ` / `^### ` boundaries to stop or reset the block.
+- Q19: Several tests handle nested H3 blocks either by piping an extracted H2 section into a second `awk`, or by directly extracting H3 blocks from `owns-defers.md` files that begin at H3 level.
+- Q19: Recurrent conventions include comments stating why section-scoped extraction is used, `[ -n "$block" ]` guards after extraction, `grep -q`/`grep -Eqi` assertions on slices, and sentence/paragraph splitting with `awk` record separators for co-occurrence checks.
+
+**Surprises:** `test-cross-skill-contracts.bats` does not use section extraction despite being named in the question; it uses deliberately broad file-level `grep` checks, and its header explicitly calls this a loose-grep style.
+
+**Caveats:** Investigation sampled the named files plus adjacent `tests/unit/` SKILL-body assertion tests found by searching for `extract_h2`, `extract_h3`, `awk -v`, and markdown heading boundary patterns. It did not exhaustively read every BATS file in `tests/unit/`.
+
+
+## Q20: What scope or responsibility does `skills/replan/SKILL.md` currently describe for itself relative to `skills/goals/SKILL.md`, and how does `skills/replan/SKILL.md` describe handling new items surfaced during phase completion that are not already formal goals?
+
+**TL;DR:** `skills/replan/SKILL.md` scopes Replan to severity classification of phase learnings, minor-path artifact updates (tasks/plan only), major-path feedback authoring + loop-back, and the five-step phase-transition archive-and-populate mechanics; it explicitly DEFERS goal-text expansion and new-goal creation to `skills/goals/SKILL.md`. For new items surfaced during phase completion that are NOT already formal goals, Replan's described handling has two distinct surfaces: (1) the analyzer's **scope-mapping check** classifies any proposed change whose scope is not covered by existing goal text as **Major with loop-back to Goals** (never silently expanded by Replan); (2) `future-goals.md` Ideas (informal suggestions captured by Test/Integrate human gates) are read as input and "presented to user as optional additions" during analysis. The actual Ideas-capture mechanism lives in Test's Phase Learnings Gate, not Replan.
+
+**Key findings:**
+- Replan's OWNS list (`skills/replan/owns-defers.md:3-9`) is bounded to: phase-transition execution (minor path), severity classification, minor-path tasks/plan updates, major-path feedback authoring + cascade reset, and marking next-phase drafts `status: draft`.
+- Replan's DEFERS list (`skills/replan/owns-defers.md:12-17`) explicitly names "Goal-text expansion or new goal creation → owned by Goals", with the scope-mapping check as the enforcement mechanism (`owns-defers.md:16`).
+- The Severity Classification table (`skills/replan/SKILL.md:55-69`) routes "Change project goals or constraints (problem framing, intent, scope, environmental constraints)" and "Fundamental re-evaluation of project direction" to **Major / loop-back target: Goals**.
+- The analyzer-responsibility scope-mapping check (`skills/replan/SKILL.md:97`): "when the analyzer ties a proposed change to an existing goal, it verifies the goal's problem framing actually describes the proposal's scope. If the proposal's scope is not covered by the existing goal text, the analyzer classifies the proposal as Major (loop-back to Goals). Goal-text changes are Goals' responsibility on the loop-back, never Replan's."
+- Replan reads `future-goals.md` as a required input (`skills/replan/SKILL.md:38`): "contains Formal goals (approved for future phases with IDs) and Ideas (informal suggestions from Test/Integrate human gates). Read before producing analysis. Formal goals inform phase promotion. **Ideas are presented to user as optional additions.**"
+- Capture of new ideas/items at phase completion is performed by Test, not Replan. Test's Phase Learnings Gate (`skills/test/SKILL.md:309-322`) splits user input into "Current-phase items" (discussed in conversation) vs "Future work ideas" (appended as bullets under `## Ideas` in `future-goals.md`). Test runs BEFORE Replan in the route; Replan inherits that file.
+- The Common Rationalizations table (`skills/replan/SKILL.md:332`) reinforces: "If Test invoked Replan, more phases remain. Review remaining tasks for accuracy even if no changes are needed."
+- The Roadmap Usage paragraph (`skills/replan/SKILL.md:101`) clarifies that during phase transitions, Replan promotes goals from the **Formal section** of `future-goals.md` into a fresh `goals.md` — i.e., the Ideas section is NOT auto-promoted into the next-phase draft; only Formal goals with IDs are.
+
+**Surprises:** None.
+
+**Caveats:** Investigation was limited to `skills/replan/SKILL.md`, `skills/replan/owns-defers.md`, `skills/goals/SKILL.md`, `skills/goals/owns-defers.md`, and the relevant Test gate. Agent-body files under `agents/` were not opened (Replan's analyzer and reviewer agent definitions live there); the SKILL.md is described as the authoritative scope contract loaded by scope-reviewers, but agent-body wording could phrase behaviors slightly differently. Phasing's roadmap-authoring rules (where Ideas-vs-Formal lifecycle ultimately resolves) were not inspected.
+
+
+## Q22: What current GitHub Actions patterns (2025–2026) exist for running BATS test suites and shell linting on `ubuntu-latest`, including dependency installation, matrix strategies, and caching?
+
+**TL;DR:** Current GitHub Actions patterns for BATS on `ubuntu-latest` split into three main forms: using a BATS-specific setup action, installing BATS directly through npm/apt/source, or using the BATS action that also installs common helper libraries. Shell linting patterns most commonly use `ludeeus/action-shellcheck`, while GitHub-hosted Ubuntu 24.04 runner images also list ShellCheck as a preinstalled apt package. Matrix and caching patterns combine standard GitHub Actions `strategy.matrix` syntax with `actions/cache@v5` or BATS-action built-in caching behavior, especially when BATS helper libraries are installed under the workspace or `$HOME` instead of `/usr/lib`.
+
+**Key findings:**
+- BATS setup actions exist in two visible patterns: `sgerrand/setup-bats-action@v1`, which installs BATS itself, and `bats-core/bats-action@4.0.0`, which installs BATS plus `bats-support`, `bats-assert`, `bats-detik`, and `bats-file`.
+- BATS upstream installation docs still list apt, npm, Homebrew, source install, and Docker patterns; the docs warn that Ubuntu apt packages can lag and that pre-1.0 BATS packages came from the original project.
+- Shell linting patterns use either a dedicated ShellCheck action (`ludeeus/action-shellcheck@master`) or direct runner-provided `shellcheck`; Ubuntu 24.04 runner image documentation lists `shellcheck 0.9.0-1` as an installed apt package.
+- Matrix usage for this class of workflow is normally at the job level with `runs-on: ${{ matrix.os }}` and dimensions such as operating system, BATS version, ShellCheck version, or shell dialect.
+- Caching is handled either by `actions/cache@v5` with explicit `path`, `key`, and optional `restore-keys`, or by BATS action behavior; `bats-core/bats-action` states BATS binary caching is always available, while helper-library caching depends on installing libraries inside `$HOME`.
+
+**Surprises:** ShellCheck is listed as preinstalled on the Ubuntu 24.04 GitHub-hosted runner image, so a separate ShellCheck action is not the only current pattern for shell linting on Ubuntu runners. The BATS action’s README also states that default Linux helper-library paths under `/usr/lib/bats-*` are not cache-supported because of a known sudo/cache-action limitation.
+
+**Caveats:** WebFetch succeeded for BATS and ShellCheck action pages but was rate-limited on GitHub’s matrix/cache documentation pages. GitHub repository README and runner-image content were retrieved through GitHub’s public API, and the matrix section uses the public GitHub Actions matrix documentation URL plus observed action README examples rather than a successful WebFetch extraction from that page.
+
+
+## Q23: What branch-naming conventions are documented in `AGENTS.md` and `skills/implement/SKILL.md` Branch Model, and how do those namespaces appear in current scripts or templates?
+
+**TL;DR:** `AGENTS.md` documents an agent/issue branch namespace rooted at each bot handle, with branches shaped like `qrspi-{nato}/issue-{NNN}-{short-slug}`. `skills/implement/SKILL.md` documents the runtime implementation branch namespace rooted at `qrspi/{slug}/`, with concrete branches `main`, `task-NN`, `stage-after-W{N}`, and `task-00` under that prefix. The current `scripts/` and `templates/` files do not contain those documented namespace literals; the only script-level branch handling found is generic `--base <branch>` support in `scripts/sibling-impact.mjs`, defaulting to `main`.
+
+**Key findings:**
+- `AGENTS.md` says each agent identity is `qrspi-{nato}[bot]`, the branch prefix matches the bot handle without `[bot]`, and the start-work branch pattern is `{your-handle}/issue-{NNN}-{short-slug}` such as `qrspi-alpha/issue-42-fix-plan-stage-loop` (`AGENTS.md:3-10`, `AGENTS.md:100-101`).
+- `skills/implement/SKILL.md` resolves symbolic branch bases to `qrspi/{slug}/main`, `qrspi/{slug}/task-NN`, `qrspi/{slug}/stage-after-W{N}`, and `qrspi/{slug}/task-00` (`skills/implement/SKILL.md:330-340`).
+- `skills/implement/SKILL.md` requires the feature branch to be named `qrspi/{slug}/main`, not bare `qrspi/{slug}`, so task branches such as `qrspi/{slug}/task-NN` can coexist as namespace siblings (`skills/implement/SKILL.md:361-364`).
+- Exact searches under `scripts/` and `templates/` found no occurrences of `qrspi/{slug}`, `stage-after-W`, `feature branch tip`, `task-NN tip`, `task-00 tip`, `qrspi-alpha`/other NATO bot branch prefixes, or `issue-{NNN}`/agent issue-branch patterns.
+- `scripts/sibling-impact.mjs` exposes generic branch terminology only: usage accepts `--base <branch>` and argument parsing defaults `base` to `main` (`scripts/sibling-impact.mjs:4-6`, `scripts/sibling-impact.mjs:34-40`, `scripts/sibling-impact.mjs:51-53`).
+
+**Surprises:** The documented branch namespaces are present in skills and AGENTS documentation but not in current `scripts/` or `templates/` literals.
+
+**Caveats:** Investigation focused on `AGENTS.md`, `skills/implement/SKILL.md`, and all files directly under `scripts/` and `templates/`, per the question. I also checked `skills/parallelize/SKILL.md` for the Branch Model that Implement explicitly consumes, but did not exhaustively analyze all non-script/non-template documentation beyond branch-namespace search hits.
+
+
+## Q24: Which `skills/**/SKILL.md` and `agents/qrspi-*.md` files in the current `main` branch contain release-version strings or milestone references, and which dated or version-tagged file paths exist today that are intentionally release-bound?
+
+**TL;DR:** On `main`, the searched `skills/**/SKILL.md` and `agents/qrspi-*.md` contract surfaces contain no explicit `v0.x`, `vNN-release`, or `*-release` version anchors. The remaining release/milestone-like hits in those files are three `F-NN` references in skill prose, two example dated feedback paths, two example ISO timestamps, roadmap/milestone terminology used for the QRSPI phasing artifact, and ordinary uses of the word “release” for gate release conditions or build flags. Dated/version-tagged paths that are presently release-bound are the archived `docs/qrspi/2026-04-29-v0.4-bundle/` artifact tree and the two `tests/unit/test-v06-*.bats` regression/acceptance files.
+
+**Key findings:**
+- `git grep` against `main -- "skills/*/SKILL.md" "agents/qrspi-*.md"` found no `v0.X` release-version tokens in target skill/agent files.
+- The latest relevant `main` history includes `66dcc6c docs(qrspi): drop release-version mentions from skill/agent prose`, whose commit message records four scrubbed release-version mentions and states that version-anchored tests and dated release artifacts were intentionally unchanged.
+- Current target-file milestone-like `F-NN` references appear only in `skills/implement/SKILL.md`, `skills/parallelize/SKILL.md`, and `skills/using-qrspi/SKILL.md`.
+- The only tracked `docs/qrspi/` dated/versioned release artifact directory on `main` is `docs/qrspi/2026-04-29-v0.4-bundle/`, whose `config.md` explicitly names the v0.4 milestone and feature branch.
+- Version-tagged test paths on `main` are `tests/unit/test-v06-acceptance-contracts.bats` and `tests/unit/test-v06-repros.bats`; `test-v06-repros.bats` line 3 identifies itself as regression/reproduction tests for v0.6 companion-wrapper fixes.
+
+**Surprises:** The current `main` branch already contains a release-scrub cleanup commit immediately before HEAD (`66dcc6c`), so the expected `v0.6`/`v0.7+` anchors in skill/agent prose are absent at HEAD.
+
+**Caveats:** Searches were limited to tracked files at `main` HEAD using `git -C /Users/dfrysinger/Documents/claude-workspace/qrspi-marketplace/qrspi-plus` commands, as requested. The path inventory used grep patterns for dates and version tags and does not claim to classify every unversioned historical artifact.
+
+
+## Q25: What lint or CI patterns do other markdown-driven prompt or skill libraries use to detect or prevent version strings, milestone references, or other dated language from accumulating in files intended to be stable across releases?
+
+**TL;DR:** The clearest public pattern is not from prompt/skill libraries specifically, but from documentation repositories that treat Markdown as stable product content: GitLab uses Vale rules in CI to flag future tense, temporary-status wording, and outdated version references. Vale and markdownlint both provide mechanisms for repository-specific Markdown checks, but Vale is the more directly documented fit for prose-level banned terms, regexes, substitutions, and severity levels. Public prompt/skill repositories checked here did not visibly document rules that specifically block version strings, milestone references, or dated language in prompt/skill Markdown.
+
+**Key findings:**
+- GitLab uses Vale in documentation pipelines; error-level Vale rules fail CI, warnings appear in merge request diffs, and suggestions are advisory. Its custom rules include `FutureTense.yml`, `CurrentStatus.yml`, and `OutdatedVersions.yml`.
+- GitLab's `OutdatedVersions.yml` is a concrete dated-version detector: it flags unsupported GitLab version references using a regex token and emits the message "If possible, remove the reference to '%s'."
+- GitLab's `CurrentStatus.yml` flags `currently` with the message "Remove '%s'. The documentation reflects the current state of the product," which is directly aligned with preventing stable docs from implying transience.
+- Strapi's documentation repo exposes a YAML style-validation config with `docs/**/*.md` and `docs/**/*.mdx` targets, forbidden phrase lists, severity levels, and PR-blocking critical violations; the fetched config did not show date/version-specific rules.
+- Anthropic's public `skills` repository and Microsoft's `promptflow` repository did not visibly expose CI or lint rules specifically for temporal language, release strings, or milestone references in Markdown/prompt files in the fetched top-level pages.
+
+**Surprises:** Public prompt/skill libraries checked here did not provide obvious examples of stable-prompt Markdown checks for versions or dates; the strongest evidence came from general documentation systems, especially GitLab's Vale rule set.
+
+**Caveats:** This was web research using fetched public pages and targeted GitHub code search/API lookups. It was not an exhaustive crawl of all prompt libraries, private CI configurations, or every workflow file in the repositories sampled. GitHub top-level pages can hide workflow contents, so absence of visible evidence in a fetched page is not proof that a repository has no such checks.
+
+
+## Q31: How does the QRSPI pipeline currently parse `config.md`, apply defaults for fields that did not exist when an older resumed run was created, and warn or migrate older configurations?
+
+**TL;DR:** `config.md` is specified as a YAML-frontmatter file in each artifact directory, but the current repository implements parsing mostly through prose contracts and shell snippets rather than a centralized production parser. The canonical contract is strict: skills must validate required behavior-affecting fields and must not silently infer missing `pipeline`, `route`, or `codex_reviews`; older-run compatibility exists only through explicit runtime-backfill carve-outs for `verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`, and Implement's `phase`. There are current inconsistencies: Research and Questions still document a missing-`config.md` fallback to `codex_reviews: false`, and the test fixture validator only implements some fields named by the canonical validation table.
+
+**Key findings:**
+- The canonical schema and validation rules live in `skills/using-qrspi/SKILL.md`, where `config.md` is defined as the artifact-directory source of truth with YAML frontmatter fields including `pipeline`, `codex_reviews`, `route`, `review_depth`, `review_mode`, `verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`, and quick-only `question_budget`.
+- Parsing is described in two concrete forms: frontmatter extraction between the first two `---` markers in `tests/fixtures/validate-config-field.sh`, and direct line-based `awk -F': *' '/^field:/ {print $2; exit}'` snippets in the Apply-fix protocol for verifier/scope-tagger gates.
+- The no-silent-defaults rule forbids assuming `pipeline: full`, assuming `codex_reviews: false`, deriving `route` from `pipeline`, or proceeding with guessed field values.
+- Runtime backfill is explicitly documented for missing legacy fields: `verifier_enabled` defaults to `true`, `scope_tagger_enabled` defaults to `true`, `visual_fidelity_required` defaults to `false`, and Implement backfills `phase: NN` by deriving the next phase ordinal from phase-bearing artifacts.
+- Missing/invalid non-backfilled fields stop and present a field-specific menu; `question_budget` has no runtime-backfill carve-out and must be present only for quick runs, absent for full runs, and in range 1–50.
+
+**Surprises:** Research and Questions still document `config.md` missing → `codex_reviews: false`, which conflicts with the canonical no-silent-defaults rule. The validation fixture implements `route`, `pipeline`, `codex_reviews`, `visual_fidelity_required`, and `question_budget`, but not all fields in the canonical table such as `verifier_enabled` or `scope_tagger_enabled`.
+
+**Caveats:** This investigation examined the skill markdown, hook references, and config-validation fixtures in the repository. QRSPI is largely prompt/prose-driven here; I did not find a centralized runtime library that parses `config.md` for all skills, so findings distinguish documented contracts, shell snippets embedded in skill docs, and test fixtures.
+
+
+## Cross-References
+
+- Model-routing surfaces span Q1/Q26 (dispatcher classes, agent-file/dispatch-time/task-frontmatter selectors), Q2 (third-party frameworks' per-component model fields), and Q9/Q28 (provider prompt caches and recurring large-input mechanisms).
+- Prompt-transport mechanics in Q3 (`run-codex-review.sh` + `codex-companion-bg.sh`) and Q8 (Claude vs Codex prompt composition, untrusted-artifact wrapping, `AGENT-BODY-END (3-angle-bracket form)` marker) describe both halves of the same dispatch pipeline.
+- OpenAI-compatible endpoints/CLI patterns in Q4/Q5 connect to the per-component model-routing schemas in Q2.
+- Plan/task-spec authoring in Q6/Q7 is consumed by Implement TDD sequencing in Q10, implementer fix-cycle identifier conventions in Q12/Q29, the commit procedure in Q17, and replan ownership in Q20.
+- Q11/Q27 (split test-author vs code-author literature, A/B methodology) provides context for the single-dispatch TDD shape documented in Q10.
+- Branch-namespace vocabulary appears in Q13/Q14/Q21 (Parallelize `Base` symbols and reviewer drift) and Q23 (Implement runtime resolution to `qrspi/{slug}/...` plus AGENTS.md agent branches).
+- Reference-artifact handling in Q15/Q16/Q30 (visual-fidelity binding/wireframes) shares validation discipline with the audit/structural checks examined in Q18/Q19 (BATS section-scoped extraction) and the lint-pattern landscape in Q25.
+- Release-anchor scrubbing in Q24 ties directly to Q25 (Vale-style lint rules for outdated version/temporal language).
+- Q22 (GitHub Actions BATS + ShellCheck patterns) provides the CI substrate that the BATS conventions catalogued in Q18/Q19 would execute under.
+- Config parsing/backfill in Q31 interlocks with Q1/Q26 dispatch surfaces, Q17's commit procedure, and Q20's replan boundaries — `config.md` fields drive dispatch gating, route selection, and phase transitions across the pipeline.
