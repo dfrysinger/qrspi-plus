@@ -1,0 +1,99 @@
+--- design.md (R1 reviewed)
++++ design.md (R2 to review)
+@@ -28,7 +28,7 @@
+ 
+ **Decision:** Add `.qrspi-commit-msg.txt` to the committed root `.gitignore`. Do NOT reorder the implementer-protocol commit procedure.
+ 
+-**Reasoning:** Per `research/q04-codebase.md`, the current safety relies on a per-clone `.git/info/exclude` entry -- fresh clones and worktrees receive no protection. Reordering the procedure (the alternative) is invasive, touches every SKILL.md commit section, and would still leak under any future code path that runs `git add -A` before `rm`. Gitignore is structurally stronger.
++**Reasoning:** Per `research/q03-codebase.md` (the commit procedure relies on a per-clone `.git/info/exclude` entry; fresh clones and worktrees receive no protection) and `research/q04-codebase.md` (confirms the committed `.gitignore` carries no entry for the scratch file). Reordering the procedure (the alternative) is invasive, touches every SKILL.md commit section, and would still leak under any future code path that runs `git add -A` before `rm`. Gitignore is structurally stronger.
+ 
+ ### DKR3 -- Separate fence-aware helper function (G3)
+ 
+@@ -40,17 +40,17 @@
+ 
+ **Decision:** Replace the flat Branch Map in `skills/parallelize/SKILL.md` with `### Wave N` sub-sections, each containing a mini Branch Map table (Task | Branch | Base). The Dependency Analysis table stays separate. The "Execution Order" prose section is removed as redundant.
+ 
+-**Reasoning:** Per `research/q06-codebase.md`, the current flat three-column Branch Map (Task | Branch | Base) has no Wave column -- wave assignment lives in the separate Dependency Analysis table and in an Execution Order prose section that readers must cross-reference manually. Wave sub-sections collapse those two artefacts into one scannable structure at the Parallelize review point, when base-mismatch findings are cheapest to catch. The parallelize-reviewer agent's linting must be updated to walk Wave sub-sections; existing symbolic-base vocabulary and row-completeness rules survive intact with the new shape.
++**Reasoning:** Per `research/q06-codebase.md`, the current flat three-column Branch Map (Task | Branch | Base) has no Wave column -- wave assignment lives in the separate Dependency Analysis table and in an Execution Order prose section that readers must cross-reference manually. Wave sub-sections collapse those two artefacts into one scannable structure at the Parallelize review point, when base-mismatch findings are cheapest to catch. The Wave sub-section shape changes the input shape that downstream parallelize-reviewer linting consumes (a Plan / Implement concern); existing symbolic-base vocabulary and row-completeness rules survive intact with the new shape.
+ 
+ ### DKR5 -- Drop evergreen-lint path carve-outs entirely (G5)
+ 
+-**Decision:** Remove all 5 path-shaped exemption groups from `_is_path_exempt()` in `tests/unit/test-evergreen-markdown.bats`. Per-line treatment priority: (1) rewrite to forward-functional framing, (2) delete as historical noise, (3) inline `<!-- evergreen-exempt -->` marker (last resort, only for load-bearing example content).
++**Decision:** Remove all 5 path-shaped exemption groups from `_is_path_exempt()` in `tests/unit/test-evergreen-markdown.bats`. The inline `<!-- evergreen-exempt -->` mechanism is retained as the sole remaining escape hatch. Per-line classification (rewrite vs delete vs inline-marker) is owned by Plan.
+ 
+-**Reasoning:** Per `research/q07-codebase.md`, with both carve-outs and inline markers disabled there are exactly 5 violations across 2 files; all 5 already carry `<!-- evergreen-exempt -->` markers, so disabling carve-outs while leaving inline markers active produces zero violations. Plan must enumerate the exact lines under current `main` and classify each before deciding which treatment applies.
++**Reasoning:** Per `research/q07-codebase.md`, with both carve-outs and inline markers disabled there are exactly 5 violations across 2 files; all 5 already carry `<!-- evergreen-exempt -->` markers, so disabling carve-outs while leaving inline markers active produces zero violations. The architectural decision Design owns is to close the path-shaped exemption surface; the per-line classification procedure belongs to Plan against current `main`.
+ 
+ ### DKR6 -- Cross-CLI host detection via env-var probe + per-host Codex availability check (G6)
+ 
+-**Decision:** Detection function probes `COPILOT_CLI=1` first (Copilot CLI host signal since v0.0.421 per `research/q09-web.md`), falls back to `command -v codex` (standalone Codex CLI), defaults to Claude Code if neither matches. Per detected host, check the right path for Codex availability.
++**Decision:** Detection function probes `COPILOT_CLI=1` first (Copilot CLI host signal since v0.0.421 per `research/q09-web.md`); otherwise defaults to Claude Code. Standalone Codex CLI as a host is explicitly out of scope for v0.7.1 (per `goals.md` G6 deferral); a Codex-CLI host falls through to the Claude Code branch. Per detected host, check the right path for Codex availability.
+ 
+ **Reasoning:** Under Copilot CLI, Codex is a routable model (`gpt-5.3-codex`) via the native subagent tool -- no filesystem probe needed; under Claude Code, glob `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs` as today (per `research/q08-codebase.md`). At goals-time, if detection result disagrees with the `codex_reviews` config value, emit a one-line diagnostic naming the disagreement (catches the misdetection that surfaced at config-time in this run).
+ 
+@@ -64,7 +64,7 @@
+ 
+ **Decision:** G7a (cache mechanism retirement) has no design surface. Plan enumerates the exact line ranges and produces a single deletion task.
+ 
+-**Reasoning:** The mechanism spans five files (per `research/q10-codebase.md`): `skills/using-qrspi/SKILL.md` lines 427-428 + 441-442, `scripts/run-third-party-llm.sh` cache gate, `scripts/g4-cache-probe.sh`, the stub spike report, and two BATS unit suites. The acceptance suite restructuring around dropped Slice 7 / C-5 assertions is a known sub-task per `goals.md`.
++**Reasoning:** The mechanism spans five files (per `research/q10-codebase.md`): the using-qrspi SKILL.md cache-hint block, the `scripts/run-third-party-llm.sh` cache gate, `scripts/g4-cache-probe.sh`, the stub spike report, and two BATS unit suites. The acceptance suite restructuring around dropped Slice 7 / C-5 assertions is a known sub-task per `goals.md`.
+ 
+ ### DKR9 -- Delete `model:` from all 41 agents; retain `haiku`/`sonnet`/`opus` as canonical tier names (G7b)
+ 
+@@ -106,6 +106,12 @@
+ 
+ **Hybrid (Wave column AND visual grouping) (rejected).** Three flavors of presentation to maintain in sync; consistency-check cost dominates the marginal scan benefit.
+ 
++### G5: Carve-out retention alternatives (rejected)
++
++**Keep path-shaped carve-outs as belt-and-suspenders (rejected).** Path carve-outs exempt entire directory trees from forward-looking prose checks, which is the same class of regression the lint exists to catch. Maintenance over time grows the carve-out list rather than shrinking it; closing the surface once is cheaper than re-justifying each entry as the repository evolves.
++
++**Rewrite violations but keep carve-outs disabled-by-default behind a flag (rejected).** Reintroduces a config knob with two modes that drift independently. The inline `<!-- evergreen-exempt -->` mechanism already covers the load-bearing-example escape hatch (per `research/q07-codebase.md`); a parallel disabled-by-default path adds surface area without coverage.
++
+ ### G6: Config-only flag alternatives (rejected)
+ 
+ **Config-only flag, no auto-detect (rejected).** Loses out-of-the-box UX; every new operator has a manual setup step.
+@@ -122,23 +128,23 @@
+ 
+ ## Test Strategy
+ 
+-All tests use BATS (bash-3.2 portable) -- no new framework. Assertion text and per-test-file layout are deferred to Plan.
++All tests use BATS (bash-3.2 portable) -- no new framework. Assertion text, full test procedures, and per-test-file layout are deferred to Plan.
+ 
+-**G1 (control-char detection):** Unit test in `tests/unit/test-run-third-party-llm.bats`. Layer: dispatcher pre-flight. Coverage: each of the 33 control bytes (0x00-0x1F + 0x7F) as a header value triggers `die`; clean ASCII passes; LF specifically pinned as a regression guard against the prior grep gap.
++**G1 (control-char detection):** Unit test at the dispatcher pre-flight layer. Coverage: each of the 33 control bytes (0x00-0x1F + 0x7F) as a header value triggers the die path; clean ASCII passes; LF is pinned as a regression guard against the prior grep gap.
+ 
+-**G2 (gitignore scratch file):** Unit test asserting `.qrspi-commit-msg.txt` is matched by the root `.gitignore`. Integration test that simulates the implementer commit flow (Write scratch + `git add -A` + `git status --porcelain` shows scratch absent from index).
++**G2 (gitignore scratch file):** Unit test that the scratch path matches the committed `.gitignore`. Integration test verifying that the scratch file does not appear in the staged index when a simulated implementer commit flow runs.
+ 
+-**G3 (fence-aware helper):** Unit test for the new `extract_section_fence_aware` (or final name) function covering fence-toggle correctness, exit-on-next-fence, exit-on-next-section, and empty-extract guard. Rewrite of `tests/unit/test-skill-md-content-patterns.bats` consumers; existing call-site behavior preserved.
++**G3 (fence-aware helper):** Unit test for the new fence-aware extraction helper covering fence-toggle correctness, exit-on-next-fence, exit-on-next-section, and empty-extract guard. Existing call-site behavior of the migrated inline helper is preserved.
+ 
+-**G4 (Branch Map presentation):** Parallelize-reviewer agent test pins the Wave-sub-section structural rule. Worked-example regeneration ("Worked Example -- Good" / "-- Bad") under the new shape. Existing `tests/unit/test-parallelize-*.bats` adapted to the new structure.
++**G4 (Branch Map presentation):** Parallelize-reviewer agent test pins the Wave sub-section structural rule. Worked-example regeneration ("Good" / "Bad") under the new shape. Existing parallelize unit tests are adapted to the new structure.
+ 
+-**G5 (TBD/TODO cleanup):** No new test code -- the existing `tests/unit/test-evergreen-markdown.bats` is the test. Coverage after fix: scan runs against the entire repo with zero carve-outs and zero violations.
++**G5 (TBD/TODO cleanup):** No new test code -- the existing evergreen-markdown unit test is the test. Coverage after fix: scan runs against the entire repo with zero carve-outs and zero violations.
+ 
+-**G6 (cross-CLI Codex detection):** Unit test for the new host-detection function with mocked env vars (`COPILOT_CLI=1`, `COPILOT_CLI` unset, `command -v codex` mock). Unit test for the Codex availability check per detected host. Integration test that dispatching a Codex review via the host-appropriate transport succeeds.
++**G6 (cross-CLI Codex detection):** Unit test for the new host-detection function with mocked environment signals. Unit test for the Codex availability check per detected host. Integration test that dispatching a Codex review via the host-appropriate transport succeeds.
+ 
+-**G7a (cache mechanism deletion):** Existing tests removed. Post-deletion CI green verifies the truth-table duplicate in `test-run-third-party-llm.bats` (per `research/q10-codebase.md`) is also removed cleanly.
++**G7a (cache mechanism deletion):** Existing cache-mechanism unit tests removed. Post-deletion CI-green verifies the truth-table duplicate flagged in `research/q10-codebase.md` is removed cleanly alongside the cache gate.
+ 
+-**G7b (`model:` field deletion):** Structural lint in `tests/unit/` (likely a new `test-agent-frontmatter.bats` or an extension of an existing suite) pinning that no `agents/*.md` file contains a `model:` line at the top-level frontmatter. Regression test (manual or smoke): fresh `copilot plugin install` on the resulting branch shows zero "model not available" warnings across a full pipeline run.
++**G7b (`model:` field deletion):** Structural lint unit test pinning that no agent frontmatter carries a top-level `model:` field. Regression smoke (manual): fresh `copilot plugin install` on the resulting branch shows zero "model not available" warnings across a full pipeline run.
+ 
+ ## System Diagram
+ 
+@@ -148,9 +154,7 @@
+ flowchart TD
+   subgraph host_detection["Host detection (DKR6)"]
+     A1["COPILOT_CLI=1?"] -->|yes| H_COPILOT["Host = Copilot CLI"]
+-    A1 -->|no| A2["command -v codex?"]
+-    A2 -->|yes| H_CODEX["Host = Codex CLI"]
+-    A2 -->|no| H_CLAUDE["Host = Claude Code"]
++    A1 -->|no| H_CLAUDE["Host = Claude Code (default; Codex CLI host out of scope for v0.7.1)"]
+   end
+   host_detection --> CONFIG["config.md model_routing table (DKR9)"]
+   host_detection --> DISPATCH["Codex dispatch transport selection (DKR7)"]
