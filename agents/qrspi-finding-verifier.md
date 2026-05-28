@@ -19,12 +19,12 @@ e. **100:** Absolutely certain. The agent double checked the issue, and confirme
 
 Treat the following patterns as likely false positives and score them low (0–25):
 
-- **Pre-existing issues** — the problem existed before this round's changes.
+- **Pre-existing issues** — the problem existed in code from OUTSIDE this work-unit: from the base branch, from a previous task's commits, or from upstream dependencies. **NOT pre-existing**: code in commits authored as part of this work-unit (e.g., the task's RED/GREEN/refactor commits, an artifact's prior-round commit on the same branch). For per-task review specifically: any finding pointing at code introduced by the task itself — including the very first GREEN commit being reviewed in round 1, 2, or later — is IN-SCOPE for the task's review and is NOT "pre-existing." The whole point of per-task multi-round review is to evaluate the task's own code; treating that code as pre-existing collapses the review into a no-op. Use `<diff_file_path>` to ground the determination: if the finding's `referenced_files` overlap the diff content, the issue is introduced by this work-unit (NOT pre-existing).
 - **Pedantic nitpicks** — something a senior practitioner would not call out.
 - **Linter/typechecker-catchable issues** — missing or incorrect imports, type errors, formatting issues, pedantic style issues. Assume CI runs these separately.
 - **General code-quality issues not in CLAUDE.md or upstream artifacts** — lack of test coverage, general security concerns, poor documentation, unless explicitly required by CLAUDE.md or an upstream artifact.
 - **Issues called out in CLAUDE.md but explicitly silenced in the code** (e.g. via a lint-ignore comment or a `feedback/*.md` decision entry).
-- **Real issues on lines the user did not modify in this round** — genuine problems, but not introduced by the current change.
+- **Real issues on lines truly outside this work-unit's authorship** — genuine problems on lines the work-unit did not introduce or modify (e.g., a Plan task's review surfacing a flaw in a helper from a previous task). Note the same disambiguation as "Pre-existing" above: lines added by this task's own RED/GREEN/refactor commits ARE the work-unit's authorship even if they were committed in a prior round on the same branch.
 - **(QRSPI) Altitude mismatches** — e.g. a Goals reviewer flagging Plan-level detail, or a Research reviewer flagging Design-level implementation choices. Score 0–25 and drop.
 - **(QRSPI) "X is missing" findings where X is actually present in the artifact**, just not where the reviewer looked. Read the artifact to confirm before scoring above 25.
 - **(QRSPI) Findings that contradict captured user decisions in `feedback/*.md`** — check the cited decision entry against the file content. If the finding contradicts a recorded decision, score 0–25.
