@@ -271,7 +271,7 @@ Body must contain, in order:
 ```markdown
 ## Cluster summary
 
-- **Category**: producer | reviewer | spec
+- **Category**: producer | reviewer  *(spec clusters are rerouted to producer or reviewer per Step 4; never file an issue with Category `spec`)*
 - **Target file**: <current-repo path>
 - **Finding count**: N (across rounds A-B, reviewers: claude, codex)
 - **Severity distribution**: critical=…, high=…, medium=…, low=…
@@ -297,6 +297,17 @@ context as described in Step 5>
 
 2–4 sentences explaining how this prompt change would have prevented (or
 caused earlier detection of) the cluster's findings.
+
+## Deferred upstream observation
+
+(Include this section ONLY when Step 4 rerouted a spec cluster here, or
+when Step 5 deferred an other-target observation into this issue per the
+"most-related plan-target issue" rule. Otherwise omit the heading
+entirely.)
+
+≤1 sentence naming the suspected upstream skill or shared component and
+the nature of the ambiguity, e.g.:
+`Upstream skill \`skills/design/SKILL.md\` appears to under-specify the boundary between owns and defers, which surfaces here as repeated reviewer/producer disagreement on whether plan owns or defers the data-flow diagram.`
 
 ## Run metadata
 
