@@ -90,6 +90,63 @@ require_value() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# Host identification and Codex availability probes (added in v0.7.1 task-06)
+# ---------------------------------------------------------------------------
+
+# detect_host - emits either 'copilot-cli' or 'claude-code' to stdout.
+# Examines only the COPILOT_CLI environment variable.
+# The literal string "1" selects copilot-cli; every other state (unset, empty,
+# or any non-"1" value) selects claude-code.  Always exits 0.
+# Writes nothing to stderr under normal operation.
+detect_host() {
+  if [[ "${COPILOT_CLI:-}" == "1" ]]; then
+    echo "copilot-cli"
+  else
+    echo "claude-code"
+  fi
+}
+
+# check_codex_available <host> - exits 0 if Codex is usable for the given host.
+#   copilot-cli: always exits 0 (Codex is natively routable; no filesystem probe).
+#   claude-code:  probes the companion-script glob path; exits 0 when at least
+#                 one matching file exists, non-zero otherwise.
+#   other:        exits non-zero and emits a single-line diagnostic to stderr.
+# bash-3.2 portable: no nameref, no declare -A, no ${var,,}, no mapfile.
+check_codex_available() {
+  local host="${1:-}"
+  case "$host" in
+    copilot-cli)
+      return 0
+      ;;
+    claude-code)
+      local found=0
+      local f
+      for f in "${HOME}/.claude/plugins/cache/openai-codex/codex"/*/scripts/codex-companion.mjs; do
+        if [[ -f "$f" ]]; then
+          found=1
+          break
+        fi
+      done
+      if [[ "$found" -eq 1 ]]; then
+        return 0
+      else
+        return 1
+      fi
+      ;;
+    *)
+      echo "check_codex_available: unsupported host argument: $host" >&2
+      return 1
+      ;;
+  esac
+}
+
+# Source guard: when QRSPI_SOURCE_ONLY=1, return after loading function
+# definitions so that function-isolation tests can source this file and call
+# detect_host / check_codex_available directly without triggering argument
+# parsing or validation.
+[[ "${QRSPI_SOURCE_ONLY:-}" == "1" ]] && return 0
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --agent-file)     require_value "--agent-file"   "$#"; AGENT_FILE="$2"; shift 2 ;;
@@ -452,5 +509,48 @@ fi
 
 # Pipe the assembled prompt to the dispatcher's stdin and propagate its
 # exit code unchanged (per the exit-code matrix above).
-compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}"
-exit "$?"
+#
+# Host detection and transport routing (added in v0.7.1 task-06):
+# detect_host probes COPILOT_CLI to select the transport.  check_codex_available
+# verifies availability.  A mismatch between availability and the codex_reviews
+# config value emits a single-line warning to stderr (warning-only - does not
+# block dispatch or override exit code).  The transport marker ([transport: ...])
+# is emitted once to stderr at the call site that selects the transport path.
+
+_detected_host="$(detect_host)"
+
+# Read codex_reviews from the artifact-dir config.md frontmatter.
+# Default to empty (treated as false) if the file is absent or the field is missing.
+_codex_reviews=""
+if [[ -f "$ARTIFACT_DIR/config.md" ]]; then
+  _codex_reviews="$(awk '
+    /^---$/ { n++; if (n == 2) exit; next }
+    n == 1 && /^codex_reviews:/ {
+      sub(/^codex_reviews:[[:space:]]*/, "")
+      sub(/[[:space:]]*$/, "")
+      print
+      exit
+    }
+  ' "$ARTIFACT_DIR/config.md")"
+fi
+
+# Check Codex availability for the detected host.  For the claude-code path,
+# if the companion glob is empty but codex_reviews says "true", emit a mismatch
+# warning.  The warning is stderr-only and does not affect dispatch or exit code.
+if ! check_codex_available "$_detected_host" 2>/dev/null; then
+  if [[ "${_codex_reviews}" == "true" ]]; then
+    echo "[mismatch] detected host=${_detected_host}, codex_reviews config=${_codex_reviews}" >&2
+  fi
+fi
+
+# Emit the transport marker and dispatch.  Exit code is propagated unchanged
+# from the transport; no suppression, no log-and-continue.
+if [[ "$_detected_host" == "copilot-cli" ]]; then
+  echo "[transport: task-tool]" >&2
+  compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}"
+  exit "$?"
+else
+  echo "[transport: shell-pipeline]" >&2
+  compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}"
+  exit "$?"
+fi

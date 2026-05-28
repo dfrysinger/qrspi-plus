@@ -581,6 +581,10 @@ teardown() {
   # (not the pre-T06 legacy path which would also propagate the code but not emit the
   # marker).  Without this anchor, TE16 would trivially pass against unmodified code.
   TMP_STDERR="$TMP_DIR/t16-stderr.txt"
+  # Use && ... || dispatch_status=$? to capture non-zero exits in bats (which
+  # runs test bodies with set -e active; a bare non-zero command would abort
+  # the test body before dispatch_status=$? could run).
+  dispatch_status=0
   QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
     MOCK_TRANSPORT_EXIT=42 \
@@ -593,8 +597,7 @@ teardown() {
       --model gpt-5-codex \
       --output-file "$TMP_DIR/result.md" \
       --artifact-dir "$TMP_DIR/artifact-dir" \
-    >"$TMP_DIR/t16-stdout.txt" 2>"$TMP_STDERR"
-  dispatch_status=$?
+    >"$TMP_DIR/t16-stdout.txt" 2>"$TMP_STDERR" && dispatch_status=0 || dispatch_status=$?
 
   # [transport: shell-pipeline] in stderr confirms the T06 dispatch surface ran.
   grep -q '\[transport: shell-pipeline\]' "$TMP_STDERR"
@@ -612,6 +615,9 @@ teardown() {
   printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   TMP_STDERR="$TMP_DIR/t17-stderr.txt"
+  # Use && ... || dispatch_status=$? to capture non-zero exits in bats (same
+  # rationale as TE16: bats test bodies run with set -e active).
+  dispatch_status=0
   QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
     HOME="$MOCK_HOME" \
@@ -625,8 +631,7 @@ teardown() {
       --model gpt-5-codex \
       --output-file "$TMP_DIR/result.md" \
       --artifact-dir "$TMP_DIR/artifact-dir" \
-    >"$TMP_DIR/t17-stdout.txt" 2>"$TMP_STDERR"
-  dispatch_status=$?
+    >"$TMP_DIR/t17-stdout.txt" 2>"$TMP_STDERR" && dispatch_status=0 || dispatch_status=$?
 
   # Mismatch warning in stderr confirms the mismatch path ran (proves new code active).
   grep -q "claude-code" "$TMP_STDERR"
