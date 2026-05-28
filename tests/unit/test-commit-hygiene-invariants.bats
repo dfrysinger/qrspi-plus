@@ -204,32 +204,22 @@ teardown() {
 }
 
 # =============================================================================
-# G2 committed-gitignore invariant: .qrspi-commit-msg.txt in committed
+# committed-gitignore invariant: .qrspi-commit-msg.txt in committed
 # root .gitignore closes the fresh-clone / fresh-worktree staging gap.
-#
-# These tests are RED until the implementer adds the entry to .gitignore.
 # =============================================================================
 
-# Test expectation: The string `.qrspi-commit-msg.txt` appears verbatim in the
-# content of the committed root `.gitignore` file
-@test "[T02-G2-hygiene] committed root .gitignore contains .qrspi-commit-msg.txt verbatim" {
+@test "[commit-hygiene] committed root .gitignore contains .qrspi-commit-msg.txt verbatim" {
   # Verify REPO_ROOT is set (require_repo_root called in setup_file).
   [ -n "$REPO_ROOT" ]
   [ -f "$REPO_ROOT/.gitignore" ]
   grep -E "^\.qrspi-commit-msg\.txt$" "$REPO_ROOT/.gitignore"
 }
 
-# Test expectation: When a scratch commit-message file is present on disk and
-# `git add -A` is executed in a simulated commit flow, the scratch file path
-# does not appear in the resulting staged index.
-# Test expectation: The fresh-clone simulation uses a temporary scratch git
-# directory created via `mktemp -d` + `git init` with no `.git/info/exclude`
-# entry for the scratch path; the test asserts the staged-index behavior
-# independently of any per-clone exclude file.
-@test "[T02-G2-hygiene] git add -A does not stage scratch file on fresh-clone simulation (gitignore-only, no per-clone exclude)" {
+@test "[commit-hygiene] git add -A does not stage scratch file on fresh-clone simulation (gitignore-only, no per-clone exclude)" {
   # Create a scratch git repo simulating a fresh clone with no per-clone exclude.
   local fresh_dir
   fresh_dir="$(mktemp -d)"
+  trap 'rm -rf "$fresh_dir"' RETURN
   git -C "$fresh_dir" init -q -b main
   git -C "$fresh_dir" config user.email "t02g2@example.com"
   git -C "$fresh_dir" config user.name "T02-G2 Fixture"
@@ -237,7 +227,6 @@ teardown() {
   # A real fresh clone has an empty (or absent) info/exclude file.
   if [ -f "$fresh_dir/.git/info/exclude" ]; then
     if grep -qF ".qrspi-commit-msg.txt" "$fresh_dir/.git/info/exclude"; then
-      rm -rf "$fresh_dir"
       printf 'FAIL: pre-condition violated - .git/info/exclude already contains scratch path\n' >&2
       return 1
     fi
@@ -255,10 +244,12 @@ teardown() {
   printf 'feat: some work\n' > "$fresh_dir/.qrspi-commit-msg.txt"
   # Execute git add -A as the implementer commit flow would.
   git -C "$fresh_dir" add -A
-  # Capture staged index contents, then clean up the scratch repo.
+  # Capture staged index contents.
   local staged
   staged="$(git -C "$fresh_dir" diff --cached --name-only)"
-  rm -rf "$fresh_dir"
+  # Positive guard: staging must have captured work.txt, proving git add -A ran.
+  printf '%s\n' "$staged" | grep -qE "^work\.txt$" \
+    || { printf 'FAIL: staging captured nothing - test is vacuous\n' >&2; return 1; }
   # The scratch file must NOT appear in the staged index. Protection here comes
   # solely from the committed .gitignore; no per-clone exclude is in effect.
   ! printf '%s\n' "$staged" | grep -E "^\.qrspi-commit-msg\.txt$"
