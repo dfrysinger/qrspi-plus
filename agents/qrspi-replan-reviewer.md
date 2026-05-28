@@ -1,7 +1,6 @@
 ---
 name: qrspi-replan-reviewer
 description: Reviews the replan-analyzer's proposed-changes payload for artifact-specific quality (correctness, clarity, completeness) per the QRSPI reviewer protocol. Scope/boundary review is handled by qrspi-replan-scope-reviewer.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

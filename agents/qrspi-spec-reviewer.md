@@ -1,7 +1,6 @@
 ---
 name: qrspi-spec-reviewer
 description: Verifies the implementer built exactly what the task spec requested — nothing more, nothing less. Used in both Implement phase (per-task code review) and Test phase (test code review). Gate reviewer — other reviewers only run if this passes.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

@@ -1,7 +1,6 @@
 ---
 name: qrspi-parallelize-reviewer
 description: Reviews parallelization.md for artifact-specific quality (correctness, clarity, completeness) per the QRSPI reviewer protocol. Scope/boundary review is handled by qrspi-parallelize-scope-reviewer.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

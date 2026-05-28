@@ -1,7 +1,6 @@
 ---
 name: qrspi-plan-test-coverage-reviewer
 description: Verifies that task test expectations cover all behaviors, edge cases, and error conditions, and that each expectation is specific enough to be verifiable. Reviews the plan artifact, not task implementations. Runs always (quick + full pipeline).
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---
