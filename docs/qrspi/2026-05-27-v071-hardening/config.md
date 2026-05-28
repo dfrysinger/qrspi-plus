@@ -51,7 +51,7 @@ sync hazard that wiped untracked work in the prior session). Artifacts live in-r
 under `docs/qrspi/2026-05-27-v071-hardening/`.
 
 **Branch model:** `qrspi/v0.7.1-hardening/main` is this run's feature-main branch
-(forked from `origin/main` at `542023e`). Implement will fork task worktrees as
+(rebased onto `origin/main` at `b977466` during the goals-draft dual-review pass; originally forked from `542023e` before rebase pulled in #200 + #203). Implement will fork task worktrees as
 `qrspi/v0.7.1-hardening/task-NN` siblings under the same namespace.
 
 **Review configuration:** `pipeline: full` with `review_depth: deep` and
@@ -70,11 +70,7 @@ reviewer running in parallel with the Claude reviewer per the QRSPI
 fan-out protocol. The skill's detection gap itself is scoped into G7 of this
 release (see goals.md).
 
-**#183 caveat — spike execution.** Issue #183 ships a `scripts/g4-cache-probe.sh`
-script that must be run against the live Anthropic API to select Path A vs Path B
-for the G4 cache-control gate. Direct Anthropic API access is not available in
-this Copilot CLI session. Goals will frame the spike's deliverable as
-"ensure the script is runnable + write the spike report skeleton"; the actual
-API run may be deferred to a follow-up session with API credentials, or the
-spike conclusion may be derived from offline evidence (Anthropic prompt-caching
-documentation) at Design time.
+**#183 superseded by G7a / #205.** Issue #183 (the v0.7 G4 cache-probe spike against
+the live Anthropic API) is dropped from this release: goals.md G7a / #205 retires
+the entire G4 cache-control mechanism (the spike script, its report, the dual-flag
+gate, and the two BATS pins). No Anthropic-API spike execution is in v0.7.1 scope.

@@ -10,16 +10,16 @@ Close the 6 genuine post-v0.7-release gaps surfaced by the v0.7 bookkeeping audi
 
 ## Constraints
 
-- **Target repo:** `dfrysinger/qrspi-plus@main` at HEAD `542023e`. Feature-main branch `qrspi/v0.7.1-hardening/main` forked from that commit.
+- **Target repo:** `dfrysinger/qrspi-plus@main` at HEAD `b977466` (post-#200 generalize-contributor-protocol + post-#203 manifest 0.7.0 bump). Feature-main branch `qrspi/v0.7.1-hardening/main` rebased onto that commit during the goals-draft dual-review pass; baseline measurements below were taken at run start against the pre-rebase fork point `542023e` and the rebase picked up only the contributor-doc and manifest-version commits (no test infrastructure changed), so the baseline still holds.
 - **CI must stay green** under both the Lint (`shellcheck` + bash-3.2 ban-list grep) job and the `BATS-under-bash:3.2` job defined in `.github/workflows/ci.yml`. Baseline at run start: Unit 1188 ok / 1 fail (test 325 evergreen-markdown, tracked separately under the closed #179); Acceptance 41 ok / 0 fail.
 - **bash 3.2 portability** is a hard requirement for any shell-script touch. macOS system bash + the CI `bash:3.2` alpine image both lack GNU bash 4+ features (no `${var,,}`, no associative arrays declared with bare `declare -A` outside funcs, etc.) and macOS system `grep` lacks PCRE.
 - **No new external dependencies.** All fixes must land using tools already in the qrspi-plus runtime (node stdlib, POSIX shell, bats-core, gawk where the CI install step provides it). New `npm` or Homebrew dependencies are out.
 - **Evergreen-prose enforcement.** `tests/unit/test-evergreen-markdown.bats` bans release-version tokens, half-step labels, B-codes, mechanism codenames, and bare-paren PR refs in `skills/**` + `agents/**` (per PR #195 + PR #198 carve-outs). Any new prose lands inside those rules unless the path is in an existing exemption.
-- **Workspace isolation per CONTRIBUTING.md.** This run executes against a fresh clone at `~/code/qrspi-plus-v0.7.1/` outside Dropbox to eliminate the Dropbox-sync file-replacement failure mode that surfaced during the v0.7 run. Per CONTRIBUTING.md § "Parallel agents," concurrent agent sessions on this repo are the design, not the exception: this orchestrator runs as `agent-echo`, branches are namespaced `agent-echo/<type>/<slug>` off the `qrspi/v0.7.1-hardening/main` release feature-main, and in-flight work is announced in `STATUS.md`. Orchestrator and Implement should treat unexpected working-tree changes on this clone as a stop-and-investigate signal, and assume other agent handles may be operating concurrently against their own clones.
+- **Workspace + identity per CONTRIBUTING.md § Parallel agents.** Fresh clone at `~/code/qrspi-plus-v0.7.1/` outside Dropbox eliminates the Dropbox-sync file-replacement failure mode that surfaced during the v0.7 run. The clone sets `user.name = agent-echo` for visual distinguishability in `git log` per the section's per-clone git-author pattern; cross-session coordination uses `STATUS.md`. The release feature-main `qrspi/v0.7.1-hardening/main` is a multi-issue release-branch namespace; it is distinct from CONTRIBUTING.md's per-handle `<handle>/<type>/<slug>` pattern that applies to standalone issue work. Implement will fork task worktrees as `qrspi/v0.7.1-hardening/task-NN` siblings off the release feature-main rather than per-handle branches. Orchestrator should treat unexpected working-tree changes on this clone as a stop-and-investigate signal and assume other agent handles may be operating concurrently against their own clones.
 
 ## Goals
 
-> **Note for Research:** G1 through G5 originated from the v0.7 bookkeeping audit weeks before this run started; intervening work on `main` may have partially or fully closed any of them. Research must verify the current applicability of each G1-G5 entry against `main` HEAD (`542023e`) before Design opens, and flag any that are already resolved, partially resolved, or have shifted scope. G6 and G7 were authored against current state in this run and do not need the same status check.
+> **Note for Research:** G1 through G5 originated from the v0.7 bookkeeping audit weeks before this run started; intervening work on `main` may have partially or fully closed any of them. Research must verify the current applicability of each G1-G5 entry against `main` HEAD (`b977466`) before Design opens, and flag any that are already resolved, partially resolved, or have shifted scope. G6 and G7 were authored against current state in this run and do not need the same status check.
 
 ### G1 — Portable control-character detection in third-party LLM dispatcher (#185)
 
@@ -139,7 +139,6 @@ QRSPI's review-quality story rests on dual-vendor reviewer panels (Claude + Code
 
 - Host detection signals available today (verified 2026-05-27 against Copilot CLI 1.0.55-3):
   - Env vars set deterministically by Copilot CLI at process spawn: `COPILOT_CLI=1`, `COPILOT_CLI_BINARY_VERSION=<ver>`, `COPILOT_AGENT_SESSION_ID=<uuid>`, `COPILOT_LOADER_PID=<pid>`, `COPILOT_RUN_APP=1`. Cleanest signal for shell scripts; no FS access required; cannot be spoofed by file-system layout drift.
-  - Plugin manifest filename itself discriminates: Copilot reads `.github/plugin/plugin.json`; Claude Code reads `.claude-plugin/plugin.json`. Both filenames coexist in the qrspi-plus repo today, so a `test -f` against the active install path discriminates the host.
   - Agents implicitly know which host they run in via tool registry shape (Copilot's `task` tool with `model:` override vs Claude's `Agent({ subagent_type: ... })` syntax) and via the subagent-name prefix conventions. This knowledge is available in prompt context but not addressable from shell scripts.
   - The gap the operator's "still would be nice to have a way of deterministically knowing" instinct picks up: skill prose and shell-script transports run identically on both hosts, so they need a single deterministic switch point. Agent self-awareness alone isn't enough.
 - Detection signal candidates Design should weigh:
@@ -161,7 +160,7 @@ Two design decisions from the Claude Code era no longer hold under the new GitHu
 
 **G7a — G4 cache-control mechanism is unreachable from the plugin under Copilot.** The mechanism's stub spike (`scripts/g4-cache-probe.sh`, the dual-flag gate in `skills/using-qrspi/SKILL.md` § providers, the cache_control marker emission branch in `scripts/run-third-party-llm.sh`, and the two BATS suites pinning the gate) was designed against Anthropic's prompt-caching at the SDK boundary. Under Copilot CLI, the plugin does not control that boundary — the host CLI does. The mechanism is dead infrastructure that confuses operators and consumes review surface area.
 
-**G7b — Agent `model:` field declarations silently fall back under Copilot CLI.** All 41 files in `agents/*.md` declare Claude short model names in YAML frontmatter (34 `sonnet`, 6 `inherit`, 2 `opus`, 2 `haiku` = 44 sites). Copilot CLI 1.0.55 does not recognize any of them. On every dispatch it emits `Warning: Custom agent "X" specifies model "Y" which is not available; using "<parent-session-model>" instead` and runs the agent on whatever model the operator's session has selected. Probed 2026-05-27 against `qrspi-finding-verifier` (declared `haiku`), `qrspi-spec-reviewer` (declared `sonnet`), and `qrspi-implementer` (declared `inherit`); all three fell back to `claude-opus-4.7-high` (the probe session's selected model).
+**G7b — Agent `model:` field declarations silently fall back under Copilot CLI.** All 41 files in `agents/*.md` declare Claude short model names in YAML frontmatter (33 `sonnet`, 5 `inherit`, 1 `opus`, 2 `haiku` = 41 sites across 41 files; verified via `grep -h '^model:' agents/*.md | sort | uniq -c` against `HEAD`). Copilot CLI 1.0.55 does not recognize any of them. On every dispatch it emits `Warning: Custom agent "X" specifies model "Y" which is not available; using "<parent-session-model>" instead` and runs the agent on whatever model the operator's session has selected. Probed 2026-05-27 against `qrspi-finding-verifier` (declared `haiku`), `qrspi-spec-reviewer` (declared `sonnet`), and `qrspi-implementer` (declared `inherit`); all three fell back to `claude-opus-4.7-high` (the probe session's selected model).
 
 #### Why we care
 
@@ -178,11 +177,12 @@ G7 ships as one goal with two sub-deliverables (separate issues, separate PRs, i
 - Delete `scripts/g4-cache-probe.sh` (16KB, fully implemented but unrun).
 - Delete `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` (stub spike report).
 - Delete `tests/unit/test-cache-control-capability-gate.bats` and `tests/unit/test-cache-hit-rate.bats`.
-- Remove `supports_prompt_cache` + `emit_cache_control_markers` fields from `skills/using-qrspi/SKILL.md` providers block (currently lines 427-428, 442).
+- Remove `supports_prompt_cache` + `emit_cache_control_markers` from all occurrences in the `skills/using-qrspi/SKILL.md` providers block (both the YAML example values currently at lines 427-428 and the description bullets currently at lines 441-442; phrasing left intentionally line-drift-tolerant).
 - Remove the cache_control marker emission branch from `scripts/run-third-party-llm.sh`.
 - Trim cache_control assertions only from `tests/unit/test-run-third-party-llm.bats`.
+- Update `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` to drop the `SPIKE` export pointing at the deleted spike (currently line 25) and the two `run run_pin` invocations for the deleted unit suites (currently lines 208 and 210). The acceptance suite must stay green per the CI constraint.
 - Historical run records under `docs/qrspi/2026-04-29-v0.4-bundle/` and `docs/superpowers/` stay untouched.
-- ~500 lines deleted, no design surface, mechanical.
+- ~500 lines deleted, mechanical except for the acceptance-suite restructuring around the dropped Slice 7 / C-5 assertions.
 
 **G7b — agent `model:` field migration (#204) (real design surface):**
 
