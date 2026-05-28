@@ -177,7 +177,7 @@ CURL_EOF
   # attempting indirect expansion, exiting with a key-resolution diagnostic.
   _write_config_openai "$FIXTURE_DIR" p1 https://api.example.com MY-BAD-KEY false false
   run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
   [[ "$output" == *"key-resolution"* ]]
   [ ! -f "$OUTPUT_FILE" ]
 }
