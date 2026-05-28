@@ -1,0 +1,37 @@
+--- structure.md (R2 reviewed)
++++ structure.md (R3 to review)
+@@ -144,32 +144,11 @@
+ - `setup` block: locate repo root and the `agents/` directory
+ - `@test` blocks:
+   - no `agents/qrspi-*.md` frontmatter carries a top-level `model:` key (single sweep assertion across all 41 files)
+-  - tier-vocabulary preservation: each file mentions at least one of the allowed tier names in body prose
+ 
+-### Modified files (top-level section reshape)
++### Modified files
+ 
+-**`skills/parallelize/SKILL.md`** (Slice 4, G4)
+-
+-- Top-level sections after rewrite:
+-  - `## Overview`
+-  - `## Process`
+-  - `## Branch Map` (now contains `### Wave N` sub-sections instead of a flat three-column table)
+-  - `## Worked Examples` (updated Good/Bad pairs to Wave-grouped shape)
+-  - `## Red Flags`
+-- Removed top-level section: `## Execution Order` (subsumed by the Wave sub-section ordering)
+-
+-**`skills/using-qrspi/SKILL.md`** (Slice 6 + Slice 7 + Slice 8)
++For modified files, the per-file boundary responsibility is captured in the File Map; this artifact does not re-assert heading-level shape for those files (the existing top-level section structure is preserved by all Phase 1 edits). Plan owns the per-line edit locations within each touched content block.
+ 
+-- Touched top-level sections:
+-  - `## Codex Detection` (Slice 6: per-host transport prose, mismatch diagnostic)
+-  - `## Providers` (Slice 7: cache fields removed from YAML example and description bullets)
+-  - `## Model Routing` (Slice 8: dispatcher-prose paragraph documenting tier-name resolution against `config.md` `model_routing` via `detect_host()` output)
+-
+-**`agents/qrspi-parallelize-reviewer.md`** (Slice 4, G4)
+-
+-- Touched top-level sections:
+-  - `## Branch Map Structural Rules` (assertion set updated to require `### Wave N` sub-section grouping)
+-
+ ---
+ 
+ ## Interfaces
