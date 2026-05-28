@@ -123,6 +123,16 @@ The carve-outs are a quiet form of technical debt: the lint is in place but blin
 - The post-#199 AGENTS.md split (slim auto-load pointer + CONTRIBUTING.md) materially reshaped the file; the violation list must be re-enumerated against the current `main` rather than the pre-split snapshot.
 - Status-check priority: of the G1-G5 set, this one is the most likely to be partially or fully closed by intervening work, because evergreen-prose hardening has continued on `main` since the audit. Research should re-run the carve-out-disabled scan first and report the current violation count before Design opens.
 
+#### Status: closed by intervening work (2026-05-28)
+
+G5 is closed without code change in v0.7.1. Evidence and rationale:
+
+- `bats tests/unit/test-evergreen-markdown.bats` reports `21 ok / 0 fail` against the active surface (`AGENTS.md`, `README.md`, `skills/**`, `agents/**`) at HEAD `9cc284b`. Captured at `docs/qrspi/2026-05-27-v071-hardening/evidence/g5-status/evergreen-scan-pass.txt`.
+- The five remaining path-shaped carve-outs in `_is_path_exempt()` (dated `docs/qrspi/YYYY-MM-DD-*/`, `CHANGELOG.md`, `tests/fixtures/`, `docs/superpowers/plans|specs/`, `reviews/`) do not hide active-surface violations. They preserve archived planning prose and reviewer-finding artifacts whose versioned references are correct for the moment the document was written. Removing those carve-outs would surface ~20 hits in archival prose that legitimately quotes prior-release version strings and PR refs, none of which represent forward-looking tech debt of the kind G5 was framed to close.
+- Discovery point: Task 5 reached RED in the Implement phase. The RED proof revealed that the scan-pass acceptance criterion is structurally unreachable without rewording archived planning documents whose references are correct as written. Plan author missed the Research status-check directive recorded at the bullet above; the directive should have been honored at the Research stage, not at Implement RED.
+
+Closure action: Task 5 is withdrawn (see plan.md `### Task 5: WITHDRAWN`). No code change for G5 in v0.7.1.
+
 ### G6 — Cross-CLI Codex auto-detection for the qrspi-plus skill (#202)
 
 - **type:** `known-fix`

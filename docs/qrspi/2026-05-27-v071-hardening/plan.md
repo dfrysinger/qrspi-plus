@@ -31,7 +31,7 @@ The 10 tasks follow a dependency chain shaped by three files that are co-modifie
 - Slice 2 (G2): Task 2
 - Slice 3 (G3): Task 3
 - Slice 4 (G4): Task 4
-- Slice 5 (G5): Task 5
+- Slice 5 (G5): WITHDRAWN -- G5 closed by intervening work; see `### Task 5: WITHDRAWN` below and `goals.md` G5 status block
 - Slice 6 (G6): Tasks 6 and 7
 - Slice 7 (G7a): Task 8
 - Slice 8 (G7b): Tasks 9 and 10
@@ -48,7 +48,7 @@ Task execution order (Parallelize will determine wave groupings):
 - Task 2 -- G2: gitignore scratch commit-message file
 - Task 3 -- G3: fence-aware helper promoted to shared library
 - Task 4 -- G4: Wave-grouped Branch Map presentation
-- Task 5 -- G5: evergreen-lint carve-out removal
+- Task 5 -- G5: evergreen-lint carve-out removal -- WITHDRAWN (see Task 5 section below)
 - Task 6 -- G6 (part 1): host-detection and Codex availability functions in dispatch helper
 - Task 7 -- G6 (part 2): per-host dispatch transport prose in using-qrspi SKILL (depends on Task 6)
 - Task 8 -- G7a: cache mechanism retirement (depends on Tasks 1 and 7)
@@ -154,23 +154,13 @@ Per-phase criteria that must be observable end-to-end at the phase boundary, ind
   - The new assertion in `tests/unit/test-parallelize-vocab.bats` passes when the reviewer agent file contains the Wave sub-section structural rule and fails (RED) when it is absent
   - Existing symbolic-base-vocabulary and row-completeness assertions in the BATS suite continue to pass
 
-### Task 5: Remove path-shaped exemption groups from evergreen-lint helper
+### Task 5: WITHDRAWN
 
-- **Phase:** 1
-- **Target files:** `tests/unit/test-evergreen-markdown.bats` (modify)
-- **Dependencies:** none
-- **LOC estimate:** ~40
-- **task_type:** code
-- **model:** sonnet
-- **goal_ids:** [G5]
-- **Description:** All five path-shaped exemption groups (six `case` patterns total) are deleted from the `_is_path_exempt()` function in `tests/unit/test-evergreen-markdown.bats`. The inline `<!-- evergreen-exempt -->` comment mechanism is retained as the sole remaining escape hatch; none of the five pre-existing violations that already carry inline markers are disturbed. After this change the evergreen scan covers its intended surface unconditionally: no directory tree is silently exempted by path. The carve-out removal is validated by the existing evergreen-lint job in CI, which is the design-stated test surface (Design DKR5).
-- **Test expectations:**
-  - The evergreen scan executed against all repo-tracked markdown files reports zero violations (the five pre-existing violations all carry `<!-- evergreen-exempt -->` inline markers and are suppressed without relying on path carve-outs)
-  - The shell function `_is_path_exempt()` in `tests/unit/test-evergreen-markdown.bats` contains zero path-shaped `case` pattern branches after the modification; a structural grep assertion in `tests/unit/test-evergreen-markdown.bats` verifies the absence (fails RED on the current codebase with six branches present, passes GREEN after deletion)
-  - The five existing `<!-- evergreen-exempt -->` inline markers remain intact in their original locations after the modification
-  - No new violations are introduced by the removal of the carve-out groups (verified by running the scan after the edit)
-  - The jargon scan (scoped to `skills/**` and `agents/**`) is unaffected and continues to report zero violations
-  - The existing evergreen-lint job in CI reports zero violations after carve-out removal
+- **Status:** withdrawn (2026-05-28)
+- **Goal:** G5 (closed by intervening work; see `goals.md` G5 status block)
+- **Rationale:** The task assumed the five path-shaped exemption groups in `_is_path_exempt()` hide tech debt on the active prose surface. The RED proof in the Implement phase surfaced ~20 violations in the archived directories the carve-outs cover (`docs/superpowers/plans|specs/`, `reviews/`, `docs/qrspi/YYYY-MM-DD-*/`), which are correctly preserved because those documents legitimately quote prior-release version strings and PR refs as written-at-the-time references. The active surface (`AGENTS.md`, `README.md`, `skills/**`, `agents/**`) is already clean: `bats tests/unit/test-evergreen-markdown.bats` returns 21 ok / 0 fail. G5 is closed without code change. Goals authoring already flagged this risk in the G5 `What we know so far` block ("Status-check priority: of the G1-G5 set, this one is the most likely to be partially or fully closed by intervening work"); the directive to verify at Research was not honored, and the scope error surfaced at Implement RED instead.
+- **Inputs that should have caught this earlier:** the G5 Research status-check directive (goals.md line 124).
+- **Wave impact:** Wave 1 reduces from six to five tasks (task-01, task-02, task-03, task-06, task-09); see `parallelization.md` Wave 1 entry.
 
 ### Task 6: Implement host-aware Codex availability detection in Codex dispatch helper
 
