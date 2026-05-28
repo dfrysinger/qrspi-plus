@@ -190,6 +190,38 @@ IPEOF2
 }
 
 # ---------------------------------------------------------------------------
+# _control_char_check <header-name> <header-value>
+#
+# Rejects any header name or value that contains a control byte.
+# Covered byte ranges: C0 (0x00-0x1F) and DEL (0x7F).
+#
+# Detection method: LC_ALL=C tr deletes all printable ASCII bytes
+# (0x20-0x7E, octal \040-\176). Anything remaining after deletion is a
+# control byte. The byte count is taken by wc -c on the same pipeline so
+# command-substitution trailing-newline stripping does not affect the
+# count -- LF inside an argument is correctly detected this way.
+#
+# No grep -P is used; the implementation is POSIX-clean and works on
+# macOS system grep (BSD grep, no PCRE) and GNU grep alike.
+#
+# Reads the global PROVIDER variable for the die-path diagnostic.
+# Caller must have die() in scope.
+_control_char_check() {
+  local _cc_hname="$1" _cc_hval="$2"
+  local _cc_count
+  # Delete printable-ASCII bytes (space through tilde, octal \040-\176).
+  # DEL (octal \177 = 0x7F) is outside this range and survives deletion.
+  # LF inside the argument is also outside this range and survives; wc -c
+  # counts it before command substitution can strip trailing newlines.
+  _cc_count=$(printf '%s' "$_cc_hname$_cc_hval" \
+    | LC_ALL=C tr -d '\040-\176' \
+    | wc -c \
+    | tr -d ' \t')
+  [ "$_cc_count" -eq 0 ] || \
+    die "header-validation: default_headers for provider '${PROVIDER:-}' contains a control character in header '$_cc_hname'"
+}
+
+# ---------------------------------------------------------------------------
 # _dispatch_openai_chat
 #
 # Issues a blocking POST to <base_url>/chat/completions using curl.
@@ -555,16 +587,25 @@ if [ "$TRANSPORT_TYPE" = "openai-chat-completions" ]; then
     fi
   fi
 
-  # 4. default_headers: no control characters in name or value.
+  # 4. Raw-byte pre-flight: NUL bytes (0x00) are stripped by bash on variable
+  #    assignment and never reach HEADER_NAMES/HEADER_VALUES through the awk
+  #    parser. Compare the raw byte count of config.md to the count after NUL
+  #    removal; any difference means NUL bytes are present in the file.
+  _raw_file_bytes=$(wc -c < "$CONFIG_MD" | tr -d ' \t')
+  _raw_no_nul_bytes=$(LC_ALL=C tr -d '\000' < "$CONFIG_MD" | wc -c | tr -d ' \t')
+  if [ "$_raw_file_bytes" -ne "$_raw_no_nul_bytes" ]; then
+    die "header-validation: config.md for provider '$PROVIDER' contains NUL bytes in header configuration"
+  fi
+
+  # 5. default_headers: no control characters in name or value.
+  #    _control_char_check is POSIX-clean (no grep -P) and detects all 33
+  #    control bytes (C0 0x00-0x1F and DEL 0x7F), including LF which was
+  #    silently missed by the prior grep -qP 2>/dev/null implementation.
   _hi=0
   while [ "$_hi" -lt "${#HEADER_NAMES[@]}" ]; do
     _hname="${HEADER_NAMES[$_hi]}"
     _hval="${HEADER_VALUES[$_hi]}"
-    # Use printf | grep -P for control-character detection.
-    if printf '%s' "$_hname" | grep -qP '[\x00-\x1f\x7f]' 2>/dev/null || \
-       printf '%s' "$_hval"  | grep -qP '[\x00-\x1f\x7f]' 2>/dev/null; then
-      die "header-validation: default_headers for provider '$PROVIDER' contains a control character in header '$_hname'"
-    fi
+    _control_char_check "$_hname" "$_hval"
     _hi=$((_hi + 1))
   done
 
