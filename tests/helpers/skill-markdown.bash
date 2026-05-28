@@ -198,6 +198,103 @@ assert_section_contains() {
 }
 
 # ---------------------------------------------------------------------------
+# extract_section_fence_aware <file> <anchor-heading>
+#
+# Extracts from the anchor heading line (inclusive) through the last line
+# before the next out-of-fence ## or ### section boundary, or EOF.
+#
+# Unlike extract_section, the anchor is the full heading line (e.g.
+# "### Review Round") and heading-shaped lines inside open code fences are
+# not treated as boundaries. Closing a fence restores boundary detection for
+# subsequent lines.
+#
+# On success: prints anchor line + content lines to stdout, exits 0.
+# On error:   prints nothing to stdout, emits a named diagnostic to stderr,
+#             exits non-zero.  Error message always begins with the literal
+#             prefix "extract_section_fence_aware:" and includes the anchor
+#             heading value.  The two error paths are distinguishable:
+#               missing anchor  -- message body contains "not found"
+#               empty region    -- message body does NOT contain "not found"
+#
+# Bash 3.2 portable; uses awk for single-pass extraction.
+# ---------------------------------------------------------------------------
+extract_section_fence_aware() {
+  if [ "$#" -ne 2 ]; then
+    printf 'extract_section_fence_aware: expected 2 args (file, anchor-heading); got %d\n' "$#" >&2
+    return 1
+  fi
+  local file="$1"
+  local anchor="$2"
+
+  if [ ! -r "$file" ]; then
+    printf 'extract_section_fence_aware: file unreadable: %s\n' "$file" >&2
+    return 1
+  fi
+
+  # Signal file: awk writes FOUND_WITH_CONTENT or FOUND_EMPTY after processing.
+  # Using a PID-scoped name to avoid collisions with concurrent callers.
+  local signal_tmp="/tmp/skill-md-fence-signal-$$"
+
+  local awk_out
+  awk_out="$(awk -v anchor="$anchor" -v signal_tmp="$signal_tmp" '
+    BEGIN { fence = 0; in_b = 0; found = 0; has_content = 0 }
+
+    /^```/ {
+      fence = !fence
+      if (in_b) print
+      next
+    }
+
+    in_b && !fence && (/^## / || /^### /) {
+      exit
+    }
+
+    !in_b && !fence && $0 == anchor {
+      in_b = 1
+      found = 1
+      print
+      next
+    }
+
+    in_b {
+      print
+      if ($0 ~ /[^[:space:]]/) has_content = 1
+    }
+
+    END {
+      if (found) {
+        if (has_content) {
+          print "FOUND_WITH_CONTENT" > signal_tmp
+        } else {
+          print "FOUND_EMPTY" > signal_tmp
+        }
+      }
+    }
+  ' "$file")"
+
+  local signal=""
+  if [ -r "$signal_tmp" ]; then
+    signal="$(cat "$signal_tmp")"
+    rm -f "$signal_tmp"
+  fi
+
+  case "$signal" in
+    FOUND_WITH_CONTENT)
+      printf '%s\n' "$awk_out"
+      return 0
+      ;;
+    FOUND_EMPTY)
+      printf 'extract_section_fence_aware: %s: anchor located but region contains no content lines\n' "$anchor" >&2
+      return 1
+      ;;
+    *)
+      printf 'extract_section_fence_aware: %s: not found in %s\n' "$anchor" "$file" >&2
+      return 1
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # require_repo_root — export REPO_ROOT or fail loudly.
 # ---------------------------------------------------------------------------
 require_repo_root() {
