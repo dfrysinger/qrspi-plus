@@ -205,9 +205,11 @@ For each cluster, decide the *most fixable* producer of the pattern:
   so the issue is caught earlier / more consistently. Improvement:
   tighten the relevant `agents/qrspi-plan-*-reviewer.md`.
 - **`spec`** — the upstream artifacts (goals/design/spec) are ambiguous in
-  a way that legitimately allows both reviewer interpretations.
-  Improvement: tighten the *upstream* skill prompt (e.g.
-  `skills/design/SKILL.md`).
+  a way that legitimately allows both reviewer interpretations. Phase 1
+  does NOT propose changes to upstream skills. Instead, file the issue
+  as a `reviewer` or `producer` category against a plan file (whichever
+  fits) and add a "Deferred upstream observation" subsection in the
+  body noting the upstream skill we suspect, with at most one sentence.
 
 A cluster may map to more than one category; if so, propose the highest-
 leverage one and mention the others.
@@ -226,8 +228,19 @@ forms:
    insertion point.
 
 Do not propose changes to files you have not read. Do not invent line
-numbers. Do not propose changes to files outside `skills/` or `agents/`
-in this phase.
+numbers. **Phase 1 allowed target files are exactly:**
+
+- `skills/plan/SKILL.md`
+- `skills/plan/owns-defers.md`
+- `skills/plan/post-approval-split-contract.md`
+- `skills/plan/smoke-spec.md`
+- any file matching `agents/qrspi-plan-*-reviewer.md`
+
+If your highest-leverage fix targets any other file (e.g. an upstream
+`skills/design/SKILL.md`, a `_shared/` skill, or anything under `tests/`
+/ `scripts/` / `.github/`), do not file the issue at all. Record the
+observation in the most-related plan-target issue under "Deferred
+upstream observation" if one exists; otherwise drop the cluster.
 
 ## Step 5b — Cross-cluster deduplication pass (mandatory)
 
@@ -287,10 +300,14 @@ caused earlier detection of) the cluster's findings.
 
 ## Run metadata
 
-- Corpus: reviews/plan-109/
-- Rounds analyzed: 1–7
-- Reviewers: claude (approved round 5), codex (open through round 7)
-- Convergence-signal files: reviews/plan-109/round-05-claude.md (12 bytes)
+(Fill these values from your Step 1 inventory; do not copy the example
+below verbatim. The example reflects plan-109 at the time this prompt
+was written.)
+
+- Corpus: <corpus path from Step 1, e.g. `reviews/plan-109/`>
+- Rounds analyzed: <min round>–<max round> (e.g. `1–7`)
+- Reviewers: <reviewer> (<approved at round N | open through round N>), <reviewer> (...)
+- Convergence-signal files: <list each file ≤ 16 bytes with its byte size, e.g. `reviews/plan-109/round-05-claude.md (12 bytes)`; if none detected, write "none detected">
 - Analyzer engine: claude
 ```
 
