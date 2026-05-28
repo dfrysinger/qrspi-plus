@@ -547,7 +547,7 @@ _extract_ctrl_check_fn() {
   } > "$test_script"
 
   run bash "$test_script"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
 }
 
 # ---------------------------------------------------------------------------
