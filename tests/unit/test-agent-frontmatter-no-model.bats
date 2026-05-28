@@ -15,14 +15,28 @@ setup() {
 
 # Helper: print the YAML frontmatter block (lines between the first two `---`
 # lines at column 0) for a given file. Bash 3.2 / POSIX-awk portable.
+#
+# Fixes applied:
+#   sf.F01: strip CR (\r) before delimiter matching so CRLF-terminated files
+#           are handled correctly (GitHub web edits, Windows contributors).
+#   sf.F02: track block-scalar context (key ending with | or >) so a bare ---
+#           at column 0 inside a block scalar is not mistaken for the closing
+#           frontmatter delimiter; only exit when not inside a block scalar.
 _frontmatter() {
   awk '
+    { gsub(/\r$/, "") }
     /^---$/ {
-      n++
-      if (n == 1) { next }
-      if (n == 2) { exit }
+      if (!in_scalar) {
+        n++
+        if (n == 1) { next }
+        if (n == 2) { exit }
+      }
     }
-    n == 1 { print }
+    n == 1 {
+      if (/:[[:space:]]*[|>][[:space:]]*$/) { in_scalar = 1 }
+      else if (in_scalar && /^[^[:space:]]/ && !/^---$/) { in_scalar = 0 }
+      print
+    }
   ' "$1"
 }
 
@@ -134,6 +148,57 @@ SCRIPT
   # 5. The rendered message must include the literal error format marker.
   [[ "$output" == *"forbidden top-level frontmatter key 'model:'"* ]] || {
     echo "sweep output did not include error format text; got: $output"
+    return 1
+  }
+}
+
+@test "[agent-frontmatter-no-model] CRLF line endings: model: key detected in CRLF-terminated frontmatter" {
+  # sf.F01: _frontmatter() used /^---$/ which does not match ---\r on
+  # CRLF-terminated files. Any file with model: sonnet in CRLF frontmatter
+  # silently passes. This test asserts the violation IS detected despite
+  # CRLF endings (i.e., CR must be stripped before delimiter matching).
+  local fixture="${BATS_TEST_TMPDIR}/qrspi-test-crlf-model.md"
+  # Write the fixture with CRLF line endings throughout. Use %s\r\n
+  # format to avoid printf treating leading dashes as option flags.
+  printf '%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n\r\n%s\r\n' \
+    '---' 'name: qrspi-test-crlf' 'model: sonnet' \
+    'description: "CRLF fixture"' 'tools: Read' '---' 'Body text.' \
+    >"$fixture"
+
+  # The sweep must detect the model: violation even with CRLF line endings.
+  local offending_line
+  offending_line=$(_frontmatter "$fixture" | grep -nE '^model:' || true)
+  [ -n "$offending_line" ] || {
+    echo "CRLF: model: key not detected — _frontmatter does not strip CR from delimiter lines"
+    return 1
+  }
+}
+
+@test "[agent-frontmatter-no-model] block-scalar: bare --- in block-scalar context does not prematurely close frontmatter" {
+  # sf.F02: _frontmatter() exits on the second /^---$/ match. A YAML
+  # block scalar (description: |) followed immediately by a bare --- at
+  # column 0 causes awk to treat that inner --- as the close delimiter
+  # (n==2) and exit before reaching a real model: key that follows.
+  # This test asserts that model: sonnet IS detected as a violation even
+  # when a bare --- appears earlier in a block-scalar context.
+  local fixture="${BATS_TEST_TMPDIR}/qrspi-test-blockscalar-model.md"
+  cat >"$fixture" <<'EOF'
+---
+name: qrspi-test-blockscalar
+description: |
+---
+model: sonnet
+---
+
+Body text.
+EOF
+
+  # The sweep must detect model: sonnet; the inner --- (block-scalar
+  # context) must not be treated as the frontmatter close delimiter.
+  local offending_line
+  offending_line=$(_frontmatter "$fixture" | grep -nE '^model:' || true)
+  [ -n "$offending_line" ] || {
+    echo "block-scalar: model: key not detected — _frontmatter exited prematurely on inner --- (block-scalar context)"
     return 1
   }
 }
