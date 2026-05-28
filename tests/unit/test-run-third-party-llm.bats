@@ -171,6 +171,17 @@ CURL_EOF
   [ ! -f "$OUTPUT_FILE" ]
 }
 
+@test "exit 1: api_key_env containing invalid shell-identifier char (hyphen) exits with key-resolution diagnostic" {
+  # A hyphen in the api_key_env field name is not a valid shell-identifier
+  # character ([A-Za-z0-9_]); the identifier validator must catch this before
+  # attempting indirect expansion, exiting with a key-resolution diagnostic.
+  _write_config_openai "$FIXTURE_DIR" p1 https://api.example.com MY-BAD-KEY false false
+  run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"key-resolution"* ]]
+  [ ! -f "$OUTPUT_FILE" ]
+}
+
 # ---------------------------------------------------------------------------
 # Prompt-injection abort via real sourced llm-prompt-utils.sh library.
 # A stdin prompt containing the wrapper-private marker the library guards
