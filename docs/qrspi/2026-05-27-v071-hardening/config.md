@@ -19,6 +19,9 @@ route:
 verifier_enabled: true
 scope_tagger_enabled: true
 visual_fidelity_required: false
+review_depth: deep
+review_mode: loop_until_clean
+phase: 1
 ---
 
 # QRSPI Configuration — v0.7.1 hardening
