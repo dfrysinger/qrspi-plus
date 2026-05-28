@@ -32,6 +32,7 @@
 #   - No wait -n
 
 set -u
+set -o pipefail
 
 # Resolve the directory containing this script so we can source lib/ reliably.
 _SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -219,8 +220,20 @@ _control_char_check() {
     | LC_ALL=C tr -d '\040-\176\200-\377' \
     | wc -c \
     | tr -d ' \t')
-  [ "$_cc_count" -eq 0 ] || \
-    die "header-validation: default_headers for provider '${PROVIDER:-}' contains a control character in header '$_cc_hname'"
+  # Sanitise the header name before embedding in any die message to prevent
+  # raw control bytes (e.g. ESC sequences) from manipulating the operator's
+  # terminal and hiding the security abort notification.
+  local _safe_hname
+  _safe_hname=$(printf '%s' "$_cc_hname" | LC_ALL=C tr '\000-\037\177' '?')
+  # Fail closed: if the pipeline returns empty or non-numeric output (e.g.
+  # due to SIGPIPE or tool failure), die immediately rather than silently
+  # bypassing control-char detection (fail-open via [ "" -eq 0 ]).
+  case "$_cc_count" in
+    ''|*[!0-9]*) die "header-validation: failed to compute byte count for header '$_safe_hname' on provider '${PROVIDER:-}' (pipeline/tool failure)" ;;
+  esac
+  if [ "$_cc_count" -ne 0 ]; then
+    die "header-validation: provider '${PROVIDER:-}' — control character in header/key field '$_safe_hname'"
+  fi
 }
 
 # ---------------------------------------------------------------------------

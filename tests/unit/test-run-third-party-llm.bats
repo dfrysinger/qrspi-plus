@@ -693,7 +693,7 @@ _extract_ctrl_check_fn() {
 }
 
 # ---------------------------------------------------------------------------
-# security-claude F03: _control_char_check must NOT reject non-ASCII (0x80-0xFF).
+# _control_char_check must NOT reject non-ASCII (0x80-0xFF).
 # Spec covers C0 (0x00-0x1F) and DEL (0x7F) only; bytes 0x80-0xFF are not
 # in scope and must not cause spurious abort (false-positive DoS).
 # ---------------------------------------------------------------------------
@@ -713,13 +713,13 @@ _extract_ctrl_check_fn() {
 }
 
 # ---------------------------------------------------------------------------
-# sf-codex F01 / sf-claude F02: NUL pre-flight must die when the byte-count
-# pipeline returns empty (fail-closed on tool failure, not fail-open).
-# A stub wc that outputs nothing simulates a pipeline / tool failure.
-# Without the numeric guard the comparison is silently skipped (fail-open).
-# With the guard the script dies with a "failed to compute" diagnostic.
-# A config without default_headers is used so _control_char_check (which
-# also calls wc) is never reached; only the NUL pre-flight uses wc here.
+# NUL pre-flight must die when the byte-count pipeline returns empty
+# (fail-closed on tool failure, not fail-open).  A stub wc that outputs
+# nothing simulates a pipeline / tool failure.  Without the numeric guard
+# the comparison is silently skipped (fail-open).  With the guard the script
+# dies with a "failed to compute" diagnostic.  A config without
+# default_headers is used so _control_char_check (which also calls wc) is
+# never reached; only the NUL pre-flight uses wc here.
 # ---------------------------------------------------------------------------
 
 @test "[control-char-detect] NUL pre-flight fails closed when byte-count pipeline returns empty" {
@@ -756,10 +756,9 @@ _extract_ctrl_check_fn() {
 }
 
 # ---------------------------------------------------------------------------
-# security-claude F01: API key value must be screened for control characters
-# before being placed into the Authorization header.
-# A clean config with no custom-header control chars is used so only the API
-# key check is the failing gate.
+# API key value must be screened for control characters before being placed
+# into the Authorization header.  A clean config with no custom-header
+# control chars is used so only the API key check is the failing gate.
 # ---------------------------------------------------------------------------
 
 @test "[control-char-detect] API key containing control character causes exit before network dispatch" {
@@ -776,4 +775,106 @@ _extract_ctrl_check_fn() {
        --output-file '$FIXTURE_DIR/out.txt'"
   [ "$status" -eq 1 ]
   [[ "$output" == *"header-validation"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# set -o pipefail must appear in the dispatcher script so that intermediate
+# pipeline failures are not silently masked by the final stage's exit code.
+# Without pipefail, a crashed tool in the middle of a pipeline exits 0 if
+# the final stage succeeds, silently hiding security-critical failures.
+# ---------------------------------------------------------------------------
+
+@test "[script-hygiene] set -o pipefail appears in dispatcher script" {
+  # Guards against regressions that would remove pipefail and silently mask
+  # intermediate pipeline failures in security-critical paths (e.g. the NUL
+  # pre-flight and _control_char_check pipelines).
+  run grep -F 'set -o pipefail' "$DISPATCHER"
+  [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# _control_char_check must fail closed when its byte-count pipeline returns
+# empty or non-numeric output (e.g. due to SIGPIPE or tool failure).
+# Without a numeric validity guard, [ "" -eq 0 ] silently succeeds and
+# control characters pass through undetected (fail-open).  The case guard
+# must die with a "failed to compute byte count" diagnostic instead.
+# Structural assertion: the case guard pattern exists in the helper body.
+# ---------------------------------------------------------------------------
+
+@test "[control-char-detect] _control_char_check body contains numeric guard for empty/non-numeric byte count" {
+  # Guards against a fail-open regression where a crashed pipeline emits no
+  # output and the arithmetic test [ "" -eq 0 ] silently succeeds, allowing
+  # control characters to pass through undetected.
+  local fn_file="$FIXTURE_DIR/ctrl_fn.sh"
+  _extract_ctrl_check_fn "$fn_file"
+  [ -s "$fn_file" ]
+
+  # The function body must contain the fail-closed numeric validity guard.
+  run grep -F "''|*[!0-9]*)" "$fn_file"
+  [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# Control bytes in a header name must be sanitised before embedding in the
+# die message.  A raw ESC byte (0x1B) in a die message can trigger terminal
+# escape sequences (e.g. erase-line, cursor-up) that hide the security abort
+# notification from the operator.  All C0 and DEL bytes must be replaced with
+# a safe substitute (e.g. '?') before the message is emitted.
+# ---------------------------------------------------------------------------
+
+@test "[control-char-detect] ESC byte in header name is sanitised in die message (no raw 0x1B in output)" {
+  # Guards against terminal-manipulation via raw ESC sequences in die messages:
+  # an attacker-controlled header name containing ESC sequences could erase
+  # terminal output and hide the security abort notification.
+  local fn_file="$FIXTURE_DIR/ctrl_fn.sh"
+  _extract_ctrl_check_fn "$fn_file"
+  [ -s "$fn_file" ]
+
+  # Call _control_char_check with an ESC byte in the header name.
+  # The die message must not contain the raw ESC byte (0x1B).
+  local esc_byte
+  esc_byte=$(printf '\033')
+  run bash -c "
+    die() { printf '%s\n' \"\$1\" >&2; exit 1; }
+    . '$fn_file'
+    _control_char_check 'X-Header${esc_byte}ESC' 'safe-value'
+  "
+  [ "$status" -eq 1 ]
+  # The output must still identify it as a header-validation failure.
+  # (Use [[ ]] for positive glob match; [ ] is used for the ESC count below.)
+  [[ "$output" == *"header-validation"* ]]
+  # The raw ESC byte (0x1B) must NOT appear in the output.
+  # Use [ ] (not [[ ]]) so a non-zero count properly fails the test via bats ERR trap.
+  local _esc_count
+  _esc_count=$(printf '%s' "$output" | LC_ALL=C tr -cd '\033' | wc -c | tr -d ' \t')
+  [ "$_esc_count" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# die message for an API key control-char violation must NOT contain the
+# text "default_headers".  The API key is checked via the same helper as
+# default_headers, but the die message must not point operators at the wrong
+# config block when the violation source is the API key field.
+# ---------------------------------------------------------------------------
+
+@test "[control-char-detect] die message for API-key control-char does not contain 'default_headers'" {
+  # Guards against a misleading die message that says "default_headers" even
+  # when the violation is in the API key, causing operators to waste time
+  # inspecting the wrong config block.
+  _write_ctrl_config "$FIXTURE_DIR" "X-Safe" "safe-value"
+  _install_stub_curl
+  # CR (0x0D) embedded in the key is a canonical CRLF-injection vector.
+  CTRL_TEST_KEY="sk-ok$(printf '\015')injected" QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c \
+    "printf 'test-prompt\n' | '$DISPATCHER' \
+       --artifact-dir '$FIXTURE_DIR' \
+       --provider ctrl-test-prov \
+       --model test-model \
+       --output-file '$FIXTURE_DIR/out.txt'"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"header-validation"* ]]
+  # Must NOT blame the wrong config block.
+  # Save $output before overwriting with a second run; use [ ] so failures are caught.
+  local _saved_output="$output"
+  run grep -F 'default_headers' <<< "$_saved_output"
+  [ "$status" -ne 0 ]
 }
