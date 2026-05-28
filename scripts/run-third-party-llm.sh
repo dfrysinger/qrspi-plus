@@ -194,10 +194,12 @@ IPEOF2
 #
 # Rejects any header name or value that contains a control byte.
 # Covered byte ranges: C0 (0x00-0x1F) and DEL (0x7F).
+# Non-ASCII bytes (0x80-0xFF) are outside spec scope and are not flagged.
 #
-# Detection method: LC_ALL=C tr deletes all printable ASCII bytes
-# (0x20-0x7E, octal \040-\176). Anything remaining after deletion is a
-# control byte. The byte count is taken by wc -c on the same pipeline so
+# Detection method: LC_ALL=C tr deletes printable-ASCII bytes (0x20-0x7E,
+# octal \040-\176) and non-ASCII bytes (0x80-0xFF, octal \200-\377).
+# Anything remaining after deletion is a C0 or DEL control byte.
+# The byte count is taken by wc -c on the same pipeline so
 # command-substitution trailing-newline stripping does not affect the
 # count -- LF inside an argument is correctly detected this way.
 #
@@ -209,12 +211,12 @@ IPEOF2
 _control_char_check() {
   local _cc_hname="$1" _cc_hval="$2"
   local _cc_count
-  # Delete printable-ASCII bytes (space through tilde, octal \040-\176).
-  # DEL (octal \177 = 0x7F) is outside this range and survives deletion.
-  # LF inside the argument is also outside this range and survives; wc -c
-  # counts it before command substitution can strip trailing newlines.
+  # Delete printable-ASCII bytes (space through tilde, octal \040-\176) and
+  # non-ASCII bytes (0x80-0xFF, octal \200-\377) so only C0 control bytes
+  # (0x00-0x1F) and DEL (0x7F) survive.  LF inside the argument also
+  # survives; wc -c counts it before command substitution strips newlines.
   _cc_count=$(printf '%s' "$_cc_hname$_cc_hval" \
-    | LC_ALL=C tr -d '\040-\176' \
+    | LC_ALL=C tr -d '\040-\176\200-\377' \
     | wc -c \
     | tr -d ' \t')
   [ "$_cc_count" -eq 0 ] || \
@@ -593,8 +595,16 @@ if [ "$TRANSPORT_TYPE" = "openai-chat-completions" ]; then
   #    removal; any difference means NUL bytes are present in the file.
   _raw_file_bytes=$(wc -c < "$CONFIG_MD" | tr -d ' \t')
   _raw_no_nul_bytes=$(LC_ALL=C tr -d '\000' < "$CONFIG_MD" | wc -c | tr -d ' \t')
+  # Fail closed: if either count is non-numeric (pipeline/tool failure), die
+  # immediately rather than silently bypassing NUL detection (fail-open).
+  case "$_raw_file_bytes" in
+    ''|*[!0-9]*) die "header-validation: failed to compute byte counts for NUL pre-flight on config.md for provider '$PROVIDER'" ;;
+  esac
+  case "$_raw_no_nul_bytes" in
+    ''|*[!0-9]*) die "header-validation: failed to compute byte counts for NUL pre-flight on config.md for provider '$PROVIDER'" ;;
+  esac
   if [ "$_raw_file_bytes" -ne "$_raw_no_nul_bytes" ]; then
-    die "header-validation: config.md for provider '$PROVIDER' contains NUL bytes in header configuration"
+    die "header-validation: config.md for provider '$PROVIDER' contains NUL bytes (raw byte scan of entire file); NUL in header values is rejected because bash strips NUL at variable assignment"
   fi
 
   # 5. default_headers: no control characters in name or value.
@@ -616,13 +626,27 @@ fi
 # Applies to openai-chat-completions only; codex-broker manages its own auth.
 _API_KEY=""
 if [ "$TRANSPORT_TYPE" = "openai-chat-completions" ]; then
+  # Defence-in-depth: validate api_key_env is a well-formed shell identifier
+  # before using it in indirect expansion.  The env-var presence check below
+  # would catch most malformed values but this guard makes the invariant
+  # explicit and avoids any reliance on eval behaviour.
+  case "$API_KEY_ENV" in
+    ''|*[!A-Za-z0-9_]*) die "key-resolution: api_key_env must be a valid shell identifier (for provider '$PROVIDER')" ;;
+  esac
   if ! env | grep -q "^${API_KEY_ENV}="; then
     die "key-resolution: environment variable '$API_KEY_ENV' (api_key_env for provider '$PROVIDER') is not set"
   fi
-  eval '_API_KEY="${'"$API_KEY_ENV"':-}"'
+  # Use bash indirect expansion instead of eval to avoid any eval-injection
+  # risk.  API_KEY_ENV is validated as a pure identifier above.
+  _API_KEY="${!API_KEY_ENV:-}"
   if [ -z "$_API_KEY" ]; then
     die "key-resolution: environment variable '$API_KEY_ENV' (api_key_env for provider '$PROVIDER') is set but empty — fail-closed to prevent silent empty-Authorization-header"
   fi
+  # Screen the API key for control characters: it is placed verbatim into the
+  # Authorization header, so the same injection risk applies as for any other
+  # header value.  Use the "api_key_env/<var>" label so the die message
+  # identifies the source without leaking the key value itself.
+  _control_char_check "api_key_env/${API_KEY_ENV}" "$_API_KEY"
 fi
 
 # ---------------------------------------------------------------------------

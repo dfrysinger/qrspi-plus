@@ -362,8 +362,7 @@ EOF
 # RED rationale: the current code uses `grep -qP '[\x00-\x1f\x7f]' 2>/dev/null`
 # which is silently suppressed on macOS system grep (no PCRE support), making
 # header-validation a no-op.  On GNU grep, LF is missed because it is grep's
-# own record delimiter.  The _control_char_check helper does not yet exist.
-# All tests below are genuinely failing against the un-implemented source.
+# own record delimiter.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -509,7 +508,6 @@ _extract_ctrl_check_fn() {
 # grep -P call is silently suppressed by 2>/dev/null.
 # LF cannot survive the awk line-based config parse into HEADER_VALUES so
 # _control_char_check is exercised directly via function extraction.
-# RED: function is absent from current source (not yet implemented).
 # ---------------------------------------------------------------------------
 
 @test "[control-char-detect] LF (0x0A) caught by _control_char_check - regression guard for grep record-delimiter gap" {
@@ -518,7 +516,7 @@ _extract_ctrl_check_fn() {
   # LF was silently missed because it is grep's record delimiter
   local fn_file="$FIXTURE_DIR/ctrl_fn.sh"
   _extract_ctrl_check_fn "$fn_file"
-  # RED: _control_char_check is not yet implemented in the dispatcher.
+  # Guard: function must be extractable — fails loud if accidentally removed.
   [ -s "$fn_file" ]
 
   # Build a test script that passes a literal LF-containing string to the
@@ -544,10 +542,8 @@ _extract_ctrl_check_fn() {
 # ---------------------------------------------------------------------------
 # Bullet 6 — NUL (0x00) causes exit, not silent skip.
 # NUL is stripped by bash variable assignment so it never reaches HEADER_VALUES
-# via the normal awk→bash path.  The new implementation must detect it via a
-# raw-byte scan of the config file (or equivalent mechanism) rather than
-# treating the absence-after-strip as "no control character present".
-# RED: current grep -P loop cannot see NUL (bash strips it from variables).
+# via the normal awk-to-bash path.  The implementation detects it via a
+# raw-byte scan of the config file that runs before the awk parse.
 # ---------------------------------------------------------------------------
 
 @test "[control-char-detect] NUL (0x00) in header value causes exit not silent skip or binary false-negative" {
@@ -583,7 +579,6 @@ _extract_ctrl_check_fn() {
 # ---------------------------------------------------------------------------
 # Bullet 7 — Empty header name and empty value do NOT trigger false-positive.
 # Tested via direct _control_char_check call.
-# RED: function absent from current source.
 # ---------------------------------------------------------------------------
 
 @test "[control-char-detect] empty header name and empty value do not trigger false-positive die" {
@@ -591,7 +586,7 @@ _extract_ctrl_check_fn() {
   # trigger the die path (no false positive on empty input)
   local fn_file="$FIXTURE_DIR/ctrl_fn.sh"
   _extract_ctrl_check_fn "$fn_file"
-  # RED: function not yet implemented.
+  # Guard: function must be extractable — fails loud if accidentally removed.
   [ -s "$fn_file" ]
 
   run bash -c "die() { exit 1; }; . '$fn_file'; _control_char_check '' ''"
@@ -599,9 +594,8 @@ _extract_ctrl_check_fn() {
 }
 
 # ---------------------------------------------------------------------------
-# Bullet 8 — Printable ASCII (0x20–0x7E) does NOT trigger die path.
+# Bullet 8 — Printable ASCII (0x20-0x7E) does NOT trigger die path.
 # Tested via direct _control_char_check call.
-# RED: function absent from current source.
 # ---------------------------------------------------------------------------
 
 @test "[control-char-detect] printable-ASCII-only header does not trigger die path" {
@@ -610,7 +604,7 @@ _extract_ctrl_check_fn() {
   # to continue
   local fn_file="$FIXTURE_DIR/ctrl_fn.sh"
   _extract_ctrl_check_fn "$fn_file"
-  # RED: function not yet implemented.
+  # Guard: function must be extractable — fails loud if accidentally removed.
   [ -s "$fn_file" ]
 
   run bash -c "die() { exit 1; }; . '$fn_file'; _control_char_check 'X-Custom-Header' 'Bearer safe-token_v1.2+ok!'"
@@ -657,7 +651,6 @@ _extract_ctrl_check_fn() {
 # Bullet 11 — Structural: _control_char_check body must not use grep -P.
 # PCRE (-P) is absent from macOS system grep; 2>/dev/null turned detection
 # into a silent no-op there.  The replacement must be POSIX-clean.
-# RED: function is absent from current source.
 # ---------------------------------------------------------------------------
 
 @test "[control-char-detect] _control_char_check helper body contains no grep -P (POSIX-clean structural assertion)" {
@@ -665,7 +658,7 @@ _extract_ctrl_check_fn() {
   # grep -P invocation (structural code-pattern assertion)
   local fn_file="$FIXTURE_DIR/ctrl_fn.sh"
   _extract_ctrl_check_fn "$fn_file"
-  # RED: function not yet defined in the current source.
+  # Guard: function must be extractable — fails loud if accidentally removed.
   [ -s "$fn_file" ]
 
   # The extracted function body must contain no grep -P flag in any form.
@@ -686,4 +679,90 @@ _extract_ctrl_check_fn() {
   [[ "$output" == *"header-validation"* ]]
   [[ "$output" == *"ctrl-test-prov"* ]]
   [[ "$output" == *"X-Named-Header"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# security-claude F03: _control_char_check must NOT reject non-ASCII (0x80-0xFF).
+# Spec covers C0 (0x00-0x1F) and DEL (0x7F) only; bytes 0x80-0xFF are not
+# in scope and must not cause spurious abort (false-positive DoS).
+# ---------------------------------------------------------------------------
+
+@test "[control-char-detect] non-ASCII byte (0x80) in header value does NOT trigger false-positive die" {
+  # Spec: covered byte ranges are C0 (0x00-0x1F) and DEL (0x7F).
+  # Bytes 0x80-0xFF (UTF-8 continuation, Latin-1 extended, C1 controls) are
+  # outside spec scope and must not trigger the die path.
+  # Tested via direct function call because the awk config parser drops
+  # non-ASCII bytes from config.md before they reach HEADER_VALUES.
+  local fn_file="$FIXTURE_DIR/ctrl_fn.sh"
+  _extract_ctrl_check_fn "$fn_file"
+  [ -s "$fn_file" ]
+
+  run bash -c "die() { exit 1; }; . '$fn_file'; _control_char_check 'X-Header' 'safe$(printf '\200')value'"
+  [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# sf-codex F01 / sf-claude F02: NUL pre-flight must die when the byte-count
+# pipeline returns empty (fail-closed on tool failure, not fail-open).
+# A stub wc that outputs nothing simulates a pipeline / tool failure.
+# Without the numeric guard the comparison is silently skipped (fail-open).
+# With the guard the script dies with a "failed to compute" diagnostic.
+# A config without default_headers is used so _control_char_check (which
+# also calls wc) is never reached; only the NUL pre-flight uses wc here.
+# ---------------------------------------------------------------------------
+
+@test "[control-char-detect] NUL pre-flight fails closed when byte-count pipeline returns empty" {
+  # Config with NUL bytes in the file body but no default_headers entry so
+  # the header-loop wc call is never reached.
+  {
+    printf '%s\n' '---'
+    printf '%s\n' 'providers:'
+    printf '%s\n' '  ctrl-test-prov:'
+    printf '%s\n' '    base_url: https://127.0.0.1/v1'
+    printf '%s\n' '    api_key_env: CTRL_TEST_KEY'
+    printf '%s\n' '    transport_type: openai-chat-completions'
+    printf '%s\n' '    supports_prompt_cache: false'
+    printf '%s\n' '    emit_cache_control_markers: false'
+    printf '%s\n' '---'
+    printf 'body with '
+    printf '\000'
+    printf ' nul byte\n'
+    printf '%s\n' '# Config'
+  } > "$FIXTURE_DIR/config.md"
+  # Stub wc in the same bin dir that _install_stub_curl uses so PATH sees it.
+  mkdir -p "$FIXTURE_DIR/bin"
+  printf '%s\n' '#!/usr/bin/env bash' > "$FIXTURE_DIR/bin/wc"
+  chmod +x "$FIXTURE_DIR/bin/wc"
+  _install_stub_curl
+  CTRL_TEST_KEY=dummykey QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c \
+    "printf 'test-prompt\n' | '$DISPATCHER' \
+       --artifact-dir '$FIXTURE_DIR' \
+       --provider ctrl-test-prov \
+       --model test-model \
+       --output-file '$FIXTURE_DIR/out.txt'"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"failed to compute"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# security-claude F01: API key value must be screened for control characters
+# before being placed into the Authorization header.
+# A clean config with no custom-header control chars is used so only the API
+# key check is the failing gate.
+# ---------------------------------------------------------------------------
+
+@test "[control-char-detect] API key containing control character causes exit before network dispatch" {
+  # API key is used verbatim in the Authorization header; a control char in
+  # the key value must trigger the same die path as default_headers violations.
+  _write_ctrl_config "$FIXTURE_DIR" "X-Safe" "safe-value"
+  _install_stub_curl
+  # CR (0x0D) embedded in the key is a canonical CRLF-injection vector.
+  CTRL_TEST_KEY="sk-ok$(printf '\015')X-Injected: evil" QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c \
+    "printf 'test-prompt\n' | '$DISPATCHER' \
+       --artifact-dir '$FIXTURE_DIR' \
+       --provider ctrl-test-prov \
+       --model test-model \
+       --output-file '$FIXTURE_DIR/out.txt'"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"header-validation"* ]]
 }
