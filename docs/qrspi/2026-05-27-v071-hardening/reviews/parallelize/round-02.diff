@@ -1,0 +1,25 @@
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/parallelization.md b/docs/qrspi/2026-05-27-v071-hardening/parallelization.md
+index b2a8005..50e9ed9 100644
+--- a/docs/qrspi/2026-05-27-v071-hardening/parallelization.md
++++ b/docs/qrspi/2026-05-27-v071-hardening/parallelization.md
+@@ -29,8 +29,11 @@ status: draft
+ - **task-01 → task-08** both modify `scripts/run-third-party-llm.sh` and `tests/unit/test-run-third-party-llm.bats`. task-08's edits depend on task-01's POSIX control-char helper landing first; resolved via the stage-after-W2 fork.
+ - **task-07 → task-08** both modify `skills/using-qrspi/SKILL.md` and `tests/acceptance/v07-phase1/test-phase1-acceptance.bats`. task-08 retires cache prose after task-07 adds the per-host Codex transport prose; resolved via the stage-after-W2 fork.
+ - **task-08 → task-10** both modify `skills/using-qrspi/SKILL.md`. task-10 adds the Model Routing section after task-08 has removed the cache-mechanism prose; resolved via the stage-after-W4 fork.
++- **task-07 ↔ task-10** both modify `skills/using-qrspi/SKILL.md`. task-07 adds per-host Codex transport prose; task-10 adds a Model Routing section. Resolution is transitive through the task-07 → stage-after-W2 → task-08 → stage-after-W4 → task-10 chain (task-07 lands first, task-08 retires cache prose, task-10 then adds Model Routing prose), so no direct stage commit between task-07 and task-10 is required.
+ - **task-09 → task-10** both modify `tests/unit/test-agent-frontmatter-no-model.bats`. task-09 creates the file with the no-`model:`-key sweep; task-10 extends it with `model_routing` table assertions. Resolved via the stage-after-W4 fork.
+ 
++All other task pairs are file-disjoint by inspection of the per-task Files column in the Dependency Analysis table above.
++
+ ## Branch Map
+ 
+ | Task | Branch | Base |
+@@ -70,7 +73,7 @@ status: draft
+ 
+ **Wave 5** (base: stage-after-W4) -- fires when `stage-after-W4 = merge(task-08 tip, task-09 tip)` exists, which requires task-08 (Wave 4) and task-09 (Wave 1) both complete. Single task: task-10.
+ 
+-Wave numbering does not imply strict dispatch ordering: Waves 2 and 3 fire concurrently once their single-parent dependencies clear; Wave 4 fires as soon as `stage-after-W2` is created (does not wait on Wave 3); Wave 5 fires after Wave 4 leaves and task-09 are both available.
++Wave numbering does not imply strict dispatch ordering: Waves 2 and 3 fire concurrently once their single-parent dependencies clear; Wave 4 fires as soon as `stage-after-W2` is created (does not wait on Wave 3); Wave 5 fires after `stage-after-W4` is created, which requires Wave 4's leaf (task-08 tip) and task-09 tip to both be available.
+ 
+ ## Worktree-Aware Setup Validation
+ 

@@ -1,0 +1,113 @@
+---
+status: approved
+---
+
+# Parallelization Plan: qrspi-plus v0.7.1 Hardening -- Phase 1
+
+## Execution Mode
+
+**Hybrid.** Six tasks have no dependencies and dispatch in Wave 1; three downstream Waves chain off single-parent forks (T7, T4) or stage commits (T8, T10) that compose tips from multiple prior Waves.
+
+## Dependency Analysis
+
+| Task | Dependencies | Files | Wave |
+|------|--------------|-------|------|
+| task-01 | none | `scripts/run-third-party-llm.sh`, `tests/unit/test-run-third-party-llm.bats` | 1 |
+| task-02 | none | `.gitignore`, `tests/unit/test-commit-hygiene-invariants.bats` | 1 |
+| task-03 | none | `tests/helpers/skill-markdown.bash`, `tests/unit/test-skill-md-content-patterns.bats`, `tests/unit/test-helpers-skill-markdown.bats` | 1 |
+| task-05 | none | `tests/unit/test-evergreen-markdown.bats` | 1 |
+| task-06 | none | `scripts/run-codex-review.sh`, `tests/unit/test-host-detection.bats` (create) | 1 |
+| task-09 | none | 41 × `agents/qrspi-*.md` (modify), `tests/unit/test-agent-frontmatter-no-model.bats` (create) | 1 |
+| task-07 | task-06 | `skills/using-qrspi/SKILL.md`, `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` | 2 |
+| task-04 | none (file-conflict with task-09) | `skills/parallelize/SKILL.md`, `agents/qrspi-parallelize-reviewer.md`, `tests/unit/test-parallelize-vocab.bats` | 3 |
+| task-08 | task-01, task-07 | `scripts/g4-cache-probe.sh` (delete), `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` (delete), `tests/unit/test-cache-control-capability-gate.bats` (delete), `tests/unit/test-cache-hit-rate.bats` (delete), `skills/using-qrspi/SKILL.md` (modify), `scripts/run-third-party-llm.sh` (modify), `tests/unit/test-run-third-party-llm.bats` (modify), `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` (modify), `tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats` (create) | 4 |
+| task-10 | task-08, task-09 | `docs/qrspi/2026-05-27-v071-hardening/config.md`, `skills/using-qrspi/SKILL.md`, `tests/unit/test-agent-frontmatter-no-model.bats` (modify) | 5 |
+
+**File-overlap resolution notes:**
+
+- **task-04 vs task-09** both target `agents/qrspi-parallelize-reviewer.md`. task-09 strips the frontmatter `model:` key from all 41 agent files; task-04 adds Wave sub-section structural-rule prose to the body of `qrspi-parallelize-reviewer.md`. The two edits sit in disjoint file regions but Wave membership requires file-disjointness, so task-04 forks from task-09 tip (Wave 3) rather than running alongside task-09 in Wave 1.
+- **task-01 → task-08** both modify `scripts/run-third-party-llm.sh` and `tests/unit/test-run-third-party-llm.bats`. task-08's edits depend on task-01's POSIX control-char helper landing first; resolved via the stage-after-W2 fork.
+- **task-07 → task-08** both modify `skills/using-qrspi/SKILL.md` and `tests/acceptance/v07-phase1/test-phase1-acceptance.bats`. task-08 retires cache prose after task-07 adds the per-host Codex transport prose; resolved via the stage-after-W2 fork.
+- **task-08 → task-10** both modify `skills/using-qrspi/SKILL.md`. task-10 adds the Model Routing section after task-08 has removed the cache-mechanism prose; resolved via the stage-after-W4 fork.
+- **task-07 ↔ task-10** both modify `skills/using-qrspi/SKILL.md`. task-07 adds per-host Codex transport prose; task-10 adds a Model Routing section. Resolution is transitive through the task-07 → stage-after-W2 → task-08 → stage-after-W4 → task-10 chain (task-07 lands first, task-08 retires cache prose, task-10 then adds Model Routing prose), so no direct stage commit between task-07 and task-10 is required.
+- **task-09 → task-10** both modify `tests/unit/test-agent-frontmatter-no-model.bats`. task-09 creates the file with the no-`model:`-key sweep; task-10 extends it with `model_routing` table assertions. Resolved via the stage-after-W4 fork.
+
+All other task pairs are file-disjoint by inspection of the per-task Files column in the Dependency Analysis table above.
+
+## Branch Map
+
+| Task | Branch | Base |
+|------|--------|------|
+| task-01 | `qrspi/v0.7.1-hardening/task-01` | feature branch tip |
+| task-02 | `qrspi/v0.7.1-hardening/task-02` | feature branch tip |
+| task-03 | `qrspi/v0.7.1-hardening/task-03` | feature branch tip |
+| task-05 | `qrspi/v0.7.1-hardening/task-05` | feature branch tip |
+| task-06 | `qrspi/v0.7.1-hardening/task-06` | feature branch tip |
+| task-09 | `qrspi/v0.7.1-hardening/task-09` | feature branch tip |
+| task-07 | `qrspi/v0.7.1-hardening/task-07` | task-06 tip |
+| task-04 | `qrspi/v0.7.1-hardening/task-04` | task-09 tip |
+| task-08 | `qrspi/v0.7.1-hardening/task-08` | stage-after-W2 |
+| task-10 | `qrspi/v0.7.1-hardening/task-10` | stage-after-W4 |
+
+## Stage Commits
+
+| Stage branch | Composition | Created before |
+|--------------|-------------|----------------|
+| `qrspi/v0.7.1-hardening/stage-after-W2` | merge(task-01 tip, task-07 tip) | Wave 4 (task-08 fork) |
+| `qrspi/v0.7.1-hardening/stage-after-W4` | merge(task-08 tip, task-09 tip) | Wave 5 (task-10 fork) |
+
+**Stage commit notes:**
+
+- `stage-after-W2` composes task-01 (Wave 1) and task-07 (Wave 2) tips; task-08 depends on both per its `Dependencies: Task 1, Task 7` field.
+- `stage-after-W4` composes task-08 (Wave 4) and task-09 (Wave 1) tips; task-10 depends on both per its `Dependencies: Task 8, Task 9` field. task-09's tip is long-lived from Wave 1 and is reused here.
+
+## Execution Order
+
+**Wave 1** (base: feature branch tip) -- fires at phase start. Six independent, file-disjoint tasks: task-01, task-02, task-03, task-05, task-06, task-09.
+
+**Wave 2** (base: task-06 tip) -- fires when task-06 completes. Single task: task-07. Independent of Waves 3 and 4 progress.
+
+**Wave 3** (base: task-09 tip) -- fires when task-09 completes. Single task: task-04. Concurrent with Wave 2 once both task-06 and task-09 have completed.
+
+**Wave 4** (base: stage-after-W2) -- fires when `stage-after-W2 = merge(task-01 tip, task-07 tip)` exists, which requires task-01 (Wave 1) and task-07 (Wave 2) both complete. Single task: task-08.
+
+**Wave 5** (base: stage-after-W4) -- fires when `stage-after-W4 = merge(task-08 tip, task-09 tip)` exists, which requires task-08 (Wave 4) and task-09 (Wave 1) both complete. Single task: task-10.
+
+Wave numbering does not imply strict dispatch ordering: Waves 2 and 3 fire concurrently once their single-parent dependencies clear; Wave 4 fires as soon as `stage-after-W2` is created (does not wait on Wave 3); Wave 5 fires after `stage-after-W4` is created, which requires Wave 4's leaf (task-08 tip) and task-09 tip to both be available.
+
+## Worktree-Aware Setup Validation
+
+**Not applicable.** qrspi-plus is a pure shell + markdown project: no `eslint.config.js`, no `tsconfig.json`, no `vitest.config.*`, no framework build directory (`.next/`, `dist/`, `build/`). BATS test invocations name each `.bats` file explicitly via the existing CI matrix; no recursive glob walks the worktree tree. No exclusions needed; no remediation guidance to surface.
+
+## Reference Gates
+
+**None.** No Phase 1 task carries `reference_gate: true` in its plan-task spec. All tasks dispatch under standard QRSPI per-task TDD + review flow.
+
+## Dependency Graph
+
+```mermaid
+graph TD
+  W1[Wave 1<br/>base: feature branch tip]
+  W1 --> T1[task-01: control-char]
+  W1 --> T2[task-02: gitignore]
+  W1 --> T3[task-03: fence helper]
+  W1 --> T5[task-05: evergreen carve-out]
+  W1 --> T6[task-06: host-detection]
+  W1 --> T9[task-09: agent model: delete]
+
+  T6 --> W2[Wave 2<br/>base: task-06 tip]
+  W2 --> T7[task-07: using-qrspi prose]
+
+  T9 --> W3[Wave 3<br/>base: task-09 tip]
+  W3 --> T4[task-04: parallelize Branch Map]
+
+  T1 --> S2[stage-after-W2<br/>merge T1, T7]
+  T7 --> S2
+  S2 --> W4[Wave 4<br/>base: stage-after-W2]
+  W4 --> T8[task-08: cache retirement]
+
+  T8 --> S4[stage-after-W4<br/>merge T8, T9]
+  T9 --> S4
+  S4 --> W5[Wave 5<br/>base: stage-after-W4]
+  W5 --> T10[task-10: model_routing]
+```
