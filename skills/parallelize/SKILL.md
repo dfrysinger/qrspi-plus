@@ -102,7 +102,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — parallelize", d
 4. Determine execution mode (sequential / parallel / hybrid) — pick the simplest mode the dependency graph supports
 5. For each Wave, decide its symbolic base per the Branch Model. For multi-parent dependencies, name a stage commit (`stage-after-W{N}`); for single prior-Wave parents, name that task's tip; for sequential chains, name the previous task's tip.
 6. Build the Wave dependency graph: Wave 1 contains all Waves whose only dependency is the feature branch tip; downstream Waves declare their prerequisite Waves. Implement's runtime rule dispatches every Wave whose dependencies are satisfied each tick — concurrency derives from the dependency graph at runtime, not from Wave numbering.
-7. Write `parallelization.md` with the required sections (Dependency Analysis table, Branch Map table, Stage Commits table if any, Execution Order narrative)
+7. Write `parallelization.md` with the required sections (Dependency Analysis table, Branch Map organized into `### Wave N` sub-sections each with a Task/Branch/Base mini-table, Stage Commits table if any)
 8. Render the Mermaid dependency graph into the same file (do not paste the diagram into the terminal — the user opens the file to view it)
 9. Present the plan to the user for approval
 
@@ -129,9 +129,8 @@ The implementer running parallelize does NOT auto-apply patches. Patches are adv
 
 - **Execution Mode** — sequential / parallel / hybrid with one-sentence rationale
 - **Dependency Analysis** — table with columns: Task / Dependencies / Files / Wave
-- **Branch Map** — table with columns: Task / Branch / Base. The `Base` column uses *only* the symbolic vocabulary defined in the Branch Model (`feature branch tip`, `task-NN tip`, `stage-after-W{N}`, `task-00 tip`). Do not embed concrete commit hashes — Implement resolves these at runtime.
+- **Branch Map** — organized as `### Wave N` sub-section headings (one per Wave: `### Wave 1`, `### Wave 2`, …). Each sub-section contains a Task / Branch / Base mini-table restricted to the tasks belonging to that Wave. The sub-section grouping replaces both the older flat three-column Branch Map table and the standalone Execution Order narrative — the Wave ordering is read directly from the `### Wave N` headings, and intra-Wave concurrency is implicit (all rows under one heading share that Wave's dispatch). The `Base` column uses *only* the symbolic vocabulary defined in the Branch Model (`feature branch tip`, `task-NN tip`, `stage-after-W{N}`, `task-00 tip`). Do not embed concrete commit hashes — Implement resolves these at runtime.
 - **Stage Commits** — table (only present when any Wave has multi-parent dependencies) with columns: Stage branch / Composition / Created before
-- **Execution Order** — narrative describing the Wave dependency graph (which Waves can fire concurrently when their dependencies are satisfied, what gates downstream Waves)
 - **Mermaid dependency graph** — written inline in the file
 
 **Reference-gate notes (when applicable).** When any task in the phase carries `reference_gate: true`, `parallelization.md` MUST include one note per gated task immediately after the Branch Map table, using this canonical shape:
@@ -340,19 +339,25 @@ Rationale: Tasks 1 and 2 are independent (file-disjoint) so they share Wave 1. T
 | Task 3: Auth endpoints | Task 1, Task 2 | `src/routes/auth.ts`, `src/routes/auth.test.ts` | Wave 2 (base: stage-after-W1, multi-parent) |
 | Task 4: Profile endpoints | Task 1 | `src/routes/profile.ts`, `src/routes/profile.test.ts` | Wave 3 (base: task-01 tip, single-parent) |
 
-## Execution Order
-
-**Wave 1:** Tasks 1 and 2 dispatch concurrently (shared base = feature branch tip; no file overlap). Once both finish, Implement creates the stage commit `stage-after-W1` (merge of task-01 + task-02 tips).
-
-**Wave 2 and Wave 3 (concurrent):** Wave 2 (Task 3) forks from `stage-after-W1`. Wave 3 (Task 4) forks directly from task-01's tip (single-parent shortcut — no stage commit needed). Both Waves dispatch concurrently when their dependencies are satisfied (each has no file overlap with the other and no logical dependency on the other), per Implement's runtime rule.
-
 ## Branch Map
+
+### Wave 1
 
 | Task | Branch | Base |
 |------|--------|------|
 | task-01 | qrspi/user-auth/task-01 | feature branch tip |
 | task-02 | qrspi/user-auth/task-02 | feature branch tip |
+
+### Wave 2
+
+| Task | Branch | Base |
+|------|--------|------|
 | task-03 | qrspi/user-auth/task-03 | stage-after-W1 |
+
+### Wave 3
+
+| Task | Branch | Base |
+|------|--------|------|
 | task-04 | qrspi/user-auth/task-04 | task-01 tip |
 
 ## Stage Commits
@@ -386,18 +391,19 @@ Rationale: Tasks 1 and 2 are independent and share Wave 1. Task 3 depends on Tas
 | Task 3: Schema migrations | Task 1 | `src/db/migrate.ts`, `tests/migrate.test.ts` | Wave 2 (base: stage-after-W1a, single-parent from W1) |
 | Task 4: API routes | Task 2 | `src/routes/api.ts`, `tests/api.test.ts` | Wave 2 (base: stage-after-W1b, single-parent from W1) |
 
-## Execution Order
-
-**Wave 1:** Tasks 1 and 2 dispatch concurrently (shared base = feature branch tip; no file overlap). Once each finishes, Implement creates the corresponding suffixed stage commit: `stage-after-W1a` wraps task-01's tip; `stage-after-W1b` wraps task-02's tip.
-
-**Wave 2 (Tasks 3 and 4 concurrent):** Task 3 forks from `stage-after-W1a`; Task 4 forks from `stage-after-W1b`. Both dispatch concurrently (file-disjoint, no logical dependency on each other).
-
 ## Branch Map
+
+### Wave 1
 
 | Task | Branch | Base |
 |------|--------|------|
 | task-01 | qrspi/db-migration/task-01 | feature branch tip |
 | task-02 | qrspi/db-migration/task-02 | feature branch tip |
+
+### Wave 2
+
+| Task | Branch | Base |
+|------|--------|------|
 | task-03 | qrspi/db-migration/task-03 | stage-after-W1a |
 | task-04 | qrspi/db-migration/task-04 | stage-after-W1b |
 
@@ -436,21 +442,25 @@ Rationale: Tasks 1 and 2 are independent (Wave 1). Task 3 carries reference_gate
 | Task 4: Adapter scripts | Task 3 | `scripts/red-verify/*.sh` | Wave 3 (base: task-03 tip) |
 | Task 5: Dual-mode test-writer | Task 3 | `agents/qrspi-test-writer.md` | Wave 3 (base: task-03 tip) |
 
-## Execution Order
-
-**Wave 1:** Tasks 1 and 2 dispatch concurrently (file-disjoint, base = feature branch tip). Implement creates `stage-after-W1`.
-
-**Wave 2:** Task 3 alone (reference_gate: true — wave-terminating; Tasks 4 and 5 cannot dispatch until Task 3 clears). Task 3 forks from `stage-after-W1`.
-
-**Wave 3:** Tasks 4 and 5 dispatch concurrently once Task 3 clears (both fork from task-03 tip; file-disjoint).
-
 ## Branch Map
+
+### Wave 1
 
 | Task | Branch | Base |
 |------|--------|------|
 | task-01 | qrspi/feature/task-01 | feature branch tip |
 | task-02 | qrspi/feature/task-02 | feature branch tip |
+
+### Wave 2
+
+| Task | Branch | Base |
+|------|--------|------|
 | task-03 | qrspi/feature/task-03 | stage-after-W1 |
+
+### Wave 3
+
+| Task | Branch | Base |
+|------|--------|------|
 | task-04 | qrspi/feature/task-04 | task-03 tip |
 | task-05 | qrspi/feature/task-05 | task-03 tip |
 

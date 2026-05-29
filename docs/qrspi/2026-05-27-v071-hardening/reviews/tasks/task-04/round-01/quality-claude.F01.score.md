@@ -1,0 +1,2 @@
+score: 72
+reason: Real violation of an explicit "forbidden / flag every occurrence" rule in the code-quality reviewer's ID Hygiene § (T-prefixed tokens in test names and comments outside docs/qrspi/), with 10 new instances added by this diff; tempered by the same anti-pattern already entrenched in the file's 14 pre-existing [T23-vocab] tests and Task 23 comment header, which makes the rule-vs-file-consistency tradeoff genuinely contested for a low-severity style finding.
