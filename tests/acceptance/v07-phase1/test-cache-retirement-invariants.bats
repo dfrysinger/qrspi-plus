@@ -152,7 +152,7 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE9b] tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no run_pin invocations referencing the deleted cache-hit-rate suite" {
+@test "[T8 / TE9c] tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no run_pin invocations referencing the deleted cache-hit-rate suite" {
   # Test expectation: no run_pin invocations referencing the deleted suite
   # files after modification (test-cache-hit-rate.bats)
   [ -f "$PHASE1_ACCEPTANCE" ]
