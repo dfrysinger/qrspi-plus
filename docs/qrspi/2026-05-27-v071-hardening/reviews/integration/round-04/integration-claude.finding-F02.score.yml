@@ -1,0 +1,2 @@
+score: 35
+reason: Real-but-minor cross-link gap mis-framed as correctness — L470 assigns fail-loud duty to the dispatcher (not per-skill validation), and L422/L510-520 cover the absent-block case while L470 covers the malformed case, so the "incompatible contracts" table conflates two distinct cases and the dispatcher always halts on partial corruption, defeating the asserted failure path.

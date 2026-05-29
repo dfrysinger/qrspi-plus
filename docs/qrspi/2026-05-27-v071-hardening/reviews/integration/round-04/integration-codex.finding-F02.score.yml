@@ -1,0 +1,2 @@
+score: 22
+reason: Mischaracterizes the explicitly-designed and documented inherit→sonnet collapse (config.md:89-92, SKILL.md:543-546, TE4) as a data-flow defect; non-inherit rows remain reachable via precedence-chain steps 1-2 (per-task and dispatch-site model: overrides), and the proposed "fix" would re-introduce the silent-fallback surface T9/G7b was created to remove.
