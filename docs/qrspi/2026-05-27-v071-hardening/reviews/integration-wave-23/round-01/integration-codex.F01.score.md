@@ -1,0 +1,2 @@
+score: 82
+reason: Verified — parallelize/SKILL.md:132 explicitly states the Execution Order narrative is removed (and vocab.bats:288-293 pins its absence), yet implement/SKILL.md:361 still lists "Execution Order narrative" as a required input and :371 iterates "the Execution Order"; this is a real cross-skill contract mismatch introduced by T4 that leaves the consumer's stated input contract stale.

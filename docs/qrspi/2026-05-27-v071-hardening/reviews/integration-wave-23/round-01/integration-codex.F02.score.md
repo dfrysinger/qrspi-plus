@@ -1,0 +1,2 @@
+score: 50
+reason: Real prose/runtime divergence verified (SKILL:413 omits the trusted-gh gate that detect_host enforces and tests assert), but the simplification is intentional security hardening — in legitimate Copilot CLI sessions gh always normalizes under a trusted prefix, and in the spoofed/forged case the silent fallback to claude-code is the desired behavior, so practical operator confusion is low and the gap falls below the 70 correctness KEEP threshold.
