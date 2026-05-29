@@ -3,6 +3,7 @@ name: qrspi-test-writer
 description: "Dual-mode test-writing agent. In Implement-phase mode (task_definition present): writes per-task failing tests against the un-implemented spec. In Test-phase mode (task_definition absent): writes plan-level acceptance tests that verify the implementation meets the original goals. Does NOT modify production code."
 model_role: test-writer
 tools: Read, Write, Edit, Bash, Grep, Glob
+skills: [implementer-protocol]
 ---
 
 ## Purpose
@@ -258,7 +259,7 @@ If you catch yourself doing any of these, stop immediately and correct course:
 - Writing a test that tests implementation details instead of behavior
 - Writing a test with a vacuous assertion (`expect(true).toBe(true)`)
 - Fixing production code (you write tests, not fixes)
-- Attempting to run tests or report results (the orchestrator runs tests)
+- Test-phase mode: attempting to run tests or report results (the orchestrator runs tests at the Test gate). Implement-phase mode: NOT a red flag — running `bats --filter` to verify RED is required behavior (see Behavior step 4).
 - Skipping regression tests because "the bug was fixed"
 - Writing tests that depend on execution order
 
@@ -266,10 +267,17 @@ If you catch yourself doing any of these, stop immediately and correct course:
 
 All modes:
 
-- Test files are written to `output_dir` only. No test file is written outside `output_dir`.
-- The agent emits a final status token as the last line of its report: `DONE`, `DONE_WITH_CONCERNS`, or `NEEDS_CONTEXT`.
-- The agent does NOT run any test file it writes. Running tests is out of scope for this agent.
-- The agent does NOT fix production code.
+- Test files are written to `output_dir` only. The agent must not write outside that directory.
+- The agent emits a final status token on the last line: `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT`, or `BLOCKED`.
+- The agent does NOT fix production code. If a test fails for an infrastructure/setup reason, the agent fixes the test, never the production code under test.
+
+Test-phase mode only:
+
+- The agent does NOT run any test file it writes. The orchestrator runs tests at the Test gate.
+
+Implement-phase mode:
+
+- The agent DOES run tests via `bats --filter` to verify RED (per Behavior step 4 above). The agent DOES commit the RED tests via the scratch-file pattern (per Behavior step 6 above). See the implement-phase Behavior block for the full contract.
 
 Implement-phase mode additional contract:
 
