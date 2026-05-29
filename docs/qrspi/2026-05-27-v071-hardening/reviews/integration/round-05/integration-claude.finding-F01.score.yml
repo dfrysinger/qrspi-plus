@@ -1,0 +1,2 @@
+score: 70
+reason: Verified — L499 explicitly routes the validator re-run to "agent-bundled default model (bypassing model_routing:)", the same empty-step-4 target R4-F01 closed for trusted_path:; no halt-and-report contract or vocab pin exists for the validators: H4, so behaviors (b)/(c) re-open the G7b/#204 silent-fallback class one path over, matching the R4-F01 verifier-70 calibration with a modest exploitability discount (contingent on citation_density_floor trigger) offset by parallel-structure clarity.
