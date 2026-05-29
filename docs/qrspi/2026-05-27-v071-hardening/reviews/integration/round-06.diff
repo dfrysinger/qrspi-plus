@@ -1,0 +1,229 @@
+diff --git a/skills/using-qrspi/SKILL.anchors.json b/skills/using-qrspi/SKILL.anchors.json
+index 7ed5ff9..aa29d2e 100644
+--- a/skills/using-qrspi/SKILL.anchors.json
++++ b/skills/using-qrspi/SKILL.anchors.json
+@@ -65,94 +65,94 @@
+   },
+   "Config File (`config.md`)": {
+     "line_start": 349,
+-    "line_end": 549
++    "line_end": 553
+   },
+   "Dispatch routing blocks": {
+     "line_start": 420,
+-    "line_end": 549
++    "line_end": 553
+   },
+   "Config Validation Procedure": {
+-    "line_start": 550,
+-    "line_end": 668
++    "line_start": 554,
++    "line_end": 672
+   },
+   "When config.md is missing entirely": {
+-    "line_start": 554,
+-    "line_end": 562
++    "line_start": 558,
++    "line_end": 566
+   },
+   "When a required field is missing or has an invalid value": {
+-    "line_start": 563,
+-    "line_end": 615
++    "line_start": 567,
++    "line_end": 619
+   },
+   "No silent defaults": {
+-    "line_start": 616,
+-    "line_end": 623
++    "line_start": 620,
++    "line_end": 627
+   },
+   "Exceptions to the no-silent-defaults rule": {
+-    "line_start": 624,
+-    "line_end": 642
++    "line_start": 628,
++    "line_end": 646
+   },
+   "Fields that affect pipeline behavior (must be validated)": {
+-    "line_start": 643,
+-    "line_end": 662
++    "line_start": 647,
++    "line_end": 666
+   },
+   "Fields that do NOT require validation (informational only)": {
+-    "line_start": 663,
+-    "line_end": 668
++    "line_start": 667,
++    "line_end": 672
+   },
+   "Standard Review Loop": {
+-    "line_start": 669,
+-    "line_end": 712
++    "line_start": 673,
++    "line_end": 716
+   },
+   "Fix-altitude rule (F-5)": {
+-    "line_start": 705,
+-    "line_end": 712
++    "line_start": 709,
++    "line_end": 716
+   },
+   "Review Output Handling": {
+-    "line_start": 713,
+-    "line_end": 1104
++    "line_start": 717,
++    "line_end": 1108
+   },
+   "Review-Loop Pause Gate": {
+-    "line_start": 1105,
+-    "line_end": 1152
++    "line_start": 1109,
++    "line_end": 1156
+   },
+   "BATCH-WITH-OVERRIDES UI contract": {
+-    "line_start": 1109,
+-    "line_end": 1116
++    "line_start": 1113,
++    "line_end": 1120
+   },
+   "3-option menu (per paused finding)": {
+-    "line_start": 1117,
+-    "line_end": 1134
++    "line_start": 1121,
++    "line_end": 1138
+   },
+   "Paused rounds do not decrement the cap": {
+-    "line_start": 1135,
+-    "line_end": 1140
++    "line_start": 1139,
++    "line_end": 1144
+   },
+   "Pending-findings file": {
+-    "line_start": 1141,
+-    "line_end": 1152
++    "line_start": 1145,
++    "line_end": 1156
+   },
+   "Review Time Allocation": {
+-    "line_start": 1153,
+-    "line_end": 1160
++    "line_start": 1157,
++    "line_end": 1164
+   },
+   "Compaction Checkpoints": {
+-    "line_start": 1161,
+-    "line_end": 1192
++    "line_start": 1165,
++    "line_end": 1196
+   },
+   "Feedback File Format": {
+-    "line_start": 1193,
+-    "line_end": 1212
++    "line_start": 1197,
++    "line_end": 1216
+   },
+   "Common Rationalizations — STOP": {
+-    "line_start": 1213,
+-    "line_end": 1227
++    "line_start": 1217,
++    "line_end": 1231
+   },
+   "Skill Invocation": {
+-    "line_start": 1228,
+-    "line_end": 1233
++    "line_start": 1232,
++    "line_end": 1237
+   },
+   "Pipeline Iron Laws — Final Reminder": {
+-    "line_start": 1234,
+-    "line_end": 1256
++    "line_start": 1238,
++    "line_end": 1260
+   }
+ }
+diff --git a/skills/using-qrspi/SKILL.md b/skills/using-qrspi/SKILL.md
+index c668599..bbfd069 100644
+--- a/skills/using-qrspi/SKILL.md
++++ b/skills/using-qrspi/SKILL.md
+@@ -498,6 +498,8 @@ validators:
+ 
+ - `citation_density_floor`: float, default `0.05`. The minimum fraction of output tokens that must be citations (inline references to source material). When a dispatch's output falls below this floor, the validator triggers a trusted-model re-run: the same prompt is re-dispatched to the agent-bundled default model (bypassing `model_routing:`) and the re-run output replaces the original. The re-run is logged to main-chat output as a one-line note.
+ 
++When the validator triggers the trusted-model re-run and the matched agent's frontmatter declares no `model:` field (the state established for all agents after the T9 sweep), the re-run has no concrete target. The dispatcher halts and reports the validator trigger plus the empty agent-bundled default. The dispatcher never falls back silently to `model_routing:` (which the re-run explicitly bypasses) and never passes the re-run through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` and `trusted_path:` paths.
++
+ #### Precedence chain
+ 
+ When the dispatcher resolves which model to call for a task, it applies this precedence order (highest to lowest):
+@@ -521,6 +523,8 @@ When `config.md` does not contain a `model_routing:` block, the dispatcher fires
+ - No persistent marker is written to disk to track that the warning has already fired. Because no marker is written, there is no write-failure surface that could leave the on-disk config in an inconsistent state.
+ - Each session sees the backfill defaults applied in-memory without changing the file on disk.
+ 
++When the in-memory backfill resolves an agent's "bundled default" but the matched agent's frontmatter declares no `model:` field (the state established for all agents after the T9 sweep), the backfill has no concrete value to apply. The dispatcher halts and reports the missing-`model_routing:` condition plus the empty agent-bundled default. The dispatcher never falls back silently to the host CLI's silent re-routing and never substitutes an unannounced model — either fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` and `trusted_path:` paths. The one-time warning above announces the missing block; the halt-and-report on empty step 4 announces the consequence.
++
+ #### Model Routing
+ 
+ Resolution flow for agent tier names. When the dispatcher prepares an agent
+diff --git a/tests/unit/test-using-qrspi-vocab.bats b/tests/unit/test-using-qrspi-vocab.bats
+index 7917866..b435c1f 100644
+--- a/tests/unit/test-using-qrspi-vocab.bats
++++ b/tests/unit/test-using-qrspi-vocab.bats
+@@ -157,3 +157,59 @@ setup() {
+   [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
+   [[ "$body" != *"silently degrade"* ]]
+ }
++
++@test "validators block: fail-loud contract pinned for empty step 4" {
++  local body
++  body="$(_extract_h4 "$USING" '`validators:` block')"
++  # R5-F01 fix (close validators: trusted-model re-run silent-fallback):
++  # The validators: H4 documents a trusted-model re-run path that
++  # "bypasses model_routing: and dispatches to the agent-bundled default
++  # model". Post-T9, the agent-bundled default is empty for every agent.
++  # Without a fail-loud rule pinned here, the re-run path reproduces the
++  # G7b/#204 silent-fallback class one layer deeper than trusted_path:.
++  # Sanity: _extract_h4 returns non-empty body (else assertions below
++  # would silently pass on empty string).
++  [ -n "$body" ]
++  [[ "$body" == *"halts and reports"* ]]
++  [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
++}
++
++@test "validators block: anti-pattern wording absent" {
++  local body
++  body="$(_extract_h4 "$USING" '`validators:` block')"
++  # R5-F01 fix: pin absence of the anti-pattern wording G7b/#204 was
++  # filed against, scoped to the validators: H4 body specifically.
++  [ -n "$body" ]
++  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
++  [[ "$body" != *"silently degrade"* ]]
++}
++
++@test "missing model_routing block: fail-loud contract pinned for empty step 4" {
++  local body
++  body="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
++  # R5-F01 fix (close missing-block backfill silent-fallback):
++  # The Missing model_routing: H4 documents a backfill path that uses
++  # "agent-bundled defaults for this session". Post-T9, those defaults
++  # are empty for every agent. Without a fail-loud rule pinned here, the
++  # backfill path reproduces the G7b/#204 silent-fallback class through
++  # a different bypass.
++  # Sanity: the H4 label here contains literal backticks AND a
++  # multi-word + backticked subphrase. The _extract_h4 helper uses awk
++  # string equality on the heading line, so backticks pass through
++  # without escaping — but if that ever regresses, an empty body would
++  # silently satisfy the substring-mismatch assertions. Assert non-empty
++  # body first.
++  [ -n "$body" ]
++  [[ "$body" == *"halts and reports"* ]]
++  [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
++}
++
++@test "missing model_routing block: anti-pattern wording absent" {
++  local body
++  body="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
++  # R5-F01 fix: pin absence of the anti-pattern wording scoped to the
++  # missing-block H4 body specifically.
++  [ -n "$body" ]
++  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
++  [[ "$body" != *"silently degrade"* ]]
++}
