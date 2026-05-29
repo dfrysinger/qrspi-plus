@@ -1,0 +1,2 @@
+score: 72
+reason: The finding is well-founded: test uses structural proof (grep for literal `true|false`) rather than runtime verification that crafted config values are actually sanitized and echoed safely. The implementation is correct, but the test is inadequate for a security concern and would pass even if the sanitization were dead code.

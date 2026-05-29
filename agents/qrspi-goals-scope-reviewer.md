@@ -1,7 +1,6 @@
 ---
 name: qrspi-goals-scope-reviewer
 description: Scope/boundary review for goals.md. Reads skills/goals/owns-defers.md and applies the 3-check scope procedure. Companion to qrspi-goals-reviewer (which handles artifact quality).
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

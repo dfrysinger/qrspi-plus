@@ -15,7 +15,7 @@ status: approved
 | task-01 | none | `scripts/run-third-party-llm.sh`, `tests/unit/test-run-third-party-llm.bats` | 1 |
 | task-02 | none | `.gitignore`, `tests/unit/test-commit-hygiene-invariants.bats` | 1 |
 | task-03 | none | `tests/helpers/skill-markdown.bash`, `tests/unit/test-skill-md-content-patterns.bats`, `tests/unit/test-helpers-skill-markdown.bats` | 1 |
-| task-05 | none | `tests/unit/test-evergreen-markdown.bats` | 1 |
+| task-05 | WITHDRAWN -- G5 closed by intervening work | (no files touched) | (no wave) |
 | task-06 | none | `scripts/run-codex-review.sh`, `tests/unit/test-host-detection.bats` (create) | 1 |
 | task-09 | none | 41 × `agents/qrspi-*.md` (modify), `tests/unit/test-agent-frontmatter-no-model.bats` (create) | 1 |
 | task-07 | task-06 | `skills/using-qrspi/SKILL.md`, `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` | 2 |
@@ -41,7 +41,6 @@ All other task pairs are file-disjoint by inspection of the per-task Files colum
 | task-01 | `qrspi/v0.7.1-hardening/task-01` | feature branch tip |
 | task-02 | `qrspi/v0.7.1-hardening/task-02` | feature branch tip |
 | task-03 | `qrspi/v0.7.1-hardening/task-03` | feature branch tip |
-| task-05 | `qrspi/v0.7.1-hardening/task-05` | feature branch tip |
 | task-06 | `qrspi/v0.7.1-hardening/task-06` | feature branch tip |
 | task-09 | `qrspi/v0.7.1-hardening/task-09` | feature branch tip |
 | task-07 | `qrspi/v0.7.1-hardening/task-07` | task-06 tip |
@@ -63,7 +62,7 @@ All other task pairs are file-disjoint by inspection of the per-task Files colum
 
 ## Execution Order
 
-**Wave 1** (base: feature branch tip) -- fires at phase start. Six independent, file-disjoint tasks: task-01, task-02, task-03, task-05, task-06, task-09.
+**Wave 1** (base: feature branch tip) -- fires at phase start. Five independent, file-disjoint tasks: task-01, task-02, task-03, task-06, task-09. (task-05 was withdrawn 2026-05-28 -- see plan.md `### Task 5: WITHDRAWN`.)
 
 **Wave 2** (base: task-06 tip) -- fires when task-06 completes. Single task: task-07. Independent of Waves 3 and 4 progress.
 
@@ -91,7 +90,6 @@ graph TD
   W1 --> T1[task-01: control-char]
   W1 --> T2[task-02: gitignore]
   W1 --> T3[task-03: fence helper]
-  W1 --> T5[task-05: evergreen carve-out]
   W1 --> T6[task-06: host-detection]
   W1 --> T9[task-09: agent model: delete]
 

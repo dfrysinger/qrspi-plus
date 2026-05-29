@@ -1,0 +1,2 @@
+score: 55
+reason: Real defect verified — script uses set -u (no set -e), so if either wc -c yields empty output, `[ "" -ne "" ]` errors and the if-branch is false, silently passing NUL detection; low likelihood since CONFIG_MD is pre-validated readable, and the finding is flagged as duplicate of silent-failure-codex F01.

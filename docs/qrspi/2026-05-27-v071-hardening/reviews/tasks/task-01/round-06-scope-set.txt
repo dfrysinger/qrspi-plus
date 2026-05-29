@@ -1,0 +1,21 @@
+# scope-set for round 06 (post-fix-cycle re-review of c229f10)
+# orchestrator-persisted
+#
+# Round-5 fanout findings: ALL CLOSED ✓
+#   sf.F01 (90), sf.F02 (62), sf.F03 (82) — verified closed by sf-claude R6
+#   sec.F02 (80) — verified closed by sec-claude R6
+#   sec.F03 (65) — decline-rationale confirmed by sec-claude R6
+#   cq.F01 (80) — verified closed by cq-claude R6
+#
+# SKILL-RULE-OVERRIDE (user-authorized 2026-05-28): pragmatic max
+# Strict SKILL ≥80 would drop both new R6 findings (cq.F01=70, sf.F04=75).
+# User chose to keep both because:
+#   - Both findings target the SAME helper (_safe_hname) introduced in c229f10
+#   - Combined fix is one tiny edit (rename + fallback clause on existing line)
+#   - sf.F04 verifier cited spec-line-29 violation
+#
+# kept findings dispatched to fix-implementer:
+#   cq.F01 (70, naming-inconsistency): rename _safe_hname → _cc_safe_hname
+#   sf.F04 (75, correctness): add `|| _cc_safe_hname="..."` fallback on tr-pipeline failure
+scripts/run-third-party-llm.sh
+tests/unit/test-run-third-party-llm.bats

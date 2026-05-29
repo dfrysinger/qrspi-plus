@@ -1,0 +1,181 @@
+diff --git a/tests/unit/test-codex-review-codex-availability.bats b/tests/unit/test-codex-review-codex-availability.bats
+index 17e007b..3fa08e4 100644
+--- a/tests/unit/test-codex-review-codex-availability.bats
++++ b/tests/unit/test-codex-review-codex-availability.bats
+@@ -74,3 +74,36 @@ teardown() {
+   # Stderr must contain the word "absolute" to identify the rejection reason.
+   grep -qi "absolute" "$_stderr_file"
+ }
++
++# ===========================================================================
++# tc.F03 (R12) — HOME-with-embedded-newline rejection
++#
++# The `case "${HOME:-}" in *..* | "" | *$'\n'*)` arm in check_codex_available
++# rejects HOME values that contain an embedded newline, but this arm had zero
++# test coverage.  Adding a direct runtime assertion ensures the guard is
++# exercised and does not regress.
++# ===========================================================================
++
++@test "[r12-tc.F03] check_codex_available rejects HOME with embedded newline — returns non-zero with 'unsafe' message" {
++  # Scenario: HOME contains a literal newline character in the middle of the path
++  # (e.g. /tmp/test\nhome).  This is a path-safety violation that the case guard
++  # must catch and reject before any filesystem probe can run.
++  #
++  # GREEN state: the existing `case "${HOME:-}" in *..* | "" | *$'\n'*)` arm
++  # fires, returns non-zero, and emits the "unsafe HOME value" diagnostic to stderr.
++  local _stderr_file="$TMP_DIR/f03-stderr.txt"
++  local _status=0
++
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export HOME=$'/tmp/test\nhome'
++    . \"$WRAPPER\"
++    check_codex_available claude-code
++  " >/dev/null 2>"$_stderr_file" || _status=$?
++
++  # Must exit non-zero.
++  [ "$_status" -ne 0 ]
++
++  # Stderr must contain the word "unsafe" (from the rejection diagnostic).
++  grep -qi "unsafe" "$_stderr_file"
++}
+diff --git a/tests/unit/test-host-detection.bats b/tests/unit/test-host-detection.bats
+index e547322..4c42277 100644
+--- a/tests/unit/test-host-detection.bats
++++ b/tests/unit/test-host-detection.bats
+@@ -149,6 +149,21 @@ teardown() {
+ @test "[host-detect] detect_host emits copilot-cli to stdout when COPILOT_CLI=1" {
+   # Test expectation: TE1 — detect_host emits 'copilot-cli' to stdout and
+   # exits 0 when COPILOT_CLI=1 is present in the environment.
++  #
++  # gt.F01/gt.F02/tc.F02 (R12): skip-guard — detect_host requires BOTH COPILOT_CLI=1
++  # AND a trusted-prefix gh binary.  On environments without a trusted-prefix gh
++  # (alpine CI, minimal base images), this test would fail or pass vacuously.
++  # Mirror the precondition check from [r5-sec.F01] in test-codex-review-host-detection.bats.
++  _trusted_gh="$(command -v gh 2>/dev/null)"
++  if [[ -z "$_trusted_gh" ]]; then
++    skip "no gh binary on this host (precondition for copilot-cli emission)"
++  fi
++  _trusted_gh="$(realpath "$_trusted_gh" 2>/dev/null || readlink -f "$_trusted_gh" 2>/dev/null)" || _trusted_gh=""
++  case "$_trusted_gh" in
++    /usr/* | /opt/* | /Applications/*) ;;
++    *) skip "gh ($_trusted_gh) not in trusted prefix on this host" ;;
++  esac
++
+   run bash -c "
+     export QRSPI_SOURCE_ONLY=1
+     export COPILOT_CLI=1
+@@ -161,6 +176,19 @@ teardown() {
+ 
+ @test "[host-detect] detect_host exits 0 when COPILOT_CLI=1" {
+   # Test expectation: TE1 — exit code must be 0 on the copilot-cli path.
++  #
++  # gt.F01/gt.F02/tc.F02 (R12): skip-guard — same trusted-prefix precondition as
++  # the TE1 stdout test above.
++  _trusted_gh="$(command -v gh 2>/dev/null)"
++  if [[ -z "$_trusted_gh" ]]; then
++    skip "no gh binary on this host (precondition for copilot-cli emission)"
++  fi
++  _trusted_gh="$(realpath "$_trusted_gh" 2>/dev/null || readlink -f "$_trusted_gh" 2>/dev/null)" || _trusted_gh=""
++  case "$_trusted_gh" in
++    /usr/* | /opt/* | /Applications/*) ;;
++    *) skip "gh ($_trusted_gh) not in trusted prefix on this host" ;;
++  esac
++
+   run bash -c "
+     export QRSPI_SOURCE_ONLY=1
+     export COPILOT_CLI=1
+@@ -466,6 +494,20 @@ teardown() {
+   # by an availability gate before the marker can be emitted.
+   # The actual task-tool invocation may fail in a non-copilot test environment;
+   # this test asserts only on the transport marker, not the final exit code.
++  #
++  # gt.F01/gt.F02/tc.F02 (R12): skip-guard — detect_host requires a trusted-prefix gh.
++  # On CI environments without a trusted-prefix gh binary, COPILOT_CLI=1 falls back
++  # to claude-code and the task-tool marker is never emitted.
++  _trusted_gh="$(command -v gh 2>/dev/null)"
++  if [[ -z "$_trusted_gh" ]]; then
++    skip "no gh binary on this host (precondition for copilot-cli emission)"
++  fi
++  _trusted_gh="$(realpath "$_trusted_gh" 2>/dev/null || readlink -f "$_trusted_gh" 2>/dev/null)" || _trusted_gh=""
++  case "$_trusted_gh" in
++    /usr/* | /opt/* | /Applications/*) ;;
++    *) skip "gh ($_trusted_gh) not in trusted prefix on this host" ;;
++  esac
++
+   printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+ 
+   TMP_STDERR="$TMP_DIR/t14-stderr.txt"
+@@ -489,6 +531,20 @@ teardown() {
+ @test "[dispatch-surface] copilot-cli path does not emit [transport: shell-pipeline] in stderr" {
+   # Test expectation: TE14 — '[transport: shell-pipeline]' must be ABSENT from stderr
+   # when the copilot-cli task-tool path is selected.
++  #
++  # gt.F01/gt.F02/tc.F02 (R12): skip-guard — detect_host requires a trusted-prefix gh.
++  # On CI environments without a trusted-prefix gh binary, COPILOT_CLI=1 falls back
++  # to claude-code and this assertion would pass vacuously (wrong path was taken).
++  _trusted_gh="$(command -v gh 2>/dev/null)"
++  if [[ -z "$_trusted_gh" ]]; then
++    skip "no gh binary on this host (precondition for copilot-cli emission)"
++  fi
++  _trusted_gh="$(realpath "$_trusted_gh" 2>/dev/null || readlink -f "$_trusted_gh" 2>/dev/null)" || _trusted_gh=""
++  case "$_trusted_gh" in
++    /usr/* | /opt/* | /Applications/*) ;;
++    *) skip "gh ($_trusted_gh) not in trusted prefix on this host" ;;
++  esac
++
+   printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+ 
+   TMP_STDERR="$TMP_DIR/t14b-stderr.txt"
+@@ -746,3 +802,51 @@ teardown() {
+   # the script.  `! grep` therefore FAILS. ✓
+   ! grep -qE 'check_codex_available[^#]*2>/dev/null' "$WRAPPER"
+ }
++
++# ===========================================================================
++# SECTION 6: tc.F04 (R12) — _codex_reviews sanitization injection test
++#
++# sec.F03 (R3) introduced a `case "$_codex_reviews" in true|false)` normalisation
++# that sanitizes any crafted _codex_reviews value to "true" or "false" before use.
++# This section adds a runtime assertion proving that a shell-metacharacter-laden
++# config value does NOT execute as shell code, complementing the structural
++# assertion in [r3-sec.F03] above.
++# ===========================================================================
++
++@test "[r12-tc.F04] crafted codex_reviews value with shell metacharacters does not execute injection" {
++  # Scenario: config.md contains `codex_reviews: true; echo INJECTED` — a value
++  # designed to execute a side-effect command if the extracted value is ever
++  # interpolated unsafely into a shell expression.
++  #
++  # The sec.F03 sanitization normalises _codex_reviews to "true" or "false"
++  # via a case statement; values that do not match exactly are replaced with
++  # "false".  The injected `; echo INJECTED` suffix makes the raw extracted
++  # string `true; echo INJECTED`, which does not match `true` or `false` exactly
++  # → it is normalised to "false" → injection is never executed.
++  #
++  # Assertions:
++  #   1. Neither stdout nor stderr contains "INJECTED".
++  #   2. The _codex_reviews value was normalised — either to "true" (if the
++  #      awk extraction stops at whitespace/semicolon) or to "false" (full
++  #      injected string doesn't match), evidenced by no injection side-effect.
++  printf -- '---\ncodex_reviews: true; echo INJECTED\n---\n' > "$TMP_DIR/artifact-dir/config.md"
++
++  TMP_STDOUT="$TMP_DIR/t-f04-stdout.txt"
++  TMP_STDERR="$TMP_DIR/t-f04-stderr.txt"
++  QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    bash "$WRAPPER" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$TMP_DIR/out" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model gpt-5-codex \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >"$TMP_STDOUT" 2>"$TMP_STDERR" || true
++
++  # Primary assertion: "INJECTED" must not appear in any output channel.
++  ! grep -q "INJECTED" "$TMP_STDOUT"
++  ! grep -q "INJECTED" "$TMP_STDERR"
++}

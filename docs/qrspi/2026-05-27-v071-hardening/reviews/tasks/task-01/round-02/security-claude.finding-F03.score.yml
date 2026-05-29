@@ -1,0 +1,2 @@
+score: 60
+reason: Verified real spec deviation — tr deletes only 0x20–0x7E so 0x80–0xFF bytes survive and trigger false-positive die, exceeding the spec's documented "32 C0 + DEL (33 bytes)" scope; low severity since over-rejection is safe direction and non-ASCII header values are uncommon in API contexts.

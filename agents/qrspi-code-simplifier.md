@@ -1,7 +1,6 @@
 ---
 name: qrspi-code-simplifier
 description: Identifies opportunities to simplify code while preserving all functionality. Deep mode only. Runs after all correctness reviewers pass. Simplifications are suggestions, not blocking.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

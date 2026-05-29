@@ -1,0 +1,315 @@
+diff --git a/scripts/run-codex-review.sh b/scripts/run-codex-review.sh
+index 096dcc2..5544990 100755
+--- a/scripts/run-codex-review.sh
++++ b/scripts/run-codex-review.sh
+@@ -97,15 +97,24 @@ require_value() {
+ # detect_host - emits either 'copilot-cli' or 'claude-code' to stdout.
+ # Examines COPILOT_CLI AND the reachability of the gh binary to prevent
+ # transport-marker spoofing via a user-supplied env var alone.
+-# COPILOT_CLI=1 selects copilot-cli ONLY when `gh` is also reachable in PATH
++# COPILOT_CLI=1 selects copilot-cli ONLY when `gh` resolves to a path under
++# a system-controlled prefix (/usr/*, /opt/*, /Applications/*).
+ # (process-spawn fingerprint: a real Copilot CLI session launches under gh).
+-# All other states (COPILOT_CLI unset/empty/non-"1", or gh absent) select
+-# claude-code.  Always exits 0.  Writes nothing to stderr under normal operation.
++# All other states (COPILOT_CLI unset/empty/non-"1", gh absent, or gh in an
++# untrusted prefix) select claude-code.  Always exits 0.  Writes nothing to
++# stderr under normal operation.
+ #
+ # sec.F01 (R2): COPILOT_CLI alone was user-settable; adding the binary check
+ # makes the marker harder to forge without a real gh installation.
++# sec.F01 (R5): `command -v gh` trusted PATH blindly; an attacker who can set
++# COPILOT_CLI=1 can equally prepend PATH with a fake gh directory.  Resolving
++# the path and validating it against trusted prefixes closes that gap.
+ detect_host() {
+-  if [[ "${COPILOT_CLI:-}" == "1" ]] && command -v gh >/dev/null 2>&1; then
++  local _gh_path
++  _gh_path="$(command -v gh 2>/dev/null)"
++  if [[ "${COPILOT_CLI:-}" == "1" ]] && \
++     [[ -n "$_gh_path" ]] && \
++     [[ "$_gh_path" == /usr/* || "$_gh_path" == /opt/* || "$_gh_path" == /Applications/* ]]; then
+     echo "copilot-cli"
+   else
+     echo "claude-code"
+@@ -134,6 +143,14 @@ check_codex_available() {
+           return 1
+           ;;
+       esac
++      # sec.F02 (R5): the case guard above does not check for a leading '/'.
++      # A relative HOME value (e.g. HOME=relative-dir) would pass all case arms
++      # and cause the companion glob to expand relative to the process CWD.
++      # Enforce that HOME starts with '/' before any filesystem probe.
++      if [[ "${HOME}" != /* ]]; then
++        echo "check_codex_available: HOME must be an absolute path (got: relative path)" >&2
++        return 1
++      fi
+       local found=0
+       local f
+       for f in "${HOME}/.claude/plugins/cache/openai-codex/codex"/*/scripts/codex-companion.mjs; do
+diff --git a/tests/unit/test-codex-review-codex-availability.bats b/tests/unit/test-codex-review-codex-availability.bats
+new file mode 100644
+index 0000000..17e007b
+--- /dev/null
++++ b/tests/unit/test-codex-review-codex-availability.bats
+@@ -0,0 +1,76 @@
++#!/usr/bin/env bats
++#
++# tests/unit/test-codex-review-codex-availability.bats
++# Task 6 — R5 security fix: sec.F02 — absolute-path enforcement for HOME in
++# check_codex_available.
++# Target: scripts/run-codex-review.sh
++#
++# RED test for sec.F02: check_codex_available(claude-code) must reject a
++# relative HOME value with exit 1 and a stderr message containing "absolute".
++# The current case guard only rejects HOME values containing '..', empty string,
++# or newlines; it does NOT check for a leading '/'.  A value like HOME=relative-dir
++# passes all current guards and causes the companion glob to expand relative to
++# CWD.
++#
++# RED state (before fix):
++#   HOME=relative-dir passes the case guard → check_codex_available returns 0
++#   (or non-zero for a different reason without "absolute" in stderr) → the
++#   assertion `[ "$status" -eq 1 ]` or the `grep -q "absolute"` assertion fails.
++#
++# GREEN state (after fix):
++#   An explicit `if [[ "${HOME}" != /* ]]; then ... return 1; fi` check after
++#   the case guard rejects relative HOME with exit 1 and a diagnostic containing
++#   "absolute" on stderr.
++#
++# bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++bats_require_minimum_version 1.5.0
++
++# ---------------------------------------------------------------------------
++# Suite setup
++# ---------------------------------------------------------------------------
++
++setup_file() {
++  REAL_REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
++  export REAL_REPO_ROOT
++  WRAPPER="$REAL_REPO_ROOT/scripts/run-codex-review.sh"
++  export WRAPPER
++}
++
++setup() {
++  TMP_DIR="$(mktemp -d)"
++  export TMP_DIR
++}
++
++teardown() {
++  cd /
++  rm -rf "$TMP_DIR"
++}
++
++# ===========================================================================
++# sec.F02 — absolute-path enforcement for HOME
++# ===========================================================================
++
++@test "[r5-sec.F02] check_codex_available rejects relative HOME with exit 1 and stderr containing 'absolute'" {
++  # RED: current code case guard checks for '..' / empty / newlines but not for
++  # a leading '/'.  HOME=relative-dir passes all guards → function either returns
++  # 0 (no companion glob matches from CWD) or returns non-zero without emitting
++  # "absolute" in stderr.
++  # GREEN: fixed code adds `if [[ "${HOME}" != /* ]]; then ... return 1; fi`
++  # which rejects relative HOME with a diagnostic containing "absolute".
++  local _stderr_file="$TMP_DIR/f02-stderr.txt"
++  local _status=0
++
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export HOME='relative-dir'
++    . \"$WRAPPER\"
++    check_codex_available claude-code
++  " >/dev/null 2>"$_stderr_file" || _status=$?
++
++  # Must exit non-zero (return 1 from check_codex_available).
++  [ "$_status" -ne 0 ]
++
++  # Stderr must contain the word "absolute" to identify the rejection reason.
++  grep -qi "absolute" "$_stderr_file"
++}
+diff --git a/tests/unit/test-codex-review-host-detection.bats b/tests/unit/test-codex-review-host-detection.bats
+new file mode 100644
+index 0000000..5310379
+--- /dev/null
++++ b/tests/unit/test-codex-review-host-detection.bats
+@@ -0,0 +1,77 @@
++#!/usr/bin/env bats
++#
++# tests/unit/test-codex-review-host-detection.bats
++# Task 6 — R5 security fix: sec.F01 — gh path prefix validation in detect_host
++# Target: scripts/run-codex-review.sh
++#
++# RED test for sec.F01: detect_host must reject copilot-cli marker when the
++# `gh` binary resolves to a path outside the trusted prefixes /usr/*, /opt/*,
++# /Applications/*.  The current code uses `command -v gh` which accepts ANY
++# gh in PATH, allowing an attacker who controls PATH to forge the marker.
++#
++# RED state (before fix):
++#   detect_host emits "copilot-cli" for a fake gh in /tmp/fakebins → assertion
++#   `[ "$output" = "claude-code" ]` fails → test is RED.
++#
++# GREEN state (after fix):
++#   detect_host validates the resolved path against trusted prefixes; fake gh
++#   in /tmp does not match /usr/*, /opt/*, /Applications/* → emits "claude-code".
++#
++# bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++bats_require_minimum_version 1.5.0
++
++# ---------------------------------------------------------------------------
++# Suite setup
++# ---------------------------------------------------------------------------
++
++setup_file() {
++  REAL_REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
++  export REAL_REPO_ROOT
++  WRAPPER="$REAL_REPO_ROOT/scripts/run-codex-review.sh"
++  export WRAPPER
++}
++
++# ---------------------------------------------------------------------------
++# Per-test setup: build a temp directory for the fake gh binary.
++# ---------------------------------------------------------------------------
++
++setup() {
++  TMP_DIR="$(mktemp -d)"
++  export TMP_DIR
++  FAKE_BIN="$TMP_DIR/fakebins"
++  mkdir -p "$FAKE_BIN"
++  # Minimal fake gh: exits 0 to satisfy any reachability probe, but lives in
++  # an untrusted prefix (/tmp/...) that the fixed code must reject.
++  printf '#!/bin/sh\nexit 0\n' > "$FAKE_BIN/gh"
++  chmod +x "$FAKE_BIN/gh"
++  export FAKE_BIN
++}
++
++teardown() {
++  cd /
++  rm -rf "$TMP_DIR"
++}
++
++# ===========================================================================
++# sec.F01 — gh path prefix validation
++# ===========================================================================
++
++@test "[r5-sec.F01] detect_host rejects copilot-cli marker when gh resolves outside /usr|/opt|/Applications" {
++  # RED: current code uses `command -v gh` which accepts the fake gh in FAKE_BIN
++  # (an untrusted /tmp path) → emits "copilot-cli".
++  # GREEN: fixed code resolves gh's path and validates it against /usr/*, /opt/*,
++  # /Applications/*; /tmp/fakebins/gh fails all three → emits "claude-code".
++  #
++  # PATH is set to FAKE_BIN followed by basic system dirs so the fake gh is
++  # found first but normal shell builtins (dirname, pwd) remain reachable.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    export PATH='$FAKE_BIN:/usr/bin:/bin'
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
+diff --git a/tests/unit/test-codex-review-source-guard.bats b/tests/unit/test-codex-review-source-guard.bats
+new file mode 100644
+index 0000000..9f475fd
+--- /dev/null
++++ b/tests/unit/test-codex-review-source-guard.bats
+@@ -0,0 +1,96 @@
++#!/usr/bin/env bats
++#
++# tests/unit/test-codex-review-source-guard.bats
++# Task 6 — R5 security fix: sec.F01 positive path — detect_host trusts gh
++# when it resolves to a system-controlled prefix (/usr/*, /opt/*, /Applications/*).
++# Target: scripts/run-codex-review.sh
++#
++# This is a positive regression guard for the sec.F01 fix.  It verifies that
++# the path-prefix check does NOT over-restrict: a real gh binary in a trusted
++# prefix (/opt/homebrew/bin on macOS Homebrew) must still allow detect_host to
++# emit "copilot-cli" when COPILOT_CLI=1.
++#
++# NOTE on RED state: this test is a positive regression guard, not a strict
++# RED test.  The pre-fix code also emits "copilot-cli" for a trusted-path gh
++# (since it trusts any gh in PATH).  The test's value is ensuring the fix does
++# not over-restrict legitimate installations.  It is included per the R5 TDD
++# requirements to document expected positive behavior.
++#
++# The test skips with a diagnostic reason if no gh binary is found under a
++# recognised trusted prefix (/usr/*, /opt/*, /Applications/*) on the host.
++#
++# bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++bats_require_minimum_version 1.5.0
++
++# ---------------------------------------------------------------------------
++# Suite setup
++# ---------------------------------------------------------------------------
++
++setup_file() {
++  REAL_REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
++  export REAL_REPO_ROOT
++  WRAPPER="$REAL_REPO_ROOT/scripts/run-codex-review.sh"
++  export WRAPPER
++}
++
++setup() {
++  TMP_DIR="$(mktemp -d)"
++  export TMP_DIR
++}
++
++teardown() {
++  cd /
++  rm -rf "$TMP_DIR"
++}
++
++# ===========================================================================
++# sec.F01 positive path — trusted-prefix gh is accepted
++# ===========================================================================
++
++@test "[r5-sec.F01] detect_host trusts marker when gh is in a system-controlled prefix (/usr|/opt|/Applications)" {
++  # Locate a gh binary under a trusted prefix on the host.  On macOS with
++  # Homebrew, gh lives at /opt/homebrew/bin/gh (/opt/* matches).  On Linux
++  # systems it is often at /usr/bin/gh or /usr/local/bin/gh (/usr/* matches).
++  # Skip if no such binary is found rather than failing the suite — this host
++  # simply does not have gh installed in a trusted system location.
++  local _trusted_gh=""
++  local _candidate
++  for _candidate in /usr/bin/gh /usr/local/bin/gh /opt/homebrew/bin/gh /opt/local/bin/gh; do
++    if [[ -x "$_candidate" ]]; then
++      _trusted_gh="$_candidate"
++      break
++    fi
++  done
++
++  # Also accept any gh found via `command -v gh` if it resolves under a trusted prefix.
++  if [[ -z "$_trusted_gh" ]]; then
++    local _cv
++    _cv="$(command -v gh 2>/dev/null)"
++    case "$_cv" in
++      /usr/* | /opt/* | /Applications/*)
++        _trusted_gh="$_cv"
++        ;;
++    esac
++  fi
++
++  if [[ -z "$_trusted_gh" ]]; then
++    skip "no gh binary found under /usr/*, /opt/*, or /Applications/* on this host — positive-path test skipped"
++  fi
++
++  # Derive the directory containing the trusted gh and set PATH to include it
++  # together with the basic system dirs (/usr/bin, /bin) required for shell
++  # builtins (dirname, pwd) used during script sourcing.
++  local _trusted_dir
++  _trusted_dir="$(dirname "$_trusted_gh")"
++
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    export PATH='$_trusted_dir:/usr/bin:/bin'
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "copilot-cli" ]
++}

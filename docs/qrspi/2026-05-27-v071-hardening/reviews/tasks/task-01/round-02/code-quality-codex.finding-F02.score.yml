@@ -1,0 +1,2 @@
+score: 20
+reason: Low-severity stylistic concern; two ranges are pre-existing (out of T1 scope), the awk helper is reasonable isolation, and the grep -P structural pin is explicitly required by spec bullet 11 (cannot be removed).

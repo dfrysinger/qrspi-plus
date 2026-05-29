@@ -1,0 +1,46 @@
+Reviewer: tc-claude
+Round: 11
+Commit anchor: f31d4da (R10 thoroughness fixes)
+Prior commit: a4fa25c (R7 mktemp guard)
+Scope: narrow verify of 5 new tests addressing R9 tc.F01–F04
+
+VERDICT: CLEAN — no findings.
+
+All 5 new tests (3 × tc-F02 arity, 1 × tc-F01 unreadable-file, 1 × tc-F03 H2 anchor,
+1 × tc-F04 TOCTOU strengthening) are correct, meaningful, and fully address the
+original findings. No coverage regressions detected against prior tests.
+
+Details:
+
+tc-F01 (unreadable-file, line 654-671):
+  - chmod 000 applied correctly.
+  - Asserts status=1, "extract_section_fence_aware:" prefix, "file unreadable" substring.
+  - chmod 644 restore placed BEFORE first assertion — cleanup is guaranteed on any
+    assertion failure path.
+  - Root skip guard present and correct.
+  - Message in production code (skill-markdown.bash:230) matches assertion globs.
+
+tc-F02 (arity guard, lines 627-648):
+  - Three separate subtests for 0, 1, and 3 args — each uses `run` (stderr captured
+    in $output), asserts status=1, asserts "expected 2 args" substring.
+  - Production code emits message to >&2; BATS `run` merges stderr into $output.
+  - All three guard paths exercised.
+
+tc-F03 (H2 anchor, lines 677-699):
+  - Fixture uses "## Overview" (H2 heading, not H3).
+  - Calls function with "## Overview" anchor; $? check is after plain assignment
+    (not `local`), correctly captures subshell exit status.
+  - Asserts anchor line, both content lines, and no bleed-through of next section.
+  - Awk boundary rule /^## / fires correctly on "## Next Section".
+
+tc-F04 (TOCTOU strengthening, lines 705-745):
+  - Output captured via out="$(extract...)" — not discarded.
+  - rc captured via `local rc=$?` immediately after the out= assignment.
+  - Asserts rc=0, anchor line, both content lines, and attack target unchanged.
+  - Symlink cleanup (rm -f) is unconditional before assertions.
+  - 2>/dev/null on line 730 is a shell redirection, NOT a third argument; function
+    receives exactly 2 args.
+  - Predictable path /tmp/skill-md-fence-signal-$$ cannot collide with mktemp
+    XXXXXXXX suffix (numeric PID vs 8-char alphanum random string).
+
+No coverage regressions: all 5 tests are additive; no existing tests modified.

@@ -1,0 +1,2 @@
+score: 30
+reason: Real gap (API key value bypasses the control-char screen) but pre-existing and outside the task's explicitly-scoped surface (replacing the default_headers detection routine); modern curl strips embedded CRLF, making practical impact low and the in-scope claim arguable.

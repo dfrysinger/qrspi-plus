@@ -12,8 +12,9 @@ setup() {
   echo "$PROTOCOL" | grep -qE 'scope.*intent.*bypass.*score|scope.*intent.*pause gate.*regardless|scope.*intent.*never.*score-filtered'
 }
 
-@test "style/clarity/correctness are score-filtered at >=80" {
-  echo "$PROTOCOL" | grep -qE 'style.*clarity.*correctness.*(>=|≥)\s*80|score\s*(>=|≥)\s*80.*style.*clarity.*correctness'
+@test "style/clarity require >=80 and correctness requires >=70 (Hotfix B threshold split per issue #225)" {
+  echo "$PROTOCOL" | grep -qE 'style.*clarity.*(>=|≥)\s*80' && \
+  echo "$PROTOCOL" | grep -qE 'correctness.*(>=|≥)\s*70'
 }
 
 @test "out-of-enum change_type triggers loud failure" {

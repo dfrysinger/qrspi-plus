@@ -1,0 +1,2 @@
+score: 88
+reason: Genuine correctness bug confirmed in artifact; fence-delimiter lines skip the only has_content-setting rule, causing sections with only code blocks to be misclassified as empty and silently discarded.

@@ -1,0 +1,146 @@
+diff --git a/tests/unit/test-agent-frontmatter-no-model.bats b/tests/unit/test-agent-frontmatter-no-model.bats
+index a716a6e..21947e2 100644
+--- a/tests/unit/test-agent-frontmatter-no-model.bats
++++ b/tests/unit/test-agent-frontmatter-no-model.bats
+@@ -17,24 +17,30 @@ setup() {
+ # lines at column 0) for a given file. Bash 3.2 / POSIX-awk portable.
+ #
+ # Fixes applied:
+-#   sf.F01: strip CR (\r) before delimiter matching so CRLF-terminated files
+-#           are handled correctly (GitHub web edits, Windows contributors).
++#   sf.F01 (CRLF): strip CR (\r) before delimiter matching so CRLF-terminated
++#           files are handled correctly (GitHub web edits, Windows contributors).
+ #   sf.F02: track block-scalar context (key ending with | or >) so a bare ---
+ #           at column 0 inside a block scalar is not mistaken for the closing
+-#           frontmatter delimiter; only exit when not inside a block scalar.
++#           frontmatter delimiter.
++#   sf.F01 (scalar-at-end): a top-level (column-0) --- unconditionally resets
++#           in_scalar before counting the delimiter. Block scalar content is
++#           always indented, so a column-0 --- cannot appear inside a block
++#           scalar in valid YAML; resetting in_scalar here is safe and prevents
++#           the closing --- from being skipped when the scalar is the last key.
+ _frontmatter() {
+   awk '
+     { gsub(/\r$/, "") }
+     /^---$/ {
+-      if (!in_scalar) {
+-        n++
+-        if (n == 1) { next }
+-        if (n == 2) { exit }
+-      }
++      # Top-level --- always terminates any active block scalar (block scalar
++      # content requires indentation; a column-0 --- is never inside one).
++      in_scalar = 0
++      n++
++      if (n == 1) { next }
++      if (n == 2) { exit }
+     }
+     n == 1 {
+       if (/:[[:space:]]*[|>][[:space:]]*$/) { in_scalar = 1 }
+-      else if (in_scalar && /^[^[:space:]]/ && !/^---$/) { in_scalar = 0 }
++      else if (in_scalar && /^[^[:space:]]/) { in_scalar = 0 }
+       print
+     }
+   ' "$1"
+@@ -174,31 +180,32 @@ SCRIPT
+   }
+ }
+ 
+-@test "[agent-frontmatter-no-model] block-scalar: bare --- in block-scalar context does not prematurely close frontmatter" {
+-  # sf.F02: _frontmatter() exits on the second /^---$/ match. A YAML
+-  # block scalar (description: |) followed immediately by a bare --- at
+-  # column 0 causes awk to treat that inner --- as the close delimiter
+-  # (n==2) and exit before reaching a real model: key that follows.
+-  # This test asserts that model: sonnet IS detected as a violation even
+-  # when a bare --- appears earlier in a block-scalar context.
++@test "[agent-frontmatter-no-model] block-scalar: indented --- in block-scalar body does not prematurely close frontmatter" {
++  # sf.F02: _frontmatter() must not treat an INDENTED --- that appears as
++  # content inside a block scalar as the closing frontmatter delimiter.
++  # In valid YAML, block scalar content is always indented relative to the
++  # parent key — a top-level (column-0) --- cannot appear inside a block
++  # scalar. This test uses a properly indented --- as block scalar content
++  # to assert that model: sonnet IS detected as a violation even when ---
++  # appears earlier in an indented block-scalar context.
+   local fixture="${BATS_TEST_TMPDIR}/qrspi-test-blockscalar-model.md"
+   cat >"$fixture" <<'EOF'
+ ---
+ name: qrspi-test-blockscalar
+ description: |
+----
++  ---
+ model: sonnet
+ ---
+ 
+ Body text.
+ EOF
+ 
+-  # The sweep must detect model: sonnet; the inner --- (block-scalar
+-  # context) must not be treated as the frontmatter close delimiter.
++  # The sweep must detect model: sonnet; the indented --- (block-scalar
++  # content) must not be treated as the frontmatter close delimiter.
+   local offending_line
+   offending_line=$(_frontmatter "$fixture" | grep -nE '^model:' || true)
+   [ -n "$offending_line" ] || {
+-    echo "block-scalar: model: key not detected — _frontmatter exited prematurely on inner --- (block-scalar context)"
++    echo "block-scalar: model: key not detected — _frontmatter exited prematurely on indented --- (block-scalar content)"
+     return 1
+   }
+ }
+@@ -231,3 +238,57 @@ EOF
+   fi
+   rm -f "$fixture"
+ }
++
++@test "[r5-sf.F01] frontmatter ending with block-scalar key exits cleanly at closing ---" {
++  # sf.F01 (scalar-at-end): when a block scalar is the LAST frontmatter key,
++  # in_scalar stays 1 at the closing ---. The old guard (!in_scalar) then
++  # skips n++ so the function never exits, widening the scan into body text.
++  # A body-level `model:` line is then falsely flagged as a frontmatter
++  # violation. This fixture reproduces that scenario: description: | is the
++  # last key, body contains `model:` in prose, and the lint MUST report clean.
++  local fixture="${BATS_TEST_TMPDIR}/qrspi-test-scalar-at-end-body-model.md"
++  cat >"$fixture" <<'EOF'
++---
++name: qrspi-test-scalar-at-end
++description: |
++  some description text
++  more description text
++---
++body starts here
++model: something at body start
++EOF
++
++  # No frontmatter violation should be reported — body's model: is out of scope.
++  local offending_line
++  offending_line=$(_frontmatter "$fixture" | grep -nE '^model:' || true)
++  [ -z "$offending_line" ] || {
++    echo "sf.F01 scalar-at-end: false-positive — _frontmatter read into body and flagged body-level model:"
++    echo "  offending_line=${offending_line}"
++    return 1
++  }
++}
++
++@test "[r5-sf.F01] frontmatter with block-scalar last key and no body model: still clean" {
++  # Companion to the above: same scalar-at-end topology but the body does NOT
++  # contain model:. Confirms the helper exits cleanly and emits nothing that
++  # would be flagged, even when there is nothing in the body to misdetect.
++  local fixture="${BATS_TEST_TMPDIR}/qrspi-test-scalar-at-end-no-body-model.md"
++  cat >"$fixture" <<'EOF'
++---
++name: qrspi-test-scalar-at-end-clean
++description: |
++  some description text
++  more description text
++---
++body starts here
++no model key anywhere in this body
++EOF
++
++  local offending_line
++  offending_line=$(_frontmatter "$fixture" | grep -nE '^model:' || true)
++  [ -z "$offending_line" ] || {
++    echo "sf.F01 scalar-at-end (no body model): unexpected match — _frontmatter did not exit at closing ---"
++    echo "  offending_line=${offending_line}"
++    return 1
++  }
++}

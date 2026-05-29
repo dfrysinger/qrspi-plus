@@ -1,0 +1,109 @@
+diff --git a/tests/unit/test-agent-frontmatter-no-model.bats b/tests/unit/test-agent-frontmatter-no-model.bats
+index d889166..513343d 100644
+--- a/tests/unit/test-agent-frontmatter-no-model.bats
++++ b/tests/unit/test-agent-frontmatter-no-model.bats
+@@ -295,3 +295,104 @@ EOF
+     return 1
+   }
+ }
++
++@test "[r10-tc.F01] folded scalar (>): model: key after folded block scalar is detected" {
++  # tc.F01: the production awk regex [|>] handles both literal (|) and folded
++  # (>) block scalars. All prior tests use only |. This test uses > so that the
++  # mutation [|>]->[|] (dropping folded-scalar support) is caught. Without this
++  # test, that mutation survives the full suite and leaves folded-scalar files
++  # silently un-linted.
++  local fixture="${BATS_TEST_TMPDIR}/qrspi-test-folded-scalar-model.md"
++  cat >"$fixture" <<'EOF'
++---
++name: qrspi-test-folded-scalar
++description: >
++  This is a folded scalar description spanning
++  multiple lines of content.
++model: sonnet
++---
++
++Body text.
++EOF
++
++  # model: sonnet appears after the folded scalar; _frontmatter must NOT
++  # treat the scalar body as extending past the next column-0 key, so the
++  # model: line must be visible in the frontmatter output.
++  local offending_line
++  offending_line=$(_frontmatter "$fixture" | grep -nE '^model:' || true)
++  [ -n "$offending_line" ] || {
++    echo "folded-scalar: model: key not detected — _frontmatter failed to handle '>' (folded) block scalar"
++    return 1
++  }
++}
++
++@test "[r10-tc.F01] folded scalar-at-end: _frontmatter exits cleanly with no false positive" {
++  # tc.F01 (scalar-at-end mirror): mirrors the existing | scalar-at-end tests
++  # but uses > (folded). When description: > is the last frontmatter key, the
++  # closing --- must still terminate the frontmatter scan correctly; body text
++  # must not leak into the frontmatter output and trigger a false positive.
++  local fixture="${BATS_TEST_TMPDIR}/qrspi-test-folded-at-end.md"
++  cat >"$fixture" <<'EOF'
++---
++name: qrspi-test-folded-at-end
++description: >
++  some description text
++  more description text
++---
++body starts here
++model: this line must not appear in frontmatter output
++EOF
++
++  local offending_line
++  offending_line=$(_frontmatter "$fixture" | grep -nE '^model:' || true)
++  [ -z "$offending_line" ] || {
++    echo "folded-scalar at-end: false-positive — _frontmatter read into body and flagged body-level model:"
++    echo "  offending_line=${offending_line}"
++    return 1
++  }
++}
++
++@test "[r10-tc.F02] complete-output: _frontmatter returns block-scalar key line and indented body verbatim" {
++  # tc.F02: the in_scalar variable in _frontmatter is set on | or > key lines
++  # but never gates print. This is correct — all lines including block-scalar
++  # key and indented body must appear in the frontmatter output. A regression
++  # that adds `if (!in_scalar) { print }` would silently drop description: |
++  # and its indented body lines; existing tests would still pass because they
++  # only grep for model:. This complete-output assertion catches that mutation.
++  local fixture="${BATS_TEST_TMPDIR}/qrspi-test-complete-output.md"
++  cat >"$fixture" <<'EOF'
++---
++name: qrspi-test-complete-output
++description: |
++  indented body line one
++  indented body line two
++model: sonnet
++---
++
++Trailing body text.
++EOF
++
++  local fm_output
++  fm_output=$(_frontmatter "$fixture")
++
++  # The block-scalar key line must be present in the frontmatter output.
++  echo "$fm_output" | grep -qE '^description: \|' || {
++    echo "complete-output: 'description: |' line missing from _frontmatter output"
++    printf 'actual output:\n%s\n' "$fm_output"
++    return 1
++  }
++
++  # The indented block-scalar body lines must be present in the output.
++  echo "$fm_output" | grep -q 'indented body line one' || {
++    echo "complete-output: indented block-scalar content missing from _frontmatter output"
++    printf 'actual output:\n%s\n' "$fm_output"
++    return 1
++  }
++
++  # The model: key that follows the block scalar must also be present.
++  echo "$fm_output" | grep -qE '^model: sonnet' || {
++    echo "complete-output: 'model: sonnet' line missing from _frontmatter output"
++    printf 'actual output:\n%s\n' "$fm_output"
++    return 1
++  }
++}

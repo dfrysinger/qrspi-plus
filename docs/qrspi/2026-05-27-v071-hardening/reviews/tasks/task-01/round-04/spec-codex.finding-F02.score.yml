@@ -1,0 +1,2 @@
+score: 87
+reason: Confirmed — task-01.md line 31 explicitly requires a test for malformed api_key_env identifier (chars outside [A-Za-z0-9_]) → exit 1 with key-resolution diagnostic, but the test file (769 lines) has no such test; only unset/empty-VALUE cases at lines 155-172 are covered.

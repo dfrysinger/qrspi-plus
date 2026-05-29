@@ -1,0 +1,2 @@
+score: 85
+reason: Finding is highly accurate—TE1 and TE14 tests rely on ambient system gh at trusted prefix (tests provide no fakebins fixture), failing on systems without gh or with gh in untrusted locations; however, task requirements do not explicitly mandate self-contained testing (leaving it a portability concern rather than a spec violation).

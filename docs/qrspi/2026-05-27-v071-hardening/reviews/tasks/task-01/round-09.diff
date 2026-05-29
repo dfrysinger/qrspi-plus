@@ -1,0 +1,196 @@
+diff --git a/tests/unit/test-run-third-party-llm.bats b/tests/unit/test-run-third-party-llm.bats
+index e156b46..5a8d717 100644
+--- a/tests/unit/test-run-third-party-llm.bats
++++ b/tests/unit/test-run-third-party-llm.bats
+@@ -512,6 +512,182 @@ _extract_ctrl_check_fn() {
+   [[ "$output" == *"header-validation"* ]]
+ }
+ 
++# ---------------------------------------------------------------------------
++# tc.F01 — Parametric: every C0 byte (0x00–0x1F) in header VALUE causes exit.
++# Routes each byte through the appropriate exercise path:
++#   NUL (0x00): raw-byte fixture-file pre-flight scan (bash strips NUL at
++#               variable assignment, so it never reaches HEADER_VALUES).
++#   LF  (0x0A): _extract_ctrl_check_fn function-extraction path (LF is awk's
++#               record delimiter and splits the config line during parsing).
++#   All other C0 bytes: _write_ctrl_config + _run_ctrl_check integration path.
++# Iterates all 32 bytes; each iteration asserts exit-code 1 AND presence of
++# "header-validation" in output, with the byte hex printed on failure to
++# pinpoint regressions. Pins the contract that the tr deletion range cannot
++# silently regress (e.g. widening \040 to \020 would unblock 0x10-0x1F).
++# ---------------------------------------------------------------------------
++
++@test "[control-char-detect] parametric: every C0 byte (0x00-0x1F) in header VALUE causes exit" {
++  # Test expectation: Every C0 control byte (0x00 through 0x1F) supplied as a
++  # header value causes the script to exit before reaching any network dispatch
++  # call. Routes each byte through the exercise path that can carry it intact.
++  local _byte_octal _byte_hex
++  for _byte_octal in \
++      000 001 002 003 004 005 006 007 \
++      010 011 012 013 014 015 016 017 \
++      020 021 022 023 024 025 026 027 \
++      030 031 032 033 034 035 036 037; do
++    _byte_hex=$(printf '%02x' "0$_byte_octal")
++    case "$_byte_octal" in
++      000)
++        # NUL: bash strips it at variable assignment; must use raw fixture
++        # pre-flight scan — the same approach as Bullet 6 (line 560).
++        {
++          printf '%s\n' '---'
++          printf '%s\n' 'providers:'
++          printf '%s\n' '  ctrl-test-prov:'
++          printf '%s\n' '    base_url: https://127.0.0.1/v1'
++          printf '%s\n' '    api_key_env: CTRL_TEST_KEY'
++          printf '%s\n' '    transport_type: openai-chat-completions'
++          printf '%s\n' '    supports_prompt_cache: false'
++          printf '%s\n' '    emit_cache_control_markers: false'
++          printf '%s\n' '    default_headers:'
++          printf '      X-Param-Test: safe'
++          printf '\000'
++          printf 'value\n'
++          printf '%s\n' '---' '' '# Config'
++        } > "$FIXTURE_DIR/config.md"
++        _run_ctrl_check "$FIXTURE_DIR"
++        [ "$status" -eq 1 ] \
++          || { printf 'FAIL: NUL (0x%s) in VALUE did not cause exit 1\n' "$_byte_hex" >&2; return 1; }
++        [[ "$output" == *"header-validation"* ]] \
++          || { printf 'FAIL: 0x%s in VALUE — missing header-validation in output\n' "$_byte_hex" >&2; return 1; }
++        ;;
++      012)
++        # LF: cannot survive awk line-based config parse into HEADER_VALUES;
++        # exercise _control_char_check directly via function-extraction path.
++        local _fn_file_val="$FIXTURE_DIR/ctrl_fn_val_${_byte_hex}.sh"
++        _extract_ctrl_check_fn "$_fn_file_val"
++        [ -s "$_fn_file_val" ] \
++          || { printf 'FAIL: could not extract _control_char_check for 0x%s\n' "$_byte_hex" >&2; return 1; }
++        local _ts_val="$FIXTURE_DIR/byte_val_test_${_byte_hex}.sh"
++        {
++          printf '%s\n' '#!/usr/bin/env bash'
++          printf 'die() { printf "%%s\n" "$1" >&2; exit 1; }\n'
++          printf '. %s\n' "'$_fn_file_val'"
++          printf '_control_char_check %s ' "'x-param-val-header'"
++          printf "'"
++          printf 'safe'
++          printf '\012'
++          printf "injected'\n"
++        } > "$_ts_val"
++        run bash "$_ts_val"
++        [ "$status" -eq 1 ] \
++          || { printf 'FAIL: LF (0x%s) in VALUE did not cause exit 1\n' "$_byte_hex" >&2; return 1; }
++        [[ "$output" == *"header-validation"* ]] \
++          || { printf 'FAIL: 0x%s in VALUE — missing header-validation in output\n' "$_byte_hex" >&2; return 1; }
++        ;;
++      *)
++        # All other C0 bytes: end-to-end integration path via _write_ctrl_config.
++        _write_ctrl_config "$FIXTURE_DIR" "X-Param-Test" "safe$(printf "\\$_byte_octal")value"
++        _run_ctrl_check "$FIXTURE_DIR"
++        [ "$status" -eq 1 ] \
++          || { printf 'FAIL: byte 0x%s in VALUE did not cause exit 1\n' "$_byte_hex" >&2; return 1; }
++        [[ "$output" == *"header-validation"* ]] \
++          || { printf 'FAIL: byte 0x%s in VALUE — missing header-validation in output\n' "$_byte_hex" >&2; return 1; }
++        ;;
++    esac
++  done
++}
++
++# ---------------------------------------------------------------------------
++# tc.F01 — Parametric: every C0 byte (0x00–0x1F) in header NAME causes exit.
++# Routes each byte through the appropriate exercise path:
++#   NUL (0x00): raw-byte fixture-file pre-flight scan (bash strips NUL at
++#               variable assignment, so it never reaches the awk config parse).
++#   LF  (0x0A): _extract_ctrl_check_fn function-extraction path (LF is awk's
++#               record delimiter and splits the config line during parsing).
++#   CR  (0x0D): _extract_ctrl_check_fn function-extraction path (CR in a header
++#               name disrupts awk record splitting on some platforms).
++#   All other C0 bytes: _write_ctrl_config + _run_ctrl_check integration path.
++# Iterates all 32 bytes; each iteration asserts exit-code 1 AND presence of
++# "header-validation" in output, with the byte hex printed on failure.
++# ---------------------------------------------------------------------------
++
++@test "[control-char-detect] parametric: every C0 byte (0x00-0x1F) in header NAME causes exit" {
++  # Test expectation: Every C0 control byte (0x00 through 0x1F) supplied as a
++  # header name causes the script to exit before reaching any network dispatch
++  # call. Routes each byte through the exercise path that can carry it intact.
++  local _byte_octal _byte_hex
++  for _byte_octal in \
++      000 001 002 003 004 005 006 007 \
++      010 011 012 013 014 015 016 017 \
++      020 021 022 023 024 025 026 027 \
++      030 031 032 033 034 035 036 037; do
++    _byte_hex=$(printf '%02x' "0$_byte_octal")
++    case "$_byte_octal" in
++      000)
++        # NUL: bash strips it at variable assignment; use raw fixture
++        # pre-flight scan with NUL embedded in the header name area.
++        {
++          printf '%s\n' '---'
++          printf '%s\n' 'providers:'
++          printf '%s\n' '  ctrl-test-prov:'
++          printf '%s\n' '    base_url: https://127.0.0.1/v1'
++          printf '%s\n' '    api_key_env: CTRL_TEST_KEY'
++          printf '%s\n' '    transport_type: openai-chat-completions'
++          printf '%s\n' '    supports_prompt_cache: false'
++          printf '%s\n' '    emit_cache_control_markers: false'
++          printf '%s\n' '    default_headers:'
++          printf '      X-Nul'
++          printf '\000'
++          printf 'Name: safe-value\n'
++          printf '%s\n' '---' '' '# Config'
++        } > "$FIXTURE_DIR/config.md"
++        _run_ctrl_check "$FIXTURE_DIR"
++        [ "$status" -eq 1 ] \
++          || { printf 'FAIL: NUL (0x%s) in NAME did not cause exit 1\n' "$_byte_hex" >&2; return 1; }
++        [[ "$output" == *"header-validation"* ]] \
++          || { printf 'FAIL: 0x%s in NAME — missing header-validation in output\n' "$_byte_hex" >&2; return 1; }
++        ;;
++      012|015)
++        # LF/CR: cannot survive awk record splitting cleanly; exercise
++        # _control_char_check directly via function-extraction path.
++        local _fn_file_name="$FIXTURE_DIR/ctrl_fn_name_${_byte_hex}.sh"
++        _extract_ctrl_check_fn "$_fn_file_name"
++        [ -s "$_fn_file_name" ] \
++          || { printf 'FAIL: could not extract _control_char_check for 0x%s\n' "$_byte_hex" >&2; return 1; }
++        local _ts_name="$FIXTURE_DIR/byte_name_test_${_byte_hex}.sh"
++        {
++          printf '%s\n' '#!/usr/bin/env bash'
++          printf 'die() { printf "%%s\n" "$1" >&2; exit 1; }\n'
++          printf '. %s\n' "'$_fn_file_name'"
++          printf '_control_char_check '
++          printf "'"
++          printf 'X-Param'
++          printf "\\$_byte_octal"
++          printf "Name'"
++          printf ' '
++          printf "'safe-value'\n"
++        } > "$_ts_name"
++        run bash "$_ts_name"
++        [ "$status" -eq 1 ] \
++          || { printf 'FAIL: byte 0x%s in NAME did not cause exit 1\n' "$_byte_hex" >&2; return 1; }
++        [[ "$output" == *"header-validation"* ]] \
++          || { printf 'FAIL: byte 0x%s in NAME — missing header-validation in output\n' "$_byte_hex" >&2; return 1; }
++        ;;
++      *)
++        # All other C0 bytes: end-to-end integration path via _write_ctrl_config.
++        _write_ctrl_config "$FIXTURE_DIR" "X-Param$(printf "\\$_byte_octal")Name" "safe-value"
++        _run_ctrl_check "$FIXTURE_DIR"
++        [ "$status" -eq 1 ] \
++          || { printf 'FAIL: byte 0x%s in NAME did not cause exit 1\n' "$_byte_hex" >&2; return 1; }
++        [[ "$output" == *"header-validation"* ]] \
++          || { printf 'FAIL: byte 0x%s in NAME — missing header-validation in output\n' "$_byte_hex" >&2; return 1; }
++        ;;
++    esac
++  done
++}
++
+ # ---------------------------------------------------------------------------
+ # Bullet 5 — LF (0x0A) regression guard.
+ # LF is grep's record delimiter: `printf 'a\nb' | grep -qP '[\x0a]'` returns
+@@ -547,7 +723,7 @@ _extract_ctrl_check_fn() {
+   } > "$test_script"
+ 
+   run bash "$test_script"
+-  [ "$status" -ne 0 ]
++  [ "$status" -eq 1 ]
+ }
+ 
+ # ---------------------------------------------------------------------------

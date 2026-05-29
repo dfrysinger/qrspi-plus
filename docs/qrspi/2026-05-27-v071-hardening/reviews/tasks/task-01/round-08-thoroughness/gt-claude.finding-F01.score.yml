@@ -1,0 +1,2 @@
+score: 68
+reason: Real documentation issue—test file section header is stale after R4/R5 amendments added B13 and B14, both of which are tested but not mentioned in the comment. Not a pre-existing false positive; important for test-coverage tracking but not a functionality defect.

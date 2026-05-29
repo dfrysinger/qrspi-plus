@@ -1,0 +1,180 @@
+diff --git a/tests/helpers/skill-markdown.bash b/tests/helpers/skill-markdown.bash
+index 9309a06..3bb0aa9 100644
+--- a/tests/helpers/skill-markdown.bash
++++ b/tests/helpers/skill-markdown.bash
+@@ -232,8 +232,12 @@ extract_section_fence_aware() {
+   fi
+ 
+   # Signal file: awk writes FOUND_WITH_CONTENT or FOUND_EMPTY after processing.
+-  # Using a PID-scoped name to avoid collisions with concurrent callers.
+-  local signal_tmp="/tmp/skill-md-fence-signal-$$"
++  # Use mktemp to generate an unguessable unique path — a predictable PID-scoped
++  # name (/tmp/skill-md-fence-signal-$$) is vulnerable to TOCTOU / symlink
++  # attacks by any local user who can pre-create the path in world-writable /tmp.
++  # mktemp creates the file with mode 0600 and an unguessable suffix (sec.F01 fix).
++  local signal_tmp
++  signal_tmp="$(mktemp "${TMPDIR:-/tmp}/skill-md-fence-signal-XXXXXXXX")"
+ 
+   local awk_out
+   awk_out="$(awk -v anchor="$anchor" -v signal_tmp="$signal_tmp" '
+@@ -241,7 +245,10 @@ extract_section_fence_aware() {
+ 
+     /^```/ {
+       fence = !fence
+-      if (in_b) print
++      if (in_b) {
++        print
++        has_content = 1
++      }
+       next
+     }
+ 
+@@ -271,6 +278,13 @@ extract_section_fence_aware() {
+       }
+     }
+   ' "$file")"
++  local awk_status=$?
++  if [ "$awk_status" -ne 0 ]; then
++    printf 'extract_section_fence_aware: awk failed (exit %d) processing %s\n' \
++      "$awk_status" "$file" >&2
++    rm -f "$signal_tmp"
++    return 1
++  fi
+ 
+   local signal=""
+   if [ -r "$signal_tmp" ]; then
+diff --git a/tests/unit/test-helpers-skill-markdown.bats b/tests/unit/test-helpers-skill-markdown.bats
+index 475aa7e..473f6df 100644
+--- a/tests/unit/test-helpers-skill-markdown.bats
++++ b/tests/unit/test-helpers-skill-markdown.bats
+@@ -448,3 +448,130 @@ EOF
+   # After migration, the inline function definition must be absent.
+   ! grep -q "^extract_review_round()" "$patterns_file"
+ }
++
++# =============================================================================
++# sf.F01: awk crash produces distinct "awk failed (exit N)" diagnostic
++# (NOT "not found in")
++# =============================================================================
++
++@test "[sf-F01] extract_section_fence_aware: awk crash emits 'awk failed (exit' diagnostic, not 'not found in'" {
++  # sf.F01 (score 100, correctness): awk's exit status was swallowed in the
++  # original implementation.  A crash (non-zero exit from awk) was reported as
++  # "anchor not found", silently masking exec failures, OOM kills, etc.
++  # After the fix the function must:
++  #   - return 1
++  #   - emit a message containing "awk failed (exit" on stderr
++  #   - NOT emit the misleading "not found in" phrase
++  #
++  # Technique: shadow awk in PATH with a script that always exits 2.
++  local fake_bin="$FIXTURE_DIR/fake-bin"
++  mkdir -p "$fake_bin"
++  printf '#!/bin/sh\nexit 2\n' > "$fake_bin/awk"
++  chmod +x "$fake_bin/awk"
++
++  cat > "$FIXTURE_DIR/any.md" <<'EOF'
++### Some Section
++content here
++EOF
++
++  # Run with the fake awk first in PATH so the real awk is never reached.
++  run env PATH="$fake_bin:$PATH" bash -c '
++    load_dir="'"$BATS_TEST_DIRNAME"'/../helpers"
++    # shellcheck source=tests/helpers/skill-markdown.bash
++    source "$load_dir/skill-markdown.bash"
++    extract_section_fence_aware "'"$FIXTURE_DIR/any.md"'" "### Some Section"
++  '
++
++  # Must exit non-zero
++  [ "$status" -ne 0 ]
++  # Must contain the new distinct diagnostic
++  [[ "$output" == *"awk failed (exit"* ]]
++  # Must NOT fall through to the misleading anchor-not-found message
++  [[ "$output" != *"not found in"* ]]
++}
++
++# =============================================================================
++# sec.F01: predictable signal-tmp path TOCTOU/symlink attack hardening
++# =============================================================================
++
++@test "[sec-F01] extract_section_fence_aware: mktemp-generated signal-tmp does not follow pre-planted symlink (TOCTOU fix)" {
++  # sec.F01 (score 78, correctness): signal_tmp was computed as
++  # /tmp/skill-md-fence-signal-$$ — predictable before the process starts.
++  # A local attacker can pre-create a symlink at that path pointing at an
++  # arbitrary target; awk's END block then overwrites the symlink target.
++  #
++  # After the fix (mktemp generates an unguessable unique path), the
++  # pre-planted symlink at the old predictable path is never touched, so
++  # the attack target file retains its original content.
++  #
++  # RED rationale: pre-fix, awk writes FOUND_WITH_CONTENT to the predictable
++  # path which follows the symlink and overwrites attack_target; the assertion
++  # that attack_target == ORIGINAL_CONTENT therefore FAILS (RED).
++  # Post-fix, mktemp creates a distinct path; the symlink is untouched;
++  # the assertion PASSES (GREEN).
++
++  # Create the attack target with known content.
++  local attack_target="$FIXTURE_DIR/sec-f01-attack-target"
++  printf 'ORIGINAL_CONTENT\n' > "$attack_target"
++
++  # Plant the symlink at the predictable path (uses $$ = bats process PID;
++  # extract_section_fence_aware runs in the same process so its $$ matches).
++  local predictable_path="/tmp/skill-md-fence-signal-$$"
++  ln -sf "$attack_target" "$predictable_path"
++
++  # Fixture file with a valid non-empty section so awk reaches its END block
++  # and writes FOUND_WITH_CONTENT to whatever signal_tmp resolves to.
++  cat > "$FIXTURE_DIR/valid.md" <<'EOF'
++### Some Section
++content line that is not empty
++EOF
++
++  # Direct call (no `run`) so the function executes in this shell where $$
++  # equals the bats PID — same value the function uses to build the
++  # predictable path if it has not yet been fixed.
++  extract_section_fence_aware "$FIXTURE_DIR/valid.md" "### Some Section" \
++    >/dev/null 2>&1 || true
++
++  # Remove the symlink regardless of outcome (test-level cleanup).
++  rm -f "$predictable_path"
++
++  # Post-fix: attack target must contain its original content (symlink was
++  # never followed because mktemp generated a unique path).
++  local content
++  content="$(cat "$attack_target")"
++  [ "$content" = "ORIGINAL_CONTENT" ]
++}
++
++# =============================================================================
++# sf.F03: empty fenced block (delimiters only) treated as content, not FOUND_EMPTY
++# =============================================================================
++
++@test "[sf-F03] extract_section_fence_aware: section containing only an empty fenced block returns 0 with fence delimiters in stdout" {
++  # sf.F03 (score 88, correctness): the /^```/ rule inside the awk script set
++  # fence state and printed the delimiter line but never set has_content=1.
++  # A section whose body was an empty fenced code block (two ``` delimiter lines
++  # with nothing between them) was therefore misclassified as FOUND_EMPTY and
++  # its output silently discarded.
++  #
++  # After the fix, fence delimiter lines inside the target section must set
++  # has_content=1, so the function returns 0 and emits both delimiter lines.
++  cat > "$FIXTURE_DIR/empty-fence.md" <<'EOF'
++### Target Section
++```
++```
++### Next Section
++other content
++EOF
++
++  out="$(extract_section_fence_aware "$FIXTURE_DIR/empty-fence.md" "### Target Section")"
++  local rc=$?
++
++  # Pre-fix: returns 1 (FOUND_EMPTY). Post-fix: must return 0.
++  [ "$rc" -eq 0 ]
++  # Both fence delimiter lines must appear in the output.
++  [[ "$out" == *'```'* ]]
++  # Verify the anchor line is present (anchor-inclusive contract).
++  [[ "$out" == *"### Target Section"* ]]
++  # The next section's content must not bleed through.
++  [[ "$out" != *"other content"* ]]
++}

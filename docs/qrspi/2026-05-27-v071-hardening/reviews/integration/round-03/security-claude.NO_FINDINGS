@@ -1,0 +1,41 @@
+# NO_FINDINGS — Security-Integration Review, Round 03
+
+**Reviewer**: security-claude
+**Round**: 3
+**Scope**: Single-file diff to `agents/qrspi-test-writer.md` (~12 net lines), commits a8d90c7 → 1d38afe
+**Artifact**: docs/qrspi/2026-05-27-v071-hardening/structure.md (companion: design.md)
+
+## Disposition
+
+No cross-task security findings.
+
+## Verification performed
+
+1. **R2-F02 closed.** The `skills: [implementer-protocol]` preload added in round 01 is removed from the test-writer frontmatter (diff line 9, file line 5 confirms no `skills:` key). The conflicting wider directives from the implementer-protocol body (`git add -A` allowance, `reviews/tasks/...` write authority) are no longer pulled into the test-writer's effective prompt.
+
+2. **Inline restatement does not expand capability.** Step 6a–d of the implement-phase Behavior block uses only:
+   - `Write` (in `tools:` grant) to create `.qrspi-commit-msg.txt`
+   - `git add <test-file-paths>` (explicit-path only; `-A` explicitly forbidden) — subset of allowlist line 23
+   - `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt` — subset of allowlist line 23
+   - `rm .qrspi-commit-msg.txt` — subset of allowlist line 24 (`rm <transient-scratch-file>`)
+
+   The diff additionally adds a new parenthetical *to the allowlist itself* (file line 23: "list each path explicitly; **never `git add -A`** or any wildcard staging"), strengthening the constraint. The step-6 preamble explicitly names the HARD CONSTRAINT block as binding precedence over "any wider pattern you may have seen elsewhere," preserving authority ordering against context drift.
+
+3. **R2-F01 (status-token mismatch) confirmed non-security.** Output Contract authoritatively permits `BLOCKED`; orchestrator parser is bound to the contract, not the Behavior prose. No auth / data / injection / privilege / race path depends on token-set narrowing. Clarity-class defect only.
+
+4. **No regression of T6 / R2-R8 hardened paths.** Diff touches ONLY `agents/qrspi-test-writer.md`. No changes to `scripts/lib/*.sh`, gh wrapper, realpath canonicalization, or HOME-shape guards.
+
+## Cross-task criteria
+
+| Criterion | Result |
+|---|---|
+| Broken access control across tasks | Pass — net privilege contraction; no new endpoints/routes |
+| Data exposure across boundaries | Pass — no data-field flows changed |
+| Injection vectors across tasks | Pass — fixed scratch filename, explicit-path `git add`, no new untrusted sinks |
+| Dependency vulnerabilities | Pass — no dependency changes |
+| Privilege escalation paths | Pass — implementer-protocol preload removed; `-A` prohibition stated in three places |
+| Race conditions / shared state | Pass — no shared mutable state changes |
+
+## Recommendation
+
+Approve. Round-02's identified privilege-escalation vector (R2-F02) is fully remediated at the source, and the remediation does not introduce a replacement vector via the inline restatement.

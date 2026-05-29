@@ -1,0 +1,2 @@
+score: 68
+reason: Real fail-open pattern — empty/non-numeric `_raw_file_bytes`/`_raw_no_nul_bytes` makes `[ ... -ne ... ]` exit 2, which `if` treats as false, silently bypassing the NUL pre-flight in a defensive check; trigger probability is genuinely low (file already validated upstream and `set -e` isn't in effect either way), but the fail-open semantics in a security-class control-byte guard matches the hardening initiative's exact concern; minor location/variable-name drift (598-601 vs 594-598, CONFIG_FILE vs CONFIG_MD) doesn't invalidate the substance.

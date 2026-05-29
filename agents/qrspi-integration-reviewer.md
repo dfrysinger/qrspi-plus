@@ -1,7 +1,6 @@
 ---
 name: qrspi-integration-reviewer
 description: Reviews merged code from multiple implementation tasks for cross-task integration issues. Dispatched from the Integrate phase after all tasks are merged.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

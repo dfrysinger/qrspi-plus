@@ -1,0 +1,22 @@
+1..21
+ok 1 [T17] clean markdown file (no forbidden tokens) passes
+ok 2 [T17] markdown file with release-version token (in v0.6) outside carve-out fails
+ok 3 [T17] line with evergreen-exempt inline comment is skipped
+ok 4 [T17] file under docs/qrspi/YYYY-MM-DD-* carve-out path is exempt
+ok 5 [T17] file outside carve-out path is not exempt
+ok 6 [T17] CHANGELOG.md is exempt from path-shaped carve-out check
+ok 7 [T17] file under tests/fixtures/ is exempt
+ok 8 [T17] non-markdown file path is not exempt (but scan skips non-.md)
+ok 9 [T17] repo-wide evergreen-markdown scan — no hits outside carve-outs
+ok 10 [T17] shared helper loads and require_repo_root resolves REPO_ROOT
+ok 11 [jargon] positive fixture: bare-paren PR ref triggers detection
+ok 12 [jargon] positive fixture: Mechanism codename triggers detection
+ok 13 [jargon] negative fixture: 'Mechanism' table header (no trailing letter) does NOT trigger
+ok 14 [jargon] positive fixture: B-code in parens triggers detection
+ok 15 [jargon] positive fixture: half-step numbering triggers detection
+ok 16 [jargon] positive fixture: capitalized Step 7.5 triggers detection
+ok 17 [jargon] positive fixture: all-caps STEP 7.5 triggers detection
+ok 18 [jargon] negative fixture: full integer step number does NOT trigger
+ok 19 [jargon] negative fixture: hierarchical sub-step numbering (step 5.2, step 1.1) does NOT trigger
+ok 20 [jargon] inline evergreen-exempt comment suppresses jargon hit
+ok 21 [jargon] skills/** + agents/** scan — no jargon hits

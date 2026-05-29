@@ -1,0 +1,2 @@
+score: 40
+reason: Verified — detect_host/check_codex_available defined in run-codex-review.sh:122-190 but using-qrspi/SKILL.md:405 still uses the inline glob with zero `detect_host` references; parallelization.md:21,24 confirms task-07 (Wave 2) and task-10 (Wave 5) own the wiring per DKR10. Finding correctly self-classifies as LOW/informational scope-boundary — no Wave-1 defect, just a forward-looking flag.

@@ -1,0 +1,2 @@
+score: 90
+reason: Confirmed — spec bullet 14 is listed as a Test Expectation in task-01.md (line 31) but no test in the 42-test bats file exercises an invalid api_key_env identifier; the two existing key-resolution tests (lines 155–172) use valid identifiers NEVER_SET_KEY_XYZ and EMPTY_KEY_XYZ and test env-var-unset/empty-value paths, not the identifier-validator.

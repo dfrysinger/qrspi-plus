@@ -1,7 +1,6 @@
 ---
 name: qrspi-code-quality-reviewer
 description: Verifies the implementation is clean, well-structured, and maintainable. Used in both Implement phase (per-task code review) and Test phase (test code review). Runs after spec-reviewer passes.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

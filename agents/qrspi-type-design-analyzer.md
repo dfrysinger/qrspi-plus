@@ -1,7 +1,6 @@
 ---
 name: qrspi-type-design-analyzer
 description: Analyzes type design for encapsulation, invariant expression, and correct use. Deep mode only, only when the task introduces new types. Runs after all correctness reviewers pass.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

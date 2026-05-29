@@ -283,3 +283,719 @@ run_pin() {
   # When fixed, this should run cleanly:
   # grep -c '^## Overview' "$SKILLS/plan/SKILL.md" | grep -qx 1
 }
+
+# ===========================================================================
+# T7 — v0.7.1 hardening: using-qrspi SKILL prose + Codex dispatch transport
+# routing acceptance.
+#
+# Task spec: docs/qrspi/2026-05-27-v071-hardening/tasks/task-07.md
+# Target files (per spec):
+#   - skills/using-qrspi/SKILL.md  (Codex detection section gains per-host
+#     conditional prose naming both transports)
+#   - tests/acceptance/v07-phase1/test-phase1-acceptance.bats  (this file —
+#     gains end-to-end host-detection assertions exercising the dispatch
+#     surface under mocked conditions for each host path)
+#
+# Coverage: bullets TE1..TE13 of task-07.md ## Test Expectations.
+#
+# RED scope at test-author time (i.e., before Task 7's implementer runs):
+#   TE1..TE4  RED: SKILL.md does not yet name the Copilot CLI task-tool
+#             transport, the `agent_type: code-review` / `model: gpt-5.3-codex`
+#             parameters, or the mismatch warning-vs-gating policy.
+#   TE5..TE6  Already green from Task 6 (trace markers are emitted today);
+#             added here for traceability to the acceptance gate, per spec.
+#   TE7       RED: current run-codex-review.sh does NOT short-circuit when
+#             check_codex_available returns non-zero — it only emits a
+#             [mismatch] warning when codex_reviews=true and continues
+#             dispatch.  Task 7's bullet 7 requires a hard short-circuit with
+#             single-line stderr diagnostic and non-zero exit propagation.
+#   TE8..TE9  Discriminating-power tests; passes when env matches branch,
+#             fails (RED) when env disagrees.  Mostly green today (Task 6).
+#   TE10..11  Pass today (mock invoked + trace marker fires); added here so
+#             the acceptance gate proves the mock transport actually ran,
+#             not just a happy exit code (per spec emphasis).
+#   TE12      Green today (Task 6 propagates transport exit).
+#   TE13      RED today: the current mismatch path emits the [mismatch] line
+#             ONLY when check_codex_available fails (lines 607-611 of
+#             run-codex-review.sh).  Task 7's bullet 13 scenario requires
+#             mismatch to be detectable from host-vs-config disagreement
+#             alone (e.g., detected copilot-cli + codex_reviews: false),
+#             where check_codex_available succeeds and dispatch reaches the
+#             transport.  Under current code, no [mismatch] line fires for
+#             this scenario, so the warning-emitted assertion is RED.
+#
+# Mock strategy (shared by TE5..TE13):
+#   Per-test, build a self-contained mock REPO_ROOT in a fresh mktemp dir
+#   (mirrors the pattern in tests/unit/test-host-detection.bats).  The mock
+#   `scripts/run-third-party-llm.sh` drains stdin, optionally writes
+#   ${MOCK_TRANSPORT_STDOUT} to stdout, optionally writes
+#   ${MOCK_TRANSPORT_STDERR} to stderr, and exits ${MOCK_TRANSPORT_EXIT:-0}.
+#   The wrapper is invoked with QRSPI_REPO_ROOT pointing at the mock dir, so
+#   it resolves the dispatcher to the mock instead of the real one.
+#
+#   Each test uses its OWN distinguishable MOCK_TRANSPORT_STDOUT marker so
+#   "the mock was invoked" is provable from stdout, not just from exit code.
+#
+#   Per-test setup is inlined (this file's setup_file() is shared with the
+#   earlier traceability tests and we do not want to widen its scope).
+# ===========================================================================
+
+# Helper: build a self-contained mock REPO_ROOT skeleton in $1.
+# Mirrors tests/unit/test-host-detection.bats setup() but as a per-test
+# helper to avoid widening this file's setup_file().
+_t7_make_mock_repo() {
+  local tmp="$1"
+
+  # Subject-code file required by --subject-code for dispatch invocations.
+  mkdir -p "$tmp/src"
+  printf 'const x = 1;\n' > "$tmp/src/subject.ts"
+
+  # Mock reviewer-protocol files (the wrapper's compose_prompt reads these).
+  mkdir -p "$tmp/skills/reviewer-protocol"
+  printf '## Reviewer Dispatch Contract\nReviewer protocol stub.\n' \
+    > "$tmp/skills/reviewer-protocol/SKILL.md"
+  printf '<<<FINDING-BOUNDARY>>>\nCodex emission override stub.\n' \
+    > "$tmp/skills/reviewer-protocol/codex-emission-override.md"
+
+  # Minimal agent file with no extra skill deps (keeps the skill-load chain
+  # trivially short so the test fixture stays self-contained).
+  mkdir -p "$tmp/agents"
+  printf -- '---\nmodel: sonnet\nskills: []\n---\n\nStub agent body.\n' \
+    > "$tmp/agents/qrspi-spec-reviewer.md"
+
+  # Artifact directory with a default config (codex_reviews: false).
+  # Individual tests override this when they need a specific value.
+  mkdir -p "$tmp/artifact-dir"
+  printf -- '---\ncodex_reviews: false\n---\n' > "$tmp/artifact-dir/config.md"
+
+  # Mock dispatcher.  Drains stdin so the upstream pipe never blocks.
+  # If MOCK_TRANSPORT_STDOUT is set, writes it to stdout.  If
+  # MOCK_TRANSPORT_STDERR is set, writes it to stderr.  Exits
+  # MOCK_TRANSPORT_EXIT (default 0).
+  mkdir -p "$tmp/scripts"
+  cat > "$tmp/scripts/run-third-party-llm.sh" <<'MOCK_DISPATCHER_EOF'
+#!/usr/bin/env bash
+# Mock run-third-party-llm.sh for T7 dispatch-surface tests.
+cat > /dev/null
+if [ -n "${MOCK_TRANSPORT_STDOUT:-}" ]; then
+  printf '%s\n' "${MOCK_TRANSPORT_STDOUT}"
+fi
+if [ -n "${MOCK_TRANSPORT_STDERR:-}" ]; then
+  printf '%s\n' "${MOCK_TRANSPORT_STDERR}" >&2
+fi
+exit "${MOCK_TRANSPORT_EXIT:-0}"
+MOCK_DISPATCHER_EOF
+  chmod +x "$tmp/scripts/run-third-party-llm.sh"
+
+  # HOME fixture for the claude-code companion-glob probe.  Empty by default;
+  # tests that want check_codex_available(claude-code) to succeed must
+  # populate the codex-companion.mjs path inside this tree before invoking.
+  mkdir -p "$tmp/mock-home"
+
+  # Output directory for dispatch invocations (--output-dir must be absolute).
+  mkdir -p "$tmp/out"
+}
+
+# Helper: skip the test if `gh` is absent or not in a trusted prefix
+# (precondition for detect_host emitting 'copilot-cli' when COPILOT_CLI=1).
+# Mirrors the [r5-sec.F01] skip-guard pattern in test-host-detection.bats.
+_t7_require_trusted_gh() {
+  local _gh
+  _gh="$(command -v gh 2>/dev/null)"
+  if [ -z "$_gh" ]; then
+    skip "no gh binary on this host (precondition for copilot-cli detection)"
+  fi
+  _gh="$(realpath "$_gh" 2>/dev/null || readlink -f "$_gh" 2>/dev/null)" || _gh=""
+  case "$_gh" in
+    /usr/* | /opt/* | /Applications/*) ;;
+    *) skip "gh ($_gh) not in trusted prefix on this host (precondition for copilot-cli detection)" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE1: SKILL prose names both transports
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE1] using-qrspi SKILL Codex detection section names BOTH Copilot CLI task-tool and Claude Code shell-pipeline transports" {
+  # Test expectation: skills/using-qrspi/SKILL.md Codex detection section
+  # contains conditional prose that explicitly names both the Copilot CLI
+  # task-tool transport and the Claude Code shell-pipeline transport.
+  #
+  # Anchor: load-bearing tokens must appear in the same section block as
+  # the existing "**Codex detection:**" prose (line ~405 today).
+  local skill="$SKILLS/using-qrspi/SKILL.md"
+  [ -f "$skill" ]
+  # The section anchor must remain present.
+  grep -q "Codex detection" "$skill"
+  # Token 1: task-tool transport named (either "task tool" or "task-tool"
+  # accepted; both are conventional in this codebase, e.g. design.md uses
+  # "task tool" prose and "[transport: task-tool]" trace marker).
+  grep -qE "task[- ]tool" "$skill"
+  # Token 2: shell-pipeline transport named.
+  grep -qE "shell[- ]pipeline|shell pipeline" "$skill"
+  # Token 3: both transports must appear in the SAME Codex-related
+  # conditional prose block (proves the prose is per-host conditional, not
+  # an unrelated mention).  Extract the slice from the first "Codex
+  # detection" heading down to the next H2/H3 boundary; assert both tokens
+  # appear inside that slice.
+  local slice
+  slice="$(awk '
+    /Codex detection/ { capture=1 }
+    capture && /^#{2,4} / && NR>start { exit }
+    capture { print; if (start==0) start=NR }
+  ' "$skill")"
+  printf '%s\n' "$slice" | grep -qE "task[- ]tool"
+  printf '%s\n' "$slice" | grep -qE "shell[- ]pipeline|shell pipeline"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE2: SKILL prose names agent_type: code-review and model: gpt-5.3-codex
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE2] using-qrspi SKILL prose specifies agent_type: code-review and model: gpt-5.3-codex for Copilot CLI Codex dispatch" {
+  # Test expectation: the SKILL prose specifies `agent_type: code-review`
+  # and `model: gpt-5.3-codex` as the parameters for Copilot CLI Codex
+  # dispatch.  Both literal tokens must be present (the model identifier
+  # is the one named in design.md line 59 and goals.md G6).
+  local skill="$SKILLS/using-qrspi/SKILL.md"
+  [ -f "$skill" ]
+  grep -q "agent_type: code-review" "$skill"
+  grep -q "model: gpt-5.3-codex" "$skill"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE3: SKILL prose names scripts/run-codex-review.sh as the Claude Code
+# Codex dispatch mechanism.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE3] using-qrspi SKILL prose names scripts/run-codex-review.sh as the Claude Code Codex dispatch mechanism" {
+  # Test expectation: the SKILL prose names `scripts/run-codex-review.sh`
+  # as the Claude Code Codex dispatch mechanism.  The token must appear
+  # in the Codex-related prose slice (not just incidentally elsewhere).
+  local skill="$SKILLS/using-qrspi/SKILL.md"
+  [ -f "$skill" ]
+  grep -q "scripts/run-codex-review.sh" "$skill"
+  # Co-location anchor: the script path must appear in the same Codex
+  # detection prose slice as the shell-pipeline token from TE1.
+  local slice
+  slice="$(awk '
+    /Codex detection/ { capture=1 }
+    capture && /^#{2,4} / && NR>start { exit }
+    capture { print; if (start==0) start=NR }
+  ' "$skill")"
+  printf '%s\n' "$slice" | grep -q "scripts/run-codex-review.sh"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE4: SKILL prose documents the mismatch warning-vs-gating policy.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE4] using-qrspi SKILL prose documents that mismatch emits single-line stderr diagnostic and continues with configured policy (mismatch does NOT gate dispatch)" {
+  # Test expectation: skills/using-qrspi/SKILL.md contains prose documenting
+  # that when the detected host disagrees with the codex_reviews config
+  # value, the dispatch surface emits a single-line diagnostic to stderr
+  # identifying the disagreement and continues with the configured policy;
+  # the mismatch diagnostic does NOT gate dispatch.
+  local skill="$SKILLS/using-qrspi/SKILL.md"
+  [ -f "$skill" ]
+  # Mismatch tokens — at least one mismatch-naming variant must be present.
+  grep -qEi "mismatch|disagree|disagreement" "$skill"
+  # Policy clause: stderr diagnostic is named.
+  grep -qE "stderr|diagnostic|single.line" "$skill"
+  # Policy clause: dispatch is NOT blocked / continues / warning-only.
+  grep -qEi "warning.only|warning only|does not block|does not gate|continues with|not block dispatch|configured policy" "$skill"
+  # Co-location: all three tokens must appear in the same Codex-detection
+  # prose slice (proves the policy is documented in the Codex section, not
+  # incidentally elsewhere).
+  local slice
+  slice="$(awk '
+    /Codex detection/ { capture=1 }
+    capture && /^#{2,4} / && NR>start { exit }
+    capture { print; if (start==0) start=NR }
+  ' "$skill")"
+  printf '%s\n' "$slice" | grep -qEi "mismatch|disagree"
+  printf '%s\n' "$slice" | grep -qEi "stderr|diagnostic|configured policy|does not (block|gate)|warning"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE5: COPILOT_CLI=1 → [transport: task-tool] exactly once, no
+# [transport: shell-pipeline].  Mocked Codex dispatch via the task-tool
+# wrapper.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE5] dispatch surface: COPILOT_CLI=1 path emits [transport: task-tool] exactly once and never [transport: shell-pipeline]" {
+  # Test expectation: with COPILOT_CLI=1 set, the dispatch surface emits
+  # the `[transport: task-tool]` marker to stderr exactly once and does
+  # not emit the `[transport: shell-pipeline]` marker (exercising a
+  # mocked Codex dispatch via the task tool wrapper).
+  _t7_require_trusted_gh
+
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+  # codex_reviews: true so the copilot-cli dispatch is not skipped by an
+  # availability gate before the marker can be emitted.
+  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+
+  local stderr_log="$tmp/te5-stderr.log"
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI=1 \
+    MOCK_TRANSPORT_STDOUT="te5-task-tool-mock-marker-2026-05-27" \
+    MOCK_TRANSPORT_EXIT=0 \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$tmp/te5-stdout.log" 2>"$stderr_log" || true
+
+  # Exactly-once [transport: task-tool] on stderr.
+  local task_tool_count
+  task_tool_count="$(grep -c '\[transport: task-tool\]' "$stderr_log" 2>/dev/null || printf '0')"
+  [ "$task_tool_count" -eq 1 ]
+  # [transport: shell-pipeline] must be absent.
+  ! grep -q '\[transport: shell-pipeline\]' "$stderr_log"
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE6: COPILOT_CLI unset → [transport: shell-pipeline] exactly once,
+# no [transport: task-tool].  Mocked scripts/run-codex-review.sh path.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE6] dispatch surface: COPILOT_CLI-unset path emits [transport: shell-pipeline] exactly once and never [transport: task-tool]" {
+  # Test expectation: with COPILOT_CLI unset and the shell pipeline via
+  # `scripts/run-codex-review.sh` mocked, the dispatch surface emits the
+  # `[transport: shell-pipeline]` marker to stderr exactly once and does
+  # not emit the `[transport: task-tool]` marker.
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+
+  local stderr_log="$tmp/te6-stderr.log"
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI="" \
+    MOCK_TRANSPORT_STDOUT="te6-shell-pipeline-mock-marker-2026-05-27" \
+    MOCK_TRANSPORT_EXIT=0 \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$tmp/te6-stdout.log" 2>"$stderr_log" || true
+
+  local pipe_count
+  pipe_count="$(grep -c '\[transport: shell-pipeline\]' "$stderr_log" 2>/dev/null || printf '0')"
+  [ "$pipe_count" -eq 1 ]
+  ! grep -q '\[transport: task-tool\]' "$stderr_log"
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE7: check_codex_available non-zero → single-line stderr diagnostic
+# + propagates non-zero exit (NO log-and-continue).
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE7] dispatch surface: check_codex_available non-zero short-circuits with single-line stderr diagnostic and propagates non-zero exit (no log-and-continue)" {
+  # Test expectation: when check_codex_available returns non-zero for the
+  # detected host, the dispatch surface emits a single-line diagnostic to
+  # stderr and propagates non-zero exit (no log-and-continue).
+  #
+  # Scenario: detected_host=claude-code (COPILOT_CLI unset), HOME points at
+  # a mock tree with NO codex-companion.mjs → check_codex_available
+  # returns non-zero.  The dispatch surface MUST exit non-zero before
+  # invoking the transport mock (which would otherwise exit 0).
+  #
+  # RED state under Task-6 code: current run-codex-review.sh only emits a
+  # `[mismatch]` warning when codex_reviews=true and continues to dispatch
+  # the transport, which exits 0 → dispatch exits 0 → this test fails.
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+
+  local stderr_log="$tmp/te7-stderr.log"
+  local dispatch_status=0
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI="" \
+    HOME="$tmp/mock-home" \
+    MOCK_TRANSPORT_EXIT=0 \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$tmp/te7-stdout.log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
+
+  # The dispatch surface MUST exit non-zero (Codex unavailable short-circuit).
+  [ "$dispatch_status" -ne 0 ]
+  # A single-line stderr diagnostic must name the failure: at minimum it
+  # must reference Codex unavailability or the check_codex_available probe.
+  grep -qEi "codex|check_codex_available|unavailable|companion" "$stderr_log"
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE8a (positive): Copilot CLI assertion passes when COPILOT_CLI=1 set.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE8a] dispatch surface: Copilot CLI assertion PASSES (task-tool marker present) when COPILOT_CLI=1 is set" {
+  # Test expectation: the acceptance test assertion for the Copilot CLI
+  # path passes when COPILOT_CLI=1 is set (positive case of TE8's
+  # discriminating-power assertion).
+  _t7_require_trusted_gh
+
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+
+  local stderr_log="$tmp/te8a-stderr.log"
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI=1 \
+    MOCK_TRANSPORT_STDOUT="te8a-marker-2026-05-27" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$tmp/te8a-stdout.log" 2>"$stderr_log" || true
+
+  # Positive: task-tool marker MUST be present (assertion passes).
+  grep -q '\[transport: task-tool\]' "$stderr_log"
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE8b (negative): Copilot CLI assertion FAILS (RED) when COPILOT_CLI
+# is absent — i.e., the task-tool marker is correctly absent on the
+# claude-code branch.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE8b] dispatch surface: Copilot CLI assertion FAILS (task-tool marker ABSENT) when COPILOT_CLI is unset (discriminating-power negative)" {
+  # Test expectation: the acceptance test assertion for the Copilot CLI
+  # path fails (RED) when COPILOT_CLI is absent.  This is the inverted-
+  # environment negative case proving the assertion has discriminating
+  # power: the task-tool marker MUST NOT fire when the env signal is
+  # absent.
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+
+  local stderr_log="$tmp/te8b-stderr.log"
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI="" \
+    MOCK_TRANSPORT_STDOUT="te8b-marker-2026-05-27" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$tmp/te8b-stdout.log" 2>"$stderr_log" || true
+
+  # Negative: task-tool marker MUST be absent (the Copilot CLI assertion
+  # would fail if applied to this run — proving its discriminating power).
+  ! grep -q '\[transport: task-tool\]' "$stderr_log"
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE9a (positive): Claude Code assertion passes when COPILOT_CLI unset.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE9a] dispatch surface: Claude Code assertion PASSES (shell-pipeline marker present) when COPILOT_CLI is unset" {
+  # Test expectation: the acceptance test assertion for the Claude Code
+  # path passes when COPILOT_CLI is unset (positive case of TE9).
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+
+  local stderr_log="$tmp/te9a-stderr.log"
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI="" \
+    MOCK_TRANSPORT_STDOUT="te9a-marker-2026-05-27" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$tmp/te9a-stdout.log" 2>"$stderr_log" || true
+
+  grep -q '\[transport: shell-pipeline\]' "$stderr_log"
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE9b (negative): Claude Code assertion FAILS when COPILOT_CLI signal
+# is active — i.e., the shell-pipeline marker is correctly absent on the
+# copilot-cli branch.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE9b] dispatch surface: Claude Code assertion FAILS (shell-pipeline marker ABSENT) when COPILOT_CLI=1 is active (discriminating-power negative)" {
+  # Test expectation: the acceptance test assertion for the Claude Code
+  # path fails (RED) when the Copilot CLI signal is active.  The
+  # shell-pipeline marker MUST NOT fire when COPILOT_CLI=1 selects the
+  # task-tool branch.
+  _t7_require_trusted_gh
+
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+
+  local stderr_log="$tmp/te9b-stderr.log"
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI=1 \
+    MOCK_TRANSPORT_STDOUT="te9b-marker-2026-05-27" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$tmp/te9b-stdout.log" 2>"$stderr_log" || true
+
+  ! grep -q '\[transport: shell-pipeline\]' "$stderr_log"
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE10: Copilot CLI path — mocked task-tool dispatch exits 0 AND
+# captured stdout contains a distinguishable marker the mock emitted.
+# Exit-code-0-alone is insufficient proof.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE10] dispatch surface: Copilot CLI path — mocked task-tool dispatch exits 0 AND stdout carries a distinguishable mock-emitted marker (exit 0 alone insufficient)" {
+  # Test expectation: for the Copilot CLI path, the mocked task-tool
+  # dispatch exits with code 0 and captured stdout contains a
+  # distinguishable marker string emitted by the mock transport (a value
+  # the mock produces and no other code path produces), proving the
+  # dispatch invoked the mock rather than falling back.
+  _t7_require_trusted_gh
+
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+
+  # Distinguishable marker — unique enough that no fallback code path could
+  # produce it incidentally.
+  local mock_marker="te10-task-tool-mock-emitted-DAB72CC1-1429-46E0-8D0F-A8EF92AB1230"
+  local stdout_log="$tmp/te10-stdout.log"
+  local stderr_log="$tmp/te10-stderr.log"
+  local dispatch_status=0
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI=1 \
+    MOCK_TRANSPORT_STDOUT="$mock_marker" \
+    MOCK_TRANSPORT_EXIT=0 \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$stdout_log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
+
+  # Trace marker proves the COPILOT_CLI branch ran.
+  grep -q '\[transport: task-tool\]' "$stderr_log"
+  # Mock marker on stdout proves the mock transport was actually invoked
+  # (not a fallback).
+  grep -q "$mock_marker" "$stdout_log"
+  # Exit 0.
+  [ "$dispatch_status" -eq 0 ]
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE11: Claude Code path — mocked scripts/run-codex-review.sh dispatch
+# exits 0 AND captured stdout contains a distinguishable marker emitted by
+# the mock.  Exit-code-0-alone is insufficient proof.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE11] dispatch surface: Claude Code path — mocked shell-pipeline dispatch exits 0 AND stdout carries a distinguishable mock-emitted marker (exit 0 alone insufficient)" {
+  # Test expectation: for the Claude Code path, the mocked
+  # `scripts/run-codex-review.sh` dispatch exits with code 0 and captured
+  # stdout contains a distinguishable marker string emitted by the mock
+  # transport, proving the dispatch invoked the mock rather than falling
+  # back.
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+
+  local mock_marker="te11-shell-pipeline-mock-emitted-7F8C2A60-9B43-4E1B-AC91-3D6E2F1B0A55"
+  local stdout_log="$tmp/te11-stdout.log"
+  local stderr_log="$tmp/te11-stderr.log"
+  local dispatch_status=0
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI="" \
+    MOCK_TRANSPORT_STDOUT="$mock_marker" \
+    MOCK_TRANSPORT_EXIT=0 \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$stdout_log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
+
+  grep -q '\[transport: shell-pipeline\]' "$stderr_log"
+  grep -q "$mock_marker" "$stdout_log"
+  [ "$dispatch_status" -eq 0 ]
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE12: Non-zero transport exit (correctly-routed, Codex available)
+# propagates unchanged.  No suppression, no log-and-continue.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE12] dispatch surface: non-zero transport exit propagates unchanged on the correctly-routed Codex-available path (no suppression)" {
+  # Test expectation: when the mocked transport command (correctly-routed,
+  # Codex available) exits with a non-zero exit code, the dispatch surface
+  # propagates that same non-zero exit code to the caller — no
+  # suppression, no log-and-continue.
+  #
+  # Correctly-routed = shell-pipeline (COPILOT_CLI unset).  Codex
+  # available = mock HOME contains a codex-companion.mjs at the expected
+  # glob, so check_codex_available(claude-code) returns 0 and dispatch
+  # reaches the transport.
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+
+  # Populate the companion-glob path so check_codex_available succeeds.
+  mkdir -p "$tmp/mock-home/.claude/plugins/cache/openai-codex/codex/v1/scripts"
+  printf '// mock codex-companion stub\n' \
+    > "$tmp/mock-home/.claude/plugins/cache/openai-codex/codex/v1/scripts/codex-companion.mjs"
+
+  local stderr_log="$tmp/te12-stderr.log"
+  local dispatch_status=0
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI="" \
+    HOME="$tmp/mock-home" \
+    MOCK_TRANSPORT_STDOUT="te12-marker-2026-05-27" \
+    MOCK_TRANSPORT_EXIT=42 \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$tmp/te12-stdout.log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
+
+  # Trace marker confirms the shell-pipeline path ran (anchors RED to the
+  # T06 dispatch surface, not a pre-T06 legacy path that would also
+  # propagate exit codes).
+  grep -q '\[transport: shell-pipeline\]' "$stderr_log"
+  # Exit code MUST be 42 (propagated from mock transport — no suppression,
+  # no remapping, no log-and-continue).
+  [ "$dispatch_status" -eq 42 ]
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T7 / TE13: Mismatch warning path + non-zero transport exit propagates
+# unchanged.  The mismatch warning does not suppress dispatch failures.
+# ---------------------------------------------------------------------------
+
+@test "[T7 / TE13] dispatch surface: mismatch-warning path does not suppress non-zero transport exit (mismatch emitted, transport ran, non-zero propagated)" {
+  # Test expectation: when the dispatch-surface detects a mismatch
+  # (warning emitted) and then invokes a mocked transport that exits with
+  # a non-zero exit code, the dispatch surface propagates that same
+  # non-zero exit code to the caller.  The mismatch warning path does not
+  # suppress dispatch failures.
+  #
+  # Scenario: detected_host=copilot-cli (COPILOT_CLI=1, trusted gh),
+  # config codex_reviews=false → host-vs-config mismatch.
+  # check_codex_available(copilot-cli) returns 0 trivially (no filesystem
+  # probe), so dispatch reaches the mock transport.  Mock exits 7.
+  #
+  # RED state under Task-6 code: the current mismatch line fires ONLY when
+  # check_codex_available fails AND codex_reviews=true.  In this scenario
+  # check_codex_available SUCCEEDS, so no `[mismatch]` line fires under
+  # current code → the warning-emitted assertion is RED.  Task 7 is
+  # expected to decouple the mismatch warning from check_codex_available
+  # failure so it fires on any host-vs-config disagreement.
+  _t7_require_trusted_gh
+
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+  # Explicit mismatch: detected copilot-cli but config says no Codex.
+  printf -- '---\ncodex_reviews: false\n---\n' > "$tmp/artifact-dir/config.md"
+
+  local stderr_log="$tmp/te13-stderr.log"
+  local dispatch_status=0
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI=1 \
+    MOCK_TRANSPORT_STDOUT="te13-marker-2026-05-27" \
+    MOCK_TRANSPORT_EXIT=7 \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model gpt-5.3-codex \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$tmp/te13-stdout.log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
+
+  # Mismatch warning must be present in stderr — naming both the detected
+  # host and the config value on a single line.
+  grep -qE "(mismatch|disagree).*copilot-cli|copilot-cli.*(mismatch|disagree)|mismatch.*false|false.*mismatch" "$stderr_log"
+  # Transport marker for the copilot-cli branch must also be present
+  # (proves dispatch was NOT short-circuited by the mismatch warning).
+  grep -q '\[transport: task-tool\]' "$stderr_log"
+  # Exit code MUST be 7 (propagated from mock transport — mismatch warning
+  # path does not suppress the failure).
+  [ "$dispatch_status" -eq 7 ]
+
+  rm -rf "$tmp"
+}

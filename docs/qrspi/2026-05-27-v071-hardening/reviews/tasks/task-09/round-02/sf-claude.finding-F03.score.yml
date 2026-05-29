@@ -1,0 +1,2 @@
+score: 68
+reason: Real correctness gap in test code authored by Task 9's own GREEN commit (c7544e8), not pre-existing; the test cannot distinguish "clean frontmatter without model:" from "missing frontmatter entirely," creating a false-negative gap in the lint.

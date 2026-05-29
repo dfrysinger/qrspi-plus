@@ -1,0 +1,2 @@
+score: 58
+reason: Finding accurately documents that done-report.md describes pre-fix PID-scoped signal-file approach while actual implementation uses mktemp; verified in code comments and implementation. In-scope issue (done-report is task-03's artifact), but appropriately low-priority since it's audit-record documentation, not functional code.

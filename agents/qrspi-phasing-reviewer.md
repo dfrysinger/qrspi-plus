@@ -1,7 +1,6 @@
 ---
 name: qrspi-phasing-reviewer
 description: Reviews phasing.md for artifact-specific quality (correctness, clarity, completeness) per the QRSPI reviewer protocol. Scope/boundary review is handled by qrspi-phasing-scope-reviewer.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

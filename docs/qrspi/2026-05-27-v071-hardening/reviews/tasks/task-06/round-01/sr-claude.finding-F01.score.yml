@@ -1,0 +1,2 @@
+score: 65
+reason: The core claim is valid—the `check_codex_available claude-code` success path lacks a stderr-cleanliness test (TE15)—but the finding cites incorrect line numbers (486, 503, 517) for existing TE15 tests; correct lines are 361, 378, 392. The gap is real and per-spec, and the recommended test fix is appropriate.

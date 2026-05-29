@@ -1,0 +1,2 @@
+score: 78
+reason: Real security regression introduced by R7 in the diff. The fallback `|| printf '%s' "$_gh_path"` re-opens R6-F01 (..-injection) and R6-F02 (symlink bypass) on stripped Alpine and similar environments lacking both realpath and readlink. Attack vectors are concrete and demonstrated; fallback path is untested; fail-closed fix is straightforward. Highly confident this is a genuine issue, though impact is limited to relatively uncommon stripped environments.

@@ -1,0 +1,2 @@
+score: 75
+reason: Real issue violating task spec line 29 (die message must identify header name); asymmetric error handling between _cc_count (guarded) and _safe_hname (unguarded); manifests only on pipeline failures (rare in practice) but requirement is explicit.

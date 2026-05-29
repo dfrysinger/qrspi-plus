@@ -1,0 +1,2 @@
+score: 40
+reason: Finding correctly identifies that compose_prompt lacks set -e and notes the incomplete fix; however, the underlying function definition is pre-existing code (not modified in this round), and Hotfix A guidance scores pre-existing issues low. The critique of the R2 fix strategy is valid but applies to inherited code patterns.

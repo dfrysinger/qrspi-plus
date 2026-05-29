@@ -1,7 +1,6 @@
 ---
 name: qrspi-design-reviewer
 description: Reviews design.md for artifact-specific quality (correctness, clarity, completeness) per the QRSPI reviewer protocol. Scope/boundary review is handled by qrspi-design-scope-reviewer.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

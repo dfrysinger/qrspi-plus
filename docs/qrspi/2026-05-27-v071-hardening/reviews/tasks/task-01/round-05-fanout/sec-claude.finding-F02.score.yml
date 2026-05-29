@@ -1,0 +1,2 @@
+score: 80
+reason: Both specific technical claims (die() emits args raw via printf '%s' at lines 45-47, and _control_char_check passes unsanitized $_cc_hname to die at lines 222-223) are confirmed exactly in the artifact; the terminal-injection attack path is real and the unsanitized header name is the exact value that triggered the control-char check.
