@@ -113,18 +113,21 @@ require_value() {
 # via PATH=/usr/../tmp/fakebins:... (`..` not normalised) and via symlinks inside
 # trusted prefixes.  Normalize with realpath (BSD/macOS) or readlink -f (GNU/Linux)
 # before the prefix check; both resolve `..` segments AND follow symlinks so the
-# real filesystem path is compared.  Falls back to the raw command-v output if
-# neither tool is available, preserving the R5 guarantee while closing the new
-# vectors on any platform that ships either utility.
+# real filesystem path is compared.
+# sec.F01 (R8): the previous `|| printf '%s' "$_gh_path"` pass-through fallback
+# re-opened R7 vectors on hosts where both realpath and readlink -f are absent.
+# Fix: fail-closed — when both normalization tools fail the assignment fails and
+# _gh_path is forced to ""; the downstream -n guard then short-circuits to the
+# safe claude-code default.  No path normalization = no trusted-prefix check.
 detect_host() {
   local _gh_path
   _gh_path="$(command -v gh 2>/dev/null)"
   # Normalize: resolve symlinks and .. segments so the prefix check operates on
   # the canonical filesystem path, not a PATH-constructed string.
+  # Fail-closed (R8): if both tools are absent/fail, _gh_path is set to ""; the
+  # -n guard below then short-circuits to the safe claude-code default.
   if [[ -n "$_gh_path" ]]; then
-    _gh_path="$(realpath "$_gh_path" 2>/dev/null \
-      || readlink -f "$_gh_path" 2>/dev/null \
-      || printf '%s' "$_gh_path")"
+    _gh_path="$(realpath "$_gh_path" 2>/dev/null || readlink -f "$_gh_path" 2>/dev/null)" || _gh_path=""
   fi
   if [[ "${COPILOT_CLI:-}" == "1" ]] && \
      [[ -n "$_gh_path" ]] && \

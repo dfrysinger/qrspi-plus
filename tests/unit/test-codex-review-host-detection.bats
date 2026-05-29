@@ -102,6 +102,46 @@ teardown() {
 # sec.F02 (R7) — symlink in /opt to /tmp rejected
 # ===========================================================================
 
+# ===========================================================================
+# sec.F01 (R8) — fail-closed when both realpath and readlink -f are absent
+# ===========================================================================
+
+@test "[r8-sec.F01] detect_host fail-closed when realpath and readlink-f both absent" {
+  # Attack: PATH=/usr/../<tmpdir>/fakebins:... (..‑injection, R7 vector)
+  # On this test platform, realpath and readlink are normally available and
+  # would normalise the path and reject it.  This test simulates an environment
+  # where BOTH are absent / non-functional by placing failing shims ahead of
+  # the real binaries on PATH.
+  #
+  # RED (before fix): the fallback `|| printf '%s' "$_gh_path"` preserves the
+  # raw "/usr/../<tmpdir>/fakebins/gh" string, which matches /usr/* → emits
+  # "copilot-cli".
+  #
+  # GREEN (after fix): the fail-closed assignment produces an empty string when
+  # both tools fail; the -n guard short-circuits and detect_host emits
+  # "claude-code".
+
+  # Build failing shims for realpath and readlink.
+  local shim_dir="$TMP_DIR/no-norm-shims"
+  mkdir -p "$shim_dir"
+  printf '#!/bin/sh\nexit 1\n' > "$shim_dir/realpath"
+  printf '#!/bin/sh\nexit 1\n' > "$shim_dir/readlink"
+  chmod +x "$shim_dir/realpath" "$shim_dir/readlink"
+
+  # Injected PATH: the shims precede real system bins so realpath/readlink fail,
+  # but the fake gh (in FAKE_BIN prepended via /usr/../) is found first.
+  local injected_path="/usr/../${FAKE_BIN}:${shim_dir}:/usr/bin:/bin"
+  run bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    export COPILOT_CLI=1
+    export PATH='${injected_path}'
+    . \"$WRAPPER\"
+    detect_host
+  "
+  [ "$status" -eq 0 ]
+  [ "$output" = "claude-code" ]
+}
+
 @test "[r7-sec.F02] symlink in trusted prefix pointing to untrusted dir rejected" {
   # Attack: place a symlink inside a trusted-prefix directory (simulated via
   # a symlink inside the test tmp dir itself) that points to the fake gh binary.
