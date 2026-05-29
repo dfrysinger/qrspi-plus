@@ -65,94 +65,94 @@
   },
   "Config File (`config.md`)": {
     "line_start": 349,
-    "line_end": 510
+    "line_end": 536
   },
   "Dispatch routing blocks": {
     "line_start": 420,
-    "line_end": 510
+    "line_end": 536
   },
   "Config Validation Procedure": {
-    "line_start": 511,
-    "line_end": 629
+    "line_start": 537,
+    "line_end": 655
   },
   "When config.md is missing entirely": {
-    "line_start": 515,
-    "line_end": 523
+    "line_start": 541,
+    "line_end": 549
   },
   "When a required field is missing or has an invalid value": {
-    "line_start": 524,
-    "line_end": 576
+    "line_start": 550,
+    "line_end": 602
   },
   "No silent defaults": {
-    "line_start": 577,
-    "line_end": 584
+    "line_start": 603,
+    "line_end": 610
   },
   "Exceptions to the no-silent-defaults rule": {
-    "line_start": 585,
-    "line_end": 603
-  },
-  "Fields that affect pipeline behavior (must be validated)": {
-    "line_start": 604,
-    "line_end": 623
-  },
-  "Fields that do NOT require validation (informational only)": {
-    "line_start": 624,
+    "line_start": 611,
     "line_end": 629
   },
-  "Standard Review Loop": {
+  "Fields that affect pipeline behavior (must be validated)": {
     "line_start": 630,
-    "line_end": 673
+    "line_end": 649
+  },
+  "Fields that do NOT require validation (informational only)": {
+    "line_start": 650,
+    "line_end": 655
+  },
+  "Standard Review Loop": {
+    "line_start": 656,
+    "line_end": 699
   },
   "Fix-altitude rule (F-5)": {
-    "line_start": 666,
-    "line_end": 673
+    "line_start": 692,
+    "line_end": 699
   },
   "Review Output Handling": {
-    "line_start": 674,
-    "line_end": 1065
+    "line_start": 700,
+    "line_end": 1091
   },
   "Review-Loop Pause Gate": {
-    "line_start": 1066,
-    "line_end": 1113
+    "line_start": 1092,
+    "line_end": 1139
   },
   "BATCH-WITH-OVERRIDES UI contract": {
-    "line_start": 1070,
-    "line_end": 1077
+    "line_start": 1096,
+    "line_end": 1103
   },
   "3-option menu (per paused finding)": {
-    "line_start": 1078,
-    "line_end": 1095
-  },
-  "Paused rounds do not decrement the cap": {
-    "line_start": 1096,
-    "line_end": 1101
-  },
-  "Pending-findings file": {
-    "line_start": 1102,
-    "line_end": 1113
-  },
-  "Review Time Allocation": {
-    "line_start": 1114,
+    "line_start": 1104,
     "line_end": 1121
   },
-  "Compaction Checkpoints": {
+  "Paused rounds do not decrement the cap": {
     "line_start": 1122,
-    "line_end": 1153
+    "line_end": 1127
+  },
+  "Pending-findings file": {
+    "line_start": 1128,
+    "line_end": 1139
+  },
+  "Review Time Allocation": {
+    "line_start": 1140,
+    "line_end": 1147
+  },
+  "Compaction Checkpoints": {
+    "line_start": 1148,
+    "line_end": 1179
   },
   "Feedback File Format": {
-    "line_start": 1154,
-    "line_end": 1173
+    "line_start": 1180,
+    "line_end": 1199
   },
   "Common Rationalizations — STOP": {
-    "line_start": 1174,
-    "line_end": 1188
+    "line_start": 1200,
+    "line_end": 1214
   },
   "Skill Invocation": {
-    "line_start": 1189,
-    "line_end": 1194
+    "line_start": 1215,
+    "line_end": 1220
   },
   "Pipeline Iron Laws — Final Reminder": {
-    "line_start": 1195,
-    "line_end": 1217
+    "line_start": 1221,
+    "line_end": 1243
   }
 }

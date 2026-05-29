@@ -508,6 +508,32 @@ When `config.md` does not contain a `model_routing:` block, the dispatcher fires
 - No persistent marker is written to disk to track that the warning has already fired. Because no marker is written, there is no write-failure surface that could leave the on-disk config in an inconsistent state.
 - Each session sees the backfill defaults applied in-memory without changing the file on disk.
 
+#### Model Routing
+
+Resolution flow for agent tier names. When the dispatcher prepares an agent
+dispatch, it resolves the abstract Claude tier name carried on the agent
+(`haiku`, `sonnet`, `opus`, or the implicit `inherit` when the agent
+declares no explicit `model:` field) against the `model_routing` table in
+`config.md`. The lookup is a two-step indexing operation:
+
+1. **Host column selection.** The dispatcher calls `detect_host` (see the
+   per-host Codex dispatch transport routing section above) and uses its
+   output (`claude-code` or `copilot-cli`) to pick the matching top-level
+   key under `model_routing`.
+2. **Tier row selection.** The tier name on the agent (or `inherit` for
+   agents with no `model:` field) selects the row within the host's
+   sub-mapping. The mapped value is the concrete versioned model ID that
+   the dispatch transport will request.
+
+The `copilot-cli` column uses fully versioned Claude model IDs rather than
+bare tier short-forms because Copilot CLI's model proxy emits a
+"model not available" warning for bare `haiku` / `sonnet` / `opus` requests
+but accepts the full versioned IDs and routes them through to the upstream
+provider. The `inherit` row exists so that agents declaring no explicit
+`model:` field (the state established for all 41 agents after the T9 sweep)
+still resolve to a concrete model rather than relying on the host CLI's
+own fallback behavior, which differs between hosts.
+
 ## Config Validation Procedure
 
 Every skill that reads config.md applies this procedure before using any field.
