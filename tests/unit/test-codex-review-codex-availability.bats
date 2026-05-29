@@ -74,3 +74,36 @@ teardown() {
   # Stderr must contain the word "absolute" to identify the rejection reason.
   grep -qi "absolute" "$_stderr_file"
 }
+
+# ===========================================================================
+# tc.F03 (R12) — HOME-with-embedded-newline rejection
+#
+# The `case "${HOME:-}" in *..* | "" | *$'\n'*)` arm in check_codex_available
+# rejects HOME values that contain an embedded newline, but this arm had zero
+# test coverage.  Adding a direct runtime assertion ensures the guard is
+# exercised and does not regress.
+# ===========================================================================
+
+@test "[r12-tc.F03] check_codex_available rejects HOME with embedded newline — returns non-zero with 'unsafe' message" {
+  # Scenario: HOME contains a literal newline character in the middle of the path
+  # (e.g. /tmp/test\nhome).  This is a path-safety violation that the case guard
+  # must catch and reject before any filesystem probe can run.
+  #
+  # GREEN state: the existing `case "${HOME:-}" in *..* | "" | *$'\n'*)` arm
+  # fires, returns non-zero, and emits the "unsafe HOME value" diagnostic to stderr.
+  local _stderr_file="$TMP_DIR/f03-stderr.txt"
+  local _status=0
+
+  bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    export HOME=$'/tmp/test\nhome'
+    . \"$WRAPPER\"
+    check_codex_available claude-code
+  " >/dev/null 2>"$_stderr_file" || _status=$?
+
+  # Must exit non-zero.
+  [ "$_status" -ne 0 ]
+
+  # Stderr must contain the word "unsafe" (from the rejection diagnostic).
+  grep -qi "unsafe" "$_stderr_file"
+}
