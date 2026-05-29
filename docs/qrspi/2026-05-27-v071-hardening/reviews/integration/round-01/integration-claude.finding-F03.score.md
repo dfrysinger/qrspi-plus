@@ -1,0 +1,2 @@
+score: 78
+reason: Verified — qrspi-test-writer.md frontmatter (lines 1-6) has no `skills:` field while qrspi-implementer.md:5 declares `skills: [implementer-protocol]` (auto-preloaded per SKILL.md:10); test-writer:28 invokes "implementer-protocol scratch-file pattern" yet the agent never gets the three invariants or pre-DONE hygiene self-check (SKILL.md:148-181) preloaded. Real cross-task integration gap.
