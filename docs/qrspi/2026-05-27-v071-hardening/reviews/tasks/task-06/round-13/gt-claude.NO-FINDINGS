@@ -1,0 +1,23 @@
+reviewer: gt-claude
+round: 13
+commit_anchor: 600232f
+verdict: clean
+
+All R11 gt.F01 + gt.F02 requirements verified:
+
+1. TE1 stdout test [host-detect] detect_host emits copilot-cli to stdout when COPILOT_CLI=1
+   — skip-guard added (lines 157–165): command-v gh → realpath/readlink-f → trusted-prefix
+   case match. Guard fires BEFORE run bash -c. ✅
+
+2. TE1 exit-0 test [host-detect] detect_host exits 0 when COPILOT_CLI=1
+   — identical skip-guard added (lines 182–190). ✅
+
+3. TE14 [dispatch-surface] copilot-cli path emits [transport: task-tool] exactly once
+   — skip-guard added (lines 501–509). Guard fires BEFORE bash "$WRAPPER". ✅
+
+4. TE14 [dispatch-surface] copilot-cli path does not emit [transport: shell-pipeline]
+   — skip-guard added (lines 538–546), including comment explaining vacuous-pass risk
+   on wrong path. ✅
+
+No production code modified. Two additive test functions (tc.F03, tc.F04) chain
+cleanly to existing coverage gaps. No prior traceability chains broken.

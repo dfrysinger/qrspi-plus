@@ -1,0 +1,2 @@
+score: 65
+reason: Valid correctness issue—silent coercion of misconfigured codex_reviews without diagnostic reduces debuggability. Code was introduced by this task, fix is accurate, but severity is moderate (usability, not security bypass) with acceptable fail-safe semantics.

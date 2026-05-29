@@ -1,0 +1,2 @@
+score: 20
+reason: Real but pre-existing issue from T03 (commit a2edc7f); reviewer self-flags as out-of-scope for T1 and the grep pre-check provides implicit mitigation against most payloads.

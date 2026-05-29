@@ -1,0 +1,2 @@
+score: 78
+reason: The finding accurately identifies a real test coverage gap—the production regex `[|>]` handles both literal and folded block scalars, but all 8 test fixtures use only `|`, leaving the `>` path unverified. The mutation `[|>]→[|]` would indeed pass all tests, confirming the gap is real. The code is in scope (new test file), and the issue is load-bearing for comprehensive YAML frontmatter handling.

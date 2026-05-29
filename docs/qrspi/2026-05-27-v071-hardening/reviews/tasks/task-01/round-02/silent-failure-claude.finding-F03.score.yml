@@ -1,0 +1,2 @@
+score: 50
+reason: Verified — wc -c scans entire file (frontmatter + body) but die message says "in header configuration", a real but low-impact diagnostic-accuracy mismatch that would only mislead in the rare NUL-in-config.md case.

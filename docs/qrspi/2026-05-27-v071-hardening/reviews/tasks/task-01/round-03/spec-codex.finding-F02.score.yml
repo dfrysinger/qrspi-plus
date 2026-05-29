@@ -1,0 +1,2 @@
+score: 10
+reason: The finding's own orchestrator note records a captured user decision ("if in codebase, just fix it") that explicitly authorises the eval-removal + identifier-validator change; the prescribed resolution is a spec amendment, not reverting the implementation, so the out-of-scope complaint contradicts a recorded user directive.

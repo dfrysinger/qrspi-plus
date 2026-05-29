@@ -1,0 +1,2 @@
+score: 58
+reason: Real resource leak in test helper code verified at lines 236/276-279; lacks EXIT trap; manifests on interrupt within same shell but mitigated by PID-scoped naming and OS cleanup on process exit.

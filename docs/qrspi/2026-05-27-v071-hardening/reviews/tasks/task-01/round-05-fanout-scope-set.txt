@@ -1,0 +1,17 @@
+# scope-set for round 05 fanout
+# orchestrator-persisted (scope-tagger subagent contradiction defect — see plan.md)
+#
+# SKILL-RULE-OVERRIDE (user-authorized):
+# using-qrspi/SKILL.md lines 388/615/835/869 specify the apply-fix filter as:
+#   "drop if score < 80 AND change_type ∈ {style, clarity, correctness}; scope/intent bypass"
+# Strict reading yields 4 kept (score >=80): sf.F01(90), sf.F03(82), sec.F02(80), cq.F01(80)
+# User chose pragmatic override 2026-05-28: also keep sf.F02(62) and sec.F03(65) because
+#   - sf.F02 (no pipefail) is the same fail-open class as sf.F01(90 HIGH)
+#   - sec.F03 (NUL TOCTOU) shows a real diagnostic-defeat path
+# Findings used `category:` instead of `change_type:` (schema violation; treat as defect candidate).
+#
+# kept findings dispatched to fix-implementer: sf.F01(90), sf.F02(62, override), sf.F03(82),
+#   sec.F02(80), sec.F03(65, override), cq.F01(80)
+# dropped: sec.F01(20, docs design), sec.F04(40, INFO no-exploit), cq.F02(45, polish)
+scripts/run-third-party-llm.sh
+tests/unit/test-run-third-party-llm.bats

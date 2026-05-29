@@ -1,0 +1,2 @@
+score: 45
+reason: Finding is accurate — lines 537-551 contain no comment showing the assembled script output, making the tricky printf chain harder to verify — but this is a low-severity documentation/cleanliness issue with no functional impact.

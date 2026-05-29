@@ -1,0 +1,1311 @@
+diff --git a/scripts/run-codex-review.sh b/scripts/run-codex-review.sh
+index 56d0552..e775116 100755
+--- a/scripts/run-codex-review.sh
++++ b/scripts/run-codex-review.sh
+@@ -90,6 +90,119 @@ require_value() {
+   fi
+ }
+ 
++# ---------------------------------------------------------------------------
++# Host identification and Codex availability probes (added in v0.7.1 task-06)
++# ---------------------------------------------------------------------------
++
++# detect_host - emits either 'copilot-cli' or 'claude-code' to stdout.
++# Examines COPILOT_CLI AND the reachability of the gh binary to prevent
++# transport-marker spoofing via a user-supplied env var alone.
++# COPILOT_CLI=1 selects copilot-cli ONLY when `gh` resolves to a path under
++# a system-controlled prefix (/usr/*, /opt/*, /Applications/*).
++# (process-spawn fingerprint: a real Copilot CLI session launches under gh).
++# All other states (COPILOT_CLI unset/empty/non-"1", gh absent, or gh in an
++# untrusted prefix) select claude-code.  Always exits 0.  Writes nothing to
++# stderr under normal operation.
++#
++# sec.F01 (R2): COPILOT_CLI alone was user-settable; adding the binary check
++# makes the marker harder to forge without a real gh installation.
++# sec.F01 (R5): `command -v gh` trusted PATH blindly; an attacker who can set
++# COPILOT_CLI=1 can equally prepend PATH with a fake gh directory.  Resolving
++# the path and validating it against trusted prefixes closes that gap.
++# sec.F01/F02 (R7): pure string prefix check on `command -v` output is bypassable
++# via PATH=/usr/../tmp/fakebins:... (`..` not normalised) and via symlinks inside
++# trusted prefixes.  Normalize with realpath (BSD/macOS) or readlink -f (GNU/Linux)
++# before the prefix check; both resolve `..` segments AND follow symlinks so the
++# real filesystem path is compared.
++# sec.F01 (R8): the previous `|| printf '%s' "$_gh_path"` pass-through fallback
++# re-opened R7 vectors on hosts where both realpath and readlink -f are absent.
++# Fix: fail-closed — when both normalization tools fail the assignment fails and
++# _gh_path is forced to ""; the downstream -n guard then short-circuits to the
++# safe claude-code default.  No path normalization = no trusted-prefix check.
++detect_host() {
++  local _gh_path
++  _gh_path="$(command -v gh 2>/dev/null)"
++  # Normalize: resolve symlinks and .. segments so the prefix check operates on
++  # the canonical filesystem path, not a PATH-constructed string.
++  # Fail-closed (R8): if both tools are absent/fail, _gh_path is set to ""; the
++  # -n guard below then short-circuits to the safe claude-code default.
++  if [[ -n "$_gh_path" ]]; then
++    _gh_path="$(realpath "$_gh_path" 2>/dev/null || readlink -f "$_gh_path" 2>/dev/null)" || _gh_path=""
++  fi
++  if [[ "${COPILOT_CLI:-}" == "1" ]] && \
++     [[ -n "$_gh_path" ]] && \
++     [[ "$_gh_path" == /usr/* || "$_gh_path" == /opt/* || "$_gh_path" == /Applications/* ]]; then
++    echo "copilot-cli"
++  else
++    echo "claude-code"
++  fi
++}
++
++# check_codex_available <host> - exits 0 if Codex is usable for the given host.
++#   copilot-cli: always exits 0 (Codex is natively routable; no filesystem probe).
++#   claude-code:  probes the companion-script glob path; exits 0 when at least
++#                 one matching file exists, non-zero otherwise.
++#   other:        exits non-zero and emits a single-line diagnostic to stderr.
++# bash-3.2 portable: no nameref, no declare -A, no ${var,,}, no mapfile.
++check_codex_available() {
++  local host="${1:-}"
++  case "$host" in
++    copilot-cli)
++      return 0
++      ;;
++    claude-code)
++      # sec.F02 (R2): reject HOME values that contain '..' path components,
++      # are empty, or contain newlines — any of these could allow filesystem
++      # probing outside the expected ~/.claude/ tree.
++      case "${HOME:-}" in
++        *..* | "" | *$'\n'*)
++          echo "check_codex_available: unsafe HOME value — must be an absolute path without '..' components" >&2
++          return 1
++          ;;
++      esac
++      # sec.F02 (R5): the case guard above does not check for a leading '/'.
++      # A relative HOME value (e.g. HOME=relative-dir) would pass all case arms
++      # and cause the companion glob to expand relative to the process CWD.
++      # Enforce that HOME starts with '/' before any filesystem probe.
++      if [[ "${HOME}" != /* ]]; then
++        echo "check_codex_available: HOME must be an absolute path (got: relative path)" >&2
++        return 1
++      fi
++      local found=0
++      local f
++      for f in "${HOME}/.claude/plugins/cache/openai-codex/codex"/*/scripts/codex-companion.mjs; do
++        if [[ -f "$f" ]]; then
++          found=1
++          break
++        fi
++      done
++      if [[ "$found" -eq 1 ]]; then
++        return 0
++      else
++        return 1
++      fi
++      ;;
++    *)
++      echo "check_codex_available: unsupported host argument: $host" >&2
++      return 1
++      ;;
++  esac
++}
++
++# Source guard: when QRSPI_SOURCE_ONLY=1, return after loading function
++# definitions so that function-isolation tests can source this file and call
++# detect_host / check_codex_available directly without triggering argument
++# parsing or validation.
++#
++# sf.F01 (R2): `return 0` is only valid in a sourced context.  When the script
++# is executed directly (`bash run-codex-review.sh`) with set -e absent, the
++# failed `return` does not abort the script — execution falls through into
++# argument parsing.  `return 0 2>/dev/null || exit 0` works in both modes:
++# `return 0` succeeds when sourced; `exit 0` fires when executed directly.
++if [[ "${QRSPI_SOURCE_ONLY:-}" == "1" ]]; then
++  return 0 2>/dev/null || exit 0
++fi
++
+ while [[ $# -gt 0 ]]; do
+   case "$1" in
+     --agent-file)     require_value "--agent-file"   "$#"; AGENT_FILE="$2"; shift 2 ;;
+@@ -452,5 +565,63 @@ fi
+ 
+ # Pipe the assembled prompt to the dispatcher's stdin and propagate its
+ # exit code unchanged (per the exit-code matrix above).
+-compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}"
+-exit "$?"
++#
++# Host detection and transport routing (added in v0.7.1 task-06):
++# detect_host probes COPILOT_CLI to select the transport.  check_codex_available
++# verifies availability.  A mismatch between availability and the codex_reviews
++# config value emits a single-line warning to stderr (warning-only - does not
++# block dispatch or override exit code).  The transport marker ([transport: ...])
++# is emitted once to stderr at the call site that selects the transport path.
++
++_detected_host="$(detect_host)"
++
++# Read codex_reviews from the artifact-dir config.md frontmatter.
++# Default to empty (treated as false) if the file is absent or the field is missing.
++_codex_reviews=""
++if [[ -f "$ARTIFACT_DIR/config.md" ]]; then
++  _codex_reviews="$(awk '
++    /^---$/ { n++; if (n == 2) exit; next }
++    n == 1 && /^codex_reviews:/ {
++      sub(/^codex_reviews:[[:space:]]*/, "")
++      sub(/[[:space:]]*$/, "")
++      print
++      exit
++    }
++  ' "$ARTIFACT_DIR/config.md")"
++fi
++
++# Check Codex availability for the detected host.  For the claude-code path,
++# if the companion glob is empty but codex_reviews says "true", emit a mismatch
++# warning.  The warning is stderr-only and does not affect dispatch or exit code.
++#
++# sec.F03 (R2): normalise _codex_reviews to exactly "true" or "false" before
++# any use — an unexpected value (which could carry terminal control sequences
++# from a crafted config.md) is treated as "false" and never echoed verbatim.
++case "$_codex_reviews" in
++  true|false) ;;
++  *) _codex_reviews="false" ;;
++esac
++#
++# sf.F03 (R2): removed 2>/dev/null so that the check_codex_available stderr
++# diagnostic for unrecognised hosts reaches the operator's terminal.
++if ! check_codex_available "$_detected_host"; then
++  if [[ "${_codex_reviews}" == "true" ]]; then
++    echo "[mismatch] detected host=${_detected_host}, codex_reviews config=${_codex_reviews}" >&2
++  fi
++fi
++
++# Emit the transport marker and dispatch.  Exit code is propagated unchanged
++# from the transport; no suppression, no log-and-continue.
++#
++# sf.F02 (R2): each dispatch pipeline now runs in a subshell with set -o pipefail
++# so that a compose_prompt failure (e.g. partial output from a read error) is
++# not silently masked by the dispatcher's exit code.
++if [[ "$_detected_host" == "copilot-cli" ]]; then
++  echo "[transport: task-tool]" >&2
++  ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
++  exit "$?"
++else
++  echo "[transport: shell-pipeline]" >&2
++  ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
++  exit "$?"
++fi
+diff --git a/tests/unit/test-codex-review-codex-availability.bats b/tests/unit/test-codex-review-codex-availability.bats
+new file mode 100644
+index 0000000..17e007b
+--- /dev/null
++++ b/tests/unit/test-codex-review-codex-availability.bats
+@@ -0,0 +1,76 @@
++#!/usr/bin/env bats
++#
++# tests/unit/test-codex-review-codex-availability.bats
++# Task 6 — R5 security fix: sec.F02 — absolute-path enforcement for HOME in
++# check_codex_available.
++# Target: scripts/run-codex-review.sh
++#
++# RED test for sec.F02: check_codex_available(claude-code) must reject a
++# relative HOME value with exit 1 and a stderr message containing "absolute".
++# The current case guard only rejects HOME values containing '..', empty string,
++# or newlines; it does NOT check for a leading '/'.  A value like HOME=relative-dir
++# passes all current guards and causes the companion glob to expand relative to
++# CWD.
++#
++# RED state (before fix):
++#   HOME=relative-dir passes the case guard → check_codex_available returns 0
++#   (or non-zero for a different reason without "absolute" in stderr) → the
++#   assertion `[ "$status" -eq 1 ]` or the `grep -q "absolute"` assertion fails.
++#
++# GREEN state (after fix):
++#   An explicit `if [[ "${HOME}" != /* ]]; then ... return 1; fi` check after
++#   the case guard rejects relative HOME with exit 1 and a diagnostic containing
++#   "absolute" on stderr.
++#
++# bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++bats_require_minimum_version 1.5.0
++
++# ---------------------------------------------------------------------------
++# Suite setup
++# ---------------------------------------------------------------------------
++
++setup_file() {
++  REAL_REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
++  export REAL_REPO_ROOT
++  WRAPPER="$REAL_REPO_ROOT/scripts/run-codex-review.sh"
++  export WRAPPER
++}
++
++setup() {
++  TMP_DIR="$(mktemp -d)"
++  export TMP_DIR
++}
++
++teardown() {
++  cd /
++  rm -rf "$TMP_DIR"
++}
++
++# ===========================================================================
++# sec.F02 — absolute-path enforcement for HOME
++# ===========================================================================
++
++@test "[r5-sec.F02] check_codex_available rejects relative HOME with exit 1 and stderr containing 'absolute'" {
++  # RED: current code case guard checks for '..' / empty / newlines but not for
++  # a leading '/'.  HOME=relative-dir passes all guards → function either returns
++  # 0 (no companion glob matches from CWD) or returns non-zero without emitting
++  # "absolute" in stderr.
++  # GREEN: fixed code adds `if [[ "${HOME}" != /* ]]; then ... return 1; fi`
++  # which rejects relative HOME with a diagnostic containing "absolute".
++  local _stderr_file="$TMP_DIR/f02-stderr.txt"
++  local _status=0
++
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export HOME='relative-dir'
++    . \"$WRAPPER\"
++    check_codex_available claude-code
++  " >/dev/null 2>"$_stderr_file" || _status=$?
++
++  # Must exit non-zero (return 1 from check_codex_available).
++  [ "$_status" -ne 0 ]
++
++  # Stderr must contain the word "absolute" to identify the rejection reason.
++  grep -qi "absolute" "$_stderr_file"
++}
+diff --git a/tests/unit/test-codex-review-host-detection.bats b/tests/unit/test-codex-review-host-detection.bats
+new file mode 100644
+index 0000000..6b3662c
+--- /dev/null
++++ b/tests/unit/test-codex-review-host-detection.bats
+@@ -0,0 +1,177 @@
++#!/usr/bin/env bats
++#
++# tests/unit/test-codex-review-host-detection.bats
++# Task 6 — R5/R7 security fixes: sec.F01 — gh path prefix validation in detect_host
++# Target: scripts/run-codex-review.sh
++#
++# RED test for sec.F01: detect_host must reject copilot-cli marker when the
++# `gh` binary resolves to a path outside the trusted prefixes /usr/*, /opt/*,
++# /Applications/*.  The current code uses `command -v gh` which accepts ANY
++# gh in PATH, allowing an attacker who controls PATH to forge the marker.
++#
++# RED state (before fix):
++#   detect_host emits "copilot-cli" for a fake gh in /tmp/fakebins → assertion
++#   `[ "$output" = "claude-code" ]` fails → test is RED.
++#
++# GREEN state (after fix):
++#   detect_host validates the resolved path against trusted prefixes; fake gh
++#   in /tmp does not match /usr/*, /opt/*, /Applications/* → emits "claude-code".
++#
++# bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++bats_require_minimum_version 1.5.0
++
++# ---------------------------------------------------------------------------
++# Suite setup
++# ---------------------------------------------------------------------------
++
++setup_file() {
++  REAL_REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
++  export REAL_REPO_ROOT
++  WRAPPER="$REAL_REPO_ROOT/scripts/run-codex-review.sh"
++  export WRAPPER
++}
++
++# ---------------------------------------------------------------------------
++# Per-test setup: build a temp directory for the fake gh binary.
++# ---------------------------------------------------------------------------
++
++setup() {
++  TMP_DIR="$(mktemp -d)"
++  export TMP_DIR
++  FAKE_BIN="$TMP_DIR/fakebins"
++  mkdir -p "$FAKE_BIN"
++  # Minimal fake gh: exits 0 to satisfy any reachability probe, but lives in
++  # an untrusted prefix (/tmp/...) that the fixed code must reject.
++  printf '#!/bin/sh\nexit 0\n' > "$FAKE_BIN/gh"
++  chmod +x "$FAKE_BIN/gh"
++  export FAKE_BIN
++}
++
++teardown() {
++  cd /
++  rm -rf "$TMP_DIR"
++}
++
++# ===========================================================================
++# sec.F01 — gh path prefix validation
++# ===========================================================================
++
++@test "[r5-sec.F01] detect_host rejects copilot-cli marker when gh resolves outside /usr|/opt|/Applications" {
++  # RED: current code uses `command -v gh` which accepts the fake gh in FAKE_BIN
++  # (an untrusted /tmp path) → emits "copilot-cli".
++  # GREEN: fixed code resolves gh's path and validates it against /usr/*, /opt/*,
++  # /Applications/*; /tmp/fakebins/gh fails all three → emits "claude-code".
++  #
++  # PATH is set to FAKE_BIN followed by basic system dirs so the fake gh is
++  # found first but normal shell builtins (dirname, pwd) remain reachable.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    export PATH='$FAKE_BIN:/usr/bin:/bin'
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++# ===========================================================================
++# sec.F01 (R7) — PATH with /usr/../ injection rejected
++# ===========================================================================
++
++@test "[r7-sec.F01] PATH with /usr/../ injection rejected" {
++  # Attack: PATH=/usr/../<tmpdir>/fakebins:...
++  # command -v gh returns "/usr/../<tmpdir>/fakebins/gh"
++  # [[ ... == /usr/* ]] is a string match → TRUE (bypass without realpath fix).
++  # GREEN: realpath normalises "/usr/../<tmpdir>/fakebins/gh" → "<tmpdir>/fakebins/gh"
++  # which does NOT match any trusted prefix → detect_host emits "claude-code".
++  local injected_path="/usr/../${FAKE_BIN}"
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    export PATH='${injected_path}:/usr/bin:/bin'
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++# ===========================================================================
++# sec.F02 (R7) — symlink in /opt to /tmp rejected
++# ===========================================================================
++
++# ===========================================================================
++# sec.F01 (R8) — fail-closed when both realpath and readlink -f are absent
++# ===========================================================================
++
++@test "[r8-sec.F01] detect_host fail-closed when realpath and readlink-f both absent" {
++  # Attack: PATH=/usr/../<tmpdir>/fakebins:... (..‑injection, R7 vector)
++  # On this test platform, realpath and readlink are normally available and
++  # would normalise the path and reject it.  This test simulates an environment
++  # where BOTH are absent / non-functional by placing failing shims ahead of
++  # the real binaries on PATH.
++  #
++  # RED (before fix): the fallback `|| printf '%s' "$_gh_path"` preserves the
++  # raw "/usr/../<tmpdir>/fakebins/gh" string, which matches /usr/* → emits
++  # "copilot-cli".
++  #
++  # GREEN (after fix): the fail-closed assignment produces an empty string when
++  # both tools fail; the -n guard short-circuits and detect_host emits
++  # "claude-code".
++
++  # Build failing shims for realpath and readlink.
++  local shim_dir="$TMP_DIR/no-norm-shims"
++  mkdir -p "$shim_dir"
++  printf '#!/bin/sh\nexit 1\n' > "$shim_dir/realpath"
++  printf '#!/bin/sh\nexit 1\n' > "$shim_dir/readlink"
++  chmod +x "$shim_dir/realpath" "$shim_dir/readlink"
++
++  # Injected PATH: the shims precede real system bins so realpath/readlink fail,
++  # but the fake gh (in FAKE_BIN prepended via /usr/../) is found first.
++  local injected_path="/usr/../${FAKE_BIN}:${shim_dir}:/usr/bin:/bin"
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    export PATH='${injected_path}'
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++@test "[r7-sec.F02] symlink in trusted prefix pointing to untrusted dir rejected" {
++  # Attack: place a symlink inside a trusted-prefix directory (simulated via
++  # a symlink inside the test tmp dir itself) that points to the fake gh binary.
++  # realpath must follow the symlink and expose the real location, which is
++  # outside all trusted prefixes → detect_host emits "claude-code".
++  #
++  # We simulate the trusted-prefix symlink attack entirely within $TMP_DIR
++  # (no /opt write needed).  We create:
++  #   $TMP_DIR/trusted-sim/usr/bin/ → symlink named "gh" → $FAKE_BIN/gh
++  # Then we set PATH so command -v gh returns the symlink path
++  # ($TMP_DIR/trusted-sim/usr/bin/gh) which starts with a /usr/ look-alike
++  # string — but after realpath resolution points to $FAKE_BIN/gh (untrusted).
++  #
++  # Because the actual path of $TMP_DIR starts with /tmp (or /private/tmp on
++  # macOS), neither the raw string nor the resolved path matches a trusted prefix.
++  local trusted_sim="$TMP_DIR/trusted-sim/usr/bin"
++  mkdir -p "$trusted_sim"
++  ln -s "$FAKE_BIN/gh" "$trusted_sim/gh"
++
++  # Construct a PATH entry that looks like /usr/... at string level only when
++  # we fake it via /usr/../$TMP_DIR/trusted-sim/usr/bin.  The symlink itself
++  # lives at $trusted_sim/gh; realpath($trusted_sim/gh) = $FAKE_BIN/gh.
++  local injected_path="/usr/../${TMP_DIR}/trusted-sim/usr/bin"
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    export PATH='${injected_path}:/usr/bin:/bin'
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
+diff --git a/tests/unit/test-codex-review-source-guard.bats b/tests/unit/test-codex-review-source-guard.bats
+new file mode 100644
+index 0000000..9f475fd
+--- /dev/null
++++ b/tests/unit/test-codex-review-source-guard.bats
+@@ -0,0 +1,96 @@
++#!/usr/bin/env bats
++#
++# tests/unit/test-codex-review-source-guard.bats
++# Task 6 — R5 security fix: sec.F01 positive path — detect_host trusts gh
++# when it resolves to a system-controlled prefix (/usr/*, /opt/*, /Applications/*).
++# Target: scripts/run-codex-review.sh
++#
++# This is a positive regression guard for the sec.F01 fix.  It verifies that
++# the path-prefix check does NOT over-restrict: a real gh binary in a trusted
++# prefix (/opt/homebrew/bin on macOS Homebrew) must still allow detect_host to
++# emit "copilot-cli" when COPILOT_CLI=1.
++#
++# NOTE on RED state: this test is a positive regression guard, not a strict
++# RED test.  The pre-fix code also emits "copilot-cli" for a trusted-path gh
++# (since it trusts any gh in PATH).  The test's value is ensuring the fix does
++# not over-restrict legitimate installations.  It is included per the R5 TDD
++# requirements to document expected positive behavior.
++#
++# The test skips with a diagnostic reason if no gh binary is found under a
++# recognised trusted prefix (/usr/*, /opt/*, /Applications/*) on the host.
++#
++# bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++bats_require_minimum_version 1.5.0
++
++# ---------------------------------------------------------------------------
++# Suite setup
++# ---------------------------------------------------------------------------
++
++setup_file() {
++  REAL_REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
++  export REAL_REPO_ROOT
++  WRAPPER="$REAL_REPO_ROOT/scripts/run-codex-review.sh"
++  export WRAPPER
++}
++
++setup() {
++  TMP_DIR="$(mktemp -d)"
++  export TMP_DIR
++}
++
++teardown() {
++  cd /
++  rm -rf "$TMP_DIR"
++}
++
++# ===========================================================================
++# sec.F01 positive path — trusted-prefix gh is accepted
++# ===========================================================================
++
++@test "[r5-sec.F01] detect_host trusts marker when gh is in a system-controlled prefix (/usr|/opt|/Applications)" {
++  # Locate a gh binary under a trusted prefix on the host.  On macOS with
++  # Homebrew, gh lives at /opt/homebrew/bin/gh (/opt/* matches).  On Linux
++  # systems it is often at /usr/bin/gh or /usr/local/bin/gh (/usr/* matches).
++  # Skip if no such binary is found rather than failing the suite — this host
++  # simply does not have gh installed in a trusted system location.
++  local _trusted_gh=""
++  local _candidate
++  for _candidate in /usr/bin/gh /usr/local/bin/gh /opt/homebrew/bin/gh /opt/local/bin/gh; do
++    if [[ -x "$_candidate" ]]; then
++      _trusted_gh="$_candidate"
++      break
++    fi
++  done
++
++  # Also accept any gh found via `command -v gh` if it resolves under a trusted prefix.
++  if [[ -z "$_trusted_gh" ]]; then
++    local _cv
++    _cv="$(command -v gh 2>/dev/null)"
++    case "$_cv" in
++      /usr/* | /opt/* | /Applications/*)
++        _trusted_gh="$_cv"
++        ;;
++    esac
++  fi
++
++  if [[ -z "$_trusted_gh" ]]; then
++    skip "no gh binary found under /usr/*, /opt/*, or /Applications/* on this host — positive-path test skipped"
++  fi
++
++  # Derive the directory containing the trusted gh and set PATH to include it
++  # together with the basic system dirs (/usr/bin, /bin) required for shell
++  # builtins (dirname, pwd) used during script sourcing.
++  local _trusted_dir
++  _trusted_dir="$(dirname "$_trusted_gh")"
++
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    export PATH='$_trusted_dir:/usr/bin:/bin'
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "copilot-cli" ]
++}
+diff --git a/tests/unit/test-host-detection.bats b/tests/unit/test-host-detection.bats
+new file mode 100644
+index 0000000..e547322
+--- /dev/null
++++ b/tests/unit/test-host-detection.bats
+@@ -0,0 +1,748 @@
++#!/usr/bin/env bats
++#
++# tests/unit/test-host-detection.bats
++# Task 6 — Host-aware Codex availability detection
++# Target: scripts/run-codex-review.sh
++#
++# Covers every test-expectation bullet from tasks/task-06.md:
++#
++#   TE1  detect_host emits 'copilot-cli', exits 0 when COPILOT_CLI=1
++#   TE2  detect_host emits 'claude-code', exits 0 when COPILOT_CLI is unset
++#   TE3  detect_host emits 'claude-code' when COPILOT_CLI is empty string
++#   TE4  detect_host emits 'claude-code' for COPILOT_CLI=0 / true / yes
++#   TE5  2-branch probe: only the literal string "1" → copilot-cli; all others → claude-code
++#   TE6  COPILOT_CLI_BINARY_VERSION alone is not a host-detection trigger
++#   TE7  detect_host output is solely determined by COPILOT_CLI; other env vars are irrelevant
++#   TE8  check_codex_available 'copilot-cli' returns exit 0 without any filesystem probe
++#   TE9  check_codex_available 'claude-code' returns exit 0 when companion glob resolves
++#   TE10 check_codex_available 'claude-code' returns non-zero when companion glob is empty
++#   TE11 check_codex_available with unrecognized host returns non-zero + single-line stderr diagnostic
++#   TE12 dispatch surface emits mismatch warning naming both the detected host and config value;
++#        warning is a stderr-only signal — dispatch runs and exits with the transport exit code
++#   TE13 claude-code path emits [transport: shell-pipeline] exactly once in stderr;
++#        [transport: task-tool] is absent
++#   TE14 copilot-cli path emits [transport: task-tool] exactly once in stderr;
++#        [transport: shell-pipeline] is absent
++#   TE15 detect_host and check_codex_available write nothing to stderr under normal operation
++#   TE16 dispatch surface propagates a non-zero transport exit code unchanged (no suppression)
++#   TE17 mismatch path does not suppress a non-zero transport exit code
++#
++# Test strategy:
++#   Function-isolation tests (TE1–TE11, TE15):
++#     Each test runs a bash -c subshell that exports QRSPI_SOURCE_ONLY=1, sources
++#     run-codex-review.sh to load only function definitions, then calls detect_host or
++#     check_codex_available directly.
++#
++#     The implementer MUST add this guard in run-codex-review.sh, after the new function
++#     definitions and before the argument-parsing block:
++#
++#         [[ "${QRSPI_SOURCE_ONLY:-}" == "1" ]] && return 0
++#
++#     RED state: the guard does not exist → sourcing runs the full script → validation
++#     calls exit 1 (no --agent-file flag) → bash -c exits non-zero → tests fail. ✓
++#
++#   Dispatch surface tests (TE12–TE14, TE16–TE17):
++#     Invoke run-codex-review.sh in full dispatch mode (no --dry-run) with
++#     QRSPI_REPO_ROOT pointing at a per-test mock directory containing:
++#       scripts/run-third-party-llm.sh  (mock dispatcher, exits MOCK_TRANSPORT_EXIT)
++#       skills/reviewer-protocol/SKILL.md + codex-emission-override.md  (stubs)
++#       agents/qrspi-spec-reviewer.md  (minimal, no extra skill deps)
++#       artifact-dir/config.md  (codex_reviews: value per test)
++#     Stderr from the full invocation is captured to a temp file so transport-marker
++#     and mismatch-diagnostic assertions can examine it directly.
++#
++#     RED state: the new dispatch surface code does not exist → transport markers are
++#     never emitted → grep assertions fail. ✓
++#
++# Carry-forward set-asides from Plan R8:
++#   S1: mismatch handling is warning-only; dispatch is not blocked (asserted in TE12, TE17).
++#   S2: all four behaviors (host probe, codex check, transport marker, mismatch diagnostic)
++#       land in this single task (TE1–TE7 probe; TE8–TE11 check; TE13–TE14 markers; TE12 mismatch).
++#
++# bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc, no wait -n.
++
++bats_require_minimum_version 1.5.0
++
++# ---------------------------------------------------------------------------
++# Suite setup — resolve the real repo root and wrapper path once.
++# ---------------------------------------------------------------------------
++
++setup_file() {
++  REAL_REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
++  export REAL_REPO_ROOT
++  WRAPPER="$REAL_REPO_ROOT/scripts/run-codex-review.sh"
++  export WRAPPER
++}
++
++# ---------------------------------------------------------------------------
++# Per-test setup — build a fresh temp directory with a mock REPO_ROOT skeleton.
++# ---------------------------------------------------------------------------
++
++setup() {
++  TMP_DIR="$(mktemp -d)"
++  export TMP_DIR
++
++  # Subject-code file required by --subject-code for dispatch invocations.
++  mkdir -p "$TMP_DIR/src"
++  printf 'const x = 1;\n' > "$TMP_DIR/src/subject.ts"
++
++  # Mock reviewer-protocol files (compose_prompt in the wrapper reads these).
++  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
++  printf '## Reviewer Dispatch Contract\nReviewer protocol stub.\n' \
++    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
++  printf '<<<FINDING-BOUNDARY>>>\nCodex emission override stub.\n' \
++    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
++
++  # Minimal agent file with no extra skill: dependencies so the skill-load
++  # chain stays trivially short and the test fixture stays self-contained.
++  mkdir -p "$TMP_DIR/agents"
++  printf -- '---\nmodel: sonnet\nskills: []\n---\n\nStub agent body.\n' \
++    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
++
++  # Artifact directory with a default config (codex_reviews: false).
++  # Individual tests write a different config.md when they need a specific value.
++  mkdir -p "$TMP_DIR/artifact-dir"
++  printf -- '---\ncodex_reviews: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
++
++  # Mock dispatcher: drains stdin, optionally emits MOCK_TRANSPORT_STDERR to stderr,
++  # exits with MOCK_TRANSPORT_EXIT (default 0).  Lives at the path the wrapper expects
++  # when QRSPI_REPO_ROOT=$TMP_DIR.
++  mkdir -p "$TMP_DIR/scripts"
++  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_DISPATCHER_EOF'
++#!/usr/bin/env bash
++# Mock run-third-party-llm.sh for host-detection tests.
++# Drain stdin so the upstream pipe does not block.
++cat > /dev/null
++if [ -n "${MOCK_TRANSPORT_STDERR:-}" ]; then
++  printf '%s\n' "${MOCK_TRANSPORT_STDERR}" >&2
++fi
++exit "${MOCK_TRANSPORT_EXIT:-0}"
++MOCK_DISPATCHER_EOF
++  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
++
++  # HOME directory fixture for companion-glob tests (TE9, TE10).
++  # Tests that want the companion to exist create the file tree inside here.
++  MOCK_HOME="$TMP_DIR/mock-home"
++  mkdir -p "$MOCK_HOME"
++  export MOCK_HOME
++
++  # Output directory for dispatch invocations (--output-dir must be absolute).
++  mkdir -p "$TMP_DIR/out"
++}
++
++teardown() {
++  cd /
++  rm -rf "$TMP_DIR"
++}
++
++# ===========================================================================
++# SECTION 1: detect_host function
++#
++# Each test runs a bash -c subshell that sources the wrapper in function-only
++# mode (QRSPI_SOURCE_ONLY=1), then calls detect_host with the appropriate
++# COPILOT_CLI value.
++#
++# RED state: no source guard exists → the full argument-parsing body runs →
++# require_flag "agent-file" exits 1 → bash -c exits 1 → tests fail. ✓
++# ===========================================================================
++
++@test "[host-detect] detect_host emits copilot-cli to stdout when COPILOT_CLI=1" {
++  # Test expectation: TE1 — detect_host emits 'copilot-cli' to stdout and
++  # exits 0 when COPILOT_CLI=1 is present in the environment.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "copilot-cli" ]
++}
++
++@test "[host-detect] detect_host exits 0 when COPILOT_CLI=1" {
++  # Test expectation: TE1 — exit code must be 0 on the copilot-cli path.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++}
++
++@test "[host-detect] detect_host emits claude-code when COPILOT_CLI is unset" {
++  # Test expectation: TE2 — detect_host emits 'claude-code' to stdout and exits 0
++  # when COPILOT_CLI is not present in the environment at all.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    unset COPILOT_CLI
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++@test "[host-detect] detect_host emits claude-code when COPILOT_CLI is empty string" {
++  # Test expectation: TE3 — COPILOT_CLI="" (set but empty) is treated identically
++  # to unset; detect_host must emit 'claude-code'.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=''
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++@test "[host-detect] detect_host emits claude-code when COPILOT_CLI=0" {
++  # Test expectation: TE4/TE5 — COPILOT_CLI=0 is not the literal string '1'.
++  # The 2-branch probe must return claude-code for all non-'1' values.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=0
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++@test "[host-detect] detect_host emits claude-code when COPILOT_CLI=true" {
++  # Test expectation: TE4 — the string 'true' is not the literal '1' → claude-code.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=true
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++@test "[host-detect] detect_host emits claude-code when COPILOT_CLI=yes" {
++  # Test expectation: TE4 — the string 'yes' is not the literal '1' → claude-code.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=yes
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++@test "[host-detect] 2-branch probe: COPILOT_CLI=11 is not the literal string 1 so emits claude-code" {
++  # Test expectation: TE5 — the probe accepts only the EXACT string '1'.
++  # '11', ' 1', '1 ', and '01' all fall through to the claude-code branch.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=11
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++@test "[host-detect] COPILOT_CLI_BINARY_VERSION set but COPILOT_CLI unset still emits claude-code" {
++  # Test expectation: TE6 — COPILOT_CLI_BINARY_VERSION alone is not a host-detection
++  # trigger; detect_host must emit 'claude-code' when COPILOT_CLI is absent.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    unset COPILOT_CLI
++    export COPILOT_CLI_BINARY_VERSION=1.0.55-3
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++@test "[host-detect] detect_host result is unchanged when other Copilot env vars are present" {
++  # Test expectation: TE7 — detect_host output is solely determined by COPILOT_CLI.
++  # COPILOT_AGENT_SESSION_ID, COPILOT_RUN_APP, COPILOT_LOADER_PID, and similar
++  # env vars must not affect the result.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    unset COPILOT_CLI
++    export COPILOT_AGENT_SESSION_ID=3a8f1c22-dead-beef-cafe-000000000001
++    export COPILOT_RUN_APP=1
++    export COPILOT_LOADER_PID=99999
++    export COPILOT_CLI_BINARY_VERSION=1.0.55-3
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++# ===========================================================================
++# SECTION 2: check_codex_available function
++# ===========================================================================
++
++@test "[codex-availability] check_codex_available returns exit 0 for copilot-cli without filesystem probe" {
++  # Test expectation: TE8 — under copilot-cli, Codex is a natively routable model
++  # via the task tool; no companion file on disk is required.
++  # MOCK_HOME is empty (no companion installed) — the function must NOT probe it.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export HOME=\"$MOCK_HOME\"
++    . \"$WRAPPER\"
++    check_codex_available copilot-cli
++  "
++  [ "$status" -eq 0 ]
++}
++
++@test "[codex-availability] check_codex_available returns exit 0 for claude-code when companion glob resolves" {
++  # Test expectation: TE9 — companion-script glob resolves to ≥1 existing file → exit 0.
++  # Create a minimal companion stub under the mock HOME to simulate an installed companion.
++  mkdir -p "$MOCK_HOME/.claude/plugins/cache/openai-codex/codex/v1.0.55/scripts"
++  printf '#!/usr/bin/env node\n// stub companion\n' \
++    > "$MOCK_HOME/.claude/plugins/cache/openai-codex/codex/v1.0.55/scripts/codex-companion.mjs"
++
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export HOME=\"$MOCK_HOME\"
++    . \"$WRAPPER\"
++    check_codex_available claude-code
++  "
++  [ "$status" -eq 0 ]
++}
++
++@test "[codex-availability] check_codex_available returns non-zero for claude-code when companion glob is empty" {
++  # Test expectation: TE10 — companion-script glob resolves to no files → non-zero exit.
++  # MOCK_HOME has no companion directory tree, so the glob must be empty.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export HOME=\"$MOCK_HOME\"
++    . \"$WRAPPER\"
++    check_codex_available claude-code
++  "
++  [ "$status" -ne 0 ]
++}
++
++@test "[codex-availability] check_codex_available returns non-zero for unrecognized host argument" {
++  # Test expectation: TE11 — an unrecognized host string must produce a non-zero exit.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    . \"$WRAPPER\"
++    check_codex_available unknown-host-xyz 2>/dev/null
++  "
++  [ "$status" -ne 0 ]
++}
++
++@test "[codex-availability] check_codex_available emits single-line stderr diagnostic for unrecognized host" {
++  # Test expectation: TE11 — the stderr diagnostic must identify the unsupported
++  # host value so an operator can diagnose the configuration problem.
++  TMP_STDERR="$TMP_DIR/check-avail-stderr.txt"
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    . \"$WRAPPER\" 2>/dev/null
++    check_codex_available unknown-host-xyz
++  " >/dev/null 2>"$TMP_STDERR" || true
++
++  # Exactly one non-empty line must be written to stderr.
++  line_count="$(grep -c '' "$TMP_STDERR" 2>/dev/null || printf '0')"
++  [ "$line_count" -eq 1 ]
++
++  # The diagnostic must name the unsupported host value.
++  grep -q "unknown-host-xyz" "$TMP_STDERR"
++}
++
++# ===========================================================================
++# SECTION 3: Stderr cleanliness under normal (non-error) operation
++#
++# RED state: sourcing exits 1 (no guard) → bash -c subshell exits non-zero
++# → the func_status assertion fails before the stderr-empty assertion. ✓
++# ===========================================================================
++
++@test "[host-detect] detect_host writes nothing to stderr on copilot-cli path" {
++  # Test expectation: TE15 — detect_host must not emit anything to stderr
++  # under normal operation; stderr silence is part of the function contract.
++  TMP_STDERR="$TMP_DIR/detect-copilot-stderr.txt"
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    . \"$WRAPPER\"
++    detect_host
++  " >/dev/null 2>"$TMP_STDERR"
++  func_status=$?
++  # RED: detect_host absent → bash -c exits non-zero → func_status != 0 → fails here.
++  [ "$func_status" -eq 0 ]
++  # GREEN: detect_host ran cleanly; no diagnostic output permitted.
++  [ ! -s "$TMP_STDERR" ]
++}
++
++@test "[host-detect] detect_host writes nothing to stderr on claude-code path" {
++  # Test expectation: TE15 — same stderr-silence contract for the claude-code branch.
++  TMP_STDERR="$TMP_DIR/detect-claude-stderr.txt"
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    unset COPILOT_CLI
++    . \"$WRAPPER\"
++    detect_host
++  " >/dev/null 2>"$TMP_STDERR"
++  func_status=$?
++  [ "$func_status" -eq 0 ]
++  [ ! -s "$TMP_STDERR" ]
++}
++
++@test "[codex-availability] check_codex_available copilot-cli writes nothing to stderr under normal operation" {
++  # Test expectation: TE15 — check_codex_available must not write to stderr when
++  # the call succeeds normally (valid host, copilot-cli path).
++  TMP_STDERR="$TMP_DIR/check-copilot-stderr.txt"
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    . \"$WRAPPER\"
++    check_codex_available copilot-cli
++  " >/dev/null 2>"$TMP_STDERR"
++  func_status=$?
++  [ "$func_status" -eq 0 ]
++  [ ! -s "$TMP_STDERR" ]
++}
++
++# ===========================================================================
++# SECTION 4: Dispatch surface — transport markers, mismatch, exit-code propagation
++#
++# All tests in this section invoke run-codex-review.sh in full dispatch mode
++# (no --dry-run) with QRSPI_REPO_ROOT=$TMP_DIR so the mock dispatcher at
++# $TMP_DIR/scripts/run-third-party-llm.sh is used.
++#
++# Stderr from the whole invocation is captured to a temp file for assertion.
++#
++# RED state: the new dispatch surface code does not exist in the script →
++# transport markers are never emitted → grep assertions fail. ✓
++# ===========================================================================
++
++@test "[dispatch-surface] claude-code path emits [transport: shell-pipeline] exactly once in stderr" {
++  # Test expectation: TE13 — when the dispatch surface selects the Claude Code
++  # shell-pipeline path (detected host = claude-code, COPILOT_CLI unset/empty),
++  # the marker '[transport: shell-pipeline]' appears exactly once on stderr.
++  TMP_STDERR="$TMP_DIR/t13-stderr.txt"
++  QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    bash "$WRAPPER" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$TMP_DIR/out" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model gpt-5-codex \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >"$TMP_DIR/t13-stdout.txt" 2>"$TMP_STDERR" || true
++
++  marker_count="$(grep -c '\[transport: shell-pipeline\]' "$TMP_STDERR" 2>/dev/null || printf '0')"
++  [ "$marker_count" -eq 1 ]
++}
++
++@test "[dispatch-surface] claude-code path does not emit [transport: task-tool] in stderr" {
++  # Test expectation: TE13 — '[transport: task-tool]' must be ABSENT from stderr
++  # when the claude-code shell-pipeline path is selected.
++  TMP_STDERR="$TMP_DIR/t13b-stderr.txt"
++  QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    bash "$WRAPPER" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$TMP_DIR/out" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model gpt-5-codex \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >"$TMP_DIR/t13b-stdout.txt" 2>"$TMP_STDERR" || true
++
++  ! grep -q '\[transport: task-tool\]' "$TMP_STDERR"
++}
++
++@test "[dispatch-surface] copilot-cli path emits [transport: task-tool] exactly once in stderr" {
++  # Test expectation: TE14 — when dispatch surface selects the Copilot CLI task-tool
++  # path (detected host = copilot-cli, COPILOT_CLI=1), the marker
++  # '[transport: task-tool]' appears exactly once on stderr.
++  # config.md set to codex_reviews: true so the copilot-cli dispatch is not skipped
++  # by an availability gate before the marker can be emitted.
++  # The actual task-tool invocation may fail in a non-copilot test environment;
++  # this test asserts only on the transport marker, not the final exit code.
++  printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
++
++  TMP_STDERR="$TMP_DIR/t14-stderr.txt"
++  QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI=1 \
++    bash "$WRAPPER" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$TMP_DIR/out" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model gpt-5-codex \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >"$TMP_DIR/t14-stdout.txt" 2>"$TMP_STDERR" || true
++
++  marker_count="$(grep -c '\[transport: task-tool\]' "$TMP_STDERR" 2>/dev/null || printf '0')"
++  [ "$marker_count" -eq 1 ]
++}
++
++@test "[dispatch-surface] copilot-cli path does not emit [transport: shell-pipeline] in stderr" {
++  # Test expectation: TE14 — '[transport: shell-pipeline]' must be ABSENT from stderr
++  # when the copilot-cli task-tool path is selected.
++  printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
++
++  TMP_STDERR="$TMP_DIR/t14b-stderr.txt"
++  QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI=1 \
++    bash "$WRAPPER" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$TMP_DIR/out" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model gpt-5-codex \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >"$TMP_DIR/t14b-stdout.txt" 2>"$TMP_STDERR" || true
++
++  ! grep -q '\[transport: shell-pipeline\]' "$TMP_STDERR"
++}
++
++@test "[dispatch-surface] mismatch warning names both the detected host and the codex_reviews config value" {
++  # Test expectation: TE12 — when detect_host output disagrees with the codex_reviews
++  # config value, the dispatch surface emits a single line to stderr that names BOTH
++  # the detected host value AND the config value so an operator can act on it.
++  #
++  # Mismatch scenario from the spec example: detected host = 'claude-code' (COPILOT_CLI
++  # unset), config codex_reviews = true.  MOCK_HOME has no companion file, so
++  # check_codex_available(claude-code) returns non-zero → mismatch with codex_reviews: true.
++  printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
++
++  TMP_STDERR="$TMP_DIR/t12-stderr.txt"
++  QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    HOME="$MOCK_HOME" \
++    bash "$WRAPPER" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$TMP_DIR/out" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model gpt-5-codex \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >"$TMP_DIR/t12-stdout.txt" 2>"$TMP_STDERR" || true
++
++  # Stderr must contain both the detected host value and the config value.
++  grep -q "claude-code" "$TMP_STDERR"
++  grep -q "true" "$TMP_STDERR"
++  # Both must appear on the SAME line (single-line diagnostic requirement).
++  grep -qE "claude-code.*true|true.*claude-code" "$TMP_STDERR"
++}
++
++@test "[dispatch-surface] mismatch is warning-only: dispatch runs and exits with transport exit code" {
++  # Test expectation: TE12 (warning-only clause) — the mismatch warning must not block
++  # dispatch; the dispatch surface must still invoke the transport and propagate its exit
++  # code.  Here the mock transport exits 0; the dispatch surface must also exit 0.
++  #
++  # The grep on 'claude-code' proves the new dispatch surface ran (mismatch path active).
++  # If it were missing, the test would fail at the grep line, not at the exit-code check.
++  printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
++
++  TMP_STDERR="$TMP_DIR/t12b-stderr.txt"
++  QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    HOME="$MOCK_HOME" \
++    MOCK_TRANSPORT_EXIT=0 \
++    bash "$WRAPPER" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$TMP_DIR/out" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model gpt-5-codex \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >"$TMP_DIR/t12b-stdout.txt" 2>"$TMP_STDERR"
++  dispatch_status=$?
++
++  # Mismatch warning must be present in stderr (proves the new dispatch path ran).
++  grep -q "claude-code" "$TMP_STDERR"
++  # Exit code must come from the transport (0), not from mismatch logic.
++  [ "$dispatch_status" -eq 0 ]
++}
++
++@test "[dispatch-surface] non-zero transport exit code is propagated unchanged on shell-pipeline path" {
++  # Test expectation: TE16 — when the dispatch surface invokes the shell-pipeline
++  # transport and that transport exits with a non-zero exit code, the dispatch surface
++  # propagates that exact code to the caller with no suppression or remapping.
++  #
++  # The grep on '[transport: shell-pipeline]' proves the T06 dispatch surface ran
++  # (not the pre-T06 legacy path which would also propagate the code but not emit the
++  # marker).  Without this anchor, TE16 would trivially pass against unmodified code.
++  TMP_STDERR="$TMP_DIR/t16-stderr.txt"
++  # Use && ... || dispatch_status=$? to capture non-zero exits in bats (which
++  # runs test bodies with set -e active; a bare non-zero command would abort
++  # the test body before dispatch_status=$? could run).
++  dispatch_status=0
++  QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    MOCK_TRANSPORT_EXIT=42 \
++    bash "$WRAPPER" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$TMP_DIR/out" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model gpt-5-codex \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >"$TMP_DIR/t16-stdout.txt" 2>"$TMP_STDERR" && dispatch_status=0 || dispatch_status=$?
++
++  # [transport: shell-pipeline] in stderr confirms the T06 dispatch surface ran.
++  grep -q '\[transport: shell-pipeline\]' "$TMP_STDERR"
++  # Exit code must be 42 (propagated from mock transport, not suppressed or remapped).
++  [ "$dispatch_status" -eq 42 ]
++}
++
++@test "[dispatch-surface] mismatch path does not suppress non-zero transport exit code" {
++  # Test expectation: TE17 — even when a mismatch warning is emitted, a non-zero exit
++  # code from the underlying transport must be propagated to the caller unchanged.
++  # The mismatch warning path must not swallow failures.
++  #
++  # Mismatch scenario: COPILOT_CLI unset (claude-code), codex_reviews: true,
++  # no companion in MOCK_HOME.  Mock transport exits 7.
++  printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
++
++  TMP_STDERR="$TMP_DIR/t17-stderr.txt"
++  # Use && ... || dispatch_status=$? to capture non-zero exits in bats (same
++  # rationale as TE16: bats test bodies run with set -e active).
++  dispatch_status=0
++  QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    HOME="$MOCK_HOME" \
++    MOCK_TRANSPORT_EXIT=7 \
++    bash "$WRAPPER" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$TMP_DIR/out" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model gpt-5-codex \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >"$TMP_DIR/t17-stdout.txt" 2>"$TMP_STDERR" && dispatch_status=0 || dispatch_status=$?
++
++  # Mismatch warning in stderr confirms the mismatch path ran (proves new code active).
++  grep -q "claude-code" "$TMP_STDERR"
++  # Exit code must be 7 (from transport), not 0 or any other override.
++  [ "$dispatch_status" -eq 7 ]
++}
++
++# ===========================================================================
++# SECTION 5: R2 correctness fixes (T6 R3 fix-cycle)
++#
++# Six tests — one per R2 finding kept after Hotfix A+B threshold:
++#   sec.F01: transport-marker spoofable via COPILOT_CLI (binary-validation gate)
++#   sec.F02: HOME glob unvalidated (reject unsafe HOME before glob)
++#   sec.F03: mismatch echo injects terminal control chars (strip before echo)
++#   sf.F01:  source guard fails open on direct execution (return 0 || exit 0)
++#   sf.F02:  pipefail-off masks compose_prompt failure (set -o pipefail subshell)
++#   sf.F03:  check_codex_available stderr swallowed by 2>/dev/null at call site
++# ===========================================================================
++
++@test "[r3-sec.F01] detect_host emits claude-code when COPILOT_CLI=1 but gh binary not reachable in PATH" {
++  # sec.F01: transport-marker is spoofable because detect_host trusts the
++  # user-supplied COPILOT_CLI env var without validating that the gh/copilot
++  # binary is actually reachable.  After the fix, detect_host checks
++  # `command -v gh` before emitting 'copilot-cli'; if gh is absent it falls
++  # back to 'claude-code', making the marker harder to forge.
++  #
++  # RED state: the current code ignores binary reachability and emits
++  # 'copilot-cli' whenever COPILOT_CLI=1, regardless of PATH.
++  # The assertion `[ "$output" = "claude-code" ]` therefore FAILS. ✓
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    export PATH=/usr/bin:/bin
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++@test "[r3-sec.F02] check_codex_available emits diagnostic and returns non-zero when HOME contains .. component" {
++  # sec.F02: HOME is taken verbatim for the companion-glob path with no
++  # path-safety check.  A caller can set HOME to a path with '..' components
++  # to probe arbitrary filesystem locations.  After the fix, check_codex_available
++  # rejects HOME values containing '..' and emits a diagnostic to stderr.
++  #
++  # RED state: the current code performs no HOME validation; it silently
++  # fails (glob finds nothing) without any stderr diagnostic.
++  # grep for "unsafe" therefore FAILS. ✓
++  TMP_STDERR="$TMP_DIR/r3-sec-f02-stderr.txt"
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export HOME=\"$TMP_DIR/../unsafe-home\"
++    . \"$WRAPPER\" 2>/dev/null
++    check_codex_available claude-code
++  " >/dev/null 2>"$TMP_STDERR" || true
++
++  grep -qi "unsafe" "$TMP_STDERR"
++}
++
++@test "[r3-sec.F03] codex_reviews value is validated to a safe literal before echoing in mismatch diagnostic" {
++  # sec.F03: the _codex_reviews value extracted from config.md is echoed
++  # verbatim to stderr without sanitisation.  A crafted config.md value that
++  # passes a loose future comparison could inject terminal control sequences.
++  # After the fix, _codex_reviews is normalised to exactly "true" or "false"
++  # before any use; an out-of-range value is set to "false".
++  #
++  # The fix must introduce a `true|false` case statement (or equivalent) that
++  # is NOT present in the current code.  This structural assertion is the
++  # reliable gate for the sanitisation — behavioural injection tests would
++  # require the echo to fire with a polluted value, which the strict
++  # `== "true"` guard in the current code prevents.
++  #
++  # RED state: the script does not contain a `true|false` case pattern for
++  # _codex_reviews sanitisation.  `grep -qF 'true|false' "$WRAPPER"` FAILS. ✓
++  grep -qF 'true|false' "$WRAPPER"
++}
++
++@test "[r3-sf.F01] source guard exits cleanly when script is directly executed with QRSPI_SOURCE_ONLY=1" {
++  # sf.F01: `return 0` at the source guard is valid only in a sourced context.
++  # When the script is executed directly (`bash run-codex-review.sh`), `return`
++  # outside a function emits an error but — because set -e is disabled — does
++  # NOT halt execution.  The script falls through into argument parsing and
++  # exits 1 on missing --agent-file.  After the fix, the guard uses
++  # `return 0 2>/dev/null || exit 0` which correctly exits when run directly.
++  #
++  # RED state: `bash "$WRAPPER"` (direct execution) with QRSPI_SOURCE_ONLY=1
++  # exits 1 (argument-parsing aborts).  `[ "$status" -eq 0 ]` FAILS. ✓
++  QRSPI_SOURCE_ONLY=1 run bash "$WRAPPER"
++  [ "$status" -eq 0 ]
++}
++
++@test "[r3-sf.F02] dispatch section uses a pipefail-safe invocation for compose_prompt pipeline" {
++  # sf.F02: `compose_prompt | bash dispatcher` with pipefail OFF means a
++  # compose_prompt failure (partial output, file error) is silently masked by
++  # the dispatcher's exit code.  After the fix the pipeline runs inside a
++  # subshell with `set -o pipefail` so compose_prompt failures are surfaced.
++  #
++  # RED state: the script contains no `set -o pipefail` statement (the existing
++  # comment `# pipefail is off` does not match `set -o pipefail`).
++  # `grep -q 'set -o pipefail'` therefore FAILS. ✓
++  grep -q 'set -o pipefail' "$WRAPPER"
++}
++
++@test "[r3-sf.F03] check_codex_available at dispatch call site does not suppress its stderr diagnostic" {
++  # sf.F03: `check_codex_available "$_detected_host" 2>/dev/null` at the
++  # dispatch call site silently swallows the TE11 unrecognized-host diagnostic.
++  # After the fix the 2>/dev/null redirection is removed so the diagnostic can
++  # reach the operator's stderr stream.
++  #
++  # RED state: the pattern `check_codex_available.*2>/dev/null` IS present in
++  # the script.  `! grep` therefore FAILS. ✓
++  ! grep -qE 'check_codex_available[^#]*2>/dev/null' "$WRAPPER"
++}

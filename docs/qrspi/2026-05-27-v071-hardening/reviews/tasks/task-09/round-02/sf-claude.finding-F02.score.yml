@@ -1,0 +1,2 @@
+score: 72
+reason: Genuine structural bug in awk-based _frontmatter() helper (lines 19-27) introduced by task-09's GREEN commit; brittle to YAML block scalars containing embedded `---` at column 0, causing premature exit and silent test failures.

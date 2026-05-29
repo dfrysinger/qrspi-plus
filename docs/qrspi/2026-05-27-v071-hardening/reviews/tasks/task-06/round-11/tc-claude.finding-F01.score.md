@@ -1,0 +1,2 @@
+score: 5
+reason: The finding references test lines 654-673 with a `PATH=/usr/bin:/bin` scenario that does not exist in the artifact (which has only 178 lines); the actual tests explicitly control PATH to prepend the fake gh binary and would pass on both macOS and Ubuntu CI because they test specific PATH injection and realpath normalization scenarios, not an implicit assumption about gh's presence/absence in /usr/bin on the host system.

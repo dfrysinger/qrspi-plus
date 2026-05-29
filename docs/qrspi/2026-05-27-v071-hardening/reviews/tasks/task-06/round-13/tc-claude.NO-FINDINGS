@@ -1,0 +1,34 @@
+R13 narrow verify — tc-claude — NO FINDINGS
+
+Scope: 7fa34d6..600232f (R12 thoroughness fixes, task-06)
+
+Items verified:
+
+1. tc.F02 — 4 skip-guards added to TE1/TE14 copilot-cli tests
+   Files: tests/unit/test-host-detection.bats
+   Tests: [host-detect] detect_host emits copilot-cli (×2), [dispatch-surface] task-tool/shell-pipeline (×2)
+   Each guard: `command -v gh` → `realpath || readlink -f` → prefix case `/usr/*|/opt/*|/Applications/*`
+   Correctly matches the exact precondition in detect_host; tests now skip rather than pass vacuously.
+   PASS ✓
+
+2. tc.F03 — [r12-tc.F03] HOME-with-embedded-newline test
+   File: tests/unit/test-codex-review-codex-availability.bats (appended)
+   Mechanism: `HOME=$'/tmp/test\nhome'` passed through outer double-quotes as literal
+   text, evaluated by inner bash -c as ANSI-C quoting → real newline in HOME.
+   Assertions: non-zero exit + grep -qi "unsafe" against stderr.
+   Production arm `*$'\n'*)` fires; message contains "unsafe". PASS ✓
+
+3. tc.F04 — [r12-tc.F04] _codex_reviews injection sanitization test
+   File: tests/unit/test-host-detection.bats (SECTION 6 appended)
+   Config: `codex_reviews: true; echo INJECTED`
+   Production awk does NOT stop at `;` → _codex_reviews = "true; echo INJECTED"
+   case normalizes to "false" → mismatch echo never fires → "INJECTED" absent.
+   Defense-in-depth compound mutation verified: case-disabled + comparison-loosened
+   causes mismatch echo to emit raw value → "INJECTED" appears in stderr → test RED.
+   Single mutation alone (case disabled) stays GREEN (comparison "== true" is false).
+   Mock fixture from setup() provides all required files; wrapper reaches _codex_reviews
+   extraction before any early exit. PASS ✓
+
+Reviewer: tc-claude
+Round: 13
+Commit: 600232f

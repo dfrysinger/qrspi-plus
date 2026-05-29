@@ -1,0 +1,2 @@
+score: 75
+reason: This is a real portability issue that will cause silent failures on macOS and restricted CI environments where `/tmp` is non-writable; the awk write will fail silently, causing incorrect "not found" errors for existing anchors. The issue directly impacts functionality and violates the file's stated Bash portability design.

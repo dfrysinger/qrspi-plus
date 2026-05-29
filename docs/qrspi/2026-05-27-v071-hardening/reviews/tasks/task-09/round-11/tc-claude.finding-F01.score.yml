@@ -1,0 +1,2 @@
+score: 35
+reason: Real documentation issue confirmed (in_scalar is dead code, mutation IS unobservable), but reviewer correctly flags as low-priority, test-logic-unaffected, non-blocking documentation fix. Clarity/style territory with no functional defect.

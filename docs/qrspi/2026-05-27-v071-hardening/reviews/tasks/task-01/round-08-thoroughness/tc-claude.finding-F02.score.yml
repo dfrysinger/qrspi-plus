@@ -1,0 +1,2 @@
+score: 82
+reason: Real correctness issue verified by pattern violation (29+ sibling tests use -eq 1), die() unconditional exit-1 behavior, and analogous R5 fix that demonstrates the solution works. Masks non-1 exits risking test reliability.

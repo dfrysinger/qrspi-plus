@@ -1,0 +1,4 @@
+score: 72
+change_type: correctness
+verdict: Valid correctness finding; identifies genuine PATH-injection weakness in the applied `command -v gh` fix. Accurately categorized as latent forward-risk (current branches identical, no exploitation today). Technical analysis is sound. Meets Hotfix B correctness threshold (70).
+reason: Finding correctly demonstrates that the R2 fix using `command -v gh` remains bypassable via PATH manipulation; while latent (no current impact), it is a legitimate gap in the hardening approach.

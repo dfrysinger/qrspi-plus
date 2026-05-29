@@ -1,0 +1,2 @@
+score: 58
+reason: Semantic inversion confirmed: R7 changed body from "no model:" to "model: [content]" but fixture name still asserts "no-body-model", creating diagnostic confusion during debugging. Real clarity issue but purely naming-related with no functional impact.
