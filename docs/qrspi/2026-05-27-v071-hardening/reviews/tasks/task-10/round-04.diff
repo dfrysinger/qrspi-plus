@@ -1,0 +1,898 @@
+diff --git a/skills/using-qrspi/SKILL.anchors.json b/skills/using-qrspi/SKILL.anchors.json
+index 9182549..2b62a21 100644
+--- a/skills/using-qrspi/SKILL.anchors.json
++++ b/skills/using-qrspi/SKILL.anchors.json
+@@ -65,94 +65,94 @@
+   },
+   "Config File (`config.md`)": {
+     "line_start": 349,
+-    "line_end": 510
++    "line_end": 547
+   },
+   "Dispatch routing blocks": {
+     "line_start": 420,
+-    "line_end": 510
++    "line_end": 547
+   },
+   "Config Validation Procedure": {
+-    "line_start": 511,
+-    "line_end": 629
++    "line_start": 548,
++    "line_end": 666
+   },
+   "When config.md is missing entirely": {
+-    "line_start": 515,
+-    "line_end": 523
++    "line_start": 552,
++    "line_end": 560
+   },
+   "When a required field is missing or has an invalid value": {
+-    "line_start": 524,
+-    "line_end": 576
++    "line_start": 561,
++    "line_end": 613
+   },
+   "No silent defaults": {
+-    "line_start": 577,
+-    "line_end": 584
++    "line_start": 614,
++    "line_end": 621
+   },
+   "Exceptions to the no-silent-defaults rule": {
+-    "line_start": 585,
+-    "line_end": 603
++    "line_start": 622,
++    "line_end": 640
+   },
+   "Fields that affect pipeline behavior (must be validated)": {
+-    "line_start": 604,
+-    "line_end": 623
++    "line_start": 641,
++    "line_end": 660
+   },
+   "Fields that do NOT require validation (informational only)": {
+-    "line_start": 624,
+-    "line_end": 629
++    "line_start": 661,
++    "line_end": 666
+   },
+   "Standard Review Loop": {
+-    "line_start": 630,
+-    "line_end": 673
++    "line_start": 667,
++    "line_end": 710
+   },
+   "Fix-altitude rule (F-5)": {
+-    "line_start": 666,
+-    "line_end": 673
++    "line_start": 703,
++    "line_end": 710
+   },
+   "Review Output Handling": {
+-    "line_start": 674,
+-    "line_end": 1065
++    "line_start": 711,
++    "line_end": 1102
+   },
+   "Review-Loop Pause Gate": {
+-    "line_start": 1066,
+-    "line_end": 1113
++    "line_start": 1103,
++    "line_end": 1150
+   },
+   "BATCH-WITH-OVERRIDES UI contract": {
+-    "line_start": 1070,
+-    "line_end": 1077
++    "line_start": 1107,
++    "line_end": 1114
+   },
+   "3-option menu (per paused finding)": {
+-    "line_start": 1078,
+-    "line_end": 1095
++    "line_start": 1115,
++    "line_end": 1132
+   },
+   "Paused rounds do not decrement the cap": {
+-    "line_start": 1096,
+-    "line_end": 1101
++    "line_start": 1133,
++    "line_end": 1138
+   },
+   "Pending-findings file": {
+-    "line_start": 1102,
+-    "line_end": 1113
++    "line_start": 1139,
++    "line_end": 1150
+   },
+   "Review Time Allocation": {
+-    "line_start": 1114,
+-    "line_end": 1121
++    "line_start": 1151,
++    "line_end": 1158
+   },
+   "Compaction Checkpoints": {
+-    "line_start": 1122,
+-    "line_end": 1153
++    "line_start": 1159,
++    "line_end": 1190
+   },
+   "Feedback File Format": {
+-    "line_start": 1154,
+-    "line_end": 1173
++    "line_start": 1191,
++    "line_end": 1210
+   },
+   "Common Rationalizations — STOP": {
+-    "line_start": 1174,
+-    "line_end": 1188
++    "line_start": 1211,
++    "line_end": 1225
+   },
+   "Skill Invocation": {
+-    "line_start": 1189,
+-    "line_end": 1194
++    "line_start": 1226,
++    "line_end": 1231
+   },
+   "Pipeline Iron Laws — Final Reminder": {
+-    "line_start": 1195,
+-    "line_end": 1217
++    "line_start": 1232,
++    "line_end": 1254
+   }
+ }
+diff --git a/skills/using-qrspi/SKILL.md b/skills/using-qrspi/SKILL.md
+index 01fba9e..2c58edc 100644
+--- a/skills/using-qrspi/SKILL.md
++++ b/skills/using-qrspi/SKILL.md
+@@ -447,16 +447,27 @@ providers:
+ 
+ #### `model_routing:` block
+ 
+-Maps role names to provider-plus-model pairs. The dispatcher uses this block to resolve which model to call for a given role.
++Maps abstract Claude tier names to concrete versioned model IDs, per dispatch host. The dispatcher resolves an agent dispatch by (1) detecting the host CLI it is running under and (2) looking up the tier name carried on the agent (or `inherit` when the agent declares no explicit `model:` field).
+ 
+ ```yaml
+ model_routing:
+-  researcher: my-provider/gpt-4o
+-  reviewer:   my-provider/gpt-4o-mini
+-  implementer: other-provider/claude-opus-4
++  claude-code:
++    haiku: claude-haiku-4.5
++    sonnet: claude-sonnet-4.6
++    opus: claude-opus-4.7-high
++    inherit: claude-sonnet-4.6
++  copilot-cli:
++    haiku: claude-haiku-4.5
++    sonnet: claude-sonnet-4.6
++    opus: claude-opus-4.7-high
++    inherit: claude-sonnet-4.6
+ ```
+ 
+-Each value is `<provider-name>/<model-id>` where `<provider-name>` MUST refer to an entry in the `providers:` block. Using a provider name that is absent from `providers:` is a config validation error (the dispatcher halts and reports the unknown provider rather than falling back silently).
++Top-level keys are the host names emitted by `detect_host` (see Codex dispatch transport routing). Each host sub-mapping contains exactly four tier rows: `haiku`, `sonnet`, `opus`, and `inherit`. Values are fully versioned model IDs (e.g. `claude-haiku-4.5`, not the bare tier short-form `haiku`) — Copilot CLI's model proxy emits a "model not available" warning for bare tier requests but accepts versioned IDs.
++
++See `#### Model Routing` below for the dispatch-time resolution flow.
++
++The orchestrator validates these invariants at config-load time and on every dispatch. When `detect_host` returns a host value for which `model_routing:` has no matching top-level key, when an agent's tier name (or the implicit `inherit`) matches no row under the matched host's sub-mapping, or when a tier value is a bare short-form (`haiku`, `sonnet`, `opus`) rather than a fully versioned model ID, the dispatcher halts and reports the missing or invalid entry. The dispatcher never falls back silently to the agent-bundled default and never passes the dispatch through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
+ 
+ #### `trusted_path:` block
+ 
+@@ -470,7 +481,7 @@ trusted_path:
+ 
+ Entries can be:
+ - A relative path to an agent `.md` file (relative to the repo root, e.g. `agents/qrspi-implementer.md`).
+-- A role name string (matches entries in `model_routing:`).
++- A role name string (matches the `model_role:` value declared in an agent's frontmatter — independent of `model_routing:`'s host-keyed structure).
+ 
+ `trusted_path:` is documented separately from the precedence chain below because it is a short-circuit, not a step in the chain — matching agents or roles bypass the chain entirely.
+ 
+@@ -491,7 +502,7 @@ When the dispatcher resolves which model to call for a task, it applies this pre
+ 
+ 1. **Per-task `model:` override** — the `model:` field on an individual task spec, when present.
+ 2. **Hardcoded dispatch-site `model:`** — a `model:` value hard-coded at the dispatch site in a skill's SKILL.md.
+-3. **`model_routing:` role lookup** — the role name resolved via the `model_routing:` block in `config.md`.
++3. **`model_routing:` host/tier lookup** — the concrete model ID resolved via the `model_routing:` block in `config.md`, indexed by the active dispatch host (from `detect_host`) and the tier name carried on the agent (or `inherit` when the agent declares no explicit `model:` field). See `#### \`model_routing:\` block` and `#### Model Routing` for schema + resolution flow.
+ 4. **Agent-bundled default** — the model bundled in the agent's own definition file.
+ 
+ `trusted_path:` is a separate short-circuit outside this chain: when an agent-file path or role name matches a `trusted_path:` entry, the dispatcher skips steps 1–3 and routes directly to the agent-bundled default (step 4).
+@@ -508,6 +519,32 @@ When `config.md` does not contain a `model_routing:` block, the dispatcher fires
+ - No persistent marker is written to disk to track that the warning has already fired. Because no marker is written, there is no write-failure surface that could leave the on-disk config in an inconsistent state.
+ - Each session sees the backfill defaults applied in-memory without changing the file on disk.
+ 
++#### Model Routing
++
++Resolution flow for agent tier names. When the dispatcher prepares an agent
++dispatch, it resolves the abstract Claude tier name carried on the agent
++(`haiku`, `sonnet`, `opus`, or the implicit `inherit` when the agent
++declares no explicit `model:` field) against the `model_routing` table in
++`config.md`. The lookup is a two-step indexing operation:
++
++1. **Host column selection.** The dispatcher calls `detect_host` (see the
++   per-host Codex dispatch transport routing section above) and uses its
++   output (`claude-code` or `copilot-cli`) to pick the matching top-level
++   key under `model_routing`.
++2. **Tier row selection.** The tier name on the agent (or `inherit` for
++   agents with no `model:` field) selects the row within the host's
++   sub-mapping. The mapped value is the concrete versioned model ID that
++   the dispatch transport will request.
++
++The `copilot-cli` column uses fully versioned Claude model IDs rather than
++bare tier short-forms because Copilot CLI's model proxy emits a
++"model not available" warning for bare `haiku` / `sonnet` / `opus` requests
++but accepts the full versioned IDs and routes them through to the upstream
++provider. The `inherit` row exists so that agents declaring no explicit
++`model:` field (the state established for all 41 agents after the T9 sweep)
++still resolve to a concrete model rather than relying on the host CLI's
++own fallback behavior, which differs between hosts.
++
+ ## Config Validation Procedure
+ 
+ Every skill that reads config.md applies this procedure before using any field.
+diff --git a/tests/unit/test-agent-frontmatter-no-model.bats b/tests/unit/test-agent-frontmatter-no-model.bats
+index 513343d..85f61bf 100644
+--- a/tests/unit/test-agent-frontmatter-no-model.bats
++++ b/tests/unit/test-agent-frontmatter-no-model.bats
+@@ -396,3 +396,464 @@ EOF
+     return 1
+   }
+ }
++
++# ============================================================================
++# T10 extensions — per-host `model_routing:` table assertions
++# ============================================================================
++#
++# Task 10 wires per-host tier resolution into config.md. The structural lint
++# below extends this BATS file (originally created by T9 for the no-`model:`-
++# in-frontmatter sweep) with assertions that:
++#
++#   1. `docs/qrspi/2026-05-27-v071-hardening/config.md` carries a
++#      `model_routing:` YAML block whose entries map each of the four agent
++#      tier names (`haiku`, `sonnet`, `opus`, `inherit`) to the correct
++#      versioned Claude model ID for BOTH host columns produced by
++#      `detect_host` (`claude-code` and `copilot-cli`).
++#   2. The `copilot-cli` column contains no bare tier short-forms (`haiku`,
++#      `sonnet`, `opus` alone) that would trigger Copilot CLI's
++#      "model not available" warning.
++#   3. `skills/using-qrspi/SKILL.md` documents the resolution flow under a
++#      "Model Routing" heading that names `detect_host` output as the host-
++#      selection input and the `model_routing` table as the per-tier source.
++#   4. The lint helper itself behaves correctly under positive and negative
++#      synthetic fixtures (meta-self-assertion per TE7).
++#
++# Format coupling: the lint assumes the implementer represents the
++# `model_routing:` table as a YAML mapping-of-mappings (the natural shape
++# for the existing config schema documented in SKILL.md), with each host
++# name as a sub-key whose value is a tier->model-id mapping. The chosen
++# indentation level is tolerated (any consistent indent works) but the
++# nesting structure is required.
++#
++# Bash 3.2 / POSIX-awk portability: no `mapfile`, no `${var,,}`, no
++# associative arrays, no GNU-only grep flags.
++
++# Helper: print the `model_routing:` YAML block from a config file.
++# Starts at the line beginning with `model_routing:` (column 0) and continues
++# while subsequent lines are indented (block content) or blank. Stops at the
++# next top-level structure (column-0 non-blank line: next YAML key, markdown
++# heading, or paragraph) or end of file.
++_model_routing_block() {
++  awk '
++    { gsub(/\r$/, "") }
++    /^model_routing:[[:space:]]*$/ { in_block = 1; print; next }
++    in_block {
++      if ($0 ~ /^[^[:space:]]/) { exit }
++      print
++    }
++  ' "$1"
++}
++
++# Helper: extract the YAML sub-block under a given host key within the
++# model_routing block. The host key is matched at any indent level as long
++# as the line is `<indent><host>:` with no trailing value. The sub-block
++# consists of all subsequent more-indented lines (plus blank lines) until
++# the next sibling-or-shallower key.
++_host_subblock() {
++  local file="$1" host="$2"
++  _model_routing_block "$file" | awk -v h="$host" '
++    function lead(s,   i) {
++      for (i = 1; i <= length(s); i++) {
++        if (substr(s, i, 1) != " ") return i - 1
++      }
++      return length(s)
++    }
++    {
++      if (!in_h) {
++        if ($0 ~ ("^[[:space:]]*" h ":[[:space:]]*$")) {
++          in_h = 1
++          host_indent = lead($0)
++          next
++        }
++      } else {
++        if ($0 ~ /^[[:space:]]*$/) { print; next }
++        if (lead($0) <= host_indent) exit
++        print
++      }
++    }
++  '
++}
++
++# Helper: assert a (tier -> model) pair exists in the given host sub-block
++# text on stdin. Pattern: `<indent><tier>:[ws]<model>` with optional trailing
++# whitespace. Returns 0 on match, 1 on miss.
++_assert_tier_maps_to() {
++  local tier="$1" model="$2"
++  grep -qE "^[[:space:]]+${tier}:[[:space:]]+${model}[[:space:]]*$"
++}
++
++# Helper: extract a named markdown section's body from a file. The section
++# starts at a line matching `^#+[[:space:]]+<title>[[:space:]]*$` and ends
++# at the next line of the same heading level OR a shallower heading OR EOF.
++# Heading depth is captured from the opening line so deeper sub-headings
++# within the section are kept.
++_markdown_section() {
++  local file="$1" title="$2"
++  awk -v t="$title" '
++    function hlevel(s,   n) {
++      n = 0
++      while (substr(s, n + 1, 1) == "#") n++
++      return n
++    }
++    {
++      if (!in_sec) {
++        if ($0 ~ ("^#+[[:space:]]+" t "[[:space:]]*$")) {
++          in_sec = 1
++          sec_level = hlevel($0)
++          next
++        }
++      } else {
++        if ($0 ~ /^#+[[:space:]]+/) {
++          if (hlevel($0) <= sec_level) exit
++        }
++        print
++      }
++    }
++  ' "$file"
++}
++
++@test "[T10/TE1] config.md model_routing: haiku tier resolves to claude-haiku-4.5 for both hosts" {
++  # Test expectation: docs/qrspi/2026-05-27-v071-hardening/config.md contains
++  # `claude-haiku-4.5` as the haiku-tier entry in the model_routing table for
++  # both the `claude-code` and `copilot-cli` host columns.
++  local cfg="docs/qrspi/2026-05-27-v071-hardening/config.md"
++  [ -f "$cfg" ] || { echo "config.md not found at expected path: $cfg"; return 1; }
++
++  local cc_block cli_block
++  cc_block=$(_host_subblock "$cfg" claude-code)
++  cli_block=$(_host_subblock "$cfg" copilot-cli)
++
++  [ -n "$cc_block" ] || {
++    echo "TE1: claude-code sub-block missing from model_routing: in config.md"
++    return 1
++  }
++  [ -n "$cli_block" ] || {
++    echo "TE1: copilot-cli sub-block missing from model_routing: in config.md"
++    return 1
++  }
++
++  printf '%s\n' "$cc_block" | _assert_tier_maps_to haiku 'claude-haiku-4\.5' || {
++    echo "TE1: claude-code/haiku does not map to claude-haiku-4.5"
++    printf 'claude-code sub-block:\n%s\n' "$cc_block"
++    return 1
++  }
++  printf '%s\n' "$cli_block" | _assert_tier_maps_to haiku 'claude-haiku-4\.5' || {
++    echo "TE1: copilot-cli/haiku does not map to claude-haiku-4.5"
++    printf 'copilot-cli sub-block:\n%s\n' "$cli_block"
++    return 1
++  }
++}
++
++@test "[T10/TE2] config.md model_routing: sonnet tier resolves to claude-sonnet-4.6 for both hosts" {
++  # Test expectation: docs/qrspi/2026-05-27-v071-hardening/config.md contains
++  # `claude-sonnet-4.6` as the sonnet-tier entry in the model_routing table
++  # for both the `claude-code` and `copilot-cli` host columns.
++  local cfg="docs/qrspi/2026-05-27-v071-hardening/config.md"
++  [ -f "$cfg" ] || { echo "config.md not found at expected path: $cfg"; return 1; }
++
++  local cc_block cli_block
++  cc_block=$(_host_subblock "$cfg" claude-code)
++  cli_block=$(_host_subblock "$cfg" copilot-cli)
++
++  [ -n "$cc_block" ] || {
++    echo "TE2: claude-code sub-block missing from model_routing: in config.md"
++    return 1
++  }
++  [ -n "$cli_block" ] || {
++    echo "TE2: copilot-cli sub-block missing from model_routing: in config.md"
++    return 1
++  }
++
++  printf '%s\n' "$cc_block" | _assert_tier_maps_to sonnet 'claude-sonnet-4\.6' || {
++    echo "TE2: claude-code/sonnet does not map to claude-sonnet-4.6"
++    printf 'claude-code sub-block:\n%s\n' "$cc_block"
++    return 1
++  }
++  printf '%s\n' "$cli_block" | _assert_tier_maps_to sonnet 'claude-sonnet-4\.6' || {
++    echo "TE2: copilot-cli/sonnet does not map to claude-sonnet-4.6"
++    printf 'copilot-cli sub-block:\n%s\n' "$cli_block"
++    return 1
++  }
++}
++
++@test "[T10/TE3] config.md model_routing: opus tier resolves to claude-opus-4.7-high for both hosts" {
++  # Test expectation: docs/qrspi/2026-05-27-v071-hardening/config.md contains
++  # `claude-opus-4.7-high` as the opus-tier entry in the model_routing table
++  # for both the `claude-code` and `copilot-cli` host columns.
++  local cfg="docs/qrspi/2026-05-27-v071-hardening/config.md"
++  [ -f "$cfg" ] || { echo "config.md not found at expected path: $cfg"; return 1; }
++
++  local cc_block cli_block
++  cc_block=$(_host_subblock "$cfg" claude-code)
++  cli_block=$(_host_subblock "$cfg" copilot-cli)
++
++  [ -n "$cc_block" ] || {
++    echo "TE3: claude-code sub-block missing from model_routing: in config.md"
++    return 1
++  }
++  [ -n "$cli_block" ] || {
++    echo "TE3: copilot-cli sub-block missing from model_routing: in config.md"
++    return 1
++  }
++
++  printf '%s\n' "$cc_block" | _assert_tier_maps_to opus 'claude-opus-4\.7-high' || {
++    echo "TE3: claude-code/opus does not map to claude-opus-4.7-high"
++    printf 'claude-code sub-block:\n%s\n' "$cc_block"
++    return 1
++  }
++  printf '%s\n' "$cli_block" | _assert_tier_maps_to opus 'claude-opus-4\.7-high' || {
++    echo "TE3: copilot-cli/opus does not map to claude-opus-4.7-high"
++    printf 'copilot-cli sub-block:\n%s\n' "$cli_block"
++    return 1
++  }
++}
++
++@test "[T10/TE4] config.md model_routing: inherit tier resolves to claude-sonnet-4.6 for both hosts" {
++  # Test expectation: docs/qrspi/2026-05-27-v071-hardening/config.md contains
++  # `claude-sonnet-4.6` as the inherit-tier entry in the model_routing table
++  # for both the `claude-code` and `copilot-cli` host columns. This matches
++  # Claude's resolver default for custom agents that do not declare an
++  # explicit `model:` (which T9 removed from all 41 agent files).
++  local cfg="docs/qrspi/2026-05-27-v071-hardening/config.md"
++  [ -f "$cfg" ] || { echo "config.md not found at expected path: $cfg"; return 1; }
++
++  local cc_block cli_block
++  cc_block=$(_host_subblock "$cfg" claude-code)
++  cli_block=$(_host_subblock "$cfg" copilot-cli)
++
++  [ -n "$cc_block" ] || {
++    echo "TE4: claude-code sub-block missing from model_routing: in config.md"
++    return 1
++  }
++  [ -n "$cli_block" ] || {
++    echo "TE4: copilot-cli sub-block missing from model_routing: in config.md"
++    return 1
++  }
++
++  printf '%s\n' "$cc_block" | _assert_tier_maps_to inherit 'claude-sonnet-4\.6' || {
++    echo "TE4: claude-code/inherit does not map to claude-sonnet-4.6"
++    printf 'claude-code sub-block:\n%s\n' "$cc_block"
++    return 1
++  }
++  printf '%s\n' "$cli_block" | _assert_tier_maps_to inherit 'claude-sonnet-4\.6' || {
++    echo "TE4: copilot-cli/inherit does not map to claude-sonnet-4.6"
++    printf 'copilot-cli sub-block:\n%s\n' "$cli_block"
++    return 1
++  }
++}
++
++@test "[T10/TE5] config.md model_routing: copilot-cli column contains no bare tier short-forms" {
++  # Test expectation: no entry in the copilot-cli column of the
++  # `model_routing:` table is a bare Claude tier short-form (the strings
++  # `haiku`, `sonnet`, or `opus` alone) that would trigger a Copilot CLI
++  # "model not available" warning. The copilot-cli sub-block MUST exist
++  # for this assertion to be meaningful — a missing sub-block fails this
++  # test rather than vacuously passing.
++  local cfg="docs/qrspi/2026-05-27-v071-hardening/config.md"
++  [ -f "$cfg" ] || { echo "config.md not found at expected path: $cfg"; return 1; }
++
++  local cli_block
++  cli_block=$(_host_subblock "$cfg" copilot-cli)
++
++  [ -n "$cli_block" ] || {
++    echo "TE5: copilot-cli sub-block missing from model_routing: in config.md (vacuous-pass guard)"
++    return 1
++  }
++
++  # Any line of the form `<indent><tier-key>: <bare-tier-short-form>` is
++  # forbidden. We match values that are EXACTLY one of haiku/sonnet/opus
++  # with no version suffix, no provider prefix, no further punctuation.
++  local bad_lines
++  bad_lines=$(printf '%s\n' "$cli_block" \
++    | grep -nE '^[[:space:]]+[A-Za-z_][A-Za-z0-9_-]*:[[:space:]]+(haiku|sonnet|opus)[[:space:]]*$' \
++    || true)
++  if [ -n "$bad_lines" ]; then
++    echo "TE5: copilot-cli column contains bare tier short-form(s) that trigger 'model not available' warnings:"
++    printf '%s\n' "$bad_lines"
++    return 1
++  fi
++}
++
++@test "[T10/TE6] SKILL.md contains a Model Routing section naming detect_host and model_routing" {
++  # Test expectation: skills/using-qrspi/SKILL.md contains a "Model Routing"
++  # section (at any heading depth) that names `detect_host` output as the
++  # host-selection input AND the `model_routing` table as the per-tier
++  # resolution source. The existing `#### \`model_routing:\` block` section
++  # (lowercase, code-formatted, about the YAML schema) does NOT satisfy this
++  # expectation — the new section must be a distinct heading titled
++  # "Model Routing" (capital M, capital R, no backticks) that documents the
++  # dispatcher resolution flow.
++  local skill="skills/using-qrspi/SKILL.md"
++  [ -f "$skill" ] || { echo "SKILL.md not found at expected path: $skill"; return 1; }
++
++  local section
++  section=$(_markdown_section "$skill" "Model Routing")
++
++  [ -n "$section" ] || {
++    echo "TE6: no 'Model Routing' section heading found in $skill"
++    echo "  expected a line matching '^#+ Model Routing\$' (case-sensitive)"
++    return 1
++  }
++
++  printf '%s\n' "$section" | grep -qF 'detect_host' || {
++    echo "TE6: 'Model Routing' section does not name detect_host as host-selection input"
++    printf 'section body:\n%s\n' "$section"
++    return 1
++  }
++  printf '%s\n' "$section" | grep -qF 'model_routing' || {
++    echo "TE6: 'Model Routing' section does not name the model_routing table as per-tier resolution source"
++    printf 'section body:\n%s\n' "$section"
++    return 1
++  }
++}
++
++@test "[T10/TE7] lint helper accepts a synthetic complete model_routing fixture (GREEN path)" {
++  # Test expectation (TE7 positive): the extended structural lint passes when
++  # all required host/tier entries are present. This pins the helper's
++  # contract: a well-formed YAML model_routing block with both hosts and
++  # all four tier entries each must satisfy the sub-block extraction +
++  # tier-maps-to assertions used by TE1-TE5.
++  local fixture="${BATS_TEST_TMPDIR}/qrspi-test-routing-complete.md"
++  cat >"$fixture" <<'EOF'
++---
++status: approved
++---
++
++# Some heading
++
++model_routing:
++  claude-code:
++    haiku: claude-haiku-4.5
++    sonnet: claude-sonnet-4.6
++    opus: claude-opus-4.7-high
++    inherit: claude-sonnet-4.6
++  copilot-cli:
++    haiku: claude-haiku-4.5
++    sonnet: claude-sonnet-4.6
++    opus: claude-opus-4.7-high
++    inherit: claude-sonnet-4.6
++
++# Trailing section.
++EOF
++
++  local cc_block cli_block
++  cc_block=$(_host_subblock "$fixture" claude-code)
++  cli_block=$(_host_subblock "$fixture" copilot-cli)
++
++  [ -n "$cc_block" ] || { echo "TE7 GREEN: claude-code sub-block extraction returned empty"; return 1; }
++  [ -n "$cli_block" ] || { echo "TE7 GREEN: copilot-cli sub-block extraction returned empty"; return 1; }
++
++  # All four tier entries must resolve for both hosts.
++  local host block
++  for host in claude-code copilot-cli; do
++    block=$(_host_subblock "$fixture" "$host")
++    printf '%s\n' "$block" | _assert_tier_maps_to haiku 'claude-haiku-4\.5' \
++      || { echo "TE7 GREEN: $host/haiku missed on complete fixture"; return 1; }
++    printf '%s\n' "$block" | _assert_tier_maps_to sonnet 'claude-sonnet-4\.6' \
++      || { echo "TE7 GREEN: $host/sonnet missed on complete fixture"; return 1; }
++    printf '%s\n' "$block" | _assert_tier_maps_to opus 'claude-opus-4\.7-high' \
++      || { echo "TE7 GREEN: $host/opus missed on complete fixture"; return 1; }
++    printf '%s\n' "$block" | _assert_tier_maps_to inherit 'claude-sonnet-4\.6' \
++      || { echo "TE7 GREEN: $host/inherit missed on complete fixture"; return 1; }
++  done
++
++  # Bare tier short-form scan on copilot-cli sub-block must come up empty.
++  local bad
++  bad=$(printf '%s\n' "$cli_block" \
++    | grep -nE '^[[:space:]]+[A-Za-z_][A-Za-z0-9_-]*:[[:space:]]+(haiku|sonnet|opus)[[:space:]]*$' \
++    || true)
++  [ -z "$bad" ] || {
++    echo "TE7 GREEN: complete fixture wrongly flagged bare-tier short-forms: $bad"
++    return 1
++  }
++}
++
++@test "[T10/TE7] lint helper rejects fixtures with absent or incomplete model_routing block (RED path)" {
++  # Test expectation (TE7 negative): the extended structural lint fails when
++  # the model_routing block is absent OR when a required host/tier entry
++  # is missing. Three scenarios:
++  #   (a) model_routing block absent entirely
++  #   (b) model_routing block present but missing the copilot-cli host
++  #   (c) model_routing block present with both hosts but missing the
++  #       opus tier entry under copilot-cli
++
++  # --- Scenario (a): block absent ---
++  local fix_a="${BATS_TEST_TMPDIR}/qrspi-test-routing-absent.md"
++  cat >"$fix_a" <<'EOF'
++---
++status: approved
++---
++
++# Config with no model_routing block at all
++EOF
++
++  local block_a
++  block_a=$(_model_routing_block "$fix_a")
++  [ -z "$block_a" ] || {
++    echo "TE7 RED (a): _model_routing_block returned non-empty for fixture with no model_routing: key"
++    printf 'unexpected block:\n%s\n' "$block_a"
++    return 1
++  }
++
++  local cc_a cli_a
++  cc_a=$(_host_subblock "$fix_a" claude-code)
++  cli_a=$(_host_subblock "$fix_a" copilot-cli)
++  [ -z "$cc_a" ] || { echo "TE7 RED (a): claude-code sub-block found despite absent model_routing block"; return 1; }
++  [ -z "$cli_a" ] || { echo "TE7 RED (a): copilot-cli sub-block found despite absent model_routing block"; return 1; }
++
++  # --- Scenario (b): block present but missing copilot-cli host ---
++  local fix_b="${BATS_TEST_TMPDIR}/qrspi-test-routing-missing-host.md"
++  cat >"$fix_b" <<'EOF'
++---
++status: approved
++---
++
++model_routing:
++  claude-code:
++    haiku: claude-haiku-4.5
++    sonnet: claude-sonnet-4.6
++    opus: claude-opus-4.7-high
++    inherit: claude-sonnet-4.6
++EOF
++
++  local cc_b cli_b
++  cc_b=$(_host_subblock "$fix_b" claude-code)
++  cli_b=$(_host_subblock "$fix_b" copilot-cli)
++  [ -n "$cc_b" ] || { echo "TE7 RED (b): claude-code sub-block not found in fixture-b"; return 1; }
++  [ -z "$cli_b" ] || {
++    echo "TE7 RED (b): copilot-cli sub-block returned non-empty despite host being absent from fixture-b"
++    printf 'unexpected sub-block:\n%s\n' "$cli_b"
++    return 1
++  }
++
++  # --- Scenario (c): both hosts present but copilot-cli missing the opus row ---
++  local fix_c="${BATS_TEST_TMPDIR}/qrspi-test-routing-missing-tier.md"
++  cat >"$fix_c" <<'EOF'
++---
++status: approved
++---
++
++model_routing:
++  claude-code:
++    haiku: claude-haiku-4.5
++    sonnet: claude-sonnet-4.6
++    opus: claude-opus-4.7-high
++    inherit: claude-sonnet-4.6
++  copilot-cli:
++    haiku: claude-haiku-4.5
++    sonnet: claude-sonnet-4.6
++    inherit: claude-sonnet-4.6
++EOF
++
++  local cli_c
++  cli_c=$(_host_subblock "$fix_c" copilot-cli)
++  [ -n "$cli_c" ] || { echo "TE7 RED (c): copilot-cli sub-block missing from fixture-c"; return 1; }
++
++  # The opus assertion must NOT find a match (the row is intentionally absent).
++  if printf '%s\n' "$cli_c" | _assert_tier_maps_to opus 'claude-opus-4\.7-high'; then
++    echo "TE7 RED (c): _assert_tier_maps_to wrongly matched opus row on fixture missing that row"
++    printf 'copilot-cli sub-block:\n%s\n' "$cli_c"
++    return 1
++  fi
++}
+diff --git a/tests/unit/test-config-model-routing.bats b/tests/unit/test-config-model-routing.bats
+index ec5bc6c..b526985 100644
+--- a/tests/unit/test-config-model-routing.bats
++++ b/tests/unit/test-config-model-routing.bats
+@@ -68,10 +68,13 @@ setup_file() {
+   [[ "$out" == *"Hardcoded dispatch-site"* ]]
+ }
+ 
+-@test "precedence chain: layer 3 (model_routing: role lookup) named in using-qrspi" {
++@test "precedence chain: layer 3 (model_routing: host/tier lookup) named in using-qrspi" {
++  # T10 R1 fix (schema replacement): v0.7.1 hardening retired the
++  # role→provider/model schema in favor of host→tier→model. Step 3's
++  # canonical wording is now "host/tier lookup" rather than "role lookup".
+   out="$(_extract_h4 "$USING" "Precedence chain")"
+   [[ "$out" == *"model_routing:"* ]]
+-  [[ "$out" == *"role lookup"* ]]
++  [[ "$out" == *"host/tier lookup"* ]]
+ }
+ 
+ @test "precedence chain: layer 4 (agent-bundled default) named in using-qrspi" {
+@@ -118,10 +121,21 @@ setup_file() {
+ # Fail-loud provider resolution: unknown provider in model_routing: halts.
+ # ---------------------------------------------------------------------------
+ 
+-@test "provider resolution: unknown provider name is a config-validation error (fail-loud)" {
++@test "provider resolution: unknown provider name no longer documented under model_routing: (schema retired)" {
++  # T10 R1 fix (schema replacement): the v0.7-era model_routing: schema
++  # used `<provider-name>/<model-id>` values, and that schema's doc body
++  # carried a fail-loud "config validation error / halts and reports the
++  # unknown provider" sentence for unknown-provider references. v0.7.1
++  # retired the role→provider/model schema entirely in favor of the
++  # host→tier→model shape; provider names are no longer keyed off
++  # model_routing: values, so that specific fail-loud contract has no
++  # surface to assert on in the new schema doc.
++  #
++  # Pin the absence of the retired wording so a future revert of the
++  # schema would fail loud here as well as in test-using-qrspi-vocab.bats.
+   out="$(_extract_h4 "$USING" '`model_routing:` block')"
+-  [[ "$out" == *"config validation error"* ]]
+-  [[ "$out" == *"halts and reports the unknown provider"* ]] || [[ "$out" == *"falling back silently"* ]] || [[ "$out" == *"fall back silently"* ]]
++  [[ "$out" != *"halts and reports the unknown provider"* ]]
++  [[ "$out" != *"<provider-name>/<model-id>"* ]]
+ }
+ 
+ # ---------------------------------------------------------------------------
+@@ -170,9 +184,10 @@ setup_file() {
+ # single Precedence chain section so a regression cannot silently pass.
+ # ---------------------------------------------------------------------------
+ 
+-@test "role-resolution fallback: model_routing: role lookup AND agent-bundled default co-located in precedence chain" {
++@test "precedence-chain co-location: model_routing: host/tier lookup AND agent-bundled default co-located in precedence chain" {
++  # T10 R2 fix (post-R1 schema replacement): step-3 wording is now "host/tier lookup", not "role lookup". This pin was silently passing pre-R2 because of a bats [[ ]] short-circuit quirk; the post-R2 pin asserts the GREEN behavior explicitly.
+   out="$(_extract_h4 "$USING" "Precedence chain")"
+   [[ "$out" == *"model_routing:"* ]]
+-  [[ "$out" == *"role lookup"* ]]
++  [[ "$out" == *"host/tier lookup"* ]]
+   [[ "$out" == *"Agent-bundled default"* ]]
+ }
+diff --git a/tests/unit/test-using-qrspi-vocab.bats b/tests/unit/test-using-qrspi-vocab.bats
+new file mode 100644
+index 0000000..a4a2876
+--- /dev/null
++++ b/tests/unit/test-using-qrspi-vocab.bats
+@@ -0,0 +1,134 @@
++#!/usr/bin/env bats
++bats_require_minimum_version 1.5.0
++
++# T10 R1 fix — pin the v0.7.1 host→tier→model schema for
++# `skills/using-qrspi/SKILL.md` § `#### model_routing:` block + § Precedence
++# chain step 3.
++#
++# Background: the v0.7.1 hardening retired the v0.7-era role→provider/model
++# routing schema in favor of a host→tier→model shape (see
++# docs/qrspi/2026-05-27-v071-hardening/config.md and the `#### Model Routing`
++# section in skills/using-qrspi/SKILL.md). T10 added the new section but left
++# the pre-existing role-based schema doc + the "role lookup" precedence-chain
++# entry intact, shipping the SKILL in a self-contradictory state
++# (quality-claude.F01 / quality-codex.F01).
++#
++# These assertions pin the contract so a future regression (e.g. someone
++# reintroducing the old role/provider/model wording during a merge) fails CI
++# before landing.
++#
++# What's pinned:
++#   - Absence of `Maps role names to provider-plus-model pairs` (old schema
++#     doc opener)
++#   - Absence of the literal precedence-chain phrase ``model_routing:` role
++#     lookup`` (old step-3 wording)
++#   - Presence of the host→tier→model shape inside the schema's YAML example:
++#       claude-code:
++#       copilot-cli:
++#       haiku: claude-haiku-4.5
++#
++# Substring greps are intentional — they survive incidental wording polish
++# while catching schema regression. Pattern follows the
++# tests/unit/test-skill-md-content-patterns.bats precedent (load shared
++# helper + require_repo_root in setup; per-assertion grep with loud
++# diagnostics).
++
++load '../helpers/skill-markdown'
++
++# ---------------------------------------------------------------------------
++# H4 section extractor — the shared helper supports H2/H3 only. The
++# fail-loud paragraph added by T10 R2 lives at the END of the H4 section
++# `#### \`model_routing:\` block`, so the R2 pins below extract the H4 body
++# (between the H4 anchor and the next H1-H4 boundary) and grep within it.
++# Mirrors the _extract_h4 helper defined in test-config-model-routing.bats.
++# ---------------------------------------------------------------------------
++_extract_h4() {
++  local file="$1" text="$2"
++  local target="#### $text"
++  local out
++  out="$(awk -v target="$target" '
++    BEGIN { inside=0; found=0 }
++    {
++      if (inside == 1) {
++        if ($0 ~ /^#{1,4} /) { inside=0; next }
++        print $0
++        next
++      }
++      if ($0 == target) { inside=1; found=1; next }
++    }
++    END { if (found == 0) exit 1 }
++  ' "$file")" || { echo "h4 anchor not found: $target in $file" >&2; return 1; }
++  if [ -z "$out" ]; then
++    echo "h4 extract empty: $target in $file" >&2
++    return 1
++  fi
++  printf '%s\n' "$out"
++}
++
++setup() {
++  require_repo_root
++  USING_QRSPI_SKILL="$REPO_ROOT/skills/using-qrspi/SKILL.md"
++  # T10 R2 fix: `USING` alias is the variable name the new fail-loud /
++  # anti-pattern pins below use (mirrors test-config-model-routing.bats).
++  USING="$USING_QRSPI_SKILL"
++  export USING_QRSPI_SKILL USING
++}
++
++@test "[using-qrspi-vocab] SKILL.md exists" {
++  [ -f "$USING_QRSPI_SKILL" ]
++}
++
++@test "[using-qrspi-vocab] retired role→provider/model schema doc is gone" {
++  # The old v0.7 schema opener must not reappear. If this fails, someone
++  # reintroduced the role-based routing description that v0.7.1 retired.
++  run grep -F -- 'Maps role names to provider-plus-model pairs' "$USING_QRSPI_SKILL"
++  [ "$status" -ne 0 ]
++}
++
++@test "[using-qrspi-vocab] retired precedence-chain 'role lookup' wording is gone" {
++  # Old step-3 wording. The hardened version says "host/tier lookup" and
++  # references detect_host + the agent's tier name.
++  run grep -F -- '`model_routing:` role lookup' "$USING_QRSPI_SKILL"
++  [ "$status" -ne 0 ]
++}
++
++@test "[using-qrspi-vocab] schema doc carries the claude-code: host key" {
++  run grep -F -- 'claude-code:' "$USING_QRSPI_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++@test "[using-qrspi-vocab] schema doc carries the copilot-cli: host key" {
++  run grep -F -- 'copilot-cli:' "$USING_QRSPI_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++@test "[using-qrspi-vocab] schema doc carries a versioned tier row (haiku: claude-haiku-4.5)" {
++  # Versioned-ID requirement: the doc must show the full versioned ID, not
++  # the bare tier short-form (Copilot CLI's proxy rejects bare names).
++  run grep -F -- 'haiku: claude-haiku-4.5' "$USING_QRSPI_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++@test "model_routing block: fail-loud contract pinned for partial corruption" {
++  local body
++  body="$(_extract_h4 "$USING" '`model_routing:` block')"
++  # T10 R2 fix (restore fail-loud contract):
++  # The host→tier→model schema announces three structural invariants
++  # (host key matches detect_host, four tier rows present, values are
++  # fully versioned IDs). The schema doc MUST carry a fail-loud rule
++  # naming what the dispatcher does on partial corruption, or the
++  # G7b/#204 silent-fallback class reopens one layer deeper.
++  [[ "$body" == *"halts and reports"* ]]
++  [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
++}
++
++@test "model_routing block: anti-pattern wording absent (no 'silently fall back' / 'silently degrade')" {
++  local body
++  body="$(_extract_h4 "$USING" '`model_routing:` block')"
++  # T10 R2 fix (restore fail-loud contract):
++  # Pin the absence of anti-pattern wording G7b/#204 was filed
++  # against. If a future edit "softens" the fail-loud rule into a
++  # silent-fallback, this pin RED-fails.
++  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
++  [[ "$body" != *"silently degrade"* ]]
++}
