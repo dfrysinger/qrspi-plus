@@ -1112,3 +1112,80 @@ _extract_ctrl_check_fn() {
   printf '%s' "$output" | grep -qF 'sanitisation pipeline failed' && _found=1
   [ "$_found" -eq 1 ]
 }
+
+# ---------------------------------------------------------------------------
+# T8 — Cache-mechanism retirement: grep-based absence assertions on
+# scripts/run-third-party-llm.sh and skills/using-qrspi/SKILL.md.
+#
+# These tests verify that the three load-bearing cache-mechanism literal
+# strings — cache_control, supports_prompt_cache, emit_cache_control_markers
+# — are absent from both the dispatcher script and the using-qrspi skill
+# after the T8 mechanical removal pass.
+#
+# Word-boundary regex (-w) keeps each match sharp: it avoids matching
+# substrings inside unrelated identifiers and avoids matching the literal
+# token inside neighbour test file paths printed in stack traces. The
+# repo-relative paths are resolved against $REPO_ROOT (set up in
+# setup_file via require_repo_root).
+#
+# Each test asserts ONE literal in ONE file (six tests total). Keeping each
+# assertion granular lets the post-T8 implementer see exactly which
+# (literal, file) pair regresses if the retirement is partial.
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no cache_control literal (absence assertion)" {
+  # Test expectation (TE6): A new automated assertion in
+  # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
+  # for cache_control [...] and fails if the literal string is found.
+  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
+  [ -f "$skill" ]
+  run grep -nwE 'cache_control' "$skill"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no supports_prompt_cache literal (absence assertion)" {
+  # Test expectation (TE6): A new automated assertion in
+  # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
+  # for [...] supports_prompt_cache [...] and fails if the literal string is found.
+  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
+  [ -f "$skill" ]
+  run grep -nwE 'supports_prompt_cache' "$skill"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no emit_cache_control_markers literal (absence assertion)" {
+  # Test expectation (TE6): A new automated assertion in
+  # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
+  # for [...] emit_cache_control_markers and fails if the literal string is found.
+  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
+  [ -f "$skill" ]
+  run grep -nwE 'emit_cache_control_markers' "$skill"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no cache_control literal (absence assertion)" {
+  # Test expectation (TE7): a grep-based absence assertion in
+  # tests/unit/test-run-third-party-llm.bats verifies that the literal string
+  # cache_control [...] is absent from scripts/run-third-party-llm.sh.
+  [ -f "$DISPATCHER" ]
+  run grep -nwE 'cache_control' "$DISPATCHER"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no supports_prompt_cache literal (absence assertion)" {
+  # Test expectation (TE7): a grep-based absence assertion in
+  # tests/unit/test-run-third-party-llm.bats verifies that the literal string
+  # [...] supports_prompt_cache [...] is absent from scripts/run-third-party-llm.sh.
+  [ -f "$DISPATCHER" ]
+  run grep -nwE 'supports_prompt_cache' "$DISPATCHER"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no emit_cache_control_markers literal (absence assertion)" {
+  # Test expectation (TE7): a grep-based absence assertion in
+  # tests/unit/test-run-third-party-llm.bats verifies that the literal string
+  # [...] emit_cache_control_markers is absent from scripts/run-third-party-llm.sh.
+  [ -f "$DISPATCHER" ]
+  run grep -nwE 'emit_cache_control_markers' "$DISPATCHER"
+  [ "$status" -ne 0 ]
+}
