@@ -32,10 +32,10 @@ setup() {
 # 2. Frontmatter shape
 # ---------------------------------------------------------------------------
 
-@test "agent file declares model: sonnet" {
+@test "agent file does NOT declare a top-level model: key (per T9 hardening, G9)" {
   awk '/^---$/{n++; next} n==1{print} n==2{exit}' "$AGENT" \
-    | grep -qE '^model:[[:space:]]*sonnet$' \
-    || { echo "frontmatter in $AGENT does not declare 'model: sonnet'"; return 1; }
+    | grep -qE '^model:' \
+    && { echo "frontmatter in $AGENT unexpectedly declares 'model:' key (per T9, agent files must not pin model)"; return 1; } || true
 }
 
 @test "agent file declares tools: including Read" {
