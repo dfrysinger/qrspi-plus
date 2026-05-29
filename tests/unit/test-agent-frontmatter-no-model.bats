@@ -269,9 +269,12 @@ EOF
 }
 
 @test "[r5-sf.F01] frontmatter with block-scalar last key and no body model: still clean" {
-  # Companion to the above: same scalar-at-end topology but the body does NOT
-  # contain model:. Confirms the helper exits cleanly and emits nothing that
-  # would be flagged, even when there is nothing in the body to misdetect.
+  # Companion to the above: same scalar-at-end topology. The body NOW contains
+  # a `model:` line so this test independently detects the over-reading
+  # regression. If _frontmatter over-reads past the closing `---`, the body's
+  # `model:` line is returned and grep produces a non-empty offending_line,
+  # causing the test to fail RED. If _frontmatter exits correctly at `---`,
+  # the body is invisible to the scan and offending_line stays empty (pass).
   local fixture="${BATS_TEST_TMPDIR}/qrspi-test-scalar-at-end-no-body-model.md"
   cat >"$fixture" <<'EOF'
 ---
@@ -281,13 +284,13 @@ description: |
   more description text
 ---
 body starts here
-no model key anywhere in this body
+model: this line must not appear in frontmatter output
 EOF
 
   local offending_line
   offending_line=$(_frontmatter "$fixture" | grep -nE '^model:' || true)
   [ -z "$offending_line" ] || {
-    echo "sf.F01 scalar-at-end (no body model): unexpected match — _frontmatter did not exit at closing ---"
+    echo "sf.F01 scalar-at-end (body model): false-positive — _frontmatter read into body and flagged body-level model:"
     echo "  offending_line=${offending_line}"
     return 1
   }
