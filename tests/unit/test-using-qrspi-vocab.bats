@@ -35,10 +35,43 @@ bats_require_minimum_version 1.5.0
 
 load '../helpers/skill-markdown'
 
+# ---------------------------------------------------------------------------
+# H4 section extractor — the shared helper supports H2/H3 only. The
+# fail-loud paragraph added by T10 R2 lives at the END of the H4 section
+# `#### \`model_routing:\` block`, so the R2 pins below extract the H4 body
+# (between the H4 anchor and the next H1-H4 boundary) and grep within it.
+# Mirrors the _extract_h4 helper defined in test-config-model-routing.bats.
+# ---------------------------------------------------------------------------
+_extract_h4() {
+  local file="$1" text="$2"
+  local target="#### $text"
+  local out
+  out="$(awk -v target="$target" '
+    BEGIN { inside=0; found=0 }
+    {
+      if (inside == 1) {
+        if ($0 ~ /^#{1,4} /) { inside=0; next }
+        print $0
+        next
+      }
+      if ($0 == target) { inside=1; found=1; next }
+    }
+    END { if (found == 0) exit 1 }
+  ' "$file")" || { echo "h4 anchor not found: $target in $file" >&2; return 1; }
+  if [ -z "$out" ]; then
+    echo "h4 extract empty: $target in $file" >&2
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
+
 setup() {
   require_repo_root
   USING_QRSPI_SKILL="$REPO_ROOT/skills/using-qrspi/SKILL.md"
-  export USING_QRSPI_SKILL
+  # T10 R2 fix: `USING` alias is the variable name the new fail-loud /
+  # anti-pattern pins below use (mirrors test-config-model-routing.bats).
+  USING="$USING_QRSPI_SKILL"
+  export USING_QRSPI_SKILL USING
 }
 
 @test "[using-qrspi-vocab] SKILL.md exists" {
@@ -74,4 +107,28 @@ setup() {
   # the bare tier short-form (Copilot CLI's proxy rejects bare names).
   run grep -F -- 'haiku: claude-haiku-4.5' "$USING_QRSPI_SKILL"
   [ "$status" -eq 0 ]
+}
+
+@test "model_routing block: fail-loud contract pinned for partial corruption" {
+  local body
+  body="$(_extract_h4 "$USING" '`model_routing:` block')"
+  # T10 R2 fix (restore fail-loud contract):
+  # The host→tier→model schema announces three structural invariants
+  # (host key matches detect_host, four tier rows present, values are
+  # fully versioned IDs). The schema doc MUST carry a fail-loud rule
+  # naming what the dispatcher does on partial corruption, or the
+  # G7b/#204 silent-fallback class reopens one layer deeper.
+  [[ "$body" == *"halts and reports"* ]]
+  [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
+}
+
+@test "model_routing block: anti-pattern wording absent (no 'silently fall back' / 'silently degrade')" {
+  local body
+  body="$(_extract_h4 "$USING" '`model_routing:` block')"
+  # T10 R2 fix (restore fail-loud contract):
+  # Pin the absence of anti-pattern wording G7b/#204 was filed
+  # against. If a future edit "softens" the fail-loud rule into a
+  # silent-fallback, this pin RED-fails.
+  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
+  [[ "$body" != *"silently degrade"* ]]
 }

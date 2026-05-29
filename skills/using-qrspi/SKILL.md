@@ -467,6 +467,8 @@ Top-level keys are the host names emitted by `detect_host` (see Codex dispatch t
 
 See `#### Model Routing` below for the dispatch-time resolution flow.
 
+The orchestrator validates these invariants at config-load time and on every dispatch. When `detect_host` returns a host value for which `model_routing:` has no matching top-level key, when an agent's tier name (or the implicit `inherit`) matches no row under the matched host's sub-mapping, or when a tier value is a bare short-form (`haiku`, `sonnet`, `opus`) rather than a fully versioned model ID, the dispatcher halts and reports the missing or invalid entry. The dispatcher never falls back silently to the agent-bundled default and never passes the dispatch through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
+
 #### `trusted_path:` block
 
 A flat list of agent file paths or role names that always win over `model_routing:`. When an agent-file path or role name matches an entry in `trusted_path:`, the dispatcher short-circuits ahead of the normal routing chain and routes to the agent-bundled default for that agent or role.
@@ -479,7 +481,7 @@ trusted_path:
 
 Entries can be:
 - A relative path to an agent `.md` file (relative to the repo root, e.g. `agents/qrspi-implementer.md`).
-- A role name string (matches entries in `model_routing:`).
+- A role name string (matches the `model_role:` value declared in an agent's frontmatter — independent of `model_routing:`'s host-keyed structure).
 
 `trusted_path:` is documented separately from the precedence chain below because it is a short-circuit, not a step in the chain — matching agents or roles bypass the chain entirely.
 

@@ -184,9 +184,10 @@ setup_file() {
 # single Precedence chain section so a regression cannot silently pass.
 # ---------------------------------------------------------------------------
 
-@test "role-resolution fallback: model_routing: role lookup AND agent-bundled default co-located in precedence chain" {
+@test "precedence-chain co-location: model_routing: host/tier lookup AND agent-bundled default co-located in precedence chain" {
+  # T10 R2 fix (post-R1 schema replacement): step-3 wording is now "host/tier lookup", not "role lookup". This pin was silently passing pre-R2 because of a bats [[ ]] short-circuit quirk; the post-R2 pin asserts the GREEN behavior explicitly.
   out="$(_extract_h4 "$USING" "Precedence chain")"
   [[ "$out" == *"model_routing:"* ]]
-  [[ "$out" == *"role lookup"* ]]
+  [[ "$out" == *"host/tier lookup"* ]]
   [[ "$out" == *"Agent-bundled default"* ]]
 }
