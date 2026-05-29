@@ -498,6 +498,8 @@ validators:
 
 - `citation_density_floor`: float, default `0.05`. The minimum fraction of output tokens that must be citations (inline references to source material). When a dispatch's output falls below this floor, the validator triggers a trusted-model re-run: the same prompt is re-dispatched to the agent-bundled default model (bypassing `model_routing:`) and the re-run output replaces the original. The re-run is logged to main-chat output as a one-line note.
 
+When the validator triggers the trusted-model re-run and the matched agent's frontmatter declares no `model:` field (the state established for all agents after the T9 sweep), the re-run has no concrete target. The dispatcher halts and reports the validator trigger plus the empty agent-bundled default. The dispatcher never falls back silently to `model_routing:` (which the re-run explicitly bypasses) and never passes the re-run through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` and `trusted_path:` paths.
+
 #### Precedence chain
 
 When the dispatcher resolves which model to call for a task, it applies this precedence order (highest to lowest):
@@ -520,6 +522,8 @@ When `config.md` does not contain a `model_routing:` block, the dispatcher fires
 - The on-disk `config.md` is **never silently mutated** by the backfill. Dispatch defaults are applied in-memory only; the file on disk is unchanged.
 - No persistent marker is written to disk to track that the warning has already fired. Because no marker is written, there is no write-failure surface that could leave the on-disk config in an inconsistent state.
 - Each session sees the backfill defaults applied in-memory without changing the file on disk.
+
+When the in-memory backfill resolves an agent's "bundled default" but the matched agent's frontmatter declares no `model:` field (the state established for all agents after the T9 sweep), the backfill has no concrete value to apply. The dispatcher halts and reports the missing-`model_routing:` condition plus the empty agent-bundled default. The dispatcher never falls back silently to the host CLI's silent re-routing and never substitutes an unannounced model — either fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` and `trusted_path:` paths. The one-time warning above announces the missing block; the halt-and-report on empty step 4 announces the consequence.
 
 #### Model Routing
 

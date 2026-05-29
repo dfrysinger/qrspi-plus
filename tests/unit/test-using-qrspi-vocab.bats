@@ -157,3 +157,59 @@ setup() {
   [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
   [[ "$body" != *"silently degrade"* ]]
 }
+
+@test "validators block: fail-loud contract pinned for empty step 4" {
+  local body
+  body="$(_extract_h4 "$USING" '`validators:` block')"
+  # R5-F01 fix (close validators: trusted-model re-run silent-fallback):
+  # The validators: H4 documents a trusted-model re-run path that
+  # "bypasses model_routing: and dispatches to the agent-bundled default
+  # model". Post-T9, the agent-bundled default is empty for every agent.
+  # Without a fail-loud rule pinned here, the re-run path reproduces the
+  # G7b/#204 silent-fallback class one layer deeper than trusted_path:.
+  # Sanity: _extract_h4 returns non-empty body (else assertions below
+  # would silently pass on empty string).
+  [ -n "$body" ]
+  [[ "$body" == *"halts and reports"* ]]
+  [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
+}
+
+@test "validators block: anti-pattern wording absent" {
+  local body
+  body="$(_extract_h4 "$USING" '`validators:` block')"
+  # R5-F01 fix: pin absence of the anti-pattern wording G7b/#204 was
+  # filed against, scoped to the validators: H4 body specifically.
+  [ -n "$body" ]
+  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
+  [[ "$body" != *"silently degrade"* ]]
+}
+
+@test "missing model_routing block: fail-loud contract pinned for empty step 4" {
+  local body
+  body="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
+  # R5-F01 fix (close missing-block backfill silent-fallback):
+  # The Missing model_routing: H4 documents a backfill path that uses
+  # "agent-bundled defaults for this session". Post-T9, those defaults
+  # are empty for every agent. Without a fail-loud rule pinned here, the
+  # backfill path reproduces the G7b/#204 silent-fallback class through
+  # a different bypass.
+  # Sanity: the H4 label here contains literal backticks AND a
+  # multi-word + backticked subphrase. The _extract_h4 helper uses awk
+  # string equality on the heading line, so backticks pass through
+  # without escaping — but if that ever regresses, an empty body would
+  # silently satisfy the substring-mismatch assertions. Assert non-empty
+  # body first.
+  [ -n "$body" ]
+  [[ "$body" == *"halts and reports"* ]]
+  [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
+}
+
+@test "missing model_routing block: anti-pattern wording absent" {
+  local body
+  body="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
+  # R5-F01 fix: pin absence of the anti-pattern wording scoped to the
+  # missing-block H4 body specifically.
+  [ -n "$body" ]
+  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
+  [[ "$body" != *"silently degrade"* ]]
+}
