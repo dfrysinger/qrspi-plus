@@ -431,8 +431,6 @@ providers:
     base_url: https://api.example.com/v1
     api_key_env: MY_PROVIDER_API_KEY
     transport_type: openai-chat-completions   # or: codex-broker
-    supports_prompt_cache: false              # optional; default: false
-    emit_cache_control_markers: false         # optional; default: false; independent of supports_prompt_cache
     default_headers:                          # optional map; merged into every request to this provider
       X-Custom-Header: value
 ```
@@ -445,8 +443,6 @@ providers:
   - `codex-broker` — the provider is accessed via the Codex broker shim.
 
 **Optional fields per entry:**
-- `supports_prompt_cache`: boolean, default `false`. Signals that the provider supports prompt caching at the protocol level.
-- `emit_cache_control_markers`: boolean, default `false`. **Independent of `supports_prompt_cache`.** The dispatcher emits `cache_control` fields in requests to this provider ONLY when BOTH `supports_prompt_cache: true` AND `emit_cache_control_markers: true` are set on the provider entry (the dual-flag gate). A `true`/`false` mismatch on either flag suppresses `cache_control` emission entirely — setting one flag without the other has no effect on dispatcher output.
 - `default_headers`: optional map of string key-value pairs merged into every HTTP request sent to this provider. Useful for vendor-specific auth headers beyond `Authorization`.
 
 #### `model_routing:` block

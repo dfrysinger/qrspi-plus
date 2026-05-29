@@ -268,50 +268,6 @@ CURL_EOF
 }
 
 # ---------------------------------------------------------------------------
-# Dual-flag cache_control gate: 4-cell truth table.
-# Only (true,true) emits `cache_control` in the assembled request body;
-# (true,false) is the default state at T03 ship and critical to T33 integrity.
-# ---------------------------------------------------------------------------
-
-@test "cache_control gate (false,false): request body OMITS cache_control" {
-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY false false
-  _install_stub_curl
-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
-  [ "$status" -eq 0 ]
-  [ -f "$STUB_CURL_CAPTURE" ]
-  body="$(cat "$STUB_CURL_CAPTURE")"
-  [[ "$body" != *"cache_control"* ]]
-}
-
-@test "cache_control gate (true,false): default state — request body OMITS cache_control" {
-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY true false
-  _install_stub_curl
-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
-  [ "$status" -eq 0 ]
-  body="$(cat "$STUB_CURL_CAPTURE")"
-  [[ "$body" != *"cache_control"* ]]
-}
-
-@test "cache_control gate (false,true): request body OMITS cache_control (capability gate)" {
-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY false true
-  _install_stub_curl
-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
-  [ "$status" -eq 0 ]
-  body="$(cat "$STUB_CURL_CAPTURE")"
-  [[ "$body" != *"cache_control"* ]]
-}
-
-@test "cache_control gate (true,true): request body CONTAINS cache_control (ephemeral)" {
-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY true true
-  _install_stub_curl
-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
-  [ "$status" -eq 0 ]
-  body="$(cat "$STUB_CURL_CAPTURE")"
-  [[ "$body" == *"cache_control"* ]]
-  [[ "$body" == *"ephemeral"* ]]
-}
-
-# ---------------------------------------------------------------------------
 # Transport branching: unknown transport_type fail-loud.
 # codex-broker branch presence is asserted via the script source so the
 # pin holds even when the broker subprocess is unavailable in this sandbox.
@@ -1111,4 +1067,81 @@ _extract_ctrl_check_fn() {
   printf '%s' "$output" | grep -qF '(field name unavailable' && _found=1
   printf '%s' "$output" | grep -qF 'sanitisation pipeline failed' && _found=1
   [ "$_found" -eq 1 ]
+}
+
+# ---------------------------------------------------------------------------
+# T8 — Cache-mechanism retirement: grep-based absence assertions on
+# scripts/run-third-party-llm.sh and skills/using-qrspi/SKILL.md.
+#
+# These tests verify that the three load-bearing cache-mechanism literal
+# strings — cache_control, supports_prompt_cache, emit_cache_control_markers
+# — are absent from both the dispatcher script and the using-qrspi skill
+# after the T8 mechanical removal pass.
+#
+# Word-boundary regex (-w) keeps each match sharp: it avoids matching
+# substrings inside unrelated identifiers and avoids matching the literal
+# token inside neighbour test file paths printed in stack traces. The
+# repo-relative paths are resolved against $REPO_ROOT (set up in
+# setup_file via require_repo_root).
+#
+# Each test asserts ONE literal in ONE file (six tests total). Keeping each
+# assertion granular lets the post-T8 implementer see exactly which
+# (literal, file) pair regresses if the retirement is partial.
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no cache_control literal (absence assertion)" {
+  # Test expectation (TE6): A new automated assertion in
+  # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
+  # for cache_control [...] and fails if the literal string is found.
+  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
+  [ -f "$skill" ]
+  run grep -nwE 'cache_control' "$skill"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no supports_prompt_cache literal (absence assertion)" {
+  # Test expectation (TE6): A new automated assertion in
+  # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
+  # for [...] supports_prompt_cache [...] and fails if the literal string is found.
+  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
+  [ -f "$skill" ]
+  run grep -nwE 'supports_prompt_cache' "$skill"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no emit_cache_control_markers literal (absence assertion)" {
+  # Test expectation (TE6): A new automated assertion in
+  # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
+  # for [...] emit_cache_control_markers and fails if the literal string is found.
+  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
+  [ -f "$skill" ]
+  run grep -nwE 'emit_cache_control_markers' "$skill"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no cache_control literal (absence assertion)" {
+  # Test expectation (TE7): a grep-based absence assertion in
+  # tests/unit/test-run-third-party-llm.bats verifies that the literal string
+  # cache_control [...] is absent from scripts/run-third-party-llm.sh.
+  [ -f "$DISPATCHER" ]
+  run grep -nwE 'cache_control' "$DISPATCHER"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no supports_prompt_cache literal (absence assertion)" {
+  # Test expectation (TE7): a grep-based absence assertion in
+  # tests/unit/test-run-third-party-llm.bats verifies that the literal string
+  # [...] supports_prompt_cache [...] is absent from scripts/run-third-party-llm.sh.
+  [ -f "$DISPATCHER" ]
+  run grep -nwE 'supports_prompt_cache' "$DISPATCHER"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no emit_cache_control_markers literal (absence assertion)" {
+  # Test expectation (TE7): a grep-based absence assertion in
+  # tests/unit/test-run-third-party-llm.bats verifies that the literal string
+  # [...] emit_cache_control_markers is absent from scripts/run-third-party-llm.sh.
+  [ -f "$DISPATCHER" ]
+  run grep -nwE 'emit_cache_control_markers' "$DISPATCHER"
+  [ "$status" -ne 0 ]
 }
