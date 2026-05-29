@@ -1,7 +1,6 @@
 ---
 name: qrspi-goal-traceability-reviewer
 description: Verifies an unbroken traceability chain from goals through specs through tests to implementation. Deep mode only. Also reused by the Test phase to review generated test code. Runs after all correctness reviewers pass.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

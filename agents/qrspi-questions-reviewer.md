@@ -1,7 +1,6 @@
 ---
 name: qrspi-questions-reviewer
 description: Reviews questions.md for artifact quality only — no scope review (Questions has no scope-reviewer per canonical topology).
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

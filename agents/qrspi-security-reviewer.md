@@ -1,7 +1,6 @@
 ---
 name: qrspi-security-reviewer
 description: Identifies security vulnerabilities in the implementation. Runs after spec-reviewer passes, in parallel with other thoroughness reviewers.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

@@ -1,7 +1,6 @@
 ---
 name: qrspi-goals-reviewer
 description: Reviews goals.md for artifact-specific quality (correctness, clarity, completeness) per the QRSPI reviewer protocol. Scope/boundary review is handled by qrspi-goals-scope-reviewer.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

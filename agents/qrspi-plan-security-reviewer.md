@@ -1,7 +1,6 @@
 ---
 name: qrspi-plan-security-reviewer
 description: Identifies fail-open conditions, missing validation, auth gaps, and insecure defaults in the planned design before implementation begins. Reviews the plan artifact, not task implementations. Runs always (quick + full pipeline).
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

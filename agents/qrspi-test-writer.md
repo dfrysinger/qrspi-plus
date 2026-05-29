@@ -1,7 +1,6 @@
 ---
 name: qrspi-test-writer
 description: "Dual-mode test-writing agent. In Implement-phase mode (task_definition present): writes per-task failing tests against the un-implemented spec. In Test-phase mode (task_definition absent): writes plan-level acceptance tests that verify the implementation meets the original goals. Does NOT modify production code."
-model: inherit
 model_role: test-writer
 tools: Read, Write, Edit, Bash, Grep, Glob
 ---

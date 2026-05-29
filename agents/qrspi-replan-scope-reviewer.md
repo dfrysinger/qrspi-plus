@@ -1,7 +1,6 @@
 ---
 name: qrspi-replan-scope-reviewer
 description: Scope/boundary review for the replan-analyzer's proposed-changes payload. Reads skills/replan/owns-defers.md and applies the 3-check scope procedure. Companion to qrspi-replan-reviewer (which handles artifact quality).
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

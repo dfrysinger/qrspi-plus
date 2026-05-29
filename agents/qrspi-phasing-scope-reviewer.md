@@ -1,7 +1,6 @@
 ---
 name: qrspi-phasing-scope-reviewer
 description: Scope/boundary review for phasing.md. Reads skills/phasing/owns-defers.md and applies the 3-check scope procedure. Companion to qrspi-phasing-reviewer (which handles artifact quality).
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

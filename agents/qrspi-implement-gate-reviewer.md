@@ -1,7 +1,6 @@
 ---
 name: qrspi-implement-gate-reviewer
 description: Cross-task batch-gate reviewer dispatched when the user selects "Re-run all reviews" at the Implement batch gate. Reviews the combined wave of task code, specs, and test results for cross-task patterns and gate-level issues.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---
