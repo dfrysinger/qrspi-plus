@@ -90,6 +90,119 @@ require_value() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# Host identification and Codex availability probes (added in v0.7.1 task-06)
+# ---------------------------------------------------------------------------
+
+# detect_host - emits either 'copilot-cli' or 'claude-code' to stdout.
+# Examines COPILOT_CLI AND the reachability of the gh binary to prevent
+# transport-marker spoofing via a user-supplied env var alone.
+# COPILOT_CLI=1 selects copilot-cli ONLY when `gh` resolves to a path under
+# a system-controlled prefix (/usr/*, /opt/*, /Applications/*).
+# (process-spawn fingerprint: a real Copilot CLI session launches under gh).
+# All other states (COPILOT_CLI unset/empty/non-"1", gh absent, or gh in an
+# untrusted prefix) select claude-code.  Always exits 0.  Writes nothing to
+# stderr under normal operation.
+#
+# sec.F01 (R2): COPILOT_CLI alone was user-settable; adding the binary check
+# makes the marker harder to forge without a real gh installation.
+# sec.F01 (R5): `command -v gh` trusted PATH blindly; an attacker who can set
+# COPILOT_CLI=1 can equally prepend PATH with a fake gh directory.  Resolving
+# the path and validating it against trusted prefixes closes that gap.
+# sec.F01/F02 (R7): pure string prefix check on `command -v` output is bypassable
+# via PATH=/usr/../tmp/fakebins:... (`..` not normalised) and via symlinks inside
+# trusted prefixes.  Normalize with realpath (BSD/macOS) or readlink -f (GNU/Linux)
+# before the prefix check; both resolve `..` segments AND follow symlinks so the
+# real filesystem path is compared.
+# sec.F01 (R8): the previous `|| printf '%s' "$_gh_path"` pass-through fallback
+# re-opened R7 vectors on hosts where both realpath and readlink -f are absent.
+# Fix: fail-closed — when both normalization tools fail the assignment fails and
+# _gh_path is forced to ""; the downstream -n guard then short-circuits to the
+# safe claude-code default.  No path normalization = no trusted-prefix check.
+detect_host() {
+  local _gh_path
+  _gh_path="$(command -v gh 2>/dev/null)"
+  # Normalize: resolve symlinks and .. segments so the prefix check operates on
+  # the canonical filesystem path, not a PATH-constructed string.
+  # Fail-closed (R8): if both tools are absent/fail, _gh_path is set to ""; the
+  # -n guard below then short-circuits to the safe claude-code default.
+  if [[ -n "$_gh_path" ]]; then
+    _gh_path="$(realpath "$_gh_path" 2>/dev/null || readlink -f "$_gh_path" 2>/dev/null)" || _gh_path=""
+  fi
+  if [[ "${COPILOT_CLI:-}" == "1" ]] && \
+     [[ -n "$_gh_path" ]] && \
+     [[ "$_gh_path" == /usr/* || "$_gh_path" == /opt/* || "$_gh_path" == /Applications/* ]]; then
+    echo "copilot-cli"
+  else
+    echo "claude-code"
+  fi
+}
+
+# check_codex_available <host> - exits 0 if Codex is usable for the given host.
+#   copilot-cli: always exits 0 (Codex is natively routable; no filesystem probe).
+#   claude-code:  probes the companion-script glob path; exits 0 when at least
+#                 one matching file exists, non-zero otherwise.
+#   other:        exits non-zero and emits a single-line diagnostic to stderr.
+# bash-3.2 portable: no nameref, no declare -A, no ${var,,}, no mapfile.
+check_codex_available() {
+  local host="${1:-}"
+  case "$host" in
+    copilot-cli)
+      return 0
+      ;;
+    claude-code)
+      # sec.F02 (R2): reject HOME values that contain '..' path components,
+      # are empty, or contain newlines — any of these could allow filesystem
+      # probing outside the expected ~/.claude/ tree.
+      case "${HOME:-}" in
+        *..* | "" | *$'\n'*)
+          echo "check_codex_available: unsafe HOME value — must be an absolute path without '..' components" >&2
+          return 1
+          ;;
+      esac
+      # sec.F02 (R5): the case guard above does not check for a leading '/'.
+      # A relative HOME value (e.g. HOME=relative-dir) would pass all case arms
+      # and cause the companion glob to expand relative to the process CWD.
+      # Enforce that HOME starts with '/' before any filesystem probe.
+      if [[ "${HOME}" != /* ]]; then
+        echo "check_codex_available: HOME must be an absolute path (got: relative path)" >&2
+        return 1
+      fi
+      local found=0
+      local f
+      for f in "${HOME}/.claude/plugins/cache/openai-codex/codex"/*/scripts/codex-companion.mjs; do
+        if [[ -f "$f" ]]; then
+          found=1
+          break
+        fi
+      done
+      if [[ "$found" -eq 1 ]]; then
+        return 0
+      else
+        return 1
+      fi
+      ;;
+    *)
+      echo "check_codex_available: unsupported host argument: $host" >&2
+      return 1
+      ;;
+  esac
+}
+
+# Source guard: when QRSPI_SOURCE_ONLY=1, return after loading function
+# definitions so that function-isolation tests can source this file and call
+# detect_host / check_codex_available directly without triggering argument
+# parsing or validation.
+#
+# sf.F01 (R2): `return 0` is only valid in a sourced context.  When the script
+# is executed directly (`bash run-codex-review.sh`) with set -e absent, the
+# failed `return` does not abort the script — execution falls through into
+# argument parsing.  `return 0 2>/dev/null || exit 0` works in both modes:
+# `return 0` succeeds when sourced; `exit 0` fires when executed directly.
+if [[ "${QRSPI_SOURCE_ONLY:-}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --agent-file)     require_value "--agent-file"   "$#"; AGENT_FILE="$2"; shift 2 ;;
@@ -452,5 +565,63 @@ fi
 
 # Pipe the assembled prompt to the dispatcher's stdin and propagate its
 # exit code unchanged (per the exit-code matrix above).
-compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}"
-exit "$?"
+#
+# Host detection and transport routing (added in v0.7.1 task-06):
+# detect_host probes COPILOT_CLI to select the transport.  check_codex_available
+# verifies availability.  A mismatch between availability and the codex_reviews
+# config value emits a single-line warning to stderr (warning-only - does not
+# block dispatch or override exit code).  The transport marker ([transport: ...])
+# is emitted once to stderr at the call site that selects the transport path.
+
+_detected_host="$(detect_host)"
+
+# Read codex_reviews from the artifact-dir config.md frontmatter.
+# Default to empty (treated as false) if the file is absent or the field is missing.
+_codex_reviews=""
+if [[ -f "$ARTIFACT_DIR/config.md" ]]; then
+  _codex_reviews="$(awk '
+    /^---$/ { n++; if (n == 2) exit; next }
+    n == 1 && /^codex_reviews:/ {
+      sub(/^codex_reviews:[[:space:]]*/, "")
+      sub(/[[:space:]]*$/, "")
+      print
+      exit
+    }
+  ' "$ARTIFACT_DIR/config.md")"
+fi
+
+# Check Codex availability for the detected host.  For the claude-code path,
+# if the companion glob is empty but codex_reviews says "true", emit a mismatch
+# warning.  The warning is stderr-only and does not affect dispatch or exit code.
+#
+# sec.F03 (R2): normalise _codex_reviews to exactly "true" or "false" before
+# any use — an unexpected value (which could carry terminal control sequences
+# from a crafted config.md) is treated as "false" and never echoed verbatim.
+case "$_codex_reviews" in
+  true|false) ;;
+  *) _codex_reviews="false" ;;
+esac
+#
+# sf.F03 (R2): removed 2>/dev/null so that the check_codex_available stderr
+# diagnostic for unrecognised hosts reaches the operator's terminal.
+if ! check_codex_available "$_detected_host"; then
+  if [[ "${_codex_reviews}" == "true" ]]; then
+    echo "[mismatch] detected host=${_detected_host}, codex_reviews config=${_codex_reviews}" >&2
+  fi
+fi
+
+# Emit the transport marker and dispatch.  Exit code is propagated unchanged
+# from the transport; no suppression, no log-and-continue.
+#
+# sf.F02 (R2): each dispatch pipeline now runs in a subshell with set -o pipefail
+# so that a compose_prompt failure (e.g. partial output from a read error) is
+# not silently masked by the dispatcher's exit code.
+if [[ "$_detected_host" == "copilot-cli" ]]; then
+  echo "[transport: task-tool]" >&2
+  ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
+  exit "$?"
+else
+  echo "[transport: shell-pipeline]" >&2
+  ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
+  exit "$?"
+fi
