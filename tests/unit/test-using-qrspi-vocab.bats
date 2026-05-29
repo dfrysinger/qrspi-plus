@@ -132,3 +132,28 @@ setup() {
   [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
   [[ "$body" != *"silently degrade"* ]]
 }
+
+@test "trusted_path block: fail-loud contract pinned for empty step 4" {
+  local body
+  body="$(_extract_h4 "$USING" '`trusted_path:` block')"
+  # R4-F01 fix (close trusted_path: silent-fallback):
+  # Post-T9, agent-bundled default (precedence chain step 4) is empty
+  # for every agent. The trusted_path: short-circuit routes directly to
+  # step 4. Without a fail-loud rule pinned here, two of three plausible
+  # dispatcher implementations reproduce the G7b/#204 silent-fallback
+  # class one layer deeper than the model_routing: path.
+  [[ "$body" == *"halts and reports"* ]]
+  [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
+}
+
+@test "trusted_path block: anti-pattern wording absent" {
+  local body
+  body="$(_extract_h4 "$USING" '`trusted_path:` block')"
+  # R4-F01 fix (close trusted_path: silent-fallback):
+  # Pin absence of the anti-pattern wording G7b/#204 was filed against,
+  # scoped to the trusted_path: H4 body specifically. If a future edit
+  # softens the trusted_path: fail-loud rule into a silent-fallback,
+  # this pin RED-fails.
+  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
+  [[ "$body" != *"silently degrade"* ]]
+}
