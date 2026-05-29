@@ -268,50 +268,6 @@ CURL_EOF
 }
 
 # ---------------------------------------------------------------------------
-# Dual-flag cache_control gate: 4-cell truth table.
-# Only (true,true) emits `cache_control` in the assembled request body;
-# (true,false) is the default state at T03 ship and critical to T33 integrity.
-# ---------------------------------------------------------------------------
-
-@test "cache_control gate (false,false): request body OMITS cache_control" {
-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY false false
-  _install_stub_curl
-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
-  [ "$status" -eq 0 ]
-  [ -f "$STUB_CURL_CAPTURE" ]
-  body="$(cat "$STUB_CURL_CAPTURE")"
-  [[ "$body" != *"cache_control"* ]]
-}
-
-@test "cache_control gate (true,false): default state — request body OMITS cache_control" {
-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY true false
-  _install_stub_curl
-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
-  [ "$status" -eq 0 ]
-  body="$(cat "$STUB_CURL_CAPTURE")"
-  [[ "$body" != *"cache_control"* ]]
-}
-
-@test "cache_control gate (false,true): request body OMITS cache_control (capability gate)" {
-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY false true
-  _install_stub_curl
-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
-  [ "$status" -eq 0 ]
-  body="$(cat "$STUB_CURL_CAPTURE")"
-  [[ "$body" != *"cache_control"* ]]
-}
-
-@test "cache_control gate (true,true): request body CONTAINS cache_control (ephemeral)" {
-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY true true
-  _install_stub_curl
-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
-  [ "$status" -eq 0 ]
-  body="$(cat "$STUB_CURL_CAPTURE")"
-  [[ "$body" == *"cache_control"* ]]
-  [[ "$body" == *"ephemeral"* ]]
-}
-
-# ---------------------------------------------------------------------------
 # Transport branching: unknown transport_type fail-loud.
 # codex-broker branch presence is asserted via the script source so the
 # pin holds even when the broker subprocess is unavailable in this sandbox.

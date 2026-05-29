@@ -241,19 +241,10 @@ _control_char_check() {
 # _dispatch_openai_chat
 #
 # Issues a blocking POST to <base_url>/chat/completions using curl.
-# Emits cache_control ONLY when BOTH supports_prompt_cache AND
-# emit_cache_control_markers are "true" on the resolved provider entry.
 # Writes the response body atomically to OUTPUT_FILE on success.
-# Reads: BASE_URL, MODEL, PROVIDER, OUTPUT_FILE, SUPPORTS_PROMPT_CACHE,
-#        EMIT_CACHE_CONTROL_MARKERS, _API_KEY, HEADER_NAMES, HEADER_VALUES,
-#        TIMEOUT_SECONDS, STDIN_TEMP.
+# Reads: BASE_URL, MODEL, PROVIDER, OUTPUT_FILE, _API_KEY, HEADER_NAMES,
+#        HEADER_VALUES, TIMEOUT_SECONDS, STDIN_TEMP.
 _dispatch_openai_chat() {
-  # Dual-flag cache-control gate.
-  local emit_cache="false"
-  if [ "$SUPPORTS_PROMPT_CACHE" = "true" ] && [ "$EMIT_CACHE_CONTROL_MARKERS" = "true" ]; then
-    emit_cache="true"
-  fi
-
   # Read prompt content from STDIN_TEMP.
   local prompt_content
   prompt_content=$(cat "$STDIN_TEMP")
@@ -261,16 +252,12 @@ _dispatch_openai_chat() {
   # Build request JSON via node (correct escaping of arbitrary prompt content).
   local request_json
   request_json=$(node -e "
-const emitCache = process.argv[1] === 'true';
-const model     = process.argv[2];
-const prompt    = process.argv[3];
+const model     = process.argv[1];
+const prompt    = process.argv[2];
 const msg = { role: 'user', content: prompt };
-if (emitCache) {
-  msg.cache_control = { type: 'ephemeral' };
-}
 const body = { model: model, messages: [msg] };
 process.stdout.write(JSON.stringify(body));
-" -- "$emit_cache" "$MODEL" "$prompt_content") || {
+" -- "$MODEL" "$prompt_content") || {
     rm -f "$STDIN_TEMP"
     die "failed to build request JSON"
   }
@@ -544,8 +531,6 @@ PROVIDER_BLOCK_OUTPUT=$(parse_provider_block "$CONFIG_MD" "$PROVIDER") || \
 BASE_URL=""
 API_KEY_ENV=""
 TRANSPORT_TYPE=""
-SUPPORTS_PROMPT_CACHE="false"
-EMIT_CACHE_CONTROL_MARKERS="false"
 HEADER_NAMES=()
 HEADER_VALUES=()
 
@@ -556,8 +541,6 @@ while IFS="	" read -r rec_type rec_key rec_val; do
         base_url)                   BASE_URL="$rec_val" ;;
         api_key_env)                API_KEY_ENV="$rec_val" ;;
         transport_type)             TRANSPORT_TYPE="$rec_val" ;;
-        supports_prompt_cache)      SUPPORTS_PROMPT_CACHE="$rec_val" ;;
-        emit_cache_control_markers) EMIT_CACHE_CONTROL_MARKERS="$rec_val" ;;
       esac ;;
     header)
       HEADER_NAMES+=("$rec_key")

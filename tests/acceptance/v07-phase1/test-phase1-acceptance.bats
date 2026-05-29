@@ -22,7 +22,6 @@ setup_file() {
   export PINS="$REPO_ROOT/tests/unit"
   export INTPINS="$REPO_ROOT/tests/integration"
   export SKILLS="$REPO_ROOT/skills"
-  export SPIKE="$REPO_ROOT/docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md"
 }
 
 # Helper: run a bats pin file silently; pass if exit 0.
@@ -170,17 +169,17 @@ run_pin() {
 
 # --------------------------------------------------------------------------
 # Slice 7 — Caching spike + verify
+#
+# T8 (v0.7.1-hardening) retired the prompt-cache mechanism. The G4
+# cache-probe spike, the dual-flag capability-gate pin, and the cache-hit-
+# rate pin were deleted from the tree. The Slice 7 C-1, C-2, and C-5
+# criteria (which gated on those deleted artifacts) are therefore removed
+# from this acceptance file. The retirement itself is gated by
+# `tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats`,
+# which asserts filesystem-absence and content-absence invariants from
+# outside this file. C-3 and C-4 (unrelated to the cache mechanism)
+# remain.
 # --------------------------------------------------------------------------
-
-@test "[Phase1 Slice 7 C-1] G4 cache-probe spike deliverable exists as release artifact" {
-  [ -f "$SPIKE" ]
-  grep -q "## Decision" "$SPIKE"
-}
-
-@test "[Phase1 Slice 7 C-2] spike report records Path A/B decision (or Pending stub) and downstream gating is observable" {
-  [ -f "$SPIKE" ]
-  grep -qE "Path A|Path B|Pending" "$SPIKE"
-}
 
 @test "[Phase1 Slice 7 C-3] no-summary-shim-dispatches invariant pin runs green" {
   run run_pin "$PINS/test-no-summary-shim-dispatches.bats"
@@ -198,17 +197,6 @@ run_pin() {
   # H2-with-H3-span byte-identity bug (implement-summary.md issue #2). The
   # bug is tracked separately; the criterion is satisfied for the green
   # index-shape pin + the 3 anchor files + manifest above.
-}
-
-@test "[Phase1 Slice 7 C-5] T43 conditional satisfied: cache-control capability gate pin behavior consistent with T33 decision" {
-  # T33 spike report is currently 'Pending Decision' (per implement-summary.md W3 + W9).
-  # T43 was a NO-OP under Path A / Pending; criterion satisfies vacuously by spec.
-  grep -q "Pending" "$SPIKE" && skip "T33 spike report decision = Pending; T43 vacuously satisfied per plan.md Slice 7 C-5 (skipped-env-dep on live API)"
-  # If/when the spike resolves to Path A or Path B, run the gate pins.
-  run run_pin "$PINS/test-cache-control-capability-gate.bats"
-  [ "$status" -eq 0 ]
-  run run_pin "$PINS/test-cache-hit-rate.bats"
-  [ "$status" -eq 0 ]
 }
 
 # --------------------------------------------------------------------------
