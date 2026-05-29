@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #
 # tests/unit/test-codex-review-host-detection.bats
-# Task 6 — R5 security fix: sec.F01 — gh path prefix validation in detect_host
+# Task 6 — R5/R7 security fixes: sec.F01 — gh path prefix validation in detect_host
 # Target: scripts/run-codex-review.sh
 #
 # RED test for sec.F01: detect_host must reject copilot-cli marker when the
@@ -69,6 +69,66 @@ teardown() {
     export QRSPI_SOURCE_ONLY=1
     export COPILOT_CLI=1
     export PATH='$FAKE_BIN:/usr/bin:/bin'
+    . \"$WRAPPER\"
+    detect_host
+  "
+  [ "$status" -eq 0 ]
+  [ "$output" = "claude-code" ]
+}
+
+# ===========================================================================
+# sec.F01 (R7) — PATH with /usr/../ injection rejected
+# ===========================================================================
+
+@test "[r7-sec.F01] PATH with /usr/../ injection rejected" {
+  # Attack: PATH=/usr/../<tmpdir>/fakebins:...
+  # command -v gh returns "/usr/../<tmpdir>/fakebins/gh"
+  # [[ ... == /usr/* ]] is a string match → TRUE (bypass without realpath fix).
+  # GREEN: realpath normalises "/usr/../<tmpdir>/fakebins/gh" → "<tmpdir>/fakebins/gh"
+  # which does NOT match any trusted prefix → detect_host emits "claude-code".
+  local injected_path="/usr/../${FAKE_BIN}"
+  run bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    export COPILOT_CLI=1
+    export PATH='${injected_path}:/usr/bin:/bin'
+    . \"$WRAPPER\"
+    detect_host
+  "
+  [ "$status" -eq 0 ]
+  [ "$output" = "claude-code" ]
+}
+
+# ===========================================================================
+# sec.F02 (R7) — symlink in /opt to /tmp rejected
+# ===========================================================================
+
+@test "[r7-sec.F02] symlink in trusted prefix pointing to untrusted dir rejected" {
+  # Attack: place a symlink inside a trusted-prefix directory (simulated via
+  # a symlink inside the test tmp dir itself) that points to the fake gh binary.
+  # realpath must follow the symlink and expose the real location, which is
+  # outside all trusted prefixes → detect_host emits "claude-code".
+  #
+  # We simulate the trusted-prefix symlink attack entirely within $TMP_DIR
+  # (no /opt write needed).  We create:
+  #   $TMP_DIR/trusted-sim/usr/bin/ → symlink named "gh" → $FAKE_BIN/gh
+  # Then we set PATH so command -v gh returns the symlink path
+  # ($TMP_DIR/trusted-sim/usr/bin/gh) which starts with a /usr/ look-alike
+  # string — but after realpath resolution points to $FAKE_BIN/gh (untrusted).
+  #
+  # Because the actual path of $TMP_DIR starts with /tmp (or /private/tmp on
+  # macOS), neither the raw string nor the resolved path matches a trusted prefix.
+  local trusted_sim="$TMP_DIR/trusted-sim/usr/bin"
+  mkdir -p "$trusted_sim"
+  ln -s "$FAKE_BIN/gh" "$trusted_sim/gh"
+
+  # Construct a PATH entry that looks like /usr/... at string level only when
+  # we fake it via /usr/../$TMP_DIR/trusted-sim/usr/bin.  The symlink itself
+  # lives at $trusted_sim/gh; realpath($trusted_sim/gh) = $FAKE_BIN/gh.
+  local injected_path="/usr/../${TMP_DIR}/trusted-sim/usr/bin"
+  run bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    export COPILOT_CLI=1
+    export PATH='${injected_path}:/usr/bin:/bin'
     . \"$WRAPPER\"
     detect_host
   "
