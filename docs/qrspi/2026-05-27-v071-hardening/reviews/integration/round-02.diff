@@ -1,0 +1,504 @@
+diff --git a/agents/qrspi-test-writer.md b/agents/qrspi-test-writer.md
+index 0d9618d..bedc51f 100644
+--- a/agents/qrspi-test-writer.md
++++ b/agents/qrspi-test-writer.md
+@@ -3,6 +3,7 @@ name: qrspi-test-writer
+ description: "Dual-mode test-writing agent. In Implement-phase mode (task_definition present): writes per-task failing tests against the un-implemented spec. In Test-phase mode (task_definition absent): writes plan-level acceptance tests that verify the implementation meets the original goals. Does NOT modify production code."
+ model_role: test-writer
+ tools: Read, Write, Edit, Bash, Grep, Glob
++skills: [implementer-protocol]
+ ---
+ 
+ ## Purpose
+@@ -258,7 +259,7 @@ If you catch yourself doing any of these, stop immediately and correct course:
+ - Writing a test that tests implementation details instead of behavior
+ - Writing a test with a vacuous assertion (`expect(true).toBe(true)`)
+ - Fixing production code (you write tests, not fixes)
+-- Attempting to run tests or report results (the orchestrator runs tests)
++- Test-phase mode: attempting to run tests or report results (the orchestrator runs tests at the Test gate). Implement-phase mode: NOT a red flag — running `bats --filter` to verify RED is required behavior (see Behavior step 4).
+ - Skipping regression tests because "the bug was fixed"
+ - Writing tests that depend on execution order
+ 
+@@ -266,10 +267,17 @@ If you catch yourself doing any of these, stop immediately and correct course:
+ 
+ All modes:
+ 
+-- Test files are written to `output_dir` only. No test file is written outside `output_dir`.
+-- The agent emits a final status token as the last line of its report: `DONE`, `DONE_WITH_CONCERNS`, or `NEEDS_CONTEXT`.
+-- The agent does NOT run any test file it writes. Running tests is out of scope for this agent.
+-- The agent does NOT fix production code.
++- Test files are written to `output_dir` only. The agent must not write outside that directory.
++- The agent emits a final status token on the last line: `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT`, or `BLOCKED`.
++- The agent does NOT fix production code. If a test fails for an infrastructure/setup reason, the agent fixes the test, never the production code under test.
++
++Test-phase mode only:
++
++- The agent does NOT run any test file it writes. The orchestrator runs tests at the Test gate.
++
++Implement-phase mode:
++
++- The agent DOES run tests via `bats --filter` to verify RED (per Behavior step 4 above). The agent DOES commit the RED tests via the scratch-file pattern (per Behavior step 6 above). See the implement-phase Behavior block for the full contract.
+ 
+ Implement-phase mode additional contract:
+ 
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/fixes/integration-round-01/fix-task-01.md b/docs/qrspi/2026-05-27-v071-hardening/fixes/integration-round-01/fix-task-01.md
+new file mode 100644
+index 0000000..0c9ff61
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/fixes/integration-round-01/fix-task-01.md
+@@ -0,0 +1,108 @@
++---
++task_type: lightweight
++fix_round: integration-round-01
++source_findings: [R1-F02, R1-F04]
++target_files: [agents/qrspi-test-writer.md]
++estimated_loc: 25
++---
++
++# Fix Task 01 — Reconcile qrspi-test-writer.md prose contradictions and add implementer-protocol preload
++
++## Source findings (integration round 1, both KEPT post-verifier)
++
++- **R1-F02 (HIGH, correctness, score 85)** — agents/qrspi-test-writer.md "All modes" Output Contract contradicts T2-added implement-phase RED-run+commit behavior.
++- **R1-F04 (MED, correctness, score 78)** — agents/qrspi-test-writer.md performs commit cycle but does not load the `implementer-protocol` skill (frontmatter has no `skills:` field).
++
++Both findings have the same root cause: T2 (commit-hygiene scope) added implement-phase behavior to the test-writer but Hotfix A's parallel mutations + the pre-existing all-modes prose were not reconciled. Fixing them together is the smallest coherent change.
++
++## Required changes
++
++### Change 1 — Add `skills:` field to frontmatter (closes R1-F04)
++
++File: `agents/qrspi-test-writer.md` lines 1-6
++
++Current state:
++```yaml
++---
++name: qrspi-test-writer
++description: "Dual-mode test-writing agent. In Implement-phase mode (task_definition present): writes per-task failing tests against the un-implemented spec. In Test-phase mode (task_definition absent): writes plan-level acceptance tests that verify the implementation meets the original goals. Does NOT modify production code."
++model_role: test-writer
++tools: Read, Write, Edit, Bash, Grep, Glob
++---
++```
++
++Required state — add `skills: [implementer-protocol]` field on a new line between `tools:` and `---`:
++```yaml
++---
++name: qrspi-test-writer
++description: "Dual-mode test-writing agent. In Implement-phase mode (task_definition present): writes per-task failing tests against the un-implemented spec. In Test-phase mode (task_definition absent): writes plan-level acceptance tests that verify the implementation meets the original goals. Does NOT modify production code."
++model_role: test-writer
++tools: Read, Write, Edit, Bash, Grep, Glob
++skills: [implementer-protocol]
++---
++```
++
++Rationale: agent body line 28 explicitly invokes "the implementer-protocol scratch-file pattern" but the protocol body (commit-hygiene invariants 1-3, pre-DONE hygiene self-check at SKILL.md:148-160) is not preloaded without this declaration. agents/qrspi-implementer.md already carries `skills: [implementer-protocol]` at line 5 — apply the same preload to the test-writer.
++
++### Change 2 — Scope the "All modes" Output Contract to test-phase only (closes R1-F02)
++
++File: `agents/qrspi-test-writer.md` lines 267-272
++
++Current state (lines 267-272 — "## Output Contract" section "All modes:" block):
++```
++All modes:
++
++- Test files are written to `output_dir` only. The agent must not write outside that directory.
++- The agent emits a final status token on the last line: `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT`, or `BLOCKED`.
++- The agent does NOT run any test file it writes. Running tests is out of scope for this agent.
++- The agent does NOT fix production code.
++```
++
++Required state — split into a genuinely-all-modes block and a test-phase-only block:
++```
++All modes:
++
++- Test files are written to `output_dir` only. The agent must not write outside that directory.
++- The agent emits a final status token on the last line: `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT`, or `BLOCKED`.
++- The agent does NOT fix production code. If a test fails for an infrastructure/setup reason, the agent fixes the test, never the production code under test.
++
++Test-phase mode only:
++
++- The agent does NOT run any test file it writes. The orchestrator runs tests at the Test gate.
++
++Implement-phase mode:
++
++- The agent DOES run tests via `bats --filter` to verify RED (per Behavior step 4 above). The agent DOES commit the RED tests via the scratch-file pattern (per Behavior step 6 above). See the implement-phase Behavior block for the full contract.
++```
++
++### Change 3 — Scope the "Red Flags — STOP" "Attempting to run tests" entry to test-phase only (closes R1-F02 secondary surface)
++
++File: `agents/qrspi-test-writer.md` line 261 (inside "## Red Flags — STOP" section)
++
++Current state at line 261:
++```
++- Attempting to run tests or report results (the orchestrator runs tests).
++```
++
++Required state — qualify with test-phase scope:
++```
++- Test-phase mode: attempting to run tests or report results (the orchestrator runs tests at the Test gate). Implement-phase mode: NOT a red flag — running `bats --filter` to verify RED is required behavior (see Behavior step 4).
++```
++
++## Out-of-scope
++
++- DO NOT modify the implement-phase Behavior block (lines 71-76) — it is already correct.
++- DO NOT modify the Tool-grant scope block (lines 17-29) — it is already correct.
++- DO NOT modify the description sentence — it is already correct.
++- DO NOT touch any other file. The two related findings (F03/F05 = clarity-threshold drops about implementer-protocol/SKILL.md stale prose + single-mechanism .git/info/exclude reference) are out of scope for this fix and have been filed as v0.7.2 followups.
++
++## Test expectations
++
++- `bats tests/unit/test-test-writer-dual-mode.bats` continues to pass post-fix (does not regress the cleanup change committed at 898c171).
++- Full `bats tests/unit/` continues to pass 1305/1305.
++- `awk '/^---$/{n++; next} n==1{print}' agents/qrspi-test-writer.md | grep -q '^skills:'` exits 0.
++- `grep -n 'Attempting to run tests' agents/qrspi-test-writer.md` shows the line is qualified with "Test-phase mode" prefix.
++
++## Done report
++
++Report `DONE` with a one-line summary of each change and the bats pass count.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01-commit.txt b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01-commit.txt
+new file mode 100644
+index 0000000..69de9ad
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01-commit.txt
+@@ -0,0 +1 @@
++898c171532cea230196c4a29fa5ff565a8daee2c
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F01.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F01.md
+new file mode 100644
+index 0000000..0eb4b65
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F01.md
+@@ -0,0 +1,38 @@
++---
++finding_id: R1-F02
++severity: high
++change_type: correctness
++referenced_files: [agents/qrspi-test-writer.md]
++artifact: integration
++round: 1
++reviewer: integration-claude
++---
++
++## qrspi-test-writer.md "All modes" Output Contract contradicts new implement-phase RED-run behavior
++
++**Surface:** `agents/qrspi-test-writer.md:73`, `:75`, `:261`, `:267-272`
++
++T2 (commit-hygiene scope) added implement-phase Behavior steps:
++- Line 73: "Run the tests via `bats` to verify RED ... Tests must fail with assertion-failure ..."
++- Line 75: "Commit the RED tests ... Use the scratch-file commit pattern ..."
++
++And broadened tool grant to `Read, Write, Edit, Bash, Grep, Glob`.
++
++But the bottom-of-file "## Output Contract" block at lines 267-272 still asserts (all modes):
++- "The agent does NOT run any test file it writes. Running tests is out of scope for this agent."
++- "The agent does NOT fix production code."
++
++And the test-phase "## Red Flags — STOP" section at line 261 lists "Attempting to run tests or
++report results (the orchestrator runs tests)" as a stop-the-presses red flag, with no
++visual scoping to test-phase mode (a reader hits it as a global rule).
++
++**Cross-task impact:** test-writer is dispatched in BOTH Implement-phase and Test-phase from
++the same prompt body. T2 added implement-phase RED-run+commit but left contradictory test-phase /
++all-mode prose intact. An LLM that reads top-to-bottom hits the contradiction at line 271 / 261
++and has documented justification to silently skip the RED run — defeating the cross-task
++invariant T2 introduced.
++
++**Suggested fix:** rewrite the "All modes" block to scope the "does not run / does not commit"
++assertions to test-phase mode explicitly; update Red Flags to qualify "Attempting to run tests"
++as test-phase-specific; add cross-reference back to lines 73-75 from the implement-phase
++contract section.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F01.score.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F01.score.md
+new file mode 100644
+index 0000000..f1bb13b
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F01.score.md
+@@ -0,0 +1,2 @@
++score: 85
++reason: Verified — lines 73/75 mandate RED bats-run + commit while line 271 "All modes" explicitly forbids running tests and line 261 lists it as a STOP red flag; this contradiction in a dispatcher-shared agent prompt is real and directly undermines the T2 invariant.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F02.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F02.md
+new file mode 100644
+index 0000000..460b32a
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F02.md
+@@ -0,0 +1,35 @@
++---
++finding_id: R1-F03
++severity: medium
++change_type: clarity
++referenced_files: [skills/implementer-protocol/SKILL.md, .gitignore]
++artifact: integration
++round: 1
++reviewer: integration-claude
++---
++
++## implementer-protocol/SKILL.md justification line factually incorrect after T2's gitignore landing
++
++**Surface:** `skills/implementer-protocol/SKILL.md:241` ↔ `.gitignore:3-4`
++
++T2 added committed gitignore entry for `.qrspi-commit-msg.txt` at `.gitignore:3-4`.
++`test-commit-hygiene-invariants.bats:211-216` pins this; design DKR2 makes the
++committed gitignore the new structural mechanism.
++
++But `implementer-protocol/SKILL.md:241` step 4 of the "Commit Before Reporting" procedure
++still reads:
++> `rm <worktree>/.qrspi-commit-msg.txt` (the scratch file is not gitignored and you don't want it in the next round's diff).
++
++The parenthetical justification is now factually false at the repo level; line 174's
++Invariant 3 description of worktree-local-exclude is not updated to mention the new
++gitignore as a sibling guard.
++
++**Cross-task impact:** T2 added one mechanism without retiring/reconciling the older
++mechanism's prose. The `rm` step is still useful (worktree-local diff hygiene), but the
++stated reason misleads any future maintainer auditing the invariants.
++
++**Suggested fix:**
++1. Line 241: replace parenthetical with round-NN-diff justification ("the file is gitignored
++   but you don't want it in the worktree at all between rounds").
++2. Lines 176-181: extend Composition section with a fourth bullet noting the committed-gitignore
++   as a structural fourth layer that closes the fresh-clone gap independently of worktree setup.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F02.score.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F02.score.md
+new file mode 100644
+index 0000000..19d5844
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F02.score.md
+@@ -0,0 +1,2 @@
++score: 72
++reason: Verified — SKILL.md:241 parenthetical "the scratch file is not gitignored" is now factually false because T2 added `.qrspi-commit-msg.txt` to .gitignore:4; Invariant 3 composition prose also does not mention the new committed-gitignore guard. Real integration-clarity defect introduced by the merge.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F03.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F03.md
+new file mode 100644
+index 0000000..f9db576
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F03.md
+@@ -0,0 +1,33 @@
++---
++finding_id: R1-F04
++severity: medium
++change_type: correctness
++referenced_files: [agents/qrspi-test-writer.md, skills/implementer-protocol/SKILL.md]
++artifact: integration
++round: 1
++reviewer: integration-claude
++---
++
++## qrspi-test-writer.md performs commit cycle but does not load implementer-protocol skill
++
++**Surface:** `agents/qrspi-test-writer.md:1-6` (frontmatter), `:28` (prose reference) ↔ `skills/implementer-protocol/SKILL.md:162-181` (Commit hygiene invariants)
++
++T2 added commit ownership to the test-writer at line 28 and behavior step 75. Line 28 prose
++explicitly names "the implementer-protocol scratch-file pattern" as the contract being applied.
++
++But the agent file's frontmatter has NO `skills:` field. Contrast with
++`agents/qrspi-implementer.md:1-5` which declares `skills: [implementer-protocol]` and (per
++`implementer-protocol/SKILL.md:10`) gets the protocol body preloaded at agent activation.
++
++The test-writer thus performs a commit cycle named after a contract whose three-invariant
++declaration (staging-before-scratch / cleanup-after-commit / worktree-local-exclude) and
++pre-DONE hygiene self-check (lines 148-160) are NOT in its prompt context.
++
++**Cross-task impact:** Pre-existing `implementer-protocol` skill (contract surface) and T2's
++new "test-writer also commits" mandate (new consumer) converge without integrating. Test-writer
++can violate Invariant 1 (staging-before-scratch) or skip the hygiene scan and still report
++DONE — none of those constraints are in its prompt.
++
++**Suggested fix:** add `skills: [implementer-protocol]` to test-writer frontmatter so the
++invariant prose and hygiene self-check are preloaded. Composes cleanly with existing T2 tool
++grant (protocol's self-check needs the Bash + Read grant the test-writer now has).
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F03.score.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F03.score.md
+new file mode 100644
+index 0000000..3a9687a
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F03.score.md
+@@ -0,0 +1,2 @@
++score: 78
++reason: Verified — qrspi-test-writer.md frontmatter (lines 1-6) has no `skills:` field while qrspi-implementer.md:5 declares `skills: [implementer-protocol]` (auto-preloaded per SKILL.md:10); test-writer:28 invokes "implementer-protocol scratch-file pattern" yet the agent never gets the three invariants or pre-DONE hygiene self-check (SKILL.md:148-181) preloaded. Real cross-task integration gap.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F04.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F04.md
+new file mode 100644
+index 0000000..6f34ce7
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F04.md
+@@ -0,0 +1,25 @@
++---
++finding_id: R1-F05
++severity: low
++change_type: clarity
++referenced_files: [agents/qrspi-test-writer.md]
++artifact: integration
++round: 1
++reviewer: integration-claude
++---
++
++## qrspi-test-writer.md reference to .git/info/exclude is single-mechanism after T2 added a second mechanism
++
++**Surface:** `agents/qrspi-test-writer.md:28`
++
++Prose says: "The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`."
++Describes only pre-T2 mechanism. T2 added committed root `.gitignore:4`. Both apply post-merge;
++test-writer prose mentions only the older mechanism.
++
++**Cross-task impact:** trivial — agent's commit will still work — but prose is incomplete.
++
++**Suggested fix:** rewrite as "The scratch file is excluded by two independent mechanisms:
++the worktree-local `.git/info/exclude` (added during worktree setup) and the committed
++`.gitignore` entry (covers fresh clones). Both apply."
++
++Worth fixing alongside F02 (R1-F02) since same file.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F04.score.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F04.score.md
+new file mode 100644
+index 0000000..a221320
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F04.score.md
+@@ -0,0 +1,2 @@
++score: 50
++reason: Verified — test-writer:28 names only `.git/info/exclude` while T2 also added the committed .gitignore entry; both apply post-merge. Real but minor prose-completeness issue; commit still works. Self-described LOW.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F05.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F05.md
+new file mode 100644
+index 0000000..e88c3b0
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F05.md
+@@ -0,0 +1,33 @@
++---
++finding_id: R1-F06
++severity: low
++change_type: scope
++referenced_files: [scripts/run-codex-review.sh, skills/using-qrspi/SKILL.md]
++artifact: integration
++round: 1
++reviewer: integration-claude
++---
++
++## T6's detect_host() has no production consumer in Wave 1; DKR10 shared-probe contract half-instantiated (informational)
++
++**Surface:** `scripts/run-codex-review.sh:122-139` (detect_host definition), `:147-190`
++(check_codex_available), only consumer `tests/unit/test-host-detection.bats` via
++`QRSPI_SOURCE_ONLY=1` guard, ↔ `skills/using-qrspi/SKILL.md` (no detect_host references).
++
++Per design DKR10 and structure.md:177-197 ("One env-var probe implementation, surfaced at
++config-load time, serves both G6 and G7b"), Wave 1 lands the mechanism but
++`using-qrspi/SKILL.md:405-410` still uses pre-T6 inline glob, not a call into detect_host /
++check_codex_available.
++
++Dispatcher-prose binding is scheduled for Wave 2 (task-07) and Wave 5 (task-10).
++
++**Cross-task impact at Wave-1 boundary:** zero. **Forward-looking risk:** Wave-2 integration
++needs to either source `scripts/run-codex-review.sh` (QRSPI_SOURCE_ONLY=1 guard already
++exists for this) or duplicate detection logic in prose (would violate DKR10).
++
++**Suggested action:** flag for Wave-2 integration review. Verify task-07 actually wires
++`using-qrspi/SKILL.md` to call detect_host / check_codex_available rather than re-implementing
++the probe in prose.
++
++**Why LOW/informational:** legitimate scope-boundary state of multi-wave plan, not a
++Wave-1 defect.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F05.score.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F05.score.md
+new file mode 100644
+index 0000000..940c325
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-claude.finding-F05.score.md
+@@ -0,0 +1,2 @@
++score: 40
++reason: Verified — detect_host/check_codex_available defined in run-codex-review.sh:122-190 but using-qrspi/SKILL.md:405 still uses the inline glob with zero `detect_host` references; parallelization.md:21,24 confirms task-07 (Wave 2) and task-10 (Wave 5) own the wiring per DKR10. Finding correctly self-classifies as LOW/informational scope-boundary — no Wave-1 defect, just a forward-looking flag.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-codex.NO_FINDINGS b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-codex.NO_FINDINGS
+new file mode 100644
+index 0000000..3a1978a
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/integration-codex.NO_FINDINGS
+@@ -0,0 +1,10 @@
++integration-codex: CLEAN (round 1)
++
++Reviewer: code-review subagent acting as Codex parallel of qrspi-integration-reviewer (gpt-5.3-codex)
++Elapsed: 350s
++Verdict: "No significant issues found in the reviewed changes."
++
++Note: integration-claude (separate reviewer in same round) raised 5 findings
++(1 HIGH, 2 MEDIUM, 2 LOW). Convergence between Claude and Codex on the cross-task
++prose-contradiction findings (F02-F05) is partial — Codex returned clean while
++Claude raised the F01 contradiction in qrspi-test-writer.md as HIGH.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/security-claude.NO_FINDINGS b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/security-claude.NO_FINDINGS
+new file mode 100644
+index 0000000..543c627
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/security-claude.NO_FINDINGS
+@@ -0,0 +1,14 @@
++security-claude: CLEAN (round 1)
++
++Reviewer: qrspi-security-integration-reviewer (sonnet)
++Elapsed: 246s
++Verdict: No cross-task security vulnerabilities identified.
++
++Traced interactions (all compose with consistent or improved posture):
++ - T02 + Hotfix A: belt-and-suspenders scratch-file protection
++ - T03 + T06: orthogonal surfaces, both fail-closed
++ - T06 + using-qrspi prose: LLM-layer eval (no shell injection sink)
++ - T09 + dispatch precedence: no privilege escalation possible
++ - Hotfix A tool grant + T02/T03/T06: no new write-amplification or exec sinks
++
++Per-task per-reviewer findings reached TERMINAL CLEAN before integration.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/security-codex.finding-F01.md b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/security-codex.finding-F01.md
+new file mode 100644
+index 0000000..d4b1fc1
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/security-codex.finding-F01.md
+@@ -0,0 +1,56 @@
++---
++finding_id: R1-F01
++severity: high
++change_type: security
++referenced_files: [scripts/run-codex-review.sh, agents/qrspi-implementer.md, agents/qrspi-test-writer.md]
++artifact: integration
++round: 1
++reviewer: security-codex
++---
++
++## Bash tool grant enables arbitrary local-file exfiltration via Codex wrapper
++
++**Surface:**
++- `scripts/run-codex-review.sh:321-327` — `resolve_path()` accepts absolute paths unchanged and does no repo-boundary enforcement
++- `scripts/run-codex-review.sh:462-467` — `emit_untrusted_artifact()` reads with `cat "$path"` and embeds content in dispatch prompt
++- `scripts/run-codex-review.sh:557-560` — dispatcher forwards assembled body to `run-third-party-llm.sh --provider codex`
++- `agents/qrspi-implementer.md:4` — `tools: Read, Write, Bash, Edit, Grep, Glob`
++- `agents/qrspi-test-writer.md:5` — `tools: Read, Write, Edit, Bash, Grep, Glob` (Bash newly granted by Hotfix A)
++
++**Threat model:**
++With Hotfix A granting Bash to qrspi-implementer + qrspi-test-writer, a prompt-injection
++attack on either agent (via untrusted artifact body in `task_definition`,
++`companion_codebase_context`, etc.) can invoke `run-codex-review.sh` with arbitrary
++absolute paths as `--subject-code` or `--companion`. The wrapper accepts them, reads
++the files via `cat`, and ships the content over the sanctioned Codex review channel —
++a trusted exfil path that may bypass network controls that would block attacker URLs.
++
++**Reproduction:** Run from repo root with --dry-run flag (no network):
++```bash
++scripts/run-codex-review.sh --agent-file agents/qrspi-design-reviewer.md \
++  --reviewer-tag test --output-dir /tmp/x --round 99 \
++  --subject-code /etc/hosts \
++  --companion companion_design=docs/qrspi/2026-05-27-v071-hardening/design.md \
++  --dry-run
++```
++Output embeds `/etc/hosts` content inside `<<<UNTRUSTED-ARTIFACT-START id=/etc/hosts>>>`
++markers — verified live in the round-01 review (full hosts file contents leaked into
++the prompt buffer).
++
++**Why integration-emergent:** The wrapper's path laxity is pre-existing in T6's hardened
++script (T6 hardened `detect_host`/`check_codex_available` but did not touch
++`resolve_path`/`emit_untrusted_artifact`). Hotfix A added a NEW reachable attack vector
++by granting Bash to two in-the-loop agents whose untrusted input surface (per-task
++dispatches) is large. Per-task security review of T6 covered only T6's host-detection
++hardening; per-task review of Hotfix A's tool grant did not cross-reference all
++wrapper scripts the granted agents could invoke. The composition is integration-scope.
++
++**Suggested fix:**
++1. In `scripts/run-codex-review.sh`, canonicalize all `--subject-code`/`--companion` paths via `readlink -f` (or `realpath`) and reject paths not under `$REPO_ROOT`. Fail closed on canonicalization failure (consistent with T6's pattern at lines ~165-180).
++2. Tighten `resolve_path()` to enforce the same allowlist.
++3. Add a bats test that confirms `--subject-code /etc/hosts` is rejected with non-zero exit and a clear error message.
++
++**Severity rationale:** HIGH because (a) attack is trivially reproducible with --dry-run,
++(b) trusted exfil channel (Copilot CLI -> OpenAI is allowlisted by infrastructure),
++(c) two production agent surfaces newly hold the prerequisite Bash grant,
++(d) no other layer of the wrapper enforces path containment.
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/security-codex.finding-F01.score.yml b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/security-codex.finding-F01.score.yml
+new file mode 100644
+index 0000000..24aab34
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-01/security-codex.finding-F01.score.yml
+@@ -0,0 +1,2 @@
++score: 62
++reason: Reproduction confirmed live (resolve_path accepts /etc/hosts, emit_untrusted_artifact cats it into the prompt) and composition with Hotfix A's Bash grants is genuinely integration-emergent (per-task reviews wouldn't cross-check both surfaces); severity-HIGH is slightly inflated because prompt-injected Bash-granted agents already have many exfil paths and test-writer.md's Bash allowlist excludes invoking run-codex-review.sh, but the path-containment hardening fix is sound and matches T6's existing canonicalization pattern.

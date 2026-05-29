@@ -1,0 +1,70 @@
+---
+reviewer: integration-claude
+round: 3
+artifact: agents/qrspi-test-writer.md
+diff_ref: round commit a8d90c7 → HEAD 1d38afe
+diff_file: docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-03.diff
+scope: NARROW (single file, ~12 line delta)
+---
+
+# NO_FINDINGS — Round 03 Integration Review
+
+## Verification summary
+
+The round-02 fix (1d38afe) reverted the round-01 R1-F04 preload approach and replaced it with an inline restatement of the scratch-file commit pattern. All five round-03 verification items pass:
+
+### 1. R2-F02 closure ✅
+
+`agents/qrspi-test-writer.md:1-6` frontmatter no longer contains `skills: [implementer-protocol]`. The frontmatter terminates at line 6 with the `---` delimiter immediately after `tools: Read, Write, Edit, Bash, Grep, Glob`. The preload conflict that security-codex round-02 flagged (verifier score 72) is fully removed at the source — the test-writer no longer auto-loads the implementer-protocol skill, so it cannot inherit the wider tool/command surface that conflicted with the HARD CONSTRAINT scope (file-write surface limited to tests; bash limited to the bats/git allowlist).
+
+### 2. R1-F04 still closed via inlining ✅
+
+The dangling-reference concern is closed because the previously-referenced scratch-file pattern is now restated in-prompt at `agents/qrspi-test-writer.md:75-80` (implement-phase Behavior block step 6, sub-steps a–d):
+
+- 6a (line 77): Write `.qrspi-commit-msg.txt` via the Write tool, with subject convention and Co-authored-by trailer specified inline.
+- 6b (line 78): Stage with explicit paths; `**Never use git add -A**` reinforced.
+- 6c (line 79): Commit with `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`.
+- 6d (line 80): Remove the scratch file with `rm .qrspi-commit-msg.txt`.
+
+The two prior phrases that referenced the "implementer-protocol scratch-file pattern" (line 28 Commit ownership bullet; line 32 of the prior Behavior step 6) have been rewritten to point to the inline restatement: line 28 now says "the inline scratch-file commit pattern restated in the implement-phase Behavior block below (step 6)"; line 75 says "you never need to load any external skill to execute the commit correctly." There are zero remaining instructions of the form "follow the implementer-protocol pattern" that would require loading external content. The lone remaining occurrence of the word "implementer" at line 14 is purely descriptive ("full implementer-shaped tool grant") and is not a load-instruction.
+
+### 3. R1-F02 closure intact (no regression) ✅
+
+The tri-partite Output Contract structure introduced at round 01 is preserved at `agents/qrspi-test-writer.md:270-294`:
+
+- "All modes" block (lines 272-276) — common rules.
+- "Test-phase mode only" block (lines 278-280) — orchestrator-runs-tests carve-out.
+- "Implement-phase mode" block (lines 282-284) — explicit grant: "The agent DOES run tests via `bats --filter` to verify RED (per Behavior step 4 above). The agent DOES commit the RED tests via the scratch-file pattern (per Behavior step 6 above)."
+- "Implement-phase mode additional contract" (lines 286-289) and "Test-phase mode additional contract" (lines 291-294) preserved.
+
+The Red-Flags carve-out at line 266 that explicitly distinguishes test-phase mode (no test execution) from implement-phase mode ("NOT a red flag — running `bats --filter` to verify RED is required behavior") is also intact. R1-F02 remains closed.
+
+### 4. Defense-in-depth "never git add -A" restatement at point-of-use ✅
+
+The prohibition is now restated at TWO locations:
+
+- HARD CONSTRAINT Bash command scope, `agents/qrspi-test-writer.md:23`: "`git add <test-file-paths>` (list each path explicitly; **never `git add -A`** or any wildcard staging)" — also added in the round-02 delta (not just the original constraint block — the prohibition was inlined into the allowlist entry itself).
+- Implement-phase Behavior step 6b, `agents/qrspi-test-writer.md:78`: "**Never use `git add -A`** (the HARD CONSTRAINT block forbids it, and co-locating the prohibition here removes any rationale for broader staging picked up from external patterns)."
+
+The point-of-use restatement at step 6b explicitly names its own rationale (defense-in-depth against pattern-drift from external sources), and step 6's intro sentence at line 75 reaffirms that "the **Tool-grant scope (HARD CONSTRAINT)** block above is the binding scope authority and takes precedence over any wider pattern you may have seen elsewhere." This is exactly the structure that addresses the round-02 security-codex concern about preload-induced scope drift.
+
+### 5. No new cross-task issues introduced by the inlined content ✅
+
+Cross-checked the inlined commit-pattern sub-steps (6a–6d) against the agent's declared tool grants and bash allowlist:
+
+- 6a uses the **Write** tool → present in tools allowlist at line 5 (`tools: Read, Write, Edit, Bash, Grep, Glob`).
+- 6b uses `git add <test-file-paths>` → matches bash allowlist line 23 exactly.
+- 6c uses `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt` → matches bash allowlist line 23 (`git -c user.name=... -c user.email=... commit ...` and `git commit -F .qrspi-commit-msg.txt` forms).
+- 6d uses `rm .qrspi-commit-msg.txt` → matches bash allowlist line 24 (`rm <transient-scratch-file>`).
+
+The commit-subject convention `qrspi(<branch-tag>): RED tests for <behavioral-description>` and the `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer string at line 77 are identical to the prior commit-ownership statement at line 28 — no string drift between the two restatements. The Tool-grant precedence note at line 75 forecloses any conflict-of-authority interpretation between the inline pattern and the HARD CONSTRAINT block.
+
+No contradictions with any other content in the file. No tool/allowlist mismatches. No conflicting restatements.
+
+## Out of scope (deferred, not raised)
+
+R2-F01 (status-token list mismatch between Behavior text and Output Contract) was DROPPED at verifier score 58 (clarity, below 80 threshold) and deferred to v0.7.2 (#233). Not re-raised per round-03 scope instruction.
+
+## Result
+
+CLEAN — no integration findings. Round-03 verification complete; both R1-F04 (via inlining) and R2-F02 (via skills-line removal) are confirmed closed, with R1-F02 and the defense-in-depth `git add -A` prohibition preserved.
