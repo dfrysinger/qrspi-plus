@@ -603,7 +603,17 @@ teardown() {
   #
   # The grep on 'claude-code' proves the new dispatch surface ran (mismatch path active).
   # If it were missing, the test would fail at the grep line, not at the exit-code check.
-  printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  #
+  # T7 update: the original scenario (no companion + codex_reviews=true) now triggers
+  # the T7 codex-unavailable short-circuit (avail=false AND config=true → exit non-zero
+  # before dispatch).  Switch to the avail=true + config=false mismatch scenario so we
+  # still exercise warning-only-with-dispatch-continuing: populate the companion path
+  # (avail=true via the glob) and set codex_reviews=false → mismatch fires, no
+  # short-circuit, transport runs to completion.
+  mkdir -p "$MOCK_HOME/.claude/plugins/cache/openai-codex/codex/v1.0.55/scripts"
+  printf '// mock codex-companion stub\n' \
+    > "$MOCK_HOME/.claude/plugins/cache/openai-codex/codex/v1.0.55/scripts/codex-companion.mjs"
+  printf -- '---\ncodex_reviews: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   TMP_STDERR="$TMP_DIR/t12b-stderr.txt"
   QRSPI_REPO_ROOT="$TMP_DIR" \
@@ -666,9 +676,18 @@ teardown() {
   # code from the underlying transport must be propagated to the caller unchanged.
   # The mismatch warning path must not swallow failures.
   #
-  # Mismatch scenario: COPILOT_CLI unset (claude-code), codex_reviews: true,
-  # no companion in MOCK_HOME.  Mock transport exits 7.
-  printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  # Mismatch scenario: COPILOT_CLI unset (claude-code), companion present so
+  # avail=true, codex_reviews: false → mismatch (avail≠config) without triggering
+  # the T7 codex-unavailable short-circuit.  Mock transport exits 7.
+  #
+  # T7 update: the original scenario (no companion + codex_reviews=true) now triggers
+  # the codex-unavailable short-circuit, so the transport never runs and there's no
+  # transport exit code to suppress.  The avail=true + config=false scenario still
+  # exercises the "mismatch warning does not suppress transport failure" contract.
+  mkdir -p "$MOCK_HOME/.claude/plugins/cache/openai-codex/codex/v1.0.55/scripts"
+  printf '// mock codex-companion stub\n' \
+    > "$MOCK_HOME/.claude/plugins/cache/openai-codex/codex/v1.0.55/scripts/codex-companion.mjs"
+  printf -- '---\ncodex_reviews: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   TMP_STDERR="$TMP_DIR/t17-stderr.txt"
   # Use && ... || dispatch_status=$? to capture non-zero exits in bats (same
