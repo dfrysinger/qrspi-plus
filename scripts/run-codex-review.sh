@@ -104,28 +104,29 @@ require_value() {
 # untrusted prefix) select claude-code.  Always exits 0.  Writes nothing to
 # stderr under normal operation.
 #
-# sec.F01 (R2): COPILOT_CLI alone was user-settable; adding the binary check
-# makes the marker harder to forge without a real gh installation.
-# sec.F01 (R5): `command -v gh` trusted PATH blindly; an attacker who can set
-# COPILOT_CLI=1 can equally prepend PATH with a fake gh directory.  Resolving
-# the path and validating it against trusted prefixes closes that gap.
-# sec.F01/F02 (R7): pure string prefix check on `command -v` output is bypassable
-# via PATH=/usr/../tmp/fakebins:... (`..` not normalised) and via symlinks inside
-# trusted prefixes.  Normalize with realpath (BSD/macOS) or readlink -f (GNU/Linux)
-# before the prefix check; both resolve `..` segments AND follow symlinks so the
-# real filesystem path is compared.
-# sec.F01 (R8): the previous `|| printf '%s' "$_gh_path"` pass-through fallback
-# re-opened R7 vectors on hosts where both realpath and readlink -f are absent.
-# Fix: fail-closed — when both normalization tools fail the assignment fails and
-# _gh_path is forced to ""; the downstream -n guard then short-circuits to the
-# safe claude-code default.  No path normalization = no trusted-prefix check.
+# Why the binary check is load-bearing: COPILOT_CLI is a user-settable env var,
+# so the marker alone is forgeable.  Requiring `gh` to also resolve to a path
+# under a system-controlled prefix (/usr/*, /opt/*, /Applications/*) raises the
+# bar — an attacker would need both the env var AND a writable system prefix.
+#
+# Why prefix-matching on a normalized path: a raw `command -v` result can be
+# bypassed via PATH injection (PATH=/usr/../tmp/fakebins:...) and via symlinks
+# inside trusted prefixes that point at attacker-controlled binaries.  Resolve
+# with realpath (BSD/macOS) or readlink -f (GNU/Linux) before the prefix check;
+# both resolve `..` segments AND follow symlinks so the canonical filesystem
+# path is compared.
+#
+# Why fail-closed when normalization is unavailable: if both realpath and
+# readlink -f are absent or fail, `_gh_path` is forced to "" and the downstream
+# -n guard short-circuits to the safe claude-code default.  No path
+# normalization = no trusted-prefix check.
 detect_host() {
   local _gh_path
   _gh_path="$(command -v gh 2>/dev/null)"
   # Normalize: resolve symlinks and .. segments so the prefix check operates on
   # the canonical filesystem path, not a PATH-constructed string.
-  # Fail-closed (R8): if both tools are absent/fail, _gh_path is set to ""; the
-  # -n guard below then short-circuits to the safe claude-code default.
+  # Fail-closed: if both tools are absent/fail, _gh_path is set to ""; the -n
+  # guard below then short-circuits to the safe claude-code default.
   if [[ -n "$_gh_path" ]]; then
     _gh_path="$(realpath "$_gh_path" 2>/dev/null || readlink -f "$_gh_path" 2>/dev/null)" || _gh_path=""
   fi
@@ -151,19 +152,19 @@ check_codex_available() {
       return 0
       ;;
     claude-code)
-      # sec.F02 (R2): reject HOME values that contain '..' path components,
-      # are empty, or contain newlines — any of these could allow filesystem
-      # probing outside the expected ~/.claude/ tree.
+      # Reject HOME values that contain '..' path components, are empty, or
+      # contain newlines — any of these could allow filesystem probing outside
+      # the expected ~/.claude/ tree.
       case "${HOME:-}" in
         *..* | "" | *$'\n'*)
           echo "check_codex_available: unsafe HOME value — must be an absolute path without '..' components" >&2
           return 1
           ;;
       esac
-      # sec.F02 (R5): the case guard above does not check for a leading '/'.
-      # A relative HOME value (e.g. HOME=relative-dir) would pass all case arms
-      # and cause the companion glob to expand relative to the process CWD.
-      # Enforce that HOME starts with '/' before any filesystem probe.
+      # The case guard above does not check for a leading '/'.  A relative HOME
+      # value (e.g. HOME=relative-dir) would pass all case arms and cause the
+      # companion glob to expand relative to the process CWD.  Enforce that
+      # HOME starts with '/' before any filesystem probe.
       if [[ "${HOME}" != /* ]]; then
         echo "check_codex_available: HOME must be an absolute path (got: relative path)" >&2
         return 1
@@ -194,11 +195,11 @@ check_codex_available() {
 # detect_host / check_codex_available directly without triggering argument
 # parsing or validation.
 #
-# sf.F01 (R2): `return 0` is only valid in a sourced context.  When the script
-# is executed directly (`bash run-codex-review.sh`) with set -e absent, the
-# failed `return` does not abort the script — execution falls through into
-# argument parsing.  `return 0 2>/dev/null || exit 0` works in both modes:
-# `return 0` succeeds when sourced; `exit 0` fires when executed directly.
+# `return 0` is only valid in a sourced context.  When the script is executed
+# directly (`bash run-codex-review.sh`) the failed `return` does not abort
+# execution and would fall through into argument parsing.
+# `return 0 2>/dev/null || exit 0` works in both modes: `return 0` succeeds
+# when sourced; `exit 0` fires when executed directly.
 if [[ "${QRSPI_SOURCE_ONLY:-}" == "1" ]]; then
   return 0 2>/dev/null || exit 0
 fi
@@ -590,21 +591,18 @@ if [[ -f "$ARTIFACT_DIR/config.md" ]]; then
   ' "$ARTIFACT_DIR/config.md")"
 fi
 
-# Normalise codex_reviews to exactly "true" or "false" before any use.
-#
-# sec.F03 (R2): an unexpected value (which could carry terminal control
-# sequences from a crafted config.md) is treated as "false" and never echoed
-# verbatim.
+# Normalise codex_reviews to exactly "true" or "false" before any use.  An
+# unexpected value (which could carry terminal control sequences from a
+# crafted config.md) is treated as "false" and never echoed verbatim.
 case "$_codex_reviews" in
   true|false) ;;
   *) _codex_reviews="false" ;;
 esac
 
-# Probe Codex availability for the detected host.  Capture the exit code so
-# we can propagate it exactly (no remapping) when short-circuiting.
-#
-# sf.F03 (R2): no 2>/dev/null suppression so that any check_codex_available
-# diagnostic (e.g. unrecognised host, unsafe HOME) reaches the operator.
+# Probe Codex availability for the detected host.  Capture the exit code so we
+# can propagate it exactly (no remapping) when short-circuiting.  No
+# 2>/dev/null suppression so that any check_codex_available diagnostic (e.g.
+# unrecognised host, unsafe HOME) reaches the operator.
 if check_codex_available "$_detected_host"; then
   _codex_available="true"
   _check_exit=0
@@ -635,11 +633,10 @@ if [[ "$_codex_available" == "false" && "$_codex_reviews" == "true" ]]; then
 fi
 
 # Emit the transport marker and dispatch.  Exit code is propagated unchanged
-# from the transport; no suppression, no log-and-continue.
-#
-# sf.F02 (R2): each dispatch pipeline now runs in a subshell with set -o pipefail
-# so that a compose_prompt failure (e.g. partial output from a read error) is
-# not silently masked by the dispatcher's exit code.
+# from the transport; no suppression, no log-and-continue.  Each dispatch
+# pipeline runs in a subshell with set -o pipefail so that a compose_prompt
+# failure (e.g. partial output from a read error) is not silently masked by
+# the dispatcher's exit code.
 if [[ "$_detected_host" == "copilot-cli" ]]; then
   echo "[transport: task-tool]" >&2
   ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
