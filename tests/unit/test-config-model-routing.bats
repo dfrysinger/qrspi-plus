@@ -68,10 +68,13 @@ setup_file() {
   [[ "$out" == *"Hardcoded dispatch-site"* ]]
 }
 
-@test "precedence chain: layer 3 (model_routing: role lookup) named in using-qrspi" {
+@test "precedence chain: layer 3 (model_routing: host/tier lookup) named in using-qrspi" {
+  # T10 R1 fix (schema replacement): v0.7.1 hardening retired the
+  # role→provider/model schema in favor of host→tier→model. Step 3's
+  # canonical wording is now "host/tier lookup" rather than "role lookup".
   out="$(_extract_h4 "$USING" "Precedence chain")"
   [[ "$out" == *"model_routing:"* ]]
-  [[ "$out" == *"role lookup"* ]]
+  [[ "$out" == *"host/tier lookup"* ]]
 }
 
 @test "precedence chain: layer 4 (agent-bundled default) named in using-qrspi" {
@@ -118,10 +121,21 @@ setup_file() {
 # Fail-loud provider resolution: unknown provider in model_routing: halts.
 # ---------------------------------------------------------------------------
 
-@test "provider resolution: unknown provider name is a config-validation error (fail-loud)" {
+@test "provider resolution: unknown provider name no longer documented under model_routing: (schema retired)" {
+  # T10 R1 fix (schema replacement): the v0.7-era model_routing: schema
+  # used `<provider-name>/<model-id>` values, and that schema's doc body
+  # carried a fail-loud "config validation error / halts and reports the
+  # unknown provider" sentence for unknown-provider references. v0.7.1
+  # retired the role→provider/model schema entirely in favor of the
+  # host→tier→model shape; provider names are no longer keyed off
+  # model_routing: values, so that specific fail-loud contract has no
+  # surface to assert on in the new schema doc.
+  #
+  # Pin the absence of the retired wording so a future revert of the
+  # schema would fail loud here as well as in test-using-qrspi-vocab.bats.
   out="$(_extract_h4 "$USING" '`model_routing:` block')"
-  [[ "$out" == *"config validation error"* ]]
-  [[ "$out" == *"halts and reports the unknown provider"* ]] || [[ "$out" == *"falling back silently"* ]] || [[ "$out" == *"fall back silently"* ]]
+  [[ "$out" != *"halts and reports the unknown provider"* ]]
+  [[ "$out" != *"<provider-name>/<model-id>"* ]]
 }
 
 # ---------------------------------------------------------------------------
