@@ -1,0 +1,84 @@
+diff --git a/skills/implement/SKILL.md b/skills/implement/SKILL.md
+index 837226b..887cbb9 100644
+--- a/skills/implement/SKILL.md
++++ b/skills/implement/SKILL.md
+@@ -358,7 +358,7 @@ The order matters: baseline tests run **before** per-task worktree creation so t
+ 
+ Branch on mode (derived from `config.md.route` per § Overview) at the start. Both modes share Steps 1–5 with mode-conditional details; Step 6 onward differs.
+ 
+-1. **Read inputs.** Full pipeline: read `parallelization.md` (Branch Map + Stage Commits + Execution Order narrative; if a `## Runtime Adjustments` section exists from a prior session, load its overrides into the in-memory base-resolution table). Quick fix: read every `tasks/*.md` OR every `fixes/{type}-round-NN/*.md` per the dispatch shape — see § Batch Gate Definition for the two quick-fix main-dispatch shapes plus the isolated baseline-fix dispatch event (`references/fix-task-routing.md` for fix-task dispatch specifics). Each dispatch reads one set, not both.
++1. **Read inputs.** Full pipeline: read `parallelization.md` (Branch Map organized into `### Wave N` sub-sections + Stage Commits; if a `## Runtime Adjustments` section exists from a prior session, load its overrides into the in-memory base-resolution table). Quick fix: read every `tasks/*.md` OR every `fixes/{type}-round-NN/*.md` per the dispatch shape — see § Batch Gate Definition for the two quick-fix main-dispatch shapes plus the isolated baseline-fix dispatch event (`references/fix-task-routing.md` for fix-task dispatch specifics). Each dispatch reads one set, not both.
+ 2. **Ask phase config** (`review_depth`, `review_mode`), write to `config.md` (skip on fix-task dispatches — reuse existing values).
+ 3. **Create feature branch** `qrspi/{slug}/main` from the current branch if it does not exist (first phase only in full pipeline; first batch only in quick fix). Naming it `/main` (not bare `qrspi/{slug}`) is required so task branches `qrspi/{slug}/task-NN` can coexist as namespace siblings — see Branch Model in `parallelize/SKILL.md` § F-14 note.
+ 4. **Run baseline tests** in a single throwaway worktree at `.worktrees/{slug}/baseline/` forked from the feature branch tip. **Resume precondition:** if `.worktrees/{slug}/baseline/` already exists when this step starts, delete it first — the prior baseline result is not trusted across sessions because the feature branch tip may have advanced. (One check is sufficient in full pipeline: every Wave 1 task forks from this same commit, so per-task baselines would be identical; downstream-Wave bases derive from task work that hasn't happened yet and is validated by per-task reviewers. In quick fix the same logic holds trivially — every task forks from the feature branch tip.) See "Baseline Tests" below for the 3 options when failures occur. **Invariant:** if the pipeline continues past this step, the baseline worktree must be gone before any per-task worktree exists.
+@@ -368,7 +368,7 @@ Branch on mode (derived from `config.md.route` per § Overview) at the start. Bo
+     - **Quick fix:** the baseline-fix task is dispatched as its own isolated dispatch event BEFORE the originally-requested dispatch (no `parallelization.md`, no Branch Map row to append). Write `tasks/task-00.md` with `status: approved`, create the `task-00` worktree forked from feature branch tip, run the per-task flow for `task-00`, wait for terminal state. The baseline-fix dispatch's task set is `{tasks/task-00.md}` (one task). Once `task-00` is in terminal state, proceed to Step 6 to dispatch the originally-requested task set as a separate isolated dispatch event — either the originally-requested `tasks/*.md` (normal entry, **excluding** the just-written `tasks/task-00*.md` baseline-fix singleton — the main dispatch reads only the originally-requested files) or `fixes/{type}-round-NN/*.md` (fix-task dispatch). Each dispatch event reads exactly one set; the baseline fix and the main dispatch are separate events, not a merged batch. (Note: in this skill, "batch" = the full set of tasks gated together at the human batch gate; "dispatch event" = one invocation of the per-task flow reading one task set. The isolated baseline-fix dispatch is its own dispatch event but is not a separate batch — it auto-continues to the main dispatch with no intermediate batch gate; only the main dispatch's batch gate fires at Step 7.)
+ 5.5. **Task-count read and dynamic skip.** Run the procedure in § Implement-Entry Task-Count Read and Dynamic Skip. This step fires once per Implement entry (not on subsequent fix-round dispatches within the same phase), after the smoke check and after any baseline-fix pre-dispatch, but **before** any per-task worktree creation and before any Parallelize or Integrate dispatch. Branch on the count (`N`) per that section: N=0 halts the phase; N=1 writes the audit append and skips to the single-task per-task dispatch (Step 6), bypassing Parallelize and Integrate; N>1 writes the audit append and falls through to Step 6's normal dispatch (full-pipeline wave dispatch or quick-fix per-task dispatch per mode).
+ 6. **Dispatch tasks.**
+-    - **Full pipeline — for each wave** in the Execution Order, in order:
++    - **Full pipeline — for each `### Wave N` sub-section under Branch Map**, in ascending N order:
+         - Resolve every task's effective base: read the Branch Map's `Base` column, then apply `## Runtime Adjustments` overrides on top.
+         - Create any required `stage-after-W{N}` branch (merging the named Wave's leaves).
+         - Create the per-task worktree at `.worktrees/{slug}/task-NN/`. Verify `.worktrees/` is in `.gitignore`.
+diff --git a/tests/unit/test-implement-skill-vocab.bats b/tests/unit/test-implement-skill-vocab.bats
+new file mode 100644
+index 0000000..5b041bb
+--- /dev/null
++++ b/tests/unit/test-implement-skill-vocab.bats
+@@ -0,0 +1,56 @@
++#!/usr/bin/env bats
++bats_require_minimum_version 1.5.0
++
++# fix-int-w23-r01-t01 — implement/SKILL.md ↔ parallelize/SKILL.md (T4 reshape) contract pin
++#
++# T4 (Wave 3) reshaped skills/parallelize/SKILL.md so wave ordering is read
++# from `### Wave N` sub-section headings under Branch Map and removed the
++# standalone `## Execution Order` section. This pin asserts the consumer side
++# (skills/implement/SKILL.md) tracks that reshape:
++#
++#   1. implement/SKILL.md MUST NOT reference "Execution Order narrative" or
++#      "in the Execution Order" — these phrases describe a parallelization-level
++#      section T4 removed. The phrase "Execution order" (lowercase o) remains
++#      acceptable in OTHER domains (e.g. reviewer fan-out ordering at L488),
++#      so the test pins only the two specific producer-contract phrases.
++#
++#   2. implement/SKILL.md MUST anchor its wave-dispatch prose to the new
++#      `### Wave N` sub-section vocabulary so future drift fails loudly.
++#
++# Bash 3.2 portable (no mapfile, no declare -A, no ${var,,}, no coproc).
++
++load '../helpers/skill-markdown'
++
++setup_file() {
++  require_repo_root
++  SKILL_MD="$REPO_ROOT/skills/implement/SKILL.md"
++  export SKILL_MD
++}
++
++# ---------------------------------------------------------------------------
++# Pin 1: no stale parallelization-level "Execution Order" producer references
++# ---------------------------------------------------------------------------
++@test "[fix-int-w23-r01-t01] implement/SKILL.md does not reference a standalone parallelization-level \"Execution Order\" section or narrative" {
++  # The producer (skills/parallelize/SKILL.md, post-T4) emits neither an
++  # "Execution Order narrative" section nor any other field whose dispatch
++  # consumer would phrase as "in the Execution Order". Either phrase in
++  # implement/SKILL.md is a stale cross-skill contract reference.
++  if grep -nE 'Execution Order narrative|in the Execution Order' "$SKILL_MD"; then
++    printf 'FAIL: implement/SKILL.md still references the parallelization-level "Execution Order" producer contract removed by T4\n' >&2
++    return 1
++  fi
++}
++
++# ---------------------------------------------------------------------------
++# Pin 2: wave-dispatch prose anchors to the new `### Wave N` sub-section vocab
++# ---------------------------------------------------------------------------
++@test "[fix-int-w23-r01-t01] implement/SKILL.md reads wave ordering from Branch Map \`### Wave N\` sub-sections" {
++  # The consumer's wave-dispatch step must name the new producer anchor:
++  # the literal substring "`### Wave N` sub-section" (backtick-fenced
++  # heading shape followed by the word "sub-section"). This catches a
++  # future re-edit that drops the new vocabulary.
++  if ! grep -nE '`### Wave N` sub-section' "$SKILL_MD"; then
++    printf 'FAIL: implement/SKILL.md does not anchor wave-dispatch prose to the `### Wave N` sub-section vocabulary introduced by T4\n' >&2
++    return 1
++  fi
++}
