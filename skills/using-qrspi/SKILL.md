@@ -447,16 +447,27 @@ providers:
 
 #### `model_routing:` block
 
-Maps role names to provider-plus-model pairs. The dispatcher uses this block to resolve which model to call for a given role.
+Maps abstract Claude tier names to concrete versioned model IDs, per dispatch host. The dispatcher resolves an agent dispatch by (1) detecting the host CLI it is running under and (2) looking up the tier name carried on the agent (or `inherit` when the agent declares no explicit `model:` field).
 
 ```yaml
 model_routing:
-  researcher: my-provider/gpt-4o
-  reviewer:   my-provider/gpt-4o-mini
-  implementer: other-provider/claude-opus-4
+  claude-code:
+    haiku: claude-haiku-4.5
+    sonnet: claude-sonnet-4.6
+    opus: claude-opus-4.7-high
+    inherit: claude-sonnet-4.6
+  copilot-cli:
+    haiku: claude-haiku-4.5
+    sonnet: claude-sonnet-4.6
+    opus: claude-opus-4.7-high
+    inherit: claude-sonnet-4.6
 ```
 
-Each value is `<provider-name>/<model-id>` where `<provider-name>` MUST refer to an entry in the `providers:` block. Using a provider name that is absent from `providers:` is a config validation error (the dispatcher halts and reports the unknown provider rather than falling back silently).
+Top-level keys are the host names emitted by `detect_host` (see Codex dispatch transport routing). Each host sub-mapping contains exactly four tier rows: `haiku`, `sonnet`, `opus`, and `inherit`. Values are fully versioned model IDs (e.g. `claude-haiku-4.5`, not the bare tier short-form `haiku`) — Copilot CLI's model proxy emits a "model not available" warning for bare tier requests but accepts versioned IDs.
+
+See `#### Model Routing` below for the dispatch-time resolution flow.
+
+The orchestrator validates these invariants at config-load time and on every dispatch. When `detect_host` returns a host value for which `model_routing:` has no matching top-level key, when an agent's tier name (or the implicit `inherit`) matches no row under the matched host's sub-mapping, or when a tier value is a bare short-form (`haiku`, `sonnet`, `opus`) rather than a fully versioned model ID, the dispatcher halts and reports the missing or invalid entry. The dispatcher never falls back silently to the agent-bundled default and never passes the dispatch through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
 
 #### `trusted_path:` block
 
@@ -470,7 +481,7 @@ trusted_path:
 
 Entries can be:
 - A relative path to an agent `.md` file (relative to the repo root, e.g. `agents/qrspi-implementer.md`).
-- A role name string (matches entries in `model_routing:`).
+- A role name string (matches the `model_role:` value declared in an agent's frontmatter — independent of `model_routing:`'s host-keyed structure).
 
 `trusted_path:` is documented separately from the precedence chain below because it is a short-circuit, not a step in the chain — matching agents or roles bypass the chain entirely.
 
@@ -491,7 +502,7 @@ When the dispatcher resolves which model to call for a task, it applies this pre
 
 1. **Per-task `model:` override** — the `model:` field on an individual task spec, when present.
 2. **Hardcoded dispatch-site `model:`** — a `model:` value hard-coded at the dispatch site in a skill's SKILL.md.
-3. **`model_routing:` role lookup** — the role name resolved via the `model_routing:` block in `config.md`.
+3. **`model_routing:` host/tier lookup** — the concrete model ID resolved via the `model_routing:` block in `config.md`, indexed by the active dispatch host (from `detect_host`) and the tier name carried on the agent (or `inherit` when the agent declares no explicit `model:` field). See `#### \`model_routing:\` block` and `#### Model Routing` for schema + resolution flow.
 4. **Agent-bundled default** — the model bundled in the agent's own definition file.
 
 `trusted_path:` is a separate short-circuit outside this chain: when an agent-file path or role name matches a `trusted_path:` entry, the dispatcher skips steps 1–3 and routes directly to the agent-bundled default (step 4).
@@ -507,6 +518,32 @@ When `config.md` does not contain a `model_routing:` block, the dispatcher fires
 - The on-disk `config.md` is **never silently mutated** by the backfill. Dispatch defaults are applied in-memory only; the file on disk is unchanged.
 - No persistent marker is written to disk to track that the warning has already fired. Because no marker is written, there is no write-failure surface that could leave the on-disk config in an inconsistent state.
 - Each session sees the backfill defaults applied in-memory without changing the file on disk.
+
+#### Model Routing
+
+Resolution flow for agent tier names. When the dispatcher prepares an agent
+dispatch, it resolves the abstract Claude tier name carried on the agent
+(`haiku`, `sonnet`, `opus`, or the implicit `inherit` when the agent
+declares no explicit `model:` field) against the `model_routing` table in
+`config.md`. The lookup is a two-step indexing operation:
+
+1. **Host column selection.** The dispatcher calls `detect_host` (see the
+   per-host Codex dispatch transport routing section above) and uses its
+   output (`claude-code` or `copilot-cli`) to pick the matching top-level
+   key under `model_routing`.
+2. **Tier row selection.** The tier name on the agent (or `inherit` for
+   agents with no `model:` field) selects the row within the host's
+   sub-mapping. The mapped value is the concrete versioned model ID that
+   the dispatch transport will request.
+
+The `copilot-cli` column uses fully versioned Claude model IDs rather than
+bare tier short-forms because Copilot CLI's model proxy emits a
+"model not available" warning for bare `haiku` / `sonnet` / `opus` requests
+but accepts the full versioned IDs and routes them through to the upstream
+provider. The `inherit` row exists so that agents declaring no explicit
+`model:` field (the state established for all 41 agents after the T9 sweep)
+still resolve to a concrete model rather than relying on the host CLI's
+own fallback behavior, which differs between hosts.
 
 ## Config Validation Procedure
 

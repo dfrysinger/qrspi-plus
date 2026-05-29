@@ -77,3 +77,30 @@ release (see goals.md).
 the live Anthropic API) is dropped from this release: goals.md G7a / #205 retires
 the entire G4 cache-control mechanism (the spike script, its report, the dual-flag
 gate, and the two BATS pins). No Anthropic-API spike execution is in v0.7.1 scope.
+
+## Model routing (G7b / #204)
+
+Per-host resolution table for the four Claude agent tier names produced by
+`detect_host` (see `skills/using-qrspi/SKILL.md` Model Routing). Each host
+column maps every tier (`haiku`, `sonnet`, `opus`, `inherit`) to a fully
+versioned Claude model ID. The `copilot-cli` column uses full versioned IDs
+(never bare `haiku` / `sonnet` / `opus` short-forms) so that Copilot CLI's
+model proxy routes the dispatch without emitting the "model not available"
+warning that bare short-forms trigger. The `inherit` tier resolves to the
+sonnet default, matching Claude's resolver behavior for custom agents that
+declare no explicit `model:` field (the state established by T9 across all
+41 agent files).
+
+```yaml
+model_routing:
+  claude-code:
+    haiku: claude-haiku-4.5
+    sonnet: claude-sonnet-4.6
+    opus: claude-opus-4.7-high
+    inherit: claude-sonnet-4.6
+  copilot-cli:
+    haiku: claude-haiku-4.5
+    sonnet: claude-sonnet-4.6
+    opus: claude-opus-4.7-high
+    inherit: claude-sonnet-4.6
+```
