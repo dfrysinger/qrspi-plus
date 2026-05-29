@@ -590,24 +590,48 @@ if [[ -f "$ARTIFACT_DIR/config.md" ]]; then
   ' "$ARTIFACT_DIR/config.md")"
 fi
 
-# Check Codex availability for the detected host.  For the claude-code path,
-# if the companion glob is empty but codex_reviews says "true", emit a mismatch
-# warning.  The warning is stderr-only and does not affect dispatch or exit code.
+# Normalise codex_reviews to exactly "true" or "false" before any use.
 #
-# sec.F03 (R2): normalise _codex_reviews to exactly "true" or "false" before
-# any use — an unexpected value (which could carry terminal control sequences
-# from a crafted config.md) is treated as "false" and never echoed verbatim.
+# sec.F03 (R2): an unexpected value (which could carry terminal control
+# sequences from a crafted config.md) is treated as "false" and never echoed
+# verbatim.
 case "$_codex_reviews" in
   true|false) ;;
   *) _codex_reviews="false" ;;
 esac
+
+# Probe Codex availability for the detected host.  Capture the exit code so
+# we can propagate it exactly (no remapping) when short-circuiting.
 #
-# sf.F03 (R2): removed 2>/dev/null so that the check_codex_available stderr
-# diagnostic for unrecognised hosts reaches the operator's terminal.
-if ! check_codex_available "$_detected_host"; then
-  if [[ "${_codex_reviews}" == "true" ]]; then
-    echo "[mismatch] detected host=${_detected_host}, codex_reviews config=${_codex_reviews}" >&2
-  fi
+# sf.F03 (R2): no 2>/dev/null suppression so that any check_codex_available
+# diagnostic (e.g. unrecognised host, unsafe HOME) reaches the operator.
+if check_codex_available "$_detected_host"; then
+  _codex_available="true"
+  _check_exit=0
+else
+  _check_exit=$?
+  _codex_available="false"
+fi
+
+# Mismatch warning: detected-host Codex availability disagrees with the
+# codex_reviews config value.  Decoupled from the short-circuit below (T7):
+# the warning fires on ANY availability-vs-config disagreement, including the
+# copilot-cli + codex_reviews=false case where check_codex_available trivially
+# succeeds.  Warning-only — does not gate dispatch and does not override the
+# transport's exit code.  Fires at most once per dispatch (single >&2 emission).
+if [[ "$_codex_available" != "$_codex_reviews" ]]; then
+  echo "[mismatch] detected host=${_detected_host} (codex available=${_codex_available}), codex_reviews config=${_codex_reviews}" >&2
+fi
+
+# check_codex_available short-circuit (T7): when Codex is unavailable but the
+# run config requested Codex reviews, abort before invoking the transport.
+# Emit a single-line stderr diagnostic and propagate the EXACT non-zero exit
+# code returned by check_codex_available (no remapping, no log-and-continue).
+# When codex_reviews=false the wrapper falls through to dispatch unchanged so
+# callers that exercise the dispatch surface in isolation are not affected.
+if [[ "$_codex_available" == "false" && "$_codex_reviews" == "true" ]]; then
+  echo "[codex-unavailable] check_codex_available exit=${_check_exit} for host=${_detected_host} — aborting Codex dispatch" >&2
+  exit "$_check_exit"
 fi
 
 # Emit the transport marker and dispatch.  Exit code is propagated unchanged

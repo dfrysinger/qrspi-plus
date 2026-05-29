@@ -408,6 +408,13 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 > 1) No Codex reviews
 > 2) Use Codex for second reviews
 
+**Per-host Codex dispatch transport routing.** The Codex review dispatch surface routes per detected host. Two transports are supported, selected by `detect_host` at dispatch time:
+
+- **Copilot CLI host (`COPILOT_CLI=1`):** Codex review dispatch uses the native task tool transport. The dispatcher invokes the task tool with `agent_type: code-review` and `model: gpt-5.3-codex` (the Codex model identifier named in `design.md` and goal G6). No shell pipeline is involved — the task tool is the in-process transport. The dispatch surface emits the `[transport: task-tool]` trace marker to stderr exactly once at the call site that selects this branch.
+- **Claude Code host (`COPILOT_CLI` unset):** Codex review dispatch uses the shell-pipeline transport via `scripts/run-codex-review.sh`. The wrapper composes the reviewer prompt and pipes it through `scripts/run-third-party-llm.sh` to reach the Codex endpoint. The dispatch surface emits the `[transport: shell-pipeline]` trace marker to stderr exactly once at the call site that selects this branch.
+
+**Mismatch policy (warning-only, does not gate dispatch).** When the detected host's Codex availability disagrees with the `codex_reviews` config value, the dispatch surface emits a single-line `[mismatch]` diagnostic to stderr identifying the disagreement (detected host, observed availability, configured value) and **continues with the configured policy**. The mismatch diagnostic is warning-only: it does not block dispatch, does not gate the transport invocation, and does not override the transport's exit code. Separately, when `check_codex_available` reports Codex is not available for the detected host AND the run configuration requested Codex reviews (`codex_reviews: true`), the dispatch surface short-circuits with a single-line stderr diagnostic and propagates the non-zero availability-check exit code unchanged (no log-and-continue). The mismatch warning and the unavailability short-circuit are independent: the mismatch warning fires on any availability-vs-config disagreement, including the copilot-cli + `codex_reviews: false` case where Codex is trivially available but the user opted out.
+
 **No silent fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing or has missing/invalid fields, apply the **Config Validation Procedure** (see below). Skills do not silently default any field that affects pipeline behavior. There is no automatic derivation of the route — this avoids conditional branches in every skill.
 
 ### Dispatch routing blocks
