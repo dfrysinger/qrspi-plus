@@ -392,6 +392,9 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"extract_section_fence_aware:"* ]]
   [[ "$output" == *"### Target Section"* ]]
+  # Whitespace-only region is the empty-region path, not the missing-anchor path.
+  # The message body must NOT say "not found" — mirror the empty-region test pattern.
+  [[ "$output" != *"not found"* ]]
 }
 
 @test "[fence-aware-extractor] fenced-code fixture output matches parity contract (migration equivalence)" {
@@ -616,3 +619,128 @@ EOF
   # The next section's content must not bleed through.
   [[ "$out" != *"other content"* ]]
 }
+
+# =============================================================================
+# tc.F02: arity guard — extract_section_fence_aware rejects wrong arg counts
+# =============================================================================
+
+@test "[tc-F02] extract_section_fence_aware: arity guard rejects 0 args with status=1 and expected-2-args message" {
+  # tc.F02 (score 72, correctness): the arity guard at lines 222-225 of
+  # skill-markdown.bash emits "expected 2 args (file, anchor-heading); got %d"
+  # but was untested. This test confirms the guard fires on 0 args.
+  run extract_section_fence_aware
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"expected 2 args"* ]]
+}
+
+@test "[tc-F02] extract_section_fence_aware: arity guard rejects 1 arg with status=1 and expected-2-args message" {
+  # tc.F02 (score 72, correctness): confirm the arity guard fires on 1 arg.
+  run extract_section_fence_aware "only-one-arg"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"expected 2 args"* ]]
+}
+
+@test "[tc-F02] extract_section_fence_aware: arity guard rejects 3 args with status=1 and expected-2-args message" {
+  # tc.F02 (score 72, correctness): confirm the arity guard fires on 3 args.
+  run extract_section_fence_aware "arg1" "arg2" "arg3"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"expected 2 args"* ]]
+}
+
+# =============================================================================
+# tc.F01: unreadable-file guard — extract_section_fence_aware rejects chmod 000
+# =============================================================================
+
+@test "[tc-F01] extract_section_fence_aware: unreadable file returns status=1 with file-unreadable message" {
+  # tc.F01 (score 82, correctness): the unreadable-file guard at lines 229-232
+  # of skill-markdown.bash emits "extract_section_fence_aware: file unreadable:"
+  # but was untested. This test creates a file, chmod 000s it, calls the
+  # function, and asserts status=1 plus the unreadable message.
+  # Skip if running as root (root can always read files).
+  if [ "$(id -u)" -eq 0 ]; then
+    skip "running as root — chmod 000 does not block reads"
+  fi
+  local unreadable="$FIXTURE_DIR/unreadable.md"
+  printf '### Section\ncontent\n' > "$unreadable"
+  chmod 000 "$unreadable"
+  run extract_section_fence_aware "$unreadable" "### Section"
+  chmod 644 "$unreadable"   # restore before teardown tries rm -rf
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"extract_section_fence_aware:"* ]]
+  [[ "$output" == *"file unreadable"* ]]
+}
+
+# =============================================================================
+# tc.F03: H2 anchor — extract_section_fence_aware works with ## headings
+# =============================================================================
+
+@test "[tc-F03] extract_section_fence_aware: H2 anchor (## heading) is located and content extracted" {
+  # tc.F03 (score 75, correctness): the awk boundary rule is
+  # '/^## / || /^### /' but all 14 prior tests use only H3 anchors. This test
+  # exercises the H2 code path — happy path is sufficient.
+  cat > "$FIXTURE_DIR/h2-anchor.md" <<'EOF'
+## Overview
+Overview line one
+Overview line two
+
+## Next Section
+Other content
+EOF
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/h2-anchor.md" "## Overview")"
+  [ "$?" -eq 0 ]
+  # Anchor line included (anchor-inclusive contract).
+  [[ "$out" == *"## Overview"* ]]
+  # Content lines present.
+  [[ "$out" == *"Overview line one"* ]]
+  [[ "$out" == *"Overview line two"* ]]
+  # Next section must not bleed through.
+  [[ "$out" != *"## Next Section"* ]]
+  [[ "$out" != *"Other content"* ]]
+}
+
+# =============================================================================
+# tc.F04: TOCTOU test — capture and assert output content, not just status
+# =============================================================================
+
+@test "[tc-F04] extract_section_fence_aware: TOCTOU-safe call returns status=0 and correct content for existing anchor" {
+  # tc.F04 (score 75, correctness): the sec-F01 TOCTOU test called the function
+  # with '>/dev/null 2>&1 || true', discarding both output and status. That
+  # means a regression breaking the return value would not be caught. This test
+  # strengthens the TOCTOU scenario by asserting the function also correctly
+  # returns content for the anchor that existed at check-time (i.e., the mktemp
+  # guard doesn't break the happy path while guarding against symlink attack).
+
+  local attack_target="$FIXTURE_DIR/tc-f04-attack-target"
+  printf 'ORIGINAL_CONTENT\n' > "$attack_target"
+
+  # Plant the predictable symlink (same technique as sec-F01 test).
+  local predictable_path="/tmp/skill-md-fence-signal-$$"
+  ln -sf "$attack_target" "$predictable_path"
+
+  # Fixture: valid section with identifiable content.
+  cat > "$FIXTURE_DIR/tc-f04-valid.md" <<'EOF'
+### Checked Section
+content-line-alpha
+content-line-beta
+### Boundary
+EOF
+
+  # Capture status and output — do NOT discard with /dev/null.
+  local out
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/tc-f04-valid.md" "### Checked Section" 2>/dev/null)"
+  local rc=$?
+
+  # Cleanup symlink regardless.
+  rm -f "$predictable_path"
+
+  # The function must succeed and produce the correct content.
+  [ "$rc" -eq 0 ]
+  [[ "$out" == *"### Checked Section"* ]]
+  [[ "$out" == *"content-line-alpha"* ]]
+  [[ "$out" == *"content-line-beta"* ]]
+  # The attack target must retain its original content (symlink was not followed).
+  local target_content
+  target_content="$(cat "$attack_target")"
+  [ "$target_content" = "ORIGINAL_CONTENT" ]
+}
+
