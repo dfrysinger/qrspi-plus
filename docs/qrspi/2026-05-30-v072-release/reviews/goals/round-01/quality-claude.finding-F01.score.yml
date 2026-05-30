@@ -1,0 +1,2 @@
+score: 70
+reason: G23 violates the documented "Solutions-as-possibilities framing" contract from Goals SKILL.md § line 228, which explicitly requires candidates to use "Design should weigh" phrasing. The violation is real and present in the artifact, and is inconsistent with all other goals in the same file. However, the practical impact is low (narrow solution space) and the finding itself acknowledges this.

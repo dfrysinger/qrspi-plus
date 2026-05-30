@@ -608,7 +608,7 @@ Silent-pass tests are exactly the failure class QRSPI exists to catch — a gree
 
 #### What we know so far
 
-**Known-good replacement** (already used in R5 pins): `body="$(_extract_h4 ...)"; [ -n "$body" ]; echo "$body" | grep -q "expected text"`. Four single-line additions retrofit the asymmetric R2/R4 pins to match R5.
+A safer assertion form is already exercised by the R5-era pins in the same test file — Design has a known-good in-repo reference pattern available rather than having to derive one from scratch. Whether the fix takes that exact shape, a refactored helper, or a banned-anti-pattern lint approach is Design's call; the in-repo precedent is an example to weigh, not a commitment to copy verbatim.
 
 **Root-cause investigation needed** (carried from #244):
 
@@ -618,8 +618,8 @@ Silent-pass tests are exactly the failure class QRSPI exists to catch — a gree
 
 Candidates Design should weigh:
 
-- **Retrofit-only:** 4-line mechanical change to the 2 asymmetric pins; close #238 immediately, leave #244 investigation for a future release.
-- **Retrofit + lint rule:** mechanical retrofit plus a custom shellcheck / pre-commit hook that bans the `[[ ... && =~ ... ]]` form in `@test` blocks. Prevents recurrence.
+- **Retrofit-only:** narrowly-scoped retrofit of the asymmetric R2/R4 pins to match the safer R5-era pattern; close #238 immediately, leave #244 investigation for a future release.
+- **Retrofit + lint rule:** retrofit plus a custom shellcheck / pre-commit hook that bans the `[[ ... && =~ ... ]]` form in `@test` blocks. Prevents recurrence.
 - **Retrofit + lint rule + bats upstream investigation:** full closure including upstream report or version pin update if the behavior is fixed in a newer bats.
 
 Source: #238, #244
@@ -684,9 +684,13 @@ Config-authoring time is the highest-leverage opportunity to communicate the req
 
 #### What we know so far
 
-Mechanical addition: one row in the validation table plus cross-link annotations on L470/L526. Single paragraph of work.
+The solution space is narrow — Candidates Design should weigh:
 
-**Coupling with G22 (model-routing schema drift).** If G22 lands a canonical-schema decision that reorganizes `model_routing:`, this fix should land in the same edit pass — the validation table row needs to describe whichever schema (tier-keyed vs. role-keyed vs. both) wins. Implementing G23 in isolation produces churn if G22 lands later. Order suggestion: G22 first, G23 as a sub-task of the same Plan-phase wave.
+- Add a new row to the validation table that names `model_routing:` and references the runtime fail-loud paragraphs (L470, L526).
+- Inject cross-link annotations on L470 / L526 that point back to the validation table row, so the doc anchors stay bidirectionally discoverable.
+- Replace the validation table with a generated index sourced from a single canonical list of required blocks, so future omissions cannot recur.
+
+**Coupling with G22 (model-routing schema drift).** Whichever schema G22 selects (tier-keyed, role-keyed, or both) shapes how the validation row should describe `model_routing:`. Implementing this goal in isolation risks churn if G22 lands later with a reorganized schema; Phasing should evaluate that coupling.
 
 Source: #240
 
@@ -754,15 +758,15 @@ Persistent warning noise on every test run desensitizes the operator to test out
 
 #### What we know so far
 
-Mechanical fix per bats docs — replace shebang. Two options:
+The bats upstream documentation enumerates the replacement shebang forms; Candidates Design should weigh:
 
-- `#!/usr/bin/env -S bats -t` (TAP mode)
-- `#!/usr/bin/env bats` + `bats_load_library bats-support` (if TAP mode is not needed)
+- Adopt the TAP-mode shebang form recommended by the BW02 warning.
+- Adopt the alternative shebang form that pairs with explicit library loading, when TAP mode is not needed.
 
 **Investigation extension Design may weigh:**
 
-- Sweep ALL `.bats` files for the same deprecated shebang and fix in one pass (avoid the same recurrence pattern as G21 / R5-vs-R2-R4 asymmetric pin fix).
-- Consider adding a shellcheck / pre-commit rule that bans the deprecated shebang, so the regression cannot re-emerge — pairs naturally with the lint-rule extension in G21.
+- Sweep ALL `.bats` files for the same deprecated shebang and fix in one pass (avoid the asymmetric-fix recurrence pattern flagged in G21).
+- Add a shellcheck / pre-commit rule that bans the deprecated shebang so the regression cannot re-emerge — pairs naturally with the lint-rule extension in G21.
 
 Source: #243
 
@@ -780,14 +784,17 @@ Every Copilot-CLI operator is silently opted out of Codex reviews today. The hos
 
 #### What we know so far
 
-Fix shape (carried verbatim from #253):
+The repository already ships canonical helper functions in `scripts/run-codex-review.sh` (`detect_host`, `check_codex_available`) that the dispatcher consumes; the question is how the Goals skill should reach the same answer.
 
-1. **Direct shell call at probe time (preferred):** `bash -c 'set -e; QRSPI_SOURCE_ONLY=1 source scripts/run-codex-review.sh; check_codex_available "$(detect_host)"'`. One source of truth, three consumers (dispatcher, Goals probe, any future consumer).
-2. **Documented contract reference (lower-risk):** keep prose in the skill, but cite the function names + their behavior verbatim so the skill prose is forced to stay in sync with the script. Inferior — drift returns the moment the script changes.
+Candidates Design should weigh:
+
+- **Single source of truth at probe time:** have the Goals probe invoke the same canonical helper functions the dispatcher uses, so all consumers (dispatcher, Goals probe, any future consumer) agree by construction.
+- **Documented contract reference:** keep probe prose in the skill but pin it to the helper's function names and observable behavior so the skill prose is forced to stay synchronised with the script. Lower-risk; drift returns the moment the script changes.
+- **Generated probe:** auto-generate the skill's probe snippet from the helper script at build time, eliminating the manual sync surface entirely.
 
 **Cross-link with G18 (#235 Plan-phase under-scoping).** This is instance #10 of the same v0.7.1 pattern G18 tracks — the hardening work landed the dispatcher-side helper but did not enumerate the Goals-side consumer as a downstream surface. The fix here is small and independent; G18's mitigation work would prevent the next such instance.
 
-**Cross-link with G22 (model-routing schema drift).** Same "one canonical source, multiple drifted consumers" pattern. Could share a Plan-phase consumer-enumeration sweep.
+**Cross-link with G22 (model-routing schema drift).** Same "one canonical source, multiple drifted consumers" pattern. Could share a consumer-enumeration sweep — Phasing decides whether to bundle.
 
 Source: #253
 
@@ -795,7 +802,7 @@ Source: #253
 
 - **Reviewer-pipeline correctness cluster (G6 / G7 / G8 / G9 / G10 / G11 / G12 / G13 / G14 / G19 / G20).** These goals all address the reliability of the reviewer→verifier→orchestrator pipeline: disk-write contract (G6/G11), field-schema enforcement (G8/G13), threshold-rule location and DRY (G7/G12), rubric calibration (G14/G19/G20), orchestration drift (G9), and authority-fabrication (G10). G11 and G12 form a tightly coupled pair (contract then consumer); G7, G12, and G13 share a "one place for the canonical filter rule" resolution path; G14 and G19 share a verifier-rubric expansion path also relevant to G10.
 
-- **Dispatch-routing schema cluster (G22 / G23 / G24-F02 / G24-F04 / G25 / G27).** These goals all touch `model_routing:` / dispatch-path in `using-qrspi/SKILL.md`: schema reconciliation (G22), validation table (G23), per-H4 prose redundancy (G24-F02) and tier-regex consolidation (G24-F04), top-level fail-loud invariant (G25), and Goals-side inline probe (G27). G22 is the anchor — its canonical-schema decision shapes G23's table row, G24-F02/F04's consolidation target, and G25's invariant scope. Landing these in a single Plan-phase wave avoids repeated churn on the same H4 paragraphs.
+- **Dispatch-routing schema cluster (G22 / G23 / G24-F02 / G24-F04 / G25 / G27).** These goals all touch `model_routing:` / dispatch-path in `using-qrspi/SKILL.md`: schema reconciliation (G22), validation table (G23), per-H4 prose redundancy (G24-F02) and tier-regex consolidation (G24-F04), top-level fail-loud invariant (G25), and Goals-side inline probe (G27). G22 is the anchor — its canonical-schema decision shapes G23's table row, G24-F02/F04's consolidation target, and G25's invariant scope. The cluster shares the same H4 paragraphs as an edit surface; Phasing should evaluate whether the cluster benefits from being scheduled together.
 
 - **Test-gate hardening cluster (G21 / G24-F05 / G26).** These goals address brittleness in the bats test harness: silent-pass `[[ ]]` form (G21), literal anti-pattern pin fragility (G24-F05), and deprecated shebang noise (G26). All three are small, mechanical, and share a "add a lint rule to prevent recurrence" extension candidate — a single "test-pin hardening" wave covers all three.
 

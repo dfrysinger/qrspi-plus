@@ -1,0 +1,2 @@
+score: 79
+reason: Verified violation of SKILL.md Iron Law #3 (line 506): solution candidates must be framed as "possibilities for Design to weigh, never as commitments." Both G23 and G26 use declarative language ("Mechanical addition", "Mechanical fix") that pre-commits approaches rather than presenting them as design options. The finding correctly identifies specific violations with line numbers and textual evidence; the requirement is documented and load-bearing.
