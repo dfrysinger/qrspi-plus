@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Research Summary
@@ -500,3 +500,7 @@ status: draft
 - **Q13 × Q15 — `run-codex-review.sh` security asymmetry**: Q15 documents `detect_host` and `check_codex_available` and their `realpath`/`readlink -f` and `HOME` safety guards; Q13 reveals that `resolve_path()` — used for `--subject-code` and `--companion` paths — applies no canonicalization at all, a materially weaker treatment than the environment-detection helpers in the same script.
 - **Q14 × Q19 — per-task review delegation and diff-anchor mechanics**: Q14 shows `implement/SKILL.md` is a delta spec that defers the convergence-rule table and diff-emission preconditions to `using-qrspi`; Q19 confirms that `using-qrspi/SKILL.md` is the sole canonical source for the diff-anchor algorithm and that no script implements it — it is orchestrator-executed prose throughout.
 - **Q10 × Q23 — spec-vs.-as-built output patterns**: Q10 documents the `**Manual Validation:**` section as an undocumented de facto extension of the task spec template; Q23 documents `severity: suggestion`, `status: advisory-not-applied`, and `orchestrator_decision:` as non-canonical fields added to Codex findings post-hoc — both illustrating how runtime practice extends documented schemas without updating the canonical spec.
+- **Q24 × Q26 — Reviewer dispatch mechanics / artifact delivery form**: Q24 documents the `artifact_body` parameter used in every per-skill Claude and Codex dispatch shape; Q26 confirms `artifact_body` (inline-wrapped form) is the sole mechanism prescribed by `reviewer-protocol/SKILL.md § Reviewer Dispatch Contract`, with `artifact_path` absent from all reviewer dispatch shapes.
+- **Q26 × Q27 — Out-of-contract `artifact_path` use**: Q26 establishes that `artifact_path` is not a reviewer dispatch parameter in any current contract; Q27 documents the only observed ad-hoc use — the v072 87 KB `research/summary.md` dispatched via `artifact_path` (commit `45625ed`, goals.md G29 / PI-012) — which seeded the G29 goal to canonize path-based dispatch for large artifacts.
+- **Q25 × Q3 — Threshold rules / no cluster exception**: Q3 covers the ≥80/≥70 filter thresholds applied in the apply-fix protocol; Q25 confirms those rules contain no cluster-exception text anywhere in `skills/`, `agents/`, or `scripts/`, with all observed cluster-application rationale confined to v072 orchestrator dispositions files.
+- **Q24 × Q4 × Q5 — Codex dispatch path (extended)**: Q4 and Q5 cover the Codex dispatch path trinity (task-tool decision, `run-codex-review.sh` internal wiring); Q24 extends that coverage to all 11 per-skill SKILL.md files and documents the boilerplate-present (goals–parallelize, 7 skills) vs. boilerplate-absent (plan–test, 4 skills) split, with the wrapper supplying the emission format for the latter group.
