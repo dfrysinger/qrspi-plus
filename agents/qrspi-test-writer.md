@@ -230,6 +230,10 @@ After writing tests, produce both tables:
 - Tests MUST NOT be flaky — no timing dependencies, no external service calls without mocks
 - Do NOT write tests for internal implementation details — test observable behavior
 
+### Skip-Guards and Capability Probes
+
+Skip-guards and capability probes must reach their `skip` decision under their stated failure conditions. When you write a precondition check that decides whether to run or skip a test (tool present, environment variable set, OS or runner version sufficient, file fixture available), that check by definition runs in environments where the precondition might be unmet — that is the case it exists to handle. Mentally execute the guard in that environment: does control reach the `skip` line, or does an earlier statement in the guard fail first? A guard that errors before it can skip is worse than no guard at all: it converts an unsupported environment from a clean skip into a hard failure, exactly inverting the guard's intent.
+
 ### Report Format
 
 When done, report:
