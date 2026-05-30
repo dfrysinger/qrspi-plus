@@ -848,7 +848,7 @@ Same context-hygiene concern that motivated the collator's staging-filename / ve
 
 The v0.7.2 self-host used an ad-hoc workaround: pass `artifact_path: <abs>` instead of wrapped body, and instruct the reviewer to Read the file and treat its content as if it had arrived between `<<<UNTRUSTED-ARTIFACT-START id={artifact_name}>>>` / `<<<UNTRUSTED-ARTIFACT-END id={artifact_name}>>>` markers. Applied across research R1 (Claude + Codex) and research R2 (Claude + Codex). No fidelity loss observed; R2 came back clean.
 
-The path-based variant is **strictly stronger** prompt-injection defense than the wrapped-body variant: artifact content materializes only inside the subagent's context via its Read tool, never touching the orchestrator's dispatch prompt or process memory. The `<<<UNTRUSTED-ARTIFACT-START>>>` framing is preserved by the reviewer's treatment of Read output as the wrapped body. The path-based form's protective semantics are at least equivalent to (and arguably stronger than) the wrapped-body form.
+Observation on dispatch mechanics (Design should evaluate, not treat as a verdict): with the wrapped-body form, artifact content travels through the orchestrator's dispatch prompt; with the path-based form, content materializes only when the subagent issues its own Read call. The `<<<UNTRUSTED-ARTIFACT-START>>>` framing is preserved in either case (in the path-based variant by the reviewer's treatment of Read output as the wrapped body). The security-properties comparison between the two forms is a Design-level trade-off.
 
 Candidates Design should weigh:
 
