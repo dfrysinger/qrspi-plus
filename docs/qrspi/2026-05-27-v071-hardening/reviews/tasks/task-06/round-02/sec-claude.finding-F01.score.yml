@@ -1,0 +1,2 @@
+score: 76
+reason: Real security issue introduced by the task (in-scope per updated rubric). Both dispatch branches execute identical commands despite the spec promising different "transport selection paths"; COPILOT_CLI is untrusted and trivially spoofed to forge audit logs, violating the spec's promise of a reliable marker indicating which path was taken.

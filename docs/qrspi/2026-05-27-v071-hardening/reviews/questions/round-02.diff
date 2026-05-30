@@ -1,0 +1,41 @@
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/questions.md b/docs/qrspi/2026-05-27-v071-hardening/questions.md
+new file mode 100644
+index 0000000..ca0d808
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/questions.md
+@@ -0,0 +1,35 @@
++---
++status: draft
++---
++
++# Research Questions
++
++1. [codebase] What does the control-character detection routine in `scripts/run-third-party-llm.sh` look like: what tool and flags does it invoke, what pattern does it match against, and what code paths does the detection result gate?
++
++2. [web] What POSIX-portable shell techniques exist for detecting the presence of control characters in a string, and how do their behaviors and portability characteristics differ across macOS system tools and GNU/Alpine counterparts?
++
++3. [codebase] What is the step-by-step commit procedure defined in `skills/implementer-protocol/SKILL.md`, specifically the sequence in which the scratch message file is created, `git add` is run, and `git commit -F` is invoked?
++
++4. [codebase] What paths and glob patterns does the repo's `.gitignore` currently match, and what categories of generated artifacts (test outputs, review staging, broker scratch, lock files) do those entries cover?
++
++5. [codebase] What functions does `tests/helpers/skill-markdown.bash` export, and what are the parameter contracts and exit-anchor behaviors for `extract_section` and any related section-extraction helpers, including how the helper determines where a section ends?
++
++6. [codebase] What columns and rows make up the Branch Map table in the current `skills/parallelize/SKILL.md` worked examples, and how is wave / execution-order information currently presented (table, prose, or both) in that skill?
++
++7. [codebase] What token patterns does `tests/unit/test-evergreen-markdown.bats` enforce, what file paths are currently exempted via carve-outs or inline markers, and what is the exact syntax used to declare those exemptions?
++
++8. [codebase] How does `skills/using-qrspi/SKILL.md` determine Codex availability today: what filesystem paths does it probe, what config keys does it inspect, and what dispatch code path does a positive detection activate?
++
++9. [web] What environment variables does GitHub Copilot CLI set in the subprocess environment when launching an agent, and is there any documented or de-facto-stable signal that an embedded shell script can use to identify it as the host CLI?
++
++10. [codebase] What is the full current footprint of the prompt-cache mechanism in the repo, including every occurrence of `supports_prompt_cache` and `emit_cache_control_markers` (with their conditional context and gate logic), any dedicated cache-probe scripts under `scripts/`, any spike or evidence documents under `docs/qrspi/`, and any acceptance-suite pins or unit BATS files that reference cache-control behavior?
++
++11. [codebase] What `model:` values are declared in the YAML frontmatter across `agents/*.md`, and which dispatching skills or dispatcher scripts read or act on that field when scheduling an agent invocation?
++
++12. [web] How do multi-host AI-agent plugin projects that target two or more of Claude Code, Copilot CLI, Cursor, and Codex CLI simultaneously express agent model selection in their agent manifests, and what model-tier vocabularies and dispatch conventions appear across those projects?
++
++13. [codebase] What is the current definition and full call-site list of the helper invoked to extract a single review round's findings from the review-state structure (e.g. `extract_review_round` or similarly named helpers in `tests/helpers/` or `scripts/`)? Where is it defined, what are its parameters and return shape, and which test files and scripts invoke it today?
++
++14. [codebase] What linting rules does the Plan-step reviewer's prompt template currently enforce against the Branch Map table format (column set, header ordering, required cells, wave-numbering convention), and where in `agents/` or `skills/plan/` are those rules declared?
++
++15. [codebase] Under which host environments is `scripts/run-third-party-llm.sh` invoked today? Trace the call sites that reach it from skill prose, reviewer dispatch, and the broker companion scripts, and identify whether any of those call sites are gated on a host-specific signal.

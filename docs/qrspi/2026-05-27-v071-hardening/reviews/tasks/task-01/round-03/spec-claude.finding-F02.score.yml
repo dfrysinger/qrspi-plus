@@ -1,0 +1,2 @@
+score: 65
+reason: The finding is verified accurate — line 649 of the artifact calls `_control_char_check "api_key_env/${API_KEY_ENV}" "$_API_KEY"` and the corresponding 42nd test is not traceable to any of the 12 enumerated test expectations in task-01.md, creating a genuine spec-traceability gap; however the spec's broad "every header value is screened" language (task-01.md line 16) provides arguable coverage, and the behaviour and test are correct, making this a moderate-confidence advisory gap rather than a blocking defect.

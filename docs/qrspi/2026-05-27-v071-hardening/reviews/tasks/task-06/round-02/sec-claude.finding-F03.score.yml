@@ -1,0 +1,2 @@
+score: 85
+reason: Real security vulnerability (terminal escape/log injection) confirmed in code at lines 526-542; introduced this round per diff; exploitable in multi-tenant CI environments; recommendation is sound and actionable.

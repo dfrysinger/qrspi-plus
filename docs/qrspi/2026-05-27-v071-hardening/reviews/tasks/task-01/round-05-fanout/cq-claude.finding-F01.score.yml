@@ -1,0 +1,2 @@
+score: 80
+reason: All three instances are confirmed present exactly as described at lines 696, 715-716, and 758 — reviewer-round finding IDs ("security-claude F03", "sf-codex F01 / sf-claude F02", "security-claude F01") are committed into test-file comments, constituting real ID-hygiene violations with no navigable path back for future maintainers.

@@ -1,0 +1,2 @@
+score: 72
+reason: Real correctness issue—check_codex_available's stderr diagnostic is intentionally designed but permanently suppressed by 2>/dev/null at line 540, creating an architectural silent-failure point. Issue is well-documented, has a straightforward fix (remove 2>/dev/null), but marked appropriately low-severity since it doesn't affect current operation.

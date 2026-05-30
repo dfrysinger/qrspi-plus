@@ -1,0 +1,10 @@
+--- structure.md (R4 reviewed)
++++ structure.md (R5 to review)
+@@ -38,6 +38,7 @@
+ |------|--------|----------------|----------|
+ | `skills/parallelize/SKILL.md` | Modify | Reshape the Branch Map content (in the `## Artifact` specification and the worked-example output shape) from a flat three-column table into `### Wave N` sub-sections, each containing a Task/Branch/Base mini-table; drop the now-redundant Execution Order narrative from the same locations; update the inline Good and Bad worked-example pairs to the Wave-grouped shape | G4 |
+ | `agents/qrspi-parallelize-reviewer.md` | Modify | Update the Branch Map structural-rule assertions to require `### Wave N` sub-section grouping rather than the flat three-column layout | G4 |
++| `tests/unit/test-parallelize-vocab.bats` | Modify | Add assertion pinning the `### Wave N` sub-section structural rule against `agents/qrspi-parallelize-reviewer.md`; adapt existing Wave-vocabulary assertions to reference the new sub-section grouping shape | G4 |
+ 
+ ### Slice 5: Drop evergreen-lint path carve-outs (G5)
+ 

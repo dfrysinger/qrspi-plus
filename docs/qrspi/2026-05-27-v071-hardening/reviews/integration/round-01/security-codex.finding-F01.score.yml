@@ -1,0 +1,2 @@
+score: 62
+reason: Reproduction confirmed live (resolve_path accepts /etc/hosts, emit_untrusted_artifact cats it into the prompt) and composition with Hotfix A's Bash grants is genuinely integration-emergent (per-task reviews wouldn't cross-check both surfaces); severity-HIGH is slightly inflated because prompt-injected Bash-granted agents already have many exfil paths and test-writer.md's Bash allowlist excludes invoking run-codex-review.sh, but the path-containment hardening fix is sound and matches T6's existing canonicalization pattern.

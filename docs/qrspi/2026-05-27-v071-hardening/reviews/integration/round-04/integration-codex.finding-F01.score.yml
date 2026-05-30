@@ -1,0 +1,2 @@
+score: 38
+reason: Real but mild doc-discoverability gap; the §641-653 table is per-skill validation (skills don't consume `model_routing`; the dispatcher does), and §510-520 (absent block → warning + bundled defaults) vs §470 (in-block invariants → halt) are scoped to disjoint cases, so the "two incompatible contracts" framing is overstated — this is polish, not a sharp correctness break, and below the correctness-70 KEEP bar.

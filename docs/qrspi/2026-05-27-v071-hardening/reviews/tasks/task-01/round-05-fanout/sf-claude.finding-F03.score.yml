@@ -1,0 +1,2 @@
+score: 82
+reason: Confirmed — line 223 hardcodes "default_headers" unconditionally, so the api_key_env call at line 649 produces a misleading die message that contradicts the intent stated in the comments at lines 647-648.

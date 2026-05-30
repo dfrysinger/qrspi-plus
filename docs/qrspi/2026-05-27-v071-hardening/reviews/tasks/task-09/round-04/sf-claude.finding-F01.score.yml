@@ -1,0 +1,2 @@
+score: 78
+reason: Bug verified by awk trace: when block scalar is the last frontmatter key, `in_scalar` never clears because the reset rule requires a non-whitespace non-`---` line, closing `---` doesn't trigger exit when `in_scalar=1`, function continues reading body as frontmatter causing false positives. Existing test gap confirms lack of coverage for scalar-at-end scenario. Real correctness issue that violates function contract.

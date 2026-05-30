@@ -31,8 +31,8 @@ bats_require_minimum_version 1.5.0
 #
 # Task 22 migration: inline section-extraction helpers replaced by shared
 # tests/helpers/skill-markdown.bash. REPO_ROOT resolved via require_repo_root.
-# extract_review_round is retained as a local helper (fence-aware, not
-# replaceable by the generic extract_section).
+# extract_review_round migrated to extract_section_fence_aware in the shared
+# helper (fence-aware extractor promoted in task-03).
 
 load '../helpers/skill-markdown'
 
@@ -158,23 +158,6 @@ setup() {
 #         requires every skill that reads config.md to invoke the Config
 #         Validation Procedure instead. Design must validate codex_reviews.
 
-# extract_review_round <file>
-# Extracts the `### Review Round` subsection from the design SKILL.md, robust
-# to fenced code-block content (which contains `## Approach`, `## Key
-# Decisions`, etc., that would otherwise confuse the simple H2 extractor).
-# Tracks code-fence state and only stops on a real (out-of-fence) `### `/`## `
-# heading after the Review Round heading is entered.
-extract_review_round() {
-  local file="$1"
-  awk '
-    /^```/ { fence = !fence; if (in_b) print; next }
-    !fence && $0 == "### Review Round" { in_b = 1; print; next }
-    in_b && !fence && /^### / { exit }
-    in_b && !fence && /^## / { exit }
-    in_b { print }
-  ' "$file"
-}
-
 @test "[T36-1] design SKILL Review Round Claude-reviewer checks no longer reference deprecated 'acceptance criteria' phrasing" {
   # The Review Round subsection (under ### Review Round) authors the Claude
   # reviewer prompt's check list. Per T9's strip-from-goals contract,
@@ -182,7 +165,7 @@ extract_review_round() {
   # reviewer cannot meaningfully check "design addresses ... acceptance
   # criteria" at design time. The deprecated wording must be gone.
   local section
-  section=$(extract_review_round "$DESIGN_FILE")
+  section=$(extract_section_fence_aware "$DESIGN_FILE" "### Review Round")
   if [ -z "$section" ]; then
     echo "Could not extract '### Review Round' subsection from design SKILL.md" >&2
     return 1
@@ -203,7 +186,7 @@ extract_review_round() {
   # (matches structure SKILL's analogous reviewer-prompt phrasing) — is
   # present inside the Review Round subsection.
   local section
-  section=$(extract_review_round "$DESIGN_FILE")
+  section=$(extract_section_fence_aware "$DESIGN_FILE" "### Review Round")
   if [ -z "$section" ]; then
     echo "Could not extract '### Review Round' subsection from design SKILL.md" >&2
     return 1

@@ -385,7 +385,7 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 - `route`: ordered list of skill names this run will execute (see Route Templates above)
 - `review_depth`: `quick` (4 correctness reviewers) or `deep` (all 8 reviewers) — written by Implement at phase start
 - `review_mode`: `single` or `loop` — written alongside `review_depth`
-- `verifier_enabled`: boolean, default `true`. When `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` per finding-file in parallel and filters style/clarity/correctness findings at score ≥80 before applying. When `false`, the protocol skips verifier dispatch entirely and keeps all findings via the "no sidecar → keep" branch. Set at run creation by Goals; edit `config.md` directly between rounds to disable for the whole run. See "Fields that affect pipeline behavior" below for the full behavioral contract.
+- `verifier_enabled`: boolean, default `true`. When `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` per finding-file in parallel and filters findings by `change_type`: style/clarity at score ≥80 (high bar for nitpicks) and correctness at score ≥70 (lower bar for hardening-relevant correctness gaps — silent failures, attack surface, and other correctness gaps that the rubric tends to score in the 72-78 "real but low-severity" band would be lost at the higher threshold). When `false`, the protocol skips verifier dispatch entirely and keeps all findings via the "no sidecar → keep" branch. Set at run creation by Goals; edit `config.md` directly between rounds to disable for the whole run. See "Fields that affect pipeline behavior" below for the full behavioral contract.
 - `scope_tagger_enabled`: boolean, default `true`. When `true`, the Apply-fix protocol dispatches one `qrspi-scope-tagger` per round and uses the resulting scope-set to drive narrow-vs-broaden convergence comparisons across rounds. When `false`, no tagger dispatch fires and reviewer dispatch falls through to full-base-diff behavior. Set at run creation by Goals; edit `config.md` directly between rounds to disable convergence narrowing for the whole run. See "Fields that affect pipeline behavior" below for the full behavioral contract.
 - `visual_fidelity_required`: boolean, default `false`. When `true`, the run opts into the visual-fidelity binding chain (Design must include a wireframe binding subsection, Phasing must cite wireframe artifacts per UI phase, Plan must populate `visual_fidelity_check` on UI-producing tasks, and Implement dispatches the visual-fidelity reviewer). When `false`, the chain is silent — no dispatch, no extra gates.
 - `question_budget`: integer, default `5`, valid range 1–50 inclusive. Used by the Research skill to cap the number of research specialists dispatched in parallel when `pipeline: quick`. Written to `config.md` ONLY when the run is `pipeline: quick`; on full-pipeline runs the field is omitted from `config.md` entirely (no cap applies — Research dispatches per its own scaling rules). The lower cap exists because quick-fix mode trades research breadth for throughput; a small fixed budget keeps the autonomous Research step bounded so the cascade gate documented under the pipeline-mode behavioral semantics below stays cheap. The upper cap of 50 exists because Research specialist dispatch fan-out wider than 50 exhausts orchestrator subagent slots and produces diminishing-returns coverage; the validator fixture (`tests/fixtures/validate-config-field.sh`) enforces both bounds.
@@ -394,7 +394,7 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 
 **Behavioral semantics — `pipeline: quick` (auto-approve cascade and surviving human gates):** The `pipeline: quick` mode is more than a route shortener — it changes how human approval is sequenced across the run. Three things hold under quick-fix mode:
 
-1. **Auto-approve cascade for Questions, Research, and Plan.** These three autonomous steps still run their full review loops (Claude reviewers, Codex reviewers when `codex_reviews: true`, the verifier when `verifier_enabled: true`), and findings still write to disk under `reviews/{step}/round-NN/`. What changes is the human gate after the loop. When a review round produces zero kept findings AFTER verifier filtering — either the initial round emerged clean, or the first fix round closed every kept finding from the prior round — the step writes `status: approved` automatically without prompting the user. The "zero kept findings" trigger is the post-verifier-filter count (the count after the artifact-level Apply-fix protocol applies the verifier's score-≥80 filter to style/clarity/correctness findings), NOT the pre-filter raw findings count emitted by reviewer subagents; this disambiguates the trigger so downstream cascade-branch implementations cannot diverge on whether a verifier-suppressed finding still counts toward the cascade gate. The cascade is a single hop per step (initial-clean OR first-fix-clean), not an unbounded loop; if the fix round still carries kept findings the step pauses for human input via the standard Review-Loop Pause Gate. The `question_budget` field (default `5`) caps Research specialist dispatch under this cascade so the autonomous Research step stays bounded. The line-by-line implementation of the cascade branch in each of these three skills is owned by the respective skill body — `using-qrspi/SKILL.md` is the contract surface that names the behavior; the per-skill implementations carry the wiring.
+1. **Auto-approve cascade for Questions, Research, and Plan.** These three autonomous steps still run their full review loops (Claude reviewers, Codex reviewers when `codex_reviews: true`, the verifier when `verifier_enabled: true`), and findings still write to disk under `reviews/{step}/round-NN/`. What changes is the human gate after the loop. When a review round produces zero kept findings AFTER verifier filtering — either the initial round emerged clean, or the first fix round closed every kept finding from the prior round — the step writes `status: approved` automatically without prompting the user. The "zero kept findings" trigger is the post-verifier-filter count (the count after the artifact-level Apply-fix protocol applies the verifier's by-change_type threshold — ≥80 for style/clarity, ≥70 for correctness), NOT the pre-filter raw findings count emitted by reviewer subagents; this disambiguates the trigger so downstream cascade-branch implementations cannot diverge on whether a verifier-suppressed finding still counts toward the cascade gate. The cascade is a single hop per step (initial-clean OR first-fix-clean), not an unbounded loop; if the fix round still carries kept findings the step pauses for human input via the standard Review-Loop Pause Gate. The `question_budget` field (default `5`) caps Research specialist dispatch under this cascade so the autonomous Research step stays bounded. The line-by-line implementation of the cascade branch in each of these three skills is owned by the respective skill body — `using-qrspi/SKILL.md` is the contract surface that names the behavior; the per-skill implementations carry the wiring.
 
    **Trust model — clean-sentinel forgery resistance.** The cascade auto-approve trigger reads the orchestrator's in-session "kept findings" count after fan-in completes; it does NOT read any on-disk `<reviewer-tag>.clean.md` sentinel directly to make the auto-approve decision. The on-disk sentinel is the audit-trail artifact, NOT the trigger. For the cascade-specific clean sentinel that records "this auto-approval fired against reviewer-tag X with zero kept findings", the orchestrator is the EXCLUSIVE writer — only the orchestrator writes the cascade clean sentinel after its in-session fan-in tally confirms zero kept findings AFTER verifier filtering for that reviewer tag. Reviewer subagents MUST NOT write the cascade clean sentinel (`<artifact_dir>/cascade-clean-<reviewer-tag>.md` or whatever the orchestrator names it); only the orchestrator writes it after its in-session fan-in tally confirms zero kept findings post-verifier-filter. Reviewer subagents emit per-finding files (`<reviewer-tag>.finding-FNN.md`) per their existing dispatch contract; any `<reviewer-tag>.clean.md` file a reviewer subagent emits under the existing dispatch surface is treated by the cascade as ADVISORY metadata, NOT as the auto-approve trigger. Without this two-layer rule (trigger-from-in-session-count + orchestrator-exclusive-writer for the cascade clean sentinel), a compromised or mis-prompted reviewer subagent could forge a `clean.md` sentinel and trick a sentinel-driven cascade into auto-approving without a real fan-in. Pinning the cascade trigger to the orchestrator's in-session count and pinning the cascade clean-sentinel write to the orchestrator closes the forgery surface end-to-end. This trust model mirrors the orchestrator-exclusive-writer framing already in place for `path-filtered.md` and `bypass-attempt-NN.md` records (see those sections for the parallel pattern).
 
@@ -407,6 +407,13 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 > Codex reviews:
 > 1) No Codex reviews
 > 2) Use Codex for second reviews
+
+**Per-host Codex dispatch transport routing.** The Codex review dispatch surface routes per detected host. Two transports are supported, selected by `detect_host` at dispatch time:
+
+- **Copilot CLI host (`COPILOT_CLI=1`):** Codex review dispatch uses the native task tool transport. The dispatcher invokes the task tool with `agent_type: code-review` and `model: gpt-5.3-codex` (the Codex model identifier named in `design.md` and goal G6). No shell pipeline is involved — the task tool is the in-process transport. The dispatch surface emits the `[transport: task-tool]` trace marker to stderr exactly once at the call site that selects this branch.
+- **Claude Code host (`COPILOT_CLI` unset):** Codex review dispatch uses the shell-pipeline transport via `scripts/run-codex-review.sh`. The wrapper composes the reviewer prompt and pipes it through `scripts/run-third-party-llm.sh` to reach the Codex endpoint. The dispatch surface emits the `[transport: shell-pipeline]` trace marker to stderr exactly once at the call site that selects this branch.
+
+**Mismatch policy (warning-only, does not gate dispatch).** When the detected host's Codex availability disagrees with the `codex_reviews` config value, the dispatch surface emits a single-line `[mismatch]` diagnostic to stderr identifying the disagreement (detected host, observed availability, configured value) and **continues with the configured policy**. The mismatch diagnostic is warning-only: it does not block dispatch, does not gate the transport invocation, and does not override the transport's exit code. Separately, when `check_codex_available` reports Codex is not available for the detected host AND the run configuration requested Codex reviews (`codex_reviews: true`), the dispatch surface short-circuits with a single-line stderr diagnostic and propagates the non-zero availability-check exit code unchanged (no log-and-continue). The mismatch warning and the unavailability short-circuit are independent: the mismatch warning fires on any availability-vs-config disagreement, including the copilot-cli + `codex_reviews: false` case where Codex is trivially available but the user opted out.
 
 **No silent fallback.** All subsequent skills must read `config.md` for route and Codex config. If `config.md` is missing or has missing/invalid fields, apply the **Config Validation Procedure** (see below). Skills do not silently default any field that affects pipeline behavior. There is no automatic derivation of the route — this avoids conditional branches in every skill.
 
@@ -424,8 +431,6 @@ providers:
     base_url: https://api.example.com/v1
     api_key_env: MY_PROVIDER_API_KEY
     transport_type: openai-chat-completions   # or: codex-broker
-    supports_prompt_cache: false              # optional; default: false
-    emit_cache_control_markers: false         # optional; default: false; independent of supports_prompt_cache
     default_headers:                          # optional map; merged into every request to this provider
       X-Custom-Header: value
 ```
@@ -438,22 +443,31 @@ providers:
   - `codex-broker` — the provider is accessed via the Codex broker shim.
 
 **Optional fields per entry:**
-- `supports_prompt_cache`: boolean, default `false`. Signals that the provider supports prompt caching at the protocol level.
-- `emit_cache_control_markers`: boolean, default `false`. **Independent of `supports_prompt_cache`.** The dispatcher emits `cache_control` fields in requests to this provider ONLY when BOTH `supports_prompt_cache: true` AND `emit_cache_control_markers: true` are set on the provider entry (the dual-flag gate). A `true`/`false` mismatch on either flag suppresses `cache_control` emission entirely — setting one flag without the other has no effect on dispatcher output.
 - `default_headers`: optional map of string key-value pairs merged into every HTTP request sent to this provider. Useful for vendor-specific auth headers beyond `Authorization`.
 
 #### `model_routing:` block
 
-Maps role names to provider-plus-model pairs. The dispatcher uses this block to resolve which model to call for a given role.
+Maps abstract Claude tier names to concrete versioned model IDs, per dispatch host. The dispatcher resolves an agent dispatch by (1) detecting the host CLI it is running under and (2) looking up the tier name carried on the agent (or `inherit` when the agent declares no explicit `model:` field).
 
 ```yaml
 model_routing:
-  researcher: my-provider/gpt-4o
-  reviewer:   my-provider/gpt-4o-mini
-  implementer: other-provider/claude-opus-4
+  claude-code:
+    haiku: claude-haiku-4.5
+    sonnet: claude-sonnet-4.6
+    opus: claude-opus-4.7-high
+    inherit: claude-sonnet-4.6
+  copilot-cli:
+    haiku: claude-haiku-4.5
+    sonnet: claude-sonnet-4.6
+    opus: claude-opus-4.7-high
+    inherit: claude-sonnet-4.6
 ```
 
-Each value is `<provider-name>/<model-id>` where `<provider-name>` MUST refer to an entry in the `providers:` block. Using a provider name that is absent from `providers:` is a config validation error (the dispatcher halts and reports the unknown provider rather than falling back silently).
+Top-level keys are the host names emitted by `detect_host` (see Codex dispatch transport routing). Each host sub-mapping contains exactly four tier rows: `haiku`, `sonnet`, `opus`, and `inherit`. Values are fully versioned model IDs (e.g. `claude-haiku-4.5`, not the bare tier short-form `haiku`) — Copilot CLI's model proxy emits a "model not available" warning for bare tier requests but accepts versioned IDs.
+
+See `#### Model Routing` below for the dispatch-time resolution flow.
+
+The orchestrator validates these invariants at config-load time and on every dispatch. When `detect_host` returns a host value for which `model_routing:` has no matching top-level key, when an agent's tier name (or the implicit `inherit`) matches no row under the matched host's sub-mapping, or when a tier value is a bare short-form (`haiku`, `sonnet`, `opus`) rather than a fully versioned model ID, the dispatcher halts and reports the missing or invalid entry. The dispatcher never falls back silently to the agent-bundled default and never passes the dispatch through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
 
 #### `trusted_path:` block
 
@@ -467,9 +481,11 @@ trusted_path:
 
 Entries can be:
 - A relative path to an agent `.md` file (relative to the repo root, e.g. `agents/qrspi-implementer.md`).
-- A role name string (matches entries in `model_routing:`).
+- A role name string (matches the `model_role:` value declared in an agent's frontmatter — independent of `model_routing:`'s host-keyed structure).
 
 `trusted_path:` is documented separately from the precedence chain below because it is a short-circuit, not a step in the chain — matching agents or roles bypass the chain entirely.
+
+When `trusted_path:` matches but the matched agent's frontmatter declares no `model:` field (the state established for all agents after the T9 sweep), step 4 has no concrete value to return. The dispatcher halts and reports the trusted_path: match plus the empty agent-bundled default. The dispatcher never falls back silently to `model_routing:` (which `trusted_path:` explicitly bypasses) and never passes the dispatch through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` path.
 
 #### `validators:` block
 
@@ -482,13 +498,15 @@ validators:
 
 - `citation_density_floor`: float, default `0.05`. The minimum fraction of output tokens that must be citations (inline references to source material). When a dispatch's output falls below this floor, the validator triggers a trusted-model re-run: the same prompt is re-dispatched to the agent-bundled default model (bypassing `model_routing:`) and the re-run output replaces the original. The re-run is logged to main-chat output as a one-line note.
 
+When the validator triggers the trusted-model re-run and the matched agent's frontmatter declares no `model:` field (the state established for all agents after the T9 sweep), the re-run has no concrete target. The dispatcher halts and reports the validator trigger plus the empty agent-bundled default. The dispatcher never falls back silently to `model_routing:` (which the re-run explicitly bypasses) and never passes the re-run through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` and `trusted_path:` paths.
+
 #### Precedence chain
 
 When the dispatcher resolves which model to call for a task, it applies this precedence order (highest to lowest):
 
 1. **Per-task `model:` override** — the `model:` field on an individual task spec, when present.
 2. **Hardcoded dispatch-site `model:`** — a `model:` value hard-coded at the dispatch site in a skill's SKILL.md.
-3. **`model_routing:` role lookup** — the role name resolved via the `model_routing:` block in `config.md`.
+3. **`model_routing:` host/tier lookup** — the concrete model ID resolved via the `model_routing:` block in `config.md`, indexed by the active dispatch host (from `detect_host`) and the tier name carried on the agent (or `inherit` when the agent declares no explicit `model:` field). See `#### \`model_routing:\` block` and `#### Model Routing` for schema + resolution flow.
 4. **Agent-bundled default** — the model bundled in the agent's own definition file.
 
 `trusted_path:` is a separate short-circuit outside this chain: when an agent-file path or role name matches a `trusted_path:` entry, the dispatcher skips steps 1–3 and routes directly to the agent-bundled default (step 4).
@@ -504,6 +522,34 @@ When `config.md` does not contain a `model_routing:` block, the dispatcher fires
 - The on-disk `config.md` is **never silently mutated** by the backfill. Dispatch defaults are applied in-memory only; the file on disk is unchanged.
 - No persistent marker is written to disk to track that the warning has already fired. Because no marker is written, there is no write-failure surface that could leave the on-disk config in an inconsistent state.
 - Each session sees the backfill defaults applied in-memory without changing the file on disk.
+
+When the in-memory backfill resolves an agent's "bundled default" but the matched agent's frontmatter declares no `model:` field (the state established for all agents after the T9 sweep), the backfill has no concrete value to apply. The dispatcher halts and reports the missing-`model_routing:` condition plus the empty agent-bundled default. The dispatcher never falls back silently to the host CLI's silent re-routing and never substitutes an unannounced model — either fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` and `trusted_path:` paths. The one-time warning above announces the missing block; the halt-and-report on empty step 4 announces the consequence.
+
+#### Model Routing
+
+Resolution flow for agent tier names. When the dispatcher prepares an agent
+dispatch, it resolves the abstract Claude tier name carried on the agent
+(`haiku`, `sonnet`, `opus`, or the implicit `inherit` when the agent
+declares no explicit `model:` field) against the `model_routing` table in
+`config.md`. The lookup is a two-step indexing operation:
+
+1. **Host column selection.** The dispatcher calls `detect_host` (see the
+   per-host Codex dispatch transport routing section above) and uses its
+   output (`claude-code` or `copilot-cli`) to pick the matching top-level
+   key under `model_routing`.
+2. **Tier row selection.** The tier name on the agent (or `inherit` for
+   agents with no `model:` field) selects the row within the host's
+   sub-mapping. The mapped value is the concrete versioned model ID that
+   the dispatch transport will request.
+
+The `copilot-cli` column uses fully versioned Claude model IDs rather than
+bare tier short-forms because Copilot CLI's model proxy emits a
+"model not available" warning for bare `haiku` / `sonnet` / `opus` requests
+but accepts the full versioned IDs and routes them through to the upstream
+provider. The `inherit` row exists so that agents declaring no explicit
+`model:` field (the state established for all 41 agents after the T9 sweep)
+still resolve to a concrete model rather than relying on the host CLI's
+own fallback behavior, which differs between hosts.
 
 ## Config Validation Procedure
 
@@ -612,7 +658,7 @@ Skills must not:
 | `visual_fidelity_required` | Goals, Design, Phasing, Plan, Implement | `true` or `false` — set at run creation; gates the visual-fidelity binding chain |
 | `question_budget` | Goals, Plan, Parallelize (validators); Research (runtime consumer — see note below) | positive integer between 1 and 50 inclusive (e.g. `5`, `12`) — present required when `pipeline: quick`, absent when `pipeline: full`; caps Research specialist dispatch count (cap of 50 exists because dispatch fan-out beyond 50 exhausts orchestrator subagent slots and yields diminishing-returns coverage) |
 
-- **`verifier_enabled`** (boolean, default `true`) — when `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` (Haiku) per finding-file in parallel and filters style/clarity/correctness findings at score ≥80 before applying. When `false`, the protocol skips verifier dispatch entirely (no sidecars are written) and keeps all findings via the "no sidecar → keep" branch in step 8. The field is durable across `/compact`, pause, resume, and re-entry within the run directory under `docs/qrspi/<date>-<bundle>/`. Fresh run directories start with `verifier_enabled: true` (set by the `using-qrspi` run-init code at run creation). The §3 menu's `skip` option disables the verifier for the CURRENT round only (it does NOT mutate `config.md`); to disable across the whole run, edit `config.md` directly between rounds. CLI-flag opt-out at `/qrspi` invocation is out of scope for #109 (deferred).
+- **`verifier_enabled`** (boolean, default `true`) — when `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` (Haiku) per finding-file in parallel and filters findings by `change_type`: style/clarity at score ≥80 and correctness at score ≥70 (lower correctness threshold so hardening-relevant correctness gaps in the 72-78 "real but low-severity" rubric band are not dropped). When `false`, the protocol skips verifier dispatch entirely (no sidecars are written) and keeps all findings via the "no sidecar → keep" branch in step 8. The field is durable across `/compact`, pause, resume, and re-entry within the run directory under `docs/qrspi/<date>-<bundle>/`. Fresh run directories start with `verifier_enabled: true` (set by the `using-qrspi` run-init code at run creation). The §3 menu's `skip` option disables the verifier for the CURRENT round only (it does NOT mutate `config.md`); to disable across the whole run, edit `config.md` directly between rounds. CLI-flag opt-out at `/qrspi` invocation is deferred.
 
 - **`scope_tagger_enabled`** (boolean, default `true`) — when `true`, step 6 of the Apply-fix protocol (scope-tagger dispatch) dispatches one `qrspi-scope-tagger` (Haiku) per round to derive a scope-set, and step 12 (ref selection for round NN+1) compares scope-sets across rounds to drive the narrow-vs-broaden decision for the next round's diff `<ref>` and optional `<scope_hint>` advisory. When `false`, step 6 is skipped (no tagger dispatch, no scope-set file emitted) and step 12's convergence comparison treats every round as full-scope (no narrowing fires); reviewer dispatch falls through to the default full-base-diff behavior. The field is durable across `/compact`, pause, resume, and re-entry within the run directory under `docs/qrspi/<date>-<bundle>/`. Fresh run directories start with `scope_tagger_enabled: true` (set by the `using-qrspi` run-init code at run creation). To disable convergence narrowing across a whole run, edit `config.md` directly between rounds. The test step (`skills/test/SKILL.md`) opts out of convergence narrowing entirely — see §"Per-step applicability" in the spec; that opt-out is independent of `scope_tagger_enabled`.
 
@@ -832,7 +878,13 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
      score=$(awk -F': *' '/^score:/ {print $2; exit}' "$sc")
      scored=$((scored + 1))
      ct=$(awk -F': *' '/^change_type:/ {print $2; exit}' "$f")
-     if (( score < 80 )) && [[ $ct =~ ^(style|clarity|correctness)$ ]]; then
+     # Threshold split: style/clarity require ≥80 (high bar for nitpicks);
+     # correctness requires ≥70 (lower bar for silent failures, attack
+     # surface, and hardening-relevant correctness gaps that the rubric
+     # tends to score in the 72-78 "real but low-severity" band).
+     threshold=80
+     [[ $ct == "correctness" ]] && threshold=70
+     if (( score < threshold )) && [[ $ct =~ ^(style|clarity|correctness)$ ]]; then
        dropped=$((dropped + 1))
      fi
    done
@@ -866,7 +918,7 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
      done
    } > "$D/../round-NN-verified.md"
    ```
-   The boundary HTML comments give a single-pass reader an unambiguous record delimiter without the verifier writing into the finding file. Sidecars are emitted only when present on disk, so the disabled-from-start path (no sidecars created) and the sidecar-absent edge case both produce a well-formed verified file. Header field semantics: `verifier_enabled` mirrors `config.md`; `scored` = sidecars with integer score; `failed` = sidecars with `score: VERIFY_FAILED`; `dropped` = sidecars with score < 80 AND `change_type` ∈ `style|clarity|correctness`; `kept` = (findings - dropped) — everything that survives to step 8's Edit/pause routing (sidecar score ≥80, sidecar absent, sidecar VERIFY_FAILED, scope/intent change-type, and verifier-disabled-round findings all funnel into `kept`); `clean` = count of `*.clean.md` files.
+   The boundary HTML comments give a single-pass reader an unambiguous record delimiter without the verifier writing into the finding file. Sidecars are emitted only when present on disk, so the disabled-from-start path (no sidecars created) and the sidecar-absent edge case both produce a well-formed verified file. Header field semantics: `verifier_enabled` mirrors `config.md`; `scored` = sidecars with integer score; `failed` = sidecars with `score: VERIFY_FAILED`; `dropped` = sidecars where `change_type ∈ style|clarity` AND `score < 80`, OR `change_type = correctness` AND `score < 70` (correctness floor sits lower than the style/clarity floor so hardening-relevant correctness findings in the 72-78 rubric band are not dropped); `kept` = (findings - dropped) — everything that survives to step 8's Edit/pause routing (sidecar above threshold, sidecar absent, sidecar VERIFY_FAILED, scope/intent change-type, and verifier-disabled-round findings all funnel into `kept`); `clean` = count of `*.clean.md` files.
 
 6. **Scope-tagger dispatch.** After step 5 assembles the round, dispatch ONE `qrspi-scope-tagger` Task subagent against the kept finding-files. The tagger derives one `scope_tag` per kept finding and writes `reviews/{step}/round-NN-scope-set.txt` for the orchestrator's convergence comparison in step 12 (ref selection for round NN+1) below.
 
@@ -929,7 +981,8 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
 8. **Filter and dispatch findings by `change_type`.** Partition findings by `change_type`:
    - `scope` and `intent`: bypass score filter; flow directly to the existing pause gate (scope and intent are never score-filtered, regardless of sidecar value).
-   - `style`, `clarity`, `correctness`: filter at score ≥80 (verifier-enabled rounds with a sidecar score) or keep-all (verifier-disabled rounds, sidecar absent, OR sidecar has VERIFY_FAILED — degraded-but-uncertain → favor surfacing). Survivors → `Edit` on the artifact.
+   - `style`, `clarity`: filter at score ≥80 (verifier-enabled rounds with a sidecar score) or keep-all (verifier-disabled rounds, sidecar absent, OR sidecar has VERIFY_FAILED — degraded-but-uncertain → favor surfacing). Survivors → `Edit` on the artifact.
+   - `correctness`: filter at score ≥70 (lower bar than style/clarity — hardening-relevant correctness gaps like silent failures and attack surface tend to score in the 72-78 "real but low-severity" rubric band) or keep-all (verifier-disabled rounds, sidecar absent, OR sidecar has VERIFY_FAILED). Survivors → `Edit` on the artifact.
 
    Out-of-enum `change_type` values are loud failures from step 2's schema guard (already caught before reaching step 8).
 

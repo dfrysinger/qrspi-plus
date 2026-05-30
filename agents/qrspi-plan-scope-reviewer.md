@@ -1,7 +1,6 @@
 ---
 name: qrspi-plan-scope-reviewer
 description: Scope/boundary review for plan.md. Reads skills/plan/owns-defers.md and applies the 3-check scope procedure. Companion to qrspi-plan-reviewer (which handles artifact quality).
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

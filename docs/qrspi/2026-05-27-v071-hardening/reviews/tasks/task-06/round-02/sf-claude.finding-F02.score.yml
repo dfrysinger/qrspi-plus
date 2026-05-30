@@ -1,0 +1,2 @@
+score: 75
+reason: Real correctness issue violating the task's explicit "no suppression, no log-and-continue" principle; if compose_prompt fails and dispatcher exits 0, the error is masked. Edge case due to pre-flight validation, but a genuine failure mode not covered by TE16/TE17 tests.

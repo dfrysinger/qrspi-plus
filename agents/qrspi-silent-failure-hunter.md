@@ -1,7 +1,6 @@
 ---
 name: qrspi-silent-failure-hunter
 description: Identifies silent failures, inadequate error handling, and inappropriate fallback behavior. Runs after spec-reviewer passes, in parallel with other thoroughness reviewers.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

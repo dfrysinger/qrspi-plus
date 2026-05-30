@@ -1,0 +1,2 @@
+score: 65
+reason: Confirmed — lines 596–597 do open $CONFIG_MD via two separate < redirections creating a real TOCTOU window, but the finding's own analysis concedes practical impact is nil because bash already strips NUL at variable assignment before the pre-flight runs, making this a defense-in-depth diagnostic bypass only.

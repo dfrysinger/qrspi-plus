@@ -1,0 +1,2 @@
+score: 80
+reason: Verified — SKILL.md L499 (validator re-run) and L512–522 (missing model_routing: backfill) both route to the empty post-T9 agent-bundled default with no fail-loud contract, mirroring the R4-F01 defect class (which scored 70 KEEP) and corroborated by 3 independent reviewers; new tests only pin the trusted_path: branch.

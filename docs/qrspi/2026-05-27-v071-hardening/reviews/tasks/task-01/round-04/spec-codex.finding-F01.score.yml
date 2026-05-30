@@ -1,0 +1,2 @@
+score: 90
+reason: Confirmed — line 558 exits with "missing required field api_key_env" for empty API_KEY_ENV before the key-resolution identifier check at line 634 is ever reached, directly contradicting spec bullet 31 which states empty string produces a key-resolution diagnostic.

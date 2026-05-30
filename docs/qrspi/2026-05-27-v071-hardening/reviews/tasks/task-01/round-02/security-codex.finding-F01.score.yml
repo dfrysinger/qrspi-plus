@@ -1,0 +1,2 @@
+score: 20
+reason: Real SSRF concern but explicitly pre-existing (orchestrator-triaged to commit a2edc7f, predates T1) and already marked out-of-scope/escalated; rubric scores pre-existing issues 0–25.

@@ -1,0 +1,2 @@
+score: 35
+reason: Valid clarity observation about cryptic awk variable naming, but this is a stylistic preference rather than a functional issue or load-bearing constraint. The variable name inherited from the original inline extract_review_round helper and works correctly; renaming would be a nice-to-have improvement but is not urgent.

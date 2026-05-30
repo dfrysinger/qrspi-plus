@@ -1,0 +1,11 @@
+--- structure.md (R3 reviewed)
++++ structure.md (R4 to review)
+@@ -36,7 +36,7 @@
+ 
+ | File | Action | Responsibility | Goal IDs |
+ |------|--------|----------------|----------|
+-| `skills/parallelize/SKILL.md` | Modify | Replace the flat three-column Branch Map with `### Wave N` sub-sections (each sub-section contains a Task/Branch/Base mini-table); remove the now-redundant `## Execution Order` prose section; update the inline "Good" and "Bad" worked-example pairs to the new Wave-grouped shape | G4 |
++| `skills/parallelize/SKILL.md` | Modify | Reshape the Branch Map content (in the `## Artifact` specification and the worked-example output shape) from a flat three-column table into `### Wave N` sub-sections, each containing a Task/Branch/Base mini-table; drop the now-redundant Execution Order narrative from the same locations; update the inline Good and Bad worked-example pairs to the Wave-grouped shape | G4 |
+ | `agents/qrspi-parallelize-reviewer.md` | Modify | Update the Branch Map structural-rule assertions to require `### Wave N` sub-section grouping rather than the flat three-column layout | G4 |
+ 
+ ### Slice 5: Drop evergreen-lint path carve-outs (G5)

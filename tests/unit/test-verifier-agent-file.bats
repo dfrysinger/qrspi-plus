@@ -4,9 +4,10 @@
   [ -f agents/qrspi-finding-verifier.md ]
 }
 
-@test "frontmatter declares model: haiku" {
+@test "frontmatter does NOT declare a top-level model: key (per T9 hardening, G9)" {
   awk '/^---$/{n++; next} n==1{print}' agents/qrspi-finding-verifier.md \
-    | grep -qE '^model:\s*haiku'
+    | grep -qE '^model:' \
+    && { echo "qrspi-finding-verifier frontmatter unexpectedly carries 'model:' key (per T9, agent files must not pin model)"; return 1; } || true
 }
 
 @test "frontmatter declares tools: [Read, Write]" {

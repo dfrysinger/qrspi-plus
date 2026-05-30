@@ -1,0 +1,189 @@
+diff --git a/skills/using-qrspi/SKILL.anchors.json b/skills/using-qrspi/SKILL.anchors.json
+index 2b62a21..7ed5ff9 100644
+--- a/skills/using-qrspi/SKILL.anchors.json
++++ b/skills/using-qrspi/SKILL.anchors.json
+@@ -65,94 +65,94 @@
+   },
+   "Config File (`config.md`)": {
+     "line_start": 349,
+-    "line_end": 547
++    "line_end": 549
+   },
+   "Dispatch routing blocks": {
+     "line_start": 420,
+-    "line_end": 547
++    "line_end": 549
+   },
+   "Config Validation Procedure": {
+-    "line_start": 548,
+-    "line_end": 666
++    "line_start": 550,
++    "line_end": 668
+   },
+   "When config.md is missing entirely": {
+-    "line_start": 552,
+-    "line_end": 560
++    "line_start": 554,
++    "line_end": 562
+   },
+   "When a required field is missing or has an invalid value": {
+-    "line_start": 561,
+-    "line_end": 613
++    "line_start": 563,
++    "line_end": 615
+   },
+   "No silent defaults": {
+-    "line_start": 614,
+-    "line_end": 621
++    "line_start": 616,
++    "line_end": 623
+   },
+   "Exceptions to the no-silent-defaults rule": {
+-    "line_start": 622,
+-    "line_end": 640
++    "line_start": 624,
++    "line_end": 642
+   },
+   "Fields that affect pipeline behavior (must be validated)": {
+-    "line_start": 641,
+-    "line_end": 660
++    "line_start": 643,
++    "line_end": 662
+   },
+   "Fields that do NOT require validation (informational only)": {
+-    "line_start": 661,
+-    "line_end": 666
++    "line_start": 663,
++    "line_end": 668
+   },
+   "Standard Review Loop": {
+-    "line_start": 667,
+-    "line_end": 710
++    "line_start": 669,
++    "line_end": 712
+   },
+   "Fix-altitude rule (F-5)": {
+-    "line_start": 703,
+-    "line_end": 710
++    "line_start": 705,
++    "line_end": 712
+   },
+   "Review Output Handling": {
+-    "line_start": 711,
+-    "line_end": 1102
++    "line_start": 713,
++    "line_end": 1104
+   },
+   "Review-Loop Pause Gate": {
+-    "line_start": 1103,
+-    "line_end": 1150
++    "line_start": 1105,
++    "line_end": 1152
+   },
+   "BATCH-WITH-OVERRIDES UI contract": {
+-    "line_start": 1107,
+-    "line_end": 1114
++    "line_start": 1109,
++    "line_end": 1116
+   },
+   "3-option menu (per paused finding)": {
+-    "line_start": 1115,
+-    "line_end": 1132
++    "line_start": 1117,
++    "line_end": 1134
+   },
+   "Paused rounds do not decrement the cap": {
+-    "line_start": 1133,
+-    "line_end": 1138
++    "line_start": 1135,
++    "line_end": 1140
+   },
+   "Pending-findings file": {
+-    "line_start": 1139,
+-    "line_end": 1150
++    "line_start": 1141,
++    "line_end": 1152
+   },
+   "Review Time Allocation": {
+-    "line_start": 1151,
+-    "line_end": 1158
++    "line_start": 1153,
++    "line_end": 1160
+   },
+   "Compaction Checkpoints": {
+-    "line_start": 1159,
+-    "line_end": 1190
++    "line_start": 1161,
++    "line_end": 1192
+   },
+   "Feedback File Format": {
+-    "line_start": 1191,
+-    "line_end": 1210
++    "line_start": 1193,
++    "line_end": 1212
+   },
+   "Common Rationalizations — STOP": {
+-    "line_start": 1211,
+-    "line_end": 1225
++    "line_start": 1213,
++    "line_end": 1227
+   },
+   "Skill Invocation": {
+-    "line_start": 1226,
+-    "line_end": 1231
++    "line_start": 1228,
++    "line_end": 1233
+   },
+   "Pipeline Iron Laws — Final Reminder": {
+-    "line_start": 1232,
+-    "line_end": 1254
++    "line_start": 1234,
++    "line_end": 1256
+   }
+ }
+diff --git a/skills/using-qrspi/SKILL.md b/skills/using-qrspi/SKILL.md
+index 2c58edc..c668599 100644
+--- a/skills/using-qrspi/SKILL.md
++++ b/skills/using-qrspi/SKILL.md
+@@ -485,6 +485,8 @@ Entries can be:
+ 
+ `trusted_path:` is documented separately from the precedence chain below because it is a short-circuit, not a step in the chain — matching agents or roles bypass the chain entirely.
+ 
++When `trusted_path:` matches but the matched agent's frontmatter declares no `model:` field (the state established for all agents after the T9 sweep), step 4 has no concrete value to return. The dispatcher halts and reports the trusted_path: match plus the empty agent-bundled default. The dispatcher never falls back silently to `model_routing:` (which `trusted_path:` explicitly bypasses) and never passes the dispatch through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` path.
++
+ #### `validators:` block
+ 
+ Post-dispatch output gates applied after a dispatch returns. Currently supports one gate:
+diff --git a/tests/unit/test-using-qrspi-vocab.bats b/tests/unit/test-using-qrspi-vocab.bats
+index a4a2876..7917866 100644
+--- a/tests/unit/test-using-qrspi-vocab.bats
++++ b/tests/unit/test-using-qrspi-vocab.bats
+@@ -132,3 +132,28 @@ setup() {
+   [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
+   [[ "$body" != *"silently degrade"* ]]
+ }
++
++@test "trusted_path block: fail-loud contract pinned for empty step 4" {
++  local body
++  body="$(_extract_h4 "$USING" '`trusted_path:` block')"
++  # R4-F01 fix (close trusted_path: silent-fallback):
++  # Post-T9, agent-bundled default (precedence chain step 4) is empty
++  # for every agent. The trusted_path: short-circuit routes directly to
++  # step 4. Without a fail-loud rule pinned here, two of three plausible
++  # dispatcher implementations reproduce the G7b/#204 silent-fallback
++  # class one layer deeper than the model_routing: path.
++  [[ "$body" == *"halts and reports"* ]]
++  [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
++}
++
++@test "trusted_path block: anti-pattern wording absent" {
++  local body
++  body="$(_extract_h4 "$USING" '`trusted_path:` block')"
++  # R4-F01 fix (close trusted_path: silent-fallback):
++  # Pin absence of the anti-pattern wording G7b/#204 was filed against,
++  # scoped to the trusted_path: H4 body specifically. If a future edit
++  # softens the trusted_path: fail-loud rule into a silent-fallback,
++  # this pin RED-fails.
++  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
++  [[ "$body" != *"silently degrade"* ]]
++}

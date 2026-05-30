@@ -1,0 +1,17 @@
+--- a/plan.md
++++ b/plan.md
+@@ -266,10 +266,13 @@
+ - **Test expectations:**
+   - `tests/unit/test-agent-frontmatter-no-model.bats` contains a test that sweeps every file matching `agents/qrspi-*.md` and fails if any frontmatter block carries a standalone top-level `model:` key
+   - After all 41 agent files are modified, the structural lint test passes with zero violations reported
+-  - The strings `haiku`, `sonnet`, and `opus` appearing in agent body prose (outside the YAML frontmatter block, in dispatcher prose or `<!-- model: -->`-style inline annotations) are preserved with identical line content before and after the frontmatter deletion. The per-file diff for each of the 41 modifications shows exactly one deletion (the `model:` frontmatter line).
++  - Each modified `agents/qrspi-*.md` file in its post-modification state contains at least one occurrence of each of the tier-name tokens `haiku`, `sonnet`, and `opus` outside the YAML frontmatter block (verifying dispatcher prose and `<!-- model: -->`-style inline annotations were not collaterally removed)
+   - All other frontmatter keys (`skills:`, `description:`, `name:`, and any agent-specific keys) are unmodified
+   - The structural lint test fails clearly in RED for each file that still carries a `model:` key, providing a useful per-file failure message
+ 
++**Manual Validation:**
++- Pre-merge: `git diff --stat HEAD~1 -- 'agents/qrspi-*.md'` for the Task 9 commit shows exactly 41 files changed, each with one line removed and zero lines added. Operator-verified; BATS-level git introspection is impractical for this scope (mirrors the Task 8 Manual Validation pattern).
++
+ ### Task 10: Wire per-host model_routing resolution for agent tier names
+ 
+ - **Phase:** 1

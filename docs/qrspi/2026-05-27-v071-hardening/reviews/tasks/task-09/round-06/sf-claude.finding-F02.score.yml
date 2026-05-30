@@ -1,0 +1,2 @@
+score: 72
+reason: Real clarity issue (dead variable in scope code) but below threshold—no functional impact and isolated dead code does not severely mislead readers; finding is well-documented.

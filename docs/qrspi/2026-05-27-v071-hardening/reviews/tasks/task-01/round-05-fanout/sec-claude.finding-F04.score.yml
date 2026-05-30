@@ -1,0 +1,2 @@
+score: 40
+reason: Confirmed real gap — line 634's `*[!A-Za-z0-9_]*` pattern genuinely admits digit-leading strings and bash `${!1}` resolves to positional params — but both mitigations cited in the finding (post-shift empty positionals + fail-closed empty-key check at line 642) are verified present, leaving this a latent/INFO issue with no current exploit path.

@@ -1,0 +1,2 @@
+score: 92
+reason: Verified real vulnerability—bash glob `[[ "$_gh_path" == /usr/* ]]` matches string prefix without normalizing `..` segments, allowing `PATH=/usr/../tmp/fakebins:...` to forge copilot-cli marker. Concrete attack scenario directly reachable by env var manipulation; fix requires realpath/readlink-f normalization before glob check.

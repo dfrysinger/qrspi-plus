@@ -1,0 +1,2 @@
+score: 100
+reason: The awk exit code is definitively not captured at line 273 in extract_section_fence_aware; silent awk failures will be misreported as "not found", violating the spec's requirement for distinguishable error paths. The parallel extract_section function shows the correct pattern.

@@ -1,0 +1,23 @@
+--- phasing.md (R2 reviewed)
++++ phasing.md (R3 to review)
+@@ -20,9 +20,9 @@
+ 
+ The fence-aware section-extraction helper is promoted from an inline duplicate in the SKILL.md content-patterns unit suite to a dedicated function in the shared test-helper library. The consuming unit suite is migrated to the shared function, and new unit coverage pins the helper's behavior including fenced-code blocks. This slice touches the shared helper, the consuming test, and the unit tests that pin the new function's behavior -- the full path from helper authorship through call-site migration through test coverage.
+ 
+-### Slice 4: Wave sub-sections in Branch Map presentation (goal IDs: G4)
++### Slice 4: Wave-grouped Branch Map presentation (goal IDs: G4)
+ 
+-The Parallelize SKILL's flat Branch Map presentation is restructured into per-Wave sub-sections, each containing its own mini Branch Map table. The parallelize-reviewer's pinning rule and the Worked Example pair are updated to match the new shape. This slice touches the skill prose, the reviewer agent's lint rule, and the example artifacts -- the full presentation-through-review-signal vertical, verified by the structural lint test.
++The Parallelize SKILL's flat Branch Map presentation is reorganized so that tasks are grouped per Wave, matching the underlying dependency structure. The matching reviewer-side guidance and the worked-example artifacts are updated to reflect the new presentation. This slice exercises the full path from skill prose through reviewer guidance through worked examples through CI verification.
+ 
+ ### Slice 5: Drop evergreen-lint path carve-outs (goal IDs: G5)
+ 
+@@ -57,7 +57,7 @@
+ 5. The control-char detection in the third-party LLM dispatch script correctly triggers the die path on a raw LF byte input without a silent grep fallback under a BSD-grep environment (G1 acceptance, per `design.md` DKR1).
+ 6. A simulated implementer commit flow confirms the scratch commit-message file is absent from the staged index (G2 acceptance, per `design.md` DKR2).
+ 7. The fence-aware section-extraction helper exists as a dedicated function in the shared test-helper library, the inline duplicate is removed from the consuming unit suite, and unit coverage pins the helper's behavior including fenced-code blocks (G3 acceptance, per `design.md` DKR3).
+-8. The Parallelize SKILL renders its Branch Map as per-Wave sub-sections with the parallelize-reviewer's pinning rule and the Worked Example pair updated to match, and the structural lint test passes (G4 acceptance, per `design.md` DKR4).
++8. The Parallelize SKILL presents its Branch Map grouped per Wave, with reviewer-side guidance and worked-example artifacts updated to match (G4 acceptance, per `design.md` DKR4).
+ 
+ ## Goal-ID Consistency
+ 

@@ -206,3 +206,541 @@ alpha body
 EOF
   ! extract_section "$FIXTURE_DIR/doc.md" H2 "Nonexistent" 2>/dev/null
 }
+
+# =============================================================================
+# fence-aware section extractor: extract_section_fence_aware
+#
+# All tests below are RED against the pre-implementation state:
+# extract_section_fence_aware does not yet exist in skill-markdown.bash.
+#
+# Assumed signature: extract_section_fence_aware <file> <anchor-heading>
+#   <anchor-heading> is the full heading line including prefix,
+#   e.g. "### Review Round" or "## Artifact Gating".
+#
+# Covers the 10 test-expectation bullets for the fence-aware section extractor
+# promoted to tests/helpers/skill-markdown.bash.
+# =============================================================================
+
+@test "[fence-aware-extractor] basic extraction: anchor line included, content up to next out-of-fence boundary" {
+  # Test expectation: returns content from the anchor line (inclusive) through
+  # the last line before the next out-of-fence section boundary.
+  # Test expectation: the anchor line itself is included in the function output
+  # (consistent with the prior extract_review_round contract).
+  cat > "$FIXTURE_DIR/basic.md" <<'EOF'
+# Title
+
+### Review Round
+Reviewer instruction A
+Reviewer instruction B
+
+### Next Section
+Next content here
+EOF
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/basic.md" "### Review Round")"
+  [ "$?" -eq 0 ]
+  [[ "$out" == *"### Review Round"* ]]
+  [[ "$out" == *"Reviewer instruction A"* ]]
+  [[ "$out" == *"Reviewer instruction B"* ]]
+  [[ "$out" != *"### Next Section"* ]]
+  [[ "$out" != *"Next content here"* ]]
+}
+
+@test "[fence-aware-extractor] H3 and H2 heading-shaped lines inside a code fence do not terminate extraction" {
+  # Test expectation: a ### or ## heading line that appears inside an open
+  # code fence is not treated as a section boundary and does not terminate
+  # the extraction.
+  cat > "$FIXTURE_DIR/fenced-headings.md" <<'EOF'
+### Review Round
+Preamble line
+```
+### Inside H3 Fence
+## Inside H2 Fence
+still inside fence
+```
+Post-fence line
+
+### Real Boundary
+Should not appear
+EOF
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/fenced-headings.md" "### Review Round")"
+  [ "$?" -eq 0 ]
+  [[ "$out" == *"### Review Round"* ]]
+  [[ "$out" == *"Preamble line"* ]]
+  [[ "$out" == *"### Inside H3 Fence"* ]]
+  [[ "$out" == *"## Inside H2 Fence"* ]]
+  [[ "$out" == *"Post-fence line"* ]]
+  [[ "$out" != *"### Real Boundary"* ]]
+  [[ "$out" != *"Should not appear"* ]]
+}
+
+@test "[fence-aware-extractor] closing triple-backtick fence restores heading-boundary detection" {
+  # Test expectation: exiting a code fence (closing triple-backtick line)
+  # restores heading-boundary detection for subsequent lines in the same
+  # extraction.
+  cat > "$FIXTURE_DIR/fence-restore.md" <<'EOF'
+### Target Section
+Before the fence
+```
+### Shielded Heading
+inside fence body
+```
+After the fence - should be included
+
+### Terminating Heading
+Content after terminator
+EOF
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/fence-restore.md" "### Target Section")"
+  [ "$?" -eq 0 ]
+  [[ "$out" == *"### Shielded Heading"* ]]
+  [[ "$out" == *"After the fence - should be included"* ]]
+  [[ "$out" != *"### Terminating Heading"* ]]
+  [[ "$out" != *"Content after terminator"* ]]
+}
+
+@test "[fence-aware-extractor] section extending to EOF extracts through the last line of the file" {
+  # Test expectation: when the target section extends to end-of-file with no
+  # subsequent section boundary, the function extracts content from the anchor
+  # line through the last line of the file.
+  cat > "$FIXTURE_DIR/eof.md" <<'EOF'
+### Preceding Section
+preceding content
+
+### Target Section
+First target line
+Second target line
+Third target line
+EOF
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/eof.md" "### Target Section")"
+  [ "$?" -eq 0 ]
+  [[ "$out" == *"### Target Section"* ]]
+  [[ "$out" == *"First target line"* ]]
+  [[ "$out" == *"Second target line"* ]]
+  [[ "$out" == *"Third target line"* ]]
+}
+
+@test "[fence-aware-extractor] missing anchor: exits non-zero with extract_section_fence_aware: prefix and anchor text in stderr" {
+  # Test expectation: for both error paths, the function exits non-zero and
+  # emits a single stderr message beginning with the literal function-name
+  # prefix extract_section_fence_aware: and includes the anchor heading value
+  # passed by the caller. The missing-anchor path's message body identifies
+  # that the anchor heading was not found.
+  cat > "$FIXTURE_DIR/present.md" <<'EOF'
+### Existing Section
+Some content here
+EOF
+  run extract_section_fence_aware "$FIXTURE_DIR/present.md" "### Absent Section"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"extract_section_fence_aware:"* ]]
+  [[ "$output" == *"### Absent Section"* ]]
+  [[ "$output" == *"not found"* ]]
+}
+
+@test "[fence-aware-extractor] empty region: exits non-zero with extract_section_fence_aware: prefix and anchor text in stderr" {
+  # Test expectation: the empty-region path's message body identifies that the
+  # anchor was located but no content sat between it and the next heading.
+  # The message begins with extract_section_fence_aware: and includes the anchor.
+  cat > "$FIXTURE_DIR/empty-region.md" <<'EOF'
+### Target Section
+### Immediately Following Section
+Content of next section
+EOF
+  run extract_section_fence_aware "$FIXTURE_DIR/empty-region.md" "### Target Section"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"extract_section_fence_aware:"* ]]
+  [[ "$output" == *"### Target Section"* ]]
+  # Empty-region message must NOT say "not found" -- anchor was located,
+  # the missing piece is content between it and the next heading.
+  [[ "$output" != *"not found"* ]]
+}
+
+@test "[fence-aware-extractor] missing-anchor and empty-region error messages are distinguishable by message body" {
+  # Test expectation: the two error paths are distinguishable by message body.
+  # Missing-anchor body identifies the anchor was not found; empty-region body
+  # identifies the anchor was located but no content followed it before the
+  # next heading boundary.
+  cat > "$FIXTURE_DIR/compare.md" <<'EOF'
+### Found Section
+### Immediately Next
+Content
+EOF
+  run extract_section_fence_aware "$FIXTURE_DIR/compare.md" "### Absent Anchor"
+  [ "$status" -ne 0 ]
+  absent_msg="$output"
+
+  run extract_section_fence_aware "$FIXTURE_DIR/compare.md" "### Found Section"
+  [ "$status" -ne 0 ]
+  empty_msg="$output"
+
+  # Missing-anchor message body must identify the not-found condition.
+  [[ "$absent_msg" == *"not found"* ]]
+  # Empty-region message body must NOT say "not found" -- anchor was located.
+  [[ "$empty_msg" != *"not found"* ]]
+}
+
+@test "[fence-aware-extractor] whitespace-only region between anchor and next heading triggers no-content error path" {
+  # Test expectation: a region containing only whitespace (blank lines, spaces,
+  # tabs) between anchor heading and next heading triggers the no-content error
+  # path (treated as empty).
+  cat > "$FIXTURE_DIR/whitespace-only.md" <<'EOF'
+### Target Section
+   
+	
+### Next Section
+Content here
+EOF
+  run extract_section_fence_aware "$FIXTURE_DIR/whitespace-only.md" "### Target Section"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"extract_section_fence_aware:"* ]]
+  [[ "$output" == *"### Target Section"* ]]
+  # Whitespace-only region is the empty-region path, not the missing-anchor path.
+  # The message body must NOT say "not found" — mirror the empty-region test pattern.
+  [[ "$output" != *"not found"* ]]
+}
+
+@test "[fence-aware-extractor] fenced-code fixture output matches parity contract (migration equivalence)" {
+  # Test expectation: both migrated call sites in test-skill-md-content-patterns.bats
+  # produce output identical to the prior inline extract_review_round output for
+  # the same input files. Verified here against a fixture that mirrors the
+  # structural pattern of the design SKILL.md Review Round section: a fenced
+  # code block containing heading-shaped lines, followed by a real out-of-fence
+  # boundary heading. The assertions match exactly what the two migrated tests
+  # assert on the real file.
+  cat > "$FIXTURE_DIR/design-like.md" <<'EOF'
+# Design SKILL
+
+## Background
+
+### Review Round
+Review instruction text
+```markdown
+## Approach
+Content inside code fence
+### Subsection inside fence
+More fenced content
+```
+Post-fence reviewer note
+Also post-fence
+
+### Dispatch
+Other section content
+EOF
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/design-like.md" "### Review Round")"
+  [ "$?" -eq 0 ]
+  # Anchor line included (anchor-inclusive contract, parity with extract_review_round).
+  [[ "$out" == *"### Review Round"* ]]
+  # Fenced heading-shaped lines must be present (fence-shielded, parity).
+  [[ "$out" == *"## Approach"* ]]
+  [[ "$out" == *"### Subsection inside fence"* ]]
+  # Post-fence prose included up to the real boundary (restored detection, parity).
+  [[ "$out" == *"Post-fence reviewer note"* ]]
+  [[ "$out" == *"Also post-fence"* ]]
+  # Real boundary heading and content after it must not appear.
+  [[ "$out" != *"### Dispatch"* ]]
+  [[ "$out" != *"Other section content"* ]]
+}
+
+@test "[fence-aware-extractor] inline extract_review_round definition removed from test-skill-md-content-patterns.bats after migration" {
+  # Test expectation: removing the inline extract_review_round definition from
+  # test-skill-md-content-patterns.bats causes no test failures in that suite.
+  # This test asserts the migration is complete by verifying the inline function
+  # definition is absent from the file (post-migration state). Fails RED because
+  # the definition is currently present.
+  require_repo_root
+  local patterns_file="$REPO_ROOT/tests/unit/test-skill-md-content-patterns.bats"
+  [ -f "$patterns_file" ]
+  # After migration, the inline function definition must be absent.
+  ! grep -q "^extract_review_round()" "$patterns_file"
+}
+
+# =============================================================================
+# sf.F01: awk crash produces distinct "awk failed (exit N)" diagnostic
+# (NOT "not found in")
+# =============================================================================
+
+@test "[sf-F01] extract_section_fence_aware: awk crash emits 'awk failed (exit' diagnostic, not 'not found in'" {
+  # sf.F01 (score 100, correctness): awk's exit status was swallowed in the
+  # original implementation.  A crash (non-zero exit from awk) was reported as
+  # "anchor not found", silently masking exec failures, OOM kills, etc.
+  # After the fix the function must:
+  #   - return 1
+  #   - emit a message containing "awk failed (exit" on stderr
+  #   - NOT emit the misleading "not found in" phrase
+  #
+  # Technique: shadow awk in PATH with a script that always exits 2.
+  local fake_bin="$FIXTURE_DIR/fake-bin"
+  mkdir -p "$fake_bin"
+  printf '#!/bin/sh\nexit 2\n' > "$fake_bin/awk"
+  chmod +x "$fake_bin/awk"
+
+  cat > "$FIXTURE_DIR/any.md" <<'EOF'
+### Some Section
+content here
+EOF
+
+  # Run with the fake awk first in PATH so the real awk is never reached.
+  run env PATH="$fake_bin:$PATH" bash -c '
+    load_dir="'"$BATS_TEST_DIRNAME"'/../helpers"
+    # shellcheck source=tests/helpers/skill-markdown.bash
+    source "$load_dir/skill-markdown.bash"
+    extract_section_fence_aware "'"$FIXTURE_DIR/any.md"'" "### Some Section"
+  '
+
+  # Must exit non-zero
+  [ "$status" -ne 0 ]
+  # Must contain the new distinct diagnostic
+  [[ "$output" == *"awk failed (exit"* ]]
+  # Must NOT fall through to the misleading anchor-not-found message
+  [[ "$output" != *"not found in"* ]]
+}
+
+# =============================================================================
+# sec.F01: predictable signal-tmp path TOCTOU/symlink attack hardening
+# =============================================================================
+
+@test "[sec-F01] extract_section_fence_aware: mktemp-generated signal-tmp does not follow pre-planted symlink (TOCTOU fix)" {
+  # sec.F01 (score 78, correctness): signal_tmp was computed as
+  # /tmp/skill-md-fence-signal-$$ — predictable before the process starts.
+  # A local attacker can pre-create a symlink at that path pointing at an
+  # arbitrary target; awk's END block then overwrites the symlink target.
+  #
+  # After the fix (mktemp generates an unguessable unique path), the
+  # pre-planted symlink at the old predictable path is never touched, so
+  # the attack target file retains its original content.
+  #
+  # RED rationale: pre-fix, awk writes FOUND_WITH_CONTENT to the predictable
+  # path which follows the symlink and overwrites attack_target; the assertion
+  # that attack_target == ORIGINAL_CONTENT therefore FAILS (RED).
+  # Post-fix, mktemp creates a distinct path; the symlink is untouched;
+  # the assertion PASSES (GREEN).
+
+  # Create the attack target with known content.
+  local attack_target="$FIXTURE_DIR/sec-f01-attack-target"
+  printf 'ORIGINAL_CONTENT\n' > "$attack_target"
+
+  # Plant the symlink at the predictable path (uses $$ = bats process PID;
+  # extract_section_fence_aware runs in the same process so its $$ matches).
+  local predictable_path="/tmp/skill-md-fence-signal-$$"
+  ln -sf "$attack_target" "$predictable_path"
+
+  # Fixture file with a valid non-empty section so awk reaches its END block
+  # and writes FOUND_WITH_CONTENT to whatever signal_tmp resolves to.
+  cat > "$FIXTURE_DIR/valid.md" <<'EOF'
+### Some Section
+content line that is not empty
+EOF
+
+  # Direct call (no `run`) so the function executes in this shell where $$
+  # equals the bats PID — same value the function uses to build the
+  # predictable path if it has not yet been fixed.
+  extract_section_fence_aware "$FIXTURE_DIR/valid.md" "### Some Section" \
+    >/dev/null 2>&1 || true
+
+  # Remove the symlink regardless of outcome (test-level cleanup).
+  rm -f "$predictable_path"
+
+  # Post-fix: attack target must contain its original content (symlink was
+  # never followed because mktemp generated a unique path).
+  local content
+  content="$(cat "$attack_target")"
+  [ "$content" = "ORIGINAL_CONTENT" ]
+}
+
+# =============================================================================
+# sf.F03: empty fenced block (delimiters only) treated as content, not FOUND_EMPTY
+# =============================================================================
+
+@test "[r7-sf.F01] mktemp failure surfaces mktemp-named diagnostic" {
+  # sf.F01 (score 85, correctness): when mktemp fails (e.g. TMPDIR points to a
+  # non-existent directory), signal_tmp becomes empty and the function fell
+  # through to awk, which emitted a misleading "not found in" or "awk failed
+  # (exit 2)" diagnostic that hid the real root cause.
+  #
+  # After the fix, the function must return non-zero AND write a stderr message
+  # containing the literal substring "mktemp" so the operator can identify the
+  # real cause without guessing.
+  #
+  # Technique: shadow mktemp in PATH with a script that exits 1 silently (no
+  # output).  This prevents mktemp's own "mkstemp failed" message from leaking
+  # into $output and making the assertion vacuous before the fix is applied.
+  # Pre-fix: signal_tmp="" → awk runs → "not found in" (no "mktemp" substring).
+  # Post-fix: guard fires → "extract_section_fence_aware: mktemp failed …"
+  #   (contains "mktemp") → function returns 1 before awk is invoked.
+  local fake_bin="$FIXTURE_DIR/fake-bin"
+  mkdir -p "$fake_bin"
+  printf '#!/bin/sh\nexit 1\n' > "$fake_bin/mktemp"
+  chmod +x "$fake_bin/mktemp"
+
+  cat > "$FIXTURE_DIR/doc.md" <<'EOF'
+### Some Section
+content here
+### Next Section
+EOF
+
+  # Run with the silent fake mktemp first in PATH.
+  run env PATH="$fake_bin:$PATH" bash -c '
+    load_dir="'"$BATS_TEST_DIRNAME"'/../helpers"
+    # shellcheck source=tests/helpers/skill-markdown.bash
+    source "$load_dir/skill-markdown.bash"
+    extract_section_fence_aware "'"$FIXTURE_DIR/doc.md"'" "### Some Section"
+  '
+
+  # Must exit non-zero.
+  [ "$status" -ne 0 ]
+  # Stderr (captured by bats run) must name mktemp as the root cause.
+  [[ "$output" == *"mktemp"* ]]
+}
+
+@test "[sf-F03] extract_section_fence_aware: section containing only an empty fenced block returns 0 with fence delimiters in stdout" {
+  # sf.F03 (score 88, correctness): the /^```/ rule inside the awk script set
+  # fence state and printed the delimiter line but never set has_content=1.
+  # A section whose body was an empty fenced code block (two ``` delimiter lines
+  # with nothing between them) was therefore misclassified as FOUND_EMPTY and
+  # its output silently discarded.
+  #
+  # After the fix, fence delimiter lines inside the target section must set
+  # has_content=1, so the function returns 0 and emits both delimiter lines.
+  cat > "$FIXTURE_DIR/empty-fence.md" <<'EOF'
+### Target Section
+```
+```
+### Next Section
+other content
+EOF
+
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/empty-fence.md" "### Target Section")"
+  local rc=$?
+
+  # Pre-fix: returns 1 (FOUND_EMPTY). Post-fix: must return 0.
+  [ "$rc" -eq 0 ]
+  # Both fence delimiter lines must appear in the output.
+  [[ "$out" == *'```'* ]]
+  # Verify the anchor line is present (anchor-inclusive contract).
+  [[ "$out" == *"### Target Section"* ]]
+  # The next section's content must not bleed through.
+  [[ "$out" != *"other content"* ]]
+}
+
+# =============================================================================
+# tc.F02: arity guard — extract_section_fence_aware rejects wrong arg counts
+# =============================================================================
+
+@test "[tc-F02] extract_section_fence_aware: arity guard rejects 0 args with status=1 and expected-2-args message" {
+  # tc.F02 (score 72, correctness): the arity guard at lines 222-225 of
+  # skill-markdown.bash emits "expected 2 args (file, anchor-heading); got %d"
+  # but was untested. This test confirms the guard fires on 0 args.
+  run extract_section_fence_aware
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"expected 2 args"* ]]
+}
+
+@test "[tc-F02] extract_section_fence_aware: arity guard rejects 1 arg with status=1 and expected-2-args message" {
+  # tc.F02 (score 72, correctness): confirm the arity guard fires on 1 arg.
+  run extract_section_fence_aware "only-one-arg"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"expected 2 args"* ]]
+}
+
+@test "[tc-F02] extract_section_fence_aware: arity guard rejects 3 args with status=1 and expected-2-args message" {
+  # tc.F02 (score 72, correctness): confirm the arity guard fires on 3 args.
+  run extract_section_fence_aware "arg1" "arg2" "arg3"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"expected 2 args"* ]]
+}
+
+# =============================================================================
+# tc.F01: unreadable-file guard — extract_section_fence_aware rejects chmod 000
+# =============================================================================
+
+@test "[tc-F01] extract_section_fence_aware: unreadable file returns status=1 with file-unreadable message" {
+  # tc.F01 (score 82, correctness): the unreadable-file guard at lines 229-232
+  # of skill-markdown.bash emits "extract_section_fence_aware: file unreadable:"
+  # but was untested. This test creates a file, chmod 000s it, calls the
+  # function, and asserts status=1 plus the unreadable message.
+  # Skip if running as root (root can always read files).
+  if [ "$(id -u)" -eq 0 ]; then
+    skip "running as root — chmod 000 does not block reads"
+  fi
+  local unreadable="$FIXTURE_DIR/unreadable.md"
+  printf '### Section\ncontent\n' > "$unreadable"
+  chmod 000 "$unreadable"
+  run extract_section_fence_aware "$unreadable" "### Section"
+  chmod 644 "$unreadable"   # restore before teardown tries rm -rf
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"extract_section_fence_aware:"* ]]
+  [[ "$output" == *"file unreadable"* ]]
+}
+
+# =============================================================================
+# tc.F03: H2 anchor — extract_section_fence_aware works with ## headings
+# =============================================================================
+
+@test "[tc-F03] extract_section_fence_aware: H2 anchor (## heading) is located and content extracted" {
+  # tc.F03 (score 75, correctness): the awk boundary rule is
+  # '/^## / || /^### /' but all 14 prior tests use only H3 anchors. This test
+  # exercises the H2 code path — happy path is sufficient.
+  cat > "$FIXTURE_DIR/h2-anchor.md" <<'EOF'
+## Overview
+Overview line one
+Overview line two
+
+## Next Section
+Other content
+EOF
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/h2-anchor.md" "## Overview")"
+  [ "$?" -eq 0 ]
+  # Anchor line included (anchor-inclusive contract).
+  [[ "$out" == *"## Overview"* ]]
+  # Content lines present.
+  [[ "$out" == *"Overview line one"* ]]
+  [[ "$out" == *"Overview line two"* ]]
+  # Next section must not bleed through.
+  [[ "$out" != *"## Next Section"* ]]
+  [[ "$out" != *"Other content"* ]]
+}
+
+# =============================================================================
+# tc.F04: TOCTOU test — capture and assert output content, not just status
+# =============================================================================
+
+@test "[tc-F04] extract_section_fence_aware: TOCTOU-safe call returns status=0 and correct content for existing anchor" {
+  # tc.F04 (score 75, correctness): the sec-F01 TOCTOU test called the function
+  # with '>/dev/null 2>&1 || true', discarding both output and status. That
+  # means a regression breaking the return value would not be caught. This test
+  # strengthens the TOCTOU scenario by asserting the function also correctly
+  # returns content for the anchor that existed at check-time (i.e., the mktemp
+  # guard doesn't break the happy path while guarding against symlink attack).
+
+  local attack_target="$FIXTURE_DIR/tc-f04-attack-target"
+  printf 'ORIGINAL_CONTENT\n' > "$attack_target"
+
+  # Plant the predictable symlink (same technique as sec-F01 test).
+  local predictable_path="/tmp/skill-md-fence-signal-$$"
+  ln -sf "$attack_target" "$predictable_path"
+
+  # Fixture: valid section with identifiable content.
+  cat > "$FIXTURE_DIR/tc-f04-valid.md" <<'EOF'
+### Checked Section
+content-line-alpha
+content-line-beta
+### Boundary
+EOF
+
+  # Capture status and output — do NOT discard with /dev/null.
+  local out
+  out="$(extract_section_fence_aware "$FIXTURE_DIR/tc-f04-valid.md" "### Checked Section" 2>/dev/null)"
+  local rc=$?
+
+  # Cleanup symlink regardless.
+  rm -f "$predictable_path"
+
+  # The function must succeed and produce the correct content.
+  [ "$rc" -eq 0 ]
+  [[ "$out" == *"### Checked Section"* ]]
+  [[ "$out" == *"content-line-alpha"* ]]
+  [[ "$out" == *"content-line-beta"* ]]
+  # The attack target must retain its original content (symlink was not followed).
+  local target_content
+  target_content="$(cat "$attack_target")"
+  [ "$target_content" = "ORIGINAL_CONTENT" ]
+}
+

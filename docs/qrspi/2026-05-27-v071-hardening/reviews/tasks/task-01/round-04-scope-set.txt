@@ -1,0 +1,2 @@
+docs/qrspi/2026-05-27-v071-hardening/tasks/task-01.md
+tests/unit/test-run-third-party-llm.bats

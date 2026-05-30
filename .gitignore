@@ -1,5 +1,8 @@
 .worktrees/
 
+# QRSPI implementer scratch file
+.qrspi-commit-msg.txt
+
 # Editor / IDE
 .vscode/
 

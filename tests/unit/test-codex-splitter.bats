@@ -1,5 +1,12 @@
 #!/usr/bin/env bats
 
+# This file uses `run --separate-stderr`, a flag added in bats-core 1.5.0.
+# Declaring the minimum version silences BW02 warnings and produces a clear
+# up-front error on older bats installs (which the CI bash:3.2 container
+# treats as a non-zero exit, failing the whole suite despite all tests
+# passing).
+bats_require_minimum_version 1.5.0
+
 setup() {
   ROUND_DIR=$(mktemp -d)
   TAG=quality-codex

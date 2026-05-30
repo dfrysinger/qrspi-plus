@@ -1,0 +1,83 @@
+diff --git a/scripts/run-codex-review.sh b/scripts/run-codex-review.sh
+index 211aa6d..e775116 100755
+--- a/scripts/run-codex-review.sh
++++ b/scripts/run-codex-review.sh
+@@ -113,18 +113,21 @@ require_value() {
+ # via PATH=/usr/../tmp/fakebins:... (`..` not normalised) and via symlinks inside
+ # trusted prefixes.  Normalize with realpath (BSD/macOS) or readlink -f (GNU/Linux)
+ # before the prefix check; both resolve `..` segments AND follow symlinks so the
+-# real filesystem path is compared.  Falls back to the raw command-v output if
+-# neither tool is available, preserving the R5 guarantee while closing the new
+-# vectors on any platform that ships either utility.
++# real filesystem path is compared.
++# sec.F01 (R8): the previous `|| printf '%s' "$_gh_path"` pass-through fallback
++# re-opened R7 vectors on hosts where both realpath and readlink -f are absent.
++# Fix: fail-closed — when both normalization tools fail the assignment fails and
++# _gh_path is forced to ""; the downstream -n guard then short-circuits to the
++# safe claude-code default.  No path normalization = no trusted-prefix check.
+ detect_host() {
+   local _gh_path
+   _gh_path="$(command -v gh 2>/dev/null)"
+   # Normalize: resolve symlinks and .. segments so the prefix check operates on
+   # the canonical filesystem path, not a PATH-constructed string.
++  # Fail-closed (R8): if both tools are absent/fail, _gh_path is set to ""; the
++  # -n guard below then short-circuits to the safe claude-code default.
+   if [[ -n "$_gh_path" ]]; then
+-    _gh_path="$(realpath "$_gh_path" 2>/dev/null \
+-      || readlink -f "$_gh_path" 2>/dev/null \
+-      || printf '%s' "$_gh_path")"
++    _gh_path="$(realpath "$_gh_path" 2>/dev/null || readlink -f "$_gh_path" 2>/dev/null)" || _gh_path=""
+   fi
+   if [[ "${COPILOT_CLI:-}" == "1" ]] && \
+      [[ -n "$_gh_path" ]] && \
+diff --git a/tests/unit/test-codex-review-host-detection.bats b/tests/unit/test-codex-review-host-detection.bats
+index 14b6174..6b3662c 100644
+--- a/tests/unit/test-codex-review-host-detection.bats
++++ b/tests/unit/test-codex-review-host-detection.bats
+@@ -102,6 +102,46 @@ teardown() {
+ # sec.F02 (R7) — symlink in /opt to /tmp rejected
+ # ===========================================================================
+ 
++# ===========================================================================
++# sec.F01 (R8) — fail-closed when both realpath and readlink -f are absent
++# ===========================================================================
++
++@test "[r8-sec.F01] detect_host fail-closed when realpath and readlink-f both absent" {
++  # Attack: PATH=/usr/../<tmpdir>/fakebins:... (..‑injection, R7 vector)
++  # On this test platform, realpath and readlink are normally available and
++  # would normalise the path and reject it.  This test simulates an environment
++  # where BOTH are absent / non-functional by placing failing shims ahead of
++  # the real binaries on PATH.
++  #
++  # RED (before fix): the fallback `|| printf '%s' "$_gh_path"` preserves the
++  # raw "/usr/../<tmpdir>/fakebins/gh" string, which matches /usr/* → emits
++  # "copilot-cli".
++  #
++  # GREEN (after fix): the fail-closed assignment produces an empty string when
++  # both tools fail; the -n guard short-circuits and detect_host emits
++  # "claude-code".
++
++  # Build failing shims for realpath and readlink.
++  local shim_dir="$TMP_DIR/no-norm-shims"
++  mkdir -p "$shim_dir"
++  printf '#!/bin/sh\nexit 1\n' > "$shim_dir/realpath"
++  printf '#!/bin/sh\nexit 1\n' > "$shim_dir/readlink"
++  chmod +x "$shim_dir/realpath" "$shim_dir/readlink"
++
++  # Injected PATH: the shims precede real system bins so realpath/readlink fail,
++  # but the fake gh (in FAKE_BIN prepended via /usr/../) is found first.
++  local injected_path="/usr/../${FAKE_BIN}:${shim_dir}:/usr/bin:/bin"
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    export PATH='${injected_path}'
++    . \"$WRAPPER\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
+ @test "[r7-sec.F02] symlink in trusted prefix pointing to untrusted dir rejected" {
+   # Attack: place a symlink inside a trusted-prefix directory (simulated via
+   # a symlink inside the test tmp dir itself) that points to the fake gh binary.

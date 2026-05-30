@@ -1,0 +1,245 @@
+--- /dev/null
++++ structure.md (R1 to review)
+@@ -0,0 +1,242 @@
++---
++status: draft
++---
++
++# Structure: qrspi-plus v0.7.1 hardening
++
++Eight vertical slices land together in a single hardening PR, each touching the files below; the cross-cutting integration risk (host-detection consistency between Slice 6 and Slice 8) is resolved by sharing one `detect_host()` implementation at the `scripts/run-codex-review.sh` boundary.
++
++## File Map
++
++Each table row names one concrete file, its action, a one-line boundary responsibility, and the goal IDs driving the change.
++
++### Slice 1: POSIX control-char detection rewrite (G1)
++
++| File | Action | Responsibility | Goal IDs |
++|------|--------|----------------|----------|
++| `scripts/run-third-party-llm.sh` | Modify | Replace the `grep -qP` control-char detection block (lines 558--569) with a `_control_char_check()` function using `LC_ALL=C tr -d '[:cntrl:]'` + `LC_ALL=C wc -c` byte comparison; the function is called for each header name and value within the `openai-chat-completions` transport block | G1 |
++| `tests/unit/test-run-third-party-llm.bats` | Modify | Extend existing control-char coverage to pin all 33 C0+DEL bytes (0x00--0x1F, 0x7F) as die-path triggers, and add an explicit LF (0x0a) regression guard against the prior BSD-grep silent-false-negative | G1 |
++
++### Slice 2: Scratch commit-message file added to committed gitignore (G2)
++
++| File | Action | Responsibility | Goal IDs |
++|------|--------|----------------|----------|
++| `.gitignore` | Modify | Add `.qrspi-commit-msg.txt` entry so the scratch commit-message file is excluded on all fresh clones and worktrees, independent of per-clone `.git/info/exclude` setup | G2 |
++| `tests/unit/test-commit-hygiene-invariants.bats` | Modify | Add assertions that `.qrspi-commit-msg.txt` matches the committed `.gitignore` and that the scratch file is absent from the staged index in a simulated implementer commit flow; existing `.git/info/exclude` invariant tests are retained | G2 |
++
++### Slice 3: Fence-aware extract helper promoted to shared library (G3)
++
++| File | Action | Responsibility | Goal IDs |
++|------|--------|----------------|----------|
++| `tests/helpers/skill-markdown.bash` | Modify | Add `extract_section_fence_aware` as a new exported function alongside `extract_section`; exposes fence-toggle tracking, exit-on-next-fence, exit-on-next-heading, and an empty-extract diagnostic guard | G3 |
++| `tests/unit/test-skill-md-content-patterns.bats` | Modify | Migrate the inline `extract_review_round` call sites (lines 185 and 206) to the shared `extract_section_fence_aware` and remove the local duplicate definition (lines 167--176) | G3 |
++| `tests/unit/test-helpers-skill-markdown.bats` | Modify | Add unit coverage for `extract_section_fence_aware`: fence-toggle correctness, exit-on-next-fence, exit-on-next-heading-anchor, and empty-extract guard | G3 |
++
++### Slice 4: Wave-grouped Branch Map presentation (G4)
++
++| File | Action | Responsibility | Goal IDs |
++|------|--------|----------------|----------|
++| `skills/parallelize/SKILL.md` | Modify | Replace the flat three-column Branch Map with `### Wave N` sub-sections (each sub-section contains a Task/Branch/Base mini-table); remove the now-redundant `## Execution Order` prose section; update the inline "Good" and "Bad" worked-example pairs to the new Wave-grouped shape | G4 |
++| `agents/qrspi-parallelize-reviewer.md` | Modify | Update the Branch Map structural-rule assertions (lines 28--34) to require `### Wave N` sub-section grouping rather than the flat three-column layout | G4 |
++
++### Slice 5: Drop evergreen-lint path carve-outs (G5)
++
++| File | Action | Responsibility | Goal IDs |
++|------|--------|----------------|----------|
++| `tests/unit/test-evergreen-markdown.bats` | Modify | Remove all 5 path-shaped exemption groups (6 `case` patterns) from `_is_path_exempt()`; the inline `<!-- evergreen-exempt -->` mechanism is the sole remaining escape hatch | G5 |
++
++### Slice 6: Cross-CLI Codex detection and per-host dispatch transport (G6)
++
++| File | Action | Responsibility | Goal IDs |
++|------|--------|----------------|----------|
++| `scripts/run-codex-review.sh` | Modify | Add `detect_host()` env-var probe function that returns `copilot-cli` or `claude-code`; add `check_codex_available()` per-host availability check; add per-host transport branch selecting the shell-pipeline path (Claude Code) or the native task-tool dispatch annotation (Copilot CLI) | G6 |
++| `skills/using-qrspi/SKILL.md` | Modify | Update the Codex-detection section to name both dispatch transports with per-host conditional prose; add a one-line config-vs-detection mismatch diagnostic hook at the detection boundary | G6 |
++| `tests/unit/test-host-detection.bats` | Create | Unit tests for `detect_host()` under mocked `COPILOT_CLI` env signals and `check_codex_available()` per host; pins transport-selection correctness for both Claude Code and Copilot CLI paths | G6 |
++
++### Slice 7: Cache mechanism retirement (G7a)
++
++| File | Action | Responsibility | Goal IDs |
++|------|--------|----------------|----------|
++| `scripts/g4-cache-probe.sh` | Delete | Remove the cache-probe script (the spike that was never executed) | G7a |
++| `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` | Delete | Remove the stub spike report (`run_id: stub-pending-live-execution`) | G7a |
++| `tests/unit/test-cache-control-capability-gate.bats` | Delete | Remove the dual-flag cache-control capability-gate unit suite | G7a |
++| `tests/unit/test-cache-hit-rate.bats` | Delete | Remove the cache-hit-rate path-conditional unit suite | G7a |
++| `skills/using-qrspi/SKILL.md` | Modify | Remove `supports_prompt_cache` and `emit_cache_control_markers` from the providers block (both the YAML example values and the description bullets; lines 427--428 and 441--442) | G7a |
++| `scripts/run-third-party-llm.sh` | Modify | Remove the `cache_control` marker emission branch from `_dispatch_openai_chat` (lines 196--221 and 499--512) | G7a |
++| `tests/unit/test-run-third-party-llm.bats` | Modify | Remove the 4-cell truth-table cache-control assertions that duplicate the deleted `test-cache-control-capability-gate.bats` suite | G7a |
++| `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` | Modify | Drop the `SPIKE` export pointing at the deleted spike report (line 25) and the two `run run_pin` invocations for the deleted cache unit suites (lines 208 and 210) | G7a |
++
++### Slice 8: Agent model-field deletion with tier vocabulary preserved (G7b)
++
++| File | Action | Responsibility | Goal IDs |
++|------|--------|----------------|----------|
++| `agents/*.md (41 files)` | Modify | Remove the top-level `model:` YAML frontmatter field from all 41 agent files; tier names (haiku, sonnet, opus, inherit) in dispatcher prose are preserved as platform-agnostic vocabulary | G7b |
++| `docs/qrspi/2026-05-27-v071-hardening/config.md` | Modify | Populate the `model_routing:` table with per-host concrete-model entries for both Claude Code and Copilot CLI hosts, resolving the tier vocabulary to the appropriate model IDs per host | G7b |
++| `tests/unit/test-agent-frontmatter-no-model.bats` | Create | Structural lint asserting that no `agents/*.md` frontmatter carries a top-level `model:` key; one test per agent glob, one test confirming zero matches for the `^model:` pattern across the entire `agents/` directory | G7b |
++
++---
++
++## Interfaces
++
++Three components expose new or modified public boundaries; all others are internal rewrites. Shell function signatures use positional-arg notation; return codes are POSIX (0 = success, 1 = failure).
++
++### `tests/helpers/skill-markdown.bash` -- `extract_section_fence_aware`
++
++The new fence-aware extraction function is a sibling to `extract_section` and shares the same empty-extract diagnostic convention.
++
++```bash
++# extract_section_fence_aware(file, start_pattern)
++#
++# $1  file        -- path to the Markdown file to extract from
++# $2  start_pattern -- grep -E compatible pattern matching the anchor line
++#                      (e.g. "^### Review Round")
++#
++# Output: all lines from the first start_pattern match through
++#         the next out-of-fence heading line ("^## " or "^### ") or EOF,
++#         with fence state tracked (``` toggle) so heading-shaped lines
++#         inside code fences are NOT treated as section boundaries.
++#         The anchor line itself IS included in the output.
++#
++# Returns: 0 on non-empty extract, written to stdout
++#          1 with "skill-markdown: <file>: <start_pattern>: empty extract"
++#            diagnostic to stderr on empty or missing extract
++#
++# Bash 3.2 portable; no nameref, no associative arrays, no $'...'
++extract_section_fence_aware()
++```
++
++### `scripts/run-codex-review.sh` -- `detect_host` and `check_codex_available`
++
++The two host-detection functions are the single shared probe implementation serving both G6 (transport selection) and G7b (model_routing default selection) per DKR10.
++
++```bash
++# detect_host()
++#
++# Probes COPILOT_CLI=1 first; falls through to "claude-code" default.
++# Codex CLI as a host is out of scope for v0.7.1 and falls through
++# to the "claude-code" branch.
++#
++# Output: "copilot-cli" or "claude-code" written to stdout
++# Returns: always 0
++# No arguments.
++detect_host()
++
++# check_codex_available(host)
++#
++# $1  host -- "copilot-cli" or "claude-code" (output of detect_host)
++#
++# Under "copilot-cli": Codex is always available as gpt-5.3-codex
++#   via the native task tool; no filesystem probe; returns 0.
++# Under "claude-code": globs
++#   ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs;
++#   returns 0 on at least one match, 1 on no match.
++#
++# Returns: 0 (Codex reachable on this host), 1 (not reachable)
++check_codex_available()
++```
++
++### `scripts/run-third-party-llm.sh` -- `_control_char_check`
++
++The internal helper replaces the inline `grep -qP` call within the security pre-flight block; it is not exported for external callers.
++
++```bash
++# _control_char_check(str)
++#
++# $1  str -- the string to inspect (a single header name or header value)
++#
++# Strips all POSIX [:cntrl:] bytes (0x00--0x1F and 0x7F, including LF)
++# using LC_ALL=C tr -d '[:cntrl:]', then compares byte count via
++# LC_ALL=C wc -c.  A non-zero difference means at least one control
++# byte was present.
++#
++# Returns: 0 (clean -- no control bytes), 1 (control byte detected)
++# On rc=1, the caller invokes die() with the header-validation message.
++_control_char_check()
++```
++
++---
++
++## Architectural Diagram
++
++Modules are grouped by the three portability mechanisms that form the design's through-line (POSIX-clean shell, model-tier abstraction, dispatch-transport branching), with repo-hygiene slices shown as a separate cluster. Arrows are runtime data-flow or dependency direction.
++
++```mermaid
++flowchart TD
++  subgraph transport["Dispatch-transport branching -- Slice 6"]
++    ENV["COPILOT_CLI=1\nenv signal"]
++    DETECT["detect_host()\nrun-codex-review.sh"]
++    AVAIL["check_codex_available()\nrun-codex-review.sh"]
++    COPILOT_T["Copilot CLI transport\ntask tool / gpt-5.3-codex"]
++    CLAUDE_T["Claude Code transport\nrun-codex-review.sh shell pipeline"]
++    ENV --> DETECT
++    DETECT -->|"copilot-cli"| AVAIL
++    DETECT -->|"claude-code"| AVAIL
++    AVAIL -->|"host = copilot-cli"| COPILOT_T
++    AVAIL -->|"host = claude-code"| CLAUDE_T
++    USING_QRSPI["skills/using-qrspi/SKILL.md"]
++    USING_QRSPI -->|"prose: per-host transport + mismatch diagnostic"| DETECT
++  end
++
++  subgraph tier["Model-tier abstraction -- Slice 8"]
++    AGENTS["agents/*.md (41 files)\nmodel: field removed"]
++    CONFIG_RT["config.md\nmodel_routing: table"]
++    TIER_NAME["Tier name in dispatcher prose\nhaiku / sonnet / opus"]
++    CONFIG_RT -->|"host-resolved concrete model ID"| TIER_NAME
++    AGENTS -.->|"model: absent; tier from prose"| TIER_NAME
++    TEST_LINT["test-agent-frontmatter-no-model.bats\nno model: field asserted"]
++    AGENTS -->|"structural lint"| TEST_LINT
++  end
++
++  subgraph posix_shell["POSIX-clean shell -- Slice 1"]
++    RUN_LLM["scripts/run-third-party-llm.sh"]
++    CTRL_CHK["_control_char_check()\ntr + wc -c"]
++    RUN_LLM -->|"calls per header name/value"| CTRL_CHK
++    TEST_LLM["tests/unit/test-run-third-party-llm.bats"]
++    CTRL_CHK -->|"all 33 bytes + LF guard"| TEST_LLM
++  end
++
++  subgraph hygiene["Repo hygiene -- Slices 2, 3, 4, 5"]
++    GITIGNORE[".gitignore\n+ .qrspi-commit-msg.txt"]
++    COMMIT_TEST["test-commit-hygiene-invariants.bats\ngitignore match + staged-index absence"]
++    GITIGNORE -->|"asserted by"| COMMIT_TEST
++
++    HELPER["tests/helpers/skill-markdown.bash\n+ extract_section_fence_aware()"]
++    TEST_PATTERNS["test-skill-md-content-patterns.bats\nextract_review_round migrated"]
++    TEST_HELPERS["test-helpers-skill-markdown.bats\nfence-aware unit coverage"]
++    HELPER -->|"consumed by"| TEST_PATTERNS
++    HELPER -->|"unit coverage"| TEST_HELPERS
++
++    PAR_SKILL["skills/parallelize/SKILL.md\nWave N sub-sections"]
++    PAR_AGENT["agents/qrspi-parallelize-reviewer.md\nWave N rule asserted"]
++    PAR_SKILL -->|"shape contract"| PAR_AGENT
++
++    EVERGREEN["test-evergreen-markdown.bats\n_is_path_exempt() carve-outs removed"]
++  end
++
++  subgraph retirements["Cache retirement -- Slice 7"]
++    DEL_PROBE["scripts/g4-cache-probe.sh\nDELETE"]
++    DEL_SPIKE["spikes/g4-cache-probe.md\nDELETE"]
++    DEL_GATE["test-cache-control-capability-gate.bats\nDELETE"]
++    DEL_RATE["test-cache-hit-rate.bats\nDELETE"]
++    USING_7A["skills/using-qrspi/SKILL.md\ncache fields removed"]
++    RUN_7A["scripts/run-third-party-llm.sh\ncache branch removed"]
++    ACCEPT["tests/acceptance/v07-phase1/\ntest-phase1-acceptance.bats\nSPIKE export + run_pin removed"]
++    DEL_PROBE -.->|"deleted"| USING_7A
++    DEL_SPIKE -.->|"deleted"| ACCEPT
++    DEL_GATE -.->|"deleted"| ACCEPT
++    DEL_RATE -.->|"deleted"| ACCEPT
++  end
++
++  DETECT -.->|"shared probe serves G7b"| CONFIG_RT
++  CLAUDE_T -->|"dispatches via"| RUN_LLM
++  RUN_7A -.->|"same file as Slice 1"| RUN_LLM
++  USING_7A -.->|"same file as Slice 6"| USING_QRSPI
++```
++
++---
++
++## CI Pipeline
++
++The existing CI pipeline is unchanged for this release. The two jobs defined in `.github/workflows/ci.yml` -- the Lint job (shellcheck + bash-3.2 ban-list grep) and the BATS-under-bash:3.2 job -- already cover every test file in this release's scope. No workflow file changes are required.
++
++The replan gate for Phase 1 (per `phasing.md`) requires this pipeline to pass with zero regressions against the hardening branch baseline. The workflow file path for traceability is `.github/workflows/ci.yml`.

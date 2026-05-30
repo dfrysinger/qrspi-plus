@@ -1,0 +1,266 @@
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/plan.md b/docs/qrspi/2026-05-27-v071-hardening/plan.md
+new file mode 100644
+index 0000000..c45d507
+--- /dev/null
++++ b/docs/qrspi/2026-05-27-v071-hardening/plan.md
+@@ -0,0 +1,260 @@
++---
++status: draft
++phase_start_commit: null
++test_writer_model: sonnet
++---
++
++# Implementation Plan: qrspi-plus v0.7.1 Hardening
++
++## Project Environment
++
++- **build_command:** none -- pure-script + markdown release; no build artifact produced.
++- **dev_command:** none -- no smoke-check server or watch process required for this release; all test surfaces are covered by the existing Lint job and BATS-under-bash-3.2 job in CI.
++
++## Overview
++
++This plan covers a single Phase 1 for the v0.7.1 hardening release: 10 tasks across 8 vertical slices (G1-G7b), all landing together as one coordinated PR. G8 is closed as out of scope per Design DKR11 (the broader subagent-dispatch port is deferred to v0.8).
++
++The 10 tasks follow a dependency chain shaped by three files that are co-modified across multiple slices. `skills/using-qrspi/SKILL.md` is touched by Task 7 (G6 transport prose), Task 8 (G7a cache-field removal), and Task 10 (G7b model-routing prose); those three must execute in that order. `scripts/run-third-party-llm.sh` is touched by Task 1 (G1 detection rewrite) and Task 8 (G7a cache-branch removal); Task 8 must follow Task 1. `tests/unit/test-run-third-party-llm.bats` is co-modified by Task 1 (coverage extension) and Task 8 (assertion removal); same ordering applies. `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` is co-modified by Task 7 (G6 E2E coverage) and Task 8 (G7a SPIKE and run_pin removal); Task 8 must follow Task 7.
++
++**Dependency graph:**
++
++- Tasks 1, 2, 3, 4, 5, 6, 9: no inter-task dependencies; may execute in any order or in parallel.
++- Task 7 (G6 SKILL prose + acceptance test): requires Task 6 (host-detection functions must exist before the prose references them and before the acceptance test can exercise them).
++- Task 8 (G7a cache retirement): requires Task 1 (co-modifies `run-third-party-llm.sh` and its test suite) and Task 7 (co-modifies `using-qrspi/SKILL.md` and the acceptance test).
++- Task 10 (G7b model_routing table + SKILL prose): requires Task 8 (sequencing of `using-qrspi/SKILL.md`) and Task 9 (the structural lint test file created by Task 9 is extended by Task 10).
++
++**Slice-to-task mapping:**
++
++- Slice 1 (G1): Task 1
++- Slice 2 (G2): Task 2
++- Slice 3 (G3): Task 3
++- Slice 4 (G4): Task 4
++- Slice 5 (G5): Task 5
++- Slice 6 (G6): Tasks 6 and 7
++- Slice 7 (G7a): Task 8
++- Slice 8 (G7b): Tasks 9 and 10
++
++## Phase 1: v0.7.1 Hardening Release
++
++All 10 tasks are in Phase 1. The single-phase structure is warranted because each slice carries its own targeted test layer (unit, integration, structural lint, or smoke), the 8 slices are independent hardening changes with no cross-slice shared new mechanism, and the one genuine cross-cutting integration risk (host-detection consistency between G6 and G7b) is resolved by Tasks 6, 7, and 10 sharing one detection implementation as directed by Design DKR10.
++
++Ordering rationale: Tasks 1-6 and Task 9 have no blocking dependencies and may dispatch in any order or in parallel. Task 7 follows Task 6. Task 8 follows Tasks 1 and 7. Task 10 follows Tasks 8 and 9.
++
++Task execution order (Parallelize will determine wave groupings):
++
++- Task 1 -- G1: POSIX control-char detection rewrite
++- Task 2 -- G2: gitignore scratch commit-message file
++- Task 3 -- G3: fence-aware helper promoted to shared library
++- Task 4 -- G4: Wave-grouped Branch Map presentation
++- Task 5 -- G5: evergreen-lint carve-out removal
++- Task 6 -- G6 (part 1): host-detection and Codex availability functions in dispatch helper
++- Task 7 -- G6 (part 2): per-host dispatch transport prose in using-qrspi SKILL (depends on Task 6)
++- Task 8 -- G7a: cache mechanism retirement (depends on Tasks 1 and 7)
++- Task 9 -- G7b (part 1): agent model: field deletion with structural lint coverage
++- Task 10 -- G7b (part 2): per-host model_routing table and Model Routing prose (depends on Tasks 8 and 9)
++
++### Phase 1 Acceptance Criteria
++
++Per-phase criteria that must be observable end-to-end at the phase boundary, independent of any single task. All eight trace directly to the replan-gate criteria in `phasing.md`.
++
++- [ ] The existing CI suite (Lint job + BATS-under-bash-3.2 job) passes on the hardening branch with no regressions against the Phase 1 baseline. (G1-G7b -- replan-gate criterion 1)
++- [ ] A full pipeline dry-run on a freshly installed copy of the hardening branch emits zero "model not available" warnings across all agent dispatches. (G7b -- replan-gate criterion 2)
++- [ ] Codex reviewer dispatches succeed end-to-end on both Claude Code and Copilot CLI hosts using the host-appropriate transport. (G6 -- replan-gate criterion 3)
++- [ ] The evergreen-lint scan runs across the full repo with all path carve-outs removed and reports zero violations. (G5 -- replan-gate criterion 4)
++- [ ] The control-char detection in the third-party LLM dispatch script correctly triggers the die path on a raw LF byte input without a silent grep fallback under a BSD-grep environment. (G1 -- replan-gate criterion 5)
++- [ ] A simulated implementer commit flow confirms the scratch commit-message file is absent from the staged index. (G2 -- replan-gate criterion 6)
++- [ ] The fence-aware section-extraction helper exists as a dedicated function in the shared test-helper library, the inline duplicate is removed from the consuming unit suite, and unit coverage pins the helper's behavior including fenced-code blocks. (G3 -- replan-gate criterion 7)
++- [ ] The Parallelize SKILL presents its Branch Map grouped per Wave, with reviewer-side guidance and worked-example artifacts updated to match. (G4 -- replan-gate criterion 8)
++
++---
++
++## Task Specs
++
++### Task 1: Rewrite control-char detection to POSIX-clean function in third-party LLM dispatcher
++
++- **Phase:** 1
++- **Target files:** `scripts/run-third-party-llm.sh` (modify), `tests/unit/test-run-third-party-llm.bats` (modify)
++- **Dependencies:** none
++- **LOC estimate:** ~90
++- **task_type:** code
++- **model:** sonnet
++- **goal_ids:** [G1]
++- **Description:** The control-char detection routine inside the `openai-chat-completions` security pre-flight block is replaced by a dedicated internal helper function that is POSIX-clean and produces correct results on BSD grep (macOS system grep without PCRE). The replacement catches all 33 control bytes -- the 32 C0 characters (0x00-0x1F) plus DEL (0x7F) -- including LF, which the prior `grep -qP` pattern missed silently. The current `2>/dev/null` suppression that caused the detection to become a no-op when grep lacks `-P` support is eliminated. The helper is called for each header name and each header value in the pre-flight loop; a positive detection result triggers the existing `die` path before any network call. Extended test coverage pins each of the 33 control bytes as a die-path trigger and adds an explicit LF regression guard that would have caught the prior false-negative. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Test expectations:**
++  - Every C0 control byte (0x00 through 0x1F) supplied as a header value causes the script to exit before reaching any network dispatch call
++  - Every C0 control byte supplied as a header name causes the script to exit before reaching any network dispatch call
++  - DEL (0x7F) in a header value causes the script to exit before any network dispatch
++  - LF (0x0A / 0x0a) in a header value causes the script to exit -- this is the explicit regression guard for the prior grep gap where LF was silently missed because it is grep's record delimiter
++  - NUL (0x00) in a header value causes exit, not a silent skip or binary-mode false negative
++  - A header containing only printable ASCII characters (0x20 through 0x7E) does not trigger the die path and allows execution to continue
++  - The detection produces correct results when invoked in an environment where `grep -P` is unavailable (BSD grep without PCRE support)
++  - The die message identifies the offending provider and header name, matching the existing message format
++
++### Task 2: Add scratch commit-message filename to committed gitignore
++
++- **Phase:** 1
++- **Target files:** `.gitignore` (modify), `tests/unit/test-commit-hygiene-invariants.bats` (modify)
++- **Dependencies:** none
++- **LOC estimate:** ~40
++- **task_type:** code
++- **model:** sonnet
++- **goal_ids:** [G2]
++- **Description:** The scratch commit-message file used by the implementer-protocol commit procedure (`.qrspi-commit-msg.txt`) is added to the committed root `.gitignore`. This closes the structural gap where `git add -A` on a fresh clone or worktree stages the scratch file when it happens to exist on disk at staging time, since the prior protection relied on a per-clone `.git/info/exclude` entry that is not present on fresh clones or worktrees. Two new assertions are added to `tests/unit/test-commit-hygiene-invariants.bats`: one verifies the scratch filename appears in the committed `.gitignore`, and one verifies the scratch file is absent from the staged index in a simulated implementer commit flow. The existing `.git/info/exclude` invariant assertions in the same suite are not modified. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Test expectations:**
++  - The string `.qrspi-commit-msg.txt` appears verbatim in the content of the committed root `.gitignore` file
++  - When a scratch commit-message file is present on disk and `git add -A` is executed in a simulated commit flow, the scratch file path does not appear in the resulting staged index
++  - The assertion holds in a context that simulates a fresh clone (no `.git/info/exclude` entry for the scratch path)
++  - Existing commit-hygiene invariant assertions in the test suite continue to pass with no changes
++
++### Task 3: Promote fence-aware section extractor to shared test-helper library
++
++- **Phase:** 1
++- **Target files:** `tests/helpers/skill-markdown.bash` (modify), `tests/unit/test-skill-md-content-patterns.bats` (modify), `tests/unit/test-helpers-skill-markdown.bats` (modify)
++- **Dependencies:** none
++- **LOC estimate:** ~110
++- **task_type:** code
++- **model:** sonnet
++- **goal_ids:** [G3]
++- **Description:** A new exported fence-aware section-extraction function is added to `tests/helpers/skill-markdown.bash` alongside the existing heading-anchored `extract_section`. The new function tracks code-fence state so that heading-shaped lines inside fenced blocks are not treated as section boundaries; it exits at the next out-of-fence section boundary (a same-level heading outside a fence) or at EOF; it includes the anchor line in its output (matching the contract of the inline `extract_review_round` it replaces); and it emits a named diagnostic to stderr with a non-zero exit code when the extraction is empty. The two call sites of the inline `extract_review_round` helper in `tests/unit/test-skill-md-content-patterns.bats` are migrated to the new shared function, and the inline definition of `extract_review_round` is removed. New unit coverage in `tests/unit/test-helpers-skill-markdown.bats` pins fence-toggle correctness, exit-on-fence, exit-on-heading, empty-extract diagnostic, and anchor-line inclusion behaviors. The implementation must be bash-3.2 portable (no nameref, no `declare -A` outside functions, no `$'...'` ANSI-C strings in load-bearing paths). Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Test expectations:**
++  - The new shared function returns content from the anchor line (inclusive) through the last line before the next out-of-fence section boundary
++  - A `### ` or `## ` heading line that appears inside an open code fence is not treated as a section boundary and does not terminate the extraction
++  - Exiting a code fence (closing triple-backtick line) restores heading-boundary detection for subsequent lines in the same extraction
++  - When the extraction from anchor to boundary produces no content lines, the function emits a diagnostic message to stderr and exits with a non-zero return code
++  - The anchor line itself is included in the function output (consistent with the prior `extract_review_round` contract)
++  - Both migrated call sites in `test-skill-md-content-patterns.bats` produce output identical to the prior inline `extract_review_round` output for the same input files
++  - Removing the inline `extract_review_round` definition from `test-skill-md-content-patterns.bats` causes no test failures in that suite
++  - All pre-existing `extract_section` tests in `tests/unit/test-helpers-skill-markdown.bats` continue to pass with no changes
++
++### Task 4: Reshape parallelize SKILL Branch Map into Wave-grouped sub-sections
++
++- **Phase:** 1
++- **Target files:** `skills/parallelize/SKILL.md` (modify), `agents/qrspi-parallelize-reviewer.md` (modify), `tests/unit/test-parallelize-vocab.bats` (modify)
++- **Dependencies:** none
++- **LOC estimate:** ~120
++- **task_type:** code
++- **model:** opus
++- **goal_ids:** [G4]
++- **Description:** The Branch Map content in `skills/parallelize/SKILL.md` is reorganized from a flat three-column table into `### Wave N` sub-sections, each containing a Task/Branch/Base mini-table restricted to the tasks belonging to that wave. This restructuring applies to the artifact specification section and to both the "Good" and "Bad" worked-example pairs in the skill. The now-redundant "Execution Order" prose section, which previously described wave groupings in a separate narrative, is removed from both the specification and the worked examples. `agents/qrspi-parallelize-reviewer.md` is updated so its Branch Map structural-rule assertions require `### Wave N` sub-section grouping rather than the former flat three-column layout; the existing symbolic-base vocabulary rule, row-completeness rule, and Dependency Analysis table rules are retained. `tests/unit/test-parallelize-vocab.bats` gains a new assertion pinning the `### Wave N` sub-section structural rule against the reviewer agent, and existing wave-vocabulary assertions are adapted to reference the new sub-section grouping shape. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Test expectations:**
++  - `skills/parallelize/SKILL.md` contains `### Wave N` sub-section headings (e.g. `### Wave 1`, `### Wave 2`) as the organizing structure for its Branch Map, with no flat three-column Branch Map table appearing outside a Wave sub-section
++  - Each `### Wave N` sub-section contains a Markdown table with exactly three columns: Task, Branch, and Base
++  - No `## Execution Order` heading or equivalent standalone wave-order prose block exists anywhere in the artifact specification or worked-example sections of the skill
++  - The "Good" worked example in the skill shows Wave-grouped sub-sections and matches the updated specification shape
++  - The "Bad" worked example in the skill illustrates the old flat layout (or another anti-pattern) without Wave sub-sections
++  - `agents/qrspi-parallelize-reviewer.md` contains a structural rule that requires Branch Map content to be organized under `### Wave N` sub-section headings
++  - The new assertion in `tests/unit/test-parallelize-vocab.bats` passes when the reviewer agent file contains the Wave sub-section structural rule and fails (RED) when it is absent
++  - Existing symbolic-base-vocabulary and row-completeness assertions in the BATS suite continue to pass
++
++### Task 5: Remove path-shaped exemption groups from evergreen-lint helper
++
++- **Phase:** 1
++- **Target files:** `tests/unit/test-evergreen-markdown.bats` (modify)
++- **Dependencies:** none
++- **LOC estimate:** ~40
++- **task_type:** code
++- **model:** sonnet
++- **goal_ids:** [G5]
++- **Description:** All five path-shaped exemption groups (six `case` patterns total) are deleted from the `_is_path_exempt()` function in `tests/unit/test-evergreen-markdown.bats`. The inline `<!-- evergreen-exempt -->` comment mechanism is retained as the sole remaining escape hatch; none of the five pre-existing violations that already carry inline markers are disturbed. After this change the evergreen scan covers its intended surface unconditionally: no directory tree is silently exempted by path. The test-writer writes a structural assertion verifying that `_is_path_exempt()` contains no path-shaped `case` branches (RED when branches are present, GREEN after deletion). Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Test expectations:**
++  - `_is_path_exempt()` in `tests/unit/test-evergreen-markdown.bats` contains no path-shaped `case` pattern branches after the modification
++  - The evergreen scan executed against all repo-tracked markdown files reports zero violations (the five pre-existing violations all carry `<!-- evergreen-exempt -->` inline markers and are suppressed without relying on path carve-outs)
++  - No new violations are introduced by the removal of the carve-out groups (verified by running the scan after the edit)
++  - The jargon scan (scoped to `skills/**` and `agents/**`) is unaffected and continues to report zero violations
++
++### Task 6: Implement host-aware Codex availability detection in Codex dispatch helper
++
++- **Phase:** 1
++- **Target files:** `scripts/run-codex-review.sh` (modify), `tests/unit/test-host-detection.bats` (create)
++- **Dependencies:** none
++- **LOC estimate:** ~100
++- **task_type:** code
++- **model:** sonnet
++- **goal_ids:** [G6]
++- **Description:** Two new functions are added to `scripts/run-codex-review.sh`: a host-identification function that probes the `COPILOT_CLI=1` environment variable and emits either `copilot-cli` or `claude-code` to stdout, and a per-host Codex availability check that returns success under Copilot CLI (where Codex is a natively routable model requiring no filesystem probe) and under Claude Code probes the companion-script glob path. These two functions are the single shared host-probe implementation required by Design DKR10; Task 7 (SKILL prose) and Task 10 (model_routing prose) both reference this implementation. A new unit test file covers both functions under mocked environment signals: correct detection with the variable set, correct detection with the variable absent, availability success on Copilot CLI (no filesystem probe path exercised), availability success on Claude Code when the glob matches, and availability failure on Claude Code when the glob produces no match. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Test expectations:**
++  - The host-identification function emits `copilot-cli` to stdout when `COPILOT_CLI=1` is present in the environment
++  - The host-identification function emits `claude-code` to stdout when `COPILOT_CLI` is unset or set to empty
++  - The host-identification function produces the same result regardless of other unrelated environment variables being set or unset
++  - The Codex availability check returns exit code 0 (success) when called with `copilot-cli` as the host argument, without requiring any filesystem path to exist
++  - The Codex availability check returns exit code 0 (success) when called with `claude-code` and the companion-script glob resolves to at least one existing file path
++  - The Codex availability check returns a non-zero exit code when called with `claude-code` and the companion-script glob resolves to no file paths
++  - Neither function writes to stderr under normal (non-error) operation
++  - Both functions are bash-3.2 portable (no bash 4+ features)
++
++### Task 7: Update using-qrspi skill with per-host Codex dispatch transport routing
++
++- **Phase:** 1
++- **Target files:** `skills/using-qrspi/SKILL.md` (modify), `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` (modify)
++- **Dependencies:** Task 6
++- **LOC estimate:** ~90
++- **task_type:** code
++- **model:** opus
++- **goal_ids:** [G6]
++- **Description:** The Codex detection section in `skills/using-qrspi/SKILL.md` is updated to name both dispatch transports explicitly with per-host conditional prose. Under Copilot CLI the dispatch uses the native task tool with `agent_type: code-review` and `model: gpt-5.3-codex`. Under Claude Code the dispatch uses the shell pipeline via `scripts/run-codex-review.sh`. A one-line diagnostic hook is described at the detection boundary; it fires when the detected host disagrees with the `codex_reviews` config value, identifying the specific disagreement so the operator can reconcile. The acceptance test gains two new end-to-end host-detection assertions: one verifying that the Copilot CLI transport annotation is selected when the Copilot CLI host signal is active, and one verifying that the shell-pipeline transport is selected under the Claude Code default. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Test expectations:**
++  - `skills/using-qrspi/SKILL.md` Codex detection section contains conditional prose that explicitly names both the Copilot CLI task-tool transport and the Claude Code shell-pipeline transport
++  - The SKILL prose specifies `agent_type: code-review` and `model: gpt-5.3-codex` as the parameters for Copilot CLI Codex dispatch
++  - The SKILL prose names `scripts/run-codex-review.sh` as the Claude Code Codex dispatch mechanism
++  - `skills/using-qrspi/SKILL.md` contains a mismatch-diagnostic description that fires when the host detected by the probe disagrees with the `codex_reviews` config value
++  - The acceptance test assertion for the Copilot CLI path passes when `COPILOT_CLI=1` is set and fails (RED) when it is absent
++  - The acceptance test assertion for the Claude Code path passes when `COPILOT_CLI` is unset and fails (RED) when the Copilot CLI signal is active
++
++### Task 8: Retire prompt-cache mechanism from dispatcher, skill, and test infrastructure
++
++- **Phase:** 1
++- **Target files:** `scripts/g4-cache-probe.sh` (delete), `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` (delete), `tests/unit/test-cache-control-capability-gate.bats` (delete), `tests/unit/test-cache-hit-rate.bats` (delete), `skills/using-qrspi/SKILL.md` (modify), `scripts/run-third-party-llm.sh` (modify), `tests/unit/test-run-third-party-llm.bats` (modify), `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` (modify), `tests/unit/test-cache-mechanism-retired.bats` (create)
++- **Dependencies:** Task 1, Task 7
++- **LOC estimate:** ~150
++- **task_type:** code
++- **model:** opus
++- **goal_ids:** [G7a]
++- **Description:** The prompt-cache mechanism is fully retired: four files are deleted and cache-related content is removed from four modified files. Deleted: `scripts/g4-cache-probe.sh` (the cache-probe script), `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` (the stub spike report), `tests/unit/test-cache-control-capability-gate.bats` (the dual-flag capability-gate unit suite), and `tests/unit/test-cache-hit-rate.bats` (the path-conditional cache-hit-rate suite). Modified: `skills/using-qrspi/SKILL.md` loses `supports_prompt_cache` and `emit_cache_control_markers` from the providers block (both the YAML example values and their description bullets); `scripts/run-third-party-llm.sh` loses the `cache_control` marker emission branch from `_dispatch_openai_chat`; `tests/unit/test-run-third-party-llm.bats` loses the four cache-control truth-table assertions that duplicate the deleted capability-gate suite; `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` loses the `SPIKE` export pointing at the deleted spike report and the two `run_pin` invocations for the deleted unit suites. A new structural test file asserts the post-retirement invariants (deleted files absent, patterns absent from modified files); these assertions fail RED against current state and pass GREEN after all deletions and removals land. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Test expectations:**
++  - `scripts/g4-cache-probe.sh` does not exist in the repository after the task completes
++  - `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` does not exist in the repository after the task completes
++  - `tests/unit/test-cache-control-capability-gate.bats` does not exist in the repository after the task completes
++  - `tests/unit/test-cache-hit-rate.bats` does not exist in the repository after the task completes
++  - `skills/using-qrspi/SKILL.md` contains no references to `supports_prompt_cache` or `emit_cache_control_markers` after modification
++  - `scripts/run-third-party-llm.sh` contains no `cache_control` key emission logic after modification
++  - `tests/unit/test-run-third-party-llm.bats` contains no cache-control truth-table test blocks after modification
++  - `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` contains no `SPIKE` variable export referencing the deleted spike file and no `run_pin` invocations referencing the deleted suite files after modification
++  - The full CI suite (Lint job + BATS-under-bash-3.2 job) passes after all deletions and removals land with no regressions
++  - Historical run records under `docs/qrspi/2026-04-29-v0.4-bundle/` and `docs/superpowers/` are unmodified
++
++### Task 9: Remove model: field from all agent frontmatters with structural lint coverage
++
++- **Phase:** 1
++- **Target files:** `agents/qrspi-code-quality-reviewer.md` (modify), `agents/qrspi-code-simplifier.md` (modify), `agents/qrspi-design-reviewer.md` (modify), `agents/qrspi-design-scope-reviewer.md` (modify), `agents/qrspi-finding-verifier.md` (modify), `agents/qrspi-goal-traceability-reviewer.md` (modify), `agents/qrspi-goals-reviewer.md` (modify), `agents/qrspi-goals-scope-reviewer.md` (modify), `agents/qrspi-implement-gate-reviewer.md` (modify), `agents/qrspi-implementer-lightweight.md` (modify), `agents/qrspi-implementer.md` (modify), `agents/qrspi-integration-reviewer.md` (modify), `agents/qrspi-parallelize-reviewer.md` (modify), `agents/qrspi-parallelize-scope-reviewer.md` (modify), `agents/qrspi-phasing-reviewer.md` (modify), `agents/qrspi-phasing-scope-reviewer.md` (modify), `agents/qrspi-plan-goal-traceability-reviewer.md` (modify), `agents/qrspi-plan-reviewer.md` (modify), `agents/qrspi-plan-scope-reviewer.md` (modify), `agents/qrspi-plan-security-reviewer.md` (modify), `agents/qrspi-plan-silent-failure-hunter.md` (modify), `agents/qrspi-plan-spec-reviewer.md` (modify), `agents/qrspi-plan-test-coverage-reviewer.md` (modify), `agents/qrspi-questions-reviewer.md` (modify), `agents/qrspi-replan-analyzer.md` (modify), `agents/qrspi-replan-reviewer.md` (modify), `agents/qrspi-replan-scope-reviewer.md` (modify), `agents/qrspi-research-collator.md` (modify), `agents/qrspi-research-reviewer.md` (modify), `agents/qrspi-research-specialist.md` (modify), `agents/qrspi-scope-tagger.md` (modify), `agents/qrspi-security-integration-reviewer.md` (modify), `agents/qrspi-security-reviewer.md` (modify), `agents/qrspi-silent-failure-hunter.md` (modify), `agents/qrspi-spec-reviewer.md` (modify), `agents/qrspi-structure-reviewer.md` (modify), `agents/qrspi-structure-scope-reviewer.md` (modify), `agents/qrspi-test-coverage-reviewer.md` (modify), `agents/qrspi-test-writer.md` (modify), `agents/qrspi-type-design-analyzer.md` (modify), `agents/qrspi-visual-fidelity-reviewer.md` (modify), `tests/unit/test-agent-frontmatter-no-model.bats` (create)
++- **Dependencies:** none
++- **LOC estimate:** ~90
++- **Sizing exception:** schema migration -- 41 agent frontmatter files each receive an identical single-line `model:` key deletion; bundled for atomicity so the no-model-field invariant is established in one commit and the structural lint (written first in RED) can sweep all 41 files in a single pass.
++- **task_type:** code
++- **model:** opus
++- **goal_ids:** [G7b]
++- **Description:** The top-level `model:` YAML frontmatter key is deleted from all 41 `agents/qrspi-*.md` files. Tier-name references in dispatcher prose blocks (haiku, sonnet, opus, inherit) within each file are not modified; only the standalone `model:` key in the YAML front matter block is removed. A new structural lint test at `tests/unit/test-agent-frontmatter-no-model.bats` sweeps all files matching `agents/qrspi-*.md` and asserts that no frontmatter carries a top-level `model:` key. The test-writer writes this file in the RED phase (all 41 agents still carry the field, so the test fails); the implementer then removes the field from all 41 files to reach GREEN. The `skills:`, `description:`, `name`, and all other frontmatter fields are unmodified. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Test expectations:**
++  - `tests/unit/test-agent-frontmatter-no-model.bats` contains a test that sweeps every file matching `agents/qrspi-*.md` and fails if any frontmatter block carries a standalone top-level `model:` key
++  - After all 41 agent files are modified, the structural lint test passes with zero violations reported
++  - Tier-name strings (haiku, sonnet, opus, inherit) appearing in the body prose or inline dispatch annotations of each agent file remain intact after the frontmatter deletion
++  - All other frontmatter keys (`skills:`, `description:`, `name:`, and any agent-specific keys) are unmodified
++  - The structural lint test fails clearly in RED for each file that still carries a `model:` key, providing a useful per-file failure message
++
++### Task 10: Wire per-host model_routing resolution for agent tier names
++
++- **Phase:** 1
++- **Target files:** `docs/qrspi/2026-05-27-v071-hardening/config.md` (modify), `skills/using-qrspi/SKILL.md` (modify), `tests/unit/test-agent-frontmatter-no-model.bats` (modify)
++- **Dependencies:** Task 8, Task 9
++- **LOC estimate:** ~80
++- **task_type:** code
++- **model:** opus
++- **goal_ids:** [G7b]
++- **Description:** The `model_routing:` table in `docs/qrspi/2026-05-27-v071-hardening/config.md` is populated with per-host concrete model ID entries covering all three tier names (haiku, sonnet, opus) for both the `claude-code` and `copilot-cli` host values produced by the `detect_host` function from Task 6. The copilot-cli entries use fully-versioned Copilot-native model identifiers that do not trigger "model not available" warnings; the claude-code entries use the corresponding Anthropic versioned identifiers. `skills/using-qrspi/SKILL.md` gains a Model Routing section documenting how dispatcher prose resolves agent tier names against the `model_routing` table: the `detect_host` output selects the per-host column, and the tier name selects the row, yielding the concrete model ID for that dispatch. The structural lint test created in Task 9 is extended with assertions verifying that the `model_routing` table contains entries for the required host/tier combinations and that none of the copilot-cli entries are bare Claude short-form tier names. Dispatch order: test-writer first, implementer second (RED-verification gate between).
++- **Test expectations:**
++  - `docs/qrspi/2026-05-27-v071-hardening/config.md` contains a `model_routing:` table with at least one concrete model identifier entry for each of the three tier names (haiku, sonnet, opus) under the `claude-code` host
++  - `docs/qrspi/2026-05-27-v071-hardening/config.md` contains at least one concrete model identifier entry for each of the three tier names under the `copilot-cli` host
++  - No entry in the `copilot-cli` column of the `model_routing:` table is a bare Claude tier short-form (the strings "haiku", "sonnet", or "opus" alone) that would trigger a Copilot CLI "model not available" warning
++  - `skills/using-qrspi/SKILL.md` contains a Model Routing section that names `detect_host` output as the host-selection input and the `model_routing` table as the per-tier resolution source
++  - The extended structural lint assertions in `tests/unit/test-agent-frontmatter-no-model.bats` fail in RED when the `model_routing` table is absent or missing a required host/tier entry, and pass GREEN when all required entries are present
++  - A freshly installed copy of the plugin on Copilot CLI emits zero "model not available" warnings when an agent dispatch resolves through the `model_routing` table

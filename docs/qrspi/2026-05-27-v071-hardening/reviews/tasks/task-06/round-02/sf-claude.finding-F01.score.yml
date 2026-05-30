@@ -1,0 +1,2 @@
+score: 85
+reason: Real correctness issue in task-introduced code (GREEN commit d339e76); source guard fails silently when script directly executed with QRSPI_SOURCE_ONLY=1, violating the documented task spec requirement that guard work in both sourced and executed contexts. Per updated rubric, code in task's own GREEN commit is IN-SCOPE, not pre-existing.

@@ -1,0 +1,2 @@
+score: 70
+reason: Real issue—the naming inconsistency is objectively verifiable; `_safe_hname` breaks the established `_cc_` prefix convention used by all other locals in the function. In a sourced-script context, naming consistency is load-bearing for collision avoidance. However, no explicit "MUST" or documented convention in the task spec or CLAUDE.md was cited, limiting confidence to 70 rather than 75+.

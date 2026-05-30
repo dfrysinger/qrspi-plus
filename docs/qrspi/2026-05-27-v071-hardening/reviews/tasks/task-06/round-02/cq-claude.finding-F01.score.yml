@@ -1,0 +1,2 @@
+score: 50
+reason: Legitimate DRY violation with practical refactoring suggestion, but a minor style/maintainability issue that doesn't affect functionality.

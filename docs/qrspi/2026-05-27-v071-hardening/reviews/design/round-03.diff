@@ -1,0 +1,20 @@
+--- design.md (R2 reviewed)
++++ design.md (R3 to review)
+@@ -58,7 +58,7 @@
+ 
+ **Decision:** Skill prose for Codex dispatches names BOTH transports explicitly. Under Claude Code: shell pipeline via `scripts/run-codex-review.sh`. Under Copilot CLI: native subagent dispatch via the `task` tool with `agent_type: code-review` and `model: gpt-5.3-codex`.
+ 
+-**Reasoning:** The dispatch helper accepts both transports; the host-detection result selects. This is the single dispatch-routing decision for v0.7.1; it does not retire the shell pipeline (out of scope; revisit in v0.8). The concrete model name `gpt-5.3-codex` comes from the `model_routing:` table per `research/q11-codebase.md`.
++**Reasoning:** The dispatch helper accepts both transports; the host-detection result selects. This is the single dispatch-routing decision for v0.7.1; it does not retire the shell pipeline (out of scope; revisit in v0.8). The concrete Copilot-CLI model identifier (`gpt-5.3-codex`) is the one named in `goals.md` G6 (per `research/q12-web.md`'s scan of the Copilot agents corpus); the exact value Plan writes into `config.md`'s `model_routing:` table is owned downstream.
+ 
+ ### DKR8 -- G7a is mechanical lift-verbatim deletion (no design surface)
+ 
+@@ -70,7 +70,7 @@
+ 
+ **Decision:** Delete the `model:` field from all 41 `agents/*.md` frontmatters. Tier names (`haiku`, `sonnet`, `opus`) survive as platform-agnostic vocabulary in dispatcher prose. Per-host concrete-model resolution lives in `config.md`'s existing `model_routing:` table.
+ 
+-**Reasoning:** Per `research/q11-codebase.md`, the `model:` field is Layer 3 in the routing chain and is bypassed at every dispatch site that specifies an inline override (Layer 1b) -- the field's effect is already marginal. Under Copilot CLI, the field triggers a "model not available" warning per agent dispatch (per `goals.md`'s probe results). Per `research/q12-web.md`, `gentle-ai`'s pattern of using `haiku/sonnet/opus` as an abstraction layer is the closest multi-host precedent; tier names are NOT model names. Plugin ships defaults for both hosts: Claude Code uses `claude-haiku-4.5` / `claude-sonnet-4.6` / `claude-opus-4.7`; Copilot CLI uses equivalent concrete IDs. Operators can override per-tier or per-role.
++**Reasoning:** Per `research/q11-codebase.md`, the `model:` field is Layer 3 in the routing chain and is bypassed at every dispatch site that specifies an inline override (Layer 1b) -- the field's effect is already marginal. Under Copilot CLI, the field triggers a "model not available" warning per agent dispatch (per `goals.md`'s probe results). Per `research/q12-web.md`, `gentle-ai`'s pattern of using `haiku/sonnet/opus` as an abstraction layer is the closest multi-host precedent (its concrete mapping is `haiku → claude-haiku-4.5`, `sonnet → claude-sonnet-4.6`, `opus → claude-opus-4.6`); tier names are NOT model names. Plugin ships per-host defaults in the bundled `config.md` for both Claude Code and Copilot CLI; the concrete model identifiers Plan writes into the `model_routing:` table are owned downstream. Operators can override per-tier or per-role.
+ 
+ ### DKR10 -- Single host-detection mechanism shared by G6 and G7b
+ 

@@ -1,0 +1,1470 @@
+diff --git a/docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md b/docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md
+deleted file mode 100644
+index 92b4920..0000000
+--- a/docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md
++++ /dev/null
+@@ -1,74 +0,0 @@
+----
+-run_id: stub-pending-live-execution
+-artifact: g4-cache-probe
+-generated_by: docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md (stub authored at v0.7 T33; replaced verbatim by scripts/g4-cache-probe.sh on live execution)
+----
+-
+-# G4 Mechanism A Cache-Probe Report (STUB — pending live execution)
+-
+-This file is the **stub** authored at v0.7 T33 implementation time. It
+-establishes the report shape and the load-bearing Decision section consumed
+-by T36 (`test-cache-hit-rate.bats`) and the conditional T43 marker-insertion
+-task (Wave 9). The script `scripts/g4-cache-probe.sh` replaces this file
+-verbatim — including the Decision section — when the operator runs it
+-against the live Anthropic API.
+-
+-## Run
+-
+-- run_id: stub-pending-live-execution
+-- invocation_timestamp: stub-pending-live-execution
+-
+-## Measurement: Cache Metadata Exposure
+-
+-Does the Claude Code Agent({}) dispatch response surface Anthropic cache-hit
+-metadata fields (`cache_creation_input_tokens`, `cache_read_input_tokens`)?
+-
+-- metadata_exposed: pending
+-
+-## Measurement: Captured Cache-Hit Values
+-
+-Each row is one of the three probe dispatches. All three dispatches share a
+-byte-identical system-prompt prefix (the verbatim body of
+-`skills/reviewer-protocol/SKILL.md`); only the per-call tail varies.
+-
+-| call | cache_creation_input_tokens | cache_read_input_tokens |
+-| ---- | --------------------------- | ----------------------- |
+-| 1    | pending                     | pending                 |
+-| 2    | pending                     | pending                 |
+-| 3    | pending                     | pending                 |
+-
+-The `none` sentinel (used by the live script) means the response payload
+-did not include the field at all (distinct from a numeric `0`, which means
+-the field was present but no cache hit occurred). In this stub all six
+-cells are `pending` until the script runs against live API.
+-
+-## Decision
+-
+-Pending — operator runs scripts/g4-cache-probe.sh against live Anthropic API before this decision lands.
+-
+-Derivation rule the live script applies (three possible branches):
+-
+-1. **Metadata not exposed at all** — all six captured cells are the `none`
+-   sentinel. Path B is REQUIRED: Mechanism A scope expands to include
+-   `cache_control` marker insertion at the Anthropic SDK boundary, AND a
+-   follow-up measurement task must verify the markers produce surfaced hits.
+-
+-2. **Metadata exposed but zero hits** — fields are numeric; `cache_read`
+-   on calls 2 and 3 both `== 0`. Path B selected: Mechanism A scope expands
+-   to include `cache_control` marker insertion at the Anthropic SDK boundary.
+-
+-3. **Path A selected** — `cache_read` on call 2 OR call 3 `> 0`. Agent({})
+-   dispatch path already caches stable prefixes automatically. Mechanism A
+-   scope is instrument + measure only; `cache_control` marker insertion is
+-   NOT required.
+-
+-## Consumers
+-
+-- T36 `test-cache-hit-rate.bats` consumes this report's Decision section to
+-  select its Path-A vs Path-B fixture set (the Path-conditional fixture pin).
+-  Until the Decision section is populated by a live run, T36 treats the
+-  Path-conditional pin as deferred.
+-- Any follow-up `cache_control` marker-insertion task is gated by the
+-  Decision section above; T43 (conditional, Wave 9) is skipped when Path A
+-  is selected (or skipped while this stub stands pending — its conditional
+-  gate fails to fire against a Pending Decision).
+diff --git a/scripts/g4-cache-probe.sh b/scripts/g4-cache-probe.sh
+deleted file mode 100755
+index 77cb00f..0000000
+--- a/scripts/g4-cache-probe.sh
++++ /dev/null
+@@ -1,380 +0,0 @@
+-#!/usr/bin/env bash
+-# g4-cache-probe.sh — G4 Mechanism A cache-probe (Plan-time measurement).
+-#
+-# Dispatches three reviewer prompts that share a byte-identical system prefix
+-# and a varying per-call tail, captures the Anthropic cache-hit usage metadata
+-# (`cache_creation_input_tokens`, `cache_read_input_tokens`) from each response,
+-# and writes a one-page spike report that records the Path A vs Path B decision
+-# for the Mechanism-A-only sub-decision (see design.md G4 — does Claude Code's
+-# Agent({}) dispatch path already cache stable prefixes automatically?).
+-#
+-# The script is the producer of the deliverable at
+-# `docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md` — that path is
+-# the spike-deliverable location declared in structure.md Slice 7.
+-#
+-# Usage:
+-#   scripts/g4-cache-probe.sh --report-out <path>
+-#
+-# Exit codes:
+-#   0   report written + decision recorded
+-#   1   validation failure, dispatch failure, or report-write failure
+-#
+-# Bash 3.2-compatible (macOS system /bin/bash).
+-
+-set -u
+-
+-# ---------------------------------------------------------------------------
+-# Argument parsing.
+-# ---------------------------------------------------------------------------
+-REPORT_OUT=""
+-
+-while [ "$#" -gt 0 ]; do
+-  case "$1" in
+-    --report-out)
+-      [ "$#" -ge 2 ] || { echo "g4-cache-probe: --report-out requires a value" >&2; exit 1; }
+-      REPORT_OUT="$2"
+-      shift 2
+-      ;;
+-    *)
+-      echo "g4-cache-probe: unrecognised argument: $1" >&2
+-      exit 1
+-      ;;
+-  esac
+-done
+-
+-if [ -z "$REPORT_OUT" ]; then
+-  echo "g4-cache-probe: validation: --report-out is required" >&2
+-  exit 1
+-fi
+-
+-# ---------------------------------------------------------------------------
+-# Resolve --report-out to its canonical absolute path via realpath (or
+-# parent-resolution when the file does not yet exist). The path-validation
+-# check below operates on the resolved path, not the raw argument — a naive
+-# string-prefix check would miss traversal attempts like
+-# `docs/qrspi/../../../etc/shadow`.
+-# ---------------------------------------------------------------------------
+-resolve_canonical_path() {
+-  local p="$1"
+-  local resolved
+-  if resolved=$(/usr/bin/env python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$p" 2>/dev/null); then
+-    [ -n "$resolved" ] && { printf '%s\n' "$resolved"; return 0; }
+-  fi
+-  # Fallback for environments without python3: resolve parent + basename.
+-  local parent base parent_abs
+-  parent=$(dirname -- "$p")
+-  base=$(basename -- "$p")
+-  if [ ! -d "$parent" ]; then
+-    return 1
+-  fi
+-  if ! parent_abs=$(cd "$parent" 2>/dev/null && pwd -P); then
+-    return 1
+-  fi
+-  printf '%s/%s\n' "$parent_abs" "$base"
+-}
+-
+-RESOLVED_REPORT_OUT=""
+-if ! RESOLVED_REPORT_OUT=$(resolve_canonical_path "$REPORT_OUT"); then
+-  echo "g4-cache-probe: path-validation: cannot resolve --report-out '$REPORT_OUT' (parent directory does not exist)" >&2
+-  exit 1
+-fi
+-
+-# ---------------------------------------------------------------------------
+-# Path-validation: resolved path must lie under docs/qrspi/. The check is
+-# applied to the resolved path so traversal attempts (raw arg string-prefix
+-# `docs/qrspi/` that resolves outside) are rejected.
+-# ---------------------------------------------------------------------------
+-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+-ALLOWED_PREFIX="$REPO_ROOT/docs/qrspi/"
+-
+-case "$RESOLVED_REPORT_OUT" in
+-  "$ALLOWED_PREFIX"*) ;;
+-  *)
+-    echo "g4-cache-probe: path-validation: resolved --report-out '$RESOLVED_REPORT_OUT' lies outside the declared spike-deliverable location under '$ALLOWED_PREFIX'" >&2
+-    exit 1
+-    ;;
+-esac
+-
+-# ---------------------------------------------------------------------------
+-# Lock-file discipline. Remove any prior sentinel/lock at <report-out-dir>/
+-# g4-cache-probe.lock so a stale lock from a failed prior run does not
+-# survive into the new invocation. On successful completion we recreate the
+-# lock atomically containing the same run_id as the report. Mid-run failure
+-# leaves no lock — T36 downstream consumers detect stale reports by absence
+-# of a fresh lock or a run_id mismatch between report and lock.
+-# ---------------------------------------------------------------------------
+-REPORT_DIR="$(dirname "$RESOLVED_REPORT_OUT")"
+-LOCK_PATH="$REPORT_DIR/g4-cache-probe.lock"
+-
+-# Ensure the report directory exists; fail loud on mkdir failure (e.g.,
+-# read-only filesystem, permission denied).
+-if ! mkdir -p "$REPORT_DIR" 2>/dev/null; then
+-  echo "g4-cache-probe: report-write: cannot create report directory '$REPORT_DIR' (permission denied or read-only filesystem)" >&2
+-  exit 1
+-fi
+-
+-rm -f "$LOCK_PATH" 2>/dev/null || true
+-
+-# Generate a unique run identifier for this invocation. Used in both the
+-# report header and the post-success lock file.
+-RUN_ID="$(date -u "+%Y-%m-%dT%H:%M:%SZ")-$$"
+-
+-# ---------------------------------------------------------------------------
+-# Stable system-prompt prefix. The byte-identity assertion in T36's pinned
+-# fixture compares the assembled prefix bytes across the three dispatches —
+-# the prefix is concretely defined as the bytes from the start of the
+-# assembled system-message body through the end of the verbatim
+-# `skills/reviewer-protocol/SKILL.md` content embedded here. The per-dispatch
+-# tail begins immediately after the stable prefix.
+-# ---------------------------------------------------------------------------
+-REVIEWER_PROTOCOL_PATH="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
+-if [ ! -f "$REVIEWER_PROTOCOL_PATH" ]; then
+-  echo "g4-cache-probe: missing-input: reviewer-protocol body not found at $REVIEWER_PROTOCOL_PATH" >&2
+-  exit 1
+-fi
+-
+-build_stable_prefix() {
+-  # The verbatim body of reviewer-protocol/SKILL.md IS the stable prefix.
+-  cat "$REVIEWER_PROTOCOL_PATH"
+-}
+-
+-build_per_call_tail() {
+-  # $1 = call index (1, 2, 3). The tail differs by index so each dispatch is
+-  # a distinct prompt — only the trailing per-call section varies.
+-  printf '\n\n## Per-Dispatch Reviewer Task (call %s)\n\nProbe call %s — emit `NO_FINDINGS` and return.\n' "$1" "$1"
+-}
+-
+-# ---------------------------------------------------------------------------
+-# Dispatch. The probe issues three dispatches via the universal dispatcher
+-# (T03) using the `anthropic` provider entry from config.md. Each dispatch
+-# captures `cache_creation_input_tokens` and `cache_read_input_tokens` from
+-# the response usage metadata.
+-#
+-# In the autonomous-pipeline harness, the dispatcher is invoked end-to-end;
+-# the operator runs this script against the live Anthropic API to populate
+-# the report's measured fields. The script itself fails loud on any
+-# dispatch failure rather than writing a partial report.
+-# ---------------------------------------------------------------------------
+-DISPATCHER="$REPO_ROOT/scripts/run-third-party-llm.sh"
+-if [ ! -f "$DISPATCHER" ]; then
+-  echo "g4-cache-probe: missing-input: universal dispatcher not found at $DISPATCHER" >&2
+-  exit 1
+-fi
+-
+-# Probe provider entry — operator MUST add an `anthropic-probe` provider entry
+-# to <artifact-dir>/config.md with transport_type that surfaces the cache
+-# metadata fields. The artifact-dir is derived from the resolved report path:
+-# the report's grandparent is the run's artifact directory (since reports
+-# live at <artifact-dir>/spikes/g4-cache-probe.md per structure.md).
+-ARTIFACT_DIR="$(dirname "$REPORT_DIR")"
+-
+-# Capture three responses. Each dispatch writes its result to a tmp file;
+-# usage metadata is extracted from the response body by the dispatcher's
+-# transport adapter when present. Any non-zero dispatch exit causes the
+-# probe to fail loud without writing a partial report.
+-declare_dispatch_outputs() {
+-  CACHE_CREATION_1=""; CACHE_READ_1=""
+-  CACHE_CREATION_2=""; CACHE_READ_2=""
+-  CACHE_CREATION_3=""; CACHE_READ_3=""
+-}
+-declare_dispatch_outputs
+-
+-# Stable prefix is built once and reused — the byte-identity invariant is
+-# preserved by reusing the same captured string across all three dispatches.
+-STABLE_PREFIX="$(build_stable_prefix)"
+-
+-run_one_dispatch() {
+-  # $1 = call index; on success, prints two tab-separated values:
+-  #   <cache_creation_input_tokens>\t<cache_read_input_tokens>
+-  # On dispatch failure, returns non-zero.
+-  local idx="$1"
+-  local prompt_file response_file
+-  prompt_file="$(mktemp -t g4-cache-probe-prompt.XXXXXX)" || return 1
+-  response_file="$(mktemp -t g4-cache-probe-resp.XXXXXX)" || { rm -f "$prompt_file"; return 1; }
+-
+-  {
+-    printf '%s' "$STABLE_PREFIX"
+-    build_per_call_tail "$idx"
+-  } > "$prompt_file"
+-
+-  # Dispatch via the universal dispatcher. The transport's response-handling
+-  # path is responsible for surfacing cache metadata; the probe reads the
+-  # metadata from a sidecar JSON file the dispatcher writes alongside the
+-  # response when the transport exposes it. The sidecar path convention is
+-  # `<output-file>.usage.json` per the dispatcher's usage-metadata contract.
+-  local dispatch_rc=0
+-  bash "$DISPATCHER" \
+-    --artifact-dir "$ARTIFACT_DIR" \
+-    --provider anthropic-probe \
+-    --model claude-sonnet-4-5-20250929 \
+-    --output-file "$response_file" \
+-    < "$prompt_file" \
+-    || dispatch_rc=$?
+-
+-  rm -f "$prompt_file"
+-
+-  if [ "$dispatch_rc" -ne 0 ]; then
+-    rm -f "$response_file"
+-    return "$dispatch_rc"
+-  fi
+-
+-  # Extract cache metadata from the sidecar. When the sidecar is absent
+-  # (transport did not surface cache fields at all), emit a literal `none`
+-  # sentinel so the report can distinguish "no cache metadata exposed" from
+-  # "metadata exposed but zero hits".
+-  local usage_sidecar="${response_file}.usage.json"
+-  local cc cr
+-  if [ -f "$usage_sidecar" ]; then
+-    cc=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(String(j.cache_creation_input_tokens ?? "none"));}catch(e){process.stdout.write("none");}' "$usage_sidecar" 2>/dev/null)
+-    cr=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(String(j.cache_read_input_tokens ?? "none"));}catch(e){process.stdout.write("none");}' "$usage_sidecar" 2>/dev/null)
+-  else
+-    cc="none"
+-    cr="none"
+-  fi
+-
+-  rm -f "$response_file" "$usage_sidecar"
+-  printf '%s\t%s\n' "$cc" "$cr"
+-  return 0
+-}
+-
+-run_dispatch_or_abort() {
+-  local idx="$1"
+-  local out rc=0
+-  out=$(run_one_dispatch "$idx") || rc=$?
+-  if [ "$rc" -ne 0 ]; then
+-    echo "g4-cache-probe: dispatch-failure: probe call $idx failed (exit $rc); no partial report written" >&2
+-    exit 1
+-  fi
+-  printf '%s' "$out"
+-}
+-
+-# Execute three dispatches in strict sequence so the second/third observe
+-# whatever cache state the first established.
+-DISPATCH_1="$(run_dispatch_or_abort 1)"
+-CACHE_CREATION_1="${DISPATCH_1%%	*}"
+-CACHE_READ_1="${DISPATCH_1##*	}"
+-
+-DISPATCH_2="$(run_dispatch_or_abort 2)"
+-CACHE_CREATION_2="${DISPATCH_2%%	*}"
+-CACHE_READ_2="${DISPATCH_2##*	}"
+-
+-DISPATCH_3="$(run_dispatch_or_abort 3)"
+-CACHE_CREATION_3="${DISPATCH_3%%	*}"
+-CACHE_READ_3="${DISPATCH_3##*	}"
+-
+-# ---------------------------------------------------------------------------
+-# Decision derivation. The decision branch is:
+-#   - "metadata not exposed at all": all six cache fields are the `none` sentinel.
+-#   - "metadata exposed but zero hits": fields are numeric; cache_read on
+-#     calls 2 and 3 both == 0.
+-#   - "Path A (auto-cache active)": cache_read on calls 2 OR 3 > 0.
+-# Path B (marker insertion required) is the consequence when "metadata
+-# exposed but zero hits" is observed AND a follow-up cache_control-marker
+-# probe confirms hits then materialize.
+-# ---------------------------------------------------------------------------
+-metadata_exposed="true"
+-case "$CACHE_CREATION_1$CACHE_READ_1$CACHE_CREATION_2$CACHE_READ_2$CACHE_CREATION_3$CACHE_READ_3" in
+-  "nonenonenonenonenonenone") metadata_exposed="false" ;;
+-esac
+-
+-DECISION=""
+-if [ "$metadata_exposed" = "false" ]; then
+-  DECISION="Metadata not exposed — Agent({}) dispatch responses do not surface Anthropic cache-hit usage fields. Path B is REQUIRED: Mechanism A scope expands to include cache_control marker insertion at the Anthropic SDK boundary, AND a follow-up measurement task must verify the markers produce surfaced hits."
+-elif [ "$CACHE_READ_2" = "0" ] && [ "$CACHE_READ_3" = "0" ]; then
+-  DECISION="Metadata exposed but zero hits — Agent({}) dispatch surfaces the cache fields but does NOT cache stable prefixes automatically. Path B selected: Mechanism A scope expands to include cache_control marker insertion at the Anthropic SDK boundary."
+-else
+-  DECISION="Path A selected — Agent({}) dispatch path already caches stable prefixes automatically. Mechanism A scope is instrument + measure only; cache_control marker insertion is NOT required."
+-fi
+-
+-# ---------------------------------------------------------------------------
+-# Write the report. The write is atomic: write to a tmp file first, then
+-# rename. If the rename fails (read-only filesystem, permission denied), the
+-# script exits 1 without leaving a partial report at the target path.
+-# ---------------------------------------------------------------------------
+-TMP_REPORT="$(mktemp -t g4-cache-probe-report.XXXXXX)" || {
+-  echo "g4-cache-probe: report-write: mktemp failed for report scratch file" >&2
+-  exit 1
+-}
+-
+-cat > "$TMP_REPORT" <<REPORT_EOF
+----
+-run_id: $RUN_ID
+-artifact: g4-cache-probe
+-generated_by: scripts/g4-cache-probe.sh
+----
+-
+-# G4 Mechanism A Cache-Probe Report
+-
+-## Run
+-
+-- run_id: $RUN_ID
+-- invocation_timestamp: $RUN_ID
+-
+-## Measurement: Cache Metadata Exposure
+-
+-Does the Claude Code Agent({}) dispatch response surface Anthropic cache-hit
+-metadata fields (\`cache_creation_input_tokens\`, \`cache_read_input_tokens\`)?
+-
+-- metadata_exposed: $metadata_exposed
+-
+-## Measurement: Captured Cache-Hit Values
+-
+-Each row is one of the three probe dispatches. All three dispatches share a
+-byte-identical system-prompt prefix (the verbatim body of
+-\`skills/reviewer-protocol/SKILL.md\`); only the per-call tail varies.
+-
+-| call | cache_creation_input_tokens | cache_read_input_tokens |
+-| ---- | --------------------------- | ----------------------- |
+-| 1    | $CACHE_CREATION_1           | $CACHE_READ_1           |
+-| 2    | $CACHE_CREATION_2           | $CACHE_READ_2           |
+-| 3    | $CACHE_CREATION_3           | $CACHE_READ_3           |
+-
+-The \`none\` sentinel means the response payload did not include the field at
+-all (distinct from a numeric \`0\`, which means the field was present but no
+-cache hit occurred).
+-
+-## Decision
+-
+-Pending — operator runs scripts/g4-cache-probe.sh against live Anthropic API before this decision lands.
+-
+-Once the live run completes, the Decision line above is replaced verbatim by
+-the derived decision below. The derivation rule (and the three possible
+-branches: "metadata not exposed", "metadata exposed but zero hits", "Path A
+-auto-cache active") is the rule the script applies after capturing the three
+-dispatches.
+-
+-Derived (from the captured values above, applied at write-time):
+-
+-$DECISION
+-
+-## Consumers
+-
+-- T36 \`test-cache-hit-rate.bats\` consumes this report's Decision section to
+-  select its Path-A vs Path-B fixture set (the Path-conditional fixture pin).
+-- Any follow-up \`cache_control\` marker-insertion task is gated by the
+-  Decision section above; T43 (conditional, Wave 9) is skipped when Path A
+-  is selected.
+-REPORT_EOF
+-
+-# Atomic move to the final report path; fail loud on write failure.
+-if ! mv "$TMP_REPORT" "$RESOLVED_REPORT_OUT" 2>/dev/null; then
+-  rm -f "$TMP_REPORT"
+-  echo "g4-cache-probe: report-write: cannot write report to '$RESOLVED_REPORT_OUT' (permission denied, read-only filesystem, or parent missing)" >&2
+-  exit 1
+-fi
+-
+-# Create the post-success lock file carrying the same run_id. The lock is
+-# the freshness signal T36 reads to detect a stale prior-run report.
+-TMP_LOCK="$(mktemp -t g4-cache-probe-lock.XXXXXX)" || {
+-  echo "g4-cache-probe: report-write: mktemp failed for lock scratch file" >&2
+-  exit 1
+-}
+-printf 'run_id: %s\n' "$RUN_ID" > "$TMP_LOCK"
+-if ! mv "$TMP_LOCK" "$LOCK_PATH" 2>/dev/null; then
+-  rm -f "$TMP_LOCK"
+-  echo "g4-cache-probe: report-write: cannot write lock file to '$LOCK_PATH'" >&2
+-  exit 1
+-fi
+-
+-exit 0
+diff --git a/scripts/run-third-party-llm.sh b/scripts/run-third-party-llm.sh
+index 03dc20a..d2b87aa 100755
+--- a/scripts/run-third-party-llm.sh
++++ b/scripts/run-third-party-llm.sh
+@@ -241,19 +241,10 @@ _control_char_check() {
+ # _dispatch_openai_chat
+ #
+ # Issues a blocking POST to <base_url>/chat/completions using curl.
+-# Emits cache_control ONLY when BOTH supports_prompt_cache AND
+-# emit_cache_control_markers are "true" on the resolved provider entry.
+ # Writes the response body atomically to OUTPUT_FILE on success.
+-# Reads: BASE_URL, MODEL, PROVIDER, OUTPUT_FILE, SUPPORTS_PROMPT_CACHE,
+-#        EMIT_CACHE_CONTROL_MARKERS, _API_KEY, HEADER_NAMES, HEADER_VALUES,
+-#        TIMEOUT_SECONDS, STDIN_TEMP.
++# Reads: BASE_URL, MODEL, PROVIDER, OUTPUT_FILE, _API_KEY, HEADER_NAMES,
++#        HEADER_VALUES, TIMEOUT_SECONDS, STDIN_TEMP.
+ _dispatch_openai_chat() {
+-  # Dual-flag cache-control gate.
+-  local emit_cache="false"
+-  if [ "$SUPPORTS_PROMPT_CACHE" = "true" ] && [ "$EMIT_CACHE_CONTROL_MARKERS" = "true" ]; then
+-    emit_cache="true"
+-  fi
+-
+   # Read prompt content from STDIN_TEMP.
+   local prompt_content
+   prompt_content=$(cat "$STDIN_TEMP")
+@@ -261,16 +252,12 @@ _dispatch_openai_chat() {
+   # Build request JSON via node (correct escaping of arbitrary prompt content).
+   local request_json
+   request_json=$(node -e "
+-const emitCache = process.argv[1] === 'true';
+-const model     = process.argv[2];
+-const prompt    = process.argv[3];
++const model     = process.argv[1];
++const prompt    = process.argv[2];
+ const msg = { role: 'user', content: prompt };
+-if (emitCache) {
+-  msg.cache_control = { type: 'ephemeral' };
+-}
+ const body = { model: model, messages: [msg] };
+ process.stdout.write(JSON.stringify(body));
+-" -- "$emit_cache" "$MODEL" "$prompt_content") || {
++" -- "$MODEL" "$prompt_content") || {
+     rm -f "$STDIN_TEMP"
+     die "failed to build request JSON"
+   }
+@@ -544,8 +531,6 @@ PROVIDER_BLOCK_OUTPUT=$(parse_provider_block "$CONFIG_MD" "$PROVIDER") || \
+ BASE_URL=""
+ API_KEY_ENV=""
+ TRANSPORT_TYPE=""
+-SUPPORTS_PROMPT_CACHE="false"
+-EMIT_CACHE_CONTROL_MARKERS="false"
+ HEADER_NAMES=()
+ HEADER_VALUES=()
+ 
+@@ -556,8 +541,6 @@ while IFS="	" read -r rec_type rec_key rec_val; do
+         base_url)                   BASE_URL="$rec_val" ;;
+         api_key_env)                API_KEY_ENV="$rec_val" ;;
+         transport_type)             TRANSPORT_TYPE="$rec_val" ;;
+-        supports_prompt_cache)      SUPPORTS_PROMPT_CACHE="$rec_val" ;;
+-        emit_cache_control_markers) EMIT_CACHE_CONTROL_MARKERS="$rec_val" ;;
+       esac ;;
+     header)
+       HEADER_NAMES+=("$rec_key")
+diff --git a/skills/using-qrspi/SKILL.anchors.json b/skills/using-qrspi/SKILL.anchors.json
+index 740d107..9182549 100644
+--- a/skills/using-qrspi/SKILL.anchors.json
++++ b/skills/using-qrspi/SKILL.anchors.json
+@@ -65,94 +65,94 @@
+   },
+   "Config File (`config.md`)": {
+     "line_start": 349,
+-    "line_end": 514
++    "line_end": 510
+   },
+   "Dispatch routing blocks": {
+     "line_start": 420,
+-    "line_end": 514
++    "line_end": 510
+   },
+   "Config Validation Procedure": {
+-    "line_start": 515,
+-    "line_end": 633
++    "line_start": 511,
++    "line_end": 629
+   },
+   "When config.md is missing entirely": {
+-    "line_start": 519,
+-    "line_end": 527
++    "line_start": 515,
++    "line_end": 523
+   },
+   "When a required field is missing or has an invalid value": {
+-    "line_start": 528,
+-    "line_end": 580
++    "line_start": 524,
++    "line_end": 576
+   },
+   "No silent defaults": {
+-    "line_start": 581,
+-    "line_end": 588
++    "line_start": 577,
++    "line_end": 584
+   },
+   "Exceptions to the no-silent-defaults rule": {
+-    "line_start": 589,
+-    "line_end": 607
++    "line_start": 585,
++    "line_end": 603
+   },
+   "Fields that affect pipeline behavior (must be validated)": {
+-    "line_start": 608,
+-    "line_end": 627
++    "line_start": 604,
++    "line_end": 623
+   },
+   "Fields that do NOT require validation (informational only)": {
+-    "line_start": 628,
+-    "line_end": 633
++    "line_start": 624,
++    "line_end": 629
+   },
+   "Standard Review Loop": {
+-    "line_start": 634,
+-    "line_end": 677
++    "line_start": 630,
++    "line_end": 673
+   },
+   "Fix-altitude rule (F-5)": {
+-    "line_start": 670,
+-    "line_end": 677
++    "line_start": 666,
++    "line_end": 673
+   },
+   "Review Output Handling": {
+-    "line_start": 678,
+-    "line_end": 1069
++    "line_start": 674,
++    "line_end": 1065
+   },
+   "Review-Loop Pause Gate": {
+-    "line_start": 1070,
+-    "line_end": 1117
++    "line_start": 1066,
++    "line_end": 1113
+   },
+   "BATCH-WITH-OVERRIDES UI contract": {
+-    "line_start": 1074,
+-    "line_end": 1081
++    "line_start": 1070,
++    "line_end": 1077
+   },
+   "3-option menu (per paused finding)": {
+-    "line_start": 1082,
+-    "line_end": 1099
++    "line_start": 1078,
++    "line_end": 1095
+   },
+   "Paused rounds do not decrement the cap": {
+-    "line_start": 1100,
+-    "line_end": 1105
++    "line_start": 1096,
++    "line_end": 1101
+   },
+   "Pending-findings file": {
+-    "line_start": 1106,
+-    "line_end": 1117
++    "line_start": 1102,
++    "line_end": 1113
+   },
+   "Review Time Allocation": {
+-    "line_start": 1118,
+-    "line_end": 1125
++    "line_start": 1114,
++    "line_end": 1121
+   },
+   "Compaction Checkpoints": {
+-    "line_start": 1126,
+-    "line_end": 1157
++    "line_start": 1122,
++    "line_end": 1153
+   },
+   "Feedback File Format": {
+-    "line_start": 1158,
+-    "line_end": 1177
++    "line_start": 1154,
++    "line_end": 1173
+   },
+   "Common Rationalizations — STOP": {
+-    "line_start": 1178,
+-    "line_end": 1192
++    "line_start": 1174,
++    "line_end": 1188
+   },
+   "Skill Invocation": {
+-    "line_start": 1193,
+-    "line_end": 1198
++    "line_start": 1189,
++    "line_end": 1194
+   },
+   "Pipeline Iron Laws — Final Reminder": {
+-    "line_start": 1199,
+-    "line_end": 1221
++    "line_start": 1195,
++    "line_end": 1217
+   }
+ }
+diff --git a/skills/using-qrspi/SKILL.md b/skills/using-qrspi/SKILL.md
+index a680e6e..01fba9e 100644
+--- a/skills/using-qrspi/SKILL.md
++++ b/skills/using-qrspi/SKILL.md
+@@ -431,8 +431,6 @@ providers:
+     base_url: https://api.example.com/v1
+     api_key_env: MY_PROVIDER_API_KEY
+     transport_type: openai-chat-completions   # or: codex-broker
+-    supports_prompt_cache: false              # optional; default: false
+-    emit_cache_control_markers: false         # optional; default: false; independent of supports_prompt_cache
+     default_headers:                          # optional map; merged into every request to this provider
+       X-Custom-Header: value
+ ```
+@@ -445,8 +443,6 @@ providers:
+   - `codex-broker` — the provider is accessed via the Codex broker shim.
+ 
+ **Optional fields per entry:**
+-- `supports_prompt_cache`: boolean, default `false`. Signals that the provider supports prompt caching at the protocol level.
+-- `emit_cache_control_markers`: boolean, default `false`. **Independent of `supports_prompt_cache`.** The dispatcher emits `cache_control` fields in requests to this provider ONLY when BOTH `supports_prompt_cache: true` AND `emit_cache_control_markers: true` are set on the provider entry (the dual-flag gate). A `true`/`false` mismatch on either flag suppresses `cache_control` emission entirely — setting one flag without the other has no effect on dispatcher output.
+ - `default_headers`: optional map of string key-value pairs merged into every HTTP request sent to this provider. Useful for vendor-specific auth headers beyond `Authorization`.
+ 
+ #### `model_routing:` block
+diff --git a/tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats b/tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats
+new file mode 100644
+index 0000000..ff764ed
+--- /dev/null
++++ b/tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats
+@@ -0,0 +1,194 @@
++#!/usr/bin/env bats
++#
++# T8 — Cache-mechanism retirement invariants (Phase 1 acceptance).
++#
++# This file is the external (non-self-referential) gate on the prompt-cache
++# mechanism retirement performed by task-08. It greps neighbor artifacts —
++# never itself — and asserts:
++#
++#   * Filesystem absence of the four deleted artifacts
++#     (TE1: scripts/g4-cache-probe.sh,
++#      TE2: docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md,
++#      TE3: tests/unit/test-cache-control-capability-gate.bats,
++#      TE4: tests/unit/test-cache-hit-rate.bats).
++#
++#   * Content-level retirement in skills/using-qrspi/SKILL.md
++#     (TE5: no cache_control / supports_prompt_cache /
++#      emit_cache_control_markers literal strings remain after T8).
++#
++#   * Structural retirement in tests/unit/test-run-third-party-llm.bats
++#     (TE8: no `@test "cache_control gate` truth-table blocks remain after T8).
++#
++#   * SPIKE/run_pin absence in tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++#     (TE9: SPIKE= export to the deleted spike file and run_pin invocations
++#      pointing at the deleted unit suites are gone after T8). Greps the
++#      neighbor file from outside — eliminates the self-referential grep
++#      antipattern that would otherwise force the assertion to grep its own
++#      bytes.
++#
++#   * G6 host-detection assertions still present in test-phase1-acceptance.bats
++#     (TE10: the COPILOT_CLI=1 (Copilot CLI) and COPILOT_CLI-unset (Claude
++#      Code) acceptance assertions added by Task 7 are NOT collateral-damaged
++#      by the T8 mechanical removal pass).
++#
++# Bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++setup_file() {
++  # Resolve repo root from THIS file's location (tests/acceptance/v07-phase1/),
++  # matching the neighbor test-phase1-acceptance.bats convention. Bats may be
++  # invoked from a sibling worktree; do not rely on cwd.
++  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
++  export REPO_ROOT
++  export PHASE1_ACCEPTANCE="$REPO_ROOT/tests/acceptance/v07-phase1/test-phase1-acceptance.bats"
++  export DISPATCHER_PIN="$REPO_ROOT/tests/unit/test-run-third-party-llm.bats"
++  export USING_QRSPI_SKILL="$REPO_ROOT/skills/using-qrspi/SKILL.md"
++}
++
++# ---------------------------------------------------------------------------
++# TE1–TE4: Filesystem absence of the four deleted artifacts.
++# ---------------------------------------------------------------------------
++
++@test "[T8 / TE1] scripts/g4-cache-probe.sh is absent from the repository" {
++  # Test expectation: scripts/g4-cache-probe.sh does not exist in the
++  # repository after the task completes (filesystem absence)
++  [ ! -e "$REPO_ROOT/scripts/g4-cache-probe.sh" ]
++}
++
++@test "[T8 / TE2] docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md is absent from the repository" {
++  # Test expectation: docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md
++  # does not exist in the repository after the task completes (filesystem absence)
++  [ ! -e "$REPO_ROOT/docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md" ]
++}
++
++@test "[T8 / TE3] tests/unit/test-cache-control-capability-gate.bats is absent from the repository" {
++  # Test expectation: tests/unit/test-cache-control-capability-gate.bats does
++  # not exist in the repository after the task completes (filesystem absence)
++  [ ! -e "$REPO_ROOT/tests/unit/test-cache-control-capability-gate.bats" ]
++}
++
++@test "[T8 / TE4] tests/unit/test-cache-hit-rate.bats is absent from the repository" {
++  # Test expectation: tests/unit/test-cache-hit-rate.bats does not exist in
++  # the repository after the task completes (filesystem absence)
++  [ ! -e "$REPO_ROOT/tests/unit/test-cache-hit-rate.bats" ]
++}
++
++# ---------------------------------------------------------------------------
++# TE5: skills/using-qrspi/SKILL.md contains no cache_control /
++# supports_prompt_cache / emit_cache_control_markers literal strings.
++#
++# Three independent literal-string greps; word-boundary regex (-w) keeps the
++# assertion sharp and avoids partial collisions with adjacent identifiers.
++# ---------------------------------------------------------------------------
++
++@test "[T8 / TE5] skills/using-qrspi/SKILL.md contains no cache_control literal" {
++  # Test expectation: skills/using-qrspi/SKILL.md contains no references to
++  # cache_control [...] after modification
++  [ -f "$USING_QRSPI_SKILL" ]
++  run grep -nwE 'cache_control' "$USING_QRSPI_SKILL"
++  [ "$status" -ne 0 ]
++}
++
++@test "[T8 / TE5] skills/using-qrspi/SKILL.md contains no supports_prompt_cache literal" {
++  # Test expectation: skills/using-qrspi/SKILL.md contains no references to
++  # [...] supports_prompt_cache [...] after modification
++  [ -f "$USING_QRSPI_SKILL" ]
++  run grep -nwE 'supports_prompt_cache' "$USING_QRSPI_SKILL"
++  [ "$status" -ne 0 ]
++}
++
++@test "[T8 / TE5] skills/using-qrspi/SKILL.md contains no emit_cache_control_markers literal" {
++  # Test expectation: skills/using-qrspi/SKILL.md contains no references to
++  # [...] emit_cache_control_markers after modification
++  [ -f "$USING_QRSPI_SKILL" ]
++  run grep -nwE 'emit_cache_control_markers' "$USING_QRSPI_SKILL"
++  [ "$status" -ne 0 ]
++}
++
++# ---------------------------------------------------------------------------
++# TE8: tests/unit/test-run-third-party-llm.bats contains no cache-control
++# truth-table @test blocks after modification.
++#
++# Pattern targets the literal `@test "cache_control gate` prefix used by the
++# four truth-table tests (false,false), (true,false), (false,true), (true,true).
++# Anchored at column 1 to avoid matching incidental occurrences inside
++# helper bodies or commit-message scratch lines.
++# ---------------------------------------------------------------------------
++
++@test "[T8 / TE8] tests/unit/test-run-third-party-llm.bats contains no '@test \"cache_control gate' truth-table blocks" {
++  # Test expectation: tests/unit/test-run-third-party-llm.bats contains no
++  # cache-control truth-table test blocks after modification
++  [ -f "$DISPATCHER_PIN" ]
++  run grep -nE '^@test "cache_control gate' "$DISPATCHER_PIN"
++  [ "$status" -ne 0 ]
++}
++
++# ---------------------------------------------------------------------------
++# TE9: tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains
++# (a) no SPIKE variable export referencing the deleted spike report, and
++# (b) no run_pin invocations referencing the deleted unit suite files.
++#
++# Greps the neighbor file from OUTSIDE — this is the load-bearing
++# self-reference elimination required by the spec (the previous design grep'd
++# its own file body, producing a tautological pass when the assertion text
++# itself contained the forbidden token).
++# ---------------------------------------------------------------------------
++
++@test "[T8 / TE9a] tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no SPIKE export referencing the deleted spike report" {
++  # Test expectation: test-phase1-acceptance.bats contains no SPIKE variable
++  # export referencing the deleted spike file after modification
++  [ -f "$PHASE1_ACCEPTANCE" ]
++  # Match `SPIKE=` (assignment or export) on any line that also references
++  # the deleted spike file path. Both sides must be on the same line, which
++  # is the exact shape the deletion target uses.
++  run grep -nE 'SPIKE=.*g4-cache-probe\.md' "$PHASE1_ACCEPTANCE"
++  [ "$status" -ne 0 ]
++}
++
++@test "[T8 / TE9b] tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no run_pin invocations referencing the deleted capability-gate suite" {
++  # Test expectation: no run_pin invocations referencing the deleted suite
++  # files after modification (test-cache-control-capability-gate.bats)
++  [ -f "$PHASE1_ACCEPTANCE" ]
++  run grep -nE 'run_pin[[:space:]].*test-cache-control-capability-gate' "$PHASE1_ACCEPTANCE"
++  [ "$status" -ne 0 ]
++}
++
++@test "[T8 / TE9b] tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no run_pin invocations referencing the deleted cache-hit-rate suite" {
++  # Test expectation: no run_pin invocations referencing the deleted suite
++  # files after modification (test-cache-hit-rate.bats)
++  [ -f "$PHASE1_ACCEPTANCE" ]
++  run grep -nE 'run_pin[[:space:]].*test-cache-hit-rate' "$PHASE1_ACCEPTANCE"
++  [ "$status" -ne 0 ]
++}
++
++# ---------------------------------------------------------------------------
++# TE10: After T8 modifications, test-phase1-acceptance.bats STILL contains the
++# G6 host-detection assertions added by T7. The mechanical removal pass for
++# T8 (SPIKE export, two run_pin lines, Slice 7 C-5 test body) must not
++# collateral-delete the T7 / TE5 and T7 / TE6 assertion blocks.
++#
++# We grep for the load-bearing tokens that uniquely identify each block:
++#   * positive (Copilot CLI): the COPILOT_CLI=1 path emits
++#     `[transport: task-tool]` exactly once.
++#   * negative (Claude Code): the COPILOT_CLI-unset path emits
++#     `[transport: shell-pipeline]` exactly once.
++# ---------------------------------------------------------------------------
++
++@test "[T8 / TE10a] tests/acceptance/v07-phase1/test-phase1-acceptance.bats still contains the G6 COPILOT_CLI=1 host-detection assertion (T7 / TE5 preserved)" {
++  # Test expectation: After Task 8 modifications, test-phase1-acceptance.bats
++  # still contains the G6 host-detection acceptance assertions added by
++  # Task 7 (specifically, the COPILOT_CLI=1 Copilot CLI path assertion)
++  [ -f "$PHASE1_ACCEPTANCE" ]
++  # Anchored at the @test header for the T7 / TE5 block; matches the unique
++  # `T7 / TE5` tag + COPILOT_CLI=1 phrase from the test name.
++  run grep -nF '[T7 / TE5] dispatch surface: COPILOT_CLI=1 path emits [transport: task-tool]' "$PHASE1_ACCEPTANCE"
++  [ "$status" -eq 0 ]
++}
++
++@test "[T8 / TE10b] tests/acceptance/v07-phase1/test-phase1-acceptance.bats still contains the G6 COPILOT_CLI-unset host-detection assertion (T7 / TE6 preserved)" {
++  # Test expectation: After Task 8 modifications, test-phase1-acceptance.bats
++  # still contains the G6 host-detection acceptance assertions added by
++  # Task 7 (specifically, the COPILOT_CLI unset Claude Code path assertion)
++  [ -f "$PHASE1_ACCEPTANCE" ]
++  run grep -nF '[T7 / TE6] dispatch surface: COPILOT_CLI-unset path emits [transport: shell-pipeline]' "$PHASE1_ACCEPTANCE"
++  [ "$status" -eq 0 ]
++}
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index 46c0ba8..7742586 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -22,7 +22,6 @@ setup_file() {
+   export PINS="$REPO_ROOT/tests/unit"
+   export INTPINS="$REPO_ROOT/tests/integration"
+   export SKILLS="$REPO_ROOT/skills"
+-  export SPIKE="$REPO_ROOT/docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md"
+ }
+ 
+ # Helper: run a bats pin file silently; pass if exit 0.
+@@ -170,18 +169,18 @@ run_pin() {
+ 
+ # --------------------------------------------------------------------------
+ # Slice 7 — Caching spike + verify
++#
++# T8 (v0.7.1-hardening) retired the prompt-cache mechanism. The G4
++# cache-probe spike, the dual-flag capability-gate pin, and the cache-hit-
++# rate pin were deleted from the tree. The Slice 7 C-1, C-2, and C-5
++# criteria (which gated on those deleted artifacts) are therefore removed
++# from this acceptance file. The retirement itself is gated by
++# `tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats`,
++# which asserts filesystem-absence and content-absence invariants from
++# outside this file. C-3 and C-4 (unrelated to the cache mechanism)
++# remain.
+ # --------------------------------------------------------------------------
+ 
+-@test "[Phase1 Slice 7 C-1] G4 cache-probe spike deliverable exists as release artifact" {
+-  [ -f "$SPIKE" ]
+-  grep -q "## Decision" "$SPIKE"
+-}
+-
+-@test "[Phase1 Slice 7 C-2] spike report records Path A/B decision (or Pending stub) and downstream gating is observable" {
+-  [ -f "$SPIKE" ]
+-  grep -qE "Path A|Path B|Pending" "$SPIKE"
+-}
+-
+ @test "[Phase1 Slice 7 C-3] no-summary-shim-dispatches invariant pin runs green" {
+   run run_pin "$PINS/test-no-summary-shim-dispatches.bats"
+   [ "$status" -eq 0 ]
+@@ -200,17 +199,6 @@ run_pin() {
+   # index-shape pin + the 3 anchor files + manifest above.
+ }
+ 
+-@test "[Phase1 Slice 7 C-5] T43 conditional satisfied: cache-control capability gate pin behavior consistent with T33 decision" {
+-  # T33 spike report is currently 'Pending Decision' (per implement-summary.md W3 + W9).
+-  # T43 was a NO-OP under Path A / Pending; criterion satisfies vacuously by spec.
+-  grep -q "Pending" "$SPIKE" && skip "T33 spike report decision = Pending; T43 vacuously satisfied per plan.md Slice 7 C-5 (skipped-env-dep on live API)"
+-  # If/when the spike resolves to Path A or Path B, run the gate pins.
+-  run run_pin "$PINS/test-cache-control-capability-gate.bats"
+-  [ "$status" -eq 0 ]
+-  run run_pin "$PINS/test-cache-hit-rate.bats"
+-  [ "$status" -eq 0 ]
+-}
+-
+ # --------------------------------------------------------------------------
+ # Slice 8 — Commit-message scratch staging
+ # --------------------------------------------------------------------------
+diff --git a/tests/unit/test-cache-control-capability-gate.bats b/tests/unit/test-cache-control-capability-gate.bats
+deleted file mode 100644
+index 66594a8..0000000
+--- a/tests/unit/test-cache-control-capability-gate.bats
++++ /dev/null
+@@ -1,162 +0,0 @@
+-#!/usr/bin/env bats
+-#
+-# T36 Slice 7 cache-control unit pin — dual-flag cache_control emission gate
+-# observed via direct invocation of the T03 universal dispatcher.
+-#
+-# Invokes scripts/run-third-party-llm.sh against fixture providers exercising
+-# all four cells of the supports_prompt_cache: x emit_cache_control_markers:
+-# truth table:
+-#   (a) (false, false)  — request body OMITS cache_control
+-#   (b) (true, false)   — request body OMITS cache_control (default state at
+-#                         T03 ship; critical to T33 spike measurement integrity)
+-#   (c) (false, true)   — request body OMITS cache_control (capability gate)
+-#   (d) (true, true)    — request body CONTAINS cache_control (ephemeral)
+-#
+-# All four fixtures use transport_type: openai-chat-completions so the
+-# dispatcher assembles a chat-completions JSON body the test can observe
+-# directly. transport_type: codex-broker is NOT exercised here (broker
+-# defers JSON assembly to a subprocess, which would make the request-body
+-# assertion vacuous — that decision is documented in the T36 spec).
+-#
+-# Bash 3.2 portable.
+-
+-load '../helpers/skill-markdown'
+-
+-setup_file() {
+-  require_repo_root
+-  DISPATCHER="$REPO_ROOT/scripts/run-third-party-llm.sh"
+-  [ -f "$DISPATCHER" ] || { echo "dispatcher missing" >&2; return 1; }
+-  export DISPATCHER
+-}
+-
+-setup() {
+-  FIXTURE_DIR="$(mktemp -d)"
+-  export FIXTURE_DIR
+-  OUTPUT_FILE="$FIXTURE_DIR/output.txt"
+-  export OUTPUT_FILE
+-}
+-
+-teardown() {
+-  rm -rf "$FIXTURE_DIR"
+-}
+-
+-_write_provider() {
+-  # $1=spc $2=ecmm
+-  cat > "$FIXTURE_DIR/config.md" <<EOF
+----
+-providers:
+-  testprov:
+-    base_url: https://127.0.0.1/v1
+-    api_key_env: TEST_KEY
+-    transport_type: openai-chat-completions
+-    supports_prompt_cache: $1
+-    emit_cache_control_markers: $2
+----
+-EOF
+-}
+-
+-# Stub curl that captures the request body to $STUB_CURL_CAPTURE and returns
+-# a canned successful response so the dispatcher exits 0.
+-_install_stub_curl() {
+-  local stub_dir="$FIXTURE_DIR/bin"
+-  local capture="$FIXTURE_DIR/curl-request-body.json"
+-  export STUB_CURL_CAPTURE="$capture"
+-  mkdir -p "$stub_dir"
+-  cat > "$stub_dir/curl" <<'CURL_EOF'
+-#!/usr/bin/env bash
+-body=""
+-out=""
+-prev=""
+-for a in "$@"; do
+-  case "$prev" in
+-    -d) body="$a" ;;
+-    -o) out="$a" ;;
+-  esac
+-  prev="$a"
+-done
+-if [ -n "$body" ] && [ -n "${STUB_CURL_CAPTURE:-}" ]; then
+-  printf '%s' "$body" > "$STUB_CURL_CAPTURE"
+-fi
+-if [ -n "$out" ]; then
+-  printf '%s' '{"choices":[{"message":{"content":"ok"}}]}' > "$out"
+-fi
+-exit 0
+-CURL_EOF
+-  chmod +x "$stub_dir/curl"
+-  export PATH="$stub_dir:$PATH"
+-}
+-
+-@test "cell (a) (false,false): request body OMITS cache_control" {
+-  _write_provider false false
+-  _install_stub_curl
+-  TEST_KEY=k QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo p | bash '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider testprov --model m --output-file '$OUTPUT_FILE'"
+-  [ "$status" -eq 0 ]
+-  body="$(cat "$STUB_CURL_CAPTURE")"
+-  [[ "$body" != *"cache_control"* ]]
+-}
+-
+-@test "cell (b) (true,false): default state — request body OMITS cache_control (T33 spike-integrity)" {
+-  _write_provider true false
+-  _install_stub_curl
+-  TEST_KEY=k QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo p | bash '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider testprov --model m --output-file '$OUTPUT_FILE'"
+-  [ "$status" -eq 0 ]
+-  body="$(cat "$STUB_CURL_CAPTURE")"
+-  [[ "$body" != *"cache_control"* ]]
+-}
+-
+-@test "cell (c) (false,true): capability gate — request body OMITS cache_control" {
+-  _write_provider false true
+-  _install_stub_curl
+-  TEST_KEY=k QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo p | bash '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider testprov --model m --output-file '$OUTPUT_FILE'"
+-  [ "$status" -eq 0 ]
+-  body="$(cat "$STUB_CURL_CAPTURE")"
+-  [[ "$body" != *"cache_control"* ]]
+-}
+-
+-@test "cell (d) (true,true): emission ON — request body CONTAINS cache_control: ephemeral" {
+-  _write_provider true true
+-  _install_stub_curl
+-  TEST_KEY=k QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo p | bash '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider testprov --model m --output-file '$OUTPUT_FILE'"
+-  [ "$status" -eq 0 ]
+-  body="$(cat "$STUB_CURL_CAPTURE")"
+-  [[ "$body" == *"cache_control"* ]]
+-  [[ "$body" == *"ephemeral"* ]]
+-}
+-
+-# ---------------------------------------------------------------------------
+-# Capability-gate-and-emission-gate co-located contract:
+-# both "capability gate" (no markers to providers without prompt-cache
+-# support, regardless of emission flag) AND "emission gate" (no markers
+-# by default even when the provider supports caching, preserving T33
+-# spike-measurement integrity) must hold simultaneously. The four cells
+-# above co-locate that observation: only (d) emits.
+-# ---------------------------------------------------------------------------
+-
+-@test "co-located contract: only (true,true) emits — three other cells uniformly suppress" {
+-  # Re-run all four cells in-test to assert the truth table as a single
+-  # observation (one fixture set, one PATH, one stub curl).
+-  local cell_a_body cell_b_body cell_c_body cell_d_body
+-  for cell in a b c d; do
+-    rm -rf "$FIXTURE_DIR/bin"
+-    case "$cell" in
+-      a) _write_provider false false ;;
+-      b) _write_provider true false ;;
+-      c) _write_provider false true ;;
+-      d) _write_provider true true ;;
+-    esac
+-    _install_stub_curl
+-    TEST_KEY=k QRSPI_ALLOW_LOCALHOST_BASE_URL=1 bash -c "echo p | bash '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider testprov --model m --output-file '$OUTPUT_FILE'"
+-    rc=$?
+-    [ "$rc" -eq 0 ]
+-    case "$cell" in
+-      a) cell_a_body="$(cat "$STUB_CURL_CAPTURE")" ;;
+-      b) cell_b_body="$(cat "$STUB_CURL_CAPTURE")" ;;
+-      c) cell_c_body="$(cat "$STUB_CURL_CAPTURE")" ;;
+-      d) cell_d_body="$(cat "$STUB_CURL_CAPTURE")" ;;
+-    esac
+-  done
+-  [[ "$cell_a_body" != *"cache_control"* ]]
+-  [[ "$cell_b_body" != *"cache_control"* ]]
+-  [[ "$cell_c_body" != *"cache_control"* ]]
+-  [[ "$cell_d_body" == *"cache_control"* ]]
+-}
+diff --git a/tests/unit/test-cache-hit-rate.bats b/tests/unit/test-cache-hit-rate.bats
+deleted file mode 100644
+index 554ae5d..0000000
+--- a/tests/unit/test-cache-hit-rate.bats
++++ /dev/null
+@@ -1,206 +0,0 @@
+-#!/usr/bin/env bats
+-#
+-# T36 Slice 7 cache-control unit pin — cache-hit-rate, path-conditional.
+-#
+-# Reads the T33 spike-report deliverable (docs/qrspi/2026-05-17-v07-release/
+-# spikes/g4-cache-probe.md) to choose between Path A verification-only and
+-# Path B add-then-verify assertions. On Path A asserts cache_read_input_tokens
+-# > 0 on second-and-later dispatches with an identical system-prefix; on
+-# Path B asserts both cache_control marker presence in the assembled JSON
+-# request body (under the dual-flag gate) AND the same hit-rate condition,
+-# AND the contrapositive (providers with emit_cache_control_markers: false
+-# receive NO cache_control field even on Path B).
+-#
+-# Loud-failure preconditions (BEFORE branching on Path A/B):
+-#   - spike-report file absent
+-#   - spike-report Decision section missing or unrecognized
+-#   - colocated g4-cache-probe.lock file absent
+-#   - lock file malformed (no run_id: key parseable)
+-#   - report.run_id and lock.run_id mismatch (stale report)
+-#
+-# Bash 3.2 portable.
+-
+-load '../helpers/skill-markdown'
+-
+-setup_file() {
+-  require_repo_root
+-  SPIKE_DIR="$REPO_ROOT/docs/qrspi/2026-05-17-v07-release/spikes"
+-  REPORT_PATH="$SPIKE_DIR/g4-cache-probe.md"
+-  LOCK_PATH="$SPIKE_DIR/g4-cache-probe.lock"
+-  export SPIKE_DIR REPORT_PATH LOCK_PATH
+-}
+-
+-# ---------------------------------------------------------------------------
+-# Parse helpers — both report and lock carry a `run_id:` key on a YAML line.
+-# ---------------------------------------------------------------------------
+-
+-_extract_run_id() {
+-  local file="$1"
+-  awk '/^run_id:[[:space:]]*/ { sub(/^run_id:[[:space:]]*/, ""); print; exit }' "$file"
+-}
+-
+-_extract_decision_line() {
+-  # The Decision section's first non-empty body line carries the verdict.
+-  awk '
+-    /^## Decision[[:space:]]*$/ { inside = 1; next }
+-    /^## / { if (inside == 1) exit }
+-    inside == 1 && NF > 0 { print; exit }
+-  ' "$1"
+-}
+-
+-# ---------------------------------------------------------------------------
+-# Loud-failure preconditions (each is a distinct named diagnostic when the
+-# pin runs against a real future spike-report deliverable).
+-# ---------------------------------------------------------------------------
+-
+-@test "loud-fail: spike-report file present (T33 deliverable)" {
+-  [ -f "$REPORT_PATH" ] || { echo "spike-report missing at $REPORT_PATH" >&2; false; }
+-}
+-
+-@test "loud-fail: spike-report Decision section present + parseable" {
+-  decision="$(_extract_decision_line "$REPORT_PATH")"
+-  [ -n "$decision" ] || { echo "Decision section unparseable in $REPORT_PATH" >&2; false; }
+-}
+-
+-@test "loud-fail: report's run_id: header field present + non-empty" {
+-  rid="$(_extract_run_id "$REPORT_PATH")"
+-  [ -n "$rid" ] || { echo "run_id missing/empty in report $REPORT_PATH" >&2; false; }
+-}
+-
+-# ---------------------------------------------------------------------------
+-# Pre-lock contract enumeration — pinned via grep against the T33 script
+-# source so the documented absent / malformed / mismatch branches each have
+-# a distinct named loud-failure surface, EVEN WHEN the live lock file does
+-# not yet exist (the spike has not run end-to-end at T36 ship time).
+-# ---------------------------------------------------------------------------
+-
+-@test "loud-fail contract: cache-probe script documents lock-file discipline" {
+-  run grep -F "Lock-file discipline" "$REPO_ROOT/scripts/g4-cache-probe.sh"
+-  [ "$status" -eq 0 ]
+-}
+-
+-@test "loud-fail contract: cache-probe script documents stale-report detection via absent lock or run_id mismatch" {
+-  # The phrase spans two source-comment lines; join lines (strip leading `# `)
+-  # then match the contiguous phrase.
+-  sed 's/^# //; s/^#//' "$REPO_ROOT/scripts/g4-cache-probe.sh" | tr '\n' ' ' | grep -qF "absence of a fresh lock or a run_id mismatch"
+-}
+-
+-# ---------------------------------------------------------------------------
+-# Lock-state conditional assertions: run the live freshness checks when the
+-# lock file exists; otherwise document that the deliverable is in the
+-# pre-live stub state (which is itself a T36-pin loud signal — the next
+-# operator run replaces the stub).
+-# ---------------------------------------------------------------------------
+-
+-@test "freshness: when lock exists, report.run_id == lock.run_id (no stale report)" {
+-  if [ ! -f "$LOCK_PATH" ]; then
+-    skip "lock absent — spike has not run end-to-end (stub state expected at T36 ship time)"
+-  fi
+-  report_rid="$(_extract_run_id "$REPORT_PATH")"
+-  lock_rid="$(_extract_run_id "$LOCK_PATH")"
+-  [ -n "$lock_rid" ] || { echo "malformed-lock: lock present at $LOCK_PATH but no parseable run_id: key" >&2; false; }
+-  [ "$report_rid" = "$lock_rid" ] || { echo "stale-report: report.run_id=$report_rid != lock.run_id=$lock_rid" >&2; false; }
+-}
+-
+-@test "freshness: when lock exists, lock.run_id is non-empty (guards malformed-lock branch)" {
+-  if [ ! -f "$LOCK_PATH" ]; then
+-    skip "lock absent — exercise of malformed-lock branch deferred until lock is written"
+-  fi
+-  lock_rid="$(_extract_run_id "$LOCK_PATH")"
+-  [ -n "$lock_rid" ]
+-}
+-
+-# ---------------------------------------------------------------------------
+-# Path-conditional dispatch: read the Decision section and branch.
+-# At T36 ship time the stub records "Pending — operator runs ..." which
+-# is a recognized non-path verdict. The pin documents the deferred state
+-# rather than silently passing.
+-# ---------------------------------------------------------------------------
+-
+-_path_from_decision() {
+-  local decision="$1"
+-  case "$decision" in
+-    *"Path A selected"*|*"Path A"*) echo "A" ;;
+-    *"Path B selected"*|*"Path B required"*|*"Path B REQUIRED"*|*"Path B"*) echo "B" ;;
+-    *"Pending"*) echo "PENDING" ;;
+-    *) echo "UNRECOGNIZED" ;;
+-  esac
+-}
+-
+-@test "decision: parsed verdict is one of {A, B, PENDING} (UNRECOGNIZED is a loud fail)" {
+-  decision="$(_extract_decision_line "$REPORT_PATH")"
+-  verdict="$(_path_from_decision "$decision")"
+-  case "$verdict" in
+-    A|B|PENDING) ;;
+-    *) echo "unrecognized Decision: '$decision'" >&2; false ;;
+-  esac
+-}
+-
+-@test "Path A assertion: cache_read_input_tokens > 0 on second-and-later dispatches (when Path A)" {
+-  decision="$(_extract_decision_line "$REPORT_PATH")"
+-  verdict="$(_path_from_decision "$decision")"
+-  if [ "$verdict" != "A" ]; then
+-    skip "verdict=$verdict — Path A assertion not selected"
+-  fi
+-  # Extract the captured cache_read values from the report's table; calls
+-  # 2 and 3 must both be numeric and > 0 for Path A integrity.
+-  for call in 2 3; do
+-    val="$(awk -v c="$call" 'BEGIN{FS="|"} $0 ~ "^\\|[[:space:]]*"c"[[:space:]]*\\|" { gsub(/[[:space:]]/, "", $4); print $4; exit }' "$REPORT_PATH")"
+-    [ -n "$val" ] || { echo "Path A: cache_read row for call $call missing" >&2; false; }
+-    case "$val" in
+-      ''|*[!0-9]*) echo "Path A: cache_read call $call is non-numeric: $val" >&2; false ;;
+-    esac
+-    [ "$val" -gt 0 ] || { echo "Path A: cache_read call $call == 0 — hit-rate assertion failed" >&2; false; }
+-  done
+-}
+-
+-@test "Path B assertion: cache_control marker present on dual-flag-true providers AND hit-rate holds (when Path B)" {
+-  decision="$(_extract_decision_line "$REPORT_PATH")"
+-  verdict="$(_path_from_decision "$decision")"
+-  if [ "$verdict" != "B" ]; then
+-    skip "verdict=$verdict — Path B assertion not selected"
+-  fi
+-  # Path B requires the dispatcher's dual-flag gate to be observable at the
+-  # flagged reviewer-dispatch sites. The capability-gate truth table is
+-  # pinned in test-cache-control-capability-gate.bats; here we assert the
+-  # spike report enumerates the flagged sites where Path B activation
+-  # toggles emit_cache_control_markers: true on the Anthropic provider
+-  # entries (and contrapositive: emit_cache_control_markers: false
+-  # providers receive NO cache_control field).
+-  run grep -F "emit_cache_control_markers" "$REPORT_PATH"
+-  [ "$status" -eq 0 ]
+-  # Hit-rate check: same as Path A (second-and-later calls cache_read > 0).
+-  for call in 2 3; do
+-    val="$(awk -v c="$call" 'BEGIN{FS="|"} $0 ~ "^\\|[[:space:]]*"c"[[:space:]]*\\|" { gsub(/[[:space:]]/, "", $4); print $4; exit }' "$REPORT_PATH")"
+-    [ -n "$val" ] || { echo "Path B: cache_read row for call $call missing" >&2; false; }
+-    case "$val" in
+-      ''|*[!0-9]*) echo "Path B: cache_read call $call is non-numeric: $val" >&2; false ;;
+-    esac
+-    [ "$val" -gt 0 ] || { echo "Path B: cache_read call $call == 0 — hit-rate assertion failed" >&2; false; }
+-  done
+-}
+-
+-@test "Path B contrapositive: providers with emit_cache_control_markers: false get NO cache_control field" {
+-  decision="$(_extract_decision_line "$REPORT_PATH")"
+-  verdict="$(_path_from_decision "$decision")"
+-  if [ "$verdict" != "B" ]; then
+-    skip "verdict=$verdict — Path B contrapositive not selected"
+-  fi
+-  # The contrapositive is observable via test-cache-control-capability-gate.bats
+-  # cells (a)/(b)/(c) — this assertion documents the cross-pin contract.
+-  [ -f "$REPO_ROOT/tests/unit/test-cache-control-capability-gate.bats" ]
+-  run grep -F "(false,false)" "$REPO_ROOT/tests/unit/test-cache-control-capability-gate.bats"
+-  [ "$status" -eq 0 ]
+-}
+-
+-@test "PENDING state: stub report present — flag as deferred (load-bearing diagnostic)" {
+-  decision="$(_extract_decision_line "$REPORT_PATH")"
+-  verdict="$(_path_from_decision "$decision")"
+-  if [ "$verdict" != "PENDING" ]; then
+-    skip "verdict=$verdict — PENDING-state diagnostic only fires against the stub"
+-  fi
+-  # The stub MUST self-identify as the T33 stub so a future regression that
+-  # ships a placeholder report under a non-stub run_id fails loud here.
+-  rid="$(_extract_run_id "$REPORT_PATH")"
+-  [[ "$rid" == *"stub"* ]] || [[ "$rid" == *"pending"* ]] || { echo "PENDING decision but run_id ($rid) does not self-identify as stub/pending" >&2; false; }
+-}
+diff --git a/tests/unit/test-run-third-party-llm.bats b/tests/unit/test-run-third-party-llm.bats
+index 8c5f79c..e371245 100644
+--- a/tests/unit/test-run-third-party-llm.bats
++++ b/tests/unit/test-run-third-party-llm.bats
+@@ -267,50 +267,6 @@ CURL_EOF
+   [ -f "$OUTPUT_FILE" ]
+ }
+ 
+-# ---------------------------------------------------------------------------
+-# Dual-flag cache_control gate: 4-cell truth table.
+-# Only (true,true) emits `cache_control` in the assembled request body;
+-# (true,false) is the default state at T03 ship and critical to T33 integrity.
+-# ---------------------------------------------------------------------------
+-
+-@test "cache_control gate (false,false): request body OMITS cache_control" {
+-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY false false
+-  _install_stub_curl
+-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
+-  [ "$status" -eq 0 ]
+-  [ -f "$STUB_CURL_CAPTURE" ]
+-  body="$(cat "$STUB_CURL_CAPTURE")"
+-  [[ "$body" != *"cache_control"* ]]
+-}
+-
+-@test "cache_control gate (true,false): default state — request body OMITS cache_control" {
+-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY true false
+-  _install_stub_curl
+-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
+-  [ "$status" -eq 0 ]
+-  body="$(cat "$STUB_CURL_CAPTURE")"
+-  [[ "$body" != *"cache_control"* ]]
+-}
+-
+-@test "cache_control gate (false,true): request body OMITS cache_control (capability gate)" {
+-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY false true
+-  _install_stub_curl
+-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
+-  [ "$status" -eq 0 ]
+-  body="$(cat "$STUB_CURL_CAPTURE")"
+-  [[ "$body" != *"cache_control"* ]]
+-}
+-
+-@test "cache_control gate (true,true): request body CONTAINS cache_control (ephemeral)" {
+-  _write_config_openai "$FIXTURE_DIR" p1 https://127.0.0.1/v1 SOME_KEY true true
+-  _install_stub_curl
+-  SOME_KEY=k1 QRSPI_ALLOW_LOCALHOST_BASE_URL=1 run bash -c "echo hi | '$DISPATCHER' --artifact-dir '$FIXTURE_DIR' --provider p1 --model m --output-file '$OUTPUT_FILE'"
+-  [ "$status" -eq 0 ]
+-  body="$(cat "$STUB_CURL_CAPTURE")"
+-  [[ "$body" == *"cache_control"* ]]
+-  [[ "$body" == *"ephemeral"* ]]
+-}
+-
+ # ---------------------------------------------------------------------------
+ # Transport branching: unknown transport_type fail-loud.
+ # codex-broker branch presence is asserted via the script source so the
+@@ -1112,3 +1068,80 @@ _extract_ctrl_check_fn() {
+   printf '%s' "$output" | grep -qF 'sanitisation pipeline failed' && _found=1
+   [ "$_found" -eq 1 ]
+ }
++
++# ---------------------------------------------------------------------------
++# T8 — Cache-mechanism retirement: grep-based absence assertions on
++# scripts/run-third-party-llm.sh and skills/using-qrspi/SKILL.md.
++#
++# These tests verify that the three load-bearing cache-mechanism literal
++# strings — cache_control, supports_prompt_cache, emit_cache_control_markers
++# — are absent from both the dispatcher script and the using-qrspi skill
++# after the T8 mechanical removal pass.
++#
++# Word-boundary regex (-w) keeps each match sharp: it avoids matching
++# substrings inside unrelated identifiers and avoids matching the literal
++# token inside neighbour test file paths printed in stack traces. The
++# repo-relative paths are resolved against $REPO_ROOT (set up in
++# setup_file via require_repo_root).
++#
++# Each test asserts ONE literal in ONE file (six tests total). Keeping each
++# assertion granular lets the post-T8 implementer see exactly which
++# (literal, file) pair regresses if the retirement is partial.
++# ---------------------------------------------------------------------------
++
++@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no cache_control literal (absence assertion)" {
++  # Test expectation (TE6): A new automated assertion in
++  # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
++  # for cache_control [...] and fails if the literal string is found.
++  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
++  [ -f "$skill" ]
++  run grep -nwE 'cache_control' "$skill"
++  [ "$status" -ne 0 ]
++}
++
++@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no supports_prompt_cache literal (absence assertion)" {
++  # Test expectation (TE6): A new automated assertion in
++  # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
++  # for [...] supports_prompt_cache [...] and fails if the literal string is found.
++  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
++  [ -f "$skill" ]
++  run grep -nwE 'supports_prompt_cache' "$skill"
++  [ "$status" -ne 0 ]
++}
++
++@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no emit_cache_control_markers literal (absence assertion)" {
++  # Test expectation (TE6): A new automated assertion in
++  # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
++  # for [...] emit_cache_control_markers and fails if the literal string is found.
++  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
++  [ -f "$skill" ]
++  run grep -nwE 'emit_cache_control_markers' "$skill"
++  [ "$status" -ne 0 ]
++}
++
++@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no cache_control literal (absence assertion)" {
++  # Test expectation (TE7): a grep-based absence assertion in
++  # tests/unit/test-run-third-party-llm.bats verifies that the literal string
++  # cache_control [...] is absent from scripts/run-third-party-llm.sh.
++  [ -f "$DISPATCHER" ]
++  run grep -nwE 'cache_control' "$DISPATCHER"
++  [ "$status" -ne 0 ]
++}
++
++@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no supports_prompt_cache literal (absence assertion)" {
++  # Test expectation (TE7): a grep-based absence assertion in
++  # tests/unit/test-run-third-party-llm.bats verifies that the literal string
++  # [...] supports_prompt_cache [...] is absent from scripts/run-third-party-llm.sh.
++  [ -f "$DISPATCHER" ]
++  run grep -nwE 'supports_prompt_cache' "$DISPATCHER"
++  [ "$status" -ne 0 ]
++}
++
++@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no emit_cache_control_markers literal (absence assertion)" {
++  # Test expectation (TE7): a grep-based absence assertion in
++  # tests/unit/test-run-third-party-llm.bats verifies that the literal string
++  # [...] emit_cache_control_markers is absent from scripts/run-third-party-llm.sh.
++  [ -f "$DISPATCHER" ]
++  run grep -nwE 'emit_cache_control_markers' "$DISPATCHER"
++  [ "$status" -ne 0 ]
++}

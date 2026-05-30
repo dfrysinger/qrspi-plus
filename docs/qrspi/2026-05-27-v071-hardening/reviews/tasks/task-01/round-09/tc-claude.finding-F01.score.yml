@@ -1,0 +1,2 @@
+score: 90
+reason: The VALUE parametric test loop has a real correctness gap where CR (0x0D) is not special-cased like it is in the NAME loop, causing platform-specific test failures on CRLF-aware awk. The same issue was identified and mitigated in the NAME loop (line 652), but the VALUE loop was left unpatched, violating the task spec requirement that "Every C0 control byte supplied as a header value causes the script to exit."

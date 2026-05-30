@@ -1,0 +1,2 @@
+score: 78
+reason: Real correctness issue in-scope to this task's GREEN commit c7544e8; CRLF line endings cause the awk pattern /^---$/ to silently miss frontmatter violations, defeating Task 9's core enforcement mechanism. Will be hit in practice by any Windows contributor or GitHub web editor user.

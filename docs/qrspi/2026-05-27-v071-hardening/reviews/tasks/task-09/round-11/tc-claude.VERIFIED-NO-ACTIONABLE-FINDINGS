@@ -1,0 +1,10 @@
+T9 Round 11 (narrow-verify of R10 fix cf52a40)
+
+tc reviewer surfaced 1 finding:
+- tc.F01 (low, clarity): test 9 comment overstates mutation-resistance claim
+  - Verifier score: 35 → DROP (below clarity threshold 80 per Hotfix B)
+  - Reviewer self-labeled "no blocking action required"
+  - Test 9 still provides real behavioral coverage of `>` code path
+
+Outcome: NO ACTIONABLE FINDINGS after verifier fan-in.
+T9 R10 fix-cycle is COMPLETE.

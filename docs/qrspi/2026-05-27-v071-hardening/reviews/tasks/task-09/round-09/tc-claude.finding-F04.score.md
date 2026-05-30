@@ -1,0 +1,2 @@
+score: 28
+reason: Finding accurately describes a real discrepancy between embedded test stub and production _frontmatter code (missing CRLF gsub, in_scalar tracking, scalar-at-end reset). However, per explicit verifier instruction ("Hotfix A in-scope") and finding's own classification as re-raise of T9 R8 sf.F02 (prior score 30, marked pre-existing), this is a known low-priority issue being re-flagged from test-coverage perspective rather than a new defect.

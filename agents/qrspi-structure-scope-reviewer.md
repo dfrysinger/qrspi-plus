@@ -1,7 +1,6 @@
 ---
 name: qrspi-structure-scope-reviewer
 description: Scope/boundary review for structure.md. Reads skills/structure/owns-defers.md and applies the 3-check scope procedure. Companion to qrspi-structure-reviewer (which handles artifact quality).
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

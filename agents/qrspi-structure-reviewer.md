@@ -1,7 +1,6 @@
 ---
 name: qrspi-structure-reviewer
 description: Reviews structure.md for artifact-specific quality (correctness, clarity, completeness) per the QRSPI reviewer protocol. Scope/boundary review is handled by qrspi-structure-scope-reviewer.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

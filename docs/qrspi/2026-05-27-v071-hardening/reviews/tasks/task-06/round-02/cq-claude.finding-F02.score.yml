@@ -1,0 +1,2 @@
+score: 50
+reason: Real redundancy verified (Test 2 is a strict subset of Test 1, both identical setup), but stylistic nitpick with no documented constraint violation; test suite is functionally correct.

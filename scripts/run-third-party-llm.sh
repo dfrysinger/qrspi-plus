@@ -32,6 +32,7 @@
 #   - No wait -n
 
 set -u
+set -o pipefail
 
 # Resolve the directory containing this script so we can source lib/ reliably.
 _SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -190,22 +191,60 @@ IPEOF2
 }
 
 # ---------------------------------------------------------------------------
+# _control_char_check <header-name> <header-value>
+#
+# Rejects any header name or value that contains a control byte.
+# Covered byte ranges: C0 (0x00-0x1F) and DEL (0x7F).
+# Non-ASCII bytes (0x80-0xFF) are outside spec scope and are not flagged.
+#
+# Detection method: LC_ALL=C tr deletes printable-ASCII bytes (0x20-0x7E,
+# octal \040-\176) and non-ASCII bytes (0x80-0xFF, octal \200-\377).
+# Anything remaining after deletion is a C0 or DEL control byte.
+# The byte count is taken by wc -c on the same pipeline so
+# command-substitution trailing-newline stripping does not affect the
+# count -- LF inside an argument is correctly detected this way.
+#
+# No grep -P is used; the implementation is POSIX-clean and works on
+# macOS system grep (BSD grep, no PCRE) and GNU grep alike.
+#
+# Reads the global PROVIDER variable for the die-path diagnostic.
+# Caller must have die() in scope.
+_control_char_check() {
+  local _cc_hname="$1" _cc_hval="$2"
+  local _cc_count
+  # Delete printable-ASCII bytes (space through tilde, octal \040-\176) and
+  # non-ASCII bytes (0x80-0xFF, octal \200-\377) so only C0 control bytes
+  # (0x00-0x1F) and DEL (0x7F) survive.  LF inside the argument also
+  # survives; wc -c counts it before command substitution strips newlines.
+  _cc_count=$(printf '%s' "$_cc_hname$_cc_hval" \
+    | LC_ALL=C tr -d '\040-\176\200-\377' \
+    | wc -c \
+    | tr -d ' \t')
+  # Sanitise the header name before embedding in any die message to prevent
+  # raw control bytes (e.g. ESC sequences) from manipulating the operator's
+  # terminal and hiding the security abort notification.
+  local _cc_safe_hname
+  _cc_safe_hname=$(printf '%s' "$_cc_hname" | LC_ALL=C tr '\000-\037\177' '?') \
+    || _cc_safe_hname="(field name unavailable — sanitisation pipeline failed)"
+  # Fail closed: if the pipeline returns empty or non-numeric output (e.g.
+  # due to SIGPIPE or tool failure), die immediately rather than silently
+  # bypassing control-char detection (fail-open via [ "" -eq 0 ]).
+  case "$_cc_count" in
+    ''|*[!0-9]*) die "header-validation: failed to compute byte count for header '$_cc_safe_hname' on provider '${PROVIDER:-}' (pipeline/tool failure)" ;;
+  esac
+  if [ "$_cc_count" -ne 0 ]; then
+    die "header-validation: provider '${PROVIDER:-}' — control character in header/key field '$_cc_safe_hname'"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # _dispatch_openai_chat
 #
 # Issues a blocking POST to <base_url>/chat/completions using curl.
-# Emits cache_control ONLY when BOTH supports_prompt_cache AND
-# emit_cache_control_markers are "true" on the resolved provider entry.
 # Writes the response body atomically to OUTPUT_FILE on success.
-# Reads: BASE_URL, MODEL, PROVIDER, OUTPUT_FILE, SUPPORTS_PROMPT_CACHE,
-#        EMIT_CACHE_CONTROL_MARKERS, _API_KEY, HEADER_NAMES, HEADER_VALUES,
-#        TIMEOUT_SECONDS, STDIN_TEMP.
+# Reads: BASE_URL, MODEL, PROVIDER, OUTPUT_FILE, _API_KEY, HEADER_NAMES,
+#        HEADER_VALUES, TIMEOUT_SECONDS, STDIN_TEMP.
 _dispatch_openai_chat() {
-  # Dual-flag cache-control gate.
-  local emit_cache="false"
-  if [ "$SUPPORTS_PROMPT_CACHE" = "true" ] && [ "$EMIT_CACHE_CONTROL_MARKERS" = "true" ]; then
-    emit_cache="true"
-  fi
-
   # Read prompt content from STDIN_TEMP.
   local prompt_content
   prompt_content=$(cat "$STDIN_TEMP")
@@ -213,16 +252,12 @@ _dispatch_openai_chat() {
   # Build request JSON via node (correct escaping of arbitrary prompt content).
   local request_json
   request_json=$(node -e "
-const emitCache = process.argv[1] === 'true';
-const model     = process.argv[2];
-const prompt    = process.argv[3];
+const model     = process.argv[1];
+const prompt    = process.argv[2];
 const msg = { role: 'user', content: prompt };
-if (emitCache) {
-  msg.cache_control = { type: 'ephemeral' };
-}
 const body = { model: model, messages: [msg] };
 process.stdout.write(JSON.stringify(body));
-" -- "$emit_cache" "$MODEL" "$prompt_content") || {
+" -- "$MODEL" "$prompt_content") || {
     rm -f "$STDIN_TEMP"
     die "failed to build request JSON"
   }
@@ -496,8 +531,6 @@ PROVIDER_BLOCK_OUTPUT=$(parse_provider_block "$CONFIG_MD" "$PROVIDER") || \
 BASE_URL=""
 API_KEY_ENV=""
 TRANSPORT_TYPE=""
-SUPPORTS_PROMPT_CACHE="false"
-EMIT_CACHE_CONTROL_MARKERS="false"
 HEADER_NAMES=()
 HEADER_VALUES=()
 
@@ -508,8 +541,6 @@ while IFS="	" read -r rec_type rec_key rec_val; do
         base_url)                   BASE_URL="$rec_val" ;;
         api_key_env)                API_KEY_ENV="$rec_val" ;;
         transport_type)             TRANSPORT_TYPE="$rec_val" ;;
-        supports_prompt_cache)      SUPPORTS_PROMPT_CACHE="$rec_val" ;;
-        emit_cache_control_markers) EMIT_CACHE_CONTROL_MARKERS="$rec_val" ;;
       esac ;;
     header)
       HEADER_NAMES+=("$rec_key")
@@ -555,16 +586,33 @@ if [ "$TRANSPORT_TYPE" = "openai-chat-completions" ]; then
     fi
   fi
 
-  # 4. default_headers: no control characters in name or value.
+  # 4. Raw-byte pre-flight: NUL bytes (0x00) are stripped by bash on variable
+  #    assignment and never reach HEADER_NAMES/HEADER_VALUES through the awk
+  #    parser. Compare the raw byte count of config.md to the count after NUL
+  #    removal; any difference means NUL bytes are present in the file.
+  _raw_file_bytes=$(wc -c < "$CONFIG_MD" | tr -d ' \t')
+  _raw_no_nul_bytes=$(LC_ALL=C tr -d '\000' < "$CONFIG_MD" | wc -c | tr -d ' \t')
+  # Fail closed: if either count is non-numeric (pipeline/tool failure), die
+  # immediately rather than silently bypassing NUL detection (fail-open).
+  case "$_raw_file_bytes" in
+    ''|*[!0-9]*) die "header-validation: failed to compute byte counts for NUL pre-flight on config.md for provider '$PROVIDER'" ;;
+  esac
+  case "$_raw_no_nul_bytes" in
+    ''|*[!0-9]*) die "header-validation: failed to compute byte counts for NUL pre-flight on config.md for provider '$PROVIDER'" ;;
+  esac
+  if [ "$_raw_file_bytes" -ne "$_raw_no_nul_bytes" ]; then
+    die "header-validation: config.md for provider '$PROVIDER' contains NUL bytes (raw byte scan of entire file); NUL in header values is rejected because bash strips NUL at variable assignment"
+  fi
+
+  # 5. default_headers: no control characters in name or value.
+  #    _control_char_check is POSIX-clean (no grep -P) and detects all 33
+  #    control bytes (C0 0x00-0x1F and DEL 0x7F), including LF which was
+  #    silently missed by the prior grep -qP 2>/dev/null implementation.
   _hi=0
   while [ "$_hi" -lt "${#HEADER_NAMES[@]}" ]; do
     _hname="${HEADER_NAMES[$_hi]}"
     _hval="${HEADER_VALUES[$_hi]}"
-    # Use printf | grep -P for control-character detection.
-    if printf '%s' "$_hname" | grep -qP '[\x00-\x1f\x7f]' 2>/dev/null || \
-       printf '%s' "$_hval"  | grep -qP '[\x00-\x1f\x7f]' 2>/dev/null; then
-      die "header-validation: default_headers for provider '$PROVIDER' contains a control character in header '$_hname'"
-    fi
+    _control_char_check "$_hname" "$_hval"
     _hi=$((_hi + 1))
   done
 
@@ -575,13 +623,27 @@ fi
 # Applies to openai-chat-completions only; codex-broker manages its own auth.
 _API_KEY=""
 if [ "$TRANSPORT_TYPE" = "openai-chat-completions" ]; then
+  # Defence-in-depth: validate api_key_env is a well-formed shell identifier
+  # before using it in indirect expansion.  The env-var presence check below
+  # would catch most malformed values but this guard makes the invariant
+  # explicit and avoids any reliance on eval behaviour.
+  case "$API_KEY_ENV" in
+    ''|*[!A-Za-z0-9_]*) die "key-resolution: api_key_env must be a valid shell identifier (for provider '$PROVIDER')" ;;
+  esac
   if ! env | grep -q "^${API_KEY_ENV}="; then
     die "key-resolution: environment variable '$API_KEY_ENV' (api_key_env for provider '$PROVIDER') is not set"
   fi
-  eval '_API_KEY="${'"$API_KEY_ENV"':-}"'
+  # Use bash indirect expansion instead of eval to avoid any eval-injection
+  # risk.  API_KEY_ENV is validated as a pure identifier above.
+  _API_KEY="${!API_KEY_ENV:-}"
   if [ -z "$_API_KEY" ]; then
     die "key-resolution: environment variable '$API_KEY_ENV' (api_key_env for provider '$PROVIDER') is set but empty — fail-closed to prevent silent empty-Authorization-header"
   fi
+  # Screen the API key for control characters: it is placed verbatim into the
+  # Authorization header, so the same injection risk applies as for any other
+  # header value.  Use the "api_key_env/<var>" label so the die message
+  # identifies the source without leaking the key value itself.
+  _control_char_check "api_key_env/${API_KEY_ENV}" "$_API_KEY"
 fi
 
 # ---------------------------------------------------------------------------

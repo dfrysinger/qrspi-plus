@@ -1,7 +1,6 @@
 ---
 name: qrspi-code-quality-reviewer
 description: Verifies the implementation is clean, well-structured, and maintainable. Used in both Implement phase (per-task code review) and Test phase (test code review). Runs after spec-reviewer passes.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---
@@ -114,6 +113,10 @@ Evaluate each area. Cite specific file:line references for any issues found.
 The flag-target is one specific failure mode: the implementer copying run-specific tokens from the task spec into the diff. The regex over-matches by design; treat it as a candidate-finder, never as a verdict.
 
 Do NOT flag: `goal_ids` frontmatter, content under `docs/qrspi/`, pre-existing customer-domain tokens, reserved framework vocabulary (`D1`–`D3`, `F-N`), tokens whose textual neighborhood resolves the ambiguity (`H1` headings, `Q1`/`Q2` quarter labels, version strings).
+
+### 12. Self-Consistent Defenses
+
+Defensive code must remain functional in the environment it is defending against. When a function, test, or branch exists to handle a specific failure mode — precondition probes, skip-guards, fallback paths, capability checks, version assertions, environment-shape detection — the defense itself runs in the environment where that failure mode is real, and must route correctly there. A defense whose own correctness depends on the condition it claims to handle is not a defense; it is an assumption. Verify by tracing: "if the condition this code defends against is FALSE, does this code still route correctly, or does it crash before reaching its decision point?" Do not accept "works on the author's machine" as evidence — the dev environment typically satisfies most preconditions by default, so the defense's failure mode is the very case that does not exercise locally.
 
 ## Diff-File Read Pattern
 

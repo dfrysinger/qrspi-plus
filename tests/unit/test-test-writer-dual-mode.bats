@@ -49,9 +49,10 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "test-writer Purpose section documents the YOU WRITE TESTS, NOT FIX CODE iron law (Implement-phase mode)" {
-  # Either section may carry the iron law; scope to implement-phase mode body.
-  run assert_section_contains "$AGENT_FILE" H2 "Mode: implement-phase (per-task)" "Do NOT run the tests"
+@test "test-writer implement-phase mode instructs running bats to verify RED (Hotfix A grants Bash + bats per issue #215)" {
+  # Hotfix A replaced the prior "do not run tests" prohibition with an explicit
+  # directive to verify RED via `bats --filter`. The iron law is now positive.
+  run assert_section_contains "$AGENT_FILE" H2 "Mode: implement-phase (per-task)" "Run the tests via .bats. to verify RED"
   [ "$status" -eq 0 ]
 }
 

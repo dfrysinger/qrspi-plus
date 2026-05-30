@@ -1,0 +1,2 @@
+score: 62
+reason: Confirmed — line 34 has `set -u` but no `set -o pipefail`, and lines 218-221 contain a 4-stage pipeline inside a command substitution in the security-critical `_control_char_check` function; the fail-open consequence is real but requires an unlikely `tr`/`wc` failure in practice.

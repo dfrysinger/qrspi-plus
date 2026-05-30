@@ -1,0 +1,10 @@
+score: 72
+reason: |
+  Real correctness issue with unvalidated input (HOME) in glob expansion enabling false
+  availability signals and filesystem probing; new code in this task with concrete attack
+  scenarios, but marked low severity and fix is straightforward.
+persistence_note: |
+  Score persisted by orchestrator from chat-only return. Reviewer agent emitted analysis +
+  score in chat but did not call the `create` tool to write the sidecar file. Same
+  WRITE_FAILURE-style fallback observed in 2 of 9 T6 R2 verifiers despite the
+  reviewer-protocol's disk-write contract.

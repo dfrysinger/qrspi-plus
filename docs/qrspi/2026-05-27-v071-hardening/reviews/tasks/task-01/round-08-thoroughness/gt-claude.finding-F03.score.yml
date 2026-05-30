@@ -1,0 +1,2 @@
+score: 73
+reason: Real and verified test coverage gap for a documented spec requirement; NUL carve-out assertion missing but issue is non-critical since implementation is correct.

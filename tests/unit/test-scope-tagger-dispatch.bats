@@ -35,10 +35,10 @@ setup() {
   [ -f "$AGENT" ]
 }
 
-@test "[112-PR2] qrspi-scope-tagger frontmatter declares model: haiku" {
+@test "[112-PR2] qrspi-scope-tagger frontmatter does NOT declare a top-level model: key (per T9 hardening, G9)" {
   awk '/^---$/{n++; next} n==1{print}' "$AGENT" \
-    | grep -qE '^model:\s*haiku' \
-    || { echo "qrspi-scope-tagger frontmatter missing 'model: haiku'"; return 1; }
+    | grep -qE '^model:' \
+    && { echo "qrspi-scope-tagger frontmatter unexpectedly carries 'model:' key (per T9, agent files must not pin model)"; return 1; } || true
 }
 
 @test "[112-PR2] qrspi-scope-tagger frontmatter declares tools: [Read, Write]" {

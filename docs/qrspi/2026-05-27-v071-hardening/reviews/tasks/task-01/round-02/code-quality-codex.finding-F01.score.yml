@@ -1,0 +1,2 @@
+score: 15
+reason: Reviewer self-identifies finding as pre-existing (predates T1 RED/GREEN commits) and out-of-scope; matches the rubric's pre-existing-issue false-positive pattern.

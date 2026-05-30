@@ -1,0 +1,2 @@
+score: 68
+reason: Real cross-task contradiction — SKILL.md:450,524-527 name agent `model:` as the tier carrier but T9 forbids that field on all 41 agents, leaving haiku/sonnet/opus rows unreachable via agent dispatch; severity is borderline since the inherit→sonnet path still closes the G7b silent-fallback, making the defect more dead-schema/clarity than runtime correctness, landing just below a confident KEEP under the correctness≥70 threshold.

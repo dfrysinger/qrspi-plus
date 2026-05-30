@@ -1,0 +1,2 @@
+score: 5
+reason: Explicitly user-approved deviation (commit 23ba4c8); self-documented in the finding as informational with no code action needed; pre-existing orchestrator decision retroactively covers the task-doc as an allowed target.

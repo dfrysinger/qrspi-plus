@@ -1,0 +1,2 @@
+score: 75
+reason: The stale line reference is confirmed factually incorrect—line 543's comment references "line 560" as Bullet 6's location, but the R8 insertion of ~182 parametric lines pushed Bullet 6 to line 736, causing developers following the reference to land in the wrong section (line 560 now points to parametric LF test logic). This is a real traceability/clarity bug introduced in the current round affecting code navigation.

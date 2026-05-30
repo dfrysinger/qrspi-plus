@@ -1,7 +1,6 @@
 ---
 name: qrspi-test-coverage-reviewer
 description: Verifies tests are comprehensive and meaningful, covering behaviors, edge cases, and error conditions. Deep mode only. Runs after all correctness reviewers pass.
-model: sonnet
 tools: Read, Write
 skills: [reviewer-protocol]
 ---

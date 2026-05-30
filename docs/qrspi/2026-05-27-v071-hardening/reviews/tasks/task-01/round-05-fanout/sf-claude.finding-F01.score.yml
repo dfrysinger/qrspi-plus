@@ -1,0 +1,2 @@
+score: 90
+reason: Confirmed asymmetry — _control_char_check (lines 218-222) has no numeric guard on _cc_count while the NUL pre-flight (lines 600-605) explicitly adds case-pattern guards with a comment naming the exact fail-open scenario; the SIGPIPE/zero-output path that bypasses the check is real.

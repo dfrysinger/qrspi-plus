@@ -1,0 +1,2 @@
+score: 20
+reason: The technical math is correct (C1 bytes 0x80–0x9F are inside the \200-\377 deletion range), but the behavior is an intentional, documented design decision captured in both the task specification (quoted verbatim by the finding itself) and the code's own inline comment (lines 214–217), making this a false-positive per the "captured user decision" and "explicitly silenced" rubric patterns.

@@ -1,0 +1,2 @@
+score: 18
+reason: Premise is wrong — bash `[ "" -eq 0 ]` (POSIX single-bracket) errors with exit code 2, not true, so the `||` branch fires and `die` is called; the described silent-pass cannot occur here (the author may be conflating `[[ ]]` arithmetic context with `[ ]`).

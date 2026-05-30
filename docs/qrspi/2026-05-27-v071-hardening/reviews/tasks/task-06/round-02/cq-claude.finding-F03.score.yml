@@ -1,0 +1,2 @@
+score: 75
+reason: Legitimate ID hygiene violation confirmed — "R8" (QRSPI-internal ID) embedded in test-file comment outside docs/qrspi/, violating documented rule in Code Quality Reviewer agent (line 104-105) that forbids QRSPI-internal IDs in code comments outside that tree.

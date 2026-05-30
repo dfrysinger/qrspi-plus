@@ -1,0 +1,6 @@
+# scope-set for round 03
+# generated_by: qrspi-scope-tagger (orchestrator-persisted from chat-only return)
+# total_findings_kept: 3
+# dropped: spec-codex.F02 (score 10, user-authorized change), spec-codex.F03 (score 20, false positive), spec-codex.F04 (score 5, advisory/user-approved)
+scripts/run-third-party-llm.sh
+tests/unit/test-run-third-party-llm.bats
