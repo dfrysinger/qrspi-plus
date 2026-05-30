@@ -13,7 +13,8 @@ bats_require_minimum_version 1.5.0
 #   - docs/superpowers/plans/**         (dated point-in-time implementation plans)
 #   - docs/superpowers/specs/**         (dated point-in-time spec/design docs)
 #   - reviews/**                        (reviewer-finding artifacts — quote versions/PRs from the artifact under review)
-#   - CHANGELOG.md                      (version-of-record file)
+#   - CHANGELOG.md                      (top-level version-of-record file)
+#   - docs/qrspi/CHANGELOG.md           (QRSPI plugin version-of-record file)
 #   - tests/fixtures/**                 (fixture files may embed version strings)
 #
 # Inline carve-out:
@@ -23,6 +24,13 @@ bats_require_minimum_version 1.5.0
 #   - release-version : v[0-9]+\.[0-9]+
 #   - milestone-wording: in v[0-9]+\.[0-9]+|after this release|after the [a-zA-Z]+ release
 #   - pr-issue-ref    : (see|per|fixes|closes)\s+#[0-9]+
+#                       AND
+#                       (see|per|tracks?|tracking|filed (as)?|references?)\s+(issue|PR|pr|pull request)\s+#[0-9]+
+#                       AND bare prefix: (issue|PR|pr|pull request)\s+#[0-9]+
+#                       (the bare-prefix form catches "...see issue #225..." and
+#                       "tracked as issue #225" without requiring a known verb;
+#                       in evergreen .md files, any "issue #NNN" reference is a
+#                       point-in-time leak regardless of the surrounding verb).
 #
 # Bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc,
 # no wait -n.
@@ -40,9 +48,11 @@ _is_path_exempt() {
     docs/qrspi/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*/*)
       return 0 ;;
   esac
-  # Carve-out 2: CHANGELOG.md
+  # Carve-out 2: CHANGELOG.md (top-level repo changelog AND the QRSPI plugin
+  # changelog at docs/qrspi/CHANGELOG.md). Both are version-of-record files
+  # that legitimately cite issue numbers and version strings.
   case "$rel" in
-    CHANGELOG.md)
+    CHANGELOG.md|docs/qrspi/CHANGELOG.md)
       return 0 ;;
   esac
   # Carve-out 3: tests/fixtures/**
@@ -86,7 +96,14 @@ _check_file_for_evergreen() {
   # Families checked:
   #   1. release-version : v[0-9]+\.[0-9]+
   #   2. milestone-wording: in v[0-9]+\.[0-9]+|after this release|after the [a-zA-Z]+ release
-  #   3. pr-issue-ref: (see|per|fixes|closes) +#[0-9]+
+  #   3. pr-issue-ref: matches three forms —
+  #      (a) verb-prefixed bare:  (see|per|fixes|closes) +#[0-9]+
+  #      (b) verb + issue infix:  (see|per|tracks?|tracking|filed|references?) +(issue|PR|pr|pull request) +#[0-9]+
+  #      (c) bare issue prefix:   (issue|PR|pr|pull request) +#[0-9]+
+  #      Form (c) catches "...rationale in issue #225..." and supersedes (b);
+  #      (b) is kept anchored for diagnostic clarity. Bare "#NNN" without a
+  #      keyword prefix is NOT flagged (would false-positive on markdown
+  #      anchors and code-block literals).
   local hits
   hits="$(awk -v rp="$rel_path" '
     /<!-- evergreen-exempt -->/ { next }
@@ -99,6 +116,11 @@ _check_file_for_evergreen() {
       found = 1
     }
     /(see|per|fixes|closes) +#[0-9]+/ {
+      printf "EVERGREEN HIT: %s:%d [pr-issue-ref]: %s\n", rp, NR, $0
+      found = 1
+      next
+    }
+    /(issue|PR|pr|pull request) +#[0-9]+/ {
       printf "EVERGREEN HIT: %s:%d [pr-issue-ref]: %s\n", rp, NR, $0
       found = 1
     }
@@ -142,6 +164,43 @@ setup_file() {
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep -q "release-version"
   printf '%s\n' "$output" | grep -q "skills/fake/SKILL.md"
+}
+
+# ---------------------------------------------------------------------------
+# Regression guard: bare-prefix pr-issue-ref forms (see issue #NNN, tracked
+# as issue #NNN, ...issue #NNN for rationale) must be caught. The original
+# regex `(see|per|fixes|closes) +#[0-9]+` required literal whitespace
+# directly between the keyword and `#`, so any "issue" infix slipped past.
+# This fixture pins the broadened detection.
+# ---------------------------------------------------------------------------
+@test "[T17] pr-issue-ref with 'issue' infix (see issue #NNN) is caught" {
+  local fixture
+  fixture="$(mktemp /tmp/evergreen-issue-infix-XXXXXX.md)"
+  printf '# Feature\n\nThe rubric was tuned later — see issue #225 for context.\n' > "$fixture"
+  run _check_file_for_evergreen "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "pr-issue-ref"
+}
+
+@test "[T17] pr-issue-ref bare prefix (issue #NNN inline) is caught" {
+  local fixture
+  fixture="$(mktemp /tmp/evergreen-issue-bare-XXXXXX.md)"
+  printf '# Feature\n\nThe threshold split (rationale captured in issue #225) ships now.\n' > "$fixture"
+  run _check_file_for_evergreen "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "pr-issue-ref"
+}
+
+@test "[T17] pr-issue-ref with PR infix (see PR #NNN) is caught" {
+  local fixture
+  fixture="$(mktemp /tmp/evergreen-pr-infix-XXXXXX.md)"
+  printf '# Feature\n\nMerged via PR #234.\n' > "$fixture"
+  run _check_file_for_evergreen "$fixture" "skills/fake/SKILL.md"
+  rm -f "$fixture"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "pr-issue-ref"
 }
 
 # ---------------------------------------------------------------------------
