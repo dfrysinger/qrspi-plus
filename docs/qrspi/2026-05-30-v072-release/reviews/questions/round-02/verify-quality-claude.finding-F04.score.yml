@@ -1,0 +1,2 @@
+score: 72
+reason: Q19's closing clause "could call instead" genuinely telegraphs G4's consolidation decision by presupposing that (a) current state has inline implementations and (b) a shared helper is the solution; this encodes design direction into the research question, violating the methodology of letting empirical findings inform design. The issue is real and impacts research integrity, though isolated to one phrase rather than the entire question, and G4 status confirms the presupposed direction.

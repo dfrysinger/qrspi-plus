@@ -1,0 +1,2 @@
+score: 88
+reason: Finding correctly identifies that Q10's three sub-questions directly surface specific named goals (G2, G15, G18) verified against goals.md, compromising research neutrality and introducing high-density goal leakage into a single compound question.
