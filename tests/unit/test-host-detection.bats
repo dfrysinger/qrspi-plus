@@ -154,7 +154,9 @@ teardown() {
   # AND a trusted-prefix gh binary.  On environments without a trusted-prefix gh
   # (alpine CI, minimal base images), this test would fail or pass vacuously.
   # Mirror the precondition check from [r5-sec.F01] in test-codex-review-host-detection.bats.
-  _trusted_gh="$(command -v gh 2>/dev/null)"
+  # Use `|| true` so the assignment does NOT propagate `command -v`'s exit-1 when
+  # gh is absent (bats's errexit would fire before the skip-guard runs).
+  _trusted_gh="$(command -v gh 2>/dev/null || true)"
   if [[ -z "$_trusted_gh" ]]; then
     skip "no gh binary on this host (precondition for copilot-cli emission)"
   fi
@@ -179,7 +181,9 @@ teardown() {
   #
   # gt.F01/gt.F02/tc.F02 (R12): skip-guard — same trusted-prefix precondition as
   # the TE1 stdout test above.
-  _trusted_gh="$(command -v gh 2>/dev/null)"
+  # Use `|| true` so the assignment does NOT propagate `command -v`'s exit-1 when
+  # gh is absent (bats's errexit would fire before the skip-guard runs).
+  _trusted_gh="$(command -v gh 2>/dev/null || true)"
   if [[ -z "$_trusted_gh" ]]; then
     skip "no gh binary on this host (precondition for copilot-cli emission)"
   fi
@@ -498,7 +502,9 @@ teardown() {
   # gt.F01/gt.F02/tc.F02 (R12): skip-guard — detect_host requires a trusted-prefix gh.
   # On CI environments without a trusted-prefix gh binary, COPILOT_CLI=1 falls back
   # to claude-code and the task-tool marker is never emitted.
-  _trusted_gh="$(command -v gh 2>/dev/null)"
+  # Use `|| true` so the assignment does NOT propagate `command -v`'s exit-1 when
+  # gh is absent (bats's errexit would fire before the skip-guard runs).
+  _trusted_gh="$(command -v gh 2>/dev/null || true)"
   if [[ -z "$_trusted_gh" ]]; then
     skip "no gh binary on this host (precondition for copilot-cli emission)"
   fi
@@ -535,7 +541,9 @@ teardown() {
   # gt.F01/gt.F02/tc.F02 (R12): skip-guard — detect_host requires a trusted-prefix gh.
   # On CI environments without a trusted-prefix gh binary, COPILOT_CLI=1 falls back
   # to claude-code and this assertion would pass vacuously (wrong path was taken).
-  _trusted_gh="$(command -v gh 2>/dev/null)"
+  # Use `|| true` so the assignment does NOT propagate `command -v`'s exit-1 when
+  # gh is absent (bats's errexit would fire before the skip-guard runs).
+  _trusted_gh="$(command -v gh 2>/dev/null || true)"
   if [[ -z "$_trusted_gh" ]]; then
     skip "no gh binary on this host (precondition for copilot-cli emission)"
   fi

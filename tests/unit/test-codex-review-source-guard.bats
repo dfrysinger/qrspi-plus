@@ -66,7 +66,9 @@ teardown() {
   # Also accept any gh found via `command -v gh` if it resolves under a trusted prefix.
   if [[ -z "$_trusted_gh" ]]; then
     local _cv
-    _cv="$(command -v gh 2>/dev/null)"
+    # Use `|| true` so the assignment does NOT propagate `command -v`'s exit-1
+    # when gh is absent (bats's errexit would fire before the skip-guard runs).
+    _cv="$(command -v gh 2>/dev/null || true)"
     case "$_cv" in
       /usr/* | /opt/* | /Applications/*)
         _trusted_gh="$_cv"
