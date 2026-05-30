@@ -1,5 +1,5 @@
 ---
-status: approved
+status: draft
 ---
 
 # Goals: qrspi-plus v0.7.2
@@ -172,7 +172,9 @@ Candidates Design should weigh (strongest lever first):
 6. **`scripts/run-codex-review.sh` refuses with useful diagnostic** when codex CLI is absent.
 7. **Integration test** (per #246's investigation #3) dispatching each reviewer agent with synthetic prompt and asserting expected round-directory files post-dispatch — also measures whether (1) or (2) moved the needle.
 
-Source: #213, #216, #245, #246
+**Sharpening from v0.7.2 self-host (PI-010, #260):** the OpenAI-family chat-only behavior originally framed as a vendor-side suppression problem now has a more proximate cause candidate. Every per-skill SKILL.md review-round section (questions, research, design, parallelize, test) unconditionally instructs the Codex dispatch to use Claude-Code-era shell-pipeline emission (`<<<FINDING-BOUNDARY>>>` per-finding output via `scripts/run-codex-review.sh` + `scripts/codex-finding-splitter.sh`), even on Copilot CLI host where `skills/using-qrspi/SKILL.md` L413 says Codex routes via the task-tool transport with the same agent body Claude uses. Under that path the model receives a dispatch prompt literally telling it to print to stdout — chat-only return is the recipe's specified behavior, not a vendor defect. v0.7.2 self-host confirmed 5/5 chat-only returns for `gpt-5.3-codex` against `tools: Read, Write` frontmatter when the per-skill boilerplate was included. **A verifying counter-experiment** (dispatch the same agent body with `model: gpt-5.3-codex` via Task tool WITHOUT the per-finding-emission boilerplate) would establish whether vendor suppression is real or whether the per-skill prose is sufficient root cause. **New candidate Design should weigh:** host-switch the per-skill review-round prose so Copilot CLI dispatches drop the shell-pipeline recipe entirely, with the dispatch contract centralized in `skills/reviewer-protocol/SKILL.md`. This is candidate #8, and likely subsumes (4) (#5).
+
+Source: #213, #216, #245, #246, #260 (PI-010 sharpening)
 
 ### G7 — Verifier filter rule: missing at point of use and DRY drift across central locations
 
@@ -797,9 +799,68 @@ Candidates Design should weigh:
 
 Source: #253
 
+### G28 — Apply-fix protocol has no convergent-evidence exception
+
+- **type:** `exploratory`
+
+#### Problem
+
+The apply-fix protocol (`skills/using-qrspi/SKILL.md` L388 and `skills/reviewer-protocol/SKILL.md` change-type classifier) specifies a strict per-finding threshold filter: `style|clarity` → KEEP at score ≥80, `correctness` → KEEP at ≥70, `scope|intent` → always KEEP. **No carve-out exists for clusters of sub-threshold findings that share a defect class.** `grep -rn "convergent" skills/ agents/` returns zero hits — the rule is single-finding-only by construction.
+
+But the v0.7.2 self-host encountered this pattern twice during Questions review: multiple sub-threshold `clarity` findings (individual scores 68/70/72/75 — each below the ≥80 threshold and therefore strictly DROP) collectively pointed at the same defect class (goal leakage across 4 different questions). The orchestrator applied the cluster anyway and documented it as a "convergent-class exception" in dispositions; subsequent review rounds came back clean, confirming the cluster fix was right.
+
+#### Why we care
+
+The orchestrator is making protocol-extending judgment calls and documenting them only in disposition prose. The protocol disagrees with what we actually do. Two real costs:
+
+- **Auditability** — a fresh-context replay or a new operator reading only the protocol cannot reconstruct why findings below the threshold were applied. The rationale is buried in dispositions, not in the contract.
+- **Information loss in the disallowed direction** — the verifier rubric is calibrated for individual-finding signal, not cluster-evidence signal. Pretending the cluster doesn't exist throws away real coverage. Both v0.7.2 self-host clusters identified real goal-leakage defects that the rubric's single-finding lens scored individually as sub-threshold; verifier-as-individual-filter would have dropped them, the cluster fix kept them.
+
+#### What we know so far
+
+Self-host occurrences:
+
+- **Questions R1** — 4 `clarity` findings (scores 68/70/72/75) all naming goal-leakage in different questions; applied as cluster.
+- **Questions R2** — 2 `clarity` findings (scores 72/75) both naming goal-leakage; F02 (Q13) named security-vulnerability disclosure as the leak; applied as cluster.
+
+Candidates Design should weigh:
+
+- **Formalize the exception** — add a "convergent-evidence exception" carve-out to the apply-fix protocol: if N≥3 sub-threshold findings (each within K points of the threshold) share a defect class as documented by the orchestrator in dispositions, the cluster MAY be applied as a single batch with named rationale; the next review round serves as the verification. Bounds the discretion explicitly.
+- **Disallow it** — tighten the protocol to forbid orchestrator-applied sub-threshold findings; trust the rubric verbatim. If the verifier dropped, dropped stays dropped. Cost: real defects in the sub-threshold band stay unfixed.
+- **Re-calibrate the rubric** — lower the `clarity` threshold (e.g., to ≥70 matching correctness) so individual cluster-class findings would already KEEP. Risk: produces more low-signal noise in normal rounds; the rubric was originally calibrated high specifically to suppress nitpicks.
+- **Per-class threshold knobs** — let the verifier's rubric ship per-class thresholds (e.g., `clarity:goal-leakage` ≥70, `clarity:style-only` ≥85). More expressive but doubles the rubric's surface area.
+
+Source: #261 (PI-011), `docs/qrspi/2026-05-30-v072-release/reviews/questions/round-01-dispositions.md` § "Convergent-evidence decision", `docs/qrspi/2026-05-30-v072-release/reviews/questions/round-02-dispositions.md` § "Exception rationale (F02, F04)"
+
+### G29 — Reviewer dispatch contract has no escape hatch for large artifacts (canonize `artifact_path`)
+
+- **type:** `known-fix`
+
+#### Problem
+
+Per-skill reviewer dispatch contracts (`skills/{goals,questions,research,design,structure,plan,parallelize,test}/SKILL.md` and `skills/reviewer-protocol/SKILL.md` L42) all specify the artifact under review is passed to the reviewer subagent as a wrapped inline body: `artifact_body: <<<UNTRUSTED-ARTIFACT-START id={artifact_name}>>> {full file body} <<<UNTRUSTED-ARTIFACT-END id={artifact_name}>>>`. This works for small artifacts but breaks down at scale — `research/summary.md` in v0.7.2 self-host was 87 KB / 432 lines, and wrapping it inline in every reviewer dispatch loads the full body into orchestrator tool-call args, bloats every dispatch payload, and re-bills as cache reads on every subsequent orchestrator turn. The skill contract has no formal escape hatch.
+
+#### Why we care
+
+Same context-hygiene concern that motivated the collator's staging-filename / verbatim-extraction contract at the collation step — except the canonical workflow then re-loads the same 87 KB by inlining it in reviewer dispatches at the review step. Round-tripping the artifact through the orchestrator's dispatch prompt for every reviewer defeats the collator-level hygiene win.
+
+#### What we know so far
+
+The v0.7.2 self-host used an ad-hoc workaround: pass `artifact_path: <abs>` instead of wrapped body, and instruct the reviewer to Read the file and treat its content as if it had arrived between `<<<UNTRUSTED-ARTIFACT-START id={artifact_name}>>>` / `<<<UNTRUSTED-ARTIFACT-END id={artifact_name}>>>` markers. Applied across research R1 (Claude + Codex) and research R2 (Claude + Codex). No fidelity loss observed; R2 came back clean.
+
+The path-based variant is **strictly stronger** prompt-injection defense than the wrapped-body variant: artifact content materializes only inside the subagent's context via its Read tool, never touching the orchestrator's dispatch prompt or process memory. The `<<<UNTRUSTED-ARTIFACT-START>>>` framing is preserved by the reviewer's treatment of Read output as the wrapped body. The path-based form's protective semantics are at least equivalent to (and arguably stronger than) the wrapped-body form.
+
+Candidates Design should weigh:
+
+- **Threshold rule** — amend `skills/reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract to add: artifacts ≤ N KB use wrapped `artifact_body` inline; artifacts > N KB use `artifact_path: <abs>` and the reviewer Reads the file. Recommend N=30 KB as a starting point; calibration test should measure orchestrator context use at various sizes.
+- **Unconditional path-based for all artifacts** — drop the wrapped-body form entirely; always pass `artifact_path`. Simpler contract, single dispatch shape, strictly stronger injection defense. Trade-off: subagents must always run a Read before reviewing (one extra tool call per dispatch).
+- **Reviewer-side parser accepts either parameter** — agent bodies updated to handle `artifact_body` OR `artifact_path`; dispatching skills decide per-call. Maintains backward compatibility but pushes complexity into every reviewer agent body.
+
+Source: #262 (PI-012), v0.7.2 self-host commit `45625ed research: approve (R2 clean × 2 reviewers)` — research R1+R2 used artifact_path against 87 KB summary.md
+
 ## Cross-Cutting Notes
 
-- **Reviewer-pipeline correctness cluster (G6 / G7 / G8 / G9 / G10 / G11 / G12 / G13 / G14 / G19 / G20).** These goals all address the reliability of the reviewer→verifier→orchestrator pipeline: disk-write contract (G6/G11), field-schema enforcement (G8/G13), threshold-rule location and DRY (G7/G12), rubric calibration (G14/G19/G20), orchestration drift (G9), and authority-fabrication (G10). G11 and G12 form a tightly coupled pair (contract then consumer); G7, G12, and G13 share a "one place for the canonical filter rule" resolution path; G14 and G19 share a verifier-rubric expansion path also relevant to G10.
+- **Reviewer-pipeline correctness cluster (G6 / G7 / G8 / G9 / G10 / G11 / G12 / G13 / G14 / G19 / G20 / G28 / G29).** These goals all address the reliability of the reviewer→verifier→orchestrator pipeline: disk-write contract (G6/G11), field-schema enforcement (G8/G13), threshold-rule location and DRY (G7/G12), rubric calibration (G14/G19/G20), orchestration drift (G9), authority-fabrication (G10), apply-fix protocol cluster carve-out (G28), and large-artifact dispatch ingress (G29). G11 and G12 form a tightly coupled pair (contract then consumer); G7, G12, G13, and G28 share a "one place for the canonical filter rule" resolution path; G14 and G19 share a verifier-rubric expansion path also relevant to G10. G6 and G29 share the same dispatch-contract surface (`skills/reviewer-protocol/SKILL.md`) and are likely co-scheduled.
 
 - **Dispatch-routing schema cluster (G22 / G23 / G24-F02 / G24-F04 / G25 / G27).** These goals all touch `model_routing:` / dispatch-path in `using-qrspi/SKILL.md`: schema reconciliation (G22), validation table (G23), per-H4 prose redundancy (G24-F02) and tier-regex consolidation (G24-F04), top-level fail-loud invariant (G25), and Goals-side inline probe (G27). G22 is the anchor — its canonical-schema decision shapes G23's table row, G24-F02/F04's consolidation target, and G25's invariant scope. The cluster shares the same H4 paragraphs as an edit surface; Phasing should evaluate whether the cluster benefits from being scheduled together.
 
