@@ -1,0 +1,2 @@
+score: 70
+reason: Real goal leakage issue with verifiable textual overlap; the phrase "contradiction-refusal procedures" appears in both Q18 and G10, allowing readers to infer the G10 failure mode before Design evaluation. Legitimate research-methodology concern with sound suggested fix, but lacks explicit documented requirement.

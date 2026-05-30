@@ -1,0 +1,2 @@
+score: 75
+reason: Real issue—G18 is documented in goals.md with explicit research requirements to traverse v0.7.1 hardening artifacts and characterize 9 instances, but no question in the newly-created questions.md addresses this investigation; Q15 may partially relate to G27 (instance #10) but not the main G18 consumer-enumeration research.
