@@ -1,0 +1,3 @@
+score: 45
+reason: Finding correctly identifies G15 and G19 language style, but overstates severity. G15 is properly candidate-framed under "Candidates Design should weigh", and G19's "Iron rule" is labeled as user-direction (appropriate for Goals constraints per owns-defers.md). Still flagged here as scope (always kept) — the G19 MUST framing IS worth reframing per scope-claude.F03; G15 needs only a light touch.
+note: Verifier chat-only fallback — orchestrator persisted sidecar (qrspi:qrspi-finding-verifier × claude-haiku-4.5 did not Write).

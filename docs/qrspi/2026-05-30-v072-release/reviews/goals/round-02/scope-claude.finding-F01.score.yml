@@ -1,0 +1,2 @@
+score: 76
+reason: The finding correctly identifies that G17's "What we know so far" section provides verbatim replacement text at specific file:line targets (e.g., "At :241, replace..."), which violates the documented Goals DEFERS rule against "detailed solution definitions"; SKILL.md § lines 20–22 and 98 explicitly allow "possibilities for Design to weigh" but prohibit detailed prose definitions. The three bullet points (lines 489–491 of goals.md) cross this boundary by providing exact wording to use, not just concept-level candidates to evaluate.

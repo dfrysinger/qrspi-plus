@@ -1,0 +1,2 @@
+score: 30
+reason: Valid but advisory observation about scope; finding explicitly confirms goals are individually well-formed, no rule violation exists, and expected correction is just acknowledgment in dispositions with no artifact changes required. The 27-goal scope is user-pre-scoped and the downstream Phasing skill is designed to decompose. This is procedural guidance rather than a defect finding.

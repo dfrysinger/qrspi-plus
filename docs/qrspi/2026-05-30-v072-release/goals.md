@@ -18,6 +18,7 @@ qrspi-plus v0.7.2 closes correctness and reliability gaps surfaced during the v0
 - **Test/CI baseline.** `bats tests/` (unit, integration, behavior) is the existing test infrastructure; test-coverage tasks in this release tighten existing harnesses rather than introduce new ones.
 - **Review depth.** Working assumption is deep-mode review (8 reviewers: correctness + thoroughness) given the schema-design work in G22 and the broad reviewer-pipeline cluster. The operator may override to quick at Implement-phase start.
 - **Host context (Copilot CLI).** This run executes on the Copilot CLI host (`COPILOT_CLI=1`); Codex dispatch routes via the task-tool transport per `skills/using-qrspi/SKILL.md` § "Per-host Codex dispatch transport routing." Documented Codex model identifier is `gpt-5.3-codex`; v0.7.1 observed `gpt-5.5` in practice (tracked as PI-001 and in G19/G20).
+- **Subagent-resident verification (user direction).** Any cite-checking, content-corroboration, or per-finding rubric-scoring work introduced by v0.7.2 is expected to execute inside a subagent (verifier, pre-verifier, or equivalent) rather than the main chat / orchestrator. Pulling cited file contents and grep output into the orchestrator context would defeat the cross-cutting context-reduction motivation that several goals in this release share. Downstream skills must respect this boundary when choosing among candidate solutions.
 
 ## Goals
 
@@ -343,7 +344,7 @@ Candidates Design should weigh:
 
 - Shape and location of the script: `scripts/verifier-fan-in.sh <round-dir>` walking the round directory, globbing sidecars, parsing score + `change_type`, applying the two-tier threshold from a single canonical location.
 - Canonical output shape: `<round-dir>/kept-findings.txt` listing kept finding IDs plus a fan-in audit record summarizing scored/failed/dropped/kept counts that downstream apply-fix consumes directly.
-- Fail-loud assertions: script refuses to run when `verifier_enabled: true` and findings exist without sidecars (catches the upstream contract violations from G6).
+- A fail-loud behavior shape for the upstream contract violations from G6: when `verifier_enabled: true` and findings exist without sidecars, the fan-in step should not silently proceed. Design chooses the exact failure mode (assertion, exit code, halt-and-report).
 - Sidecar schema lock alongside the script so the parser has a stable contract.
 - `implement/SKILL.md` apply-fix protocol updates to invoke the script at the right step and consume its output rather than parsing chat.
 - Downstream consequence for G7: if the threshold lives in the script, the SKILL prose can become "see `scripts/verifier-fan-in.sh` for the canonical filter" rather than restating values that can drift.
@@ -484,13 +485,13 @@ Documentation-vs-code drift only — no runtime defect today, the `rm` is still 
 
 #### What we know so far
 
-Candidates Design should weigh (issue body has concrete prose for all three):
+Three prose-drift surfaces need to be reconciled so they reflect that `.qrspi-commit-msg.txt` is now covered by a committed `.gitignore` in addition to the worktree-local `.git/info/exclude`:
 
-- At `:241`, replace the parenthetical with round-NN-diff justification: "the file is gitignored but you don't want it in the worktree at all between rounds."
-- At `:176-181`, add a fourth Composition bullet for the committed `.gitignore`: "closes the fresh-clone gap independently of any worktree setup; belt-and-suspenders with Invariant 3's worktree-local-exclude."
-- At `agents/qrspi-test-writer.md:28`, rewrite to name both mechanisms: "excluded by two independent mechanisms: the worktree-local `.git/info/exclude` and the committed `.gitignore` entry; both apply."
+- `implementer-protocol/SKILL.md:241` — the parenthetical that currently states only the gitignored framing.
+- `implementer-protocol/SKILL.md:176-181` — the Composition section that enumerates exclusion mechanisms (a committed-gitignore entry is currently missing).
+- `agents/qrspi-test-writer.md:28` — a sentence that currently names only one mechanism.
 
-Low risk, mostly mechanical; worth bundling with any other prose work in this neighborhood.
+Design authors the replacement prose. Issue #233 carries concrete drafts that may serve as candidates Design weighs. Low risk, mostly mechanical; worth bundling with any other prose work in this neighborhood.
 
 Source: #233
 
@@ -554,11 +555,11 @@ The verifier filter is the load-bearing defense between the noisy reviewer fan-o
 
 **Verifier-side observation.** Reading `agents/qrspi-finding-verifier.md` (64 lines): the verifier already lazy-Reads cited upstream files (step 4) and scores against a 5-tier rubric (0/25/50/75/100). The rubric anchors on pre-existing-vs-introduced classification, NOT on whether cited content exists at the cited location. Expanding the rubric to include a cite-check branch ("if cited file:line does not contain cited content → score 0 / HALLUCINATED, halt scoring") fits naturally inside the verifier's existing role and consolidates all confidence concerns in one subagent.
 
-**Iron rule for any candidate (user direction).** All cite-checking work MUST happen inside a subagent (the verifier itself, or a dedicated pre-verifier subagent dispatched in parallel). The main chat / orchestrator MUST NOT take on cite-checking work directly — that would pull cited file contents and grep output into the orchestrator's context window, defeating the v0.7.2 cross-cutting goal of reducing orchestrator context burden.
+(Architectural boundary: the project-wide Constraint on subagent-resident verification applies — cite-checking belongs in a subagent, not the orchestrator. Candidates below are evaluated against that constraint.)
 
 Candidates Design should weigh:
 
-- **Expand the verifier rubric to include cite-check** (leading candidate per the user direction above): the verifier already reads the cited file; adding a content-equality assertion against the cited line range is cheap. Single subagent owns all confidence dimensions.
+- **Expand the verifier rubric to include cite-check** (leading candidate, since it stays within the subagent-resident constraint): the verifier already reads the cited file; adding a content-equality assertion against the cited line range is cheap. Single subagent owns all confidence dimensions.
 - **Pre-verifier grep gate as a separate subagent:** dispatched in parallel before the verifier, halts findings whose cited content does not grep-match. Cheap belt-and-suspenders against verifier-rubric regression; adds dispatch overhead.
 - **Cross-reviewer corroboration threshold:** a finding unique to one reviewer in a multi-reviewer fan-out AND citing specific content requires a higher verifier threshold (e.g. 85 instead of 70). Captures the "wholesale hallucination" subset but does not catch single-reviewer rounds.
 - **Repro investigation:** provoke the failure deterministically by varying prompt shape; instrument whichever input axis triggers it. Pairs naturally with G20 (#237 over-flagging) and G6 (transport-layer disk-write contract).
@@ -732,15 +733,13 @@ The G7b/#204 silent-fallback regression class is exactly what the v0.7.1 hardeni
 
 #### What we know so far
 
-**Option B from R5 (the proposed v0.7.2 invariant):** add a top-level invariant to the "Dispatch routing" section of `skills/using-qrspi/SKILL.md`:
+Candidates Design should weigh:
 
-> *Any path that resolves to step 4 (the agent-bundled default fallback) when the agent's `model:` field is empty MUST halt and report — never silently fall back to the agent-bundled default.*
+- **Option B from R5 (top-level invariant):** add a class-level invariant to the "Dispatch routing" section of `skills/using-qrspi/SKILL.md` prohibiting silent fallback to the agent-bundled default for any dispatch path. Design authors the exact wording; R5 surfaced concrete prose worth referencing. With the invariant in place, the four per-H4 mirror paragraphs become illustrative reinforcements rather than load-bearing contracts.
+- **Companion vocab pin:** an executable check (likely a new test) that fails when any H4 under "Dispatch routing" lacks the fail-loud mention. Without enforcement, the invariant is contract-only and a future H4 author can still regress the class. Design selects the pin shape (grep-based, parser-based, or convention-driven).
+- **Stay on Option A (per-H4 enumeration):** accept the recurring author-discipline cost. Listed for completeness; R5/R6 both flagged the structural fragility of this option.
 
-The four per-H4 paragraphs then become illustrative reinforcements of the top-level rule rather than load-bearing contracts.
-
-**Needs a new vocab pin** that searches for any H4 under "Dispatch routing" missing a "halts and reports" mention and fails — without this, the invariant is unenforceable.
-
-**Couples tightly with G22 (model-routing schema drift) and G24 F02 (prose redundancy).** All three goals touch the dispatch-routing section; landing them in a single Plan-phase wave avoids three rounds of churn on the same H4 paragraphs.
+**Couples tightly with G22 (model-routing schema drift) and G24 F02 (prose redundancy).** All three goals touch the dispatch-routing section and share an edit surface; Phasing should evaluate whether the cluster benefits from being scheduled together to avoid churn on the same H4 paragraphs.
 
 Source: #242
 
