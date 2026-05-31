@@ -984,6 +984,29 @@ Without a build step:
 
 Source: G31 BLOCKING open question (design.md, this session); empirical Copilot CLI 1.0.57-1 finding that `!cat` directives appear as literal text in loaded SKILL prompts; existing `scripts/render-skill.sh` (latent, unreferenced); G3 (vendor-neutrality — drives the requirement that every supported host see the same composed semantics).
 
+### G33 — Design skill interactive dialog clarity: simple language + context when presenting ideas
+
+- **type:** `known-fix`
+
+#### Problem
+
+The Design SKILL's `### Interactive Design Discussion` phase (Phase 1, step 2: *"Propose 2–3 candidate approaches; lead with recommendation; explain trade-offs"*) does not specify a clarity bar for the prose of those proposals. In practice, design dialogue defaults to jargon-dense framing (terms like "false-positive rubric," "actionability field," "structural-confidence anchor," "wrapper SKILL," "dispatch contract") that requires the user to have the relevant SKILL anatomy / orchestrator internals / rubric definitions fresh in working memory to follow the proposal.
+
+#### Why we care
+
+Observed during v0.7.2 self-host G14 walkthrough: initial proposal of options A / B / C was opaque enough that the user explicitly asked for a simple-language reframing — verbatim: *"using simple language give me the context here, im not following. both the problem and the fix is opaque to me"*. The reframing took an additional turn, interrupted the per-goal dialogue rhythm, and reset the conversational state. Without an explicit clarity directive in the Design SKILL, this friction recurs per-goal across long Design walkthroughs (32 goals × several decisions each = many opportunities for the same opaque-framing failure mode).
+
+#### What we know so far
+
+User directive captured verbatim during the v0.7.2 self-host G14 walkthrough: *"use simple language and provide context when presenting ideas"* — to be added to the design skill dialog rules.
+
+Candidates Design should weigh:
+
+- One-line dialog rule added to `skills/design/SKILL.md` `### Interactive Design Discussion` Phase 1, scoped per user direction to the Design skill.
+- Open question for broader scoping: do other interactive skills (Goals, Replan, Phasing, Structure) suffer the same opaque-framing failure mode and benefit from the same rule? User scope this release is Design-only; broader scoping is a v0.7.3+ candidate contingent on self-host signal from other skills.
+
+Source: v0.7.2 self-host G14 walkthrough user directive.
+
 ## Cross-Cutting Notes
 
 - **Reviewer-pipeline correctness cluster (G6 / G7 / G8 / G9 / G10 / G11 / G12 / G13 / G14 / G19 / G20 / G28 / G29).** These goals all address the reliability of the reviewer→verifier→orchestrator pipeline: disk-write contract (G6/G11), field-schema enforcement (G8/G13), threshold-rule location and DRY (G7/G12), rubric calibration (G14/G19/G20), orchestration drift (G9), authority-fabrication (G10), apply-fix protocol cluster carve-out (G28), and large-artifact dispatch ingress (G29). G11 and G12 form a tightly coupled pair (contract then consumer); G7, G12, G13, and G28 share a "one place for the canonical filter rule" resolution path; G14 and G19 share a verifier-rubric expansion path also relevant to G10. G6 and G29 share the same dispatch-contract surface (`skills/reviewer-protocol/SKILL.md`) and are likely co-scheduled.

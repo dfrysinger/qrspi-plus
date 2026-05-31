@@ -1927,6 +1927,38 @@ where `<relpath>` matches `[A-Za-z0-9_./-]+` and resolves from the **source repo
 
 ---
 
+## G33 — Design skill interactive dialog clarity: simple language + context when presenting ideas
+
+**Problem.** Design SKILL's `### Interactive Design Discussion` Phase 1 step 2 ("Propose 2–3 candidate approaches; lead with recommendation; explain trade-offs") specifies no clarity bar for the prose of those proposals. Default tendency is jargon-dense framing requiring the user to have plugin internals fresh in working memory to follow. Observed v0.7.2 self-host G14: user explicitly asked for simple-language reframing mid-dialogue — verbatim *"using simple language give me the context here, im not following. both the problem and the fix is opaque to me"* — costing one extra turn and resetting conversational state.
+
+**Approach.** One-line dialog rule added to `skills/design/SKILL.md` `### Interactive Design Discussion` Phase 1, immediately after step 2 (the candidate-proposal step). User direction scopes the rule to the Design skill for v0.7.2; broader scoping to Goals / Replan / Phasing / Structure tracked as v0.7.3 follow-up contingent on self-host signal.
+
+**D1 — Wording and placement.** New step 3 inserted into the Phase 1 numbered list in `skills/design/SKILL.md` `### Interactive Design Discussion`, between current step 2 ("Propose 2-3 candidate approaches; lead with recommendation; explain trade-offs.") and current step 3 ("Open Q&A — user asks back, you ask back, until the goal's design is settled."). The existing steps 3 and 4 renumber to 4 and 5.
+
+  - **Verbatim new step:**
+
+    > 3. **Use simple language and provide context when presenting ideas.** Ground proposals in concrete scenarios before naming them abstractly. Assume the user may not have plugin internals (SKILL anatomy, orchestrator behavior, rubric definitions, schema-field names) fresh in working memory — when introducing a technical term that has not appeared in this dialog within the recent turns, provide one sentence of grounding context. Trade-off framings ("here are 3 candidates: A is X, B is Y...") should explain what each candidate concretely does in plain prose before naming the abstract architectural shape.
+
+  - **Placement rationale.** Adjacent to step 2 (the candidate-proposal step) because the rule directly governs how candidates are presented. Placed as its own step (not a sub-bullet of step 2) for visibility — it is a per-turn dialog rule, not a one-shot prep instruction. The new step does not change any existing dialog mechanic; existing steps 1, 2, 4 (was 3), 5 (was 4) retain their semantics.
+
+  - **Scope to Design only (per user direction).** Goals dialogue confirmed scope: *"add a small change to the design skill dialog rules"*. Other interactive skills (Goals, Replan, Phasing, Structure) are NOT updated this release. A v0.7.3 follow-up issue tracks whether the rule should broaden to a shared interactive-skill dialog-quality snippet (`skills/_shared/interactive-dialog-clarity.md`) consumed via `!cat` from each interactive skill's dialog section. The broader-scoping question is contingent on v0.7.2 self-host signal from those other skills.
+
+**Acceptance.**
+
+- New step 3 exists in `skills/design/SKILL.md` `### Interactive Design Discussion` Phase 1, matching D1's verbatim text.
+- Existing Phase 1 steps 3 and 4 renumbered to 4 and 5; their content is unchanged.
+- A bats test asserts the literal phrase "Use simple language and provide context when presenting ideas" appears in `skills/design/SKILL.md` (regression guard against accidental removal).
+- No changes to Goals / Replan / Phasing / Structure SKILLs this release.
+- v0.7.3 follow-up issue filed against the v0.7.3 milestone tracking the broader-scoping question.
+
+**Open Questions for v0.7.3+.** Tracked externally as GitHub issue dfrysinger/qrspi-plus#266 against the v0.7.3 milestone — should the dialog-clarity rule broaden to all interactive skills via a shared snippet? Decision criteria: capture self-host signal during v0.7.2 from Goals / Replan / Phasing / Structure dialogues — did users hit the same opaque-framing friction in those skills, or is it Design-specific (e.g., because Design's per-goal proposals are denser than Goals' problem-frame dialogue)?
+
+**Pre-existing plugin issues to file.** None. G33 is a missing-rule observation from v0.7.2 self-host friction, not a documented plugin defect; the existing Design SKILL is internally consistent on the dialog rules it does specify — it just doesn't specify a clarity bar.
+
+**References.** Source: v0.7.2 self-host G14 walkthrough user directive (literal quote captured in goals.md G33); `skills/design/SKILL.md` `### Interactive Design Discussion` Phase 1 (the dialog-rule section being extended); related G14 (the goal whose walkthrough produced the directive — different artifact, same session).
+
+---
+
 ## Plugin issues observed during this Design session
 
 - **Q5 under-counted consumer list** — research/summary.md Q5 (line 68) said splitter is not invoked by run-codex-review.sh; missed that implement/SKILL.md is the highest-density consumer (9 invocations + 2 splitter blocks).
