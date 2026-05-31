@@ -260,7 +260,6 @@ A sentence that only makes sense as a delta from a prior state is **dialogue exh
 | Session / drafting notes | "Rule X drafting note," "this collapsed from 3 to 1 because…" | Nothing — delete. If a fact matters, embed inline in the decision. |
 | Version-history narration | "earlier draft said X," "previously," "originally," "pre-cleanup" | Nothing — git history holds versions. |
 | Inside baseball | text addressed to "us" / "the author," meta-explanation of the document's own structure ("this section is split into A and B because…") | The decision the structure expresses — without the structural explanation. |
-| Source-file self-reference inside `!cat`-included snippets | snippet body or co-resident prose says "per `_shared/foo.md` contract" / "see `skills/bar/SKILL.md`" when the referenced content is the surrounding inlined text the runtime agent already has in context (path tokens that the agent has no tool to dereference) | Self-relative phrasing: "as described above" / "per the contract below" / fully restate the rule inline. File-path references stay in design.md / plan.md / component-spec sections (which humans read), never in agent-facing skill prose. |
 | Compaction-loss recovery notes | "this nuance was almost lost during…" | Nothing — if the nuance is needed, the rule itself carries it. |
 | Failure-modes-prevented lists | bullets that justify why a rule exists rather than state what to do | Strengthen the rule's wording; delete the justification list. |
 
@@ -269,11 +268,10 @@ Decision-process history (drafts, review rounds, feedback applied, compaction re
 
 **Acceptance criteria:**
 
-- `skills/_shared/evergreen-output-rule.md` exists and contains the locked prose verbatim (anchor phrases: "Litmus test (apply to every paragraph before write)", "dialogue exhaust", "Named antagonist patterns — strip on sight, substitute as shown", the two ordered filters, the exclusions parenthetical, the source-file-self-reference antagonist row).
+- `skills/_shared/evergreen-output-rule.md` exists and contains the locked prose verbatim (anchor phrases: "Litmus test (apply to every paragraph before write)", "dialogue exhaust", "Named antagonist patterns — strip on sight, substitute as shown", the two ordered filters, the exclusions parenthetical).
 - Every consumer SKILL.md listed above carries a `!cat ${CLAUDE_SKILL_DIR}/../_shared/evergreen-output-rule.md` line, placed where the SKILL.md introduces its artifact-output contract (typically near the artifact template or just before it).
 - Skill prose lint: no SKILL.md in the consumer list embeds a copy of the rule text — `!cat` is the only inclusion path.
-- Skill prose lint (source-file-self-reference): no SKILL.md or `_shared/*.md` file references another `_shared/*.md` snippet by file path inside content that ships into runtime agent context (snippet bodies, inlined checklists, locked-prose blocks). Verified by: `grep -nE '_shared/[a-z-]+\.md' skills/{*/SKILL.md,_shared/*.md}` — every match must sit inside a clearly marked design-doc / maintainer comment block (e.g., HTML comment `<!-- maintainer: ... -->` or an out-of-band `# Authoring notes` section), not inside the runtime-loaded body. Existing matches grandfathered as a v0.7.2 sweep task; new matches blocked.
-- Reviewer protocol updated to surface a finding when an `status: draft → approved` artifact contains any of the named antagonist patterns (including the source-file-self-reference pattern when an `!cat`-included snippet leaks a file-path token). (Either fold the check into existing quality reviewers, or define a sibling check — sizing TBD in Plan.)
+- Reviewer protocol updated to surface a finding when an `status: draft → approved` artifact contains any of the named antagonist patterns. (Either fold the check into existing quality reviewers, or define a sibling check — sizing TBD in Plan.)
 - Documentation: the cross-skill rule appears in `using-qrspi/SKILL.md`'s artifact-quality section by reference (one-line pointer to `_shared/evergreen-output-rule.md`), not by copy.
 
 ---
