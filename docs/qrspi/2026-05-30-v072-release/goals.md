@@ -1005,7 +1005,7 @@ Candidates Design should weigh:
 - One-line dialog rule added to `skills/design/SKILL.md` `### Interactive Design Discussion` Phase 1, scoped per user direction to the Design skill.
 - Open question for broader scoping: do other interactive skills (Goals, Replan, Phasing, Structure) suffer the same opaque-framing failure mode and benefit from the same rule? User scope this release is Design-only; broader scoping is a v0.7.3+ candidate contingent on self-host signal from other skills.
 
-Source: v0.7.2 self-host G14 walkthrough user directive.
+Source: v0.7.2 self-host G14 walkthrough user directive. **Solution folded into G1's Dialogue Conduct section as new Rule 5** (Design-only per user scope; Goals mirror explicitly excludes it). See design.md G33 entry for the cross-reference and design.md G1 for the verbatim rule.
 
 ## Cross-Cutting Notes
 

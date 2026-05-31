@@ -679,10 +679,20 @@ belongs in Plan.
    choice back. If grounding genuinely leaves the call indeterminate, say so explicitly and
    name what additional evidence would resolve it.
 
-5. **Sharpen fuzzy language.** When the user uses imprecise vocabulary, propose the canonical
+5. **Use simple language and provide context when presenting ideas.** Ground proposals in
+   concrete scenarios before naming them abstractly. Assume the user may not have plugin
+   internals (SKILL anatomy, orchestrator behavior, rubric definitions, schema-field names)
+   fresh in working memory — when introducing a technical term that has not appeared in this
+   dialog within the recent turns, provide one sentence of grounding context. Trade-off
+   framings ("here are 3 candidates: A is X, B is Y...") should explain what each candidate
+   concretely does in plain prose before naming the abstract architectural shape. This rule
+   covers G33; Goals SKILL does NOT receive this rule (G33 scope was user-directed to Design
+   only; broader scoping tracked as dfrysinger/qrspi-plus#266).
+
+6. **Sharpen fuzzy language.** When the user uses imprecise vocabulary, propose the canonical
    term and ask for confirmation before moving on.
 
-6. **Walk every branch of the decision tree, including flow gaps.** For each goal, resolve
+7. **Walk every branch of the decision tree, including flow gaps.** For each goal, resolve
    dependencies between decisions one-by-one. Do not move to the next goal until every branch
    surfaced for the current one is either decided, explicitly deferred with a written reason,
    or split out as a separate goal. Branch completeness explicitly includes the end-to-end
@@ -691,7 +701,7 @@ belongs in Plan.
    call-out present (per Sub-Rule C). A flow with implicit hand-offs is an open branch; close
    it before moving on.
 
-7. **Lock decisions as they settle.** Write each decision into the goal block under
+8. **Lock decisions as they settle.** Write each decision into the goal block under
    `status: draft` as it is confirmed. Do not accumulate decisions in chat across multiple
    goals before persisting.
 
@@ -861,7 +871,7 @@ The only external-to-codebase knowledge downstream skills are expected to bring 
 ### Implementation deliverables (for the eventual Plan tasks + Implement work that ships G1)
 
 1. New Design SKILL.md template carrying the verbatim content above
-2. Dialogue Conduct section in the Design SKILL.md preamble (the 7 rules above, verbatim)
+2. Dialogue Conduct section in the Design SKILL.md preamble (the 8 rules above, verbatim — note Rule 5 covers G33's dialog-clarity directive and is Design-only per user scope)
 3. Remove the existing Design SKILL.md "Test Strategy" top-level section (acceptance moves
    inline to each goal block)
 4. Remove the existing Design SKILL.md "System Flow" diagram section (the architecture
@@ -869,13 +879,16 @@ The only external-to-codebase knowledge downstream skills are expected to bring 
 5. Update the design reviewer agent to enforce the per-goal block structure AND the Altitude Sub-Rule C end-to-end flow requirements (actor inventory present, sequence of operations specified, per-step inputs/outputs traced, consumer identification complete, loud-failure paths named, context-cost call-out present for orchestrator/subagent boundary crossings) AND Sub-Rule D external-knowledge completeness (every external claim has a concrete answer with citation + verification-method label; no "TBD" / "see vendor docs" placeholders; unknown branches name safe-default + verification procedure)
 6. Update the design scope-reviewer owns-defers to defer architecture, file maps, and test mechanics
 7. Add the Sub-Rules section (Altitude A + B + C + Completeness D) to the SKILL.md, verbatim
-8. Mirror the same Dialogue Conduct section into Goals SKILL.md's preamble. Rules 1, 2, 4, 5,
-   6, 7 are verbatim. Rule 3 is adjusted: drop the "research summary" tier (Goals runs before
-   Research, so no research artifacts exist); the tier ordering becomes codebase → web. All
-   other Dialogue Conduct text is identical between the two skills. Goals keeps its existing
-   per-goal template and its "Interactive Dialogue" question-topic checklist — G1 only adds
-   the Dialogue Conduct rules to Goals; it does not change Goals' artifact template or the
-   Pipeline Mode Selection step.
+8. Mirror the Dialogue Conduct section into Goals SKILL.md's preamble with the following
+   selection: Rules 1, 2, 4, 6, 7, 8 are verbatim. Rule 3 is adjusted: drop the "research
+   summary" tier (Goals runs before Research, so no research artifacts exist); the tier
+   ordering becomes codebase → web. **Rule 5 (G33 dialog-clarity directive) is NOT mirrored
+   to Goals** — user scope for G33 was Design-only; broader scoping to Goals / Replan /
+   Phasing / Structure tracked as dfrysinger/qrspi-plus#266 contingent on self-host signal.
+   All other Dialogue Conduct text is identical between the two skills. Goals keeps its
+   existing per-goal template and its "Interactive Dialogue" question-topic checklist — G1
+   only adds the Dialogue Conduct rules to Goals; it does not change Goals' artifact template
+   or the Pipeline Mode Selection step.
 
 ### Acceptance
 
@@ -1429,7 +1442,7 @@ The two-case carve-out (false-positive vs informational) is intentionally narrow
 - Survive `/compact` mid-phase without losing per-decision content
 - Run a lightweight "finalize" pass at end-of-phase that validates completeness and flips status to `approved-pending-review`
 
-(Dialogue Conduct rules for both skills are owned by G1 — see G1's deliverables for the verbatim 7-rule section and its Goals/Design application.)
+(Dialogue Conduct rules for both skills are owned by G1 — see G1's deliverables for the verbatim 8-rule section and its Goals/Design application. Rule 5 covers G33's dialog-clarity directive and is Design-only.)
 
 **Solution.**
 
@@ -1929,33 +1942,17 @@ where `<relpath>` matches `[A-Za-z0-9_./-]+` and resolves from the **source repo
 
 ## G33 — Design skill interactive dialog clarity: simple language + context when presenting ideas
 
-**Problem.** Design SKILL's `### Interactive Design Discussion` Phase 1 step 2 ("Propose 2–3 candidate approaches; lead with recommendation; explain trade-offs") specifies no clarity bar for the prose of those proposals. Default tendency is jargon-dense framing requiring the user to have plugin internals fresh in working memory to follow. Observed v0.7.2 self-host G14: user explicitly asked for simple-language reframing mid-dialogue — verbatim *"using simple language give me the context here, im not following. both the problem and the fix is opaque to me"* — costing one extra turn and resetting conversational state.
+**Solution folded into G1.** G33's design lives inside G1's Dialogue Conduct section as new Rule 5 — *"Use simple language and provide context when presenting ideas."* See G1 Dialogue Conduct (Rule 5 verbatim) + G1 Implementation deliverables (item 2 for Design, item 8 for the Goals mirror exclusion). G33's source directive (user quote during v0.7.2 self-host G14 walkthrough) and the v0.7.3 broader-scoping follow-up are preserved here for traceability:
 
-**Approach.** One-line dialog rule added to `skills/design/SKILL.md` `### Interactive Design Discussion` Phase 1, immediately after step 2 (the candidate-proposal step). User direction scopes the rule to the Design skill for v0.7.2; broader scoping to Goals / Replan / Phasing / Structure tracked as v0.7.3 follow-up contingent on self-host signal.
+- **Source directive.** User input during v0.7.2 self-host G14: *"use simple language and provide context when presenting ideas"* + earlier *"using simple language give me the context here, im not following. both the problem and the fix is opaque to me"*.
 
-**D1 — Wording and placement.** New step 3 inserted into the Phase 1 numbered list in `skills/design/SKILL.md` `### Interactive Design Discussion`, between current step 2 ("Propose 2-3 candidate approaches; lead with recommendation; explain trade-offs.") and current step 3 ("Open Q&A — user asks back, you ask back, until the goal's design is settled."). The existing steps 3 and 4 renumber to 4 and 5.
+- **Scope.** Design SKILL only (per user direction *"add a small change to the design skill dialog rules"*). Goals SKILL is NOT updated this release per G1 deliverable 8's exclusion clause. Replan / Phasing / Structure SKILLs are NOT updated (out of scope for v0.7.2).
 
-  - **Verbatim new step:**
+- **Open Questions for v0.7.3+.** Tracked externally as dfrysinger/qrspi-plus#266 — should the dialog-clarity rule broaden to all interactive skills via a shared snippet? Decision criteria: capture self-host signal from Goals / Replan / Phasing / Structure dialogues — did users hit the same opaque-framing friction in those skills, or is it Design-specific (because Design's per-goal proposals are denser than Goals' problem-frame dialogue)?
 
-    > 3. **Use simple language and provide context when presenting ideas.** Ground proposals in concrete scenarios before naming them abstractly. Assume the user may not have plugin internals (SKILL anatomy, orchestrator behavior, rubric definitions, schema-field names) fresh in working memory — when introducing a technical term that has not appeared in this dialog within the recent turns, provide one sentence of grounding context. Trade-off framings ("here are 3 candidates: A is X, B is Y...") should explain what each candidate concretely does in plain prose before naming the abstract architectural shape.
+- **Acceptance.** All criteria deferred to G1's Acceptance — G1's implementation now carries G33's rule as part of its 8-rule Dialogue Conduct section. The bats regression guard ("the literal phrase 'Use simple language and provide context when presenting ideas' appears in `skills/design/SKILL.md`") rolls into G1's acceptance test set.
 
-  - **Placement rationale.** Adjacent to step 2 (the candidate-proposal step) because the rule directly governs how candidates are presented. Placed as its own step (not a sub-bullet of step 2) for visibility — it is a per-turn dialog rule, not a one-shot prep instruction. The new step does not change any existing dialog mechanic; existing steps 1, 2, 4 (was 3), 5 (was 4) retain their semantics.
-
-  - **Scope to Design only (per user direction).** Goals dialogue confirmed scope: *"add a small change to the design skill dialog rules"*. Other interactive skills (Goals, Replan, Phasing, Structure) are NOT updated this release. A v0.7.3 follow-up issue tracks whether the rule should broaden to a shared interactive-skill dialog-quality snippet (`skills/_shared/interactive-dialog-clarity.md`) consumed via `!cat` from each interactive skill's dialog section. The broader-scoping question is contingent on v0.7.2 self-host signal from those other skills.
-
-**Acceptance.**
-
-- New step 3 exists in `skills/design/SKILL.md` `### Interactive Design Discussion` Phase 1, matching D1's verbatim text.
-- Existing Phase 1 steps 3 and 4 renumbered to 4 and 5; their content is unchanged.
-- A bats test asserts the literal phrase "Use simple language and provide context when presenting ideas" appears in `skills/design/SKILL.md` (regression guard against accidental removal).
-- No changes to Goals / Replan / Phasing / Structure SKILLs this release.
-- v0.7.3 follow-up issue filed against the v0.7.3 milestone tracking the broader-scoping question.
-
-**Open Questions for v0.7.3+.** Tracked externally as GitHub issue dfrysinger/qrspi-plus#266 against the v0.7.3 milestone — should the dialog-clarity rule broaden to all interactive skills via a shared snippet? Decision criteria: capture self-host signal during v0.7.2 from Goals / Replan / Phasing / Structure dialogues — did users hit the same opaque-framing friction in those skills, or is it Design-specific (e.g., because Design's per-goal proposals are denser than Goals' problem-frame dialogue)?
-
-**Pre-existing plugin issues to file.** None. G33 is a missing-rule observation from v0.7.2 self-host friction, not a documented plugin defect; the existing Design SKILL is internally consistent on the dialog rules it does specify — it just doesn't specify a clarity bar.
-
-**References.** Source: v0.7.2 self-host G14 walkthrough user directive (literal quote captured in goals.md G33); `skills/design/SKILL.md` `### Interactive Design Discussion` Phase 1 (the dialog-rule section being extended); related G14 (the goal whose walkthrough produced the directive — different artifact, same session).
+- **References.** v0.7.2 self-host G14 walkthrough user directive; G1 Dialogue Conduct Rule 5 (verbatim) + deliverables 2 and 8.
 
 ---
 
