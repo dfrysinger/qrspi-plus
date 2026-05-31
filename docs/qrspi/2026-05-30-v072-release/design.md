@@ -1578,6 +1578,47 @@ A short audit of `scripts/run-third-party-llm.sh` is included to confirm direct 
 
 ---
 
+## G17 — Stale prose in implementer-protocol and test-writer after T2 added committed gitignore
+
+**Plain-language problem.** v0.7.1 Wave 1 T2 added `.qrspi-commit-msg.txt` to the committed root `.gitignore`. Three prose surfaces still describe the pre-T2 reality: one says "the scratch file is not gitignored" (factually false), one says "the target repository's committed `.gitignore` is not polluted with QRSPI internals" (now contradicted by qrspi-plus's own committed entry), one names only the worktree-local exclude when two layers now apply. Pure documentation drift, no runtime defect. v0.7.1 INTEGRATE round 1 caught it (R1-F03 + R1-F05); the verifier suppressed both (72 and 50 against the clarity ≥80 threshold) so the prose never got fixed.
+
+**Outcome.** Three surgical edits correct the false/incomplete claims without restructuring the Invariants section. The committed `.gitignore` is a static test-enforced repo property — it is NOT something the implementer agent reads, writes, or follows at runtime — so it does NOT become a peer of Invariants 1/2/3, which describe runtime agent behavior. Adding "Invariant 4" would conflate two different categories (runtime agent behavior vs static repo config) and bloat the section the agent reads every dispatch.
+
+**Approach.** Three minimum-disruption edits: correct Invariant 3's outdated rationale sentence; strip the false-claim parenthetical from step 4 (the implementer doesn't need to know-why to do the `rm`); delete the redundant exclude sentence from `qrspi-test-writer.md` L28 (the step list at L77-80 already states the same thing authoritatively). No new section. No Composition rewrite. No new tests. Doc-only.
+
+**Implementation deliverables (locked replacement prose).**
+
+1. **`skills/implementer-protocol/SKILL.md` L174 — Invariant 3 rationale sentence.** Replace the second sentence verbatim:
+
+   - **Old:** "This ensures `git status` reports remain deterministic between scratch-file write and removal, and the target repository's committed `.gitignore` is not polluted with QRSPI internals."
+   - **New:** "This ensures `git status` reports remain deterministic between scratch-file write and removal in any worktree, including downstream consumers' target repositories which do not inherit qrspi-plus's own committed `.gitignore` entry."
+
+   Drops the false "not polluted" claim. Correctly scopes Invariant 3 to the case the worktree-local exclude actually covers: downstream-consumer target repos where there is no committed entry to inherit.
+
+2. **`skills/implementer-protocol/SKILL.md` L241 — Commit-Before-Reporting step 4 parenthetical.** Replace verbatim:
+
+   - **Old:** "(the scratch file is not gitignored and you don't want it in the next round's diff)"
+   - **New:** "(keeps the scratch file out of the next round's diff)"
+
+   Drops the rationale entirely. The implementer needs to do the `rm`; it does not need to track the layered-exclude mechanism's state to decide whether the `rm` is necessary. Less prose, no false claim.
+
+3. **`agents/qrspi-test-writer.md` L28 — Commit ownership bullet.** Delete the standalone exclude sentence:
+
+   - **Old:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer."
+   - **New:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer."
+
+   The exclude reassurance is restated authoritatively in the step list at L77-80. Removing the L28 mention avoids partial restatement (which is the very drift this goal exists to fix — listing one mechanism while there are now two).
+
+4. **No other surfaces touched.** `skills/implement/SKILL.md` L376 / L383 / L672 mention the scratch file in correct, target-repo-scoped framings ("does not pollute the target repo's committed `.gitignore`") that remain accurate for downstream consumers. `agents/qrspi-test-writer.md` L23 / L24 / L77-80 are load-bearing operational references (Bash allowlist entries + the canonical step list). No changes.
+
+5. **No new tests.** All four guards (staging order, cleanup, worktree-local exclude, committed gitignore) are already verified by `tests/unit/test-commit-hygiene-invariants.bats`. G17 is pure prose reconciliation; no behavior change to test.
+
+**Pre-existing plugin issues to file.** None new. G17 closes the v0.7.1 R1-F03 / R1-F05 prose-drift findings the verifier suppressed. G14's verifier-rubric fix means the next equivalent informational-but-valid clarity finding would not be suppressed by the same score-threshold reasoning.
+
+**References.** Source: goals.md G17 / #233 (v0.7.1 INTEGRATE R1 F03 + F05); `skills/implementer-protocol/SKILL.md` L174 (Invariant 3 second sentence), L241 (Commit-Before-Reporting step 4); `agents/qrspi-test-writer.md` L28 (Commit ownership bullet); `tests/unit/test-commit-hygiene-invariants.bats` (test-enforced repo property — committed `.gitignore` entry verified there); `.gitignore` (committed entry added in T2); related G14 — same suppression pattern caught both findings here.
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
