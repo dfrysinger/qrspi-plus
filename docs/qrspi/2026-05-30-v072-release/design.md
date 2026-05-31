@@ -1435,6 +1435,62 @@ The two-case carve-out (false-positive vs informational) is intentionally narrow
 
 ---
 
+## G15 — Per-task test scope misses dependent tests for sweep tasks
+
+**Plain-language problem.** When a task changes the same thing across many files at once (a "sweep" — e.g., "strip `model:` from all 41 agent frontmatter files"), the producing task's targeted tests pass green inside its own worktree. But other tests elsewhere in the suite assert specific values that the sweep was scoped to remove. Those tests aren't in the task's plan-spec `files_in_scope`, so the per-task gate never runs them. The task ships GREEN. Integrate phase merges the branch, runs the full suite, and immediately surfaces stale-test failures the producing task should have owned. The per-task BLOCKING gate's contract — "if I'm green, the integrated state is at-least-not-worse-than-before-me" — is silently violated.
+
+**Outcome.** Sweep tasks must enumerate their dependent tests (or grep-prove "none exist") at plan-authoring time so the per-task gate runs them too. The plan reviewer detects sweep tasks by heuristic and demands the enumeration. No sweep-shaped task can ship with implicit downstream test exposure; the per-task gate becomes trustworthy again.
+
+**Approach.** Two-mechanism composition. (1) Document the contract in `plan/SKILL.md` — sweep-task plan-spec authors enumerate dependent tests by path OR commit to "no dependent tests exist" with a grep command in the plan body. (2) Plan-reviewer heuristic detects sweep-shaped tasks and surfaces a finding when the dependent-test enumeration is missing.
+
+Composition rationale: documentation alone (without the reviewer enforcement) relies on plan-authors remembering the rule — the v0.7.1 incident is direct evidence that plan-authors don't reach for sweep semantics on their own. Reviewer enforcement alone (without the documentation) gives the reviewer no canonical contract to cite. Together: the doc is the contract; the reviewer is the gate.
+
+Deferred: an automated test-discovery pass at gate time (grep `tests/unit/` for files referencing in-scope identifiers; run those tests too as part of the per-task suite). Filed as v0.7.3 follow-up — the v0.7.2 self-host of this design will produce direct signal on whether the doc + reviewer-heuristic combo is too leaky to catch sweep regressions cleanly.
+
+**Two-mechanism details.**
+
+*1) `plan/SKILL.md` — Sweep Task Contract (new subsection under § Test Expectations).* The plan-author rule (verbatim wording, ~120-150 words inserted as a single subsection within Test Expectations):
+
+> ### Sweep Task Contract
+>
+> A **sweep task** removes, replaces, or enforces an invariant across many files at once (e.g., "strip `model:` from all agent frontmatter," "rename `qrspi-foo` to `qrspi-bar` across all skills," "remove all `${VAR}` references in CDs"). Sweep tasks systematically invalidate test files that assert on the swept property's previous values, even when those test files are not in the task's `files_in_scope`.
+>
+> A sweep-task plan-spec MUST include, in its Test Expectations block, a `dependent_tests:` field with one of two values:
+>
+> - A list of test file paths the per-task gate must additionally run. Each path must be a file (not a directory glob) and must exist at plan-authoring time. Each listed test SHOULD be expected to either (a) pass unchanged once the sweep is applied or (b) require a specific predicted update — describe which in one sentence per file.
+> - The literal string `none` followed on the next line by a grep-confirmable search command of shape `grep -rn '<pattern>' tests/` that demonstrably returns zero matches. The pattern is the swept identifier (e.g., `'^model:'`) — the plan-reviewer will re-run the grep and surface a finding if it returns ≥1 hit.
+>
+> Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defect, not a deferred-to-implementer concern.
+
+*2) `plan-reviewer.md` agent — Sweep Detection Heuristic.* A new rubric clause inserted into `agents/qrspi-plan-reviewer.md` (between existing rubric items, NOT replacing any). Heuristic (literal wording the reviewer applies):
+
+> **Sweep-task detection.** Treat a task as a sweep when BOTH conditions hold:
+>
+> - `files_in_scope` lists >5 files (strict greater-than, not >=) of the same file type (file type = matching extension; `.md` agents in `agents/` count as one type, `.bats` tests count as another, etc.).
+> - The task title OR the task description body contains at least one of: `all`, `every`, `strip`, `remove`, `rename`, `replace`, `delete`, `sweep` (case-insensitive, word-boundary match — `removal` matches `remove`; `installer` does NOT match `all`).
+>
+> On detection, the reviewer MUST verify the task's Test Expectations block contains a `dependent_tests:` field per the `plan/SKILL.md` § Sweep Task Contract. Missing-field → emit a `severity: high, change_type: correctness` finding referencing the contract. Field-present-but-malformed (no paths, no `none`-with-grep, or `none` with a grep that returns ≥1 hit when re-run) → same severity.
+
+The 5-file threshold and the 8-keyword list are calibrated against the v0.7.1 Wave-1 incident: T9 (#204, strip `model:` from 41 files) trips on both checks; Hotfix A (test-writer iron law rewrite) trips on file-count + `remove`; Hotfix B (threshold split) is borderline — file count below threshold but the reviewer can still surface it because the description mentions `replace`. Self-host signal during v0.7.2 will reveal whether the threshold should drop to 3 or the keyword list needs expansion.
+
+**Cross-cutting note (G15 ↔ G18).** G15's pattern — *"plan reviewer catches a structural under-scoping shape by heuristic, demands the producing task own its full surface area"* — is the same shape G18 is going to need (Plan-phase under-scoping cluster per goals.md Cross-Cutting Notes). When G18 is walked, prefer extending the same plan-reviewer rubric over inventing a parallel mechanism. Don't pre-commit G18 here — just flag for that walk.
+
+**Implementation deliverables.**
+
+1. **`plan/SKILL.md`** — insert the verbatim "Sweep Task Contract" subsection above into the existing § Test Expectations section. Adjacency choice: at the END of § Test Expectations (after all existing per-task field documentation), as a clearly-fenced subsection. Rationale: sweep tasks are a structural special case that builds on the standard Test Expectations vocabulary — placing the contract last lets a plan-author read the general rules first and then reach for the sweep extension when applicable.
+2. **`agents/qrspi-plan-reviewer.md`** — insert the verbatim "Sweep-task detection" rubric clause above into the agent body. Adjacency choice: as a new bullet within the existing review rubric, alongside (not replacing) existing field-shape checks. The agent's loaded reviewer-protocol (5-field finding schema) is unchanged — sweep findings use existing `severity` + `change_type` values, no new finding kind.
+3. **`plan/SKILL.md` worked example** — add a 1-paragraph "worked example" under the Sweep Task Contract subsection showing a plan-spec excerpt for a sweep task with a well-formed `dependent_tests:` list, and a second 1-paragraph example with the `none + grep` shape. ~30-40 lines combined.
+4. **Backstop documentation** — a short note in `using-qrspi/SKILL.md` Standard Implement-Phase loop describing what happens when a sweep-finding fires at plan-review time (treated as a normal plan-reviewer correctness finding; routes through the standard plan re-spec loop; no new gate behavior).
+5. **No changes to** `implementer-protocol/SKILL.md`, the per-task gate code/script paths, or any test runner — G15 surfaces the missing tests at PLAN time so they end up in `files_in_scope` (extended to read `dependent_tests:`) of the producing task. The existing per-task gate runs whatever tests are listed; the producing-task expectation that the gate runs `files_in_scope` tests is preserved.
+
+**Open Questions for v0.7.3+.** Tracked externally as GitHub issue dfrysinger/qrspi-plus#267 against the v0.7.3 milestone (filed when this design block ships): does v0.7.2 self-host evidence warrant adding automated sweep-aware test discovery at gate time (grep `tests/` for in-scope identifiers and run matching tests in addition to the explicit `dependent_tests:` list)? Issue captures: whether the doc + reviewer-heuristic combo caught all sweep regressions during v0.7.2 self-host, whether plan-authors had trouble enumerating the dependent tests by hand, and whether the 5-file / 8-keyword threshold needed tuning.
+
+**Pre-existing plugin issues to file.** None new. G15 closes the contract gap that #231 left open after the v0.7.1 stale-test cleanup landed; the existing `plan/SKILL.md` is internally consistent on the cases it documents — it just doesn't document sweep tasks.
+
+**References.** Source: goals.md G15 / #231 (v0.7.1 Wave-1 6-stale-test surfacing); v0.7.1 cleanup commit `898c171`; `plan/SKILL.md` § Test Expectations (extension point); `agents/qrspi-plan-reviewer.md` (rubric extension point); goals.md Cross-Cutting Notes "Plan-phase under-scoping cluster" (G15 + G18 relationship); related G18 — design pattern for the cluster originates here.
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
