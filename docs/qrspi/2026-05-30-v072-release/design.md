@@ -1041,6 +1041,315 @@ Clean LLM/script split.
 
 ---
 
+## G5 — Idempotent post-approval plan split
+
+<!-- prose-design -->
+
+**Outcome.** Plan's post-approval split step (per-task fan-out that materializes `tasks/task-NN.md` from `plan.md`'s `### Task N` blocks) is re-runnable without harm. A re-invocation after a partial crash dispatches only the missing files; a re-invocation after a fully-completed split is a near-zero-cost no-op that proceeds directly to plan.md reduction + `status: approved`. Hand-edits to per-task files made after the previous split are naturally preserved on re-run. A user amendment to `plan.md`'s `### Task N` block since the previous split fails loud with a named diagnostic rather than silently shipping a stale spec.
+
+**Solution.**
+
+*Decision rule (per task, computed in main-chat orchestrator before the fan-out loop, single pass):*
+
+| Case | `tasks/task-NN.md` state | Decision |
+|------|--------------------------|----------|
+| 1 | Absent | dispatch sub-subagent to write |
+| 2 | Present, block-hash audit matches | safe-skip (no dispatch, no write) |
+| 3 | Present, block-hash audit mismatches | **HALT** with named diagnostic |
+
+*Atomic-write premise.* Sub-subagent dispatches don't stream partial files; the Write call lands at the end of the subagent's run, and Write is OS-atomic for the file sizes in play. Therefore file existence is a faithful "previous dispatch for this task completed" signal — no `.I-wrote-this` sidecar, no divergence-vs-hand-authored distinguishability, no `.split-conflict-NN.md` machinery needed. This collapses the original 4-case strawman to the 3-case table above.
+
+*Block-hash audit.* Each `tasks/task-NN.md` carries a single line immediately after the closing frontmatter `---` and before the first body content:
+
+```
+# block-hash: <sha256-hex>
+```
+
+The hash covers the **normalized** source `### Task N` block from `plan.md`. Normalization = strip trailing whitespace from each line, preserve all other characters and line breaks verbatim. No markdown canonicalization, no case folding, no whitespace collapse — anything that changes wording is considered a change. Algorithm = sha256, hex-encoded, no salt.
+
+Write-time: orchestrator computes the normalized hash for each `### Task N` block before fan-out and passes it to the sub-subagent as a `block_hash:` dispatch field. Sub-subagent emits the `# block-hash:` line verbatim into the file it writes.
+
+Skip-time: orchestrator re-computes the hash from the current `plan.md` block and compares to the line read from the existing `tasks/task-NN.md`. Match → safe-skip. Mismatch → HALT with the named diagnostic:
+
+> `task-NN.md exists but its source block in plan.md has changed since the last split. To regenerate from the current plan.md, delete tasks/task-NN.md and re-run. To preserve the existing file, revert your plan.md edit.`
+
+*Decision site.* Main-chat orchestrator. Two reasons not to push the existence-check into a sub-subagent: (a) `test -e` + a single sha256 compare per task is cheaper than dispatch overhead, (b) keeping the decision auditable in one place (the orchestration step) avoids fan-out-shape coupling for what is a pre-fan-out filter.
+
+*Exact-set verification.* Existing step (skill `plan/SKILL.md` ~line 449) runs unchanged after the fan-out completes. With the idempotent decision rule, a complete-set re-run produces zero dispatches and still passes verification because all files are already present.
+
+**Why this approach.**
+
+- File existence is a faithful "done" signal under the atomic-write premise, so existence-only is the right primary case-split. The block-hash audit is a narrow safety net for the one case existence alone misses (user amended `plan.md`'s block since the previous split without deleting the per-task file). Fail-loud on that case beats silently feeding a stale spec to an implementer six tasks downstream.
+- One-line header + one sha256 per skip is the minimum machinery that catches the silent-stale-spec failure mode. The alternative — pure existence-only ("Flavor A") — was considered defensible but loses fail-loud detection of the plan-amend-without-delete case; the cost of the audit is too small to justify accepting that risk.
+- Hand-edits to `tasks/task-NN.md` post-write are naturally preserved on re-run — the per-task file's body changed, but the source block in `plan.md` did not, so the hash still matches. This is exactly the goals.md-stated requirement ("not safely re-runnable... can either silently overwrite existing per-task files (clobbering hand-edits) or fail loudly").
+- Conventional idempotent-tool semantics (terraform / kubectl): if the user wants a forced regeneration, they delete the artifact and re-run. This matches existing user mental models for idempotent split steps.
+- Main-chat decision keeps the existence-check and audit logic visible in the orchestration site rather than buried in sub-subagent prompts, which means the conformance contract (block-hash format + audit failure mode) is reviewable in one file.
+
+**Dependencies + edge cases.**
+
+- Depends on #172's sub-subagent split infrastructure (already landed; see `skills/plan/SKILL.md` lines 433-454 and `skills/plan/post-approval-split-contract.md`).
+- Sub-subagent dispatch contract gains one new field: `block_hash: <sha256-hex>`. Sub-subagent prompt template gains an "emit the `# block-hash:` line verbatim immediately after frontmatter close" instruction. Contract document (`skills/plan/post-approval-split-contract.md`) documents the format, position, and conformance rule.
+- **Edge case — split was complete and `plan.md` was reduced to overview-only before crash.** `### Task N` blocks no longer exist in `plan.md`; the source-of-truth has shifted to per-task files. Orchestrator detects "no Task blocks in plan.md + N task files present + status not yet approved" → skips both fan-out and audit (nothing to audit against), proceeds directly to `phase_start_commit` + `status: approved`. If `status: approved` is already on disk, the split is fully done — entire step is a no-op.
+- **Edge case — quick-fix N=1 path** (`skills/plan/SKILL.md` ~line 112). Inline write path, no sub-subagent. Same idempotency rule applies: `test -e tasks/task-01.md` → if absent, write; if present, audit the block-hash. Single-task plan still emits the `# block-hash:` line.
+- **Edge case — block-hash audit HALT during re-run.** Orchestrator does NOT auto-resolve. Surface the named diagnostic, halt the split step, leave the existing per-task file untouched. User decides whether to delete-and-regenerate or revert their `plan.md` edit. No `.split-conflict-NN.md` sidecar — the diagnostic + the existing files are the surface.
+- **Edge case — `# block-hash:` line missing from an existing `tasks/task-NN.md`.** Pre-G5 files lack the line. Treat as audit-fail (HALT with a distinct diagnostic: `"task-NN.md is present but carries no '# block-hash:' header. This file predates the idempotent-split contract. To regenerate under the current contract, delete tasks/task-NN.md and re-run."`). Migration is a one-time per-file regeneration; no automatic backfill.
+- **Edge case — `# block-hash:` line malformed.** Same fail-loud as missing line; the diagnostic names "malformed block-hash header" specifically.
+- Inbound-reference sweep: Implement runs `grep -rl 'tasks/task-NN.md' skills/` to confirm no skill prose assumes "split always re-runs from scratch" — any such assumption is rewritten to reflect idempotency.
+
+**Acceptance.**
+
+- After a partial-split crash (M of N task files written) + re-run, exactly N-M sub-subagent dispatches fire, all task files end up present with valid `# block-hash:` headers, exact-set verification passes.
+- After a complete-split re-run (all files present, all hashes match), zero sub-subagent dispatches fire, exact-set verification passes, flow proceeds to plan.md reduction + `status: approved`.
+- After a hand-edit to `tasks/task-NN.md` post-write + re-run, the hand-edit is preserved (file present + hash unchanged → safe-skip).
+- After a hand-edit to `plan.md`'s `### Task N` block + re-run without deleting `tasks/task-NN.md`, orchestrator HALTs with the named diagnostic and does NOT write `status: approved`. The existing per-task file is not touched.
+- The `# block-hash:` line format (position, syntax, algorithm, normalization rule) is documented in `skills/plan/post-approval-split-contract.md` as the conformance contract for both write-time emission and skip-time audit.
+- Quick-fix N=1 path emits the `# block-hash:` line and applies the same audit rule on re-run.
+
+---
+
+## G6 — Reviewer disk-write reliability across model families
+
+<!-- prose-design -->
+
+**Type:** `known-fix` (refined from `exploratory` after PI-010 sharpening + the third-party prompt-assembly inspection collapsed the uncertainty to a small, concrete residual).
+
+**Outcome.** Every reviewer dispatch — regardless of (host, model, transport) — produces per-finding files on disk under `reviews/{step}/round-NN/`. The reviewer prompt for any single dispatch carries exactly one emission contract; no prompt contains both "use the Write tool" and "do not use the Write tool" simultaneously. The Claude-reviewer habit-failure profile (intermittent chat-only return on the first-party path with no contradictory instructions in context) is addressed by an explicit iron-law clause in the protocol body, surfaced again in each reviewer agent body.
+
+**Solution.**
+
+*Structural ownership.* CD-1 (Universal dispatch architecture) is the structural owner of this goal. Specifically: `dispatch-agent.sh` branches on `(host, vendor)` per the matrix; the first-party path emits a Task-tool spec and invokes the Task tool (which loads the agent file + auto-loads `skills: [reviewer-protocol]` naturally); the third-party path invokes `dispatch-companion.sh` (renamed from `run-third-party-llm.sh`) which assembles the broker-bound prompt. The rename of `codex-emission-override.md` → `third-party-emission-override.md` (CD-1 rename inventory) makes the override transport-conditional rather than model-conditional, removing the historical contradiction-vector where the override leaked into Copilot-CLI/task-tool/gpt-5.3-codex dispatches and caused chat-only returns.
+
+G6 layers two additive items that CD-1 alone does not deliver:
+
+*(G6-1) Reviewer-protocol body split — emission-agnostic core + per-transport emission siblings.* The current `skills/reviewer-protocol/SKILL.md` embeds a "Per-Finding Disk-Write Contract" section that contradicts the `codex-emission-override.md` content on every third-party assembly (override resolves the conflict by prose alone — "this overrides the above"). Split into three files:
+
+- `skills/reviewer-protocol/SKILL.md` — emission-agnostic core only. Contains: 5-field finding schema, change-type classifier, untrusted-data handling, phase routing, dispatch contract, untrusted-scope-hint markers. Does NOT contain any "use the Write tool" or "emit to stdout" prose.
+- `skills/reviewer-protocol/first-party-emission.md` — first-party emission contract: "use Write tool to write `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` per finding, or `<reviewer_tag>.clean.md` sentinel when no findings exist. Chat-only return is a contract violation and produces zero findings for your tag."
+- `skills/reviewer-protocol/third-party-emission.md` — third-party emission contract (replaces `codex-emission-override.md` in name and behavior, but no longer phrased as an "override" — there is nothing to override): "you are running in a read-only filesystem sandbox; the Write tool will fail. Emit `<<<FINDING-BOUNDARY>>>` blocks (or the literal `NO_FINDINGS` sentinel) to stdout. The orchestrator pipes your stdout through `third-party-finding-splitter.sh` which materializes the on-disk files."
+
+Each dispatch path produces a single-voice prompt:
+
+| Path | Prompt assembly | Emission section |
+|------|-----------------|------------------|
+| First-party | Task tool loads `agents/<name>.md` + auto-loads `skills:` references | `first-party-emission.md` (via agent's `skills:` frontmatter, OR explicit auto-load — see Dependencies) |
+| Third-party | `dispatch-companion.sh` concatenates: protocol core + agent body + emission file + dispatch params, pipes to broker | `third-party-emission.md` (cat'd in last) |
+
+After the split, no reviewer prompt — first-party or third-party — contains both emission contracts simultaneously.
+
+*(G6-2) Iron-law clause for wrong-channel emission.* Insert a single named directive into both `first-party-emission.md` and `third-party-emission.md`, symmetric across both wrong-channel failure modes (default-to-chat AND default-to-other-transport):
+
+- `first-party-emission.md` iron law: "**Iron law: emit findings ONLY by Write tool to `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` (one file per finding) or `<round_subdir>/<reviewer_tag>.clean.md` (zero-findings sentinel). Any other channel — chat-only return, narrative reply, stdout emission, summary prose — is a contract violation and produces zero findings for your tag. The orchestrator's apply-fix step will report 'expected tag produced no output' and the round will fail to converge.**"
+- `third-party-emission.md` iron law: "**Iron law: emit findings ONLY by `<<<FINDING-BOUNDARY>>>`-prefixed blocks on stdout, or the literal single-line `NO_FINDINGS` sentinel on stdout. Any other channel — chat-only return without boundary markers, narrative reply, attempts to call the Write tool (which will fail silently in this read-only sandbox), summary prose — is a contract violation and produces zero findings for your tag. The orchestrator's apply-fix step will report 'expected tag produced no output' and the round will fail to converge.**"
+
+Each iron-law clause names the correct channel positively (Write tool / stdout boundary blocks), enumerates the wrong-channel failure modes by name (covering both the model's default-to-chat habit AND any cross-transport leakage), and ties the violation to the concrete orchestrator-visible failure surface. Reviewer agent bodies (`agents/qrspi-*-reviewer.md`) reference the directive by name in a one-line callout near the "Findings emission" section, replacing today's "per the disk-write contract above" wording with "per the emission contract from your dispatch transport (iron law: wrong-channel emission is a contract violation)".
+
+*Agent-body wording sweep.* Across the ~9 reviewer agent files (`qrspi-spec-reviewer`, `qrspi-code-quality-reviewer`, `qrspi-security-reviewer`, `qrspi-silent-failure-hunter`, `qrspi-goal-traceability-reviewer`, `qrspi-test-coverage-reviewer`, `qrspi-type-design-analyzer`, `qrspi-code-simplifier`, `qrspi-visual-fidelity-reviewer` — Implement complementing agents in Plan/Design/etc. as inventoried), update body wording from "use the Write tool per the Per-Finding Disk-Write Contract" → "use the emission contract from your dispatch transport (iron law: wrong-channel emission is a contract violation)". One-pass sweep at G6 implementation time.
+
+**Why this approach.**
+
+- CD-1 already removes the structural contradiction-vector (`codex-emission-override.md` injected into first-party dispatches). G6's value is the residual: the Claude habit-failure profile (which CD-1 does not address — Claude reviewers fail intermittently even on clean dispatches) and the third-party prompt-internal contradiction (which CD-1's rename clarifies but does not eliminate — the override still concatenates after the disk-write contract on the third-party path, just with a clearer name).
+- Splitting the protocol body into emission-agnostic core + per-transport emission siblings eliminates every known contradiction-vector in the reviewer prompt regardless of transport. Each dispatch path's prompt carries one coherent emission story. This is structurally cleaner than the current "later wins + explicit override prose" pattern, which functions today but re-litigates the conflict on every model reading of the prompt and is plausibly a contributor to the intermittent Claude profile.
+- The iron-law clause is the lowest-leverage but cheapest lever — one named directive surfaced consistently across protocol body and agent bodies. Cheap to author, cheap to maintain, addresses the "habit / default-to-chat" failure mode the user identified for Claude.
+- Both G6 items are content/wording changes that ride on CD-1's structural rework. They have no architectural surface of their own. If CD-1 is rolled back, G6 has nothing to ship.
+
+**Dependencies + edge cases.**
+
+- Depends on CD-1 landing first (or co-landing). G6 has no value on top of the current `codex-emission-override.md` design.
+- Depends on the rename `codex-emission-override.md` → `third-party-emission-override.md` from CD-1's rename inventory, then further renames it to `third-party-emission.md` (G6-1 strips the "override" framing entirely — there is nothing to override once the disk-write section is removed from the protocol core).
+- Per-agent `skills:` frontmatter auto-loads the protocol core. To deliver the first-party emission file into the agent's context, either: (a) extend the `skills:` frontmatter mechanism to auto-load the first-party emission file alongside the core, or (b) have `dispatch-agent.sh` emit the emission file path as a dispatch parameter and update the agent body to "Read your dispatch-named emission file as your first action." Open decision deferred to Plan-time — both paths satisfy the single-voice acceptance.
+- **Edge case — first-party path on Codex (Copilot CLI host).** After CD-1, gpt-5.3-codex dispatched via task tool is on the first-party path. It receives `first-party-emission.md` (use Write tool). Its `tools:` frontmatter declares Write. CD-1's `.dispatch-manifest.json` audit log captures whether Write was actually used; persistent chat-only returns on this path post-CD-1 + G6 indicate either a vendor-level system-prompt suppression we cannot override from prompt content, or a regression. Detection is the manifest signal; remediation falls outside G6's scope (escalation path: re-open the `exploratory` framing as a follow-up goal).
+- **Edge case — agent body cites a section name that no longer exists.** Reviewer agent bodies today reference "the Per-Finding Disk-Write Contract" by name. After the split, that section name lives only in `first-party-emission.md`. Agent-body sweep updates wording; protocol-core inbound references (`grep -rl 'Per-Finding Disk-Write Contract' skills/ agents/`) are rewritten in the same wave.
+- **Edge case — third-party emission file is missing from dispatch.** `dispatch-companion.sh` asserts file existence before assembly (mirrors existing `assert_file_exists` pattern in current `run-codex-review.sh` lines 343-347). Missing file → fail loud with named diagnostic, no broker invocation. No silent fallback to "let the broker decide."
+- Integration test / smoke probe (#7 from original goal candidates) deferred. CD-1's `.dispatch-manifest.json` audit log is the in-band regression signal; synthetic-prompt harness deferred to a follow-up issue if manifest data shows G6 did not converge the reliability profile.
+
+**Acceptance.**
+
+- `skills/reviewer-protocol/SKILL.md` post-G6 contains no "use Write tool" or "emit to stdout" prose. Body lint: `grep -E 'Write tool|stdout' skills/reviewer-protocol/SKILL.md` returns no matches in emission-contract context.
+- `skills/reviewer-protocol/first-party-emission.md` exists and contains the disk-write contract + iron-law clause.
+- `skills/reviewer-protocol/third-party-emission.md` exists (rename completed from `codex-emission-override.md` via the intermediate `third-party-emission-override.md`) and contains the stdout-emission contract + iron-law clause. The word "override" does not appear in its prose.
+- Every reviewer agent body's "Findings emission" section cites "the emission contract from your dispatch transport" and surfaces the iron-law clause name (wrong-channel emission is a contract violation). Agent-body lint: `grep -L 'iron law' agents/qrspi-*-reviewer.md` returns empty.
+- For any first-party dispatch, the assembled prompt the subagent reads contains exactly one emission contract (first-party). For any third-party dispatch, the assembled prompt contains exactly one emission contract (third-party). Verified by inspecting a captured prompt from each path.
+- Claude-reviewer habit-failure profile measurably reduced post-G6: `.dispatch-manifest.json` audit log shows a lower rate of wrong-channel emission for reviewers compared to the v0.7.1 baseline. (Threshold for "measurably reduced" deferred to Plan; the manifest is the substrate that makes the measurement possible at all.)
+- G6 implementation does NOT touch `dispatch-agent.sh`, the host × vendor matrix, the model-routing tier system, or the per-skill review-round prose collapse — all owned by CD-1. Calling-surface acceptance (output-bound `await-round.sh`, batched dispatch-agent, no-op-safe await on first-party-only rounds) is owned by CD-1 components #3 and #4.
+
+**References.** CD-1 (structural owner); PI-010 (#260 sharpening that reframed root cause); plugin issues #213, #216, #245, #246.
+
+---
+
+## G7 — Verifier filter rule: missing at point of use and DRY drift
+
+**Resolved by CD-4 — Verifier-Fan-In Pipeline.** The script becomes the executable source of truth for threshold values; SKILL prose collapses to a single short pointer; orchestrator never carries threshold values in context. See CD-4 § "F. Orchestrator-side prose update" + G7 acceptance row.
+
+**Plan-time ordering.** G8 (field-name lint) + G11 (sidecar extension) must land before or with G7+G12 — the script can't filter on a field reviewers don't emit on a sidecar at the wrong extension. The five goals are reasonably implemented as a single Plan-tracked work bundle owned by CD-4.
+
+**References.** Source: #220. Resolves alongside G8 (#221), G11 (#227), G12 (#252), G13 (#253-class enum drift).
+
+---
+
+## G8 — Reviewer subagents emit `category:` instead of `change_type:`
+
+**Resolved by CD-4 — Verifier-Fan-In Pipeline.** Field name `change_type:` is centralized in `reviewer-protocol/SKILL.md`; per-reviewer agent bodies reference rather than duplicate; script halts with named cause when missing. See CD-4 § "G. Reviewer agent updates" + G8 acceptance row.
+
+**References.** Source: #221. Compound failure with G7 / G13 / G11 / G12 — all resolved together by CD-4.
+
+---
+
+## G9 — Per-task review orchestration drift: scope-tagger, round-NN.diff, round-NN-commit.txt not fired
+
+**Outcome.** The per-task review loop's between-round bookkeeping — diff emission, commit-anchor capture, scope-tagger dispatch, ref selection — fires reliably under context load. Silent drift (round NN+1 dispatching against the full base-diff because round NN's bookkeeping was skipped) becomes a loud, named failure naming which artifact is missing.
+
+**Resolved by:** G4 solution step 1 (consolidated SHA cross-check + across-rounds advance check + missing-flag check + commit-anchor write, all in `round-prepare.sh` with exit-code-encoded recovery routing) + G4 solution step 10 (pre-dispatch presence assertion) + CD-1 component #3 (`--implementer-commit` flag surface on dispatch-agent.sh + verbatim exit-code propagation) + narrow main chat skill prose (read `commit_sha:` from Task return; invoke dispatch-agent; branch on exit code) + this goal's per-task SKILL.md authoring work below. The compound architecture replaces the v0.7.1 split-contract structure (per-task fan-out section at `implement/SKILL.md` line ~929; per-task convergence narrowing section at line ~1184 — orchestrator must context-switch between them between rounds, frequently forgets under load) with a four-layer arrangement: (1) all three SHA-correctness checks (within-round equality, across-rounds advance, missing-flag) ride on `round-prepare.sh`'s pre-flight auto-invocation as step 1, exit-code-encoded so main chat can branch on the verdict without owning the check itself, (2) the meaningful subagent dispatch (scope-tagger) stays explicit in skill prose, (3) the script's own presence assertion catches any miss loudly before the next round dispatches, (4) an in-line checklist gives the orchestrator a sequence-reminder at the per-task fan-out site itself (read commit_sha; invoke dispatch-agent; branch on exit code).
+
+**Solution.**
+
+The four-layer arrangement, by layer (in addition to G4's two inherited layers — diff emission and ref selection — which solve the round-NN.diff and base-ref-selection halves of the per-task review contract without any G9-specific work):
+
+1. **`round-NN.diff` emission (already solved by G4).** `scripts/round-prepare.sh` is auto-invoked by `dispatch-agent.sh` before every reviewer fan-out per CD-1 component #3 (`Check <output-dir>/.round-prepare.json; if absent, auto-invoke round-prepare.sh`). The diff lands on disk deterministically; the orchestrator never has to remember to emit it. No new work for G9 — this layer is inherited from G4.
+
+2. **Ref selection / step-12 narrow-vs-broaden decision (already solved by G4).** `round-prepare.sh` solution step 4 applies the set-comparison table deterministically; the result lands in the sidecar's `narrowed` and `ref` fields. Per-task gets `<ref>=<task-base-commit>` as its broaden default (per `--task-branch` flag in G4 solution step 6). No new work for G9 — this layer is inherited from G4.
+
+3. **All SHA-correctness checks + `round-NN-commit.txt` write (new — owned by G4 solution step 1 + CD-1 component #3 flag surface).** Main chat passes the implementer's self-reported `commit_sha:` (from the Task tool return) to `dispatch-agent.sh` via `--implementer-commit <SHA>`; the flag threads through to `round-prepare.sh` as its first action when `--task-branch` is set. The script runs three checks in order before writing the anchor:
+
+   - **Missing-flag check (exit 10).** `--task-branch` is set but `--implementer-commit` is empty/absent → orchestrator bug (main chat lost the SHA between the Task return and the dispatch invocation). Halt with a diagnostic; main chat surfaces to user.
+   - **Across-rounds advance check (exit 12).** Passed SHA equals the prior round's anchor (`<output-dir>/../round-(NN-1)-commit.txt` for NN ≥ 2, or the task base SHA for NN = 1) → implementer did not advance HEAD this round. Recovery: re-dispatch the implementer subagent via `SendMessage` or a fresh Task tool invocation; only main chat can take that action, but main chat takes it in response to the script's exit code rather than computing the comparison itself.
+   - **Within-round equality check (exit 11).** Passed SHA ≠ `git rev-parse HEAD` → the implementer's report and the worktree's actual state disagree. Halt; suspect worktree corruption, wrong worktree path, concurrent commit by another process, or implementer self-report drift. Do NOT auto-retry; surface to user (integrity break, not a transient failure).
+
+   On exit 0, the script writes `round-NN-commit.txt = <passed-SHA>`. CD-1 component #3 propagates round-prepare.sh's exit code verbatim through dispatch-agent.sh; main chat sees the exit code from its bash-tool invocation and branches per the recovery table in G4 solution step 1.
+
+   **Why all three checks live in the script.** Recovery-action ownership and check ownership are independent: the script produces a verdict (exit code + stderr recovery hint); main chat takes the recovery action based on the verdict. Consolidating all SHA-correctness rules in one place — `round-prepare.sh` step 1 — reduces the orchestrator's between-rounds cognitive load to a small fixed pattern (read field, invoke script, branch on exit code) and ensures every SHA-related rule is enforced by deterministic code rather than by an LLM remembering to perform the check between rounds. The architectural boundary holds: scripts still don't capture Task tool return values; main chat just passes the value forward as a flag.
+
+4. **Scope-tagger dispatch (orchestrator-driven; explicit in `implement/SKILL.md` per-task review section — new authoring work owned here).** After per-round reviewer fan-in completes — host-agnostic signal: `await-round.sh` has written `<round-dir>/.round-complete.json` with all dispatches resolved (first-party Task subagents return synchronously; third-party Codex subagents resolve via `await-round.sh`'s manifest-driven redirects; first-party-only rounds still invoke `await-round.sh` as a no-op per CD-1 component #4) — main chat dispatches one `qrspi-scope-tagger` Task subagent against the kept finding-files for the round. The dispatch is a first-party Task tool invocation — owned by main chat, not the script chain (per the QRSPI architectural boundary: bash scripts dispatch third-party CLIs; first-party Task-tool subagents are dispatched only from main chat). The dispatch shape already exists in `implement/SKILL.md` § Per-Task Convergence Narrowing → "Step 6 (scope-tagger dispatch) — per-task scope-tagger dispatch" (lines 1199–1207 in v0.7.1). G9's authoring work moves the *invocation step* up into the per-task fan-out section (line ~929 in v0.7.1) so the orchestrator sees it sequentially with the reviewer dispatches, instead of having to context-switch to a separate section.
+
+5. **Fail-loud presence assertion (new — owned by G4 amendment, solution step 10).** `round-prepare.sh` pre-dispatch presence assertion verifies `round-(NN-1)-commit.txt` and (when narrowing-eligible AND `scope_tagger_enabled: true`) `round-(NN-1)-scope-set.txt` exist and are well-formed before computing the round NN diff. Missing or malformed inputs exit non-zero with a diagnostic naming the specific missing file. `dispatch-agent.sh` propagates the non-zero exit per G4's existing failure-propagation contract; the orchestrator is forbidden from dispatching the next round. After layer 3's commit-anchor write, the assertion is a paranoia check against filesystem-level deletion or out-of-sequence invocation — it should not fire in normal operation. See G4 solution step 10 for the full assertion spec and diagnostic strings.
+
+6. **In-line "between-round sequence" checklist (new — owned here, lives in `implement/SKILL.md`).** At the END of the per-task reviewer fan-out section (immediately after the reviewer dispatch prose, before the orchestrator's attention moves on), insert a short numbered block titled "Between rounds — required sequence":
+
+   ```markdown
+   **Between rounds — required sequence.** After this round's reviewer fan-in completes and BEFORE preparing the next round's dispatch, the orchestrator MUST perform these five steps in order:
+
+   1. Read `<round-dir>/.round-complete.json` (written by `await-round.sh`). Confirm no `mode: background` entries are still `pending`.
+   2. Dispatch `qrspi-scope-tagger` Task subagent against the round's kept finding-files (see § Per-Task Convergence Narrowing → "Step 6" for the dispatch parameters). The tagger writes `<round-dir>/../round-NN-scope-set.txt` per its agent contract.
+   3. If the round just completed included an implementer dispatch (initial pass for round 1; fix-cycle implementer-fix for round NN ≥ 2), read the implementer's self-reported `commit_sha:` from the Task tool return per `implementer-protocol/SKILL.md` § Report Format. If `commit_sha:` is absent or malformed, re-dispatch the implementer immediately (do NOT invoke `dispatch-agent.sh` — the SHA-correctness checks in step 4 require a valid SHA). The all-SHA-checks rule (within-round equality, across-rounds advance, missing-flag) lives in `round-prepare.sh` step 1 and is enforced when step 4 runs; this checklist step is just the field-read.
+   4. Invoke `dispatch-agent.sh --implementer-commit <SHA-from-step-3> ...` for round NN+1. `round-prepare.sh` (auto-invoked via dispatch-agent's passthrough) runs all three SHA-correctness checks and writes `<round-dir>/../round-NN+1-commit.txt = <passed-SHA>` on exit 0, then asserts that prior-round artifacts (`round-NN-commit.txt`, and `round-NN-scope-set.txt` when narrowing-eligible) exist and are well-formed. Branch on the exit code: 0 → proceed to step 5; 10 → orchestrator bug, halt + surface to user; 11 → worktree integrity break, halt + surface to user; 12 → re-dispatch implementer subagent, then restart this checklist from step 3 with the fresh `commit_sha:`; other non-zero → surface diagnostic.
+   5. After dispatch-agent.sh returns: parse stdout for `MODE=first_party` spec lines. For each spec line, invoke the Task tool exactly once with `subagent_type`/`model` copied verbatim from the line and `prompt = "DISPATCH_FILE=<absolute-path-from-the-PROMPT_FILE-field>"`. If zero `MODE=first_party` lines were emitted (all reviewers were third-party this round), skip the Task-tool loop entirely. Either way, call `await-round.sh --round-dir <round-dir>` to finalize the round — it is no-op-safe on first-party-only rounds (returns immediately after reading the manifest) and processes background third-party manifest entries on third-party-mixed rounds. The dispatch contract (Iron Law: invoke Task exactly once per spec line, verbatim values, no skipping/dedup/modification) is described in full earlier in this SKILL.md inside the reviewer-dispatch block.
+
+   Steps 1, 3, 4 are mechanical reads, a field extraction, and an exit-code branch; steps 2 and 5 dispatch first-party Task subagents through the orchestrator (step 2: one scope-tagger against the round's kept findings; step 5: zero-or-more reviewers, one Task invocation per `MODE=first_party` spec line returned by dispatch-agent). The forward-reference to § Per-Task Convergence Narrowing covers details (anchor format, scope-set format, narrow-vs-broaden semantics).
+   ```
+
+   This is the reminder the v0.7.1 orchestrator lacked — without it, the orchestrator reads the per-task fan-out prose, dispatches reviewers, and then has to remember (across `/compact`, across context saturation) to navigate to a separate section for the between-round bookkeeping. The in-line checklist puts the sequence at the orchestrator's point of attention.
+
+**Per-task vs artifact-level scope.** The four-layer arrangement applies to per-task review loops (the v0.7.1 failure surface). Artifact-level review loops in `using-qrspi/SKILL.md` § Standard Review Loop have the same conceptual shape (commit anchor, scope-set, narrow-vs-broaden decision) but did not exhibit the same silent-drift symptom in v0.7.1 self-host runs — the artifact-level flow runs less frequently and the orchestrator's attention is less divided. Per-task is in scope for G9; artifact-level is out of scope (revisit in v0.7.3+ if drift surfaces there). G4's commit-anchor write (solution step 1) only fires when `--task-branch` is set, so artifact-level invocations skip it cleanly; G4's presence assertion (solution step 10) is also conditional on prior-round files being expected, which artifact-level invocations naturally don't produce today. G9's in-line checklist is the only piece that is specifically per-task.
+
+**Acceptance criteria:**
+- `round-prepare.sh` runs all three SHA-correctness checks in order when `--task-branch` is set, then writes `round-NN-commit.txt = <passed-SHA>` on success. Verified by five bats fixtures: (a) happy path — pre-stage worktree at SHA X with a prior anchor at distinct SHA P, invoke `round-prepare.sh --task-branch <path> --implementer-commit X --output-dir <round-dir> --round 2`, assert exit 0 AND `round-02-commit.txt` contains X + newline; (b) missing-flag — pass `--task-branch <path>` without `--implementer-commit`, assert exit 10 AND stderr matches the orchestrator-bug diagnostic regex; (c) across-rounds non-advance — pre-stage `round-01-commit.txt` containing SHA P, pass `--implementer-commit P --round 2`, assert exit 12 AND stderr matches the re-dispatch-implementer diagnostic regex; (d) within-round mismatch — pre-stage worktree at SHA X, pass `--implementer-commit Y` where Y ≠ X and Y ≠ prior anchor, assert exit 11 AND stderr matches the halt-worktree-integrity diagnostic regex; (e) round-1 across-rounds — pre-stage no prior anchor, pass `--implementer-commit <task-base-commit> --round 1`, assert exit 12 AND stderr names "task base commit" rather than "prior round anchor".
+- `dispatch-agent.sh` accepts `--task-branch` + `--implementer-commit` as a pair on per-task invocations and forwards both to `round-prepare.sh` during the pre-flight auto-invocation. dispatch-agent.sh propagates round-prepare.sh's exit code verbatim (no exit-code remapping). Verified by a bats fixture that invokes `dispatch-agent.sh` with each of the round-prepare.sh exit codes 0/10/11/12 forced via a stub round-prepare.sh fixture, asserting dispatch-agent.sh exits with the matching code unmodified.
+- `round-prepare.sh` exits non-zero with a named diagnostic when invoked for round NN ≥ 2 with a missing or malformed `round-(NN-1)-commit.txt`. Verified by: a bats fixture that pre-stages a round-2 invocation with the prior anchor deleted; asserts exit code is non-zero AND stderr matches the diagnostic regex.
+- `round-prepare.sh` exits non-zero with a named diagnostic when invoked for round NN ≥ 3 with `scope_tagger_enabled: true` AND missing or empty `round-(NN-1)-scope-set.txt`. Verified by: a bats fixture parallel to the above for the scope-set case.
+- `implement/SKILL.md` per-task reviewer fan-out section contains the "Between rounds — required sequence" checklist verbatim (locked prose above). Verified by: a grep lint asserting the checklist heading is present in the per-task section AND that the exit-code recovery branches (0/10/11/12) are enumerated in checklist step 4.
+- Main chat's between-rounds residual is narrow: read `commit_sha:` from the implementer Task return, invoke `dispatch-agent.sh --implementer-commit <SHA>`, branch on exit code per the G4 step 1 recovery table. Verified by: grep lint on `implement/SKILL.md` that no main-chat-side SHA comparison code remains (the old `run git rev-parse HEAD then compare` instructions from v0.7.1 lines 1190–1195 are removed in favor of "read commit_sha; if missing re-dispatch; else invoke dispatch-agent and branch on exit code"). Companion lint: grep returns zero matches for "rev-parse HEAD" patterns in the per-task review section of `implement/SKILL.md`.
+- A v0.7.1-style silent drift (per-task round dispatched against full base-diff because scope-tagger was skipped) becomes impossible because either: (a) the missing scope-set fails `round-prepare.sh`'s assertion loudly at round NN+1, or (b) the in-line checklist surfaces the missing dispatch step at the orchestrator's point of attention at round NN. Verified by: a self-host smoke run on a fresh per-task review loop confirms scope-tagger fires every round and `round-NN-scope-set.txt` lands on disk for every round NN.
+- The architectural boundary holds: no first-party Task-tool subagents are dispatched from any bash script, and no script attempts to capture Task tool return values directly. The SHA passthrough is the architecturally honest seam — main chat reads the Task return, the script consumes the value as a flag. Verified by: `grep -rnE "subagent_type|Task\(|Agent\(" scripts/` returns empty (existing convention; G9 does not break it).
+
+**References.** Source: #224. Compound architecture spans G4 (solution step 1 — consolidated SHA cross-check, across-rounds advance check, missing-flag check, commit-anchor write, exit-code recovery table; solution step 10 — presence assertion) + CD-1 component #3 (`--implementer-commit` flag surface on dispatch-agent.sh; verbatim exit-code propagation) + narrow main chat skill prose (read commit_sha from Task return; invoke dispatch-agent; branch on exit code) + this goal (in-line checklist + scope-tagger relocation in implement/SKILL.md per-task fan-out section). The four-layer arrangement converts silent drift into loud failures at the round-boundary that would have masked it in v0.7.1. Three earlier drafts of this goal were corrected before any code was written: (1) the first draft attributed the commit-anchor write to a CD-1 component #11 "post-implementer-dispatch hook in dispatch-agent.sh" — architecturally impossible (dispatch-agent.sh exits before the Task tool runs in main chat; it has no return-path access). (2) The second draft moved the write into round-prepare.sh's first action with an implicit-timing argument ("HEAD at round-prepare time naturally equals the just-committed implementer SHA because nothing else commits in that window") — technically sound but rested on an unverified invariant. (3) The third draft introduced explicit SHA passthrough but kept the across-rounds advance check in main chat, justified by "recovery action ownership" (re-dispatching the implementer is a main-chat-only action). The present design recognizes that recovery-action ownership and check ownership are independent: the script produces a verdict (exit code + stderr recovery hint), main chat takes the action. Consolidating all three checks in the script reduces the orchestrator's between-rounds cognitive load from "remember to do four SHA-comparison checks across two sites" to "read field, invoke script, branch on exit code". The architectural boundary holds throughout: scripts never capture Task tool return values; main chat passes the value forward as a flag.
+
+---
+
+## G10 — Reviewers fabricate procedural authority to justify non-compliance
+
+**Problem.** Distinct from G6's transport-level chat-only fallback: in occurrence 7 of #226 (T3 R11 gt reviewer), a reviewer subagent fabricated a non-existent procedural authority and quoted it verbatim — attributed to `skills/reviewer-protocol/SKILL.md` — to justify a contract violation. The fabricated quote was: *"Per the contradiction-refusal procedure in `skills/reviewer-protocol/SKILL.md`, when the disk-write contract conflicts with the finding-quality bar, the reviewer should refuse to write findings and instead surface them in chat for orchestrator triage."* No such procedure exists. The pattern echoed an existing real section heading (`### Contradiction Refusal (FAIL-LOUD)`, which applies to ONE narrow `task_definition`-routing case) and invented a generic rule under it. This is a prompt-drift / authority-fabrication failure class — generalizable to any documented load-bearing rule (HARD-GATEs, route handoffs, verifier filter rules, scope-tagger triggers) — not a transport-layer failure.
+
+**Approach.** Investigation-first scope per goals dialogue. v0.7.2 ships ONE minimal hardening lever — an anti-fabrication callout in `skills/reviewer-protocol/SKILL.md` that bounds the scope of the existing Contradiction Refusal section AND provides a labeled escape hatch (`CONTRACT-CONFLICT:` single-line prefix) for the legitimate case where a reviewer genuinely sees two contracts in conflict. The labeled-door pattern is load-bearing: without an exit, a saturated model is incentivized to invent one (which is what occurrence 7 did). Research questions for v0.7.3+ (training-data echo, context-size correlation, round-number correlation) are filed as GitHub issue #264 on the v0.7.3 milestone — not parked in this Design block, because the work is investigation, not a v0.7.2 Open Question.
+
+**D1 — Anti-fabrication callout content, placement, and orchestrator-side handling.** ONE concrete decision covers both the prompt-side rule and the orchestrator-side handling of the new prefix.
+
+  - **Placement.** New `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/reviewer-protocol/SKILL.md`, inserted between the existing `### Refusal Procedure` (ends ~line 206) and `## Per-Finding Disk-Write Contract` (line 208). Positioned immediately after Refusal Procedure so the bounding clause ("The Contradiction Refusal procedure above applies to ONE specific dispatch malformation … It does NOT generalize") is adjacent to the section it bounds.
+
+  - **Verbatim callout content** (becomes the literal section body):
+
+    ```markdown
+    ### Anti-Fabrication Rule (FAIL-LOUD)
+
+    The Contradiction Refusal procedure above applies to ONE specific dispatch malformation
+    (`task_definition` present with a test-phase `output` path). It does NOT generalize.
+
+    Do NOT invent, paraphrase, or attribute to `reviewer-protocol/SKILL.md` any contradiction-
+    refusal or escape-hatch procedure that is not present verbatim above. If you believe a
+    documented contract (the per-finding disk-write contract, change-type classifier, finding
+    schema, untrusted-data handling, phase routing, or any consumer skill's HARD-GATE) is in
+    conflict with another rule or with finding quality, do NOT confabulate a generic resolution
+    to bypass it. Surface the conflict by name:
+
+    1. Do NOT call the `Write` tool. Do NOT emit findings or sentinels. Do NOT proceed.
+    2. Return a single-line text response with this load-bearing prefix (orchestrator detects it):
+
+       ```
+       CONTRACT-CONFLICT: <contract A name> conflicts with <contract B name or quality concern>; cannot proceed
+       ```
+
+    3. End the turn. The orchestrator surfaces the conflict to the operator, who resolves it
+       by name (amend a contract, adjust the dispatch, or instruct the reviewer to proceed
+       under one specific contract).
+
+    Quoting a procedure from `reviewer-protocol/SKILL.md` that is not literally present in this
+    file is a fabrication. Treat the absence of a named escape hatch as the rule, not as an
+    invitation to invent one.
+    ```
+
+  - **Orchestrator-side handling of `CONTRACT-CONFLICT:` prefix.** Where a reviewer dispatch's chat output begins with `CONTRACT-CONFLICT:` (load-bearing prefix, case-sensitive, anchored at start of first non-blank line):
+    1. Do NOT treat the dispatch as a normal review round (no findings parsed, no clean-sentinel synthesis, no schema-violation guard fire).
+    2. Do NOT auto-repair. Do NOT consume the tag's emission budget. Do NOT advance the round counter.
+    3. Surface the single-line conflict statement verbatim to the operator with one of the standard intervention menus from `using-qrspi/SKILL.md` (operator picks: amend contract A, amend contract B, adjust dispatch shape, instruct reviewer to proceed under one specific contract, or abort the round).
+    4. Operator resolution drives the re-dispatch path; no orchestrator-side default.
+
+    The handling lives in `using-qrspi/SKILL.md` § Standard Review Loop alongside the existing post-dispatch chat-output classifier (the same site that handles schema-violation guard, missing-tag detection, and Codex stdout fall-through). One additional classifier branch — `if output starts with CONTRACT-CONFLICT: → operator-intervention menu`.
+
+  - **Why a labeled escape hatch (not just a prohibition).** Goals dialogue weighed two sub-options:
+    - **(a)** Ship prohibition + labeled escape hatch (chosen).
+    - **(b)** Ship prohibition only; defer escape-hatch design to v0.7.3+.
+    Option (b) trades fabrication risk for honest-stuckness risk: a saturated reviewer told "do not invent an escape hatch" with no real escape hatch defined will either confabulate one anyway (defeating the prohibition) or freeze ungracefully (no progress, no diagnostic). Option (a) provides the labeled door, making the prohibition enforceable AND giving the legitimate case a structured exit. The cost (one classifier branch in the orchestrator) is small enough that the investigation-first scope still holds — total v0.7.2 footprint is one SKILL section + one orchestrator classifier branch.
+
+**Acceptance.**
+
+- New `### Anti-Fabrication Rule (FAIL-LOUD)` section exists in `skills/reviewer-protocol/SKILL.md`, inserted between `### Refusal Procedure` and `## Per-Finding Disk-Write Contract`.
+- Section body matches D1's verbatim content (the three-paragraph callout including the bounding clause, the three-step exit procedure with literal `CONTRACT-CONFLICT:` prefix, and the closing fabrication-treatment-as-rule clause).
+- `using-qrspi/SKILL.md` § Standard Review Loop's post-dispatch classifier includes a `CONTRACT-CONFLICT:` branch routing to operator-intervention menu (no auto-repair, no round-counter advance, no tag-budget consumption).
+- v0.7.3 follow-up research filed as issue dfrysinger/qrspi-plus#264 against the v0.7.3 milestone, covering Q1 (training-data origin), Q2 (context-size correlation), Q3 (round-number correlation).
+- No retroactive changes to existing reviewer agent bodies — the callout is consumed via the existing `skills:` frontmatter preload mechanism that all reviewer agents already declare for `reviewer-protocol`.
+
+**Open Questions for v0.7.3+.** None tracked here — moved to GitHub issue #264 per goals dialogue ("make an issue for 0.7.3"). The orchestrator-side anti-fabrication scanner (post-dispatch chat scan for quoted SKILL citations that don't match any loaded SKILL body — option #2 from the goals dialogue) is enumerated as a potential hardening lever IN that issue, contingent on Q2/Q3 outcomes; it is NOT scoped to v0.7.2.
+
+**Pre-existing plugin issues to file.** None. G10's failure mode is a candidate-pattern observation from one instance, not a documented plugin defect; existing `reviewer-protocol/SKILL.md` is correct as written, this Design augments it.
+
+**References.** Source: goals.md G10; #226 occurrence 7 (T3 R11 gt reviewer); `skills/reviewer-protocol/SKILL.md` L183-206 (existing Contradiction Refusal section being bounded); related G6 (transport-level chat-only fallback — closed the opportunity occurrence 7 piggybacked on, but not the fabrication pattern itself); v0.7.3 research follow-up: https://github.com/dfrysinger/qrspi-plus/issues/264.
+
+---
+
+## G11 — Verifier sidecar pipeline: extension drift + orchestrator bypass
+
+**Resolved by CD-4 — Verifier-Fan-In Pipeline.** Sidecar extension locked to `.score.md`; verifier agent's Write tool call is constrained to that path/extension; script halts with named cause on wrong extension; orchestrator consumes sidecar via script rather than chat-parse. See CD-4 § "B. Verifier sidecar" + G11 acceptance row.
+
+**References.** Source: #227. Tight coupling with G12 — both resolved by CD-4.
+
+---
+
+## G12 — Automated verifier-fan-in script (replace orchestrator chat-parsing)
+
+**Resolved by CD-4 — Verifier-Fan-In Pipeline.** `scripts/verifier-fan-in.sh` is the canonical filter; single invocation per round; writes `kept-findings.txt` + `.verifier-fan-in-audit.json`; orchestrator never chat-parses. See CD-4 § "C. `scripts/verifier-fan-in.sh`" + Mermaid diagram (the verifier→script→orchestrator handshake) + G12 acceptance row.
+
+**References.** Source: #252. Owns the consumer that makes G7 / G8 / G11 / G13 load-bearing.
+
+---
+
+## G13 — `change_type` enum drift: reviewer-side emit + orchestrator-side silent fall-through
+
+**Resolved by CD-4 — Verifier-Fan-In Pipeline.** Canonical enum defined once in `scripts/verifier-fan-in.sh` header (DRY source) and once in `reviewer-protocol/SKILL.md` (referenced from per-reviewer agents); script halts on out-of-enum value with named cause; no silent default-keep. See CD-4 § "G. Reviewer agent updates" + G13 acceptance row.
+
+**Future-corroboration seam.** If G19's exploratory walk lands cross-reviewer corroboration as a threshold adjustment, the adjustment is implemented as an extension to `scripts/verifier-fan-in.sh` (per the CD-4 amendment seam) — NOT as orchestrator-side prose. The script remains the only path.
+
+**References.** Source: #253 (and same family). Three-layer compound failure with G7 (rule visibility) + G8 (field name) — all resolved together by CD-4.
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
@@ -1420,315 +1729,6 @@ Smoke tests:
 - Negative #1: a pure code-only change (e.g., a `.ts` or `.sh` file modification with no prompt-prose content) emits zero rules-grounded findings from any reviewer (the content-semantic step short-circuits naturally; no false positives).
 - Negative #2: a TDD task (`task_type: code`) does NOT trigger a Read of `skills/_shared/prompt-design-rules.md` from the TDD implementer's dispatch (the conditional Read fires only for the lightweight agent, which never receives `task_type: code` work).
 - Meta-acceptance: the refreshed `skills/_shared/prompt-design-rules.md` applied against itself (the reviewer correctly identifies it as a meta-document about prompt prose and applies R1-R7 to it) passes its own audit — the rules must satisfy themselves.
-
----
-
-## G5 — Idempotent post-approval plan split
-
-<!-- prose-design -->
-
-**Outcome.** Plan's post-approval split step (per-task fan-out that materializes `tasks/task-NN.md` from `plan.md`'s `### Task N` blocks) is re-runnable without harm. A re-invocation after a partial crash dispatches only the missing files; a re-invocation after a fully-completed split is a near-zero-cost no-op that proceeds directly to plan.md reduction + `status: approved`. Hand-edits to per-task files made after the previous split are naturally preserved on re-run. A user amendment to `plan.md`'s `### Task N` block since the previous split fails loud with a named diagnostic rather than silently shipping a stale spec.
-
-**Solution.**
-
-*Decision rule (per task, computed in main-chat orchestrator before the fan-out loop, single pass):*
-
-| Case | `tasks/task-NN.md` state | Decision |
-|------|--------------------------|----------|
-| 1 | Absent | dispatch sub-subagent to write |
-| 2 | Present, block-hash audit matches | safe-skip (no dispatch, no write) |
-| 3 | Present, block-hash audit mismatches | **HALT** with named diagnostic |
-
-*Atomic-write premise.* Sub-subagent dispatches don't stream partial files; the Write call lands at the end of the subagent's run, and Write is OS-atomic for the file sizes in play. Therefore file existence is a faithful "previous dispatch for this task completed" signal — no `.I-wrote-this` sidecar, no divergence-vs-hand-authored distinguishability, no `.split-conflict-NN.md` machinery needed. This collapses the original 4-case strawman to the 3-case table above.
-
-*Block-hash audit.* Each `tasks/task-NN.md` carries a single line immediately after the closing frontmatter `---` and before the first body content:
-
-```
-# block-hash: <sha256-hex>
-```
-
-The hash covers the **normalized** source `### Task N` block from `plan.md`. Normalization = strip trailing whitespace from each line, preserve all other characters and line breaks verbatim. No markdown canonicalization, no case folding, no whitespace collapse — anything that changes wording is considered a change. Algorithm = sha256, hex-encoded, no salt.
-
-Write-time: orchestrator computes the normalized hash for each `### Task N` block before fan-out and passes it to the sub-subagent as a `block_hash:` dispatch field. Sub-subagent emits the `# block-hash:` line verbatim into the file it writes.
-
-Skip-time: orchestrator re-computes the hash from the current `plan.md` block and compares to the line read from the existing `tasks/task-NN.md`. Match → safe-skip. Mismatch → HALT with the named diagnostic:
-
-> `task-NN.md exists but its source block in plan.md has changed since the last split. To regenerate from the current plan.md, delete tasks/task-NN.md and re-run. To preserve the existing file, revert your plan.md edit.`
-
-*Decision site.* Main-chat orchestrator. Two reasons not to push the existence-check into a sub-subagent: (a) `test -e` + a single sha256 compare per task is cheaper than dispatch overhead, (b) keeping the decision auditable in one place (the orchestration step) avoids fan-out-shape coupling for what is a pre-fan-out filter.
-
-*Exact-set verification.* Existing step (skill `plan/SKILL.md` ~line 449) runs unchanged after the fan-out completes. With the idempotent decision rule, a complete-set re-run produces zero dispatches and still passes verification because all files are already present.
-
-**Why this approach.**
-
-- File existence is a faithful "done" signal under the atomic-write premise, so existence-only is the right primary case-split. The block-hash audit is a narrow safety net for the one case existence alone misses (user amended `plan.md`'s block since the previous split without deleting the per-task file). Fail-loud on that case beats silently feeding a stale spec to an implementer six tasks downstream.
-- One-line header + one sha256 per skip is the minimum machinery that catches the silent-stale-spec failure mode. The alternative — pure existence-only ("Flavor A") — was considered defensible but loses fail-loud detection of the plan-amend-without-delete case; the cost of the audit is too small to justify accepting that risk.
-- Hand-edits to `tasks/task-NN.md` post-write are naturally preserved on re-run — the per-task file's body changed, but the source block in `plan.md` did not, so the hash still matches. This is exactly the goals.md-stated requirement ("not safely re-runnable... can either silently overwrite existing per-task files (clobbering hand-edits) or fail loudly").
-- Conventional idempotent-tool semantics (terraform / kubectl): if the user wants a forced regeneration, they delete the artifact and re-run. This matches existing user mental models for idempotent split steps.
-- Main-chat decision keeps the existence-check and audit logic visible in the orchestration site rather than buried in sub-subagent prompts, which means the conformance contract (block-hash format + audit failure mode) is reviewable in one file.
-
-**Dependencies + edge cases.**
-
-- Depends on #172's sub-subagent split infrastructure (already landed; see `skills/plan/SKILL.md` lines 433-454 and `skills/plan/post-approval-split-contract.md`).
-- Sub-subagent dispatch contract gains one new field: `block_hash: <sha256-hex>`. Sub-subagent prompt template gains an "emit the `# block-hash:` line verbatim immediately after frontmatter close" instruction. Contract document (`skills/plan/post-approval-split-contract.md`) documents the format, position, and conformance rule.
-- **Edge case — split was complete and `plan.md` was reduced to overview-only before crash.** `### Task N` blocks no longer exist in `plan.md`; the source-of-truth has shifted to per-task files. Orchestrator detects "no Task blocks in plan.md + N task files present + status not yet approved" → skips both fan-out and audit (nothing to audit against), proceeds directly to `phase_start_commit` + `status: approved`. If `status: approved` is already on disk, the split is fully done — entire step is a no-op.
-- **Edge case — quick-fix N=1 path** (`skills/plan/SKILL.md` ~line 112). Inline write path, no sub-subagent. Same idempotency rule applies: `test -e tasks/task-01.md` → if absent, write; if present, audit the block-hash. Single-task plan still emits the `# block-hash:` line.
-- **Edge case — block-hash audit HALT during re-run.** Orchestrator does NOT auto-resolve. Surface the named diagnostic, halt the split step, leave the existing per-task file untouched. User decides whether to delete-and-regenerate or revert their `plan.md` edit. No `.split-conflict-NN.md` sidecar — the diagnostic + the existing files are the surface.
-- **Edge case — `# block-hash:` line missing from an existing `tasks/task-NN.md`.** Pre-G5 files lack the line. Treat as audit-fail (HALT with a distinct diagnostic: `"task-NN.md is present but carries no '# block-hash:' header. This file predates the idempotent-split contract. To regenerate under the current contract, delete tasks/task-NN.md and re-run."`). Migration is a one-time per-file regeneration; no automatic backfill.
-- **Edge case — `# block-hash:` line malformed.** Same fail-loud as missing line; the diagnostic names "malformed block-hash header" specifically.
-- Inbound-reference sweep: Implement runs `grep -rl 'tasks/task-NN.md' skills/` to confirm no skill prose assumes "split always re-runs from scratch" — any such assumption is rewritten to reflect idempotency.
-
-**Acceptance.**
-
-- After a partial-split crash (M of N task files written) + re-run, exactly N-M sub-subagent dispatches fire, all task files end up present with valid `# block-hash:` headers, exact-set verification passes.
-- After a complete-split re-run (all files present, all hashes match), zero sub-subagent dispatches fire, exact-set verification passes, flow proceeds to plan.md reduction + `status: approved`.
-- After a hand-edit to `tasks/task-NN.md` post-write + re-run, the hand-edit is preserved (file present + hash unchanged → safe-skip).
-- After a hand-edit to `plan.md`'s `### Task N` block + re-run without deleting `tasks/task-NN.md`, orchestrator HALTs with the named diagnostic and does NOT write `status: approved`. The existing per-task file is not touched.
-- The `# block-hash:` line format (position, syntax, algorithm, normalization rule) is documented in `skills/plan/post-approval-split-contract.md` as the conformance contract for both write-time emission and skip-time audit.
-- Quick-fix N=1 path emits the `# block-hash:` line and applies the same audit rule on re-run.
-
----
-
-## G6 — Reviewer disk-write reliability across model families
-
-<!-- prose-design -->
-
-**Type:** `known-fix` (refined from `exploratory` after PI-010 sharpening + the third-party prompt-assembly inspection collapsed the uncertainty to a small, concrete residual).
-
-**Outcome.** Every reviewer dispatch — regardless of (host, model, transport) — produces per-finding files on disk under `reviews/{step}/round-NN/`. The reviewer prompt for any single dispatch carries exactly one emission contract; no prompt contains both "use the Write tool" and "do not use the Write tool" simultaneously. The Claude-reviewer habit-failure profile (intermittent chat-only return on the first-party path with no contradictory instructions in context) is addressed by an explicit iron-law clause in the protocol body, surfaced again in each reviewer agent body.
-
-**Solution.**
-
-*Structural ownership.* CD-1 (Universal dispatch architecture) is the structural owner of this goal. Specifically: `dispatch-agent.sh` branches on `(host, vendor)` per the matrix; the first-party path emits a Task-tool spec and invokes the Task tool (which loads the agent file + auto-loads `skills: [reviewer-protocol]` naturally); the third-party path invokes `dispatch-companion.sh` (renamed from `run-third-party-llm.sh`) which assembles the broker-bound prompt. The rename of `codex-emission-override.md` → `third-party-emission-override.md` (CD-1 rename inventory) makes the override transport-conditional rather than model-conditional, removing the historical contradiction-vector where the override leaked into Copilot-CLI/task-tool/gpt-5.3-codex dispatches and caused chat-only returns.
-
-G6 layers two additive items that CD-1 alone does not deliver:
-
-*(G6-1) Reviewer-protocol body split — emission-agnostic core + per-transport emission siblings.* The current `skills/reviewer-protocol/SKILL.md` embeds a "Per-Finding Disk-Write Contract" section that contradicts the `codex-emission-override.md` content on every third-party assembly (override resolves the conflict by prose alone — "this overrides the above"). Split into three files:
-
-- `skills/reviewer-protocol/SKILL.md` — emission-agnostic core only. Contains: 5-field finding schema, change-type classifier, untrusted-data handling, phase routing, dispatch contract, untrusted-scope-hint markers. Does NOT contain any "use the Write tool" or "emit to stdout" prose.
-- `skills/reviewer-protocol/first-party-emission.md` — first-party emission contract: "use Write tool to write `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` per finding, or `<reviewer_tag>.clean.md` sentinel when no findings exist. Chat-only return is a contract violation and produces zero findings for your tag."
-- `skills/reviewer-protocol/third-party-emission.md` — third-party emission contract (replaces `codex-emission-override.md` in name and behavior, but no longer phrased as an "override" — there is nothing to override): "you are running in a read-only filesystem sandbox; the Write tool will fail. Emit `<<<FINDING-BOUNDARY>>>` blocks (or the literal `NO_FINDINGS` sentinel) to stdout. The orchestrator pipes your stdout through `third-party-finding-splitter.sh` which materializes the on-disk files."
-
-Each dispatch path produces a single-voice prompt:
-
-| Path | Prompt assembly | Emission section |
-|------|-----------------|------------------|
-| First-party | Task tool loads `agents/<name>.md` + auto-loads `skills:` references | `first-party-emission.md` (via agent's `skills:` frontmatter, OR explicit auto-load — see Dependencies) |
-| Third-party | `dispatch-companion.sh` concatenates: protocol core + agent body + emission file + dispatch params, pipes to broker | `third-party-emission.md` (cat'd in last) |
-
-After the split, no reviewer prompt — first-party or third-party — contains both emission contracts simultaneously.
-
-*(G6-2) Iron-law clause for wrong-channel emission.* Insert a single named directive into both `first-party-emission.md` and `third-party-emission.md`, symmetric across both wrong-channel failure modes (default-to-chat AND default-to-other-transport):
-
-- `first-party-emission.md` iron law: "**Iron law: emit findings ONLY by Write tool to `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` (one file per finding) or `<round_subdir>/<reviewer_tag>.clean.md` (zero-findings sentinel). Any other channel — chat-only return, narrative reply, stdout emission, summary prose — is a contract violation and produces zero findings for your tag. The orchestrator's apply-fix step will report 'expected tag produced no output' and the round will fail to converge.**"
-- `third-party-emission.md` iron law: "**Iron law: emit findings ONLY by `<<<FINDING-BOUNDARY>>>`-prefixed blocks on stdout, or the literal single-line `NO_FINDINGS` sentinel on stdout. Any other channel — chat-only return without boundary markers, narrative reply, attempts to call the Write tool (which will fail silently in this read-only sandbox), summary prose — is a contract violation and produces zero findings for your tag. The orchestrator's apply-fix step will report 'expected tag produced no output' and the round will fail to converge.**"
-
-Each iron-law clause names the correct channel positively (Write tool / stdout boundary blocks), enumerates the wrong-channel failure modes by name (covering both the model's default-to-chat habit AND any cross-transport leakage), and ties the violation to the concrete orchestrator-visible failure surface. Reviewer agent bodies (`agents/qrspi-*-reviewer.md`) reference the directive by name in a one-line callout near the "Findings emission" section, replacing today's "per the disk-write contract above" wording with "per the emission contract from your dispatch transport (iron law: wrong-channel emission is a contract violation)".
-
-*Agent-body wording sweep.* Across the ~9 reviewer agent files (`qrspi-spec-reviewer`, `qrspi-code-quality-reviewer`, `qrspi-security-reviewer`, `qrspi-silent-failure-hunter`, `qrspi-goal-traceability-reviewer`, `qrspi-test-coverage-reviewer`, `qrspi-type-design-analyzer`, `qrspi-code-simplifier`, `qrspi-visual-fidelity-reviewer` — Implement complementing agents in Plan/Design/etc. as inventoried), update body wording from "use the Write tool per the Per-Finding Disk-Write Contract" → "use the emission contract from your dispatch transport (iron law: wrong-channel emission is a contract violation)". One-pass sweep at G6 implementation time.
-
-**Why this approach.**
-
-- CD-1 already removes the structural contradiction-vector (`codex-emission-override.md` injected into first-party dispatches). G6's value is the residual: the Claude habit-failure profile (which CD-1 does not address — Claude reviewers fail intermittently even on clean dispatches) and the third-party prompt-internal contradiction (which CD-1's rename clarifies but does not eliminate — the override still concatenates after the disk-write contract on the third-party path, just with a clearer name).
-- Splitting the protocol body into emission-agnostic core + per-transport emission siblings eliminates every known contradiction-vector in the reviewer prompt regardless of transport. Each dispatch path's prompt carries one coherent emission story. This is structurally cleaner than the current "later wins + explicit override prose" pattern, which functions today but re-litigates the conflict on every model reading of the prompt and is plausibly a contributor to the intermittent Claude profile.
-- The iron-law clause is the lowest-leverage but cheapest lever — one named directive surfaced consistently across protocol body and agent bodies. Cheap to author, cheap to maintain, addresses the "habit / default-to-chat" failure mode the user identified for Claude.
-- Both G6 items are content/wording changes that ride on CD-1's structural rework. They have no architectural surface of their own. If CD-1 is rolled back, G6 has nothing to ship.
-
-**Dependencies + edge cases.**
-
-- Depends on CD-1 landing first (or co-landing). G6 has no value on top of the current `codex-emission-override.md` design.
-- Depends on the rename `codex-emission-override.md` → `third-party-emission-override.md` from CD-1's rename inventory, then further renames it to `third-party-emission.md` (G6-1 strips the "override" framing entirely — there is nothing to override once the disk-write section is removed from the protocol core).
-- Per-agent `skills:` frontmatter auto-loads the protocol core. To deliver the first-party emission file into the agent's context, either: (a) extend the `skills:` frontmatter mechanism to auto-load the first-party emission file alongside the core, or (b) have `dispatch-agent.sh` emit the emission file path as a dispatch parameter and update the agent body to "Read your dispatch-named emission file as your first action." Open decision deferred to Plan-time — both paths satisfy the single-voice acceptance.
-- **Edge case — first-party path on Codex (Copilot CLI host).** After CD-1, gpt-5.3-codex dispatched via task tool is on the first-party path. It receives `first-party-emission.md` (use Write tool). Its `tools:` frontmatter declares Write. CD-1's `.dispatch-manifest.json` audit log captures whether Write was actually used; persistent chat-only returns on this path post-CD-1 + G6 indicate either a vendor-level system-prompt suppression we cannot override from prompt content, or a regression. Detection is the manifest signal; remediation falls outside G6's scope (escalation path: re-open the `exploratory` framing as a follow-up goal).
-- **Edge case — agent body cites a section name that no longer exists.** Reviewer agent bodies today reference "the Per-Finding Disk-Write Contract" by name. After the split, that section name lives only in `first-party-emission.md`. Agent-body sweep updates wording; protocol-core inbound references (`grep -rl 'Per-Finding Disk-Write Contract' skills/ agents/`) are rewritten in the same wave.
-- **Edge case — third-party emission file is missing from dispatch.** `dispatch-companion.sh` asserts file existence before assembly (mirrors existing `assert_file_exists` pattern in current `run-codex-review.sh` lines 343-347). Missing file → fail loud with named diagnostic, no broker invocation. No silent fallback to "let the broker decide."
-- Integration test / smoke probe (#7 from original goal candidates) deferred. CD-1's `.dispatch-manifest.json` audit log is the in-band regression signal; synthetic-prompt harness deferred to a follow-up issue if manifest data shows G6 did not converge the reliability profile.
-
-**Acceptance.**
-
-- `skills/reviewer-protocol/SKILL.md` post-G6 contains no "use Write tool" or "emit to stdout" prose. Body lint: `grep -E 'Write tool|stdout' skills/reviewer-protocol/SKILL.md` returns no matches in emission-contract context.
-- `skills/reviewer-protocol/first-party-emission.md` exists and contains the disk-write contract + iron-law clause.
-- `skills/reviewer-protocol/third-party-emission.md` exists (rename completed from `codex-emission-override.md` via the intermediate `third-party-emission-override.md`) and contains the stdout-emission contract + iron-law clause. The word "override" does not appear in its prose.
-- Every reviewer agent body's "Findings emission" section cites "the emission contract from your dispatch transport" and surfaces the iron-law clause name (wrong-channel emission is a contract violation). Agent-body lint: `grep -L 'iron law' agents/qrspi-*-reviewer.md` returns empty.
-- For any first-party dispatch, the assembled prompt the subagent reads contains exactly one emission contract (first-party). For any third-party dispatch, the assembled prompt contains exactly one emission contract (third-party). Verified by inspecting a captured prompt from each path.
-- Claude-reviewer habit-failure profile measurably reduced post-G6: `.dispatch-manifest.json` audit log shows a lower rate of wrong-channel emission for reviewers compared to the v0.7.1 baseline. (Threshold for "measurably reduced" deferred to Plan; the manifest is the substrate that makes the measurement possible at all.)
-- G6 implementation does NOT touch `dispatch-agent.sh`, the host × vendor matrix, the model-routing tier system, or the per-skill review-round prose collapse — all owned by CD-1. Calling-surface acceptance (output-bound `await-round.sh`, batched dispatch-agent, no-op-safe await on first-party-only rounds) is owned by CD-1 components #3 and #4.
-
-**References.** CD-1 (structural owner); PI-010 (#260 sharpening that reframed root cause); plugin issues #213, #216, #245, #246.
-
----
-
-## G7 — Verifier filter rule: missing at point of use and DRY drift
-
-**Resolved by CD-4 — Verifier-Fan-In Pipeline.** The script becomes the executable source of truth for threshold values; SKILL prose collapses to a single short pointer; orchestrator never carries threshold values in context. See CD-4 § "F. Orchestrator-side prose update" + G7 acceptance row.
-
-**Plan-time ordering.** G8 (field-name lint) + G11 (sidecar extension) must land before or with G7+G12 — the script can't filter on a field reviewers don't emit on a sidecar at the wrong extension. The five goals are reasonably implemented as a single Plan-tracked work bundle owned by CD-4.
-
-**References.** Source: #220. Resolves alongside G8 (#221), G11 (#227), G12 (#252), G13 (#253-class enum drift).
-
----
-
-## G8 — Reviewer subagents emit `category:` instead of `change_type:`
-
-**Resolved by CD-4 — Verifier-Fan-In Pipeline.** Field name `change_type:` is centralized in `reviewer-protocol/SKILL.md`; per-reviewer agent bodies reference rather than duplicate; script halts with named cause when missing. See CD-4 § "G. Reviewer agent updates" + G8 acceptance row.
-
-**References.** Source: #221. Compound failure with G7 / G13 / G11 / G12 — all resolved together by CD-4.
-
----
-
-## G9 — Per-task review orchestration drift: scope-tagger, round-NN.diff, round-NN-commit.txt not fired
-
-**Outcome.** The per-task review loop's between-round bookkeeping — diff emission, commit-anchor capture, scope-tagger dispatch, ref selection — fires reliably under context load. Silent drift (round NN+1 dispatching against the full base-diff because round NN's bookkeeping was skipped) becomes a loud, named failure naming which artifact is missing.
-
-**Resolved by:** G4 solution step 1 (consolidated SHA cross-check + across-rounds advance check + missing-flag check + commit-anchor write, all in `round-prepare.sh` with exit-code-encoded recovery routing) + G4 solution step 10 (pre-dispatch presence assertion) + CD-1 component #3 (`--implementer-commit` flag surface on dispatch-agent.sh + verbatim exit-code propagation) + narrow main chat skill prose (read `commit_sha:` from Task return; invoke dispatch-agent; branch on exit code) + this goal's per-task SKILL.md authoring work below. The compound architecture replaces the v0.7.1 split-contract structure (per-task fan-out section at `implement/SKILL.md` line ~929; per-task convergence narrowing section at line ~1184 — orchestrator must context-switch between them between rounds, frequently forgets under load) with a four-layer arrangement: (1) all three SHA-correctness checks (within-round equality, across-rounds advance, missing-flag) ride on `round-prepare.sh`'s pre-flight auto-invocation as step 1, exit-code-encoded so main chat can branch on the verdict without owning the check itself, (2) the meaningful subagent dispatch (scope-tagger) stays explicit in skill prose, (3) the script's own presence assertion catches any miss loudly before the next round dispatches, (4) an in-line checklist gives the orchestrator a sequence-reminder at the per-task fan-out site itself (read commit_sha; invoke dispatch-agent; branch on exit code).
-
-**Solution.**
-
-The four-layer arrangement, by layer (in addition to G4's two inherited layers — diff emission and ref selection — which solve the round-NN.diff and base-ref-selection halves of the per-task review contract without any G9-specific work):
-
-1. **`round-NN.diff` emission (already solved by G4).** `scripts/round-prepare.sh` is auto-invoked by `dispatch-agent.sh` before every reviewer fan-out per CD-1 component #3 (`Check <output-dir>/.round-prepare.json; if absent, auto-invoke round-prepare.sh`). The diff lands on disk deterministically; the orchestrator never has to remember to emit it. No new work for G9 — this layer is inherited from G4.
-
-2. **Ref selection / step-12 narrow-vs-broaden decision (already solved by G4).** `round-prepare.sh` solution step 4 applies the set-comparison table deterministically; the result lands in the sidecar's `narrowed` and `ref` fields. Per-task gets `<ref>=<task-base-commit>` as its broaden default (per `--task-branch` flag in G4 solution step 6). No new work for G9 — this layer is inherited from G4.
-
-3. **All SHA-correctness checks + `round-NN-commit.txt` write (new — owned by G4 solution step 1 + CD-1 component #3 flag surface).** Main chat passes the implementer's self-reported `commit_sha:` (from the Task tool return) to `dispatch-agent.sh` via `--implementer-commit <SHA>`; the flag threads through to `round-prepare.sh` as its first action when `--task-branch` is set. The script runs three checks in order before writing the anchor:
-
-   - **Missing-flag check (exit 10).** `--task-branch` is set but `--implementer-commit` is empty/absent → orchestrator bug (main chat lost the SHA between the Task return and the dispatch invocation). Halt with a diagnostic; main chat surfaces to user.
-   - **Across-rounds advance check (exit 12).** Passed SHA equals the prior round's anchor (`<output-dir>/../round-(NN-1)-commit.txt` for NN ≥ 2, or the task base SHA for NN = 1) → implementer did not advance HEAD this round. Recovery: re-dispatch the implementer subagent via `SendMessage` or a fresh Task tool invocation; only main chat can take that action, but main chat takes it in response to the script's exit code rather than computing the comparison itself.
-   - **Within-round equality check (exit 11).** Passed SHA ≠ `git rev-parse HEAD` → the implementer's report and the worktree's actual state disagree. Halt; suspect worktree corruption, wrong worktree path, concurrent commit by another process, or implementer self-report drift. Do NOT auto-retry; surface to user (integrity break, not a transient failure).
-
-   On exit 0, the script writes `round-NN-commit.txt = <passed-SHA>`. CD-1 component #3 propagates round-prepare.sh's exit code verbatim through dispatch-agent.sh; main chat sees the exit code from its bash-tool invocation and branches per the recovery table in G4 solution step 1.
-
-   **Why all three checks live in the script.** Recovery-action ownership and check ownership are independent: the script produces a verdict (exit code + stderr recovery hint); main chat takes the recovery action based on the verdict. Consolidating all SHA-correctness rules in one place — `round-prepare.sh` step 1 — reduces the orchestrator's between-rounds cognitive load to a small fixed pattern (read field, invoke script, branch on exit code) and ensures every SHA-related rule is enforced by deterministic code rather than by an LLM remembering to perform the check between rounds. The architectural boundary holds: scripts still don't capture Task tool return values; main chat just passes the value forward as a flag.
-
-4. **Scope-tagger dispatch (orchestrator-driven; explicit in `implement/SKILL.md` per-task review section — new authoring work owned here).** After per-round reviewer fan-in completes — host-agnostic signal: `await-round.sh` has written `<round-dir>/.round-complete.json` with all dispatches resolved (first-party Task subagents return synchronously; third-party Codex subagents resolve via `await-round.sh`'s manifest-driven redirects; first-party-only rounds still invoke `await-round.sh` as a no-op per CD-1 component #4) — main chat dispatches one `qrspi-scope-tagger` Task subagent against the kept finding-files for the round. The dispatch is a first-party Task tool invocation — owned by main chat, not the script chain (per the QRSPI architectural boundary: bash scripts dispatch third-party CLIs; first-party Task-tool subagents are dispatched only from main chat). The dispatch shape already exists in `implement/SKILL.md` § Per-Task Convergence Narrowing → "Step 6 (scope-tagger dispatch) — per-task scope-tagger dispatch" (lines 1199–1207 in v0.7.1). G9's authoring work moves the *invocation step* up into the per-task fan-out section (line ~929 in v0.7.1) so the orchestrator sees it sequentially with the reviewer dispatches, instead of having to context-switch to a separate section.
-
-5. **Fail-loud presence assertion (new — owned by G4 amendment, solution step 10).** `round-prepare.sh` pre-dispatch presence assertion verifies `round-(NN-1)-commit.txt` and (when narrowing-eligible AND `scope_tagger_enabled: true`) `round-(NN-1)-scope-set.txt` exist and are well-formed before computing the round NN diff. Missing or malformed inputs exit non-zero with a diagnostic naming the specific missing file. `dispatch-agent.sh` propagates the non-zero exit per G4's existing failure-propagation contract; the orchestrator is forbidden from dispatching the next round. After layer 3's commit-anchor write, the assertion is a paranoia check against filesystem-level deletion or out-of-sequence invocation — it should not fire in normal operation. See G4 solution step 10 for the full assertion spec and diagnostic strings.
-
-6. **In-line "between-round sequence" checklist (new — owned here, lives in `implement/SKILL.md`).** At the END of the per-task reviewer fan-out section (immediately after the reviewer dispatch prose, before the orchestrator's attention moves on), insert a short numbered block titled "Between rounds — required sequence":
-
-   ```markdown
-   **Between rounds — required sequence.** After this round's reviewer fan-in completes and BEFORE preparing the next round's dispatch, the orchestrator MUST perform these five steps in order:
-
-   1. Read `<round-dir>/.round-complete.json` (written by `await-round.sh`). Confirm no `mode: background` entries are still `pending`.
-   2. Dispatch `qrspi-scope-tagger` Task subagent against the round's kept finding-files (see § Per-Task Convergence Narrowing → "Step 6" for the dispatch parameters). The tagger writes `<round-dir>/../round-NN-scope-set.txt` per its agent contract.
-   3. If the round just completed included an implementer dispatch (initial pass for round 1; fix-cycle implementer-fix for round NN ≥ 2), read the implementer's self-reported `commit_sha:` from the Task tool return per `implementer-protocol/SKILL.md` § Report Format. If `commit_sha:` is absent or malformed, re-dispatch the implementer immediately (do NOT invoke `dispatch-agent.sh` — the SHA-correctness checks in step 4 require a valid SHA). The all-SHA-checks rule (within-round equality, across-rounds advance, missing-flag) lives in `round-prepare.sh` step 1 and is enforced when step 4 runs; this checklist step is just the field-read.
-   4. Invoke `dispatch-agent.sh --implementer-commit <SHA-from-step-3> ...` for round NN+1. `round-prepare.sh` (auto-invoked via dispatch-agent's passthrough) runs all three SHA-correctness checks and writes `<round-dir>/../round-NN+1-commit.txt = <passed-SHA>` on exit 0, then asserts that prior-round artifacts (`round-NN-commit.txt`, and `round-NN-scope-set.txt` when narrowing-eligible) exist and are well-formed. Branch on the exit code: 0 → proceed to step 5; 10 → orchestrator bug, halt + surface to user; 11 → worktree integrity break, halt + surface to user; 12 → re-dispatch implementer subagent, then restart this checklist from step 3 with the fresh `commit_sha:`; other non-zero → surface diagnostic.
-   5. After dispatch-agent.sh returns: parse stdout for `MODE=first_party` spec lines. For each spec line, invoke the Task tool exactly once with `subagent_type`/`model` copied verbatim from the line and `prompt = "DISPATCH_FILE=<absolute-path-from-the-PROMPT_FILE-field>"`. If zero `MODE=first_party` lines were emitted (all reviewers were third-party this round), skip the Task-tool loop entirely. Either way, call `await-round.sh --round-dir <round-dir>` to finalize the round — it is no-op-safe on first-party-only rounds (returns immediately after reading the manifest) and processes background third-party manifest entries on third-party-mixed rounds. The dispatch contract (Iron Law: invoke Task exactly once per spec line, verbatim values, no skipping/dedup/modification) is described in full earlier in this SKILL.md inside the reviewer-dispatch block.
-
-   Steps 1, 3, 4 are mechanical reads, a field extraction, and an exit-code branch; steps 2 and 5 dispatch first-party Task subagents through the orchestrator (step 2: one scope-tagger against the round's kept findings; step 5: zero-or-more reviewers, one Task invocation per `MODE=first_party` spec line returned by dispatch-agent). The forward-reference to § Per-Task Convergence Narrowing covers details (anchor format, scope-set format, narrow-vs-broaden semantics).
-   ```
-
-   This is the reminder the v0.7.1 orchestrator lacked — without it, the orchestrator reads the per-task fan-out prose, dispatches reviewers, and then has to remember (across `/compact`, across context saturation) to navigate to a separate section for the between-round bookkeeping. The in-line checklist puts the sequence at the orchestrator's point of attention.
-
-**Per-task vs artifact-level scope.** The four-layer arrangement applies to per-task review loops (the v0.7.1 failure surface). Artifact-level review loops in `using-qrspi/SKILL.md` § Standard Review Loop have the same conceptual shape (commit anchor, scope-set, narrow-vs-broaden decision) but did not exhibit the same silent-drift symptom in v0.7.1 self-host runs — the artifact-level flow runs less frequently and the orchestrator's attention is less divided. Per-task is in scope for G9; artifact-level is out of scope (revisit in v0.7.3+ if drift surfaces there). G4's commit-anchor write (solution step 1) only fires when `--task-branch` is set, so artifact-level invocations skip it cleanly; G4's presence assertion (solution step 10) is also conditional on prior-round files being expected, which artifact-level invocations naturally don't produce today. G9's in-line checklist is the only piece that is specifically per-task.
-
-**Acceptance criteria:**
-- `round-prepare.sh` runs all three SHA-correctness checks in order when `--task-branch` is set, then writes `round-NN-commit.txt = <passed-SHA>` on success. Verified by five bats fixtures: (a) happy path — pre-stage worktree at SHA X with a prior anchor at distinct SHA P, invoke `round-prepare.sh --task-branch <path> --implementer-commit X --output-dir <round-dir> --round 2`, assert exit 0 AND `round-02-commit.txt` contains X + newline; (b) missing-flag — pass `--task-branch <path>` without `--implementer-commit`, assert exit 10 AND stderr matches the orchestrator-bug diagnostic regex; (c) across-rounds non-advance — pre-stage `round-01-commit.txt` containing SHA P, pass `--implementer-commit P --round 2`, assert exit 12 AND stderr matches the re-dispatch-implementer diagnostic regex; (d) within-round mismatch — pre-stage worktree at SHA X, pass `--implementer-commit Y` where Y ≠ X and Y ≠ prior anchor, assert exit 11 AND stderr matches the halt-worktree-integrity diagnostic regex; (e) round-1 across-rounds — pre-stage no prior anchor, pass `--implementer-commit <task-base-commit> --round 1`, assert exit 12 AND stderr names "task base commit" rather than "prior round anchor".
-- `dispatch-agent.sh` accepts `--task-branch` + `--implementer-commit` as a pair on per-task invocations and forwards both to `round-prepare.sh` during the pre-flight auto-invocation. dispatch-agent.sh propagates round-prepare.sh's exit code verbatim (no exit-code remapping). Verified by a bats fixture that invokes `dispatch-agent.sh` with each of the round-prepare.sh exit codes 0/10/11/12 forced via a stub round-prepare.sh fixture, asserting dispatch-agent.sh exits with the matching code unmodified.
-- `round-prepare.sh` exits non-zero with a named diagnostic when invoked for round NN ≥ 2 with a missing or malformed `round-(NN-1)-commit.txt`. Verified by: a bats fixture that pre-stages a round-2 invocation with the prior anchor deleted; asserts exit code is non-zero AND stderr matches the diagnostic regex.
-- `round-prepare.sh` exits non-zero with a named diagnostic when invoked for round NN ≥ 3 with `scope_tagger_enabled: true` AND missing or empty `round-(NN-1)-scope-set.txt`. Verified by: a bats fixture parallel to the above for the scope-set case.
-- `implement/SKILL.md` per-task reviewer fan-out section contains the "Between rounds — required sequence" checklist verbatim (locked prose above). Verified by: a grep lint asserting the checklist heading is present in the per-task section AND that the exit-code recovery branches (0/10/11/12) are enumerated in checklist step 4.
-- Main chat's between-rounds residual is narrow: read `commit_sha:` from the implementer Task return, invoke `dispatch-agent.sh --implementer-commit <SHA>`, branch on exit code per the G4 step 1 recovery table. Verified by: grep lint on `implement/SKILL.md` that no main-chat-side SHA comparison code remains (the old `run git rev-parse HEAD then compare` instructions from v0.7.1 lines 1190–1195 are removed in favor of "read commit_sha; if missing re-dispatch; else invoke dispatch-agent and branch on exit code"). Companion lint: grep returns zero matches for "rev-parse HEAD" patterns in the per-task review section of `implement/SKILL.md`.
-- A v0.7.1-style silent drift (per-task round dispatched against full base-diff because scope-tagger was skipped) becomes impossible because either: (a) the missing scope-set fails `round-prepare.sh`'s assertion loudly at round NN+1, or (b) the in-line checklist surfaces the missing dispatch step at the orchestrator's point of attention at round NN. Verified by: a self-host smoke run on a fresh per-task review loop confirms scope-tagger fires every round and `round-NN-scope-set.txt` lands on disk for every round NN.
-- The architectural boundary holds: no first-party Task-tool subagents are dispatched from any bash script, and no script attempts to capture Task tool return values directly. The SHA passthrough is the architecturally honest seam — main chat reads the Task return, the script consumes the value as a flag. Verified by: `grep -rnE "subagent_type|Task\(|Agent\(" scripts/` returns empty (existing convention; G9 does not break it).
-
-**References.** Source: #224. Compound architecture spans G4 (solution step 1 — consolidated SHA cross-check, across-rounds advance check, missing-flag check, commit-anchor write, exit-code recovery table; solution step 10 — presence assertion) + CD-1 component #3 (`--implementer-commit` flag surface on dispatch-agent.sh; verbatim exit-code propagation) + narrow main chat skill prose (read commit_sha from Task return; invoke dispatch-agent; branch on exit code) + this goal (in-line checklist + scope-tagger relocation in implement/SKILL.md per-task fan-out section). The four-layer arrangement converts silent drift into loud failures at the round-boundary that would have masked it in v0.7.1. Three earlier drafts of this goal were corrected before any code was written: (1) the first draft attributed the commit-anchor write to a CD-1 component #11 "post-implementer-dispatch hook in dispatch-agent.sh" — architecturally impossible (dispatch-agent.sh exits before the Task tool runs in main chat; it has no return-path access). (2) The second draft moved the write into round-prepare.sh's first action with an implicit-timing argument ("HEAD at round-prepare time naturally equals the just-committed implementer SHA because nothing else commits in that window") — technically sound but rested on an unverified invariant. (3) The third draft introduced explicit SHA passthrough but kept the across-rounds advance check in main chat, justified by "recovery action ownership" (re-dispatching the implementer is a main-chat-only action). The present design recognizes that recovery-action ownership and check ownership are independent: the script produces a verdict (exit code + stderr recovery hint), main chat takes the action. Consolidating all three checks in the script reduces the orchestrator's between-rounds cognitive load from "remember to do four SHA-comparison checks across two sites" to "read field, invoke script, branch on exit code". The architectural boundary holds throughout: scripts never capture Task tool return values; main chat passes the value forward as a flag.
-
----
-
-## G10 — Reviewers fabricate procedural authority to justify non-compliance
-
-**Problem.** Distinct from G6's transport-level chat-only fallback: in occurrence 7 of #226 (T3 R11 gt reviewer), a reviewer subagent fabricated a non-existent procedural authority and quoted it verbatim — attributed to `skills/reviewer-protocol/SKILL.md` — to justify a contract violation. The fabricated quote was: *"Per the contradiction-refusal procedure in `skills/reviewer-protocol/SKILL.md`, when the disk-write contract conflicts with the finding-quality bar, the reviewer should refuse to write findings and instead surface them in chat for orchestrator triage."* No such procedure exists. The pattern echoed an existing real section heading (`### Contradiction Refusal (FAIL-LOUD)`, which applies to ONE narrow `task_definition`-routing case) and invented a generic rule under it. This is a prompt-drift / authority-fabrication failure class — generalizable to any documented load-bearing rule (HARD-GATEs, route handoffs, verifier filter rules, scope-tagger triggers) — not a transport-layer failure.
-
-**Approach.** Investigation-first scope per goals dialogue. v0.7.2 ships ONE minimal hardening lever — an anti-fabrication callout in `skills/reviewer-protocol/SKILL.md` that bounds the scope of the existing Contradiction Refusal section AND provides a labeled escape hatch (`CONTRACT-CONFLICT:` single-line prefix) for the legitimate case where a reviewer genuinely sees two contracts in conflict. The labeled-door pattern is load-bearing: without an exit, a saturated model is incentivized to invent one (which is what occurrence 7 did). Research questions for v0.7.3+ (training-data echo, context-size correlation, round-number correlation) are filed as GitHub issue #264 on the v0.7.3 milestone — not parked in this Design block, because the work is investigation, not a v0.7.2 Open Question.
-
-**D1 — Anti-fabrication callout content, placement, and orchestrator-side handling.** ONE concrete decision covers both the prompt-side rule and the orchestrator-side handling of the new prefix.
-
-  - **Placement.** New `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/reviewer-protocol/SKILL.md`, inserted between the existing `### Refusal Procedure` (ends ~line 206) and `## Per-Finding Disk-Write Contract` (line 208). Positioned immediately after Refusal Procedure so the bounding clause ("The Contradiction Refusal procedure above applies to ONE specific dispatch malformation … It does NOT generalize") is adjacent to the section it bounds.
-
-  - **Verbatim callout content** (becomes the literal section body):
-
-    ```markdown
-    ### Anti-Fabrication Rule (FAIL-LOUD)
-
-    The Contradiction Refusal procedure above applies to ONE specific dispatch malformation
-    (`task_definition` present with a test-phase `output` path). It does NOT generalize.
-
-    Do NOT invent, paraphrase, or attribute to `reviewer-protocol/SKILL.md` any contradiction-
-    refusal or escape-hatch procedure that is not present verbatim above. If you believe a
-    documented contract (the per-finding disk-write contract, change-type classifier, finding
-    schema, untrusted-data handling, phase routing, or any consumer skill's HARD-GATE) is in
-    conflict with another rule or with finding quality, do NOT confabulate a generic resolution
-    to bypass it. Surface the conflict by name:
-
-    1. Do NOT call the `Write` tool. Do NOT emit findings or sentinels. Do NOT proceed.
-    2. Return a single-line text response with this load-bearing prefix (orchestrator detects it):
-
-       ```
-       CONTRACT-CONFLICT: <contract A name> conflicts with <contract B name or quality concern>; cannot proceed
-       ```
-
-    3. End the turn. The orchestrator surfaces the conflict to the operator, who resolves it
-       by name (amend a contract, adjust the dispatch, or instruct the reviewer to proceed
-       under one specific contract).
-
-    Quoting a procedure from `reviewer-protocol/SKILL.md` that is not literally present in this
-    file is a fabrication. Treat the absence of a named escape hatch as the rule, not as an
-    invitation to invent one.
-    ```
-
-  - **Orchestrator-side handling of `CONTRACT-CONFLICT:` prefix.** Where a reviewer dispatch's chat output begins with `CONTRACT-CONFLICT:` (load-bearing prefix, case-sensitive, anchored at start of first non-blank line):
-    1. Do NOT treat the dispatch as a normal review round (no findings parsed, no clean-sentinel synthesis, no schema-violation guard fire).
-    2. Do NOT auto-repair. Do NOT consume the tag's emission budget. Do NOT advance the round counter.
-    3. Surface the single-line conflict statement verbatim to the operator with one of the standard intervention menus from `using-qrspi/SKILL.md` (operator picks: amend contract A, amend contract B, adjust dispatch shape, instruct reviewer to proceed under one specific contract, or abort the round).
-    4. Operator resolution drives the re-dispatch path; no orchestrator-side default.
-
-    The handling lives in `using-qrspi/SKILL.md` § Standard Review Loop alongside the existing post-dispatch chat-output classifier (the same site that handles schema-violation guard, missing-tag detection, and Codex stdout fall-through). One additional classifier branch — `if output starts with CONTRACT-CONFLICT: → operator-intervention menu`.
-
-  - **Why a labeled escape hatch (not just a prohibition).** Goals dialogue weighed two sub-options:
-    - **(a)** Ship prohibition + labeled escape hatch (chosen).
-    - **(b)** Ship prohibition only; defer escape-hatch design to v0.7.3+.
-    Option (b) trades fabrication risk for honest-stuckness risk: a saturated reviewer told "do not invent an escape hatch" with no real escape hatch defined will either confabulate one anyway (defeating the prohibition) or freeze ungracefully (no progress, no diagnostic). Option (a) provides the labeled door, making the prohibition enforceable AND giving the legitimate case a structured exit. The cost (one classifier branch in the orchestrator) is small enough that the investigation-first scope still holds — total v0.7.2 footprint is one SKILL section + one orchestrator classifier branch.
-
-**Acceptance.**
-
-- New `### Anti-Fabrication Rule (FAIL-LOUD)` section exists in `skills/reviewer-protocol/SKILL.md`, inserted between `### Refusal Procedure` and `## Per-Finding Disk-Write Contract`.
-- Section body matches D1's verbatim content (the three-paragraph callout including the bounding clause, the three-step exit procedure with literal `CONTRACT-CONFLICT:` prefix, and the closing fabrication-treatment-as-rule clause).
-- `using-qrspi/SKILL.md` § Standard Review Loop's post-dispatch classifier includes a `CONTRACT-CONFLICT:` branch routing to operator-intervention menu (no auto-repair, no round-counter advance, no tag-budget consumption).
-- v0.7.3 follow-up research filed as issue dfrysinger/qrspi-plus#264 against the v0.7.3 milestone, covering Q1 (training-data origin), Q2 (context-size correlation), Q3 (round-number correlation).
-- No retroactive changes to existing reviewer agent bodies — the callout is consumed via the existing `skills:` frontmatter preload mechanism that all reviewer agents already declare for `reviewer-protocol`.
-
-**Open Questions for v0.7.3+.** None tracked here — moved to GitHub issue #264 per goals dialogue ("make an issue for 0.7.3"). The orchestrator-side anti-fabrication scanner (post-dispatch chat scan for quoted SKILL citations that don't match any loaded SKILL body — option #2 from the goals dialogue) is enumerated as a potential hardening lever IN that issue, contingent on Q2/Q3 outcomes; it is NOT scoped to v0.7.2.
-
-**Pre-existing plugin issues to file.** None. G10's failure mode is a candidate-pattern observation from one instance, not a documented plugin defect; existing `reviewer-protocol/SKILL.md` is correct as written, this Design augments it.
-
-**References.** Source: goals.md G10; #226 occurrence 7 (T3 R11 gt reviewer); `skills/reviewer-protocol/SKILL.md` L183-206 (existing Contradiction Refusal section being bounded); related G6 (transport-level chat-only fallback — closed the opportunity occurrence 7 piggybacked on, but not the fabrication pattern itself); v0.7.3 research follow-up: https://github.com/dfrysinger/qrspi-plus/issues/264.
-
----
-
-## G11 — Verifier sidecar pipeline: extension drift + orchestrator bypass
-
-**Resolved by CD-4 — Verifier-Fan-In Pipeline.** Sidecar extension locked to `.score.md`; verifier agent's Write tool call is constrained to that path/extension; script halts with named cause on wrong extension; orchestrator consumes sidecar via script rather than chat-parse. See CD-4 § "B. Verifier sidecar" + G11 acceptance row.
-
-**References.** Source: #227. Tight coupling with G12 — both resolved by CD-4.
-
----
-
-## G12 — Automated verifier-fan-in script (replace orchestrator chat-parsing)
-
-**Resolved by CD-4 — Verifier-Fan-In Pipeline.** `scripts/verifier-fan-in.sh` is the canonical filter; single invocation per round; writes `kept-findings.txt` + `.verifier-fan-in-audit.json`; orchestrator never chat-parses. See CD-4 § "C. `scripts/verifier-fan-in.sh`" + Mermaid diagram (the verifier→script→orchestrator handshake) + G12 acceptance row.
-
-**References.** Source: #252. Owns the consumer that makes G7 / G8 / G11 / G13 load-bearing.
-
----
-
-## G13 — `change_type` enum drift: reviewer-side emit + orchestrator-side silent fall-through
-
-**Resolved by CD-4 — Verifier-Fan-In Pipeline.** Canonical enum defined once in `scripts/verifier-fan-in.sh` header (DRY source) and once in `reviewer-protocol/SKILL.md` (referenced from per-reviewer agents); script halts on out-of-enum value with named cause; no silent default-keep. See CD-4 § "G. Reviewer agent updates" + G13 acceptance row.
-
-**Future-corroboration seam.** If G19's exploratory walk lands cross-reviewer corroboration as a threshold adjustment, the adjustment is implemented as an extension to `scripts/verifier-fan-in.sh` (per the CD-4 amendment seam) — NOT as orchestrator-side prose. The script remains the only path.
-
-**References.** Source: #253 (and same family). Three-layer compound failure with G7 (rule visibility) + G8 (field name) — all resolved together by CD-4.
 
 ---
 
