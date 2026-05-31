@@ -858,6 +858,97 @@ Candidates Design should weigh:
 
 Source: #262 (PI-012), v0.7.2 self-host commit `45625ed research: approve (R2 clean × 2 reviewers)` — research R1+R2 used artifact_path against 87 KB summary.md
 
+### G30 — Goals and Design dialogue-authoring quality and compaction-resilient incremental persistence
+
+- **type:** `known-fix`
+
+#### Problem
+
+Goals and Design are the two QRSPI skills with the same authoring shape: **per-decision interactive dialogue accumulating in the orchestrator's chat context, then end-of-phase synthesis subagent**. Both share two related quality gaps:
+
+**Gap 1 — No per-decision incremental persistence.** With 27-30 goals per release and the per-goal dialogue depth required by each skill's template, both phases routinely run long enough that `/compact` fires mid-phase. Compaction summaries are not faithful records of locked per-goal decisions; they preserve narrative but lose structured per-decision content. The synthesis subagent's only durable inputs are upstream artifacts; everything decided during dialogue is at the mercy of the compaction summary.
+
+**Gap 2 — Dialogue-conduct patterns are under-specified.** Neither skill currently instructs the orchestrator to follow the high-quality interview patterns that produce thorough specs:
+- Open with questions and outline before writing the plan (Dex Horthy's "magic words": "work back and forth with me, starting with your open questions and outline before writing the plan")
+- Interview-style probing — one question at a time with recommended answer (grill-me lineage)
+- Sharpen fuzzy user language with canonical terms (mattpocock grill-with-docs influence)
+- Probe edge cases / cross-decision dependencies / failure modes until each decision is fully formed for downstream phases
+- Liberal use of web search and codebase search when uncertain (don't ask the user what code or web research can answer)
+- Tiered grounding for Goals: codebase search → web search (research artifacts don't exist yet at Goals stage)
+- Tiered grounding for Design: research summary → codebase → web (research artifacts exist; don't re-derive what research already covered)
+
+#### Why we care
+
+**On Gap 1.** Observed in v0.7.2 self-hosting Design Phase 1 on 2026-05-30: by G4 lock the session held CD-1 (universal dispatch architecture, ~120 lines of detail) + G1-G4 locked outcomes in chat context only, with 25 goals still to walk through and one compaction already executed earlier in the run. The user had to prompt the orchestrator to start writing decisions to disk; without that prompt, a second compaction would have silently lost CD-1 and the G1-G4 lock details before the synthesis subagent ever ran. v0.7.2 Goals walk-through took 5 checkpoints (001-005) — circumstantial evidence that Goals operates at the same compaction-friction threshold, even though synthesis usually catches the structured per-goal fields (the fidelity-loss risk is lower than Design's because Goals' template doesn't have a rationale-heavy "Why this approach" section). The failure mode is silent (no error surface) and the cost is invisible until you read the synthesized artifact and notice missing rationale, missing cross-goal decisions, or per-goal sections that have lost their resolution detail.
+
+**On Gap 2.** Observed across multiple v0.7.1 and v0.7.2 sessions: orchestrators tend to ask broad open-ended questions and accept shallow answers, particularly when working under autonomous-mode time pressure. Skills that don't explicitly script the dialogue-conduct pattern (Goals, Design) produce thinner specs than skills that have structured per-decision probes (Plan, Structure — which benefit from subagent-driven authoring with fresh context). The G1 work on Design surfaced 7 Dialogue Conduct rules that materially improve Design output quality; Goals lacks an equivalent codified set. Goals' current SKILL.md lists question topics but does not codify the back-and-forth grilling pattern, the magic-words opener, the tiered grounding, or the canonical-term sharpening discipline.
+
+The two gaps share a fix surface (Goals SKILL.md, Design SKILL.md) and a fix shape (prose additions to the skill's process section). Shipping together as one coordinated wave is more efficient than as two separate goals.
+
+#### What we know so far
+
+- **Affected SKILL.md files:** `skills/goals/SKILL.md` and `skills/design/SKILL.md`. Both currently route through synthesis-at-end without incremental persistence; both currently lack a codified Dialogue Conduct section.
+- **The G1 Dialogue Conduct work** (7 rules locked during v0.7.2 self-hosting) defines the template for Design's Dialogue Conduct section. Goals' Dialogue Conduct will mirror these rules with two adjustments: (a) tiered grounding stops at codebase + web (no upstream research at Goals stage); (b) the questions menu in Goals' existing "Interactive Dialogue" section stays as a topic checklist but is supplemented by the conduct rules.
+- **Plan/Structure/Phasing/Test** do NOT have the same risk pattern — they are round-based one-shot synthesis with feedback files (`feedback/{step}-round-NN.md`), which inherently survives compaction because each round's subagent re-reads original inputs + persisted feedback. Their authoring is subagent-driven, not turn-by-turn orchestrator accumulation. Goals and Design are the only two QRSPI authoring skills that do per-decision orchestrator-side dialogue.
+- **Comparable persistence patterns elsewhere in QRSPI:** Plan writes per-task `tasks/task-NN.md` files; Research writes per-question `q*.md` files via specialists; Implement writes per-task worktrees and commits. Goals and Design are the only artifact-producing phases that defer all on-disk writes to end-of-phase synthesis.
+- **Surfaced as:** plugin issue `PI-DES-003` during v0.7.2 Design self-hosting; user direction to formalize and to mirror Dialogue Conduct to Goals so the fix lands in v0.7.2 rather than being lost to plugin-issue triage.
+
+Candidates Design should weigh:
+
+**For Gap 1 (incremental persistence):**
+- **Direct-write to artifact with status=draft (Option B)** — author directly to `goals.md` / `design.md` with `status: draft` as decisions lock; resume-after-compaction reads the draft to see what's locked; end-of-phase lightweight finalize pass (validation + optional intro/cleanup) → flip to `status: approved`. Single file per skill, no transformation step, zero fidelity-loss risk because nothing is re-synthesized. Risk: draft artifact could be mistaken for final by downstream skills — mitigated by `status: approved` IRON RULE check that downstream skills already perform.
+- **Staging file → synthesis subagent → final artifact (Option A)** — `goals-decisions-draft.md` / `design-decisions-draft.md` accumulate per-decision blocks; synthesis subagent at end-of-phase reads draft + upstream artifacts → writes final artifact. Two files mid-phase; transformation step adds fidelity-loss risk and same context-pressure problem we're trying to fix.
+- **Per-decision files (Option C)** — `goals/g-NN.md` and `design/g-NN.md` set; synthesis subagent globs and assembles. Filesystem clutter; cross-decision content (Cross-Goal Decisions) has no natural home; per-decision idempotent updates achievable with single-file Option B keyed by goal ID.
+
+**For Gap 2 (Dialogue Conduct mirroring):**
+- **Identical 7-rule Dialogue Conduct section** in both Goals and Design SKILL.md with the two Goals-specific adjustments noted above (tiered grounding stops at codebase+web; questions menu coexists with conduct rules).
+- **Shared `_shared/dialogue-conduct.md`** referenced from both SKILL.md files. Pros: single source of truth; one edit applies to both. Cons: the two-adjustment differential between Goals and Design (grounding sources, questions menu coexistence) makes shared text awkward — would need inclusion-time substitution or per-skill override notes.
+- **Per-skill inline copies** with consistent rule numbering. Pros: each skill is self-contained, easier to maintain when skill-specific nuances diverge. Cons: enforcing consistency across copies relies on reviewer discipline.
+
+The incremental persistence work should encourage the orchestrator to re-read the accumulating file when resuming after `/compact` (so it knows what's already locked) and to surface a recovery diagnostic (`"Resumed after compaction — last locked decision: GNN. Continuing from G(NN+1)."`) for user-visible continuity. The synthesis-subagent prompt should be updated to consume the draft as the authoritative input for per-decision content (under Option B, this collapses to "finalize draft" rather than "synthesize from scratch").
+
+Source: PI-DES-003 (filed during this Design self-hosting session); G1 (Design template revision — companion fix; G1 defines per-goal block shape, G30 defines persistence + dialogue-conduct patterns).
+
+### G31 — Prompt-prose review coverage
+
+- **type:** `known-fix`
+
+#### Problem
+
+QRSPI has artifact-quality reviewers for every step's output document (`goals.md`, `design.md`, `plan.md`, `structure.md`, `phasing.md`, `parallelization.md`, etc.) but no reviewer that specifically applies prompt-engineering best practices when the artifact under review IS prompt prose — i.e., `SKILL.md` files in `skills/`, agent files in `agents/`, and the verbatim "prose-design" blocks inside `design.md` introduced by G1 Sub-Rule B. The authoritative checklist exists (`docs/prompt-design-guide.md`, 7 rules + cross-cutting principles + finding-type gate) but is consulted manually during authoring; no reviewer agent enforces it. The guide itself anticipates the failure mode: *"QRSPI skill prompts will accumulate drift over time."*
+
+#### Why we care
+
+v0.7.2 self-hosting confirmed the drift surface is wide: G1 introduces multi-page Dialogue Conduct sections, Altitude Sub-Rules A/B, and Goals SKILL.md mirroring; G30 adds incremental-persistence + recovery prose to two SKILL.md files; CD-2 (the Evergreen-Output Rule that emerged during this Design phase) ships entirely as prompt prose. The guide's documented mitigation — periodic manual audits "after every major Phase ships" — is not happening at the cadence the prompt-prose turnover requires. Without per-round reviewer enforcement, drift between audits accumulates as orchestrator under-adherence in production runs (the same failure mode that justified the verifier sidecar work in G11/G12/G14). The cost is the same recurring class of plugin issues the v0.7.2 release is trying to close.
+
+#### What we know so far
+
+The audit pass (2026-05-30) compared `docs/prompt-design-guide.md` against current 2026 best practices (web search) and against the cross-cutting decisions locked in this Design phase (CD-2 Evergreen-Output Rule; G1 Dialogue Conduct + Sub-Rules A/B; G3 vendor-neutrality; G30 compaction-resilient persistence). The guide is mostly current; eight specific update opportunities surfaced for Design to weigh:
+
+- **(A) Refine "positive framing outperforms negative framing"** — the cross-cutting principle as written is too absolute. Modern Claude 4+ and GPT-4+ handle negation fine when paired with positive substitute + named antagonist label + decision rule (the guide's own Iron Laws / Red Flags / "Common Rationalizations" tables already demonstrate the pattern successfully). Recast as *"Negation works in modern LLMs when paired with a positive substitute, a named antagonist, and a decision rule; bare 'do not X' without substitute is the GPT-3-era anti-pattern."*
+- **(B) Name antagonist patterns in R1** — R1 lists categories to cut but doesn't name them. Fold in CD-2's six named antagonists (dialogue exhaust, session/drafting notes, version-history narration, inside baseball, compaction-loss recovery notes, failure-modes-prevented lists) so authors and reviewers have self-check labels.
+- **(C) Add the litmus test as a cross-cutting principle** — CD-2's two-question filter (*"does this paragraph read true if every prior draft were deleted? is the subject the WHAT being designed, or the dialogue that produced it?"*) is missing from the guide. It belongs alongside the existing "rationale alongside prohibitions" principle.
+- **(D) Name "anchor phrases" as a cross-cutting principle** — when a phrase must be preserved verbatim across edits (e.g., the CD-2 anchor list in the Evergreen-Output Rule, G1's Sub-Rule B verbatim treatment), calling it an "anchor phrase" is a 2025-era practice the guide doesn't currently capture. G1 Sub-Rule B and CD-2 acceptance criteria both rely on this concept; the guide should make it canonical.
+- **(E) Vendor-neutralize R5** — R5 says *"For Claude Code: spine + references saves zero tokens if the spine always instructs the read."* Per G3 (vendor-neutrality), narrow the host-specific framing: the savings model applies to any agent platform that pre-loads skill text. Mention Claude Code and Codex CLI as equal vendors.
+- **(F) Fix source-research paths** — R1's "Source research" section cites `general2/docs/superpowers/specs/2026-04-25-qrspi-skill-refactor-design.md` and `general2/docs/qrspi/2026-04-06-phase4-hooks/phases/phase-02/research/prompt-best-practices.md`. These paths point outside the qrspi-plus repo and are not auditable from this repo. Either inline-fold the derivations or replace with intra-repo references.
+- **(G) Recalibrate against May 2026 model landings** — "Last applied: 2026-04-25" predates Opus 4.7-high, GPT-5.5, and May 2026 model shifts. Re-test the seven rules and cross-cutting principles against the current model lineup; flag any whose evidence base has weakened.
+- **(H) Add compaction-resilient prompt-design as a principle** — G30 establishes that orchestrator-side context-saturation drives a class of prompt-side mitigations (incremental persistence prose, recovery diagnostics, "presence ≡ locked" idioms, explicit re-read-on-resume instructions). The guide does not currently treat compaction-resilience as a design dimension; CD-2 + G30 give it a name and a contract.
+
+Candidates Design should weigh for the reviewer architecture:
+
+- **Expand existing reviewers (preferred starting position).** Add a conditional Read step to `qrspi-code-quality-reviewer` (catches Implement-side prompt prose: `.md` files in `skills/`, `agents/`) and to `qrspi-design-reviewer` (catches `design.md` prose-design blocks marked `<!-- prose-design: ... -->`). When the routing heuristic fires, the reviewer Reads the authoritative best-practices file and applies its checks as additional findings. No new agent fanout slot; no parallel review-loop duplication; aligns with the existing "expand what's there before adding new" working principle. Risk: file-routing heuristic must be reliable enough to avoid silently skipping prompt prose embedded in unexpected places.
+- **Dedicated `qrspi-prompt-reviewer` agent.** Single-purpose agent with its own fanout slot in every applicable round. Pros: focused; easier to evolve in isolation. Cons: duplicates the file-routing logic the two reviewers above already do; adds an always-on fanout cost even when the diff has zero prompt prose; fragments review responsibility across more agents to maintain.
+- **Hybrid (least preferred).** Existing reviewers handle the easy cases; a dedicated reviewer fires only for SKILL.md / agents/*.md changes above a threshold. Combines the worst of both architectures (routing logic in two places + a partial new agent).
+
+Candidates Design should weigh for the best-practices file location:
+
+- Keep `docs/prompt-design-guide.md` as the authoritative source; reviewers Read it directly from `docs/`.
+- Move (or duplicate) to `skills/_shared/prompt-writing-best-practices.md` to align with the rest of the shared-reference convention (precedent: `precondition-block.md`, `tsc-probe-helper.md`, `codex/launch-await-pattern.md`). Pros: single conventional home for cross-skill reference content; `!cat` includes available for authoring-side use. Cons: `docs/prompt-design-guide.md` is already linked from the source-research section and may carry external references; moving without a stub leaves dangling pointers.
+
+Open question for Design: should the authoritative best-practices file ALSO be `!cat`'d into the authoring side (e.g., into Goals/Design SKILL.md's Dialogue Conduct preamble as a "ground first" reference), or kept strictly as a reviewer-side reference? G1's Dialogue Conduct already encodes some authoring-side prompt-engineering practice ("ground first, ask second," "sharpen fuzzy language") — Design should decide whether to consolidate.
+
+Source: Audit pass 2026-05-30 (this Design phase, response to G1 + G30 + CD-2 introducing multi-page prompt prose with no automated quality gate); `docs/prompt-design-guide.md` (the existing manual guide, last applied 2026-04-25); CD-2 (Evergreen-Output Rule — supplies the litmus test + named antagonist patterns); G1 (Dialogue Conduct + Sub-Rules A/B — defines the prose-design block surface); G30 (compaction-resilient persistence — supplies the compaction dimension); G3 (vendor-neutrality — drives R5 reframing).
+
 ## Cross-Cutting Notes
 
 - **Reviewer-pipeline correctness cluster (G6 / G7 / G8 / G9 / G10 / G11 / G12 / G13 / G14 / G19 / G20 / G28 / G29).** These goals all address the reliability of the reviewer→verifier→orchestrator pipeline: disk-write contract (G6/G11), field-schema enforcement (G8/G13), threshold-rule location and DRY (G7/G12), rubric calibration (G14/G19/G20), orchestration drift (G9), authority-fabrication (G10), apply-fix protocol cluster carve-out (G28), and large-artifact dispatch ingress (G29). G11 and G12 form a tightly coupled pair (contract then consumer); G7, G12, G13, and G28 share a "one place for the canonical filter rule" resolution path; G14 and G19 share a verifier-rubric expansion path also relevant to G10. G6 and G29 share the same dispatch-contract surface (`skills/reviewer-protocol/SKILL.md`) and are likely co-scheduled.
