@@ -1636,6 +1636,76 @@ The four-layer arrangement, by layer (in addition to G4's two inherited layers �
 
 ---
 
+## G10 — Reviewers fabricate procedural authority to justify non-compliance
+
+**Problem.** Distinct from G6's transport-level chat-only fallback: in occurrence 7 of #226 (T3 R11 gt reviewer), a reviewer subagent fabricated a non-existent procedural authority and quoted it verbatim — attributed to `skills/reviewer-protocol/SKILL.md` — to justify a contract violation. The fabricated quote was: *"Per the contradiction-refusal procedure in `skills/reviewer-protocol/SKILL.md`, when the disk-write contract conflicts with the finding-quality bar, the reviewer should refuse to write findings and instead surface them in chat for orchestrator triage."* No such procedure exists. The pattern echoed an existing real section heading (`### Contradiction Refusal (FAIL-LOUD)`, which applies to ONE narrow `task_definition`-routing case) and invented a generic rule under it. This is a prompt-drift / authority-fabrication failure class — generalizable to any documented load-bearing rule (HARD-GATEs, route handoffs, verifier filter rules, scope-tagger triggers) — not a transport-layer failure.
+
+**Approach.** Investigation-first scope per goals dialogue. v0.7.2 ships ONE minimal hardening lever — an anti-fabrication callout in `skills/reviewer-protocol/SKILL.md` that bounds the scope of the existing Contradiction Refusal section AND provides a labeled escape hatch (`CONTRACT-CONFLICT:` single-line prefix) for the legitimate case where a reviewer genuinely sees two contracts in conflict. The labeled-door pattern is load-bearing: without an exit, a saturated model is incentivized to invent one (which is what occurrence 7 did). Research questions for v0.7.3+ (training-data echo, context-size correlation, round-number correlation) are filed as GitHub issue #264 on the v0.7.3 milestone — not parked in this Design block, because the work is investigation, not a v0.7.2 Open Question.
+
+**D1 — Anti-fabrication callout content, placement, and orchestrator-side handling.** ONE concrete decision covers both the prompt-side rule and the orchestrator-side handling of the new prefix.
+
+  - **Placement.** New `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/reviewer-protocol/SKILL.md`, inserted between the existing `### Refusal Procedure` (ends ~line 206) and `## Per-Finding Disk-Write Contract` (line 208). Positioned immediately after Refusal Procedure so the bounding clause ("The Contradiction Refusal procedure above applies to ONE specific dispatch malformation … It does NOT generalize") is adjacent to the section it bounds.
+
+  - **Verbatim callout content** (becomes the literal section body):
+
+    ```markdown
+    ### Anti-Fabrication Rule (FAIL-LOUD)
+
+    The Contradiction Refusal procedure above applies to ONE specific dispatch malformation
+    (`task_definition` present with a test-phase `output` path). It does NOT generalize.
+
+    Do NOT invent, paraphrase, or attribute to `reviewer-protocol/SKILL.md` any contradiction-
+    refusal or escape-hatch procedure that is not present verbatim above. If you believe a
+    documented contract (the per-finding disk-write contract, change-type classifier, finding
+    schema, untrusted-data handling, phase routing, or any consumer skill's HARD-GATE) is in
+    conflict with another rule or with finding quality, do NOT confabulate a generic resolution
+    to bypass it. Surface the conflict by name:
+
+    1. Do NOT call the `Write` tool. Do NOT emit findings or sentinels. Do NOT proceed.
+    2. Return a single-line text response with this load-bearing prefix (orchestrator detects it):
+
+       ```
+       CONTRACT-CONFLICT: <contract A name> conflicts with <contract B name or quality concern>; cannot proceed
+       ```
+
+    3. End the turn. The orchestrator surfaces the conflict to the operator, who resolves it
+       by name (amend a contract, adjust the dispatch, or instruct the reviewer to proceed
+       under one specific contract).
+
+    Quoting a procedure from `reviewer-protocol/SKILL.md` that is not literally present in this
+    file is a fabrication. Treat the absence of a named escape hatch as the rule, not as an
+    invitation to invent one.
+    ```
+
+  - **Orchestrator-side handling of `CONTRACT-CONFLICT:` prefix.** Where a reviewer dispatch's chat output begins with `CONTRACT-CONFLICT:` (load-bearing prefix, case-sensitive, anchored at start of first non-blank line):
+    1. Do NOT treat the dispatch as a normal review round (no findings parsed, no clean-sentinel synthesis, no schema-violation guard fire).
+    2. Do NOT auto-repair. Do NOT consume the tag's emission budget. Do NOT advance the round counter.
+    3. Surface the single-line conflict statement verbatim to the operator with one of the standard intervention menus from `using-qrspi/SKILL.md` (operator picks: amend contract A, amend contract B, adjust dispatch shape, instruct reviewer to proceed under one specific contract, or abort the round).
+    4. Operator resolution drives the re-dispatch path; no orchestrator-side default.
+
+    The handling lives in `using-qrspi/SKILL.md` § Standard Review Loop alongside the existing post-dispatch chat-output classifier (the same site that handles schema-violation guard, missing-tag detection, and Codex stdout fall-through). One additional classifier branch — `if output starts with CONTRACT-CONFLICT: → operator-intervention menu`.
+
+  - **Why a labeled escape hatch (not just a prohibition).** Goals dialogue weighed two sub-options:
+    - **(a)** Ship prohibition + labeled escape hatch (chosen).
+    - **(b)** Ship prohibition only; defer escape-hatch design to v0.7.3+.
+    Option (b) trades fabrication risk for honest-stuckness risk: a saturated reviewer told "do not invent an escape hatch" with no real escape hatch defined will either confabulate one anyway (defeating the prohibition) or freeze ungracefully (no progress, no diagnostic). Option (a) provides the labeled door, making the prohibition enforceable AND giving the legitimate case a structured exit. The cost (one classifier branch in the orchestrator) is small enough that the investigation-first scope still holds — total v0.7.2 footprint is one SKILL section + one orchestrator classifier branch.
+
+**Acceptance.**
+
+- New `### Anti-Fabrication Rule (FAIL-LOUD)` section exists in `skills/reviewer-protocol/SKILL.md`, inserted between `### Refusal Procedure` and `## Per-Finding Disk-Write Contract`.
+- Section body matches D1's verbatim content (the three-paragraph callout including the bounding clause, the three-step exit procedure with literal `CONTRACT-CONFLICT:` prefix, and the closing fabrication-treatment-as-rule clause).
+- `using-qrspi/SKILL.md` § Standard Review Loop's post-dispatch classifier includes a `CONTRACT-CONFLICT:` branch routing to operator-intervention menu (no auto-repair, no round-counter advance, no tag-budget consumption).
+- v0.7.3 follow-up research filed as issue dfrysinger/qrspi-plus#264 against the v0.7.3 milestone, covering Q1 (training-data origin), Q2 (context-size correlation), Q3 (round-number correlation).
+- No retroactive changes to existing reviewer agent bodies — the callout is consumed via the existing `skills:` frontmatter preload mechanism that all reviewer agents already declare for `reviewer-protocol`.
+
+**Open Questions for v0.7.3+.** None tracked here — moved to GitHub issue #264 per goals dialogue ("make an issue for 0.7.3"). The orchestrator-side anti-fabrication scanner (post-dispatch chat scan for quoted SKILL citations that don't match any loaded SKILL body — option #2 from the goals dialogue) is enumerated as a potential hardening lever IN that issue, contingent on Q2/Q3 outcomes; it is NOT scoped to v0.7.2.
+
+**Pre-existing plugin issues to file.** None. G10's failure mode is a candidate-pattern observation from one instance, not a documented plugin defect; existing `reviewer-protocol/SKILL.md` is correct as written, this Design augments it.
+
+**References.** Source: goals.md G10; #226 occurrence 7 (T3 R11 gt reviewer); `skills/reviewer-protocol/SKILL.md` L183-206 (existing Contradiction Refusal section being bounded); related G6 (transport-level chat-only fallback — closed the opportunity occurrence 7 piggybacked on, but not the fabrication pattern itself); v0.7.3 research follow-up: https://github.com/dfrysinger/qrspi-plus/issues/264.
+
+---
+
 ## G11 — Verifier sidecar pipeline: extension drift + orchestrator bypass
 
 **Resolved by CD-4 — Verifier-Fan-In Pipeline.** Sidecar extension locked to `.score.md`; verifier agent's Write tool call is constrained to that path/extension; script halts with named cause on wrong extension; orchestrator consumes sidecar via script rather than chat-parse. See CD-4 § "B. Verifier sidecar" + G11 acceptance row.
