@@ -1619,6 +1619,82 @@ A short audit of `scripts/run-third-party-llm.sh` is included to confirm direct 
 
 ---
 
+## G18 — Plan-phase under-scopes cross-task consumer surface
+
+**Plain-language problem.** Plan-phase task specs scope each task's own changes but do not systematically enumerate the downstream consumers of the contracts being changed. v0.7.1 documented 9 instances of this pattern (T8 cache-cleanup, T9 frontmatter sweep, T10 R1/R2, fix-int-r4-01 validator-table, T10 TE1-TE3 tier-source orphaning, validation-table cross-link gap, vocab pin asymmetry, top-level invariant absence); this session added a 10th (G27/#253 Codex availability inline probe). The recurring shape: a task modifies a thing (a frontmatter field, an anchor name, a helper function, a validator entry, a schema layout, a shared-prose section), but the plan-spec only lists files the task itself edits — not other files that reference the changed thing. Integrate-phase reviewer fan-out catches the orphans, each round surfacing 1-3 more. The v0.7.1 hardening run took 6 integrate rounds and ~5 fix-tasks to converge. G15 fixed the narrow sweep-tasks-orphan-tests case; G18 generalizes the prevention pattern to contract-carrier changes generally.
+
+**Relationship to G27 and G22.** G18 is the **prevention mechanism** — catches the next instance at plan-review time. G27 and G22 are **specific code fixes** for instances that already shipped; both stay as their own goals — G18 does not subsume them.
+
+**Outcome.** Plan-spec authors must enumerate cross-task consumers for contract-carrier changes; the plan reviewer detects the change-shape by heuristic and demands the enumeration. The 8 of 10 grep-detectable v0.7.1 instances are closed by construction. The 2 of 10 prose-consistency instances (vocab pin asymmetry, top-level invariant absence) are acknowledged as out-of-scope for the heuristic and tracked as v0.7.3 follow-up.
+
+**Approach.** Two-mechanism composition, evergreen (no qrspi-plus-specific directory names, no language-specific identifier kinds — designed to work in any project a QRSPI run is invoked against):
+
+1. **Author-side template extension** — `plan/SKILL.md` § Task Definition gains a `Cross-Task Consumer Surface` subsection documenting when the `cross_task_consumers:` field is required and what shapes it accepts.
+2. **Reviewer-side heuristic** — `agents/qrspi-plan-reviewer.md` gains a Cross-Task Consumer Surface Detection rubric clause that fires on contract-shape changes and demands the field.
+
+Composition rationale: same as G15 — documentation alone relies on plan-author memory (v0.7.1 evidence is that authors don't reach for consumer enumeration unprompted); reviewer enforcement alone gives the reviewer no canonical contract to cite. Together: the doc is the contract; the reviewer is the gate.
+
+Deferred to v0.7.3 (contingent on v0.7.2 self-host signal): a standalone Plan-phase scope-completeness reviewer subagent dispatched in parallel with `qrspi-plan-reviewer.md`; an automated grep at plan-review time that runs the consumer-search command for the author. Both are heavier mechanisms; the v0.7.2 reviewer-heuristic + author-template approach mirrors G15 and gets the same self-host signal cycle.
+
+**Decisions locked:**
+
+- **A — Composition: mechanisms #1 + #2 only for v0.7.2.** Standalone scope-completeness reviewer subagent (#3) deferred — would add a 5th plan-time dispatch and obscures the signal on whether the rubric extension alone is enough. Automated grep at gate time (#4) deferred indefinitely — too speculative to build before #2 self-host signal arrives.
+- **B — Trigger breadth: broad, evergreen.** Trigger fires on any task whose changes match the documented contract-shape conditions (see below) — described by *what the change does to consumers*, not by what directory the changed file lives in. The trivial-answer escape (`none` + reproducible search command returning zero hits) keeps author burden low for tasks that genuinely have no consumers.
+- **C — Field shape: parallels G15's `dependent_tests:` field.** Same mental model (paths-with-disposition OR `none + grep`), same reviewer-rerun behavior, same finding severity. Reuses the G15 rubric infrastructure.
+- **D — Prose-consistency cases (vocab pin asymmetry, top-level invariant absence): defer to v0.7.3.** These can't be grep-caught without false-positive flood; mitigation requires either semantic-similarity tooling or a different mechanism entirely. Filed as v0.7.3 investigation issue.
+- **E — Separate G15 and G18 rubric clauses (not merged).** G15 asks `dependent_tests:`; G18 asks `cross_task_consumers:`. The two questions are about different downstream surfaces (test files vs consumer files generally) and merit separate field names + separate triggers. Merging into one clause would obscure intent.
+
+**Implementation deliverables.**
+
+1. **`plan/SKILL.md` — Cross-Task Consumer Surface subsection (new).** Insert at the END of § Task Definition (after all existing per-task field documentation, in the same neighborhood as G15's Sweep Task Contract subsection). Verbatim wording:
+
+   > ### Cross-Task Consumer Surface
+   >
+   > A task is **consumer-surface-touching** when its description or `files_in_scope` indicates ANY of:
+   >
+   > - Adding, renaming, or removing a function, method, class, interface, exported symbol, or other named declaration.
+   > - Adding, renaming, removing, or moving a file listed in `files_in_scope`.
+   > - Changing the public signature (parameter list, return type, exceptions or errors raised, side effects, or visibility) of any callable in `files_in_scope`.
+   > - Changing the schema or structure of any structured document (JSON, YAML, frontmatter, TOML, XML, etc.) in `files_in_scope` whose keys, anchors, or top-level identifiers are referenced by name from other files.
+   > - Adding, renaming, or removing a documented contract — a configuration key, environment variable, CLI flag, URL route, RPC method, command-line subcommand, schema field, anchor heading, or any other named extension point declared in `files_in_scope`.
+   >
+   > A task that only modifies the body of an existing callable, edits prose paragraphs without changing referenced anchor names, or fixes formatting is NOT consumer-surface-touching. The trigger fires on changes that other code or documents could plausibly be coupled to *by name*.
+   >
+   > When the trigger fires, the plan-spec MUST include a `cross_task_consumers:` field with one of two shapes:
+   >
+   > - A list of consumer file paths outside `files_in_scope`, each followed on the next line by a one-sentence disposition: `no change` (consumer keeps working unmodified), `pass-through` (consumer's behavior intentionally unchanged but the consumer file must be re-verified), `co-edit` (consumer file must be modified inside this same task), or `break-and-fix-task` (consumer file will be intentionally broken by this task and repaired in a named follow-up task — the follow-up task ID must be cited).
+   > - The literal string `none` followed on the next line by a reproducible search command demonstrating zero consumer references exist outside `files_in_scope`. Command shape is left to the author: `grep`, `rg`, `git grep`, a language-specific reference-finder (`go vet`, `tsc --noEmit -p`, `rustc --emit=metadata`, IDE-equivalent CLI), or any other reproducible zero-result probe. The reviewer re-runs the command and treats a non-zero hit count as a defect.
+   >
+   > Skipping the `cross_task_consumers:` field on a consumer-surface-touching task is a plan-spec defect, not a deferred-to-implementer concern.
+
+2. **`agents/qrspi-plan-reviewer.md` — Cross-Task Consumer Surface Detection rubric clause (new).** Insert as a new bullet within the existing review rubric, alongside (NOT replacing) G15's Sweep-Task Detection clause. Verbatim wording:
+
+   > **Cross-task consumer surface detection.** A task is consumer-surface-touching when ANY of the trigger conditions in `plan/SKILL.md` § Cross-Task Consumer Surface apply (named-declaration add/rename/remove, file add/rename/remove/move, public-signature change, structured-document schema change to referenced keys/anchors, named extension-point add/rename/remove). On detection, the reviewer MUST verify the task's plan-spec contains a `cross_task_consumers:` field per the contract:
+   >
+   > 1. Field present and well-formed (one of the two documented shapes).
+   > 2. If the field value is `none`, re-run the cited search command from the repo root and treat a non-zero hit count as a finding.
+   > 3. If the field lists consumers, verify each listed disposition is one of `no change` / `pass-through` / `co-edit` / `break-and-fix-task`, and (for `break-and-fix-task`) verify the cited follow-up task ID exists in the plan.
+   >
+   > Missing field, malformed field, non-zero hits on a `none` claim, or invalid disposition value → emit a `severity: high, change_type: correctness` finding referencing the contract.
+
+3. **`plan/SKILL.md` worked examples** — append two worked examples under the new subsection (~40-60 lines total):
+   - Example 1: a consumer-surface-touching task that renames a public function across two files; `cross_task_consumers:` lists three consumer files with `co-edit` / `co-edit` / `no change` dispositions.
+   - Example 2: a body-only bug fix in one file; trigger does not fire, no `cross_task_consumers:` field required; a one-line note explains why the trigger did not fire.
+
+4. **No changes to** `implementer-protocol/SKILL.md`, `using-qrspi/SKILL.md` Standard Plan loop, per-task gate runner, or the test infrastructure. G18 surfaces the missing consumer enumeration at PLAN time; downstream phases consume the enriched plan unchanged.
+
+5. **Worked-example calibration.** The two worked examples in `plan/SKILL.md` are calibrated against the v0.7.1 G27 instance (renaming the canonical Codex availability check across consumer skills) and a typical body-only bug fix. They show both the "trigger fires" and "trigger does not fire" cases so authors can self-classify without consulting the reviewer.
+
+**Cross-cutting note (G15 ↔ G18).** Both G15 and G18 are members of the goals.md Cross-Cutting Notes "Plan-phase under-scoping cluster." G15 ships first (was locked before G18) — its `dependent_tests:` mechanism for sweep tasks is the structural template G18 mirrors. The two clauses in `qrspi-plan-reviewer.md` (Sweep-Task Detection, Cross-Task Consumer Surface Detection) stay separate; the two fields in `plan/SKILL.md` (`dependent_tests:`, `cross_task_consumers:`) stay separate. A task that is both a sweep AND consumer-surface-touching carries both fields.
+
+**Open Questions for v0.7.3+.** Tracked externally as GitHub issue dfrysinger/qrspi-plus#269 (filed when this design block ships): (a) does v0.7.2 self-host signal indicate the heuristic + author-template combo catches enough of the consumer-surface gaps that the standalone scope-completeness reviewer (#3) is unnecessary? (b) do the 2-of-10 prose-consistency cases (vocab pin asymmetry, top-level invariant absence) need a separate mechanism in v0.7.3 — semantic-similarity probe, glossary file, periodic full-prose audit? (c) does automated grep at gate time (#4) net out positive after measuring v0.7.2 author burden of writing the `none + grep` commands by hand?
+
+**Pre-existing plugin issues to file.** None new. G18 closes the v0.7.1 cluster of 9 instances + the session-discovered 10th (G27/#253) is its own specific code-fix goal; G22 (model-routing schema drift) is another instance whose specific code fix lives in G22's own goal. None of these surface a separate plugin issue — they are all manifestations of the same under-scoping pattern G18's mechanism prevents.
+
+**References.** Source: goals.md G18 / #235 (v0.7.1 hardening run 9-instance pattern documentation); `tasks/task-{08,09,10}.md` (original under-scoped specs in `docs/qrspi/2026-05-27-v071-hardening/`); `fixes/integration-round-0{1..5}/` (fix-task specs that closed each gap); `reviews/integration/round-{01..06}/` (integrate-round finding files surfacing each gap); `plan/SKILL.md` § Task Definition (extension point); `agents/qrspi-plan-reviewer.md` (rubric extension point); goals.md Cross-Cutting Notes "Plan-phase under-scoping cluster" (G15 + G18 relationship); related G15 — same pattern shape, sweep-task narrow case; related G27 — instance #10, specific code fix; related G22 — same canonical-source-multiple-consumers pattern.
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
