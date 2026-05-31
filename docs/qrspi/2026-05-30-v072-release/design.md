@@ -1490,6 +1490,94 @@ The 5-file threshold and the 8-keyword list are calibrated against the v0.7.1 Wa
 
 ---
 
+## G16 — `scripts/run-codex-review.sh` accepts arbitrary absolute paths; sanctioned-channel exfil surface
+
+**Plain-language problem.** The wrapper script reads file content from any path the caller hands it via `--subject-code` / `--artifact-body` / `--companion` / `--diff-file`, then ships that content out through the OpenAI/Codex network channel as part of the LLM prompt. There's no check that the path is inside the qrspi repo. A prompt-injected implementer-style agent that holds Bash could invoke `run-codex-review.sh --subject-code /etc/hosts` (or `~/.ssh/id_rsa`, or `~/.aws/credentials`, or `../sibling-repo/.env`) and the content leaves over a network channel that infrastructure-level egress controls explicitly **allow** because Codex is the sanctioned LLM provider. The v0.7.1 INTEGRATE round-1 sec-codex F01 finding caught this; the QRSPI verifier scored it 62 (below the security ≥70 threshold) on the reasoning "prompt-injected Bash-granted agents already have many exfil paths" — true at the curl level, false at the sanctioned-channel level. G14's verifier-rubric fix means a future identical finding wouldn't get suppressed, but the code fix still has to land.
+
+**Outcome.** Three layered guards close the exfil surface:
+
+1. Every path argument to `run-codex-review.sh` is canonicalized (`realpath` / `readlink -f`) and required to start with `$REPO_ROOT/` followed by `/`. Symlinks-out-of-repo are rejected because canonicalization follows them. Anything else → exit non-zero, error to stderr — fail closed.
+2. `agents/qrspi-implementer.md` gains a small Bash allowlist clause forbidding direct invocation of the two orchestrator-only scripts (`scripts/run-codex-review.sh`, `scripts/run-third-party-llm.sh`). The implementer never has legitimate reason to invoke them; the orchestrator dispatches LLM reviews.
+3. Bats regression tests assert the failure shape.
+
+A short audit of `scripts/run-third-party-llm.sh` is included to confirm direct invocation doesn't reopen the same surface from a different entry point.
+
+**Approach.** Single-point enforcement on the script side, narrow defense-in-depth on the agent side, regression tests against the documented failure mode, audit note for the dispatcher script. The script fix is the gate; the agent allowlist is the belt to the script's suspenders.
+
+**Decisions locked:**
+
+- **A — Allowed path scope is strict.** Inputs must canonicalize to a path with `$REPO_ROOT/` as a path prefix (real prefix check, not lexical — `$REPO_ROOT-sibling/foo` does NOT match). No `/tmp/` carve-out. All current callers in `skills/*/SKILL.md` pass paths under the run's `docs/qrspi/...` artifact directory which is inside the repo. If a future caller legitimately needs to ship a `/tmp/` input, an explicit `--allow-tmp-input` flag can be added then; today's surface area says "strict" is the right default.
+- **B — Implementer allowlist is minimal (B1).** Add one bullet to `agents/qrspi-implementer.md` forbidding invocation of `scripts/run-codex-review.sh` and `scripts/run-third-party-llm.sh` by path or any path-suffix shape. Do NOT add a full positive command-family allowlist of the test-writer variety — implementer flexibility (build, lint, install, test across many language stacks) is necessary and over-restricting it would break legitimate work. The agent restriction's only job is to close the "agent invokes the wrapper as an exfil tool" path; the script-level fix handles the rest.
+- **C — Audit is one paragraph.** A single-paragraph audit note in the design block (and a 1-line note in `scripts/run-third-party-llm.sh` if remediation is needed) confirms whether the dispatcher script has the same surface when invoked directly. If the audit surfaces anything, fix it in the same task; if it surfaces nothing, no further work this run. A broader sweep of all `scripts/` shell scripts for "reads a path, ships content through LLM channel" patterns is deferred to v0.7.3 contingent on v0.7.2 self-host signal.
+
+**Implementation deliverables.**
+
+1. **`scripts/run-codex-review.sh` — new function `assert_path_under_repo_root <label> <abs-path>`.** Insert as a helper alongside the existing `resolve_path()` and `assert_file_exists()` (around L322-338). Body shape (verbatim):
+
+   ```sh
+   # assert_path_under_repo_root <label> <abs-path>
+   # Canonicalize <abs-path> and require it to live under $REPO_ROOT/.
+   # Fail closed on canonicalization failure, on path traversal outside
+   # the repo, or on symlinks resolving outside the repo. Single
+   # enforcement point for every --subject-code / --artifact-body /
+   # --companion / --diff-file caller; closes sanctioned-channel exfil
+   # surface (G16).
+   assert_path_under_repo_root() {
+     local label="$1"
+     local raw="$2"
+     local canonical
+     canonical="$(realpath "$raw" 2>/dev/null || readlink -f "$raw" 2>/dev/null)" || canonical=""
+     if [[ -z "$canonical" ]]; then
+       echo "error: ${label} could not be canonicalized: $raw" >&2
+       exit 1
+     fi
+     # Real-prefix check: require $REPO_ROOT/ as a path prefix (not lexical).
+     local root_canonical
+     root_canonical="$(realpath "$REPO_ROOT" 2>/dev/null || readlink -f "$REPO_ROOT" 2>/dev/null)" || root_canonical=""
+     if [[ -z "$root_canonical" ]]; then
+       echo "error: REPO_ROOT could not be canonicalized: $REPO_ROOT" >&2
+       exit 1
+     fi
+     if [[ "$canonical" != "$root_canonical"/* ]]; then
+       echo "error: ${label} resolves outside repository: $raw -> $canonical (REPO_ROOT=$root_canonical)" >&2
+       exit 1
+     fi
+   }
+   ```
+
+   Call `assert_path_under_repo_root <label> <abs-path>` from each of: `AGENT_FILE_ABS` resolution (currently L340-341), every `--subject-code` / `--artifact-body` path resolution, every `--companion` path resolution, every `--diff-file` path resolution. Placement: immediately after each existing `assert_file_exists` call so existence and boundary are both checked before the path is ever passed to `cat` or echo'd into a prompt.
+
+2. **`agents/qrspi-implementer.md` — Bash allowlist clause.** Add one bullet under the existing tool-grant section (the agent body currently has `tools: Read, Write, Bash, Edit, Grep, Glob` at L4 with no prompt-layer restrictions). Insert at the top of the agent's prose body, ABOVE the first procedural section, as a new section titled `## Orchestrator-Only Scripts (Bash Allowlist)`:
+
+   > ## Orchestrator-Only Scripts (Bash Allowlist)
+   >
+   > You may NOT invoke `scripts/run-codex-review.sh` or `scripts/run-third-party-llm.sh` under any path shape — not by relative path (`./scripts/run-codex-review.sh`), not by absolute path (`<repo>/scripts/run-codex-review.sh`), not via shell expansion or aliases. These scripts are orchestrator-only — they dispatch LLM reviews on behalf of the run, and they read arbitrary file content into the LLM prompt. Per-task implementer work has no legitimate reason to invoke them; the per-task Bash grant restriction here is defense in depth against prompt-injected exfil.
+   >
+   > If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` and stop — the orchestrator owns LLM dispatch decisions, not the implementer.
+
+   This is the narrow-restriction B1 shape per the locked decision — no positive command-family allowlist. The implementer keeps full Bash flexibility for legitimate build/test/lint work in any language stack.
+
+3. **`tests/unit/test-run-codex-review-path-boundary.bats`** — new file. Three test cases, each invoking `bash scripts/run-codex-review.sh ... --dry-run` with a malicious path and asserting `[ "$status" -ne 0 ]` plus the error message substring:
+   - `--subject-code /etc/hosts --dry-run` → exit non-zero, stderr contains `"resolves outside repository"`.
+   - Symlink test: `ln -s /etc/hosts /tmp/qrspi-test-link-$$` inside the test's setup, then `--subject-code /tmp/qrspi-test-link-$$ --dry-run` → exit non-zero, stderr contains `"resolves outside repository"`. Teardown removes the symlink.
+   - `--companion /tmp/qrspi-test-malicious-$$.md --dry-run` with a real file at that path (created in setup, removed in teardown) → exit non-zero, stderr contains `"resolves outside repository"`. This proves the boundary check fires even when the file exists and is readable, not just on missing-file paths.
+
+   The test file lives in `tests/unit/` alongside existing wrapper-script tests. Use existing bats helpers (`load helpers/...`) if applicable.
+
+4. **`scripts/run-third-party-llm.sh` — 1-paragraph audit.** Verify whether the dispatcher accepts arbitrary file paths as direct CLI input from outside the wrapper. If yes (same surface reachable from a different entry point), add the same `assert_path_under_repo_root` call in the dispatcher as well, sourced from a shared helper file (`scripts/lib/path-guard.sh`) to keep the canonicalization logic in one place. If no (dispatcher only ever receives in-memory data assembled by the wrapper, never raw paths), document that in a one-line comment in the dispatcher script and write a sentence in the G16 implementation notes (`docs/qrspi/2026-05-30-v072-release/notes/g16-audit.md` or wherever the run's notes live) confirming the audit outcome.
+
+5. **No changes to** `agents/qrspi-test-writer.md` (its Bash allowlist already prohibits orchestrator scripts via the positive-allowlist shape — `bats`, `git`, `mkdir -p tests/`, narrow inspection commands only), no changes to `skills/reviewer-protocol/SKILL.md` (the dispatch contract is unchanged; G16 fixes only the implementation of the wrapper), no changes to `using-qrspi/SKILL.md` (the orchestrator's wrapper-invocation patterns already pass repo-relative or `<ABS_ARTIFACT_DIR>/...` paths, which canonicalize cleanly under `$REPO_ROOT`).
+
+**G14 cross-reference.** When this design lands and is implemented, the next sanctioned-channel exfil finding emitted by a reviewer will be scored against the G14-extended verifier rubric — security findings about sanctioned-channel surfaces are NOT pattern-matched as "redundant with existing curl-level exfil paths" and won't be suppressed by the same reasoning that scored the v0.7.1 F01 at 62.
+
+**Open Questions for v0.7.3+.** Tracked externally as GitHub issue dfrysinger/qrspi-plus#268 (filed when this design block ships): broader audit of all `scripts/*.sh` and `scripts/*.mjs` for the "reads a path, ships content through sanctioned LLM channel" pattern. Decision criteria: v0.7.2 self-host of G16 surfaces any additional scripts with the same shape? Also captures: did the strict-under-`$REPO_ROOT` choice prove too tight for any legitimate caller (any need for a future `--allow-tmp-input` flag)?
+
+**Pre-existing plugin issues to file.** None new — G16 is a remediation of the v0.7.1 F01 finding that the verifier suppressed; the plugin defect was the verifier rubric (now covered by G14), not a separate plugin issue.
+
+**References.** Source: goals.md G16 / #232 (v0.7.1 INTEGRATE R1 sec-codex F01); `scripts/run-codex-review.sh` L322-329 (resolve_path), L340-341 (AGENT_FILE_ABS), L462-467 (emit_untrusted_artifact `cat`), L548-560 (forward to dispatcher); `scripts/run-codex-review.sh` L115-131 (existing realpath/readlink-f pattern in `check_codex_available` — reused as canonicalization reference); `agents/qrspi-test-writer.md` L21-26 (positive-allowlist reference shape, B2 alternative); `agents/qrspi-implementer.md` L4 (tool-grant line, current state — no prompt-layer restriction); related G14 — verifier rubric drift suppressed this finding once and would have suppressed it again without G14.
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
