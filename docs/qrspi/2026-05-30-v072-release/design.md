@@ -1156,6 +1156,64 @@ The finalize pass can be inline skill prose OR a small subagent — it's mechani
 - No new agent file added under `agents/`; no `!cat` of the rules file into any SKILL.md preamble; no new config field in `config.md`; no new path-glob heuristic anywhere in the reviewer dispatch chain.
 - Meta-acceptance: the refreshed `skills/_shared/prompt-design-rules.md` applied against itself (the reviewer correctly identifies it as a meta-document about prompt prose and applies R1-R7 to it) passes its own audit — the rules must satisfy themselves.
 
+**Amendment (locked 2026-05-31): Implementer-side coverage + Plan classification + Test-expectation shape.**
+
+The G31 original locks reviewer-side enforcement (`qrspi-code-quality-reviewer` + `qrspi-design-reviewer` apply prompt-design-rules.md to prompt-prose subjects via content-semantic detection). Three upstream surfaces also need parallel awareness so the rule chain fires correctly at every gate, not just at review:
+
+1. **Plan classifier** needs a content-semantic test for `task_type: lightweight` routing so prompt-prose tasks reach the lightweight implementer regardless of project layout (the existing path-glob list is qrspi-plus-specific and would mis-route `skills/_shared/*.md`, user-project `prompts/`, and any custom layout).
+2. **Lightweight implementer** needs the SAME content-semantic test applied to its OWN task's deliverable to decide whether to Read the rules file before drafting (lightweight handles prose / prompt / doc / config — only prompt subjects need R1-R7; reading-and-not-applying is the verbosity-bias anti-pattern the rules themselves warn against).
+3. **Plan writer subagents** (the merged-plan/overview subagent + the initial-draft per-task sub-subagent) need awareness that prompt-prose tasks have no executable RED gate — Test Expectations for such tasks must encode rules-application as the verification mechanism, not test execution.
+
+Three Parts ship together as one amendment unit.
+
+<!-- prose-design: skills/plan/SKILL.md § Per-Task Classification — amend Step 1 -->
+
+**Part A — Plan classification (content-semantic primary gate; existing globs as fast-path shortcut).** Amend `skills/plan/SKILL.md` § Per-Task Classification Step 1. Replace the current *"Default `code`. Assign `task_type: lightweight` only when **all** target files match one of these globs: …"* with:
+
+*"Default `task_type: code`. Assign `task_type: lightweight` when the planned task's primary deliverable consists of prose that will be consumed by an LLM agent as instructions, context, or rules at runtime (skill bodies, agent bodies, shared snippets, prompt templates, rule files, MCP tool descriptions, RAG instructions, any LLM-consumable directive content) OR non-prompt prose / docs / config that has no executable behavior to test. Use content semantics, not file path or extension, as the determining signal. The existing glob list (`skills/**/SKILL.md`, `skills/**/templates/*.md`, `agents/qrspi-*.md`) remains as a fast-path shortcut for qrspi-plus-internal authoring — when **all** target files match a fast-path glob, classify lightweight without further inspection. For target files outside the fast-path globs, apply the content-semantic test. This makes the classifier universal across any project a user develops prompts for (a user-project task authoring `prompts/foo.md`, `src/llm-instructions/bar.md`, or a custom-layout prompt file gets correct lightweight routing without per-project glob configuration)."*
+
+Anchor phrases: *"prose that will be consumed by an LLM agent as instructions, context, or rules at runtime,"* *"Use content semantics, not file path or extension,"* *"fast-path shortcut for qrspi-plus-internal authoring."*
+
+Propagate the same classification rule into the dispatch payload sections of both writer-subagent flavors (the merged-plan / overview subagent dispatch and the initial-draft per-task sub-subagent dispatch — `skills/plan/SKILL.md` lines ~125-132 and ~439-444 as of v0.7.1). The post-approval-split sub-subagent does NOT need the rule — it carries frontmatter verbatim from the orchestrator-classified wrapped section per `skills/plan/post-approval-split-contract.md` § "carries every field present on the wrapped task section verbatim."
+
+<!-- prose-design: agents/qrspi-implementer-lightweight.md — add content-semantic detection + conditional rules Read -->
+
+**Part B — Lightweight implementer content-semantic detection + conditional rules Read.** Amend `agents/qrspi-implementer-lightweight.md` agent body (NOT `skills/implementer-protocol/SKILL.md`, since the TDD implementer never handles prompt prose by design and should not Read the rules file). Add a step the lightweight implementer runs before drafting:
+
+*"Lightweight tasks span four content categories: prose, prompt, doc, config. Only prompt-prose deliverables require application of `skills/_shared/prompt-design-rules.md`. Before drafting, determine semantically whether this task's deliverable IS prompt prose — i.e., text the implementer will author that is intended to be loaded into an LLM's context as instructions, system prompts, agent definitions, skill definitions, reviewer rubrics, MCP tool descriptions, RAG instructions, or any equivalent LLM-consumable directive content. Use content semantics, not file path or extension, as the determining signal. If yes, Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles BEFORE drafting, not as post-write polish. If no (the deliverable is non-prompt prose, ordinary documentation, or configuration), proceed with standard prose authoring; do not Read the rules file (reading-without-applying is the same verbosity-bias failure mode the rules themselves warn against)."*
+
+Anchor phrases: *"determine semantically whether this task's deliverable IS prompt prose,"* *"Use content semantics, not file path or extension,"* *"skills/_shared/prompt-design-rules.md (resolved from the installed plugin path per host convention),"* *"apply R1-R7 + cross-cutting principles BEFORE drafting, not as post-write polish."*
+
+<!-- prose-design: skills/plan/SKILL.md § writer-subagent dispatch payload — Test-Expectations clause for prompt-prose tasks -->
+
+**Part C — Plan writer-subagent Test-Expectations clause for prompt-prose tasks.** Amend the dispatch payload sections of Plan's writer subagents (merged-plan / overview subagent + initial-draft per-task sub-subagent) to instruct:
+
+*"For tasks classified `task_type: lightweight` because the deliverable is prompt prose (per Part A content-semantic test), Test Expectations cannot be RED-gate failing tests — prompt prose has no executable behavior to verify by test execution. Instead, Test Expectations for prompt-prose tasks MUST encode rules-application as the verification mechanism, anchored on this template: 'Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy].' Other lightweight task categories (non-prompt prose, docs, config) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause."*
+
+Anchor phrases: *"prompt prose has no executable behavior to verify by test execution,"* *"Test Expectations for prompt-prose tasks MUST encode rules-application as the verification mechanism,"* *"verified via the same content-semantic rules application."*
+
+**Amendment dependencies + edge cases.**
+
+- Depends on G31 original (reviewer-side content-semantic detection — Parts A/B/C mirror the same anchor phrases for consistency across Plan + lightweight implementer + reviewers).
+- Co-ships with G31 original in v0.7.2.
+- Edge case: a task spans mixed deliverables (one prompt-prose file + one non-prompt file). Solution: Plan classifier already requires "**all** target files" satisfy the lightweight test — mixed tasks default to the code path. The content-semantic test runs against the deliverable set as a whole. If a task is genuinely mixed in nature, split it per existing Plan Goal-Specificity rules.
+- Edge case: lightweight implementer's content-semantic judgment is borderline (a task deliverable mixes prompt prose with ordinary documentation in one file). Solution: judge per-block where the file's structure permits; when ambiguous, default to applying the rules. Same disposition as the reviewer-side edge case above (the cost of one extra finding-type-gate evaluation is negligible relative to missed drift).
+- Edge case: Plan writer-subagent emits the Part C Test-Expectations clause for a task that is later re-classified (e.g., user amendment changes the deliverable from prompt prose to ordinary doc). Solution: re-classification triggers re-authoring of Test Expectations to match the new category — the clause is keyed off the (current) `task_type` + deliverable content, not historical state.
+- Edge case: a project legitimately wants to author lightweight prose that LOOKS like LLM instructions but is consumed by humans (e.g., a style guide that uses imperative voice). Solution: the content-semantic test asks whether the prose is intended to be LOADED INTO AN LLM'S CONTEXT, not whether it uses imperative voice. A human-facing style guide consumed by humans fails the loading-intent test and routes to ordinary lightweight prose authoring.
+
+**Amendment acceptance (additions to the G31 acceptance list above).**
+
+- `skills/plan/SKILL.md` § Per-Task Classification Step 1 carries the content-semantic test with the Part A anchor phrases; the existing glob list is reframed as a fast-path shortcut, not the sole gate.
+- Plan writer-subagent dispatch payload sections (merged-plan/overview subagent + initial-draft per-task sub-subagent) carry the Part C Test-Expectations clause with the Part C anchor phrases.
+- `agents/qrspi-implementer-lightweight.md` agent body carries the Part B content-semantic detection step with the Part B anchor phrases.
+- `skills/implementer-protocol/SKILL.md` is NOT amended (the TDD implementer must not Read the rules file — it never handles prompt prose by design; rules Read belongs on the lightweight agent only).
+- `skills/plan/post-approval-split-contract.md` is NOT amended (post-approval-split sub-subagents carry frontmatter verbatim from orchestrator-classified wrapped sections; classification is the orchestrator's responsibility at that site, not the sub-subagent's).
+- Three positive smoke tests:
+  1. A user-project task in a non-qrspi-plus repo authoring `prompts/some-new-file.md` (no fast-path glob match) gets `task_type: lightweight` via the Plan classifier's content-semantic test.
+  2. The lightweight implementer dispatched for a prompt-prose deliverable Read-evidences `skills/_shared/prompt-design-rules.md` before drafting; the same implementer dispatched for a non-prompt config deliverable does NOT Read the rules file.
+  3. Plan writer subagent emits Test Expectations for a prompt-prose task that cite "R1-R7 application" as the verification mechanism (no RED-gate failing-test expectation).
+- Negative smoke test: a TDD task (`task_type: code`) does NOT trigger a Read of `skills/_shared/prompt-design-rules.md` from the TDD implementer's dispatch (Part B's conditional Read fires only for the lightweight agent, which never receives `task_type: code` work).
+
 ---
 
 ## G5 — Idempotent post-approval plan split
