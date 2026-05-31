@@ -1350,6 +1350,78 @@ The four-layer arrangement, by layer (in addition to G4's two inherited layers �
 
 ---
 
+## G14 — Verifier mis-applies false-positive rubric to reviewer-labeled "Informational" findings
+
+**Problem.** The `qrspi-finding-verifier` agent treats reviewer-emitted "Informational" labels as equivalent to "explicitly silenced like a CLAUDE.md acknowledgment" and applies the false-positive rubric, scoring 20–30 → DROP. This conflates two distinct cases: (1) the finding's premise is wrong (true false positive — issue does not exist as described), (2) the finding's premise is correct but the reviewer chose not to demand action (informational/observational — issue exists, reviewer notes it for the record). The v0.7.1 rubric (`agents/qrspi-finding-verifier.md` L19-29) lists false-positive patterns including "Issues called out in CLAUDE.md but explicitly silenced in the code" — which correctly captures the acknowledged-and-silenced case (a documented user decision says the trade-off is accepted) — but provides no carve-out for reviewer-labeled Informational, so the agent extrapolates the silenced-pattern logic to cover it. Observed in v0.7.1 self-host T6 round-8 sec.F02: reviewer emitted a `sec` finding labeled "Informational" describing a real TOCTOU window between `realpath` and trust-prefix matching; verifier scored 25/100 → DROP, citing "reviewer self-labeled informational → false-positive rubric applies → low confidence." Outcome was right (the finding wasn't actionable) but the reasoning was wrong, and the same wrong reasoning would drop a serious-but-informational finding next time.
+
+**Approach.** Formalize "Informational" as a documented finding-message convention with hard verifier-side detection. Two coordinated changes:
+
+1. **`skills/reviewer-protocol/SKILL.md`** gains a new `## Informational Findings` section documenting the prefix convention: a reviewer who intends a finding to be informational (real issue, no action demanded) begins the `message` body's first non-blank line with the literal token `Informational:` (case-sensitive). The convention's semantics: the finding is logged to the review-round artifact for the record, scored on structural confidence by the verifier, but does NOT route to auto-apply or pause (regardless of `change_type`). The section explicitly distinguishes Informational from "acknowledged-and-silenced" (the latter is captured in CLAUDE.md or `feedback/*.md`, is a documented user decision, and remains in the false-positive rubric per existing line 25).
+
+2. **`agents/qrspi-finding-verifier.md`** gains a new rubric clause inserted BEFORE the existing false-positive-pattern list (currently L19-29). The clause: if the finding's `message` body's first non-blank line begins with literal `Informational:` (case-sensitive), do NOT apply the false-positive rubric. Instead, score on structural confidence — "does the cited issue exist as described in the cited files?" Anchor: 75 if the issue is structurally verifiable, 50 if partially verifiable, 25 if the cited issue cannot be located in the referenced files (the finding's premise is wrong). The DROP/KEEP threshold then applies normally; informational findings that are structurally real keep, informational findings whose premise is wrong drop — but the dispatch never collapses into the false-positive-pattern path.
+
+The two-case carve-out (false-positive vs informational) is intentionally narrow. The third candidate case from goals dialogue — acknowledged-and-silenced — is already correctly handled by the existing false-positive rubric (line 25 captures it). G14 only adds the missing branch; it does not restructure the rest of the rubric.
+
+**D1 — Informational prefix convention: prefix shape, placement, and verifier rubric branch.** Single decision covering both the reviewer-protocol convention and the verifier rubric clause.
+
+  - **Prefix shape.** Literal token `Informational:` (capital I, lowercase remainder, trailing colon). Case-sensitive. Must appear at the start of the first non-blank line of the `message` field body. May be followed by space + the finding body on the same line, or by a newline + body on subsequent lines. No other tokens (`INFO:`, `FYI:`, `Note:`, `Observation:`) carry the semantic — case-sensitivity and the single canonical token are load-bearing for unambiguous detection.
+
+  - **Reviewer-protocol placement.** New `## Informational Findings` section in `skills/reviewer-protocol/SKILL.md`, inserted between `## Disagreement-Valid Framing` (line 115ish, currently the closest adjacent section about how reviewers frame stance in their findings) and `## Untrusted Data Handling` (line 125). Section body documents: when to use the prefix (reviewer believes the finding is real but is not demanding action — e.g., a TOCTOU window mitigated by an upstream guard, a stylistic observation reviewer wants on record, a "future-maintenance flag" reviewer thinks worth noting); how to use it (literal `Informational:` prefix on first non-blank line of `message`); what happens downstream (verifier scores on structural confidence; review loop logs the finding but does NOT auto-apply or pause regardless of `change_type`); distinction from acknowledged-and-silenced (the latter belongs in CLAUDE.md or `feedback/*.md`, is a user decision, and continues to route through the false-positive rubric per the existing verifier line 25). Backward compatibility: findings without the prefix continue to be scored exactly as before (no behavior change for any existing finding shape).
+
+  - **Verifier rubric branch (verbatim addition to `agents/qrspi-finding-verifier.md`).** Inserted as a new paragraph immediately BEFORE the existing "Treat the following patterns as likely false positives and score them low (0–25):" sentence (currently ~line 19):
+
+    ```markdown
+    **Informational findings (carved out from the false-positive rubric).** If the finding's
+    `message` body's first non-blank line begins with the literal token `Informational:`
+    (case-sensitive, capital I, trailing colon), do NOT apply the false-positive patterns
+    below. The reviewer has explicitly labeled this finding as a real observation that does
+    not demand action — false-positive scoring is the wrong rubric. Instead, score on
+    structural confidence: does the cited issue actually exist in the referenced files as
+    the message describes?
+
+    - **75:** Structurally verifiable. You can locate the cited issue in the referenced
+      files and the message's description matches what is there.
+    - **50:** Partially verifiable. The cited issue exists in some form but the message's
+      description is loose or partially mismatched against the file content.
+    - **25:** Premise wrong. The cited issue cannot be located in the referenced files as
+      described — the informational claim itself is incorrect.
+
+    DROP/KEEP threshold applies normally to the resulting score. Informational findings
+    that are structurally real (≥50) keep and are logged to the round artifact; informational
+    findings whose premise is wrong (≤25) drop.
+
+    This branch is distinct from "acknowledged-and-silenced" findings (covered by the
+    false-positive pattern below for "Issues called out in CLAUDE.md but explicitly silenced
+    in the code"). Acknowledged-and-silenced is a documented user decision, lives in CLAUDE.md
+    or `feedback/*.md`, and correctly routes through the false-positive rubric. Informational
+    is a reviewer-emitted stance on a finding the reviewer authored — different signal,
+    different rubric.
+    ```
+
+  - **Why a prose-prefix convention (not a structured-field schema migration).** Goals dialogue weighed two architectural directions:
+    - **Light way (B, chosen).** Documented `Informational:` prefix in `message` body. One reviewer-protocol section + one verifier rubric clause; zero changes to the 5-field finding schema; zero changes to ~25 reviewer agent bodies; fully backward-compatible (findings without the prefix score as before).
+    - **Heavy way (A, deferred).** Add a 6th finding-schema field (e.g., `actionability: action-required | informational`). Verifier branches on the structured field. Reviewer-protocol schema goes from 5 fields to 6; every reviewer agent must learn to emit the new field; review-loop dispatch logic may need to know "informational findings log-only, no auto-apply, no pause." Rigorous but heavy.
+
+    Option B chosen because the observed evidence is one instance (T6 R8 sec.F02), the existing ad-hoc convention already uses prose labeling, and B is essentially a documented version of what reviewers already do. If v0.7.2 self-host shows the prose-prefix is too fragile (reviewers typo, forget, or use inconsistent variants like `INFO:` / `FYI:` / `Note:`), v0.7.3 migrates to Option A; the prose convention provides the migration path's seed (existing Informational-prefixed findings convert directly to `actionability: informational` field values). A v0.7.3 follow-up issue (filed at acceptance time) tracks the option-A migration question contingent on self-host signal.
+
+**Acceptance.**
+
+- New `## Informational Findings` section exists in `skills/reviewer-protocol/SKILL.md`, inserted between `## Disagreement-Valid Framing` and `## Untrusted Data Handling`.
+- Section body documents the prefix shape (literal `Informational:`, case-sensitive, first non-blank line of `message`), when to use it, what happens downstream, and the distinction from acknowledged-and-silenced.
+- `agents/qrspi-finding-verifier.md` gains the verbatim Informational-carve-out paragraph (D1) inserted immediately BEFORE the existing false-positive-pattern list at ~line 19.
+- A bats test asserts the verifier rubric contains the literal `Informational:` token in the carve-out clause (regression guard against accidental rubric edits removing the branch).
+- A bats test asserts the reviewer-protocol section is present and contains both the prefix-shape definition and the distinction-from-acknowledged-and-silenced paragraph.
+- No changes to the 5-field finding schema. No changes to reviewer agent bodies (the convention is documented but not enforced — reviewers opt in by using the prefix).
+- v0.7.3 follow-up filed: GitHub issue dfrysinger/qrspi-plus#265 tracking the option-A (structured `actionability` field) migration question, contingent on v0.7.2 self-host signal showing prose-prefix fragility.
+
+**Open Questions for v0.7.3+.** Tracked externally as GitHub issue dfrysinger/qrspi-plus#265 against the v0.7.3 milestone — does v0.7.2 self-host evidence warrant migrating from prose-prefix (B) to structured field (A)? Issue captures: observed fragility incidents (typos, missed prefix, inconsistent capitalization variants), false-detection incidents (non-informational findings whose message happens to begin with `Informational:`), and reviewer-side workflow friction (did reviewers find the convention discoverable / natural to use). If self-host signal is clean, B stays; if fragile, A migration is scoped for v0.7.3.
+
+**Pre-existing plugin issues to file.** None. G14's failure mode is a missing-carve-out in an existing rubric, not a documented plugin defect; the v0.7.1 verifier rubric is internally consistent on the cases it actually documents — it just doesn't document Informational.
+
+**References.** Source: goals.md G14 / #230 (T6 round-8 sec.F02); `agents/qrspi-finding-verifier.md` L19-29 (existing false-positive rubric being extended); `skills/reviewer-protocol/SKILL.md` Finding Schema (L53-62, unchanged) + Disagreement-Valid Framing (L115ish, adjacent to new section); related G13 (`change_type` enum drift — different finding-field rigidity concern; G14 adds a documented prose convention rather than a schema field, intentionally).
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
