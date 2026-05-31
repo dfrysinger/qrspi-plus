@@ -1200,9 +1200,9 @@ description: Apply prompt-design rules when authoring or planning prompt-prose d
 
 # Prompt Prose Writer
 
-!`cat ${CLAUDE_SKILL_DIR}/../_shared/prompt-prose-detection.md`
+!cat skills/_shared/prompt-prose-detection.md
 
-!`cat ${CLAUDE_SKILL_DIR}/../_shared/prompt-prose-writer-addition.md`
+!cat skills/_shared/prompt-prose-writer-addition.md
 ```
 
 Consumer: #4 (preloaded via `skills:` frontmatter).
@@ -1220,9 +1220,9 @@ description: Apply prompt-design rules when reviewing prompt-prose subjects in a
 
 # Prompt Prose Reviewer
 
-!`cat ${CLAUDE_SKILL_DIR}/../_shared/prompt-prose-detection.md`
+!cat skills/_shared/prompt-prose-detection.md
 
-!`cat ${CLAUDE_SKILL_DIR}/../_shared/prompt-prose-reviewer-addition.md`
+!cat skills/_shared/prompt-prose-reviewer-addition.md
 ```
 
 Consumers: #5-#8 (preloaded via `skills:` frontmatter).
@@ -1238,7 +1238,7 @@ Verbatim content:
 
 Assign `task_type: lightweight` when the task's primary deliverable is prompt prose OR non-prompt prose / docs / config that has no executable behavior to test.
 
-!cat ${CLAUDE_SKILL_DIR}/../_shared/prompt-prose-detection.md
+!cat skills/_shared/prompt-prose-detection.md
 
 Apply the detection above to the planned target files. If the target IS prompt prose, classify lightweight. Mixed-deliverable tasks (one prompt-prose file + one code file in the same task) require ALL target files to satisfy the lightweight test; mixed tasks default to `task_type: code` — split per Goal-Specificity rules if genuinely mixed in nature.
 
@@ -1339,7 +1339,7 @@ Placement: `agents/qrspi-design-reviewer.md` body, appended to the review-proced
 
 2. **No cross-agent forward references.** Each consumer's body either composes from a shared snippet or preloads a wrapper SKILL. No consumer's body references another consumer's body. The anti-pattern G9 caught for procedural authority (forward-referencing design-doc anchors at runtime) applies symmetrically to cross-agent prompt references — the design-reviewer's original "apply the same content-semantic judgment described in qrspi-code-quality-reviewer's amendment" was exactly that anti-pattern (the design-reviewer cannot Read another agent's body at runtime). The shared-block composition strips it.
 
-3. **Two mechanisms because two surface types.** SKILL.md files process `!cat` at load time (verified — `goals/SKILL.md` `!cat`s `precondition-block.md`). Agent files do not process `!cat` directly but DO process `skills:` frontmatter preload (verified — `qrspi-implementer.md` and `qrspi-implementer-lightweight.md` both preload `implementer-protocol` this way). One shared source can serve both surface types via the two mechanisms; trying to force a single mechanism would degrade one of the two surface types.
+3. **Two mechanisms because two surface types.** SKILL.md files process `!cat` at load time on Claude Code (verified via `goals/SKILL.md` `!cat`ing `precondition-block.md`). Agent files do not process `!cat` directly but DO process `skills:` frontmatter preload on Claude Code (verified via `qrspi-implementer.md` + `qrspi-implementer-lightweight.md` both preloading `implementer-protocol`). **Host-portability across Copilot CLI and Codex CLI is NOT yet verified — see the new entry under "Open questions" below.** The architecture assumes both mechanisms work on every host qrspi-plus supports; if they do not, an alternative composition mechanism is required before this goal can ship.
 
 4. **Universal across projects via content-semantic detection.** The classifier and reviewer use LLM content-comprehension to identify prompt prose; path-based heuristics (file globs, extension allowlists, directory conventions) serve only as a fast-path shortcut for qrspi-plus's own layout, not the universal gate. A user authoring prompts in `prompts/foo.md`, `src/llm-instructions/bar.md`, or any custom layout gets correct classification and review without per-project plugin configuration. The shared detection block's content-semantic test ("Use content semantics, not just file path or extension") is the universal contract; path and extension are valid secondary signals but not sole determinants. The path-heuristic-only approach was rejected because (a) it would hardcode qrspi-plus's layout into a rule meant to be universal, (b) it would require either a per-user config field or a treadmill of glob updates as conventions evolve, (c) it cannot catch prompt prose in unconventional locations without ever-expanding glob lists. The dedicated-reviewer alternative (`qrspi-prompt-reviewer`) was rejected because it would add an always-on fanout slot whose cost falls on every Implement round even when zero prompt prose is touched, fragment prompt-quality enforcement across more agents to maintain, and duplicate content-detection logic.
 
@@ -1364,6 +1364,7 @@ Placement: `agents/qrspi-design-reviewer.md` body, appended to the review-proced
 
 **Open questions for v0.7.3+ (out of scope for v0.7.2).**
 
+- **[BLOCKING — must resolve before Implement] Host portability of `!cat` and `skills:` preload mechanisms.** Empirical evidence from this design session (Copilot CLI 1.0.57-1, this run) indicates Copilot CLI does NOT expand `!cat` directives at SKILL load time — the directive appears as literal text in the loaded SKILL prompt rather than the referenced file's contents. This was observed for both syntactic variants: backtick-wrapped `` !`cat ${CLAUDE_SKILL_DIR}/...` `` (1 site: `goals/SKILL.md` line 8) AND bare `!cat skills/.../owns-defers.md` (7 sites: design / plan / phasing / parallelize / replan / structure / goals SKILLs). If confirmed by deeper investigation, this affects three things: (a) the proposed G31 architecture (wrapper SKILLs + Addition A's inline `!cat`) does not actually compose on Copilot CLI; (b) existing qrspi-plus OWNS/DEFERS contracts are silently degraded on Copilot CLI (the `!cat skills/.../owns-defers.md` lines in 7 SKILL.md files never expand, leaving the contract content out of the loaded prompt — a real pre-existing bug); (c) the same question applies to CDs that prescribe `!cat`'d shared snippet files (`reviewer-dispatch-prose.md`, `evergreen-output-rule.md`, `multi-actor-flow-check.md`). `skills:` frontmatter preload by agent files is similarly unverified on Copilot CLI and Codex CLI. Investigate before Implement: (1) does Copilot CLI honor ANY composition mechanism for shared SKILL content? (2) does Codex CLI? (3) do agent `skills:` frontmatter entries fire on either? (4) if no host-native mechanism works, are install-time expansion (a build script that resolves `!cat` directives into the installed plugin tree) or explicit agent-Read directives (the SKILL.md tells the agent to `Read` the shared file) the right fallback? **G31 cannot proceed to Implement until the composition mechanism is verified to work on every host qrspi-plus supports.** Also surface the pre-existing OWNS/DEFERS degradation as a separate plugin issue once investigation confirms.
 - **Replan analyzer / reviewer integration** (`agents/qrspi-replan-analyzer.md`, `agents/qrspi-replan-reviewer.md`). Replan reads completed-phase artifacts and proposes task changes; if a task being analyzed was a prompt-prose task, the analyzer/reviewer would benefit from prompt-prose framing awareness when classifying change severity and re-authoring task specs. Surfaced here as a known follow-up; not added to the v0.7.2 consumer table to avoid scope creep this release.
 - **CI sweep automation for consumer-table drift detection.** The consumer table above is the single source of truth for which surfaces should compose from the shared blocks. A CI script (`scripts/audit-prompt-prose-consumers.sh`) could enforce: (1) every listed consumer has the expected `!cat` line or `skills:` frontmatter entry; (2) no other file in the repo contains hand-copied detection prose (grep for the anchor phrases without the expected composition mechanism). v0.7.2 ships the table; CI enforcement deferred to v0.7.3+.
 
@@ -1399,6 +1400,14 @@ Rules-file relocation and refresh:
 - `skills/_shared/prompt-design-rules.md` exists at the new path; `docs/prompt-design-guide.md` no longer exists; `git log --follow` traces the file history through the rename.
 - `skills/_shared/prompt-design-rules.md` `Last applied:` date is bumped to the refresh ship date; all eight updates (A-H) are visible in the file as inline edits (no detached changelog).
 - No file in the repo (skills, agents, scripts, tests, docs) contains a stale reference to `docs/prompt-design-guide.md` after the rename completes.
+
+Co-shipped vendor-neutrality cleanup (`!cat` path convention):
+
+- All new `!cat` directives in this work (Files 4 + 5 wrapper SKILLs, Addition A inline cat) use the bare-relative-path convention (`!cat skills/_shared/prompt-prose-detection.md`) matching the dominant 7-of-8 pattern in existing SKILL.md files (`skills/design/SKILL.md`, `skills/plan/SKILL.md`, `skills/phasing/SKILL.md`, `skills/parallelize/SKILL.md`, `skills/replan/SKILL.md`, `skills/structure/SKILL.md`, `skills/goals/SKILL.md` line 26). No `${CLAUDE_SKILL_DIR}` or host-specific path variable is introduced — bare-relative is vendor-neutral (works on Claude Code, Copilot CLI, Codex CLI, and any host that resolves SKILL `!cat` directives from the plugin root).
+- Two legacy outliers are converted to the bare-relative convention as part of this work (small, low-risk cleanup; co-ships under G3's vendor-neutrality posture):
+  1. `skills/goals/SKILL.md` line 8: `!`​`cat ${CLAUDE_SKILL_DIR}/../_shared/precondition-block.md`​` → `!cat skills/_shared/precondition-block.md`.
+  2. `skills/_shared/codex/launch-await-pattern.md` line 45 (the `<!-- Embedded via: ... -->` comment) — update the example in the comment to match the bare-relative convention so future copy-paste users don't propagate the Claude-coupled pattern.
+- Post-cleanup grep verification: `grep -rn 'CLAUDE_SKILL_DIR' skills/ agents/` returns no matches.
 
 Smoke tests:
 
