@@ -680,14 +680,13 @@ belongs in Plan.
    name what additional evidence would resolve it.
 
 5. **Use simple language and provide context when presenting ideas.** Ground proposals in
-   concrete scenarios before naming them abstractly. Assume the user may not have plugin
-   internals (SKILL anatomy, orchestrator behavior, rubric definitions, schema-field names)
-   fresh in working memory — when introducing a technical term that has not appeared in this
-   dialog within the recent turns, provide one sentence of grounding context. Trade-off
-   framings ("here are 3 candidates: A is X, B is Y...") should explain what each candidate
-   concretely does in plain prose before naming the abstract architectural shape. This rule
-   covers G33; Goals SKILL does NOT receive this rule (G33 scope was user-directed to Design
-   only; broader scoping tracked as dfrysinger/qrspi-plus#266).
+   concrete scenarios before naming them abstractly. Assume the user may not have the
+   project's internal vocabulary (component names, jargon, structural conventions, identifiers
+   specific to this codebase or domain) fresh in working memory — when introducing a technical
+   term that has not appeared in this dialog within the recent turns, provide one sentence
+   of grounding context. Trade-off framings ("here are 3 candidates: A is X, B is Y...")
+   should explain what each candidate concretely does in plain prose before naming the
+   abstract architectural shape.
 
 6. **Sharpen fuzzy language.** When the user uses imprecise vocabulary, propose the canonical
    term and ask for confirmation before moving on.
