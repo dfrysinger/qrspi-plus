@@ -1130,8 +1130,9 @@ Verbatim content:
 
 - `skills/**/SKILL.md`
 - `skills/**/*.md` (snippet files under a skill directory)
-- `skills/_shared/*.md`
-- `agents/qrspi-*.md`
+- `agents/*.md`
+- `AGENTS.md`
+- `CLAUDE.md`
 
 Files outside these globs require the content-semantic test above. Other projects may carry prompts in `prompts/`, `src/llm-instructions/`, or custom layouts — the content-semantic test is universal; the glob list is qrspi-plus-internal convenience only.
 
