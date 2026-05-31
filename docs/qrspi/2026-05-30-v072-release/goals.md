@@ -949,6 +949,41 @@ Open question for Design: should the authoritative best-practices file ALSO be `
 
 Source: Audit pass 2026-05-30 (this Design phase, response to G1 + G30 + CD-2 introducing multi-page prompt prose with no automated quality gate); `docs/prompt-design-guide.md` (the existing manual guide, last applied 2026-04-25); CD-2 (Evergreen-Output Rule — supplies the litmus test + named antagonist patterns); G1 (Dialogue Conduct + Sub-Rules A/B — defines the prose-design block surface); G30 (compaction-resilient persistence — supplies the compaction dimension); G3 (vendor-neutrality — drives R5 reframing).
 
+### G32 — Plugin build pipeline (strip dev-only paths + expand `!cat` includes)
+
+- **type:** `known-fix`
+
+#### Problem
+
+The plugin source repo and the plugin install artifact have diverging needs that no current build step reconciles:
+
+1. **Source-only content ships as install content.** `/docs/` (in-progress design artifacts, research, this v0.7.2 dossier), and plausibly other dev-only paths, are present in every plugin install today. There is no strip step.
+2. **Maintenance-DRY `!cat` composition is non-portable at runtime.** SKILL.md files use `!cat <path>` directives to compose shared snippets (OWNS/DEFERS contracts, precondition blocks, and the prompt-prose detection / addition files introduced by G31). Claude Code expands these natively at SKILL load time; Copilot CLI 1.0.57-1 does NOT — empirical evidence this session shows both `!cat ${CLAUDE_SKILL_DIR}/...` and bare `!cat skills/.../owns-defers.md` appear as literal text in loaded SKILL prompts. Codex CLI is unverified but presumed similar.
+3. **A latent kernel exists but is not wired in.** `scripts/render-skill.sh` is a 91-line bash "offline cat-emulator" with no CI hook, no install hook, and no caller anywhere in the repo. It also only handles the `${CLAUDE_SKILL_DIR}` form, not the dominant bare-relative `!cat skills/<path>` form (7 of 8 v0.7.1 SKILL.md sites).
+
+#### Why we care
+
+Without a build step:
+
+- **G31's architecture (wrapper SKILLs + inline `!cat`) silently degrades on every non-Claude host.**
+- **Seven existing v0.7.1 SKILL.md files silently degrade today.** The OWNS/DEFERS `!cat` lines in `design / plan / phasing / parallelize / replan / structure / goals` SKILLs never expand on Copilot CLI — a pre-existing bug surfaced this session.
+- **Any CD-prescribed shared snippets face the same degradation** (CD-1 `reviewer-dispatch-prose.md`, CD-2 `evergreen-output-rule.md`, CD-3/4 `multi-actor-flow-check.md`).
+- **Dev-only content keeps bloating plugin installs.**
+- **Maintenance DRY is one of the central tools** for keeping scope contracts and shared invariants consistent across the plugin — losing portable composition forces per-file duplication and drift, which is the same recurring class of plugin issues this release is trying to close.
+
+#### What we know so far
+
+- **Scope is includes-only for v0.7.2** — no variables, no conditionals (user-confirmed this session: no concrete variable use case yet; "logic-less" preserves reviewer-readability of source).
+- **`scripts/render-skill.sh` exists as a candidate kernel Design should weigh extending.** 91 LOC, bash, single-pass, mixed-content fence support; currently only handles `!cat ${CLAUDE_SKILL_DIR}/<relpath>`.
+- **Dominant `!cat` convention is bare-relative** `!cat skills/<path>` (7 of 8 v0.7.1 SKILL.md sites); only 1 legacy site uses `${CLAUDE_SKILL_DIR}`. Build step must handle the bare-relative form (and ideally normalize both as co-shipped cleanup).
+- **Implementation language candidates Design should weigh** — (a) extend `render-skill.sh` in bash; (b) rewrite as a small Python stdlib script (~100-200 LOC); (c) adopt a real template engine (Mustache / Jinja2 / Liquid — likely overkill given the no-variables decision).
+- **Strip scope must be defined by Design** — at minimum `/docs/`; plausibly other dev-only paths (e.g., `scripts/run-third-party-llm.sh`, in-progress artifacts). Needs an explicit allow- or deny-list, not heuristic.
+- **Output channel candidates Design should weigh** — (a) sibling build branch (consumers install directly); (b) Actions artifact published to a tagged release; (c) both.
+- **Validation requirements Design must specify** — cycle detection on recursive includes, fail-loud on orphan target paths, idempotent output (re-running build on already-built tree is a no-op or stays byte-identical), CI gate on PRs that catches drift.
+- **G31 dependency** — G32 unblocks G31; G31 cannot proceed to Implement until G32's build step is in place. Phasing should weigh whether G32 and G31 are co-scheduled or sequenced.
+
+Source: G31 BLOCKING open question (design.md, this session); empirical Copilot CLI 1.0.57-1 finding that `!cat` directives appear as literal text in loaded SKILL prompts; existing `scripts/render-skill.sh` (latent, unreferenced); G3 (vendor-neutrality — drives the requirement that every supported host see the same composed semantics).
+
 ## Cross-Cutting Notes
 
 - **Reviewer-pipeline correctness cluster (G6 / G7 / G8 / G9 / G10 / G11 / G12 / G13 / G14 / G19 / G20 / G28 / G29).** These goals all address the reliability of the reviewer→verifier→orchestrator pipeline: disk-write contract (G6/G11), field-schema enforcement (G8/G13), threshold-rule location and DRY (G7/G12), rubric calibration (G14/G19/G20), orchestration drift (G9), authority-fabrication (G10), apply-fix protocol cluster carve-out (G28), and large-artifact dispatch ingress (G29). G11 and G12 form a tightly coupled pair (contract then consumer); G7, G12, G13, and G28 share a "one place for the canonical filter rule" resolution path; G14 and G19 share a verifier-rubric expansion path also relevant to G10. G6 and G29 share the same dispatch-contract surface (`skills/reviewer-protocol/SKILL.md`) and are likely co-scheduled.
@@ -958,3 +993,5 @@ Source: Audit pass 2026-05-30 (this Design phase, response to G1 + G30 + CD-2 in
 - **Test-gate hardening cluster (G21 / G24-F05 / G26).** These goals address brittleness in the bats test harness: silent-pass `[[ ]]` form (G21), literal anti-pattern pin fragility (G24-F05), and deprecated shebang noise (G26). All three are small, mechanical, and share a "add a lint rule to prevent recurrence" extension candidate — a single "test-pin hardening" wave covers all three.
 
 - **Plan-phase under-scoping cluster (G15 / G18).** Both goals describe Plan-phase failure to enumerate downstream surfaces: sweep tasks failing to list dependent tests (G15) and cross-task consumer surfaces left off task specs (G18, with 10 documented instances). They share a root cause (no enumeration step in plan/SKILL.md) and at least one candidate solution (a grep-audit probe for downstream references) — Design should evaluate them together.
+
+- **Prompt-prose architecture cluster (G31 / G32).** G31 introduces wrapper SKILLs + shared snippet files for prompt-prose review coverage; G32 introduces the build pipeline that expands `!cat` includes so G31's composition (and 7 existing v0.7.1 OWNS/DEFERS sites) ship to every host. G32 is a hard dependency of G31 — G31 cannot reach Implement until G32 lands. The cluster also unblocks future shared-snippet work (CD-1 / CD-2 / CD-3 / CD-4 prescribed snippets). Phasing should weigh whether G32 lands in an earlier phase than G31 or both ship together.
