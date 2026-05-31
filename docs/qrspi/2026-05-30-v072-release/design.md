@@ -109,7 +109,17 @@ manifest persistence. Skill prose names only the agent; the script chain handles
 
     *Codex CLI host support deferred to v0.7.3+.
 
-11. **`skills/_shared/reviewer-dispatch-prose.md` — shared orchestrator-side dispatch instructions.** Single source of truth for the per-skill review-round prose. Carries: the `dispatch-agent.sh` invocation pattern (batched form), the spec-line parse instructions, the per-line Task tool invocation contract (one Task call per spec line, verbatim values, `prompt = "DISPATCH_FILE=<path>"`), the iron law forbidding skipped/deduplicated/modified Task calls, and the `await-round.sh` follow-up. `!cat`-included into every consumer skill (precedent: `_shared/precondition-block.md`, `_shared/evergreen-output-rule.md` per CD-2).
+11. **Post-implementer-dispatch commit-anchor hook (G9 amendment).** When `dispatch-agent.sh` dispatches an implementer subagent (initial implementer pass or fix-cycle implementer-fix), after the Task tool returns DONE/DONE_WITH_CONCERNS AND after the HEAD-advanced verification at `implement/SKILL.md` § Per-Task Convergence Narrowing passes, `dispatch-agent.sh` runs:
+
+    ```sh
+    git -C "<worktree-path>" rev-parse HEAD > "<round-dir>/round-NN-commit.txt"
+    ```
+
+    where `<worktree-path>` is the task's worktree path (full pipeline: `.worktrees/{slug}/task-NN/`; quick fix: repo root) and `<round-dir>` is `reviews/tasks/task-NN/` (per-task path; for artifact-level dispatches the file is not written — only per-task review loops use it). Pure mechanical capture; no first-party subagent is invoked from the script. Failure handling: on `git rev-parse` failure or write failure (worktree corrupt, disk full, parent dir missing), abort with diagnostic `"Per-round commit anchor capture failed for task NN round NN: <stderr>"` and propagate non-zero exit to the orchestrator — do NOT allow the orchestrator to dispatch the next round with a missing or empty anchor (G4's pre-dispatch gate would catch it too, but failing here surfaces the cause one hop closer to its origin).
+
+    Why here and not in `round-prepare.sh`: `round-prepare.sh` runs PRE-dispatch (assembles the round inputs); commit-anchor capture is POST-dispatch (records the result). Keeping POST-dispatch state capture in `dispatch-agent.sh` preserves G4's purity as a pre-flight script and concentrates per-subagent lifecycle bookkeeping in the dispatcher that already owns subagent lifecycle (manifest writes, await coordination).
+
+12. **`skills/_shared/reviewer-dispatch-prose.md` — shared orchestrator-side dispatch instructions.** Single source of truth for the per-skill review-round prose. Carries: the `dispatch-agent.sh` invocation pattern (batched form), the spec-line parse instructions, the per-line Task tool invocation contract (one Task call per spec line, verbatim values, `prompt = "DISPATCH_FILE=<path>"`), the iron law forbidding skipped/deduplicated/modified Task calls, and the `await-round.sh` follow-up. `!cat`-included into every consumer skill (precedent: `_shared/precondition-block.md`, `_shared/evergreen-output-rule.md` per CD-2).
 
     Each consumer skill's review-round section reduces to:
     1. A skill-specific preamble setting the dispatch parameters (`$REVIEW_STEP`, `$REVIEW_ROUND`, `$REVIEW_OUTPUT_DIR`, `$REVIEW_ARTIFACT`, `$REVIEW_AGENTS`) — varies per skill because the agent list differs (e.g., goals dispatches `quality-claude` + `scope-claude` + Codex peers when `codex_reviews: true`; design dispatches the design-reviewer + scope-reviewer set; plan dispatches the four plan-specific reviewers).
@@ -188,7 +198,7 @@ manifest persistence. Skill prose names only the agent; the script chain handles
 - NOT renamed: `codex-companion-bg.sh` (legitimately Codex-specific transport)
 
 **Acceptance criteria:**
-- `skills/_shared/reviewer-dispatch-prose.md` exists and contains the locked snippet body verbatim (per component #11).
+- `skills/_shared/reviewer-dispatch-prose.md` exists and contains the locked snippet body verbatim (per component #12).
 - Every skill in the 12-skill consumer list (goals, questions, research, design, structure, phasing, plan, parallelize, replan, implement, integrate, test) `!cat`-includes `_shared/reviewer-dispatch-prose.md` in its review-round section. Lint: `grep -L 'reviewer-dispatch-prose.md' skills/{goals,questions,research,design,structure,phasing,plan,parallelize,replan,implement,integrate,test}/SKILL.md` returns empty.
 - Every consumer skill's review-round section has been collapsed: no per-reviewer Claude-vs-Codex dispatch blocks, no inline `<<<FINDING-BOUNDARY>>>` recipe, no per-skill duplication of the parse-spec-line + invoke-Task instructions. The per-skill preamble sets `$REVIEW_STEP`, `$REVIEW_ROUND`, `$REVIEW_OUTPUT_DIR`, `$REVIEW_ARTIFACT`, `$REVIEW_AGENTS` and nothing else.
 - Every reviewer agent body (`agents/qrspi-*-reviewer.md`) carries the "**Read your `DISPATCH_FILE` as your full dispatch before doing anything else**" first-action instruction.
@@ -954,6 +964,17 @@ single deterministic script that the universal dispatcher auto-invokes.
 6. Running `git -C <repo> diff <ref> [-- <artifact>]` redirected to `<output-dir>/round-NN.diff`
 7. Writing `<output-dir>/.round-prepare.json` sidecar with `ref`, `narrowed`, `scope_hint`, `diff_file`, `reason`
 8. Exit 2 for non-git workspace (dispatch-agent treats as "no diff_file, no scope_hint")
+9. **Pre-dispatch presence assertion (G9 amendment).** When invoked for round NN ≥ 2 (i.e., the round being prepared is not the first), assert that the prior round's bookkeeping artifacts exist before computing this round's diff:
+   - `round-(NN-1)-commit.txt` MUST exist AND match the regex `^[0-9a-f]{40}\n$` (40-char SHA + single trailing newline).
+   - When `scope_tagger_enabled: true` in `config.md` AND the prior round is eligible for scope-tagger output (per `implement/SKILL.md` § Per-Task Convergence Narrowing rules — rounds 1 and 2 are always broaden-default and have no scope-set requirement, so the assertion fires only for round NN ≥ 3 on the scope-set file): `round-(NN-1)-scope-set.txt` MUST exist AND be non-empty.
+
+   On any failure, exit non-zero with one of these diagnostics naming the missing artifact:
+   - `"round-prepare: missing prior-round commit anchor at <path> — implementer commit-anchor capture failed or skipped in round NN-1"`
+   - `"round-prepare: malformed prior-round commit anchor at <path> — expected 40-char SHA + newline, got <first 80 chars escaped>"`
+   - `"round-prepare: missing prior-round scope-set at <path> — scope-tagger dispatch was skipped or failed in round NN-1"`
+   - `"round-prepare: empty prior-round scope-set at <path> — scope-tagger emitted zero tags in round NN-1, broaden manually or re-run tagger"`
+
+   `dispatch-agent.sh` propagates the non-zero exit per the existing failure-propagation contract (`Auto-invocation by dispatch-agent.sh` → "Clean failure propagation"). The orchestrator is forbidden by that contract from dispatching the next round when round-prepare fails. This converts the silent-drift failure mode (next round dispatched against full base-diff because prior bookkeeping was skipped) into a loud, named failure that surfaces the specific missing step. Rationale: the script already reads the commit-anchor file at step 4 (SHA safety check) and the scope-set files at step 2 — adding the presence assertion as step 9 reuses paths the script already touches.
 
 **Key insight:** Step 12's narrow decision is NOT LLM judgment — it's deterministic set comparison
 on outputs from the already-existing `qrspi-scope-tagger` cheap subagent. No additional subagent
@@ -1247,6 +1268,55 @@ Each iron-law clause names the correct channel positively (Write tool / stdout b
 **Resolved by CD-4 — Verifier-Fan-In Pipeline.** Field name `change_type:` is centralized in `reviewer-protocol/SKILL.md`; per-reviewer agent bodies reference rather than duplicate; script halts with named cause when missing. See CD-4 § "G. Reviewer agent updates" + G8 acceptance row.
 
 **References.** Source: #221. Compound failure with G7 / G13 / G11 / G12 — all resolved together by CD-4.
+
+---
+
+## G9 — Per-task review orchestration drift: scope-tagger, round-NN.diff, round-NN-commit.txt not fired
+
+**Outcome.** The per-task review loop's between-round bookkeeping — diff emission, commit-anchor capture, scope-tagger dispatch, ref selection — fires reliably under context load. Silent drift (round NN+1 dispatching against the full base-diff because round NN's bookkeeping was skipped) becomes a loud, named failure naming which artifact is missing.
+
+**Resolved by:** CD-1 (post-implementer commit-anchor hook, component #11) + G4 (pre-dispatch presence assertion, solution step 9) + this goal's per-task SKILL.md authoring work below. The compound architecture replaces the v0.7.1 split-contract structure (per-task fan-out section at `implement/SKILL.md` line ~929; per-task convergence narrowing section at line ~1184 — orchestrator must context-switch between them between rounds, frequently forgets under load) with a four-layer arrangement: (1) mechanical bookkeeping auto-fires in the dispatcher, (2) the meaningful subagent dispatch stays explicit in skill prose, (3) the assertion catches any miss loudly before the next round dispatches, (4) an in-line checklist gives the orchestrator a sequence-reminder at the per-task fan-out site itself.
+
+**Solution.**
+
+The four-layer arrangement, by layer:
+
+1. **`round-NN.diff` emission (already solved by G4).** `scripts/round-prepare.sh` is auto-invoked by `dispatch-agent.sh` before every reviewer fan-out per CD-1 component #3 (`Check <output-dir>/.round-prepare.json; if absent, auto-invoke round-prepare.sh`). The diff lands on disk deterministically; the orchestrator never has to remember to emit it. No new work for G9 — this layer is inherited from G4.
+
+2. **Ref selection / step-12 narrow-vs-broaden decision (already solved by G4).** `round-prepare.sh` solution step 3 applies the set-comparison table deterministically; the result lands in the sidecar's `narrowed` and `ref` fields. Per-task gets `<ref>=<task-base-commit>` as its broaden default (per `--task-branch` flag in G4 solution step 5). No new work for G9 — this layer is inherited from G4.
+
+3. **`round-NN-commit.txt` write (new — owned by CD-1 amendment, component #11).** `dispatch-agent.sh` post-implementer-dispatch hook runs `git -C <worktree-path> rev-parse HEAD > <round-dir>/round-NN-commit.txt` after the Task tool returns DONE for an implementer subagent (initial pass or fix-cycle). Pure mechanical; no first-party subagent involved. Fail-loud on capture failure (worktree corrupt, disk full, parent dir missing). See CD-1 component #11 for the full contract.
+
+4. **Scope-tagger dispatch (orchestrator-driven; explicit in `implement/SKILL.md` per-task review section — new authoring work owned here).** After per-round reviewer fan-in completes (Claude reviewers returned, Codex `await` redirects done), main chat dispatches one `qrspi-scope-tagger` Task subagent against the kept finding-files for the round. The dispatch is a first-party Task tool invocation — owned by main chat, not the script chain (per the QRSPI architectural boundary: bash scripts dispatch third-party CLIs; first-party Task-tool subagents are dispatched only from main chat). The dispatch shape already exists in `implement/SKILL.md` § Per-Task Convergence Narrowing → "Step 6 (scope-tagger dispatch) — per-task scope-tagger dispatch" (lines 1199–1207 in v0.7.1). G9's authoring work moves the *invocation step* up into the per-task fan-out section (line ~929 in v0.7.1) so the orchestrator sees it sequentially with the reviewer dispatches, instead of having to context-switch to a separate section.
+
+5. **Fail-loud gate (new — owned by G4 amendment, solution step 9).** `round-prepare.sh` pre-dispatch presence assertion verifies `round-(NN-1)-commit.txt` and (when narrowing-eligible AND `scope_tagger_enabled: true`) `round-(NN-1)-scope-set.txt` exist and are well-formed before computing the round NN diff. Missing or malformed inputs exit non-zero with a diagnostic naming the specific missing file. `dispatch-agent.sh` propagates the non-zero exit per G4's existing failure-propagation contract; the orchestrator is forbidden from dispatching the next round. See G4 solution step 9 for the full assertion spec and diagnostic strings.
+
+6. **In-line "between-round sequence" checklist (new — owned here, lives in `implement/SKILL.md`).** At the END of the per-task reviewer fan-out section (immediately after the reviewer dispatch prose, before the orchestrator's attention moves on), insert a short numbered block titled "Between rounds — required sequence":
+
+   ```markdown
+   **Between rounds — required sequence.** After this round's reviewer fan-in completes and BEFORE preparing the next round's dispatch, the orchestrator MUST perform these four steps in order:
+
+   1. Read `<round-dir>/.round-complete.json` (written by `await-round.sh`). Confirm no `mode: background` entries are still `pending`.
+   2. Dispatch `qrspi-scope-tagger` Task subagent against the round's kept finding-files (see § Per-Task Convergence Narrowing → "Step 6" for the dispatch parameters). The tagger writes `<round-dir>/../round-NN-scope-set.txt` per its agent contract.
+   3. Confirm `<round-dir>/../round-NN-commit.txt` exists (auto-written by `dispatch-agent.sh`'s post-implementer hook per CD-1 component #11). If missing, the prior implementer dispatch failed to commit — escalate per the Review-Loop Pause Gate, do NOT proceed.
+   4. Invoke `dispatch-agent.sh` for round NN+1. `round-prepare.sh` (auto-invoked) will assert presence of the commit anchor and scope-set per G4 solution step 9 — a missing or malformed artifact will halt the round with a named diagnostic.
+
+   Steps 1, 3, 4 are mechanical reads or single-script calls; step 2 is the only one that dispatches a subagent. The forward-reference to § Per-Task Convergence Narrowing covers details (anchor format, scope-set format, narrow-vs-broaden semantics).
+   ```
+
+   This is the reminder the v0.7.1 orchestrator lacked — without it, the orchestrator reads the per-task fan-out prose, dispatches reviewers, and then has to remember (across `/compact`, across context saturation) to navigate to a separate section for the between-round bookkeeping. The in-line checklist puts the sequence at the orchestrator's point of attention.
+
+**Per-task vs artifact-level scope.** The four-layer arrangement applies to per-task review loops (the v0.7.1 failure surface). Artifact-level review loops in `using-qrspi/SKILL.md` § Standard Review Loop have the same conceptual shape (commit anchor, scope-set, narrow-vs-broaden decision) but did not exhibit the same silent-drift symptom in v0.7.1 self-host runs — the artifact-level flow runs less frequently and the orchestrator's attention is less divided. Per-task is in scope for G9; artifact-level is out of scope (revisit in v0.7.3+ if drift surfaces there). The CD-1 commit-anchor hook and G4 presence assertion are written generically (apply to any round-dir path) so the artifact-level flow gets the hardening for free if a future amendment opts it in; G9's in-line checklist is the only piece that is specifically per-task.
+
+**Acceptance criteria:**
+- `dispatch-agent.sh` runs `git rev-parse HEAD > round-NN-commit.txt` after every per-task implementer-subagent dispatch returns DONE (initial pass + every fix-cycle pass). Verified by: a bats fixture that dispatches a mock implementer, asserts `round-01-commit.txt` lands on disk with a valid 40-char SHA + newline.
+- `round-prepare.sh` exits non-zero with a named diagnostic when invoked for round NN ≥ 2 with a missing or malformed `round-(NN-1)-commit.txt`. Verified by: a bats fixture that pre-stages a round-2 invocation without writing round-1's anchor; asserts exit code is non-zero AND stderr matches the diagnostic regex.
+- `round-prepare.sh` exits non-zero with a named diagnostic when invoked for round NN ≥ 3 with `scope_tagger_enabled: true` AND missing or empty `round-(NN-1)-scope-set.txt`. Verified by: a bats fixture parallel to the above for the scope-set case.
+- `implement/SKILL.md` per-task reviewer fan-out section contains the "Between rounds — required sequence" checklist verbatim (locked prose above). Verified by: a grep lint asserting the checklist heading is present in the per-task section.
+- A v0.7.1-style silent drift (per-task round dispatched against full base-diff because scope-tagger was skipped) becomes impossible because either: (a) the missing scope-set fails `round-prepare.sh`'s assertion loudly at round NN+1, or (b) the in-line checklist surfaces the missing dispatch step at the orchestrator's point of attention at round NN. Verified by: a self-host smoke run on a fresh per-task review loop confirms scope-tagger fires every round and `round-NN-scope-set.txt` lands on disk for every round NN.
+- The architectural boundary holds: no first-party Task-tool subagents are dispatched from any bash script. Verified by: `grep -rnE "subagent_type|Task\(|Agent\(" scripts/` returns empty (existing convention; G9 does not break it).
+
+**References.** Source: #224. Compound architecture spans CD-1 (component #11, commit-anchor hook) + G4 (solution step 9, presence assertion) + this goal (in-line checklist + scope-tagger relocation in implement/SKILL.md). The four-layer arrangement converts silent drift into loud failures at the round-boundary that would have masked it in v0.7.1.
 
 ---
 
