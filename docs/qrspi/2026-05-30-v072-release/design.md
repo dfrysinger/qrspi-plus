@@ -1662,6 +1662,129 @@ The four-layer arrangement, by layer (in addition to G4's two inherited layers �
 
 ---
 
+## G32 — Plugin build pipeline (strip dev-only paths + expand `!cat` includes)
+
+**Problem.** The plugin source repo and the plugin install artifact have diverging needs that no current build step reconciles: (a) source-only content (`/docs/`, `/reviews/`, `/tests/`, in-progress dossiers) ships verbatim in every plugin install today; (b) maintenance-DRY `!cat` directives in 7 v0.7.1 SKILL.md files (OWNS/DEFERS contracts) silently degrade on Copilot CLI 1.0.57-1 (empirical evidence this design session: both bare `!cat skills/<path>` and backtick-wrapped `` !`cat ${CLAUDE_SKILL_DIR}/...` `` appear as literal text in loaded SKILL prompts, not expanded contents); (c) G31's wrapper-SKILL + inline-`!cat` architecture would face the same degradation if shipped without a build step; (d) `scripts/render-skill.sh` is a 91-line bash "offline cat-emulator" that exists but is not wired into any CI or install hook and only handles the legacy `${CLAUDE_SKILL_DIR}` form. The cumulative effect is that maintenance DRY across SKILL.md (a central tool for keeping scope contracts and shared invariants consistent) is non-portable across the three hosts qrspi-plus is expected to support.
+
+**Approach.** Introduce a Node.js build script at `tools/build-plugin.mjs` that compiles the source repo into a self-contained plugin tree under `build/` (committed alongside source on `main`). The marketplace.json's plugin `source` switches from `"./"` (whole repo) to `"./build"` (relative-path source type, supported by both Claude Code and Copilot CLI for git-installed marketplaces). PR CI runs the build and refuses any PR whose committed `build/` tree does not match the freshly-built output (or whose source contains malformed `!cat` directives). Authors regenerate `build/` locally before each commit; CONTRIBUTING.md documents the loop. The resolver, the manifest-driven copy logic, and the failure semantics are all owned by `tools/build-plugin.mjs`; no other build infrastructure is introduced in v0.7.2.
+
+The cleanup of the existing dev/runtime ambiguity in `scripts/` is co-shipped with G32: two dev-only files (`scripts/render-skill.sh`, `scripts/g4-section-anchor-refresh.sh`) move to a new top-level `tools/` directory, leaving `scripts/` 100% runtime helpers (referenced by skills/agents at runtime) and `tools/` 100% dev-time helpers (build script + maintenance utilities). This makes the build script's allow-list trivially correct: `scripts/` ships in full, `tools/` does not.
+
+### D1 — Output channel: build subdir on `main` with relative-path marketplace source
+
+**Decision.** Build output lives at `build/` in the repo, committed to `main` alongside source. `marketplace.json` is updated so the `qrspi` plugin entry's `source` field becomes `"./build"` (Claude Code "Relative paths" source type; Copilot CLI's mirrored schema accepts the same path-prefixed value).
+
+**Rationale.** Both Claude Code and Copilot CLI install plugins via git (no tarball / release-asset model is supported). Both also support a sparse `git-subdir` source object and a simpler "Relative path within marketplace repo" source. With marketplace and plugin co-located in the same repo, the relative path is the simpler form — no second URL to keep in sync, no separate branch to maintain. Committing `build/` to the same branch as source means: (a) the diff that introduced a source change AND the diff that updated the build artifact land in the same PR (reviewable atomically), (b) there is no cross-branch sync class of bugs, (c) `git blame` works across the source/build seam, (d) reverting a release is one revert commit, not a branch reset. The duplication cost (source `skills/foo/SKILL.md` + built `build/skills/foo/SKILL.md` both in git) is real but bounded — the plugin is small and built output compresses well.
+
+**Alternatives rejected.** Sibling build branch (force-push or merge churn on every release; marketplace.json on `main` referencing a branch elsewhere is an easy out-of-sync class). Tag-versioned branches (marketplace.json must update each release; meta-question of where the version bump itself lives). Tarball / release-asset artifact (not supported by either marketplace as an install source).
+
+### D2 — Strip scope: manifest-driven allow-list (approach iii) with co-shipped `scripts/` cleanup
+
+**Decision.** The build script reads `.claude-plugin/plugin.json` for the component path fields (`agents`, `skills`, `commands`, `hooks`, `mcpServers`, `lspServers`) and copies each declared path into `build/`. In addition, a small fixed top-level include list is hardcoded in the build script: `scripts/` (whole tree, post-cleanup), `templates/` (whole tree), `LICENSE`, `README.md`, `AGENTS.md`, `CLAUDE.md` (when present), and `.claude-plugin/` (manifests). Everything else stays out of `build/` by default — fail-closed.
+
+**Co-shipped cleanup.** Move `scripts/render-skill.sh` and `scripts/g4-section-anchor-refresh.sh` to `tools/` (new top-level directory). Update all callers (tests + docs + this design.md prose) to reference the new path. After the move:
+
+- `scripts/` is 100% runtime helpers referenced by skills or agents at runtime: `codex-companion-bg.sh`, `codex-finding-splitter.sh`, `run-codex-review.sh`, `run-smoke-checks.mjs`, `run-third-party-llm.sh`, `sibling-impact.mjs`, `lib/llm-prompt-utils.sh`, `red-verify/{bats,jest,pytest,vitest}-adapter.sh`, `g4-section-anchor-manifest.json`.
+- `tools/` is 100% dev-time: the relocated 2 scripts + the new `build-plugin.mjs`.
+- `templates/` (currently `tsc-probe.ts`) is 100% runtime (referenced by skills).
+
+**Rationale.** Manifest-driven gives `plugin.json` authority for "what is this plugin's runtime surface"; future plugin features (new component types) extend the manifest schema, not the build script. The small fixed list covers non-component runtime files that plugin.json doesn't declare (LICENSE, README, host-recognized agent files, manifests). Fail-closed prevents new dev-only paths from leaking into installs by default. The `scripts/` cleanup is a one-time clarification that pays back every future build-script edit (the allow-list is "copy all of `scripts/`" with no per-file enumeration).
+
+**Alternatives rejected.** Explicit allow-list in build script with per-runtime-`scripts/*` enumeration (fragile — new runtime helpers require build-script edits). Deny-list (fail-open — new dev-only content silently leaks if exclusion list isn't updated). Pure manifest-driven without fixed list (LICENSE/README/AGENTS.md/CLAUDE.md aren't in `plugin.json` and would need a schema extension for trivial files).
+
+### D3 — `!cat` resolver semantics: single grammar, fail-loud on every deviation
+
+**Decision.** One supported syntactic form:
+
+```
+^\s*!cat\s+<relpath>\s*$
+```
+
+where `<relpath>` matches `[A-Za-z0-9_./-]+` and resolves from the **source repo root**. The directive line must occupy the entire line (modulo leading whitespace).
+
+**Behavior.**
+
+- **Recursion: fully transitive.** If `A.md` includes `B.md` and `B.md` includes `C.md`, the resolver expands C inside B inside A in a single pass. Required because G31's wrapper SKILLs `!cat` two snippet files that may themselves grow includes later.
+- **Cycle detection: path-based, fail-loud.** Maintain an include-stack during expansion; if a normalized path appears twice in the stack, exit non-zero with the full cycle printed.
+- **Output replacement: line-for-line.** The directive line is removed; the included file's content takes its place. No extra blank lines added. Trailing newlines of included content preserved byte-faithfully. CR-stripping (`tr -d '\r'`) on included content (defensive for Windows-CRLF accidents; matches `render-skill.sh` behavior).
+- **Idempotence.** Running the resolver on its own output is a no-op — no `!cat` lines remain to expand; running again produces a byte-identical file.
+- **No fenced-block syntax.** The legacy ```` ```!` `` fenced form in `render-skill.sh` is unused in source and is dropped from the new resolver.
+
+**Fail-loud conditions (every one of these exits non-zero with file:line + reason):**
+
+- Line begins with `!cat ` (modulo whitespace) but does NOT match the strict grammar — extra args, bad chars in relpath, malformed relpath, etc.
+- Any occurrence of `${CLAUDE_SKILL_DIR}` anywhere in a shipped file — defends against the legacy form sneaking back in. The 2 existing legacy sites (`goals/SKILL.md:8` directive + `_shared/codex/launch-await-pattern.md:45` comment) are converted to the bare form as a co-shipped cleanup before G32 ships, leaving zero sites in the repo.
+- Target file does not exist.
+- Path traversal attempt (any `..` segment resolved outside the source repo root, or any absolute path).
+- Cycle detected (full cycle printed).
+- Including file is itself outside the source repo root (defensive; should never happen given how the resolver is driven).
+
+**No legacy form supported.** No `${CLAUDE_SKILL_DIR}` form, no fenced syntax. Every existing site converts to the bare form as part of G32's co-shipped cleanup. Going forward, the only mechanism is the single bare grammar.
+
+**Shipped-snippet disposition.** Shared snippet files under `skills/_shared/` (e.g., `prompt-prose-detection.md`, `precondition-block.md`) ARE copied into `build/` (even though after expansion they have no consumers in the install). Rationale: defensive — a misclassified consumer that Reads a shared snippet by path at runtime is a harder-to-debug failure than a slightly larger plugin tree.
+
+**Rationale.** A single grammar with zero ambiguity makes the resolver trivial to implement, trivial to review, and trivial to teach in CONTRIBUTING.md. Fail-loud-on-every-deviation prevents silent drift back toward the legacy form or accidental new dialects. The bare form was already dominant (7 of 8 v0.7.1 sites); converting the 1 outlier is a 2-line patch.
+
+**Alternatives rejected.** Supporting both bare and `${CLAUDE_SKILL_DIR}` forms in the resolver (more code, two paths to maintain, no behavior win once legacy is converted). Fenced-block syntax (unused; adds parser state without benefit). Allowing malformed `!cat` lines to pass through unchanged (silent drift class; one of the v0.7.1 failure modes this release is closing).
+
+### D4 — Implementation language: Node.js
+
+**Decision.** Build script lives at `tools/build-plugin.mjs`, ES modules, Node stdlib only.
+
+**Rationale.** The repo already uses Node for dev tooling: `scripts/run-smoke-checks.mjs`, `scripts/sibling-impact.mjs`, `scripts/lib/codex.mjs`, `scripts/lib/job-control.mjs`, `scripts/lib/state.mjs`, `scripts/lib/tracked-jobs.mjs`. CI already runs Node. Adding one more `.mjs` introduces zero new dev or CI dependencies. The text-munging shape (path resolution, recursion with set-based cycle detection, normalized path comparison, structured error messages with file:line) is straightforward in JS and awkward in bash. Python would also work but introduces a runtime that isn't currently in the repo's dev stack.
+
+**Alternatives rejected.** Extending `scripts/render-skill.sh` in bash (recursion + cycle-stack management in bash is fiddly and hard to unit-test; error messages are awkward). Python script (introduces a new dev dep). Real template engine — Mustache, Jinja2, Liquid (significant overkill given the no-variables decision and the single-grammar resolver).
+
+### D5 — CI gate: PR-blocking sync check
+
+**Decision.** PR CI runs `node tools/build-plugin.mjs` on every PR. After the script exits 0, CI runs `git diff --exit-code build/ .claude-plugin/marketplace.json` — non-empty diff fails the gate.
+
+**Failure modes that block the PR:**
+
+- Build script exits non-zero (any D3 fail-loud condition: malformed `!cat`, missing target, cycle, path traversal, `${CLAUDE_SKILL_DIR}` re-entry, etc.).
+- `build/` tree on the PR branch differs from what the resolver produces from current source (author edited source but forgot to regenerate `build/`).
+
+**Author workflow (documented in CONTRIBUTING.md):**
+
+1. Edit source.
+2. Run `node tools/build-plugin.mjs` locally.
+3. `git add` source changes + regenerated `build/` files together; commit as one logical change.
+4. Push; PR CI verifies the source and build are in sync.
+
+**No auto-commit by Actions in v0.7.2.** Keeps CI simple; avoids contributor/bot push races. A pre-commit hook that auto-runs the build is a v0.7.3+ candidate.
+
+**Rationale.** Checking `build/` into git and gating PRs on the diff is the simplest mechanism that guarantees the install artifact is always reproducible from source. No artifact stores, no separate release pipeline, no async bot pushes. The author workflow is one new step (`node tools/build-plugin.mjs`) which is documentable in CONTRIBUTING.md and discoverable via the PR failure message when it's forgotten.
+
+**Alternatives rejected.** Actions auto-commits build/ to PR branch (race conditions; harder-to-reason-about CI). Separate Actions workflow that runs on main and pushes build/ (build/ lags source on the main branch between push and Actions completion — install model would briefly serve stale content). PR-CI verification only (no committed `build/`, regenerated on every install) — would force every install path to depend on the resolver running on the user's machine, which is exactly the host-portability gap G32 is designed to close.
+
+**Marketplace.json change co-shipped with G32.** Today's `marketplace.json` has `"source": "./"` (whole repo). The G32 ship updates it to `"source": "./build"`. The marketplace.json itself stays at `.claude-plugin/marketplace.json` on the repo root (per Claude Code + Copilot CLI convention).
+
+### Acceptance
+
+- `tools/build-plugin.mjs` exists; implements the D3 resolver grammar + recursive expansion + cycle detection + fail-loud conditions + idempotence; implements the D2 manifest-driven allow-list + fixed include list.
+- `tools/render-skill.sh` exists at the new location; `tools/g4-section-anchor-refresh.sh` exists at the new location. `scripts/render-skill.sh` and `scripts/g4-section-anchor-refresh.sh` no longer exist. All callers updated.
+- Every legacy `${CLAUDE_SKILL_DIR}` site converted to the bare form: `skills/goals/SKILL.md:8`, `skills/_shared/codex/launch-await-pattern.md:45` (comment text). Repo-wide grep for `${CLAUDE_SKILL_DIR}` returns zero hits in shipped files.
+- `build/` directory exists on `main` with the full expanded plugin tree. Spot-check: `build/skills/goals/SKILL.md` contains the inlined content of `skills/goals/owns-defers.md` (no `!cat` directives remain); `build/skills/_shared/prompt-prose-detection.md` exists (defensive snippet copy); `build/docs/` does NOT exist; `build/tools/` does NOT exist; `build/tests/` does NOT exist.
+- `.claude-plugin/marketplace.json`'s `qrspi` plugin entry has `"source": "./build"` (or equivalent object form). Version bump landed.
+- PR CI workflow runs `node tools/build-plugin.mjs` followed by `git diff --exit-code build/ .claude-plugin/marketplace.json`. Failure of either step blocks the PR.
+- `CONTRIBUTING.md` documents the author workflow (edit source → run build → commit both).
+- Smoke test: `copilot plugin install dfrysinger/qrspi-plus` against a test marketplace registration installs the `build/` tree at `~/.copilot/installed-plugins/qrspi-plus/qrspi/` (no `docs/`, `reviews/`, `tests/`, `tools/` present in the install).
+- Acceptance test for the resolver: a fixture file with a `${CLAUDE_SKILL_DIR}`-form directive fails the build with a clear file:line error referencing the legacy-form-not-supported rule. A second fixture with a deliberate include cycle fails with the full cycle printed.
+
+### Open questions for v0.7.3+ (out of scope for v0.7.2)
+
+- **[Open] Host portability of agent `skills:` frontmatter preload.** Separate from the `!cat` mechanism G32 closes, agent files use `skills:` frontmatter to preload SKILL content at dispatch time. Verified on Claude Code (via `qrspi-implementer.md` + `qrspi-implementer-lightweight.md` preloading `implementer-protocol`, ~25 reviewer agents preloading `reviewer-protocol`, G31's 5 new sites preloading `prompt-prose-writer` / `prompt-prose-reviewer`). Unverified on Copilot CLI and Codex CLI. **If `skills:` frontmatter does not fire on Copilot CLI, the gap that remains AFTER G32 ships is significant:** every TDD implementer dispatch loses `implementer-protocol`; every lightweight implementer dispatch loses `implementer-protocol`; every reviewer dispatch loses `reviewer-protocol`; G31's prompt-prose wrappers don't reach their consumer agents. That's ~30+ agents losing their dispatch contract, finding schema, classifier, and shared rules — effectively catastrophic for Copilot CLI plugin behavior even after G32. **Possible v0.7.3+ resolutions:** (a) extend `tools/build-plugin.mjs` to inline-expand `skills:` entries into agent bodies at build time (preserves portability with no runtime cost; same architecture as G32 with frontmatter as a new input class), (b) emit explicit Read directives inside agent bodies (works everywhere, costs a tool-call per dispatch and per skill loaded), (c) maintain dual emit paths (frontmatter for Claude Code, inlined for Copilot CLI) via a build-step flag. v0.7.2 ships G31 + G32 acknowledging the remaining gap; v0.7.3+ resolves it once host behavior is empirically confirmed.
+- **[Open] Pre-commit hook for `node tools/build-plugin.mjs`.** Convenience for contributors so the PR-CI sync gate never fires for forgotten regen. Out of scope for v0.7.2; depends on per-contributor hook installation convention.
+- **[Open] Build-step variable substitution.** G32 ships includes-only by user decision; no variables in v0.7.2. If a future concrete use case emerges (`${PLUGIN_VERSION}`, `${RELEASE_DATE}`, etc.), extend `tools/build-plugin.mjs` with a minimal `${VAR}` substitution pass downstream of `!cat` expansion. Until then, the resolver stays logic-less.
+
+### Pre-existing plugin issues this Design phase surfaces (file post-merge)
+
+- **PI-G32-001 — Existing v0.7.1 OWNS/DEFERS `!cat` lines silently degrade on Copilot CLI.** Seven SKILL.md files (`design`, `plan`, `phasing`, `parallelize`, `replan`, `structure`, `goals`) `!cat` their OWNS/DEFERS contract files; on Copilot CLI the directive appears as literal text in the loaded SKILL prompt, leaving the contract content out of the loaded context. This is a real pre-existing bug, not introduced by v0.7.2. Closed in mechanism by G32 (build-time expansion); the issue documents the bug history for visibility.
+
+**References.** Source: empirical Copilot CLI 1.0.57-1 evidence captured in this design session (`!cat` directives appear as literal text in loaded SKILL prompts for both syntactic variants); G31 BLOCKING open question (resolved by G32); G3 (vendor-neutrality — drives the requirement that every supported host see the same composed semantics); existing `scripts/render-skill.sh` (latent kernel, conceptual ancestor); Claude Code marketplace plugin-source schema docs (`docs.claude.com/en/docs/claude-code/plugin-marketplaces` — relative-path source type, `git-subdir` source type, `ref`/`sha` pinning); Copilot CLI plugin reference docs (`docs.github.com/en/copilot/reference/cli-plugin-reference` — marketplace schema mirrors Claude Code at `.claude-plugin/marketplace.json` fallback path).
+
+---
+
 ## Plugin issues observed during this Design session
 
 - **Q5 under-counted consumer list** — research/summary.md Q5 (line 68) said splitter is not invoked by run-codex-review.sh; missed that implement/SKILL.md is the highest-density consumer (9 invocations + 2 splitter blocks).
