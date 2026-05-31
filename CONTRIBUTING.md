@@ -83,6 +83,68 @@ trigger CI; open a PR (draft is fine) to see check results. All
 checks must be green before merge. If a CI failure looks unrelated to
 your change, mention it in the PR body so the maintainer can confirm.
 
+## Skill prose authoring (no design-doc anchors in runtime prose)
+
+**Principle.** SKILL.md files and the `_shared/*.md` snippets they
+`!cat`-include are loaded into a runtime agent's context with NO marker
+indicating where the content came from. The agent has no tool to
+dereference an arbitrary file path, no concept of "G4 solution step 1"
+or "CD-2 component #11," and no way to navigate to a design.md / plan.md
+section. Any reference to such anchors inside skill prose is either
+redundant (the content is already in context) or dangling (the content
+is unreachable from the agent's runtime view).
+
+**The rule.** Content destined for runtime agent context — anything
+inside a SKILL.md body, anything inside `skills/_shared/*.md`, anything
+inside a fenced block in design.md / plan.md / docs marked "lives in
+implement/SKILL.md" or similar — must use self-relative phrasing
+("as described above," "per the contract below," "see the spec line
+section earlier in this SKILL.md") or restate the rule inline. File-
+path references and design-doc anchors belong only in design.md /
+plan.md / component-spec sections that humans read.
+
+**Anti-patterns to strip on sight.**
+
+| Pattern | Recognize by | Rewrite as |
+|---|---|---|
+| `_shared/*.md` file-path inside `!cat`-included snippet body or in SKILL.md prose | tokens like `per _shared/foo.md contract`, `see _shared/bar.md` when the referenced content is the surrounding inlined text | self-relative phrasing or full restate |
+| G-label / CD-label with design-doc qualifier | tokens like `per G4 solution step 1`, `see CD-2 component #11`, `per G9 layer 3` | self-relative phrasing, or restate the rule inline; the agent doesn't see G/CD labels at runtime |
+| "Cross-Goal Decision X" phrasing | the literal string in skill prose | restate the contract inline |
+| Forward-reference summary paragraph at the end of a runtime block | sentences like "The forward-reference to X covers Y" | drop if Y is already inline above; otherwise restate Y inline |
+
+**Cross-skill references that ARE valid at runtime.** Sibling SKILL.md
+files (`implementer-protocol/SKILL.md § Report Format`,
+`reviewer-protocol/SKILL.md § Reviewer Dispatch Contract`) are real
+files the agent can `Read` if it needs to. References by *file path
+plus section heading* to another top-level SKILL.md are fine.
+References to internal sections within the same SKILL.md
+(`§ Per-Task Convergence Narrowing → Step 6`) are fine too.
+
+**Litmus test.** For each path-or-label reference in skill prose,
+ask: "Can the runtime agent open this and read it?" If yes (sibling
+SKILL.md, internal heading) it stays. If no (`_shared/*.md` that is
+already inlined here via `!cat`, design.md goal labels, plan.md task
+IDs) it is rewritten or removed.
+
+**Pre-push lint.** Before pushing skill changes, run:
+
+```sh
+grep -nE '\b(G[0-9]{1,2}|CD-[0-9])\s+(solution|amendment|layer|sub-rule|component)\b|_shared/[a-z-]+\.md' \
+  skills/*/SKILL.md skills/_shared/*.md 2>/dev/null
+```
+
+Triage each hit:
+
+- Inside a clearly-marked maintainer block (HTML comment `<!-- maintainer: ... -->`
+  or an out-of-band `# Authoring notes` section) → leave.
+- Inside runtime-loaded body → rewrite self-relative or restate inline.
+
+This rule is qrspi-plus-internal authoring hygiene; it is NOT a
+content rule applied to end-user artifacts (the `goals.md` /
+`design.md` / etc. produced when a user runs qrspi on their own
+project). End-user artifacts never `!cat`-include shared snippets and
+never carry G/CD labels.
+
 ## Parallel agents (optional pattern)
 
 This repo is designed to support concurrent agent sessions working on
