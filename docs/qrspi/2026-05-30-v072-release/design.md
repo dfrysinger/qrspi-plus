@@ -1106,52 +1106,216 @@ The finalize pass can be inline skill prose OR a small subagent — it's mechani
 
 **Solution.**
 
-<!-- prose-design: skills/_shared/prompt-prose-detection.md (new file — common detection block) -->
-<!-- prose-design: skills/_shared/prompt-prose-writer-block.md (new file — !cat-composes detection + writer addition) -->
-<!-- prose-design: skills/_shared/prompt-prose-reviewer-block.md (new file — !cat-composes detection + reviewer addition) -->
-<!-- prose-design: skills/prompt-prose-writer/SKILL.md (new wrapper — !cat-composes writer-block, preloaded by lightweight implementer) -->
-<!-- prose-design: skills/prompt-prose-reviewer/SKILL.md (new wrapper — !cat-composes reviewer-block, preloaded by reviewer agents) -->
-<!-- prose-design: skills/_shared/prompt-design-rules.md § (refresh in place at new location) -->
+<!-- prose-design: skills/_shared/prompt-prose-detection.md (new file — shared detection snippet) -->
+<!-- prose-design: skills/_shared/prompt-prose-writer-addition.md (new file — writer-only addition snippet) -->
+<!-- prose-design: skills/_shared/prompt-prose-reviewer-addition.md (new file — reviewer-only addition snippet) -->
+<!-- prose-design: skills/prompt-prose-writer/SKILL.md (new wrapper SKILL for agent preload) -->
+<!-- prose-design: skills/prompt-prose-reviewer/SKILL.md (new wrapper SKILL for agent preload) -->
+<!-- prose-design: skills/_shared/prompt-design-rules.md (refresh in place at new location per A-H below) -->
 
-**Architecture (single source of truth, DRY composition).** The solution composes from three shared snippet files (`!cat`-includable from SKILL.md surfaces) plus two thin wrapper SKILLs (preloaded by agent files via the `skills:` frontmatter mechanism, since agent files do not process `!cat` directly). Every surface that authors, classifies, or reviews prompt prose consumes the appropriate block via whichever mechanism the surface supports. No consumer references another consumer's body. No consumer hand-copies prose from another consumer.
+Architecture: three shared snippet files carry the actual rule content (single source of truth, DRY). Two thin wrapper SKILLs exist solely so agent files — which cannot `!cat` directly — can preload the shared content via the `skills:` frontmatter mechanism. Four inline additions live in specific consumer files (Plan classifier rule, Plan writer-subagent Test-Expectations clause, plan-test-coverage scope guard, design-reviewer per-block addendum); each is a per-consumer refinement, not shared content.
 
-**Shared building blocks.**
+---
 
-| File | Purpose | Target size |
-|---|---|---|
-| `skills/_shared/prompt-prose-detection.md` | Common detection block — definition of "prompt prose," content-semantic test (anchor: *"Use content semantics, not just file path or extension"*), examples + anti-examples, anchor phrases, rules-file location pointer | ~30 lines |
-| `skills/_shared/prompt-prose-writer-block.md` | `!cat`-includes detection + appends writer-side application (anchor: *"apply R1-R7 + cross-cutting principles BEFORE drafting, not as post-write polish"*; explicit negative for non-prompt deliverables: *"do not Read the rules file — reading-without-applying is the verbosity-bias anti-pattern the rules themselves warn against"*) | ~10 lines (composition only) |
-| `skills/_shared/prompt-prose-reviewer-block.md` | `!cat`-includes detection + appends reviewer-side application (anchor: *"apply liberally — when content semantics indicate prompt prose, treat as in-scope regardless of file path"*; emission tags: *"change_type: clarity for verbosity/anchor-phrase findings, change_type: correctness for finding-type-gate violations"*) | ~10 lines (composition only) |
+#### File 1 — `skills/_shared/prompt-prose-detection.md` (NEW)
 
-**Wrapper SKILLs (for `skills:`-frontmatter preload by agent files).**
+Verbatim content:
 
-| Wrapper SKILL | Body | Preloaded by |
-|---|---|---|
-| `skills/prompt-prose-writer/SKILL.md` | `!cat skills/_shared/prompt-prose-writer-block.md` | Consumer #4 |
-| `skills/prompt-prose-reviewer/SKILL.md` | `!cat skills/_shared/prompt-prose-reviewer-block.md` | Consumers #5-#8 |
+```markdown
+**Prompt prose** is text authored to be loaded into an LLM's context as instructions, system prompts, agent definitions, skill definitions, reviewer rubrics, MCP tool descriptions, RAG instructions, or any equivalent LLM-consumable directive content.
 
-**Consumer table (single sweep point for completeness + drift detection).**
+**Detection rule (universal).** Use content semantics, not just file path or extension, as the determining signal. Ask: is the text intended to be loaded into an LLM's context at runtime as instructions? If yes, it is prompt prose, regardless of where it lives in the repo.
 
-| # | Consumer | Surface | Role | Mechanism |
+**Path and extension as secondary signals (fast-path shortcut for qrspi-plus-internal authoring).** When ALL target files match one of these globs, classify as prompt prose without further inspection:
+
+- `skills/**/SKILL.md`
+- `skills/**/*.md` (snippet files under a skill directory)
+- `skills/_shared/*.md`
+- `agents/qrspi-*.md`
+
+Files outside these globs require the content-semantic test above. Other projects may carry prompts in `prompts/`, `src/llm-instructions/`, or custom layouts — the content-semantic test is universal; the glob list is qrspi-plus-internal convenience only.
+
+**Examples of prompt prose:**
+
+- A SKILL.md body that instructs an orchestrator.
+- An `agents/*.md` file defining a subagent (role, task, constraints, tools).
+- A `.md` file under a project's `prompts/` directory whose frontmatter `description:` indicates LLM consumption.
+- A verbatim system prompt embedded in any markdown file (e.g., "You are...", "Your role is...", `<HARD-GATE>` blocks).
+- A `.txt` or `.json` file whose content is plainly an LLM instruction payload.
+
+**Examples of NOT prompt prose:**
+
+- Code documentation, README files describing features.
+- Design decisions in prose form (unless a `<!-- prose-design: ... -->` marker indicates a verbatim prompt-prose block within).
+- Research notes ABOUT prompts (this file itself is a meta-document — it IS subject to the rules per meta-acceptance, but ordinary research/explanatory content about prompts is not).
+- Configuration files, test fixtures, shell scripts.
+
+**Rules file.** When prompt-prose authoring or review applies, the rules live at `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention).
+```
+
+Consumers: #1 (`!cat`), #2 (`!cat`), #3 (`!cat`), #4 (via wrapper SKILL preload — File 4), #5-#8 (via wrapper SKILL preload — File 5).
+
+---
+
+#### File 2 — `skills/_shared/prompt-prose-writer-addition.md` (NEW)
+
+Verbatim content:
+
+```markdown
+**Writer-side application.** When authoring or planning a deliverable, apply the detection above to the planned target content. If the target IS prompt prose, Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles BEFORE drafting, not as post-write polish. The rules shape what to write; patching after the fact is a known anti-pattern.
+
+**If the target is NOT prompt prose** (ordinary documentation, configuration, code, non-prompt prose), do NOT Read the rules file. Reading-without-applying is the verbosity-bias anti-pattern the rules themselves warn against — loading them into context for a deliverable they don't apply to wastes context and risks misapplication.
+```
+
+Consumers: #2 (`!cat` after detection), #3 (`!cat` after detection), #4 (via wrapper SKILL — File 4).
+
+---
+
+#### File 3 — `skills/_shared/prompt-prose-reviewer-addition.md` (NEW)
+
+Verbatim content:
+
+```markdown
+**Reviewer-side application.** For each file (or sub-block, for blocks within larger documents like `design.md`) in the diff, apply the detection above. Apply liberally — when content semantics indicate prompt prose, treat as in-scope regardless of file path or extension.
+
+For each file or block determined to be prompt prose: Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles + finding-type gate. Emit findings using the standard reviewer schema, tagged:
+
+- `change_type: clarity` for verbosity / anchor-phrase / structure-quality findings.
+- `change_type: correctness` for finding-type-gate violations (e.g., load-bearing rule placed at start instead of end, examples exceeding the 2-cap, missing Iron-Law markers on override-critical content).
+```
+
+Consumers: #5-#8 (via wrapper SKILL — File 5).
+
+---
+
+#### File 4 — `skills/prompt-prose-writer/SKILL.md` (NEW wrapper)
+
+Verbatim content:
+
+```markdown
+---
+description: Apply prompt-design rules when authoring or planning prompt-prose deliverables. Detects whether a deliverable IS prompt prose, and only then Reads the rules and applies R1-R7 before drafting. Preloaded by agent files that may author prompt prose.
+---
+
+# Prompt Prose Writer
+
+!`cat ${CLAUDE_SKILL_DIR}/../_shared/prompt-prose-detection.md`
+
+!`cat ${CLAUDE_SKILL_DIR}/../_shared/prompt-prose-writer-addition.md`
+```
+
+Consumer: #4 (preloaded via `skills:` frontmatter).
+
+---
+
+#### File 5 — `skills/prompt-prose-reviewer/SKILL.md` (NEW wrapper)
+
+Verbatim content:
+
+```markdown
+---
+description: Apply prompt-design rules when reviewing prompt-prose subjects in a diff. Detects which files (or sub-blocks) are prompt prose, applies R1-R7 + cross-cutting principles + finding-type gate, and emits findings with proper change_type tagging. Preloaded by reviewer agents that may encounter prompt prose in their review subject.
+---
+
+# Prompt Prose Reviewer
+
+!`cat ${CLAUDE_SKILL_DIR}/../_shared/prompt-prose-detection.md`
+
+!`cat ${CLAUDE_SKILL_DIR}/../_shared/prompt-prose-reviewer-addition.md`
+```
+
+Consumers: #5-#8 (preloaded via `skills:` frontmatter).
+
+---
+
+#### Addition A — Plan classifier rule (inline in consumer #1)
+
+Verbatim content:
+
+```markdown
+**Step 1 — Classify each task as `code` or `lightweight`.** Default `task_type: code`.
+
+Assign `task_type: lightweight` when the task's primary deliverable is prompt prose OR non-prompt prose / docs / config that has no executable behavior to test.
+
+!cat ${CLAUDE_SKILL_DIR}/../_shared/prompt-prose-detection.md
+
+Apply the detection above to the planned target files. If the target IS prompt prose, classify lightweight. Mixed-deliverable tasks (one prompt-prose file + one code file in the same task) require ALL target files to satisfy the lightweight test; mixed tasks default to `task_type: code` — split per Goal-Specificity rules if genuinely mixed in nature.
+
+The classification gates downstream behavior: lightweight tasks dispatch to `qrspi-implementer-lightweight` (which inherits its own prompt-prose detection via the `prompt-prose-writer` skill preload); code tasks dispatch to `qrspi-implementer` (TDD path). Prompt prose NEVER lands on the TDD path by classification.
+```
+
+Placement: `skills/plan/SKILL.md` § Per-Task Classification, REPLACES the current Step 1 paragraph (the existing path-glob-only rule). Steps 2+ continue unchanged after.
+
+---
+
+#### Addition B — Plan writer-subagent Test-Expectations clause (inline in consumer #2)
+
+Verbatim content (appended to the writer-subagent dispatch payload, AFTER the `!cat` of detection + writer-addition):
+
+```markdown
+**Test-Expectations clause for prompt-prose tasks.** For tasks classified `task_type: lightweight` because the deliverable IS prompt prose (per Addition A's content-semantic test), Test Expectations cannot be RED-gate failing tests — prompt prose has no executable behavior to verify by test execution. Instead, encode rules-application as the verification mechanism using this template:
+
+> Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy].
+
+Other lightweight task categories (non-prompt prose, ordinary documentation, configuration) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause.
+```
+
+Placement: `skills/plan/SKILL.md` writer-subagent dispatch payload sections (TWO sites — the merged-plan/overview subagent dispatch ~lines 125-132 and the initial-draft per-task sub-subagent dispatch ~lines 439-444 as of v0.7.1). Inserted AFTER the consumer's `!cat detection` + `!cat writer-addition`, BEFORE the rest of the dispatch payload's standard Test-Expectations instructions. The post-approval-split sub-subagent does NOT receive this clause (it carries frontmatter verbatim from the orchestrator-classified wrapped section per `skills/plan/post-approval-split-contract.md`).
+
+---
+
+#### Addition C — plan-test-coverage-reviewer scope guard (inline in consumer #9, standalone)
+
+Verbatim content (added at the TOP of the agent's review-procedure section, BEFORE any existing instructions about evaluating test coverage):
+
+```markdown
+**Scope: only `task_type: code` tasks.** Skip evaluation of any task with `task_type: lightweight` — those tasks (prose, prompts, docs, config) have no executable RED gate by design, and applying RED-gate coverage criteria to them would emit false-positive findings ("missing failing test"). The plan-test-coverage-reviewer's domain is the subset of tasks where test execution IS the verification mechanism; for prompt-prose tasks, verification flows through `qrspi-code-quality-reviewer` / `qrspi-design-reviewer` content-semantic rules application, evaluated separately.
+
+Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare lightweight task Test Expectations to RED-gate criteria. Silently skip lightweight task sections.
+```
+
+Placement: `agents/qrspi-plan-test-coverage-reviewer.md` body, at the TOP of the review-procedure section (before any existing rubric). Standalone — this consumer does NOT preload `prompt-prose-reviewer` (Q1 resolution: full reviewer block would teach it "sometimes passing means no RED tests" which compromises judgment on `task_type: code` tasks where RED IS required).
+
+---
+
+#### Addition D — design-reviewer per-block scope addendum (inline in consumer #6)
+
+Verbatim content (added to the agent body, AFTER the `skills:` frontmatter triggers preload of `prompt-prose-reviewer` — sits in the agent body's review procedure as a per-surface refinement of the shared addition's general "file or sub-block" rule):
+
+```markdown
+**Per-block scope refinement for design.md.** `design.md` typically contains discrete `<!-- prose-design: target -->` HTML-comment markers identifying blocks of verbatim prompt prose destined for an LLM-consumable file. Treat each such marker as one strong signal but not the only one — content semantics determine the call. For each marker:
+
+- If the block's text reads as LLM-consumable directive prose (role+task+constraints, Iron Laws, `<HARD-GATE>` blocks, verbatim rule statements destined for an orchestrator or subagent prompt), apply the rules to that block.
+- If the block's text reads as something else (e.g., a shell-script snippet per G4's `<!-- prose-design: scripts/round-prepare.sh -->`), skip rules application for that block.
+
+The marker scopes attention to specific sub-blocks; the surrounding design-decision prose is itself NOT prompt prose and is reviewed by ordinary design-quality criteria, not R1-R7.
+```
+
+Placement: `agents/qrspi-design-reviewer.md` body, appended to the review-procedure section AFTER the `skills:` frontmatter has loaded `prompt-prose-reviewer`. Acts as a refinement layered atop the shared reviewer-addition's general "file or sub-block" rule.
+
+---
+
+#### Distribution table (single sweep point for completeness + drift detection)
+
+| # | Consumer file | Gets | How | Placement |
 |---|---|---|---|---|
-| 1 | `skills/plan/SKILL.md` § Per-Task Classification | SKILL body | Classifier | `!cat skills/_shared/prompt-prose-detection.md` |
-| 2 | `skills/plan/SKILL.md` writer-subagent dispatch payloads (merged-plan/overview + initial-draft per-task sub-subagent — see SKILL lines ~125-132 and ~439-444 as of v0.7.1) | SKILL body | Writer | `!cat skills/_shared/prompt-prose-writer-block.md` |
-| 3 | `skills/design/SKILL.md` when authoring `<!-- prose-design: ... -->` blocks | SKILL body | Writer | `!cat skills/_shared/prompt-prose-writer-block.md` |
-| 4 | `agents/qrspi-implementer-lightweight.md` | Agent frontmatter | Writer | `skills: [prompt-prose-writer]` preload alongside existing `[implementer-protocol]` |
-| 5 | `agents/qrspi-code-quality-reviewer.md` | Agent frontmatter | Reviewer | `skills: [prompt-prose-reviewer]` preload alongside existing `[reviewer-protocol]` |
-| 6 | `agents/qrspi-design-reviewer.md` | Agent frontmatter | Reviewer | same |
-| 7 | `agents/qrspi-plan-reviewer.md` | Agent frontmatter | Reviewer | same |
-| 8 | `agents/qrspi-plan-spec-reviewer.md` | Agent frontmatter | Reviewer | same |
+| 1 | `skills/plan/SKILL.md` § Per-Task Classification | Addition A (which itself `!cat`s detection inline) | Permanent inline addition | REPLACES current Step 1 |
+| 2 | `skills/plan/SKILL.md` writer-subagent dispatch payloads — 2 sites (~lines 125-132, ~439-444) | detection + writer-addition + Addition B | `!cat` shared content + permanent inline Addition B | AFTER both `!cat`s, BEFORE rest of dispatch payload |
+| 3 | `skills/design/SKILL.md` (step where orchestrator authors `<!-- prose-design: ... -->` blocks) | detection + writer-addition | `!cat` of both shared files | At the relevant authoring step |
+| 4 | `agents/qrspi-implementer-lightweight.md` | wrapper SKILL `prompt-prose-writer` (carries detection + writer-addition) | `skills:` frontmatter preload | Appended to existing `skills: [implementer-protocol]` list → `[implementer-protocol, prompt-prose-writer]` |
+| 5 | `agents/qrspi-code-quality-reviewer.md` | wrapper SKILL `prompt-prose-reviewer` (carries detection + reviewer-addition) | `skills:` frontmatter preload | Appended to existing `skills:` list |
+| 6 | `agents/qrspi-design-reviewer.md` | wrapper SKILL `prompt-prose-reviewer` + Addition D | `skills:` preload + permanent inline Addition D | Preload via frontmatter; Addition D in body AFTER preload triggers (refinement layer) |
+| 7 | `agents/qrspi-plan-reviewer.md` | wrapper SKILL `prompt-prose-reviewer` | `skills:` frontmatter preload | Appended to existing `skills:` list |
+| 8 | `agents/qrspi-plan-spec-reviewer.md` | wrapper SKILL `prompt-prose-reviewer` | `skills:` frontmatter preload | Appended to existing `skills:` list |
+| 9 | `agents/qrspi-plan-test-coverage-reviewer.md` | Addition C ONLY (no wrapper SKILL preload) | Permanent inline addition | TOP of review-procedure section |
 
-The TDD implementer (`agents/qrspi-implementer.md`) is deliberately NOT a consumer. Plan classifies prompt-prose tasks as `task_type: lightweight`, which routes exclusively to the lightweight implementer. The shared `skills/implementer-protocol/SKILL.md` (auto-loaded by both implementer agents) is likewise NOT a consumer — placing the rule there would force the TDD implementer to load it on every dispatch, re-creating the verbosity-bias anti-pattern.
+**Explicit non-consumers (drift guards).**
 
-**Design-reviewer addendum (consumer #6, per-block scope).** Beyond the standard reviewer block, the design-reviewer agent body adds a two-line addendum specific to its surface: *"For `design.md` specifically, scope the detection per-BLOCK rather than per-FILE. A `<!-- prose-design: target -->` HTML-comment marker is one strong signal that a block is verbatim prompt prose destined for the target file — but the marker is one signal, not the determining condition; content semantics determine the call."* Anchor phrases: *"one strong signal but not the only one,"* *"content semantics determine the call."*
+- `agents/qrspi-implementer.md` (TDD): NOT a consumer. Plan classifies prompt-prose tasks as `task_type: lightweight`, which routes exclusively to the lightweight implementer; TDD path never sees prompt prose.
+- `skills/implementer-protocol/SKILL.md` (auto-loaded by both implementer agents): NOT a consumer. Placing the rule there would force the TDD implementer to load it on every dispatch, re-creating the verbosity-bias anti-pattern.
+- `skills/plan/post-approval-split-contract.md`: NOT a consumer. Post-approval-split sub-subagents carry frontmatter verbatim from orchestrator-classified wrapped sections per the contract's "carries every field present on the wrapped task section verbatim" clause; classification is the orchestrator's responsibility upstream.
 
-**Plan classification rule (consumer #1 + #2 application, derived from detection).** Default `task_type: code`. Assign `task_type: lightweight` when the planned task's primary deliverable is prompt prose (per detection block) OR non-prompt prose / docs / config with no executable behavior to test. The existing glob list (`skills/**/SKILL.md`, `skills/**/templates/*.md`, `agents/qrspi-*.md`) remains as a fast-path shortcut for qrspi-plus-internal authoring — when all target files match a fast-path glob, classify lightweight without further inspection. For target files outside the fast-path globs, apply the content-semantic test. This makes the classifier universal across any project a user develops prompts for (user-project tasks authoring `prompts/foo.md`, `src/llm-instructions/bar.md`, or custom-layout prompt files get correct routing without per-project glob configuration). The post-approval-split sub-subagent does NOT receive the rule — it carries frontmatter verbatim from the orchestrator-classified wrapped section per `skills/plan/post-approval-split-contract.md`. Anchor phrases: *"prose that will be consumed by an LLM agent as instructions, context, or rules at runtime,"* *"fast-path shortcut for qrspi-plus-internal authoring."*
-
-**Plan writer-subagent Test-Expectations clause (consumer #2 addition).** When a task is classified `task_type: lightweight` because the deliverable is prompt prose, Test Expectations MUST encode rules-application as the verification mechanism (no RED-gate failing-test expectation; prompt prose has no executable behavior to verify by test execution). Template: *"Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md`; reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy]."* Other lightweight categories (non-prompt prose, docs, config) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions). Anchor phrases: *"prompt prose has no executable behavior to verify by test execution,"* *"verified via the same content-semantic rules application."*
-
-**Plan-test-coverage-reviewer scope guard (independent of the prompt-prose-block architecture).** Add to `agents/qrspi-plan-test-coverage-reviewer.md` body: *"Scope: only `task_type: code` tasks. Skip evaluation of `task_type: lightweight` task sections — their verification mechanism is content-semantic rules application, not test execution, and falls outside this reviewer's scope."* This one-line guard prevents the reviewer from mis-flagging lightweight task sections as missing RED-gate tests; it does NOT teach the reviewer prompt-prose rules (and deliberately does not pull in the shared reviewer block, to avoid the "sometimes passing doesn't mean RED tests" confusion that would compromise its judgment on the `task_type: code` tasks that ARE its scope). Standalone item, not part of the consumer architecture above.
+---
 
 **Rules-file relocation and rename.** `git mv docs/prompt-design-guide.md skills/_shared/prompt-design-rules.md` plus content edits (refresh per A-H below) plus reference updates in any consumers that already link to the file. The new location aligns with QRSPI's established convention — `skills/_shared/` is the canonical home for cross-skill technical content (alongside `precondition-block.md`, `tsc-probe-helper.md`, `codex/launch-await-pattern.md`); `docs/` is for human-targeted documentation (release notes, design specs, project READMEs) and is the wrong scope for a runtime contract that agents Read. The rules file travels with the plugin (resolved at runtime from the installed plugin path per host convention — e.g., on Copilot CLI: `~/.copilot/installed-plugins/qrspi-plus/qrspi/skills/_shared/prompt-design-rules.md`; analogous paths on Claude Code and Codex CLI). The file is NOT expected to live in the user's project repo; users developing prompts for their own products get the rules enforced against their work even though their repo doesn't contain them. The rules file is NOT `!cat`-included into any consumer (file is 185+ lines; inlining would balloon every consumer and re-create the verbosity-bias problem the rules themselves warn against) — consumers Read it on-demand when detection fires. The rename from "guide" to "rules" signals enforcement intent in the filename; the file IS rules + decision gates + finding-type classifications, not a tutorial.
 
@@ -1166,7 +1330,7 @@ The TDD implementer (`agents/qrspi-implementer.md`) is deliberately NOT a consum
 - **(G) Recalibrate "Last applied" + re-test against May 2026 model landings.** Bump `Last applied:` to the date the refresh ships. Run a single-pass re-test of R1-R7 + cross-cutting principles against the current model lineup (Opus 4.7-high, GPT-5.5, GPT-5.3-Codex, Sonnet 4.6). The test is "for each rule, does the cited evidence still hold at current model capability?" If any rule's evidence has weakened, annotate inline (do NOT remove the rule — the historical evidence still applies to its model era; mark the rule with a "May 2026 status: confirmed | weakened | superseded" line).
 - **(H) Add compaction-resilient prompt design as a cross-cutting principle.** New principle: *"Compaction-resilient prompt design — when an orchestrator-driven skill spans enough decisions to risk mid-phase `/compact` firing (Goals, Design at scale), the SKILL.md prose must (1) instruct incremental persistence to the final artifact under `status: draft`, (2) instruct a recovery diagnostic on resume, and (3) instruct the orchestrator to re-read the in-progress artifact to enumerate locked decisions before continuing. Presence ≡ locked (G30); no placeholder bodies (CD-2)."* Cite G30 + CD-2 as sources. Anchor: "Compaction-resilient prompt design," "presence ≡ locked," "no placeholder bodies."
 
-<!-- (Old per-reviewer amendment paragraphs deleted — replaced by the Consumer Table architecture above. The qrspi-code-quality-reviewer and qrspi-design-reviewer now consume the shared reviewer block via `skills:` frontmatter preload of `prompt-prose-reviewer`; the design-reviewer-specific per-block scope addendum stays inline in that agent's body, captured in the "Design-reviewer addendum" subsection above.) -->
+<!-- (Old per-reviewer amendment paragraphs deleted — replaced by the Distribution Table architecture above. The qrspi-code-quality-reviewer and qrspi-design-reviewer now consume the shared reviewer-addition via wrapper-SKILL `skills:` frontmatter preload; the design-reviewer-specific per-block scope refinement stays inline as Addition D in that agent's body.) -->
 
 **Why this architecture.** Five drivers:
 
@@ -1204,33 +1368,30 @@ The TDD implementer (`agents/qrspi-implementer.md`) is deliberately NOT a consum
 
 **Acceptance.**
 
-Shared snippet and wrapper files exist with the expected composition and anchor phrases:
+Shared snippet and wrapper files exist with the expected verbatim content and anchor phrases (cross-reference the per-file content blocks above):
 
-- `skills/_shared/prompt-prose-detection.md` exists, ~30 lines, and carries the four anchor phrases verbatim: *"text … loaded into an LLM's context as instructions, system prompts, agent definitions,"* *"Use content semantics, not just file path or extension,"* *"prompt prose,"* *"skills/_shared/prompt-design-rules.md (resolved from the installed plugin path per host convention)."*
-- `skills/_shared/prompt-prose-writer-block.md` exists, opens with `!cat skills/_shared/prompt-prose-detection.md`, and appends writer-side application with anchor phrases *"apply R1-R7 + cross-cutting principles BEFORE drafting, not as post-write polish"* and the explicit negative *"do not Read the rules file"* for non-prompt deliverables.
-- `skills/_shared/prompt-prose-reviewer-block.md` exists, opens with `!cat skills/_shared/prompt-prose-detection.md`, and appends reviewer-side application with anchor phrases *"apply liberally — when content semantics indicate prompt prose, treat as in-scope regardless of file path,"* *"change_type: clarity for verbosity/anchor-phrase findings,"* *"change_type: correctness for finding-type-gate violations."*
-- `skills/prompt-prose-writer/SKILL.md` exists; body is `!cat skills/_shared/prompt-prose-writer-block.md`.
-- `skills/prompt-prose-reviewer/SKILL.md` exists; body is `!cat skills/_shared/prompt-prose-reviewer-block.md`.
+- `skills/_shared/prompt-prose-detection.md` exists with the four anchor phrases: *"text … loaded into an LLM's context as instructions, system prompts, agent definitions,"* *"Use content semantics, not just file path or extension,"* *"fast-path shortcut for qrspi-plus-internal authoring,"* *"skills/_shared/prompt-design-rules.md (resolved from the installed plugin path per host convention)."*
+- `skills/_shared/prompt-prose-writer-addition.md` exists with anchor phrases *"apply R1-R7 + cross-cutting principles BEFORE drafting, not as post-write polish"* and the explicit negative *"do not Read the rules file"* for non-prompt deliverables.
+- `skills/_shared/prompt-prose-reviewer-addition.md` exists with anchor phrases *"apply liberally — when content semantics indicate prompt prose, treat as in-scope regardless of file path,"* *"change_type: clarity for verbosity / anchor-phrase / structure-quality findings,"* *"change_type: correctness for finding-type-gate violations."*
+- `skills/prompt-prose-writer/SKILL.md` exists; body consists of `!cat` of `prompt-prose-detection.md` followed by `!cat` of `prompt-prose-writer-addition.md` (carries detection + writer-addition together for agent preload).
+- `skills/prompt-prose-reviewer/SKILL.md` exists; body consists of `!cat` of `prompt-prose-detection.md` followed by `!cat` of `prompt-prose-reviewer-addition.md` (carries detection + reviewer-addition together for agent preload).
 
-Each of the eight consumers in the table contains the expected composition or preload:
+Each of the nine consumers in the Distribution table contains the expected composition or preload (per the per-Addition placement specs above):
 
-- Consumer #1 (`skills/plan/SKILL.md` § Per-Task Classification) contains `!cat skills/_shared/prompt-prose-detection.md` plus the Plan classification rule with anchor phrases *"prose that will be consumed by an LLM agent as instructions, context, or rules at runtime"* and *"fast-path shortcut for qrspi-plus-internal authoring."*
-- Consumer #2 (`skills/plan/SKILL.md` writer-subagent dispatch payloads) contains `!cat skills/_shared/prompt-prose-writer-block.md` plus the Test-Expectations clause with anchor phrase *"prompt prose has no executable behavior to verify by test execution."*
-- Consumer #3 (`skills/design/SKILL.md`) contains `!cat skills/_shared/prompt-prose-writer-block.md` at the relevant authoring step.
-- Consumer #4 (`agents/qrspi-implementer-lightweight.md`) declares `prompt-prose-writer` in its `skills:` frontmatter list.
-- Consumers #5-#8 (`agents/qrspi-code-quality-reviewer.md`, `agents/qrspi-design-reviewer.md`, `agents/qrspi-plan-reviewer.md`, `agents/qrspi-plan-spec-reviewer.md`) each declare `prompt-prose-reviewer` in their `skills:` frontmatter list.
-- Consumer #6 (`agents/qrspi-design-reviewer.md`) additionally contains the per-block scope addendum with anchor phrases *"one strong signal but not the only one"* and *"content semantics determine the call."*
-
-Standalone item (independent of the consumer architecture):
-
-- `agents/qrspi-plan-test-coverage-reviewer.md` body contains the scope-guard clause anchored on *"Scope: only `task_type: code` tasks."*
+- Consumer #1 (`skills/plan/SKILL.md` § Per-Task Classification Step 1) contains Addition A verbatim, which itself contains the inline `!cat skills/_shared/prompt-prose-detection.md`. Anchor phrases: *"prose that will be consumed by an LLM agent as instructions, context, or rules at runtime"* and *"fast-path shortcut for qrspi-plus-internal authoring."*
+- Consumer #2 (`skills/plan/SKILL.md` writer-subagent dispatch payloads, 2 sites) contains `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md` + Addition B verbatim. Addition B anchor phrases: *"prompt prose has no executable behavior to verify by test execution,"* *"verified via the same content-semantic rules application."*
+- Consumer #3 (`skills/design/SKILL.md` at the authoring step) contains `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md`.
+- Consumer #4 (`agents/qrspi-implementer-lightweight.md`) declares `prompt-prose-writer` in its `skills:` frontmatter alongside the existing `implementer-protocol`.
+- Consumers #5-#8 (`agents/qrspi-code-quality-reviewer.md`, `agents/qrspi-design-reviewer.md`, `agents/qrspi-plan-reviewer.md`, `agents/qrspi-plan-spec-reviewer.md`) each declare `prompt-prose-reviewer` in their `skills:` frontmatter alongside the existing `reviewer-protocol`.
+- Consumer #6 (`agents/qrspi-design-reviewer.md`) additionally contains Addition D verbatim in its agent body, placed AFTER the frontmatter preload. Anchor phrases: *"one strong signal but not the only one"* and *"content semantics determine the call."*
+- Consumer #9 (`agents/qrspi-plan-test-coverage-reviewer.md`) contains Addition C verbatim at the TOP of its review-procedure section. Anchor phrase: *"Scope: only `task_type: code` tasks."* Does NOT declare `prompt-prose-reviewer` in its `skills:` frontmatter (standalone addition, not architecture consumer).
 
 Non-consumer invariants (explicit negative acceptance — protect the architecture from drift toward unwanted consumers):
 
 - `agents/qrspi-implementer.md` (TDD) does NOT declare `prompt-prose-writer` in its `skills:` frontmatter and does NOT contain hand-copied detection prose.
 - `skills/implementer-protocol/SKILL.md` does NOT contain `!cat` of any of the three shared snippet files and does NOT contain hand-copied detection prose (DRY enforcement — placing the rule in the shared protocol would force the TDD implementer to load it on every dispatch).
 - `skills/plan/post-approval-split-contract.md` is NOT amended (post-approval-split sub-subagents carry frontmatter verbatim from orchestrator-classified wrapped sections; classification is the orchestrator's responsibility, not the sub-subagent's).
-- No file other than the listed consumers contains hand-copied detection prose (verified by grep for the anchor phrases).
+- No file outside the listed consumers + shared snippets contains hand-copied detection prose (verified by grep for the anchor phrases).
 
 Rules-file relocation and refresh:
 
