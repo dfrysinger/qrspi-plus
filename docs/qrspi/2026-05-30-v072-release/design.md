@@ -1916,6 +1916,51 @@ This formalizes what `test/SKILL.md:92` already does informally (the Test phase 
 
 ---
 
+## G23 — Validation table omits `model_routing:` and is uncross-linked to fail-loud paragraphs
+
+**Type:** known-fix. **Source:** goals.md G23 / #240. **Cross-link:** rides on CD-1 (new vendor-neutral 5-tier schema) and G22 (schema-doc rewrite + per-agent rubric); G23 owns the residual validation-table row plus bidirectional cross-links left on the floor by both upstreams. Sequencing: CD-1 → G22 → G23.
+
+**Plain-language problem.** The validation table at `skills/using-qrspi/SKILL.md` L641-660 (heading: `### Fields that affect pipeline behavior (must be validated)`) is the single most-discoverable surface that tells operators "these are the fields the runtime validates on every config load." It enumerates 9 fields (`route`, `pipeline`, `codex_reviews`, `review_depth`, `review_mode`, `verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`, `question_budget`). It does NOT list `model_routing:` — even though two fail-loud paragraphs elsewhere in the same file (~L470 dispatcher-scope; ~L526 missing-block backfill) enforce its presence on every dispatch. A reader of the validation table reasonably concludes that the 9 listed fields are the complete required set; the actual required set after CD-1 ships is "those 9 PLUS `model_routing:` per the two fail-loud paragraphs." The fail-loud paragraphs themselves do not point back to the validation table, so the gap is silent in both directions.
+
+**Why we care.** Config-authoring time is the highest-leverage opportunity to communicate the required-blocks contract. The runtime fail-loud paragraphs catch the omission at first dispatch — loud, but late: the operator has already shipped a config they believed was valid. Doc-discoverability at the validation table prevents the late-catch class entirely (the operator sees the row, authors the block, never reaches the runtime check). This is a small fix with disproportionate ergonomic payoff because operators read the validation table once at config-authoring time and only ever re-read the fail-loud paragraphs after they fire.
+
+**What G23 delivers.**
+
+1. **One new row in the validation table** (`skills/using-qrspi/SKILL.md` L641-660 region, post-G22 rewrite):
+   - **Field name:** `model_routing:` (top-level block, not a scalar field; the row's "Valid values" cell describes the per-vendor 5-tier map shape rather than a literal enum).
+   - **Skills that validate it:** `using-qrspi` (dispatcher pre-flight at `detect_host` time + every dispatch), Goals, Plan, Parallelize, Implement, Integrate (any skill whose Config Validation Procedure invocation runs the runtime dispatcher).
+   - **Valid values:** "per-vendor 5-tier map per CD-1; see `### \`model_routing:\` block` for the schema definition and the two fail-loud paragraphs at `### Missing model_routing: block in config.md` (post-G22 anchor) for runtime enforcement."
+   - **Row position:** alphabetically slots between `codex_reviews` (line ~L644) and `question_budget` (line ~L652), but G23 emits it as a logically-grouped block-field row immediately after `route` (the only other block-shaped field in the table) so block-shaped fields cluster visually.
+
+2. **Two bidirectional cross-link annotations** — one-sentence appends to each fail-loud paragraph (post-G22 rewrite locations):
+   - The dispatcher-scope paragraph (CD-1's replacement for L470's current text): append "This requirement is enumerated in the validation table at `### Fields that affect pipeline behavior (must be validated)`."
+   - The missing-block-backfill paragraph (CD-1's replacement for L526's current text): append the same one-sentence pointer.
+
+   Both appends use the literal heading text (not a line number) so the cross-link survives future re-numbering. The phrasing matches the existing cross-link style elsewhere in `using-qrspi/SKILL.md` (e.g. the `verifier_enabled` row's "see `### When a required field is missing or has an invalid value` above" pattern at L676).
+
+**What G23 does NOT cover.**
+- The `model_routing:` schema itself, the dispatch chain, the per-vendor tier resolution, the `none`-halt semantics — owned by CD-1.
+- The per-agent tier rubric, the doc-cleanup of L448-470 / L472-488 / L503-512, the plan-time `model:` → `tier:` migration, the `model: "sonnet"` dispatch-line cleanup — owned by G22.
+- Replacing the validation table with a generated index sourced from a single canonical list — explicit non-goal for v0.7.2 (deferred candidate, see Open Questions).
+- Validation rows for any other top-level `config.md` block not currently in the table (e.g. `providers:`, `trusted_path:`, `validators:`) — out of scope; G23's framing in goals.md is `model_routing:`-specific. A broader "validation-table parity audit" is a v0.7.3+ candidate.
+
+**Acceptance criteria.**
+- `skills/using-qrspi/SKILL.md` validation table includes exactly one new row for `model_routing:` after CD-1 + G22 land.
+- The new row's "Skills that validate it" cell enumerates all skills whose Config Validation Procedure runs the dispatcher at re-entry (at minimum: `using-qrspi`, Goals, Plan, Parallelize, Implement, Integrate).
+- The new row's "Valid values" cell cross-references both the schema-definition heading and the two fail-loud paragraph headings by literal text (not line number).
+- Both fail-loud paragraphs (dispatcher-scope and missing-block backfill, post-G22) carry a one-sentence pointer back to the validation table by literal heading text.
+- Net diff in `using-qrspi/SKILL.md` ≤ 10 lines (one table row insertion + two single-sentence appends).
+- No new generator, no new lint hook, no canonical-source file, no new validators block.
+- Implementation ordering: G23 lands AFTER CD-1 (schema) and AFTER G22 (schema-doc rewrite) — both upstreams must settle before G23's cross-link anchors are stable.
+
+**Pre-existing plugin issues to file.** None new. G23's three edits are mechanical once CD-1 + G22 settle; no architectural surface of its own.
+
+**Open Questions for v0.7.3+.** (a) Does the validation table grow past ~25 fields (whether from new top-level blocks or per-block scalar field expansion), making the goals.md candidate C (generated index sourced from a single canonical list) worth its maintenance cost? (b) Should other top-level `config.md` blocks not currently in the validation table (`providers:`, `trusted_path:`, `validators:`) earn rows in a follow-on "validation-table parity audit," and what scope-detection heuristic would catch the omission class in future config-schema additions?
+
+**References.** Source: goals.md G23 / #240; CD-1 (this file, top — provides the post-rewrite schema and fail-loud paragraph content that G23's row + cross-links reference); G22 (this file — provides the post-rewrite L448-470 / L472-488 / L503-512 doc surface; G23's cross-links anchor to the headings G22 establishes); `skills/using-qrspi/SKILL.md` L641-660 (validation table — sole edit target for the new row), L470 (dispatcher-scope fail-loud paragraph — post-G22 rewrite location for the first cross-link append), L526 (missing-block backfill fail-loud paragraph — post-G22 rewrite location for the second cross-link append), L676 (existing cross-link style template — `verifier_enabled` row pattern G23 matches); related G7b / #204 (silent-fallback class the fail-loud paragraphs exist to close); closes #240 on ship.
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
