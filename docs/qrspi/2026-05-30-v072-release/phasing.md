@@ -47,11 +47,11 @@ the slice's surface, or a unit/integration test that exercises the changed paths
 ### Slice 1.1 — Apply-fix / verifier backbone
 
 **Goals:** G6, G7, G8, G11, G12, G13, G14
-**Surface:** the verifier sidecar pipeline + change_type discipline + reviewer
+**Surface:** the verifier sidecar pipeline + finding-categorization discipline + reviewer
 disk-write reliability across model families. The apply-fix protocol's core data
 shape.
 **Demonstrable by:** running any artifact-level review round with `verifier_enabled:
-true` and confirming sidecars land per-finding with valid change_type values, the
+true` and confirming sidecars land per-finding with valid finding-categorization values, the
 verifier-fan-in script produces the expected aggregate, and Codex + Claude reviewer
 outputs are both reliably persisted.
 
@@ -144,14 +144,15 @@ touches because every layer is touched by the cross-cutting hardening set.
 1. **End-to-end pipeline exercise.** Run a fresh qrspi-plus v0.7.2 pipeline
    against a small real project from Goals through Test. The run must complete
    without the run-time issues this release is closing: no silent Codex
-   disk-write failures (G6); no silent model routing fallbacks (G7/G22/G23);
-   no verifier fan-in chat-parsing (G12); no change_type enum silent
-   fall-through (G13); no per-task review orchestration drift (G9).
+   disk-write failures (G6); no silent model-routing fallbacks (G7/G22/G23);
+   no verifier fan-in chat-parsing (G12); no finding-categorization enum
+   silent fall-through (G13); no per-task review orchestration drift (G9).
 
 2. **Fail-loud trip-the-trap test.** Deliberately exercise each fail-loud path
-   added in this release (dispatch with missing model_routing, dispatch with
-   invalid change_type, reviewer with malformed sidecar, etc.) and confirm
-   each surfaces the documented failure menu rather than silently degrading.
+   added in this release (dispatch with missing dispatch-routing config,
+   dispatch with invalid finding categorization, reviewer with malformed
+   sidecar, etc.) and confirm each surfaces the documented failure menu
+   rather than silently degrading.
 
 3. **Instrumentation completeness.** A review round in the end-to-end exercise
    must produce both above-threshold and sub-threshold findings; confirm the
