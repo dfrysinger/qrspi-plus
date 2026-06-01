@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 release: qrspi-plus v0.7.2
 total_goals: 35
 slice_count: 7
@@ -16,7 +16,7 @@ This artifact uses **per-file specification blocks** (see `## Per-File Specifica
 
 **Verbatim vs outline.** Each per-file block distinguishes two prose forms:
 
-- **Verbatim content (lifted from design.md):** A structured citation header followed by a mandatory fenced code block carrying the lifted payload. Each citation declares four fields — `**Source:**` (plain bold, format `design.md §<section> (L<start>-L<end>)`), `**Marker phrase:**` (the exact bounding phrase in design.md that a verifier can use to relocate the lift when line numbers drift), `**Lift type:**` (one of `Full file body`, `Insertion delta`, or `Section body`), and `**Insertion site (in target file):**` (required iff Lift type ≠ Full file body — names the exact location in the target file where the payload lands). The fenced code block (e.g., ```markdown for `.md` targets, ```bash for shell scripts) is the unambiguous payload boundary and carries the lifted prose byte-identical to design.md, with no leading `> ` blockquote markers. **design.md display-fence carve-out.** When design.md wraps a payload in its own outer code fence (e.g., a 4-backtick ````markdown wrap so design.md can render `## headings` and `| tables |` as literal characters), that outer fence is design.md's display affordance — not part of the payload — and MUST NOT be lifted into structure.md's verbatim block. The structure.md fence is the only fence; the payload starts at the first line of substantive content inside design.md's display wrap. The same rule applies to any trailing `Placement:` / `Consumers:` metadata that design.md keeps adjacent to a payload — those are design-process metadata and belong in structure.md's `**Insertion site (in target file):**` field, never inside the payload. **`Old:` / `New:` delta-schema carve-out.** When design.md describes a prose-edit delta using an `Old:` / `New:` bullet pair (a substitution recipe), only the `New:` content is the verbatim payload destined for the target file. The `Old:` quote serves as a find-and-replace locator and belongs in the `**Insertion site (in target file):**` field, where the structure.md block names the pre-edit text the Insertion site uses to relocate the substitution point. A `**Verbatim content (lifted from design.md):**` heading on a per-file block means design.md is the canonical source — Plan/Implement consumers MUST author the cited file with the fenced payload exactly, preserving code fences, HTML comments, and any list/anchor scaffolding the lift carries. A future drift between structure.md and design.md is a contract violation caught by the structure-reviewer's stitching audit.
+- **Verbatim content (lifted from design.md):** A structured citation header followed by a mandatory fenced code block carrying the lifted payload. Each citation declares three fields — `**Source:**` (plain bold, format `design.md §<section> (L<start>-L<end>)`), `**Lift type:**` (one of `Full file body`, `Insertion delta`, or `Section body`), and `**Insertion site (in target file):**` (required iff Lift type ≠ Full file body — names the exact location in the target file where the payload lands). The fenced code block (e.g., ```markdown for `.md` targets, ```bash for shell scripts) is the unambiguous payload boundary and carries the lifted prose byte-identical to design.md, with no leading `> ` blockquote markers. **design.md display-fence carve-out.** When design.md wraps a payload in its own outer code fence (e.g., a 4-backtick ````markdown wrap so design.md can render `## headings` and `| tables |` as literal characters), that outer fence is design.md's display affordance — not part of the payload — and MUST NOT be lifted into structure.md's verbatim block. The structure.md fence is the only fence; the payload starts at the first line of substantive content inside design.md's display wrap. The same rule applies to any trailing `Placement:` / `Consumers:` metadata that design.md keeps adjacent to a payload — those are design-process metadata and belong in structure.md's `**Insertion site (in target file):**` field, never inside the payload. **`Old:` / `New:` delta-schema carve-out.** When design.md describes a prose-edit delta using an `Old:` / `New:` bullet pair (a substitution recipe), only the `New:` content is the verbatim payload destined for the target file. The `Old:` quote serves as a find-and-replace locator and belongs in the `**Insertion site (in target file):**` field, where the structure.md block names the pre-edit text the Insertion site uses to relocate the substitution point. A `**Verbatim content (lifted from design.md):**` heading on a per-file block means design.md is the canonical source — Plan/Implement consumers MUST author the cited file with the fenced payload exactly, preserving code fences, HTML comments, and any list/anchor scaffolding the lift carries. A future drift between structure.md and design.md is a contract violation caught by the structure-reviewer's stitching audit.
 - **Outline-only sections (Plan/Implement authors):** A bullet list naming section anchors, anchor phrases that MUST appear, and behavior constraints. design.md provides scope and constraints; the actual prose body is authored at Plan/Implement time per design.md G1 Sub-Rule B ("deferred-prose-design" form). The outline pins what the authored prose must achieve without locking the wording.
 
 **Asymmetry is explicit, not implicit.** A per-file block that omits both `**Verbatim content (lifted from design.md):**` and `**Outline-only sections:**` headings means design.md authored neither — the file is fully Plan/Implement-DEFERS. Test files (any `tests/**/*.bats` row) carry only `**Tests:**` content (what the test pins), never verbatim assertion text, per Plan/Implement's DEFERS contract on test bodies.
@@ -266,7 +266,6 @@ Audit-file schema (per structure.md §11):
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G6 (L1247)
-**Marker phrase:** "Iron law: emit findings ONLY by Write tool to `<round_subdir>/<reviewer_tag>.finding-F<NN>.md`"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Appended as the iron-law clause that closes the `## First-Party Emission Contract` body in `skills/reviewer-protocol/first-party-emission.md` — the load-bearing sentence the contract pivots on.
 
@@ -295,7 +294,6 @@ Audit-file schema (per structure.md §11):
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G6 (L1248)
-**Marker phrase:** "Iron law: emit findings ONLY by `<<<FINDING-BOUNDARY>>>`-prefixed blocks on stdout"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Appended as the iron-law clause that closes the `## Third-Party Emission Contract` body in `skills/reviewer-protocol/third-party-emission.md` — the load-bearing sentence the stdout-boundary contract pivots on.
 
@@ -338,7 +336,6 @@ Path rule: `<round-dir>/<reviewer-tag>.finding-FNN.score.md` (per structure.md �
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G14 D1 (L1481-L1498)
-**Marker phrase:** "verbatim addition to `agents/qrspi-finding-verifier.md`"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted as a new paragraph in `agents/qrspi-finding-verifier.md` immediately BEFORE the existing sentence "Treat the following patterns as likely false positives and score them low (0–25):" (currently ~L19 of the agent file), per design.md G14 D1 placement at L1478.
 
@@ -415,7 +412,6 @@ findings whose premise is wrong (≤25) drop.
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G19 Implementation deliverables (L1808-L1819)
-**Marker phrase:** "new Step 3.5: Cite Check, inserted between current step 3 and step 4 … Verbatim wording:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `agents/qrspi-finding-verifier.md` between the existing Step 3 (Read `referenced_files`) and Step 4 (lazy-Read upstreams) of the rubric procedure — a new Step 3.5 (Cite Check).
 
@@ -435,7 +431,6 @@ findings whose premise is wrong (≤25) drop.
 ```
 
 **Source:** design.md §G19 Implementation deliverables (L1823)
-**Marker phrase:** "new top-anchor rubric tier (prepended to the existing 0/25/50/75/100 anchors) … Verbatim wording:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Prepended in `agents/qrspi-finding-verifier.md` to the rubric anchor list as a new top-anchor tier (anchor `a.`), sitting ABOVE the existing 0/25/50/75/100 anchors (which renumber accordingly).
 
@@ -444,7 +439,6 @@ a. **0 / HALLUCINATED:** Cite Check (step 3.5) found that the finding cites cont
 ```
 
 **Source:** design.md §G19 Implementation deliverables (L1827)
-**Marker phrase:** "reason field convention documented in step 6 (Write sidecar). Append one sentence to the existing step 6 success-case description:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Appended as one additional sentence to the existing Step 6 (Write sidecar) success-case description in `agents/qrspi-finding-verifier.md`.
 
@@ -453,7 +447,6 @@ When the score is `0` due to Cite Check failure (step 3.5), the `reason` value M
 ```
 
 **Source:** design.md §G20 Deliverables item 5 (L1871)
-**Marker phrase:** "Verifier sidecar schema addition (`agents/qrspi-finding-verifier.md`) — step 1 (Read finding file) gains a phrase:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted as a phrase appended to the existing Step 1 (Read finding file) description in `agents/qrspi-finding-verifier.md`, extending the parse contract from 5 fields to 5 fields plus the `actual_model:` audit field.
 
@@ -462,7 +455,6 @@ parse the 5-field finding object plus the audit field `actual_model:`
 ```
 
 **Source:** design.md §G20 Deliverables item 5 (L1871)
-**Marker phrase:** "Step 6 (Write sidecar) gains one line in BOTH the success and the `VERIFY_FAILED` shapes:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted as one additional sidecar frontmatter line in BOTH the success-case and the `VERIFY_FAILED`-case sidecar shapes documented in Step 6 (Write sidecar) of `agents/qrspi-finding-verifier.md`.
 
@@ -471,7 +463,6 @@ actual_model: <copied verbatim from finding frontmatter>
 ```
 
 **Source:** design.md §G28 Implementation deliverables item 1 (L2265-L2269)
-**Marker phrase:** "new rubric step 'Defect-class tag,' inserted after the current scoring step and before the write-sidecar step. Verbatim wording:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `agents/qrspi-finding-verifier.md` as a new rubric step (Defect-class tag) AFTER the current scoring step and BEFORE the existing Step 6 (Write sidecar).
 
@@ -628,7 +619,6 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G9 (L1318-L1326)
-**Marker phrase:** "The script runs three checks in order before writing the anchor"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as the contract prose body in the header / leading-documentation block of `scripts/round-prepare.sh` (immediately above the shell implementation), enumerating the three SHA-correctness checks and the commit-anchor write rule the script enforces.
 
@@ -665,7 +655,6 @@ The script runs three checks in order before writing the anchor:
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G15 (L1541-L1550)
-**Marker phrase:** "the plan-author rule (verbatim wording)"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as a new `### Sweep Task Contract` subsection appended to the END of the `## Test Expectations` section of `skills/plan/SKILL.md` (per design.md §G15 L1574).
 
@@ -683,7 +672,6 @@ Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defe
 ```
 
 **Source:** design.md §G18 (L1739-L1756)
-**Marker phrase:** "Cross-Task Consumer Surface subsection (new) … Verbatim wording"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as a new `### Cross-Task Consumer Surface` subsection appended to the END of the `## Task Definition` section of `skills/plan/SKILL.md` (same neighborhood as G15's Sweep Task Contract subsection), per design.md §G18 L1744.
 
@@ -729,7 +717,6 @@ Skipping the `cross_task_consumers:` field on a consumer-surface-touching task i
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G15 (L1554-L1559)
-**Marker phrase:** "Heuristic (literal wording the reviewer applies)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted as a new bullet within the existing review rubric of `agents/qrspi-plan-reviewer.md`, alongside (NOT replacing) existing field-shape checks, per design.md §G15 L1575.
 
@@ -743,7 +730,6 @@ On detection, the reviewer MUST verify the task's Test Expectations block contai
 ```
 
 **Source:** design.md §G18 (L1760-L1766)
-**Marker phrase:** "Cross-Task Consumer Surface Detection rubric clause (new) … Verbatim wording"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted as a new bullet within the existing review rubric of `agents/qrspi-plan-reviewer.md`, alongside (NOT replacing) G15's Sweep-Task Detection clause, per design.md §G18 L1765.
 
@@ -776,7 +762,6 @@ Missing field, malformed field, non-zero hits on a `none` claim, or invalid disp
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G9 (L1335-L1343)
-**Marker phrase:** "Between rounds — required sequence … insert a short numbered block titled"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `skills/implement/SKILL.md` at the END of the per-task reviewer fan-out section — immediately after the reviewer-dispatch prose and before the orchestrator's attention moves on, per design.md §G9 L1332.
 
@@ -866,7 +851,6 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-1 component #3 (L80)
-**Marker phrase:** "Iron law (orchestrator side): invoke Task tool exactly once per emitted spec line"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/dispatch-agent.sh` as the orchestrator-side iron law that the script's stdout spec-line contract relies on.
 
@@ -875,7 +859,6 @@ scripts/dispatch-agent.sh --verifier-fanout \
 ```
 
 **Source:** design.md §CD-1 component #3 (L87)
-**Marker phrase:** "Spec line format: shell-style `KEY=VALUE` pairs, space-separated, one line per dispatch"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/dispatch-agent.sh` (alongside the iron-law clause above) as the locked stdout spec-line format the orchestrator parses.
 
@@ -981,7 +964,6 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G4 solution step 1 (L1061-L1084)
-**Marker phrase:** "HEAD-correctness check block (verbatim shell from the design solution)"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as the body of the HEAD-correctness checks step (Step 1) inside `scripts/round-prepare.sh` — three shell checks (required-flag, across-rounds advance, within-round equality) followed by the anchor write.
 
@@ -1044,7 +1026,6 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-1 component #4 (L98)
-**Marker phrase:** "Output-bound contract."
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/await-round.sh` as the output-bound contract sentence the script's stdout/stderr boundary must honor.
 
@@ -1070,7 +1051,6 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G27 D5 (L2194-L2200)
-**Marker phrase:** "D5 — CD-1 host×vendor matrix extension."
 **Lift type:** Section body
 **Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/_resolve-lib.sh` as the host × vendor routing matrix the library's lookup helpers (`lookup_host_vendor_path`, `lookup_default_second_reviewer`) implement.
 
@@ -1119,7 +1099,6 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G27 D2 (L2180)
-**Marker phrase:** "D2 — New probe script `scripts/second-reviewer-available.sh`"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Authored into the script header / leading documentation as the probe's runtime contract; implementation may source `_host-detect.sh` and `_resolve-lib.sh` rather than `dispatch-agent.sh` directly, but the same matrix is the source of truth.
 
@@ -1181,7 +1160,6 @@ Runs `detect_host` (sourced from `scripts/dispatch-agent.sh` via the existing `Q
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-4 §I.7 (L611-L615)
-**Marker phrase:** "Locked platform directory (verified at design time against host docs + direct runtime observation as of 2026-05-31)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/detect-interaction-mode.sh` as the locked platform-discriminator → auto-mode-signal → script-output-shape directory the script's per-host branches implement.
 
@@ -1194,7 +1172,6 @@ Runs `detect_host` (sourced from `scripts/dispatch-agent.sh` via the existing `Q
 ```
 
 **Source:** design.md §CD-4 §I.7 (L666-L669)
-**Marker phrase:** "Override chain (consulted by the script in this order for any `user-override-only` host, AND as a fallback for shell-verdict/llm-context hosts when the primary signal is absent)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/detect-interaction-mode.sh` (alongside the platform directory above) as the ordered override-chain the script consults when the primary host signal is absent.
 
@@ -1206,7 +1183,6 @@ Runs `detect_host` (sourced from `scripts/dispatch-agent.sh` via the existing `Q
 ```
 
 **Source:** design.md §CD-4 §I.7 (L679)
-**Marker phrase:** "Encapsulation rule: No SKILL.md prose, no agent body, and no `_shared/` snippet references per-host signal names directly"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/detect-interaction-mode.sh` as the encapsulation rule the script is the sole consumer-facing surface for.
 
@@ -1234,7 +1210,6 @@ Runs `detect_host` (sourced from `scripts/dispatch-agent.sh` via the existing `Q
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-1 component #11 (L149-L187)
-**Marker phrase:** "Snippet body (locked prose — author this exact text into `skills/_shared/reviewer-dispatch-prose.md`; values in `$VARNAME` form are set by the per-skill preamble above the `!cat`)"
 **Lift type:** Full file body
 
 ````markdown
@@ -1330,7 +1305,6 @@ Then read `$REVIEW_OUTPUT_DIR/.round-complete.json` and the per-finding files as
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-4 §I.4 (L580-L585)
-**Marker phrase:** "`model_routing:` config block (5-tier schema + halt-response additions)"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as the `model_routing:` / `trusted_path:` / `orchestrator_rescue` / `max_drift_per_round` configuration block within `config.md` — the 5-tier vendor-neutral routing schema plus the halt-response additions for CD-4 §I.4.
 
@@ -1605,7 +1579,6 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G16 Implementation Deliverable 2 (L1647-L1651)
-**Marker phrase:** "`## Orchestrator-Only Scripts (Bash Allowlist)` section body authored verbatim for `agents/qrspi-implementer.md`"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as a new `## Orchestrator-Only Scripts (Bash Allowlist)` section inserted at the TOP of the prose body of `agents/qrspi-implementer.md`, ABOVE the first procedural section, per design.md G16 L1645.
 
@@ -1635,7 +1608,6 @@ If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` an
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-1 Schema migrations (L195)
-**Marker phrase:** "Reviewer-agent first-action instruction: Read your `DISPATCH_FILE` … as your full dispatch before doing anything else."
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted at the very first procedural step (Read step) of the agent body of `agents/qrspi-code-quality-reviewer.md`, replacing the implicit assumption that dispatch parameters arrive inline in the prompt argument.
 
@@ -1660,7 +1632,6 @@ If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` an
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-1 Schema migrations (L195)
-**Marker phrase:** "Reviewer-agent first-action instruction: Read your `DISPATCH_FILE` … as your full dispatch before doing anything else."
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted at the very first procedural step (Read step) of the agent body of `agents/qrspi-plan-reviewer.md`, replacing the implicit assumption that dispatch parameters arrive inline in the prompt argument.
 
@@ -1698,7 +1669,6 @@ If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` an
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-1 Schema migrations (L195)
-**Marker phrase:** "Reviewer-agent first-action instruction (applied to every reviewer agent in the sweep)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted at the very first procedural step (Read step) of the agent body of every `agents/qrspi-*-reviewer.md` file in the 41-agent sweep (excluding the three already covered by their dedicated rows above).
 
@@ -1707,7 +1677,6 @@ If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` an
 ```
 
 **Source:** design.md §G22 Deliverable 1 (L1945-L1949)
-**Marker phrase:** "Tier-assignment rubric (full agent → tier mapping)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Consumed by the sweep against `agents/*.md` frontmatter as the authoritative agent → `tier:` mapping (5 agents at `tier: low`; 36 agents at `tier: medium`); not lifted into any single file body — drives the per-file frontmatter `tier:` field write.
 
@@ -1886,7 +1855,6 @@ If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` an
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G31 Addition A (L2544-L2552)
-**Marker phrase:** "Plan classifier rule (inline in consumer #1)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `skills/plan/SKILL.md` § Per-Task Classification — REPLACES the current Step 1 paragraph (the existing path-glob-only rule). Steps 2+ continue unchanged after.
 
@@ -1903,7 +1871,6 @@ The classification gates downstream behavior: lightweight tasks dispatch to `qrs
 ```
 
 **Source:** design.md §G31 Addition B (L2564-L2568)
-**Marker phrase:** "Plan writer-subagent Test-Expectations clause (inline in consumer #2)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `skills/plan/SKILL.md` writer-subagent dispatch payload sections at TWO sites — the merged-plan/overview subagent dispatch (~lines 125-132) and the initial-draft per-task sub-subagent dispatch (~lines 439-444). At each site, inserted AFTER the consumer's `!cat detection` + `!cat writer-addition`, BEFORE the rest of the dispatch payload's standard Test-Expectations instructions. The post-approval-split sub-subagent does NOT receive this clause.
 
@@ -1941,7 +1908,6 @@ Other lightweight task categories (non-prompt prose, ordinary documentation, con
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G31 Addition D (L2594-L2599)
-**Marker phrase:** "design-reviewer per-block scope addendum (inline in consumer #6)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Appended in `agents/qrspi-design-reviewer.md` body to the review-procedure section AFTER the `skills:` frontmatter preload of `prompt-prose-reviewer` has loaded — layered atop the shared reviewer-addition's general "file or sub-block" rule as a refinement.
 
@@ -2013,7 +1979,6 @@ The marker scopes attention to specific sub-blocks; the surrounding design-decis
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G10 D1 (L1377-L1402)
-**Marker phrase:** "Anti-Fabrication Rule callout — becomes the literal section body"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as a new `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/reviewer-protocol/SKILL.md`, inserted between the existing `### Refusal Procedure` (ends ~line 206) and `## Per-Finding Disk-Write Contract` (line 208). Positioned immediately after Refusal Procedure so the bounding clause is adjacent to the section it bounds.
 
@@ -2066,7 +2031,6 @@ invitation to invent one.
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G17 deliverable #1 (L1682)
-**Marker phrase:** "Invariant 3 rationale sentence replacement at L174"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Replaces the existing Invariant 3 rationale sentence at line ~174 of `skills/implementer-protocol/SKILL.md`. The pre-edit sentence (locator for find-and-replace) reads: *"This ensures `git status` reports remain deterministic between scratch-file write and removal, and the target repository's committed `.gitignore` is not polluted with QRSPI internals."* The post-edit sentence (verbatim payload below) corrects the now-stale "not polluted" claim — qrspi-plus's own committed `.gitignore` does carry the scratch-file entry; the deterministic-status property still holds because downstream consumers' target repositories do not inherit qrspi-plus's `.gitignore` entry.
 
@@ -2075,7 +2039,6 @@ This ensures `git status` reports remain deterministic between scratch-file writ
 ```
 
 **Source:** design.md §G17 deliverable #2 (L1689)
-**Marker phrase:** "Commit-Before-Reporting step 4 parenthetical replacement at L241"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Replaces the existing Commit-Before-Reporting step 4 parenthetical at line ~241 of `skills/implementer-protocol/SKILL.md`. The pre-edit parenthetical (locator for find-and-replace) reads: *"(the scratch file is not gitignored and you don't want it in the next round's diff)"* — the "not gitignored" half is stale (the file is now in the committed `.gitignore`). The post-edit parenthetical (verbatim payload below) drops the obsolete rationale and keeps the actionable "out of next round's diff" framing.
 
@@ -2100,7 +2063,6 @@ This ensures `git status` reports remain deterministic between scratch-file writ
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G17 deliverable #3 (L1695)
-**Marker phrase:** "Commit ownership bullet replacement at L28"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Replaces the existing Commit ownership bullet at line ~28 of `agents/qrspi-test-writer.md`. The pre-edit bullet (locator for find-and-replace) reads: *"...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`."* The post-edit bullet (verbatim payload below) drops the trailing worktree-local-exclude sentence since the file is now also covered by the committed `.gitignore`.
 
@@ -2124,7 +2086,6 @@ This ensures `git status` reports remain deterministic between scratch-file writ
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G34 D2 (L2892-L2899)
-**Marker phrase:** "Locked OWNS allowances list"
 **Lift type:** Full file body
 
 ```markdown
@@ -2139,7 +2100,6 @@ Design OWNS:
 ```
 
 **Source:** design.md §G34 D3 (L2903-L2910)
-**Marker phrase:** "Locked DEFERS list (continues the same file as a single contiguous block)"
 **Lift type:** Full file body
 
 ```markdown
@@ -2172,7 +2132,6 @@ Design DEFERS:
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-2 component 3 (L246-L281)
-**Marker phrase:** "<!-- prose-design: skills/_shared/evergreen-output-rule.md (entire file) -->"
 **Lift type:** Full file body
 
 ```markdown
@@ -2223,7 +2182,6 @@ Decision-process history (drafts, review rounds, feedback applied, compaction re
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-3 component 1 (L301-L330)
-**Marker phrase:** "<!-- prose-design: skills/_shared/multi-actor-flow-check.md (entire file) -->"
 **Lift type:** Full file body
 
 ```markdown
@@ -2286,7 +2244,6 @@ Alternative: provide explicit guidance to accept the gap with a documented assum
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G31 File 1 (L2432-L2461)
-**Marker phrase:** "`skills/_shared/prompt-prose-detection.md` (NEW). Verbatim content:"
 **Lift type:** Full file body
 
 ```markdown
@@ -2337,7 +2294,6 @@ Files outside these globs require the content-semantic test above. Other project
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G31 File 2 (L2475-L2483)
-**Marker phrase:** "`skills/_shared/prompt-prose-writer-addition.md` (NEW). Verbatim content:"
 **Lift type:** Full file body
 
 ```markdown
@@ -2361,7 +2317,6 @@ Files outside these globs require the content-semantic test above. Other project
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G31 File 3 (L2489-L2500)
-**Marker phrase:** "`skills/_shared/prompt-prose-reviewer-addition.md` (NEW). Verbatim content:"
 **Lift type:** Full file body
 
 ```markdown
@@ -2388,7 +2343,6 @@ For each file or block determined to be prompt prose: Read `skills/_shared/promp
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G31 File 4 (L2504-L2512)
-**Marker phrase:** "`skills/prompt-prose-writer/SKILL.md` (NEW wrapper). Verbatim content:"
 **Lift type:** Full file body
 
 ```markdown
@@ -2420,7 +2374,6 @@ description: Apply prompt-design rules when authoring or planning prompt-prose d
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G31 File 5 (L2524-L2532)
-**Marker phrase:** "`skills/prompt-prose-reviewer/SKILL.md` (NEW wrapper). Verbatim content:"
 **Lift type:** Full file body
 
 ```markdown
@@ -2606,7 +2559,6 @@ description: Apply prompt-design rules when reviewing prompt-prose subjects in a
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G31 Addition C (L2580-L2582)
-**Marker phrase:** "plan-test-coverage-reviewer scope guard (inline in consumer #9, standalone)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `agents/qrspi-plan-test-coverage-reviewer.md` body at the TOP of the review-procedure section, BEFORE any existing rubric. Standalone — this consumer does NOT preload `prompt-prose-reviewer` (Q1 resolution: full reviewer block would compromise judgment on `task_type: code` tasks where RED IS required).
 
@@ -2654,7 +2606,6 @@ Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare l
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G35 (L2966-L2981)
-**Marker phrase:** "D2 Locked OWNS allowances list followed by D3 Locked DEFERS list — file body is “D2 block then D3 block, no other content” per design.md G35 §D5 first bullet (L3001)"
 **Lift type:** Full file body
 
 ```markdown
@@ -2719,7 +2670,6 @@ Structure DEFERS:
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G35 §D5 third bullet (L2996)
-**Marker phrase:** "introducer prose authored verbatim for `agents/qrspi-structure-scope-reviewer.md`"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `agents/qrspi-structure-scope-reviewer.md` body's procedure section immediately AFTER the Step 1 Read citation, on its own line; the `!cat skills/_shared/structure-altitude-boundary.md` directive follows on the next line.
 
