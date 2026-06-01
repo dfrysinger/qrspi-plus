@@ -1,0 +1,2 @@
+score: 22
+reason: §3's PATH B comment is intentionally high-level and enumerates no dispatch-companion.sh args (not --vendor, --model, --prompt-file, or --tag); §14 carries the full launch signature so an implementer cross-reads both, and singling out --tag as a "seam mismatch" is a low-severity nit rather than a real interface disagreement.

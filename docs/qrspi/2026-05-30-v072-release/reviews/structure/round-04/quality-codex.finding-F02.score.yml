@@ -1,0 +1,2 @@
+score: 65
+reason: Confirmed — §16 says "writes NO_FINDINGS sentinel file" without naming the path, while sibling interfaces (§15 `.round-complete.json`, §9 explicit path rule, §14 `<round-dir>/.dispatch/<tag>.raw`) all name exact filenames; downstream test contract (test-per-finding-file-emission.bats clean-sentinel behavior) and apply-fix consumers need the concrete path, so this is a real clarity gap at Structure altitude, though modest (Plan could backfill).

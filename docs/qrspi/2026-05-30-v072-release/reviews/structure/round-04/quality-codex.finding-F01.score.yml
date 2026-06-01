@@ -1,0 +1,2 @@
+score: 18
+reason: Glob is `.md`-anchored and sidecars are `.yml` per using-qrspi protocol, so enumeration cannot match sidecars; finding reduces to an optional inline-doc nitpick the author already acknowledges.

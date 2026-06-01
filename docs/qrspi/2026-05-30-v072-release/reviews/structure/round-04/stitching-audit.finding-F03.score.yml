@@ -1,0 +1,2 @@
+score: 70
+reason: Verified gap — design.md §I.3 line 539 explicitly locks `.orchestrator-fixes.json` schema/writer/consumer, and structure.md contracts the sibling `.verifier-fan-in-audit.json` in §11 but omits a parallel interface section for the rescue audit file, leaving implementers without a structure-altitude contract for a design-locked artifact.

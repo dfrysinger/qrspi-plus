@@ -1,0 +1,2 @@
+score: 78
+reason: Confirmed in artifact — §3 verifier-fanout shows bare `--tier-override <tier>` while §7's canonical grammar (assignment, optionally CSV) would reject a bare tier as an invalid tag name; the two interface sections genuinely disagree on the flag's value shape and need alignment before Plan/Implement.

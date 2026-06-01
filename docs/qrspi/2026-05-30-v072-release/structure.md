@@ -33,7 +33,7 @@ This slice makes verifier scoring observable and review-round instrumentation du
 | File | Action | Responsibility | Goal IDs |
 |---|---|---|---|
 | `agents/qrspi-finding-verifier.md` | Modify | Add hallucination screening, actual-model-aware scoring cues, and convergent-evidence exception handling. | G19, G20, G28 |
-| `skills/using-qrspi/SKILL.md` | Modify | Define round instrumentation, sub-threshold observation logging, and verifier-visible audit surfaces. | G20, G28, G29 |
+| `skills/using-qrspi/SKILL.md` | Modify | Define round instrumentation, sub-threshold observation logging, verifier-visible audit surfaces, and orchestrator-side halt-response protocol (CD-4 §I.3): read `orchestrator_rescue` and `max_drift_per_round` from config.md to gate rescue-layer behavior and drift-count enforcement. | G20, G28, G29, CD-4 |
 | `scripts/dispatch-agent.sh` | Modify | Add host/vendor/model metadata persistence into the dispatch manifest for later observability. | G20, G29 |
 | `tests/unit/test-verified-file-shape.bats` | Modify | Pin verified-file headers, kept/dropped counts, and instrumentation fields. | G20, G28 |
 | `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` | Modify | Exercise verifier calibration and round instrumentation in the release-level path. | G19, G20, G28, G29 |
@@ -209,7 +209,7 @@ scripts/dispatch-agent.sh --step <step> --round <N> --output-dir <round-dir> \
 # Verifier-fanout mode:
 scripts/dispatch-agent.sh --verifier-fanout \
   --step <step> --round <N> --output-dir <round-dir> \
-  [--tier-override <tier>]
+  [--tier-override qrspi-finding-verifier=<tier>]
 # Script globs <round-dir>/*.finding-F*.md to enumerate findings; --agents is not used
 # Stdout: one spec line per finding: MODE=first_party TAG=<reviewer-tag>.F<NN> SUBAGENT_TYPE=qrspi-finding-verifier MODEL=<resolved-model> PROMPT_FILE=<absolute-path>
 ```
@@ -399,7 +399,7 @@ The orchestrator consults this script once per round-start; detection logic stay
 
 Override chain (consulted for `user-override-only` hosts and as fallback when the primary signal is absent): (1) `QRSPI_INTERACTION_MODE=auto|interactive` env var; (2) safe-default `interactive`.
 
-Locked platform directory (verified at design time as of 2026-05-31): Copilot CLI returns `DETECTION_TYPE=llm-context`; Claude Code returns `DETECTION_TYPE=llm-context`; unknown host returns `DETECTION_TYPE=user-override-only`. See design.md CD-4 §I.7 for full platform table.
+Locked platform directory (verified at design time as of 2026-05-31): per-platform return values are listed in design.md CD-4 §I.7.
 
 Audit file: `<round-dir>/.interaction-mode-audit.json` with shape `{platform, detection_type, verdict, evidence}`. Separate from `.verifier-fan-in-audit.json` (different writer, different timing).
 
@@ -455,6 +455,29 @@ Splits third-party reviewer stdout (boundary-delimited) into per-finding files o
 #              for each <<<FINDING-BOUNDARY>>> block in that tag's raw output;
 #              writes NO_FINDINGS sentinel file on clean NO_FINDINGS stdout
 ```
+
+### 17. `.orchestrator-fixes.json` rescue audit schema
+
+Orchestrator rescue layer logs every fix attempt (successful or failed) to this file; the round-summary prose surface sources per-tier counts from it.
+
+```json
+{
+  "rescue_events": [
+    {
+      "finding_id": "R1-F03",
+      "cause": "missing_change_type",
+      "tier": 1,
+      "original_value": "category",
+      "fixed_value": "change_type",
+      "fix_method": "frontmatter-key-rename",
+      "citation": null,
+      "tier_outcome": "applied"
+    }
+  ]
+}
+```
+
+Path: `<round-dir>/.orchestrator-fixes.json`. Writer: orchestrator rescue layer (written after each tier 1/2/3 fix attempt; partial-failure semantics — failed attempts write `tier_outcome: "failed"`). Consumer: `using-qrspi/SKILL.md` round-summary prose surface, which sources per-tier counts for `round-NN-dispositions.md`. Schema authority: design.md CD-4 §I.3. Co-exists with §11 `.verifier-fan-in-audit.json` — separate writers, separate files, no merge semantics.
 
 ## Architectural Diagram
 
@@ -631,7 +654,7 @@ These invariants are release-wide and each is owned by the smallest test type th
 
 ## Section Contracts
 
-Section-list contracts for new `skills/`, `_shared/`, and protocol files created in this release. Each entry names required top-level sections at heading-level granularity. Prose content under those headings is deferred to Plan/Implement. Files already contracted in the Interfaces section (`skills/_shared/structure-altitude-boundary.md` → §5; `skills/_shared/design-altitude-boundary.md` → §6; `skills/_shared/verifier-filter-rule.md` → §12; `scripts/detect-interaction-mode.sh` → §13; `scripts/dispatch-companion.sh` → §14; `scripts/await-round.sh` → §15; `scripts/third-party-finding-splitter.sh` → §16) are cross-referenced rather than duplicated here.
+Section-list contracts for new `skills/`, `_shared/`, and protocol files created in this release. Each entry names required top-level sections at heading-level granularity. Prose content under those headings is deferred to Plan/Implement. Files already contracted in the Interfaces section (`skills/_shared/structure-altitude-boundary.md` → §5; `skills/_shared/design-altitude-boundary.md` → §6; `skills/_shared/verifier-filter-rule.md` → §12; `scripts/detect-interaction-mode.sh` → §13; `scripts/dispatch-companion.sh` → §14; `scripts/await-round.sh` → §15; `scripts/third-party-finding-splitter.sh` → §16; `<round-dir>/.orchestrator-fixes.json` → §17) are cross-referenced rather than duplicated here.
 
 | File | Required top-level sections |
 |---|---|
