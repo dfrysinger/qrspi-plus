@@ -124,7 +124,7 @@ manifest persistence. Skill prose names only the agent; the script chain handles
 
     Each consumer skill's review-round section reduces to:
     1. A skill-specific preamble setting the dispatch parameters (`$REVIEW_STEP`, `$REVIEW_ROUND`, `$REVIEW_OUTPUT_DIR`, `$REVIEW_ARTIFACT`, `$REVIEW_AGENTS`) — varies per skill because the agent list differs (e.g., goals dispatches `quality-claude` + `scope-claude` + Codex peers when `codex_reviews: true`; design dispatches the design-reviewer + scope-reviewer set; plan dispatches the four plan-specific reviewers).
-    2. The `!cat ${CLAUDE_SKILL_DIR}/../_shared/reviewer-dispatch-prose.md` include.
+    2. The `!cat skills/_shared/reviewer-dispatch-prose.md` include.
 
     The snippet itself is generic — it does NOT enumerate agent names, step names, or per-skill artifact names. Those flow in via the dispatch parameters the preamble sets.
 
@@ -225,7 +225,7 @@ manifest persistence. Skill prose names only the agent; the script chain handles
 2. **`!cat` include in each artifact-producing skill SKILL.md** (precedent: `skills/goals/SKILL.md` already uses this pattern for `precondition-block.md`):
 
    ```
-   !`cat ${CLAUDE_SKILL_DIR}/../_shared/evergreen-output-rule.md`
+   !cat skills/_shared/evergreen-output-rule.md
    ```
 
    Consumers to update:
@@ -279,7 +279,7 @@ Decision-process history (drafts, review rounds, feedback applied, compaction re
 **Acceptance criteria:**
 
 - `skills/_shared/evergreen-output-rule.md` exists and contains the locked prose verbatim (anchor phrases: "Litmus test (apply to every paragraph before write)", "dialogue exhaust", "Named antagonist patterns — strip on sight, substitute as shown", the two ordered filters, the exclusions parenthetical).
-- Every consumer SKILL.md listed above carries a `!cat ${CLAUDE_SKILL_DIR}/../_shared/evergreen-output-rule.md` line, placed where the SKILL.md introduces its artifact-output contract (typically near the artifact template or just before it).
+- Every consumer SKILL.md listed above carries a `!cat skills/_shared/evergreen-output-rule.md` line, placed where the SKILL.md introduces its artifact-output contract (typically near the artifact template or just before it).
 - Skill prose lint: no SKILL.md in the consumer list embeds a copy of the rule text — `!cat` is the only inclusion path.
 - Reviewer protocol updated to surface a finding when an `status: draft → approved` artifact contains any of the named antagonist patterns. (Either fold the check into existing quality reviewers, or define a sibling check — sizing TBD in Plan.)
 - Documentation: the cross-skill rule appears in `using-qrspi/SKILL.md`'s artifact-quality section by reference (one-line pointer to `_shared/evergreen-output-rule.md`), not by copy.
@@ -328,7 +328,7 @@ Diagnostic template:
 **2. Snippet placement in each consumer SKILL.md.** Insert the `!cat` line at the start of the per-decision authoring section (the point where the skill begins translating a design decision into a deliverable — for Structure, the file-map authoring; for Plan, the task-spec authoring; for Parallelize, the parallelization-plan authoring; for Implement, the per-task implementer dispatch). Exact line:
 
 ```
-!cat ${CLAUDE_SKILL_DIR}/../_shared/multi-actor-flow-check.md
+!cat skills/_shared/multi-actor-flow-check.md
 ```
 
 **3. Layered-defense semantics.** Each consumer runs the check independently against the design decision currently in scope; an upstream skill's pass is not a downstream skip. The four checks are redundant by design — they catch different failure cadences (Structure runs once per file-map authoring, Plan once per task, Parallelize once per wave, Implement once per task dispatch). Redundancy is the layered defense; do NOT optimize it away.
@@ -338,7 +338,7 @@ Diagnostic template:
 **Acceptance criteria:**
 
 - `skills/_shared/multi-actor-flow-check.md` exists and contains the locked snippet verbatim (anchor phrases: "Multi-Actor Flow Check", "where \"actor\" means anything that performs an operation and hands off to another", the six numbered elements with their bolded labels, "STOP", "Iron law: silently inventing a missing hand-off is a contract violation").
-- All four consumer SKILL.md files carry exactly one `!cat ${CLAUDE_SKILL_DIR}/../_shared/multi-actor-flow-check.md` line each: `skills/structure/SKILL.md`, `skills/plan/SKILL.md`, `skills/parallelize/SKILL.md`, `skills/implement/SKILL.md`. Grep-lint: `grep -rln "multi-actor-flow-check.md" skills/` returns exactly 4 SKILL.md files plus the source file (5 total).
+- All four consumer SKILL.md files carry exactly one `!cat skills/_shared/multi-actor-flow-check.md` line each: `skills/structure/SKILL.md`, `skills/plan/SKILL.md`, `skills/parallelize/SKILL.md`, `skills/implement/SKILL.md`. Grep-lint: `grep -rln "multi-actor-flow-check.md" skills/` returns exactly 4 SKILL.md files plus the source file (5 total).
 - Snippet self-containment lint: `grep -E "Sub-Rule C|G1|G\\d+" skills/_shared/multi-actor-flow-check.md` returns zero matches. The snippet stands alone in any consumer's context.
 - Snippet body lint: no consumer SKILL.md embeds a copy of the six-element list or the diagnostic template; `!cat` is the only inclusion path. Grep-lint: searching consumer files for any of the anchor phrases above (excluding the `!cat` line) returns zero matches.
 - Behavioral acceptance: in a contrived design.md that names two actors but omits a per-step output's consumer, each of Structure/Plan/Parallelize/Implement, when given that design as input, halts and emits the diagnostic template with the missing element correctly identified rather than silently authoring around the gap.
