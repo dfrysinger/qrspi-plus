@@ -613,7 +613,9 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Interface:**
 ```bash
-# scripts/round-prepare.sh <round-NN> <output-dir> [--task-branch <name>] [--implementer-commit <SHA>] [--verify]
+# scripts/round-prepare.sh <round-NN> <output-dir> [--task-branch <name> --implementer-commit <SHA>] [--verify]
+# (The --task-branch / --implementer-commit pair is per-task only; both flags
+# appear together or not at all. Partial use is rejected with exit 10.)
 # Exit 0: <output-dir>/round-NN.diff + <output-dir>/../round-NN-commit.txt written
 # Exit 10: --task-branch set without --implementer-commit (orchestrator bug — halt + surface to user)
 # Exit 11: passed SHA != git rev-parse HEAD (worktree integrity break — halt + diagnose)
@@ -965,7 +967,9 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Interface:**
 ```bash
-# scripts/round-prepare.sh <round-NN> <output-dir> [--task-branch <name>] [--implementer-commit <SHA>] [--verify]
+# scripts/round-prepare.sh <round-NN> <output-dir> [--task-branch <name> --implementer-commit <SHA>] [--verify]
+# (The --task-branch / --implementer-commit pair is per-task only; both flags
+# appear together or not at all. Partial use is rejected with exit 10.)
 # Exit 0: <output-dir>/round-NN.diff + <output-dir>/../round-NN-commit.txt written
 # Exit 10: --task-branch set without --implementer-commit (orchestrator bug — halt + surface to user)
 # Exit 11: passed SHA != git rev-parse HEAD (worktree integrity break — halt + diagnose)
@@ -1792,8 +1796,8 @@ If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` an
 
 **Tests:**
 - Pins default second-reviewer availability for each supported host (Claude Code, Copilot CLI) under the G27 D5 matrix.
-- Pins the unavailable-host diagnostic surface (non-zero exit + `[second-reviewer-unavailable]` stderr token).
-- Pins shared-matrix use — the script reads `_resolve-lib.sh`'s matrix/default lookup rather than a parallel hardcoded host table.
+- Pins unavailable-host handling (loud diagnostic surface).
+- Pins shared-matrix integration with `_resolve-lib.sh`.
 
 ## Slice 1.5 — Skill prose & interactive dialog quality
 
