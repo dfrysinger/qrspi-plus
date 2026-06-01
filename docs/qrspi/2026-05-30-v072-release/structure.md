@@ -613,7 +613,7 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Interface:**
 ```bash
-# scripts/round-prepare.sh <task-branch> <round-NN> <output-dir> [--implementer-commit <SHA>] [--verify]
+# scripts/round-prepare.sh <round-NN> <output-dir> [--task-branch <name>] [--implementer-commit <SHA>] [--verify]
 # Exit 0: <output-dir>/round-NN.diff + <output-dir>/../round-NN-commit.txt written
 # Exit 10: --task-branch set without --implementer-commit (orchestrator bug — halt + surface to user)
 # Exit 11: passed SHA != git rev-parse HEAD (worktree integrity break — halt + diagnose)
@@ -965,7 +965,7 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Interface:**
 ```bash
-# scripts/round-prepare.sh <task-branch> <round-NN> <output-dir> [--implementer-commit <SHA>] [--verify]
+# scripts/round-prepare.sh <round-NN> <output-dir> [--task-branch <name>] [--implementer-commit <SHA>] [--verify]
 # Exit 0: <output-dir>/round-NN.diff + <output-dir>/../round-NN-commit.txt written
 # Exit 10: --task-branch set without --implementer-commit (orchestrator bug — halt + surface to user)
 # Exit 11: passed SHA != git rev-parse HEAD (worktree integrity break — halt + diagnose)
@@ -1068,7 +1068,7 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 **Source:** design.md §G27 D5 (L2194-L2200)
 **Marker phrase:** "D5 — CD-1 host×vendor matrix extension."
 **Lift type:** Section body
-**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/_resolve-lib.sh` as the host × vendor routing matrix the library's lookup helpers (`lookup_host_vendor_path`, `lookup_default_second_reviewer`) implement. The 5-column matrix at design.md L2192-L2200 supersedes the prior 4-column version at design.md L117-L125 — a reader who finds the 4-col version first should follow the G27 D5 extension to land on the load-bearing version.
+**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/_resolve-lib.sh` as the host × vendor routing matrix the library's lookup helpers (`lookup_host_vendor_path`, `lookup_default_second_reviewer`) implement.
 
 ```markdown
 | Host          | Claude        | Codex         | DeepSeek (v0.7.3+) | Default second-reviewer vendor |
@@ -1102,7 +1102,10 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 
 **Interface:**
 ```bash
-# scripts/second-reviewer-available.sh <vendor>
+# scripts/second-reviewer-available.sh [<vendor>]
+# When <vendor> is omitted, the script reads the default-second-reviewer vendor for the
+# detected host from `_resolve-lib.sh`'s host × vendor matrix (design.md §G27 D5). Skill
+# prose invokes the no-arg form; `<vendor>` is an optional override for operator/diagnostic use.
 # Exit 0: the requested/default second-reviewer vendor is potentially available for the detected host
 # Exit 1: the vendor is absent from the host × vendor matrix, no default exists, or the vendor is unreachable on this host
 # Stdout: optional default vendor identifier for verbose/operator diagnostics only; not consumed by SKILL prose
@@ -1603,11 +1606,11 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Insertion site (in target file):** Authored as a new `## Orchestrator-Only Scripts (Bash Allowlist)` section inserted at the TOP of the prose body of `agents/qrspi-implementer.md`, ABOVE the first procedural section, per design.md G16 L1645.
 
 ```markdown
-> ## Orchestrator-Only Scripts (Bash Allowlist)
->
-> You may NOT invoke `scripts/run-codex-review.sh` or `scripts/run-third-party-llm.sh` under any path shape — not by relative path (`./scripts/run-codex-review.sh`), not by absolute path (`<repo>/scripts/run-codex-review.sh`), not via shell expansion or aliases. These scripts are orchestrator-only — they dispatch LLM reviews on behalf of the run, and they read arbitrary file content into the LLM prompt. Per-task implementer work has no legitimate reason to invoke them; the per-task Bash grant restriction here is defense in depth against prompt-injected exfil.
->
-> If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` and stop — the orchestrator owns LLM dispatch decisions, not the implementer.
+## Orchestrator-Only Scripts (Bash Allowlist)
+
+You may NOT invoke `scripts/run-codex-review.sh` or `scripts/run-third-party-llm.sh` under any path shape — not by relative path (`./scripts/run-codex-review.sh`), not by absolute path (`<repo>/scripts/run-codex-review.sh`), not via shell expansion or aliases. These scripts are orchestrator-only — they dispatch LLM reviews on behalf of the run, and they read arbitrary file content into the LLM prompt. Per-task implementer work has no legitimate reason to invoke them; the per-task Bash grant restriction here is defense in depth against prompt-injected exfil.
+
+If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` and stop — the orchestrator owns LLM dispatch decisions, not the implementer.
 ```
 
 
@@ -1788,10 +1791,9 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Direct unit coverage for the host-aware second-reviewer probe script. Complements the dispatch-companion availability regression by asserting the probe itself uses the shared host × vendor matrix and emits the required unavailable diagnostic.
 
 **Tests:**
-- `COPILOT_CLI=1 bash scripts/second-reviewer-available.sh openai-codex; echo $?` returns 0 because D5 names `openai-codex` as the default second-reviewer vendor for Copilot CLI.
-- Claude Code host fixture returns 0 for `openai-codex` using the same matrix lookup.
-- Unknown-host fixture returns non-zero and stderr contains `[second-reviewer-unavailable]`.
-- Mutation fixture proves the script reads `_resolve-lib.sh`'s matrix/default lookup rather than a parallel hardcoded host table.
+- Pins default second-reviewer availability for each supported host (Claude Code, Copilot CLI) under the G27 D5 matrix.
+- Pins the unavailable-host diagnostic surface (non-zero exit + `[second-reviewer-unavailable]` stderr token).
+- Pins shared-matrix use — the script reads `_resolve-lib.sh`'s matrix/default lookup rather than a parallel hardcoded host table.
 
 ## Slice 1.5 — Skill prose & interactive dialog quality
 
@@ -1904,7 +1906,7 @@ The classification gates downstream behavior: lightweight tasks dispatch to `qrs
 ```markdown
 **Test-Expectations clause for prompt-prose tasks.** For tasks classified `task_type: lightweight` because the deliverable IS prompt prose (per Addition A's content-semantic test), Test Expectations cannot be RED-gate failing tests — prompt prose has no executable behavior to verify by test execution. Instead, encode rules-application as the verification mechanism using this template:
 
-> Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy].
+Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy].
 
 Other lightweight task categories (non-prompt prose, ordinary documentation, configuration) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause.
 ```
@@ -2122,14 +2124,14 @@ This ensures `git status` reports remain deterministic between scratch-file writ
 **Lift type:** Full file body
 
 ```markdown
-> Design OWNS:
-> - Per-goal outcome statements (the end-state being targeted)
-> - Per-goal solution definitions at outcome altitude including: detailed descriptions of the solutions with full edge cases, end-to-end flows specifying actor sequence and per-step inputs/outputs, prompt-writing specifics (the actual prose a SKILL or agent file will carry, paraphrased or verbatim when load-bearing), acceptance criteria including concrete examples and rough test-pairing shapes (e.g., "one bats file per script under `scripts/`"; naming the shape is acceptance-criteria-altitude — authoring the test code is Plan/Implement's job)
-> - Cross-Goal Decisions (CDs) that establish vocabulary, named architectural components by purpose, and cross-cutting invariants
-> - Per-solution diagrams (zero or more per goal block or per cross-cutting CD block) when they aid comprehension of that specific solution — Mermaid sequence diagrams for per-solution end-to-end flows, or Mermaid flowcharts for branch-heavy per-solution control flow. NOT a unified system-wide architecture diagram across goals/CDs (Structure's job).
-> - Test Strategy at the per-solution altitude: each goal/CD block carries its own Acceptance subsection with concrete examples and rough test-pairing shapes; design.md does NOT carry a top-level Test Strategy section stitching acceptance criteria across goals (Structure's job).
-> - Naming and renames that establish cross-skill vocabulary (rename inventory blocks)
-> - Phasing/release-assignment phrases that name which goal/CD ships in which release (operator-authoritative; phasing.md is the canonical artifact but design.md may carry the labels inline for self-host reasoning)
+Design OWNS:
+- Per-goal outcome statements (the end-state being targeted)
+- Per-goal solution definitions at outcome altitude including: detailed descriptions of the solutions with full edge cases, end-to-end flows specifying actor sequence and per-step inputs/outputs, prompt-writing specifics (the actual prose a SKILL or agent file will carry, paraphrased or verbatim when load-bearing), acceptance criteria including concrete examples and rough test-pairing shapes (e.g., "one bats file per script under `scripts/`"; naming the shape is acceptance-criteria-altitude — authoring the test code is Plan/Implement's job)
+- Cross-Goal Decisions (CDs) that establish vocabulary, named architectural components by purpose, and cross-cutting invariants
+- Per-solution diagrams (zero or more per goal block or per cross-cutting CD block) when they aid comprehension of that specific solution — Mermaid sequence diagrams for per-solution end-to-end flows, or Mermaid flowcharts for branch-heavy per-solution control flow. NOT a unified system-wide architecture diagram across goals/CDs (Structure's job).
+- Test Strategy at the per-solution altitude: each goal/CD block carries its own Acceptance subsection with concrete examples and rough test-pairing shapes; design.md does NOT carry a top-level Test Strategy section stitching acceptance criteria across goals (Structure's job).
+- Naming and renames that establish cross-skill vocabulary (rename inventory blocks)
+- Phasing/release-assignment phrases that name which goal/CD ships in which release (operator-authoritative; phasing.md is the canonical artifact but design.md may carry the labels inline for self-host reasoning)
 ```
 
 **Source:** design.md §G34 D3 (L2903-L2910)
@@ -2137,14 +2139,14 @@ This ensures `git status` reports remain deterministic between scratch-file writ
 **Lift type:** Full file body
 
 ```markdown
-> Design DEFERS:
-> - Function bodies (procedural code blocks with executable logic — full implementations belong in Implement)
-> - Full unit-test code (specific assertion text, fixture file contents, test scaffolding — belongs in Plan/Implement; Design names the test type and rough shape only)
-> - Executable shell beyond a few illustrative lines (a 2-3 line block illustrating shape is fine; a 20-line script body is not)
-> - File architecture (which file holds which component, directory layout, module boundary lines — Structure's job)
-> - Unified system-wide architecture diagrams that stitch components across goals/CDs into a single architectural overview (Structure's job; per-solution diagrams inside a single goal/CD block remain in Design's OWNS)
-> - Unified Test Strategy / Test Architecture section that stitches per-solution acceptance criteria from individual goal/CD blocks into a release-wide test plan, names cross-cutting test invariants by type, or enumerates the release's test taxonomy (Structure's job; per-solution Acceptance subsections inside individual goal/CD blocks remain in Design's OWNS)
-> - Task carving (per-task LOC budgets, per-task dependency graphs, per-task test-case enumeration — Plan's job)
+Design DEFERS:
+- Function bodies (procedural code blocks with executable logic — full implementations belong in Implement)
+- Full unit-test code (specific assertion text, fixture file contents, test scaffolding — belongs in Plan/Implement; Design names the test type and rough shape only)
+- Executable shell beyond a few illustrative lines (a 2-3 line block illustrating shape is fine; a 20-line script body is not)
+- File architecture (which file holds which component, directory layout, module boundary lines — Structure's job)
+- Unified system-wide architecture diagrams that stitch components across goals/CDs into a single architectural overview (Structure's job; per-solution diagrams inside a single goal/CD block remain in Design's OWNS)
+- Unified Test Strategy / Test Architecture section that stitches per-solution acceptance criteria from individual goal/CD blocks into a release-wide test plan, names cross-cutting test invariants by type, or enumerates the release's test taxonomy (Structure's job; per-solution Acceptance subsections inside individual goal/CD blocks remain in Design's OWNS)
+- Task carving (per-task LOC budgets, per-task dependency graphs, per-task test-case enumeration — Plan's job)
 ```
 
 
@@ -2236,13 +2238,13 @@ If any element is missing for an in-scope decision, **STOP** authoring against t
 
 Diagnostic template:
 
-> Design decision **X** enumerates actors **A, B, C** but does not specify **[missing element — e.g., "what happens if B produces no output", "how A invokes B", "who reads C's output"]**.
->
-> Stopping before guessing.
->
-> Recommended path: trigger the **Backward Loops** procedure (see `using-qrspi/SKILL.md` § Backward Loops) to re-open Design via its per-decision dialogue, lock the missing element, re-review + re-approve `design.md`, then cascade forward — every dependent artifact from Design onward (Phasing if phase boundaries are affected, Structure, Plan, Parallelize if task dependencies are affected) re-runs against the updated design.
->
-> Alternative: provide explicit guidance to accept the gap with a documented assumption recorded against this decision in the deliverable. The assumption becomes the de-facto contract — name what you are choosing for the missing element.
+Design decision **X** enumerates actors **A, B, C** but does not specify **[missing element — e.g., "what happens if B produces no output", "how A invokes B", "who reads C's output"]**.
+
+Stopping before guessing.
+
+Recommended path: trigger the **Backward Loops** procedure (see `using-qrspi/SKILL.md` § Backward Loops) to re-open Design via its per-decision dialogue, lock the missing element, re-review + re-approve `design.md`, then cascade forward — every dependent artifact from Design onward (Phasing if phase boundaries are affected, Structure, Plan, Parallelize if task dependencies are affected) re-runs against the updated design.
+
+Alternative: provide explicit guidance to accept the gap with a documented assumption recorded against this decision in the deliverable. The assumption becomes the de-facto contract — name what you are choosing for the missing element.
 
 **Iron law:** silently inventing a missing hand-off is a contract violation that ships half-finished features which only surface at Test or in production. Guessing-instead-of-stopping is a process failure and must be reported even if the deliverable otherwise looks complete.
 ```
