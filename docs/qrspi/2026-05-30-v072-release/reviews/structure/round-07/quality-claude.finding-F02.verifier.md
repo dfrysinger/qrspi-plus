@@ -1,0 +1,2 @@
+score: 75
+reason: Verified — structure.md L767-776 enumerates only 3 sites and explicitly scopes to "Consumers #2–#3," while design.md confirms Addition A (L2555), wrapper File 4 (L2517,L2519), and wrapper File 5 (L2537,L2539) all contain `!cat` lines for the G31 trio; the reviewer-addition snippet has zero hook-point coverage despite being contract-listed at L683, and peer subsections (CD-1..G35) enumerate every site, so the asymmetry is a real drift-prevention gap.
