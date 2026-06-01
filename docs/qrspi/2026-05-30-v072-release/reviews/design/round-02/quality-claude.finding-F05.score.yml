@@ -1,0 +1,2 @@
+score: 10
+reason: False positive — D6 (design.md L2179) explicitly enumerates `skills/reviewer-protocol/SKILL.md` Expected-Reviewer Matrix sweep as a G27 deliverable, and the acceptance criterion at L2204 explicitly names it ("including the Expected-Reviewer Matrix column headers in `skills/reviewer-protocol/SKILL.md` per D6 — verifiable by `grep -nE 'codex_reviews' skills/reviewer-protocol/SKILL.md` returning zero matches"); the reviewer missed D6 which sits between D3 and D4.

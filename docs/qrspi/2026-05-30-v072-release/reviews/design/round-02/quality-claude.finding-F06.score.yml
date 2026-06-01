@@ -1,0 +1,2 @@
+score: 10
+reason: False positive — design.md L1266 already contains the exact post-rename name-sweep grep the finding's "Suggested fix" proposes, in G6's Acceptance block; reviewer missed an existing acceptance criterion.

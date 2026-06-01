@@ -195,7 +195,7 @@ manifest persistence. Skill prose names only the agent; the script chain handles
 - `run-third-party-llm.sh` → `dispatch-companion.sh`
 - `codex-finding-splitter.sh` → `third-party-finding-splitter.sh`
 - `_shared/codex/launch-await-pattern.md` → `_shared/third-party/launch-await-pattern.md`
-- `reviewer-protocol/codex-emission-override.md` → `third-party-emission-override.md`
+- `reviewer-protocol/codex-emission-override.md` → `third-party-emission.md` (CD-1 strips Codex-specific naming; G6 strips the "override" framing — single rename, two motivations applied in the same release)
 - NOT renamed: `codex-companion-bg.sh` (legitimately Codex-specific transport)
 
 **Acceptance criteria:**
@@ -363,20 +363,37 @@ These goals are five symptoms of one broken end-to-end flow: reviewer → findin
 sequenceDiagram
     autonumber
     participant O as Orchestrator
+    participant D as scripts/dispatch-agent.sh
     participant R as Reviewer subagents (M parallel)
-    participant V as Verifier subagent (per finding)
+    participant V as Verifier subagents (N parallel)
+    participant A as scripts/await-round.sh
     participant S as scripts/verifier-fan-in.sh
     participant FS as Disk (round dir)
 
-    O->>R: dispatch M reviewers (per CD-1)
+    Note over O,FS: Phase 1 — Reviewer fan-out (CD-1 unchanged)
+    O->>D: dispatch-agent.sh --step <step> --round <N> --agents tag1=agent-1,tag2=agent-2,...
+    D->>FS: write per-tag PROMPT_FILEs + manifest entries
+    D-->>O: emit M spec lines (first-party) — background-dispatch any third-party
+    O->>R: parallel Task batch (one Task call per spec line, prompt = "DISPATCH_FILE=<path>")
     R->>FS: write <tag>.finding-F<NN>.md (change_type in enum)
-    R-->>O: return (round complete)
-    loop per finding
-        O->>V: dispatch verifier (finding path)
-        V->>FS: write <tag>.finding-F<NN>.score.md sidecar
-        V-->>O: return (job complete)
-    end
-    O->>S: invoke verifier-fan-in.sh <round-dir>
+    R-->>O: return (synchronous first-party path)
+    O->>A: await-round.sh (no-op if all first-party — awaits any background entries)
+    A->>FS: write .round-complete.json
+    A-->>O: exit 0
+
+    Note over O,FS: Phase 2 — Verifier fan-out (CD-4 new mode, same script)
+    O->>D: dispatch-agent.sh --verifier-fanout --round <N> --output-dir <round-dir>
+    D->>FS: enumerate findings, write per-finding PROMPT_FILEs + manifest entries
+    D-->>O: emit N spec lines (first-party) — background-dispatch any third-party
+    O->>V: parallel Task batch (one Task call per spec line, prompt = "DISPATCH_FILE=<path>")
+    V->>FS: write <tag>.finding-F<NN>.score.md sidecar
+    V-->>O: return
+    O->>A: await-round.sh (handles background entries again)
+    A->>FS: update .round-complete.json
+    A-->>O: exit 0
+
+    Note over O,FS: Phase 3 — Fan-in (CD-4 canonical filter)
+    O->>S: verifier-fan-in.sh <round-dir>
     S->>FS: read each finding + paired sidecar
     alt all findings well-formed
         S->>FS: write kept-findings.txt + .verifier-fan-in-audit.json
@@ -386,14 +403,14 @@ sequenceDiagram
     else any finding malformed (missing change_type, out-of-enum, missing sidecar, wrong extension)
         S->>FS: write .verifier-fan-in-audit.json with halts[]
         S-->>O: exit non-zero with named cause
-        O-->>O: surface halt to user; round fails to converge
+        O-->>O: surface halt to user — round fails to converge
     end
 ```
 
 **Six choreography elements (Sub-Rule C compliance):**
 
 1. **Actors** — reviewer subagents (M parallel per round), verifier subagent (per finding), `scripts/verifier-fan-in.sh`, orchestrator.
-2. **Sequence** — reviewer fan-out → wait → verifier per-finding dispatch (parallel within a round) → wait → orchestrator invokes script ONCE per round → script reads finding+sidecar pairs → script writes kept-findings + audit → orchestrator reads kept-findings → apply-fix.
+2. **Sequence** — reviewer fan-out (CD-1 reviewer pattern: ONE batched `dispatch-agent.sh --agents tag1=..,tag2=..` call + spec-line iteration + parallel Task batch + `await-round.sh`) → ONE `dispatch-agent.sh --verifier-fanout` call (script enumerates findings under `--output-dir`, prepares per-finding PROMPT_FILEs, emits N spec lines for first-party verifiers or background-dispatches third-party verifiers per host × vendor matrix) → orchestrator iterates spec lines and invokes Task once per line in a single parallel batch (no per-finding loop in orchestrator prose) → `await-round.sh` waits on any background entries → orchestrator invokes the fan-in script ONCE per round → script reads finding+sidecar pairs → script writes kept-findings + audit → orchestrator reads kept-findings → apply-fix.
 3. **Per-step I/O** — every output written to disk under `<round-dir>/`; specific path conventions locked below.
 4. **Consumers** — every output named: finding files consumed by verifier + script; sidecars consumed by script; kept-findings.txt consumed by orchestrator; audit JSON consumed by orchestrator's round-summary prose for user visibility.
 5. **Loud-failure paths** — script halts and exits non-zero on: missing `change_type:` field, out-of-enum `change_type:` value, missing sidecar for any finding, sidecar on wrong extension, unparseable score. Each halt names the specific finding ID + the specific cause in the audit JSON. Round fails to converge — no silent default-keep, no silent default-drop.
@@ -409,7 +426,7 @@ sequenceDiagram
 - `score:` integer 0–100
 - Reasoning prose in body (consumed by humans + future debug tooling, not by the fan-in script)
 
-The verifier agent body is updated to constrain its Write tool call to the locked path/extension. Today's chat-emit-of-score-prose remains as telemetry but is no longer load-bearing.
+The verifier agent body is updated to constrain its Write tool call to the locked path/extension. Today's chat-emit-of-score-prose remains as telemetry but is no longer load-bearing. **The dispatch mechanism that invokes the verifier and produces these sidecars is specified in component J below** (verifier dispatch reuses CD-1's `dispatch-agent.sh` rather than an orchestrator-side per-finding loop).
 
 **C. `scripts/verifier-fan-in.sh` (canonical filter).** Single invocation per round: `scripts/verifier-fan-in.sh <round-dir>`. Script:
 1. Globs `<round-dir>/*.finding-F*.md` to enumerate findings.
@@ -432,19 +449,61 @@ The verifier agent body is updated to constrain its Write tool call to the locke
 ```
 Orchestrator includes the count summary in the round-complete prose surfaced to the user (audit visibility — no silent filter activity).
 
-**F. Orchestrator-side prose update.** Every SKILL.md that today references the filter rule (verified locations from G7: `using-qrspi/SKILL.md` lines 388, 661, 921, 984, 985; `implement/SKILL.md` references to "kept findings" / "findings that survived verifier filtering") changes to point to the script. Specifically:
-- `using-qrspi/SKILL.md` — collapse the 5 restatements to ONE short paragraph (~2 sentences) that explains what the script does and points to its header constants for current threshold values. Remove the other 4 sites entirely.
-- `implement/SKILL.md` — replace "kept findings" / "findings that survived verifier filtering" with "findings listed in `<round-dir>/kept-findings.txt`"; add a precondition that `scripts/verifier-fan-in.sh` must have exited 0 for the round before apply-fix runs.
+**F. Orchestrator-side prose update.** Every SKILL.md that today references the filter rule OR the per-finding verifier dispatch loop changes to point to the unified CD-1 dispatch pipeline. Specifically:
+- `using-qrspi/SKILL.md` — collapse the 5 filter-rule restatements to ONE short paragraph (~2 sentences) that explains what the fan-in script does and points to its header constants for current threshold values. Remove the other 4 sites entirely. Replace the per-finding verifier dispatch loop (currently at the artifact-level Apply-fix protocol, ~line 814) with a single invocation of `scripts/dispatch-agent.sh --verifier-fanout --output-dir <round-dir>` followed by spec-line iteration per CD-1's reviewer dispatch pattern (one parallel Task batch reading `DISPATCH_FILE=<path>` per line), followed by `await-round.sh`. The verifier-loop prose disappears entirely from this consumer.
+- `implement/SKILL.md` — replace "kept findings" / "findings that survived verifier filtering" with "findings listed in `<round-dir>/kept-findings.txt`"; replace the per-finding verifier dispatch loop (~line 828) with the same single `dispatch-agent.sh --verifier-fanout` + spec-line iteration + `await-round.sh` pattern; add a precondition that `scripts/verifier-fan-in.sh` must have exited 0 for the round before apply-fix runs.
 - Reviewer-protocol `SKILL.md` — `change_type:` enum is centralized here (G8 candidate 3 + G13 — single schema source); per-reviewer agent files reference rather than duplicate.
 
 **G. Reviewer agent updates.** Each per-reviewer agent body (`agents/qrspi-silent-failure-hunter.md`, `agents/qrspi-security-reviewer.md`, `agents/qrspi-code-quality-reviewer.md`, all other reviewer agents) carries the field name `change_type:` and the enum value enumeration explicitly (G8). The reviewer-protocol skill defines the canonical enum; per-reviewer agents inherit by reference.
+
+**J. Verifier dispatch reuses CD-1's `dispatch-agent.sh` (new `--verifier-fanout` mode).** Instead of a new bespoke script and instead of the orchestrator looping per finding, CD-4 extends CD-1's universal dispatch entry point with one new mode that runs the verifier fan-out through the exact same pipeline (PROMPT_FILE per dispatch, host × vendor matrix routing, first-party spec-line emission + third-party background dispatch, single dispatch-manifest.json, await-round.sh handles both paths). Naming rationale: the flag is named for the role it dispatches (verifiers), symmetric with the shared snippet `_shared/verifier-dispatch-prose.md` and parallel to CD-1's reviewer-mode flag pair. The underlying mechanism (enumerate findings under `--output-dir`, dispatch one verifier per finding) is documented in "Script behavior in `--verifier-fanout` mode" below.
+
+**Invocation form:**
+
+```sh
+scripts/dispatch-agent.sh --verifier-fanout \
+  --step <step> --round <N> --output-dir <round-dir> \
+  [--tier-override <tier>]
+```
+
+**Script behavior in `--verifier-fanout` mode:**
+
+1. Globs `<round-dir>/*.finding-F*.md` to enumerate the round's findings (the same files CD-4 component A locks). Halts with diagnostic if zero findings found and the calling skill expected verification (the orchestrator already knows whether to invoke this mode based on reviewer-round output — empty round-dir means reviewer round produced no findings, which short-circuits verification entirely).
+2. For each finding file:
+   - Derives `tag = <reviewer-tag>.F<NN>` from the filename (e.g., `quality-claude.finding-F01.md` → tag `quality-claude.F01`). Tag uniqueness within a round is guaranteed by the finding filename's own uniqueness.
+   - Agent is fixed: `qrspi-finding-verifier` (no per-tag agent variance; the verifier agent is singular).
+   - Resolves verifier agent tier → vendor → model via `_resolve-lib.sh` (current default: `low` → Haiku, per the v0.7.1 verifier wiring; G22 may revise the rubric, but the resolution path is unchanged).
+   - Detects host × vendor → first-party OR third-party (per CD-1's matrix; in Copilot CLI all verifiers resolve first-party because Claude is first-party on that host).
+   - Builds PROMPT_FILE at `/tmp/qrspi-dispatch-<round-id>-<tag>.prompt` containing: verifier agent body + per-finding dispatch params (`<finding_file_path>`, `<sidecar_path>` constructed as the finding path with `.md` → `.score.md` per CD-4 component B, `<artifact_path>` propagated from the calling skill's dispatch params, `<diff_file_path>` from the same round's `.diff` per CD-1, `<upstream_paths>` per the verifier's input contract).
+   - First-party path: emits the spec line `MODE=first_party TAG=<tag> SUBAGENT_TYPE=qrspi-finding-verifier MODEL=<resolved-model> PROMPT_FILE=<absolute-path>` to stdout; appends manifest entry with `mode: first_party`.
+   - Third-party path: invokes `dispatch-companion.sh`, captures jobId, appends manifest entry with `mode: background, status: pending, await_cmd`.
+3. After all findings processed: stdout carries one spec line per first-party verifier (zero lines if all verifiers resolved third-party on this host). Same iron law as CD-1 reviewer dispatch: orchestrator invokes Task exactly once per emitted spec line, copying `SUBAGENT_TYPE`, `MODEL`, `PROMPT_FILE` verbatim, prompt arg literally `"DISPATCH_FILE=<absolute-path-from-PROMPT_FILE>"`.
+
+**Orchestrator-side flow (replaces the today's per-finding loop):**
+
+1. ONE Bash call to `scripts/dispatch-agent.sh --verifier-fanout ...` (script enumerates findings; orchestrator never reads finding bodies into its own context).
+2. ONE parallel Task batch — one Task call per spec line emitted by the script (mechanical iteration over a tiny list of spec lines, ~150 bytes each; no per-finding orchestrator reasoning).
+3. ONE Bash call to `scripts/await-round.sh --round-dir <round-dir>` (same script CD-1 uses for reviewer rounds — no-op-safe if zero background entries; uniform for first-party-only and mixed rounds).
+4. ONE Bash call to `scripts/verifier-fan-in.sh <round-dir>` (CD-4 component C, unchanged).
+5. Read `kept-findings.txt` (CD-4 component D, unchanged); apply-fix.
+
+**Shared dispatch prose snippet — `skills/_shared/verifier-dispatch-prose.md`.** Mirror of `skills/_shared/reviewer-dispatch-prose.md` (CD-1 §11). Carries the `dispatch-agent.sh --verifier-fanout` invocation, the spec-line iteration contract (one Task call per line, verbatim values), and the `await-round.sh` follow-up. `!cat`-included into every consumer skill that runs verification (`using-qrspi/SKILL.md` artifact-level Apply-fix protocol; `implement/SKILL.md` task-level Apply-fix protocol). The two snippets (reviewer-dispatch-prose + verifier-dispatch-prose) are deliberately separate even though their bodies are ~85% identical: each names a different dispatch-agent.sh mode flag (`--agents tag1=..,tag2=..` vs `--verifier-fanout`) and the mode flag is the load-bearing difference at the call site; a single combined snippet with a `$DISPATCH_MODE` param would obscure that distinction. A future v0.7.3+ refactor may merge them once both have stabilized in v0.7.2 self-host.
+
+**Why this dispatch-agent.sh extension instead of a new script:**
+
+- **Same PROMPT_FILE lifecycle.** `/tmp/qrspi-dispatch-<round-id>-<tag>.prompt`, written by dispatch-agent, cleaned by await-round.sh after `.round-complete.json` is written. No new lifecycle.
+- **Same dispatch-manifest.json.** Reviewer entries and verifier entries land in the same per-round manifest; await-round.sh handles them uniformly.
+- **Same iron law.** Orchestrator's contract is "invoke Task exactly once per emitted spec line, verbatim" — identical to reviewer dispatch. No new mental model.
+- **Same host × vendor matrix.** Verifier routing inherits CD-1's matrix transparently (Copilot CLI = first-party Claude verifier; Claude Code = first-party Claude verifier; Codex CLI = first-party Codex verifier deferred to v0.7.3+ per CD-1).
+- **Orchestrator context cost unchanged from reviewer round.** N spec lines (~150 bytes each) + N small `DISPATCH_FILE` references passed to Task tool. Verifier prompts and finding bodies stay on disk; orchestrator never holds them.
+- **The per-finding loop is the thing being eliminated.** Today's `loop per finding` in orchestrator prose was the residual orchestrator busywork CD-4's "kept-findings.txt only" guarantee was supposed to retire. CD-4 retired the post-verifier context cost; this amendment retires the pre-verifier dispatch cost. Same iron rule, fully realized.
 
 **Per-goal acceptance mapping (each goal's specific lint preserved):**
 
 - **G7 acceptance** — `grep -nE "≥\s*(70|80)" skills/` returns zero matches (threshold values live ONLY in `scripts/verifier-fan-in.sh`); `grep -rln "kept findings\|survived verifier filtering" skills/` returns matches only in the consolidated `using-qrspi/SKILL.md` paragraph and the `implement/SKILL.md` precondition; changing a threshold requires editing exactly one constant in the script.
 - **G8 acceptance** — `grep -rln "^category:" reviews/` after any round returns zero matches; `grep -rln "^change_type:" reviews/` returns one match per finding file; script halts with `cause: missing_change_type` for any finding without the field.
 - **G11 acceptance** — every verifier sidecar carries the `.score.md` extension; `find <round-dir> -name "*.score.yml"` returns zero results; script halts with `cause: sidecar_wrong_extension` if a `.yml` sidecar appears.
-- **G12 acceptance** — `scripts/verifier-fan-in.sh` exists, exits 0 on a well-formed round, writes both `kept-findings.txt` and `.verifier-fan-in-audit.json`; orchestrator never chat-parses verifier output to compute the kept set.
+- **G12 acceptance** — `scripts/verifier-fan-in.sh` exists, exits 0 on a well-formed round, writes both `kept-findings.txt` and `.verifier-fan-in-audit.json`; orchestrator never chat-parses verifier output to compute the kept set; AND `scripts/dispatch-agent.sh --verifier-fanout` exists and emits one spec line per finding (first-party hosts) or registers one background entry per finding in `.dispatch-manifest.json` (third-party hosts); AND `grep -rE "loop per finding|for each finding.*verifier" skills/using-qrspi/SKILL.md skills/implement/SKILL.md` returns zero matches — the orchestrator-side per-finding verifier dispatch loop is eliminated from both consumer skills (verifier dispatch goes through the same `dispatch-agent.sh` + `await-round.sh` pipeline as reviewer dispatch); AND `skills/_shared/verifier-dispatch-prose.md` exists and is `!cat`-included into both `using-qrspi/SKILL.md` (artifact-level Apply-fix protocol) and `implement/SKILL.md` (task-level Apply-fix protocol).
 - **G13 acceptance** — script halts with `cause: change_type_out_of_enum` for any finding whose value is not in the canonical enum; the canonical enum is defined ONCE in the script header and once in `reviewer-protocol/SKILL.md` (referenced from per-reviewer agents); `grep -rln "change_type.*|.*|.*|" skills/` returns matches only in `reviewer-protocol/SKILL.md` (single SKILL-side source).
 
 **Behavioral acceptance** — provoke each halt cause in a fixture round-dir; confirm script exits non-zero with the named cause in `halts[]`; confirm orchestrator surfaces the halt to the user rather than silently proceeding.
@@ -645,107 +704,18 @@ Three output shapes, distinguished by `DETECTION_TYPE`:
 
 ---
 
-## Component Map (top-level)
-
-```mermaid
-graph TB
-    subgraph SkillProse["Skill prose (12 consumer skills)"]
-        SP[per-skill SKILL.md<br/>!cat-includes shared snippets]
-        SH[_shared/reviewer-dispatch-prose.md<br/>_shared/evergreen-output-rule.md<br/>_shared/multi-actor-flow-check.md]
-        SP --> SH
-    end
-
-    subgraph DispatchChain["Dispatch chain (CD-1)"]
-        DA[dispatch-agent.sh<br/>universal entry point]
-        RP[round-prepare.sh<br/>auto-invoked]
-        DC[dispatch-companion.sh<br/>vendor routing]
-        CC[codex-companion-bg.sh<br/>vendor-specific transport]
-        RL[_resolve-lib.sh<br/>tier→vendor+model<br/>host×vendor matrix]
-        AR[await-round.sh<br/>manifest-driven async]
-        TFS[third-party-finding-splitter.sh]
-
-        DA --> RP
-        DA --> RL
-        DA -.first-party.-> TT[Task tool]
-        DA -.third-party.-> DC
-        DC --> CC
-        AR --> TFS
-    end
-
-    subgraph EmissionContract["Emission contract (G6)"]
-        FPE[reviewer-protocol/first-party-emission.md]
-        TPE[reviewer-protocol/third-party-emission.md]
-    end
-
-    subgraph VerifierPipeline["Verifier-fan-in pipeline (CD-4)"]
-        VA[qrspi-finding-verifier agent]
-        VFI[verifier-fan-in.sh<br/>single source of truth:<br/>thresholds + change_type enum]
-        KF[kept-findings.txt<br/>+ audit JSON]
-
-        VA --> VFI
-        VFI --> KF
-    end
-
-    subgraph SecondReviewer["Second-reviewer surface (G27)"]
-        SRA[second-reviewer-available.sh<br/>probe]
-        SR[D5 host×vendor matrix<br/>+ default-second-reviewer column]
-        SRA --> SR
-    end
-
-    SP --> DA
-    TT --> FPE
-    CC --> TPE
-    FPE --> VA
-    TPE --> VA
-    SRA -.consulted by.-> SP
-    DA -.consults.-> SR
-    KF -.consumed by.-> SP
-
-    classDef new fill:#fef3c7,stroke:#92400e
-    class DA,DC,TFS,RP,AR,RL,SRA,SR,VFI,KF,FPE,TPE,SH new
-```
-
-Yellow nodes are new or renamed in v0.7.2. The diagram shows the structural lanes; per-goal sections below specify decisions; Structure phase maps these components onto files and module boundaries.
-
----
-
-## Test Strategy
-
-<!-- prose-design: Design SKILL.md § "Test Strategy" -->
-
-Design owns naming the **types** of tests v0.7.2 ships and the **coverage boundaries** for each type. Plan owns authoring per-task acceptance criteria (the specific assertions inside each test). The five test types named here form the release taxonomy; every per-task `Test Expectations` block authored by Plan must classify itself into one of them.
-
-**T1 — Shell static-analysis lint.** `shellcheck`-style passes across every shell script under `scripts/`, every test fixture, every commit-hook. Coverage boundary: catches contract-level shape errors (unquoted expansion, unhandled return codes, undefined variables, dangerous `eval`). Does NOT cover behavior. Runs on every PR. Owned by CI; per-task contribution is "shellcheck clean on touched files."
-
-**T2 — Bats unit tests.** Per-script behavioral assertions using the `bats-core` framework + `bats-assert` / `bats-support` helpers (G21 amendment: every negative assertion uses guarded forms — `assert_output` with explicit expected output or `! assert_output --partial '<token>'`, never `[[ ! "$body" =~ ... ]]`). Coverage boundary: one bats file per script under `scripts/`; covers happy path + every named exit code (e.g., for `round-prepare.sh`, all four of exit 0/10/11/12) + at least one fixture per documented error mode. Does NOT cover cross-script integration. Runs on every PR.
-
-**T3 — Integration smoke fixtures.** End-to-end fixtures that exercise multi-script chains using throwaway repos under `tests/integration/fixtures/`. Coverage boundary: each CD-1 dispatch path (first-party + third-party) gets one fixture; the verifier-fan-in pipeline (CD-4) gets one fixture per change-type enum value; the second-reviewer surface (G27) gets one Copilot-CLI fixture asserting exit-0 from `second-reviewer-available.sh`. Does NOT cover real LLM calls. Runs on every PR (mocked vendor responses) and a nightly variant (real vendor calls behind a CI flag).
-
-**T4 — Self-host runs.** v0.7.2 must successfully self-host its own next release dialogue at least once before promotion (the v0.7.2 release walks at least the Goals + Questions + Research + Design phases of a v0.7.3-scope draft using v0.7.2 itself). Coverage boundary: catches drift between locked design and shipped prose that contract tests cannot detect (e.g., a per-skill SKILL.md that nominally implements CD-1 but routes its own dispatches wrong in practice). Failure surface: the operator reports friction; the friction is filed against the appropriate goal. Runs once per release candidate; not gated on every PR.
-
-**T5 — Reviewer-protocol contract tests.** Per-reviewer-agent smoke that asserts: (a) the agent's frontmatter `tier:` field is set, (b) the agent body contains the `change_type:` enum block in canonical form, (c) the first-party-emission OR third-party-emission file is present in the dispatch-prompt assembly for that agent. Coverage boundary: every reviewer agent in `agents/qrspi-*.md`. Does NOT cover the substance of what reviewers emit (that emerges from self-host data, T4). Runs on every PR.
-
-**Test types NOT in v0.7.2's taxonomy.** Property-based fuzzers, mutation testing, formal-method proofs — out of scope. Calibration aggregation across `actual_model:` audit data (G20) is observability, not a test type — its analysis happens in v0.7.3+ after self-host data accumulates.
-
-**Cross-cutting invariants enforced by tests** (every CD or goal that introduces one names which test type owns it):
-- CD-1 host×vendor matrix and second-reviewer column (T3 fixture).
-- CD-2 evergreen-output rule (T2 lint on `_shared/evergreen-output-rule.md` consumers + T5 contract check).
-- CD-4 threshold + change-type enum single source of truth (T2 on `verifier-fan-in.sh` asserts thresholds NOT appearing in any other location).
-- G6 emission iron-law (T5 asserts the iron-law clause is present in both emission files verbatim).
-- G21 bats BW02 guard (T2 lint rule — the rule that catches its own pattern in test fixtures).
-- G27 second-reviewer probe semantics (T3 Copilot CLI fixture + T2 unit test on `second-reviewer-available.sh`).
-
----
-
 ## G1 — Design phase under-describes decisions
 
 <!-- prose-design: Design SKILL.md § "What Design produces" -->
 
 **Outcome.** Design produces a per-goal solution definition at outcome altitude — the end-state
 being targeted, the practical solution at the altitude defined by the Altitude Sub-Rules below,
-and the reasoning behind it. Architecture documentation belongs in Structure. Test **strategy**
-(test types + coverage boundaries) belongs in Design's `## Test Strategy` section above; test
-**specification** (per-test assertions) belongs in Plan.
+and the reasoning behind it. Per-goal acceptance criteria are inline in each goal block.
+Design may include zero or more per-solution diagrams (per goal block or per cross-cutting CD)
+when they aid comprehension of that specific solution. Unified system architecture, file maps,
+module boundaries, and the unified test architecture that stitches per-solution acceptance
+criteria into a coherent test plan are Structure's job (see G35); per-test specification
+(per-assertion test code) is Plan's job.
 
 <!-- prose-design: Design SKILL.md § "Per-goal block template" -->
 
@@ -979,7 +949,7 @@ The only external-to-codebase knowledge downstream skills are expected to bring 
 4. Remove the existing Design SKILL.md "System Flow" diagram section (the architecture
    diagramming role migrates to Structure)
 5. Update the design reviewer agent to enforce the per-goal block structure AND the Altitude Sub-Rule C end-to-end flow requirements (actor inventory present, sequence of operations specified, per-step inputs/outputs traced, consumer identification complete, loud-failure paths named, context-cost call-out present for orchestrator/subagent boundary crossings) AND Sub-Rule D external-knowledge completeness (every external claim has a concrete answer with citation + verification-method label; no "TBD" / "see vendor docs" placeholders; unknown branches name safe-default + verification procedure)
-6. Update the design scope-reviewer owns-defers to defer architecture, file maps, and test mechanics
+6. **Superseded by G34.** Original wording was "Update the design scope-reviewer owns-defers to defer architecture, file maps, and test mechanics." G34 expands this to the full positive OWNS allowances list + DEFERS list, mirrored into both `skills/design/owns-defers.md` and `agents/qrspi-design-scope-reviewer.md` via a `!cat` shared snippet so the reviewer's reasoning context matches G1's Design SKILL vision. Plan must implement this surface under G34's task spec, NOT under G1's — see G34 D6 for the deliverable handoff contract.
 7. Add the Sub-Rules section (Altitude A + B + C + Completeness D) to the SKILL.md, verbatim
 8. Mirror the Dialogue Conduct section into Goals SKILL.md's preamble with the following
    selection: Rules 1, 2, 4, 6, 7, 8 are verbatim. Rule 3 is adjusted: drop the "research
@@ -991,6 +961,15 @@ The only external-to-codebase knowledge downstream skills are expected to bring 
    existing per-goal template and its "Interactive Dialogue" question-topic checklist — G1
    only adds the Dialogue Conduct rules to Goals; it does not change Goals' artifact template
    or the Pipeline Mode Selection step.
+9. **Cross-reference G35 (Structure-side absorption).** Deliverables #3 and #4 above remove
+   the unified Test Strategy and System Flow sections from the Design SKILL.md template — i.e.,
+   they MIGRATE those responsibilities out of Design. G35 is the inverse-side goal that
+   ABSORBS them into Structure (Structure SKILL.md authoring procedure for the unified test
+   architecture, `skills/structure/owns-defers.md` OWNS expansion to include unified architecture
+   + test architecture, scope-reviewer alignment). Without G35, the migration's destination is
+   empty — Design stops authoring those artifacts but Structure never starts. Plan must schedule
+   G1's deliverables #3/#4 and G35's deliverables in the same wave (or G35 in a strictly later
+   wave) so the migration source and destination land together.
 
 ### Acceptance
 
@@ -1232,7 +1211,7 @@ Skip-time: orchestrator re-computes the hash from the current `plan.md` block an
 
 **Solution.**
 
-*Structural ownership.* CD-1 (Universal dispatch architecture) is the structural owner of this goal. Specifically: `dispatch-agent.sh` branches on `(host, vendor)` per the matrix; the first-party path emits a Task-tool spec and invokes the Task tool (which loads the agent file + auto-loads `skills: [reviewer-protocol]` naturally); the third-party path invokes `dispatch-companion.sh` (renamed from `run-third-party-llm.sh`) which assembles the broker-bound prompt. The rename of `codex-emission-override.md` → `third-party-emission-override.md` (CD-1 rename inventory) makes the override transport-conditional rather than model-conditional, removing the historical contradiction-vector where the override leaked into Copilot-CLI/task-tool/gpt-5.3-codex dispatches and caused chat-only returns.
+*Structural ownership.* CD-1 (Universal dispatch architecture) is the structural owner of this goal. Specifically: `dispatch-agent.sh` branches on `(host, vendor)` per the matrix; the first-party path emits a Task-tool spec and invokes the Task tool (which loads the agent file + auto-loads `skills: [reviewer-protocol]` naturally); the third-party path invokes `dispatch-companion.sh` (renamed from `run-third-party-llm.sh`) which assembles the broker-bound prompt. The rename of `codex-emission-override.md` → `third-party-emission.md` (CD-1 rename inventory) makes the override transport-conditional rather than model-conditional, removing the historical contradiction-vector where the override leaked into Copilot-CLI/task-tool/gpt-5.3-codex dispatches and caused chat-only returns.
 
 G6 layers two additive items that CD-1 alone does not deliver:
 
@@ -1270,7 +1249,7 @@ Each iron-law clause names the correct channel positively (Write tool / stdout b
 **Dependencies + edge cases.**
 
 - Depends on CD-1 landing first (or co-landing). G6 has no value on top of the current `codex-emission-override.md` design.
-- Depends on the rename `codex-emission-override.md` → `third-party-emission-override.md` from CD-1's rename inventory, then further renames it to `third-party-emission.md` (G6-1 strips the "override" framing entirely — there is nothing to override once the disk-write section is removed from the protocol core).
+- Depends on the rename `codex-emission-override.md` → `third-party-emission.md` from CD-1's rename inventory. The rename collapses two motivations into a single destination name: CD-1 strips the Codex-specific naming (transport-conditional, not model-conditional); G6 strips the "override" framing (there is nothing to override once the disk-write section is removed from the protocol core). Both motivations apply in the same release; the file lands at its final name in one step.
 - Per-agent `skills:` frontmatter auto-loads the protocol core. To deliver the first-party emission file into the agent's context, either: (a) extend the `skills:` frontmatter mechanism to auto-load the first-party emission file alongside the core, or (b) have `dispatch-agent.sh` emit the emission file path as a dispatch parameter and update the agent body to "Read your dispatch-named emission file as your first action." Open decision deferred to Plan-time — both paths satisfy the single-voice acceptance.
 - **Edge case — first-party path on Codex (Copilot CLI host).** After CD-1, gpt-5.3-codex dispatched via task tool is on the first-party path. It receives `first-party-emission.md` (use Write tool). Its `tools:` frontmatter declares Write. CD-1's `.dispatch-manifest.json` audit log captures whether Write was actually used; persistent chat-only returns on this path post-CD-1 + G6 indicate either a vendor-level system-prompt suppression we cannot override from prompt content, or a regression. Detection is the manifest signal; remediation falls outside G6's scope (escalation path: re-open the `exploratory` framing as a follow-up goal).
 - **Edge case — agent body cites a section name that no longer exists.** Reviewer agent bodies today reference "the Per-Finding Disk-Write Contract" by name. After the split, that section name lives only in `first-party-emission.md`. Agent-body sweep updates wording; protocol-core inbound references (`grep -rl 'Per-Finding Disk-Write Contract' skills/ agents/`) are rewritten in the same wave.
@@ -1281,9 +1260,10 @@ Each iron-law clause names the correct channel positively (Write tool / stdout b
 
 - `skills/reviewer-protocol/SKILL.md` post-G6 contains no "use Write tool" or "emit to stdout" prose. Body lint: `grep -E 'Write tool|stdout' skills/reviewer-protocol/SKILL.md` returns no matches in emission-contract context.
 - `skills/reviewer-protocol/first-party-emission.md` exists and contains the disk-write contract + iron-law clause.
-- `skills/reviewer-protocol/third-party-emission.md` exists (rename completed from `codex-emission-override.md` via the intermediate `third-party-emission-override.md`) and contains the stdout-emission contract + iron-law clause. The word "override" does not appear in its prose.
+- `skills/reviewer-protocol/third-party-emission.md` exists (rename completed from `codex-emission-override.md` directly to its final name per CD-1's rename inventory) and contains the stdout-emission contract + iron-law clause. The word "override" does not appear in its prose.
 - Every reviewer agent body's "Findings emission" section cites "the emission contract from your dispatch transport" and surfaces the iron-law clause name (wrong-channel emission is a contract violation). Agent-body lint: `grep -L 'iron law' agents/qrspi-*-reviewer.md` returns empty.
 - For any first-party dispatch, the assembled prompt the subagent reads contains exactly one emission contract (first-party). For any third-party dispatch, the assembled prompt contains exactly one emission contract (third-party). Verified by inspecting a captured prompt from each path.
+- **Post-rename name sweep of `skills/reviewer-protocol/SKILL.md`.** `grep -E 'run-codex-review|codex-emission-override|codex-finding-splitter' skills/reviewer-protocol/SKILL.md` returns zero matches. All references to dispatcher scripts and emission-related files use the post-CD-1/G6 names (`dispatch-agent.sh`, `dispatch-companion.sh`, `third-party-emission.md`, `third-party-finding-splitter.sh`). Covers the SKILL Delivery section's prior pre-rename name surface in addition to the body-content lint above.
 - Claude-reviewer habit-failure profile measurably reduced post-G6: `.dispatch-manifest.json` audit log shows a lower rate of wrong-channel emission for reviewers compared to the v0.7.1 baseline. (Threshold for "measurably reduced" deferred to Plan; the manifest is the substrate that makes the measurement possible at all.)
 - G6 implementation does NOT touch `dispatch-agent.sh`, the host × vendor matrix, the model-routing tier system, or the per-skill review-round prose collapse — all owned by CD-1. Calling-surface acceptance (output-bound `await-round.sh`, batched dispatch-agent, no-op-safe await on first-party-only rounds) is owned by CD-1 components #3 and #4.
 
@@ -1877,7 +1857,7 @@ Composition rationale: the verifier already lazy-Reads cited upstream files (cur
 
 1. **Reviewer-protocol audit-field addition** (`skills/reviewer-protocol/SKILL.md`) — extend the audit-field list (currently `artifact`, `round`, `reviewer`) to include `actual_model`. The contract: reviewers MUST emit this field on every finding file and every `*.clean.md` sentinel. Value type: the resolved model ID string (e.g. `claude-sonnet-4.6`, `gpt-5.3-codex`) per the `model_routing:` chain output. The per-finding file format example block and the clean-sentinel block both gain the field.
 
-2. **Dispatch parameter addition** — every per-skill SKILL.md that dispatches reviewers via the Standard Review Loop adds one parameter to the reviewer dispatch prompt: `actual_model: <resolved model ID>`. The orchestrator already resolves this value at dispatch site (it's the value passed to `Agent({ ..., model })` for Claude subagents and to the reviewer model flag of `scripts/run-codex-review.sh` for Codex subagents). The new parameter is record-keeping for the reviewer to copy into emission frontmatter. Files affected: per-skill SKILL.md under `skills/{goals,questions,research,design,phasing,structure,plan,parallelize,implement,integrate,test,replan}/`.
+2. **Dispatch parameter addition** — every per-skill SKILL.md that dispatches reviewers via the Standard Review Loop adds one parameter to the reviewer dispatch prompt: `actual_model: <resolved model ID>`. The orchestrator already resolves this value at dispatch site (it's the value passed to `Agent({ ..., model })` for first-party subagents and to the model-resolution output consumed by `scripts/dispatch-companion.sh` for third-party subagents). The new parameter is record-keeping for the reviewer to copy into emission frontmatter. Files affected: per-skill SKILL.md under `skills/{goals,questions,research,design,phasing,structure,plan,parallelize,implement,integrate,test,replan}/`.
 
 3. **Third-party emission template update** (`skills/reviewer-protocol/third-party-emission.md`) — the worked-example finding frontmatter and the clean-sentinel example both gain the `actual_model:` field so third-party subagents emit it. The splitter (`scripts/third-party-finding-splitter.sh`) is unchanged — it splits on `<<<FINDING-BOUNDARY>>>`, does not parse frontmatter fields.
 
@@ -2192,9 +2172,11 @@ This formalizes what `test/SKILL.md:92` already does informally (the Test phase 
 
 **D1 — Config schema rename (vendor-neutral, clean break).** Rename the config field `codex_reviews: true|false` → `second_reviewer: true|false`. No alias for the legacy field. The Config Validation Procedure (owned by using-qrspi) treats an unknown `codex_reviews:` as a hard validation error per CD-1's no-silent-fallback rule; the error message names the rename so operators can self-serve the fix (e.g., `[config-error] unknown field 'codex_reviews:' — renamed to 'second_reviewer:' in v0.7.2; update config.md to the new field name`). Rationale: v0.7.x is pre-1.0, breaking config changes ship without deprecation cycles; silent aliasing would defeat the no-silent-fallback rule the rest of the dispatch surface enforces. Optional advanced-operator override: `second_reviewer_vendor: <vendor-id>` forces a specific vendor on hosts where multiple are available.
 
-**D2 — New probe script `scripts/second-reviewer-available.sh` (~15 LOC).** Runs `detect_host` (sourced from `scripts/dispatch-agent.sh` via the existing `QRSPI_SOURCE_ONLY=1` guard, OR pulled into a tiny helper in `scripts/lib/` — implementer's choice during Structure/Plan). Looks up the detected host in CD-1's host×vendor matrix (D5). Exits 0 if D5's "Default second-reviewer vendor" column for this host names a vendor that is **distinct from the primary reviewer's vendor** for that host and is available, exits 1 otherwise. The probe is **not** keyed on `first-party` vs `third-party` — that distinction names the transport branch (Task tool vs broker), not second-reviewer eligibility. On Copilot CLI, where both Claude and Codex are first-party, D5 names `openai-codex` as the second-reviewer vendor (distinct from the Anthropic-vendor primary), and the probe exits 0. Optionally prints the default vendor identifier to stdout for diagnostic purposes (not consumed by the SKILL; useful for `--verbose` operator runs). Single source of truth = the same matrix the dispatcher reads — there is no parallel table to drift.
+**D2 — New probe script `scripts/second-reviewer-available.sh` (~15 LOC).** Runs `detect_host` (sourced from `scripts/dispatch-agent.sh` via the existing `QRSPI_SOURCE_ONLY=1` guard, OR pulled into a tiny helper in `scripts/lib/` — implementer's choice during Structure/Plan). Looks up the detected host in CD-1's host×vendor matrix (D5). Exits 0 if D5's "Default second-reviewer vendor" column for this host names a vendor that is **potentially available on this host** (the host can reach it). Exits 1 if D5 names no default second-reviewer vendor for this host, or if the named vendor is unreachable. The probe is **not** keyed on `first-party` vs `third-party` — that distinction names the transport branch (Task tool vs broker), not second-reviewer eligibility. The probe also does **not** verify "distinct from primary" — primary vendor depends on per-tier `model_routing:` config the probe does not read; D4 enforces the vendor-distinct invariant at dispatch time using the fully-resolved primary vendor. On Copilot CLI, where both Claude and Codex are first-party, D5 names `openai-codex` as the default second-reviewer vendor and the probe exits 0. Optionally prints the default vendor identifier to stdout for diagnostic purposes (not consumed by the SKILL; useful for `--verbose` operator runs). Single source of truth = the same matrix the dispatcher reads — there is no parallel table to drift.
 
 **D3 — SKILL prose rewrite (Goals + using-qrspi).** DELETE the Claude-only inline globs at `skills/goals/SKILL.md:120` and `skills/using-qrspi/SKILL.md:405`. REPLACE both with prose that invokes the probe script: "Run `bash scripts/second-reviewer-available.sh`. If exit 0, ask the user 'Second-model review: yes/no?' (with whatever framing the SKILL section uses). If exit non-zero, skip silently and write `second_reviewer: false`." The user-facing question is vendor-neutral — no "Codex" in the question text, no vendor identifier shown to the user (vendor identifiers are not user-meaningful; the dispatcher handles vendor selection at runtime). Both SKILL prose blocks call the SAME script — no copy-paste of host logic, no SKILL-side detection at all.
+
+**D6 — Reviewer-protocol Expected-Reviewer Matrix sweep.** The Expected-Reviewer Matrix in `skills/reviewer-protocol/SKILL.md` (the per-step table whose column headers are `codex_reviews: true` / `codex_reviews: false` and whose cells enumerate which reviewer tags the orchestrator expects per round under each config value) is a third consumer of the `codex_reviews:` field name beyond the two SKILL prose sites in D3. Per D1's "fully deleted from all skill prose and templates" all-or-nothing acceptance, the matrix's column headers MUST be renamed `second_reviewer: true` / `second_reviewer: false` in the same wave as D3. The matrix's cell contents (per-step tag enumerations) are unchanged — only the column headers shift. This deliverable is scoped narrowly to the matrix; any other `codex_reviews:` reference discovered in `reviewer-protocol/SKILL.md` during the sweep falls under the same fix (delete-and-replace with the canonical field name).
 
 **D4 — Dispatcher (`dispatch-agent.sh`) owns runtime routing.** For every reviewer-agent dispatch (the existing CD-1 dispatch path):
 - Read `second_reviewer:` from `config.md` (canonical only — no alias per D1).
@@ -2218,8 +2200,8 @@ Rationale for defaults: cost continuity with v0.7.1 behavior (every host pairs a
 
 - `skills/goals/SKILL.md` no longer contains the inline glob `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`; the pipeline-mode dialogue invokes `scripts/second-reviewer-available.sh` and asks a vendor-neutral question only on exit 0.
 - `skills/using-qrspi/SKILL.md` no longer contains the same inline glob at the Codex-detection paragraph; the equivalent prose invokes the same probe script.
-- `scripts/second-reviewer-available.sh` exists, is executable, exits 0 on Copilot CLI (verifiable by `COPILOT_CLI=1 bash scripts/second-reviewer-available.sh; echo $?`) because D5 names `openai-codex` as the default second-reviewer vendor (distinct from the Anthropic-vendor primary), and reads from CD-1's host×vendor matrix (no separate hardcoded host table). Exit-0 on Claude Code is also verified by an equivalent fixture (D5 names `openai-codex` as the default second-reviewer vendor distinct from the primary).
-- `config.md` schema documentation (in using-qrspi) shows `second_reviewer:` as the canonical field; the legacy `codex_reviews:` name is fully deleted from all skill prose and templates; Config Validation Procedure treats a stray `codex_reviews:` as an unknown-field hard error per D1 (with the rename-naming error message).
+- `scripts/second-reviewer-available.sh` exists, is executable, exits 0 on Copilot CLI (verifiable by `COPILOT_CLI=1 bash scripts/second-reviewer-available.sh; echo $?`) because D5 names `openai-codex` as the default second-reviewer vendor for that host, and reads from CD-1's host×vendor matrix (no separate hardcoded host table). Exit-0 on Claude Code is also verified by an equivalent fixture (D5 names `openai-codex` as the default second-reviewer vendor). The "distinct from primary" invariant is verified separately at the D4 dispatch-time acceptance below, not at probe time.
+- `config.md` schema documentation (in using-qrspi) shows `second_reviewer:` as the canonical field; the legacy `codex_reviews:` name is fully deleted from all skill prose and templates (including the Expected-Reviewer Matrix column headers in `skills/reviewer-protocol/SKILL.md` per D6 — verifiable by `grep -nE 'codex_reviews' skills/reviewer-protocol/SKILL.md` returning zero matches); Config Validation Procedure treats a stray `codex_reviews:` as an unknown-field hard error per D1 (with the rename-naming error message).
 - `dispatch-agent.sh` reads `second_reviewer:` (canonical field only — no alias per D1), resolves second vendor per D4's precedence, emits two dispatch entries when enabled, and halts loudly with the D4 diagnostic when no second vendor is available for the host.
 - CD-1's host×vendor matrix block carries the "Default second-reviewer vendor" column per D5.
 - An end-to-end Copilot CLI smoke test confirms: with `second_reviewer: true` in `config.md`, a Goals review round emits both a Claude reviewer dispatch and a Codex (gpt-5.3-codex) reviewer dispatch via the task-tool transport; fan-in tallies both; per-finding files from both branches land under the round directory.
@@ -2607,7 +2589,7 @@ Verbatim content (added to the agent body, AFTER the `skills:` frontmatter trigg
 **Per-block scope refinement for design.md.** `design.md` typically contains discrete `<!-- prose-design: target -->` HTML-comment markers identifying blocks of verbatim prompt prose destined for an LLM-consumable file. Treat each such marker as one strong signal but not the only one — content semantics determine the call. For each marker:
 
 - If the block's text reads as LLM-consumable directive prose (role+task+constraints, Iron Laws, `<HARD-GATE>` blocks, verbatim rule statements destined for an orchestrator or subagent prompt), apply the rules to that block.
-- If the block's text reads as something else (e.g., a shell-script snippet per G4's `<!-- prose-design: scripts/round-prepare.sh -->`), skip rules application for that block.
+- If the block's text reads as something else (e.g., a shell-script snippet identified by a marker like `<!-- prose-design: scripts/example.sh -->`), skip rules application for that block.
 
 The marker scopes attention to specific sub-blocks; the surrounding design-decision prose is itself NOT prompt prose and is reviewed by ordinary design-quality criteria, not R1-R7.
 ```
@@ -2882,7 +2864,156 @@ where `<relpath>` matches `[A-Za-z0-9_./-]+` and resolves from the **source repo
 
 ---
 
-## Plugin issues observed during this Design session
+## G34 — Align Design scope-reviewer with G1's detailed-solution boundary
+
+**Type:** `known-fix` (added mid-Design during v0.7.2 self-host after R1 fan-in produced 5 user-overridden scope findings; G1 deliverable #6 alone is insufficient — the positive OWNS list must also land, and it must reach BOTH the owns-defers contract file AND the scope-reviewer agent body, authored once in a shared snippet and build-expanded into both consumers). **Source:** Added during v0.7.2 self-host R2 dialogue between operator and orchestrator on 2026-05-31; captured the gap PI-HKP-005 originally tracked as a v0.7.3 deferral, now in-scope for v0.7.2.
+
+**Outcome.** The Design scope-reviewer enforces a boundary that matches G1's Design SKILL vision: Design OWNS detailed descriptions of the solutions including end-to-end flows, edge cases, prompt-writing specifics, acceptance criteria with concrete examples (including rough test-pairing shapes), and zero or more per-solution diagrams per goal/CD block when they aid comprehension. Design DEFERS function bodies, full unit-test code, executable shell beyond a few illustrative lines, file architecture (Structure's job), task carving (Plan's job), unified system-wide architecture diagrams (Structure's job per G1 #4 + G35), and the unified Test Strategy section that stitches per-solution acceptance criteria across goals (Structure's job per G35). Operators reading G1 see the same vocabulary the reviewer reasons against; no contradiction.
+
+**Plain-language problem.** Today's scope-reviewer (`agents/qrspi-design-scope-reviewer.md`) and its contract (`skills/design/owns-defers.md`) read "Design altitude" as a stricter rule than G1's vision establishes. R1 self-host produced 5 scope-class findings on content the operator wanted kept (specific example deliverables in G1, the CD-4 §C 5-step algorithm, the CD-4 §E JSON schema example, the G33 inventory in G33 D2, and the phasing-leakage phrases throughout — all kept per operator decision and captured in `reviews/design/round-01-decisions.md`). G1 deliverable #6 makes the contradiction worse by tightening DEFERS without articulating OWNS.
+
+**Why this matters.** Two failure modes compound:
+- **Operator friction.** Self-host runs fight identical false-positive scope findings every round. The operator overrides them, captures the decision, and moves on — but the friction repeats next round. Operators learn to skim scope findings rather than read them, which is exactly the opposite of what makes scope review valuable.
+- **Lost signal.** When the scope reviewer fires on legitimately-blessed content, real scope violations (a per-goal block that actually carries function-body code, a per-goal block that actually authors unit-test code, a per-goal block that actually defines the file architecture) drown in the false-positive noise. The reviewer's positive value collapses.
+
+Closing this gap in v0.7.2 alongside G1 means the Design SKILL ships internally consistent — the vision article (G1's Dialogue Conduct + Altitude Sub-Rules) and the enforcement article (G34's scope-reviewer contract) agree on the same vocabulary.
+
+**Design decisions.**
+
+**D1 — Adopt Candidate B (single shared snippet, both consumers include via `!cat`).** v0.7.2 ships one new file — `skills/_shared/design-altitude-boundary.md` — carrying the D2 OWNS + D3 DEFERS text. Both consumer files (`skills/design/owns-defers.md` and `agents/qrspi-design-scope-reviewer.md`) include it via a `!cat skills/_shared/design-altitude-boundary.md` directive. G32's build pipeline (also v0.7.2) expands the directive at plugin build time, so the installed plugin artifact carries the verbatim text inlined in both files — the host CLI loads pre-resolved content at dispatch time, no runtime resolution required. Maintenance edits land in one source file; the build guarantees both consumers stay in sync structurally. **Hard dependency on G32:** this goal cannot be implemented until G32 ships in the same release. The build pipeline is the single-source-of-truth mechanism, consistent with v0.7.2's other shared-snippet patterns (CD-2 evergreen-output-rule, multi-actor-flow-check, etc.).
+
+**D2 — Locked OWNS allowances list (lives in `skills/_shared/design-altitude-boundary.md`, included into both consumers via `!cat`).**
+
+> Design OWNS:
+> - Per-goal outcome statements (the end-state being targeted)
+> - Per-goal solution definitions at outcome altitude including: detailed descriptions of the solutions with full edge cases, end-to-end flows specifying actor sequence and per-step inputs/outputs, prompt-writing specifics (the actual prose a SKILL or agent file will carry, paraphrased or verbatim when load-bearing), acceptance criteria including concrete examples and rough test-pairing shapes (e.g., "one bats file per script under `scripts/`"; naming the shape is acceptance-criteria-altitude — authoring the test code is Plan/Implement's job)
+> - Cross-Goal Decisions (CDs) that establish vocabulary, named architectural components by purpose, and cross-cutting invariants
+> - Per-solution diagrams (zero or more per goal block or per cross-cutting CD block) when they aid comprehension of that specific solution — Mermaid sequence diagrams for per-solution end-to-end flows, or Mermaid flowcharts for branch-heavy per-solution control flow. NOT a unified system-wide architecture diagram across goals/CDs (Structure's job).
+> - Test Strategy at the per-solution altitude: each goal/CD block carries its own Acceptance subsection with concrete examples and rough test-pairing shapes; design.md does NOT carry a top-level Test Strategy section stitching acceptance criteria across goals (Structure's job).
+> - Naming and renames that establish cross-skill vocabulary (rename inventory blocks)
+> - Phasing/release-assignment phrases that name which goal/CD ships in which release (operator-authoritative; phasing.md is the canonical artifact but design.md may carry the labels inline for self-host reasoning)
+
+**D3 — Locked DEFERS list (continues `skills/_shared/design-altitude-boundary.md`, included into both consumers via the same `!cat`).**
+
+> Design DEFERS:
+> - Function bodies (procedural code blocks with executable logic — full implementations belong in Implement)
+> - Full unit-test code (specific assertion text, fixture file contents, test scaffolding — belongs in Plan/Implement; Design names the test type and rough shape only)
+> - Executable shell beyond a few illustrative lines (a 2-3 line block illustrating shape is fine; a 20-line script body is not)
+> - File architecture (which file holds which component, directory layout, module boundary lines — Structure's job)
+> - Unified system-wide architecture diagrams that stitch components across goals/CDs into a single architectural overview (Structure's job; per-solution diagrams inside a single goal/CD block remain in Design's OWNS)
+> - Unified Test Strategy / Test Architecture section that stitches per-solution acceptance criteria from individual goal/CD blocks into a release-wide test plan, names cross-cutting test invariants by type, or enumerates the release's test taxonomy (Structure's job; per-solution Acceptance subsections inside individual goal/CD blocks remain in Design's OWNS)
+> - Task carving (per-task LOC budgets, per-task dependency graphs, per-task test-case enumeration — Plan's job)
+
+**D4 — Surfaces updated.** One new source file + two consumer edits. All three are source-tree edits; the install artifact's post-build content is produced by G32's pipeline.
+
+- `skills/_shared/design-altitude-boundary.md` (new file): carries the D2 OWNS allowances list and the D3 DEFERS list as a single contiguous markdown block (D2 block then D3 block, no other content). This is the single source of truth. Front-matter optional but conventional with other `_shared/` snippets.
+- `skills/design/owns-defers.md` (consumer edit): replace the current contract body with a single `!cat skills/_shared/design-altitude-boundary.md` directive. The file's existing front-matter / surrounding structure unchanged. Build-time expansion (via G32) replaces the directive with the verbatim block in the install artifact.
+- `agents/qrspi-design-scope-reviewer.md` (consumer edit): in the agent body's procedure section (the part that today says "Step 1: Read `skills/design/owns-defers.md`. Step 2: Apply the OWNS/DEFERS contract to the artifact body."), insert immediately after the Step 1 Read citation the introducer prose "The contract you just read carries the following allowances and deferrals; restated here so they are present in your immediate reasoning context:" followed by a `!cat skills/_shared/design-altitude-boundary.md` directive. Build-time expansion inlines the verbatim block into the install artifact's agent body so the reviewer's loaded context carries the contract content at dispatch time (no runtime tool-call required to surface it).
+
+**D5 — Regression guard (single bats lint test).** New bats test under `tests/lint/test-design-altitude-boundary-include.bats` asserts that the literal line `!cat skills/_shared/design-altitude-boundary.md` is present in BOTH `skills/design/owns-defers.md` AND `agents/qrspi-design-scope-reviewer.md` source files. Failure surface: a future edit that removes the include from one consumer (drift via subtraction) fails the lint test, surfacing the drift before merge. The test is a 2-line grep assertion per file; ~6 LOC total. No post-expansion byte-equal check is needed because both consumers expand from the same source — structural single-source-of-truth makes content drift impossible.
+
+**D6 — Supersedes G1 deliverable #6.** G1's deliverable #6 (*"Update the design scope-reviewer owns-defers to defer architecture, file maps, and test mechanics"*) is replaced by G34's D2 + D3 + D4 surface coverage. The DEFERS-only flavor in G1 deliverable #6 was an incomplete first cut; G34 supplies the positive OWNS articulation G1's own Dialogue Conduct + Altitude Sub-Rules require. After G34 lands, G1 deliverable #6 is no longer separately implementable — the work has migrated to G34's deliverables. Note this in Plan: G34 owns this surface; G1's deliverable #6 is annotated "superseded by G34" in the Plan task spec, not implemented twice.
+
+**Acceptance criteria.**
+
+- `skills/_shared/design-altitude-boundary.md` exists as a new file carrying the D2 OWNS allowances list and the D3 DEFERS list as a single contiguous markdown block (D2 block then D3 block, no other content).
+- `skills/design/owns-defers.md` source contains a `!cat skills/_shared/design-altitude-boundary.md` directive in place of the previous inline contract body; G32's build pipeline expands the directive in the install artifact.
+- `agents/qrspi-design-scope-reviewer.md` source contains the introducer prose ("The contract you just read carries the following allowances and deferrals; restated here so they are present in your immediate reasoning context:") immediately after the Step 1 Read citation, followed by a `!cat skills/_shared/design-altitude-boundary.md` directive; G32's build pipeline expands the directive in the install artifact's agent body.
+- `tests/lint/test-design-altitude-boundary-include.bats` exists and passes on a tree where both consumer source files carry the `!cat skills/_shared/design-altitude-boundary.md` line; the test fails (with a halt message naming the missing file) when either consumer source has the include removed.
+- Post-build install-artifact check: the expanded contract content (verbatim D2 + D3 text) appears in both `skills/design/owns-defers.md` and `agents/qrspi-design-scope-reviewer.md` of the build output. This is verified by G32's own build verification (single-source expansion guarantees both consumers receive identical content); no separate test needed beyond G32's own coverage.
+- Re-running the v0.7.2 self-host Design R1 fan-in mentally against the new contract: the 5 user-overridden scope findings (G1 deliverables list, CD-4 §C 5-step algorithm, CD-4 §E JSON schema, CD-4 §H rescue tier, G33 inventory, phasing-leakage phrases throughout) would NOT have fired under D2's OWNS allowances. The convergent R2 scope findings on per-acceptance-criteria pairing examples ("one bats file per script", per-fixture counts, per-agent assertions) similarly would NOT fire — those are acceptance-criteria-altitude examples, not unit-test code. (The R1-fix-era top-level `## Test Strategy` and `## Component Map` sections were separately deleted per G35's boundary — both DEFER to Structure under the new contract.)
+- v0.7.3+ follow-up filed as a GitHub issue: audit `qrspi-goals-scope-reviewer`, `qrspi-plan-scope-reviewer`, `qrspi-phasing-scope-reviewer`, `qrspi-structure-scope-reviewer`, `qrspi-parallelize-scope-reviewer`, `qrspi-replan-scope-reviewer` and their respective owns-defers files for the same drift pattern against their respective SKILL visions. Issue title: "Audit non-Design artifact scope reviewers for same vision-vs-enforcement drift G34 closed for Design." Decision criteria: post-v0.7.2 self-host signal from runs that exercise those phases (Phasing, Structure, Plan, Parallelize, Replan).
+
+**What G34 does NOT cover.**
+
+- **Other artifact scope reviewers.** Goals / Plan / Phasing / Structure / Parallelize / Replan scope reviewers are not in G34's scope. v0.7.3+ follow-up issue above.
+- **Change-type classifier or auto-apply-vs-pause semantics.** `change_type: scope` findings still default to user-pause per the reviewer-protocol contract. G34 reduces the *rate* of false-positive scope findings — it does NOT change how scope findings are handled once fired.
+- **Reviewer agent runtime model.** G34 ships only prose updates to two files. No new tool grants, no new agent file shape, no new dispatch parameters.
+- **G1's other deliverables** (#1-#5, #7, #8). G34 supersedes ONLY G1's deliverable #6; the rest of G1 is unchanged.
+
+**Plain-language summary.** "G1 says Design is the home of detailed descriptions of the solutions; the scope reviewer says it isn't. G34 makes the scope reviewer agree with G1, with the contract authored once in a `_shared/` snippet and included into both files via `!cat` (build-expanded by G32)."
+
+---
+
+## G35 — Structure SKILL absorbs unified architecture + unified test architecture from Design
+
+**Type:** `known-fix` (mirror of G34 pattern, applied to the Structure side of the G1 #4 + G1 #3 migration). **Source:** Added during v0.7.2 self-host R2 dialogue between operator and orchestrator on 2026-06-01 alongside G34; surfaces the inverse side of G1 deliverables #3 + #4 (Design SKILL stops authoring unified Test Strategy and System Flow sections; Structure must absorb them) and binds the Design/Structure test-authorship boundary: Design authors per-solution acceptance criteria inline per goal/CD block; Structure stitches them into a unified test architecture.
+
+**Outcome.** Structure SKILL.md authors and owns: (a) the unified system architecture / file map / module-boundary specification for the release; (b) the unified test architecture that stitches per-solution acceptance criteria from design.md into a coherent test plan across types. Structure's scope-reviewer enforces the expanded OWNS/DEFERS contract; the scope-reviewer agent body reads the same vocabulary Structure SKILL.md authors against (no contradiction, same fix pattern as G34).
+
+**Plain-language problem.** G1 deliverables #3 (remove Design SKILL's top-level Test Strategy section) and #4 (remove Design SKILL's System Flow section; architecture diagramming migrates to Structure) move two authoring responsibilities OUT of Design. Nothing in v0.7.2 currently updates the Structure side to absorb them:
+- `skills/structure/SKILL.md` operates against the pre-migration scope — it produces file maps today but has no procedure for authoring a unified system architecture diagram and no procedure for authoring a unified test architecture (test architecture was previously Design's, so Structure SKILL has never had one).
+- `skills/structure/owns-defers.md` does not list unified architecture diagrams or unified test architecture as Structure OWNS.
+- `agents/qrspi-structure-reviewer.md` + `agents/qrspi-structure-scope-reviewer.md` would flag architecture diagrams and unified test-architecture content authored in structure.md as out-of-scope — the exact same drift pattern G34 closes for Design.
+
+Without G35, v0.7.2 ships a Design SKILL that stops authoring those artifacts and a Structure SKILL that never starts. The migration's destination is empty.
+
+**Why this matters.** Two failure modes, mirroring G34 on the Structure side:
+- **Authoring gap.** If Structure doesn't know it now owns unified architecture + unified test architecture, the release ships with NEITHER artifact authored. Downstream artifacts (Plan, Implement) lose the architectural overview and the stitched test plan that previously lived in design.md's top-level Component Map / Test Strategy sections.
+- **Reviewer false-positives.** When a self-host operator does author architecture / test architecture into structure.md, Structure's scope-reviewer flags it as drift. The friction repeats every round, exactly as it did for Design pre-G34.
+
+**Design decisions.**
+
+**D1 — Mirror G34's Candidate B (single shared snippet + `!cat` into both consumers).** New file `skills/_shared/structure-altitude-boundary.md` carries Structure's OWNS allowances + DEFERS list. Both `skills/structure/owns-defers.md` and `agents/qrspi-structure-scope-reviewer.md` `!cat`-include it. G32's build pipeline expands at plugin build time so the installed plugin artifact carries the verbatim text inlined in both files; host CLI loads pre-resolved content at dispatch time, no runtime resolution required. Mirrors G34's mechanism exactly — same trade-offs, same hard dependency on G32.
+
+**D2 — Locked OWNS allowances list (lives in `skills/_shared/structure-altitude-boundary.md`, included into both consumers via `!cat`).**
+
+> Structure OWNS:
+> - Unified system architecture diagram(s) for the release (Mermaid or equivalent) — stitches the components named across design.md's per-solution + cross-cutting-CD blocks into a single architectural overview
+> - File map: which file holds which component, directory layout, module boundaries
+> - Module-boundary contracts: which module exports what to which other module (the structural commitments Plan's task carving consumes)
+> - Cross-solution component interaction specification: how the components named in design.md's per-solution blocks interact at the system-architecture level (distinct from design.md's per-solution end-to-end flows, which are inter-actor-only inside one solution)
+> - Unified test architecture: a top-level `## Test Architecture` section in structure.md that names the test taxonomy for the release (e.g., unit, integration, end-to-end, smoke, contract — exact taxonomy varies by release), names the coverage boundary of each type, and enumerates the cross-cutting test invariants (drawn from CDs and goals in design.md) along with which test type owns each invariant
+> - Per-type stitching of per-solution acceptance criteria: for each type in the test taxonomy, enumerate which per-solution `Acceptance` subsections from design.md (per goal + per CD) feed into that test type — naming the design.md source by goal/CD identifier
+
+**D3 — Locked DEFERS list (continues `skills/_shared/structure-altitude-boundary.md`, included into both consumers via the same `!cat`).**
+
+> Structure DEFERS:
+> - Per-solution choice rationale or alternatives weighed (Design's job — Structure consumes the locked solution, does not re-litigate it)
+> - Per-task assertions / unit-test code (Plan/Implement's job — Structure names the test taxonomy and per-type coverage boundary; Plan authors the per-task `Test Expectations` against the taxonomy; Implement writes the test code)
+> - Per-solution end-to-end flows or per-solution sequence diagrams (Design's job — Structure shows components at the architectural level, not per-solution choreography)
+> - External-system contracts or vendor research (Design's job — Structure consumes the cited answers, does not re-research; Design is the last research-bearing phase)
+> - Detailed solution descriptions or per-solution decision rationale (Design's job — Structure stitches the locked solutions into a unified architecture; Design defines them)
+
+**D4 — Structure SKILL.md authoring procedure additions.** Beyond the owns-defers + scope-reviewer updates (which mirror G34 mechanically), `skills/structure/SKILL.md` gets a new procedural section because authoring a unified test architecture is *new behavior* (previously Design did it; Structure has no existing procedure for it). The section instructs Structure to:
+
+1. After Design approval, enumerate every per-solution `Acceptance` subsection in design.md (per goal + per CD).
+2. Group acceptance criteria by test type per the release taxonomy named in step 4 below.
+3. Identify cross-cutting test invariants (drawn from CDs and goals that introduce cross-cutting behavior) and name the test type that owns each invariant.
+4. Author the result as a top-level `## Test Architecture` section in structure.md, named-taxonomy-first (T1, T2, ..., with the release-specific shape), with one paragraph per type naming the coverage boundary, and a final "Cross-cutting invariants" subsection.
+
+The exact procedure prose is authored as deferred-prose-design at Implement time per G1 Sub-Rule B; G35 commits the section name (`## Test Architecture`), the 4-step skeleton, and the load-bearing anchor phrases ("name the test taxonomy", "enumerate cross-cutting test invariants", "name the test type that owns each invariant", "after Design approval").
+
+**D5 — Surfaces updated.** Four edits.
+
+- `skills/_shared/structure-altitude-boundary.md` (new file): carries D2 + D3 verbatim as a single contiguous markdown block.
+- `skills/structure/owns-defers.md` (consumer edit): replace the current contract body with a single `!cat skills/_shared/structure-altitude-boundary.md` directive. The file's existing front-matter / surrounding structure unchanged.
+- `agents/qrspi-structure-scope-reviewer.md` (consumer edit): in the agent body's procedure section, insert the introducer prose "The contract you just read carries the following allowances and deferrals; restated here so they are present in your immediate reasoning context:" immediately after the Step 1 Read citation, followed by a `!cat skills/_shared/structure-altitude-boundary.md` directive. Build-time expansion inlines the verbatim block.
+- `skills/structure/SKILL.md` (procedure addition): new section per D4. Spec is the section name + 4-step skeleton + anchor phrases per Sub-Rule B; full prose authored at Implement.
+
+**D6 — Regression guard (single bats lint test).** Mirror of G34 D5. New bats test under `tests/lint/test-structure-altitude-boundary-include.bats` asserts the literal line `!cat skills/_shared/structure-altitude-boundary.md` is present in BOTH `skills/structure/owns-defers.md` AND `agents/qrspi-structure-scope-reviewer.md` source files. ~6 LOC. Drift-via-subtraction is the only failure surface (single source = no content drift possible).
+
+**D7 — Hard dependencies.** G1 deliverables #3 + #4 (the migration source — without them, Structure absorbing architecture/test-architecture creates a parallel authoring contract instead of a migration). G32 (`!cat` resolver — without it, the shared snippet doesn't expand at build time and the install artifact carries unresolved directives). Both ship in v0.7.2.
+
+**Acceptance criteria.**
+
+- `skills/_shared/structure-altitude-boundary.md` exists as a new file carrying the D2 OWNS allowances list and the D3 DEFERS list as a single contiguous markdown block (D2 block then D3 block, no other content).
+- `skills/structure/owns-defers.md` source contains a `!cat skills/_shared/structure-altitude-boundary.md` directive in place of any previous inline contract body; G32's build pipeline expands the directive in the install artifact.
+- `agents/qrspi-structure-scope-reviewer.md` source contains the introducer prose immediately after the Step 1 Read citation, followed by the `!cat` directive; G32's build pipeline expands the directive in the install artifact's agent body.
+- `skills/structure/SKILL.md` contains a new section authoring the unified `## Test Architecture` per D4's 4-step procedure with the load-bearing anchor phrases verbatim.
+- `tests/lint/test-structure-altitude-boundary-include.bats` exists and passes on a tree where both consumer source files carry the `!cat skills/_shared/structure-altitude-boundary.md` line; fails (with a halt message naming the missing file) when either consumer source has the include removed.
+- Mental replay: a v0.7.2 structure.md that includes a unified system architecture Mermaid diagram and a `## Test Architecture` section stitching per-goal/per-CD acceptance criteria from design.md by test type would NOT trigger Structure's scope-reviewer under the new contract.
+
+**What G35 does NOT cover.**
+
+- **Other artifact scope reviewers.** Goals / Plan / Phasing / Parallelize / Replan scope reviewers are not in G35's scope. Tracked alongside G34's v0.7.3+ follow-up audit issue.
+- **Authoring procedure for the unified system architecture diagram beyond naming it as Structure-owned.** Structure already produces file maps; adding a Mermaid component overview is a natural extension under existing structure-authoring patterns. G35 names the section as Structure-owned and adds it to the OWNS list, but does not introduce a new dedicated authoring procedure for diagram production (the existing Structure SKILL's file-map authoring procedure scales to cover it).
+- **Changes to design.md per-goal template.** Per-solution `Acceptance` subsections already exist (G1 per-goal template, deliverable #1). G35 consumes them; it does not change their shape.
+- **Re-litigation of design decisions during Structure authoring.** Structure consumes the locked design; if a structural concern surfaces that requires re-opening a Design decision, the standard QRSPI Backward Loop applies (Structure halts, returns to Design's per-decision dialogue).
+
+**Plain-language summary.** "G1 #3 + #4 say Design hands the unified Test Strategy and System Flow sections to Structure. G34 makes Design know it (and stop flagging missing architecture as drift on its side). G35 makes Structure know it too — gives Structure the OWNS/DEFERS vocabulary via the same `_shared/` + `!cat` pattern G34 uses, AND gives Structure SKILL.md a new authoring procedure for the unified test architecture (which is new behavior on the Structure side — previously Design did it)."
+
+
 
 - **Q5 under-counted consumer list** — research/summary.md Q5 (line 68) said splitter is not invoked by run-codex-review.sh; missed that implement/SKILL.md is the highest-density consumer (9 invocations + 2 splitter blocks).
 - **Backward-loop flag mechanism may be dead code** — never observed in any session. The Pause Gate option 3 cascade may be undiscoverable in practice. Preserved in new architecture (cost is negligible) but worth observability check post-v0.7.2.

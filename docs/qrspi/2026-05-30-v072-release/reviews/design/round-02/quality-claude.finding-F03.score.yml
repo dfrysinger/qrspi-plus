@@ -1,0 +1,2 @@
+score: 45
+reason: Verified real taxonomy mismatch — T2 is defined as "one bats file per script under `scripts/`" (behavioral, not lint) yet the G21 invariant labels its `tests/lint/test-bats-body-assertion-guard.bats` lint gate as "T2 lint rule"; same shape recurs on CD-2 line; however, finding self-classifies low because G21 design block independently describes the gate correctly, so impact on implementers is minor taxonomy/labeling cleanup.

@@ -1,0 +1,2 @@
+score: 5
+reason: False positive — design.md G20 deliverable 2 (line 1860) already reads "scripts/dispatch-companion.sh ... third-party subagents", which is exactly the finding's suggested fix; the stale text the finding quotes is not present in the artifact.
