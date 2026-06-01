@@ -1,0 +1,2 @@
+score: 30
+reason: Real gap between §17 and S12 subgraph, but the diagram convention is consistently source-files-only (no other audit artifacts — §11, §13, manifest — appear as nodes either), so adding `.orchestrator-fixes.json` would break convention while the authoritative §17 prose already binds the consumer obligation; low practical risk.

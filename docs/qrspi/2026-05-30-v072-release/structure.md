@@ -209,7 +209,7 @@ scripts/dispatch-agent.sh --step <step> --round <N> --output-dir <round-dir> \
 # Verifier-fanout mode:
 scripts/dispatch-agent.sh --verifier-fanout \
   --step <step> --round <N> --output-dir <round-dir> \
-  [--tier-override qrspi-finding-verifier=<tier>]
+  [--tier-override <tier>]
 # Script globs <round-dir>/*.finding-F*.md to enumerate findings; --agents is not used
 # Stdout: one spec line per finding: MODE=first_party TAG=<reviewer-tag>.F<NN> SUBAGENT_TYPE=qrspi-finding-verifier MODEL=<resolved-model> PROMPT_FILE=<absolute-path>
 ```
@@ -282,6 +282,8 @@ csv        := assignment ("," assignment)*
 assignment := <reviewer-tag> "=" <tier>
 tier       := extra-low | low | medium | high | extra-high
 ```
+
+Note: this CSV `tag=tier` grammar applies to reviewer-fanout (CD-1), where multiple reviewer agents can be tier-overridden independently. Verifier-fanout (CD-4 §H) takes a bare `<tier>` instead, because the verifier is a singleton agent (`qrspi-finding-verifier`) and no tag-prefix namespacing is needed.
 
 Semantics:
 - tags not named in `--tier-override` resolve through agent `tier:` → `default_tier:` → fail-loud fallback chain

@@ -1,0 +1,7 @@
+# scope-set for round 05
+# generated_by: qrspi-scope-tagger
+# step: structure
+# total_findings_kept: 2
+# warning: R5-F01 (quality-codex) has malformed referenced_files entry 'structure.md (line 212, §3 verifier-fanout invocation)': path component contains embedded whitespace and no colon-delimited range component matches the schema regex; tagged as full-artifact
+# warning: R5-F01 (scope-codex) has malformed referenced_files entry 'structure.md (lines 209-213, §3 verifier-fanout invocation)': path component contains embedded whitespace and no colon-delimited range component matches the schema regex; tagged as full-artifact
+<full>
