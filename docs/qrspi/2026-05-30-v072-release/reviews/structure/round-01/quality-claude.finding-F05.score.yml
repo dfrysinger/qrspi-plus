@@ -1,0 +1,2 @@
+score: 80
+reason: Verified — `scripts/dispatch-agent.sh` has `Create` on both Slice 1.2 line 36 and Slice 1.4 line 59; a file cannot be created twice, so this is a real ambiguity Plan will hit, and the proposed Modify-in-1.2 fix matches the file-map convention.

@@ -1,0 +1,2 @@
+score: 82
+reason: Verified — `scripts/round-prepare.sh` is listed with action "Create" in both Slice 1.3 (line 46) and Slice 1.4 (line 62) of structure.md, which is a real correctness issue that will produce two conflicting create-tasks for Plan; the proposed Modify-in-1.3 / Create-in-1.4 fix is well-reasoned.

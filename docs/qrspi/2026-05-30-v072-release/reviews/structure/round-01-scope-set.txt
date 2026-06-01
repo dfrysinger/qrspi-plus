@@ -1,0 +1,18 @@
+# scope-set for round 01
+# generated_by: qrspi-scope-tagger
+# total_findings_kept: 14
+# warning: quality-claude.R1-F01 had no line-range; tagged as full-artifact
+# warning: quality-claude.R1-F02 had no line-range; tagged as full-artifact
+# warning: quality-claude.R1-F03 had no line-range; tagged as full-artifact
+# warning: quality-claude.R1-F04 had no line-range; tagged as full-artifact
+# warning: quality-claude.R1-F05 had no line-range; tagged as full-artifact
+# warning: quality-claude.R1-F06 had no line-range; tagged as full-artifact
+# warning: quality-codex.R1-F01 had no line-range; tagged as full-artifact
+# warning: quality-codex.R1-F02 had no line-range; tagged as full-artifact
+# warning: quality-codex.R1-F03 had no line-range; tagged as full-artifact
+# warning: quality-codex.R1-F04 had no line-range; tagged as full-artifact
+# warning: scope-codex.R1-F01 had no line-range; tagged as full-artifact
+# warning: scope-codex.R1-F02 had no line-range; tagged as full-artifact
+<full>
+## File Map
+## Interfaces

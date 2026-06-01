@@ -1,0 +1,2 @@
+score: 85
+reason: Confirmed — CD-4 §I.7 of design.md locks a named contract for `scripts/detect-interaction-mode.sh` (KEY=VALUE stdout, three DETECTION_TYPE shapes, exit codes, locked platform directory, Iron-Law verification procedure), but the script is absent from every slice's file map and from the 12 Interfaces; without a file-map entry Plan will not schedule its creation, and the entire halt-response protocol (CD-4 §I.1–I.6) loses its auto/interactive discrimination.

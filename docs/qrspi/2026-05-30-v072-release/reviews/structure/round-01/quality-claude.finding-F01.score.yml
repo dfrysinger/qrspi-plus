@@ -1,0 +1,2 @@
+score: 90
+reason: Verified — CD-2 in design.md explicitly requires creating skills/_shared/evergreen-output-rule.md with 9 consumer skills `!cat`-including it, but structure.md's file map has no Create entry (conspicuous absence alongside peer shared snippets that ARE listed), which would leave Plan with no task to create the file and break all 9 consumer includes.

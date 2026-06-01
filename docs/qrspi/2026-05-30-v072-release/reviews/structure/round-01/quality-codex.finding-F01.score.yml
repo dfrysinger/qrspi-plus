@@ -1,0 +1,2 @@
+score: 82
+reason: Design CD-4 explicitly locks `skills/_shared/verifier-dispatch-prose.md` as a Create file `!cat`-included into both `using-qrspi/SKILL.md` and `implement/SKILL.md`, and structure.md's file map (verified across all 7 slices) contains no row for it — a real structure-matches-design gap on a design-locked shared snippet.

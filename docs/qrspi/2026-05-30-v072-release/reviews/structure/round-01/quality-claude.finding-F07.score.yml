@@ -1,0 +1,2 @@
+score: 60
+reason: Verified — G25 is listed in file-map unit test `test-config-model-routing.bats` (G22, G23, G25) yet absent from T1 and T2 Feeds; real but low-severity clarity/traceability gap with a clear fix.

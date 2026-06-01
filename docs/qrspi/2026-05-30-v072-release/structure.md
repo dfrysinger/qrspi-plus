@@ -17,6 +17,7 @@ This slice centralizes finding shape, sidecar handling, and keep-or-drop decisio
 |---|---|---|---|
 | `scripts/verifier-fan-in.sh` | Create | Read round findings + sidecars, enforce schema, and emit kept-finding/audit artifacts for apply-fix. | G12, G13 |
 | `skills/_shared/verifier-filter-rule.md` | Create | Hold the single threshold/filter rule consumed by orchestrator prose and verifier fan-in. | G7 |
+| `skills/_shared/verifier-dispatch-prose.md` | Create | Hold the shared verifier dispatch prose snippet (`dispatch-agent.sh --verifier-fanout` invocation + spec-line contract + `await-round.sh` follow-up) consumed by `using-qrspi/SKILL.md` and `implement/SKILL.md`. | G12 |
 | `skills/reviewer-protocol/SKILL.md` | Modify | Lock the canonical finding schema, `change_type` field name, enum, and informational-finding framing independent of transport. | G6, G8, G13, G14 |
 | `skills/reviewer-protocol/first-party-emission.md` | Create | Define the Write-tool-only reviewer emission contract for first-party dispatches. | G6 |
 | `skills/reviewer-protocol/third-party-emission.md` | Create | Define the stdout-boundary emission contract for third-party dispatches. | G6 |
@@ -33,7 +34,7 @@ This slice makes verifier scoring observable and review-round instrumentation du
 |---|---|---|---|
 | `agents/qrspi-finding-verifier.md` | Modify | Add hallucination screening, actual-model-aware scoring cues, and convergent-evidence exception handling. | G19, G20, G28 |
 | `skills/using-qrspi/SKILL.md` | Modify | Define round instrumentation, sub-threshold observation logging, and verifier-visible audit surfaces. | G20, G28, G29 |
-| `scripts/dispatch-agent.sh` | Create | Persist resolved host/vendor/model metadata into the dispatch manifest for later observability. | G20, G29 |
+| `scripts/dispatch-agent.sh` | Modify | Add host/vendor/model metadata persistence into the dispatch manifest for later observability. | G20, G29 |
 | `tests/unit/test-verified-file-shape.bats` | Modify | Pin verified-file headers, kept/dropped counts, and instrumentation fields. | G20, G28 |
 | `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` | Modify | Exercise verifier calibration and round instrumentation in the release-level path. | G19, G20, G28, G29 |
 
@@ -43,7 +44,7 @@ This slice repairs the per-task lane so sweep tasks and contract-carrying tasks 
 
 | File | Action | Responsibility | Goal IDs |
 |---|---|---|---|
-| `scripts/round-prepare.sh` | Create | Prepare per-task diff, scope, and commit-anchor artifacts before every review round. | G9 |
+| `scripts/round-prepare.sh` | Modify | Add per-task diff, scope, and commit-anchor artifact emission alongside the existing canonical diff/ref selection logic. | G9 |
 | `skills/plan/SKILL.md` | Modify | Author `dependent_tests:` and `cross_task_consumers:` when a task changes shared contracts or sweep surfaces. | G15, G18 |
 | `agents/qrspi-plan-reviewer.md` | Modify | Enforce sweep-task and cross-task-consumer heuristics at plan review time. | G15, G18 |
 | `skills/implement/SKILL.md` | Modify | Require `round-prepare` outputs and scope-tagger/fan-in artifacts on each per-task review cycle. | G9 |
@@ -63,6 +64,7 @@ This slice collapses per-skill reviewer dispatch into one routed script chain an
 | `scripts/await-round.sh` | Create | Drain background reviewer jobs, finalize manifest state, and write round completion summaries. | G3, G4 |
 | `scripts/_resolve-lib.sh` | Create | Own host×vendor routing, tier resolution, default-tier fallback, and fail-loud routing lookups. | G22, G23, G25, G27 |
 | `scripts/_host-detect.sh` | Create | Expose the canonical host-detection probe reused by dispatch and reviewer selection. | G27 |
+| `scripts/detect-interaction-mode.sh` | Create | Encapsulate per-host interaction-mode detection; return shell-verdict, llm-context instruction, or user-override-only signal depending on the active host. See Interface §13. | CD-4 |
 | `skills/_shared/reviewer-dispatch-prose.md` | Create | Provide the one shared orchestrator dispatch snippet included by all review-producing skills. | G3, G4 |
 | `skills/using-qrspi/SKILL.md` | Modify | Carry the unified five-tier `model_routing:` schema, host matrix, validation rows, and fail-loud invariant prose. | G3, G22, G23, G24, G25, G27 |
 | `config.md` | Modify | Surface `model_routing`, `trusted_path`, and validator blocks consumed by universal dispatch. | G22, G23, G25 |
@@ -109,6 +111,8 @@ This slice raises artifact-authoring quality at the prompt/prose boundary and ma
 | `skills/implementer-protocol/SKILL.md` | Modify | Correct stale committed-gitignore prose without changing runtime invariants. | G17 |
 | `agents/qrspi-test-writer.md` | Modify | Correct stale committed-gitignore prose in the test-writer’s commit workflow. | G17 |
 | `skills/_shared/design-altitude-boundary.md` | Create | Hold the single Design OWNS/DEFERS contract used by both contract and reviewer surfaces. | G34 |
+| `skills/_shared/evergreen-output-rule.md` | Create | Hold the single Evergreen-Output Rule snippet consumed by all nine artifact-producing skills via `!cat`. | CD-2 |
+| `skills/_shared/multi-actor-flow-check.md` | Create | Hold the single Multi-Actor Flow Check snippet `!cat`-included into structure, plan, parallelize, and implement SKILL.md files. | CD-3 |
 | `skills/design/owns-defers.md` | Modify | Include the shared Design altitude boundary. | G34 |
 | `skills/_shared/prompt-prose-detection.md` | Create | Define universal prompt-prose detection by content semantics. | G31 |
 | `skills/_shared/prompt-prose-writer-addition.md` | Create | Define writer-side prompt-rule application. | G31 |
@@ -120,6 +124,7 @@ This slice raises artifact-authoring quality at the prompt/prose boundary and ma
 | `tests/unit/test-plan-post-approval-split.bats` | Modify | Guard block-hash emission, safe re-run, and loud conflict behavior. | G5 |
 | `tests/unit/test-interactive-skill-prompts.bats` | Modify | Pin dialog-conduct wording, simple-language framing, and compaction-resume diagnostics. | G1, G30, G33 |
 | `tests/unit/test-author-skill-uses-cat.bats` | Modify | Guard shared include usage for prompt-prose and design-boundary snippets. | G31, G34 |
+| `tests/lint/test-design-altitude-boundary-include.bats` | Create | Guard the two required `!cat` inclusions for `design-altitude-boundary.md` so the Design boundary cannot drift by subtraction. | G34 |
 | `tests/acceptance/test-review-pause.bats` | Modify | Ensure pause/review flow respects operator authority rather than fabricated reviewer mandates. | G10 |
 
 ### Slice 1.6 — Structure SKILL absorbs unified architecture
@@ -168,7 +173,7 @@ The apply-fix boundary is a single script contract so round assembly no longer d
 # Exit 0: wrote <round-dir>/kept-findings.txt
 # Exit 1: contract violation (missing sidecars, out-of-enum change_type)
 # Output: <round-dir>/kept-findings.txt (newline-separated finding IDs)
-#         <round-dir>/fan-in-audit.json (scored/failed/dropped/kept counts)
+#         <round-dir>/.verifier-fan-in-audit.json (scored/failed/dropped/kept counts)
 ```
 
 ### 2. Canonical cumulative diff helper
@@ -329,7 +334,7 @@ Dispatch state survives compaction because first-party and third-party launches 
 ]
 ```
 
-### 11. `fan-in-audit.json` schema
+### 11. `.verifier-fan-in-audit.json` schema
 
 Fan-in emits machine-readable counts because apply-fix needs a stable summary even when the round halts early.
 
@@ -356,13 +361,33 @@ Threshold logic is snippet-backed so fan-in, apply-fix, and reviewer-facing docu
 ```markdown
 ## Verifier Filter Rule
 
-Apply the verifier score only to `style`, `clarity`, and `correctness` findings.
-- `style` and `clarity` require the higher threshold.
-- `correctness` uses the lower hardening threshold.
-- `scope` and `intent` bypass score filtering.
+<threshold and filter rule prose>
+- ...
 ```
 
 Concrete v0.7.2 path: `skills/_shared/verifier-filter-rule.md`.
+
+### 13. Interaction-mode detector
+
+The orchestrator consults this script once per round-start; detection logic stays script-encapsulated so no consumer skill or agent body carries per-host signal names.
+
+```bash
+# scripts/detect-interaction-mode.sh
+# Usage: detect-interaction-mode.sh  (no arguments)
+# Exit 0: detection succeeded (including safe-default branch)
+# Exit non-zero: internal script error only
+# Stdout: KEY=VALUE pairs, one per line; DETECTION_TYPE ∈ {shell-verdict, llm-context, user-override-only}
+#
+# shell-verdict:      PLATFORM=<name> DETECTION_TYPE=shell-verdict VERDICT=auto|interactive EVIDENCE=<signal>
+# llm-context:        PLATFORM=<name> DETECTION_TYPE=llm-context INSTRUCTION=<prose>
+# user-override-only: PLATFORM=<name> DETECTION_TYPE=user-override-only VERDICT=interactive EVIDENCE=<override-chain-result>
+```
+
+Override chain (consulted for `user-override-only` hosts and as fallback when the primary signal is absent): (1) `QRSPI_INTERACTION_MODE=auto|interactive` env var; (2) safe-default `interactive`.
+
+Locked platform directory (verified at design time as of 2026-05-31): Copilot CLI (`COPILOT_CLI=1`) returns `llm-context`; Claude Code (no `COPILOT_CLI`, system-reminder framing present) returns `llm-context`; unknown host returns `user-override-only`. See design.md CD-4 §I.7 for full platform table.
+
+Audit file: after each detection cycle, the orchestrator (exclusive writer) writes `<round-dir>/.interaction-mode-audit.json` with shape `{platform, detection_type, verdict, evidence}`. For `shell-verdict` and `user-override-only` the orchestrator copies fields directly from script stdout; for `llm-context` the orchestrator derives verdict and evidence from its own context inspection. Separate file from `.verifier-fan-in-audit.json` (different writer, different timing — round-start vs round-end).
 
 ## Architectural Diagram
 
@@ -538,3 +563,104 @@ These invariants are release-wide and each is owned by the smallest test type th
 - **G31 prompt-prose rules apply by content semantics, not by path alone** — T1 + T5
 - **G32 build sync check guarantees `build/` matches source and shipped plugin omits dev-only paths** — T5 + T6
 - **G35 `structure-altitude-boundary` include presence stays in both consumer files** — T4
+
+## Section Contracts
+
+Section-list contracts for new `skills/`, `_shared/`, and protocol files created in this release. Each entry names required top-level sections at heading-level granularity. Prose content under those headings is deferred to Plan/Implement. Files already contracted in the Interfaces section (`skills/_shared/structure-altitude-boundary.md` → §5; `skills/_shared/design-altitude-boundary.md` → §6; `skills/_shared/verifier-filter-rule.md` → §12; `scripts/detect-interaction-mode.sh` → §13) are cross-referenced rather than duplicated here.
+
+| File | Required top-level sections |
+|---|---|
+| `skills/_shared/evergreen-output-rule.md` | `## Evergreen-Output Rule` |
+| `skills/_shared/multi-actor-flow-check.md` | `## Multi-Actor Flow Check` |
+| `skills/_shared/verifier-dispatch-prose.md` | `## Verifier Dispatch` |
+| `skills/_shared/verifier-filter-rule.md` | `## Verifier Filter Rule` — see Interface §12 |
+| `skills/_shared/structure-altitude-boundary.md` | `## Structure Altitude Boundary`, `### What Structure OWNS`, `### What Structure DEFERS` — see Interface §5 |
+| `skills/_shared/design-altitude-boundary.md` | `## Design Altitude Boundary`, `### What Design OWNS`, `### What Design DEFERS` — see Interface §6 |
+| `skills/_shared/reviewer-dispatch-prose.md` | `## Reviewer Dispatch` |
+| `skills/_shared/config-validation-procedure.md` | `## Config Validation Procedure`, `### Valid Configuration`, `### Invalid Configuration` |
+| `skills/_shared/prompt-prose-detection.md` | `## Prompt-Prose Detection` |
+| `skills/_shared/prompt-prose-writer-addition.md` | `## Prompt-Prose Writer Addition` |
+| `skills/_shared/prompt-prose-reviewer-addition.md` | `## Prompt-Prose Reviewer Addition` |
+| `skills/_shared/prompt-design-rules.md` | `## Prompt Design Rules` |
+| `skills/reviewer-protocol/first-party-emission.md` | `## First-Party Emission Contract`, `### Write-Tool Requirements`, `### Path Rules` |
+| `skills/reviewer-protocol/third-party-emission.md` | `## Third-Party Emission Contract`, `### Stdout Boundary`, `### Splitter Requirements` |
+| `skills/prompt-prose-writer/SKILL.md` | `## Overview`, `## Detection`, `## Rules Application`, `## Process` |
+| `skills/prompt-prose-reviewer/SKILL.md` | `## Overview`, `## Detection`, `## Rules Application`, `## Process` |
+
+## Hook-Point Locations
+
+Cross-cutting insertion sites locked by this release. Locations only — text content is deferred to Plan/Implement. Each entry names the consumer file and the section heading at which the hook fires or the include lands.
+
+### CD-1 reviewer-dispatch-prose `!cat` include sites
+
+`skills/_shared/reviewer-dispatch-prose.md` replaces inline reviewer-dispatch prose in the following consumer SKILL.md files. Include lands at each file's reviewer-dispatch section (the section that previously carried the inline `dispatch-agent.sh` invocation prose):
+
+| Consumer file | Section heading |
+|---|---|
+| `skills/goals/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/questions/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/research/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/design/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/structure/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/phasing/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/plan/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/parallelize/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/replan/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/implement/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/integrate/SKILL.md` | `## Reviewer Dispatch` |
+| `skills/test/SKILL.md` | `## Reviewer Dispatch` |
+
+### CD-2 evergreen-output-rule `!cat` include sites
+
+`skills/_shared/evergreen-output-rule.md` is `!cat`-included into nine artifact-producing SKILL.md files at the section that introduces the artifact-output contract (typically immediately before the artifact template or at the artifact-quality section):
+
+| Consumer file | Section heading |
+|---|---|
+| `skills/goals/SKILL.md` | artifact-output contract section (before artifact template) |
+| `skills/questions/SKILL.md` | artifact-output contract section (before artifact template) |
+| `skills/research/SKILL.md` | artifact-output contract section (before artifact template) |
+| `skills/design/SKILL.md` | artifact-output contract section (before artifact template) |
+| `skills/structure/SKILL.md` | artifact-output contract section (before artifact template) |
+| `skills/phasing/SKILL.md` | artifact-output contract section (before artifact template) |
+| `skills/plan/SKILL.md` | artifact-output contract section (before artifact template) |
+| `skills/parallelize/SKILL.md` | artifact-output contract section (before artifact template) |
+| `skills/replan/SKILL.md` | artifact-output contract section (before artifact template) |
+
+### CD-3 multi-actor-flow-check `!cat` include sites
+
+`skills/_shared/multi-actor-flow-check.md` is `!cat`-included into four downstream-gate SKILL.md files at the section that introduces multi-actor hand-off checking behavior:
+
+| Consumer file | Section heading |
+|---|---|
+| `skills/structure/SKILL.md` | `## Multi-Actor Flow Check` |
+| `skills/plan/SKILL.md` | `## Multi-Actor Flow Check` |
+| `skills/parallelize/SKILL.md` | `## Multi-Actor Flow Check` |
+| `skills/implement/SKILL.md` | `## Multi-Actor Flow Check` |
+
+### CD-4 / G12 verifier-dispatch-prose `!cat` include sites
+
+`skills/_shared/verifier-dispatch-prose.md` is `!cat`-included into the Apply-fix protocol section of two consumer skills:
+
+| Consumer file | Section heading |
+|---|---|
+| `skills/using-qrspi/SKILL.md` | artifact-level Apply-fix protocol section |
+| `skills/implement/SKILL.md` | task-level Apply-fix protocol section |
+
+### G34 design-altitude-boundary `!cat` include sites
+
+`skills/_shared/design-altitude-boundary.md` is `!cat`-included in two consumer files per design.md CD-4 §D1:
+
+| Consumer file | Location |
+|---|---|
+| `skills/design/owns-defers.md` | replaces inline contract body |
+| `agents/qrspi-design-scope-reviewer.md` | procedure section, immediately after Step 1 Read citation (introducer prose precedes the include) |
+
+### G35 structure-altitude-boundary `!cat` include sites
+
+`skills/_shared/structure-altitude-boundary.md` is `!cat`-included in two consumer files per design.md G35 §D1:
+
+| Consumer file | Location |
+|---|---|
+| `skills/structure/owns-defers.md` | replaces inline contract body |
+| `agents/qrspi-structure-scope-reviewer.md` | procedure section, immediately after Step 1 Read citation (introducer prose precedes the include) |
+

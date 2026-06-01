@@ -1,0 +1,2 @@
+score: 82
+reason: Confirmed mismatch — structure.md Interface 11 and the script usage block name `fan-in-audit.json`, but design.md CD-4 (components C, E, and sequence diagram lines 403/408/439) locks `.verifier-fan-in-audit.json`; this is a real contract drift on a CD-4 locked path.
