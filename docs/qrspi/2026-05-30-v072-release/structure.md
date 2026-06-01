@@ -12,7 +12,7 @@ qrspi-plus v0.7.2 hardens one pipeline end to end: reviewer dispatch, verifier f
 
 This artifact uses **per-file specification blocks** (see `## Per-File Specifications` below) as the load-bearing organizing axis. Each block consolidates everything an architect needs to reason about that file in one place: action, slice, goal IDs, responsibility, interface signature, design.md-sourced verbatim prose, outline-only constraints for Plan/Implement, tests, and `!cat` / `skills:` hook points.
 
-**Why per-file blocks.** Earlier revisions split this information across a §File Map row, a §Interfaces signature block, a §Hook-Point Locations row, and a verbatim-prose source in design.md that was cited only by topic. Plan and Implement consumers had to dereference four sections (three in structure.md, one in design.md) per file before authoring a task. The per-file block removes that dereference cost and removes the dual-citation drift risk where structure.md and design.md disagree on the locked prose.
+**Why per-file blocks.** Each per-file block is the single anchor point where an architect, Plan consumer, or Implement consumer reads everything that pertains to one target file: its action, slice, goal IDs, responsibility, interface signature, design.md-sourced verbatim prose (when locked), outline-only constraints (when deferred), test-coverage boundary, and `!cat` / `skills:` hook-point list. Consolidating these into one block removes per-file dereference cost across structure.md and removes the dual-citation drift risk where structure.md and design.md could disagree on the locked prose.
 
 **Verbatim vs outline.** Each per-file block distinguishes two prose forms:
 
@@ -612,10 +612,13 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Interface:**
 ```bash
 # scripts/round-prepare.sh <task-branch> <round-NN> <output-dir> [--implementer-commit <SHA>] [--verify]
-# Exit 0: <output-dir>/round-NN.diff + <output-dir>/round-NN-commit.txt written
-# Exit 10: SHA already matches (idempotent skip)
-# Exit 11: worktree integrity break
-# Exit 12: re-dispatch implementer needed
+# Exit 0: <output-dir>/round-NN.diff + <output-dir>/../round-NN-commit.txt written
+# Exit 10: --task-branch set without --implementer-commit (orchestrator bug — halt + surface to user)
+# Exit 11: passed SHA != git rev-parse HEAD (worktree integrity break — halt + diagnose)
+# Exit 12: passed SHA == prior round's anchor (re-dispatch implementer)
+#
+# Authoritative table: design.md §G4 L1090-L1097. Verbatim shell body lifted in the
+# Slice 1.4 per-file block for this same script.
 ```
 
 **Verbatim content (lifted from design.md):**
@@ -663,16 +666,16 @@ The script runs three checks in order before writing the anchor:
 **Insertion site (in target file):** Authored as a new `### Sweep Task Contract` subsection appended to the END of the `## Test Expectations` section of `skills/plan/SKILL.md` (per design.md §G15 L1574).
 
 ```markdown
-> ### Sweep Task Contract
->
-> A **sweep task** removes, replaces, or enforces an invariant across many files at once (e.g., "strip `model:` from all agent frontmatter," "rename `qrspi-foo` to `qrspi-bar` across all skills," "remove all `${VAR}` references in CDs"). Sweep tasks systematically invalidate test files that assert on the swept property's previous values, even when those test files are not in the task's `files_in_scope`.
->
-> A sweep-task plan-spec MUST include, in its Test Expectations block, a `dependent_tests:` field with one of two values:
->
-> - A list of test file paths the per-task gate must additionally run. Each path must be a file (not a directory glob) and must exist at plan-authoring time. Each listed test SHOULD be expected to either (a) pass unchanged once the sweep is applied or (b) require a specific predicted update — describe which in one sentence per file.
-> - The literal string `none` followed on the next line by a grep-confirmable search command of shape `grep -rn '<pattern>' tests/` that demonstrably returns zero matches. The pattern is the swept identifier (e.g., `'^model:'`) — the plan-reviewer will re-run the grep and surface a finding if it returns ≥1 hit.
->
-> Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defect, not a deferred-to-implementer concern.
+### Sweep Task Contract
+
+A **sweep task** removes, replaces, or enforces an invariant across many files at once (e.g., "strip `model:` from all agent frontmatter," "rename `qrspi-foo` to `qrspi-bar` across all skills," "remove all `${VAR}` references in CDs"). Sweep tasks systematically invalidate test files that assert on the swept property's previous values, even when those test files are not in the task's `files_in_scope`.
+
+A sweep-task plan-spec MUST include, in its Test Expectations block, a `dependent_tests:` field with one of two values:
+
+- A list of test file paths the per-task gate must additionally run. Each path must be a file (not a directory glob) and must exist at plan-authoring time. Each listed test SHOULD be expected to either (a) pass unchanged once the sweep is applied or (b) require a specific predicted update — describe which in one sentence per file.
+- The literal string `none` followed on the next line by a grep-confirmable search command of shape `grep -rn '<pattern>' tests/` that demonstrably returns zero matches. The pattern is the swept identifier (e.g., `'^model:'`) — the plan-reviewer will re-run the grep and surface a finding if it returns ≥1 hit.
+
+Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defect, not a deferred-to-implementer concern.
 ```
 
 **Source:** design.md §G18 (L1746-L1763)
@@ -681,24 +684,24 @@ The script runs three checks in order before writing the anchor:
 **Insertion site (in target file):** Authored as a new `### Cross-Task Consumer Surface` subsection appended to the END of the `## Task Definition` section of `skills/plan/SKILL.md` (same neighborhood as G15's Sweep Task Contract subsection), per design.md §G18 L1744.
 
 ```markdown
-> ### Cross-Task Consumer Surface
->
-> A task is **consumer-surface-touching** when its description or `files_in_scope` indicates ANY of:
->
-> - Adding, renaming, or removing a function, method, class, interface, exported symbol, or other named declaration.
-> - Adding, renaming, removing, or moving a file listed in `files_in_scope`.
-> - Changing the public signature (parameter list, return type, exceptions or errors raised, side effects, or visibility) of any callable in `files_in_scope`.
-> - Changing the schema or structure of any structured document (JSON, YAML, frontmatter, TOML, XML, etc.) in `files_in_scope` whose keys, anchors, or top-level identifiers are referenced by name from other files.
-> - Adding, renaming, or removing a documented contract — a configuration key, environment variable, CLI flag, URL route, RPC method, command-line subcommand, schema field, anchor heading, or any other named extension point declared in `files_in_scope`.
->
-> A task that only modifies the body of an existing callable, edits prose paragraphs without changing referenced anchor names, or fixes formatting is NOT consumer-surface-touching. The trigger fires on changes that other code or documents could plausibly be coupled to *by name*.
->
-> When the trigger fires, the plan-spec MUST include a `cross_task_consumers:` field with one of two shapes:
->
-> - A list of consumer file paths outside `files_in_scope`, each followed on the next line by a one-sentence disposition: `no change` (consumer keeps working unmodified), `pass-through` (consumer's behavior intentionally unchanged but the consumer file must be re-verified), `co-edit` (consumer file must be modified inside this same task), or `break-and-fix-task` (consumer file will be intentionally broken by this task and repaired in a named follow-up task — the follow-up task ID must be cited).
-> - The literal string `none` followed on the next line by a reproducible search command demonstrating zero consumer references exist outside `files_in_scope`. Command shape is left to the author: `grep`, `rg`, `git grep`, a language-specific reference-finder (`go vet`, `tsc --noEmit -p`, `rustc --emit=metadata`, IDE-equivalent CLI), or any other reproducible zero-result probe. The reviewer re-runs the command and treats a non-zero hit count as a defect.
->
-> Skipping the `cross_task_consumers:` field on a consumer-surface-touching task is a plan-spec defect, not a deferred-to-implementer concern.
+### Cross-Task Consumer Surface
+
+A task is **consumer-surface-touching** when its description or `files_in_scope` indicates ANY of:
+
+- Adding, renaming, or removing a function, method, class, interface, exported symbol, or other named declaration.
+- Adding, renaming, removing, or moving a file listed in `files_in_scope`.
+- Changing the public signature (parameter list, return type, exceptions or errors raised, side effects, or visibility) of any callable in `files_in_scope`.
+- Changing the schema or structure of any structured document (JSON, YAML, frontmatter, TOML, XML, etc.) in `files_in_scope` whose keys, anchors, or top-level identifiers are referenced by name from other files.
+- Adding, renaming, or removing a documented contract — a configuration key, environment variable, CLI flag, URL route, RPC method, command-line subcommand, schema field, anchor heading, or any other named extension point declared in `files_in_scope`.
+
+A task that only modifies the body of an existing callable, edits prose paragraphs without changing referenced anchor names, or fixes formatting is NOT consumer-surface-touching. The trigger fires on changes that other code or documents could plausibly be coupled to *by name*.
+
+When the trigger fires, the plan-spec MUST include a `cross_task_consumers:` field with one of two shapes:
+
+- A list of consumer file paths outside `files_in_scope`, each followed on the next line by a one-sentence disposition: `no change` (consumer keeps working unmodified), `pass-through` (consumer's behavior intentionally unchanged but the consumer file must be re-verified), `co-edit` (consumer file must be modified inside this same task), or `break-and-fix-task` (consumer file will be intentionally broken by this task and repaired in a named follow-up task — the follow-up task ID must be cited).
+- The literal string `none` followed on the next line by a reproducible search command demonstrating zero consumer references exist outside `files_in_scope`. Command shape is left to the author: `grep`, `rg`, `git grep`, a language-specific reference-finder (`go vet`, `tsc --noEmit -p`, `rustc --emit=metadata`, IDE-equivalent CLI), or any other reproducible zero-result probe. The reviewer re-runs the command and treats a non-zero hit count as a defect.
+
+Skipping the `cross_task_consumers:` field on a consumer-surface-touching task is a plan-spec defect, not a deferred-to-implementer concern.
 ```
 
 
@@ -727,12 +730,12 @@ The script runs three checks in order before writing the anchor:
 **Insertion site (in target file):** Inserted as a new bullet within the existing review rubric of `agents/qrspi-plan-reviewer.md`, alongside (NOT replacing) existing field-shape checks, per design.md §G15 L1575.
 
 ```markdown
-> **Sweep-task detection.** Treat a task as a sweep when BOTH conditions hold:
->
-> - `files_in_scope` lists >5 files (strict greater-than, not >=) of the same file type (file type = matching extension; `.md` agents in `agents/` count as one type, `.bats` tests count as another, etc.).
-> - The task title OR the task description body contains at least one of: `all`, `every`, `strip`, `remove`, `rename`, `replace`, `delete`, `sweep` (case-insensitive, word-boundary match — `removal` matches `remove`; `installer` does NOT match `all`).
->
-> On detection, the reviewer MUST verify the task's Test Expectations block contains a `dependent_tests:` field per the `plan/SKILL.md` § Sweep Task Contract. Missing-field → emit a `severity: high, change_type: correctness` finding referencing the contract. Field-present-but-malformed (no paths, no `none`-with-grep, or `none` with a grep that returns ≥1 hit when re-run) → same severity.
+**Sweep-task detection.** Treat a task as a sweep when BOTH conditions hold:
+
+- `files_in_scope` lists >5 files (strict greater-than, not >=) of the same file type (file type = matching extension; `.md` agents in `agents/` count as one type, `.bats` tests count as another, etc.).
+- The task title OR the task description body contains at least one of: `all`, `every`, `strip`, `remove`, `rename`, `replace`, `delete`, `sweep` (case-insensitive, word-boundary match — `removal` matches `remove`; `installer` does NOT match `all`).
+
+On detection, the reviewer MUST verify the task's Test Expectations block contains a `dependent_tests:` field per the `plan/SKILL.md` § Sweep Task Contract. Missing-field → emit a `severity: high, change_type: correctness` finding referencing the contract. Field-present-but-malformed (no paths, no `none`-with-grep, or `none` with a grep that returns ≥1 hit when re-run) → same severity.
 ```
 
 **Source:** design.md §G18 (L1767-L1773)
@@ -741,13 +744,13 @@ The script runs three checks in order before writing the anchor:
 **Insertion site (in target file):** Inserted as a new bullet within the existing review rubric of `agents/qrspi-plan-reviewer.md`, alongside (NOT replacing) G15's Sweep-Task Detection clause, per design.md §G18 L1765.
 
 ```markdown
-> **Cross-task consumer surface detection.** A task is consumer-surface-touching when ANY of the trigger conditions in `plan/SKILL.md` § Cross-Task Consumer Surface apply (named-declaration add/rename/remove, file add/rename/remove/move, public-signature change, structured-document schema change to referenced keys/anchors, named extension-point add/rename/remove). On detection, the reviewer MUST verify the task's plan-spec contains a `cross_task_consumers:` field per the contract:
->
-> 1. Field present and well-formed (one of the two documented shapes).
-> 2. If the field value is `none`, re-run the cited search command from the repo root and treat a non-zero hit count as a finding.
-> 3. If the field lists consumers, verify each listed disposition is one of `no change` / `pass-through` / `co-edit` / `break-and-fix-task`, and (for `break-and-fix-task`) verify the cited follow-up task ID exists in the plan.
->
-> Missing field, malformed field, non-zero hits on a `none` claim, or invalid disposition value → emit a `severity: high, change_type: correctness` finding referencing the contract.
+**Cross-task consumer surface detection.** A task is consumer-surface-touching when ANY of the trigger conditions in `plan/SKILL.md` § Cross-Task Consumer Surface apply (named-declaration add/rename/remove, file add/rename/remove/move, public-signature change, structured-document schema change to referenced keys/anchors, named extension-point add/rename/remove). On detection, the reviewer MUST verify the task's plan-spec contains a `cross_task_consumers:` field per the contract:
+
+1. Field present and well-formed (one of the two documented shapes).
+2. If the field value is `none`, re-run the cited search command from the repo root and treat a non-zero hit count as a finding.
+3. If the field lists consumers, verify each listed disposition is one of `no change` / `pass-through` / `co-edit` / `break-and-fix-task`, and (for `break-and-fix-task`) verify the cited follow-up task ID exists in the plan.
+
+Missing field, malformed field, non-zero hits on a `none` claim, or invalid disposition value → emit a `severity: high, change_type: correctness` finding referencing the contract.
 ```
 
 
@@ -961,10 +964,12 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Interface:**
 ```bash
 # scripts/round-prepare.sh <task-branch> <round-NN> <output-dir> [--implementer-commit <SHA>] [--verify]
-# Exit 0: <output-dir>/round-NN.diff + <output-dir>/round-NN-commit.txt written
-# Exit 10: SHA already matches (idempotent skip)  [orchestrator bug: missing --implementer-commit]
-# Exit 11: worktree integrity break
-# Exit 12: re-dispatch implementer needed
+# Exit 0: <output-dir>/round-NN.diff + <output-dir>/../round-NN-commit.txt written
+# Exit 10: --task-branch set without --implementer-commit (orchestrator bug — halt + surface to user)
+# Exit 11: passed SHA != git rev-parse HEAD (worktree integrity break — halt + diagnose)
+# Exit 12: passed SHA == prior round's anchor (re-dispatch implementer)
+#
+# Authoritative table: design.md §G4 L1090-L1097. Verbatim shell body below.
 ```
 
 **Verbatim content (lifted from design.md):**
@@ -1058,10 +1063,10 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §CD-1 component #10 (L117-L125)
-**Marker phrase:** "Host × vendor matrix (extended by G27 D5 with the “Default second-reviewer vendor” column at L2201-L2205)"
-**Lift type:** Insertion delta
-**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/_resolve-lib.sh` as the host × vendor routing matrix the library's lookup helpers (`lookup_host_vendor_path`, `lookup_default_second_reviewer`) implement.
+**Source:** design.md §G27 D5 (L2192-L2200)
+**Marker phrase:** "D5 — CD-1 host×vendor matrix extension."
+**Lift type:** Section body
+**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/_resolve-lib.sh` as the host × vendor routing matrix the library's lookup helpers (`lookup_host_vendor_path`, `lookup_default_second_reviewer`) implement. The 5-column matrix at design.md L2192-L2200 supersedes the prior 4-column version at design.md L117-L125 — a reader who finds the 4-col version first should follow the G27 D5 extension to land on the load-bearing version.
 
 ```markdown
 | Host          | Claude        | Codex         | DeepSeek (v0.7.3+) | Default second-reviewer vendor |
@@ -2670,7 +2675,7 @@ The contract you just read carries the following allowances and deferrals; resta
 **Action:** Create
 **Slice:** 1.6
 **Goal IDs:** {G35}
-**Responsibility:** Single bats lint test that asserts the literal line `!cat skills/_shared/structure-altitude-boundary.md` is present in BOTH `skills/structure/owns-defers.md` AND `agents/qrspi-structure-scope-reviewer.md` source files; halts (with a message naming the missing file) if either consumer source has the include removed. Drift-via-subtraction is the only failure surface — single source = no content drift possible (per design.md G35 §D6, L3006). ~6 LOC.
+**Responsibility:** Single bats lint test that asserts the literal line `!cat skills/_shared/structure-altitude-boundary.md` is present in BOTH `skills/structure/owns-defers.md` AND `agents/qrspi-structure-scope-reviewer.md` source files; halts (with a message naming the missing file) if either consumer source has the include removed. Drift-via-subtraction is the only failure surface — single source = no content drift possible (per design.md G35 §D6, L3006).
 
 **Tests:**
 - `tests/lint/test-structure-altitude-boundary-include.bats`: pins the literal `!cat skills/_shared/structure-altitude-boundary.md` line in both consumer source files (`skills/structure/owns-defers.md` and `agents/qrspi-structure-scope-reviewer.md`); passes when both carry the include, fails with a halt message naming the missing file when either consumer has the include removed (per design.md G35 §Acceptance criteria L3016). Plan/Implement author the literal anchor-line assertion string.
@@ -2688,7 +2693,7 @@ The contract you just read carries the following allowances and deferrals; resta
 - Pins the 8 unguarded `[[ "$body" != *...* ]]` lines (G21 evidence at lines 132-133, 157-158, plus the R4-era trusted_path block) so each negation assertion is preceded — within the same `@test` block — by a `[ -n "$body" ]` line. Reference pattern: the R5-era pins already in this file at lines 172-184 and 202-214.
 - Pins the 4 silent-fallback contract sites at L132, L157, L183, L213 with a regex assertion matching the `silent.*(fall.?back|degrad|default)` semantic family (intent-match, not literal-match) so future re-phrasings still trip the assertion. Exact regex is Plan/Implement territory; the design constraint is "match intent, not literal."
 - Each rewritten regex assertion is wrapped in a G21 `$body`-presence guard (a bare `[[ ! "$body" =~ regex ]]` is a G21 regression). The negative-test acceptance: a deliberately-phrased silent-fallback sentence ("silently substitutes the bundled default", "silently degrades to the agent default") must trip the regex pin.
-- Net diff ≤ 20 lines for the G24 rewrite (4 assertion sites × ~3-5 lines each including the G21 guard wrapper). No new shared helper file. No new bats utility.
+- Scope: the four contract sites at L132/L157/L183/L213 (already enumerated above), each rewritten in place; no other sites touched. No new shared helper file. No new bats utility.
 - G26 contributes no edits to this file directly — its regression-prevention surface lives in the sibling lint test below.
 
 **Outline-only sections (Plan/Implement authors):**
@@ -2707,7 +2712,7 @@ The contract you just read carries the following allowances and deferrals; resta
 
 **Tests:** (this file IS a test)
 - Pins the G21 B2 rule: every line matching `\[\[ "\$body"` inside an `@test` block must be preceded — anywhere earlier in the same `@test` block — by a line matching `\[ -n "\$body" \]`. Cheap grep-based logic, no AST parser. Per design.md G21 sub-decision B2 (L1910) and §"Implementation deliverables" item 2 (L1917-1921).
-- Pins the G26 BW02-guard rule (parallel rule in the same lint file, ~30 additional lines): for any `.bats` file using a bats ≥1.5.0 feature (initial pattern set: `run --separate-stderr`; extend as new triggers surface in self-host signal), require a `bats_require_minimum_version <version>` declaration earlier in the same file. Per design.md G21 Amendment block (L1936) and G26 §"What G26 delivers" item 2 (L2146).
+- Pins the G26 BW02-guard rule (parallel rule in the same lint file, separate `@test` blocks from the G21 rule): for any `.bats` file using a bats ≥1.5.0 feature (initial pattern set: `run --separate-stderr`; extend as new triggers surface in self-host signal), require a `bats_require_minimum_version <version>` declaration earlier in the same file. Per design.md G21 Amendment block (L1936) and G26 §"What G26 delivers" item 2 (L2146).
 - Diagnostic shape: emit a clear file:line message for any violation. For the BW02 rule, name both the file:line and the triggering feature.
 - Discovery shape: walk all `*.bats` files under `tests/` excluding the lint test itself. Parse `@test` blocks delimited by `^@test "..." \{` opening and matching `^\}` close at column 0. Per design.md G21 §"Implementation deliverables" item 2 (L1918-1920).
 - The R5-era pins already in `tests/unit/test-using-qrspi-vocab.bats` (lines 172-184, 202-214) serve as live positive controls — the lint MUST accept them. Per design.md G21 §"Test coverage" (L1925).
@@ -3001,7 +3006,7 @@ Dispatch state survives compaction because first-party and third-party launches 
     "dispatch_spec": {
       "subagent_type": "qrspi-plan-reviewer",
       "host": "copilot-cli",
-      "vendor": "anthropic",
+      "vendor": "claude",
       "model": "claude-sonnet-4.6",
       "prompt_file": "/abs/path/reviews/plan/round-01/.dispatch/quality-claude.prompt"
     }
@@ -3015,7 +3020,7 @@ Dispatch state survives compaction because first-party and third-party launches 
     "dispatch_spec": {
       "subagent_type": "qrspi-plan-reviewer",
       "host": "copilot-cli",
-      "vendor": "openai",
+      "vendor": "openai-codex",
       "model": "gpt-4.1"
     },
     "await_cmd": "scripts/dispatch-companion.sh await job-123",
@@ -3334,8 +3339,8 @@ Section-list contracts for new `skills/`, `_shared/`, and protocol files created
 | `skills/_shared/prompt-design-rules.md` | `## Prompt Design Rules` |
 | `skills/reviewer-protocol/first-party-emission.md` | `## First-Party Emission Contract`, `### Write-Tool Requirements`, `### Path Rules` |
 | `skills/reviewer-protocol/third-party-emission.md` | `## Third-Party Emission Contract`, `### Stdout Boundary`, `### Splitter Requirements` |
-| `skills/prompt-prose-writer/SKILL.md` | `## Overview`, `## Detection`, `## Rules Application`, `## Process` |
-| `skills/prompt-prose-reviewer/SKILL.md` | `## Overview`, `## Detection`, `## Rules Application`, `## Process` |
+| `skills/prompt-prose-writer/SKILL.md` | `# Prompt Prose Writer` (H1 only; body is two `!cat` includes — see per-file block) |
+| `skills/prompt-prose-reviewer/SKILL.md` | `# Prompt Prose Reviewer` (H1 only; body is two `!cat` includes — see per-file block) |
 
 ## Hook-Point Cross-Slice Index
 
