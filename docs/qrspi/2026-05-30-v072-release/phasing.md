@@ -141,37 +141,35 @@ touches because every layer is touched by the cross-cutting hardening set.
 
 **Acceptance gate (Phase 1 = v0.7.2 release gate):**
 
-1. **End-to-end pipeline exercise.** Run a fresh qrspi-plus v0.7.2 pipeline
-   against a small real project from Goals through Test. The run must complete
-   without the run-time issues this release is closing: no silent Codex
-   disk-write failures (G6); no silent model-routing fallbacks (G7/G22/G23);
-   no verifier fan-in chat-parsing (G12); no finding-categorization enum
-   silent fall-through (G13); no per-task review orchestration drift (G9).
+Phasing's job at this altitude is scope and release management — what's in this
+phase vs deferred, and what release-level criteria must hold for the phase to
+ship. Per-goal behavioral acceptance criteria belong in design.md (single
+source of truth for "what does this goal mean to be done"); architectural-level
+test plans belong in structure.md (single source of truth for "how do we test
+the resulting architecture"). Phasing does NOT restate either here.
 
-2. **Fail-loud trip-the-trap test.** Deliberately exercise each fail-loud path
-   added in this release (dispatch with missing dispatch-routing config,
-   dispatch with invalid finding categorization, reviewer with malformed
-   sidecar, etc.) and confirm each surfaces the documented failure menu
-   rather than silently degrading.
+1. **Behavioral correctness.** Every goal in this phase's slices (all 35, per
+   the "Slices in this phase" line above) meets its acceptance criteria as
+   defined in design.md, and the architectural-level test plan in structure.md
+   passes against the implementation.
 
-3. **Instrumentation completeness.** A review round in the end-to-end exercise
-   must produce both above-threshold and sub-threshold findings; confirm the
-   Sub-Threshold Observations block in dispositions fires correctly, the
-   interaction-mode audit artifact writes with the per-detection-type field
-   provenance documented in design.md I.7, and the verifier-fan-in produces
-   the expected aggregate.
+2. **GitHub-issue closure.** Every v0.7.2-scoped GitHub issue closes when its
+   backing commits land in this release. Two cohorts:
+   - **Goal-backing parent issues.** The upstream issues each of the 35 goals
+     traces to (Source: lines in goals.md). Closed by the implementation
+     commits that satisfy each goal's acceptance criteria.
+   - **Self-host-monitoring issues.** Plugin-friction issues filed during the
+     v0.7.2 self-host run itself (currently #280–#288, more expected as the
+     run progresses through Structure, Plan, Implement, and Test). Each either
+     closes by commits landing in v0.7.2 OR is explicitly deferred to v0.7.3+
+     with a one-line rationale in the release notes.
 
-4. **Build pipeline produces a clean release artifact.** The plugin build
-   pipeline (G32) executed at v0.7.2 HEAD produces an installable plugin
-   artifact with dev-only paths stripped and all inline-include directives
-   expanded. The artifact installs cleanly into a fresh installed-plugins
-   location and the canary smoke test passes.
+3. **Release artifact ships.** A release PR opens against `main` containing
+   the v0.7.2 commit set; CI is green; the canary smoke test passes against
+   the built plugin; the release notes name each goal-backing issue's
+   disposition.
 
-5. **Plugin-issue inbox closure.** All five GitHub issues filed during this
-   self-host run (#281, #282, #283, #284, #285) are closed by commits landing
-   in this release.
-
-6. **Replan gate (skipped — final phase):** Phase 1 IS the only phase, so no
+4. **Replan gate (skipped — final phase):** Phase 1 IS the only phase, so no
    between-phase Replan fires. Test phase routes directly to release-PR
    creation per the Test skill's final-phase behavior.
 
