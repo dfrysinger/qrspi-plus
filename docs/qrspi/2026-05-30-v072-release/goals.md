@@ -1007,6 +1007,62 @@ Candidates Design should weigh:
 
 Source: v0.7.2 self-host G14 walkthrough user directive. **Solution folded into G1's Dialogue Conduct section as new Rule 5** (Design-only per user scope; Goals mirror explicitly excludes it). See design.md G33 entry for the cross-reference and design.md G1 for the verbatim rule.
 
+### G34 — Align Design scope-reviewer with G1's detailed-solution boundary
+
+- **type:** `known-fix`
+
+#### Problem
+
+The Design scope-reviewer (`agents/qrspi-design-scope-reviewer.md` + the `skills/design/owns-defers.md` contract it reads at runtime) operates on a stricter notion of "Design altitude" than G1 establishes for the Design SKILL itself. G1 makes Design the home of *detailed descriptions of the solutions, with full edge cases, end-to-end flows, prompt-writing specifics, and acceptance criteria with concrete examples*. The scope reviewer's prompt and the locked owns-defers wording read that same content as "implementation detail that Plan should author," and fire findings against it. The two are now in contradiction inside one release.
+
+#### Why we care
+
+Every self-host operator (and every project author who reads G1's Dialogue Conduct + Altitude Sub-Rules as the authoritative vision for Design) fights identical false-positive scope findings every round. v0.7.2 self-host Design R1 produced this directly: 5 of 14 findings were scope-class flags on content the operator explicitly wanted kept (captured in `reviews/design/round-01-decisions.md` and `PI-HKP-005`), all overridden. The contradiction gets worse with G1's own deliverable #6 (*"Update the design scope-reviewer owns-defers to defer architecture, file maps, and test mechanics"*) which further tightens the existing DEFERS list without articulating the positive OWNS list G1's vision actually requires. Without G34, v0.7.2 ships a Design SKILL whose own scope reviewer contradicts its Dialogue Conduct prose — signal-to-noise in review rounds tanks, operators learn to ignore scope findings on principle, and the scope-reviewer's positive value (catching real architecture / file-map / Plan-task-carving leakage) dissolves.
+
+#### What we know so far
+
+- G1 (this release) establishes Design as the home of: detailed descriptions of the solutions, edge cases, end-to-end flows, prompt-writing specifics, acceptance criteria with concrete examples (including rough test-pairing shapes such as "one bats file per script under `scripts/`" — naming the shape is acceptance-criteria-altitude; authoring the actual test code is what defers to Plan/Implement), and zero or more per-solution diagrams per goal/CD block when they aid comprehension.
+- G1 establishes what Design avoids: code (function bodies, full unit-test bodies, executable shell beyond a few illustrative lines), file architecture (Structure's job), task carving (Plan's job), unified system-wide architecture diagrams stitching across goals/CDs (Structure's job per G1 #4 + G35), and the unified Test Strategy section stitching per-solution acceptance criteria across goals (Structure's job per G35).
+- v0.7.2 self-host Design R1 evidence: 5 user-overridden scope findings + PI-HKP-005 captured in the session DB; round-01-decisions.md records the disposition.
+- Solution candidates Design should weigh:
+  - **Candidate A** — Update both files (owns-defers + scope-reviewer agent body) with explicit OWNS allowances + explicit DEFERS list, restate the vocabulary verbatim in both, no shared snippet. Lowest-edit-count option that does not depend on G32. Drift risk = "edit one file and forget the other" — must be mitigated by a bats lint test comparing the two blocks for byte equality.
+  - **Candidate B** — Single shared snippet under `skills/_shared/design-altitude-boundary.md`, included into both consumers via `!cat skills/_shared/design-altitude-boundary.md`. G32's build pipeline expands the directive at build time so both files in the install artifact carry the verbatim content with no runtime resolution. Maintenance edits land in one source file; structural single-source-of-truth makes content drift impossible. Hard dependency on G32 (also in v0.7.2). Consistent with v0.7.2's other shared-snippet patterns (CD-2 evergreen-output-rule, multi-actor-flow-check, etc.).
+  - **Candidate C** — Update owns-defers only, leave the scope-reviewer agent body unchanged. Insufficient — R1 self-host showed both surfaces fire findings against the same content; one-side fix won't close the gap.
+- Scope of propagation in v0.7.2 is **Design-only** (operator decision). Other artifact scope reviewers (Goals / Plan / Phasing / Structure / Parallelize / Replan) may exhibit the same drift pattern against their own SKILL visions — that audit is a v0.7.3+ follow-up filed as PI-HKP-005's natural successor.
+- G34 does NOT change the `change_type: scope` semantics or the auto-apply-vs-pause behavior (scope findings still pause for user). The fix is to stop *firing* scope findings on content the SKILL vision blesses, not to change how scope findings are handled once fired.
+
+### G35 — Structure SKILL absorbs unified architecture + unified test architecture from Design
+
+- **type:** `known-fix`
+
+#### Problem
+
+G1 deliverables #3 and #4 migrate two authoring responsibilities OUT of Design: the top-level Test Strategy section (#3) and the System Flow architecture diagram (#4) are removed from the Design SKILL.md template. The migration's intent (per G1 #4 text) is that "the architecture diagramming role migrates to Structure." But nothing in v0.7.2 currently updates the Structure side to absorb the migrated responsibilities:
+- `skills/structure/SKILL.md` operates against the pre-migration scope — it produces file maps today but has no procedure for authoring a unified system architecture diagram and no procedure for authoring a unified test architecture (test architecture was previously Design's, so Structure SKILL has never had one).
+- `skills/structure/owns-defers.md` does not list unified architecture diagrams or unified test architecture as Structure OWNS.
+- `agents/qrspi-structure-reviewer.md` + `agents/qrspi-structure-scope-reviewer.md` would flag architecture diagrams and unified test-architecture content authored in structure.md as out-of-scope (the same drift pattern G34 closes for Design).
+
+Without G35, the release ships with Design knowing not to author those artifacts and Structure not knowing it now owns them. The migration's destination is empty.
+
+#### Why we care
+
+Two failure modes compound, exactly mirroring G34's failure modes on the Structure side:
+- **Authoring gap.** If Structure doesn't know it now owns unified architecture + unified test architecture, the release ships with NEITHER side authoring those artifacts. Downstream artifacts (Plan, Implement) lose the architectural overview and the stitched test plan that previously lived in design.md's top-level Component Map / Test Strategy sections.
+- **Reviewer false-positives.** When a self-host operator does author architecture / test architecture into structure.md under the new contract, Structure's scope-reviewer flags it as drift. Friction repeats every round, exactly as it did for Design pre-G34.
+
+This is the bookend to G34: G34 makes Design know what it no longer owns; G35 makes Structure know what it now does.
+
+#### What we know so far
+
+- v0.7.2 self-host evidence: the operator-orchestrator dialogue on 2026-06-01 surfaced the gap while reviewing G34. The R1-era top-level `## Component Map` and `## Test Strategy` sections in design.md (added by orchestrator during R1 fixes) had to be DELETED to align design.md with the new Design/Structure boundary — but the receiving end (Structure) was unprepared.
+- The carve-up is operator-locked in this same dialogue: Design = list of individual solutions (per-goal + per-CD), each with 0+ per-solution diagrams; Structure = unified architecture + file system + unified test architecture (stitches per-solution acceptance criteria from design.md); Plan = broken-down tasks with per-task unit-test criteria.
+- Solution candidates Design should weigh (G35's design block locks Candidate B; this list is preserved for traceability):
+  - **Candidate A** — Update both files (owns-defers + scope-reviewer agent body) with explicit OWNS allowances + DEFERS list verbatim, no shared snippet. Lowest-edit-count option; drift risk mitigated by a bats lint comparing the two blocks for byte equality.
+  - **Candidate B** — Single shared snippet under `skills/_shared/structure-altitude-boundary.md`, included into both consumers via `!cat skills/_shared/structure-altitude-boundary.md`. G32's build pipeline expands at build time; install artifact carries verbatim content in both files. Maintenance edits land in one source file; single-source-of-truth makes content drift impossible. Hard dependency on G32. Mirrors G34's locked choice exactly — symmetry between the two scope-reviewer fixes is itself an argument for B.
+  - **Candidate C** — Update Structure SKILL.md only, leave the scope-reviewer and owns-defers unchanged. Insufficient — the scope-reviewer would flag the new authoring as drift; same failure mode G34 mirrors.
+- Additional Structure-specific complexity beyond a pure G34 mirror: Structure SKILL.md gains a NEW authoring procedure for the unified test architecture (4-step procedure to enumerate per-solution acceptance criteria from design.md, group by test type, identify cross-cutting invariants, and author a `## Test Architecture` top-level section in structure.md). This is new behavior, not just scope-rename — Design used to do this; Structure has never done it. G35 commits the section name + 4-step skeleton + anchor phrases per G1 Sub-Rule B's deferred-prose protocol; full prose authored at Implement.
+- Hard dependencies: G1 deliverables #3 and #4 (migration source). G32 (`!cat` resolver). All three ship in v0.7.2.
+
 ## Cross-Cutting Notes
 
 - **Reviewer-pipeline correctness cluster (G6 / G7 / G8 / G9 / G10 / G11 / G12 / G13 / G14 / G19 / G20 / G28 / G29).** These goals all address the reliability of the reviewer→verifier→orchestrator pipeline: disk-write contract (G6/G11), field-schema enforcement (G8/G13), threshold-rule location and DRY (G7/G12), rubric calibration (G14/G19/G20), orchestration drift (G9), authority-fabrication (G10), apply-fix protocol cluster carve-out (G28), and large-artifact dispatch ingress (G29). G11 and G12 form a tightly coupled pair (contract then consumer); G7, G12, G13, and G28 share a "one place for the canonical filter rule" resolution path; G14 and G19 share a verifier-rubric expansion path also relevant to G10. G6 and G29 share the same dispatch-contract surface (`skills/reviewer-protocol/SKILL.md`) and are likely co-scheduled.
@@ -1018,3 +1074,5 @@ Source: v0.7.2 self-host G14 walkthrough user directive. **Solution folded into 
 - **Plan-phase under-scoping cluster (G15 / G18).** Both goals describe Plan-phase failure to enumerate downstream surfaces: sweep tasks failing to list dependent tests (G15) and cross-task consumer surfaces left off task specs (G18, with 10 documented instances). They share a root cause (no enumeration step in plan/SKILL.md) and at least one candidate solution (a grep-audit probe for downstream references) — Design should evaluate them together.
 
 - **Prompt-prose architecture cluster (G31 / G32).** G31 introduces wrapper SKILLs + shared snippet files for prompt-prose review coverage; G32 introduces the build pipeline that expands `!cat` includes so G31's composition (and 7 existing v0.7.1 OWNS/DEFERS sites) ship to every host. G32 is a hard dependency of G31 — G31 cannot reach Implement until G32 lands. The cluster also unblocks future shared-snippet work (CD-1 / CD-2 / CD-3 / CD-4 prescribed snippets). Phasing should weigh whether G32 lands in an earlier phase than G31 or both ship together.
+
+- **Design↔Structure boundary migration cluster (G1 #3 + #4 → G34 + G35).** G1 deliverables #3 (remove Design SKILL's top-level Test Strategy section) and #4 (remove Design SKILL's System Flow section; architecture diagramming migrates to Structure) move authoring responsibilities OUT of Design. G34 makes Design know it (aligns Design scope-reviewer's OWNS/DEFERS contract with G1's reduced scope so the reviewer stops flagging the absence of those sections as drift on the Design side). G35 makes Structure know it (adds the migrated responsibilities to Structure's OWNS, adds a new authoring procedure to Structure SKILL.md for the unified test architecture which is new Structure behavior). G34 and G35 share Candidate B mechanism (`!cat`-included `_shared/` snippet, G32-expanded). Hard dependency chain: G32 → {G34, G35}; G1 #3/#4 → G35. Plan should schedule G1's deliverables #3/#4 + G34 + G35 in the same wave (or G35 strictly after G1 #3/#4) so the migration source and destination land together — otherwise the release ships with neither side authoring the migrated artifacts.
