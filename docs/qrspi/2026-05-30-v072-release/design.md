@@ -1961,6 +1961,45 @@ This formalizes what `test/SKILL.md:92` already does informally (the Test phase 
 
 ---
 
+## G24 — R4 simplify-claude advisories: re-scoped to F05 after tree audit (F01/F03/F04 moot; F02 defers to G25)
+
+**Type:** known-fix. **Source:** goals.md G24 / #241 (the 5-finding R4 simplify-claude bundle). **Cross-link:** rides on G21 (`$body`-presence guard for bats negation assertions — F05's rewrite must satisfy it) and explicitly defers F02 to G25 (top-level invariant subsumes per-H4 mirroring).
+
+**Plain-language problem.** R4 simplify-claude in v0.7.1 deep mode produced 5 advisory simplification findings (F01–F05) covering test-helper duplication, anti-pattern pin fragility, and prose redundancy. The bundle was deferred to v0.7.2. Re-auditing each finding against the current `qrspi-plus-v0.7.2` tree (commit baseline at `e453f91` "v0.7.1 hardening: close G7b/#204 silent-fallback class + per-host model_routing") shows four of the five no longer match the tree: F01's target test files (`tests/acceptance/v07-phase1/test-t10-*.bats`) and its helper (`_assert_host_block_has_routing`) do not exist (v0.7.1 hardening restructured that surface), F03's cross-file duplication does not exist (the `_extract_h4` helper lives in one file only — `tests/unit/test-config-model-routing.bats`), F04's `(haiku|sonnet|opus|inherit)` tier regex is no longer present in tests at any volume worth consolidating, and F02 explicitly defers to G25 by the goal text itself. F05 is the only finding that survives the audit: four bats assertions in `tests/unit/test-using-qrspi-vocab.bats` (L132, L157, L183, L213) pin a contract via the literal substring `"silently fall back to the agent-bundled default"` — and that contract's prose is being edited four times this release (CD-1, G22, G23, G25), making the literal-substring pin fragile by construction.
+
+**Why we care.** The F05 pin's whole purpose is to fail loudly when prose drift reintroduces a silent-fallback. A literal-string pin against a sentence that is actively being edited is brittle: any future re-phrasing ("silently degrades to the agent default", "silently substitutes the bundled model", etc.) passes the pin without catching the regression — the exact silent-miss class the pin exists to prevent (same family as G7b / #204). G24's value is small per finding but disproportionate per ergonomic risk: leaving a known-fragile guard on a known-evolving contract is the worst combination.
+
+**What G24 delivers (post-audit re-scope to F05 only).**
+
+1. **Replace 4 literal-substring pins** at `tests/unit/test-using-qrspi-vocab.bats` L132, L157, L183, L213 with a regex pin matching the contract's **intent** rather than its literal phrasing. Recommended regex: matches the sequence `silent…` + `(fall…back|degrad|default)` in some form, so future re-phrasings still trip the assertion when the silent-fallback semantic is what changed. Exact regex authoring is plan-time territory; the design constraint is "match intent, not literal."
+
+2. **Wrap the regex assertion in a `$body`-presence guard per G21** (already locked). G21 retrofit unguarded `$body` negation assertions to fail-loud when the body is missing or empty; F05's rewrite must inherit that guard pattern. A bare `[[ ! "$body" =~ regex ]]` is a G21 regression (passes silently when `$body` is empty); the rewrite must read `$body` after the G21 presence check.
+
+3. **Close #241** with a re-scope note: "5 advisories → 1 after tree audit. F01/F03/F04 moot (restructured away by v0.7.1 hardening or never materialized at the volume claimed); F02 deferred to G25 (top-level invariant subsumes per-H4 mirroring); F05 landed."
+
+**What G24 does NOT cover.**
+- **F01** (`_assert_host_block_has_routing` parameterization) — moot. Helper and target test files do not exist in current tree. Documented as "moot-after-v0.7.1-hardening" in the #241 close note; no implementation work.
+- **F03** (`_extract_h4` consolidation into `test_helpers/extract.bash`) — moot as cross-file duplication. The helper exists in exactly one file. If CD-1's schema rewrite ends up duplicating it into a second file at implementation time, that's CD-1 implementer territory, not standalone G24 work.
+- **F04** (`TIER_REGEX` constant) — moot. The `(haiku|sonnet|opus|inherit)` regex is no longer present in tests at any volume worth consolidating. CD-1 lands the new 5-tier vocabulary (`extra-low|low|medium|high|inherit` per the CD-1 amendment); if CD-1's bats tests for the new vocabulary end up duplicating a regex 3+ times, that's CD-1 implementer territory, not standalone G24 work.
+- **F02** (per-H4 fail-loud contract consolidation at L470/L488/L501/L526) — defers to G25 by the goal text itself. If G25 lands a top-level invariant that subsumes the per-H4 paragraphs, F02 falls out as a side effect of G25's implementation. If G25 ships without that consolidation, F02 returns as a v0.7.3 candidate.
+- Any consolidation of the regex pin pattern into a shared bats helper — explicit non-goal for v0.7.2 (only 4 pin sites, all in one file; helper extraction is over-engineering at this volume).
+
+**Acceptance criteria.**
+- The 4 literal-substring pins at `tests/unit/test-using-qrspi-vocab.bats` L132/L157/L183/L213 are replaced with regex assertions matching the silent-fallback semantic (not the literal phrasing).
+- Each replaced assertion is wrapped in a G21 `$body`-presence guard (the test fails loudly when `$body` is missing or empty, not silently passes).
+- The bats suite passes against the post-CD-1, post-G22, post-G23, post-G25 (if applicable) prose — i.e., the rewritten pins survive the four cross-cutting prose edits landing in this release.
+- A negative-test acceptance: a deliberately-phrased silent-fallback sentence ("silently substitutes the bundled default", "silently degrades to the agent default") **trips** the regex pin, demonstrating the intent-match is genuinely broader than the literal-match it replaces. (Plan-time decides whether to author this as a real test case or as a one-line comment justifying the regex.)
+- Net diff in `tests/unit/test-using-qrspi-vocab.bats` ≤ 20 lines (4 assertion sites × ~3-5 lines each including the G21 guard wrapper). No new shared helper file. No new bats utility.
+- Implementation ordering: G24 lands AFTER G21 (`$body`-presence guard pattern is the dependency) and AFTER G22 / G23 / G25 prose edits settle (the rewritten pins need to match the final post-edit phrasing of the contract they guard, not a mid-flight version).
+
+**Pre-existing plugin issues to file.** None new. The audit-vs-tree mismatch (4 of 5 findings moot) is itself a signal worth noting in the post-mortem of v0.7.1's R4 simplify-claude run: deferred advisory bundles should be re-audited against the tree before being walked at design time in the next release, because intervening hardening commits can moot premises silently. Whether this rises to a plugin issue depends on whether the pattern recurs across releases — flagged as an observation for v0.7.3 retro, not an open issue.
+
+**Open Questions for v0.7.3+.** (a) If G25 ships without the top-level invariant consolidation, does F02 return as a standalone v0.7.3 goal, or does it stay deferred indefinitely? (b) Should the "deferred advisory bundle re-audit" become a standing pre-design step in the next release's Goals phase (a one-liner check: "for each carried-forward advisory, does the target surface still exist in the tree at the claimed volume?"), or is once-per-release ad-hoc auditing sufficient? (c) If the silent-fallback contract gets re-phrased again in v0.7.3+ in a way the regex doesn't anticipate (e.g., a totally new phrasing pattern), what's the escalation path — broaden the regex, or formalize the contract into a named string constant the prose and the test both reference?
+
+**References.** Source: goals.md G24 / #241 (5-finding R4 simplify-claude bundle); G21 (this file — `$body`-presence guard pattern F05's rewrite must inherit); G25 (this file — F02 defers to G25's top-level invariant decision; if G25 walks before G24, the F02 deferral becomes concrete or releases F02 back as a v0.7.3 candidate); CD-1 (this file, top — provides the new 5-tier vocabulary whose bats tests F04 would have consolidated; CD-1 implementer territory if duplication emerges); G22 (this file — schema-doc rewrite that touches L470/L488/L501/L526 paragraphs F02 / F05 anchor against); G23 (this file — validation-table row + bidirectional cross-links that also touch the L470/L526 paragraphs); related G7b / #204 (silent-fallback class F05's pin exists to guard); v0.7.1 hardening commit `e453f91` (the structural change that mooted F01); `tests/unit/test-using-qrspi-vocab.bats` L132, L157, L183, L213 (sole edit target — the 4 pin sites); `tests/unit/test-config-model-routing.bats` (current home of the `_extract_h4` helper F03 referenced — single-file usage, no cross-file duplication); closes #241 on ship with re-scope note.
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
