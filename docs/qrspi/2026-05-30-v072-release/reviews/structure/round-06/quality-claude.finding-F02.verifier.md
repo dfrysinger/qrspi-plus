@@ -1,0 +1,2 @@
+score: 68
+reason: CD-2 acceptance criterion #4 in design.md explicitly requires a reviewer-side enforcement surface, and structure.md's File Map carries no reviewer-agent row (Slice 1.5 or anywhere else) tagged with CD-2 covering antagonist-pattern surfacing — the only CD-2 reviewer-protocol touchpoints are the rule snippet itself; design.md's "sizing TBD in Plan" softens but does not eliminate the gap because the file-map is still where Structure must name the touched surface(s).
