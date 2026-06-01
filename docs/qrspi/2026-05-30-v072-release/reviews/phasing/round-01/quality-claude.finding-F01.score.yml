@@ -1,0 +1,2 @@
+score: 70
+reason: Verified — goals.md Cross-Cutting Notes explicitly clusters G25 with the dispatch-routing cluster (G22/G23/G24-F02/G24-F04/G25/G27) and G25's body says "Phasing should evaluate whether the cluster benefits from being scheduled together"; slice 1.4 already groups 5 of 6 dispatch-cluster members while slice 1.3's "per-task review orchestration" surface description has no overlap with G25's fail-loud-invariant subject, so the placement contradicts the upstream clustering input Phasing was told to evaluate.

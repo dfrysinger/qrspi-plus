@@ -1,0 +1,5 @@
+# scope-set for round 01
+# generated_by: qrspi-scope-tagger
+# step: phasing
+# total_findings_kept: 2
+## Slices

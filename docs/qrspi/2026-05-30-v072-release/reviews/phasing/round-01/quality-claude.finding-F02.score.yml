@@ -1,0 +1,2 @@
+score: 72
+reason: Verified — goals.md Cross-Cutting Notes explicitly clusters G24-F02/F04 with the dispatch-routing cluster (slice 1.4 surface) and G24-F05 with the test-gate hardening cluster (slice 1.7 surface); phasing.md placing G24 wholesale in slice 1.3 ("per-task review pipeline corrections," which maps to zero G24 sub-findings) contradicts that explicit guidance and would mis-shape Plan's task carving.
