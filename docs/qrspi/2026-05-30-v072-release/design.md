@@ -27,23 +27,32 @@ manifest persistence. Skill prose names only the agent; the script chain handles
 **Solution components:**
 
 1. **Agent-owned tier (with override).** Every agent frontmatter declares `tier:` ∈
-   `{low, medium, high, extra-high}`. Call sites can pass `--tier-override` (used by
+   `{extra-low, low, medium, high, extra-high}`. Call sites can pass `--tier-override` (used by
    plan→implementer for per-task complexity variance). Override precedence (top wins):
    1. `--tier-override` flag at dispatch site
    2. Agent's `tier:` frontmatter
    3. `default_tier:` in config.md (for agents missing `tier:` during migration)
    4. Hard-coded fallback `medium` with loud warning
 
+   The initial agent-by-agent tier-assignment rubric (which of the 41 agents declare which
+   tier as a default) is the deliverable of G22; the table below covers schema/dispatch only.
+
 2. **Config-owned vendor+model mapping.** `config.md` carries:
    ```yaml
    model_routing:
+     extra-low:  none                                              # operator opts in
      low:        { vendor: claude, model: claude-haiku-4.5 }
      medium:     { vendor: claude, model: claude-sonnet-4.6 }
      high:       { vendor: claude, model: claude-opus-4.7 }
      extra-high: { vendor: claude, model: claude-opus-4.7-high }
    ```
-   Goals skill onboarding asks 4 questions to populate this (one per tier) with vendor-neutral
-   defaults. `none` is a valid answer per tier.
+   Goals skill onboarding asks 5 questions to populate this (one per tier) with vendor-neutral
+   defaults. `none` is a valid answer per tier — an agent dispatch that resolves to a `none` tier
+   halts with a loud diagnostic (no silent fallback to a neighboring tier), so operators who
+   leave `extra-low` and `extra-high` at `none` see immediate, observable failure if a
+   `--tier-override` accidentally targets an unconfigured tier. The `extra-low` and
+   `extra-high` rows are operator-only surfaces — no agent declares them as defaults in the
+   G22 initial rubric.
 
 3. **`scripts/dispatch-agent.sh` — universal entry point.** Skill prose calls (batched form — N reviewers per round resolved in one invocation):
    ```sh
@@ -1837,6 +1846,73 @@ Composition rationale: the verifier already lazy-Reads cited upstream files (cur
 - **G21 ↔ #244 (deferred investigation).** The lint gate closes the v0.7.2 risk surface regardless of bats-core behavior. If v0.7.3 confirms a bats upstream fix or a version pin bump removes the short-circuit quirk, the lint gate becomes redundant insurance — keep it anyway; the cost is one fast bats test and the alternative is re-introducing the same gun if bats regresses.
 
 **References.** Source: goals.md G21 / #238 (surface) + #244 (root cause — deferred); `tests/unit/test-using-qrspi-vocab.bats` (sole retrofit surface; lines 121-133 R2-era model_routing pins, lines 145-158 R4-era trusted_path pins, lines 172-184 + 202-214 R5-era reference pattern); related v0.7.3 follow-up: #244 (bats-upstream investigation) re-milestoned at design-lock time.
+
+---
+
+## G22 — Initial tier-assignment rubric + doc cleanup for the unified `model_routing:` schema
+
+**Type:** exploratory. **Source:** goals.md G22 / #239. **Cross-link:** absorbs and supersedes #239 (dead-schema scaffolding); rides on CD-1 (universal dispatch architecture) which locks the schema and dispatch chain — G22 covers only the residual rubric and doc-cleanup work CD-1 leaves on the floor.
+
+**Plain-language problem.** The `model_routing:` block in `config.md` was documented two contradictory ways before this release (tier-keyed-per-host in `using-qrspi/SKILL.md:448-470`; role-keyed in `implement/SKILL.md:537,548-560`). CD-1 already resolves the schema-drift by replacing both with one vendor-neutral, tier-keyed schema (`{extra-low, low, medium, high, extra-high}`) and a universal dispatch script. What CD-1 does NOT supply: (a) the initial agent-by-agent tier-assignment rubric (which of the 41 agents declare which tier as a default), (b) the matching deletion of the now-superseded schema docs in `using-qrspi` and `implement`, (c) the migration of plan-time per-task `model:` field → `tier:`, (d) the removal of ~40 hardcoded `model: "sonnet"` lines from skill-prose dispatch sites. G22 owns all four.
+
+**Why this matters.** Without an initial rubric, every agent ships with no `tier:` default and every dispatch falls through CD-1's precedence chain to `default_tier: medium`. That works but loses cost-vs-quality variation: the 5 currently cheap-eligible agents (per the v0.7.1 G5 matrix + finding-verifier + scope-tagger callouts) would silently consume sonnet across hundreds of dispatches per pipeline run. Without doc-cleanup, the contradictory old schema docs continue to be the first thing operators read, defeating CD-1's purpose. Without per-task migration, plan-emitted `model:` fields keep landing in a field name the new universal dispatcher doesn't read.
+
+**Outcome.** Three deliverables ship together at Implement time:
+
+**Deliverable 1 — Initial tier-assignment rubric (41 agents).** Each agent's frontmatter gains a `tier:` field. The assignments mirror the explicit signals already present in v0.7.1 prose (G5 matrix, finding-verifier "Haiku" callout, scope-tagger "Haiku" callout, the ~40 hardcoded `model: "sonnet"` dispatch sites that establish today's baseline):
+
+| Tier         | Count default | Agents (alphabetical within tier)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|--------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `extra-low`  | 0             | (operator-only surface; `--tier-override extra-low`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `low`        | 5             | `qrspi-finding-verifier`, `qrspi-implementer-lightweight`, `qrspi-research-collator`, `qrspi-research-specialist`, `qrspi-scope-tagger`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `medium`     | 36            | `qrspi-code-quality-reviewer`, `qrspi-code-simplifier`, `qrspi-design-reviewer`, `qrspi-design-scope-reviewer`, `qrspi-goal-traceability-reviewer`, `qrspi-goals-reviewer`, `qrspi-goals-scope-reviewer`, `qrspi-implement-gate-reviewer`, `qrspi-implementer`, `qrspi-integration-reviewer`, `qrspi-parallelize-reviewer`, `qrspi-parallelize-scope-reviewer`, `qrspi-phasing-reviewer`, `qrspi-phasing-scope-reviewer`, `qrspi-plan-goal-traceability-reviewer`, `qrspi-plan-reviewer`, `qrspi-plan-scope-reviewer`, `qrspi-plan-security-reviewer`, `qrspi-plan-silent-failure-hunter`, `qrspi-plan-spec-reviewer`, `qrspi-plan-test-coverage-reviewer`, `qrspi-questions-reviewer`, `qrspi-replan-analyzer`, `qrspi-replan-reviewer`, `qrspi-replan-scope-reviewer`, `qrspi-research-reviewer`, `qrspi-security-integration-reviewer`, `qrspi-security-reviewer`, `qrspi-silent-failure-hunter`, `qrspi-spec-reviewer`, `qrspi-structure-reviewer`, `qrspi-structure-scope-reviewer`, `qrspi-test-coverage-reviewer`, `qrspi-test-writer`, `qrspi-type-design-analyzer`, `qrspi-visual-fidelity-reviewer` |
+| `high`       | 0             | (invoked via `--tier-override` from Plan-time heuristic on `qrspi-implementer` AND `qrspi-test-writer` together — see Deliverable 2)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `extra-high` | 0             | (operator-only surface; `--tier-override extra-high`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+
+`default_tier:` in `config.md` = `medium` (the migration fallback for any agent shipped without `tier:`; matches today's sonnet baseline).
+
+**Operator surfaces** (`extra-low`, `extra-high`) carry NO default consumers by design. Operators who want sub-haiku cheapness wire a third-party vendor entry into `model_routing.extra-low:` (vendor-neutral — Kimi K2, DeepSeek V3, or anything else) and either (a) invoke `--tier-override extra-low` on specific tasks/agents, or (b) edit specific agent frontmatter to declare `tier: extra-low`. Same shape for `extra-high`. CD-1's halt-on-`none` rule (no silent fallback to a neighboring tier) means a `--tier-override extra-low` against an unconfigured `extra-low: none` row halts loudly — operators see immediate failure if they target an unconfigured tier.
+
+**Deliverable 2 — Test-writer / implementer per-task co-escalation.** When Plan's Step 2 heuristic emits `tier: high` for a `code` task (target files >3 OR core-surface OR fix-retry OR sizing-exception), BOTH the per-task implementer dispatch AND the per-task TDD test-writer dispatch run at `tier: high`. Plan emits ONE `tier:` field per `tasks/task-NN.md` (not separate `implementer_tier:` / `test_writer_tier:` fields); the dispatcher applies the same `--tier-override` to both dispatches for that task. Rationale: a test pins the contract the implementer must satisfy — if the task warrants a stronger implementer model, the test that pins its contract warrants the same strength. Mismatched tiers (medium test-writer pinning the contract for a high implementer's work) would systematically under-specify acceptance criteria for the most demanding tasks.
+
+This formalizes what `test/SKILL.md:92` already does informally (the Test phase reads `test_writer_model` from `plan.md` frontmatter): the new version reads per-task `tier:` directly from `tasks/task-NN.md` in Implement phase. Test phase's per-plan acceptance-test dispatch (no per-task context) keeps the test-writer's agent default `tier: medium` as the fallback. `task_type: lightweight` tasks emit no test-writer dispatch (existing non-TDD behavior of `qrspi-implementer-lightweight`) and so are unaffected.
+
+**Deliverable 3 — Doc-cleanup sweep + per-task field migration.** Specific edit surface:
+
+- **`skills/using-qrspi/SKILL.md` L448-470** — DELETE the old tier-keyed-per-host `model_routing:` schema (haiku/sonnet/opus/inherit per claude-code / copilot-cli). REPLACE with documentation of CD-1's vendor-neutral 5-tier schema, the resolution chain, and a pointer to G22's initial rubric.
+- **`skills/using-qrspi/SKILL.md` L472-488** — `trusted_path:` block: KEEP the short-circuit mechanism but rewrite to reference agent `tier:` (and agent file paths) instead of `model_role:` (which is being deleted in Deliverable 1's agent-frontmatter migration).
+- **`skills/using-qrspi/SKILL.md` L503-512** — Precedence chain: REPLACE with CD-1's chain (`--tier-override` → agent `tier:` → `default_tier:` → hardcoded medium).
+- **`skills/implement/SKILL.md` L525-560** — DELETE the old four-layer chain + role-keyed G5 matrix. REPLACE with: (a) a pointer to CD-1's universal dispatch architecture, (b) a pointer to G22's initial tier-assignment rubric (the table above), (c) the test-writer / implementer co-escalation rule from Deliverable 2.
+- **`skills/plan/SKILL.md` L150-174 (Step 2 heuristic)** — Rename `model:` → `tier:` in plan-time per-task field emission. Remap values: `lightweight → tier: low`, `code default → tier: medium`, `code + escalation → tier: high`. Update the operator-override prose accordingly.
+- **`skills/test/SKILL.md` L92** — Rename `test_writer_model` reference to read per-task `tier:` from `tasks/task-NN.md` (in Implement phase per-task dispatch) and to fall back to the test-writer agent's frontmatter `tier: medium` default (in Test phase per-plan dispatch).
+- **All 41 agent files** (`agents/qrspi-*.md`) — Add `tier:` field to frontmatter per the rubric table. The 4 currently declaring `model_role:` (`qrspi-research-collator`, `qrspi-research-specialist`, `qrspi-implementer-lightweight`, `qrspi-test-writer`) get `model_role:` DELETED — the field is deprecated; tier carries the routing signal.
+- **~40 skill-prose dispatch lines** across `skills/{goals,questions,research,design,phasing,structure,plan,parallelize,replan,integrate,implement,test}/SKILL.md` — REMOVE the hardcoded `, model: "sonnet"` argument from `Agent({ subagent_type: "qrspi-X", model: "sonnet" })` invocations. After CD-1's universal-dispatch refactor lands (CD-1 component #11 — shared `reviewer-dispatch-prose.md`), skill prose names only the agent; the dispatcher reads `tier:` and resolves the model. This per-line cleanup belongs to G22 because it is the per-site consequence of the schema migration, not part of CD-1's architecture-authoring scope.
+
+**What G22 does NOT cover.** Auto-escalation of fix-retry-2/3 to `extra-high` (a sensible future use of the operator-only surface, but adds new escalation logic — defer to v0.7.3). Per-reviewer tier escalation in deep-mode review fan-out (e.g., promoting security-integration-reviewer to high — no current signal supports it; revisit if v0.7.2 self-host data shows medium-tier under-flagging). A telemetry surface that reports realized tier distribution per run (would inform whether the medium-default for 36 agents is the right baseline — natural pairing with G20's `actual_model:` audit field but out of G22's scope).
+
+**Acceptance criteria (Plan-/Implement-authored).**
+
+- Every one of the 41 agent files carries a `tier:` field with a value from `{extra-low, low, medium, high, extra-high}`; the assignments match the rubric table above (5 `low`, 36 `medium`, 0 declaring `extra-low` / `high` / `extra-high` by default).
+- The 4 currently `model_role:`-declaring agents have `model_role:` removed.
+- `skills/using-qrspi/SKILL.md` no longer documents the old tier-keyed-per-host schema (lines 448-470 region replaced).
+- `skills/implement/SKILL.md` no longer documents the role-keyed G5 matrix (lines 525-560 region replaced).
+- `skills/plan/SKILL.md` Step 2 heuristic emits `tier:` not `model:` in per-task frontmatter; the value mapping (lightweight→low, code-default→medium, code-escalated→high) matches Deliverable 2.
+- `skills/test/SKILL.md` per-task TDD test-writer dispatch reads `tier:` from `tasks/task-NN.md`; per-plan acceptance-test dispatch falls back to the test-writer agent's `tier: medium` default.
+- Grep across `skills/*/SKILL.md` for the literal `model: "sonnet"` argument inside `Agent({` invocations returns zero hits.
+- `config.md` example block in CD-1 documentation contains the 5-tier `model_routing:` (with `extra-low: none` as the default).
+- A test-writer dispatch and the implementer dispatch for the SAME task resolve to the same `(vendor, model)` pair under CD-1's resolution chain (co-escalation invariant).
+
+**Cross-links.**
+- **G22 ↔ CD-1.** CD-1 authors the schema, the dispatch chain, and the universal entry point. G22 authors the initial per-agent tier assignments, the doc-cleanup sweep that deletes the superseded old schemas, the plan-time field migration (`model:` → `tier:`), and the skill-prose dispatch-line cleanup. The tier enum amendment (5 tiers including `extra-low`) and the co-escalation rule's existence are committed in CD-1; the rubric values and the per-site edits live here.
+- **G22 ↔ G20.** G20's `actual_model:` audit field records whatever value the routing chain ultimately resolves — it absorbs G22's tier semantics without further change. The two goals are complementary: G22 chooses the source rubric; G20 records what the source produced at dispatch time.
+- **G22 ↔ G18.** G18's plan-phase under-scoping prevention would have caught the schema-drift cluster at plan-review time (canonical schema in two skills, consumers in many others). G22 is the specific code fix for the instance that already shipped; G18 prevents recurrence. G18 design (L1626) explicitly notes G22 stays as its own goal — G18 does not subsume it.
+- **G22 ↔ #239.** #239 (dead-schema scaffolding: haiku/sonnet/opus tier rows post-T9) is absorbed by CD-1's replacement schema (the tier-keyed-per-host rows disappear entirely; the new 5-tier vendor-neutral schema takes their place). #239 closes when G22 ships; no separate v0.7.2 work item.
+
+**Pre-existing plugin issues to file.** None new. G22's residual surface after CD-1 is fully covered by this design block; the doc-cleanup edit surface enumerated in Deliverable 3 is the complete v0.7.2 work item.
+
+**Open Questions for v0.7.3+.** (a) Does v0.7.2 self-host signal show any of the 36 medium-default agents systematically over- or under-performing at sonnet, warranting tier reassignment? (b) Does the `extra-low` operator surface see real use, or remain dead scaffolding (which would warrant deprecation in v0.7.4)? (c) Should fix-retry-2/3 auto-escalate to `extra-high` (the natural future consumer of the operator-only surface)? (d) Does the test-writer / implementer co-escalation produce observable acceptance-criteria quality difference vs. mismatched tiers (informs whether the co-escalation rule should generalize to other paired dispatches)?
+
+**References.** Source: goals.md G22 / #239; CD-1 (this file, top — universal dispatch architecture); `skills/using-qrspi/SKILL.md` L448-470 (old tier-keyed-per-host schema — sole replacement target), L472-488 (trusted_path — update target), L503-512 (precedence chain — replacement target), L661 (finding-verifier "Haiku" callout — input signal), scope_tagger_enabled prose (scope-tagger "Haiku" callout — input signal); `skills/implement/SKILL.md` L525-560 (old four-layer chain + role-keyed G5 matrix — sole replacement target); `skills/plan/SKILL.md` L150-174 (Step 2 heuristic — migration target); `skills/test/SKILL.md` L92 (`test_writer_model` indirection — migration target); `agents/qrspi-*.md` (all 41 — tier-field migration target); `agents/qrspi-{research-collator,research-specialist,implementer-lightweight,test-writer}.md` (4 with `model_role:` to delete); related CD-1 (architecture authority); related G20 / #237 (`actual_model:` audit field — orthogonal observability); related G18 / #235 (plan-phase under-scoping — prevention pattern); absorbs #239 (closes on G22 ship).
 
 ---
 
