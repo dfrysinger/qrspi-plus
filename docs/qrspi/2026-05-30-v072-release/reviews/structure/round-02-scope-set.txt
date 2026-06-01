@@ -1,0 +1,6 @@
+# scope-set for round 02
+# generated_by: qrspi-scope-tagger
+# total_findings_kept: 6
+## Interfaces
+## Architectural Diagram
+## Hook-Point Locations

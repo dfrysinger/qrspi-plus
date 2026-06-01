@@ -1,0 +1,2 @@
+score: 85
+reason: Verified — structure.md §1 line 175 says "newline-separated finding IDs" but CD-4 component D locks "one absolute finding-file path per line", and §11's audit example uses `reason` (vs CD-4's `cause`) and omits the `thresholds` echo locked in component E; both are real structural contract drifts.

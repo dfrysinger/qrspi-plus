@@ -1,0 +1,2 @@
+score: 75
+reason: Confirmed — line 488 of structure.md has a stray `VF --> PR` edge outside all subgraphs, and design.md CD-4 §I.7 shows fan-in flows to kept-findings.txt/orchestrator (not round-prepare.sh), so the edge has no design basis and misrepresents data flow.

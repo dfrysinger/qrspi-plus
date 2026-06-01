@@ -1,0 +1,2 @@
+score: 75
+reason: Verified — structure.md Interface §11 JSON omits the `thresholds` field that design.md CD-4 §E locks and step 4 explicitly mandates ("counts + threshold echo + halts: []"), and adds `round_dir`/`failed` fields not present in the locked shape; this is a real schema divergence on a design-locked contract that Plan implementers will reference.

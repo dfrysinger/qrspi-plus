@@ -172,8 +172,8 @@ The apply-fix boundary is a single script contract so round assembly no longer d
 # Usage: verifier-fan-in.sh <round-dir> [--strict]
 # Exit 0: wrote <round-dir>/kept-findings.txt
 # Exit 1: contract violation (missing sidecars, out-of-enum change_type)
-# Output: <round-dir>/kept-findings.txt (newline-separated finding IDs)
-#         <round-dir>/.verifier-fan-in-audit.json (scored/failed/dropped/kept counts)
+# Output: <round-dir>/kept-findings.txt (one absolute finding-file path per line)
+#         <round-dir>/.verifier-fan-in-audit.json (scored/dropped/kept counts + threshold echo)
 ```
 
 ### 2. Canonical cumulative diff helper
@@ -340,17 +340,16 @@ Fan-in emits machine-readable counts because apply-fix needs a stable summary ev
 
 ```json
 {
-  "round_dir": "reviews/plan/round-01",
   "scored": 6,
-  "failed": 1,
-  "dropped": 2,
   "kept": 4,
+  "dropped": 2,
   "halts": [
     {
       "finding_id": "R1-F03",
-      "reason": "missing sidecar"
+      "cause": "missing sidecar"
     }
-  ]
+  ],
+  "thresholds": { "style": 80, "clarity": 80, "correctness": 70 }
 }
 ```
 
@@ -385,9 +384,61 @@ The orchestrator consults this script once per round-start; detection logic stay
 
 Override chain (consulted for `user-override-only` hosts and as fallback when the primary signal is absent): (1) `QRSPI_INTERACTION_MODE=auto|interactive` env var; (2) safe-default `interactive`.
 
-Locked platform directory (verified at design time as of 2026-05-31): Copilot CLI (`COPILOT_CLI=1`) returns `llm-context`; Claude Code (no `COPILOT_CLI`, system-reminder framing present) returns `llm-context`; unknown host returns `user-override-only`. See design.md CD-4 §I.7 for full platform table.
+Locked platform directory (verified at design time as of 2026-05-31): Copilot CLI returns `DETECTION_TYPE=llm-context`; Claude Code returns `DETECTION_TYPE=llm-context`; unknown host returns `DETECTION_TYPE=user-override-only`. See design.md CD-4 §I.7 for full platform table.
 
-Audit file: after each detection cycle, the orchestrator (exclusive writer) writes `<round-dir>/.interaction-mode-audit.json` with shape `{platform, detection_type, verdict, evidence}`. For `shell-verdict` and `user-override-only` the orchestrator copies fields directly from script stdout; for `llm-context` the orchestrator derives verdict and evidence from its own context inspection. Separate file from `.verifier-fan-in-audit.json` (different writer, different timing — round-start vs round-end).
+Audit file: `<round-dir>/.interaction-mode-audit.json` with shape `{platform, detection_type, verdict, evidence}`. Separate from `.verifier-fan-in-audit.json` (different writer, different timing).
+
+### 14. Dispatch companion script
+
+Vendor-specific third-party job launcher invoked by `dispatch-agent.sh` on the third-party path; also provides the `await` subcommand recorded in the dispatch manifest's `await_cmd` field.
+
+```bash
+# scripts/dispatch-companion.sh
+# Usage (launch): dispatch-companion.sh --vendor <vendor> --model <model-id> \
+#                   --prompt-file <abs-path> --round-dir <abs-round-dir> \
+#                   --tag <reviewer-tag>
+# Usage (await):  dispatch-companion.sh await <job-id>
+# Exit 0 (launch): job registered with vendor; JOB_ID=<id> written to stdout
+# Exit 0 (await):  job output captured and written to <round-dir>/.dispatch/<tag>.raw
+# Exit 1: vendor transport error, missing --prompt-file, or unknown job-id
+# Stdout (launch): JOB_ID=<vendor-job-id>  (one line; consumed by dispatch-agent.sh)
+# Stdout (await):  (empty — output bound per CD-1 #4 output-bound contract)
+# Side effect (launch): appends {tag, mode: background, status: pending, await_cmd, split_cmd}
+#                       entry to <round-dir>/.dispatch-manifest.json
+```
+
+### 15. Round-completion barrier
+
+Manifest-driven async drain step called unconditionally after every reviewer or verifier fan-out round; no-op-safe when manifest has zero background entries.
+
+```bash
+# scripts/await-round.sh
+# Usage: await-round.sh --round-dir <abs-round-dir>
+# Exit 0: round complete (.round-complete.json written; all background entries resolved)
+# Exit 1: unrecoverable transport failure on a background dispatch entry
+# Stdout: one short status line summarizing round (dispatches awaited / with findings / clean)
+# Stderr: (empty — MUST NOT echo captured third-party payloads per CD-1 #4 output-bound contract)
+# Side effects:
+#   - resolves each background manifest entry via its await_cmd; updates status fields
+#   - invokes split_cmd (third-party-finding-splitter.sh) per resolved entry to materialize per-finding files
+#   - writes <round-dir>/.round-complete.json summary
+#   - removes <round-dir>/.dispatch/ subdir after .round-complete.json is written
+```
+
+### 16. Third-party finding splitter
+
+Splits third-party reviewer stdout (boundary-delimited) into per-finding files on disk; called by `await-round.sh` per resolved background manifest entry.
+
+```bash
+# scripts/third-party-finding-splitter.sh
+# Usage: third-party-finding-splitter.sh --round-dir <abs-round-dir>
+# Exit 0: per-finding files written to <round-dir>/
+# Exit 1: no finding boundaries found, missing --round-dir, or write failure
+# Stdout: (empty)
+# Stderr: diagnostic on failure naming the specific cause
+# Side effect: writes <round-dir>/<tag>.finding-F<NN>.md for each <<<FINDING-BOUNDARY>>> block;
+#              writes NO_FINDINGS sentinel file on clean NO_FINDINGS stdout
+```
 
 ## Architectural Diagram
 
@@ -484,8 +535,6 @@ flowchart LR
     TB --> BP
     TA2 --> BP
   end
-
-  VF --> PR
 ```
 
 ## CI Pipeline
@@ -566,7 +615,7 @@ These invariants are release-wide and each is owned by the smallest test type th
 
 ## Section Contracts
 
-Section-list contracts for new `skills/`, `_shared/`, and protocol files created in this release. Each entry names required top-level sections at heading-level granularity. Prose content under those headings is deferred to Plan/Implement. Files already contracted in the Interfaces section (`skills/_shared/structure-altitude-boundary.md` → §5; `skills/_shared/design-altitude-boundary.md` → §6; `skills/_shared/verifier-filter-rule.md` → §12; `scripts/detect-interaction-mode.sh` → §13) are cross-referenced rather than duplicated here.
+Section-list contracts for new `skills/`, `_shared/`, and protocol files created in this release. Each entry names required top-level sections at heading-level granularity. Prose content under those headings is deferred to Plan/Implement. Files already contracted in the Interfaces section (`skills/_shared/structure-altitude-boundary.md` → §5; `skills/_shared/design-altitude-boundary.md` → §6; `skills/_shared/verifier-filter-rule.md` → §12; `scripts/detect-interaction-mode.sh` → §13; `scripts/dispatch-companion.sh` → §14; `scripts/await-round.sh` → §15; `scripts/third-party-finding-splitter.sh` → §16) are cross-referenced rather than duplicated here.
 
 | File | Required top-level sections |
 |---|---|
@@ -648,7 +697,7 @@ Cross-cutting insertion sites locked by this release. Locations only — text co
 
 ### G34 design-altitude-boundary `!cat` include sites
 
-`skills/_shared/design-altitude-boundary.md` is `!cat`-included in two consumer files per design.md CD-4 §D1:
+`skills/_shared/design-altitude-boundary.md` is `!cat`-included in two consumer files per design.md G34 §D1:
 
 | Consumer file | Location |
 |---|---|
