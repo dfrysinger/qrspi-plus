@@ -203,14 +203,6 @@ Audit-file schema (per structure.md §11):
 **Goal IDs:** {G7}
 **Responsibility:** Hold the single threshold/filter rule snippet consumed by orchestrator prose and by `scripts/verifier-fan-in.sh`'s header — eliminates DRY drift across the five pre-CD-4 restatement sites and makes the script the executable source of truth (per design.md G7 + CD-4 §F).
 
-**Interface:** (snippet shape per structure.md §12)
-```markdown
-## Verifier Filter Rule
-
-<threshold and filter rule prose>
-- ...
-```
-
 **Outline-only sections (Plan/Implement authors):**
 - `## Verifier Filter Rule`: one short canonical statement (~2 sentences) of what the filter does and that current threshold values live as constants in the header of `scripts/verifier-fan-in.sh` (per design.md G7 + CD-4 §F).
 - The snippet MUST NOT carry the numeric thresholds inline — threshold values live as script constants and never enter orchestrator context (per design.md CD-4 §6 context-cost element).
@@ -249,12 +241,12 @@ Audit-file schema (per structure.md §11):
 - Retain emission-agnostic core only: 5-field finding schema, change-type classifier, untrusted-data handling, phase routing, dispatch contract, untrusted-scope-hint markers (per design.md G6-1 L1232).
 - Field name `change_type:` is centralized here (G8); the canonical enum (`[style, clarity, correctness, scope, intent]` per structure.md §4 `validators.change_type_enum`) is defined here once and referenced — not duplicated — by per-reviewer agent bodies (per design.md CD-4 §F + §G + G13). The enum here MUST stay in lock-step with the enum in the `scripts/verifier-fan-in.sh` header (DRY source).
 - Add new `## Informational Findings` section, inserted between `## Disagreement-Valid Framing` (currently ~L115) and `## Untrusted Data Handling` (currently ~L125) — per design.md G14 D1 placement.
-- Section body MUST document: (a) the prefix shape — literal `Informational:` token, case-sensitive, capital I, lowercase remainder, trailing colon, at the start of the first non-blank line of `message`; (b) when to use it (reviewer believes the finding is real but is not demanding action); (c) what happens downstream (verifier scores on structural confidence; review loop logs the finding but does NOT auto-apply or pause regardless of `change_type`); (d) the distinction from acknowledged-and-silenced (the latter belongs in CLAUDE.md or `feedback/*.md`, is a user decision, and continues to route through the false-positive rubric) — per design.md G14 D1 placement bullet at L1476.
+- Section body MUST document: (a) the prefix shape — literal `Informational:` token, case-sensitive, capital I, lowercase remainder, trailing colon, at the start of the first non-blank line of `message`; (b) when to use it (reviewer believes the finding is real but is not demanding action); (c) what happens downstream (verifier scores on structural confidence; review loop logs the finding but does NOT auto-apply or pause regardless of `change_type`) — per design.md G14 D1 placement bullet at L1476.
 - Backward compatibility note: findings without the prefix continue to be scored exactly as before (per design.md G14 D1 placement L1476).
 - Post-CD-1/G6 name sweep MUST land: `grep -E 'run-codex-review|codex-emission-override|codex-finding-splitter' skills/reviewer-protocol/SKILL.md` returns zero matches; all references use post-rename names (`dispatch-agent.sh`, `dispatch-companion.sh`, `third-party-emission.md`, `third-party-finding-splitter.sh`) — per design.md G6 acceptance L1278.
 
 **Tests:**
-- `tests/unit/test-verifier-agent-file.bats`: pins reviewer-protocol section presence and the prefix-shape definition + distinction-from-acknowledged-and-silenced paragraph (per design.md G14 acceptance L1520; cross-slice — assertion lives in the verifier-agent-file test row in Slice 1.1).
+- `tests/unit/test-verifier-agent-file.bats`: pins reviewer-protocol section presence and the prefix-shape definition (per design.md G14 acceptance L1520; cross-slice — assertion lives in the verifier-agent-file test row in Slice 1.1).
 
 ---
 
@@ -367,13 +359,6 @@ the message describes?
 DROP/KEEP threshold applies normally to the resulting score. Informational findings
 that are structurally real (≥50) keep and are logged to the round artifact; informational
 findings whose premise is wrong (≤25) drop.
-
-This branch is distinct from "acknowledged-and-silenced" findings (covered by the
-false-positive pattern below for "Issues called out in CLAUDE.md but explicitly silenced
-in the code"). Acknowledged-and-silenced is a documented user decision, lives in CLAUDE.md
-or `feedback/*.md`, and correctly routes through the false-positive rubric. Informational
-is a reviewer-emitted stance on a finding the reviewer authored — different signal,
-different rubric.
 ```
 
 
@@ -414,7 +399,7 @@ different rubric.
 **Responsibility:** Guard verifier sidecar extension (`.score.md` locked, no `.yml` alternative — G11), required sidecar frontmatter fields (`score:` integer 0–100, per structure.md §9 + design.md CD-4 §B), and the G14 Informational-carve-out rubric text anchors in `agents/qrspi-finding-verifier.md` — including a pin on the literal `Informational:` token (case-sensitive) inside the carve-out clause as a regression guard against accidental rubric edits removing the branch (per design.md G14 acceptance L1519).
 
 **Tests:**
-- This file IS a test. It pins both the verifier-agent-file shape (sidecar path/extension + required fields) and the reviewer-protocol `## Informational Findings` section presence with the prefix-shape definition + distinction-from-acknowledged-and-silenced paragraph (per design.md G14 acceptance L1520). Assertion strings authored by Plan/Implement.
+- This file IS a test. It pins both the verifier-agent-file shape (sidecar path/extension + required fields) and the reviewer-protocol `## Informational Findings` section presence with the prefix-shape definition (per design.md G14 acceptance L1520). Assertion strings authored by Plan/Implement.
 
 ## Slice 1.2 — Verifier rubric calibration + instrumentation
 
@@ -471,7 +456,7 @@ When the score is `0` due to Cite Check failure (step 3.5), the `reason` value M
 **Insertion site (in target file):** Inserted as a phrase appended to the existing Step 1 (Read finding file) description in `agents/qrspi-finding-verifier.md`, extending the parse contract from 5 fields to 5 fields plus the `actual_model:` audit field.
 
 ```markdown
-...parse the 5-field finding object plus the audit field `actual_model:`...
+parse the 5-field finding object plus the audit field `actual_model:`
 ```
 
 **Source:** design.md §G20 Deliverables item 5 (L1878)
@@ -647,7 +632,7 @@ The script runs three checks in order before writing the anchor:
    - **Across-rounds advance check (exit 12).** Passed SHA equals the prior round's anchor (`<output-dir>/../round-(NN-1)-commit.txt` for NN ≥ 2, or the task base SHA for NN = 1) → implementer did not advance HEAD this round. Recovery: re-dispatch the implementer subagent via `SendMessage` or a fresh Task tool invocation; only main chat can take that action, but main chat takes it in response to the script's exit code rather than computing the comparison itself.
    - **Within-round equality check (exit 11).** Passed SHA ≠ `git rev-parse HEAD` → the implementer's report and the worktree's actual state disagree. Halt; suspect worktree corruption, wrong worktree path, concurrent commit by another process, or implementer self-report drift. Do NOT auto-retry; surface to user (integrity break, not a transient failure).
 
-   On exit 0, the script writes `round-NN-commit.txt = <passed-SHA>`. CD-1 component #3 propagates round-prepare.sh's exit code verbatim through dispatch-agent.sh; main chat sees the exit code from its bash-tool invocation and branches per the recovery table in G4 solution step 1.
+   On exit 0, the script writes `round-NN-commit.txt = <passed-SHA>`. Exit codes propagate verbatim through the dispatch chain so callers can branch on the round-prepare.sh exit code without re-interpreting it.
 ```
 
 
@@ -1048,12 +1033,12 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §CD-1 component #4 (L98)
-**Marker phrase:** "Output-bound contract (lifted from G6 to keep the calling-surface guarantees in one place)"
+**Marker phrase:** "Output-bound contract."
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/await-round.sh` as the output-bound contract sentence the script's stdout/stderr boundary must honor.
 
 ```markdown
-**Output-bound contract** (lifted from G6 to keep the calling-surface guarantees in one place): `await-round.sh` MUST NOT echo captured third-party subagent stdout (or any substring of it) to its own stdout or stderr. Its terminal output is bounded to: (a) one short status line summarizing the round (dispatches awaited / with findings / clean), (b) per-dispatch status updates already persisted to `.dispatch-manifest.json` and `.round-complete.json` on disk. Raw third-party payloads stay captured in tempfiles within the script chain and are consumed only by `third-party-finding-splitter.sh`. Any future maintainer change that adds `cat`-of-captured-tempfile or equivalent payload echo is a context-leakage violation (G3 concern). Lint candidate: a smoke test that runs `await-round.sh` against a fixture with a known-large third-party payload and asserts the script's combined stdout+stderr is under a small byte cap (~1KB).
+**Output-bound contract.** `await-round.sh` MUST NOT echo captured third-party subagent stdout (or any substring of it) to its own stdout or stderr. Its terminal output is bounded to: (a) one short status line summarizing the round (dispatches awaited / with findings / clean), (b) per-dispatch status updates already persisted to `.dispatch-manifest.json` and `.round-complete.json` on disk. Raw third-party payloads stay captured in tempfiles within the script chain and are consumed only by `third-party-finding-splitter.sh`. Any future maintainer change that adds `cat`-of-captured-tempfile or equivalent payload echo is a context-leakage violation. Lint candidate: a smoke test that runs `await-round.sh` against a fixture with a known-large third-party payload and asserts the script's combined stdout+stderr is under a small byte cap (~1KB).
 ```
 
 
@@ -1846,7 +1831,6 @@ Apply the detection above to the planned target files. If the target IS prompt p
 The classification gates downstream behavior: lightweight tasks dispatch to `qrspi-implementer-lightweight` (which inherits its own prompt-prose detection via the `prompt-prose-writer` skill preload); code tasks dispatch to `qrspi-implementer` (TDD path). Prompt prose NEVER lands on the TDD path by classification.
 ```
 
-Placement: `skills/plan/SKILL.md` § Per-Task Classification, REPLACES the current Step 1 paragraph (the existing path-glob-only rule). Steps 2+ continue unchanged after.
 ````
 
 **Source:** design.md §G31 Addition B (L2566-L2579)
@@ -1863,7 +1847,6 @@ Placement: `skills/plan/SKILL.md` § Per-Task Classification, REPLACES the curre
 Other lightweight task categories (non-prompt prose, ordinary documentation, configuration) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause.
 ```
 
-Placement: `skills/plan/SKILL.md` writer-subagent dispatch payload sections (TWO sites — the merged-plan/overview subagent dispatch ~lines 125-132 and the initial-draft per-task sub-subagent dispatch ~lines 439-444 as of v0.7.1). Inserted AFTER the consumer's `!cat detection` + `!cat writer-addition`, BEFORE the rest of the dispatch payload's standard Test-Expectations instructions. The post-approval-split sub-subagent does NOT receive this clause.
 ````
 
 
@@ -1906,7 +1889,6 @@ Placement: `skills/plan/SKILL.md` writer-subagent dispatch payload sections (TWO
 The marker scopes attention to specific sub-blocks; the surrounding design-decision prose is itself NOT prompt prose and is reviewed by ordinary design-quality criteria, not R1-R7.
 ```
 
-Placement: `agents/qrspi-design-reviewer.md` body, appended to the review-procedure section AFTER the `skills:` frontmatter has loaded `prompt-prose-reviewer`. Acts as a refinement layered atop the shared reviewer-addition's general "file or sub-block" rule.
 ````
 
 
@@ -2002,7 +1984,6 @@ file is a fabrication. Treat the absence of a named escape hatch as the rule, no
 invitation to invent one.
 ```
 
-Placement: New `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/reviewer-protocol/SKILL.md`, inserted between the existing `### Refusal Procedure` (ends ~line 206) and `## Per-Finding Disk-Write Contract` (line 208). Positioned immediately after Refusal Procedure so the bounding clause is adjacent to the section it bounds.
 ````
 
 
@@ -2066,8 +2047,8 @@ Placement: New `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/review
 **Insertion site (in target file):** Replaces the existing Commit ownership bullet at line ~28 of `agents/qrspi-test-writer.md` — the locked Old → New substitution.
 
 ```markdown
-- **Old:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer."
-- **New:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer."
+- **Old:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`."
+- **New:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`."
 ```
 
 
@@ -2285,7 +2266,6 @@ Files outside these globs require the content-semantic test above. Other project
 **Rules file.** When prompt-prose authoring or review applies, the rules live at `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention).
 ```
 
-Consumers: #1 (`!cat`), #2 (`!cat`), #3 (`!cat`), #4 (via wrapper SKILL preload — File 4), #5-#8 (via wrapper SKILL preload — File 5).
 ````
 
 
@@ -2313,7 +2293,6 @@ Consumers: #1 (`!cat`), #2 (`!cat`), #3 (`!cat`), #4 (via wrapper SKILL preload 
 **If the target is NOT prompt prose** (ordinary documentation, configuration, code, non-prompt prose), do NOT Read the rules file. Reading-without-applying is the verbosity-bias anti-pattern the rules themselves warn against — loading them into context for a deliverable they don't apply to wastes context and risks misapplication.
 ```
 
-Consumers: #2 (`!cat` after detection), #3 (`!cat` after detection), #4 (via wrapper SKILL — File 4).
 ````
 
 
@@ -2344,7 +2323,6 @@ For each file or block determined to be prompt prose: Read `skills/_shared/promp
 - `change_type: correctness` for finding-type-gate violations (e.g., load-bearing rule placed at start instead of end, examples exceeding the 2-cap, missing Iron-Law markers on override-critical content).
 ```
 
-Consumers: #5-#8 (via wrapper SKILL — File 5).
 ````
 
 
@@ -2414,7 +2392,6 @@ description: Apply prompt-design rules when reviewing prompt-prose subjects in a
 !cat skills/_shared/prompt-prose-reviewer-addition.md
 ```
 
-Consumers: #5-#8 (preloaded via `skills:` frontmatter).
 ````
 
 
@@ -2599,7 +2576,6 @@ Consumers: #5-#8 (preloaded via `skills:` frontmatter).
 Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare lightweight task Test Expectations to RED-gate criteria. Silently skip lightweight task sections.
 ```
 
-Placement: `agents/qrspi-plan-test-coverage-reviewer.md` body, at the TOP of the review-procedure section (before any existing rubric). Standalone — this consumer does NOT preload `prompt-prose-reviewer` (Q1 resolution: full reviewer block would teach it "sometimes passing means no RED tests" which compromises judgment on `task_type: code` tasks where RED IS required).
 ````
 
 
@@ -2637,19 +2613,6 @@ Placement: `agents/qrspi-plan-test-coverage-reviewer.md` body, at the TOP of the
 **Goal IDs:** {G35}
 **Responsibility:** Single shared snippet carrying Structure's OWNS allowances + DEFERS list as one contiguous markdown block; `!cat`-included into both `skills/structure/owns-defers.md` and `agents/qrspi-structure-scope-reviewer.md` so the contract file and the scope reviewer reason from byte-identical text (mirrors G34's Candidate B pattern).
 
-**Interface:** (per structure.md §Interfaces §5, L241-257)
-```markdown
-## Structure Altitude Boundary
-
-<boundary rule prose>
-
-### What Structure OWNS
-- ...
-
-### What Structure DEFERS
-- ...
-```
-
 **Verbatim content (lifted from design.md):**
 
 **Source:** design.md §G35 (L2971-L2989)
@@ -2675,7 +2638,7 @@ Structure DEFERS:
 
 
 **Outline-only sections (Plan/Implement authors):**
-- `## Structure Altitude Boundary` heading + `<boundary rule prose>` introducer paragraph that precedes the `### What Structure OWNS` / `### What Structure DEFERS` blocks (per structure.md §Interfaces §5 template, L246-248). Boundary-rule prose authored at Implement; the locked content is the OWNS + DEFERS verbatim blocks above.
+- `## Structure Altitude Boundary` heading + introducer paragraph that precedes the `### What Structure OWNS` / `### What Structure DEFERS` blocks (per the verbatim block above). Boundary-rule prose authored at Implement; the locked content is the OWNS + DEFERS verbatim blocks above.
 
 ---
 

@@ -95,7 +95,7 @@ manifest persistence. Skill prose names only the agent; the script chain handles
    runs splitters; updates statuses; writes `.round-complete.json` summary. LLM only needs to
    remember step + round number; manifest path is deterministic.
    - **No-op-safe when manifest has zero background entries.** First-party-only rounds still call `await-round.sh` unconditionally; it returns immediately after reading the manifest. Orchestrator does not pre-check the manifest shape — invocation is uniform per round.
-   - **Output-bound contract** (lifted from G6 to keep the calling-surface guarantees in one place): `await-round.sh` MUST NOT echo captured third-party subagent stdout (or any substring of it) to its own stdout or stderr. Its terminal output is bounded to: (a) one short status line summarizing the round (dispatches awaited / with findings / clean), (b) per-dispatch status updates already persisted to `.dispatch-manifest.json` and `.round-complete.json` on disk. Raw third-party payloads stay captured in tempfiles within the script chain and are consumed only by `third-party-finding-splitter.sh`. Any future maintainer change that adds `cat`-of-captured-tempfile or equivalent payload echo is a context-leakage violation (G3 concern). Lint candidate: a smoke test that runs `await-round.sh` against a fixture with a known-large third-party payload and asserts the script's combined stdout+stderr is under a small byte cap (~1KB).
+   - **Output-bound contract.** `await-round.sh` MUST NOT echo captured third-party subagent stdout (or any substring of it) to its own stdout or stderr. Its terminal output is bounded to: (a) one short status line summarizing the round (dispatches awaited / with findings / clean), (b) per-dispatch status updates already persisted to `.dispatch-manifest.json` and `.round-complete.json` on disk. Raw third-party payloads stay captured in tempfiles within the script chain and are consumed only by `third-party-finding-splitter.sh`. Any future maintainer change that adds `cat`-of-captured-tempfile or equivalent payload echo is a context-leakage violation. Lint candidate: a smoke test that runs `await-round.sh` against a fixture with a known-large third-party payload and asserts the script's combined stdout+stderr is under a small byte cap (~1KB).
 
 5. **`scripts/dispatch-companion.sh`** (rename of `run-third-party-llm.sh`) — vendor-routing tier
    underneath dispatch-agent. Takes `--vendor` + resolved `--model`; routes to vendor-specific
@@ -1321,7 +1321,7 @@ The four-layer arrangement, by layer (in addition to G4's two inherited layers �
    - **Across-rounds advance check (exit 12).** Passed SHA equals the prior round's anchor (`<output-dir>/../round-(NN-1)-commit.txt` for NN ≥ 2, or the task base SHA for NN = 1) → implementer did not advance HEAD this round. Recovery: re-dispatch the implementer subagent via `SendMessage` or a fresh Task tool invocation; only main chat can take that action, but main chat takes it in response to the script's exit code rather than computing the comparison itself.
    - **Within-round equality check (exit 11).** Passed SHA ≠ `git rev-parse HEAD` → the implementer's report and the worktree's actual state disagree. Halt; suspect worktree corruption, wrong worktree path, concurrent commit by another process, or implementer self-report drift. Do NOT auto-retry; surface to user (integrity break, not a transient failure).
 
-   On exit 0, the script writes `round-NN-commit.txt = <passed-SHA>`. CD-1 component #3 propagates round-prepare.sh's exit code verbatim through dispatch-agent.sh; main chat sees the exit code from its bash-tool invocation and branches per the recovery table in G4 solution step 1.
+   On exit 0, the script writes `round-NN-commit.txt = <passed-SHA>`. Exit codes propagate verbatim through the dispatch chain so callers can branch on the round-prepare.sh exit code without re-interpreting it.
 
    **Why all three checks live in the script.** Recovery-action ownership and check ownership are independent: the script produces a verdict (exit code + stderr recovery hint); main chat takes the recovery action based on the verdict. Consolidating all SHA-correctness rules in one place — `round-prepare.sh` step 1 — reduces the orchestrator's between-rounds cognitive load to a small fixed pattern (read field, invoke script, branch on exit code) and ensures every SHA-related rule is enforced by deterministic code rather than by an LLM remembering to perform the check between rounds. The architectural boundary holds: scripts still don't capture Task tool return values; main chat just passes the value forward as a flag.
 
@@ -1473,7 +1473,7 @@ The two-case carve-out (false-positive vs informational) is intentionally narrow
 
   - **Prefix shape.** Literal token `Informational:` (capital I, lowercase remainder, trailing colon). Case-sensitive. Must appear at the start of the first non-blank line of the `message` field body. May be followed by space + the finding body on the same line, or by a newline + body on subsequent lines. No other tokens (`INFO:`, `FYI:`, `Note:`, `Observation:`) carry the semantic — case-sensitivity and the single canonical token are load-bearing for unambiguous detection.
 
-  - **Reviewer-protocol placement.** New `## Informational Findings` section in `skills/reviewer-protocol/SKILL.md`, inserted between `## Disagreement-Valid Framing` (line 115ish, currently the closest adjacent section about how reviewers frame stance in their findings) and `## Untrusted Data Handling` (line 125). Section body documents: when to use the prefix (reviewer believes the finding is real but is not demanding action — e.g., a TOCTOU window mitigated by an upstream guard, a stylistic observation reviewer wants on record, a "future-maintenance flag" reviewer thinks worth noting); how to use it (literal `Informational:` prefix on first non-blank line of `message`); what happens downstream (verifier scores on structural confidence; review loop logs the finding but does NOT auto-apply or pause regardless of `change_type`); distinction from acknowledged-and-silenced (the latter belongs in CLAUDE.md or `feedback/*.md`, is a user decision, and continues to route through the false-positive rubric per the existing verifier line 25). Backward compatibility: findings without the prefix continue to be scored exactly as before (no behavior change for any existing finding shape).
+  - **Reviewer-protocol placement.** New `## Informational Findings` section in `skills/reviewer-protocol/SKILL.md`, inserted between `## Disagreement-Valid Framing` (line 115ish, currently the closest adjacent section about how reviewers frame stance in their findings) and `## Untrusted Data Handling` (line 125). Section body documents: when to use the prefix (reviewer believes the finding is real but is not demanding action — e.g., a TOCTOU window mitigated by an upstream guard, a stylistic observation reviewer wants on record, a "future-maintenance flag" reviewer thinks worth noting); how to use it (literal `Informational:` prefix on first non-blank line of `message`); what happens downstream (verifier scores on structural confidence; review loop logs the finding but does NOT auto-apply or pause regardless of `change_type`). Backward compatibility: findings without the prefix continue to be scored exactly as before (no behavior change for any existing finding shape).
 
   - **Verifier rubric branch (verbatim addition to `agents/qrspi-finding-verifier.md`).** Inserted as a new paragraph immediately BEFORE the existing "Treat the following patterns as likely false positives and score them low (0–25):" sentence (currently ~line 19):
 
@@ -1496,13 +1496,6 @@ The two-case carve-out (false-positive vs informational) is intentionally narrow
     DROP/KEEP threshold applies normally to the resulting score. Informational findings
     that are structurally real (≥50) keep and are logged to the round artifact; informational
     findings whose premise is wrong (≤25) drop.
-
-    This branch is distinct from "acknowledged-and-silenced" findings (covered by the
-    false-positive pattern below for "Issues called out in CLAUDE.md but explicitly silenced
-    in the code"). Acknowledged-and-silenced is a documented user decision, lives in CLAUDE.md
-    or `feedback/*.md`, and correctly routes through the false-positive rubric. Informational
-    is a reviewer-emitted stance on a finding the reviewer authored — different signal,
-    different rubric.
     ```
 
   - **Why a prose-prefix convention (not a structured-field schema migration).** Goals dialogue weighed two architectural directions:
@@ -1514,10 +1507,10 @@ The two-case carve-out (false-positive vs informational) is intentionally narrow
 **Acceptance.**
 
 - New `## Informational Findings` section exists in `skills/reviewer-protocol/SKILL.md`, inserted between `## Disagreement-Valid Framing` and `## Untrusted Data Handling`.
-- Section body documents the prefix shape (literal `Informational:`, case-sensitive, first non-blank line of `message`), when to use it, what happens downstream, and the distinction from acknowledged-and-silenced.
+- Section body documents the prefix shape (literal `Informational:`, case-sensitive, first non-blank line of `message`), when to use it, and what happens downstream.
 - `agents/qrspi-finding-verifier.md` gains the verbatim Informational-carve-out paragraph (D1) inserted immediately BEFORE the existing false-positive-pattern list at ~line 19.
 - A bats test asserts the verifier rubric contains the literal `Informational:` token in the carve-out clause (regression guard against accidental rubric edits removing the branch).
-- A bats test asserts the reviewer-protocol section is present and contains both the prefix-shape definition and the distinction-from-acknowledged-and-silenced paragraph.
+- A bats test asserts the reviewer-protocol section is present and contains the prefix-shape definition.
 - No changes to the 5-field finding schema. No changes to reviewer agent bodies (the convention is documented but not enforced — reviewers opt in by using the prefix).
 - v0.7.3 follow-up filed: GitHub issue dfrysinger/qrspi-plus#265 tracking the option-A (structured `actionability` field) migration question, contingent on v0.7.2 self-host signal showing prose-prefix fragility.
 
@@ -1699,8 +1692,8 @@ A short audit of `scripts/run-third-party-llm.sh` is included to confirm direct 
 
 3. **`agents/qrspi-test-writer.md` L28 — Commit ownership bullet.** Delete the standalone exclude sentence:
 
-   - **Old:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer."
-   - **New:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer."
+   - **Old:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`."
+   - **New:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`."
 
    The exclude reassurance is restated authoritatively in the step list at L77-80. Removing the L28 mention avoids partial restatement (which is the very drift this goal exists to fix — listing one mechanism while there are now two).
 
@@ -1875,7 +1868,7 @@ Composition rationale: the verifier already lazy-Reads cited upstream files (cur
 
 4. **Dispatch-companion wrapper update** (`scripts/dispatch-companion.sh`) — accept and inject `actual_model` into the composed dispatch-params section so third-party subagents see the value to copy through. Same shape as the existing `--reviewer-tag` / `--scope-hint` flags.
 
-5. **Verifier sidecar schema addition** (`agents/qrspi-finding-verifier.md`) — step 1 (Read finding file) gains a phrase: "...parse the 5-field finding object plus the audit field `actual_model:`...". Step 6 (Write sidecar) gains one line in BOTH the success and the `VERIFY_FAILED` shapes: `actual_model: <copied verbatim from finding frontmatter>`. When the finding file omits the field (older rounds, hand-written rounds, drift from a reviewer that did not yet adopt the new audit field), the verifier writes `actual_model: unknown` rather than failing — this is observability data, not a correctness gate. Step 7's return line is unchanged.
+5. **Verifier sidecar schema addition** (`agents/qrspi-finding-verifier.md`) — step 1 (Read finding file) gains a phrase: "parse the 5-field finding object plus the audit field `actual_model:`". Step 6 (Write sidecar) gains one line in BOTH the success and the `VERIFY_FAILED` shapes: `actual_model: <copied verbatim from finding frontmatter>`. When the finding file omits the field (older rounds, hand-written rounds, drift from a reviewer that did not yet adopt the new audit field), the verifier writes `actual_model: unknown` rather than failing — this is observability data, not a correctness gate. Step 7's return line is unchanged.
 
 6. **No test coverage.** The new field is descriptive, not behaviorally load-bearing — nothing keys off its value in v0.7.2. Self-host signal in v0.7.2 demonstrates whether reviewers emit it consistently. If the field is missing from >5% of v0.7.2 emissions, that's a v0.7.3-blocking emission-protocol drift, not a v0.7.2 design defect. The clean-sentinel coverage matters: without it we lose the "this reviewer dispatched but found nothing" data point for calibration aggregation.
 
