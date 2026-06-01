@@ -29,7 +29,7 @@ This artifact uses **per-file specification blocks** (see `## Per-File Specifica
 
 ## File Index
 
-Navigation table for the 107 per-file specifications in `## Per-File Specifications` below. Search the file path (CTRL-F) to jump to the per-file block.
+Navigation table for the 109 per-file specifications in `## Per-File Specifications` below. Search the file path (CTRL-F) to jump to the per-file block.
 
 | File | Action | Slice | Goal IDs |
 |------|--------|-------|----------|
@@ -60,6 +60,7 @@ Navigation table for the 107 per-file specifications in `## Per-File Specificati
 | `scripts/round-prepare.sh` | Create | 1.4 | {G4} |
 | `scripts/await-round.sh` | Create | 1.4 | {G3, G4} |
 | `scripts/_resolve-lib.sh` | Create | 1.4 | {G22, G23, G25, G27} |
+| `scripts/second-reviewer-available.sh` | Create | 1.4 | {G27} |
 | `scripts/_host-detect.sh` | Create | 1.4 | {G27} |
 | `scripts/detect-interaction-mode.sh` | Create | 1.4 | {CD-4} |
 | `skills/_shared/reviewer-dispatch-prose.md` | Create | 1.4 | {G3, G4} |
@@ -93,6 +94,7 @@ Navigation table for the 107 per-file specifications in `## Per-File Specificati
 | `tests/unit/test-routing-matrix-application.bats` | Modify | 1.4 | {G22, G27} |
 | `tests/unit/test-run-codex-review.bats` | Rename → `tests/unit/test-dispatch-agent.bats` | 1.4 | {G16} |
 | `tests/unit/test-codex-review-codex-availability.bats` | Rename → `tests/unit/test-dispatch-companion-availability.bats` | 1.4 | {G27} |
+| `tests/unit/test-second-reviewer-available.bats` | Create | 1.4 | {G27} |
 | `skills/design/SKILL.md` | Modify | 1.5 | {G1, G30, G31, G33} |
 | `skills/goals/SKILL.md` | Modify | 1.5 | {G1, G30} |
 | `skills/plan/post-approval-split-contract.md` | Modify | 1.5 | {G5} |
@@ -181,7 +183,7 @@ Audit-file schema (per structure.md §11):
 ```
 
 **Outline-only sections (Plan/Implement authors):**
-- Script header: declare canonical `change_type` enum (`[style, clarity, correctness, scope, intent]` per structure.md §4 `validators.change_type_enum`) as the DRY source of truth referenced by `reviewer-protocol/SKILL.md` (per G13 / design.md CD-4 §G).
+- Script header: declare canonical `change_type` enum (`[style, clarity, correctness, scope, intent]` per the canonical enum locked in `skills/reviewer-protocol/SKILL.md` per-file block above and the `scripts/verifier-fan-in.sh` header constants — see `## Cross-Cutting Schemas` §9 Verifier sidecar schema for the sidecar field that carries the enum value) as the DRY source of truth referenced by `reviewer-protocol/SKILL.md` (per G13 / design.md CD-4 §G).
 - Script header: declare per-`change_type` threshold floor constants (current state: style/clarity ≥80, correctness ≥70 — full per-enum table including any values added by G13's enum lock is Plan-time author work per design.md CD-4 §C step 3).
 - Step 1 — Glob `<round-dir>/*.finding-F*.md` to enumerate findings (per design.md CD-4 §C step 1).
 - Step 2 — For each finding: read frontmatter → assert `change_type:` present (halt cause `missing_change_type`) → assert value in canonical enum (halt cause `change_type_out_of_enum`) → glob paired sidecar at `<round-dir>/<reviewer-tag>.finding-F<NN>.score.md` (halt causes `missing_sidecar` / `sidecar_wrong_extension`) → read `score:` from sidecar (halt cause `score_unparseable`). Halt causes MUST match the per-cause table in design.md CD-4 §I.1.
@@ -219,13 +221,13 @@ Audit-file schema (per structure.md §11):
 
 **Outline-only sections (Plan/Implement authors):**
 - Snippet is the verifier-mode mirror of `skills/_shared/reviewer-dispatch-prose.md` (CD-1 §11). The two snippets are deliberately separate even though their bodies are ~85% identical: each names a different `dispatch-agent.sh` mode flag (`--agents tag1=..,tag2=..` vs `--verifier-fanout`) and the mode flag is the load-bearing difference at the call site (per design.md CD-4 L494 / §H rationale).
-- MUST carry: (1) the single `scripts/dispatch-agent.sh --verifier-fanout --step <step> --round <N> --output-dir <round-dir> [--tier-override <tier>]` invocation form (per structure.md §3 "Verifier-fanout mode" + design.md CD-4 §H invocation form); (2) the spec-line iteration contract — one parallel Task batch reading `DISPATCH_FILE=<path>` per emitted spec line, with the same iron law as CD-1 reviewer dispatch (Task tool invoked exactly once per emitted spec line, `SUBAGENT_TYPE` / `MODEL` / `PROMPT_FILE` copied verbatim, prompt arg literally `"DISPATCH_FILE=<absolute-path-from-PROMPT_FILE>"` — per design.md CD-4 §H step 3); (3) the follow-up `scripts/await-round.sh --round-dir <round-dir>` call, no-op-safe for first-party-only rounds (per design.md CD-4 orchestrator-side flow step 3); (4) the follow-up single `scripts/verifier-fan-in.sh <round-dir>` invocation (per design.md CD-4 orchestrator-side flow step 4).
-- Verifier-fanout takes a bare `<tier>` for `--tier-override` (NOT the CSV `tag=tier` grammar used by reviewer-fanout) because the verifier is a singleton agent — per structure.md §7 note at L289.
+- MUST carry: (1) the single `scripts/dispatch-agent.sh --verifier-fanout --step <step> --round <N> --output-dir <round-dir> [--tier-override <tier>]` invocation form (per the `scripts/dispatch-agent.sh` per-file block above (`--verifier-fanout` mode) + design.md CD-4 §H invocation form); (2) the spec-line iteration contract — one parallel Task batch reading `DISPATCH_FILE=<path>` per emitted spec line, with the same iron law as CD-1 reviewer dispatch (Task tool invoked exactly once per emitted spec line, `SUBAGENT_TYPE` / `MODEL` / `PROMPT_FILE` copied verbatim, prompt arg literally `"DISPATCH_FILE=<absolute-path-from-PROMPT_FILE>"` — per design.md CD-4 §H step 3); (3) the follow-up `scripts/await-round.sh --round-dir <round-dir>` call, no-op-safe for first-party-only rounds (per design.md CD-4 orchestrator-side flow step 3); (4) the follow-up single `scripts/verifier-fan-in.sh <round-dir>` invocation (per design.md CD-4 orchestrator-side flow step 4).
+- Verifier-fanout takes a bare `<tier>` for `--tier-override` (NOT the CSV `tag=tier` grammar used by reviewer-fanout) because the verifier is a singleton agent — per `## Cross-Cutting Schemas` §7 Host-and-tier-aware second-reviewer override.
 - MUST NOT echo captured verifier payloads on stdout/stderr (CD-1 #4 output-bound contract — inherited via `await-round.sh`).
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/verifier-dispatch-prose.md` at `skills/using-qrspi/SKILL.md` → artifact-level Apply-fix protocol section (per structure.md Hook-Point §"CD-4 / G12 verifier-dispatch-prose `!cat` include sites" + design.md CD-4 L494).
-- `!cat skills/_shared/verifier-dispatch-prose.md` at `skills/implement/SKILL.md` → task-level Apply-fix protocol section (per structure.md Hook-Point §"CD-4 / G12 verifier-dispatch-prose `!cat` include sites" + design.md CD-4 L494).
+- `!cat skills/_shared/verifier-dispatch-prose.md` at `skills/using-qrspi/SKILL.md` → artifact-level Apply-fix protocol section (per structure.md `## Hook-Point Cross-Slice Index` → CD-4 / G12 verifier-dispatch-prose `!cat` include sites + design.md CD-4 L494).
+- `!cat skills/_shared/verifier-dispatch-prose.md` at `skills/implement/SKILL.md` → task-level Apply-fix protocol section (per structure.md `## Hook-Point Cross-Slice Index` → CD-4 / G12 verifier-dispatch-prose `!cat` include sites + design.md CD-4 L494).
 
 ---
 
@@ -239,7 +241,7 @@ Audit-file schema (per structure.md §11):
 **Outline-only sections (Plan/Implement authors):**
 - Strip all emission prose from the body. Post-G6 the file contains no "use Write tool" or "emit to stdout" prose; the only emission-context grep matches MUST be in the per-transport sibling files (per design.md G6 acceptance: `grep -E 'Write tool|stdout' skills/reviewer-protocol/SKILL.md` returns no matches in emission-contract context).
 - Retain emission-agnostic core only: 5-field finding schema, change-type classifier, untrusted-data handling, phase routing, dispatch contract, untrusted-scope-hint markers (per design.md G6-1 L1232).
-- Field name `change_type:` is centralized here (G8); the canonical enum (`[style, clarity, correctness, scope, intent]` per structure.md §4 `validators.change_type_enum`) is defined here once and referenced — not duplicated — by per-reviewer agent bodies (per design.md CD-4 §F + §G + G13). The enum here MUST stay in lock-step with the enum in the `scripts/verifier-fan-in.sh` header (DRY source).
+- Field name `change_type:` is centralized here (G8); the canonical enum (`[style, clarity, correctness, scope, intent]` per the canonical enum locked in `skills/reviewer-protocol/SKILL.md` per-file block above and the `scripts/verifier-fan-in.sh` header constants — see `## Cross-Cutting Schemas` §9 Verifier sidecar schema for the sidecar field that carries the enum value) is defined here once and referenced — not duplicated — by per-reviewer agent bodies (per design.md CD-4 §F + §G + G13). The enum here MUST stay in lock-step with the enum in the `scripts/verifier-fan-in.sh` header (DRY source).
 - Add new `## Informational Findings` section, inserted between `## Disagreement-Valid Framing` (currently ~L115) and `## Untrusted Data Handling` (currently ~L125) — per design.md G14 D1 placement.
 - Section body MUST document: (a) the prefix shape — literal `Informational:` token, case-sensitive, capital I, lowercase remainder, trailing colon, at the start of the first non-blank line of `message`; (b) when to use it (reviewer believes the finding is real but is not demanding action); (c) what happens downstream (verifier scores on structural confidence; review loop logs the finding but does NOT auto-apply or pause regardless of `change_type`) — per design.md G14 D1 placement bullet at L1476.
 - Backward compatibility note: findings without the prefix continue to be scored exactly as before (per design.md G14 D1 placement L1476).
@@ -335,7 +337,7 @@ Path rule: `<round-dir>/<reviewer-tag>.finding-FNN.score.md` (per structure.md �
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G14 D1 (L1480-L1506)
+**Source:** design.md §G14 D1 (L1481-L1498)
 **Marker phrase:** "verbatim addition to `agents/qrspi-finding-verifier.md`"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted as a new paragraph in `agents/qrspi-finding-verifier.md` immediately BEFORE the existing sentence "Treat the following patterns as likely false positives and score them low (0–25):" (currently ~L19 of the agent file), per design.md G14 D1 placement at L1478.
@@ -384,7 +386,7 @@ findings whose premise is wrong (≤25) drop.
 **Action:** Modify
 **Slice:** 1.1
 **Goal IDs:** {G8, G13}
-**Responsibility:** Guard the `change_type:` field-name requirement (G8), enum-membership enforcement on the canonical enum (`[style, clarity, correctness, scope, intent]` per structure.md §4 `validators.change_type_enum`), enum-based partition routing into apply-fix, and the loud-failure paths in `scripts/verifier-fan-in.sh` — no silent default-keep on a missing or out-of-enum value (per design.md CD-4 §6 + G13).
+**Responsibility:** Guard the `change_type:` field-name requirement (G8), enum-membership enforcement on the canonical enum (`[style, clarity, correctness, scope, intent]` per the canonical enum locked in `skills/reviewer-protocol/SKILL.md` per-file block above and the `scripts/verifier-fan-in.sh` header constants — see `## Cross-Cutting Schemas` §9 Verifier sidecar schema for the sidecar field that carries the enum value), enum-based partition routing into apply-fix, and the loud-failure paths in `scripts/verifier-fan-in.sh` — no silent default-keep on a missing or out-of-enum value (per design.md CD-4 §6 + G13).
 
 **Tests:**
 - This file IS a test. It pins `change_type` field name, enum membership, partition routing, and apply-fix behavior keyed on enum membership. The canonical enum surface lives in `skills/reviewer-protocol/SKILL.md` and the `scripts/verifier-fan-in.sh` header; this test pins the partition contract that connects them. Assertion strings authored by Plan/Implement.
@@ -412,7 +414,7 @@ findings whose premise is wrong (≤25) drop.
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G19 Implementation deliverables (L1813-L1826)
+**Source:** design.md §G19 Implementation deliverables (L1808-L1819)
 **Marker phrase:** "new Step 3.5: Cite Check, inserted between current step 3 and step 4 … Verbatim wording:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `agents/qrspi-finding-verifier.md` between the existing Step 3 (Read `referenced_files`) and Step 4 (lazy-Read upstreams) of the rubric procedure — a new Step 3.5 (Cite Check).
@@ -432,7 +434,7 @@ findings whose premise is wrong (≤25) drop.
    The verifier MUST NOT invent claims to check, MUST NOT extrapolate from a finding's general tone, and MUST NOT flag findings whose prose carries no specific factual cite. Cite Check fires only against citations the finding actually makes.
 ```
 
-**Source:** design.md §G19 Implementation deliverables (L1830)
+**Source:** design.md §G19 Implementation deliverables (L1823)
 **Marker phrase:** "new top-anchor rubric tier (prepended to the existing 0/25/50/75/100 anchors) … Verbatim wording:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Prepended in `agents/qrspi-finding-verifier.md` to the rubric anchor list as a new top-anchor tier (anchor `a.`), sitting ABOVE the existing 0/25/50/75/100 anchors (which renumber accordingly).
@@ -441,7 +443,7 @@ findings whose premise is wrong (≤25) drop.
 a. **0 / HALLUCINATED:** Cite Check (step 3.5) found that the finding cites content that does not exist at the cited location — file missing, line range out of bounds, quoted string absent at cited line, or named anchor absent in cited file. The finding is structurally untrustworthy regardless of how plausible its prose reads. Halt rubric, emit `score: 0` with reason `HALLUCINATED: <diagnostic>`.
 ```
 
-**Source:** design.md §G19 Implementation deliverables (L1834)
+**Source:** design.md §G19 Implementation deliverables (L1827)
 **Marker phrase:** "reason field convention documented in step 6 (Write sidecar). Append one sentence to the existing step 6 success-case description:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Appended as one additional sentence to the existing Step 6 (Write sidecar) success-case description in `agents/qrspi-finding-verifier.md`.
@@ -450,7 +452,7 @@ a. **0 / HALLUCINATED:** Cite Check (step 3.5) found that the finding cites cont
 When the score is `0` due to Cite Check failure (step 3.5), the `reason` value MUST start with the literal prefix `HALLUCINATED: ` so dropped sidecars can be greppable for the hallucination subset.
 ```
 
-**Source:** design.md §G20 Deliverables item 5 (L1878)
+**Source:** design.md §G20 Deliverables item 5 (L1871)
 **Marker phrase:** "Verifier sidecar schema addition (`agents/qrspi-finding-verifier.md`) — step 1 (Read finding file) gains a phrase:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted as a phrase appended to the existing Step 1 (Read finding file) description in `agents/qrspi-finding-verifier.md`, extending the parse contract from 5 fields to 5 fields plus the `actual_model:` audit field.
@@ -459,7 +461,7 @@ When the score is `0` due to Cite Check failure (step 3.5), the `reason` value M
 parse the 5-field finding object plus the audit field `actual_model:`
 ```
 
-**Source:** design.md §G20 Deliverables item 5 (L1878)
+**Source:** design.md §G20 Deliverables item 5 (L1871)
 **Marker phrase:** "Step 6 (Write sidecar) gains one line in BOTH the success and the `VERIFY_FAILED` shapes:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted as one additional sidecar frontmatter line in BOTH the success-case and the `VERIFY_FAILED`-case sidecar shapes documented in Step 6 (Write sidecar) of `agents/qrspi-finding-verifier.md`.
@@ -468,7 +470,7 @@ parse the 5-field finding object plus the audit field `actual_model:`
 actual_model: <copied verbatim from finding frontmatter>
 ```
 
-**Source:** design.md §G28 Implementation deliverables item 1 (L2272-L2278)
+**Source:** design.md §G28 Implementation deliverables item 1 (L2265-L2269)
 **Marker phrase:** "new rubric step 'Defect-class tag,' inserted after the current scoring step and before the write-sidecar step. Verbatim wording:"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `agents/qrspi-finding-verifier.md` as a new rubric step (Defect-class tag) AFTER the current scoring step and BEFORE the existing Step 6 (Write sidecar).
@@ -524,7 +526,7 @@ Emit on its own line in the sidecar frontmatter alongside `score:`, `change_type
 - G29 absorbed-by-CD-1 note: no surface change for G29 in this file — the orchestrator-context concern G29 was guarding against (87 KB artifact body in orchestrator tool-call args) is resolved by CD-1's off-LLM prompt assembly. Per design.md §G29 (L2317-2329), "no new skill prose, no new contract section, no new reviewer agent change." G29 appears in this slice's Goal IDs only because the dispatch-parameter / actual_model wiring (G20 + CD-4) lands alongside the dispatch-flow shape G29 referenced.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/verifier-dispatch-prose.md` at the artifact-level Apply-fix protocol section (per design.md CD-4 §H "Shared dispatch prose snippet," L494; per structure.md §Hook-Point Locations "CD-4 / G12 verifier-dispatch-prose `!cat` include sites," L747). The snippet replaces today's per-finding verifier dispatch loop and carries the `dispatch-agent.sh --verifier-fanout` invocation + spec-line iteration contract + `await-round.sh` follow-up. The snippet itself is created in Slice 1.1.
+- `!cat skills/_shared/verifier-dispatch-prose.md` at the artifact-level Apply-fix protocol section (per design.md CD-4 §H "Shared dispatch prose snippet," L494; per structure.md `## Hook-Point Cross-Slice Index` → CD-4 / G12 verifier-dispatch-prose `!cat` include sites). The snippet replaces today's per-finding verifier dispatch loop and carries the `dispatch-agent.sh --verifier-fanout` invocation + spec-line iteration contract + `await-round.sh` follow-up. The snippet itself is created in Slice 1.1.
 
 ---
 
@@ -535,7 +537,7 @@ Emit on its own line in the sidecar frontmatter alongside `score:`, `change_type
 **Goal IDs:** {G20, G29}
 **Responsibility:** Persist host/vendor/resolved-model metadata into `<round-dir>/.dispatch-manifest.json` per dispatch entry for later observability. **Cross-slice note:** this file is renamed to `scripts/dispatch-agent.sh` in Slice 1.4 (per structure.md L60 rename row and design.md L198 rename inventory). Either slice can land first; whichever lands second works against the post-rename path.
 
-**Interface:** (per structure.md §3 "Universal dispatch CLI," L197-218 — post-rename surface; see also §10 "Dispatch manifest schema," L328-363)
+**Interface:** (per the `scripts/dispatch-agent.sh` per-file block above — post-rename surface; see also `## Cross-Cutting Schemas` → §10 Dispatch manifest schema)
 ```bash
 # Slice 1.4 renames this file to scripts/dispatch-agent.sh; the universal CLI shape is:
 scripts/dispatch-agent.sh --step <step> --round <N> --output-dir <round-dir> \
@@ -556,7 +558,7 @@ scripts/dispatch-agent.sh --verifier-fanout \
 ```
 
 **Outline-only sections (Plan/Implement authors):**
-- Manifest entry schema (per structure.md §10 "Dispatch manifest schema," L328-363): each dispatch entry under `<round-dir>/.dispatch-manifest.json` MUST include a `dispatch_spec` object whose required fields are `subagent_type`, `host`, `vendor`, `model`, and (first-party) `prompt_file`. Third-party entries carry the same `host` / `vendor` / `model` triple plus `job_id`, `await_cmd`, and `split_cmd`. The `host`, `vendor`, and `model` values are resolved by `_resolve-lib.sh` (tier → vendor → model) and `_host-detect.sh` (host) — already computed at dispatch site; this slice persists them rather than recomputing.
+- Manifest entry schema (per `## Cross-Cutting Schemas` → §10 Dispatch manifest schema): each dispatch entry under `<round-dir>/.dispatch-manifest.json` MUST include a `dispatch_spec` object whose required fields are `subagent_type`, `host`, `vendor`, `model`, and (first-party) `prompt_file`. Third-party entries carry the same `host` / `vendor` / `model` triple plus `job_id`, `await_cmd`, and `split_cmd`. The `host`, `vendor`, and `model` values are resolved by `_resolve-lib.sh` (tier → vendor → model) and `_host-detect.sh` (host) — already computed at dispatch site; this slice persists them rather than recomputing.
 - G20 audit-field flow (per design.md §G20 sub-decision D1, L1866 + deliverable 2, L1872): the manifest's `model` field IS the `actual_model` value the reviewer copies into finding-file frontmatter and `*.clean.md` sentinels. Persisting the value in the manifest closes the loop — every dispatch is greppable by host × vendor × model after the fact (`grep -E '"model":' reviews/*/round-NN/.dispatch-manifest.json | sort | uniq -c`-class one-liners).
 - G29 absorbed-by-CD-1 note (per design.md §G29, L2317-2329): G29's original framing (per-skill threshold rule for wrapped `artifact_body` vs `artifact_path`) is moot — CD-1 moves prompt assembly off-LLM into this script. The orchestrator's tool-call args never carry artifact bodies anymore. No threshold rule, no reviewer-side parser, no per-skill amendment. This file's G29 work is the dispatch-manifest persistence that makes the off-LLM assembly auditable.
 - Provenance behavior: the manifest write is the audit-log surface CD-1's iron law refers to (per design.md L176 "The dispatch manifest (`$REVIEW_OUTPUT_DIR/.dispatch-manifest.json`) records expected dispatches; the apply-fix step's 'expected tag produced no output' diagnostic catches missed or mis-routed Task invocations"). Atomic append semantics required; idempotent + atomic-mv pattern, no flock needed (per design.md L67).
@@ -660,7 +662,7 @@ The script runs three checks in order before writing the anchor:
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G15 (L1546-L1557)
+**Source:** design.md §G15 (L1541-L1550)
 **Marker phrase:** "the plan-author rule (verbatim wording)"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as a new `### Sweep Task Contract` subsection appended to the END of the `## Test Expectations` section of `skills/plan/SKILL.md` (per design.md §G15 L1574).
@@ -678,7 +680,7 @@ A sweep-task plan-spec MUST include, in its Test Expectations block, a `dependen
 Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defect, not a deferred-to-implementer concern.
 ```
 
-**Source:** design.md §G18 (L1746-L1763)
+**Source:** design.md §G18 (L1739-L1756)
 **Marker phrase:** "Cross-Task Consumer Surface subsection (new) … Verbatim wording"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as a new `### Cross-Task Consumer Surface` subsection appended to the END of the `## Task Definition` section of `skills/plan/SKILL.md` (same neighborhood as G15's Sweep Task Contract subsection), per design.md §G18 L1744.
@@ -724,7 +726,7 @@ Skipping the `cross_task_consumers:` field on a consumer-surface-touching task i
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G15 (L1561-L1566)
+**Source:** design.md §G15 (L1554-L1559)
 **Marker phrase:** "Heuristic (literal wording the reviewer applies)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted as a new bullet within the existing review rubric of `agents/qrspi-plan-reviewer.md`, alongside (NOT replacing) existing field-shape checks, per design.md §G15 L1575.
@@ -738,7 +740,7 @@ Skipping the `cross_task_consumers:` field on a consumer-surface-touching task i
 On detection, the reviewer MUST verify the task's Test Expectations block contains a `dependent_tests:` field per the `plan/SKILL.md` § Sweep Task Contract. Missing-field → emit a `severity: high, change_type: correctness` finding referencing the contract. Field-present-but-malformed (no paths, no `none`-with-grep, or `none` with a grep that returns ≥1 hit when re-run) → same severity.
 ```
 
-**Source:** design.md §G18 (L1767-L1773)
+**Source:** design.md §G18 (L1760-L1766)
 **Marker phrase:** "Cross-Task Consumer Surface Detection rubric clause (new) … Verbatim wording"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted as a new bullet within the existing review rubric of `agents/qrspi-plan-reviewer.md`, alongside (NOT replacing) G15's Sweep-Task Detection clause, per design.md §G18 L1765.
@@ -771,7 +773,7 @@ Missing field, malformed field, non-zero hits on a `none` claim, or invalid disp
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G9 (L1334-L1344)
+**Source:** design.md §G9 (L1335-L1343)
 **Marker phrase:** "Between rounds — required sequence … insert a short numbered block titled"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `skills/implement/SKILL.md` at the END of the per-task reviewer fan-out section — immediately after the reviewer-dispatch prose and before the orchestrator's attention moves on, per design.md §G9 L1332.
@@ -794,8 +796,8 @@ Steps 1, 3, 4 are mechanical reads, a field extraction, and an exit-code branch;
 - `Main-chat residual narrowing` (per design.md §G9 L1356): remove v0.7.1 lines 1190–1195 "run git rev-parse HEAD then compare" instructions; replace with the narrow pattern "read `commit_sha:` from implementer Task return; if missing re-dispatch; else invoke `dispatch-agent.sh --implementer-commit <SHA>` and branch on exit code per G4 step 1 recovery table." Companion lint asserts zero `rev-parse HEAD` matches inside the per-task review section.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/verifier-dispatch-prose.md` at the task-level Apply-fix protocol section (per structure.md §Hook-Point Locations L748, CD-4/G12 site).
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L710, CD-1 site). Note: this include is owned by Slice 1.4 (G3/G4); the G9 "Between rounds" checklist authored by this slice lands at the END of the per-task reviewer fan-out section, downstream of the shared `!cat` include, and must not duplicate dispatch-contract prose that already lives in `reviewer-dispatch-prose.md`.
+- `!cat skills/_shared/verifier-dispatch-prose.md` at the task-level Apply-fix protocol section (per structure.md `## Hook-Point Cross-Slice Index` → CD-4 / G12 verifier-dispatch-prose `!cat` include sites, CD-4/G12 site).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites, CD-1 site). Note: this include is owned by Slice 1.4 (G3/G4); the G9 "Between rounds" checklist authored by this slice lands at the END of the per-task reviewer fan-out section, downstream of the shared `!cat` include, and must not duplicate dispatch-contract prose that already lives in `reviewer-dispatch-prose.md`.
 
 ---
 
@@ -974,7 +976,7 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G4 solution step 1 (L1061-L1085)
+**Source:** design.md §G4 solution step 1 (L1061-L1084)
 **Marker phrase:** "HEAD-correctness check block (verbatim shell from the design solution)"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as the body of the HEAD-correctness checks step (Step 1) inside `scripts/round-prepare.sh` — three shell checks (required-flag, across-rounds advance, within-round equality) followed by the anchor write.
@@ -1063,7 +1065,7 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G27 D5 (L2192-L2200)
+**Source:** design.md §G27 D5 (L2194-L2200)
 **Marker phrase:** "D5 — CD-1 host×vendor matrix extension."
 **Lift type:** Section body
 **Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/_resolve-lib.sh` as the host × vendor routing matrix the library's lookup helpers (`lookup_host_vendor_path`, `lookup_default_second_reviewer`) implement. The 5-column matrix at design.md L2192-L2200 supersedes the prior 4-column version at design.md L117-L125 — a reader who finds the 4-col version first should follow the G27 D5 extension to land on the load-bearing version.
@@ -1088,6 +1090,50 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 **Tests:**
 - `tests/unit/test-config-model-routing.bats`: pins schema shape (5-tier vendor-neutral), `none`-tier halt, missing-`model_routing:` validation, fail-loud routing behavior (G22, G23, G25).
 - `tests/unit/test-routing-matrix-application.bats`: pins host-aware vendor routing and `--tier-override` per-tag application (G22, G27).
+
+---
+
+### `scripts/second-reviewer-available.sh`
+
+**Action:** Create
+**Slice:** 1.4
+**Goal IDs:** {G27}
+**Responsibility:** Host-aware second-reviewer probe. Detects the active host, consumes `_resolve-lib.sh` for the host × vendor matrix and default second-reviewer lookup, and exits non-zero with a `[second-reviewer-unavailable]` diagnostic on stderr when no second reviewer is available for the requested vendor on this host.
+
+**Interface:**
+```bash
+# scripts/second-reviewer-available.sh <vendor>
+# Exit 0: the requested/default second-reviewer vendor is potentially available for the detected host
+# Exit 1: the vendor is absent from the host × vendor matrix, no default exists, or the vendor is unreachable on this host
+# Stdout: optional default vendor identifier for verbose/operator diagnostics only; not consumed by SKILL prose
+# Stderr: `[second-reviewer-unavailable] host=<detected_host> vendor=<vendor> ...` diagnostic on non-zero exit
+```
+
+**Verbatim content (lifted from design.md):**
+
+**Source:** design.md §G27 D2 (L2180)
+**Marker phrase:** "D2 — New probe script `scripts/second-reviewer-available.sh`"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Authored into the script header / leading documentation as the probe's runtime contract; implementation may source `_host-detect.sh` and `_resolve-lib.sh` rather than `dispatch-agent.sh` directly, but the same matrix is the source of truth.
+
+```markdown
+Runs `detect_host` (sourced from `scripts/dispatch-agent.sh` via the existing `QRSPI_SOURCE_ONLY=1` guard, OR pulled into a tiny helper in `scripts/lib/` — implementer's choice during Structure/Plan). Looks up the detected host in CD-1's host×vendor matrix (D5). Exits 0 if D5's "Default second-reviewer vendor" column for this host names a vendor that is **potentially available on this host** (the host can reach it). Exits 1 if D5 names no default second-reviewer vendor for this host, or if the named vendor is unreachable. The probe is **not** keyed on `first-party` vs `third-party` — that distinction names the transport branch (Task tool vs broker), not second-reviewer eligibility. The probe also does **not** verify "distinct from primary" — primary vendor depends on per-tier `model_routing:` config the probe does not read; D4 enforces the vendor-distinct invariant at dispatch time using the fully-resolved primary vendor. On Copilot CLI, where both Claude and Codex are first-party, D5 names `openai-codex` as the default second-reviewer vendor and the probe exits 0. Optionally prints the default vendor identifier to stdout for diagnostic purposes (not consumed by the SKILL; useful for `--verbose` operator runs). Single source of truth = the same matrix the dispatcher reads — there is no parallel table to drift.
+```
+
+**Outline-only sections (Plan/Implement authors):**
+- Argument handling: accept an optional `<vendor>` override; when omitted, call `_resolve-lib.sh`'s default-second-reviewer lookup for the detected host.
+- Host detection: call `_host-detect.sh` / `detect_host`; do not duplicate env-var detection locally.
+- Matrix lookup: use `_resolve-lib.sh` helpers for host × vendor path and default second-reviewer lookup; no parallel host table.
+- Diagnostic boundary: on unavailable/missing vendor, print exactly one `[second-reviewer-unavailable]` stderr line naming host and vendor, then exit non-zero.
+- Probe boundary: do not read `model_routing:` and do not enforce primary/second vendor distinctness; `dispatch-agent.sh` owns that runtime invariant.
+
+**Tests:**
+- `tests/unit/test-second-reviewer-available.bats`: pins Copilot CLI and Claude Code exit 0 for the D5 default `openai-codex`, unknown host exits non-zero with `[second-reviewer-unavailable]`, and the script reads the same `_resolve-lib.sh` matrix as `dispatch-agent.sh`.
+- `tests/unit/test-dispatch-companion-availability.bats`: retained rename-era coverage for downstream companion availability behavior.
+
+**Hook points:**
+- Sourced/used by `skills/goals/SKILL.md` and `skills/using-qrspi/SKILL.md` second-reviewer prompt prose (G27 D3).
+- Consumes `_host-detect.sh` and `_resolve-lib.sh`; no direct `!cat` include sites.
 
 ---
 
@@ -1176,7 +1222,7 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 **Action:** Create
 **Slice:** 1.4
 **Goal IDs:** {G3, G4}
-**Responsibility:** Single shared snippet carrying the orchestrator-side reviewer dispatch instructions. `!cat`-included by every review-producing SKILL.md (12 consumer files per structure.md §Hook-Point Locations L695-712). Carries: the `dispatch-agent.sh` invocation pattern (batched form), the spec-line parse instructions, the per-line Task tool invocation contract (one Task call per spec line, verbatim values, `prompt = "DISPATCH_FILE=<path>"`), the iron law forbidding skipped / deduplicated / modified Task calls, and the `await-round.sh` follow-up. The snippet is generic — it does NOT enumerate agent names, step names, or per-skill artifact names; those flow in via the `$REVIEW_*` dispatch parameters the per-skill preamble sets.
+**Responsibility:** Single shared snippet carrying the orchestrator-side reviewer dispatch instructions. `!cat`-included by every review-producing SKILL.md (12 consumer files per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites). Carries: the `dispatch-agent.sh` invocation pattern (batched form), the spec-line parse instructions, the per-line Task tool invocation contract (one Task call per spec line, verbatim values, `prompt = "DISPATCH_FILE=<path>"`), the iron law forbidding skipped / deduplicated / modified Task calls, and the `await-round.sh` follow-up. The snippet is generic — it does NOT enumerate agent names, step names, or per-skill artifact names; those flow in via the `$REVIEW_*` dispatch parameters the per-skill preamble sets.
 
 **Verbatim content (lifted from design.md):**
 
@@ -1224,7 +1270,7 @@ Then read `$REVIEW_OUTPUT_DIR/.round-complete.json` and the per-finding files as
 
 
 **Hook points / `!cat` includes:**
-- `!cat`-included into 12 consumer SKILL.md files at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L697-712 — goals, questions, research, design, structure, phasing, plan, parallelize, replan, implement, integrate, test).
+- `!cat`-included into 12 consumer SKILL.md files at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites — goals, questions, research, design, structure, phasing, plan, parallelize, replan, implement, integrate, test).
 
 **Tests:**
 - `tests/unit/test-dispatch-sites.bats`: pins that every reviewer-producing skill `!cat`-includes this snippet at the `## Reviewer Dispatch` section (G3, G4).
@@ -1258,11 +1304,11 @@ Then read `$REVIEW_OUTPUT_DIR/.round-complete.json` and the per-finding files as
 - L641-660 region (validation table — `### Fields that affect pipeline behavior (must be validated)`): ADD a `model_routing:` row enumerating the required structure and the fail-loud behavior; ADD bidirectional cross-link annotations to/from CD-1's new single fail-loud sentence per G23.
 - L405 region: DELETE the Claude-only inline glob `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`; REPLACE with the G27 D3 prose pattern (run `bash scripts/second-reviewer-available.sh`; on exit 0 ask the vendor-neutral "Second-model review: yes/no?" question; on non-zero, skip silently and write `second_reviewer: false`).
 - Reviewer-dispatch section: thin per-skill preamble (set `$REVIEW_STEP`, `$REVIEW_ROUND`, `$REVIEW_OUTPUT_DIR`, `$REVIEW_ARTIFACT`, `$REVIEW_AGENTS`) + `!cat skills/_shared/reviewer-dispatch-prose.md` (per design.md CD-1 #11 L130-132).
-- Artifact-quality section: ONE-LINE by-reference pointer to `skills/_shared/evergreen-output-rule.md` (NOT a `!cat` include — using-qrspi is not an artifact-producing skill per CD-2 acceptance #5; the snippet itself is `!cat`-included by the 9 artifact-producing SKILL.md files per structure.md §Hook-Point Locations L714-728).
+- Artifact-quality section: ONE-LINE by-reference pointer to `skills/_shared/evergreen-output-rule.md` (NOT a `!cat` include — using-qrspi is not an artifact-producing skill per CD-2 acceptance #5; the snippet itself is `!cat`-included by the 9 artifact-producing SKILL.md files per structure.md `## Hook-Point Cross-Slice Index` → CD-2 evergreen-output-rule `!cat` include sites).
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L701).
-- `!cat skills/_shared/verifier-dispatch-prose.md` at the artifact-level Apply-fix protocol section (per structure.md §Hook-Point Locations L747 — verifier-dispatch-prose.md itself is authored in Slice 1.1 / CD-4).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
+- `!cat skills/_shared/verifier-dispatch-prose.md` at the artifact-level Apply-fix protocol section (per structure.md `## Hook-Point Cross-Slice Index` → CD-4 / G12 verifier-dispatch-prose `!cat` include sites — verifier-dispatch-prose.md itself is authored in Slice 1.1 / CD-4).
 - Pointer-only reference to `skills/_shared/evergreen-output-rule.md` at the artifact-quality section (CD-2 acceptance #5; not `!cat`-included here).
 
 ---
@@ -1389,7 +1435,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Replace the existing per-reviewer Claude+Codex inline dispatch prose with a thin per-skill preamble setting `$REVIEW_STEP`, `$REVIEW_ROUND`, `$REVIEW_OUTPUT_DIR`, `$REVIEW_ARTIFACT`, `$REVIEW_AGENTS` (Goals dispatches `quality-claude` + `scope-claude` + Codex peers when `second_reviewer: true`), followed by the `!cat` shared include. No other behavioral change in this row.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L701).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1401,7 +1447,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Replace inline reviewer-dispatch prose with a thin per-skill preamble (set `$REVIEW_AGENTS` to the questions-reviewer set) plus the `!cat` shared include.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L702).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1413,7 +1459,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Replace inline reviewer-dispatch prose with the thin per-skill preamble (set `$REVIEW_AGENTS` to the research-reviewer set; preserve the research-isolation invariant — no goals-content in the dispatch payload) plus the `!cat` shared include.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L703).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1425,7 +1471,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Replace inline reviewer-dispatch prose with the thin per-skill preamble (set `$REVIEW_AGENTS` to the design-reviewer + design-scope-reviewer set) plus the `!cat` shared include.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L704).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1437,7 +1483,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Replace inline reviewer-dispatch prose with the thin per-skill preamble (set `$REVIEW_AGENTS` to the structure-reviewer + structure-scope-reviewer set) plus the `!cat` shared include. Other Modify surfaces on this file (G35 unified-architecture posture + `## Test Architecture` authoring procedure, CD-2 evergreen-output-rule include, CD-3 multi-actor-flow-check include) are owned by Slice 1.6 / Slice 1.5 respectively; this row carries only the G3 reviewer-dispatch swap.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L705).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1449,7 +1495,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Replace inline reviewer-dispatch prose with the thin per-skill preamble (set `$REVIEW_AGENTS` to the phasing-reviewer + phasing-scope-reviewer set) plus the `!cat` shared include.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L706).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1466,7 +1512,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 - Reviewer-dispatch section: thin per-skill preamble + `!cat`.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L707).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1478,7 +1524,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Replace inline reviewer-dispatch prose with the thin per-skill preamble (set `$REVIEW_AGENTS` to the parallelize-reviewer + parallelize-scope-reviewer set) plus the `!cat` shared include.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L708).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1490,7 +1536,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Replace inline reviewer-dispatch prose with the thin per-skill preamble (set `$REVIEW_AGENTS` to the replan-reviewer + replan-scope-reviewer set) plus the `!cat` shared include.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L709).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1509,8 +1555,8 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 - Reviewer-dispatch section: thin per-skill preamble + `!cat`.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L710).
-- `!cat skills/_shared/verifier-dispatch-prose.md` at the task-level Apply-fix protocol section (per structure.md §Hook-Point Locations L748 — snippet itself in Slice 1.1).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
+- `!cat skills/_shared/verifier-dispatch-prose.md` at the task-level Apply-fix protocol section (per structure.md `## Hook-Point Cross-Slice Index` → CD-4 / G12 verifier-dispatch-prose `!cat` include sites — snippet itself in Slice 1.1).
 
 ---
 
@@ -1522,7 +1568,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Replace inline reviewer-dispatch prose with the thin per-skill preamble (set `$REVIEW_AGENTS` to the integration-reviewer + security-integration-reviewer set) plus the `!cat` shared include.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L711).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1538,7 +1584,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 - Reviewer-dispatch section: thin per-skill preamble + `!cat`.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L712).
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites).
 
 ---
 
@@ -1592,7 +1638,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 
 
 **Outline-only sections (Plan/Implement authors):**
-- Frontmatter: ADD `tier: medium`; ADD `prompt-prose-reviewer` to the `skills:` preload list (per structure.md §Hook-Point Locations L785 G31 Consumer #5).
+- Frontmatter: ADD `tier: medium`; ADD `prompt-prose-reviewer` to the `skills:` preload list (per structure.md `## Hook-Point Cross-Slice Index` → G31 prompt-prose `!cat` include sites G31 Consumer #5).
 - Body placement: the DISPATCH_FILE first-action instruction lands at the agent's very first procedural step (Read step), replacing the implicit assumption that dispatch params arrive inline in the prompt argument.
 
 ---
@@ -1653,7 +1699,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Read your `DISPATCH_FILE` (passed in your prompt argument as `DISPATCH_FILE=<path>`) as your full dispatch before doing anything else.**
 ```
 
-**Source:** design.md §G22 Deliverable 1 (L1955-L1956)
+**Source:** design.md §G22 Deliverable 1 (L1945-L1949)
 **Marker phrase:** "Tier-assignment rubric (full agent → tier mapping)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Consumed by the sweep against `agents/*.md` frontmatter as the authoritative agent → `tier:` mapping (5 agents at `tier: low`; 36 agents at `tier: medium`); not lifted into any single file body — drives the per-file frontmatter `tier:` field write.
@@ -1679,7 +1725,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Action:** Modify
 **Slice:** 1.4
 **Goal IDs:** {G3, G4}
-**Responsibility:** Assert all reviewer-producing skills route through `dispatch-agent.sh`. Specifically: every SKILL.md in the 12-consumer list (per structure.md §Hook-Point Locations L701-712) `!cat`-includes `skills/_shared/reviewer-dispatch-prose.md` at the `## Reviewer Dispatch` section; no SKILL.md carries an inline `Agent({ subagent_type: …` invocation outside the shared dispatch chain.
+**Responsibility:** Assert all reviewer-producing skills route through `dispatch-agent.sh`. Specifically: every SKILL.md in the 12-consumer list (per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites) `!cat`-includes `skills/_shared/reviewer-dispatch-prose.md` at the `## Reviewer Dispatch` section; no SKILL.md carries an inline `Agent({ subagent_type: …` invocation outside the shared dispatch chain.
 
 **Tests:**
 - `tests/unit/test-dispatch-sites.bats`: pins the 12 consumer SKILL.md files carry the `!cat skills/_shared/reviewer-dispatch-prose.md` directive at `## Reviewer Dispatch`; pins that no consumer file carries inline `Agent({ subagent_type: …)` calls outside the shared dispatch chain. Plan/Implement authors the literal anchor-line assertions.
@@ -1732,6 +1778,21 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Tests:**
 - `tests/unit/test-dispatch-companion-availability.bats` (renamed): pins (a) Copilot CLI exits 0 (default second-reviewer vendor `openai-codex` per D5); (b) Claude Code exits 0 (same default vendor); (c) unknown-host fixture exits non-zero with `[second-reviewer-unavailable]` diagnostic; (d) reading reaches the same CD-1 host×vendor matrix as `_resolve-lib.sh` (single-source-of-truth invariant — no parallel hardcoded host table). Plan/Implement authors the literal assertion strings.
 
+---
+
+### `tests/unit/test-second-reviewer-available.bats`
+
+**Action:** Create
+**Slice:** 1.4
+**Goal IDs:** {G27}
+**Responsibility:** Direct unit coverage for the host-aware second-reviewer probe script. Complements the dispatch-companion availability regression by asserting the probe itself uses the shared host × vendor matrix and emits the required unavailable diagnostic.
+
+**Tests:**
+- `COPILOT_CLI=1 bash scripts/second-reviewer-available.sh openai-codex; echo $?` returns 0 because D5 names `openai-codex` as the default second-reviewer vendor for Copilot CLI.
+- Claude Code host fixture returns 0 for `openai-codex` using the same matrix lookup.
+- Unknown-host fixture returns non-zero and stderr contains `[second-reviewer-unavailable]`.
+- Mutation fixture proves the script reads `_resolve-lib.sh`'s matrix/default lookup rather than a parallel hardcoded host table.
+
 ## Slice 1.5 — Skill prose & interactive dialog quality
 
 ### `skills/design/SKILL.md`
@@ -1759,7 +1820,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 - `tests/unit/test-author-skill-uses-cat.bats`: pins `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md` presence at the G31 Consumer #3 authoring step.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/prompt-prose-detection.md` at the G31 Consumer #3 authoring step (per design.md G31 Distribution Table + structure.md §Hook-Point Locations L783).
+- `!cat skills/_shared/prompt-prose-detection.md` at the G31 Consumer #3 authoring step (per design.md G31 Distribution Table + structure.md `## Hook-Point Cross-Slice Index` → G31 prompt-prose `!cat` include sites).
 - `!cat skills/_shared/prompt-prose-writer-addition.md` at the same site (per design.md G31 Distribution Table).
 - `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (CD-1 consumer).
 - `!cat skills/_shared/evergreen-output-rule.md` at artifact-output contract section before artifact template (CD-2 consumer).
@@ -1818,7 +1879,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G31 Addition A (L2546-L2563)
+**Source:** design.md §G31 Addition A (L2544-L2552)
 **Marker phrase:** "Plan classifier rule (inline in consumer #1)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `skills/plan/SKILL.md` § Per-Task Classification — REPLACES the current Step 1 paragraph (the existing path-glob-only rule). Steps 2+ continue unchanged after.
@@ -1835,7 +1896,7 @@ Apply the detection above to the planned target files. If the target IS prompt p
 The classification gates downstream behavior: lightweight tasks dispatch to `qrspi-implementer-lightweight` (which inherits its own prompt-prose detection via the `prompt-prose-writer` skill preload); code tasks dispatch to `qrspi-implementer` (TDD path). Prompt prose NEVER lands on the TDD path by classification.
 ```
 
-**Source:** design.md §G31 Addition B (L2566-L2579)
+**Source:** design.md §G31 Addition B (L2564-L2568)
 **Marker phrase:** "Plan writer-subagent Test-Expectations clause (inline in consumer #2)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `skills/plan/SKILL.md` writer-subagent dispatch payload sections at TWO sites — the merged-plan/overview subagent dispatch (~lines 125-132) and the initial-draft per-task sub-subagent dispatch (~lines 439-444). At each site, inserted AFTER the consumer's `!cat detection` + `!cat writer-addition`, BEFORE the rest of the dispatch payload's standard Test-Expectations instructions. The post-approval-split sub-subagent does NOT receive this clause.
@@ -1856,8 +1917,8 @@ Other lightweight task categories (non-prompt prose, ordinary documentation, con
 - `tests/unit/test-author-skill-uses-cat.bats`: pins both Consumer #1 site (`!cat skills/_shared/prompt-prose-detection.md` inside Addition A) and both Consumer #2 sites (`!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md` before Addition B); pins Addition B anchor phrases *"prompt prose has no executable behavior to verify by test execution"* and *"verified via the same content-semantic rules application"*.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/prompt-prose-detection.md` inline within Addition A at § Per-Task Classification (Consumer #1) — per design.md G31 Distribution Table + structure.md §Hook-Point Locations L781.
-- `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md` at each of the 2 writer-subagent dispatch payload sites (Consumer #2) — per design.md G31 Distribution Table + structure.md §Hook-Point Locations L782.
+- `!cat skills/_shared/prompt-prose-detection.md` inline within Addition A at § Per-Task Classification (Consumer #1) — per design.md G31 Distribution Table + structure.md `## Hook-Point Cross-Slice Index` → G31 prompt-prose `!cat` include sites.
+- `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md` at each of the 2 writer-subagent dispatch payload sites (Consumer #2) — per design.md G31 Distribution Table + structure.md `## Hook-Point Cross-Slice Index` → G31 prompt-prose `!cat` include sites.
 - `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (CD-1 consumer).
 - `!cat skills/_shared/evergreen-output-rule.md` at artifact-output contract section before artifact template (CD-2 consumer).
 - `!cat skills/_shared/multi-actor-flow-check.md` at `## Multi-Actor Flow Check` (CD-3 consumer).
@@ -1873,7 +1934,7 @@ Other lightweight task categories (non-prompt prose, ordinary documentation, con
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G31 Addition D (L2596-L2609)
+**Source:** design.md §G31 Addition D (L2594-L2599)
 **Marker phrase:** "design-reviewer per-block scope addendum (inline in consumer #6)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Appended in `agents/qrspi-design-reviewer.md` body to the review-procedure section AFTER the `skills:` frontmatter preload of `prompt-prose-reviewer` has loaded — layered atop the shared reviewer-addition's general "file or sub-block" rule as a refinement.
@@ -1915,7 +1976,7 @@ The marker scopes attention to specific sub-blocks; the surrounding design-decis
 - `tests/lint/test-design-altitude-boundary-include.bats`: pins the literal line `!cat skills/_shared/design-altitude-boundary.md` is present in this file (failure surface: drift via subtraction).
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/design-altitude-boundary.md` at procedure section, immediately after Step 1 Read citation (introducer prose precedes the include) — per design.md G34 §D4 + structure.md §Hook-Point Locations L757.
+- `!cat skills/_shared/design-altitude-boundary.md` at procedure section, immediately after Step 1 Read citation (introducer prose precedes the include) — per design.md G34 §D4 + structure.md `## Hook-Point Cross-Slice Index` → G34 design-altitude-boundary `!cat` include sites.
 
 ---
 
@@ -1945,7 +2006,7 @@ The marker scopes attention to specific sub-blocks; the surrounding design-decis
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G10 D1 (L1376-L1403)
+**Source:** design.md §G10 D1 (L1377-L1402)
 **Marker phrase:** "Anti-Fabrication Rule callout — becomes the literal section body"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as a new `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/reviewer-protocol/SKILL.md`, inserted between the existing `### Refusal Procedure` (ends ~line 206) and `## Per-Finding Disk-Write Contract` (line 208). Positioned immediately after Refusal Procedure so the bounding clause is adjacent to the section it bounds.
@@ -1998,7 +2059,7 @@ invitation to invent one.
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G17 deliverable #1 (L1686-L1691)
+**Source:** design.md §G17 deliverable #1 (L1682)
 **Marker phrase:** "Invariant 3 rationale sentence replacement at L174"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Replaces the existing Invariant 3 rationale sentence at line ~174 of `skills/implementer-protocol/SKILL.md`. The pre-edit sentence (locator for find-and-replace) reads: *"This ensures `git status` reports remain deterministic between scratch-file write and removal, and the target repository's committed `.gitignore` is not polluted with QRSPI internals."* The post-edit sentence (verbatim payload below) corrects the now-stale "not polluted" claim — qrspi-plus's own committed `.gitignore` does carry the scratch-file entry; the deterministic-status property still holds because downstream consumers' target repositories do not inherit qrspi-plus's `.gitignore` entry.
@@ -2007,7 +2068,7 @@ invitation to invent one.
 This ensures `git status` reports remain deterministic between scratch-file write and removal in any worktree, including downstream consumers' target repositories which do not inherit qrspi-plus's own committed `.gitignore` entry.
 ```
 
-**Source:** design.md §G17 deliverable #2 (L1693-L1698)
+**Source:** design.md §G17 deliverable #2 (L1689)
 **Marker phrase:** "Commit-Before-Reporting step 4 parenthetical replacement at L241"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Replaces the existing Commit-Before-Reporting step 4 parenthetical at line ~241 of `skills/implementer-protocol/SKILL.md`. The pre-edit parenthetical (locator for find-and-replace) reads: *"(the scratch file is not gitignored and you don't want it in the next round's diff)"* — the "not gitignored" half is stale (the file is now in the committed `.gitignore`). The post-edit parenthetical (verbatim payload below) drops the obsolete rationale and keeps the actionable "out of next round's diff" framing.
@@ -2032,7 +2093,7 @@ This ensures `git status` reports remain deterministic between scratch-file writ
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G17 deliverable #3 (L1700-L1705)
+**Source:** design.md §G17 deliverable #3 (L1695)
 **Marker phrase:** "Commit ownership bullet replacement at L28"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Replaces the existing Commit ownership bullet at line ~28 of `agents/qrspi-test-writer.md`. The pre-edit bullet (locator for find-and-replace) reads: *"...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`."* The post-edit bullet (verbatim payload below) drops the trailing worktree-local-exclude sentence since the file is now also covered by the committed `.gitignore`.
@@ -2056,7 +2117,7 @@ This ensures `git status` reports remain deterministic between scratch-file writ
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G34 D2 (L2897-L2907)
+**Source:** design.md §G34 D2 (L2892-L2899)
 **Marker phrase:** "Locked OWNS allowances list"
 **Lift type:** Full file body
 
@@ -2071,7 +2132,7 @@ This ensures `git status` reports remain deterministic between scratch-file writ
 > - Phasing/release-assignment phrases that name which goal/CD ships in which release (operator-authoritative; phasing.md is the canonical artifact but design.md may carry the labels inline for self-host reasoning)
 ```
 
-**Source:** design.md §G34 D3 (L2908-L2917)
+**Source:** design.md §G34 D3 (L2903-L2910)
 **Marker phrase:** "Locked DEFERS list (continues the same file as a single contiguous block)"
 **Lift type:** Full file body
 
@@ -2205,7 +2266,7 @@ Diagnostic template:
 - `tests/lint/test-design-altitude-boundary-include.bats`: asserts presence of literal `!cat skills/_shared/design-altitude-boundary.md` in this file (drift-by-subtraction guard).
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/design-altitude-boundary.md` replaces inline contract body — per design.md G34 §D4 + structure.md §Hook-Point Locations L756.
+- `!cat skills/_shared/design-altitude-boundary.md` replaces inline contract body — per design.md G34 §D4 + structure.md `## Hook-Point Cross-Slice Index` → G34 design-altitude-boundary `!cat` include sites.
 
 ---
 
@@ -2218,7 +2279,7 @@ Diagnostic template:
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G31 File 1 (L2434-L2469)
+**Source:** design.md §G31 File 1 (L2432-L2461)
 **Marker phrase:** "`skills/_shared/prompt-prose-detection.md` (NEW). Verbatim content:"
 **Lift type:** Full file body
 
@@ -2320,7 +2381,7 @@ For each file or block determined to be prompt prose: Read `skills/_shared/promp
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G31 File 4 (L2506-L2520)
+**Source:** design.md §G31 File 4 (L2504-L2512)
 **Marker phrase:** "`skills/prompt-prose-writer/SKILL.md` (NEW wrapper). Verbatim content:"
 **Lift type:** Full file body
 
@@ -2338,7 +2399,7 @@ description: Apply prompt-design rules when authoring or planning prompt-prose d
 
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/prompt-prose-detection.md` in wrapper body — per design.md G31 §File 4 + structure.md §Hook-Point Locations L784.
+- `!cat skills/_shared/prompt-prose-detection.md` in wrapper body — per design.md G31 §File 4 + structure.md `## Hook-Point Cross-Slice Index` → G31 prompt-prose `!cat` include sites.
 - `!cat skills/_shared/prompt-prose-writer-addition.md` in wrapper body — per same.
 
 ---
@@ -2352,7 +2413,7 @@ description: Apply prompt-design rules when authoring or planning prompt-prose d
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G31 File 5 (L2526-L2540)
+**Source:** design.md §G31 File 5 (L2524-L2532)
 **Marker phrase:** "`skills/prompt-prose-reviewer/SKILL.md` (NEW wrapper). Verbatim content:"
 **Lift type:** Full file body
 
@@ -2370,7 +2431,7 @@ description: Apply prompt-design rules when reviewing prompt-prose subjects in a
 
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/prompt-prose-detection.md` in wrapper body — per design.md G31 §File 5 + structure.md §Hook-Point Locations L785.
+- `!cat skills/_shared/prompt-prose-detection.md` in wrapper body — per design.md G31 §File 5 + structure.md `## Hook-Point Cross-Slice Index` → G31 prompt-prose `!cat` include sites.
 - `!cat skills/_shared/prompt-prose-reviewer-addition.md` in wrapper body — per same.
 
 ---
@@ -2538,7 +2599,7 @@ description: Apply prompt-design rules when reviewing prompt-prose subjects in a
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G31 Addition C (L2582-L2592)
+**Source:** design.md §G31 Addition C (L2580-L2582)
 **Marker phrase:** "plan-test-coverage-reviewer scope guard (inline in consumer #9, standalone)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `agents/qrspi-plan-test-coverage-reviewer.md` body at the TOP of the review-procedure section, BEFORE any existing rubric. Standalone — this consumer does NOT preload `prompt-prose-reviewer` (Q1 resolution: full reviewer block would compromise judgment on `task_type: code` tasks where RED IS required).
@@ -2571,9 +2632,9 @@ Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare l
 - Unified system architecture posture: SKILL.md acknowledges Structure now owns the unified system architecture diagram(s) for the release per design.md G35 §D2; no new dedicated authoring procedure is introduced — existing file-map authoring procedure scales to cover Mermaid component overviews (per design.md G35 "What G35 does NOT cover" bullet 2).
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (CD-1 per structure.md §Hook-Point Locations L705)
-- `!cat skills/_shared/evergreen-output-rule.md` at the artifact-output contract section, immediately before the artifact template (CD-2 per structure.md §Hook-Point Locations L724)
-- `!cat skills/_shared/multi-actor-flow-check.md` at `## Multi-Actor Flow Check` (CD-3 per structure.md §Hook-Point Locations L736)
+- `!cat skills/_shared/reviewer-dispatch-prose.md` at `## Reviewer Dispatch` (CD-1 per structure.md `## Hook-Point Cross-Slice Index` → CD-1 reviewer-dispatch-prose `!cat` include sites)
+- `!cat skills/_shared/evergreen-output-rule.md` at the artifact-output contract section, immediately before the artifact template (CD-2 per structure.md `## Hook-Point Cross-Slice Index` → CD-2 evergreen-output-rule `!cat` include sites)
+- `!cat skills/_shared/multi-actor-flow-check.md` at `## Multi-Actor Flow Check` (CD-3 per structure.md `## Hook-Point Cross-Slice Index` → CD-3 multi-actor-flow-check `!cat` include sites)
 
 ---
 
@@ -2586,7 +2647,7 @@ Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare l
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G35 (L2971-L2989)
+**Source:** design.md §G35 (L2966-L2981)
 **Marker phrase:** "D2 Locked OWNS allowances list followed by D3 Locked DEFERS list — file body is “D2 block then D3 block, no other content” per design.md G35 §D5 first bullet (L3001)"
 **Lift type:** Full file body
 
@@ -2625,7 +2686,7 @@ Structure DEFERS:
 - Body: previous inline contract body is replaced by the single `!cat` directive below; no other body content per the "single contiguous markdown block (D2 block then D3 block, no other content)" rule (design.md G35 §D5 first bullet, L3001).
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/structure-altitude-boundary.md` replaces inline contract body (per design.md G35 §D5 second bullet, L3002; per structure.md §Hook-Point Locations L765). Guarded by `tests/lint/test-structure-altitude-boundary-include.bats`.
+- `!cat skills/_shared/structure-altitude-boundary.md` replaces inline contract body (per design.md G35 §D5 second bullet, L3002; per structure.md `## Hook-Point Cross-Slice Index` → G35 structure-altitude-boundary `!cat` include sites). Guarded by `tests/lint/test-structure-altitude-boundary-include.bats`.
 
 ---
 
@@ -2651,7 +2712,7 @@ Structure DEFERS:
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §G35 §D5 third bullet (L3003)
+**Source:** design.md §G35 §D5 third bullet (L2996)
 **Marker phrase:** "introducer prose authored verbatim for `agents/qrspi-structure-scope-reviewer.md`"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `agents/qrspi-structure-scope-reviewer.md` body's procedure section immediately AFTER the Step 1 Read citation, on its own line; the `!cat skills/_shared/structure-altitude-boundary.md` directive follows on the next line.
@@ -2662,11 +2723,11 @@ The contract you just read carries the following allowances and deferrals; resta
 
 
 **Outline-only sections (Plan/Implement authors):**
-- Placement: introducer prose lands in the agent body's procedure section, immediately after the Step 1 Read citation; the `!cat` directive follows on the next line (per design.md G35 §D5 third bullet, L3003; per structure.md §Hook-Point Locations L766).
+- Placement: introducer prose lands in the agent body's procedure section, immediately after the Step 1 Read citation; the `!cat` directive follows on the next line (per design.md G35 §D5 third bullet, L3003; per structure.md `## Hook-Point Cross-Slice Index` → G35 structure-altitude-boundary `!cat` include sites).
 - All other agent body content unchanged.
 
 **Hook points / `!cat` includes:**
-- `!cat skills/_shared/structure-altitude-boundary.md` in the procedure section, immediately after the Step 1 Read citation, preceded by the introducer prose above (per design.md G35 §D5 third bullet; per structure.md §Hook-Point Locations L766). Guarded by `tests/lint/test-structure-altitude-boundary-include.bats`.
+- `!cat skills/_shared/structure-altitude-boundary.md` in the procedure section, immediately after the Step 1 Read citation, preceded by the introducer prose above (per design.md G35 §D5 third bullet; per structure.md `## Hook-Point Cross-Slice Index` → G35 structure-altitude-boundary `!cat` include sites). Guarded by `tests/lint/test-structure-altitude-boundary-include.bats`.
 
 ---
 
