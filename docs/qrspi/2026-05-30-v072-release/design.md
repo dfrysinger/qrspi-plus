@@ -1756,6 +1756,51 @@ Composition rationale: the verifier already lazy-Reads cited upstream files (cur
 
 ---
 
+## G20 — Reviewer-model calibration: observability surface
+
+**Type:** exploratory. **Source:** goals.md G20 / #237. **Cross-link:** complementary to G19 (G19 = filter-side hallucination catch; G20 = source-side calibration data — different defect classes, neither subsumes the other).
+
+**Caveat on motivating evidence (read first).** The v0.7.1 Integrate R4 ICX-F02 calibration gap was observed during a run where the orchestrator was hand-handling model dispatch — the plugin's `model_routing:` chain was not yet shipping its current form. Whether the calibration gap remains a real signal once the dispatch chain functions as designed is **the open question this goal records data to answer** — not an assumption this design takes as given. v0.7.2 ships the recording surface only. Mitigation decisions defer to v0.7.3 after v0.7.2 self-host signal.
+
+**Scope (locked).** Observability-only: A1 + B1 + D1 from the goal candidates. No KEEP-threshold change. No mitigation. No `model_routing:` schema extension. No aggregate UI in `verified.md`. The verifier filter remains the load-bearing defense against the over-flagging this goal measures.
+
+**Sub-decisions:**
+
+- **A1** — observability-only this release. No correctness-threshold (`≥70`) or style/clarity-threshold (`≥80`) change. Whether to bump the threshold for substituted-model reviewers is deferred until v0.7.2 data is in hand.
+- **B1** — per-finding sidecar field. Aggregation is post-hoc shell (`grep "^actual_model:" reviews/*/round-NN/*.md | sort | uniq -c`-class one-liners). No aggregate header surface added to `verified.md`.
+- **D1** — value flows reviewer-frontmatter → verifier-sidecar. Reviewer emits the field on every finding file and every `*.clean.md` sentinel at emission time; verifier copies it verbatim to the sidecar. The dispatcher supplies the value as a dispatch parameter (it already resolves the model ID at dispatch site — this is recording, not new computation).
+
+**Deliverables:**
+
+1. **Reviewer-protocol audit-field addition** (`skills/reviewer-protocol/SKILL.md`) — extend the audit-field list (currently `artifact`, `round`, `reviewer`) to include `actual_model`. The contract: reviewers MUST emit this field on every finding file and every `*.clean.md` sentinel. Value type: the resolved model ID string (e.g. `claude-sonnet-4.6`, `gpt-5.3-codex`) per the `model_routing:` chain output. The per-finding file format example block and the clean-sentinel block both gain the field.
+
+2. **Dispatch parameter addition** — every per-skill SKILL.md that dispatches reviewers via the Standard Review Loop adds one parameter to the reviewer dispatch prompt: `actual_model: <resolved model ID>`. The orchestrator already resolves this value at dispatch site (it's the value passed to `Agent({ ..., model })` for Claude subagents and to the reviewer model flag of `scripts/run-codex-review.sh` for Codex subagents). The new parameter is record-keeping for the reviewer to copy into emission frontmatter. Files affected: per-skill SKILL.md under `skills/{goals,questions,research,design,phasing,structure,plan,parallelize,implement,integrate,test,replan}/`.
+
+3. **Codex emission template update** (`skills/reviewer-protocol/codex-emission-override.md`) — the worked-example finding frontmatter and the clean-sentinel example both gain the `actual_model:` field so Codex subagents emit it. The splitter (`scripts/codex-finding-splitter.sh`) is unchanged — it splits on `<<<FINDING-BOUNDARY>>>`, does not parse frontmatter fields.
+
+4. **Codex wrapper update** (`scripts/run-codex-review.sh`) — accept and inject `actual_model` into the composed dispatch-params section so Codex sees the value to copy through. Same shape as the existing `--reviewer-tag` / `--scope-hint` flags.
+
+5. **Verifier sidecar schema addition** (`agents/qrspi-finding-verifier.md`) — step 1 (Read finding file) gains a phrase: "...parse the 5-field finding object plus the audit field `actual_model:`...". Step 6 (Write sidecar) gains one line in BOTH the success and the `VERIFY_FAILED` shapes: `actual_model: <copied verbatim from finding frontmatter>`. When the finding file omits the field (older rounds, hand-written rounds, drift from a reviewer that did not yet adopt the new audit field), the verifier writes `actual_model: unknown` rather than failing — this is observability data, not a correctness gate. Step 7's return line is unchanged.
+
+6. **No test coverage.** The new field is descriptive, not behaviorally load-bearing — nothing keys off its value in v0.7.2. Self-host signal in v0.7.2 demonstrates whether reviewers emit it consistently. If the field is missing from >5% of v0.7.2 emissions, that's a v0.7.3-blocking emission-protocol drift, not a v0.7.2 design defect. The clean-sentinel coverage matters: without it we lose the "this reviewer dispatched but found nothing" data point for calibration aggregation.
+
+**v0.7.3 follow-up issue (to file alongside this commit).** Once v0.7.2 self-host accumulates `actual_model:` data:
+
+- **a.** Decide whether the calibration gap reproduces under correctly-routed dispatch — or whether the v0.7.1 ICX-F02 observation was an artifact of the hand-handled-dispatch run state.
+- **b.** If real: lock candidate 3 (per-substituted-model KEEP threshold bump) or candidate 1's deeper variant (per-`(reviewer_tag, actual_model)` calibration table driving per-pair thresholds).
+- **c.** If not real: close G20 in v0.7.3 with no further action; the audit field remains as cheap insurance against future calibration drift.
+- **d.** Repro-harness pairing with G19's #270 direction (a) — if the same prompt shape provokes both wholesale fabrication (G19) and misinterpretation (G20), one mitigation may close both.
+
+**Cross-cutting notes.**
+
+- **G20 ↔ G19.** G19 caught wholesale fabrication (filter-side, via Cite Check). G20 measures source-side calibration. Both surface under substituted-model reviewers; neither subsumes the other.
+- **G20 ↔ G6 (transport-layer disk-write contract).** G6 governs WHERE reviewer output lands. G20 governs WHAT one field of that output contains. No coupling at the design level.
+- **G20 ↔ G22 (`model_routing:` schema drift).** G22 may surface new tier names or new substitution rules; the `actual_model:` audit field records whatever value the routing chain ultimately resolved, so G20 absorbs any G22 schema evolution without further change.
+
+**References.** Source: goals.md G20 / #237 (v0.7.1 hardening Integrate R4 ICX-F02); `skills/reviewer-protocol/SKILL.md` L216-234 (per-finding file format, audit fields, clean-sentinel schema); `agents/qrspi-finding-verifier.md` steps 1 + 6 (Read finding + Write sidecar — sole verifier-side edit surface); `skills/using-qrspi/SKILL.md` L388 + L985 (KEEP thresholds — unchanged by this goal); related G19 (filter-side counterpart, locked at `6f4aefb`); related G22 (`model_routing:` schema — separate concern); related #270 (v0.7.3 repro infrastructure that this goal's data drives into).
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
