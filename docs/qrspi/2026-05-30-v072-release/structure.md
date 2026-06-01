@@ -16,7 +16,7 @@ This artifact uses **per-file specification blocks** (see `## Per-File Specifica
 
 **Verbatim vs outline.** Each per-file block distinguishes two prose forms:
 
-- **Verbatim content (lifted from design.md):** A structured citation header followed by a mandatory fenced code block carrying the lifted payload. Each citation declares four fields — `**Source:**` (plain bold, format `design.md §<section> (L<start>-L<end>)`), `**Marker phrase:**` (the exact bounding phrase in design.md that a verifier can use to relocate the lift when line numbers drift), `**Lift type:**` (one of `Full file body`, `Insertion delta`, or `Section body`), and `**Insertion site (in target file):**` (required iff Lift type ≠ Full file body — names the exact location in the target file where the payload lands). The fenced code block (e.g., ```markdown for `.md` targets, ```bash for shell scripts) is the unambiguous payload boundary and carries the lifted prose byte-identical to design.md, with no leading `> ` blockquote markers. **design.md display-fence carve-out.** When design.md wraps a payload in its own outer code fence (e.g., a 4-backtick ````markdown wrap so design.md can render `## headings` and `| tables |` as literal characters), that outer fence is design.md's display affordance — not part of the payload — and MUST NOT be lifted into structure.md's verbatim block. The structure.md fence is the only fence; the payload starts at the first line of substantive content inside design.md's display wrap. The same rule applies to any trailing `Placement:` / `Consumers:` metadata that design.md keeps adjacent to a payload — those are design-process metadata and belong in structure.md's `**Insertion site (in target file):**` field, never inside the payload. A `**Verbatim content (lifted from design.md):**` heading on a per-file block means design.md is the canonical source — Plan/Implement consumers MUST author the cited file with the fenced payload exactly, preserving code fences, HTML comments, and any list/anchor scaffolding the lift carries. A future drift between structure.md and design.md is a contract violation caught by the structure-reviewer's stitching audit.
+- **Verbatim content (lifted from design.md):** A structured citation header followed by a mandatory fenced code block carrying the lifted payload. Each citation declares four fields — `**Source:**` (plain bold, format `design.md §<section> (L<start>-L<end>)`), `**Marker phrase:**` (the exact bounding phrase in design.md that a verifier can use to relocate the lift when line numbers drift), `**Lift type:**` (one of `Full file body`, `Insertion delta`, or `Section body`), and `**Insertion site (in target file):**` (required iff Lift type ≠ Full file body — names the exact location in the target file where the payload lands). The fenced code block (e.g., ```markdown for `.md` targets, ```bash for shell scripts) is the unambiguous payload boundary and carries the lifted prose byte-identical to design.md, with no leading `> ` blockquote markers. **design.md display-fence carve-out.** When design.md wraps a payload in its own outer code fence (e.g., a 4-backtick ````markdown wrap so design.md can render `## headings` and `| tables |` as literal characters), that outer fence is design.md's display affordance — not part of the payload — and MUST NOT be lifted into structure.md's verbatim block. The structure.md fence is the only fence; the payload starts at the first line of substantive content inside design.md's display wrap. The same rule applies to any trailing `Placement:` / `Consumers:` metadata that design.md keeps adjacent to a payload — those are design-process metadata and belong in structure.md's `**Insertion site (in target file):**` field, never inside the payload. **`Old:` / `New:` delta-schema carve-out.** When design.md describes a prose-edit delta using an `Old:` / `New:` bullet pair (a substitution recipe), only the `New:` content is the verbatim payload destined for the target file. The `Old:` quote serves as a find-and-replace locator and belongs in the `**Insertion site (in target file):**` field, where the structure.md block names the pre-edit text the Insertion site uses to relocate the substitution point. A `**Verbatim content (lifted from design.md):**` heading on a per-file block means design.md is the canonical source — Plan/Implement consumers MUST author the cited file with the fenced payload exactly, preserving code fences, HTML comments, and any list/anchor scaffolding the lift carries. A future drift between structure.md and design.md is a contract violation caught by the structure-reviewer's stitching audit.
 - **Outline-only sections (Plan/Implement authors):** A bullet list naming section anchors, anchor phrases that MUST appear, and behavior constraints. design.md provides scope and constraints; the actual prose body is authored at Plan/Implement time per design.md G1 Sub-Rule B ("deferred-prose-design" form). The outline pins what the authored prose must achieve without locking the wording.
 
 **Asymmetry is explicit, not implicit.** A per-file block that omits both `**Verbatim content (lifted from design.md):**` and `**Outline-only sections:**` headings means design.md authored neither — the file is fully Plan/Implement-DEFERS. Test files (any `tests/**/*.bats` row) carry only `**Tests:**` content (what the test pins), never verbatim assertion text, per Plan/Implement's DEFERS contract on test bodies.
@@ -836,7 +836,7 @@ Steps 1, 3, 4 are mechanical reads, a field extraction, and an exit-code branch;
 **Goal IDs:** {G3, G4, G16, G22, G23, G25, G27}
 **Responsibility:** Universal batched dispatch entry point. Resolves agent tier → vendor → model via `_resolve-lib.sh`, detects host via `_host-detect.sh`, auto-invokes `round-prepare.sh` (G4) when `.round-prepare.json` is absent, assembles per-reviewer prompt files under `<round-dir>/.dispatch/<tag>.prompt`, emits one `MODE=first_party …` spec line per first-party reviewer on stdout, routes third-party reviewers via `dispatch-companion.sh` (background), and appends per-tag entries to `.dispatch-manifest.json`. Also exposes `--verifier-fanout` mode that globs `<round-dir>/*.finding-F*.md` and emits one verifier spec line per finding. Halts loudly when a tier resolves to `none` (G25 absorbed acceptance criterion). Reads `second_reviewer:` from `config.md` per G27 D4 to decide whether to emit a second-vendor dispatch per reviewer-agent tag, halting loudly when no second-reviewer-eligible vendor exists for the detected host. Inherits the canonicalize-under-`$REPO_ROOT/` boundary guard on every `--subject-code` / `--artifact-body` / `--companion` / `--diff-file` path argument from the pre-rename `run-codex-review.sh` (G16 helper `assert_path_under_repo_root`).
 
-**Interface:** (per structure.md §Interfaces §3, L197-218)
+**Interface:**
 ```bash
 # Reviewer dispatch mode:
 scripts/dispatch-agent.sh --step <step> --round <N> --output-dir <round-dir> \
@@ -899,7 +899,7 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Goal IDs:** {G3, G27}
 **Responsibility:** Vendor-routing tier underneath `dispatch-agent.sh` on the third-party path. Takes `--vendor` + resolved `--model` + `--prompt-file` + `--round-dir` + `--tag`; routes to vendor-specific transport (`codex-companion-bg.sh` today; future `deepseek-companion-bg.sh`). Also provides the `await <job-id>` subcommand recorded in each background manifest entry's `await_cmd` field. Output-bound per CD-1 #4 — `await` writes the captured payload to `<round-dir>/.dispatch/<tag>.raw` on disk and emits nothing on stdout/stderr (no payload echo into the orchestrator's context).
 
-**Interface:** (per structure.md §Interfaces §14, L419-436)
+**Interface:** (per `## Cross-Cutting Schemas` §13 above)
 ```bash
 # scripts/dispatch-companion.sh
 # Usage (launch): dispatch-companion.sh --vendor <vendor> --model <model-id> \
@@ -932,7 +932,7 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Goal IDs:** {G3}
 **Responsibility:** Split third-party reviewer raw stdout (captured by `dispatch-companion.sh await` to `<round-dir>/.dispatch/<tag>.raw`) into per-finding files written to `<round-dir>/<tag>.finding-F<NN>.md`. Invoked once per resolved background manifest entry by `await-round.sh`. Writes `NO_FINDINGS` sentinel on a clean NO_FINDINGS stdout from the third-party reviewer. Vendor-neutral rename completes CD-1's removal of Codex-specific naming from the universal dispatch chain.
 
-**Interface:** (per structure.md §Interfaces §16, L456-470)
+**Interface:** (per `## Cross-Cutting Schemas` §15 above)
 ```bash
 # scripts/third-party-finding-splitter.sh
 # Usage: third-party-finding-splitter.sh --round-dir <abs-round-dir> --tag <reviewer-tag>
@@ -958,7 +958,7 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Goal IDs:** {G4}
 **Responsibility:** Single deterministic script consolidating diff-anchor construction and ref-selection logic that today lives as orchestrator-side prose across 9 skills (uniform "Pre-dispatch diff-file emission" paragraph). Auto-invoked by `dispatch-agent.sh` when `<output-dir>/.round-prepare.json` is absent. Owns all three HEAD-related correctness checks on per-task invocations (`--task-branch` + `--implementer-commit`): required-flag check (exit 10), within-round equality check (exit 11), across-rounds advance check (exit 12). Idempotent + atomic-mv pattern; no `flock` needed for parallel reviewer dispatch. (Note: This file appears in Slice 1.3 as a Modify row covering later G4 amendments; this Slice 1.4 row owns initial creation.)
 
-**Interface:** (per structure.md §Interfaces §2, L185-195)
+**Interface:**
 ```bash
 # scripts/round-prepare.sh <task-branch> <round-NN> <output-dir> [--implementer-commit <SHA>] [--verify]
 # Exit 0: <output-dir>/round-NN.diff + <output-dir>/round-NN-commit.txt written
@@ -1015,7 +1015,7 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 **Goal IDs:** {G3, G4}
 **Responsibility:** Manifest-driven async drain step called unconditionally after every reviewer or verifier fan-out round. Reads `<round-dir>/.dispatch-manifest.json`; awaits all `mode: background` entries with `status: pending` via each entry's `await_cmd`; runs `third-party-finding-splitter.sh` per resolved entry; updates manifest statuses; writes `<round-dir>/.round-complete.json`; removes the `<round-dir>/.dispatch/` subdir after the round-complete summary is written. No-op-safe when the manifest has zero background entries (first-party-only rounds still invoke it; it returns immediately after reading the manifest). Output-bound per CD-1 #4 — MUST NOT echo captured third-party subagent stdout (or any substring of it) to its own stdout or stderr.
 
-**Interface:** (per structure.md §Interfaces §15, L442-454)
+**Interface:** (per `## Cross-Cutting Schemas` §14 above)
 ```bash
 # scripts/await-round.sh
 # Usage: await-round.sh --round-dir <abs-round-dir>
@@ -1107,7 +1107,7 @@ printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
 **Goal IDs:** {CD-4}
 **Responsibility:** Encapsulate per-host interaction-mode detection. Consulted once per round-start by the orchestrator; returns one of three output shapes (`shell-verdict`, `llm-context`, or `user-override-only`) depending on the active host's auto-mode signal characteristics. The script is the single place where per-host detection knowledge lives (encapsulation rule per design.md CD-4 §I.7 L679); no SKILL.md prose, no agent body, and no `_shared/` snippet references per-host signal names directly. Audit-log entry (`<round-dir>/.interaction-mode-audit.json`) is written by the orchestrator (single-writer principle per design.md L671), not by this script.
 
-**Interface:** (per structure.md §Interfaces §13, L401-417)
+**Interface:** (per `## Cross-Cutting Schemas` §12 above)
 ```bash
 # scripts/detect-interaction-mode.sh
 # Usage: detect-interaction-mode.sh  (no arguments)
@@ -1271,7 +1271,7 @@ Then read `$REVIEW_OUTPUT_DIR/.round-complete.json` and the per-finding files as
 
 **Verbatim content (lifted from design.md):**
 
-**Source:** design.md §CD-4 §I.4 (L580-L585) and structure.md §Interfaces §4 (L224-L239)
+**Source:** design.md §CD-4 §I.4 (L580-L585)
 **Marker phrase:** "`model_routing:` config block (5-tier schema + halt-response additions)"
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as the `model_routing:` / `trusted_path:` / `orchestrator_rescue` / `max_drift_per_round` configuration block within `config.md` — the 5-tier vendor-neutral routing schema plus the halt-response additions for CD-4 §I.4.
@@ -1329,7 +1329,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Goal IDs:** {G4}
 **Responsibility:** Enumerate section-anchor sources used by narrow-read helpers and round-preparation. Per design.md G4 the section-anchor manifest is the lookup table that `round-prepare.sh` and narrow-read consumers use to translate `(file, heading)` pairs into line windows. This Modify expands the manifest with anchors covering the new dispatch/round-prepare/SKILL surfaces introduced in slice 1.4.
 
-**Interface:** (per structure.md §Interfaces §8, L300-301)
+**Interface:** (per `## Cross-Cutting Schemas` §8 below)
 ```json
 { "source": "skills/using-qrspi/SKILL.md", "indexes": [ { "heading": "## Section-Anchor Index", "line_start": 12, "line_end": 44 } ] }
 ```
@@ -1701,7 +1701,7 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Responsibility:** Assert host-aware vendor routing (per CD-1 host×vendor matrix lookup) and `--tier-override` per-tag application behavior. Specifically: `--tier-override tag1=high,tag2=medium` applied to a multi-tag dispatch resolves each tag independently per the precedence chain; the G27 second-reviewer fan-out (when `second_reviewer: true`) emits two dispatch entries per reviewer-agent tag at the SAME `tier:`; the `[second-reviewer-unavailable]` halt fires when no second-reviewer-eligible vendor exists for the detected host.
 
 **Tests:**
-- `tests/unit/test-routing-matrix-application.bats`: pins (a) `--tier-override` per-tag CSV (`tag=tier`) grammar applies per tag, with tags not named in the override resolving via the agent-`tier:` → `default_tier:` → fallback chain (per structure.md §Interfaces §7 L281-294); (b) on Copilot CLI with `second_reviewer: true`, a reviewer-agent dispatch emits both a primary Claude entry and a Codex second entry at the same tier (G27 D4); (c) on a host where no second-reviewer-eligible vendor is available, `dispatch-agent.sh` halts with the `[second-reviewer-unavailable]` diagnostic (G27 D4 L2196). Plan/Implement authors the literal anchor-line assertions.
+- `tests/unit/test-routing-matrix-application.bats`: pins (a) `--tier-override` per-tag CSV (`tag=tier`) grammar applies per tag, with tags not named in the override resolving via the agent-`tier:` → `default_tier:` → fallback chain (per `## Cross-Cutting Schemas` §7 below); (b) on Copilot CLI with `second_reviewer: true`, a reviewer-agent dispatch emits both a primary Claude entry and a Codex second entry at the same tier (G27 D4); (c) on a host where no second-reviewer-eligible vendor is available, `dispatch-agent.sh` halts with the `[second-reviewer-unavailable]` diagnostic (G27 D4 L2196). Plan/Implement authors the literal anchor-line assertions.
 
 ---
 
@@ -1996,21 +1996,19 @@ invitation to invent one.
 **Source:** design.md §G17 deliverable #1 (L1686-L1691)
 **Marker phrase:** "Invariant 3 rationale sentence replacement at L174"
 **Lift type:** Insertion delta
-**Insertion site (in target file):** Replaces the existing Invariant 3 rationale sentence at line ~174 of `skills/implementer-protocol/SKILL.md` — the locked Old → New substitution.
+**Insertion site (in target file):** Replaces the existing Invariant 3 rationale sentence at line ~174 of `skills/implementer-protocol/SKILL.md`. The pre-edit sentence (locator for find-and-replace) reads: *"This ensures `git status` reports remain deterministic between scratch-file write and removal, and the target repository's committed `.gitignore` is not polluted with QRSPI internals."* The post-edit sentence (verbatim payload below) corrects the now-stale "not polluted" claim — qrspi-plus's own committed `.gitignore` does carry the scratch-file entry; the deterministic-status property still holds because downstream consumers' target repositories do not inherit qrspi-plus's `.gitignore` entry.
 
 ```markdown
-- **Old:** "This ensures `git status` reports remain deterministic between scratch-file write and removal, and the target repository's committed `.gitignore` is not polluted with QRSPI internals."
-- **New:** "This ensures `git status` reports remain deterministic between scratch-file write and removal in any worktree, including downstream consumers' target repositories which do not inherit qrspi-plus's own committed `.gitignore` entry."
+This ensures `git status` reports remain deterministic between scratch-file write and removal in any worktree, including downstream consumers' target repositories which do not inherit qrspi-plus's own committed `.gitignore` entry.
 ```
 
 **Source:** design.md §G17 deliverable #2 (L1693-L1698)
 **Marker phrase:** "Commit-Before-Reporting step 4 parenthetical replacement at L241"
 **Lift type:** Insertion delta
-**Insertion site (in target file):** Replaces the existing Commit-Before-Reporting step 4 parenthetical at line ~241 of `skills/implementer-protocol/SKILL.md` — the locked Old → New substitution.
+**Insertion site (in target file):** Replaces the existing Commit-Before-Reporting step 4 parenthetical at line ~241 of `skills/implementer-protocol/SKILL.md`. The pre-edit parenthetical (locator for find-and-replace) reads: *"(the scratch file is not gitignored and you don't want it in the next round's diff)"* — the "not gitignored" half is stale (the file is now in the committed `.gitignore`). The post-edit parenthetical (verbatim payload below) drops the obsolete rationale and keeps the actionable "out of next round's diff" framing.
 
 ```markdown
-- **Old:** "(the scratch file is not gitignored and you don't want it in the next round's diff)"
-- **New:** "(keeps the scratch file out of the next round's diff)"
+(keeps the scratch file out of the next round's diff)
 ```
 
 
@@ -2032,11 +2030,10 @@ invitation to invent one.
 **Source:** design.md §G17 deliverable #3 (L1700-L1705)
 **Marker phrase:** "Commit ownership bullet replacement at L28"
 **Lift type:** Insertion delta
-**Insertion site (in target file):** Replaces the existing Commit ownership bullet at line ~28 of `agents/qrspi-test-writer.md` — the locked Old → New substitution.
+**Insertion site (in target file):** Replaces the existing Commit ownership bullet at line ~28 of `agents/qrspi-test-writer.md`. The pre-edit bullet (locator for find-and-replace) reads: *"...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`."* The post-edit bullet (verbatim payload below) drops the trailing worktree-local-exclude sentence since the file is now also covered by the committed `.gitignore`.
 
 ```markdown
-- **Old:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`."
-- **New:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`."
+...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`.
 ```
 
 
@@ -2935,36 +2932,9 @@ The contract you just read carries the following allowances and deferrals; resta
 - `Build prerequisite`: the G32 bullets above assume the build script has run and `build/` is in sync; orchestration is Plan/Implement territory.
 - `No new shared bats helper`: per design.md G24 §"What G24 does NOT cover" (L2073) the regex pin pattern is NOT extracted into a shared bats helper — only 4 pin sites, all in one file; helper extraction is over-engineering at this volume. This file does not add such a helper either.
 
-## Structure Altitude Boundary
+## Cross-Cutting Schemas
 
-<boundary rule prose>
-
-### What Structure OWNS
-- ...
-
-### What Structure DEFERS
-- ...
-```
-
-Concrete v0.7.2 path: `skills/_shared/structure-altitude-boundary.md`.
-
-### 6. Design altitude-boundary snippet
-
-The Design boundary uses the same single-source pattern; the shipped file name is the concrete v0.7.2 authority even though earlier draft wording described the surface generically.
-
-```markdown
-## Design Altitude Boundary
-
-<boundary rule prose>
-
-### What Design OWNS
-- ...
-
-### What Design DEFERS
-- ...
-```
-
-Concrete v0.7.2 path: `skills/_shared/design-altitude-boundary.md`.
+Reference list of file-format schemas, override grammars, and script contracts that span multiple per-file blocks. Each subsection documents a contract referenced from several per-file blocks in `## Per-File Specifications` above. The shared snippets themselves (e.g., `skills/_shared/structure-altitude-boundary.md`) carry their own per-file blocks with verbatim payloads — items below are kept here only when the contract is genuinely cross-cutting (data shapes consumed by multiple writers/readers, CLI grammars used by multiple scripts).
 
 ### 7. Host-and-tier-aware second-reviewer override
 
@@ -3073,20 +3043,7 @@ Fan-in emits machine-readable counts because apply-fix needs a stable summary ev
 }
 ```
 
-### 12. Shared verifier filter rule snippet
-
-Threshold logic is snippet-backed so fan-in, apply-fix, and reviewer-facing documentation all point at one authoritative rule.
-
-
-## Verifier Filter Rule
-
-<threshold and filter rule prose>
-- ...
-```
-
-Concrete v0.7.2 path: `skills/_shared/verifier-filter-rule.md`.
-
-### 13. Interaction-mode detector
+### 12. Interaction-mode detector
 
 The orchestrator consults this script once per round-start; detection logic stays script-encapsulated so no consumer skill or agent body carries per-host signal names.
 
@@ -3108,7 +3065,7 @@ Locked platform directory (verified at design time as of 2026-05-31): per-platfo
 
 Audit file: `<round-dir>/.interaction-mode-audit.json` with shape `{platform, detection_type, verdict, evidence}`. Separate from `.verifier-fan-in-audit.json` (different writer, different timing).
 
-### 14. Dispatch companion script
+### 13. Dispatch companion script
 
 Vendor-specific third-party job launcher invoked by `dispatch-agent.sh` on the third-party path; also provides the `await` subcommand recorded in the dispatch manifest's `await_cmd` field.
 
@@ -3127,7 +3084,7 @@ Vendor-specific third-party job launcher invoked by `dispatch-agent.sh` on the t
 #                       appends the manifest entry to <round-dir>/.dispatch-manifest.json)
 ```
 
-### 15. Round-completion barrier
+### 14. Round-completion barrier
 
 Manifest-driven async drain step called unconditionally after every reviewer or verifier fan-out round; no-op-safe when manifest has zero background entries.
 
@@ -3145,7 +3102,7 @@ Manifest-driven async drain step called unconditionally after every reviewer or 
 #   - removes <round-dir>/.dispatch/ subdir after .round-complete.json is written
 ```
 
-### 16. Third-party finding splitter
+### 15. Third-party finding splitter
 
 Splits third-party reviewer stdout (boundary-delimited) into per-finding files on disk; called by `await-round.sh` per resolved background manifest entry.
 
@@ -3161,7 +3118,7 @@ Splits third-party reviewer stdout (boundary-delimited) into per-finding files o
 #              writes NO_FINDINGS sentinel file on clean NO_FINDINGS stdout
 ```
 
-### 17. `.orchestrator-fixes.json` rescue audit schema
+### 16. `.orchestrator-fixes.json` rescue audit schema
 
 Orchestrator rescue layer logs every fix attempt (successful or failed) to this file; the round-summary prose surface sources per-tier counts from it.
 
@@ -3359,16 +3316,16 @@ These invariants are release-wide and each is owned by the smallest test type th
 
 ## Section Contracts
 
-Section-list contracts for new `skills/`, `_shared/`, and protocol files created in this release. Each entry names required top-level sections at heading-level granularity. Prose content under those headings is deferred to Plan/Implement. Files already contracted in the Interfaces section (`skills/_shared/structure-altitude-boundary.md` → §5; `skills/_shared/design-altitude-boundary.md` → §6; `skills/_shared/verifier-filter-rule.md` → §12; `scripts/detect-interaction-mode.sh` → §13; `scripts/dispatch-companion.sh` → §14; `scripts/await-round.sh` → §15; `scripts/third-party-finding-splitter.sh` → §16; `<round-dir>/.orchestrator-fixes.json` → §17) are cross-referenced rather than duplicated here.
+Section-list contracts for new `skills/`, `_shared/`, and protocol files created in this release. Each entry names required top-level sections at heading-level granularity. Prose content under those headings is deferred to Plan/Implement. Per-file specifications for `skills/_shared/structure-altitude-boundary.md`, `skills/_shared/design-altitude-boundary.md`, and `skills/_shared/verifier-filter-rule.md` live in `## Per-File Specifications` above; cross-cutting script and data-shape contracts for `scripts/detect-interaction-mode.sh` (§12), `scripts/dispatch-companion.sh` (§13), `scripts/await-round.sh` (§14), `scripts/third-party-finding-splitter.sh` (§15), and `<round-dir>/.orchestrator-fixes.json` (§16) live in `## Cross-Cutting Schemas` above and are referenced rather than duplicated below.
 
 | File | Required top-level sections |
 |---|---|
 | `skills/_shared/evergreen-output-rule.md` | `## Evergreen-Output Rule` |
 | `skills/_shared/multi-actor-flow-check.md` | `## Multi-Actor Flow Check` |
 | `skills/_shared/verifier-dispatch-prose.md` | `## Verifier Dispatch` |
-| `skills/_shared/verifier-filter-rule.md` | `## Verifier Filter Rule` — see Interface §12 |
-| `skills/_shared/structure-altitude-boundary.md` | `## Structure Altitude Boundary`, `### What Structure OWNS`, `### What Structure DEFERS` — see Interface §5 |
-| `skills/_shared/design-altitude-boundary.md` | `## Design Altitude Boundary`, `### What Design OWNS`, `### What Design DEFERS` — see Interface §6 |
+| `skills/_shared/verifier-filter-rule.md` | `## Verifier Filter Rule` — see per-file block above |
+| `skills/_shared/structure-altitude-boundary.md` | `## Structure Altitude Boundary`, `### What Structure OWNS`, `### What Structure DEFERS` — see per-file block above |
+| `skills/_shared/design-altitude-boundary.md` | `## Design Altitude Boundary`, `### What Design OWNS`, `### What Design DEFERS` — see per-file block above |
 | `skills/_shared/reviewer-dispatch-prose.md` | `## Reviewer Dispatch` |
 | `skills/_shared/config-validation-procedure.md` | `## Config Validation Procedure`, `### Valid Configuration`, `### Invalid Configuration` |
 | `skills/_shared/prompt-prose-detection.md` | `## Prompt-Prose Detection` |
