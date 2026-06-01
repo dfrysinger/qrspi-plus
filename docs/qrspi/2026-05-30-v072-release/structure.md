@@ -16,7 +16,7 @@ This artifact uses **per-file specification blocks** (see `## Per-File Specifica
 
 **Verbatim vs outline.** Each per-file block distinguishes two prose forms:
 
-- **Verbatim content (lifted from design.md):** A fenced quote block citing design.md's section, line range, and the marker phrase that identifies the lift boundary. The lifted prose is byte-identical to design.md — Plan/Implement consumers MUST author the cited file with this prose exactly, preserving code fences, HTML comments, and any list/anchor scaffolding the lift carries. When the per-file block carries a `**Verbatim content (lifted from design.md):**` heading, design.md is the canonical source and a future drift between structure.md and design.md is a contract violation caught by the structure-reviewer's stitching audit.
+- **Verbatim content (lifted from design.md):** A structured citation header followed by a mandatory fenced code block carrying the lifted payload. Each citation declares four fields — `**Source:**` (plain bold, format `design.md §<section> (L<start>-L<end>)`), `**Marker phrase:**` (the exact bounding phrase in design.md that a verifier can use to relocate the lift when line numbers drift), `**Lift type:**` (one of `Full file body`, `Insertion delta`, or `Section body`), and `**Insertion site (in target file):**` (required iff Lift type ≠ Full file body — names the exact location in the target file where the payload lands). The fenced code block (e.g., ```markdown for `.md` targets, ```bash for shell scripts) is the unambiguous payload boundary and carries the lifted prose byte-identical to design.md, with no leading `> ` blockquote markers. A `**Verbatim content (lifted from design.md):**` heading on a per-file block means design.md is the canonical source — Plan/Implement consumers MUST author the cited file with the fenced payload exactly, preserving code fences, HTML comments, and any list/anchor scaffolding the lift carries. A future drift between structure.md and design.md is a contract violation caught by the structure-reviewer's stitching audit.
 - **Outline-only sections (Plan/Implement authors):** A bullet list naming section anchors, anchor phrases that MUST appear, and behavior constraints. design.md provides scope and constraints; the actual prose body is authored at Plan/Implement time per design.md G1 Sub-Rule B ("deferred-prose-design" form). The outline pins what the authored prose must achieve without locking the wording.
 
 **Asymmetry is explicit, not implicit.** A per-file block that omits both `**Verbatim content (lifted from design.md):**` and `**Outline-only sections:**` headings means design.md authored neither — the file is fully Plan/Implement-DEFERS. Test files (any `tests/**/*.bats` row) carry only `**Tests:**` content (what the test pins), never verbatim assertion text, per Plan/Implement's DEFERS contract on test bodies.
@@ -270,9 +270,16 @@ Audit-file schema (per structure.md §11):
 - Contract body MUST state, per design.md G6-1 L1233: "use Write tool to write `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` per finding, or `<reviewer_tag>.clean.md` sentinel when no findings exist. Chat-only return is a contract violation and produces zero findings for your tag."
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §G6 (L1247), iron-law clause for `first-party-emission.md`
->
-> **Iron law: emit findings ONLY by Write tool to `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` (one file per finding) or `<round_subdir>/<reviewer_tag>.clean.md` (zero-findings sentinel). Any other channel — chat-only return, narrative reply, stdout emission, summary prose — is a contract violation and produces zero findings for your tag. The orchestrator's apply-fix step will report 'expected tag produced no output' and the round will fail to converge.**
+
+**Source:** design.md §G6 (L1247)
+**Marker phrase:** "Iron law: emit findings ONLY by Write tool to `<round_subdir>/<reviewer_tag>.finding-F<NN>.md`"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Appended as the iron-law clause that closes the `## First-Party Emission Contract` body in `skills/reviewer-protocol/first-party-emission.md` — the load-bearing sentence the contract pivots on.
+
+```markdown
+**Iron law: emit findings ONLY by Write tool to `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` (one file per finding) or `<round_subdir>/<reviewer_tag>.clean.md` (zero-findings sentinel). Any other channel — chat-only return, narrative reply, stdout emission, summary prose — is a contract violation and produces zero findings for your tag. The orchestrator's apply-fix step will report 'expected tag produced no output' and the round will fail to converge.**
+```
+
 
 **Tests:**
 - `tests/unit/test-per-finding-file-emission.bats`: pins disk-write contract behavior and clean-sentinel behavior at the file-contract layer (Slice 1.1 row).
@@ -292,9 +299,16 @@ Audit-file schema (per structure.md §11):
 - The word "override" MUST NOT appear in the prose — there is nothing to override once the disk-write section is removed from the protocol core (per design.md G6 acceptance L1275).
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §G6 (L1248), iron-law clause for `third-party-emission.md`
->
-> **Iron law: emit findings ONLY by `<<<FINDING-BOUNDARY>>>`-prefixed blocks on stdout, or the literal single-line `NO_FINDINGS` sentinel on stdout. Any other channel — chat-only return without boundary markers, narrative reply, attempts to call the Write tool (which will fail silently in this read-only sandbox), summary prose — is a contract violation and produces zero findings for your tag. The orchestrator's apply-fix step will report 'expected tag produced no output' and the round will fail to converge.**
+
+**Source:** design.md §G6 (L1248)
+**Marker phrase:** "Iron law: emit findings ONLY by `<<<FINDING-BOUNDARY>>>`-prefixed blocks on stdout"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Appended as the iron-law clause that closes the `## Third-Party Emission Contract` body in `skills/reviewer-protocol/third-party-emission.md` — the load-bearing sentence the stdout-boundary contract pivots on.
+
+```markdown
+**Iron law: emit findings ONLY by `<<<FINDING-BOUNDARY>>>`-prefixed blocks on stdout, or the literal single-line `NO_FINDINGS` sentinel on stdout. Any other channel — chat-only return without boundary markers, narrative reply, attempts to call the Write tool (which will fail silently in this read-only sandbox), summary prose — is a contract violation and produces zero findings for your tag. The orchestrator's apply-fix step will report 'expected tag produced no output' and the round will fail to converge.**
+```
+
 
 **Tests:**
 - `tests/unit/test-per-finding-file-emission.bats`: pins the disk-write contract that the splitter materializes from this stdout boundary protocol (Slice 1.1 row — file-contract layer).
@@ -328,35 +342,40 @@ Path rule: `<round-dir>/<reviewer-tag>.finding-FNN.score.md` (per structure.md �
 - Insert the G14 Informational-carve-out paragraph as a new paragraph immediately BEFORE the existing "Treat the following patterns as likely false positives and score them low (0–25):" sentence (currently ~L19 of the agent file) — per design.md G14 D1 placement at L1478.
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §G14 D1 (L1480-L1506), Informational-carve-out paragraph "verbatim addition to `agents/qrspi-finding-verifier.md`"
->
-> ```markdown
-> **Informational findings.** If the finding's
-> `message` body's first non-blank line begins with the literal token `Informational:`
-> (case-sensitive, capital I, trailing colon), do NOT apply the false-positive patterns
-> below. The reviewer has explicitly labeled this finding as a real observation that does
-> not demand action — false-positive scoring is the wrong rubric. Instead, score on
-> structural confidence: does the cited issue actually exist in the referenced files as
-> the message describes?
->
-> - **75:** Structurally verifiable. You can locate the cited issue in the referenced
->   files and the message's description matches what is there.
-> - **50:** Partially verifiable. The cited issue exists in some form but the message's
->   description is loose or partially mismatched against the file content.
-> - **25:** Premise wrong. The cited issue cannot be located in the referenced files as
->   described — the informational claim itself is incorrect.
->
-> DROP/KEEP threshold applies normally to the resulting score. Informational findings
-> that are structurally real (≥50) keep and are logged to the round artifact; informational
-> findings whose premise is wrong (≤25) drop.
->
-> This branch is distinct from "acknowledged-and-silenced" findings (covered by the
-> false-positive pattern below for "Issues called out in CLAUDE.md but explicitly silenced
-> in the code"). Acknowledged-and-silenced is a documented user decision, lives in CLAUDE.md
-> or `feedback/*.md`, and correctly routes through the false-positive rubric. Informational
-> is a reviewer-emitted stance on a finding the reviewer authored — different signal,
-> different rubric.
-> ```
+
+**Source:** design.md §G14 D1 (L1480-L1506)
+**Marker phrase:** "verbatim addition to `agents/qrspi-finding-verifier.md`"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted as a new paragraph in `agents/qrspi-finding-verifier.md` immediately BEFORE the existing sentence "Treat the following patterns as likely false positives and score them low (0–25):" (currently ~L19 of the agent file), per design.md G14 D1 placement at L1478.
+
+```markdown
+**Informational findings.** If the finding's
+`message` body's first non-blank line begins with the literal token `Informational:`
+(case-sensitive, capital I, trailing colon), do NOT apply the false-positive patterns
+below. The reviewer has explicitly labeled this finding as a real observation that does
+not demand action — false-positive scoring is the wrong rubric. Instead, score on
+structural confidence: does the cited issue actually exist in the referenced files as
+the message describes?
+
+- **75:** Structurally verifiable. You can locate the cited issue in the referenced
+  files and the message's description matches what is there.
+- **50:** Partially verifiable. The cited issue exists in some form but the message's
+  description is loose or partially mismatched against the file content.
+- **25:** Premise wrong. The cited issue cannot be located in the referenced files as
+  described — the informational claim itself is incorrect.
+
+DROP/KEEP threshold applies normally to the resulting score. Informational findings
+that are structurally real (≥50) keep and are logged to the round artifact; informational
+findings whose premise is wrong (≤25) drop.
+
+This branch is distinct from "acknowledged-and-silenced" findings (covered by the
+false-positive pattern below for "Issues called out in CLAUDE.md but explicitly silenced
+in the code"). Acknowledged-and-silenced is a documented user decision, lives in CLAUDE.md
+or `feedback/*.md`, and correctly routes through the false-positive rubric. Informational
+is a reviewer-emitted stance on a finding the reviewer authored — different signal,
+different rubric.
+```
+
 
 **Tests:**
 - `tests/unit/test-verifier-agent-file.bats`: pins the literal `Informational:` token anchor in the carve-out clause (regression guard against rubric edits removing the branch — per design.md G14 acceptance L1519) + verifier sidecar `.score.md` extension and required fields.
@@ -408,46 +427,77 @@ Path rule: `<round-dir>/<reviewer-tag>.finding-FNN.score.md` (per structure.md �
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G19 Implementation deliverables (L1813-1826), marker phrase: "new Step 3.5: Cite Check, inserted between current step 3 and step 4 … Verbatim wording:"
->
-> 3.5. **Cite Check** — verify cited resources actually contain what the finding claims they contain. The verifier MUST perform this check before scoring; mismatch produces `score: 0` and halts the rubric.
->
->    For each citation present in the finding (whether in `referenced_files` frontmatter or quoted in the finding's prose body), assert one of the following depending on citation shape:
->
->    - **File existence** — a bare path (no line number) in `referenced_files` MUST resolve to an existing file. Missing file → emit `score: 0`, reason `HALLUCINATED: file <path> does not exist`, write sidecar, halt.
->    - **Line range** — a `path:line` or `path:line-line` entry in `referenced_files` MUST resolve to an existing range in the file. Out-of-range → emit `score: 0`, reason `HALLUCINATED: <path> has <N> lines, cited <range> out of range`, write sidecar, halt.
->    - **Quoted content at cited location** — when the finding's prose quotes a specific string (in backticks, double quotes, or a fenced excerpt) and attributes it to a specific cited path:line, the verifier MUST read that line range and assert the quoted substring appears. Mismatch → emit `score: 0`, reason `HALLUCINATED: quoted content '<excerpt>' not found at <path:line>`, write sidecar, halt.
->    - **Named anchor** — when the finding names a heading, function, class, type, variable, configuration key, CLI flag, or other identifier and attributes it to a specific cited file, the verifier MUST grep the cited file for the anchor. Anchor absent → emit `score: 0`, reason `HALLUCINATED: anchor '<name>' not found in <path>`, write sidecar, halt.
->
->    Findings whose prose carries no specific factual cite (pure-advisory style notes such as "consider naming this more clearly") have nothing to cite-check. Cite Check on such findings is a no-op; proceed to step 4.
->
->    The verifier MUST NOT invent claims to check, MUST NOT extrapolate from a finding's general tone, and MUST NOT flag findings whose prose carries no specific factual cite. Cite Check fires only against citations the finding actually makes.
+**Source:** design.md §G19 Implementation deliverables (L1813-L1826)
+**Marker phrase:** "new Step 3.5: Cite Check, inserted between current step 3 and step 4 … Verbatim wording:"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted in `agents/qrspi-finding-verifier.md` between the existing Step 3 (Read `referenced_files`) and Step 4 (lazy-Read upstreams) of the rubric procedure — a new Step 3.5 (Cite Check).
 
-> **Source:** design.md §G19 Implementation deliverables (L1830), marker phrase: "new top-anchor rubric tier (prepended to the existing 0/25/50/75/100 anchors) … Verbatim wording:"
->
-> a. **0 / HALLUCINATED:** Cite Check (step 3.5) found that the finding cites content that does not exist at the cited location — file missing, line range out of bounds, quoted string absent at cited line, or named anchor absent in cited file. The finding is structurally untrustworthy regardless of how plausible its prose reads. Halt rubric, emit `score: 0` with reason `HALLUCINATED: <diagnostic>`.
+```markdown
+3.5. **Cite Check** — verify cited resources actually contain what the finding claims they contain. The verifier MUST perform this check before scoring; mismatch produces `score: 0` and halts the rubric.
 
-> **Source:** design.md §G19 Implementation deliverables (L1834), marker phrase: "reason field convention documented in step 6 (Write sidecar). Append one sentence to the existing step 6 success-case description:"
->
-> When the score is `0` due to Cite Check failure (step 3.5), the `reason` value MUST start with the literal prefix `HALLUCINATED: ` so dropped sidecars can be greppable for the hallucination subset.
+   For each citation present in the finding (whether in `referenced_files` frontmatter or quoted in the finding's prose body), assert one of the following depending on citation shape:
 
-> **Source:** design.md §G20 Deliverables item 5 (L1878), marker phrase: "Verifier sidecar schema addition (`agents/qrspi-finding-verifier.md`) — step 1 (Read finding file) gains a phrase:"
->
-> ...parse the 5-field finding object plus the audit field `actual_model:`...
+   - **File existence** — a bare path (no line number) in `referenced_files` MUST resolve to an existing file. Missing file → emit `score: 0`, reason `HALLUCINATED: file <path> does not exist`, write sidecar, halt.
+   - **Line range** — a `path:line` or `path:line-line` entry in `referenced_files` MUST resolve to an existing range in the file. Out-of-range → emit `score: 0`, reason `HALLUCINATED: <path> has <N> lines, cited <range> out of range`, write sidecar, halt.
+   - **Quoted content at cited location** — when the finding's prose quotes a specific string (in backticks, double quotes, or a fenced excerpt) and attributes it to a specific cited path:line, the verifier MUST read that line range and assert the quoted substring appears. Mismatch → emit `score: 0`, reason `HALLUCINATED: quoted content '<excerpt>' not found at <path:line>`, write sidecar, halt.
+   - **Named anchor** — when the finding names a heading, function, class, type, variable, configuration key, CLI flag, or other identifier and attributes it to a specific cited file, the verifier MUST grep the cited file for the anchor. Anchor absent → emit `score: 0`, reason `HALLUCINATED: anchor '<name>' not found in <path>`, write sidecar, halt.
 
-> **Source:** design.md §G20 Deliverables item 5 (L1878), marker phrase: "Step 6 (Write sidecar) gains one line in BOTH the success and the `VERIFY_FAILED` shapes:"
->
-> actual_model: <copied verbatim from finding frontmatter>
+   Findings whose prose carries no specific factual cite (pure-advisory style notes such as "consider naming this more clearly") have nothing to cite-check. Cite Check on such findings is a no-op; proceed to step 4.
 
-> **Source:** design.md §G28 Implementation deliverables item 1 (L2272-2278), marker phrase: "new rubric step 'Defect-class tag,' inserted after the current scoring step and before the write-sidecar step. Verbatim wording:"
->
-> **Defect-class tag.** After scoring and before writing the sidecar, emit a `defect_class:` tag classifying the finding's defect type. The tag MUST be lowercase kebab-case (letters, digits, hyphens only), ≤30 characters, and capture the structural defect — what *kind* of problem the finding identifies — not its location or severity.
->
-> Examples of well-formed tags: `goal-leakage` (a question or design reveals goals-content it should not), `unanchored-claim` (a statement makes an assertion without a citation), `imprecise-quantifier` (a constraint uses vague words like "many" or "often"), `redundant-restatement` (the same content appears in multiple places), `dangling-reference` (a citation points at content that no longer exists).
->
-> **Required when score is sub-threshold** (`clarity` <80 or `correctness` <70) so the data is usable for future cluster analysis. **Optional but permitted when score is at-or-above threshold** (informational only). If the finding does not fit any meaningful defect category — e.g., pure-advisory style suggestions ("consider naming this more clearly") — emit literal `defect_class: unspecified` rather than omitting the field. A missing field is a schema violation; an unspecified value is honest absence of signal.
->
-> Emit on its own line in the sidecar frontmatter alongside `score:`, `change_type:`, and `reason:`.
+   The verifier MUST NOT invent claims to check, MUST NOT extrapolate from a finding's general tone, and MUST NOT flag findings whose prose carries no specific factual cite. Cite Check fires only against citations the finding actually makes.
+```
+
+**Source:** design.md §G19 Implementation deliverables (L1830)
+**Marker phrase:** "new top-anchor rubric tier (prepended to the existing 0/25/50/75/100 anchors) … Verbatim wording:"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Prepended in `agents/qrspi-finding-verifier.md` to the rubric anchor list as a new top-anchor tier (anchor `a.`), sitting ABOVE the existing 0/25/50/75/100 anchors (which renumber accordingly).
+
+```markdown
+a. **0 / HALLUCINATED:** Cite Check (step 3.5) found that the finding cites content that does not exist at the cited location — file missing, line range out of bounds, quoted string absent at cited line, or named anchor absent in cited file. The finding is structurally untrustworthy regardless of how plausible its prose reads. Halt rubric, emit `score: 0` with reason `HALLUCINATED: <diagnostic>`.
+```
+
+**Source:** design.md §G19 Implementation deliverables (L1834)
+**Marker phrase:** "reason field convention documented in step 6 (Write sidecar). Append one sentence to the existing step 6 success-case description:"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Appended as one additional sentence to the existing Step 6 (Write sidecar) success-case description in `agents/qrspi-finding-verifier.md`.
+
+```markdown
+When the score is `0` due to Cite Check failure (step 3.5), the `reason` value MUST start with the literal prefix `HALLUCINATED: ` so dropped sidecars can be greppable for the hallucination subset.
+```
+
+**Source:** design.md §G20 Deliverables item 5 (L1878)
+**Marker phrase:** "Verifier sidecar schema addition (`agents/qrspi-finding-verifier.md`) — step 1 (Read finding file) gains a phrase:"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted as a phrase appended to the existing Step 1 (Read finding file) description in `agents/qrspi-finding-verifier.md`, extending the parse contract from 5 fields to 5 fields plus the `actual_model:` audit field.
+
+```markdown
+...parse the 5-field finding object plus the audit field `actual_model:`...
+```
+
+**Source:** design.md §G20 Deliverables item 5 (L1878)
+**Marker phrase:** "Step 6 (Write sidecar) gains one line in BOTH the success and the `VERIFY_FAILED` shapes:"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted as one additional sidecar frontmatter line in BOTH the success-case and the `VERIFY_FAILED`-case sidecar shapes documented in Step 6 (Write sidecar) of `agents/qrspi-finding-verifier.md`.
+
+```markdown
+actual_model: <copied verbatim from finding frontmatter>
+```
+
+**Source:** design.md §G28 Implementation deliverables item 1 (L2272-L2278)
+**Marker phrase:** "new rubric step 'Defect-class tag,' inserted after the current scoring step and before the write-sidecar step. Verbatim wording:"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted in `agents/qrspi-finding-verifier.md` as a new rubric step (Defect-class tag) AFTER the current scoring step and BEFORE the existing Step 6 (Write sidecar).
+
+```markdown
+**Defect-class tag.** After scoring and before writing the sidecar, emit a `defect_class:` tag classifying the finding's defect type. The tag MUST be lowercase kebab-case (letters, digits, hyphens only), ≤30 characters, and capture the structural defect — what *kind* of problem the finding identifies — not its location or severity.
+
+Examples of well-formed tags: `goal-leakage` (a question or design reveals goals-content it should not), `unanchored-claim` (a statement makes an assertion without a citation), `imprecise-quantifier` (a constraint uses vague words like "many" or "often"), `redundant-restatement` (the same content appears in multiple places), `dangling-reference` (a citation points at content that no longer exists).
+
+**Required when score is sub-threshold** (`clarity` <80 or `correctness` <70) so the data is usable for future cluster analysis. **Optional but permitted when score is at-or-above threshold** (informational only). If the finding does not fit any meaningful defect category — e.g., pure-advisory style suggestions ("consider naming this more clearly") — emit literal `defect_class: unspecified` rather than omitting the field. A missing field is a schema violation; an unspecified value is honest absence of signal.
+
+Emit on its own line in the sidecar frontmatter alongside `score:`, `change_type:`, and `reason:`.
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Sidecar example block update (per design.md §G28 deliverable 2, L2280): the documented example sidecar gains `defect_class:` as the 5th frontmatter field with a representative value (`defect_class: goal-leakage`). When fused with G20's deliverable 5, the example sidecar shows both `actual_model:` and `defect_class:` in the same frontmatter.
@@ -585,7 +635,10 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G9 (L1318–1326), "The script runs three checks in order before writing the anchor" — three SHA-correctness checks + commit-anchor write contract
+**Source:** design.md §G9 (L1318-L1326)
+**Marker phrase:** "The script runs three checks in order before writing the anchor"
+**Lift type:** Section body
+**Insertion site (in target file):** Authored as the contract prose body in the header / leading-documentation block of `scripts/round-prepare.sh` (immediately above the shell implementation), enumerating the three SHA-correctness checks and the commit-anchor write rule the script enforces.
 
 ```markdown
 The script runs three checks in order before writing the anchor:
@@ -596,6 +649,7 @@ The script runs three checks in order before writing the anchor:
 
    On exit 0, the script writes `round-NN-commit.txt = <passed-SHA>`. CD-1 component #3 propagates round-prepare.sh's exit code verbatim through dispatch-agent.sh; main chat sees the exit code from its bash-tool invocation and branches per the recovery table in G4 solution step 1.
 ```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - `Pre-dispatch presence assertion` (per design.md §G9 L1330, layer 5): verify `round-(NN-1)-commit.txt` and (when narrowing-eligible AND `scope_tagger_enabled: true`) `round-(NN-1)-scope-set.txt` exist and are well-formed before computing the round NN diff. Missing or malformed inputs exit non-zero with a diagnostic naming the specific missing file. Full assertion spec + diagnostic strings authored in G4 solution step 10.
@@ -618,7 +672,10 @@ The script runs three checks in order before writing the anchor:
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G15 (L1546–1557), "Sweep Task Contract" subsection — "the plan-author rule (verbatim wording)" marker; insert at the END of § Test Expectations per design.md §G15 L1574
+**Source:** design.md §G15 (L1546-L1557)
+**Marker phrase:** "the plan-author rule (verbatim wording)"
+**Lift type:** Section body
+**Insertion site (in target file):** Authored as a new `### Sweep Task Contract` subsection appended to the END of the `## Test Expectations` section of `skills/plan/SKILL.md` (per design.md §G15 L1574).
 
 ```markdown
 > ### Sweep Task Contract
@@ -633,7 +690,10 @@ The script runs three checks in order before writing the anchor:
 > Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defect, not a deferred-to-implementer concern.
 ```
 
-> **Source:** design.md §G18 (L1746–1763), "Cross-Task Consumer Surface subsection (new)" — "Verbatim wording" marker; insert at the END of § Task Definition (same neighborhood as G15's Sweep Task Contract subsection) per design.md §G18 L1744
+**Source:** design.md §G18 (L1746-L1763)
+**Marker phrase:** "Cross-Task Consumer Surface subsection (new) … Verbatim wording"
+**Lift type:** Section body
+**Insertion site (in target file):** Authored as a new `### Cross-Task Consumer Surface` subsection appended to the END of the `## Task Definition` section of `skills/plan/SKILL.md` (same neighborhood as G15's Sweep Task Contract subsection), per design.md §G18 L1744.
 
 ```markdown
 > ### Cross-Task Consumer Surface
@@ -656,6 +716,7 @@ The script runs three checks in order before writing the anchor:
 > Skipping the `cross_task_consumers:` field on a consumer-surface-touching task is a plan-spec defect, not a deferred-to-implementer concern.
 ```
 
+
 **Outline-only sections (Plan/Implement authors):**
 - `Sweep Task Contract worked examples` (per design.md §G15 L1576): two ~30–40-line worked examples appended under the Sweep Task Contract subsection — (a) a plan-spec excerpt with a well-formed `dependent_tests:` path list with per-file dispositions, and (b) a second example using the `none` + grep shape.
 - `Cross-Task Consumer Surface worked examples` (per design.md §G18 L1775–1777): two ~40–60-line worked examples appended under the Cross-Task Consumer Surface subsection — Example 1: consumer-surface-touching task renaming a public function across two files with `cross_task_consumers:` listing three consumer files (`co-edit` / `co-edit` / `no change` dispositions); Example 2: body-only bug fix where the trigger does NOT fire, with a one-line note explaining why.
@@ -675,7 +736,10 @@ The script runs three checks in order before writing the anchor:
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G15 (L1561–1566), "Sweep Detection Heuristic" — "Heuristic (literal wording the reviewer applies)" marker; insert as a new bullet within the existing review rubric (alongside, NOT replacing, existing field-shape checks) per design.md §G15 L1575
+**Source:** design.md §G15 (L1561-L1566)
+**Marker phrase:** "Heuristic (literal wording the reviewer applies)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted as a new bullet within the existing review rubric of `agents/qrspi-plan-reviewer.md`, alongside (NOT replacing) existing field-shape checks, per design.md §G15 L1575.
 
 ```markdown
 > **Sweep-task detection.** Treat a task as a sweep when BOTH conditions hold:
@@ -686,7 +750,10 @@ The script runs three checks in order before writing the anchor:
 > On detection, the reviewer MUST verify the task's Test Expectations block contains a `dependent_tests:` field per the `plan/SKILL.md` § Sweep Task Contract. Missing-field → emit a `severity: high, change_type: correctness` finding referencing the contract. Field-present-but-malformed (no paths, no `none`-with-grep, or `none` with a grep that returns ≥1 hit when re-run) → same severity.
 ```
 
-> **Source:** design.md §G18 (L1767–1773), "Cross-Task Consumer Surface Detection rubric clause (new)" — "Verbatim wording" marker; insert as a new bullet within the existing review rubric, alongside (NOT replacing) G15's Sweep-Task Detection clause per design.md §G18 L1765
+**Source:** design.md §G18 (L1767-L1773)
+**Marker phrase:** "Cross-Task Consumer Surface Detection rubric clause (new) … Verbatim wording"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted as a new bullet within the existing review rubric of `agents/qrspi-plan-reviewer.md`, alongside (NOT replacing) G15's Sweep-Task Detection clause, per design.md §G18 L1765.
 
 ```markdown
 > **Cross-task consumer surface detection.** A task is consumer-surface-touching when ANY of the trigger conditions in `plan/SKILL.md` § Cross-Task Consumer Surface apply (named-declaration add/rename/remove, file add/rename/remove/move, public-signature change, structured-document schema change to referenced keys/anchors, named extension-point add/rename/remove). On detection, the reviewer MUST verify the task's plan-spec contains a `cross_task_consumers:` field per the contract:
@@ -697,6 +764,7 @@ The script runs three checks in order before writing the anchor:
 >
 > Missing field, malformed field, non-zero hits on a `none` claim, or invalid disposition value → emit a `severity: high, change_type: correctness` finding referencing the contract.
 ```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - `Rubric placement`: both clauses inserted alongside (NOT replacing) existing field-shape checks; reviewer-protocol 5-field finding schema unchanged — sweep + consumer-surface findings use existing `severity` + `change_type` values per design.md §G15 L1575 and §G18 L1765.
@@ -715,7 +783,10 @@ The script runs three checks in order before writing the anchor:
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G9 (L1334–1344, fenced \`\`\`markdown ... \`\`\` block), "Between rounds — required sequence" checklist — "insert a short numbered block titled" marker; insert at the END of the per-task reviewer fan-out section (immediately after the reviewer dispatch prose, before the orchestrator's attention moves on) per design.md §G9 L1332
+**Source:** design.md §G9 (L1334-L1344)
+**Marker phrase:** "Between rounds — required sequence … insert a short numbered block titled"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted in `skills/implement/SKILL.md` at the END of the per-task reviewer fan-out section — immediately after the reviewer-dispatch prose and before the orchestrator's attention moves on, per design.md §G9 L1332.
 
 ```markdown
 **Between rounds — required sequence.** After this round's reviewer fan-in completes and BEFORE preparing the next round's dispatch, the orchestrator MUST perform these five steps in order:
@@ -728,6 +799,7 @@ The script runs three checks in order before writing the anchor:
 
 Steps 1, 3, 4 are mechanical reads, a field extraction, and an exit-code branch; steps 2 and 5 dispatch first-party Task subagents through the orchestrator (step 2: one scope-tagger against the round's kept findings; step 5: zero-or-more reviewers, one Task invocation per `MODE=first_party` spec line returned by dispatch-agent). The forward-reference to § Per-Task Convergence Narrowing covers details (anchor format, scope-set format, narrow-vs-broaden semantics).
 ```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - `Scope-tagger relocation` (per design.md §G9 L1328, layer 4): move the scope-tagger invocation step from § Per-Task Convergence Narrowing → Step 6 (v0.7.1 lines 1199–1207) up into the per-task fan-out section (v0.7.1 line ~929) so the orchestrator sees it sequentially with the reviewer dispatches. The detailed dispatch parameters (anchor format, scope-set format, narrow-vs-broaden semantics) remain in § Per-Task Convergence Narrowing as the forward-reference target.
@@ -800,13 +872,25 @@ scripts/dispatch-agent.sh --verifier-fanout \
 ```
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §CD-1 component #3 (L80), Iron law (orchestrator side).
->
-> **Iron law (orchestrator side):** invoke Task tool exactly once per emitted spec line, with `SUBAGENT_TYPE`, `MODEL`, and `PROMPT_FILE` copied verbatim. Skipping lines, deduplicating, modifying values, or reordering parameters is a contract violation that the manifest gap catches at apply-fix step 2 ("expected tag produced no output").
 
-> **Source:** design.md §CD-1 component #3 (L87), Spec line format.
->
-> **Spec line format:** shell-style `KEY=VALUE` pairs, space-separated, one line per dispatch, no quoting (values contain no spaces — paths use no-space chars; tag names are dash-separated; agent names are dot-separated). LLM-parseable, grep-friendly for the orchestrator's loud-failure debug case (`grep '^MODE=first_party' <bash-result>` yields all dispatches).
+**Source:** design.md §CD-1 component #3 (L80)
+**Marker phrase:** "Iron law (orchestrator side): invoke Task tool exactly once per emitted spec line"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/dispatch-agent.sh` as the orchestrator-side iron law that the script's stdout spec-line contract relies on.
+
+```markdown
+**Iron law (orchestrator side):** invoke Task tool exactly once per emitted spec line, with `SUBAGENT_TYPE`, `MODEL`, and `PROMPT_FILE` copied verbatim. Skipping lines, deduplicating, modifying values, or reordering parameters is a contract violation that the manifest gap catches at apply-fix step 2 ("expected tag produced no output").
+```
+
+**Source:** design.md §CD-1 component #3 (L87)
+**Marker phrase:** "Spec line format: shell-style `KEY=VALUE` pairs, space-separated, one line per dispatch"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/dispatch-agent.sh` (alongside the iron-law clause above) as the locked stdout spec-line format the orchestrator parses.
+
+```markdown
+**Spec line format:** shell-style `KEY=VALUE` pairs, space-separated, one line per dispatch, no quoting (values contain no spaces — paths use no-space chars; tag names are dash-separated; agent names are dot-separated). LLM-parseable, grep-friendly for the orchestrator's loud-failure debug case (`grep '^MODE=first_party' <bash-result>` yields all dispatches).
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - `--implementer-commit` SHA passthrough: forward verbatim to `round-prepare.sh`; propagate its exit code verbatim (per design.md CD-1 #3 L68, "dispatch-agent.sh propagates round-prepare.sh's exit code verbatim so main chat sees the script's exit code from its bash invocation").
@@ -899,34 +983,39 @@ scripts/dispatch-agent.sh --verifier-fanout \
 ```
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §G4 solution step 1 (L1061-1085), HEAD-correctness check block (verbatim shell from the design solution).
->
-> ```sh
-> # Check 1: required-flag check (exit 10 — orchestrator bug).
-> if [[ -z "$IMPLEMENTER_COMMIT" ]]; then
->   echo "round-prepare: --task-branch requires --implementer-commit. Recovery: orchestrator bug — main chat must read commit_sha from the implementer Task return and pass it via --implementer-commit." >&2
->   exit 10
-> fi
->
-> # Check 2: across-rounds advance check (exit 12 — re-dispatch implementer).
-> #   PRIOR_ANCHOR resolves to <output-dir>/../round-(NN-1)-commit.txt when NN >= 2,
-> #   or to <task-base-commit> (resolved per step 6) when NN == 1.
-> PRIOR=$(resolve_prior_anchor "$ROUND" "$TASK_BASE_COMMIT" "$OUTPUT_DIR")
-> if [[ "$IMPLEMENTER_COMMIT" == "$PRIOR" ]]; then
->   echo "round-prepare: implementer did not advance HEAD — passed SHA $IMPLEMENTER_COMMIT equals $( [[ $ROUND -eq 1 ]] && echo 'task base commit' || echo 'prior round anchor (round '$((ROUND-1))')' ). Recovery: re-dispatch the implementer subagent via SendMessage or a fresh Task tool invocation; the implementer must produce a new commit before reviewers can run." >&2
->   exit 12
-> fi
->
-> # Check 3: within-round equality check (exit 11 — halt + diagnose worktree).
-> ACTUAL_HEAD=$(git -C "<worktree-path>" rev-parse HEAD)
-> if [[ "$ACTUAL_HEAD" != "$IMPLEMENTER_COMMIT" ]]; then
->   echo "round-prepare: implementer-commit / HEAD mismatch — main chat passed $IMPLEMENTER_COMMIT, worktree HEAD is $ACTUAL_HEAD. Recovery: HALT — likely worktree corruption, wrong worktree path, concurrent commit by another process, or implementer self-report drift. Surface to user; do not auto-retry." >&2
->   exit 11
-> fi
->
-> # All checks passed — write the anchor.
-> printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
-> ```
+
+**Source:** design.md §G4 solution step 1 (L1061-L1085)
+**Marker phrase:** "HEAD-correctness check block (verbatim shell from the design solution)"
+**Lift type:** Section body
+**Insertion site (in target file):** Authored as the body of the HEAD-correctness checks step (Step 1) inside `scripts/round-prepare.sh` — three shell checks (required-flag, across-rounds advance, within-round equality) followed by the anchor write.
+
+```sh
+# Check 1: required-flag check (exit 10 — orchestrator bug).
+if [[ -z "$IMPLEMENTER_COMMIT" ]]; then
+  echo "round-prepare: --task-branch requires --implementer-commit. Recovery: orchestrator bug — main chat must read commit_sha from the implementer Task return and pass it via --implementer-commit." >&2
+  exit 10
+fi
+
+# Check 2: across-rounds advance check (exit 12 — re-dispatch implementer).
+#   PRIOR_ANCHOR resolves to <output-dir>/../round-(NN-1)-commit.txt when NN >= 2,
+#   or to <task-base-commit> (resolved per step 6) when NN == 1.
+PRIOR=$(resolve_prior_anchor "$ROUND" "$TASK_BASE_COMMIT" "$OUTPUT_DIR")
+if [[ "$IMPLEMENTER_COMMIT" == "$PRIOR" ]]; then
+  echo "round-prepare: implementer did not advance HEAD — passed SHA $IMPLEMENTER_COMMIT equals $( [[ $ROUND -eq 1 ]] && echo 'task base commit' || echo 'prior round anchor (round '$((ROUND-1))')' ). Recovery: re-dispatch the implementer subagent via SendMessage or a fresh Task tool invocation; the implementer must produce a new commit before reviewers can run." >&2
+  exit 12
+fi
+
+# Check 3: within-round equality check (exit 11 — halt + diagnose worktree).
+ACTUAL_HEAD=$(git -C "<worktree-path>" rev-parse HEAD)
+if [[ "$ACTUAL_HEAD" != "$IMPLEMENTER_COMMIT" ]]; then
+  echo "round-prepare: implementer-commit / HEAD mismatch — main chat passed $IMPLEMENTER_COMMIT, worktree HEAD is $ACTUAL_HEAD. Recovery: HALT — likely worktree corruption, wrong worktree path, concurrent commit by another process, or implementer self-report drift. Surface to user; do not auto-retry." >&2
+  exit 11
+fi
+
+# All checks passed — write the anchor.
+printf '%s\n' "$IMPLEMENTER_COMMIT" > "<output-dir>/../round-NN-commit.txt"
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Steps 2-9 per design.md G4 solution (L1105-1112): read-and-delete `round-NN-backward-loop.flag`, read prior `round-(NN-1)-scope-set.txt` and `round-(NN-2)-scope-set.txt`, apply step 12's deterministic set-comparison narrow/broaden table, SHA safety check (`git rev-parse HEAD~1` vs `round-(NN-1)-commit.txt`), resolve base ref, `git -C <repo> diff <ref> [-- <artifact>]` → `<output-dir>/round-NN.diff`, write `<output-dir>/.round-prepare.json` sidecar (`ref`, `narrowed`, `scope_hint`, `diff_file`, `reason`), exit 2 for non-git workspace.
@@ -957,9 +1046,16 @@ scripts/dispatch-agent.sh --verifier-fanout \
 ```
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §CD-1 component #4 (L98), Output-bound contract.
->
-> **Output-bound contract** (lifted from G6 to keep the calling-surface guarantees in one place): `await-round.sh` MUST NOT echo captured third-party subagent stdout (or any substring of it) to its own stdout or stderr. Its terminal output is bounded to: (a) one short status line summarizing the round (dispatches awaited / with findings / clean), (b) per-dispatch status updates already persisted to `.dispatch-manifest.json` and `.round-complete.json` on disk. Raw third-party payloads stay captured in tempfiles within the script chain and are consumed only by `third-party-finding-splitter.sh`. Any future maintainer change that adds `cat`-of-captured-tempfile or equivalent payload echo is a context-leakage violation (G3 concern). Lint candidate: a smoke test that runs `await-round.sh` against a fixture with a known-large third-party payload and asserts the script's combined stdout+stderr is under a small byte cap (~1KB).
+
+**Source:** design.md §CD-1 component #4 (L98)
+**Marker phrase:** "Output-bound contract (lifted from G6 to keep the calling-surface guarantees in one place)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/await-round.sh` as the output-bound contract sentence the script's stdout/stderr boundary must honor.
+
+```markdown
+**Output-bound contract** (lifted from G6 to keep the calling-surface guarantees in one place): `await-round.sh` MUST NOT echo captured third-party subagent stdout (or any substring of it) to its own stdout or stderr. Its terminal output is bounded to: (a) one short status line summarizing the round (dispatches awaited / with findings / clean), (b) per-dispatch status updates already persisted to `.dispatch-manifest.json` and `.round-complete.json` on disk. Raw third-party payloads stay captured in tempfiles within the script chain and are consumed only by `third-party-finding-splitter.sh`. Any future maintainer change that adds `cat`-of-captured-tempfile or equivalent payload echo is a context-leakage violation (G3 concern). Lint candidate: a smoke test that runs `await-round.sh` against a fixture with a known-large third-party payload and asserts the script's combined stdout+stderr is under a small byte cap (~1KB).
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Manifest-iterate loop: for each `mode: background, status: pending` entry, run `await_cmd`, then `split_cmd`, then update entry status in place.
@@ -976,15 +1072,22 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Responsibility:** Shared bash library (sourced by `dispatch-agent.sh` and friends): owns agent-frontmatter `tier:` parsing, the precedence chain (`--tier-override` → agent `tier:` → `default_tier:` → hardcoded `medium` with loud warning), tier → (vendor, model) lookup from `config.md` `model_routing:`, host × vendor matrix lookup (G27 D5 extended with the "Default second-reviewer vendor" column), and the `none`-tier halt rule (no silent fallback to a neighboring tier — G25 absorbed by CD-1). Single source of truth for the resolution algorithm; consumed by `dispatch-agent.sh` reviewer-fanout and verifier-fanout modes, and by `scripts/second-reviewer-available.sh` (G27 D2).
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §CD-1 component #10 (L117-125), Host × vendor matrix (extended by G27 D5 with the "Default second-reviewer vendor" column at L2201-2205).
->
-> | Host          | Claude        | Codex         | DeepSeek (v0.7.3+) | Default second-reviewer vendor |
-> |---------------|---------------|---------------|--------------------|--------------------------------|
-> | Claude Code   | first-party   | third-party   | third-party        | `openai-codex`                 |
-> | Codex CLI*    | third-party   | first-party   | third-party        | `anthropic-claude` (v0.7.3+)   |
-> | Copilot CLI   | first-party   | first-party   | third-party        | `openai-codex`                 |
->
-> *Codex CLI host support deferred to v0.7.3+.
+
+**Source:** design.md §CD-1 component #10 (L117-L125)
+**Marker phrase:** "Host × vendor matrix (extended by G27 D5 with the “Default second-reviewer vendor” column at L2201-L2205)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/_resolve-lib.sh` as the host × vendor routing matrix the library's lookup helpers (`lookup_host_vendor_path`, `lookup_default_second_reviewer`) implement.
+
+```markdown
+| Host          | Claude        | Codex         | DeepSeek (v0.7.3+) | Default second-reviewer vendor |
+|---------------|---------------|---------------|--------------------|--------------------------------|
+| Claude Code   | first-party   | third-party   | third-party        | `openai-codex`                 |
+| Codex CLI*    | third-party   | first-party   | third-party        | `anthropic-claude` (v0.7.3+)   |
+| Copilot CLI   | first-party   | first-party   | third-party        | `openai-codex`                 |
+
+*Codex CLI host support deferred to v0.7.3+.
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Resolution precedence chain (top wins): (1) `--tier-override` flag at dispatch site; (2) agent `tier:` frontmatter; (3) `default_tier:` in `config.md`; (4) hard-coded fallback `medium` with loud warning. Verbatim chain per design.md CD-1 #1 L31-35.
@@ -1033,24 +1136,41 @@ scripts/dispatch-agent.sh --verifier-fanout \
 ```
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §CD-4 §I.7 (L611-615), Locked platform directory (verified at design time against host docs + direct runtime observation as of 2026-05-31).
->
-> | Platform discriminator | Auto-mode signal | Script output shape |
-> |---|---|---|
-> | `COPILOT_CLI=1` (Copilot CLI; observed on v1.0.57-1, signal not documented in `copilot help environment` or official autopilot docs but injected at runtime) | `<autopilot_mode>` block in active context containing the literal sentence "Autopilot mode is currently active." Durable per-turn injection while autopilot is on. Verified by direct toggle-and-observe in session `fff21ea0` on 2026-05-31. | `DETECTION_TYPE=llm-context, INSTRUCTION="Inspect your active context for a block delimited by <autopilot_mode> ... </autopilot_mode> tags. If the block is present AND its body contains the literal sentence 'Autopilot mode is currently active.', the session is auto-mode; otherwise interactive."` |
-> | Claude Code (no `COPILOT_CLI` env, Claude Code's standard system-reminder framing present) | `## Auto Mode Active` system-reminder block in active context. Documented precedent in `qrspi/skills/goals/SKILL.md` and other plugin skills that already condition on the same signal. | `DETECTION_TYPE=llm-context, INSTRUCTION="Inspect your active context for a system-reminder block containing the literal string '## Auto Mode Active'. If present, the session is auto-mode; otherwise interactive."` |
-> | Unknown / unrecognized host | n/a | `DETECTION_TYPE=user-override-only` (script defers to `QRSPI_INTERACTION_MODE` override or safe-default `interactive`) |
 
-> **Source:** design.md §CD-4 §I.7 (L666-669), Override chain.
->
-> **Override chain** (consulted by the script in this order for any `user-override-only` host, AND as a fallback for shell-verdict/llm-context hosts when the primary signal is absent):
->
-> 1. `QRSPI_INTERACTION_MODE=auto|interactive` env var (highest precedence for testing and explicit user opt-in)
-> 2. Safe-default `interactive` (never auto-halt on a misread)
+**Source:** design.md §CD-4 §I.7 (L611-L615)
+**Marker phrase:** "Locked platform directory (verified at design time against host docs + direct runtime observation as of 2026-05-31)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/detect-interaction-mode.sh` as the locked platform-discriminator → auto-mode-signal → script-output-shape directory the script's per-host branches implement.
 
-> **Source:** design.md §CD-4 §I.7 (L679), Encapsulation rule.
->
-> **Encapsulation rule.** No SKILL.md prose, no agent body, and no `_shared/` snippet references per-host signal names directly (env var names, system-reminder strings, etc.). They all consult `scripts/detect-interaction-mode.sh` and act on its output. The script's source is the only place where per-host detection knowledge lives. When a new host CLI is supported (or an existing host adds a shell-visible or in-context auto signal that previously was undocumented), the script gains one new branch — no consumer prose changes.
+```markdown
+| Platform discriminator | Auto-mode signal | Script output shape |
+|---|---|---|
+| `COPILOT_CLI=1` (Copilot CLI; observed on v1.0.57-1, signal not documented in `copilot help environment` or official autopilot docs but injected at runtime) | `<autopilot_mode>` block in active context containing the literal sentence "Autopilot mode is currently active." Durable per-turn injection while autopilot is on. Verified by direct toggle-and-observe in session `fff21ea0` on 2026-05-31. | `DETECTION_TYPE=llm-context, INSTRUCTION="Inspect your active context for a block delimited by <autopilot_mode> ... </autopilot_mode> tags. If the block is present AND its body contains the literal sentence 'Autopilot mode is currently active.', the session is auto-mode; otherwise interactive."` |
+| Claude Code (no `COPILOT_CLI` env, Claude Code's standard system-reminder framing present) | `## Auto Mode Active` system-reminder block in active context. Documented precedent in `qrspi/skills/goals/SKILL.md` and other plugin skills that already condition on the same signal. | `DETECTION_TYPE=llm-context, INSTRUCTION="Inspect your active context for a system-reminder block containing the literal string '## Auto Mode Active'. If present, the session is auto-mode; otherwise interactive."` |
+| Unknown / unrecognized host | n/a | `DETECTION_TYPE=user-override-only` (script defers to `QRSPI_INTERACTION_MODE` override or safe-default `interactive`) |
+```
+
+**Source:** design.md §CD-4 §I.7 (L666-L669)
+**Marker phrase:** "Override chain (consulted by the script in this order for any `user-override-only` host, AND as a fallback for shell-verdict/llm-context hosts when the primary signal is absent)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/detect-interaction-mode.sh` (alongside the platform directory above) as the ordered override-chain the script consults when the primary host signal is absent.
+
+```markdown
+**Override chain** (consulted by the script in this order for any `user-override-only` host, AND as a fallback for shell-verdict/llm-context hosts when the primary signal is absent):
+
+1. `QRSPI_INTERACTION_MODE=auto|interactive` env var (highest precedence for testing and explicit user opt-in)
+2. Safe-default `interactive` (never auto-halt on a misread)
+```
+
+**Source:** design.md §CD-4 §I.7 (L679)
+**Marker phrase:** "Encapsulation rule: No SKILL.md prose, no agent body, and no `_shared/` snippet references per-host signal names directly"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Authored into the header / leading-documentation block of `scripts/detect-interaction-mode.sh` as the encapsulation rule the script is the sole consumer-facing surface for.
+
+```markdown
+**Encapsulation rule.** No SKILL.md prose, no agent body, and no `_shared/` snippet references per-host signal names directly (env var names, system-reminder strings, etc.). They all consult `scripts/detect-interaction-mode.sh` and act on its output. The script's source is the only place where per-host detection knowledge lives. When a new host CLI is supported (or an existing host adds a shell-visible or in-context auto signal that previously was undocumented), the script gains one new branch — no consumer prose changes.
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Three output-shape exemplars verbatim from design.md L636-664 (shell-verdict, llm-context, user-override-only) — produce as the script's three stdout templates.
@@ -1069,45 +1189,49 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Responsibility:** Single shared snippet carrying the orchestrator-side reviewer dispatch instructions. `!cat`-included by every review-producing SKILL.md (12 consumer files per structure.md §Hook-Point Locations L695-712). Carries: the `dispatch-agent.sh` invocation pattern (batched form), the spec-line parse instructions, the per-line Task tool invocation contract (one Task call per spec line, verbatim values, `prompt = "DISPATCH_FILE=<path>"`), the iron law forbidding skipped / deduplicated / modified Task calls, and the `await-round.sh` follow-up. The snippet is generic — it does NOT enumerate agent names, step names, or per-skill artifact names; those flow in via the `$REVIEW_*` dispatch parameters the per-skill preamble sets.
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §CD-1 component #11 (L149-187), Snippet body (locked prose — author this exact text into `skills/_shared/reviewer-dispatch-prose.md`; values in `$VARNAME` form are set by the per-skill preamble above the `!cat`).
->
-> ````markdown
-> # Reviewer Dispatch (shared)
->
-> With `$REVIEW_STEP`, `$REVIEW_ROUND`, `$REVIEW_OUTPUT_DIR`, `$REVIEW_ARTIFACT`, and `$REVIEW_AGENTS` set by the per-skill preamble above, run:
->
-> ```sh
-> scripts/dispatch-agent.sh --step "$REVIEW_STEP" --round "$REVIEW_ROUND" \
->   --output-dir "$REVIEW_OUTPUT_DIR" --artifact "$REVIEW_ARTIFACT" \
->   --agents "$REVIEW_AGENTS"
-> ```
->
-> `dispatch-agent` emits M lines on stdout (one per first-party reviewer; zero lines for a third-party-only batch). Each line has the form:
->
-> ```
-> MODE=first_party TAG=<tag> SUBAGENT_TYPE=<agent-name> MODEL=<resolved-model> PROMPT_FILE=<absolute-path>
-> ```
->
-> **For every emitted spec line, invoke the Task tool with these arguments (parse the line as space-separated `KEY=VALUE` pairs; values contain no spaces):**
->
-> - `subagent_type` = the `SUBAGENT_TYPE` value, verbatim
-> - `model` = the `MODEL` value, verbatim
-> - `prompt` = the literal string `"DISPATCH_FILE=<PROMPT_FILE-value>"` — a single-line env-var-style reference; the prompt argument has no other content
->
-> **Invoke all M Task tool calls in parallel in one orchestrator response** (one Task call per spec line). The reviewer agent body's first instruction is to `Read` its `DISPATCH_FILE` — do not pre-Read the file yourself; the dispatch context belongs in the subagent's window, not the orchestrator's.
->
-> **Iron law (orchestrator-side dispatch contract):** invoke the Task tool exactly once per emitted spec line, with `SUBAGENT_TYPE`, `MODEL`, and `PROMPT_FILE` copied verbatim. Skipping a line, deduplicating across lines, modifying any value, or substituting a different subagent_type is a contract violation. The dispatch manifest (`$REVIEW_OUTPUT_DIR/.dispatch-manifest.json`) records expected dispatches; the apply-fix step's "expected tag produced no output" diagnostic catches missed or mis-routed Task invocations.
->
-> After all Task tool calls return (Task tool is synchronous; first-party subagents have written their per-finding files to disk by the time Task returns), drain any third-party background dispatches and finalize the round:
->
-> ```sh
-> scripts/await-round.sh --round-dir "$REVIEW_OUTPUT_DIR"
-> ```
->
-> `await-round` is no-op-safe — first-party-only rounds still call it; it returns immediately after reading the manifest. It writes a small `$REVIEW_OUTPUT_DIR/.round-complete.json` summary and (for third-party dispatches) materializes per-finding files via `third-party-finding-splitter.sh`. It does NOT echo captured subagent payloads (CD-1 #4 output-bound contract).
->
-> Then read `$REVIEW_OUTPUT_DIR/.round-complete.json` and the per-finding files as needed for apply-fix. The raw per-reviewer prompt content (assembled by dispatch-agent into `PROMPT_FILE`) never enters the orchestrator's context — only the small spec lines + the small `DISPATCH_FILE` references passed to Task.
-> ````
+
+**Source:** design.md §CD-1 component #11 (L149-L187)
+**Marker phrase:** "Snippet body (locked prose — author this exact text into `skills/_shared/reviewer-dispatch-prose.md`; values in `$VARNAME` form are set by the per-skill preamble above the `!cat`)"
+**Lift type:** Full file body
+
+````markdown
+# Reviewer Dispatch (shared)
+
+With `$REVIEW_STEP`, `$REVIEW_ROUND`, `$REVIEW_OUTPUT_DIR`, `$REVIEW_ARTIFACT`, and `$REVIEW_AGENTS` set by the per-skill preamble above, run:
+
+```sh
+scripts/dispatch-agent.sh --step "$REVIEW_STEP" --round "$REVIEW_ROUND" \
+  --output-dir "$REVIEW_OUTPUT_DIR" --artifact "$REVIEW_ARTIFACT" \
+  --agents "$REVIEW_AGENTS"
+```
+
+`dispatch-agent` emits M lines on stdout (one per first-party reviewer; zero lines for a third-party-only batch). Each line has the form:
+
+```
+MODE=first_party TAG=<tag> SUBAGENT_TYPE=<agent-name> MODEL=<resolved-model> PROMPT_FILE=<absolute-path>
+```
+
+**For every emitted spec line, invoke the Task tool with these arguments (parse the line as space-separated `KEY=VALUE` pairs; values contain no spaces):**
+
+- `subagent_type` = the `SUBAGENT_TYPE` value, verbatim
+- `model` = the `MODEL` value, verbatim
+- `prompt` = the literal string `"DISPATCH_FILE=<PROMPT_FILE-value>"` — a single-line env-var-style reference; the prompt argument has no other content
+
+**Invoke all M Task tool calls in parallel in one orchestrator response** (one Task call per spec line). The reviewer agent body's first instruction is to `Read` its `DISPATCH_FILE` — do not pre-Read the file yourself; the dispatch context belongs in the subagent's window, not the orchestrator's.
+
+**Iron law (orchestrator-side dispatch contract):** invoke the Task tool exactly once per emitted spec line, with `SUBAGENT_TYPE`, `MODEL`, and `PROMPT_FILE` copied verbatim. Skipping a line, deduplicating across lines, modifying any value, or substituting a different subagent_type is a contract violation. The dispatch manifest (`$REVIEW_OUTPUT_DIR/.dispatch-manifest.json`) records expected dispatches; the apply-fix step's "expected tag produced no output" diagnostic catches missed or mis-routed Task invocations.
+
+After all Task tool calls return (Task tool is synchronous; first-party subagents have written their per-finding files to disk by the time Task returns), drain any third-party background dispatches and finalize the round:
+
+```sh
+scripts/await-round.sh --round-dir "$REVIEW_OUTPUT_DIR"
+```
+
+`await-round` is no-op-safe — first-party-only rounds still call it; it returns immediately after reading the manifest. It writes a small `$REVIEW_OUTPUT_DIR/.round-complete.json` summary and (for third-party dispatches) materializes per-finding files via `third-party-finding-splitter.sh`. It does NOT echo captured subagent payloads (CD-1 #4 output-bound contract).
+
+Then read `$REVIEW_OUTPUT_DIR/.round-complete.json` and the per-finding files as needed for apply-fix. The raw per-reviewer prompt content (assembled by dispatch-agent into `PROMPT_FILE`) never enters the orchestrator's context — only the small spec lines + the small `DISPATCH_FILE` references passed to Task.
+````
+
 
 **Hook points / `!cat` includes:**
 - `!cat`-included into 12 consumer SKILL.md files at `## Reviewer Dispatch` (per structure.md §Hook-Point Locations L697-712 — goals, questions, research, design, structure, phasing, plan, parallelize, replan, implement, integrate, test).
@@ -1161,24 +1285,29 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Responsibility:** Surface `model_routing:`, `trusted_path:`, and `validators:` blocks consumed by universal dispatch; add `orchestrator_rescue` (default `false`) and `max_drift_per_round` (default `3`) per CD-4 §I.4 for the halt-response protocol. The 5-tier `model_routing:` block uses CD-1's vendor-neutral schema (extra-low / low / medium / high / extra-high), with `extra-low: none` as the default (operator opts in to a cheaper vendor). Halt-on-`none` semantics live in `_resolve-lib.sh`; `config.md` is the schema authority. Adds `second_reviewer:` field (replaces the deleted vendor-named `codex_reviews:`) per G27 D1; optionally adds `second_reviewer_vendor:` advanced-operator override per G27 D1.
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §CD-4 §I.4 (L580-585) and structure.md §Interfaces §4 (L224-239), `model_routing:` config block (5-tier schema + halt-response additions).
->
-> ```yaml
-> model_routing:
->   extra-low:  none
->   low:        { vendor: claude, model: claude-haiku-4.5 }
->   medium:     { vendor: claude, model: claude-sonnet-4.6 }
->   high:       { vendor: claude, model: claude-opus-4.7 }
->   extra-high: { vendor: claude, model: claude-opus-4.7-high }
-> trusted_path:
->   copilot_cli: true
->   claude_code: false
-> validators:
->   change_type_enum: [style, clarity, correctness, scope, intent]
->   finding_schema_required: [finding_id, severity, change_type, referenced_files, artifact]
-> orchestrator_rescue: false        # opt-in for silent orchestrator-driven fixes; when false every halt escalates
-> max_drift_per_round: 3            # drift-event counter ceiling per round (tier 2/3 rescues + escalated resolutions + auto-drops)
-> ```
+
+**Source:** design.md §CD-4 §I.4 (L580-L585) and structure.md §Interfaces §4 (L224-L239)
+**Marker phrase:** "`model_routing:` config block (5-tier schema + halt-response additions)"
+**Lift type:** Section body
+**Insertion site (in target file):** Authored as the `model_routing:` / `trusted_path:` / `orchestrator_rescue` / `max_drift_per_round` configuration block within `config.md` — the 5-tier vendor-neutral routing schema plus the halt-response additions for CD-4 §I.4.
+
+```yaml
+model_routing:
+  extra-low:  none
+  low:        { vendor: claude, model: claude-haiku-4.5 }
+  medium:     { vendor: claude, model: claude-sonnet-4.6 }
+  high:       { vendor: claude, model: claude-opus-4.7 }
+  extra-high: { vendor: claude, model: claude-opus-4.7-high }
+trusted_path:
+  copilot_cli: true
+  claude_code: false
+validators:
+  change_type_enum: [style, clarity, correctness, scope, intent]
+  finding_schema_required: [finding_id, severity, change_type, referenced_files, artifact]
+orchestrator_rescue: false        # opt-in for silent orchestrator-driven fixes; when false every halt escalates
+max_drift_per_round: 3            # drift-event counter ceiling per round (tier 2/3 rescues + escalated resolutions + auto-drops)
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - `second_reviewer: true|false` (G27 D1) — vendor-neutral replacement for the deleted `codex_reviews:`. NO alias for the legacy field; Config Validation Procedure treats an unknown `codex_reviews:` as a hard validation error with the rename-naming diagnostic from G27 D1 L2185.
@@ -1431,13 +1560,20 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Responsibility:** (a) G16: insert the `## Orchestrator-Only Scripts (Bash Allowlist)` section at the TOP of the agent's prose body (ABOVE the first procedural section) per design.md G16 deliverable 2 L1645-1653. Forbids invocation of the orchestrator-only dispatch scripts under any path shape; defense-in-depth against prompt-injected exfil. (b) G22: add `tier: medium` to frontmatter per the G22 rubric table (qrspi-implementer is in the 36-agent `medium` default group).
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §G16 Implementation Deliverable 2 (L1647-1651), `## Orchestrator-Only Scripts (Bash Allowlist)` section body authored verbatim for `agents/qrspi-implementer.md`.
+
+**Source:** design.md §G16 Implementation Deliverable 2 (L1647-L1651)
+**Marker phrase:** "`## Orchestrator-Only Scripts (Bash Allowlist)` section body authored verbatim for `agents/qrspi-implementer.md`"
+**Lift type:** Section body
+**Insertion site (in target file):** Authored as a new `## Orchestrator-Only Scripts (Bash Allowlist)` section inserted at the TOP of the prose body of `agents/qrspi-implementer.md`, ABOVE the first procedural section, per design.md G16 L1645.
+
+```markdown
+> ## Orchestrator-Only Scripts (Bash Allowlist)
 >
-> > ## Orchestrator-Only Scripts (Bash Allowlist)
-> >
-> > You may NOT invoke `scripts/run-codex-review.sh` or `scripts/run-third-party-llm.sh` under any path shape — not by relative path (`./scripts/run-codex-review.sh`), not by absolute path (`<repo>/scripts/run-codex-review.sh`), not via shell expansion or aliases. These scripts are orchestrator-only — they dispatch LLM reviews on behalf of the run, and they read arbitrary file content into the LLM prompt. Per-task implementer work has no legitimate reason to invoke them; the per-task Bash grant restriction here is defense in depth against prompt-injected exfil.
-> >
-> > If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` and stop — the orchestrator owns LLM dispatch decisions, not the implementer.
+> You may NOT invoke `scripts/run-codex-review.sh` or `scripts/run-third-party-llm.sh` under any path shape — not by relative path (`./scripts/run-codex-review.sh`), not by absolute path (`<repo>/scripts/run-codex-review.sh`), not via shell expansion or aliases. These scripts are orchestrator-only — they dispatch LLM reviews on behalf of the run, and they read arbitrary file content into the LLM prompt. Per-task implementer work has no legitimate reason to invoke them; the per-task Bash grant restriction here is defense in depth against prompt-injected exfil.
+>
+> If your dispatch genuinely requires LLM-mediated work, report `NEEDS_CONTEXT` and stop — the orchestrator owns LLM dispatch decisions, not the implementer.
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Script-name update: per CD-1 rename inventory (design.md L197-200), the allowlist's two script names update to the post-rename canonical names — `scripts/dispatch-agent.sh` and `scripts/dispatch-companion.sh`. The verbatim block above carries the pre-rename names from G16's design block; the Implement step ships the post-rename names to match the slice-1.4 file renames in this same wave.
@@ -1454,9 +1590,16 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Responsibility:** Representative reviewer-body update demonstrating the universal DISPATCH_FILE first-action pattern (per design.md CD-1 schema migration L195). (a) G22: ADD `tier: medium` to frontmatter per the G22 rubric table. (b) G22 schema migration: ADD the DISPATCH_FILE first-action instruction to the agent body (verbatim below). (c) G31 Consumer #5: ADD `prompt-prose-reviewer` to the `skills:` frontmatter preload alongside the existing `reviewer-protocol`.
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §CD-1 Schema migrations (L195), Reviewer-agent first-action instruction.
->
-> **Read your `DISPATCH_FILE` (passed in your prompt argument as `DISPATCH_FILE=<path>`) as your full dispatch before doing anything else.**
+
+**Source:** design.md §CD-1 Schema migrations (L195)
+**Marker phrase:** "Reviewer-agent first-action instruction: Read your `DISPATCH_FILE` … as your full dispatch before doing anything else."
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted at the very first procedural step (Read step) of the agent body of `agents/qrspi-code-quality-reviewer.md`, replacing the implicit assumption that dispatch parameters arrive inline in the prompt argument.
+
+```markdown
+**Read your `DISPATCH_FILE` (passed in your prompt argument as `DISPATCH_FILE=<path>`) as your full dispatch before doing anything else.**
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Frontmatter: ADD `tier: medium`; ADD `prompt-prose-reviewer` to the `skills:` preload list (per structure.md §Hook-Point Locations L785 G31 Consumer #5).
@@ -1472,9 +1615,16 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Responsibility:** Plan-reviewer-body update applying the same universal DISPATCH_FILE first-action pattern + G22 `tier:` rubric. ADD `tier: medium` to frontmatter; ADD the DISPATCH_FILE first-action instruction at the top of the agent body.
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §CD-1 Schema migrations (L195), Reviewer-agent first-action instruction.
->
-> **Read your `DISPATCH_FILE` (passed in your prompt argument as `DISPATCH_FILE=<path>`) as your full dispatch before doing anything else.**
+
+**Source:** design.md §CD-1 Schema migrations (L195)
+**Marker phrase:** "Reviewer-agent first-action instruction: Read your `DISPATCH_FILE` … as your full dispatch before doing anything else."
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted at the very first procedural step (Read step) of the agent body of `agents/qrspi-plan-reviewer.md`, replacing the implicit assumption that dispatch parameters arrive inline in the prompt argument.
+
+```markdown
+**Read your `DISPATCH_FILE` (passed in your prompt argument as `DISPATCH_FILE=<path>`) as your full dispatch before doing anything else.**
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Frontmatter: ADD `tier: medium` per G22 rubric (qrspi-plan-reviewer in 36-agent medium default group).
@@ -1503,16 +1653,28 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Responsibility:** Single batch schema-migration row covering all 41 agent files. Two coupled edits per file. (a) ADD `tier:` frontmatter to every agent per the G22 Deliverable 1 rubric table (5 agents at `tier: low`; 36 agents at `tier: medium`; 0 declaring `extra-low` / `high` / `extra-high` by default). (b) For every reviewer agent (`agents/qrspi-*-reviewer.md`), ADD the DISPATCH_FILE first-action instruction at the top of the agent body per design.md CD-1 L195. No behavioral logic in this row beyond the schema migration. The 4 agents currently declaring `model_role:` (`qrspi-research-collator`, `qrspi-research-specialist`, `qrspi-implementer-lightweight`, `qrspi-test-writer`) get `model_role:` DELETED in the same wave per G22 Deliverable 3 L1976.
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §CD-1 Schema migrations (L195), Reviewer-agent first-action instruction (applied to every reviewer agent in the sweep).
->
-> **Read your `DISPATCH_FILE` (passed in your prompt argument as `DISPATCH_FILE=<path>`) as your full dispatch before doing anything else.**
 
-> **Source:** design.md §G22 Deliverable 1 (L1955-1956), Tier-assignment rubric (full agent → tier mapping).
->
-> | Tier         | Count default | Agents (alphabetical within tier)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-> |--------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-> | `low`        | 5             | `qrspi-finding-verifier`, `qrspi-implementer-lightweight`, `qrspi-research-collator`, `qrspi-research-specialist`, `qrspi-scope-tagger`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-> | `medium`     | 36            | (all other agents — `qrspi-code-quality-reviewer`, `qrspi-code-simplifier`, `qrspi-design-reviewer`, `qrspi-design-scope-reviewer`, `qrspi-goal-traceability-reviewer`, `qrspi-goals-reviewer`, `qrspi-goals-scope-reviewer`, `qrspi-implement-gate-reviewer`, `qrspi-implementer`, `qrspi-integration-reviewer`, `qrspi-parallelize-reviewer`, `qrspi-parallelize-scope-reviewer`, `qrspi-phasing-reviewer`, `qrspi-phasing-scope-reviewer`, `qrspi-plan-goal-traceability-reviewer`, `qrspi-plan-reviewer`, `qrspi-plan-scope-reviewer`, `qrspi-plan-security-reviewer`, `qrspi-plan-silent-failure-hunter`, `qrspi-plan-spec-reviewer`, `qrspi-plan-test-coverage-reviewer`, `qrspi-questions-reviewer`, `qrspi-replan-analyzer`, `qrspi-replan-reviewer`, `qrspi-replan-scope-reviewer`, `qrspi-research-reviewer`, `qrspi-security-integration-reviewer`, `qrspi-security-reviewer`, `qrspi-silent-failure-hunter`, `qrspi-spec-reviewer`, `qrspi-structure-reviewer`, `qrspi-structure-scope-reviewer`, `qrspi-test-coverage-reviewer`, `qrspi-test-writer`, `qrspi-type-design-analyzer`, `qrspi-visual-fidelity-reviewer`) |
+**Source:** design.md §CD-1 Schema migrations (L195)
+**Marker phrase:** "Reviewer-agent first-action instruction (applied to every reviewer agent in the sweep)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted at the very first procedural step (Read step) of the agent body of every `agents/qrspi-*-reviewer.md` file in the 41-agent sweep (excluding the three already covered by their dedicated rows above).
+
+```markdown
+**Read your `DISPATCH_FILE` (passed in your prompt argument as `DISPATCH_FILE=<path>`) as your full dispatch before doing anything else.**
+```
+
+**Source:** design.md §G22 Deliverable 1 (L1955-L1956)
+**Marker phrase:** "Tier-assignment rubric (full agent → tier mapping)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Consumed by the sweep against `agents/*.md` frontmatter as the authoritative agent → `tier:` mapping (5 agents at `tier: low`; 36 agents at `tier: medium`); not lifted into any single file body — drives the per-file frontmatter `tier:` field write.
+
+```markdown
+| Tier         | Count default | Agents (alphabetical within tier)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|--------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `low`        | 5             | `qrspi-finding-verifier`, `qrspi-implementer-lightweight`, `qrspi-research-collator`, `qrspi-research-specialist`, `qrspi-scope-tagger`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `medium`     | 36            | (all other agents — `qrspi-code-quality-reviewer`, `qrspi-code-simplifier`, `qrspi-design-reviewer`, `qrspi-design-scope-reviewer`, `qrspi-goal-traceability-reviewer`, `qrspi-goals-reviewer`, `qrspi-goals-scope-reviewer`, `qrspi-implement-gate-reviewer`, `qrspi-implementer`, `qrspi-integration-reviewer`, `qrspi-parallelize-reviewer`, `qrspi-parallelize-scope-reviewer`, `qrspi-phasing-reviewer`, `qrspi-phasing-scope-reviewer`, `qrspi-plan-goal-traceability-reviewer`, `qrspi-plan-reviewer`, `qrspi-plan-scope-reviewer`, `qrspi-plan-security-reviewer`, `qrspi-plan-silent-failure-hunter`, `qrspi-plan-spec-reviewer`, `qrspi-plan-test-coverage-reviewer`, `qrspi-questions-reviewer`, `qrspi-replan-analyzer`, `qrspi-replan-reviewer`, `qrspi-replan-scope-reviewer`, `qrspi-research-reviewer`, `qrspi-security-integration-reviewer`, `qrspi-security-reviewer`, `qrspi-silent-failure-hunter`, `qrspi-spec-reviewer`, `qrspi-structure-reviewer`, `qrspi-structure-scope-reviewer`, `qrspi-test-coverage-reviewer`, `qrspi-test-writer`, `qrspi-type-design-analyzer`, `qrspi-visual-fidelity-reviewer`) |
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Per-file frontmatter edit: ADD `tier:` field with value per the rubric above. Three already-modified agents in this slice (`qrspi-implementer`, `qrspi-code-quality-reviewer`, `qrspi-plan-reviewer`, `qrspi-test-writer`) are covered by their dedicated row blocks above; this sweep covers the remaining 37 files.
@@ -1666,33 +1828,44 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G31 Addition A (L2546-2563), Plan classifier rule (inline in consumer #1).
->
-> ```markdown
-> **Step 1 — Classify each task as `code` or `lightweight`.** Default `task_type: code`.
->
-> Assign `task_type: lightweight` when the task's primary deliverable is prompt prose OR non-prompt prose / docs / config that has no executable behavior to test.
->
-> !cat skills/_shared/prompt-prose-detection.md
->
-> Apply the detection above to the planned target files. If the target IS prompt prose, classify lightweight. Mixed-deliverable tasks (one prompt-prose file + one code file in the same task) require ALL target files to satisfy the lightweight test; mixed tasks default to `task_type: code` — split per Goal-Specificity rules if genuinely mixed in nature.
->
-> The classification gates downstream behavior: lightweight tasks dispatch to `qrspi-implementer-lightweight` (which inherits its own prompt-prose detection via the `prompt-prose-writer` skill preload); code tasks dispatch to `qrspi-implementer` (TDD path). Prompt prose NEVER lands on the TDD path by classification.
-> ```
->
-> Placement: `skills/plan/SKILL.md` § Per-Task Classification, REPLACES the current Step 1 paragraph (the existing path-glob-only rule). Steps 2+ continue unchanged after.
+**Source:** design.md §G31 Addition A (L2546-L2563)
+**Marker phrase:** "Plan classifier rule (inline in consumer #1)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted in `skills/plan/SKILL.md` § Per-Task Classification — REPLACES the current Step 1 paragraph (the existing path-glob-only rule). Steps 2+ continue unchanged after.
 
-> **Source:** design.md §G31 Addition B (L2566-2579), Plan writer-subagent Test-Expectations clause (inline in consumer #2).
->
-> ```markdown
-> **Test-Expectations clause for prompt-prose tasks.** For tasks classified `task_type: lightweight` because the deliverable IS prompt prose (per Addition A's content-semantic test), Test Expectations cannot be RED-gate failing tests — prompt prose has no executable behavior to verify by test execution. Instead, encode rules-application as the verification mechanism using this template:
->
-> > Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy].
->
-> Other lightweight task categories (non-prompt prose, ordinary documentation, configuration) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause.
-> ```
->
-> Placement: `skills/plan/SKILL.md` writer-subagent dispatch payload sections (TWO sites — the merged-plan/overview subagent dispatch ~lines 125-132 and the initial-draft per-task sub-subagent dispatch ~lines 439-444 as of v0.7.1). Inserted AFTER the consumer's `!cat detection` + `!cat writer-addition`, BEFORE the rest of the dispatch payload's standard Test-Expectations instructions. The post-approval-split sub-subagent does NOT receive this clause.
+````markdown
+```markdown
+**Step 1 — Classify each task as `code` or `lightweight`.** Default `task_type: code`.
+
+Assign `task_type: lightweight` when the task's primary deliverable is prompt prose OR non-prompt prose / docs / config that has no executable behavior to test.
+
+!cat skills/_shared/prompt-prose-detection.md
+
+Apply the detection above to the planned target files. If the target IS prompt prose, classify lightweight. Mixed-deliverable tasks (one prompt-prose file + one code file in the same task) require ALL target files to satisfy the lightweight test; mixed tasks default to `task_type: code` — split per Goal-Specificity rules if genuinely mixed in nature.
+
+The classification gates downstream behavior: lightweight tasks dispatch to `qrspi-implementer-lightweight` (which inherits its own prompt-prose detection via the `prompt-prose-writer` skill preload); code tasks dispatch to `qrspi-implementer` (TDD path). Prompt prose NEVER lands on the TDD path by classification.
+```
+
+Placement: `skills/plan/SKILL.md` § Per-Task Classification, REPLACES the current Step 1 paragraph (the existing path-glob-only rule). Steps 2+ continue unchanged after.
+````
+
+**Source:** design.md §G31 Addition B (L2566-L2579)
+**Marker phrase:** "Plan writer-subagent Test-Expectations clause (inline in consumer #2)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted in `skills/plan/SKILL.md` writer-subagent dispatch payload sections at TWO sites — the merged-plan/overview subagent dispatch (~lines 125-132) and the initial-draft per-task sub-subagent dispatch (~lines 439-444). At each site, inserted AFTER the consumer's `!cat detection` + `!cat writer-addition`, BEFORE the rest of the dispatch payload's standard Test-Expectations instructions. The post-approval-split sub-subagent does NOT receive this clause.
+
+````markdown
+```markdown
+**Test-Expectations clause for prompt-prose tasks.** For tasks classified `task_type: lightweight` because the deliverable IS prompt prose (per Addition A's content-semantic test), Test Expectations cannot be RED-gate failing tests — prompt prose has no executable behavior to verify by test execution. Instead, encode rules-application as the verification mechanism using this template:
+
+> Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy].
+
+Other lightweight task categories (non-prompt prose, ordinary documentation, configuration) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause.
+```
+
+Placement: `skills/plan/SKILL.md` writer-subagent dispatch payload sections (TWO sites — the merged-plan/overview subagent dispatch ~lines 125-132 and the initial-draft per-task sub-subagent dispatch ~lines 439-444 as of v0.7.1). Inserted AFTER the consumer's `!cat detection` + `!cat writer-addition`, BEFORE the rest of the dispatch payload's standard Test-Expectations instructions. The post-approval-split sub-subagent does NOT receive this clause.
+````
+
 
 **Outline-only sections (Plan/Implement authors):**
 - `## Schema-Migration Task Shape` (G2): codify a `sizing_exception: schema-migration` task type per design.md G2 L1006-1019 — when declared, task is permitted to exceed LOC ceiling and file-count guidance; task MUST declare `sizing_rationale: <human-readable reason>`; task MUST declare mandatory `structural_lint:` field naming a bash check asserting mechanical-only nature (e.g., "every file modified contains identical replacement pattern X → Y; no other diff content"); plan-spec reviewer EXEMPTS the LOC ceiling check only when all three fields present AND structural_lint command actually executes successfully on the proposed diff. N-files ungated. Structural lint mandatory (not optional). All three fields mandatory together.
@@ -1718,18 +1891,24 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G31 Addition D (L2596-2609), design-reviewer per-block scope addendum (inline in consumer #6).
->
-> ```markdown
-> **Per-block scope refinement for design.md.** `design.md` typically contains discrete `<!-- prose-design: target -->` HTML-comment markers identifying blocks of verbatim prompt prose destined for an LLM-consumable file. Treat each such marker as one strong signal but not the only one — content semantics determine the call. For each marker:
->
-> - If the block's text reads as LLM-consumable directive prose (role+task+constraints, Iron Laws, `<HARD-GATE>` blocks, verbatim rule statements destined for an orchestrator or subagent prompt), apply the rules to that block.
-> - If the block's text reads as something else (e.g., a shell-script snippet identified by a marker like `<!-- prose-design: scripts/example.sh -->`), skip rules application for that block.
->
-> The marker scopes attention to specific sub-blocks; the surrounding design-decision prose is itself NOT prompt prose and is reviewed by ordinary design-quality criteria, not R1-R7.
-> ```
->
-> Placement: `agents/qrspi-design-reviewer.md` body, appended to the review-procedure section AFTER the `skills:` frontmatter has loaded `prompt-prose-reviewer`. Acts as a refinement layered atop the shared reviewer-addition's general "file or sub-block" rule.
+**Source:** design.md §G31 Addition D (L2596-L2609)
+**Marker phrase:** "design-reviewer per-block scope addendum (inline in consumer #6)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Appended in `agents/qrspi-design-reviewer.md` body to the review-procedure section AFTER the `skills:` frontmatter preload of `prompt-prose-reviewer` has loaded — layered atop the shared reviewer-addition's general "file or sub-block" rule as a refinement.
+
+````markdown
+```markdown
+**Per-block scope refinement for design.md.** `design.md` typically contains discrete `<!-- prose-design: target -->` HTML-comment markers identifying blocks of verbatim prompt prose destined for an LLM-consumable file. Treat each such marker as one strong signal but not the only one — content semantics determine the call. For each marker:
+
+- If the block's text reads as LLM-consumable directive prose (role+task+constraints, Iron Laws, `<HARD-GATE>` blocks, verbatim rule statements destined for an orchestrator or subagent prompt), apply the rules to that block.
+- If the block's text reads as something else (e.g., a shell-script snippet identified by a marker like `<!-- prose-design: scripts/example.sh -->`), skip rules application for that block.
+
+The marker scopes attention to specific sub-blocks; the surrounding design-decision prose is itself NOT prompt prose and is reviewed by ordinary design-quality criteria, not R1-R7.
+```
+
+Placement: `agents/qrspi-design-reviewer.md` body, appended to the review-procedure section AFTER the `skills:` frontmatter has loaded `prompt-prose-reviewer`. Acts as a refinement layered atop the shared reviewer-addition's general "file or sub-block" rule.
+````
+
 
 **Outline-only sections (Plan/Implement authors):**
 - `skills:` frontmatter: append `prompt-prose-reviewer` to existing `skills: [reviewer-protocol]` list (per G31 Consumer #6 — design.md L2622 Distribution Table).
@@ -1788,38 +1967,44 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G10 D1 (L1376-1403), Anti-Fabrication Rule callout — becomes the literal section body.
->
-> ```markdown
-> ### Anti-Fabrication Rule (FAIL-LOUD)
->
-> The Contradiction Refusal procedure above applies to ONE specific dispatch malformation
-> (`task_definition` present with a test-phase `output` path). It does NOT generalize.
->
-> Do NOT invent, paraphrase, or attribute to `reviewer-protocol/SKILL.md` any contradiction-
-> refusal or escape-hatch procedure that is not present verbatim above. If you believe a
-> documented contract (the per-finding disk-write contract, change-type classifier, finding
-> schema, untrusted-data handling, phase routing, or any consumer skill's HARD-GATE) is in
-> conflict with another rule or with finding quality, do NOT confabulate a generic resolution
-> to bypass it. Surface the conflict by name:
->
-> 1. Do NOT call the `Write` tool. Do NOT emit findings or sentinels. Do NOT proceed.
-> 2. Return a single-line text response with this load-bearing prefix (orchestrator detects it):
->
->    ```
->    CONTRACT-CONFLICT: <contract A name> conflicts with <contract B name or quality concern>; cannot proceed
->    ```
->
-> 3. End the turn. The orchestrator surfaces the conflict to the operator, who resolves it
->    by name (amend a contract, adjust the dispatch, or instruct the reviewer to proceed
->    under one specific contract).
->
-> Quoting a procedure from `reviewer-protocol/SKILL.md` that is not literally present in this
-> file is a fabrication. Treat the absence of a named escape hatch as the rule, not as an
-> invitation to invent one.
-> ```
->
-> Placement: New `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/reviewer-protocol/SKILL.md`, inserted between the existing `### Refusal Procedure` (ends ~line 206) and `## Per-Finding Disk-Write Contract` (line 208). Positioned immediately after Refusal Procedure so the bounding clause is adjacent to the section it bounds.
+**Source:** design.md §G10 D1 (L1376-L1403)
+**Marker phrase:** "Anti-Fabrication Rule callout — becomes the literal section body"
+**Lift type:** Section body
+**Insertion site (in target file):** Authored as a new `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/reviewer-protocol/SKILL.md`, inserted between the existing `### Refusal Procedure` (ends ~line 206) and `## Per-Finding Disk-Write Contract` (line 208). Positioned immediately after Refusal Procedure so the bounding clause is adjacent to the section it bounds.
+
+````markdown
+```markdown
+### Anti-Fabrication Rule (FAIL-LOUD)
+
+The Contradiction Refusal procedure above applies to ONE specific dispatch malformation
+(`task_definition` present with a test-phase `output` path). It does NOT generalize.
+
+Do NOT invent, paraphrase, or attribute to `reviewer-protocol/SKILL.md` any contradiction-
+refusal or escape-hatch procedure that is not present verbatim above. If you believe a
+documented contract (the per-finding disk-write contract, change-type classifier, finding
+schema, untrusted-data handling, phase routing, or any consumer skill's HARD-GATE) is in
+conflict with another rule or with finding quality, do NOT confabulate a generic resolution
+to bypass it. Surface the conflict by name:
+
+1. Do NOT call the `Write` tool. Do NOT emit findings or sentinels. Do NOT proceed.
+2. Return a single-line text response with this load-bearing prefix (orchestrator detects it):
+
+   ```
+   CONTRACT-CONFLICT: <contract A name> conflicts with <contract B name or quality concern>; cannot proceed
+   ```
+
+3. End the turn. The orchestrator surfaces the conflict to the operator, who resolves it
+   by name (amend a contract, adjust the dispatch, or instruct the reviewer to proceed
+   under one specific contract).
+
+Quoting a procedure from `reviewer-protocol/SKILL.md` that is not literally present in this
+file is a fabrication. Treat the absence of a named escape hatch as the rule, not as an
+invitation to invent one.
+```
+
+Placement: New `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/reviewer-protocol/SKILL.md`, inserted between the existing `### Refusal Procedure` (ends ~line 206) and `## Per-Finding Disk-Write Contract` (line 208). Positioned immediately after Refusal Procedure so the bounding clause is adjacent to the section it bounds.
+````
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Preserve existing `### Contradiction Refusal (FAIL-LOUD)` and `### Refusal Procedure` sections unchanged. The Anti-Fabrication Rule bounds them by adjacency; it does NOT delete or rewrite them.
@@ -1839,15 +2024,26 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G17 deliverable #1 (L1686-1691), Invariant 3 rationale sentence replacement at L174.
->
-> - **Old:** "This ensures `git status` reports remain deterministic between scratch-file write and removal, and the target repository's committed `.gitignore` is not polluted with QRSPI internals."
-> - **New:** "This ensures `git status` reports remain deterministic between scratch-file write and removal in any worktree, including downstream consumers' target repositories which do not inherit qrspi-plus's own committed `.gitignore` entry."
+**Source:** design.md §G17 deliverable #1 (L1686-L1691)
+**Marker phrase:** "Invariant 3 rationale sentence replacement at L174"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Replaces the existing Invariant 3 rationale sentence at line ~174 of `skills/implementer-protocol/SKILL.md` — the locked Old → New substitution.
 
-> **Source:** design.md §G17 deliverable #2 (L1693-1698), Commit-Before-Reporting step 4 parenthetical replacement at L241.
->
-> - **Old:** "(the scratch file is not gitignored and you don't want it in the next round's diff)"
-> - **New:** "(keeps the scratch file out of the next round's diff)"
+```markdown
+- **Old:** "This ensures `git status` reports remain deterministic between scratch-file write and removal, and the target repository's committed `.gitignore` is not polluted with QRSPI internals."
+- **New:** "This ensures `git status` reports remain deterministic between scratch-file write and removal in any worktree, including downstream consumers' target repositories which do not inherit qrspi-plus's own committed `.gitignore` entry."
+```
+
+**Source:** design.md §G17 deliverable #2 (L1693-L1698)
+**Marker phrase:** "Commit-Before-Reporting step 4 parenthetical replacement at L241"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Replaces the existing Commit-Before-Reporting step 4 parenthetical at line ~241 of `skills/implementer-protocol/SKILL.md` — the locked Old → New substitution.
+
+```markdown
+- **Old:** "(the scratch file is not gitignored and you don't want it in the next round's diff)"
+- **New:** "(keeps the scratch file out of the next round's diff)"
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - No new section. No Composition rewrite. No new tests (per design.md L1709 — all four guards already verified by `tests/unit/test-commit-hygiene-invariants.bats`).
@@ -1864,10 +2060,16 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G17 deliverable #3 (L1700-1705), Commit ownership bullet replacement at L28.
->
-> - **Old:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer."
-> - **New:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer."
+**Source:** design.md §G17 deliverable #3 (L1700-L1705)
+**Marker phrase:** "Commit ownership bullet replacement at L28"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Replaces the existing Commit ownership bullet at line ~28 of `agents/qrspi-test-writer.md` — the locked Old → New substitution.
+
+```markdown
+- **Old:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer."
+- **New:** "...write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer."
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Preserve L23 / L24 / L77-80 unchanged (per design.md L1707 — load-bearing operational references: Bash allowlist entries + the canonical step list which restates the exclude reassurance authoritatively).
@@ -1883,27 +2085,36 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G34 D2 (L2897-2907), Locked OWNS allowances list.
->
-> > Design OWNS:
-> > - Per-goal outcome statements (the end-state being targeted)
-> > - Per-goal solution definitions at outcome altitude including: detailed descriptions of the solutions with full edge cases, end-to-end flows specifying actor sequence and per-step inputs/outputs, prompt-writing specifics (the actual prose a SKILL or agent file will carry, paraphrased or verbatim when load-bearing), acceptance criteria including concrete examples and rough test-pairing shapes (e.g., "one bats file per script under `scripts/`"; naming the shape is acceptance-criteria-altitude — authoring the test code is Plan/Implement's job)
-> > - Cross-Goal Decisions (CDs) that establish vocabulary, named architectural components by purpose, and cross-cutting invariants
-> > - Per-solution diagrams (zero or more per goal block or per cross-cutting CD block) when they aid comprehension of that specific solution — Mermaid sequence diagrams for per-solution end-to-end flows, or Mermaid flowcharts for branch-heavy per-solution control flow. NOT a unified system-wide architecture diagram across goals/CDs (Structure's job).
-> > - Test Strategy at the per-solution altitude: each goal/CD block carries its own Acceptance subsection with concrete examples and rough test-pairing shapes; design.md does NOT carry a top-level Test Strategy section stitching acceptance criteria across goals (Structure's job).
-> > - Naming and renames that establish cross-skill vocabulary (rename inventory blocks)
-> > - Phasing/release-assignment phrases that name which goal/CD ships in which release (operator-authoritative; phasing.md is the canonical artifact but design.md may carry the labels inline for self-host reasoning)
+**Source:** design.md §G34 D2 (L2897-L2907)
+**Marker phrase:** "Locked OWNS allowances list"
+**Lift type:** Full file body
 
-> **Source:** design.md §G34 D3 (L2908-2917), Locked DEFERS list (continues the same file as a single contiguous block).
->
-> > Design DEFERS:
-> > - Function bodies (procedural code blocks with executable logic — full implementations belong in Implement)
-> > - Full unit-test code (specific assertion text, fixture file contents, test scaffolding — belongs in Plan/Implement; Design names the test type and rough shape only)
-> > - Executable shell beyond a few illustrative lines (a 2-3 line block illustrating shape is fine; a 20-line script body is not)
-> > - File architecture (which file holds which component, directory layout, module boundary lines — Structure's job)
-> > - Unified system-wide architecture diagrams that stitch components across goals/CDs into a single architectural overview (Structure's job; per-solution diagrams inside a single goal/CD block remain in Design's OWNS)
-> > - Unified Test Strategy / Test Architecture section that stitches per-solution acceptance criteria from individual goal/CD blocks into a release-wide test plan, names cross-cutting test invariants by type, or enumerates the release's test taxonomy (Structure's job; per-solution Acceptance subsections inside individual goal/CD blocks remain in Design's OWNS)
-> > - Task carving (per-task LOC budgets, per-task dependency graphs, per-task test-case enumeration — Plan's job)
+```markdown
+> Design OWNS:
+> - Per-goal outcome statements (the end-state being targeted)
+> - Per-goal solution definitions at outcome altitude including: detailed descriptions of the solutions with full edge cases, end-to-end flows specifying actor sequence and per-step inputs/outputs, prompt-writing specifics (the actual prose a SKILL or agent file will carry, paraphrased or verbatim when load-bearing), acceptance criteria including concrete examples and rough test-pairing shapes (e.g., "one bats file per script under `scripts/`"; naming the shape is acceptance-criteria-altitude — authoring the test code is Plan/Implement's job)
+> - Cross-Goal Decisions (CDs) that establish vocabulary, named architectural components by purpose, and cross-cutting invariants
+> - Per-solution diagrams (zero or more per goal block or per cross-cutting CD block) when they aid comprehension of that specific solution — Mermaid sequence diagrams for per-solution end-to-end flows, or Mermaid flowcharts for branch-heavy per-solution control flow. NOT a unified system-wide architecture diagram across goals/CDs (Structure's job).
+> - Test Strategy at the per-solution altitude: each goal/CD block carries its own Acceptance subsection with concrete examples and rough test-pairing shapes; design.md does NOT carry a top-level Test Strategy section stitching acceptance criteria across goals (Structure's job).
+> - Naming and renames that establish cross-skill vocabulary (rename inventory blocks)
+> - Phasing/release-assignment phrases that name which goal/CD ships in which release (operator-authoritative; phasing.md is the canonical artifact but design.md may carry the labels inline for self-host reasoning)
+```
+
+**Source:** design.md §G34 D3 (L2908-L2917)
+**Marker phrase:** "Locked DEFERS list (continues the same file as a single contiguous block)"
+**Lift type:** Full file body
+
+```markdown
+> Design DEFERS:
+> - Function bodies (procedural code blocks with executable logic — full implementations belong in Implement)
+> - Full unit-test code (specific assertion text, fixture file contents, test scaffolding — belongs in Plan/Implement; Design names the test type and rough shape only)
+> - Executable shell beyond a few illustrative lines (a 2-3 line block illustrating shape is fine; a 20-line script body is not)
+> - File architecture (which file holds which component, directory layout, module boundary lines — Structure's job)
+> - Unified system-wide architecture diagrams that stitch components across goals/CDs into a single architectural overview (Structure's job; per-solution diagrams inside a single goal/CD block remain in Design's OWNS)
+> - Unified Test Strategy / Test Architecture section that stitches per-solution acceptance criteria from individual goal/CD blocks into a release-wide test plan, names cross-cutting test invariants by type, or enumerates the release's test taxonomy (Structure's job; per-solution Acceptance subsections inside individual goal/CD blocks remain in Design's OWNS)
+> - Task carving (per-task LOC budgets, per-task dependency graphs, per-task test-case enumeration — Plan's job)
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - File body = D2 OWNS block then D3 DEFERS block as a single contiguous markdown block, no other content (per design.md L2921). Front-matter optional but conventional with other `_shared/` snippets.
@@ -1922,40 +2133,43 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §CD-2 component 3 (L246-281), `<!-- prose-design: skills/_shared/evergreen-output-rule.md (entire file) -->`.
->
-> ````markdown
-> ## Evergreen-Output Rule
->
-> Any artifact in the QRSPI run directory governed by `status: draft → approved` frontmatter promotion (goals, design, structure, phasing, plan, parallelization, roadmap, future-goals, and any future artifact adopting this lifecycle) describes the **current state** of decisions. The reader is a downstream agent or future maintainer.
->
-> *(Excludes by design: `SKILL.md` files — skills carry rule rationale legitimately; `feedback/*.md` — the designated home for dialogue exhaust; `reviews/**/*.md` — finding rationale; `config.md` — non-narrative.)*
->
-> **Litmus test (apply to every paragraph before write).** Two filters, in order:
->
-> 1. Is the subject the **decision** (the thing being designed / planned / scoped)? → keep.
-> 2. Is the subject the **document itself** — its drafts, its history, the dialogue that produced it, "us"? → cut.
->
-> A sentence that only makes sense as a delta from a prior state is **dialogue exhaust** — strip it.
->
-> **Permitted substantive content** (do NOT confuse with dialogue exhaust):
->
-> - Chosen approach and its rationale (inline)
-> - Rejected alternatives and tradeoffs, where the artifact template asks for them (e.g., design.md's `## Trade-offs Considered` — substantive content about the decision space, not about the document's history)
-> - Rationale embedded inline as one parenthetical when a downstream reader needs it
->
-> **Named antagonist patterns — strip on sight, substitute as shown:**
->
-> | Antagonist pattern | Recognize by | Replace with |
-> |---|---|---|
-> | Session / drafting notes | "Rule X drafting note," "this collapsed from 3 to 1 because…" | Nothing — delete. If a fact matters, embed inline in the decision. |
-> | Version-history narration | "earlier draft said X," "previously," "originally," "pre-cleanup" | Nothing — git history holds versions. |
-> | Inside baseball | text addressed to "us" / "the author," meta-explanation of the document's own structure ("this section is split into A and B because…") | The decision the structure expresses — without the structural explanation. |
-> | Compaction-loss recovery notes | "this nuance was almost lost during…" | Nothing — if the nuance is needed, the rule itself carries it. |
-> | Failure-modes-prevented lists | bullets that justify why a rule exists rather than state what to do | Strengthen the rule's wording; delete the justification list. |
->
-> Decision-process history (drafts, review rounds, feedback applied, compaction recovery) lives in feedback files, review findings, PR descriptions, and git history — never in the artifact.
-> ````
+**Source:** design.md §CD-2 component 3 (L246-L281)
+**Marker phrase:** "<!-- prose-design: skills/_shared/evergreen-output-rule.md (entire file) -->"
+**Lift type:** Full file body
+
+```markdown
+## Evergreen-Output Rule
+
+Any artifact in the QRSPI run directory governed by `status: draft → approved` frontmatter promotion (goals, design, structure, phasing, plan, parallelization, roadmap, future-goals, and any future artifact adopting this lifecycle) describes the **current state** of decisions. The reader is a downstream agent or future maintainer.
+
+*(Excludes by design: `SKILL.md` files — skills carry rule rationale legitimately; `feedback/*.md` — the designated home for dialogue exhaust; `reviews/**/*.md` — finding rationale; `config.md` — non-narrative.)*
+
+**Litmus test (apply to every paragraph before write).** Two filters, in order:
+
+1. Is the subject the **decision** (the thing being designed / planned / scoped)? → keep.
+2. Is the subject the **document itself** — its drafts, its history, the dialogue that produced it, "us"? → cut.
+
+A sentence that only makes sense as a delta from a prior state is **dialogue exhaust** — strip it.
+
+**Permitted substantive content** (do NOT confuse with dialogue exhaust):
+
+- Chosen approach and its rationale (inline)
+- Rejected alternatives and tradeoffs, where the artifact template asks for them (e.g., design.md's `## Trade-offs Considered` — substantive content about the decision space, not about the document's history)
+- Rationale embedded inline as one parenthetical when a downstream reader needs it
+
+**Named antagonist patterns — strip on sight, substitute as shown:**
+
+| Antagonist pattern | Recognize by | Replace with |
+|---|---|---|
+| Session / drafting notes | "Rule X drafting note," "this collapsed from 3 to 1 because…" | Nothing — delete. If a fact matters, embed inline in the decision. |
+| Version-history narration | "earlier draft said X," "previously," "originally," "pre-cleanup" | Nothing — git history holds versions. |
+| Inside baseball | text addressed to "us" / "the author," meta-explanation of the document's own structure ("this section is split into A and B because…") | The decision the structure expresses — without the structural explanation. |
+| Compaction-loss recovery notes | "this nuance was almost lost during…" | Nothing — if the nuance is needed, the rule itself carries it. |
+| Failure-modes-prevented lists | bullets that justify why a rule exists rather than state what to do | Strengthen the rule's wording; delete the justification list. |
+
+Decision-process history (drafts, review rounds, feedback applied, compaction recovery) lives in feedback files, review findings, PR descriptions, and git history — never in the artifact.
+```
+
 
 **Hook points / `!cat` includes:** This is the *source* file `!cat`-included by the 9 CD-2 consumer SKILLs (goals, questions, research, design, structure, phasing, plan, parallelize, replan).
 
@@ -1970,34 +2184,37 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §CD-3 component 1 (L301-330), `<!-- prose-design: skills/_shared/multi-actor-flow-check.md (entire file) -->`.
+**Source:** design.md §CD-3 component 1 (L301-L330)
+**Marker phrase:** "<!-- prose-design: skills/_shared/multi-actor-flow-check.md (entire file) -->"
+**Lift type:** Full file body
+
+```markdown
+## Multi-Actor Flow Check
+
+Before authoring any deliverable that operationalizes a design decision involving two or more actors — where "actor" means anything that performs an operation and hands off to another: scripts, subagents, orchestrators, tools, services, protocol participants, object-call participants, workflow steps, queue producers/consumers, function callers/callees — verify that the design specifies all six choreography elements:
+
+1. **Actor inventory** — every participant named, with its role.
+2. **Sequence of operations** — ordered list of who-does-what; parallelism boundaries explicit.
+3. **Per-step inputs and outputs** — what each actor receives and produces at each step; where outputs are written (stdout, file path, return value, manifest entry, message).
+4. **Consumer identification** — for every output, who reads it next. Outputs with no named consumer must be removed or the consumer surfaced.
+5. **Loud-failure paths** — what happens when each step fails; where the failure surfaces; which actor catches it. Silent fallback is never the answer.
+6. **Context-cost call-out** — for any flow that crosses a context boundary (orchestrator/subagent, process, network), explicitly state what crosses vs. what stays on disk or in the other context.
+
+If any element is missing for an in-scope decision, **STOP** authoring against this decision and surface a concrete diagnostic to the user. Do NOT guess the missing hand-off and continue.
+
+Diagnostic template:
+
+> Design decision **X** enumerates actors **A, B, C** but does not specify **[missing element — e.g., "what happens if B produces no output", "how A invokes B", "who reads C's output"]**.
 >
-> ````markdown
-> ## Multi-Actor Flow Check
+> Stopping before guessing.
 >
-> Before authoring any deliverable that operationalizes a design decision involving two or more actors — where "actor" means anything that performs an operation and hands off to another: scripts, subagents, orchestrators, tools, services, protocol participants, object-call participants, workflow steps, queue producers/consumers, function callers/callees — verify that the design specifies all six choreography elements:
+> Recommended path: trigger the **Backward Loops** procedure (see `using-qrspi/SKILL.md` § Backward Loops) to re-open Design via its per-decision dialogue, lock the missing element, re-review + re-approve `design.md`, then cascade forward — every dependent artifact from Design onward (Phasing if phase boundaries are affected, Structure, Plan, Parallelize if task dependencies are affected) re-runs against the updated design.
 >
-> 1. **Actor inventory** — every participant named, with its role.
-> 2. **Sequence of operations** — ordered list of who-does-what; parallelism boundaries explicit.
-> 3. **Per-step inputs and outputs** — what each actor receives and produces at each step; where outputs are written (stdout, file path, return value, manifest entry, message).
-> 4. **Consumer identification** — for every output, who reads it next. Outputs with no named consumer must be removed or the consumer surfaced.
-> 5. **Loud-failure paths** — what happens when each step fails; where the failure surfaces; which actor catches it. Silent fallback is never the answer.
-> 6. **Context-cost call-out** — for any flow that crosses a context boundary (orchestrator/subagent, process, network), explicitly state what crosses vs. what stays on disk or in the other context.
->
-> If any element is missing for an in-scope decision, **STOP** authoring against this decision and surface a concrete diagnostic to the user. Do NOT guess the missing hand-off and continue.
->
-> Diagnostic template:
->
-> > Design decision **X** enumerates actors **A, B, C** but does not specify **[missing element — e.g., "what happens if B produces no output", "how A invokes B", "who reads C's output"]**.
-> >
-> > Stopping before guessing.
-> >
-> > Recommended path: trigger the **Backward Loops** procedure (see `using-qrspi/SKILL.md` § Backward Loops) to re-open Design via its per-decision dialogue, lock the missing element, re-review + re-approve `design.md`, then cascade forward — every dependent artifact from Design onward (Phasing if phase boundaries are affected, Structure, Plan, Parallelize if task dependencies are affected) re-runs against the updated design.
-> >
-> > Alternative: provide explicit guidance to accept the gap with a documented assumption recorded against this decision in the deliverable. The assumption becomes the de-facto contract — name what you are choosing for the missing element.
->
-> **Iron law:** silently inventing a missing hand-off is a contract violation that ships half-finished features which only surface at Test or in production. Guessing-instead-of-stopping is a process failure and must be reported even if the deliverable otherwise looks complete.
-> ````
+> Alternative: provide explicit guidance to accept the gap with a documented assumption recorded against this decision in the deliverable. The assumption becomes the de-facto contract — name what you are choosing for the missing element.
+
+**Iron law:** silently inventing a missing hand-off is a contract violation that ships half-finished features which only surface at Test or in production. Guessing-instead-of-stopping is a process failure and must be reported even if the deliverable otherwise looks complete.
+```
+
 
 **Hook points / `!cat` includes:** This is the *source* file `!cat`-included by the 4 CD-3 consumer SKILLs (structure, plan, parallelize, implement).
 
@@ -2030,42 +2247,47 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G31 File 1 (L2434-2469), `skills/_shared/prompt-prose-detection.md` (NEW). Verbatim content:
->
-> ```markdown
-> **Prompt prose** is text authored to be loaded into an LLM's context as instructions, system prompts, agent definitions, skill definitions, reviewer rubrics, MCP tool descriptions, RAG instructions, or any equivalent LLM-consumable directive content.
->
-> **Detection rule (universal).** Use content semantics, not just file path or extension, as the determining signal. Ask: is the text intended to be loaded into an LLM's context at runtime as instructions? If yes, it is prompt prose, regardless of where it lives in the repo.
->
-> **Path and extension as secondary signals (fast-path shortcut for qrspi-plus-internal authoring).** When ALL target files match one of these globs, classify as prompt prose without further inspection:
->
-> - `skills/**/SKILL.md`
-> - `skills/**/*.md` (snippet files under a skill directory)
-> - `agents/*.md`
-> - `AGENTS.md`
-> - `CLAUDE.md`
->
-> Files outside these globs require the content-semantic test above. Other projects may carry prompts in `prompts/`, `src/llm-instructions/`, or custom layouts — the content-semantic test is universal; the glob list is qrspi-plus-internal convenience only.
->
-> **Examples of prompt prose:**
->
-> - A SKILL.md body that instructs an orchestrator.
-> - An `agents/*.md` file defining a subagent (role, task, constraints, tools).
-> - A `.md` file under a project's `prompts/` directory whose frontmatter `description:` indicates LLM consumption.
-> - A verbatim system prompt embedded in any markdown file (e.g., "You are...", "Your role is...", `<HARD-GATE>` blocks).
-> - A `.txt` or `.json` file whose content is plainly an LLM instruction payload.
->
-> **Examples of NOT prompt prose:**
->
-> - Code documentation, README files describing features.
-> - Design decisions in prose form (unless a `<!-- prose-design: ... -->` marker indicates a verbatim prompt-prose block within).
-> - Research notes ABOUT prompts (this file itself is a meta-document — it IS subject to the rules per meta-acceptance, but ordinary research/explanatory content about prompts is not).
-> - Configuration files, test fixtures, shell scripts.
->
-> **Rules file.** When prompt-prose authoring or review applies, the rules live at `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention).
-> ```
->
-> Consumers: #1 (`!cat`), #2 (`!cat`), #3 (`!cat`), #4 (via wrapper SKILL preload — File 4), #5-#8 (via wrapper SKILL preload — File 5).
+**Source:** design.md §G31 File 1 (L2434-L2469)
+**Marker phrase:** "`skills/_shared/prompt-prose-detection.md` (NEW). Verbatim content:"
+**Lift type:** Full file body
+
+````markdown
+```markdown
+**Prompt prose** is text authored to be loaded into an LLM's context as instructions, system prompts, agent definitions, skill definitions, reviewer rubrics, MCP tool descriptions, RAG instructions, or any equivalent LLM-consumable directive content.
+
+**Detection rule (universal).** Use content semantics, not just file path or extension, as the determining signal. Ask: is the text intended to be loaded into an LLM's context at runtime as instructions? If yes, it is prompt prose, regardless of where it lives in the repo.
+
+**Path and extension as secondary signals (fast-path shortcut for qrspi-plus-internal authoring).** When ALL target files match one of these globs, classify as prompt prose without further inspection:
+
+- `skills/**/SKILL.md`
+- `skills/**/*.md` (snippet files under a skill directory)
+- `agents/*.md`
+- `AGENTS.md`
+- `CLAUDE.md`
+
+Files outside these globs require the content-semantic test above. Other projects may carry prompts in `prompts/`, `src/llm-instructions/`, or custom layouts — the content-semantic test is universal; the glob list is qrspi-plus-internal convenience only.
+
+**Examples of prompt prose:**
+
+- A SKILL.md body that instructs an orchestrator.
+- An `agents/*.md` file defining a subagent (role, task, constraints, tools).
+- A `.md` file under a project's `prompts/` directory whose frontmatter `description:` indicates LLM consumption.
+- A verbatim system prompt embedded in any markdown file (e.g., "You are...", "Your role is...", `<HARD-GATE>` blocks).
+- A `.txt` or `.json` file whose content is plainly an LLM instruction payload.
+
+**Examples of NOT prompt prose:**
+
+- Code documentation, README files describing features.
+- Design decisions in prose form (unless a `<!-- prose-design: ... -->` marker indicates a verbatim prompt-prose block within).
+- Research notes ABOUT prompts (this file itself is a meta-document — it IS subject to the rules per meta-acceptance, but ordinary research/explanatory content about prompts is not).
+- Configuration files, test fixtures, shell scripts.
+
+**Rules file.** When prompt-prose authoring or review applies, the rules live at `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention).
+```
+
+Consumers: #1 (`!cat`), #2 (`!cat`), #3 (`!cat`), #4 (via wrapper SKILL preload — File 4), #5-#8 (via wrapper SKILL preload — File 5).
+````
+
 
 **Hook points / `!cat` includes:** This is the *source* snippet `!cat`-included into Plan Consumer #1 (inside Addition A), Plan Consumer #2 (2 sites), Design Consumer #3, and both wrapper SKILLs (Files 4 + 5).
 
@@ -2080,15 +2302,20 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G31 File 2 (L2475-2483), `skills/_shared/prompt-prose-writer-addition.md` (NEW). Verbatim content:
->
-> ```markdown
-> **Writer-side application.** When authoring or planning a deliverable, apply the detection above to the planned target content. If the target IS prompt prose, Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles BEFORE drafting, not as post-write polish. The rules shape what to write; patching after the fact is a known anti-pattern.
->
-> **If the target is NOT prompt prose** (ordinary documentation, configuration, code, non-prompt prose), do NOT Read the rules file. Reading-without-applying is the verbosity-bias anti-pattern the rules themselves warn against — loading them into context for a deliverable they don't apply to wastes context and risks misapplication.
-> ```
->
-> Consumers: #2 (`!cat` after detection), #3 (`!cat` after detection), #4 (via wrapper SKILL — File 4).
+**Source:** design.md §G31 File 2 (L2475-L2483)
+**Marker phrase:** "`skills/_shared/prompt-prose-writer-addition.md` (NEW). Verbatim content:"
+**Lift type:** Full file body
+
+````markdown
+```markdown
+**Writer-side application.** When authoring or planning a deliverable, apply the detection above to the planned target content. If the target IS prompt prose, Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles BEFORE drafting, not as post-write polish. The rules shape what to write; patching after the fact is a known anti-pattern.
+
+**If the target is NOT prompt prose** (ordinary documentation, configuration, code, non-prompt prose), do NOT Read the rules file. Reading-without-applying is the verbosity-bias anti-pattern the rules themselves warn against — loading them into context for a deliverable they don't apply to wastes context and risks misapplication.
+```
+
+Consumers: #2 (`!cat` after detection), #3 (`!cat` after detection), #4 (via wrapper SKILL — File 4).
+````
+
 
 **Hook points / `!cat` includes:** This is the *source* snippet `!cat`-included into Plan Consumer #2 (2 sites), Design Consumer #3, and the prompt-prose-writer wrapper SKILL (File 4).
 
@@ -2103,18 +2330,23 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G31 File 3 (L2489-2500), `skills/_shared/prompt-prose-reviewer-addition.md` (NEW). Verbatim content:
->
-> ```markdown
-> **Reviewer-side application.** For each file (or sub-block, for blocks within larger documents like `design.md`) in the diff, apply the detection above. Apply liberally — when content semantics indicate prompt prose, treat as in-scope regardless of file path or extension.
->
-> For each file or block determined to be prompt prose: Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles + finding-type gate. Emit findings using the standard reviewer schema, tagged:
->
-> - `change_type: clarity` for verbosity / anchor-phrase / structure-quality findings.
-> - `change_type: correctness` for finding-type-gate violations (e.g., load-bearing rule placed at start instead of end, examples exceeding the 2-cap, missing Iron-Law markers on override-critical content).
-> ```
->
-> Consumers: #5-#8 (via wrapper SKILL — File 5).
+**Source:** design.md §G31 File 3 (L2489-L2500)
+**Marker phrase:** "`skills/_shared/prompt-prose-reviewer-addition.md` (NEW). Verbatim content:"
+**Lift type:** Full file body
+
+````markdown
+```markdown
+**Reviewer-side application.** For each file (or sub-block, for blocks within larger documents like `design.md`) in the diff, apply the detection above. Apply liberally — when content semantics indicate prompt prose, treat as in-scope regardless of file path or extension.
+
+For each file or block determined to be prompt prose: Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles + finding-type gate. Emit findings using the standard reviewer schema, tagged:
+
+- `change_type: clarity` for verbosity / anchor-phrase / structure-quality findings.
+- `change_type: correctness` for finding-type-gate violations (e.g., load-bearing rule placed at start instead of end, examples exceeding the 2-cap, missing Iron-Law markers on override-critical content).
+```
+
+Consumers: #5-#8 (via wrapper SKILL — File 5).
+````
+
 
 **Hook points / `!cat` includes:** This is the *source* snippet `!cat`-included into the prompt-prose-reviewer wrapper SKILL (File 5), which is then preloaded by reviewer agents Consumers #5-#8 via `skills:` frontmatter.
 
@@ -2129,21 +2361,26 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G31 File 4 (L2506-2520), `skills/prompt-prose-writer/SKILL.md` (NEW wrapper). Verbatim content:
->
-> ```markdown
-> ---
-> description: Apply prompt-design rules when authoring or planning prompt-prose deliverables. Detects whether a deliverable IS prompt prose, and only then Reads the rules and applies R1-R7 before drafting. Preloaded by agent files that may author prompt prose.
-> ---
->
-> # Prompt Prose Writer
->
-> !cat skills/_shared/prompt-prose-detection.md
->
-> !cat skills/_shared/prompt-prose-writer-addition.md
-> ```
->
-> Consumer: #4 (preloaded via `skills:` frontmatter).
+**Source:** design.md §G31 File 4 (L2506-L2520)
+**Marker phrase:** "`skills/prompt-prose-writer/SKILL.md` (NEW wrapper). Verbatim content:"
+**Lift type:** Full file body
+
+````markdown
+```markdown
+---
+description: Apply prompt-design rules when authoring or planning prompt-prose deliverables. Detects whether a deliverable IS prompt prose, and only then Reads the rules and applies R1-R7 before drafting. Preloaded by agent files that may author prompt prose.
+---
+
+# Prompt Prose Writer
+
+!cat skills/_shared/prompt-prose-detection.md
+
+!cat skills/_shared/prompt-prose-writer-addition.md
+```
+
+Consumer: #4 (preloaded via `skills:` frontmatter).
+````
+
 
 **Hook points / `!cat` includes:**
 - `!cat skills/_shared/prompt-prose-detection.md` in wrapper body — per design.md G31 §File 4 + structure.md §Hook-Point Locations L784.
@@ -2160,21 +2397,26 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G31 File 5 (L2526-2540), `skills/prompt-prose-reviewer/SKILL.md` (NEW wrapper). Verbatim content:
->
-> ```markdown
-> ---
-> description: Apply prompt-design rules when reviewing prompt-prose subjects in a diff. Detects which files (or sub-blocks) are prompt prose, applies R1-R7 + cross-cutting principles + finding-type gate, and emits findings with proper change_type tagging. Preloaded by reviewer agents that may encounter prompt prose in their review subject.
-> ---
->
-> # Prompt Prose Reviewer
->
-> !cat skills/_shared/prompt-prose-detection.md
->
-> !cat skills/_shared/prompt-prose-reviewer-addition.md
-> ```
->
-> Consumers: #5-#8 (preloaded via `skills:` frontmatter).
+**Source:** design.md §G31 File 5 (L2526-L2540)
+**Marker phrase:** "`skills/prompt-prose-reviewer/SKILL.md` (NEW wrapper). Verbatim content:"
+**Lift type:** Full file body
+
+````markdown
+```markdown
+---
+description: Apply prompt-design rules when reviewing prompt-prose subjects in a diff. Detects which files (or sub-blocks) are prompt prose, applies R1-R7 + cross-cutting principles + finding-type gate, and emits findings with proper change_type tagging. Preloaded by reviewer agents that may encounter prompt prose in their review subject.
+---
+
+# Prompt Prose Reviewer
+
+!cat skills/_shared/prompt-prose-detection.md
+
+!cat skills/_shared/prompt-prose-reviewer-addition.md
+```
+
+Consumers: #5-#8 (preloaded via `skills:` frontmatter).
+````
+
 
 **Hook points / `!cat` includes:**
 - `!cat skills/_shared/prompt-prose-detection.md` in wrapper body — per design.md G31 §File 5 + structure.md §Hook-Point Locations L785.
@@ -2345,15 +2587,21 @@ scripts/dispatch-agent.sh --verifier-fanout \
 
 **Verbatim content (lifted from design.md):**
 
-> **Source:** design.md §G31 Addition C (L2582-2592), plan-test-coverage-reviewer scope guard (inline in consumer #9, standalone).
->
-> ```markdown
-> **Scope: only `task_type: code` tasks.** Skip evaluation of any task with `task_type: lightweight` — those tasks (prose, prompts, docs, config) have no executable RED gate by design, and applying RED-gate coverage criteria to them would emit false-positive findings ("missing failing test"). The plan-test-coverage-reviewer's domain is the subset of tasks where test execution IS the verification mechanism; for prompt-prose tasks, verification flows through `qrspi-code-quality-reviewer` / `qrspi-design-reviewer` content-semantic rules application, evaluated separately.
->
-> Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare lightweight task Test Expectations to RED-gate criteria. Silently skip lightweight task sections.
-> ```
->
-> Placement: `agents/qrspi-plan-test-coverage-reviewer.md` body, at the TOP of the review-procedure section (before any existing rubric). Standalone — this consumer does NOT preload `prompt-prose-reviewer` (Q1 resolution: full reviewer block would teach it "sometimes passing means no RED tests" which compromises judgment on `task_type: code` tasks where RED IS required).
+**Source:** design.md §G31 Addition C (L2582-L2592)
+**Marker phrase:** "plan-test-coverage-reviewer scope guard (inline in consumer #9, standalone)"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted in `agents/qrspi-plan-test-coverage-reviewer.md` body at the TOP of the review-procedure section, BEFORE any existing rubric. Standalone — this consumer does NOT preload `prompt-prose-reviewer` (Q1 resolution: full reviewer block would compromise judgment on `task_type: code` tasks where RED IS required).
+
+````markdown
+```markdown
+**Scope: only `task_type: code` tasks.** Skip evaluation of any task with `task_type: lightweight` — those tasks (prose, prompts, docs, config) have no executable RED gate by design, and applying RED-gate coverage criteria to them would emit false-positive findings ("missing failing test"). The plan-test-coverage-reviewer's domain is the subset of tasks where test execution IS the verification mechanism; for prompt-prose tasks, verification flows through `qrspi-code-quality-reviewer` / `qrspi-design-reviewer` content-semantic rules application, evaluated separately.
+
+Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare lightweight task Test Expectations to RED-gate criteria. Silently skip lightweight task sections.
+```
+
+Placement: `agents/qrspi-plan-test-coverage-reviewer.md` body, at the TOP of the review-procedure section (before any existing rubric). Standalone — this consumer does NOT preload `prompt-prose-reviewer` (Q1 resolution: full reviewer block would teach it "sometimes passing means no RED tests" which compromises judgment on `task_type: code` tasks where RED IS required).
+````
+
 
 **Outline-only sections (Plan/Implement authors):**
 - `skills:` frontmatter: do NOT add `prompt-prose-reviewer` — Consumer #9 is the only G31 consumer that does NOT preload the wrapper SKILL (per design.md L2592 + L2625).
@@ -2403,22 +2651,28 @@ scripts/dispatch-agent.sh --verifier-fanout \
 ```
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §G35 (L2971-2989), D2 Locked OWNS allowances list followed by D3 Locked DEFERS list — file body is "D2 block then D3 block, no other content" per design.md G35 §D5 first bullet (L3001).
->
-> Structure OWNS:
-> - Unified system architecture diagram(s) for the release (Mermaid or equivalent) — stitches the components named across design.md's per-solution + cross-cutting-CD blocks into a single architectural overview
-> - File map: which file holds which component, directory layout, module boundaries
-> - Module-boundary contracts: which module exports what to which other module (the structural commitments Plan's task carving consumes)
-> - Cross-solution component interaction specification: how the components named in design.md's per-solution blocks interact at the system-architecture level (distinct from design.md's per-solution end-to-end flows, which are inter-actor-only inside one solution)
-> - Unified test architecture: a top-level `## Test Architecture` section in structure.md that names the test taxonomy for the release (e.g., unit, integration, end-to-end, smoke, contract — exact taxonomy varies by release), names the coverage boundary of each type, and enumerates the cross-cutting test invariants (drawn from CDs and goals in design.md) along with which test type owns each invariant
-> - Per-type stitching of per-solution acceptance criteria: for each type in the test taxonomy, enumerate which per-solution `Acceptance` subsections from design.md (per goal + per CD) feed into that test type — naming the design.md source by goal/CD identifier
->
-> Structure DEFERS:
-> - Per-solution choice rationale or alternatives weighed (Design's job — Structure consumes the locked solution, does not re-litigate it)
-> - Per-task assertions / unit-test code (Plan/Implement's job — Structure names the test taxonomy and per-type coverage boundary; Plan authors the per-task `Test Expectations` against the taxonomy; Implement writes the test code)
-> - Per-solution end-to-end flows or per-solution sequence diagrams (Design's job — Structure shows components at the architectural level, not per-solution choreography)
-> - External-system contracts or vendor research (Design's job — Structure consumes the cited answers, does not re-research; Design is the last research-bearing phase)
-> - Detailed solution descriptions or per-solution decision rationale (Design's job — Structure stitches the locked solutions into a unified architecture; Design defines them)
+
+**Source:** design.md §G35 (L2971-L2989)
+**Marker phrase:** "D2 Locked OWNS allowances list followed by D3 Locked DEFERS list — file body is “D2 block then D3 block, no other content” per design.md G35 §D5 first bullet (L3001)"
+**Lift type:** Full file body
+
+```markdown
+Structure OWNS:
+- Unified system architecture diagram(s) for the release (Mermaid or equivalent) — stitches the components named across design.md's per-solution + cross-cutting-CD blocks into a single architectural overview
+- File map: which file holds which component, directory layout, module boundaries
+- Module-boundary contracts: which module exports what to which other module (the structural commitments Plan's task carving consumes)
+- Cross-solution component interaction specification: how the components named in design.md's per-solution blocks interact at the system-architecture level (distinct from design.md's per-solution end-to-end flows, which are inter-actor-only inside one solution)
+- Unified test architecture: a top-level `## Test Architecture` section in structure.md that names the test taxonomy for the release (e.g., unit, integration, end-to-end, smoke, contract — exact taxonomy varies by release), names the coverage boundary of each type, and enumerates the cross-cutting test invariants (drawn from CDs and goals in design.md) along with which test type owns each invariant
+- Per-type stitching of per-solution acceptance criteria: for each type in the test taxonomy, enumerate which per-solution `Acceptance` subsections from design.md (per goal + per CD) feed into that test type — naming the design.md source by goal/CD identifier
+
+Structure DEFERS:
+- Per-solution choice rationale or alternatives weighed (Design's job — Structure consumes the locked solution, does not re-litigate it)
+- Per-task assertions / unit-test code (Plan/Implement's job — Structure names the test taxonomy and per-type coverage boundary; Plan authors the per-task `Test Expectations` against the taxonomy; Implement writes the test code)
+- Per-solution end-to-end flows or per-solution sequence diagrams (Design's job — Structure shows components at the architectural level, not per-solution choreography)
+- External-system contracts or vendor research (Design's job — Structure consumes the cited answers, does not re-research; Design is the last research-bearing phase)
+- Detailed solution descriptions or per-solution decision rationale (Design's job — Structure stitches the locked solutions into a unified architecture; Design defines them)
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - `## Structure Altitude Boundary` heading + `<boundary rule prose>` introducer paragraph that precedes the `### What Structure OWNS` / `### What Structure DEFERS` blocks (per structure.md §Interfaces §5 template, L246-248). Boundary-rule prose authored at Implement; the locked content is the OWNS + DEFERS verbatim blocks above.
@@ -2462,9 +2716,16 @@ scripts/dispatch-agent.sh --verifier-fanout \
 **Responsibility:** In the agent body's procedure section, insert the locked introducer prose immediately after the Step 1 Read citation, followed by a `!cat skills/_shared/structure-altitude-boundary.md` directive — so the OWNS/DEFERS contract the reviewer just read is also present verbatim in its immediate reasoning context (build-time expansion inlines the snippet).
 
 **Verbatim content (lifted from design.md):**
-> **Source:** design.md §G35 §D5 third bullet (L3003), introducer prose authored verbatim for `agents/qrspi-structure-scope-reviewer.md`.
->
-> The contract you just read carries the following allowances and deferrals; restated here so they are present in your immediate reasoning context:
+
+**Source:** design.md §G35 §D5 third bullet (L3003)
+**Marker phrase:** "introducer prose authored verbatim for `agents/qrspi-structure-scope-reviewer.md`"
+**Lift type:** Insertion delta
+**Insertion site (in target file):** Inserted in `agents/qrspi-structure-scope-reviewer.md` body's procedure section immediately AFTER the Step 1 Read citation, on its own line; the `!cat skills/_shared/structure-altitude-boundary.md` directive follows on the next line.
+
+```markdown
+The contract you just read carries the following allowances and deferrals; restated here so they are present in your immediate reasoning context:
+```
+
 
 **Outline-only sections (Plan/Implement authors):**
 - Placement: introducer prose lands in the agent body's procedure section, immediately after the Step 1 Read citation; the `!cat` directive follows on the next line (per design.md G35 §D5 third bullet, L3003; per structure.md §Hook-Point Locations L766).
