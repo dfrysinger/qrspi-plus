@@ -1801,6 +1801,45 @@ Composition rationale: the verifier already lazy-Reads cited upstream files (cur
 
 ---
 
+## G21 — Bats silent-pass: retrofit unguarded `$body` negation assertions + add lint gate
+
+**Type:** known-fix. **Source:** goals.md G21 / #238 (surface — vocab pin asymmetry) + #244 (root-cause investigation — deferred to v0.7.3 per sub-decision B).
+
+**Plain-language framing.** In `tests/unit/test-using-qrspi-vocab.bats`, eight assertions of the form `[[ "$body" != *"<bad text>"* ]]` lack a preceding `[ -n "$body" ]` guard. When the extractor that fills `$body` returns empty (because the asserted section is missing from the source, the H4 anchor drifted, or the extraction regex stopped matching), the negation form is vacuously true — empty string doesn't contain the bad text — and the test passes green without verifying anything. The R5-era pins in the same file demonstrate the safer two-line decomposition (guard + assertion) that closes the silent-pass surface.
+
+**Repository grounding (verified at design time).** `grep -rn -E '\[\[ "\$body" !=' tests/` returns 8 hits, all in `tests/unit/test-using-qrspi-vocab.bats` (lines 132-133, 157-158, plus the corresponding negative-form pins in the R4-era trusted-path block). No instances exist outside that file. 4 of 16 total `$body`-assertion lines in the file already carry the `[ -n "$body" ]` guard prefix (the R5-era pattern). The blast radius is narrower than the goal text suggests — one file, eight unguarded negations.
+
+**Sub-decisions locked.**
+
+- **A1 — Retrofit only the 8 known unguarded `!=` assertions in `test-using-qrspi-vocab.bats`.** Minimum surface; the demonstrated hazard is the negation form, and the broader lint gate (B2) catches any further drift without requiring a full corpus audit step. Out of scope at this goal: positive-form (`==`, `=~`) assertions without `-n` guards (they fail loudly today rather than silently passing — different failure mode, separate hazard class).
+- **B2 — Add a small bats-based lint check that flags `[[ "$body" ... ]]` assertions inside `@test` blocks without a preceding `[ -n "$body" ]` guard.** Implementation shape: one new test file at `tests/lint/test-bats-body-assertion-guard.bats` that walks `tests/**/*.bats`, parses `@test` blocks, and fails any block containing an unguarded `$body` assertion. Cheap grep-based logic (no AST parser needed); the rule is "every line matching `\[\[ "\$body"` inside an `@test` block must be preceded — anywhere earlier in the same `@test` block — by a line matching `\[ -n "\$body" \]`." Structural fix: closes the gun-on-the-floor problem instead of just removing the current bullets.
+- **C1 — CI gate only.** No pre-commit hook. Rationale: CI is the durable enforcement layer, pre-commit hooks are bypassable and add setup friction with no marginal correctness benefit on top of CI. If pre-commit feedback latency becomes painful in practice, revisit in v0.7.3.
+- **B3 (bats upstream investigation) is deferred to v0.7.3 (#244 re-milestoned).** The lint gate from B2 makes the test layer safe regardless of whether bats core ever fixes the underlying short-circuit quirk; pursuing upstream pinning is not blocking for v0.7.2.
+
+**Implementation deliverables.**
+
+1. Edit `tests/unit/test-using-qrspi-vocab.bats` — for each of the 8 unguarded `[[ "$body" != *...* ]]` lines, prepend a `[ -n "$body" ]` line in the same `@test` block (the R5-era pattern from lines 172-184, 202-214 in the same file is the in-repo reference).
+2. Add `tests/lint/test-bats-body-assertion-guard.bats` — bats test file containing `@test`s that:
+   - Discover all `*.bats` files under `tests/` (excluding the lint test itself).
+   - For each file, parse `@test` blocks (delimited by `^@test "..." \{` opening and matching `^\}` close at column 0).
+   - Within each block, fail if any line matches `\[\[ "\$body"` without a `\[ -n "\$body" \]` line earlier in the same block.
+   - Emit a clear diagnostic naming file:line for any violation.
+3. Add the new lint test to the CI test invocation (whatever target already runs `bats tests/unit/` — extend to include `tests/lint/` or run `tests/` recursively).
+4. Re-milestone #244 from v0.7.2 → v0.7.3 with a comment linking the G21 design block (the lint gate satisfies G21's v0.7.2 scope; #244 remains the home for the bats-upstream investigation thread).
+
+**Test coverage.** The lint gate is itself a test — its presence and green state ARE the regression coverage. Additional bats unit tests for the lint logic itself (e.g., synthetic fixture files containing intentional violations) are deferred unless self-host signal shows the lint missing or false-positive-ing real cases. The R5-era pins in the existing vocab test file serve as live positive controls (they are guarded and the lint must accept them).
+
+**Edit surface.** Two files: `tests/unit/test-using-qrspi-vocab.bats` (8 line additions, no deletions, no behavior change to passing assertions) and `tests/lint/test-bats-body-assertion-guard.bats` (new file). Plus the CI test-target update if needed.
+
+**Cross-cutting notes.**
+
+- **G21 ↔ test infrastructure (general).** This goal establishes "lint test as gate" as a pattern. Future regressions of the same shape (test forms that pass vacuously when their input is empty) can adopt the same shape — a `tests/lint/` companion test that walks the corpus. Not formalized as a design principle in v0.7.2; let the pattern prove itself via self-host signal before promoting it.
+- **G21 ↔ #244 (deferred investigation).** The lint gate closes the v0.7.2 risk surface regardless of bats-core behavior. If v0.7.3 confirms a bats upstream fix or a version pin bump removes the short-circuit quirk, the lint gate becomes redundant insurance — keep it anyway; the cost is one fast bats test and the alternative is re-introducing the same gun if bats regresses.
+
+**References.** Source: goals.md G21 / #238 (surface) + #244 (root cause — deferred); `tests/unit/test-using-qrspi-vocab.bats` (sole retrofit surface; lines 121-133 R2-era model_routing pins, lines 145-158 R4-era trusted_path pins, lines 172-184 + 202-214 R5-era reference pattern); related v0.7.3 follow-up: #244 (bats-upstream investigation) re-milestoned at design-lock time.
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
