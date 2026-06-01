@@ -1,0 +1,2 @@
+score: 72
+reason: Verified seam mismatch — Interface §10's split_cmd example and §16's CLI spec take only --round-dir, but §15 invokes it per-entry and §16's output path embeds `<tag>`, leaving the splitter with no way to discriminate which entry it is processing; this is a real, actionable gap at Structure altitude.

@@ -1,0 +1,2 @@
+score: 68
+reason: Verified internal inconsistency — Slice 1.4 file map (line 93) assigns tests/unit/test-config-model-routing.bats to G22/G23/G25, but T1 Feeds (line 560) lists G22 and G23 and omits G25; trivial-fix correctness asymmetry in traceability, partially compensated by T6's G1–G35 sweep.

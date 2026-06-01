@@ -57,7 +57,7 @@ This slice collapses per-skill reviewer dispatch into one routed script chain an
 
 | File | Action | Responsibility | Goal IDs |
 |---|---|---|---|
-| `scripts/dispatch-agent.sh` | Create | Universal batched dispatch entrypoint: resolve tier/model, prepare rounds, write manifests, and emit first-party task specs. | G3, G4, G16, G22, G23, G25, G27 |
+| `scripts/dispatch-agent.sh` | Create | Universal batched dispatch entrypoint: resolve tier/model, prepare rounds, write manifests, and emit first-party task specs; includes `--verifier-fanout` mode that globs findings and dispatches one verifier per finding. | G3, G4, G16, G22, G23, G25, G27 |
 | `scripts/dispatch-companion.sh` | Create | Launch vendor-specific third-party review jobs beneath the universal dispatcher. | G3, G27 |
 | `scripts/third-party-finding-splitter.sh` | Create | Split third-party stdout boundaries into per-finding files. | G3 |
 | `scripts/round-prepare.sh` | Create | Canonicalize cumulative diff/ref selection and next-round narrowing inputs. | G4 |
@@ -66,8 +66,9 @@ This slice collapses per-skill reviewer dispatch into one routed script chain an
 | `scripts/_host-detect.sh` | Create | Expose the canonical host-detection probe reused by dispatch and reviewer selection. | G27 |
 | `scripts/detect-interaction-mode.sh` | Create | Encapsulate per-host interaction-mode detection; return shell-verdict, llm-context instruction, or user-override-only signal depending on the active host. See Interface §13. | CD-4 |
 | `skills/_shared/reviewer-dispatch-prose.md` | Create | Provide the one shared orchestrator dispatch snippet included by all review-producing skills. | G3, G4 |
+| `skills/_shared/codex/launch-await-pattern.md` | Rename → `skills/_shared/third-party/launch-await-pattern.md` | Vendor-neutrality rename per CD-1 rename inventory; enables G32 co-shipped cleanup of `${CLAUDE_SKILL_DIR}` reference. | G3, G32 |
 | `skills/using-qrspi/SKILL.md` | Modify | Carry the unified five-tier `model_routing:` schema, host matrix, validation rows, and fail-loud invariant prose. | G3, G22, G23, G24, G25, G27 |
-| `config.md` | Modify | Surface `model_routing`, `trusted_path`, and validator blocks consumed by universal dispatch. | G22, G23, G25 |
+| `config.md` | Modify | Surface `model_routing`, `trusted_path`, and validator blocks consumed by universal dispatch; add `orchestrator_rescue` (default: false) and `max_drift_per_round` (default: 3) per CD-4 §I.4 for the halt-response protocol. | G22, G23, G25 |
 | `skills/_shared/config-validation-procedure.md` | Create | Define the repair-or-abort flow for invalid routing configuration. | G22, G23 |
 | `scripts/g4-section-anchor-manifest.json` | Modify | Enumerate section-anchor sources used by narrow-read and round-preparation helpers. | G4 |
 | `skills/using-qrspi/SKILL.anchors.json` | Modify | Index `using-qrspi` anchors for deterministic narrow reads. | G4 |
@@ -89,6 +90,7 @@ This slice collapses per-skill reviewer dispatch into one routed script chain an
 | `agents/qrspi-code-quality-reviewer.md` | Modify | Add `tier:` frontmatter and dispatch-file first action on a representative reviewer body. | G22 |
 | `agents/qrspi-plan-reviewer.md` | Modify | Add `tier:` frontmatter and dispatch-file first action on a plan reviewer body. | G22 |
 | `agents/qrspi-test-writer.md` | Modify | Add `tier:` frontmatter so test-writer dispatch co-escalates with implementer dispatch. | G22 |
+| `agents/*.md` (sweep — all 41 files) | Modify — schema migration | Add `tier:` frontmatter (value per G22 model-routing table) to every agent; add DISPATCH_FILE first-action instruction to every reviewer agent body (`agents/qrspi-*-reviewer.md`). Batch change; no behavioral logic. | G22 |
 | `tests/unit/test-dispatch-sites.bats` | Modify | Assert all reviewer-producing skills route through `dispatch-agent.sh`. | G3, G4 |
 | `tests/unit/test-config-model-routing.bats` | Modify | Pin schema shape, validation rows, and fail-loud routing behavior. | G22, G23, G25 |
 | `tests/unit/test-routing-matrix-application.bats` | Modify | Assert host-aware vendor routing and `--tier-override` behavior. | G22, G27 |
@@ -106,6 +108,7 @@ This slice raises artifact-authoring quality at the prompt/prose boundary and ma
 | `skills/plan/post-approval-split-contract.md` | Modify | Lock the block-hash position and idempotent split contract for per-task files. | G5 |
 | `skills/plan/SKILL.md` | Modify | Add schema-migration task shape and prompt-prose-aware task classification/authoring clauses. | G2, G31 |
 | `agents/qrspi-design-reviewer.md` | Modify | Enforce richer design blocks and apply prompt-prose review at block scope. | G1, G31 |
+| `agents/qrspi-design-scope-reviewer.md` | Modify | Restate the shared Design boundary in the reviewer's immediate reasoning context. | G34 |
 | `agents/qrspi-plan-reviewer.md` | Modify | Review schema-migration exceptions and prompt-prose deliverables using the shared rules. | G2, G31 |
 | `skills/reviewer-protocol/SKILL.md` | Modify | Ban fabricated procedural authority and keep reviewer findings tied to real contract surfaces. | G10 |
 | `skills/implementer-protocol/SKILL.md` | Modify | Correct stale committed-gitignore prose without changing runtime invariants. | G17 |
@@ -193,12 +196,22 @@ Round preparation is script-owned so every per-task review round computes the sa
 Reviewer dispatch is one batch-oriented CLI surface regardless of reviewer family or host path.
 
 ```bash
+# Reviewer dispatch mode:
 scripts/dispatch-agent.sh --step <step> --round <N> --output-dir <round-dir> \
   --artifact <artifact-name> \
   --agents tag1=agent-name-1,tag2=agent-name-2,... \
   [--task-branch <worktree-path> --implementer-commit <40-char-SHA>] \
   [--tier-override tag1=high,tag2=medium,...]
 # Stdout: M lines of form: MODE=first_party TAG=<tag> SUBAGENT_TYPE=<agent-name> MODEL=<resolved-model> PROMPT_FILE=<absolute-path>
+# Side effect: appends manifest entries to <round-dir>/.dispatch-manifest.json
+#              (first-party entries on first-party path; background entries after dispatch-companion.sh returns JOB_ID on third-party path)
+
+# Verifier-fanout mode:
+scripts/dispatch-agent.sh --verifier-fanout \
+  --step <step> --round <N> --output-dir <round-dir> \
+  [--tier-override <tier>]
+# Script globs <round-dir>/*.finding-F*.md to enumerate findings; --agents is not used
+# Stdout: one spec line per finding: MODE=first_party TAG=<reviewer-tag>.F<NN> SUBAGENT_TYPE=qrspi-finding-verifier MODEL=<resolved-model> PROMPT_FILE=<absolute-path>
 ```
 
 ### 4. `model_routing:` config block
@@ -218,6 +231,8 @@ trusted_path:
 validators:
   change_type_enum: [style, clarity, correctness, scope, intent]
   finding_schema_required: [finding_id, severity, change_type, referenced_files, artifact]
+orchestrator_rescue: false        # opt-in for silent orchestrator-driven fixes; when false every halt escalates
+max_drift_per_round: 3            # drift-event counter ceiling per round (tier 2/3 rescues + escalated resolutions + auto-drops)
 ```
 
 ### 5. Structure altitude-boundary snippet
@@ -329,7 +344,7 @@ Dispatch state survives compaction because first-party and third-party launches 
     "status": "pending",
     "job_id": "job-123",
     "await_cmd": "scripts/dispatch-companion.sh await job-123",
-    "split_cmd": "scripts/third-party-finding-splitter.sh --round-dir /abs/path/reviews/plan/round-01"
+    "split_cmd": "scripts/third-party-finding-splitter.sh --round-dir /abs/path/reviews/plan/round-01 --tag quality-codex"
   }
 ]
 ```
@@ -403,8 +418,8 @@ Vendor-specific third-party job launcher invoked by `dispatch-agent.sh` on the t
 # Exit 1: vendor transport error, missing --prompt-file, or unknown job-id
 # Stdout (launch): JOB_ID=<vendor-job-id>  (one line; consumed by dispatch-agent.sh)
 # Stdout (await):  (empty — output bound per CD-1 #4 output-bound contract)
-# Side effect (launch): appends {tag, mode: background, status: pending, await_cmd, split_cmd}
-#                       entry to <round-dir>/.dispatch-manifest.json
+# Side effect (launch): returns JOB_ID on stdout (consumed by dispatch-agent.sh, which
+#                       appends the manifest entry to <round-dir>/.dispatch-manifest.json)
 ```
 
 ### 15. Round-completion barrier
@@ -431,12 +446,13 @@ Splits third-party reviewer stdout (boundary-delimited) into per-finding files o
 
 ```bash
 # scripts/third-party-finding-splitter.sh
-# Usage: third-party-finding-splitter.sh --round-dir <abs-round-dir>
+# Usage: third-party-finding-splitter.sh --round-dir <abs-round-dir> --tag <reviewer-tag>
 # Exit 0: per-finding files written to <round-dir>/
-# Exit 1: no finding boundaries found, missing --round-dir, or write failure
+# Exit 1: no finding boundaries found, missing --round-dir, missing --tag, or write failure
 # Stdout: (empty)
 # Stderr: diagnostic on failure naming the specific cause
-# Side effect: writes <round-dir>/<tag>.finding-F<NN>.md for each <<<FINDING-BOUNDARY>>> block;
+# Side effect: reads <round-dir>/.dispatch/<tag>.raw; writes <round-dir>/<tag>.finding-F<NN>.md
+#              for each <<<FINDING-BOUNDARY>>> block in that tag's raw output;
 #              writes NO_FINDINGS sentinel file on clean NO_FINDINGS stdout
 ```
 
@@ -546,7 +562,7 @@ The release keeps one workflow file, but that workflow becomes the release gate 
 This workflow remains the only CI entrypoint and picks up three new blocking surfaces.
 
 - **Lint job (`lint`)**: keep shellcheck + bash-3.2 ban-list, then add recursive BATS lint coverage so `tests/lint/test-bats-body-assertion-guard.bats` blocks silent-pass regressions from G21/G26 and `tests/lint/test-structure-altitude-boundary-include.bats` blocks G35 boundary drift.
-- **Build-sync gate inside PR CI**: after checkout and Node setup, run `node tools/build-plugin.mjs` and then `git diff --exit-code build/ .claude-plugin/marketplace.json`; any stale built tree or malformed `!cat` stops the PR. This is the G32 release-integrity gate.
+- **Build-sync gate inside PR CI**: guards that the committed `build/` tree matches source; blocks PRs when the built plugin is stale or `!cat` expansion has drifted. G32 release-integrity gate.
 - **BATS execution shape**: the bash-3.2 test job expands from unit + acceptance only to recursive runtime coverage so the new lint tests and build-structure guards run on the same blocking path as existing unit/acceptance suites.
 
 ## Test Architecture

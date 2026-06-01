@@ -1,0 +1,2 @@
+score: 45
+reason: Real consistency gap — sibling interfaces in structure.md all name exact filenames (kept-findings.txt, .round-complete.json, <tag>.finding-FNN.md) while this one says only "NO_FINDINGS sentinel file"; legitimate Structure-altitude lock to add, but narrow practical impact since the fan-in script globs *.finding-F*.md and Plan could pin the sentinel name without contradicting Structure.

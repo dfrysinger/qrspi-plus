@@ -1,0 +1,2 @@
+score: 80
+reason: Structure §14 attributes the `.dispatch-manifest.json` append side effect to `dispatch-companion.sh`, but design CD-1 §3 PATH B (whose grammatical subject is `dispatch-agent.sh` under its "Behavior:" loop) and CD-1 §5 (companion is "vendor-routing tier ... routes to vendor-specific transport") both assign manifest-append to `dispatch-agent.sh`; the contradiction is real, load-bearing for ownership boundaries, and will mis-implement two scripts.

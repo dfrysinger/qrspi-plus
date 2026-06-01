@@ -1,0 +1,2 @@
+score: 80
+reason: Confirmed missing-wiring gap — design.md CD-4 §I.4 mandates two config.md fields (orchestrator_rescue, max_drift_per_round) that the Slice 1.4 config.md row and Interface §4 omit, leaving CD-4's halt-response consumers without an upstream file-map producer.
