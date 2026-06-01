@@ -16,7 +16,7 @@ This artifact uses **per-file specification blocks** (see `## Per-File Specifica
 
 **Verbatim vs outline.** Each per-file block distinguishes two prose forms:
 
-- **Verbatim content (lifted from design.md):** A structured citation header followed by a mandatory fenced code block carrying the lifted payload. Each citation declares four fields — `**Source:**` (plain bold, format `design.md §<section> (L<start>-L<end>)`), `**Marker phrase:**` (the exact bounding phrase in design.md that a verifier can use to relocate the lift when line numbers drift), `**Lift type:**` (one of `Full file body`, `Insertion delta`, or `Section body`), and `**Insertion site (in target file):**` (required iff Lift type ≠ Full file body — names the exact location in the target file where the payload lands). The fenced code block (e.g., ```markdown for `.md` targets, ```bash for shell scripts) is the unambiguous payload boundary and carries the lifted prose byte-identical to design.md, with no leading `> ` blockquote markers. A `**Verbatim content (lifted from design.md):**` heading on a per-file block means design.md is the canonical source — Plan/Implement consumers MUST author the cited file with the fenced payload exactly, preserving code fences, HTML comments, and any list/anchor scaffolding the lift carries. A future drift between structure.md and design.md is a contract violation caught by the structure-reviewer's stitching audit.
+- **Verbatim content (lifted from design.md):** A structured citation header followed by a mandatory fenced code block carrying the lifted payload. Each citation declares four fields — `**Source:**` (plain bold, format `design.md §<section> (L<start>-L<end>)`), `**Marker phrase:**` (the exact bounding phrase in design.md that a verifier can use to relocate the lift when line numbers drift), `**Lift type:**` (one of `Full file body`, `Insertion delta`, or `Section body`), and `**Insertion site (in target file):**` (required iff Lift type ≠ Full file body — names the exact location in the target file where the payload lands). The fenced code block (e.g., ```markdown for `.md` targets, ```bash for shell scripts) is the unambiguous payload boundary and carries the lifted prose byte-identical to design.md, with no leading `> ` blockquote markers. **design.md display-fence carve-out.** When design.md wraps a payload in its own outer code fence (e.g., a 4-backtick ````markdown wrap so design.md can render `## headings` and `| tables |` as literal characters), that outer fence is design.md's display affordance — not part of the payload — and MUST NOT be lifted into structure.md's verbatim block. The structure.md fence is the only fence; the payload starts at the first line of substantive content inside design.md's display wrap. The same rule applies to any trailing `Placement:` / `Consumers:` metadata that design.md keeps adjacent to a payload — those are design-process metadata and belong in structure.md's `**Insertion site (in target file):**` field, never inside the payload. A `**Verbatim content (lifted from design.md):**` heading on a per-file block means design.md is the canonical source — Plan/Implement consumers MUST author the cited file with the fenced payload exactly, preserving code fences, HTML comments, and any list/anchor scaffolding the lift carries. A future drift between structure.md and design.md is a contract violation caught by the structure-reviewer's stitching audit.
 - **Outline-only sections (Plan/Implement authors):** A bullet list naming section anchors, anchor phrases that MUST appear, and behavior constraints. design.md provides scope and constraints; the actual prose body is authored at Plan/Implement time per design.md G1 Sub-Rule B ("deferred-prose-design" form). The outline pins what the authored prose must achieve without locking the wording.
 
 **Asymmetry is explicit, not implicit.** A per-file block that omits both `**Verbatim content (lifted from design.md):**` and `**Outline-only sections:**` headings means design.md authored neither — the file is fully Plan/Implement-DEFERS. Test files (any `tests/**/*.bats` row) carry only `**Tests:**` content (what the test pins), never verbatim assertion text, per Plan/Implement's DEFERS contract on test bodies.
@@ -1818,7 +1818,6 @@ max_drift_per_round: 3            # drift-event counter ceiling per round (tier 
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `skills/plan/SKILL.md` § Per-Task Classification — REPLACES the current Step 1 paragraph (the existing path-glob-only rule). Steps 2+ continue unchanged after.
 
-````markdown
 ```markdown
 **Step 1 — Classify each task as `code` or `lightweight`.** Default `task_type: code`.
 
@@ -1831,14 +1830,11 @@ Apply the detection above to the planned target files. If the target IS prompt p
 The classification gates downstream behavior: lightweight tasks dispatch to `qrspi-implementer-lightweight` (which inherits its own prompt-prose detection via the `prompt-prose-writer` skill preload); code tasks dispatch to `qrspi-implementer` (TDD path). Prompt prose NEVER lands on the TDD path by classification.
 ```
 
-````
-
 **Source:** design.md §G31 Addition B (L2566-L2579)
 **Marker phrase:** "Plan writer-subagent Test-Expectations clause (inline in consumer #2)"
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `skills/plan/SKILL.md` writer-subagent dispatch payload sections at TWO sites — the merged-plan/overview subagent dispatch (~lines 125-132) and the initial-draft per-task sub-subagent dispatch (~lines 439-444). At each site, inserted AFTER the consumer's `!cat detection` + `!cat writer-addition`, BEFORE the rest of the dispatch payload's standard Test-Expectations instructions. The post-approval-split sub-subagent does NOT receive this clause.
 
-````markdown
 ```markdown
 **Test-Expectations clause for prompt-prose tasks.** For tasks classified `task_type: lightweight` because the deliverable IS prompt prose (per Addition A's content-semantic test), Test Expectations cannot be RED-gate failing tests — prompt prose has no executable behavior to verify by test execution. Instead, encode rules-application as the verification mechanism using this template:
 
@@ -1846,8 +1842,6 @@ The classification gates downstream behavior: lightweight tasks dispatch to `qrs
 
 Other lightweight task categories (non-prompt prose, ordinary documentation, configuration) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause.
 ```
-
-````
 
 
 **Outline-only sections (Plan/Implement authors):**
@@ -1879,7 +1873,6 @@ Other lightweight task categories (non-prompt prose, ordinary documentation, con
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Appended in `agents/qrspi-design-reviewer.md` body to the review-procedure section AFTER the `skills:` frontmatter preload of `prompt-prose-reviewer` has loaded — layered atop the shared reviewer-addition's general "file or sub-block" rule as a refinement.
 
-````markdown
 ```markdown
 **Per-block scope refinement for design.md.** `design.md` typically contains discrete `<!-- prose-design: target -->` HTML-comment markers identifying blocks of verbatim prompt prose destined for an LLM-consumable file. Treat each such marker as one strong signal but not the only one — content semantics determine the call. For each marker:
 
@@ -1888,8 +1881,6 @@ Other lightweight task categories (non-prompt prose, ordinary documentation, con
 
 The marker scopes attention to specific sub-blocks; the surrounding design-decision prose is itself NOT prompt prose and is reviewed by ordinary design-quality criteria, not R1-R7.
 ```
-
-````
 
 
 **Outline-only sections (Plan/Implement authors):**
@@ -1954,7 +1945,6 @@ The marker scopes attention to specific sub-blocks; the surrounding design-decis
 **Lift type:** Section body
 **Insertion site (in target file):** Authored as a new `### Anti-Fabrication Rule (FAIL-LOUD)` section in `skills/reviewer-protocol/SKILL.md`, inserted between the existing `### Refusal Procedure` (ends ~line 206) and `## Per-Finding Disk-Write Contract` (line 208). Positioned immediately after Refusal Procedure so the bounding clause is adjacent to the section it bounds.
 
-````markdown
 ```markdown
 ### Anti-Fabrication Rule (FAIL-LOUD)
 
@@ -1983,8 +1973,6 @@ Quoting a procedure from `reviewer-protocol/SKILL.md` that is not literally pres
 file is a fabrication. Treat the absence of a named escape hatch as the rule, not as an
 invitation to invent one.
 ```
-
-````
 
 
 **Outline-only sections (Plan/Implement authors):**
@@ -2232,7 +2220,6 @@ Diagnostic template:
 **Marker phrase:** "`skills/_shared/prompt-prose-detection.md` (NEW). Verbatim content:"
 **Lift type:** Full file body
 
-````markdown
 ```markdown
 **Prompt prose** is text authored to be loaded into an LLM's context as instructions, system prompts, agent definitions, skill definitions, reviewer rubrics, MCP tool descriptions, RAG instructions, or any equivalent LLM-consumable directive content.
 
@@ -2266,8 +2253,6 @@ Files outside these globs require the content-semantic test above. Other project
 **Rules file.** When prompt-prose authoring or review applies, the rules live at `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention).
 ```
 
-````
-
 
 **Hook points / `!cat` includes:** This is the *source* snippet `!cat`-included into Plan Consumer #1 (inside Addition A), Plan Consumer #2 (2 sites), Design Consumer #3, and both wrapper SKILLs (Files 4 + 5).
 
@@ -2286,14 +2271,11 @@ Files outside these globs require the content-semantic test above. Other project
 **Marker phrase:** "`skills/_shared/prompt-prose-writer-addition.md` (NEW). Verbatim content:"
 **Lift type:** Full file body
 
-````markdown
 ```markdown
 **Writer-side application.** When authoring or planning a deliverable, apply the detection above to the planned target content. If the target IS prompt prose, Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles BEFORE drafting, not as post-write polish. The rules shape what to write; patching after the fact is a known anti-pattern.
 
 **If the target is NOT prompt prose** (ordinary documentation, configuration, code, non-prompt prose), do NOT Read the rules file. Reading-without-applying is the verbosity-bias anti-pattern the rules themselves warn against — loading them into context for a deliverable they don't apply to wastes context and risks misapplication.
 ```
-
-````
 
 
 **Hook points / `!cat` includes:** This is the *source* snippet `!cat`-included into Plan Consumer #2 (2 sites), Design Consumer #3, and the prompt-prose-writer wrapper SKILL (File 4).
@@ -2313,7 +2295,6 @@ Files outside these globs require the content-semantic test above. Other project
 **Marker phrase:** "`skills/_shared/prompt-prose-reviewer-addition.md` (NEW). Verbatim content:"
 **Lift type:** Full file body
 
-````markdown
 ```markdown
 **Reviewer-side application.** For each file (or sub-block, for blocks within larger documents like `design.md`) in the diff, apply the detection above. Apply liberally — when content semantics indicate prompt prose, treat as in-scope regardless of file path or extension.
 
@@ -2322,8 +2303,6 @@ For each file or block determined to be prompt prose: Read `skills/_shared/promp
 - `change_type: clarity` for verbosity / anchor-phrase / structure-quality findings.
 - `change_type: correctness` for finding-type-gate violations (e.g., load-bearing rule placed at start instead of end, examples exceeding the 2-cap, missing Iron-Law markers on override-critical content).
 ```
-
-````
 
 
 **Hook points / `!cat` includes:** This is the *source* snippet `!cat`-included into the prompt-prose-reviewer wrapper SKILL (File 5), which is then preloaded by reviewer agents Consumers #5-#8 via `skills:` frontmatter.
@@ -2343,7 +2322,6 @@ For each file or block determined to be prompt prose: Read `skills/_shared/promp
 **Marker phrase:** "`skills/prompt-prose-writer/SKILL.md` (NEW wrapper). Verbatim content:"
 **Lift type:** Full file body
 
-````markdown
 ```markdown
 ---
 description: Apply prompt-design rules when authoring or planning prompt-prose deliverables. Detects whether a deliverable IS prompt prose, and only then Reads the rules and applies R1-R7 before drafting. Preloaded by agent files that may author prompt prose.
@@ -2355,9 +2333,6 @@ description: Apply prompt-design rules when authoring or planning prompt-prose d
 
 !cat skills/_shared/prompt-prose-writer-addition.md
 ```
-
-Consumer: #4 (preloaded via `skills:` frontmatter).
-````
 
 
 **Hook points / `!cat` includes:**
@@ -2379,7 +2354,6 @@ Consumer: #4 (preloaded via `skills:` frontmatter).
 **Marker phrase:** "`skills/prompt-prose-reviewer/SKILL.md` (NEW wrapper). Verbatim content:"
 **Lift type:** Full file body
 
-````markdown
 ```markdown
 ---
 description: Apply prompt-design rules when reviewing prompt-prose subjects in a diff. Detects which files (or sub-blocks) are prompt prose, applies R1-R7 + cross-cutting principles + finding-type gate, and emits findings with proper change_type tagging. Preloaded by reviewer agents that may encounter prompt prose in their review subject.
@@ -2391,8 +2365,6 @@ description: Apply prompt-design rules when reviewing prompt-prose subjects in a
 
 !cat skills/_shared/prompt-prose-reviewer-addition.md
 ```
-
-````
 
 
 **Hook points / `!cat` includes:**
@@ -2569,14 +2541,11 @@ description: Apply prompt-design rules when reviewing prompt-prose subjects in a
 **Lift type:** Insertion delta
 **Insertion site (in target file):** Inserted in `agents/qrspi-plan-test-coverage-reviewer.md` body at the TOP of the review-procedure section, BEFORE any existing rubric. Standalone — this consumer does NOT preload `prompt-prose-reviewer` (Q1 resolution: full reviewer block would compromise judgment on `task_type: code` tasks where RED IS required).
 
-````markdown
 ```markdown
 **Scope: only `task_type: code` tasks.** Skip evaluation of any task with `task_type: lightweight` — those tasks (prose, prompts, docs, config) have no executable RED gate by design, and applying RED-gate coverage criteria to them would emit false-positive findings ("missing failing test"). The plan-test-coverage-reviewer's domain is the subset of tasks where test execution IS the verification mechanism; for prompt-prose tasks, verification flows through `qrspi-code-quality-reviewer` / `qrspi-design-reviewer` content-semantic rules application, evaluated separately.
 
 Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare lightweight task Test Expectations to RED-gate criteria. Silently skip lightweight task sections.
 ```
-
-````
 
 
 **Outline-only sections (Plan/Implement authors):**
