@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 release: qrspi-plus v0.7.2
 phase_count: 1
 total_goals: 35

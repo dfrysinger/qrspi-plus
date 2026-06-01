@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 release: qrspi-plus v0.7.2
 deferred_count: 0
 ---
