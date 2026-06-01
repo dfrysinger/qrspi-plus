@@ -1,0 +1,2 @@
+score: 80
+reason: Verified — Addition C is design-mandated as standalone inline (no !cat, no preload) in qrspi-plan-test-coverage-reviewer.md, and the only Slice-1.5 test tagged G31 (test-author-skill-uses-cat.bats) explicitly guards "shared include usage," which by construction cannot cover a standalone inline block; no other File Map row pins the anchor phrase, so silent drift of the skip-lightweight guard would be undetected — a real coverage gap squarely within stitching-audit's remit.
