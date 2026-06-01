@@ -1,0 +1,2 @@
+score: 72
+reason: D1 explicitly forbids aliases for `codex_reviews:` (hard error), but L2107 says "alias-resolved per D1" and L2130 says dispatcher reads `second_reviewer:` "(or its alias)" — this inconsistent phrasing creates genuine ambiguity about whether aliases exist, risking divergent implementation despite the likely intent being "no aliases."

@@ -1,0 +1,2 @@
+score: 85
+reason: The finding correctly identifies three sections in design.md that cross into DEFERS territory (line-by-line logic, full function signatures, implementation details, and test fixture mechanics) that should belong to downstream phases (Plan/Implement). The violation is grounded in the documented OWNS/DEFERS boundary, though the finding could be more granular in distinguishing which DEFERS category each section violates.

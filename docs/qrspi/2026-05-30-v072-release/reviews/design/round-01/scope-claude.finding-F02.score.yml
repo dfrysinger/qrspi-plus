@@ -1,0 +1,2 @@
+score: 78
+reason: Clear scope boundary violation per documented Design DEFERS rule (procedural pseudocode deferred to Plan/Implement); lines 414-419 introduce explicit control-flow detail with step-by-step algorithm that duplicates the architectural contract in surrounding prose. Issue is introduced by this work-unit (new design.md file), accurately identified, and resolvable per the finding's recommendation.

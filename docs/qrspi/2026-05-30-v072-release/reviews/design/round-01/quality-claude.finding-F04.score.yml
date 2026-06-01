@@ -1,0 +1,2 @@
+score: 65
+reason: CD-4 sections E–H demonstrably introduce halt-response, rescue tiers, and interaction-mode detection components not mentioned in G7/G8/G11/G12/G13 goals, raising valid YAGNI / scope-discipline concerns, but the finding is a valid design question (intentional extension vs. speculative creep) requiring author confirmation rather than a technical error; the components themselves are internally coherent and well-designed.
