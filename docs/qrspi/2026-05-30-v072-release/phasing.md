@@ -70,8 +70,8 @@ or hallucinated findings.
 
 **Goals:** G9, G15, G18
 **Surface:** Implement-phase per-task review orchestration (scope-tagger firing,
-round-NN.diff and round-NN-commit.txt creation, dependent-test scope for sweep
-tasks, cross-task consumer surface in Plan).
+per-round diff and commit-anchor artifacts, dependent-test scope for sweep
+tasks, cross-task consumer surface into Plan).
 **Demonstrable by:** running an Implement-phase per-task review against a sweep
 task and confirming all expected artifacts land + dependent tests run.
 
@@ -79,13 +79,13 @@ task and confirming all expected artifacts land + dependent tests run.
 
 **Goals:** G3, G4, G16, G22, G23, G24 (F02, F04), G25, G27
 **Surface:** shell-pipeline splitter, canonical cumulative diff helper, path-filter
-exfil surface in `run-codex-review.sh`, unified `model_routing` schema, validation
-table cross-linking, top-level fail-loud invariant for the dispatch-routing section
-(G25), per-H4 prose redundancy consolidation (G24-F02), tier-regex consolidation
-(G24-F04), and the Goals skill's Codex-availability helper. The whole cluster
-shares the same H4-paragraph edit surface in `using-qrspi/SKILL.md`, so grouping
-them in one slice prevents Plan from carving overlapping tasks that churn the same
-paragraphs.
+exfil surface in the Codex review dispatch wrapper, unified dispatch-routing
+config schema, validation table cross-linking, top-level fail-loud invariant for
+the dispatch-routing section (G25), per-H4 prose redundancy consolidation
+(G24-F02), tier-regex consolidation (G24-F04), and the Goals skill's
+Codex-availability helper. The whole cluster shares the same H4-paragraph edit
+surface in the pipeline-orchestration skill prose, so grouping them in one slice
+prevents Plan from carving overlapping tasks that churn the same paragraphs.
 **Demonstrable by:** dispatching reviewers across all routed paths (Claude + Codex,
 quality + scope, host-aware tier resolution) and confirming the unified config
 schema validates, dispatch fails loud on misroutes, and the splitter handles
@@ -115,19 +115,19 @@ flags architecture leaks back into design.md.
 ### Slice 1.7 — Build & release tooling + test-infrastructure hardening
 
 **Goals:** G21, G24 (F01, F03, F05), G26, G32
-**Surface:** bats short-circuit hardening (G21), bats parameterization across the
-`_assert_host_block_has_routing` callers (G24-F01), `_extract_h4` /
-`_extract_routing_block` helper deduplication into `test_helpers/extract.bash`
-(G24-F03), anti-pattern pin regex hardening (G24-F05), bats deprecation cleanup
-(G26), and the plugin build pipeline (strip dev-only paths + expand `!cat`
-includes, G32). G21 + G24-F05 + G26 form the test-gate-hardening cluster
-goals.md called out; F01/F03 share the test-helper-infrastructure edit surface.
+**Surface:** bats short-circuit hardening (G21), test parameterization across the
+dispatch-routing assertion callers (G24-F01), shared bats helper deduplication
+for the H4 extraction routines (G24-F03), anti-pattern pin regex hardening
+(G24-F05), bats deprecation cleanup (G26), and the plugin build pipeline
+(strip dev-only paths + expand inline-include directives, G32). G21 + G24-F05 +
+G26 form the test-gate-hardening cluster goals.md called out; F01/F03 share the
+test-helper-infrastructure edit surface.
 **Demonstrable by:** running the plugin build pipeline against the
 qrspi-plus repo at v0.7.2 HEAD and confirming the produced release artifact
-omits dev-only paths and expands all `!cat skills/.../*.md` includes inline,
-AND running the full bats suite against the deduplicated helpers + parameterized
-callers and confirming the hardened anti-pattern pins fire on the seeded
-regression cases.
+omits dev-only paths and expands all inline-include directives, AND running
+the full bats suite against the deduplicated helpers + parameterized callers
+and confirming the hardened anti-pattern pins fire on the seeded regression
+cases.
 
 ## Phases
 
@@ -156,14 +156,14 @@ touches because every layer is touched by the cross-cutting hardening set.
 3. **Instrumentation completeness.** A review round in the end-to-end exercise
    must produce both above-threshold and sub-threshold findings; confirm the
    Sub-Threshold Observations block in dispositions fires correctly, the
-   `.interaction-mode-audit.json` writes with the per-detection-type field
-   provenance documented in design.md I.7, and the verifier-fan-in script
-   produces the expected aggregate.
+   interaction-mode audit artifact writes with the per-detection-type field
+   provenance documented in design.md I.7, and the verifier-fan-in produces
+   the expected aggregate.
 
-4. **Build pipeline produces a clean release artifact.** `scripts/build-plugin.sh`
-   (G32) executed at v0.7.2 HEAD produces an installable plugin artifact with
-   dev-only paths stripped and all `!cat` includes expanded inline. The artifact
-   installs cleanly into a fresh `~/.copilot/installed-plugins/qrspi-plus/`
+4. **Build pipeline produces a clean release artifact.** The plugin build
+   pipeline (G32) executed at v0.7.2 HEAD produces an installable plugin
+   artifact with dev-only paths stripped and all inline-include directives
+   expanded. The artifact installs cleanly into a fresh installed-plugins
    location and the canary smoke test passes.
 
 5. **Plugin-issue inbox closure.** All five GitHub issues filed during this
