@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # v0.7.2 Design — Locked Decisions (working scratchpad)
