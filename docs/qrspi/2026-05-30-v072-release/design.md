@@ -633,7 +633,7 @@ Three output shapes, distinguished by `DETECTION_TYPE`:
 
 **I. Reviewer-side hardening (defense-in-depth).** Independent of orchestrator-side response, the reviewer agents themselves are hardened to reduce the frequency of `missing_change_type` and `change_type_out_of_enum` events. Per-reviewer agent body updates (extending § G) add:
 
-- Explicit `change_type:` field name with full enum value enumeration verbatim in agent body (e.g., "Required frontmatter field: `change_type:`. Allowed values: `style`, `clarity`, `correctness`, `security`. NO other values.")
+- Explicit `change_type:` field name with full enum value enumeration verbatim in agent body, sourced from the canonical enum in `skills/reviewer-protocol/SKILL.md` (e.g., "Required frontmatter field: `change_type:`. Allowed values: `style`, `clarity`, `correctness`, `scope`, `intent`. NO other values.")
 - Self-check-before-emit instruction: "Before writing your finding file, verify your frontmatter contains exactly `change_type:` (NOT `category:`, NOT `type:`, NOT `kind:`) and the value is one of the enum members listed above."
 - Worked-example finding-file showing correct frontmatter shape (full minimal example).
 - Anti-example showing `category:` with explanation: "This is a contract violation. The fan-in script will discard this finding (and the orchestrator may auto-rescue or drop it depending on run config)."
@@ -645,14 +645,107 @@ Three output shapes, distinguished by `DETECTION_TYPE`:
 
 ---
 
+## Component Map (top-level)
+
+```mermaid
+graph TB
+    subgraph SkillProse["Skill prose (12 consumer skills)"]
+        SP[per-skill SKILL.md<br/>!cat-includes shared snippets]
+        SH[_shared/reviewer-dispatch-prose.md<br/>_shared/evergreen-output-rule.md<br/>_shared/multi-actor-flow-check.md]
+        SP --> SH
+    end
+
+    subgraph DispatchChain["Dispatch chain (CD-1)"]
+        DA[dispatch-agent.sh<br/>universal entry point]
+        RP[round-prepare.sh<br/>auto-invoked]
+        DC[dispatch-companion.sh<br/>vendor routing]
+        CC[codex-companion-bg.sh<br/>vendor-specific transport]
+        RL[_resolve-lib.sh<br/>tier→vendor+model<br/>host×vendor matrix]
+        AR[await-round.sh<br/>manifest-driven async]
+        TFS[third-party-finding-splitter.sh]
+
+        DA --> RP
+        DA --> RL
+        DA -.first-party.-> TT[Task tool]
+        DA -.third-party.-> DC
+        DC --> CC
+        AR --> TFS
+    end
+
+    subgraph EmissionContract["Emission contract (G6)"]
+        FPE[reviewer-protocol/first-party-emission.md]
+        TPE[reviewer-protocol/third-party-emission.md]
+    end
+
+    subgraph VerifierPipeline["Verifier-fan-in pipeline (CD-4)"]
+        VA[qrspi-finding-verifier agent]
+        VFI[verifier-fan-in.sh<br/>single source of truth:<br/>thresholds + change_type enum]
+        KF[kept-findings.txt<br/>+ audit JSON]
+
+        VA --> VFI
+        VFI --> KF
+    end
+
+    subgraph SecondReviewer["Second-reviewer surface (G27)"]
+        SRA[second-reviewer-available.sh<br/>probe]
+        SR[D5 host×vendor matrix<br/>+ default-second-reviewer column]
+        SRA --> SR
+    end
+
+    SP --> DA
+    TT --> FPE
+    CC --> TPE
+    FPE --> VA
+    TPE --> VA
+    SRA -.consulted by.-> SP
+    DA -.consults.-> SR
+    KF -.consumed by.-> SP
+
+    classDef new fill:#fef3c7,stroke:#92400e
+    class DA,DC,TFS,RP,AR,RL,SRA,SR,VFI,KF,FPE,TPE,SH new
+```
+
+Yellow nodes are new or renamed in v0.7.2. The diagram shows the structural lanes; per-goal sections below specify decisions; Structure phase maps these components onto files and module boundaries.
+
+---
+
+## Test Strategy
+
+<!-- prose-design: Design SKILL.md § "Test Strategy" -->
+
+Design owns naming the **types** of tests v0.7.2 ships and the **coverage boundaries** for each type. Plan owns authoring per-task acceptance criteria (the specific assertions inside each test). The five test types named here form the release taxonomy; every per-task `Test Expectations` block authored by Plan must classify itself into one of them.
+
+**T1 — Shell static-analysis lint.** `shellcheck`-style passes across every shell script under `scripts/`, every test fixture, every commit-hook. Coverage boundary: catches contract-level shape errors (unquoted expansion, unhandled return codes, undefined variables, dangerous `eval`). Does NOT cover behavior. Runs on every PR. Owned by CI; per-task contribution is "shellcheck clean on touched files."
+
+**T2 — Bats unit tests.** Per-script behavioral assertions using the `bats-core` framework + `bats-assert` / `bats-support` helpers (G21 amendment: every negative assertion uses guarded forms — `assert_output` with explicit expected output or `! assert_output --partial '<token>'`, never `[[ ! "$body" =~ ... ]]`). Coverage boundary: one bats file per script under `scripts/`; covers happy path + every named exit code (e.g., for `round-prepare.sh`, all four of exit 0/10/11/12) + at least one fixture per documented error mode. Does NOT cover cross-script integration. Runs on every PR.
+
+**T3 — Integration smoke fixtures.** End-to-end fixtures that exercise multi-script chains using throwaway repos under `tests/integration/fixtures/`. Coverage boundary: each CD-1 dispatch path (first-party + third-party) gets one fixture; the verifier-fan-in pipeline (CD-4) gets one fixture per change-type enum value; the second-reviewer surface (G27) gets one Copilot-CLI fixture asserting exit-0 from `second-reviewer-available.sh`. Does NOT cover real LLM calls. Runs on every PR (mocked vendor responses) and a nightly variant (real vendor calls behind a CI flag).
+
+**T4 — Self-host runs.** v0.7.2 must successfully self-host its own next release dialogue at least once before promotion (the v0.7.2 release walks at least the Goals + Questions + Research + Design phases of a v0.7.3-scope draft using v0.7.2 itself). Coverage boundary: catches drift between locked design and shipped prose that contract tests cannot detect (e.g., a per-skill SKILL.md that nominally implements CD-1 but routes its own dispatches wrong in practice). Failure surface: the operator reports friction; the friction is filed against the appropriate goal. Runs once per release candidate; not gated on every PR.
+
+**T5 — Reviewer-protocol contract tests.** Per-reviewer-agent smoke that asserts: (a) the agent's frontmatter `tier:` field is set, (b) the agent body contains the `change_type:` enum block in canonical form, (c) the first-party-emission OR third-party-emission file is present in the dispatch-prompt assembly for that agent. Coverage boundary: every reviewer agent in `agents/qrspi-*.md`. Does NOT cover the substance of what reviewers emit (that emerges from self-host data, T4). Runs on every PR.
+
+**Test types NOT in v0.7.2's taxonomy.** Property-based fuzzers, mutation testing, formal-method proofs — out of scope. Calibration aggregation across `actual_model:` audit data (G20) is observability, not a test type — its analysis happens in v0.7.3+ after self-host data accumulates.
+
+**Cross-cutting invariants enforced by tests** (every CD or goal that introduces one names which test type owns it):
+- CD-1 host×vendor matrix and second-reviewer column (T3 fixture).
+- CD-2 evergreen-output rule (T2 lint on `_shared/evergreen-output-rule.md` consumers + T5 contract check).
+- CD-4 threshold + change-type enum single source of truth (T2 on `verifier-fan-in.sh` asserts thresholds NOT appearing in any other location).
+- G6 emission iron-law (T5 asserts the iron-law clause is present in both emission files verbatim).
+- G21 bats BW02 guard (T2 lint rule — the rule that catches its own pattern in test fixtures).
+- G27 second-reviewer probe semantics (T3 Copilot CLI fixture + T2 unit test on `second-reviewer-available.sh`).
+
+---
+
 ## G1 — Design phase under-describes decisions
 
 <!-- prose-design: Design SKILL.md § "What Design produces" -->
 
 **Outcome.** Design produces a per-goal solution definition at outcome altitude — the end-state
 being targeted, the practical solution at the altitude defined by the Altitude Sub-Rules below,
-and the reasoning behind it. Architecture documentation belongs in Structure. Test specification
-belongs in Plan.
+and the reasoning behind it. Architecture documentation belongs in Structure. Test **strategy**
+(test types + coverage boundaries) belongs in Design's `## Test Strategy` section above; test
+**specification** (per-test assertions) belongs in Plan.
 
 <!-- prose-design: Design SKILL.md § "Per-goal block template" -->
 
@@ -1786,9 +1879,9 @@ Composition rationale: the verifier already lazy-Reads cited upstream files (cur
 
 2. **Dispatch parameter addition** — every per-skill SKILL.md that dispatches reviewers via the Standard Review Loop adds one parameter to the reviewer dispatch prompt: `actual_model: <resolved model ID>`. The orchestrator already resolves this value at dispatch site (it's the value passed to `Agent({ ..., model })` for Claude subagents and to the reviewer model flag of `scripts/run-codex-review.sh` for Codex subagents). The new parameter is record-keeping for the reviewer to copy into emission frontmatter. Files affected: per-skill SKILL.md under `skills/{goals,questions,research,design,phasing,structure,plan,parallelize,implement,integrate,test,replan}/`.
 
-3. **Codex emission template update** (`skills/reviewer-protocol/codex-emission-override.md`) — the worked-example finding frontmatter and the clean-sentinel example both gain the `actual_model:` field so Codex subagents emit it. The splitter (`scripts/codex-finding-splitter.sh`) is unchanged — it splits on `<<<FINDING-BOUNDARY>>>`, does not parse frontmatter fields.
+3. **Third-party emission template update** (`skills/reviewer-protocol/third-party-emission.md`) — the worked-example finding frontmatter and the clean-sentinel example both gain the `actual_model:` field so third-party subagents emit it. The splitter (`scripts/third-party-finding-splitter.sh`) is unchanged — it splits on `<<<FINDING-BOUNDARY>>>`, does not parse frontmatter fields.
 
-4. **Codex wrapper update** (`scripts/run-codex-review.sh`) — accept and inject `actual_model` into the composed dispatch-params section so Codex sees the value to copy through. Same shape as the existing `--reviewer-tag` / `--scope-hint` flags.
+4. **Dispatch-companion wrapper update** (`scripts/dispatch-companion.sh`) — accept and inject `actual_model` into the composed dispatch-params section so third-party subagents see the value to copy through. Same shape as the existing `--reviewer-tag` / `--scope-hint` flags.
 
 5. **Verifier sidecar schema addition** (`agents/qrspi-finding-verifier.md`) — step 1 (Read finding file) gains a phrase: "...parse the 5-field finding object plus the audit field `actual_model:`...". Step 6 (Write sidecar) gains one line in BOTH the success and the `VERIFY_FAILED` shapes: `actual_model: <copied verbatim from finding frontmatter>`. When the finding file omits the field (older rounds, hand-written rounds, drift from a reviewer that did not yet adopt the new audit field), the verifier writes `actual_model: unknown` rather than failing — this is observability data, not a correctness gate. Step 7's return line is unchanged.
 
@@ -2099,14 +2192,14 @@ This formalizes what `test/SKILL.md:92` already does informally (the Test phase 
 
 **D1 — Config schema rename (vendor-neutral, clean break).** Rename the config field `codex_reviews: true|false` → `second_reviewer: true|false`. No alias for the legacy field. The Config Validation Procedure (owned by using-qrspi) treats an unknown `codex_reviews:` as a hard validation error per CD-1's no-silent-fallback rule; the error message names the rename so operators can self-serve the fix (e.g., `[config-error] unknown field 'codex_reviews:' — renamed to 'second_reviewer:' in v0.7.2; update config.md to the new field name`). Rationale: v0.7.x is pre-1.0, breaking config changes ship without deprecation cycles; silent aliasing would defeat the no-silent-fallback rule the rest of the dispatch surface enforces. Optional advanced-operator override: `second_reviewer_vendor: <vendor-id>` forces a specific vendor on hosts where multiple are available.
 
-**D2 — New probe script `scripts/second-reviewer-available.sh` (~15 LOC).** Runs `detect_host` (sourced from `scripts/run-codex-review.sh` via the existing `QRSPI_SOURCE_ONLY=1` guard at L193-205 of that script, OR pulled into a tiny helper in `scripts/lib/` — implementer's choice during Structure/Plan). Looks up the detected host in CD-1's host×vendor matrix (D5). Exits 0 if any third-party vendor exists for this host, exits 1 otherwise. Optionally prints the default vendor identifier to stdout for diagnostic purposes (not consumed by the SKILL; useful for `--verbose` operator runs). Single source of truth = the same matrix the dispatcher reads — there is no parallel table to drift.
+**D2 — New probe script `scripts/second-reviewer-available.sh` (~15 LOC).** Runs `detect_host` (sourced from `scripts/dispatch-agent.sh` via the existing `QRSPI_SOURCE_ONLY=1` guard, OR pulled into a tiny helper in `scripts/lib/` — implementer's choice during Structure/Plan). Looks up the detected host in CD-1's host×vendor matrix (D5). Exits 0 if D5's "Default second-reviewer vendor" column for this host names a vendor that is **distinct from the primary reviewer's vendor** for that host and is available, exits 1 otherwise. The probe is **not** keyed on `first-party` vs `third-party` — that distinction names the transport branch (Task tool vs broker), not second-reviewer eligibility. On Copilot CLI, where both Claude and Codex are first-party, D5 names `openai-codex` as the second-reviewer vendor (distinct from the Anthropic-vendor primary), and the probe exits 0. Optionally prints the default vendor identifier to stdout for diagnostic purposes (not consumed by the SKILL; useful for `--verbose` operator runs). Single source of truth = the same matrix the dispatcher reads — there is no parallel table to drift.
 
 **D3 — SKILL prose rewrite (Goals + using-qrspi).** DELETE the Claude-only inline globs at `skills/goals/SKILL.md:120` and `skills/using-qrspi/SKILL.md:405`. REPLACE both with prose that invokes the probe script: "Run `bash scripts/second-reviewer-available.sh`. If exit 0, ask the user 'Second-model review: yes/no?' (with whatever framing the SKILL section uses). If exit non-zero, skip silently and write `second_reviewer: false`." The user-facing question is vendor-neutral — no "Codex" in the question text, no vendor identifier shown to the user (vendor identifiers are not user-meaningful; the dispatcher handles vendor selection at runtime). Both SKILL prose blocks call the SAME script — no copy-paste of host logic, no SKILL-side detection at all.
 
 **D4 — Dispatcher (`dispatch-agent.sh`) owns runtime routing.** For every reviewer-agent dispatch (the existing CD-1 dispatch path):
-- Read `second_reviewer:` from `config.md` (canonical or alias-resolved per D1).
+- Read `second_reviewer:` from `config.md` (canonical only — no alias per D1).
 - If `false`: emit primary dispatch only — existing CD-1 behavior unchanged.
-- If `true`: resolve the second vendor in this precedence order — (a) explicit `second_reviewer_vendor:` config override if present, (b) the per-host default from CD-1's host×vendor matrix's "default second-reviewer vendor" column (D5). If neither resolves to an available third-party vendor for this host, HALT LOUDLY (CD-1's no-silent-fallback rule) with a stderr diagnostic: `[second-reviewer-unavailable] host=<detected_host> requested second_reviewer:true but no third-party vendor available for this host — set second_reviewer:false in config.md or add a model_routing: entry for the desired vendor`. Exit non-zero; do NOT fall back to single-reviewer dispatch silently. (This halt is a defense-in-depth check; the D2 probe should have prevented a `true` value from landing on an unsupported host, but config can be hand-edited.)
+- If `true`: resolve the second vendor in this precedence order — (a) explicit `second_reviewer_vendor:` config override if present, (b) the per-host default from CD-1's host×vendor matrix's "default second-reviewer vendor" column (D5). If neither resolves to a vendor distinct from the primary and available for this host, HALT LOUDLY (CD-1's no-silent-fallback rule) with a stderr diagnostic: `[second-reviewer-unavailable] host=<detected_host> requested second_reviewer:true but no second-reviewer-eligible vendor available for this host — set second_reviewer:false in config.md or add a model_routing: entry for the desired vendor`. Exit non-zero; do NOT fall back to single-reviewer dispatch silently. (This halt is a defense-in-depth check; the D2 probe should have prevented a `true` value from landing on an unsupported host, but config can be hand-edited.)
 - Otherwise emit TWO dispatches via the existing CD-1 path — primary at `(host, primary_vendor, agent_tier)`, second at `(host, second_vendor, agent_tier)`. Both branches use the SAME agent `tier:` (from G22's rubric, default `medium` for reviewer agents). Both branches flow through CD-1's `model_routing:` resolution chain on the per-vendor branch. Per-finding file emission, fan-in, and apply-fix are unchanged — both branches write per-finding files under the existing `reviews/{step}/round-NN/` contract; fan-in tallies both.
 
 **D5 — CD-1 host×vendor matrix extension.** Extend CD-1's existing host×vendor matrix block (this file, L114-121) with one additional column: "Default second-reviewer vendor". The extended matrix becomes the single source of truth read by both the probe script (D2) and the dispatcher (D4). Initial column values (per the existing host×vendor first-party/third-party assignments):
@@ -2125,9 +2218,9 @@ Rationale for defaults: cost continuity with v0.7.1 behavior (every host pairs a
 
 - `skills/goals/SKILL.md` no longer contains the inline glob `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`; the pipeline-mode dialogue invokes `scripts/second-reviewer-available.sh` and asks a vendor-neutral question only on exit 0.
 - `skills/using-qrspi/SKILL.md` no longer contains the same inline glob at the Codex-detection paragraph; the equivalent prose invokes the same probe script.
-- `scripts/second-reviewer-available.sh` exists, is executable, exits 0 on at least one host (Copilot CLI — verifiable by `COPILOT_CLI=1 bash scripts/second-reviewer-available.sh; echo $?`), and reads from CD-1's host×vendor matrix (no separate hardcoded host table).
+- `scripts/second-reviewer-available.sh` exists, is executable, exits 0 on Copilot CLI (verifiable by `COPILOT_CLI=1 bash scripts/second-reviewer-available.sh; echo $?`) because D5 names `openai-codex` as the default second-reviewer vendor (distinct from the Anthropic-vendor primary), and reads from CD-1's host×vendor matrix (no separate hardcoded host table). Exit-0 on Claude Code is also verified by an equivalent fixture (D5 names `openai-codex` as the default second-reviewer vendor distinct from the primary).
 - `config.md` schema documentation (in using-qrspi) shows `second_reviewer:` as the canonical field; the legacy `codex_reviews:` name is fully deleted from all skill prose and templates; Config Validation Procedure treats a stray `codex_reviews:` as an unknown-field hard error per D1 (with the rename-naming error message).
-- `dispatch-agent.sh` reads `second_reviewer:` (or its alias), resolves second vendor per D4's precedence, emits two dispatch entries when enabled, and halts loudly with the D4 diagnostic when no second vendor is available for the host.
+- `dispatch-agent.sh` reads `second_reviewer:` (canonical field only — no alias per D1), resolves second vendor per D4's precedence, emits two dispatch entries when enabled, and halts loudly with the D4 diagnostic when no second vendor is available for the host.
 - CD-1's host×vendor matrix block carries the "Default second-reviewer vendor" column per D5.
 - An end-to-end Copilot CLI smoke test confirms: with `second_reviewer: true` in `config.md`, a Goals review round emits both a Claude reviewer dispatch and a Codex (gpt-5.3-codex) reviewer dispatch via the task-tool transport; fan-in tallies both; per-finding files from both branches land under the round directory.
 
@@ -2672,7 +2765,7 @@ The cleanup of the existing dev/runtime ambiguity in `scripts/` is co-shipped wi
 
 **Co-shipped cleanup.** Move `scripts/render-skill.sh` and `scripts/g4-section-anchor-refresh.sh` to `tools/` (new top-level directory). Update all callers (tests + docs + this design.md prose) to reference the new path. After the move:
 
-- `scripts/` is 100% runtime helpers referenced by skills or agents at runtime: `codex-companion-bg.sh`, `codex-finding-splitter.sh`, `run-codex-review.sh`, `run-smoke-checks.mjs`, `run-third-party-llm.sh`, `sibling-impact.mjs`, `lib/llm-prompt-utils.sh`, `red-verify/{bats,jest,pytest,vitest}-adapter.sh`, `g4-section-anchor-manifest.json`.
+- `scripts/` is 100% runtime helpers referenced by skills or agents at runtime: `codex-companion-bg.sh`, `third-party-finding-splitter.sh`, `dispatch-agent.sh`, `dispatch-companion.sh`, `run-smoke-checks.mjs`, `sibling-impact.mjs`, `lib/llm-prompt-utils.sh`, `red-verify/{bats,jest,pytest,vitest}-adapter.sh`, `g4-section-anchor-manifest.json` (the script list reflects the post-CD-1 / post-G6 rename inventory; the cleanup co-ships with CD-1).
 - `tools/` is 100% dev-time: the relocated 2 scripts + the new `build-plugin.mjs`.
 - `templates/` (currently `tsc-probe.ts`) is 100% runtime (referenced by skills).
 
