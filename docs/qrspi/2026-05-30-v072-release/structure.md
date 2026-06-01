@@ -331,7 +331,7 @@ Path rule: `<round-dir>/<reviewer-tag>.finding-FNN.score.md` (per structure.md ย
 > **Source:** design.md ยงG14 D1 (L1480-L1506), Informational-carve-out paragraph "verbatim addition to `agents/qrspi-finding-verifier.md`"
 >
 > ```markdown
-> **Informational findings (carved out from the false-positive rubric).** If the finding's
+> **Informational findings.** If the finding's
 > `message` body's first non-blank line begins with the literal token `Informational:`
 > (case-sensitive, capital I, trailing colon), do NOT apply the false-positive patterns
 > below. The reviewer has explicitly labeled this finding as a real observation that does

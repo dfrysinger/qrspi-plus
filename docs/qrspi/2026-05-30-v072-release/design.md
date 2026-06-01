@@ -1478,7 +1478,7 @@ The two-case carve-out (false-positive vs informational) is intentionally narrow
   - **Verifier rubric branch (verbatim addition to `agents/qrspi-finding-verifier.md`).** Inserted as a new paragraph immediately BEFORE the existing "Treat the following patterns as likely false positives and score them low (0–25):" sentence (currently ~line 19):
 
     ```markdown
-    **Informational findings (carved out from the false-positive rubric).** If the finding's
+    **Informational findings.** If the finding's
     `message` body's first non-blank line begins with the literal token `Informational:`
     (case-sensitive, capital I, trailing colon), do NOT apply the false-positive patterns
     below. The reviewer has explicitly labeled this finding as a real observation that does
