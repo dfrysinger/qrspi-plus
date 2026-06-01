@@ -126,7 +126,7 @@ This slice raises artifact-authoring quality at the prompt/prose boundary and ma
 | `docs/prompt-design-guide.md` | Modify | Hand off the old guide surface to the new shared runtime rules location. | G31 |
 | `tests/unit/test-plan-post-approval-split.bats` | Modify | Guard block-hash emission, safe re-run, and loud conflict behavior. | G5 |
 | `tests/unit/test-interactive-skill-prompts.bats` | Modify | Pin dialog-conduct wording, simple-language framing, and compaction-resume diagnostics. | G1, G30, G33 |
-| `tests/unit/test-author-skill-uses-cat.bats` | Modify | Guard shared include usage for prompt-prose and design-boundary snippets; additionally pin the standalone Addition C anchor phrase (`"Scope: only `task_type: code` tasks."`) at the TOP of `agents/qrspi-plan-test-coverage-reviewer.md` so silent drift or misplacement of the scope guard is caught. | G31, G34 |
+| `tests/unit/test-author-skill-uses-cat.bats` | Modify | Guard shared include usage for prompt-prose and design-boundary snippets; additionally pin the standalone Addition C placement (TOP of `agents/qrspi-plan-test-coverage-reviewer.md` review-procedure section) so silent drift or misplacement of the scope guard is caught. Anchor text is sourced from design.md (G31 Addition C verbatim block) — Plan/Implement author the assertion string. | G31, G34 |
 | `tests/lint/test-design-altitude-boundary-include.bats` | Create | Guard the two required `!cat` inclusions for `design-altitude-boundary.md` so the Design boundary cannot drift by subtraction. | G34 |
 | `tests/acceptance/test-review-pause.bats` | Modify | Ensure pause/review flow respects operator authority rather than fabricated reviewer mandates. | G10 |
 | `agents/qrspi-implementer-lightweight.md` | Modify | Add `prompt-prose-writer` to `skills:` frontmatter preload. | G31 |
@@ -514,7 +514,7 @@ flowchart LR
 
   subgraph S12[Slice 1.2 Calibration + instrumentation]
     UQ[skills/using-qrspi/SKILL.md]
-    DM[scripts/dispatch-agent.sh]
+    DM[scripts/run-codex-review.sh]
     TA1[tests/acceptance/v07-phase1/test-phase1-acceptance.bats]
     DM --> UQ
     TA1 --> UQ

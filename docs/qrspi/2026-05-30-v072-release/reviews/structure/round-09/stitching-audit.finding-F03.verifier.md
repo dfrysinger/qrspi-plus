@@ -1,0 +1,2 @@
+score: 38
+reason: Real asymmetry observation (Consumer #9 is an agent file outside the "#4–#8" preload range and the intro doesn't flag it), but the suggested fix imports design-level rationale ("compromise RED judgment on task_type: code") into a Structure-altitude intro; the existing table row already signals "standalone — no !cat, no wrapper preload," and the #6 BOTH callout exists to resolve a true double-counting hazard that Consumer #9 doesn't have. Stylistic should-fix not called out in CLAUDE.md.
