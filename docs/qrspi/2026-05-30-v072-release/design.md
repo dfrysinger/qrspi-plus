@@ -1695,6 +1695,67 @@ Deferred to v0.7.3 (contingent on v0.7.2 self-host signal): a standalone Plan-ph
 
 ---
 
+## G19 — Wholesale-hallucination findings slip past current verifier rubric
+
+**Plain-language problem.** A reviewer subagent dispatched against an artifact can fabricate a finding wholesale: invented file paths, invented line numbers, invented quoted content ("`SKILL.md:516` contains `widen/ref`" when line 516 says nothing of the kind). The current verifier rubric scores findings 0–100 on a confidence axis anchored on pre-existing-vs-introduced classification, but does NOT verify that cited resources actually contain what the finding claims they contain. A well-written hallucination scores ≥70 and reaches the orchestrator, where it either (a) wastes a fix-task cycle implementing against a nonexistent code shape or (b) is noticed by a human and erodes trust in the entire review pipeline. v0.7.1 Integrate R6 reproduced this exactly: `gpt-5.5` (running as task-tool substitute for absent codex CLI) fabricated a finding citing concrete content that a 5-second grep refuted.
+
+**Outcome.** The verifier subagent gains a Cite Check step that runs after reading cited resources and before final scoring. When a finding cites content that does not exist at the cited location (file missing, line range out of bounds, quoted string absent at cited line, named anchor absent in cited file), the verifier emits `score: 0` with a `HALLUCINATED:` reason prefix and halts further rubric work. Score-0 findings fall below both correctness (≥70) and style/clarity (≥80) keep thresholds, so the existing Apply-fix protocol drops them automatically — no orchestrator changes required. The fix is single-subagent, single-file, evergreen, and self-consistent with the constraint that confidence-side verification stays inside the verifier subagent (not the orchestrator).
+
+**Approach.** One-mechanism: extend `agents/qrspi-finding-verifier.md` with a new procedure step (Step 3.5: Cite Check) and a new top-anchor rubric tier (`0 / HALLUCINATED`). No new subagent, no new sidecar field, no new orchestrator code path. The existing reason field on the sidecar carries the `HALLUCINATED:` prefix as a convention; humans can grep dropped sidecars for the prefix if they want a count.
+
+Composition rationale: the verifier already lazy-Reads cited upstream files (current step 4) and reads `referenced_files` entries (current step 3). Cite Check piggybacks on those reads — the marginal cost is a content-equality assertion, not a new file access. Adding the check as a verifier-internal step keeps "all confidence dimensions in one subagent" and avoids the drift risk of a parallel pre-verifier grep gate. Cross-link to G10: the same cite-check mechanism that catches "L516 contains `widen/ref`" hallucination also catches "the spec says X" procedural fabrications when X is not in the spec — the two goals share the same verifier-rubric expansion path.
+
+**Decisions locked:**
+
+- **A — Cite-check scope: literal + structural (A2).** Cite Check verifies (1) file existence for bare-path `referenced_files` entries, (2) line/range existence for `path:line` and `path:line-line` entries, (3) literal-substring presence when the finding's prose quotes a specific string and attributes it to a specific cited location, and (4) anchor presence when the finding names a heading, function, class, or other identifier and attributes it to a cited file. Pure semantic claims ("the design is wrong") with no cited resource are out of scope — they remain the existing rubric's territory.
+- **B — Failure mode: halt-and-zero (B1).** On any cite-check mismatch, emit `score: 0` with reason `HALLUCINATED: <diagnostic>`, halt remaining rubric steps, write the sidecar, return. A finding built on a fabricated citation is structurally untrustworthy; partial-confidence semantics do not apply.
+- **C — Citation source: `referenced_files` frontmatter + prose body (C1+).** The frontmatter `referenced_files` field is the primary citation source (always checked). When the finding's prose body quotes a specific string adjacent to a cited path:line or names an anchor adjacent to a cited file, those prose citations are also checked. Heuristic identification of "cited content" inside prose is the verifier's responsibility (the verifier is an LLM — it reads the finding and identifies the load-bearing factual claims). The verifier MUST NOT invent claims to check; it MUST NOT flag findings whose prose makes no specific factual cite. A standalone citation extractor subagent is deferred to v0.7.3.
+- **D — Subagent reuse: automatic across all skills.** The verifier already runs on findings from every reviewer fan-out (Goals, Questions, Research, Design, Phasing, Structure, Plan, Parallelize, Implement, Integrate). Cite Check expansion fires uniformly — no per-skill plumbing.
+- **E — Reason field convention, NOT new sentinel.** Emit `score: 0` (integer) with reason `HALLUCINATED: <diagnostic>`. Do NOT add `HALLUCINATED` as a new sentinel value of the `score` field. The existing `VERIFY_FAILED` sentinel is handled by orchestrator as degraded-but-uncertain → keep-all (per `using-qrspi/SKILL.md` L984-985), which is the OPPOSITE of the dropped-by-threshold behavior wanted for hallucinations. Integer-0 + reason-prefix gets the correct drop semantics without orchestrator changes.
+
+**Implementation deliverables.**
+
+1. **`agents/qrspi-finding-verifier.md` — new Step 3.5: Cite Check, inserted between current step 3 and step 4.** Verbatim wording:
+
+   > 3.5. **Cite Check** — verify cited resources actually contain what the finding claims they contain. The verifier MUST perform this check before scoring; mismatch produces `score: 0` and halts the rubric.
+   >
+   >    For each citation present in the finding (whether in `referenced_files` frontmatter or quoted in the finding's prose body), assert one of the following depending on citation shape:
+   >
+   >    - **File existence** — a bare path (no line number) in `referenced_files` MUST resolve to an existing file. Missing file → emit `score: 0`, reason `HALLUCINATED: file <path> does not exist`, write sidecar, halt.
+   >    - **Line range** — a `path:line` or `path:line-line` entry in `referenced_files` MUST resolve to an existing range in the file. Out-of-range → emit `score: 0`, reason `HALLUCINATED: <path> has <N> lines, cited <range> out of range`, write sidecar, halt.
+   >    - **Quoted content at cited location** — when the finding's prose quotes a specific string (in backticks, double quotes, or a fenced excerpt) and attributes it to a specific cited path:line, the verifier MUST read that line range and assert the quoted substring appears. Mismatch → emit `score: 0`, reason `HALLUCINATED: quoted content '<excerpt>' not found at <path:line>`, write sidecar, halt.
+   >    - **Named anchor** — when the finding names a heading, function, class, type, variable, configuration key, CLI flag, or other identifier and attributes it to a specific cited file, the verifier MUST grep the cited file for the anchor. Anchor absent → emit `score: 0`, reason `HALLUCINATED: anchor '<name>' not found in <path>`, write sidecar, halt.
+   >
+   >    Findings whose prose carries no specific factual cite (pure-advisory style notes such as "consider naming this more clearly") have nothing to cite-check. Cite Check on such findings is a no-op; proceed to step 4.
+   >
+   >    The verifier MUST NOT invent claims to check, MUST NOT extrapolate from a finding's general tone, and MUST NOT flag findings whose prose carries no specific factual cite. Cite Check fires only against citations the finding actually makes.
+
+2. **`agents/qrspi-finding-verifier.md` — new top-anchor rubric tier (prepended to the existing 0/25/50/75/100 anchors).** Verbatim wording:
+
+   > a. **0 / HALLUCINATED:** Cite Check (step 3.5) found that the finding cites content that does not exist at the cited location — file missing, line range out of bounds, quoted string absent at cited line, or named anchor absent in cited file. The finding is structurally untrustworthy regardless of how plausible its prose reads. Halt rubric, emit `score: 0` with reason `HALLUCINATED: <diagnostic>`.
+
+   The existing five anchors (0, 25, 50, 75, 100) are renumbered b-f (or relabelled however the file's current letter scheme accommodates the new top anchor — the verbatim wording above carries `0 / HALLUCINATED` as the explicit name to disambiguate from the existing plain `0` anchor which captures the pre-existing-issue / false-positive case).
+
+3. **`agents/qrspi-finding-verifier.md` — reason field convention documented in step 6 (Write sidecar).** Append one sentence to the existing step 6 success-case description: "When the score is `0` due to Cite Check failure (step 3.5), the `reason` value MUST start with the literal prefix `HALLUCINATED: ` so dropped sidecars can be greppable for the hallucination subset."
+
+4. **No changes** to `skills/using-qrspi/SKILL.md` Apply-fix protocol, orchestrator code paths, `verifier_enabled` field semantics, or per-skill review-loop wiring. Score-0 findings already fall below both correctness (≥70) and style/clarity (≥80) thresholds and are dropped by the existing protocol — Cite Check rides on the existing drop path.
+
+5. **No changes** to reviewer subagents. The hallucination is a reviewer-side defect this design does not attempt to prevent at the reviewer level (reviewer-side prevention is a model-calibration concern tracked separately as G20 / #237). G19 closes the filter; G20 closes the source.
+
+6. **Test coverage.** The existing `qrspi-finding-verifier.md` agent has no bats coverage (it's an LLM agent file, not a script). The Cite Check step's correctness is verified at next self-host signal cycle: any wholesale-hallucination finding produced by a reviewer subagent in v0.7.2 self-host MUST drop with `HALLUCINATED:` reason. A negative self-host signal (hallucination passes through) is a v0.7.3-blocking defect.
+
+**Cross-cutting note (G19 ↔ G10).** G10 captures the procedural-fabrication pattern at #226 occurrence 7 ("the spec says X" when the spec does not say X). G10's mechanism is a Plan-side check ("are findings' factual claims about the artifact verifiable?"); G19's mechanism is a verifier-side check ("does cited content actually exist?"). The two interlock: G10 prevents procedural fabrications from being authored by reviewers in the first place (via prompt-side discipline); G19 catches them at the verifier filter when prompt-side discipline fails. Both paths converge on the same defense surface and neither subsumes the other.
+
+**Cross-cutting note (G19 ↔ G20).** G20 (model calibration for task-tool-substituted models) is the source-side fix for the reviewer-side defect that creates wholesale hallucinations. G19 is the filter-side fix that catches them regardless of source. The two goals are complementary: G20 reduces hallucination rate at origin; G19 ensures any that get through don't reach the orchestrator. Lock both — neither alone closes the surface.
+
+**Open Questions for v0.7.3+.** Tracked externally as GitHub issue dfrysinger/qrspi-plus#270 (filed when this design block ships): (a) does v0.7.2 self-host signal indicate the LLM-internal prose-citation heuristic (sub-decision C) is reliable enough, or do we need a standalone citation-extractor subagent that emits structured cite tuples for the verifier? (b) cross-reviewer corroboration threshold (raise score floor for single-reviewer findings) — orthogonal mechanism worth a separate goal if calibrated non-hallucinated findings cause trouble. (c) pre-verifier separate grep gate as belt-and-suspenders — only revisit if v0.7.2 self-host signal shows verifier-internal Cite Check regressing. (d) automated repro harness for hallucination probability per model — pairs naturally with G20 model-calibration work.
+
+**Pre-existing plugin issues to file.** None new. G19 closes the v0.7.1 R6 reproduction observed in this session-prior hardening; no separate plugin issue surfaces because the defect is the absence of a check, not a malformed existing check.
+
+**References.** Source: goals.md G19 / #236 (v0.7.1 hardening Integrate R6 reproduction); `agents/qrspi-finding-verifier.md` (sole edit surface, 64 lines pre-change); `skills/using-qrspi/SKILL.md` L984-985 (drop-by-threshold protocol that Cite Check rides on), L864 (`VERIFY_FAILED` sentinel handling — Cite Check explicitly does NOT use this code path, hence integer-0 + reason-prefix); related G10 (procedural-fabrication catch — verifier-rubric expansion path shared); related G20 (#237 model calibration — source-side fix for the same defect class); related G6 (transport-layer disk-write contract — separate concern, but recurring in the same hardening sessions).
+
+---
+
 ## G30 — Compaction-resilient incremental persistence for Goals and Design
 
 **Outcome.** Goals SKILL.md and Design SKILL.md both:
