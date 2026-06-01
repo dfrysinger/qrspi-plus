@@ -1,0 +1,8 @@
+---
+finding_id: R4-F01
+reviewer_tag: quality-claude
+score: 82
+change_type: correctness
+reason: I.7 writer-ownership contradiction is real and load-bearing — Contract says stdout-only, Audit-log says script writes, Caching says orchestrator derives evidence. Blocks deterministic implementation of the audit file. Hardening-relevant (single-writer principle is foundational across CD-4). Above the 70 correctness threshold; kept.
+defect_class: writer-ownership-contradiction
+---
