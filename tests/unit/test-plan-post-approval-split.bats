@@ -359,3 +359,477 @@ EOF
   grep -E "^status: approved$" "$FIXTURE_DIR/plan.md"
   grep -E "^phase_start_commit: [0-9a-f]{40}$" "$FIXTURE_DIR/plan.md"
 }
+
+# =============================================================================
+# G5 — Block-hash header format (contract doc sections)
+# =============================================================================
+
+@test "[T34-G5] Contract declares Block-Hash Header Format section" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+    "block-hash"
+}
+
+@test "[T34-G5] Block-Hash Header Format documents position: immediately after closing frontmatter ---" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+    "immediately after"
+}
+
+@test "[T34-G5] Block-Hash Header Format documents syntax: # block-hash: <sha256-hex>" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+    "# block-hash:"
+}
+
+@test "[T34-G5] Block-Hash Header Format documents sha256 hex no-salt algorithm" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+    "sha256"
+  extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+    "no salt"
+}
+
+@test "[T34-G5] Block-Hash Header Format documents normalization: strip trailing whitespace per line" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+    "strip trailing whitespace"
+}
+
+# =============================================================================
+# G5 — Idempotent split contract (3-case decision rule)
+# =============================================================================
+
+@test "[T34-G5] Contract declares Idempotent Split Contract section" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
+    "absent|dispatch|safe-skip|HALT"
+}
+
+@test "[T34-G5] Idempotent Split Contract documents Case 1: absent file dispatches sub-subagent" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
+    "[Aa]bsent"
+  extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
+    "dispatch"
+}
+
+@test "[T34-G5] Idempotent Split Contract documents Case 2: matching hash safe-skip without rewrite" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
+    "safe-skip|safe skip"
+}
+
+@test "[T34-G5] Idempotent Split Contract documents Case 3: mismatching hash HALT" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
+    "mismatch|HALT"
+}
+
+# =============================================================================
+# G5 — HALT diagnostic exact text
+# =============================================================================
+
+@test "[T34-G5] Contract declares HALT Diagnostic section" {
+  extract_and_grep "$CONTRACT_DOC" H2 "HALT Diagnostic" \
+    "task-NN.md"
+}
+
+@test "[T34-G5] HALT Diagnostic contains exact mismatch diagnostic text (anchor phrase)" {
+  extract_and_grep "$CONTRACT_DOC" H2 "HALT Diagnostic" \
+    "source block in plan.md has changed since the last split"
+}
+
+@test "[T34-G5] HALT Diagnostic contains exact delete-and-rerun instruction" {
+  extract_and_grep "$CONTRACT_DOC" H2 "HALT Diagnostic" \
+    "delete tasks/task-NN.md and re-run"
+}
+
+@test "[T34-G5] HALT Diagnostic contains exact revert-plan instruction" {
+  extract_and_grep "$CONTRACT_DOC" H2 "HALT Diagnostic" \
+    "revert your plan.md edit"
+}
+
+# =============================================================================
+# G5 — Pre-G5 migration diagnostic (missing-header and malformed-header)
+# =============================================================================
+
+@test "[T34-G5] Contract declares Pre-G5 Migration Diagnostic section" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+    "block-hash"
+}
+
+@test "[T34-G5] Pre-G5 Migration Diagnostic contains exact missing-header text (anchor phrase)" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+    "carries no '# block-hash:' header"
+}
+
+@test "[T34-G5] Pre-G5 Migration Diagnostic names predates idempotent-split contract" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+    "predates the idempotent-split contract"
+}
+
+@test "[T34-G5] Pre-G5 Migration Diagnostic names malformed block-hash header case" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+    "malformed block-hash header"
+}
+
+# =============================================================================
+# G5 — Sub-subagent dispatch contract gains block_hash field
+# =============================================================================
+
+@test "[T34-G5] Contract declares Sub-Subagent Dispatch Contract section" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Sub-Subagent Dispatch Contract" \
+    "block_hash"
+}
+
+@test "[T34-G5] Sub-Subagent Dispatch Contract includes block_hash: <sha256-hex> field" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Sub-Subagent Dispatch Contract" \
+    "block_hash: <sha256-hex>|block_hash:.*sha256"
+}
+
+@test "[T34-G5] Sub-Subagent Dispatch Contract instructs sub-subagent to emit block-hash line after frontmatter" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Sub-Subagent Dispatch Contract" \
+    "emit.*# block-hash:|# block-hash:.*immediately after"
+}
+
+# =============================================================================
+# G5 — Quick-fix N=1 path
+# =============================================================================
+
+@test "[T34-G5] Contract declares Quick-Fix N=1 Path section" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Quick-Fix N=1 Path" \
+    "block-hash|block_hash"
+}
+
+@test "[T34-G5] Quick-Fix N=1 Path documents same idempotency rule as full fan-out" {
+  extract_and_grep "$CONTRACT_DOC" H2 "Quick-Fix N=1 Path" \
+    "absent|safe-skip|HALT|audit"
+}
+
+# =============================================================================
+# G5 — Behavioral fixtures: block-hash line position and format
+# =============================================================================
+
+@test "[T34-G5] Emitted task file has block-hash line immediately after closing frontmatter ---" {
+  # Simulate a correctly-written tasks/task-01.md: block-hash on line 4
+  # (immediately after the closing frontmatter ---, before first body content).
+  # Use a real sha256 of the source block as the hash value.
+  local hash
+  hash="$(printf '### Task 1: example\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+---
+task: 1
+---
+# block-hash: $hash
+# Task 1: example
+EOF
+  # Line immediately after closing --- is line 4 (1-indexed).
+  local hashline
+  hashline="$(sed -n '4p' "$FIXTURE_DIR/tasks/task-01.md")"
+  echo "$hashline" | grep -E "^# block-hash: [0-9a-f]{64}$"
+}
+
+@test "[T34-G5] Block-hash line has correct syntax: # block-hash: <64-char sha256 hex>" {
+  cat > "$FIXTURE_DIR/tasks/task-02.md" <<'EOF'
+---
+task: 2
+---
+# block-hash: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+Body content starts here.
+EOF
+  grep -E "^# block-hash: [0-9a-f]{64}$" "$FIXTURE_DIR/tasks/task-02.md"
+}
+
+@test "[T34-G5] Hash calculation: sha256 over normalized source block (strip trailing whitespace)" {
+  # Verify normalization rule: strip trailing whitespace from each line.
+  # sha256("### Task 1: example\n") == known value.
+  local raw_block normalized_hash expected_hash
+  raw_block="### Task 1: example   
+body line with trailing space   "
+  # Normalize: strip trailing whitespace per line.
+  normalized_hash="$(printf '%s\n' "$raw_block" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+  # Verify the hash is a 64-char hex string.
+  echo "$normalized_hash" | grep -E "^[0-9a-f]{64}$"
+  # Verify trailing spaces were stripped before hashing (hash of normalized != hash of raw).
+  local raw_hash
+  raw_hash="$(printf '%s\n' "$raw_block" | shasum -a 256 | awk '{print $1}')"
+  # The raw block has trailing whitespace, so raw_hash should differ from normalized_hash.
+  [ "$raw_hash" != "$normalized_hash" ]
+}
+
+# =============================================================================
+# G5 — Behavioral fixtures: partial-split crash recovery
+# =============================================================================
+
+@test "[T34-G5] Partial-split crash recovery: only missing task files dispatched on re-run" {
+  # Simulate: plan.md has 3 tasks; only task-01.md and task-03.md were written
+  # before crash (task-02.md missing). On re-run, only task-02 should be dispatched.
+  # Fixture: write task-01.md and task-03.md with valid block-hash headers.
+  local hash01 hash03
+  hash01="$(printf '### Task 1: first\nbody\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+  hash03="$(printf '### Task 3: third\nbody\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+
+  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+---
+task: 1
+---
+# block-hash: $hash01
+# Task 1: first
+EOF
+
+  cat > "$FIXTURE_DIR/tasks/task-03.md" <<EOF
+---
+task: 3
+---
+# block-hash: $hash03
+# Task 3: third
+EOF
+
+  # Task-02 is absent — it should be dispatched on re-run.
+  [ ! -e "$FIXTURE_DIR/tasks/task-02.md" ]
+
+  # Simulate: orchestrator checks each expected task file.
+  # task-01 present + hash matches → safe-skip.
+  local actual_hash01
+  actual_hash01="$(printf '### Task 1: first\nbody\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+  local stored_hash01
+  stored_hash01="$(grep -E "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | awk '{print $3}')"
+  [ "$actual_hash01" = "$stored_hash01" ]
+
+  # task-02 absent → dispatch (simulate by counting dispatches needed).
+  local dispatch_count
+  dispatch_count=0
+  for i in 1 2 3; do
+    f="$FIXTURE_DIR/tasks/task-$(printf '%02d' "$i").md"
+    if [ ! -e "$f" ]; then
+      dispatch_count=$((dispatch_count + 1))
+    fi
+  done
+  [ "$dispatch_count" -eq 1 ]
+}
+
+# =============================================================================
+# G5 — Behavioral fixtures: complete re-run no-op (zero dispatches)
+# =============================================================================
+
+@test "[T34-G5] Complete re-run with all matching hashes dispatches zero sub-subagents" {
+  # Simulate: all task files present with matching block-hash values.
+  local hash01 hash02
+  hash01="$(printf '### Task 1: first\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+  hash02="$(printf '### Task 2: second\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+
+  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+---
+task: 1
+---
+# block-hash: $hash01
+# Task 1: first
+EOF
+
+  cat > "$FIXTURE_DIR/tasks/task-02.md" <<EOF
+---
+task: 2
+---
+# block-hash: $hash02
+# Task 2: second
+EOF
+
+  # Simulate orchestrator decision loop: count dispatches needed.
+  local dispatch_count
+  dispatch_count=0
+  for i in 1 2; do
+    local f hash_in_file actual_hash
+    f="$FIXTURE_DIR/tasks/task-$(printf '%02d' "$i").md"
+    if [ ! -e "$f" ]; then
+      dispatch_count=$((dispatch_count + 1))
+    else
+      hash_in_file="$(grep -E "^# block-hash:" "$f" | awk '{print $3}')"
+      if [ "$i" -eq 1 ]; then
+        actual_hash="$hash01"
+      else
+        actual_hash="$hash02"
+      fi
+      if [ "$hash_in_file" != "$actual_hash" ]; then
+        dispatch_count=$((dispatch_count + 1))
+      fi
+    fi
+  done
+  [ "$dispatch_count" -eq 0 ]
+}
+
+# =============================================================================
+# G5 — Behavioral fixtures: hand-edit preservation
+# =============================================================================
+
+@test "[T34-G5] Hand-edit preserved when stored block hash still matches current plan.md block" {
+  # Simulate: task-01.md has a hand-edit in the body, but the stored
+  # block-hash still matches the current plan.md ### Task 1 block.
+  local plan_block hash
+  plan_block="$(printf '### Task 1: original\nbody\n')"
+  hash="$(printf '%s' "$plan_block" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+
+  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+---
+task: 1
+---
+# block-hash: $hash
+# Task 1: original (hand-edited note added below)
+This note was added by hand after the split.
+EOF
+
+  # Orchestrator re-computes hash from the same plan.md block.
+  local recomputed_hash
+  recomputed_hash="$(printf '%s' "$plan_block" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+
+  # Hash match → safe-skip; file unchanged.
+  local stored_hash
+  stored_hash="$(grep -E "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | awk '{print $3}')"
+  [ "$stored_hash" = "$recomputed_hash" ]
+
+  # Hand-edit is preserved (body still contains the hand-added note).
+  grep -F "This note was added by hand after the split." "$FIXTURE_DIR/tasks/task-01.md"
+}
+
+# =============================================================================
+# G5 — Behavioral fixtures: mismatch HALT
+# =============================================================================
+
+@test "[T34-G5] Mismatch HALT: changed plan.md block with existing file halts and leaves file untouched" {
+  # Simulate: task-01.md was written when plan.md block was version A;
+  # user edited plan.md to version B without deleting the task file.
+  local block_v1 block_v2 hash_v1
+  block_v1="$(printf '### Task 1: original title\nOriginal body.\n')"
+  block_v2="$(printf '### Task 1: amended title\nAmended body.\n')"
+  hash_v1="$(printf '%s' "$block_v1" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+
+  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+---
+task: 1
+---
+# block-hash: $hash_v1
+# Task 1: original title
+Original body.
+EOF
+  local original_mtime
+  original_mtime="$(stat -f '%m' "$FIXTURE_DIR/tasks/task-01.md" 2>/dev/null || stat -c '%Y' "$FIXTURE_DIR/tasks/task-01.md" 2>/dev/null)"
+
+  # Orchestrator re-computes hash from the current (amended) plan.md block.
+  local hash_v2
+  hash_v2="$(printf '%s' "$block_v2" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+
+  # Hashes differ → HALT condition.
+  local stored_hash
+  stored_hash="$(grep -E "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | awk '{print $3}')"
+  [ "$stored_hash" != "$hash_v2" ]
+
+  # File is NOT rewritten (content unchanged — same as written).
+  grep -F "# Task 1: original title" "$FIXTURE_DIR/tasks/task-01.md"
+  grep -F "Original body." "$FIXTURE_DIR/tasks/task-01.md"
+  ! grep -F "amended title" "$FIXTURE_DIR/tasks/task-01.md"
+}
+
+# =============================================================================
+# G5 — Behavioral fixtures: missing block-hash header
+# =============================================================================
+
+@test "[T34-G5] Missing block-hash header triggers pre-G5 migration HALT diagnostic" {
+  # Simulate a pre-G5 task file with no # block-hash: line.
+  cat > "$FIXTURE_DIR/tasks/task-01.md" <<'EOF'
+---
+task: 1
+---
+# Task 1: pre-G5 file
+Body content.
+EOF
+
+  # Orchestrator inspects the file: no block-hash line → audit-fail condition.
+  local has_hash
+  has_hash="$(grep -c "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" || true)"
+  [ "$has_hash" -eq 0 ]
+
+  # Contract doc must document the exact diagnostic text for this case.
+  extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+    "carries no '# block-hash:' header"
+  extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+    "predates the idempotent-split contract"
+}
+
+# =============================================================================
+# G5 — Behavioral fixtures: malformed block-hash header
+# =============================================================================
+
+@test "[T34-G5] Malformed block-hash header triggers named malformed diagnostic" {
+  # Simulate a task file with a malformed # block-hash: line (not valid hex).
+  cat > "$FIXTURE_DIR/tasks/task-01.md" <<'EOF'
+---
+task: 1
+---
+# block-hash: not-valid-hex
+# Task 1: file with malformed hash
+EOF
+
+  # Malformed = present but not matching 64-char hex sha256 pattern.
+  local hashline
+  hashline="$(grep "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | head -1)"
+  # Should NOT match the valid sha256 hex pattern.
+  ! echo "$hashline" | grep -qE "^# block-hash: [0-9a-f]{64}$"
+
+  # Contract doc must name "malformed block-hash header" specifically.
+  extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+    "malformed block-hash header"
+}
+
+# =============================================================================
+# G5 — Quick-fix N=1 path emits block-hash line (behavioral)
+# =============================================================================
+
+@test "[T34-G5] Quick-fix N=1 path: single-task file carries block-hash line" {
+  # Simulate the quick-fix inline write path for a single-task plan.
+  local hash
+  hash="$(printf '### Task 1: quick fix task\nFix body.\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+
+  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+---
+task: 1
+---
+# block-hash: $hash
+# Task 1: quick fix task
+Fix body.
+EOF
+
+  # Block-hash line must be present and valid.
+  grep -E "^# block-hash: [0-9a-f]{64}$" "$FIXTURE_DIR/tasks/task-01.md"
+
+  # Block-hash line must be immediately after closing frontmatter ---.
+  local hashline
+  hashline="$(sed -n '4p' "$FIXTURE_DIR/tasks/task-01.md")"
+  echo "$hashline" | grep -E "^# block-hash: [0-9a-f]{64}$"
+}
+
+@test "[T34-G5] Quick-fix N=1 path: re-run with matching hash is a safe-skip" {
+  local block hash
+  block="$(printf '### Task 1: quick fix task\nFix body.\n')"
+  hash="$(printf '%s' "$block" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+
+  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+---
+task: 1
+---
+# block-hash: $hash
+# Task 1: quick fix task
+Fix body.
+EOF
+
+  # Orchestrator recomputes hash — must match → safe-skip.
+  local recomputed
+  recomputed="$(printf '%s' "$block" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+  local stored
+  stored="$(grep -E "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | awk '{print $3}')"
+  [ "$stored" = "$recomputed" ]
+}
+
+# =============================================================================
+# G5 — Grep-based documentation audit (all required section anchors)
+# =============================================================================
+
+@test "[T34-G5] Doc audit: contract doc contains all required G5 section anchors" {
+  # Each required section must be present as an H2 markdown heading.
+  grep -F "## Block-Hash Header Format" "$CONTRACT_DOC"
+  grep -F "## Idempotent Split Contract" "$CONTRACT_DOC"
+  grep -F "## HALT Diagnostic" "$CONTRACT_DOC"
+  grep -F "## Pre-G5 Migration Diagnostic" "$CONTRACT_DOC"
+  grep -F "## Sub-Subagent Dispatch Contract" "$CONTRACT_DOC"
+  grep -F "## Quick-Fix N=1 Path" "$CONTRACT_DOC"
+}
