@@ -1,0 +1,3 @@
+## Verifier Filter Rule
+
+`scripts/verifier-fan-in.sh <round-dir>` applies per-`change_type` threshold floors declared as header constants in the script to each finding's verifier sidecar and writes `<round-dir>/kept-findings.txt` (one absolute finding-file path per kept finding). Threshold values are authoritative in the `scripts/verifier-fan-in.sh` header constants only — do not carry them inline in skill prose; any restatement creates a drift target the script was built to eliminate.
