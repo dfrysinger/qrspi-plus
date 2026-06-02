@@ -1,5 +1,6 @@
 ---
 created: 2026-05-30
+phase: 1
 pipeline: full
 codex_reviews: true
 route:
@@ -17,6 +18,8 @@ route:
 verifier_enabled: true
 scope_tagger_enabled: true
 visual_fidelity_required: false
+review_depth: deep
+review_mode: loop_until_clean
 ---
 
 # Run Config: qrspi-plus v0.7.2
