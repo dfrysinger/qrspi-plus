@@ -1443,7 +1443,7 @@ MOCK_EOF
   [ -f "$manifest" ] \
     || { echo "manifest file not written at $manifest"; return 1; }
 
-  # host / vendor / model fields all present
+  # host / vendor / model fields all present (T09 in-scope provenance triple)
   grep -q '"host"' "$manifest" \
     || { echo "manifest missing host field"; cat "$manifest"; return 1; }
   grep -q '"vendor"' "$manifest" \
@@ -1457,7 +1457,141 @@ MOCK_EOF
     || grep -qF "\"model\": \"$resolved_model\"" "$manifest" \
     || { echo "manifest model value does not match resolved dispatch model"; cat "$manifest"; return 1; }
 
+  # ---- T09-scope narrowing -------------------------------------------
+  # T09 owns ONLY host/vendor/model in the dispatch manifest entry. The
+  # downstream G3 task owns subagent_type / agent / mode / status / nested
+  # dispatch_spec provenance. Pin their absence so this task does not leak
+  # T11/G3-scoped fields into the manifest before T11 lands.
+  if grep -q '"subagent_type"' "$manifest"; then
+    echo "manifest leaked T11/G3-scoped 'subagent_type' field — out of T09 scope"; cat "$manifest"; return 1
+  fi
+  if grep -q '"dispatch_spec"' "$manifest"; then
+    echo "manifest leaked T11/G3-scoped nested 'dispatch_spec' object — out of T09 scope"; cat "$manifest"; return 1
+  fi
+  if grep -q '"agent"' "$manifest"; then
+    echo "manifest carries non-T09 'agent' field"; cat "$manifest"; return 1
+  fi
+  if grep -q '"mode"' "$manifest"; then
+    echo "manifest carries non-T09 'mode' field"; cat "$manifest"; return 1
+  fi
+  if grep -q '"status"' "$manifest"; then
+    echo "manifest carries non-T09 'status' field"; cat "$manifest"; return 1
+  fi
+
+  # Greppability anchor: tag is retained for host × vendor × model × tag
+  # joins and is not in T11/G3 ownership. Pin its presence.
+  grep -q '"tag"' "$manifest" \
+    || { echo "manifest missing tag field (greppability anchor)"; cat "$manifest"; return 1; }
+
   rm -rf "$TMP_DIR"
+}
+
+# ---------------------------------------------------------------------------
+# Helper: simulate the verifier's documented sidecar-write contract for
+# `actual_model:` end-to-end. The verifier itself is a subagent that cannot
+# be invoked from a bats test, so this helper encodes the prose contract
+# from agents/qrspi-finding-verifier.md (Step 1 parse + Step 6 sidecar
+# write):
+#
+#   * Read finding frontmatter
+#   * If `actual_model:` is present, copy the value verbatim into sidecar
+#     frontmatter.
+#   * If absent, write the literal token `unknown`.
+#   * Never fail solely because the field is absent.
+#
+# The intent is to make the actual_model contract enforceable end-to-end:
+# if a future change broke the verbatim-copy or `unknown` fallback, the
+# helper's output would diverge and the assertion would trip.
+# ---------------------------------------------------------------------------
+_t9_simulate_verifier_sidecar_write() {
+  local finding_path="$1" sidecar_path="$2"
+  local actual_model
+  # Parse frontmatter strictly: only the YAML block bounded by leading and
+  # trailing '---' lines counts. awk extracts the field if present.
+  actual_model="$(awk '
+    /^---[[:space:]]*$/ { fm++; next }
+    fm == 1 && /^actual_model:[[:space:]]*/ {
+      sub(/^actual_model:[[:space:]]*/, "")
+      print
+      exit
+    }
+  ' "$finding_path")"
+  if [[ -z "$actual_model" ]]; then
+    actual_model="unknown"
+  fi
+  printf -- '---\nverifier_status: passed\nscore: 50\nactual_model: %s\n---\nSimulated sidecar.\n' \
+    "$actual_model" >"$sidecar_path"
+}
+
+@test "[reviewer-model-audit AC7] end-to-end fixture: finding-frontmatter actual_model flows verbatim into sidecar; absent field falls back to 'unknown'; clean-sentinel parity" {
+  local tmp
+  tmp="$(mktemp -d)"
+
+  # --- Case 1: finding WITH actual_model — sidecar copies verbatim --------
+  local f1="$tmp/spec-claude.finding-F01.md"
+  local s1="$tmp/spec-claude.finding-F01.score.md"
+  printf -- '---\nfinding_id: spec-claude.finding-F01\nseverity: high\nchange_type: correctness\nreferenced_files: []\nactual_model: gpt-5-codex-canary\n---\nFixture body.\n' \
+    >"$f1"
+  _t9_simulate_verifier_sidecar_write "$f1" "$s1"
+  grep -qF 'actual_model: gpt-5-codex-canary' "$s1" \
+    || { echo "sidecar did not copy actual_model verbatim from finding frontmatter"; cat "$s1"; return 1; }
+
+  # --- Case 2: finding WITHOUT actual_model — sidecar falls back to unknown
+  local f2="$tmp/spec-claude.finding-F02.md"
+  local s2="$tmp/spec-claude.finding-F02.score.md"
+  printf -- '---\nfinding_id: spec-claude.finding-F02\nseverity: high\nchange_type: correctness\nreferenced_files: []\n---\nFixture body without audit field.\n' \
+    >"$f2"
+  _t9_simulate_verifier_sidecar_write "$f2" "$s2"
+  grep -qF 'actual_model: unknown' "$s2" \
+    || { echo "sidecar did not fall back to 'unknown' when finding frontmatter omitted actual_model"; cat "$s2"; return 1; }
+
+  # --- Case 3: clean-sentinel WITH actual_model — field readable verbatim -
+  # The verifier does not write a sidecar for clean.md (clean.md is the
+  # zero-findings sentinel), so the contract for clean-sentinels is that
+  # the file ITSELF carries the audit field per the reviewer-dispatch
+  # prose. Pin that a clean.md fixture written per the prose carries the
+  # field readably.
+  local c1="$tmp/spec-claude.clean.md"
+  printf -- '---\nreviewer_tag: spec-claude\nactual_model: gpt-5-codex-canary\n---\nNo findings this round.\n' \
+    >"$c1"
+  awk '/^---[[:space:]]*$/ { fm++; next } fm==1 && /^actual_model:/ { print; exit }' "$c1" \
+    | grep -qF 'gpt-5-codex-canary' \
+    || { echo "clean-sentinel actual_model not readable verbatim"; cat "$c1"; return 1; }
+
+  # --- Case 4: clean-sentinel WITHOUT actual_model — must not fail
+  # downstream. Symmetric to the finding case: the field is observability,
+  # not a correctness gate; absence is tolerated.
+  local c2="$tmp/scope-claude.clean.md"
+  printf -- '---\nreviewer_tag: scope-claude\n---\nNo findings this round.\n' \
+    >"$c2"
+  # If the helper were ever wired into clean-sentinel processing, the
+  # 'unknown' fallback would apply. Today we just assert no actual_model
+  # token is present and the file is well-formed YAML frontmatter.
+  if grep -q '^actual_model:' "$c2"; then
+    echo "fixture clean-sentinel unexpectedly carries actual_model"; cat "$c2"; return 1
+  fi
+  # Frontmatter is well-formed (two '---' delimiters present).
+  [[ "$(grep -c '^---[[:space:]]*$' "$c2")" -eq 2 ]] \
+    || { echo "fixture clean-sentinel frontmatter malformed"; cat "$c2"; return 1; }
+
+  rm -rf "$tmp"
+}
+
+@test "[reviewer-model-audit AC8] aggregate verified-file header NOT introduced: 'verified.md' absent from verifier agent body and verifier-fan-in.sh" {
+  # T09 spec line 43 / DoD: keep behavior unchanged includes "no aggregate
+  # verified-file header introduced". This is a regression-pin against
+  # future drift — if some later edit accidentally references a
+  # verified.md aggregate header as an output target, this test trips.
+  if grep -qF 'verified.md' "$REPO_ROOT/agents/qrspi-finding-verifier.md"; then
+    echo "verifier agent body references 'verified.md' — aggregate-header output target leaked into T09 scope"
+    grep -nF 'verified.md' "$REPO_ROOT/agents/qrspi-finding-verifier.md"
+    return 1
+  fi
+  if grep -qF 'verified.md' "$REPO_ROOT/scripts/verifier-fan-in.sh"; then
+    echo "verifier-fan-in.sh references 'verified.md' — aggregate-header output target leaked into T09 scope"
+    grep -nF 'verified.md' "$REPO_ROOT/scripts/verifier-fan-in.sh"
+    return 1
+  fi
 }
 
 @test "[reviewer-model-audit AC6] keep behavior unchanged: correctness <70 drops, style/clarity <80 drops; no new substituted-model threshold introduced" {

@@ -558,8 +558,6 @@ fi
 emit_dispatch_manifest_entry() {
   local round_dir="$OUTPUT_DIR"
   local manifest="$round_dir/.dispatch-manifest.json"
-  local agent_name
-  agent_name="$(basename "$AGENT_FILE" .md)"
   local detected_host
   detected_host="$(detect_host)"
 
@@ -567,9 +565,19 @@ emit_dispatch_manifest_entry() {
   # untrusted input). The vendor is fixed to 'openai-codex' for this script;
   # the post-rename dispatch script (scripts/dispatch-agent.sh) handles
   # multi-vendor entries via _resolve-lib.sh.
+  #
+  # T09 scope: record ONLY host/vendor/model — the resolved
+  # provenance triple needed to close the host × vendor × model audit loop
+  # against finding/clean-sentinel actual_model values. The greppability
+  # anchor `tag` is retained to enable host × vendor × model × tag joins.
+  # The downstream G3 task (T11) owns the wider provenance schema —
+  # subagent_type / agent / mode / status / nested dispatch_spec — and is
+  # responsible for landing those fields once the rename + multi-vendor
+  # dispatcher are in place. Emitting them here would pre-load T11 scope
+  # and is explicitly out-of-scope per task-09.md line 32.
   local entry
-  printf -v entry '{"tag":"%s","agent":"%s","mode":"third_party","status":"dispatched","dispatch_spec":{"subagent_type":"%s","host":"%s","vendor":"openai-codex","model":"%s"}}' \
-    "$REVIEWER_TAG" "$agent_name" "$agent_name" "$detected_host" "$MODEL"
+  printf -v entry '{"tag":"%s","host":"%s","vendor":"openai-codex","model":"%s"}' \
+    "$REVIEWER_TAG" "$detected_host" "$MODEL"
 
   mkdir -p "$round_dir"
   local tmp="${manifest}.tmp.$$"
