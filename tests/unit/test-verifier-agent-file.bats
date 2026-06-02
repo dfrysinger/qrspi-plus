@@ -312,3 +312,92 @@
   echo "$section" | grep -qiE 'reviewer.authored|reviewer-authored intent' \
     || { echo "Informational Findings section missing 'reviewer-authored' framing in confused-deputy guard"; return 1; }
 }
+
+# ── R2 Fix E: sidecar field-ordering invariant (load-bearing security pin) ─
+
+@test "sidecar field-order: success template has score: BEFORE defect_class:" {
+  # Extract the success-path fenced markdown block following 'On success:'.
+  local block
+  block=$(awk '
+    /^[[:space:]]*On success:[[:space:]]*$/ { flag=1; next }
+    flag && /^[[:space:]]*```markdown[[:space:]]*$/ { in_block=1; next }
+    in_block && /^[[:space:]]*```[[:space:]]*$/ { exit }
+    in_block { print }
+  ' agents/qrspi-finding-verifier.md)
+  [ -n "$block" ] || { echo "could not locate On-success sidecar template block"; return 1; }
+  local score_line defect_line
+  score_line=$(echo "$block" | grep -nE '^\s*score:' | head -1 | cut -d: -f1)
+  defect_line=$(echo "$block" | grep -nE '^\s*defect_class:' | head -1 | cut -d: -f1)
+  [ -n "$score_line" ] || { echo "no score: in success template"; return 1; }
+  [ -n "$defect_line" ] || { echo "no defect_class: in success template"; return 1; }
+  [ "$score_line" -lt "$defect_line" ] \
+    || { echo "success template field order violated: score: at line $score_line, defect_class: at line $defect_line (score MUST precede defect_class)"; return 1; }
+}
+
+@test "sidecar field-order: failure template has defect_class: as the LAST frontmatter field" {
+  # Extract the failure-path fenced markdown block following 'On failure'.
+  local block
+  block=$(awk '
+    /^[[:space:]]*On failure/ { flag=1; next }
+    flag && /^[[:space:]]*```markdown[[:space:]]*$/ { in_block=1; next }
+    in_block && /^[[:space:]]*```[[:space:]]*$/ { exit }
+    in_block { print }
+  ' agents/qrspi-finding-verifier.md)
+  [ -n "$block" ] || { echo "could not locate On-failure sidecar template block"; return 1; }
+  # Extract frontmatter lines (between the two --- markers).
+  local fm
+  fm=$(echo "$block" | awk '/^[[:space:]]*---[[:space:]]*$/{n++; next} n==1{print}')
+  [ -n "$fm" ] || { echo "could not extract failure-template frontmatter"; return 1; }
+  local last_field
+  last_field=$(echo "$fm" | grep -E '^[[:space:]]*[a-z_]+:' | tail -1 | sed -E 's/^[[:space:]]*([a-z_]+):.*/\1/')
+  [ "$last_field" = "defect_class" ] \
+    || { echo "failure template's last frontmatter field is '$last_field' — must be 'defect_class' per the load-bearing field-ordering invariant"; echo "frontmatter:"; echo "$fm"; return 1; }
+}
+
+@test "sidecar field-order: agent body documents the load-bearing invariant" {
+  grep -qE 'Field.ordering invariant|score:.*MUST precede.*defect_class|defect_class:.*MUST appear LAST' \
+    agents/qrspi-finding-verifier.md \
+    || { echo "agent body does not document the load-bearing field-ordering invariant"; return 1; }
+}
+
+@test "sidecar field-order: verifier-fan-in.sh header documents the invariant" {
+  # The script's documentation block must mirror the agent body so future
+  # parser-replacement tooling inherits the same security pin.
+  grep -qE 'field.ordering invariant|score:.*MUST precede.*defect_class' \
+    scripts/verifier-fan-in.sh \
+    || { echo "verifier-fan-in.sh header does not document the field-ordering invariant"; return 1; }
+}
+
+# ── R2 Fix H: failure-class taxonomy (best-effort required on failure) ────
+
+@test "defect_class: failure-path classification names the failure-class taxonomy" {
+  # Required tokens from the taxonomy must appear in the agent body so
+  # verifiers have a closed vocabulary to draw from on the failure path.
+  local body
+  body=$(cat agents/qrspi-finding-verifier.md)
+  for tok in 'verifier-crash' 'infrastructure-failure' 'file-missing' 'rate-limited'; do
+    echo "$body" | grep -qF "$tok" \
+      || { echo "failure-class taxonomy missing token: $tok"; return 1; }
+  done
+  # The 'best-effort' or 'reserve unspecified' phrasing must appear so the
+  # promiscuous-unspecified anti-pattern is explicitly forbidden.
+  echo "$body" | grep -qiE 'best.effort|reserve.*unspecified' \
+    || { echo "agent body does not require best-effort failure classification (sf-claude R2 F03)"; return 1; }
+}
+
+# ── R2 Fix I: on-error branch (procedure must fall through to a sidecar) ──
+
+@test "verifier procedure documents on-error fall-through to failure-sidecar template" {
+  # The on-error paragraph must appear BEFORE step 1 of the procedure.
+  local before_step1
+  before_step1=$(awk '
+    /^## Procedure/ { in_proc=1; next }
+    in_proc && /^1\. \*\*Read `<finding_file_path>`\*\*/ { exit }
+    in_proc { print }
+  ' agents/qrspi-finding-verifier.md)
+  [ -n "$before_step1" ] || { echo "could not extract pre-step-1 procedure prose"; return 1; }
+  echo "$before_step1" | grep -qiE 'on.any.unrecoverable error|on.error' \
+    || { echo "pre-step-1 procedure prose does not introduce the on-error branch"; return 1; }
+  echo "$before_step1" | grep -qiE 'never return without writing a sidecar|Never return.*sidecar' \
+    || { echo "on-error paragraph missing 'never return without writing a sidecar' guarantee"; return 1; }
+}

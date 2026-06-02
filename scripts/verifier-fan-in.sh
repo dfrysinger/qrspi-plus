@@ -35,6 +35,17 @@
 #   sidecar_unreadable         — sidecar file exists but cannot be read (permission/I/O error)
 #   score_unparseable          — sidecar present but `score:` absent or not 1–3 decimal digits
 #   finding_unreadable         — finding file exists but cannot be read (permission/I/O error)
+#
+# Sidecar field-ordering invariant (load-bearing security pin):
+# `score:` MUST precede `defect_class:` in every sidecar, and `defect_class:`
+# MUST appear LAST among the YAML frontmatter fields. The ordering bounds
+# YAML duplicate-key drift: pyyaml-style "last value wins" parsers used by
+# future cluster-analysis tooling would let a malformed `defect_class:`
+# value containing an injected `score:` on a subsequent line silently
+# override the real score. This script already extracts the FIRST `score:`
+# match (awk `print val; exit`), so the invariant is doubly enforced today;
+# future YAML-parser consumers inherit the same guarantee. The instruction
+# is documented in agents/qrspi-finding-verifier.md (§ Procedure step 6).
 
 set -euo pipefail
 

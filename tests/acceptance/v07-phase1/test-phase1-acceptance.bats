@@ -1974,7 +1974,7 @@ _t9_simulate_verifier_sidecar_write() {
 #         defect_class, score, threshold).
 # ===========================================================================
 
-@test "[G28 AC1] verifier agent body documents defect_class field + regex ^[a-z0-9][a-z0-9-]*$" {
+@test "[AC1] verifier agent body documents defect_class field + regex ^[a-z0-9][a-z0-9-]*$" {
   local agent="$REPO_ROOT/agents/qrspi-finding-verifier.md"
   grep -qF 'defect_class:' "$agent" \
     || { echo "defect_class: token absent from verifier agent body"; return 1; }
@@ -1985,7 +1985,7 @@ _t9_simulate_verifier_sidecar_write() {
     || { echo "defect_class regex ^[a-z0-9][a-z0-9-]*\$ not documented in verifier agent"; return 1; }
 }
 
-@test "[G28 AC2] verifier agent body documents the ≤30-character cap on defect_class tokens" {
+@test "[AC2] verifier agent body documents the ≤30-character cap on defect_class tokens" {
   local agent="$REPO_ROOT/agents/qrspi-finding-verifier.md"
   # The cap MUST appear (≤30, <=30, or '30 char' phrasing) AND it must be
   # near the defect_class documentation — not a stray match elsewhere.
@@ -1999,15 +1999,18 @@ _t9_simulate_verifier_sidecar_write() {
     || { echo "≤30-character cap on defect_class not documented near the rubric step"; return 1; }
 }
 
-@test "[G28 AC3] verifier agent body documents 'defect_class: unspecified' fallback" {
+@test "[AC3] verifier agent body documents 'defect_class: unspecified' fallback" {
   grep -qE 'defect_class: *unspecified' "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
     || { echo "literal 'defect_class: unspecified' fallback not documented"; return 1; }
 }
 
-@test "[G28 AC4] sub-threshold findings cannot reach kept-findings.txt + SKILL.md forbids override" {
+@test "[AC4] sub-threshold findings cannot reach kept-findings.txt + SKILL.md forbids override" {
   # Behavior half: clarity-60 + correctness-65 are dropped end-to-end.
   local tmp
   tmp="$(mktemp -d)"
+  # Trap-based cleanup: fires on every exit path (success, return 1, abort)
+  # so partial-failure runs do not leak temp directories.
+  trap 'rm -rf "$tmp"' EXIT
 
   # clarity at 60 (well below 80 floor) — sub-threshold drop
   _t8_write_finding_pair "$tmp" "spec-claude.finding-F01" clarity 60 "" "[]" "Sub-threshold clarity finding."
@@ -2018,18 +2021,24 @@ _t9_simulate_verifier_sidecar_write() {
   [ "$status" -eq 0 ] \
     || { echo "verifier-fan-in.sh exited $status"; cat "$tmp/.verifier-fan-in-audit.json" 2>/dev/null; return 1; }
 
+  # Precondition pin: kept-findings.txt MUST exist after fan-in. Without this
+  # check, `grep -q` exits 2 on a missing file (file-not-found) and the if-
+  # branch silently skips — producing a vacuous-pass test that hides a real
+  # regression. (Anti-pattern already documented at L1880; AC4 must not
+  # reintroduce it.)
+  [ -f "$tmp/kept-findings.txt" ] \
+    || { echo "kept-findings.txt was not written by fan-in script"; return 1; }
+
   # NEITHER F01 nor F02 may appear in kept-findings.txt — the script is the
   # sole source of truth for the kept set, and there is NO override path.
-  if grep -q "spec-claude.finding-F01" "$tmp/kept-findings.txt" 2>/dev/null; then
+  if grep -q "spec-claude.finding-F01" "$tmp/kept-findings.txt"; then
     echo "sub-threshold clarity-60 finding reached kept-findings.txt — override path leaked"
     return 1
   fi
-  if grep -q "spec-claude.finding-F02" "$tmp/kept-findings.txt" 2>/dev/null; then
+  if grep -q "spec-claude.finding-F02" "$tmp/kept-findings.txt"; then
     echo "sub-threshold correctness-65 finding reached kept-findings.txt — override path leaked"
     return 1
   fi
-
-  rm -rf "$tmp"
 
   # Prose half: SKILL.md dispositions writer prose forbids keeping
   # sub-threshold findings via orchestrator override.
@@ -2040,7 +2049,7 @@ _t9_simulate_verifier_sidecar_write() {
     || { echo "prohibition (MUST NOT … override) not documented"; return 1; }
 }
 
-@test "[G28 AC5] SKILL.md documents optional ## Sub-Threshold Observations H2 with spec-pinned YAML template" {
+@test "[AC5] SKILL.md documents optional ## Sub-Threshold Observations H2 with spec-pinned YAML template" {
   local skill="$SKILLS/using-qrspi/SKILL.md"
   # H2 heading literal token.
   grep -qF '## Sub-Threshold Observations' "$skill" \
@@ -2076,10 +2085,28 @@ _t9_simulate_verifier_sidecar_write() {
     || { echo "observations template missing 'finding_paths:' list field"; printf '%s\n' "$yaml"; return 1; }
   printf '%s\n' "$yaml" | grep -qE 'defect_class:' \
     || { echo "observations template missing 'defect_class:' field"; printf '%s\n' "$yaml"; return 1; }
-  printf '%s\n' "$yaml" | grep -qE 'score:' \
-    || { echo "observations template missing 'score:' field"; printf '%s\n' "$yaml"; return 1; }
+  printf '%s\n' "$yaml" | grep -qE 'representative_score:' \
+    || { echo "observations template missing 'representative_score:' field (renamed from 'score:' in R2 — per-finding precision belongs in finding_paths[] sidecars)"; printf '%s\n' "$yaml"; return 1; }
   printf '%s\n' "$yaml" | grep -qE 'threshold:' \
     || { echo "observations template missing 'threshold:' field"; printf '%s\n' "$yaml"; return 1; }
+
+  # Bare 'score:' (without the 'representative_' prefix) is the old field name
+  # and MUST NOT appear — the rename is load-bearing because per-finding precision
+  # is intentionally NOT preserved in this aggregate template.
+  if printf '%s\n' "$yaml" | grep -qE '^\s*score:'; then
+    echo "observations template still uses bare 'score:' field — must be 'representative_score:' (R2 Fix A)"
+    printf '%s\n' "$yaml"
+    return 1
+  fi
+
+  # Path-traversal hardening (sec-claude R2 F02): finding_paths[] values MUST
+  # be relative paths within the round-NN/ directory; '../' components and
+  # absolute paths leak the round artifact surface.
+  if printf '%s\n' "$yaml" | grep -qE '(\.\./|^\s*-\s*/)'; then
+    echo "observations template contains '../' or absolute-path entry in finding_paths[]"
+    printf '%s\n' "$yaml"
+    return 1
+  fi
 
   # Strict spec-shape pin: the spec defines a flat field list. The
   # `contributing_findings:` substructure was implementation drift in R1
@@ -2095,4 +2122,14 @@ _t9_simulate_verifier_sidecar_write() {
     printf '%s\n' "$yaml"
     return 1
   fi
+
+  # Fix F (sec-claude R2 F02): SKILL prose documents the path-traversal
+  # constraint on finding_paths[].
+  grep -qE 'finding_paths.*MUST NOT contain.*\.\./|relative paths within the current `round-NN/`' "$skill" \
+    || { echo "SKILL.md does not document the finding_paths[] path-traversal constraint"; return 1; }
+
+  # Fix G (sec-claude R2 F03): SKILL prose documents that summary: MUST be
+  # double-quoted and that internal " characters MUST be escaped.
+  grep -qE 'summary:.*MUST be enclosed in double quotes' "$skill" \
+    || { echo "SKILL.md does not document the summary: double-quoting rule"; return 1; }
 }
