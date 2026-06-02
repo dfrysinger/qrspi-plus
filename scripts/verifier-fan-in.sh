@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/verifier-fan-in.sh — CD-4 canonical verifier fan-in filter (G12).
+# scripts/verifier-fan-in.sh — CD-4 canonical verifier fan-in filter.
 #
 # Usage: scripts/verifier-fan-in.sh <round-dir>
 #
@@ -35,6 +35,14 @@
 #   score_unparseable          — sidecar present but `score:` absent or non-integer
 
 set -euo pipefail
+
+# ---- Dependency check -------------------------------------------------------
+# jq is required for record_halt and write_audit.  Fail loudly at startup
+# rather than silently crashing mid-loop if jq is absent.
+command -v jq >/dev/null 2>&1 || {
+  echo "verifier-fan-in: jq is required but not found in PATH" >&2
+  exit 2
+}
 
 # ---- Canonical enum + threshold constants (single source of truth) -------
 
@@ -184,6 +192,16 @@ KEPT_PATHS=()
 
 for finding in "${FINDINGS[@]}"; do
   SCORED=$((SCORED + 1))
+
+  # Readability check: a permission or I/O error on the finding file must be
+  # reported as a diagnostic — not silently collapsed into missing_change_type.
+  if [[ ! -r "$finding" ]]; then
+    echo "verifier-fan-in: cannot read finding file: $finding" >&2
+    fid="${finding##*/}"; fid="${fid%.md}"
+    record_halt "$fid" missing_change_type
+    continue
+  fi
+
   fid=$(finding_id_for "$finding")
 
   # 1. change_type required
@@ -214,14 +232,17 @@ for finding in "${FINDINGS[@]}"; do
     continue
   fi
 
-  # 3. score must be a parseable integer 0..100
+  # 3. score must be a parseable decimal integer 0..100
+  # Use 10# prefix to force decimal interpretation: a bare $((070)) would be
+  # treated as octal 56 by bash; $((089)) crashes under set -e.  The regex
+  # allows only non-negative values (scores are always 0-100).
   raw_score=$(extract_frontmatter_field "$sidecar" score || true)
-  if [[ -z "${raw_score:-}" ]] || ! [[ "$raw_score" =~ ^-?[0-9]+$ ]]; then
+  if [[ -z "${raw_score:-}" ]] || ! [[ "$raw_score" =~ ^[0-9]+$ ]]; then
     record_halt "$fid" score_unparseable
     continue
   fi
-  score=$((raw_score))
-  if (( score < 0 || score > 100 )); then
+  score=$((10#$raw_score))
+  if (( score > 100 )); then
     record_halt "$fid" score_unparseable
     continue
   fi
@@ -261,17 +282,21 @@ done
 # ---- Emit outputs + exit --------------------------------------------------
 
 if [[ -n "$FIRST_HALT_CAUSE" ]]; then
-  # Halt path: write audit (with halts) but NOT kept-findings.txt — the
-  # round failed to converge and downstream apply-fix MUST NOT run.
-  write_audit "$SCORED" "$KEPT" "$DROPPED"
+  # Halt path: emit the halt-cause diagnostic to stderr FIRST (before any disk
+  # write), so the message is visible even if write_audit fails.  Remove any
+  # stale kept-findings.txt from a prior successful run so downstream consumers
+  # cannot act on data that is now invalid.
   echo "verifier-fan-in: halt: $FIRST_HALT_CAUSE" >&2
+  rm -f "$KEPT_TXT"
+  write_audit "$SCORED" "$KEPT" "$DROPPED" || true
   exit 1
 fi
 
-# Clean path: write kept-findings.txt + audit, exit 0.
+# Clean path: write audit FIRST so that if the write fails under set -e,
+# kept-findings.txt is never created (no partial state on disk).
+write_audit "$SCORED" "$KEPT" "$DROPPED"
 : >"$KEPT_TXT"
-for p in "${KEPT_PATHS[@]}"; do
+for p in "${KEPT_PATHS[@]+"${KEPT_PATHS[@]}"}"; do
   printf '%s\n' "$p" >>"$KEPT_TXT"
 done
-write_audit "$SCORED" "$KEPT" "$DROPPED"
 exit 0
