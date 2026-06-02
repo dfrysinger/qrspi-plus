@@ -202,10 +202,27 @@ check_codex_available() {
 # invocation adds exactly one entry.  Writes with a stable
 # trailing-bracket-on-its-own-line shape so subsequent appends are
 # deterministic.
+#
+# Concurrency safety: uses a portable mkdir-as-mutex so concurrent invocations
+# (e.g. multiple reviewer tags dispatched in the same wave) cannot interleave
+# their reads and writes.  mkdir is atomic on POSIX filesystems; only one
+# writer creates the lock dir at a time.  The loser spins with a 50 ms back-off
+# for up to 100 attempts (~5 s) before aborting with a diagnostic.
 _append_manifest_entry() {
   local entry="$1"
   local manifest="$OUTPUT_DIR/.dispatch-manifest.json"
   mkdir -p "$OUTPUT_DIR"
+  # Acquire the lock: try to create the lock directory; spin on failure.
+  local _lock_dir="${manifest}.lock"
+  local _lock_attempt=0
+  while ! mkdir "$_lock_dir" 2>/dev/null; do
+    _lock_attempt=$((_lock_attempt + 1))
+    if (( _lock_attempt >= 100 )); then
+      echo "error: _append_manifest_entry: could not acquire lock at ${_lock_dir} after 100 attempts" >&2
+      exit 1
+    fi
+    sleep 0.05
+  done
   local tmp="${manifest}.tmp.$$"
   if [[ -f "$manifest" ]]; then
     sed '$ s/\]$//' "$manifest" > "$tmp"
@@ -214,6 +231,8 @@ _append_manifest_entry() {
     printf '[\n  %s\n]\n' "$entry" > "$tmp"
   fi
   mv "$tmp" "$manifest"
+  # Release the lock.
+  rmdir "$_lock_dir"
 }
 
 # emit_dispatch_manifest_entry <job_id> — write a third-party/background
@@ -747,18 +766,46 @@ if [[ "$_codex_available" == "false" && "$_codex_reviews" == "true" ]]; then
   exit "$_check_exit"
 fi
 
-# Emit the transport marker and dispatch.  Capture the dispatcher's stdout
-# to extract a JOB_ID line if present (T20's dispatch-companion.sh will emit
-# one; pre-T20 the existing run-third-party-llm.sh may or may not).  After
-# a successful dispatch, persist the manifest entry with the captured job_id.
-# Exit code is propagated unchanged from the transport; on non-zero we still
-# persist the manifest so the round's attempted dispatch is auditable.
+# Emit the transport marker and dispatch.
+#
+# Copilot CLI (task-tool) → first-party path: assemble the full reviewer
+# prompt and write it to <round-dir>/.dispatch/<tag>.prompt so the
+# orchestrator can pass the file reference to the Task tool as
+# DISPATCH_FILE=<path>.  Emit the DISPATCH_FILE= reference to stdout (the
+# orchestrator-facing dispatch payload stays a prompt-file reference; the
+# prompt body never enters the orchestrator's tool-call arguments).  Record
+# a first_party manifest entry and exit 0.
+#
+# Claude Code (shell-pipeline) → third-party path: pipe the assembled prompt
+# to run-third-party-llm.sh.  Capture the dispatcher's stdout to extract a
+# JOB_ID line if present.  After a successful dispatch, persist the manifest
+# entry with the captured job_id.  Exit code is propagated unchanged from
+# the transport; on non-zero we still persist the manifest so the round's
+# attempted dispatch is auditable.
 if [[ "$_detected_host" == "copilot-cli" ]]; then
   echo "[transport: task-tool]" >&2
-else
-  echo "[transport: shell-pipeline]" >&2
+  # First-party dispatch: write assembled prompt to a .dispatch/ file so the
+  # orchestrator can reference it via DISPATCH_FILE= without embedding the
+  # prompt body in its tool-call arguments (per design.md CD-1 PATH A).
+  _fp_dispatch_dir="$OUTPUT_DIR/.dispatch"
+  mkdir -p "$_fp_dispatch_dir"
+  _fp_prompt_file="$_fp_dispatch_dir/$REVIEWER_TAG.prompt"
+  compose_prompt > "$_fp_prompt_file"
+  # Emit the orchestrator-facing DISPATCH_FILE reference to stdout.
+  printf 'DISPATCH_FILE=%s\n' "$_fp_prompt_file"
+  emit_first_party_manifest_entry "$_fp_prompt_file"
+  exit 0
 fi
 
+echo "[transport: shell-pipeline]" >&2
+
+# Third-party (shell-pipeline) dispatch path.
+# Capture the dispatcher's stdout to extract a JOB_ID line if present
+# (T20's dispatch-companion.sh will emit one; pre-T20 the existing
+# run-third-party-llm.sh may or may not).  After a successful dispatch,
+# persist the manifest entry with the captured job_id.
+# Exit code is propagated unchanged from the transport; on non-zero we still
+# persist the manifest so the round's attempted dispatch is auditable.
 _dispatch_stdout=""
 _dispatch_exit=0
 _dispatch_stdout="$( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )" \

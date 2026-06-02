@@ -787,12 +787,13 @@ _t7_require_trusted_gh() {
 # Exit-code-0-alone is insufficient proof.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE10] dispatch surface: Copilot CLI path — mocked task-tool dispatch exits 0 AND stdout carries a distinguishable mock-emitted marker (exit 0 alone insufficient)" {
-  # Test expectation: for the Copilot CLI path, the mocked task-tool
-  # dispatch exits with code 0 and captured stdout contains a
-  # distinguishable marker string emitted by the mock transport (a value
-  # the mock produces and no other code path produces), proving the
-  # dispatch invoked the mock rather than falling back.
+@test "[T7 / TE10] dispatch surface: Copilot CLI path — first-party dispatch exits 0, stdout carries DISPATCH_FILE= reference, and manifest records first_party entry" {
+  # Test expectation: for the Copilot CLI path, the first-party dispatch
+  # mechanism writes the assembled prompt to a .dispatch/<tag>.prompt file,
+  # emits a DISPATCH_FILE= reference on stdout (so the orchestrator passes
+  # the file reference to the Task tool, keeping the prompt body out of
+  # tool-call arguments), records a first_party manifest entry, and exits 0.
+  # The mock transport (run-third-party-llm.sh) is NOT invoked on this path.
   _t7_require_trusted_gh
 
   local tmp
@@ -800,16 +801,11 @@ _t7_require_trusted_gh() {
   _t7_make_mock_repo "$tmp"
   printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
 
-  # Distinguishable marker — unique enough that no fallback code path could
-  # produce it incidentally.
-  local mock_marker="te10-task-tool-mock-emitted-DAB72CC1-1429-46E0-8D0F-A8EF92AB1230"
   local stdout_log="$tmp/te10-stdout.log"
   local stderr_log="$tmp/te10-stderr.log"
   local dispatch_status=0
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI=1 \
-    MOCK_TRANSPORT_STDOUT="$mock_marker" \
-    MOCK_TRANSPORT_EXIT=0 \
     bash "$REPO_ROOT/scripts/run-codex-review.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
@@ -821,13 +817,19 @@ _t7_require_trusted_gh() {
       --artifact-dir "$tmp/artifact-dir" \
     >"$stdout_log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
 
-  # Trace marker proves the COPILOT_CLI branch ran.
+  # Trace marker confirms the Copilot CLI task-tool branch ran.
   grep -q '\[transport: task-tool\]' "$stderr_log"
-  # Mock marker on stdout proves the mock transport was actually invoked
-  # (not a fallback).
-  grep -q "$mock_marker" "$stdout_log"
-  # Exit 0.
+  # First-party path exits 0.
   [ "$dispatch_status" -eq 0 ]
+  # Stdout carries a DISPATCH_FILE= reference (prompt-file reference shape,
+  # not inline prompt body — the orchestrator-facing dispatch contract).
+  grep -q '^DISPATCH_FILE=' "$stdout_log" \
+    || { echo "stdout does not contain DISPATCH_FILE= line"; cat "$stdout_log"; return 1; }
+  # Manifest records a first_party entry.
+  local manifest="$tmp/out/.dispatch-manifest.json"
+  [ -f "$manifest" ] || { echo "manifest not written"; return 1; }
+  jq -e '.[0].mode == "first_party"' "$manifest" >/dev/null \
+    || { echo "manifest entry mode != first_party"; cat "$manifest"; return 1; }
 
   rm -rf "$tmp"
 }
@@ -932,24 +934,18 @@ _t7_require_trusted_gh() {
 # unchanged.  The mismatch warning does not suppress dispatch failures.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE13] dispatch surface: mismatch-warning path does not suppress non-zero transport exit (mismatch emitted, transport ran, non-zero propagated)" {
+@test "[T7 / TE13] dispatch surface: mismatch-warning path does not suppress first-party dispatch (mismatch emitted, first-party ran, exits 0)" {
   # Test expectation: when the dispatch-surface detects a mismatch
-  # (warning emitted) and then invokes a mocked transport that exits with
-  # a non-zero exit code, the dispatch surface propagates that same
-  # non-zero exit code to the caller.  The mismatch warning path does not
-  # suppress dispatch failures.
+  # (copilot-cli detected but codex_reviews=false), the mismatch warning is
+  # emitted to stderr but the first-party dispatch path still runs.
+  # Stdout carries a DISPATCH_FILE= reference and the script exits 0 —
+  # the mismatch warning does not abort or suppress the dispatch.
   #
   # Scenario: detected_host=copilot-cli (COPILOT_CLI=1, trusted gh),
-  # config codex_reviews=false → host-vs-config mismatch.
-  # check_codex_available(copilot-cli) returns 0 trivially (no filesystem
-  # probe), so dispatch reaches the mock transport.  Mock exits 7.
-  #
-  # RED state under Task-6 code: the current mismatch line fires ONLY when
-  # check_codex_available fails AND codex_reviews=true.  In this scenario
-  # check_codex_available SUCCEEDS, so no `[mismatch]` line fires under
-  # current code → the warning-emitted assertion is RED.  Task 7 is
-  # expected to decouple the mismatch warning from check_codex_available
-  # failure so it fires on any host-vs-config disagreement.
+  # config codex_reviews=false → host-vs-config mismatch warning fires.
+  # check_codex_available(copilot-cli) returns 0 trivially, so dispatch is
+  # not short-circuited.  First-party path writes prompt file and emits
+  # DISPATCH_FILE= to stdout; exits 0.
   _t7_require_trusted_gh
 
   local tmp
@@ -958,12 +954,11 @@ _t7_require_trusted_gh() {
   # Explicit mismatch: detected copilot-cli but config says no Codex.
   printf -- '---\ncodex_reviews: false\n---\n' > "$tmp/artifact-dir/config.md"
 
+  local stdout_log="$tmp/te13-stdout.log"
   local stderr_log="$tmp/te13-stderr.log"
   local dispatch_status=0
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI=1 \
-    MOCK_TRANSPORT_STDOUT="te13-marker-2026-05-27" \
-    MOCK_TRANSPORT_EXIT=7 \
     bash "$REPO_ROOT/scripts/run-codex-review.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
@@ -973,17 +968,24 @@ _t7_require_trusted_gh() {
       --model gpt-5.3-codex \
       --output-file "$tmp/result.md" \
       --artifact-dir "$tmp/artifact-dir" \
-    >"$tmp/te13-stdout.log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
+    >"$stdout_log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
 
   # Mismatch warning must be present in stderr — naming both the detected
   # host and the config value on a single line.
-  grep -qE "(mismatch|disagree).*copilot-cli|copilot-cli.*(mismatch|disagree)|mismatch.*false|false.*mismatch" "$stderr_log"
+  grep -qE "(mismatch|disagree).*copilot-cli|copilot-cli.*(mismatch|disagree)|mismatch.*false|false.*mismatch" "$stderr_log" \
+    || { echo "mismatch warning not found in stderr"; cat "$stderr_log"; return 1; }
   # Transport marker for the copilot-cli branch must also be present
   # (proves dispatch was NOT short-circuited by the mismatch warning).
-  grep -q '\[transport: task-tool\]' "$stderr_log"
-  # Exit code MUST be 7 (propagated from mock transport — mismatch warning
-  # path does not suppress the failure).
-  [ "$dispatch_status" -eq 7 ]
+  grep -q '\[transport: task-tool\]' "$stderr_log" \
+    || { echo "[transport: task-tool] not found in stderr"; return 1; }
+  # First-party path emits DISPATCH_FILE= to stdout despite the mismatch
+  # warning (warning does not suppress dispatch).
+  grep -q '^DISPATCH_FILE=' "$stdout_log" \
+    || { echo "stdout does not contain DISPATCH_FILE= line after mismatch warning"; cat "$stdout_log"; return 1; }
+  # Exit code MUST be 0 (first-party path succeeded; mismatch warning does
+  # not convert a successful dispatch into a failure).
+  [ "$dispatch_status" -eq 0 ] \
+    || { echo "expected exit 0 for first-party dispatch, got $dispatch_status"; return 1; }
 
   rm -rf "$tmp"
 }
@@ -2426,4 +2428,121 @@ MOCK_EOF
     || { echo "one or both entries missing top-level background fields"; cat "$manifest"; return 1; }
 
   rm -rf "$TMP_DIR"
+}
+
+# T11 AC4 — concurrency safety: N≥2 concurrent _append_manifest_entry
+# invocations against the same manifest path all survive (no lost-update race).
+# Uses a start-barrier pattern so all subshells hit _append_manifest_entry
+# simultaneously, maximising collision probability on the R-M-W path.
+# Requires the mkdir-as-mutex lock added by the F01 fix.
+@test "[T11 dispatch-manifest AC4] concurrent _append_manifest_entry invocations all survive (no lost-update race)" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+
+  local OUTDIR="$TMP_DIR/out"
+  mkdir -p "$OUTDIR"
+
+  # SYNC_FILE: all subshells source the script first, then wait here before
+  # writing.  Releasing the barrier simultaneously maximises concurrency at
+  # the write site.
+  local SYNC_FILE="$TMP_DIR/sync-start"
+
+  local N=5
+  local i
+  for i in $(seq 1 $N); do
+    (
+      export QRSPI_SOURCE_ONLY=1
+      source "$REPO_ROOT/scripts/run-codex-review.sh"
+      export OUTPUT_DIR="$OUTDIR"
+      # Spin until the barrier is released so all writers fire at once.
+      while [[ ! -f "$SYNC_FILE" ]]; do sleep 0.001; done
+      _append_manifest_entry "{\"tag\":\"tag-$i\",\"mode\":\"test\",\"i\":$i}"
+    ) &
+  done
+
+  # Give all subshells time to source the script and reach the barrier.
+  sleep 0.3
+  # Release the barrier — all N subshells proceed to _append_manifest_entry
+  # simultaneously.
+  touch "$SYNC_FILE"
+  wait
+
+  local manifest="$OUTDIR/.dispatch-manifest.json"
+  [ -f "$manifest" ] \
+    || { echo "manifest not written"; return 1; }
+
+  # All N entries must survive.  Without locking, the R-M-W race causes the
+  # last mv to overwrite entries written by other subshells.
+  jq -e --argjson n "$N" 'type == "array" and length == $n' "$manifest" >/dev/null \
+    || { echo "manifest does not have exactly $N entries (concurrent writes lost some)"; cat "$manifest"; return 1; }
+
+  rm -rf "$TMP_DIR"
+}
+
+# T11 AC5 — first-party dispatch path end-to-end: COPILOT_CLI=1 invokes the
+# script, stdout carries a DISPATCH_FILE= reference, and the manifest records a
+# first_party entry whose dispatch_spec.prompt_file matches the stdout reference.
+# This tests the dispatch entry point (not just the manifest-emission helper)
+# and verifies the orchestrator-facing payload stays a prompt-file reference.
+# Requires a trusted gh binary (same precondition as detect_host returning
+# 'copilot-cli') — skips when gh is absent or not in a trusted prefix.
+@test "[T11 dispatch-manifest AC5] first-party dispatch path: COPILOT_CLI=1 → DISPATCH_FILE= on stdout and first_party manifest entry with matching prompt_file" {
+  _t7_require_trusted_gh
+
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+  # codex_reviews: true — copilot-cli + codex available (trivially) → no
+  # mismatch warning, dispatch proceeds cleanly to the first-party path.
+  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+
+  local stdout_log="$tmp/ac5-stdout.log"
+  local dispatch_status=0
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI=1 \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model claude-sonnet-4-5 \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >"$stdout_log" 2>/dev/null && dispatch_status=0 || dispatch_status=$?
+
+  # First-party path exits 0.
+  [ "$dispatch_status" -eq 0 ] \
+    || { echo "script exited $dispatch_status (expected 0 for first-party path)"; return 1; }
+
+  # Stdout carries a DISPATCH_FILE= reference — the orchestrator-facing
+  # payload is a file reference, NOT inline prompt body.
+  grep -q '^DISPATCH_FILE=' "$stdout_log" \
+    || { echo "stdout does not contain DISPATCH_FILE= line (first-party dispatch contract broken)"; cat "$stdout_log"; return 1; }
+
+  # Extract the prompt file path from the DISPATCH_FILE= line.
+  local prompt_file
+  prompt_file="$(grep '^DISPATCH_FILE=' "$stdout_log" | head -1 | sed 's/^DISPATCH_FILE=//')"
+
+  # Prompt file exists on disk (prompt body was written, not echoed inline).
+  [ -f "$prompt_file" ] \
+    || { echo "prompt file $prompt_file does not exist on disk"; return 1; }
+
+  # Manifest was written.
+  local manifest="$tmp/out/.dispatch-manifest.json"
+  [ -f "$manifest" ] \
+    || { echo "manifest not written"; return 1; }
+
+  # Manifest entry records first_party mode and dispatched status.
+  jq -e '.[0].mode == "first_party"' "$manifest" >/dev/null \
+    || { echo "manifest entry mode != first_party"; cat "$manifest"; return 1; }
+  jq -e '.[0].status == "dispatched"' "$manifest" >/dev/null \
+    || { echo "manifest entry status != dispatched"; cat "$manifest"; return 1; }
+
+  # dispatch_spec.prompt_file in the manifest matches the DISPATCH_FILE
+  # reference emitted on stdout — the audit trail is consistent.
+  jq -e --arg pf "$prompt_file" '.[0].dispatch_spec.prompt_file == $pf' "$manifest" >/dev/null \
+    || { echo "manifest dispatch_spec.prompt_file does not match stdout DISPATCH_FILE reference"; cat "$manifest"; return 1; }
+
+  rm -rf "$tmp"
 }
