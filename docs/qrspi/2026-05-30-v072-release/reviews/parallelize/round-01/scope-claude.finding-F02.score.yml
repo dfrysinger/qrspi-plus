@@ -1,0 +1,2 @@
+score: 75
+reason: The finding correctly identifies a scope boundary violation where Parallelize prescribes Implement/Integrate runtime procedures (timing and cleanup) that belong in those skills' contracts, not in the Parallelize planning artifact; the Stage Commits table already encodes the required symbolic information.

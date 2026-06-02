@@ -1,0 +1,2 @@
+score: 85
+reason: The bullet clearly describes Implement-owned runtime behaviors (baseline-test execution, task-00 injection mechanism, record-keeping obligation) that are explicitly listed in the DEFERS rule as out-of-scope for Parallelize, violating the documented scope boundary.

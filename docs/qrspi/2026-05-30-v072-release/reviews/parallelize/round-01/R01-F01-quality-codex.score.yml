@@ -1,0 +1,2 @@
+score: 25
+reason: The skill requires file-overlap analysis and a per-task Dependency Analysis table (Task/Dependencies/Files/Wave columns), not a pairwise matrix; the artifact provides exactly this required schema and demonstrates disjoint Wave membership, evidencing analysis completion. The finding conflates analytical rigor (which was performed) with a specific document format (not mandated by SKILL.md).

@@ -1,0 +1,2 @@
+score: 75
+reason: The "Task-00 reservation" bullet documents Implement-owned runtime behavior (baseline-test failure handling and runtime task-00 injection), both explicitly listed in Parallelize DEFERS. The bullet should be removed or replaced with a neutral pointer to preserve scope boundaries.
