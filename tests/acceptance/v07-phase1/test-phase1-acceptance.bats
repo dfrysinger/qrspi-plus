@@ -1699,11 +1699,88 @@ MOCK_EOF
   [ "$exit_code" -ne 0 ] \
     || { echo "expected non-zero exit for crafted --model, got 0; stderr: $err"; return 1; }
 
-  echo "$err" | grep -qiE 'model' \
+  echo "$err" | grep -qiE '\-\-model' \
     || { echo "stderr does not name --model in rejection diagnostic; got: $err"; return 1; }
 
   [ ! -f "$OUTDIR/.dispatch-manifest.json" ] \
     || { echo "manifest file was written despite rejected --model"; cat "$OUTDIR/.dispatch-manifest.json"; return 1; }
+
+  rm -rf "$TMP_DIR"
+}
+
+# ---------------------------------------------------------------------------
+# AC12: emit_dispatch_manifest_entry must fail loudly if jq fails or is
+# absent — silent jq failure under `set +e` would leave $entry="" and
+# write a malformed manifest, then atomically replace any valid prior
+# manifest with corruption (the very property T09 exists to protect).
+# Simulate jq failure by prepending a fixture bin/ to PATH whose only
+# `jq` exits 1. Assert: dispatch exits non-zero, no manifest is written,
+# and stderr names 'jq' so the diagnostic is actionable.
+# ---------------------------------------------------------------------------
+@test "[reviewer-model-audit AC12] emit_dispatch_manifest_entry exits loudly when jq fails (no silent manifest corruption)" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+
+  mkdir -p "$TMP_DIR/src"
+  printf 'const x = 1;\n' > "$TMP_DIR/src/subject.ts"
+  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
+  printf '## Reviewer Dispatch Contract\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
+  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
+  mkdir -p "$TMP_DIR/agents"
+  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
+    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
+  mkdir -p "$TMP_DIR/artifact-dir"
+  printf -- '---\ncodex_reviews: false\n---\n' \
+    > "$TMP_DIR/artifact-dir/config.md"
+  mkdir -p "$TMP_DIR/scripts"
+  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+exit 0
+MOCK_EOF
+  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+
+  # Fixture bin/ whose only `jq` exits 1 with a recognizable diagnostic.
+  # Prepended to PATH so emit_dispatch_manifest_entry's jq call hits this
+  # wrapper instead of the real jq. The wrapper must be the only PATH
+  # entry that satisfies the `jq` lookup AHEAD of any system jq.
+  mkdir -p "$TMP_DIR/bin"
+  cat > "$TMP_DIR/bin/jq" <<'JQ_EOF'
+#!/usr/bin/env bash
+echo "stub jq: forced failure for AC12" >&2
+exit 1
+JQ_EOF
+  chmod +x "$TMP_DIR/bin/jq"
+
+  local OUTDIR="$TMP_DIR/out"
+  mkdir -p "$OUTDIR"
+
+  local exit_code=0
+  local err
+  err="$(PATH="$TMP_DIR/bin:$PATH" \
+    QRSPI_REPO_ROOT="$TMP_DIR" \
+    COPILOT_CLI="" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$OUTDIR" \
+      --round 1 \
+      --subject-code "$TMP_DIR/src/subject.ts" \
+      --model "gpt-5-codex-canary" \
+      --output-file "$TMP_DIR/result.md" \
+      --artifact-dir "$TMP_DIR/artifact-dir" \
+      2>&1 1>/dev/null)" || exit_code=$?
+
+  [ "$exit_code" -ne 0 ] \
+    || { echo "expected non-zero exit when jq fails, got 0; stderr: $err"; return 1; }
+
+  echo "$err" | grep -qiE 'jq' \
+    || { echo "stderr does not name 'jq' in failure diagnostic; got: $err"; return 1; }
+
+  [ ! -f "$OUTDIR/.dispatch-manifest.json" ] \
+    || { echo "manifest file was written despite jq failure (silent corruption)"; cat "$OUTDIR/.dispatch-manifest.json"; return 1; }
 
   rm -rf "$TMP_DIR"
 }

@@ -586,10 +586,12 @@ emit_dispatch_manifest_entry() {
   local detected_host
   detected_host="$(detect_host)"
 
-  # Hand-built JSON object — values are controlled (no embedded quotes from
-  # untrusted input). The vendor is fixed to 'openai-codex' for this script;
-  # the post-rename dispatch script (scripts/dispatch-agent.sh) handles
-  # multi-vendor entries via _resolve-lib.sh.
+  # JSON entry constructed via jq (defense-in-depth: jq --arg performs
+  # unconditional JSON string escaping, so the produced object is
+  # well-formed regardless of input content). The vendor is fixed to
+  # 'openai-codex' for this script; the post-rename dispatch script
+  # (scripts/dispatch-agent.sh) handles multi-vendor entries via
+  # _resolve-lib.sh.
   #
   # T09 scope: record ONLY host/vendor/model — the resolved
   # provenance triple needed to close the host × vendor × model audit loop
@@ -600,21 +602,28 @@ emit_dispatch_manifest_entry() {
   # responsible for landing those fields once the rename + multi-vendor
   # dispatcher are in place. Emitting them here would pre-load T11 scope
   # and is explicitly out-of-scope per task-09.md line 32.
-  # T09 R2 fix: build the JSON entry with jq rather than concatenating
-  # values into a printf format string. Even though the argument-parse
-  # validators above already restrict --reviewer-tag and --model to safe
-  # grammars, building JSON via `jq -n --arg ...` is defense-in-depth: it
-  # guarantees the produced object is well-formed and that no input
-  # string can forge additional keys, regardless of future relaxation of
-  # the validators. jq is already a documented dependency of this
-  # codebase (see scripts/verifier-fan-in.sh).
+  #
+  # T09 R2: build the JSON entry with jq rather than concatenating values
+  # into a printf format string. Even though the argument-parse validators
+  # above already restrict --reviewer-tag and --model to safe grammars,
+  # jq is already a documented dependency of this codebase (see
+  # scripts/verifier-fan-in.sh).
+  #
+  # T09 R3: this script intentionally runs without `set -e`, so the jq
+  # command substitution must be guarded explicitly — otherwise a missing
+  # or failing jq would leave $entry="" and the script would proceed to
+  # write a malformed manifest, atomically replacing any valid prior
+  # manifest with corruption (the very property T09 exists to protect).
+  # The `|| { ... exit 1; }` guard makes the failure loud and aborts
+  # before the tmp-file write below.
   local entry
   entry="$(jq -nc \
     --arg tag    "$REVIEWER_TAG" \
     --arg host   "$detected_host" \
     --arg vendor "openai-codex" \
     --arg model  "$MODEL" \
-    '{tag: $tag, host: $host, vendor: $vendor, model: $model}')"
+    '{tag: $tag, host: $host, vendor: $vendor, model: $model}')" \
+    || { echo "error: jq failed building dispatch-manifest entry (jq exit $?)" >&2; exit 1; }
 
   mkdir -p "$round_dir"
   local tmp="${manifest}.tmp.$$"
