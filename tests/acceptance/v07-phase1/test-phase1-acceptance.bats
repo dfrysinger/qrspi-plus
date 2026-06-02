@@ -1954,7 +1954,7 @@ _t9_simulate_verifier_sidecar_write() {
 }
 
 # ===========================================================================
-# G28 — Convergent-evidence exception: verifier instrumentation + dispositions
+# Convergent-evidence exception: verifier instrumentation + dispositions
 # observations section (apply-fix override forbidden).
 #
 # Coverage (labels mirror spec ACs 1-5 verbatim):
@@ -1966,12 +1966,21 @@ _t9_simulate_verifier_sidecar_write() {
 #         fallback for absence-of-signal findings.
 #   AC4   Sub-threshold findings DO NOT reach `kept-findings.txt` through any
 #         path (behavior pin) AND `skills/using-qrspi/SKILL.md` prose forbids
-#         keeping sub-threshold findings via orchestrator override (prose pin).
+#         keeping sub-threshold findings via orchestrator override AND forbids
+#         applying patches that address dropped findings under the guise of
+#         the round's apply-fix work (two distinct MUST NOT clauses).
 #   AC5   `skills/using-qrspi/SKILL.md` documents the optional
 #         `## Sub-Threshold Observations` H2 section (template + informational
 #         language) AND the YAML template parses as valid YAML carrying
 #         exactly the spec-pinned fields (summary, finding_paths,
-#         defect_class, score, threshold).
+#         defect_class, representative_score, threshold) — the score field
+#         was renamed from bare 'score:' to 'representative_score:' in R2 to
+#         make the per-cluster (not per-finding) reading load-bearing.
+#   AC6   Fan-in script invariance: scripts/verifier-fan-in.sh does NOT
+#         reference defect_class / representative_score / sub-threshold
+#         observations tokens. Pins the deferral of cluster-analysis
+#         automation — the script remains the single source of truth for
+#         keep/drop decisions and carries no instrumentation tokens.
 # ===========================================================================
 
 @test "[AC1] verifier agent body documents defect_class field + regex ^[a-z0-9][a-z0-9-]*$" {

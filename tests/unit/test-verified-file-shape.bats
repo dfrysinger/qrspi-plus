@@ -141,7 +141,7 @@ source_assembly() {
 }
 
 # ---------------------------------------------------------------------------
-# Defect-class rubric pins (G28 D1).
+# Defect-class rubric pins — verifier sidecar instrumentation.
 #
 # The verifier MUST emit a `defect_class:` tag classifying the finding's
 # defect type — lowercase kebab-case (regex `^[a-z0-9][a-z0-9-]*$`), ≤30
