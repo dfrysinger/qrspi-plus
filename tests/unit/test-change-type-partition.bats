@@ -55,10 +55,10 @@ setup() {
 # default-routed.
 # ---------------------------------------------------------------------------
 
-# _test_mirror_partition_finding — test-local mirror of the schema-guard
-# contract documented in skills/reviewer-protocol/SKILL.md ## Finding Schema.
-# The production schema guard that enforces this contract is added in T05
-# (scripts/verifier-fan-in.sh); until T05 lands, these tests pin only the
+# _test_mirror_partition_finding — test-local mirror of the schema-guard contract
+# documented in skills/reviewer-protocol/SKILL.md § Finding Schema. The production
+# schema guard that enforces this contract lives in scripts/verifier-fan-in.sh
+# (added in a subsequent task). Until that lands, these tests pin only the
 # contract shape, not its enforcement in production routing.
 #
 # Returns 0 and prints the routed change_type on a well-formed finding;
