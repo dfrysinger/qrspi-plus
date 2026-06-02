@@ -2167,7 +2167,7 @@ _t9_simulate_verifier_sidecar_write() {
 }
 
 @test "[AC6] verifier-fan-in.sh remains free of defect_class / representative_score / sub-threshold tokens (cluster-analysis deferral)" {
-  # G28 explicitly defers cluster-analysis automation to a future release.
+  # Cluster-analysis automation is explicitly deferred to a future release.
   # The fan-in script remains the single source of truth for keep/drop
   # decisions per CD-4's iron rule and MUST NOT grow instrumentation tokens
   # that would tempt future drift toward sidecar-shape coupling. Pin the
@@ -2175,7 +2175,7 @@ _t9_simulate_verifier_sidecar_write() {
   local script="$REPO_ROOT/scripts/verifier-fan-in.sh"
   [ -f "$script" ] || { echo "scripts/verifier-fan-in.sh missing"; return 1; }
   if grep -qE 'defect_class|representative_score|sub.threshold.obs' "$script"; then
-    echo "scripts/verifier-fan-in.sh references cluster-analysis tokens — G28 deferral violated"
+    echo "scripts/verifier-fan-in.sh references cluster-analysis tokens — deferral violated"
     grep -nE 'defect_class|representative_score|sub.threshold.obs' "$script"
     return 1
   fi
