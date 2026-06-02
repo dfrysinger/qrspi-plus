@@ -88,6 +88,32 @@ This document is the formal contract; `skills/plan/SKILL.md` § Human Gate Step 
 
 The generation-side `### Sub-Subagent Dispatch (Large Plans Only)` section in `skills/plan/SKILL.md` documents the pre-approval fan-out dispatch shape. The post-approval split fan-out reuses that dispatch shape; this document declares the additional contractual clauses specific to the post-approval transaction (atomicity, exact-set verification, plan-md-no-edit, phase_start_commit interlock).
 
+## Task-ID Validation
+
+Before any block-hash audit, filesystem probe (`test -e`), per-task path construction, or sub-subagent dispatch, the orchestrator MUST validate every task ID parsed from the `### Task N:` headings of `plan.md` against the positive-integer pattern. This validation runs once per split invocation, before the pre-fan-out idempotency pass; failure halts the entire run.
+
+**Pattern.** Every parsed task ID MUST match the regular expression `^[0-9]+$` (one or more decimal digits, no sign, no separators, no path components, no whitespace). Leading zeros are allowed for visual zero-padding but are not required by the validation step (zero-padding to the canonical `tasks/task-NN.md` filename is a separate downstream step governed by `## Per-Sub-Subagent Output Contract` → Naming Convention).
+
+**Rejection cases.** Any parsed ID that fails the pattern — including but not limited to path-traversal sequences (`..`, `../foo`, `../../etc/passwd`), absolute or relative paths, alphabetic identifiers (`abc`), names containing `/`, `\`, NUL, or any non-digit byte — MUST be rejected. The orchestrator HALTS before any filesystem operation with the named diagnostic:
+
+> `Plan split aborted: invalid task ID "<id>" in plan.md (must match ^[0-9]+$). Refusing to construct tasks/task-<id>.md path. Fix the ### Task N: heading in plan.md and re-run.`
+
+The diagnostic value `<id>` is echoed verbatim from the parsed string and is treated as untrusted text — main chat MUST NOT use it as a path component, glob, or shell argument when emitting the diagnostic; it appears only inside the quoted display fragment.
+
+**Rationale.** Without this gate, an attacker (or an accidental edit) who controls `plan.md` content can craft a heading like `### Task ../../../home/user/.ssh/authorized_keys: setup` whose parsed ID resolves outside `tasks/` when joined into `tasks/task-<id>.md`. Case 1 (absent) of the Idempotent Split Contract would then dispatch a sub-subagent that writes the task spec body to the resolved path — overwriting arbitrary files the orchestrator process can write. The validation gate runs BEFORE `test -e` so the `tasks/task-<id>.md` path is never constructed for an invalid ID.
+
+## Security Scope
+
+The block-hash audit attests to provenance of the `plan.md` source `### Task N` block ONLY. It does NOT attest to the integrity of the emitted `tasks/task-NN.md` file body or its frontmatter.
+
+**What the hash covers.** SHA-256 of the normalized source `### Task N` block extracted from `plan.md`, per `## Block-Hash Header Format`. A matching hash on re-run proves only that the upstream block in `plan.md` is byte-identical (post-normalization) to the block that was hashed when the file was originally written.
+
+**What the hash does NOT cover.** The body of `tasks/task-NN.md` — including the frontmatter fields, the `# Task NN:` heading, and all body content following the `# block-hash:` line — is not included in the hash input. A re-run that finds an existing `tasks/task-NN.md` whose `# block-hash:` line still matches the current `plan.md` block will safe-skip the file (Case 2) regardless of any tamper or hand-edit applied to the body. This is intentional: hand-edits to the task body must be preserved across compaction/restart re-runs (see `## Idempotent Split Contract` → Case 2).
+
+**Threat model implication.** An attacker who can write to the `tasks/` directory between the original split and a downstream re-run can modify the body of `tasks/task-NN.md` while preserving its `# block-hash:` line. A subsequent re-run will safe-skip the tampered file and feed it unchanged to the Implementation phase. The block-hash provides no defense against this class of attack; integrity of `tasks/task-NN.md` files between writes and reads is the responsibility of the surrounding filesystem and version-control controls (e.g., git tracking the `tasks/` directory and signed commits), not of this contract.
+
+**Forward compatibility.** A future revision MAY introduce a complementary `# body-hash: <sha256-hex>` line covering the file body for re-run verification. The current contract scopes the integrity boundary to `plan.md` provenance only and surfaces this boundary explicitly so downstream consumers do not falsely infer body-integrity guarantees from the existence of the audit contract.
+
 ## Block-Hash Header Format
 
 Every `tasks/task-NN.md` written by the post-approval split — whether via sub-subagent fan-out or the quick-fix N=1 inline path — MUST carry exactly one block-hash header line. Position, syntax, and algorithm:
@@ -116,6 +142,8 @@ where `<sha256-hex>` is a 64-character lowercase hexadecimal string produced by 
 **Algorithm.** SHA-256, hex-encoded, no salt, applied to the normalized content of the source `### Task N` block extracted from `plan.md`.
 
 **Normalization rule.** strip trailing whitespace (spaces, tabs) from each line of the source `### Task N` block; preserve all other characters and all line breaks verbatim. No markdown canonicalization, no case folding, no blank-line collapse, no re-encoding. A single character change anywhere in the block — including rewording, punctuation, or whitespace within a line — changes the hash.
+
+**Trailing-newline rule (explicit).** The hash input preserves the terminating newline (`\n`) of the final line of the source `### Task N` block. The block, as extracted from `plan.md`, ends with the line break that separates it from the next `### Task N+1` heading (or the end-of-file newline for the final task); that terminating `\n` is included in the bytes fed to SHA-256. Implementations that compute the hash via shell command substitution (`block=$(printf ...)`) MUST be aware that command substitution strips trailing newlines from the captured value — the captured form is NOT the canonical normalized input. The canonical input includes the trailing newline; producing the hash without it yields a different SHA-256 value and is a contract violation.
 
 ## Idempotent Split Contract
 
