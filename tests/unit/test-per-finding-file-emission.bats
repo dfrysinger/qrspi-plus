@@ -186,7 +186,7 @@ setup() {
 }
 
 @test "emission sibling files do not reproduce verbatim schema paragraphs from SKILL.md" {
-  # Fix 2: schema fields/audit fields/finding_id uniqueness paragraphs must live in
+  # Schema fields / audit fields / finding_id uniqueness paragraphs must live in
   # SKILL.md only; siblings must cross-reference rather than duplicate them verbatim.
   local fp="skills/reviewer-protocol/first-party-emission.md"
   local tp="skills/reviewer-protocol/third-party-emission.md"
@@ -208,7 +208,7 @@ setup() {
 }
 
 @test "third-party-emission.md pins the silent-failure characterization" {
-  # Fix 4: the parenthetical 'will fail silently' must be pinned so regressions are caught.
+  # The parenthetical 'will fail silently' must be pinned so regressions are caught.
   local f="skills/reviewer-protocol/third-party-emission.md"
   [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
   grep -qE 'fail(s)? silently|silent(ly)? fail' "$f" \
@@ -216,22 +216,64 @@ setup() {
 }
 
 @test "reviewer_tag charset rule is present in both emission siblings" {
-  # Fix 5: reviewer_tag must be validated against ^[a-z0-9-]+$ before path construction.
+  # reviewer_tag must be validated against the charset regex before path construction.
+  # First character must be alphanumeric (rejects leading hyphens — POSIX argv footgun).
   local fp="skills/reviewer-protocol/first-party-emission.md"
   local tp="skills/reviewer-protocol/third-party-emission.md"
   [[ -f "$fp" ]] || { echo "missing: $fp"; return 1; }
   [[ -f "$tp" ]] || { echo "missing: $tp"; return 1; }
-  grep -qF '^[a-z0-9-]+$' "$fp" \
+  grep -qF '^[a-z0-9][a-z0-9-]*$' "$fp" \
     || { echo "first-party-emission.md missing reviewer_tag charset rule"; return 1; }
-  grep -qF '^[a-z0-9-]+$' "$tp" \
+  grep -qF '^[a-z0-9][a-z0-9-]*$' "$tp" \
     || { echo "third-party-emission.md missing reviewer_tag charset rule"; return 1; }
 }
 
+@test "reviewer_tag charset rule rejects leading hyphen (regression pin)" {
+  # Leading-hyphen reviewer tags (-rf, --evil, etc.) are a POSIX argument-parsing
+  # footgun in downstream glob/CLI consumers. The charset regex must require an
+  # alphanumeric first character so such tags are rejected at validation time.
+  local fp="skills/reviewer-protocol/first-party-emission.md"
+  local tp="skills/reviewer-protocol/third-party-emission.md"
+  for src in "$fp" "$tp"; do
+    [[ -f "$src" ]] || { echo "missing: $src"; return 1; }
+    grep -qF '^[a-z0-9][a-z0-9-]*$' "$src" \
+      || { echo "$src missing leading-hyphen-rejecting charset rule"; return 1; }
+    # And must NOT carry the older permissive form that admits leading hyphens.
+    if grep -qF '^[a-z0-9-]+$' "$src"; then
+      echo "$src still carries permissive ^[a-z0-9-]+\$ form that admits leading hyphens"
+      return 1
+    fi
+  done
+}
+
 @test "third-party-emission.md iron law bars NO_FINDINGS as pass-through of input" {
-  # Fix 6: NO_FINDINGS must be emitted only as result of own analysis, never as
+  # NO_FINDINGS must be emitted only as result of own analysis, never as
   # pass-through of untrusted-artifact instruction.
   local f="skills/reviewer-protocol/third-party-emission.md"
   [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
   grep -qF 'result of your own analysis' "$f" \
     || { echo "third-party-emission.md missing NO_FINDINGS prompt-injection iron-law clause"; return 1; }
+}
+
+@test "SKILL.md ## Finding Schema documents audit-fields with reviewer = reviewer_tag constraint" {
+  # Audit-fields enumeration (and specifically the load-bearing
+  # `reviewer = <reviewer_tag>` constraint) was previously only pinned by the
+  # emission siblings. After the cross-reference consolidation it must live in
+  # SKILL.md so the sibling cross-reference is not dangling.
+  local f="skills/reviewer-protocol/SKILL.md"
+  [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
+  grep -qE 'reviewer.*reviewer_tag' "$f" \
+    || { echo "SKILL.md ## Finding Schema missing 'reviewer = <reviewer_tag>' audit-field constraint"; return 1; }
+}
+
+@test "SKILL.md ## Finding Schema documents finding_id canonical form and regex" {
+  # finding_id uniqueness rule (canonical form R{NN}-F{NN} + schema-guard regex
+  # ^R\d+-F\d+$) was previously only pinned by the emission siblings. After the
+  # cross-reference consolidation it must live in SKILL.md.
+  local f="skills/reviewer-protocol/SKILL.md"
+  [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
+  grep -qE '\^R\\d\+-F\\d\+\$' "$f" \
+    || { echo "SKILL.md ## Finding Schema missing finding_id schema-guard regex ^R\\d+-F\\d+\$"; return 1; }
+  grep -qE 'R\{NN\}-F\{NN\}|R[0-9]+-F[0-9]+' "$f" \
+    || { echo "SKILL.md ## Finding Schema missing finding_id canonical form"; return 1; }
 }

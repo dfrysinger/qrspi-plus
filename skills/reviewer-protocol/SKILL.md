@@ -60,6 +60,20 @@ Every reviewer finding (Claude reviewer, scope-reviewer, Codex reviewer) is a st
 - **`message`** — string. Reviewer's prose explanation of the finding. What is wrong, why it matters, and what change would resolve it. Should be self-contained — readable without re-reading the artifact under review.
 - **`referenced_files`** — string array. Absolute or repo-relative paths to files cited by the finding. Used by the secondary-escalation rule (see classifier below): a finding whose `referenced_files` cites `feedback/*.md` is escalated to `intent` regardless of the reviewer's primary `change_type` tag.
 
+### `finding_id` Uniqueness Rule
+
+The `finding_id` field uses the canonical form `R{NN}-F{NN}` — `R` followed by the review-round number, a hyphen, `F` followed by a zero-padded finding sequence number within that round (e.g. `R3-F02` is the second finding emitted in round 3). The schema-guard regex is `^R\d+-F\d+$`; identifiers failing this regex are malformed and the finding is rejected by the pause-gate dispatcher.
+
+Uniqueness is scoped to the (round, reviewer_tag) pair: a given reviewer emits `F01`, `F02`, … in emission order within one round, and the same `F<NN>` may legitimately recur across reviewer tags or across rounds. Cross-round threading is performed by matching identifiers under the round prefix; reviewers MUST NOT reuse an `F<NN>` within their own per-round output.
+
+### Audit Fields
+
+In addition to the five schema fields above, every emitted finding carries three audit fields used by the orchestrator to route the finding back to the artifact, the round, and the reviewer that produced it. These are emitted alongside the schema fields in the YAML frontmatter of the per-finding file (see the emission siblings for the on-disk shape).
+
+- **`artifact`** — string. Short name of the artifact under review (e.g. `design`, `phasing`, `plan`, `code`). Used by the orchestrator to group findings by upstream artifact in the pause-gate UI.
+- **`round`** — integer. The review-round number this finding was emitted in. MUST equal the round prefix embedded in `finding_id` (the `{NN}` after `R`); a mismatch is malformed.
+- **`reviewer`** — string. The reviewer tag that produced the finding. The `reviewer` audit-field value MUST equal the dispatcher-supplied `<reviewer_tag>` for the current dispatch (and equivalently the filename prefix used by the emission contract). This pin closes a confused-deputy surface: a reviewer cannot impersonate another reviewer's tag in its own emitted findings, because the orchestrator validates `reviewer == <reviewer_tag>` before threading.
+
 ## Change-Type Classifier
 
 Five categories. Each entry below names the category, gives the rule of thumb, and shows a positive example (a finding that fits the category) and a negative example (a finding that looks similar at a glance but belongs to a different category — to prevent miscategorization).

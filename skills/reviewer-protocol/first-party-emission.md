@@ -67,7 +67,7 @@ The on-disk file paths for first-party emission are fixed by the dispatcher-supp
 
 - **Per-finding file:** `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` — F-numbered zero-padded in emission order. One file per finding.
 - **Clean-round sentinel:** `<round_subdir>/<reviewer_tag>.clean.md` — exactly one file when the reviewer surfaces zero findings; absent when any finding files exist.
-- `reviewer_tag` MUST match `^[a-z0-9-]+$` (lowercase alphanumeric + hyphen). Write call sites MUST validate this regex before path construction; tags failing the regex are a HARD-GATE refusal — do NOT construct the Write path with an unvalidated tag.
+- `reviewer_tag` MUST match `^[a-z0-9][a-z0-9-]*$` (lowercase alphanumeric + hyphen; first character MUST be alphanumeric so a leading hyphen — a POSIX argument-parsing footgun in downstream glob/CLI consumers — is rejected at validation time). Write call sites MUST validate this regex before path construction; tags failing the regex are a HARD-GATE refusal — do NOT construct the Write path with an unvalidated tag.
 
 The filename prefix is the dispatcher-supplied `<reviewer_tag>` (e.g., `quality-claude`, `scope-claude`, `spec-claude`). The `reviewer:` audit-field value MUST equal that prefix.
 

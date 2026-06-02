@@ -46,7 +46,7 @@ The orchestrator pipes your stdout through `third-party-finding-splitter.sh`, wh
 - For each `<<<FINDING-BOUNDARY>>>` block on stdout, the splitter writes one `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` file (F-numbered zero-padded in stdout emission order).
 - For a `NO_FINDINGS` stdout, the splitter writes one `<round_subdir>/<reviewer_tag>.clean.md` zero-findings sentinel with the frontmatter-only body (`reviewer: <tag>`, `round: <NN>`, `findings: 0`).
 - Trailing-newline normalization (every materialized file ends with exactly one `\n`) is performed by the splitter on output. The on-disk schema is identical to what a first-party reviewer Writes; downstream consumers cannot distinguish the two.
-- `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` and `<round_subdir>/<reviewer_tag>.clean.md` are the only acceptable splitter output paths; `<reviewer_tag>` MUST match `^[a-z0-9-]+$`. A boundary block carrying a reviewer_tag that fails the regex is malformed and produces zero finding files for that tag.
+- `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` and `<round_subdir>/<reviewer_tag>.clean.md` are the only acceptable splitter output paths; `<reviewer_tag>` MUST match `^[a-z0-9][a-z0-9-]*$` (lowercase alphanumeric + hyphen; first character MUST be alphanumeric so a leading hyphen — a POSIX argument-parsing footgun in downstream glob/CLI consumers — is rejected at validation time). A boundary block carrying a reviewer_tag that fails the regex is malformed and produces zero finding files for that tag.
 
 The splitter consumes ONLY the boundary protocol above. Chat-only output, narrative summaries, stray text outside boundaries, or attempts to call the Write tool produce zero materialized files for your tag.
 
