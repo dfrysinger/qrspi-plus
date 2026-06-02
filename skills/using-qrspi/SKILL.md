@@ -992,30 +992,19 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
    **Optional `## Sub-Threshold Observations` section (informational only).** When the orchestrator notices a pattern in dropped findings worth recording — e.g., multiple sub-threshold findings sharing a `defect_class` tag and clustering just below the floor — it MAY append a `## Sub-Threshold Observations` H2 section to `round-NN-dispositions.md` as evidence-collection signal for future calibration. The section is purely informational: it does NOT claim an override, it does NOT trigger any reapply behavior, and it is consumed by no current script. Zero observations on a clean round is the common case.
 
-   The section's body is a YAML-fenced block listing one entry per observation with: an `observation_summary` one-liner, the contributing `finding_paths` (relative to the round-NN directory under `reviews/{step}/`), each finding's `defect_class` tag, each finding's `score`, and the `threshold` that dropped them (80 for `style`/`clarity`, 70 for `correctness`). Canonical example:
+   The section's body is a YAML-fenced block listing one entry per observation with: a `summary` one-liner, the contributing `finding_paths` (relative to the round-NN directory under `reviews/{step}/`), each finding's `defect_class` tag, each finding's `score`, and the `threshold` that dropped them (80 for `style`/`clarity`, 70 for `correctness`). Canonical example:
 
    ```yaml
    observations:
-     - observation_summary: "4 clarity findings naming goal-leakage in different questions, all dropped just below the floor"
+     - summary: "4 clarity findings naming goal-leakage in different questions, all dropped just below the floor"
+       defect_class: goal-leakage
+       score: 70
        threshold: 80
        finding_paths:
          - round-01/quality-claude.finding-F02.md
          - round-01/quality-claude.finding-F04.md
          - round-01/quality-codex.finding-F01.md
          - round-01/quality-codex.finding-F03.md
-       contributing_findings:
-         - path: round-01/quality-claude.finding-F02.md
-           defect_class: goal-leakage
-           score: 68
-         - path: round-01/quality-claude.finding-F04.md
-           defect_class: goal-leakage
-           score: 70
-         - path: round-01/quality-codex.finding-F01.md
-           defect_class: goal-leakage
-           score: 72
-         - path: round-01/quality-codex.finding-F03.md
-           defect_class: goal-leakage
-           score: 75
    ```
 
    This shape is informational-only and not consumed by any current script; downstream tooling may parse it in a future release once enough cluster occurrences accumulate to calibrate a programmatic rule.

@@ -191,6 +191,17 @@ source_assembly() {
     || { echo "defect_class: not present in success-case sidecar example"; return 1; }
 }
 
+@test "verifier sidecar failure-case example carries defect_class: in frontmatter (REQUIRED on every sidecar)" {
+  # Spec DoD: defect_class: is REQUIRED on every sidecar. The failure-sidecar
+  # path (verifier_status: failed) is a sidecar too, so the documented
+  # template MUST also carry the field — otherwise the documentation
+  # contradicts the DoD's "missing field is a schema violation" rule.
+  local body
+  body="$(awk '/On failure/{flag=1} /^7\. /{flag=0} flag' agents/qrspi-finding-verifier.md)"
+  echo "$body" | grep -qF 'defect_class:' \
+    || { echo "defect_class: not present in failure-case sidecar example (REQUIRED on every sidecar per spec DoD)"; return 1; }
+}
+
 @test "skills/using-qrspi/SKILL.md still contains the structural markers this mirror depends on" {
   # Drift guard: if any of these markers disappears from the documented
   # snippet, the in-test mirror above is no longer testing the documented

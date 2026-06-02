@@ -93,7 +93,7 @@ The verifier receives five prompt parameters:
 
    **Examples of well-formed tags:** `goal-leakage` (a question or design reveals goals-content it should not), `unanchored-claim` (a statement makes an assertion without a citation), `imprecise-quantifier` (a constraint uses vague words like "many" or "often"), `redundant-restatement` (the same content appears in multiple places), `dangling-reference` (a citation points at content that no longer exists), `swallowed-error` (an exception is caught and silently discarded), `silent-fallback` (a degraded path is taken without surfacing the degradation), `dry-violation` (the same logic is duplicated across surfaces), `injection` (untrusted input flows into a structural sink), `fabricated-citation` (the cited resource does not exist — pairs with `score: 0` HALLUCINATED).
 
-   **Required when score is sub-threshold** (`clarity` < 80 or `correctness` < 70) so the data is usable for future cluster analysis. **Optional but permitted when score is at-or-above threshold** (informational only). When the finding does not fit any meaningful defect category — e.g., pure-advisory style suggestions ("consider naming this more clearly") — emit literal `defect_class: unspecified` rather than omitting the field. A missing field is a schema violation; an `unspecified` value is honest absence of signal.
+   **Required on every sidecar.** The field is REQUIRED on every sidecar the verifier emits — both `verifier_status: passed` (success) and `verifier_status: failed` (unable-to-evaluate) sidecars. When the finding does not fit any meaningful defect category — including at-or-above-threshold findings whose only signal is style polish, pure-advisory style suggestions ("consider naming this more clearly"), or failure sidecars whose evaluation never produced a defect signal — emit literal `defect_class: unspecified` rather than omitting the field. A missing field is a schema violation; an `unspecified` value is honest absence of signal.
 
    `defect_class:` is informational instrumentation only. It does NOT gate keep/drop, does NOT extend `scripts/verifier-fan-in.sh`'s audit-JSON shape, and is consumed by no current surface; future cluster-analysis tooling may read it from sidecars.
 
@@ -116,6 +116,7 @@ The verifier receives five prompt parameters:
    ---
    verifier_status: failed
    actual_model: <copied verbatim from finding frontmatter, or the literal `unknown` when the finding omitted the field>
+   defect_class: <kebab-case tag matching ^[a-z0-9][a-z0-9-]*$, ≤30 chars; e.g. `verifier-crash`, `infrastructure-failure`; literal `unspecified` is also valid when failure produced no defect signal>
    failure_reason: <one-sentence diagnosis>
    ---
    ```
