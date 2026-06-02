@@ -1,0 +1,2 @@
+score: 80
+reason: Verified — T39 deps:[Task 25] (L92, L2211) contradicts dep-graph item 3 (L104) and T39's own scope/DoD (L2254, L2269) which explicitly mirrors T21's path guard and audits T20's renamed scripts; L110 also self-contradicts L104. Implement schedules by the `deps:` field, so the gap is materially actionable.

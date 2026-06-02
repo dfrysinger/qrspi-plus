@@ -19,7 +19,7 @@ Phase 1 is the whole release: all 35 goals, all seven slices, no future-phase co
 Per-phase criteria that must be observable end-to-end at phase boundary, independent of any single task. Each criterion is the cross-task observable behavior the Test phase verifies before the release PR opens:
 
 - [ ] **End-to-end pipeline run on a non-trivial sample project completes Goals → Test cleanly with `verifier_enabled: true`, `scope_tagger_enabled: true`, and `second_reviewer: true`** — every review round dispatches per-finding sidecars on disk with valid `change_type` values, `scripts/verifier-fan-in.sh` produces the expected aggregate, second-reviewer (Codex) and Claude reviewer outputs both reliably persist across rounds, and no orchestrator chat-parsing fallback fires.
-- [ ] **Every fail-loud invariant in the release fires loud on a seeded regression input** — splitter on adversarial Codex stdout, dispatch on misrouted `model_routing` entries, validation table on missing `model_routing:`, `_resolve-lib.sh` halt when a CD-1 dispatch resolves to a `tier: none` configuration, `_resolve-lib.sh` `[second-reviewer-same-vendor]` halt when `second_reviewer: true` resolves both reviewer slots to the same vendor, `second-reviewer-available.sh` `[second-reviewer-unavailable]` halt when `second_reviewer: true` resolves to an unavailable vendor, `plan.md` post-approval split halt when a present per-task file's `# block-hash:` no longer matches its normalized source block, `scripts/verifier-fan-in.sh` halt with a matching `.verifier-fan-in-audit.json` cause for each documented malformation (missing `change_type`, out-of-enum `change_type`, missing sidecar, wrong sidecar extension, unparseable score), reviewer-protocol against fabricated procedural-authority outputs, and the path-filter exfil guard in `scripts/dispatch-agent.sh` each produce non-zero exit with a diagnostic, never silent fallback.
+- [ ] **Every fail-loud invariant in the release fires loud on a seeded regression input** — splitter on adversarial Codex stdout, dispatch on misrouted `model_routing` entries, validation table on missing `model_routing:`, `_resolve-lib.sh` halt when a CD-1 dispatch resolves to a `tier: none` configuration, `_resolve-lib.sh` `[second-reviewer-same-vendor]` halt when `second_reviewer: true` resolves both reviewer slots to the same vendor, `second-reviewer-available.sh` `[second-reviewer-unavailable]` halt when `second_reviewer: true` resolves to an unavailable vendor, `plan.md` post-approval split halt when a present per-task file's `# block-hash:` no longer matches its normalized source block, `scripts/verifier-fan-in.sh` halt with a matching `.verifier-fan-in-audit.json` cause for each documented malformation (missing `change_type`, out-of-enum `change_type`, missing sidecar, wrong sidecar extension, unparseable score), reviewer-protocol against fabricated procedural-authority outputs, the path-filter exfil guard in `scripts/dispatch-agent.sh`, and `tools/build-plugin.mjs` `resolves outside repository` halt when a `!cat` target canonicalizes outside `$REPO_ROOT/` (symlink-escape exfiltration surface) each produce non-zero exit with a diagnostic, never silent fallback.
 - [ ] **Apply-fix sub-threshold observations and disposition instrumentation fire correctly** — a review round producing both above-threshold and sub-threshold findings emits the Sub-Threshold Observations block in dispositions, and the verifier rejects wholesale-hallucination findings on the calibration seeds for the substituted Codex model.
 - [ ] **Plugin build pipeline produces a reproducible release artifact** — `node tools/build-plugin.mjs` exits 0 against the v0.7.2 HEAD source tree, `git diff --exit-code build/ .claude-plugin/marketplace.json` is empty, the built `build/` tree omits all dev-only paths (`docs/`, `tools/`, `tests/`), all `!cat` directives are expanded, and `${CLAUDE_SKILL_DIR}` does not appear anywhere in the shipped tree.
 - [ ] **Full bats suite is green against deduplicated helpers and hardened anti-pattern pins** — `tests/lint/test-bats-body-assertion-guard.bats` catches body-less assertions on its seed regression, T40's seeded G21 violation and BW02 violation both produce non-zero lint exit with a `file:line` diagnostic, and T44's regex pins on `dispatch-routing`/`config-validation` continue to fire on their existing seed fixtures after the round-02 dep re-point.
@@ -89,7 +89,7 @@ Task numbers are globally sequential. Cross-slice dependency (Slice 1.4 G4 → S
 
 ### Slice 1.7 — Build & release tooling + test-infrastructure hardening
 
-- **Task 39 — G32 plugin build pipeline (`tools/build-plugin.mjs` + `render-skill.sh` + `g4-section-anchor-refresh.sh` + marketplace.json + CI workflow + CONTRIBUTING)** — goals: [G32] — deps: [Task 25] — LOC: ~360 — sizing_exception: CI scaffolding — task_type: code — model: opus
+- **Task 39 — G32 plugin build pipeline (`tools/build-plugin.mjs` + `render-skill.sh` + `g4-section-anchor-refresh.sh` + marketplace.json + CI workflow + CONTRIBUTING)** — goals: [G32] — deps: [Task 21, Task 25] — LOC: ~360 — sizing_exception: CI scaffolding — task_type: code — model: opus
 - **Task 40 — G21 bats short-circuit hardening with body-assertion-guard lint (incl. G26 BW02/minimum-version rule)** — goals: [G21, G26] — deps: none — LOC: ~140 — task_type: code — model: sonnet
 - **Task 44 — G24-F05 anti-pattern pin regex hardening** — goals: [G24] — deps: [Task 17, Task 40] — LOC: ~80 — task_type: code — model: sonnet
 
@@ -107,7 +107,7 @@ Three cross-slice dependency clusters dominate the graph; everything else is wit
 
 Within-slice chains worth noting: G31 primitives (T25) before all G31 consumer sites (T26) and before G32 (T39 needs the `prompt-prose-detection.md` defensive-copy site to exist); G34 design-altitude-boundary (T29) before G35 structure-altitude-boundary (T37) so the two altitude primitives are reviewed against a shared template; G1 (T30) before G33 (T31) before G30 (T32) to serialize the three design/SKILL.md edits and prevent same-paragraph conflicts. Slice 1.7 G21+G26 (T40) → G24-F05 (T44) is a short test-infrastructure chain (T40 lands the lint file and BW02 rule; T44 hardens the regex pins against the post-G22/G23 dispatch-routing wording).
 
-Slice 1.1 → Slice 1.2 is a soft chain (Slice 1.2 verifier rubric work assumes the Slice 1.1 verifier sidecar/`change_type` foundation is in place). Slice 1.6 depends on Slice 1.5's G34 (shared altitude-boundary pattern). Slice 1.7 is otherwise independent of Slices 1.1–1.6 (only T39 depends on T25 for the defensive-copy site).
+Slice 1.1 → Slice 1.2 is a soft chain (Slice 1.2 verifier rubric work assumes the Slice 1.1 verifier sidecar/`change_type` foundation is in place). Slice 1.6 depends on Slice 1.5's G34 (shared altitude-boundary pattern). Slice 1.7 is otherwise independent of Slices 1.1–1.6 except that T39 depends on T25 for the defensive-copy site and on T21 for the renamed `scripts/dispatch-agent.sh` path under the `build/` allow-list and `!cat` resolver inspection.
 
 ### Project Environment Fields
 
@@ -999,7 +999,6 @@ Migrate routing to the unified vendor-neutral `model_routing:` schema and single
 
 - `config.md` documents the five-tier `model_routing:` block, includes `default_tier: medium`, and keeps `extra-low: none` as an operator opt-in surface.
 - `_resolve-lib.sh` resolves tiers in the specified precedence order and halts loudly when the selected tier is configured as `none`; it never silently falls back to a neighboring tier or agent-bundled model.
-- `_resolve-lib.sh` halts loudly with `[second-reviewer-same-vendor]` when a `second_reviewer: true` resolution returns the same `(vendor)` for both the primary and second-reviewer slots in a single round; it never silently emits two dispatch spec lines that resolve to the same model under distinct reviewer tags.
 - The shared config-validation procedure fails missing or malformed `model_routing:` configuration with repair-or-abort guidance.
 - Every `agents/qrspi-*.md` file has exactly one `tier:` frontmatter field; the five low-tier agents are `qrspi-finding-verifier`, `qrspi-implementer-lightweight`, `qrspi-research-collator`, `qrspi-research-specialist`, and `qrspi-scope-tagger`; all remaining agents are medium.
 - The four legacy `model_role:` declarations are removed from agent frontmatter, and no dispatch prose instructs authors to use `model_role:` for routing.
@@ -1013,7 +1012,6 @@ Migrate routing to the unified vendor-neutral `model_routing:` schema and single
 - Inspect `config.md` for the five-tier vendor-neutral `model_routing:` block, `default_tier: medium`, and explicit `extra-low: none` row.
 - Exercise/grep `_resolve-lib.sh` coverage for per-dispatch tier override, agent `tier:`, `default_tier:`, and hardcoded-medium-with-warning precedence.
 - Verify a dispatch resolving to a tier configured as `none` halts with a diagnostic naming the unresolved tier and does not fall back.
-- Verify a `second_reviewer: true` dispatch whose primary and second-reviewer resolutions return the same vendor halts with `[second-reviewer-same-vendor]` and emits no dispatch spec lines for that round.
 - Verify missing and malformed `model_routing:` configurations fail through the shared config-validation procedure with repair-or-abort guidance.
 - Run an agent-frontmatter sweep: exactly five `tier: low` agents match the locked rubric, all other `agents/qrspi-*.md` files carry `tier: medium`, and no agent file carries `model_role:`.
 - Grep reviewer agents for the `DISPATCH_FILE=<path>` first-action instruction.
@@ -1124,7 +1122,6 @@ Deliver the host-aware second-reviewer availability primitive and migrate the Go
   - Dispatch script renames, the shared reviewer-dispatch prose include, `await-round.sh` draining, and the twelve review-producing skill dispatch migrations — Task 20 owns that rename-and-dispatch surface.
   - Evergreen-output-rule snippet creation and include-site migration across artifact-producing skills — Task 27 owns that shared G27 sibling surface.
   - Multi-second-reviewer fan-out, per-reviewer-agent second-reviewer toggles, realized-dispatch telemetry, and DeepSeek or other v0.7.3+ default second-reviewer choices — explicitly out of G27 v0.7.2 scope.
-  - Enforcing primary-vendor versus second-vendor distinctness inside `second-reviewer-available.sh`; Task 16's `_resolve-lib.sh` matrix lookup owns the `[second-reviewer-same-vendor]` halt at resolve time (the probe checks reachability only, not slot distinctness).
 
 **Definition of done**
 
@@ -1136,6 +1133,7 @@ Deliver the host-aware second-reviewer availability primitive and migrate the Go
 - `skills/using-qrspi/SKILL.md` documents `second_reviewer:` as the canonical config field and the config-validation prose rejects legacy `codex_reviews:` with a rename-naming diagnostic instead of aliasing it.
 - `skills/reviewer-protocol/SKILL.md` no longer contains `codex_reviews` and its Expected-Reviewer Matrix / same-surface prose uses `second_reviewer: true|false`.
 - Routing-matrix coverage demonstrates that `second_reviewer: true` can emit primary and second-reviewer entries at the same tier, and unavailable second-reviewer resolution halts with `[second-reviewer-unavailable]` instead of silently falling back to single-reviewer dispatch.
+- `_resolve-lib.sh`'s host × vendor matrix lookup halts loudly with `[second-reviewer-same-vendor]` when a `second_reviewer: true` resolution returns the same vendor for both the primary and second-reviewer slots in a single round; it never silently emits two dispatch spec lines that resolve to the same vendor under distinct reviewer tags. (The probe in `second-reviewer-available.sh` checks reachability only — slot distinctness is enforced at matrix-lookup time here.)
 
 **Test expectations**
 
@@ -1147,6 +1145,7 @@ Deliver the host-aware second-reviewer availability primitive and migrate the Go
 - Grep audit confirms `grep -nE 'codex_reviews' skills/reviewer-protocol/SKILL.md` returns no matches after the migration.
 - Config-validation tests or grep-pinned prose confirm a stray legacy `codex_reviews:` field is rejected loudly with the rename-naming diagnostic and is not aliased to `second_reviewer:`.
 - `tests/unit/test-routing-matrix-application.bats` proves same-tier primary + second-reviewer dispatch coverage under `second_reviewer: true` and `[second-reviewer-unavailable]` halt behavior when no eligible second reviewer exists.
+- `tests/unit/test-routing-matrix-application.bats` also proves `[second-reviewer-same-vendor]` halt behavior: when a `second_reviewer: true` dispatch resolves primary and second-reviewer slots to the same vendor, `_resolve-lib.sh` halts with the diagnostic and emits no dispatch spec lines for that round.
 
 **References**
 
@@ -2208,7 +2207,7 @@ Update the Structure artifact-quality and scope-reviewer prompts so they enforce
 - **Task type:** code
 - **Model:** opus
 - **Target files:** `tools/build-plugin.mjs`; `tools/render-skill.sh`; `tools/g4-section-anchor-refresh.sh`; `.claude-plugin/marketplace.json`; `.github/workflows/ci.yml`; `CONTRIBUTING.md`; `tests/unit/test-build-gate.bats`; `tests/unit/test-ci-workflow-shape.bats`; `tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats`; `tests/acceptance/v07-phase1/test-phase1-acceptance.bats`; existing callers/references to `scripts/render-skill.sh`, `scripts/g4-section-anchor-refresh.sh`, and `${CLAUDE_SKILL_DIR}` sites.
-- **Dependencies:** Task 25
+- **Dependencies:** Task 21, Task 25
 - **LOC estimate:** ~360
 - **Sizing exception:** CI scaffolding
 - **Dispatch order:** test-writer first, implementer second (RED-verification gate between).

@@ -1,0 +1,2 @@
+score: 62
+reason: Real Plan-altitude internal consistency gap — AC #2 enumerates T21's path-canonicalization guard but omits T39's structurally-identical guard that plan.md L2254 itself says "mirrors T21"; impact tempered because T39 DoD and L2269 regression test already enforce it per-task.
