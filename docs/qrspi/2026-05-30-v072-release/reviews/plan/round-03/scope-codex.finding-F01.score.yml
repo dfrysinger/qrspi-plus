@@ -1,0 +1,2 @@
+score: 72
+reason: Plan.md line 2252 names a helper-call parameter shape (`assert_path_under_repo_root <label> <abs-path>`) and specific implementation APIs (`fs.realpathSync`, `readlink -f`), which directly violates the documented Plan DEFERS rule and boundary-drift signal in plan/owns-defers.md (signatures/parameter shapes belong in structure.md).

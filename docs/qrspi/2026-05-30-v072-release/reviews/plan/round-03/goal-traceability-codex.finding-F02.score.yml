@@ -1,0 +1,2 @@
+score: 40
+reason: Verified mismatch — plan.md:2370 says F04 was "absorbed into the G3/CD-1 dispatch rewrite" while design.md:2064 actually moots F04 because the old regex is no longer present at meaningful volume; real but minor rationale-citation drift with no implementation impact.

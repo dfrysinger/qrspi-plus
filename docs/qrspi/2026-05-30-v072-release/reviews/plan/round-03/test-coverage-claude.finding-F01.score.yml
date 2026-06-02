@@ -1,0 +1,2 @@
+score: 42
+reason: Real but modest test-hygiene gap (bullets/DoD assert presence, not non-emptiness, so empty-string dispatch_spec values would pass); however, resolver fail-loud paths are explicitly scoped out of T11 to T19/T20 and "malformed schema-strict" coverage is not a documented design requirement at T11's layer.

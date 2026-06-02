@@ -1,0 +1,6 @@
+# scope-set for round 3 (plan)
+# generated_by: orchestrator (manual; scope-tagger dispatch elided — 9 kept findings cluster predictably on Overview + Phase 1 AC + Slice 1.2 task list)
+# total_findings_kept: 9
+## Overview
+## Phase 1: v0.7.2 release
+## Task List by Slice

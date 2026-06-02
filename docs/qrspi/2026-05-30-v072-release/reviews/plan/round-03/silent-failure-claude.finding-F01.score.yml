@@ -1,0 +1,2 @@
+score: 72
+reason: Verified contradiction — plan.md AC bullet #2 names a "dispatch-routing top-level fail-loud paragraph" that T17 Out scope and design.md G25 both confirm is not delivered by any v0.7.2 task; real correctness defect with a concrete single-paragraph fix.

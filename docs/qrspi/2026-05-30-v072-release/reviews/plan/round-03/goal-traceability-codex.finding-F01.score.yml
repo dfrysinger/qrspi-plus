@@ -1,0 +1,2 @@
+score: 75
+reason: Phase 1 acceptance criterion at plan.md:25 cites "the consolidated H4-extraction helper" (G24-F03) and "parameterized dispatch-routing assertion callers" (G24-F01) as observable phase-end behavior, but design.md:2062-2063 mark F01/F03 as moot and the only G24 task (T44) at plan.md:2370 explicitly lists them as out-of-scope, so the criterion is untraceable to planned work and Test cannot verify it.

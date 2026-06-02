@@ -1,0 +1,2 @@
+score: 70
+reason: Verified — plan.md L11 umbrella "moot/absorbed-by-CD-1 per design.md ## G24/G25/G26/G29" is inaccurate for G24 (re-scoped to F05, not absorbed by CD-1) and G26 (already fixed; BW02 lint rides on G21, not CD-1) per design.md section titles at L2045 and L2123; T40 itself carries goals:[G21,G26]. Real correctness defect in Overview prose that contradicts the plan's own per-task references; medium-impact since it misleads readers about gap-task rationales but is fixable with a one-paragraph edit.

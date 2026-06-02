@@ -1,0 +1,2 @@
+score: 85
+reason: Verified — Phase 1 Acceptance Criteria (plan.md:25) requires three bats outcomes (parameterized dispatch-routing callers, consolidated H4-extraction helper, test-codex-splitter.bats deprecation) that T44 (line 2370) and T40 (line 2309) explicitly declare moot/out-of-scope, creating a real release-gate contradiction.

@@ -1,0 +1,2 @@
+score: 50
+reason: Real asymmetry — Task 40 DoD line 2319 says G21 rule "fails loudly" while BW02 lines 2305/2320/2330 only say "report" diagnostics, and design.md G26 acceptance (line 2154) explicitly requires the lint test to fail CI on BW02 violations; however, structuring BW02 as a separate `@test` block (mandated by line 2305) and the line 2321 requirement that the lint test runs on the blocking CI path make a log-and-pass implementation unlikely in practice, so the spec gap is moderate rather than load-bearing.

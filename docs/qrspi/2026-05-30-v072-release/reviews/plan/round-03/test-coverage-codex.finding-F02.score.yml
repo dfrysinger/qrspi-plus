@@ -1,0 +1,2 @@
+score: 28
+reason: Task 20's expectations already pin `.dispatch-manifest.json` entries and depend on Task 11 (whose own tests own the subagent_type/host/vendor/model/prompt_file provenance contract and survive the rename); asking Task 20 to re-assert Task 11's contract is a soft refinement/overspecification rather than a real coverage gap.

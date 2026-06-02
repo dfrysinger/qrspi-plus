@@ -1,0 +1,2 @@
+score: 42
+reason: Real but moderate silent-failure-class ambiguity in T12 DoD ("zero-background-entry success") + T20's "safe to call when the round is first-party-only" wording — design.md G4/CD-1 implies dispatch-agent.sh always writes the manifest so missing-manifest is unlikely in practice, and the finding asks for fail-loud-on-absence at implementation altitude which is plausibly an implementation detail the implementer would handle correctly given the script-owner contract.
