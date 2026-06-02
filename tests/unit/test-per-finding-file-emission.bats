@@ -153,6 +153,20 @@ setup() {
   fi
 }
 
+@test "reviewer-protocol SKILL.md self-description is emission-agnostic (no 'disk-write contract' tokens)" {
+  # Pins the post-split self-description: after G6/Task-03 moved the disk-write
+  # contract prose out of SKILL.md into first-party-emission.md, the frontmatter
+  # description and intro paragraph must not still advertise it as a core
+  # protocol concern. (Round-2 fix for spec-claude/spec-codex F01.)
+  local f="skills/reviewer-protocol/SKILL.md"
+  [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
+  if grep -qiF 'disk-write contract' "$f"; then
+    grep -niF 'disk-write contract' "$f"
+    echo "SKILL.md self-description still advertises 'disk-write contract' as core protocol surface"
+    return 1
+  fi
+}
+
 @test "reviewer-protocol SKILL.md carries no pre-rename script/file references" {
   local f="skills/reviewer-protocol/SKILL.md"
   if grep -qE 'run-codex-review|codex-emission-override|codex-finding-splitter' "$f"; then

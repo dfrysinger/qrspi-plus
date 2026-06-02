@@ -1,11 +1,11 @@
 ---
 name: reviewer-protocol
-description: Cross-cutting QRSPI reviewer protocol — finding schema, change-type classifier, untrusted-data handling, disk-write contract.
+description: Cross-cutting QRSPI reviewer protocol — finding schema, change-type classifier, untrusted-data handling, and dispatch contract. Per-channel emission contracts live in sibling files first-party-emission.md and third-party-emission.md.
 ---
 
 # QRSPI Reviewer Protocol
 
-This skill is the single consolidated reviewer-shared content asset for the QRSPI pipeline. It defines the cross-cutting reviewer contract — finding schema, change-type classifier, disk-write contract, and untrusted-data handling — that every reviewer subagent uses.
+This skill is the single consolidated reviewer-shared content asset for the QRSPI pipeline. It defines the cross-cutting transport-neutral reviewer contract — finding schema, change-type classifier, dispatch contract, and untrusted-data handling — that every reviewer subagent uses. The per-channel emission contracts live in sibling files (`first-party-emission.md`, `third-party-emission.md`).
 
 **Delivery.** This skill is delivered to reviewer subagents two ways:
 
