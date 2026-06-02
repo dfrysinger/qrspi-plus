@@ -197,10 +197,13 @@ _test_mirror_partition_finding() {
 # fan-in script writes .verifier-fan-in-audit.json + kept-findings.txt INTO
 # the round dir, so the source fixture must not be mutated across runs) and
 # invokes scripts/verifier-fan-in.sh on the copy. Sets RC, AUDIT (path to
-# audit json), and KEPT (path to kept-findings.txt) for the caller. Every
-# call site MUST check the helper's return code so an environment-setup
-# failure (missing fixture, unsafe basename, copy failure) surfaces with a
-# named diagnostic instead of being silently coerced to RC=0 downstream.
+# audit json), KEPT (path to kept-findings.txt), and FIXTURE_DEST (the
+# symlink-resolved copy root used by callers as a sandbox prefix bound for
+# any awk path-walk over kept-findings.txt) for the caller. Every call site
+# MUST check the helper's return code so an environment-setup failure
+# (missing fixture, unsafe basename, copy failure, pwd-resolve failure)
+# surfaces with a named diagnostic instead of being silently coerced to
+# RC=0 downstream.
 _run_fan_in_on_fixture() {
   local src="$1"
   [[ -d "$src" ]] || { echo "fixture round missing: $src" >&2; return 99; }
@@ -219,9 +222,14 @@ _run_fan_in_on_fixture() {
     || { echo "mktemp failed under $BATS_TEST_TMPDIR" >&2; return 97; }
   # Copy contents (not the directory itself) so the audit + kept-findings
   # outputs land directly in $dest. Trailing `/.` is the standard portable
-  # form for "copy contents of src into dest".
-  cp -R "$src/." "$dest/" \
-    || { echo "cp -R failed for $src -> $dest" >&2; return 96; }
+  # form for "copy contents of src into dest". `-L` dereferences any
+  # symlinks at copy time so a symlinked finding in the fixture cannot
+  # survive into $dest and slip past the textual `[[ "$p" == "$FIXTURE_DEST"/* ]]`
+  # prefix guard (the OS would follow the symlink target out of the sandbox
+  # at awk-read time). With -L, every entry under $dest is a regular file
+  # whose bytes are physically inside the sandbox.
+  cp -RL "$src/." "$dest/" \
+    || { echo "cp -RL failed for $src -> $dest" >&2; return 96; }
   AUDIT="$dest/.verifier-fan-in-audit.json"
   KEPT="$dest/kept-findings.txt"
   RC=0
@@ -231,8 +239,70 @@ _run_fan_in_on_fixture() {
   # Resolve symlinks (macOS /var → /private/var) so callers comparing kept
   # paths against the fixture root with a prefix match — a defense-in-depth
   # bound to keep awk parsing inside the sandbox — see the same resolution
-  # the script applies internally (`pwd -P`).
-  FIXTURE_DEST="$(cd "$dest" && pwd -P)"
+  # the script applies internally (`pwd -P`). Guard the assignment: a
+  # `VAR=$(cd … && pwd -P)` form does NOT propagate the subshell's exit
+  # code on its own (a `cd` failure would silently leave FIXTURE_DEST
+  # empty, and `[[ "$p" == /* ]]` with an unquoted RHS treats `*` as a
+  # glob — matching every absolute path and neutering the sandbox bound).
+  FIXTURE_DEST="$(cd "$dest" && pwd -P)" \
+    || { echo "pwd -P failed resolving $dest" >&2; return 95; }
+  [[ -n "$FIXTURE_DEST" ]] \
+    || { echo "FIXTURE_DEST resolved to empty for $dest" >&2; return 95; }
+}
+
+@test "_run_fan_in_on_fixture surfaces pwd -P failure as non-zero (FIXTURE_DEST never silently empty)" {
+  # Hardening rationale: a `VAR=$(cd … && pwd -P)` assignment does NOT propagate
+  # the subshell's exit code to the outer shell — on failure the helper would
+  # silently set FIXTURE_DEST="" and return 0, leaving the sandbox prefix
+  # check (`[[ "$p" == "$FIXTURE_DEST"/* ]]`) effectively neutered (matches
+  # any absolute path). Pin that the helper now surfaces this failure.
+  #
+  # We force `cd "$dest" && pwd -P` to fail by shadowing `pwd` with a
+  # function that returns non-zero. Bash command substitution runs in a
+  # subshell that inherits the caller's functions, so the override fires
+  # inside the helper. (`cd` itself succeeds — `dest` is a fresh mktemp dir.)
+  pwd() { return 1; }
+  local helper_rc=0
+  _run_fan_in_on_fixture tests/fixtures/change-type-enum/round-all-canonical \
+    || helper_rc=$?
+  unset -f pwd
+  [[ "$helper_rc" -ne 0 ]] \
+    || { echo "expected helper to fail when pwd -P fails; got rc=0 with FIXTURE_DEST='$FIXTURE_DEST'"; return 1; }
+  # Be specific: helper should surface this with the named return code 95
+  # so a future regression that swallows pwd-P's failure on a different
+  # path (e.g. a `|| true` re-introduction) does not pass this test by
+  # accidentally returning some OTHER non-zero code from a later step.
+  [[ "$helper_rc" -eq 95 ]] \
+    || { echo "expected helper rc=95 (named pwd-P failure code); got $helper_rc"; return 1; }
+}
+
+@test "_run_fan_in_on_fixture dereferences fixture symlinks (sandbox prefix guard cannot be bypassed via symlink)" {
+  # Hardening rationale: `cp -R` (no -L) preserves symlinks. A symlinked
+  # finding in the fixture would survive the copy, the textual prefix
+  # guard `[[ "$p" == "$FIXTURE_DEST"/* ]]` would pass on the symlink path,
+  # and `awk "$p"` would follow it OUT of the sandbox to read the target.
+  # Switching to `cp -RL` dereferences symlinks at copy time, so nothing
+  # under $FIXTURE_DEST can point outside the sandbox.
+  command -v jq >/dev/null 2>&1 || skip "jq required (helper precondition)"
+  local outside="$BATS_TEST_TMPDIR/outside-target.txt"
+  printf 'change_type: malicious\n' >"$outside"
+  local src="$BATS_TEST_TMPDIR/symlink-fixture-round"
+  mkdir -p "$src"
+  # Plant a regular file plus a symlink whose name matches the
+  # finding-shaped pattern the fan-in script picks up.
+  printf -- '---\nchange_type: style\n---\n' >"$src/regular-claude.finding-F01.md"
+  ln -s "$outside" "$src/symlinked-claude.finding-F01.md"
+  _run_fan_in_on_fixture "$src" \
+    || true  # the helper may exit non-zero on this synthetic fixture; we
+             # care about the post-copy state, not the script's verdict.
+  [[ -n "$FIXTURE_DEST" ]] || { echo "FIXTURE_DEST empty"; return 1; }
+  [[ -e "$FIXTURE_DEST/symlinked-claude.finding-F01.md" ]] \
+    || { echo "expected the symlink-named entry to land in the sandbox copy"; return 1; }
+  # Post-fix: copy must NOT preserve the symlink. With `cp -RL`, the entry
+  # at $FIXTURE_DEST/symlinked-... is a regular file containing the
+  # target's BYTES (not a symlink to outside).
+  [[ ! -L "$FIXTURE_DEST/symlinked-claude.finding-F01.md" ]] \
+    || { echo "fixture copy preserved a symlink — cp must dereference (-L) to keep awk path-walks inside the sandbox"; return 1; }
 }
 
 @test "out-of-enum change_type triggers change_type_out_of_enum halt and blocks kept-findings.txt" {
@@ -443,17 +513,26 @@ _run_fan_in_on_fixture() {
   # and dispositioned reviews are out of scope — they freeze the state at
   # the time they were written.
   #
-  # Match the 5-value alternation `style|clarity|correctness|scope|intent`
-  # in any permutation. Allow it ONLY in:
+  # Match the 5-value alternation in ANY permutation — five
+  # `(style|clarity|correctness|scope|intent)` slots joined by literal pipes
+  # — so any non-canonical ordering trips the duplication detector. Allow
+  # the alternation ONLY in:
   #   - skills/reviewer-protocol/SKILL.md  (the reviewer-side source of truth)
   #   - scripts/verifier-fan-in.sh         (the script-side source of truth)
-  # Match the 5-value alternation in ANY permutation — five
-  # `(style|clarity|correctness|scope|intent)` slots joined by literal pipes.
+  #
   # The previous spelling used `[[:space:]|,]` which is a CHARACTER class
   # (literal `|` inside `[...]`, not regex alternation), so it silently
   # accepted `style clarity correctness scope intent` — a non-pipe spelling
   # that isn't the duplication shape we care about — and missed all 119
   # non-canonical permutations.
+  #
+  # Cardinality note: this regex matches the SHAPE (5 pipe-joined slots,
+  # each from the canonical set), not the SET (5 distinct values). It
+  # therefore admits a theoretical false-positive like
+  # `style|style|style|style|style`. We accept this trade-off: a 5-token
+  # all-same alternation has no real production use case, while extracting
+  # captures and sort -u-ing them per match would substantially complicate
+  # the detector for a defect class no reviewer or developer would write.
   local hits rc=0
   hits=$(grep -rEn '(style|clarity|correctness|scope|intent)\|(style|clarity|correctness|scope|intent)\|(style|clarity|correctness|scope|intent)\|(style|clarity|correctness|scope|intent)\|(style|clarity|correctness|scope|intent)' skills/ scripts/ 2>/dev/null) || rc=$?
   # Treat exit 0 (matches) and 1 (no matches) as successful scans; exit 2+
@@ -461,7 +540,15 @@ _run_fan_in_on_fixture() {
   [[ $rc -le 1 ]] \
     || { echo "recursive grep failed (exit $rc) scanning skills/ scripts/"; return 1; }
   if [[ -n "$hits" ]]; then
-    hits=$(printf '%s\n' "$hits" | grep -vE '^(skills/reviewer-protocol/SKILL\.md|scripts/verifier-fan-in\.sh):' || true)
+    # Same exit-code discipline as the outer scan: exit 0 = some hits
+    # remained after filtering canonical sources (real duplicates), exit 1
+    # = all hits were in canonical sources (clean), exit 2+ = grep itself
+    # errored — surface, don't mask. `|| true` would collapse 2+ into a
+    # silent pass and a runtime regex/IO error would produce a false-clean.
+    local filter_rc=0
+    hits=$(printf '%s\n' "$hits" | grep -vE '^(skills/reviewer-protocol/SKILL\.md|scripts/verifier-fan-in\.sh):') || filter_rc=$?
+    [[ $filter_rc -le 1 ]] \
+      || { echo "grep -vE filter failed (exit $filter_rc) on dup-alt hits"; return 1; }
   fi
   [[ -z "$hits" ]] \
     || { echo "duplicated 5-value change_type enum alternation found outside the canonical sources:"; printf '%s\n' "$hits"; return 1; }
