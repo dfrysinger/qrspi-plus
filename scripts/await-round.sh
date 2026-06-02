@@ -26,6 +26,16 @@
 #   1  unrecoverable transport failure on a background entry, or invalid args
 #
 # Bash 3.2 compatible (macOS system /bin/bash).
+#
+# Trust boundary (R2 hardening — security-claude R2-F01/F02):
+#   The .dispatch-manifest.json fields `await_cmd` and `split_cmd` are read
+#   verbatim from disk. They are NEVER passed to a shell. The embedded Python
+#   helper below parses each command via shlex.split, validates argv[0]
+#   against an executable allowlist (path-shaped OR `codex`), and execs with
+#   `shell=False` and `cwd=<round-dir>/.dispatch/`. This blocks the canonical
+#   RCE shape (`touch /tmp/pwned`) and confines relative-path writes to the
+#   round-scoped dispatch directory which is removed on completion.
+#   See parse_and_validate() in the inline python block.
 
 set -u
 
@@ -75,7 +85,7 @@ RC_FILE_E="$RC_FILE" \
 SUM_FILE_E="$SUM_FILE" \
 ERR_FILE_E="$ERR_FILE" \
 python3 - <<'PYEOF'
-import json, os, subprocess, sys
+import json, os, shlex, subprocess, sys
 
 round_dir = os.environ["ROUND_DIR_E"]
 manifest_path = os.environ["MANIFEST_E"]
@@ -83,6 +93,46 @@ complete_path = os.environ["COMPLETE_E"]
 rc_file = os.environ["RC_FILE_E"]
 sum_file = os.environ["SUM_FILE_E"]
 err_file = os.environ["ERR_FILE_E"]
+
+# Trust boundary (R2 hardening — security-claude R2-F01/F02):
+# `await_cmd` and `split_cmd` are read VERBATIM from
+# <round-dir>/.dispatch-manifest.json, which is on disk and writable by
+# anything that has the round-dir path. We MUST NOT pass these strings to a
+# shell. Instead:
+#   1. Parse via shlex.split → argv list, exec with shell=False.
+#   2. Validate argv[0]: must contain '/' (relative or absolute path) OR be
+#      a bare basename in BARE_NAME_ALLOWLIST. This blocks bare commands like
+#      `touch`, `curl`, `rm` while permitting real callers (scripts/<name>.sh
+#      and the `codex` CLI).
+#   3. Run with cwd=<round-dir>/.dispatch/ so any relative-path writes from
+#      legitimate callers stay confined; absolute-path writes outside the
+#      workspace are still possible only if the executable allowlist permits
+#      them (and our allowlist permits no general-purpose write tools).
+# Documented in script header comments above (see "Trust boundary").
+BARE_NAME_ALLOWLIST = {"codex"}
+DISPATCH_CWD = os.path.join(round_dir, ".dispatch")
+
+def parse_and_validate(cmdstr, kind, tag):
+    """Return (argv, err_or_None). kind ∈ {"await_cmd","split_cmd"}."""
+    try:
+        argv = shlex.split(cmdstr)
+    except ValueError as e:
+        return None, "await-round: %s parse error for %r: %s" % (kind, tag, type(e).__name__)
+    if not argv:
+        return None, "await-round: %s empty after parse for %r" % (kind, tag)
+    exe = argv[0]
+    # Reject any argv[0] that begins with '-' (option-style — never a real
+    # executable; could feed unintended flags to a downstream wrapper).
+    if exe.startswith("-"):
+        return None, "await-round: %s rejected for %r: argv[0] must not start with '-'" % (kind, tag)
+    # Bare-name (no '/') executables are rejected unless explicitly allowed.
+    # This blocks the canonical RCE shape: `touch /tmp/pwned`, `curl ...`, etc.
+    if "/" not in exe and exe not in BARE_NAME_ALLOWLIST:
+        return None, ("await-round: %s rejected for %r: bare-name executable %r "
+                      "not in allowlist; manifest commands must use a path "
+                      "(e.g. 'scripts/foo.sh') or an allowed binary (codex)."
+                      % (kind, tag, exe))
+    return argv, None
 
 errs = []
 with open(manifest_path) as f:
@@ -121,11 +171,26 @@ for entry in manifest:
         final_rc = 1
         continue
 
-    # Execute await_cmd. Capture & DISCARD stdout/stderr — they may contain
-    # raw third-party payload fragments that must not surface (CD-1 #4).
+    # Execute await_cmd. shell=False + parsed argv (R2 hardening). Captured
+    # stdout/stderr remain DEVNULL — they may carry raw third-party payload
+    # fragments that must not surface (CD-1 #4).
+    argv, perr = parse_and_validate(await_cmd, "await_cmd", tag)
+    if argv is None:
+        errs.append(perr)
+        entry["status"] = "failed"
+        final_rc = 1
+        continue
+    # Ensure the confinement directory exists so cwd= doesn't blow up on
+    # already-cleaned rounds; any prior `rm -rf .dispatch` leaves a clean
+    # slate, and we want await_cmd's relative writes to land here.
+    try:
+        os.makedirs(DISPATCH_CWD, exist_ok=True)
+    except Exception:
+        pass
     try:
         r = subprocess.run(
-            await_cmd, shell=True,
+            argv, shell=False,
+            cwd=DISPATCH_CWD,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
     except Exception as e:
@@ -139,11 +204,18 @@ for entry in manifest:
         final_rc = 1
         continue
 
-    # Execute split_cmd if present.
+    # Execute split_cmd if present (shell=False + parsed argv).
     if split_cmd:
+        argv_s, perr_s = parse_and_validate(split_cmd, "split_cmd", tag)
+        if argv_s is None:
+            errs.append(perr_s)
+            entry["status"] = "failed"
+            final_rc = 1
+            continue
         try:
             rs = subprocess.run(
-                split_cmd, shell=True,
+                argv_s, shell=False,
+                cwd=DISPATCH_CWD,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
         except Exception as e:
@@ -219,7 +291,7 @@ fi
 # parity with dispatch-companion `await`). Per structure.md §14: stdout is
 # the short status line.
 RC_VALUE="$(cat "$RC_FILE" 2>/dev/null || echo 0)"
-SUM_LINE="$(cat "$SUM_FILE" 2>/dev/null || true)"
+SUM_LINE="$(cat "$SUM_FILE" 2>/dev/null | head -c 4096 || true)"
 ERR_TEXT="$(cat "$ERR_FILE" 2>/dev/null || true)"
 
 # Strip any errant payload-shaped material that might somehow have leaked

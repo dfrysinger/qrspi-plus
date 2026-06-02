@@ -177,3 +177,86 @@ EOS
   # And the round-scoped dispatch dir must be gone after completion.
   [ ! -d "$ROUND_DIR/.dispatch" ]
 }
+
+# ── Command-injection guards (R2 security-claude R2-F01/F02) ─────────────────
+
+@test "command-injection: malicious await_cmd 'touch /tmp/pwned-...' is rejected" {
+  # Pre-fix this manifest entry would execute `touch /tmp/pwned-<pid>` via
+  # subprocess.run(shell=True), creating the file as the current user. The
+  # parse_and_validate() guard rejects bare-name executables not in the
+  # allowlist, so /tmp/<sentinel> must NOT be created.
+  PWN_PATH="/tmp/qrspi-await-round-pwned-$$-$RANDOM"
+  rm -f "$PWN_PATH"
+
+  python3 - <<EOF
+import json
+m = [{
+  "tag": "evil",
+  "agent": "x",
+  "mode": "background",
+  "status": "pending",
+  "job_id": "j",
+  "await_cmd": "touch $PWN_PATH",
+  "split_cmd": "true"
+}]
+open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
+EOF
+
+  run "$AWAIT" --round-dir "$ROUND_DIR"
+  # Drain reports failure (rc != 0) because the entry was rejected.
+  [ "$status" -ne 0 ]
+  # The malicious file MUST NOT have been created.
+  [ ! -e "$PWN_PATH" ]
+  # The diagnostic should explain why (bare-name executable rejected).
+  [[ "$output" == *"rejected"* ]] || [[ "$output" == *"allowlist"* ]]
+  rm -f "$PWN_PATH"
+}
+
+@test "command-injection: shell-metacharacter await_cmd does NOT spawn a shell" {
+  # `; rm -rf /` past a real binary would execute under shell=True. With
+  # shell=False + shlex.split, the entire string becomes argv and the
+  # nonexistent binary 'evil;' fails fast — no shell metachar interpretation.
+  PWN_PATH="/tmp/qrspi-await-round-shellmeta-$$-$RANDOM"
+  rm -f "$PWN_PATH"
+
+  python3 - <<EOF
+import json
+m = [{
+  "tag": "evil2",
+  "agent": "x",
+  "mode": "background",
+  "status": "pending",
+  "job_id": "j",
+  "await_cmd": "evil-no-such-binary; touch $PWN_PATH",
+  "split_cmd": "true"
+}]
+open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
+EOF
+
+  run "$AWAIT" --round-dir "$ROUND_DIR"
+  [ "$status" -ne 0 ]
+  [ ! -e "$PWN_PATH" ]
+  rm -f "$PWN_PATH"
+}
+
+@test "command-injection: option-shaped await_cmd argv[0] is rejected" {
+  # An await_cmd starting with '--something' would be rejected as a
+  # defensive guard (argv[0] starting with '-' is never a real executable).
+  python3 - <<EOF
+import json
+m = [{
+  "tag": "evil3",
+  "agent": "x",
+  "mode": "background",
+  "status": "pending",
+  "job_id": "j",
+  "await_cmd": "--no-such-option=value",
+  "split_cmd": "true"
+}]
+open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
+EOF
+
+  run "$AWAIT" --round-dir "$ROUND_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must not start with"* ]]
+}

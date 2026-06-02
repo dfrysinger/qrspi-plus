@@ -64,6 +64,34 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+# ---------------------------------------------------------------------------
+# Trust-boundary input validation (R2 hardening — security-claude R2-F03).
+# $BASE_REF and $ARTIFACT flow into `git rev-parse` / `git diff` invocations.
+# Without validation, an attacker controlling these flags can inject git
+# options (e.g. --output=/etc/cron.d/backdoor, --upload-pack=<cmd>). We
+# reject any value beginning with '-' here, and additionally pass refs after
+# `--end-of-options` (where supported) and use `--` separators on `git diff`.
+# Path-shaped values (legitimate ARTIFACT paths) may begin with '.' or '/'
+# but must not begin with '-'.
+# ---------------------------------------------------------------------------
+case "$BASE_REF" in
+  -*) echo "round-prepare: --base-ref must not begin with '-' (got: $BASE_REF). Refusing to invoke git with option-shaped ref." >&2; exit 1 ;;
+esac
+case "$ARTIFACT" in
+  -*) echo "round-prepare: --artifact must not begin with '-' (got: $ARTIFACT)." >&2; exit 1 ;;
+esac
+# Additionally validate $TASK_BRANCH and $IMPLEMENTER_COMMIT — they are not
+# currently fed to git, but defense in depth keeps future refactors safe.
+case "$TASK_BRANCH" in
+  -*) echo "round-prepare: --task-branch must not begin with '-' (got: $TASK_BRANCH)." >&2; exit 1 ;;
+esac
+case "$IMPLEMENTER_COMMIT" in
+  -*) echo "round-prepare: --implementer-commit must not begin with '-' (got: $IMPLEMENTER_COMMIT)." >&2; exit 1 ;;
+esac
+case "$WORKTREE" in
+  -*) echo "round-prepare: --worktree must not begin with '-' (got: $WORKTREE)." >&2; exit 1 ;;
+esac
+
 # Normalize round number to integer-safe NN string + value.
 case "$ROUND" in
   ''|*[!0-9]*)
@@ -106,6 +134,10 @@ if [ "$PER_TASK" -eq 1 ]; then
   # base on per-task invocations.
   TASK_BASE_SHA=""
   if [ -n "$BASE_REF" ]; then
+    # Input validation above (BASE_REF must not begin with '-') already
+    # closes the option-injection vector at the flag-parse boundary, so we
+    # don't pass --end-of-options here (git rev-parse echoes the literal
+    # marker on stdout, polluting the captured SHA).
     TASK_BASE_SHA="$(git -C "${WORKTREE:-.}" rev-parse "$BASE_REF" 2>/dev/null || true)"
   fi
 
@@ -325,10 +357,12 @@ fi
 
 DIFF_PATH="$OUTPUT_DIR/round-${ROUND_NN}.diff"
 DIFF_TMP="${DIFF_PATH}.tmp.$$"
+# `--` separates revision from path arguments, blocking option injection
+# even past the flag-parse validation above (defense in depth — R2-F03).
 if [ -n "$ARTIFACT" ]; then
   git diff "$REF" -- "$ARTIFACT" > "$DIFF_TMP" 2>/dev/null || true
 else
-  git diff "$REF" > "$DIFF_TMP" 2>/dev/null || true
+  git diff "$REF" -- > "$DIFF_TMP" 2>/dev/null || true
 fi
 if ! mv "$DIFF_TMP" "$DIFF_PATH"; then
   rm -f "$DIFF_TMP"

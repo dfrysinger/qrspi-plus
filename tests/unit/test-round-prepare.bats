@@ -479,8 +479,65 @@ assert d['narrowed'] is False
   run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
   [ "$status" -eq 0 ]  # round still proceeds; only diagnostic on stderr
   [[ "$output" == *"failed to delete backward-loop flag"* ]]
+  # Diagnostic must reference the offending flag path so an operator can
+  # locate the file requiring manual cleanup (R2 silent-failure-claude
+  # R2-F01: prove the failure surface is attributable, not just present).
+  [[ "$output" == *"$TASK_DIR/round-03-backward-loop.flag"* ]]
   # Flag path remains because deletion failed (consume attempt, not consume).
   [ -e "$TASK_DIR/round-03-backward-loop.flag" ]
+  # Sidecar must still be written even when deletion failed — this proves the
+  # downstream observable state is materialised on disk and the failure path
+  # is not "silent" (no .round-prepare.json would mean the round halted
+  # without a record).
+  [ -f "$TASK_DIR/round-03/.round-prepare.json" ]
+  python3 -c "
+import json
+d = json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
+# narrowed must be False (deletion failure still consumed the flag in
+# semantics — BACKWARD_FORCED=1 short-circuits decide_narrow to broaden).
+assert d.get('narrowed') is False, d
+# Reason field must reference the backward-loop forcing — without this the
+# observable state would be indistinguishable from an ordinary broaden.
+assert 'backward-loop' in (d.get('reason') or '').lower(), d
+# diff_file must be present (non-halt path).
+assert d.get('diff_file'), d
+"
+}
+
+# ── Option-injection guards (R2 security-claude R2-F03) ──────────────────────
+
+@test "git-injection: --base-ref starting with '-' is rejected (no git invoked)" {
+  # Without flag-parse validation, BASE_REF='--show-toplevel' would flow into
+  # `git rev-parse "$BASE_REF"` and exfiltrate the workspace path; an attacker
+  # could also pass --output=<path> to git diff to write arbitrary files.
+  cd "$TEST_ROOT/repo"
+  run "$PREP" 1 "$TASK_DIR/round-01" --base-ref "--show-toplevel"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--base-ref must not begin with '-'"* ]]
+  # No diff or sidecar should have been produced.
+  [ ! -f "$TASK_DIR/round-01/round-01.diff" ]
+  [ ! -f "$TASK_DIR/round-01/.round-prepare.json" ]
+}
+
+@test "git-injection: --artifact starting with '-' is rejected" {
+  cd "$TEST_ROOT/repo"
+  run "$PREP" 1 "$TASK_DIR/round-01" --base-ref "$BASE_SHA" --artifact "--output=/tmp/pwned"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--artifact must not begin with '-'"* ]]
+  [ ! -e /tmp/pwned ]
+}
+
+@test "git-injection: legitimate refs containing '-' (e.g. feature-x) still work" {
+  # Defense-in-depth must not break legitimate refs whose names contain
+  # internal dashes — only LEADING '-' is rejected.
+  cd "$TEST_ROOT/repo"
+  git checkout -q -b feature-x
+  echo "v3" > file.txt
+  git commit -q -am "third on feature-x"
+  git checkout -q main
+  run "$PREP" 1 "$TASK_DIR/round-01" --base-ref "feature-x"
+  [ "$status" -eq 0 ]
+  [ -f "$TASK_DIR/round-01/.round-prepare.json" ]
 }
 
 # ── Non-git workspace ───────────────────────────────────────────────────────
