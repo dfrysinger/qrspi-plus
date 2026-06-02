@@ -1,0 +1,2 @@
+score: 72
+reason: Verified — T25's DoD/test-expectation grep (L1400, L1408) excludes only CHANGELOG, but plan.md/structure.md/design.md themselves reference `docs/prompt-design-guide.md` (e.g., structure.md L118, plan.md L1371/1385/1386), so the audit would fail even when T25's implementation is correct; narrowing scope to runtime surfaces is a legitimate, actionable fix.

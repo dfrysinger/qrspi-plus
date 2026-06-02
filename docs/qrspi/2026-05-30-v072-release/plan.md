@@ -1397,7 +1397,7 @@ Create the shared prompt-prose primitives — three import snippets, two wrapper
 - Snippet bodies (Files 1-3) match design.md ## G31 File 1 / File 2 / File 3 byte-for-byte (modulo any one-line header comment specified by the corresponding structure.md per-file block).
 - Wrapper SKILLs (Files 4-5) carry `description:` frontmatter and the `!cat` preload directives in the exact order specified by design.md ## G31 + structure.md per-file blocks.
 - `skills/_shared/prompt-design-rules.md` carries all 8 refresh edits A-H; `git log --follow` reaches the historical `docs/prompt-design-guide.md` commits.
-- No stale `docs/prompt-design-guide.md` references remain in the repo (grep returns zero matches outside historical CHANGELOG entries).
+- No stale `docs/prompt-design-guide.md` references remain in runtime surfaces (grep over `skills/`, `agents/`, `scripts/`, and top-level docs returns zero matches; planning artifacts under `docs/qrspi/` and `.restructure-v2/` and historical CHANGELOG entries are intentionally excluded — they describe the migration, they don't consume the path).
 - Each addition snippet (Files 2-3) pairs negative guidance with a positive substitute (per R5 / modern-negation).
 - The detection snippet (File 1) clearly distinguishes universal content-semantic detection from the qrspi-plus-internal fast-path globs.
 - References to the rules-file location use exactly the anchor phrase `skills/_shared/prompt-design-rules.md (resolved from the installed plugin path per host convention)`.
@@ -1405,7 +1405,7 @@ Create the shared prompt-prose primitives — three import snippets, two wrapper
 **Test expectations**
 
 - File-existence checks for all 6 new files; deletion check for `docs/prompt-design-guide.md`.
-- Repo-wide grep audit asserts zero remaining live references to `docs/prompt-design-guide.md` outside historical CHANGELOG entries (matches DoD invariant — fails the build on any stale source-of-truth reference).
+- Runtime-surface grep audit (over `skills/`, `agents/`, `scripts/`, and top-level docs; excluding `docs/qrspi/` planning artifacts, `.restructure-v2/` intermediate structure work, and historical CHANGELOG entries) asserts zero remaining live references to `docs/prompt-design-guide.md` (matches DoD invariant — fails the build on any stale source-of-truth reference in a runtime-consumer surface).
 - Verbatim diff of File 1 / File 2 / File 3 bodies vs design.md ## G31 File 1 / File 2 / File 3 — exact match.
 - Frontmatter inspection of Files 4-5: `description:` field present; `!cat` directives appear in the expected order.
 - `git log --follow skills/_shared/prompt-design-rules.md` reaches commits older than the rename.
