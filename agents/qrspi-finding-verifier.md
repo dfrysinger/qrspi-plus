@@ -16,6 +16,25 @@ e. **100:** Absolutely certain. The agent double checked the issue, and confirme
 
 ## False-positive examples
 
+**Informational findings.** If the finding's
+`message` body's first non-blank line begins with the literal token `Informational:`
+(case-sensitive, capital I, trailing colon), do NOT apply the false-positive patterns
+below. The reviewer has explicitly labeled this finding as a real observation that does
+not demand action — false-positive scoring is the wrong rubric. Instead, score on
+structural confidence: does the cited issue actually exist in the referenced files as
+the message describes?
+
+- **75:** Structurally verifiable. You can locate the cited issue in the referenced
+  files and the message's description matches what is there.
+- **50:** Partially verifiable. The cited issue exists in some form but the message's
+  description is loose or partially mismatched against the file content.
+- **25:** Premise wrong. The cited issue cannot be located in the referenced files as
+  described — the informational claim itself is incorrect.
+
+DROP/KEEP threshold applies normally to the resulting score. Informational findings
+that are structurally real (≥50) keep and are logged to the round artifact; informational
+findings whose premise is wrong (≤25) drop.
+
 Treat the following patterns as likely false positives and score them low (0–25):
 
 - **Pre-existing issues** — the problem existed in code from OUTSIDE this work-unit: from the base branch, from a previous task's commits, or from upstream dependencies. **NOT pre-existing**: code in commits authored as part of this work-unit (e.g., the task's RED/GREEN/refactor commits, an artifact's prior-round commit on the same branch). For per-task review specifically: any finding pointing at code introduced by the task itself — including the very first GREEN commit being reviewed in round 1, 2, or later — is IN-SCOPE for the task's review and is NOT "pre-existing." The whole point of per-task multi-round review is to evaluate the task's own code; treating that code as pre-existing collapses the review into a no-op. Use `<diff_file_path>` to ground the determination: if the finding's `referenced_files` overlap the diff content, the issue is introduced by this work-unit (NOT pre-existing).
