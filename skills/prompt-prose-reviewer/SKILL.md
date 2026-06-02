@@ -4,8 +4,14 @@ description: Apply prompt-design rules when reviewing prompt-prose subjects in a
 
 # Prompt Prose Reviewer
 
+<!-- INCLUDE-BEGIN: prompt-prose-detection -->
 !cat skills/_shared/prompt-prose-detection.md
+<!-- INCLUDE-END: prompt-prose-detection -->
 
+<!-- INCLUDE-BEGIN: prompt-prose-reviewer-addition -->
 !cat skills/_shared/prompt-prose-reviewer-addition.md
+<!-- INCLUDE-END: prompt-prose-reviewer-addition -->
 
-<!-- Guard: if either include above is unavailable, do NOT apply this skill. Surface a load error and stop — partial context is worse than no skill. -->
+<!-- Guard: if you do not see content between any INCLUDE-BEGIN/INCLUDE-END pair above,
+do NOT apply this skill. Surface a load error naming the missing block and stop —
+partial context is worse than no skill. -->
