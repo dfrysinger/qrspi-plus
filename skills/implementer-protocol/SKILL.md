@@ -171,7 +171,7 @@ The procedural realization of these invariants (the literal git command sequence
 
 **Invariant 2 — cleanup-after-commit.** The scratch file is removed after the commit completes and before any subsequent staging cycle begins. Even when the worktree-local exclude (Invariant 3) is absent — for example, in a worktree set up by a non-QRSPI mechanism — the next staging cycle finds no stale scratch file to include, because cleanup has already run.
 
-**Invariant 3 — worktree-local-exclude.** The scratch file path is excluded via the worktree-local `.git/info/exclude` entry added during worktree setup, independently of any per-commit ordering. This ensures `git status` reports remain deterministic between scratch-file write and removal, and the target repository's committed `.gitignore` is not polluted with QRSPI internals.
+**Invariant 3 — worktree-local-exclude.** The scratch file path is excluded via the worktree-local `.git/info/exclude` entry added during worktree setup, independently of any per-commit ordering. This ensures `git status` reports remain deterministic between scratch-file write and removal in any worktree, including downstream consumers' target repositories which do not inherit qrspi-plus's own committed `.gitignore` entry.
 
 **Composition.** The three invariants are designed to reinforce each other:
 - Invariant 1 alone fails when the scratch file is a leftover from a prior cycle (cleaned up by Invariant 2) or when `git add -A` picks up the file before it is removed.
@@ -238,7 +238,7 @@ Before returning a DONE or DONE_WITH_CONCERNS terminal status, commit every modi
 1. `git -C <worktree> status --porcelain` to confirm there is something to commit.
 2. Write a multi-line commit message to `<worktree>/.qrspi-commit-msg.txt` using the Write tool. The message MUST reference the round number and (for fix mode) the findings being addressed — e.g., `fix(task-NN/round-3): server-side bytes/mime check (closes security-codex.F01)`.
 3. `git -C <worktree> add -A && git -C <worktree> commit -F .qrspi-commit-msg.txt`
-4. `rm <worktree>/.qrspi-commit-msg.txt` (the scratch file is not gitignored and you don't want it in the next round's diff).
+4. `rm <worktree>/.qrspi-commit-msg.txt` (keeps the scratch file out of the next round's diff).
 5. Capture the resulting SHA: `git -C <worktree> rev-parse HEAD`. Include it as `commit_sha:` in your terminal-status report.
 
 **If you have nothing to commit** (e.g., a pure-prose review-feedback round produced no edits because the finding was already addressed in the prior round), report `BLOCKED` or `DONE_WITH_CONCERNS` and explain — do not silently proceed. The orchestrator's HEAD-advanced verification will fail-loud regardless, so reporting truthfully is faster than recovering from the abort.

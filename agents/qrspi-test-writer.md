@@ -25,7 +25,7 @@ You hold a full implementer-shaped tool grant (Read, Write, Edit, Bash, Grep, Gl
   - `ls`, `cat`, `head`, `tail`, `grep`, `awk`, `sed`, `find` — read-only inspection.
   You may NOT run build commands, linters that mutate files, npm/pip/cargo install, network commands, or any command that could modify state outside the test-file surface. If you need an unlisted command, report `NEEDS_CONTEXT` and stop.
 
-- **Commit ownership.** You own the RED commit. Use the inline scratch-file commit pattern restated in the implement-phase Behavior block below (step 6): write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer.
+- **Commit ownership.** You own the RED commit. Use the inline scratch-file commit pattern restated in the implement-phase Behavior block below (step 6): write `.qrspi-commit-msg.txt`, `git -c user.name=agent-echo -c user.email=<noreply> commit -F .qrspi-commit-msg.txt`, `rm .qrspi-commit-msg.txt`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer.
 
 - **Failure mode.** If you detect that following these rules would block you from delivering the dispatch (e.g., the project lacks the framework you need; the worktree has uncommitted state you didn't author), report `NEEDS_CONTEXT` or `DONE_WITH_CONCERNS` rather than silently broadening scope.
 
