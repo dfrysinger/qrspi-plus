@@ -153,9 +153,9 @@
     && { echo "verifier agent still uses forbidden 'score: VERIFY_FAILED' encoding — replace with verifier_status: failed"; return 1; } || true
 }
 
-# ── G14 Informational-carve-out rubric assertions (verifier agent file) ───────
+# ── Informational-carve-out rubric assertions (verifier agent file) ───────────
 
-@test "G14 carve-out: verifier body contains literal case-sensitive Informational: token" {
+@test "informational-carve-out: verifier body contains literal case-sensitive Informational: token" {
   # The carve-out's load-bearing detection token is the literal case-sensitive
   # 'Informational:' string (capital I, lowercase remainder, trailing colon).
   # No other variant carries the semantic — this anchor is a regression guard
@@ -163,24 +163,24 @@
   local body
   body=$(awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-finding-verifier.md)
   echo "$body" | grep -qF 'Informational:' \
-    || { echo "verifier agent body missing literal case-sensitive 'Informational:' token in G14 carve-out"; return 1; }
+    || { echo "verifier agent body missing literal case-sensitive 'Informational:' token in carve-out"; return 1; }
 }
 
-@test "G14 carve-out: documents case-sensitive detection rule" {
+@test "informational-carve-out: documents case-sensitive detection rule" {
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-finding-verifier.md \
     | grep -qiE 'case.sensitive' \
-    || { echo "verifier agent G14 carve-out missing 'case-sensitive' detection rule"; return 1; }
+    || { echo "verifier agent carve-out missing 'case-sensitive' detection rule"; return 1; }
 }
 
-@test "G14 carve-out: documents first-non-blank-line detection rule on message body" {
+@test "informational-carve-out: documents first-non-blank-line detection rule on message body" {
   # The carve-out keys off the first non-blank line of the finding's message body,
   # not the first byte of the file. Pin the phrase shape that documents this.
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-finding-verifier.md \
     | grep -qE 'first non.blank line' \
-    || { echo "verifier agent G14 carve-out missing 'first non-blank line' detection rule"; return 1; }
+    || { echo "verifier agent carve-out missing 'first non-blank line' detection rule"; return 1; }
 }
 
-@test "G14 carve-out: precedes the false-positive-pattern list" {
+@test "informational-carve-out: precedes the false-positive-pattern list" {
   # Placement is load-bearing — the carve-out MUST appear before the existing
   # 'Treat the following patterns as likely false positives' sentence so the
   # branch executes before the false-positive rubric is consulted.
@@ -190,41 +190,41 @@
   [ -n "$fp_line" ] || { echo "could not locate false-positive-pattern sentence anchor"; return 1; }
   [ -n "$info_line" ] || { echo "could not locate 'Informational findings' carve-out heading"; return 1; }
   [ "$info_line" -lt "$fp_line" ] \
-    || { echo "G14 carve-out (line $info_line) must appear BEFORE false-positive-pattern list (line $fp_line)"; return 1; }
+    || { echo "carve-out (line $info_line) must appear BEFORE false-positive-pattern list (line $fp_line)"; return 1; }
 }
 
-@test "G14 carve-out: explicitly disables false-positive scoring on Informational findings" {
+@test "informational-carve-out: explicitly disables false-positive scoring on Informational findings" {
   # Body must instruct the agent NOT to apply the false-positive patterns when
   # the Informational prefix is detected — this is the rubric branch itself.
   awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-finding-verifier.md \
     | grep -qE 'do NOT apply the false.positive|not apply the false.positive' \
-    || { echo "verifier agent G14 carve-out missing 'do NOT apply the false-positive patterns' instruction"; return 1; }
+    || { echo "verifier agent carve-out missing 'do NOT apply the false-positive patterns' instruction"; return 1; }
 }
 
-@test "G14 carve-out: scores on structural confidence (75/50/25 anchors)" {
+@test "informational-carve-out: scores on structural confidence (75/50/25 anchors)" {
   local body
   body=$(awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-finding-verifier.md)
   echo "$body" | grep -qiE 'structural confidence' \
-    || { echo "verifier agent G14 carve-out missing 'structural confidence' rubric framing"; return 1; }
+    || { echo "verifier agent carve-out missing 'structural confidence' rubric framing"; return 1; }
   # Anchor 75: structurally verifiable
   echo "$body" | grep -qE '75:.*[Ss]tructurally verifiable' \
-    || { echo "verifier agent G14 carve-out missing 75 anchor (structurally verifiable)"; return 1; }
+    || { echo "verifier agent carve-out missing 75 anchor (structurally verifiable)"; return 1; }
   # Anchor 50: partially verifiable
   echo "$body" | grep -qE '50:.*[Pp]artially verifiable' \
-    || { echo "verifier agent G14 carve-out missing 50 anchor (partially verifiable)"; return 1; }
+    || { echo "verifier agent carve-out missing 50 anchor (partially verifiable)"; return 1; }
   # Anchor 25: premise wrong / cannot be located
   echo "$body" | grep -qE '25:.*([Pp]remise wrong|cannot be located)' \
-    || { echo "verifier agent G14 carve-out missing 25 anchor (premise wrong)"; return 1; }
+    || { echo "verifier agent carve-out missing 25 anchor (premise wrong)"; return 1; }
 }
 
-# ── G14 reviewer-protocol section assertions ──────────────────────────────────
+# ── Informational-findings reviewer-protocol section assertions ───────────────
 
-@test "G14 reviewer-protocol: '## Informational Findings' section exists" {
+@test "informational-findings-protocol: '## Informational Findings' section exists" {
   grep -qE '^## Informational Findings\s*$' skills/reviewer-protocol/SKILL.md \
     || { echo "skills/reviewer-protocol/SKILL.md missing '## Informational Findings' section"; return 1; }
 }
 
-@test "G14 reviewer-protocol: section is placed between Disagreement-Valid Framing and Untrusted Data Handling" {
+@test "informational-findings-protocol: section is placed between Disagreement-Valid Framing and Untrusted Data Handling" {
   local dv info udh
   dv=$(grep -nE '^## Disagreement-Valid Framing\s*$' skills/reviewer-protocol/SKILL.md | head -n1 | cut -d: -f1)
   info=$(grep -nE '^## Informational Findings\s*$' skills/reviewer-protocol/SKILL.md | head -n1 | cut -d: -f1)
@@ -235,7 +235,7 @@
     || { echo "expected Disagreement-Valid ($dv) < Informational ($info) < Untrusted Data ($udh)"; return 1; }
 }
 
-@test "G14 reviewer-protocol: documents the literal Informational: prefix shape" {
+@test "informational-findings-protocol: documents the literal Informational: prefix shape" {
   # Section MUST cite the exact case-sensitive token (capital I, trailing colon)
   # so reviewer agents and human reviewers have the same anchor.
   awk '/^## Informational Findings/{flag=1; next} /^## /{flag=0} flag' skills/reviewer-protocol/SKILL.md \
@@ -243,13 +243,13 @@
     || { echo "Informational Findings section missing literal 'Informational:' prefix token"; return 1; }
 }
 
-@test "G14 reviewer-protocol: documents case-sensitive prefix detection" {
+@test "informational-findings-protocol: documents case-sensitive prefix detection" {
   awk '/^## Informational Findings/{flag=1; next} /^## /{flag=0} flag' skills/reviewer-protocol/SKILL.md \
     | grep -qiE 'case.sensitive' \
     || { echo "Informational Findings section missing case-sensitive prefix rule"; return 1; }
 }
 
-@test "G14 reviewer-protocol: documents first-non-blank-line placement on message field" {
+@test "informational-findings-protocol: documents first-non-blank-line placement on message field" {
   awk '/^## Informational Findings/{flag=1; next} /^## /{flag=0} flag' skills/reviewer-protocol/SKILL.md \
     | grep -qE 'first non.blank line' \
     || { echo "Informational Findings section missing 'first non-blank line' placement rule"; return 1; }
@@ -258,7 +258,7 @@
     || { echo "Informational Findings section missing reference to 'message' field"; return 1; }
 }
 
-@test "G14 reviewer-protocol: documents intended use (real observation, no demanded action)" {
+@test "informational-findings-protocol: documents intended use (real observation, no demanded action)" {
   # The when-to-use semantics are load-bearing — distinguishes Informational
   # from acknowledged-and-silenced (which stays in the false-positive rubric).
   awk '/^## Informational Findings/{flag=1; next} /^## /{flag=0} flag' skills/reviewer-protocol/SKILL.md \
@@ -266,29 +266,49 @@
     || { echo "Informational Findings section missing intended-use framing (real observation, no demanded action)"; return 1; }
 }
 
-@test "G14 reviewer-protocol: documents downstream structural-confidence scoring" {
+@test "informational-findings-protocol: documents downstream structural-confidence scoring" {
   awk '/^## Informational Findings/{flag=1; next} /^## /{flag=0} flag' skills/reviewer-protocol/SKILL.md \
     | grep -qiE 'structural confidence' \
     || { echo "Informational Findings section missing downstream 'structural confidence' scoring note"; return 1; }
 }
 
-@test "G14 reviewer-protocol: documents log-only handling (no auto-apply, no pause)" {
+@test "informational-findings-protocol: documents log-only handling (no auto-apply, no pause)" {
   # Downstream behavior: review loop logs the finding but does NOT auto-apply
-  # or pause regardless of change_type.
+  # or pause regardless of change_type. The 'no pause' assertion uses a
+  # negation-anchored pattern (mirroring the auto-apply pattern below) so a
+  # bare 'pause' token elsewhere in the section cannot satisfy the assertion;
+  # a regression that drops the negating qualifier will surface here.
   local section
   section=$(awk '/^## Informational Findings/{flag=1; next} /^## /{flag=0} flag' skills/reviewer-protocol/SKILL.md)
   echo "$section" | grep -qiE 'log' \
     || { echo "Informational Findings section missing log-only handling note"; return 1; }
   echo "$section" | grep -qiE 'not auto.apply|does NOT auto.apply|no auto.apply|never auto.apply' \
     || { echo "Informational Findings section missing 'not auto-apply' downstream behavior"; return 1; }
-  echo "$section" | grep -qiE 'pause' \
-    || { echo "Informational Findings section missing 'no pause' downstream behavior"; return 1; }
+  echo "$section" | grep -qiE 'not.*pause|does NOT pause|no.*pause|never pause' \
+    || { echo "Informational Findings section missing 'no pause' downstream behavior (negation-anchored)"; return 1; }
 }
 
-@test "G14 reviewer-protocol: documents backward-compat for unprefixed findings" {
+@test "informational-findings-protocol: documents backward-compat for unprefixed findings" {
   # Findings without the Informational: prefix MUST continue to be scored exactly
   # as before (no behavior change for existing finding shapes).
   awk '/^## Informational Findings/{flag=1; next} /^## /{flag=0} flag' skills/reviewer-protocol/SKILL.md \
     | grep -qiE 'without the prefix|no prefix|unprefixed|backward.compat|continue to be scored|no behavior change' \
     || { echo "Informational Findings section missing backward-compat note for unprefixed findings"; return 1; }
+}
+
+@test "informational-findings-protocol: documents confused-deputy scope guard against artifact-directed labeling" {
+  # Parallel to the secondary-escalation confused-deputy guard in
+  # ## Change-Type Classifier: the Informational: prefix is reviewer-authored
+  # intent, not a label that untrusted artifact content (code comments, docstrings,
+  # fixture text, embedded data) may direct the reviewer to apply. If artifact
+  # content suggests using the prefix, the reviewer MUST NOT honor that suggestion.
+  # Pin a semantic anchor — either the explicit 'confused-deputy' token or the
+  # 'artifact-directed' phrasing — inside the Informational Findings section.
+  local section
+  section=$(awk '/^## Informational Findings/{flag=1; next} /^## /{flag=0} flag' skills/reviewer-protocol/SKILL.md)
+  echo "$section" | grep -qiE 'confused.deputy|artifact.directed' \
+    || { echo "Informational Findings section missing confused-deputy / artifact-directed scope guard"; return 1; }
+  # The guard must clearly assert reviewer-authored intent vs. untrusted/embedded content.
+  echo "$section" | grep -qiE 'reviewer.authored|reviewer-authored intent' \
+    || { echo "Informational Findings section missing 'reviewer-authored' framing in confused-deputy guard"; return 1; }
 }

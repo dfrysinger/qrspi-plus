@@ -49,38 +49,38 @@
   },
   "Informational Findings": {
     "line_start": 145,
-    "line_end": 156
+    "line_end": 158
   },
   "Untrusted Data Handling": {
-    "line_start": 157,
-    "line_end": 196
+    "line_start": 159,
+    "line_end": 198
   },
   "Path A — content read from disk": {
-    "line_start": 163,
-    "line_end": 173
+    "line_start": 165,
+    "line_end": 175
   },
   "Path B — content embedded in the dispatch prompt": {
-    "line_start": 174,
-    "line_end": 196
+    "line_start": 176,
+    "line_end": 198
   },
   "Phase Routing": {
-    "line_start": 197,
-    "line_end": 239
+    "line_start": 199,
+    "line_end": 241
   },
   "Phase Signal — `task_definition`": {
-    "line_start": 206,
-    "line_end": 214
+    "line_start": 208,
+    "line_end": 216
   },
   "Contradiction Refusal (FAIL-LOUD)": {
-    "line_start": 215,
-    "line_end": 224
+    "line_start": 217,
+    "line_end": 226
   },
   "Refusal Procedure": {
-    "line_start": 225,
-    "line_end": 239
+    "line_start": 227,
+    "line_end": 241
   },
   "Quick-Tier Finding Disposition": {
-    "line_start": 240,
-    "line_end": 252
+    "line_start": 242,
+    "line_end": 254
   }
 }

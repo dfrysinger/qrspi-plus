@@ -31,9 +31,10 @@ the message describes?
 - **25:** Premise wrong. The cited issue cannot be located in the referenced files as
   described — the informational claim itself is incorrect.
 
-DROP/KEEP threshold applies normally to the resulting score. Informational findings
-that are structurally real (≥50) keep and are logged to the round artifact; informational
-findings whose premise is wrong (≤25) drop.
+DROP/KEEP threshold applies normally to the resulting score on the standard
+0–100 scale: Informational findings that score ≥50 keep and are logged to the
+round artifact; findings that score <50 drop. (The intermediate 26–49 band is
+not a separate disposition — the threshold is a single cut at 50.)
 
 Treat the following patterns as likely false positives and score them low (0–25):
 
