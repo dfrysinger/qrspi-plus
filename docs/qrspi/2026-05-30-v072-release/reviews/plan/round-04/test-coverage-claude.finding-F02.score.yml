@@ -1,0 +1,2 @@
+score: 42
+reason: Real but minor AC↔Test-Expectations mapping gap — T16 pins the load-bearing `tier: none` halt and routing-matrix lookups; the "unknown vendor" sub-phrase is a reasonable refinement rather than an uncovered fail-loud invariant.

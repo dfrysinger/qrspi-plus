@@ -1,0 +1,2 @@
+score: 45
+reason: Real verifiability gap — T38 bullet 5 is an LLM-judgment "mental-replay" with no fixture/harness while Scope-Out forbids test-code files — but four mechanizable sibling bullets already cover the same intent, so impact is modest.

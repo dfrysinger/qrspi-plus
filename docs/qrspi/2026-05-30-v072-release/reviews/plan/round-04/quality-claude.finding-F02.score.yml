@@ -1,0 +1,2 @@
+score: 60
+reason: Verified — T20's target-files list (L1170) does not include scripts/round-prepare.sh, while it does modify skills/implement/SKILL.md (which T13 also edits at L801); the dep-graph item 4 (L106) and Task 13 Blocks clause (L802) both cite the wrong shared surface, so the rationale is genuinely incorrect even though the dep itself is right. Low-severity clarity issue that mainly affects readers auditing the dep graph by grepping file overlap.
