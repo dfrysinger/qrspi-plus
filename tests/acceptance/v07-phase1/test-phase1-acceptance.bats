@@ -2346,6 +2346,14 @@ MOCK_EOF
     || { echo "dispatch_spec missing prompt_file"; cat "$manifest"; return 1; }
   jq -e --arg pf "$prompt_file" '.[0].dispatch_spec.prompt_file == $pf' "$manifest" >/dev/null \
     || { echo "dispatch_spec.prompt_file does not match supplied path"; cat "$manifest"; return 1; }
+  # dispatch_spec.host/vendor/model must be present and match known call-site values.
+  # COPILOT_CLI="" → detect_host returns "claude-code".
+  jq -e '.[0].dispatch_spec.host == "claude-code"' "$manifest" >/dev/null \
+    || { echo "dispatch_spec.host != claude-code"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec.vendor == "claude"' "$manifest" >/dev/null \
+    || { echo "dispatch_spec.vendor != claude"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec.model == "claude-sonnet-4-5"' "$manifest" >/dev/null \
+    || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
 
   rm -rf "$TMP_DIR"
 }
@@ -2543,6 +2551,14 @@ MOCK_EOF
   # reference emitted on stdout — the audit trail is consistent.
   jq -e --arg pf "$prompt_file" '.[0].dispatch_spec.prompt_file == $pf' "$manifest" >/dev/null \
     || { echo "manifest dispatch_spec.prompt_file does not match stdout DISPATCH_FILE reference"; cat "$manifest"; return 1; }
+  # dispatch_spec.host/vendor/model must be present and match known call-site values.
+  # COPILOT_CLI=1 with trusted gh → detect_host returns "copilot-cli".
+  jq -e '.[0].dispatch_spec.host == "copilot-cli"' "$manifest" >/dev/null \
+    || { echo "dispatch_spec.host != copilot-cli"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec.vendor == "claude"' "$manifest" >/dev/null \
+    || { echo "dispatch_spec.vendor != claude"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec.model == "claude-sonnet-4-5"' "$manifest" >/dev/null \
+    || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
 
   rm -rf "$tmp"
 }
