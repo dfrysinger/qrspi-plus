@@ -223,3 +223,65 @@ source_assembly() {
   echo "$protocol" | grep -qE 'score *< *80|< *80.*style.*clarity.*correctness' \
     || { echo "score-<-80 + change_type partition logic missing"; return 1; }
 }
+
+# ── Sidecar field-ordering invariant (load-bearing security pin) ─────────
+# The `score:` field (when present) MUST precede `defect_class:`, and
+# `defect_class:` MUST appear LAST among the YAML frontmatter fields. The
+# ordering bounds duplicate-key YAML parser drift: pyyaml-style
+# "last value wins" parsers used by future cluster-analysis tooling would
+# let a malformed `defect_class:` value containing an injected `score:` on a
+# subsequent line silently override the real score. Putting `defect_class:`
+# last bounds the blast radius.
+
+@test "sidecar field-order: success template has defect_class: as the LAST frontmatter field" {
+  # Extract the success-path fenced markdown block following 'On success:'.
+  local block
+  block=$(awk '
+    /^[[:space:]]*On success:[[:space:]]*$/ { flag=1; next }
+    flag && /^[[:space:]]*```markdown[[:space:]]*$/ { in_block=1; next }
+    in_block && /^[[:space:]]*```[[:space:]]*$/ { exit }
+    in_block { print }
+  ' agents/qrspi-finding-verifier.md)
+  [ -n "$block" ] || { echo "could not locate On-success sidecar template block"; return 1; }
+  local score_line defect_line
+  score_line=$(echo "$block" | grep -nE '^\s*score:' | head -1 | cut -d: -f1)
+  defect_line=$(echo "$block" | grep -nE '^\s*defect_class:' | head -1 | cut -d: -f1)
+  [ -n "$score_line" ] || { echo "no score: in success template"; return 1; }
+  [ -n "$defect_line" ] || { echo "no defect_class: in success template"; return 1; }
+  [ "$score_line" -lt "$defect_line" ] \
+    || { echo "success template field order violated: score: at line $score_line, defect_class: at line $defect_line (score MUST precede defect_class)"; return 1; }
+  # defect_class: MUST be the LAST frontmatter field on the success path.
+  local fm
+  fm=$(echo "$block" | awk '/^[[:space:]]*---[[:space:]]*$/{n++; next} n==1{print}')
+  [ -n "$fm" ] || { echo "could not extract success-template frontmatter"; return 1; }
+  local last_field
+  last_field=$(echo "$fm" | grep -E '^[[:space:]]*[a-z_]+:' | tail -1 | sed -E 's/^[[:space:]]*([a-z_]+):.*/\1/')
+  [ "$last_field" = "defect_class" ] \
+    || { echo "success template's last frontmatter field is '$last_field' — must be 'defect_class' per the load-bearing field-ordering invariant"; echo "frontmatter:"; echo "$fm"; return 1; }
+}
+
+@test "sidecar field-order: failure template has defect_class: as the LAST frontmatter field" {
+  # Extract the failure-path fenced markdown block following 'On failure'.
+  local block
+  block=$(awk '
+    /^[[:space:]]*On failure/ { flag=1; next }
+    flag && /^[[:space:]]*```markdown[[:space:]]*$/ { in_block=1; next }
+    in_block && /^[[:space:]]*```[[:space:]]*$/ { exit }
+    in_block { print }
+  ' agents/qrspi-finding-verifier.md)
+  [ -n "$block" ] || { echo "could not locate On-failure sidecar template block"; return 1; }
+  # Extract frontmatter lines (between the two --- markers).
+  local fm
+  fm=$(echo "$block" | awk '/^[[:space:]]*---[[:space:]]*$/{n++; next} n==1{print}')
+  [ -n "$fm" ] || { echo "could not extract failure-template frontmatter"; return 1; }
+  local last_field
+  last_field=$(echo "$fm" | grep -E '^[[:space:]]*[a-z_]+:' | tail -1 | sed -E 's/^[[:space:]]*([a-z_]+):.*/\1/')
+  [ "$last_field" = "defect_class" ] \
+    || { echo "failure template's last frontmatter field is '$last_field' — must be 'defect_class' per the load-bearing field-ordering invariant"; echo "frontmatter:"; echo "$fm"; return 1; }
+}
+
+@test "sidecar field-order: agent body documents the load-bearing invariant" {
+  grep -qE 'Field.ordering invariant|score:.*MUST precede.*defect_class|defect_class:.*MUST appear LAST' \
+    agents/qrspi-finding-verifier.md \
+    || { echo "agent body does not document the load-bearing field-ordering invariant"; return 1; }
+}

@@ -66,8 +66,6 @@ The verifier receives five prompt parameters:
 
 ## Procedure
 
-**On any unrecoverable error during steps 1–5** (tool failure, file missing, rate-limit, parse error, or any uncaught exception): stop the normal path and go directly to step 6 using the "On failure" sidecar template, populating `defect_class:` with the best-fit failure class from the taxonomy (`verifier-crash`, `infrastructure-failure`, `tool-error`, `file-missing`, `rate-limited`, `parse-error`) and `failure_reason:` with a one-sentence diagnosis. **Never return without writing a sidecar** — silent return causes `scripts/verifier-fan-in.sh` to fall back to keep-all and produces no `verifier-crash` record for observability, which collapses the failure-mode cluster from future calibration data.
-
 1. **Read `<finding_file_path>`** — parse the 5-field finding object (YAML frontmatter: `finding_id`, `severity`, `change_type`, `referenced_files`, plus the prose `message` body) plus the audit field `actual_model:`. The audit field is a record-keeping channel carrying the resolved dispatch model ID the reviewer was instructed to copy at dispatch time; it is observability data only and does NOT gate scoring. When the finding frontmatter omits the field (older rounds, hand-written rounds, or pre-adoption reviewer drift), treat the value as the literal token `unknown` and continue — never fail the verification solely because the audit field is absent.
 2. **Read `<artifact_path>` + `<diff_file_path>`** eagerly when the parameter is provided. (When the artifact directory is not in a git repo the parameter is omitted — fall back to the artifact alone.) These are the primary evidence sources.
 3. **For each `referenced_files` entry**, Read it.
@@ -95,9 +93,7 @@ The verifier receives five prompt parameters:
 
    **Examples of well-formed tags:** `goal-leakage` (a question or design reveals goals-content it should not), `unanchored-claim` (a statement makes an assertion without a citation), `imprecise-quantifier` (a constraint uses vague words like "many" or "often"), `redundant-restatement` (the same content appears in multiple places), `dangling-reference` (a citation points at content that no longer exists), `swallowed-error` (an exception is caught and silently discarded), `silent-fallback` (a degraded path is taken without surfacing the degradation), `dry-violation` (the same logic is duplicated across surfaces), `injection` (untrusted input flows into a structural sink), `fabricated-citation` (the cited resource does not exist — pairs with `score: 0` HALLUCINATED).
 
-   **Required on every sidecar.** The field is REQUIRED on every sidecar the verifier emits — both `verifier_status: passed` (success) and `verifier_status: failed` (unable-to-evaluate) sidecars. When the finding does not fit any meaningful defect category — including at-or-above-threshold findings whose only signal is style polish, pure-advisory style suggestions ("consider naming this more clearly"), or findings whose verdict reached a conclusion but did not identify a classifiable defect — emit literal `defect_class: unspecified` rather than omitting the field. A missing field is a schema violation; an `unspecified` value is honest absence of signal.
-
-   **Failure-path classification (best-effort required).** For failure-path sidecars (`verifier_status: failed`), make a best-effort classification from the failure-class taxonomy: `verifier-crash`, `infrastructure-failure`, `tool-error`, `file-missing`, `rate-limited`, `parse-error`. Reserve `defect_class: unspecified` on the failure path for the genuine no-signal case (the verifier truly cannot diagnose what failed). Promiscuous use of `unspecified` on failure sidecars collapses crash-type clusters and hides real recurring infrastructure issues from future calibration analysis.
+   **Required on every sidecar.** The field is REQUIRED on every sidecar the verifier emits — both `verifier_status: passed` (success) and `verifier_status: failed` (unable-to-evaluate) sidecars. When the finding does not fit any meaningful defect category — including at-or-above-threshold findings whose only signal is style polish, pure-advisory style suggestions ("consider naming this more clearly"), or failure sidecars whose evaluation never produced a defect signal — emit literal `defect_class: unspecified` rather than omitting the field. A missing field is a schema violation; an `unspecified` value is honest absence of signal.
 
    `defect_class:` is informational instrumentation only. It does NOT gate keep/drop, does NOT extend `scripts/verifier-fan-in.sh`'s audit-JSON shape, and is consumed by no current surface; future cluster-analysis tooling may read it from sidecars.
 
@@ -109,8 +105,8 @@ The verifier receives five prompt parameters:
    verifier_status: passed
    score: <int 0..100>
    actual_model: <copied verbatim from finding frontmatter, or the literal `unknown` when the finding omitted the field>
-   defect_class: <kebab-case tag matching ^[a-z0-9][a-z0-9-]*$, ≤30 chars; e.g. goal-leakage, swallowed-error, fabricated-citation; literal `unspecified` when no meaningful class fits>
    reason: <present only when score is 0 due to Cite Check failure; value MUST start with "HALLUCINATED: " — e.g. "HALLUCINATED: file nonexistent/path.md does not exist">
+   defect_class: <kebab-case tag matching ^[a-z0-9][a-z0-9-]*$, ≤30 chars; e.g. goal-leakage, swallowed-error, fabricated-citation; literal `unspecified` when no meaningful class fits>
    ---
    <verifier reasoning prose — consumed by humans and future debug tooling, not by the fan-in script>
    ```
@@ -121,7 +117,7 @@ The verifier receives five prompt parameters:
    verifier_status: failed
    actual_model: <copied verbatim from finding frontmatter, or the literal `unknown` when the finding omitted the field>
    failure_reason: <one-sentence diagnosis>
-   defect_class: <best-effort failure class from the taxonomy: `verifier-crash`, `infrastructure-failure`, `tool-error`, `file-missing`, `rate-limited`, `parse-error`; literal `unspecified` reserved for the genuine no-signal case>
+   defect_class: <kebab-case tag matching ^[a-z0-9][a-z0-9-]*$, ≤30 chars; e.g. `verifier-crash`, `infrastructure-failure`; literal `unspecified` is also valid when failure produced no defect signal>
    ---
    ```
 

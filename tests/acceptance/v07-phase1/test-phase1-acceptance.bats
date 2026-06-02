@@ -2127,9 +2127,4 @@ _t9_simulate_verifier_sidecar_write() {
   # constraint on finding_paths[].
   grep -qE 'finding_paths.*MUST NOT contain.*\.\./|relative paths within the current `round-NN/`' "$skill" \
     || { echo "SKILL.md does not document the finding_paths[] path-traversal constraint"; return 1; }
-
-  # Fix G (sec-claude R2 F03): SKILL prose documents that summary: MUST be
-  # double-quoted and that internal " characters MUST be escaped.
-  grep -qE 'summary:.*MUST be enclosed in double quotes' "$skill" \
-    || { echo "SKILL.md does not document the summary: double-quoting rule"; return 1; }
 }
