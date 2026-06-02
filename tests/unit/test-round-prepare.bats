@@ -238,8 +238,10 @@ assert data.strip() == '$HEAD_SHA'
   PREV_SHA=$(git rev-parse HEAD~1)
   printf '%s\n' "$PREV_SHA" > "$TASK_DIR/round-02-commit.txt"
   # round-02-scope-set.txt deliberately absent.
-  QRSPI_SCOPE_TAGGER_ENABLED=true \
-  run "$PREP" 3 "$TASK_DIR/round-03" \
+  # `env VAR=val "$PREP"` (rather than `VAR=val run "$PREP"`) makes the
+  # scope-tagger gate explicit in the subprocess environment regardless of
+  # how the bats `run` function propagates assignment-prefix variables.
+  run env QRSPI_SCOPE_TAGGER_ENABLED=true "$PREP" 3 "$TASK_DIR/round-03" \
       --task-branch main \
       --implementer-commit "$HEAD_SHA" \
       --worktree "$TEST_ROOT/repo" \
@@ -254,8 +256,7 @@ assert data.strip() == '$HEAD_SHA'
   PREV_SHA=$(git rev-parse HEAD~1)
   printf '%s\n' "$PREV_SHA" > "$TASK_DIR/round-02-commit.txt"
   : > "$TASK_DIR/round-02-scope-set.txt"  # empty
-  QRSPI_SCOPE_TAGGER_ENABLED=true \
-  run "$PREP" 3 "$TASK_DIR/round-03" \
+  run env QRSPI_SCOPE_TAGGER_ENABLED=true "$PREP" 3 "$TASK_DIR/round-03" \
       --task-branch main \
       --implementer-commit "$HEAD_SHA" \
       --worktree "$TEST_ROOT/repo" \
@@ -336,6 +337,109 @@ assert d.get('reason') and 'HEAD~1' in d['reason']
 "
 }
 
+# Convergence-table coverage gap fixtures: missing, empty, full-artifact,
+# overlap (partial), proper-subset-with-safety-margin. These exercise the
+# table rows enumerated in task-12.md "Test expectations" bullet 6.
+
+@test "convergence: missing scope-set (tagger disabled) broadens via decide_narrow path" {
+  # When the scope-tagger is disabled, missing scope-set files are NOT a
+  # blocking error (that branch is gated by SCOPE_TAGGER_ENABLED). Instead,
+  # decide_narrow's `[ ! -s "$prev1" ]` check fires and the round broadens.
+  cd "$TEST_ROOT/repo"
+  PREV=$(git rev-parse HEAD~1)
+  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
+  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
+  # Both scope-set files deliberately absent; tagger disabled (default).
+  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
+  [ "$status" -eq 0 ]
+  python3 -c "
+import json
+d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
+assert d['narrowed'] is False, d
+assert d.get('reason') and 'scope-set missing or empty' in d['reason'], d
+"
+}
+
+@test "convergence: empty scope-set (tagger disabled) broadens via decide_narrow path" {
+  cd "$TEST_ROOT/repo"
+  PREV=$(git rev-parse HEAD~1)
+  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
+  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
+  : > "$TASK_DIR/round-01-scope-set.txt"
+  : > "$TASK_DIR/round-02-scope-set.txt"
+  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
+  [ "$status" -eq 0 ]
+  python3 -c "
+import json
+d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
+assert d['narrowed'] is False, d
+assert d.get('reason') and 'scope-set missing or empty' in d['reason'], d
+"
+}
+
+@test "convergence: full-artifact scope-set (sentinel vs concrete prior) broadens" {
+  # 'Full-artifact' is modeled here as a scope-set that uses an artifact-wide
+  # sentinel ('*') rather than a concrete file list. Compared against a
+  # concrete prior scope-set, the sets are non-equal and not a proper subset
+  # (s1\s2 = {*} non-empty), so decide_narrow's diverge-broaden path fires.
+  cd "$TEST_ROOT/repo"
+  PREV=$(git rev-parse HEAD~1)
+  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
+  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
+  printf '*\n'          > "$TASK_DIR/round-01-scope-set.txt"
+  printf 'a\nb\nc\n'    > "$TASK_DIR/round-02-scope-set.txt"
+  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
+  [ "$status" -eq 0 ]
+  python3 -c "
+import json
+d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
+assert d['narrowed'] is False, d
+"
+}
+
+@test "convergence: partial-overlap scope-sets broaden" {
+  cd "$TEST_ROOT/repo"
+  PREV=$(git rev-parse HEAD~1)
+  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
+  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
+  # NN-1 = {a,b,c}; NN-2 = {b,c,d}. Sets share {b,c} but neither is a subset
+  # of the other (s1\s2 = {a} non-empty), so decide_narrow broadens.
+  printf 'a\nb\nc\n' > "$TASK_DIR/round-01-scope-set.txt"
+  printf 'b\nc\nd\n' > "$TASK_DIR/round-02-scope-set.txt"
+  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
+  [ "$status" -eq 0 ]
+  python3 -c "
+import json
+d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
+assert d['narrowed'] is False, d
+"
+}
+
+@test "convergence: proper-subset (NN-1 ⊂ NN-2) with HEAD~1 safety match narrows" {
+  cd "$TEST_ROOT/repo"
+  # Add a third commit so HEAD~1 == HEAD_SHA matches the round-02 anchor
+  # (SHA safety margin satisfied for narrow eligibility).
+  echo "v3" > file.txt
+  git commit -q -am "third"
+  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
+  printf '%s\n' "$BASE_SHA" > "$TASK_DIR/round-01-commit.txt"
+  # NN-1 (round-02) = {a,b}; NN-2 (round-01) = {a,b,c}. Every element of NN-1
+  # is in NN-2 (s1\s2 = {} ); decide_narrow returns the proper-subset narrow
+  # path with the SCOPE_HINT carrying the round-NN-1 set.
+  printf 'a\nb\nc\n' > "$TASK_DIR/round-01-scope-set.txt"
+  printf 'a\nb\n'   > "$TASK_DIR/round-02-scope-set.txt"
+  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
+  [ "$status" -eq 0 ]
+  python3 -c "
+import json
+d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
+assert d['narrowed'] is True, d
+hint=d.get('scope_hint') or ''
+# Hint sourced from round-(NN-1) scope-set = {a,b}; not the NN-2 superset.
+assert 'a' in hint and 'b' in hint and 'c' not in hint, hint
+"
+}
+
 # ── Backward-loop flag ──────────────────────────────────────────────────────
 
 @test "backward-loop: present flag forces broaden + flag is consumed (deleted)" {
@@ -357,6 +461,28 @@ assert d['narrowed'] is False
 "
 }
 
+@test "backward-loop: deletion failure surfaces a diagnostic on stderr" {
+  # Make the flag path a non-empty directory rather than a regular file.
+  # `[ -e PATH ]` is true for both, so round-prepare enters the consume-once
+  # branch; but `rm -f PATH` on a non-empty directory fails (rm: is a
+  # directory), exercising the deletion-failure diagnostic branch in
+  # round-prepare.sh (lines 203-205).
+  cd "$TEST_ROOT/repo"
+  PREV=$(git rev-parse HEAD~1)
+  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
+  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
+  printf 'a\n' > "$TASK_DIR/round-01-scope-set.txt"
+  printf 'a\n' > "$TASK_DIR/round-02-scope-set.txt"
+  mkdir -p "$TASK_DIR/round-03-backward-loop.flag"
+  # Put a child inside so the dir is non-empty and `rm -f` fails on it.
+  : > "$TASK_DIR/round-03-backward-loop.flag/sentinel"
+  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
+  [ "$status" -eq 0 ]  # round still proceeds; only diagnostic on stderr
+  [[ "$output" == *"failed to delete backward-loop flag"* ]]
+  # Flag path remains because deletion failed (consume attempt, not consume).
+  [ -e "$TASK_DIR/round-03-backward-loop.flag" ]
+}
+
 # ── Non-git workspace ───────────────────────────────────────────────────────
 
 @test "non-git workspace: exits 2 with no fabricated diff_file or scope_hint" {
@@ -376,4 +502,53 @@ assert not d.get('diff_file')
 assert not d.get('scope_hint')
 "
   fi
+}
+
+# ── Anchor JSON content coverage (per task-12.md test-expectation bullet 10) ─
+# Pin the specific section keys the v0.7.2 release touches so a future
+# refactor of the SKILL.md section structure does not silently drop a key
+# the dispatch / round-preparation / reviewer-protocol / plan-classification
+# narrow-read consumers depend on.
+
+@test "using-qrspi anchors cover Standard Review Loop + Backward Loops sections" {
+  python3 -c "
+import json
+d=json.load(open('$REPO_ROOT/skills/using-qrspi/SKILL.anchors.json'))
+for key in ('Standard Review Loop','Backward Loops (New Learnings)'):
+    assert key in d, 'missing anchor: '+key
+    e=d[key]
+    assert e['line_start']>0 and e['line_end']>=e['line_start'], (key,e)
+"
+}
+
+@test "reviewer-protocol anchors cover Reviewer Dispatch Contract + Phase Routing" {
+  python3 -c "
+import json
+d=json.load(open('$REPO_ROOT/skills/reviewer-protocol/SKILL.anchors.json'))
+for key in ('Reviewer Dispatch Contract','Phase Routing'):
+    assert key in d, 'missing anchor: '+key
+    e=d[key]
+    assert e['line_start']>0 and e['line_end']>=e['line_start'], (key,e)
+"
+}
+
+@test "plan anchors cover Per-Task Classification section" {
+  python3 -c "
+import json
+d=json.load(open('$REPO_ROOT/skills/plan/SKILL.anchors.json'))
+hits=[k for k in d if 'Per-Task Classification' in k]
+assert hits, 'missing Per-Task Classification anchor; got keys='+repr(list(d.keys())[:5])
+e=d[hits[0]]
+assert e['line_start']>0 and e['line_end']>=e['line_start'], (hits[0],e)
+"
+}
+
+@test "g4-section-anchor-manifest references all three per-skill SKILL sources" {
+  python3 -c "
+import json
+d=json.load(open('$REPO_ROOT/scripts/g4-section-anchor-manifest.json'))
+sources={e['source'] for e in d['entries']}
+for s in ('skills/using-qrspi/SKILL.md','skills/reviewer-protocol/SKILL.md','skills/plan/SKILL.md'):
+    assert s in sources, 'missing manifest source: '+s
+"
 }

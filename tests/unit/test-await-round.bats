@@ -138,3 +138,42 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"--round-dir"* ]]
 }
+
+@test "output-bound: prompt-body fixture in .dispatch is NOT echoed" {
+  # Per task-12.md "Test expectations" bullet 9: combined stdout+stderr must
+  # not echo prompt-body fragments either. This fixture stages a dispatch
+  # prompt file under <round-dir>/.dispatch/ containing a recognisable
+  # sentinel; await-round consumes and removes the directory but must never
+  # surface the sentinel string.
+  STUB_AWAIT="$TEST_ROOT/stub-await.sh"
+  STUB_SPLIT="$TEST_ROOT/stub-split.sh"
+  cat > "$STUB_AWAIT" <<EOS
+#!/usr/bin/env bash
+exit 0
+EOS
+  cat > "$STUB_SPLIT" <<EOS
+#!/usr/bin/env bash
+exit 0
+EOS
+  chmod +x "$STUB_AWAIT" "$STUB_SPLIT"
+
+  # Stage a dispatch prompt body with a unique sentinel.
+  python3 -c "open('$ROUND_DIR/.dispatch/prompt-codex-quality.txt','w').write('SECRET-PROMPT-BODY-QFXBR '*5000)"
+
+  python3 - <<EOS
+import json
+m=[{"tag":"codex-quality","agent":"x","mode":"background","status":"pending","job_id":"j",
+    "await_cmd":"$STUB_AWAIT","split_cmd":"$STUB_SPLIT"}]
+open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
+EOS
+
+  out_file="$TEST_ROOT/combined.out"
+  "$AWAIT" --round-dir "$ROUND_DIR" >"$out_file" 2>&1
+  status=$?
+  [ "$status" -eq 0 ]
+  byte_count=$(wc -c < "$out_file")
+  [ "$byte_count" -le 2048 ]
+  ! grep -q 'SECRET-PROMPT-BODY-QFXBR' "$out_file"
+  # And the round-scoped dispatch dir must be gone after completion.
+  [ ! -d "$ROUND_DIR/.dispatch" ]
+}

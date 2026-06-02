@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "G4 section-anchor manifest. Lists every SKILL.md source file that has a colocated .anchors.json index. The refresh script reads this manifest to know which sources to regenerate against. Add new entries here when extending section-anchor indexing to additional skill files.",
+  "description": "G4 section-anchor manifest. Lists every SKILL.md source file that has a colocated .anchors.json index. The refresh script reads this manifest to know which sources to regenerate against. Add new entries here when extending section-anchor indexing to additional skill files. v0.7.2 coverage: refreshed windows track the dispatch, round-preparation, reviewer-protocol, and plan-classification sections changed by this release (Standard Review Loop and Backward Loops in using-qrspi; Reviewer Dispatch Contract and Phase Routing in reviewer-protocol; Per-Task Classification and Reviewer Dispatch in plan).",
   "entries": [
     {
       "source": "skills/reviewer-protocol/SKILL.md",
