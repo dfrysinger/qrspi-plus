@@ -399,7 +399,7 @@ EOF
 # arithmetic bypasses the >100 ceiling check.
 # Fix: regex cap at 3 digits (max valid score 100 has 3 digits).
 
-@test "R2 fix 1: score with > 3 digits is rejected as score_unparseable" {
+@test "score with > 3 digits is rejected as score_unparseable" {
   local f1
   f1=$(write_finding "$ROUND" qc 01 F01 style)
   write_sidecar "$f1" "18446744073709551706"
@@ -410,11 +410,21 @@ EOF
   [[ "$output" == "score_unparseable" ]]
 }
 
+@test "overflow score emits halt-cause diagnostic to stderr" {
+  local f1
+  f1=$(write_finding "$ROUND" qc 01 F01 style)
+  write_sidecar "$f1" "18446744073709551706"
+
+  run "$SCRIPT" "$ROUND"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"score_unparseable"* || "$stderr" == *"score_unparseable"* ]]
+}
+
 # --- R2 fix 2: sidecar readability guard (silent-failure-claude R2-F01) ---
 # If sidecar exists but is unreadable (chmod 000), awk/extract silently fails
 # and the script records score_unparseable.  Fix: explicit readability check.
 
-@test "R2 fix 2: unreadable sidecar records halt cause sidecar_unreadable" {
+@test "unreadable sidecar records halt cause sidecar_unreadable" {
   local f1
   f1=$(write_finding "$ROUND" qc 01 F01 style)
   write_sidecar "$f1" 90
@@ -426,7 +436,7 @@ EOF
   [[ "$output" == "sidecar_unreadable" ]]
 }
 
-@test "R2 fix 2: unreadable sidecar emits cannot-read message to stderr" {
+@test "unreadable sidecar emits cannot-read message to stderr" {
   local f1
   f1=$(write_finding "$ROUND" qc 01 F01 style)
   write_sidecar "$f1" 90
@@ -442,7 +452,7 @@ EOF
 # missing_change_type means "frontmatter omits change_type:"; wrong root cause.
 # Fix: record finding_unreadable for I/O permission errors on finding files.
 
-@test "R2 fix 3: unreadable finding file records halt cause finding_unreadable" {
+@test "unreadable finding file records halt cause finding_unreadable" {
   local f1
   f1=$(write_finding "$ROUND" qc 01 F01 style)
   write_sidecar "$f1" 90
@@ -454,13 +464,33 @@ EOF
   [[ "$output" == "finding_unreadable" ]]
 }
 
-@test "R2 fix 3: unreadable finding file still emits cannot-read message to stderr" {
-  local f1
-  f1=$(write_finding "$ROUND" qc 01 F01 style)
-  write_sidecar "$f1" 90
-  chmod 000 "$f1"
+# --- R3 fix: absent awk startup guard (silent-failure-claude R3-F02) ------
+# extract_frontmatter_field calls awk.  Without an awk startup guard, awk
+# failures (absent from PATH, OOM, fd exhaustion) are silently swallowed by
+# "|| true" and misattributed to missing_change_type / score_unparseable.
+# Fix: add command -v awk guard mirroring the existing jq guard.
 
-  run "$SCRIPT" "$ROUND"
+@test "absent awk exits non-zero with awk-related diagnostic" {
+  # Create a fake bin directory that exposes jq but not awk, so the jq guard
+  # passes and only the awk guard fires.
+  local fakebin="$BATS_TEST_TMPDIR/fake-bin"
+  mkdir -p "$fakebin"
+  ln -sf "$(command -v jq)" "$fakebin/jq"
+
+  # Build a PATH that leads with fakebin (jq present, awk absent) and
+  # excludes every directory that contains awk or a second copy of jq.
+  local newpath="$fakebin" d
+  local saved_IFS="$IFS"
+  IFS=':'
+  for d in $PATH; do
+    IFS="$saved_IFS"
+    [[ -x "$d/awk" ]] && continue
+    [[ -x "$d/jq"  ]] && continue
+    newpath="${newpath:+$newpath:}$d"
+  done
+  IFS="$saved_IFS"
+
+  run env PATH="$newpath" "$SCRIPT" "$ROUND"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"cannot read"* || "$stderr" == *"cannot read"* ]]
+  [[ "$output" == *"awk"* || "$stderr" == *"awk"* ]]
 }

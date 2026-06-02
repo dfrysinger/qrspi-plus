@@ -45,6 +45,13 @@ command -v jq >/dev/null 2>&1 || {
   echo "verifier-fan-in: jq is required but not found in PATH" >&2
   exit 2
 }
+# awk is required for extract_frontmatter_field.  Guard here mirrors the jq
+# guard above: without it, awk failures would be swallowed by "|| true" and
+# misattributed to missing_change_type or score_unparseable.
+command -v awk >/dev/null 2>&1 || {
+  echo "verifier-fan-in: awk is required but not found in PATH" >&2
+  exit 2
+}
 
 # ---- Canonical enum + threshold constants (single source of truth) -------
 
