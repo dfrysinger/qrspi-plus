@@ -2203,14 +2203,14 @@ _t9_simulate_verifier_sidecar_write() {
 }
 
 # ---------------------------------------------------------------------------
-# T11: dispatch-manifest provenance schema
+# dispatch-manifest provenance schema
 #
 # These three tests drive the dispatch_spec / mode / status / agent / job_id
 # / await_cmd / split_cmd fields required by the CD-1 dispatch-manifest
 # schema (structure.md §10).
 # ---------------------------------------------------------------------------
 
-# T11 AC1 — third-party entry: nested dispatch_spec with all T11 provenance
+# AC1 — third-party entry: nested dispatch_spec with all T11 provenance
 # fields plus background job metadata (mode/status/agent/job_id/await_cmd/
 # split_cmd).  The mock dispatcher echoes a JOB_ID line to stdout so the
 # wrapper script can capture and persist it in the manifest.
@@ -2372,7 +2372,7 @@ MOCK_EOF
   rm -rf "$TMP_DIR"
 }
 
-# T11 AC3 — append safety: two successive invocations with different reviewer
+# AC3 — append safety: two successive invocations with different reviewer
 # tags against the same output directory produce a well-formed two-entry
 # manifest with all entries carrying dispatch_spec.
 @test "[dispatch-manifest AC3] repeated invocations with multiple reviewer tags produce well-formed manifest with all dispatch_spec entries present" {
@@ -2452,7 +2452,7 @@ MOCK_EOF
   rm -rf "$TMP_DIR"
 }
 
-# T11 AC4 — concurrency safety: N≥2 concurrent _append_manifest_entry
+# AC4 — concurrency safety: N≥2 concurrent _append_manifest_entry
 # invocations against the same manifest path all survive (no lost-update race).
 # Uses a start-barrier pattern so all subshells hit _append_manifest_entry
 # simultaneously, maximising collision probability on the R-M-W path.
@@ -2630,4 +2630,143 @@ MOCK_EOF
     || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
 
   rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# R5 security and correctness fixes (FIX-A through FIX-E)
+# ---------------------------------------------------------------------------
+
+# FIX-A (sec-codex F01): first-party prompt write must use mktemp + mv -f to
+# avoid TOCTOU symlink attack between rm -f and open(2)-for-redirect.
+# Inspection test: the script source must contain a mktemp call whose result
+# is used for the first-party prompt tmpfile (pattern: mktemp + _fp_tmp).
+@test "[dispatch-manifest FIX-A] first-party prompt write uses mktemp to avoid TOCTOU race" {
+  # The fix shape requires mktemp producing a name stored in _fp_tmp, then
+  # compose_prompt writing to that tmpfile, then mv -f promoting it.
+  grep -qE 'mktemp.*_fp_prompt_file.*XXXXXX|_fp_tmp=.*mktemp' \
+    "$REPO_ROOT/scripts/run-codex-review.sh" \
+    || { echo "run-codex-review.sh: mktemp-based first-party prompt write not found (FIX-A not applied)"; return 1; }
+  # Also confirm the mv -f promotion is present (not just the mktemp call).
+  grep -qE 'mv -f.*\$_fp_tmp.*\$_fp_prompt_file|mv -f "\$_fp_tmp" "\$_fp_prompt_file"' \
+    "$REPO_ROOT/scripts/run-codex-review.sh" \
+    || { echo "run-codex-review.sh: mv -f promotion of _fp_tmp not found (FIX-A incomplete)"; return 1; }
+}
+
+# FIX-B (sec-codex F02): manifest tmpfile must use mktemp (not BASHPID/$$) to
+# avoid a predictable-name symlink pre-placement attack.
+# Inspection test: the _append_manifest_entry function must assign tmp via
+# mktemp, not via ${manifest}.tmp.${BASHPID:-$$}.
+@test "[dispatch-manifest FIX-B] manifest tmpfile uses mktemp not predictable BASHPID" {
+  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  # After fix, the predictable-name pattern must be gone from the function.
+  ! grep -qE 'tmp.*BASHPID|tmp.*\$\$' "$script" \
+    || { echo "run-codex-review.sh: predictable BASHPID/\$\$ tmp pattern still present (FIX-B not applied)"; return 1; }
+  # After fix, mktemp must be used for the manifest tmpfile.
+  grep -qE 'mktemp.*manifest.*XXXXXX|tmp=.*mktemp.*XXXXXX' "$script" \
+    || { echo "run-codex-review.sh: mktemp-based manifest tmp not found (FIX-B not applied)"; return 1; }
+}
+
+# FIX-C (cq-codex F01): DISPATCHER existence check must NOT fire on the
+# first-party (copilot-cli) path.  When COPILOT_CLI=1 and the third-party
+# dispatcher binary is absent, the script must still exit 0.
+@test "[dispatch-manifest FIX-C] first-party dispatch succeeds when third-party dispatcher is absent" {
+  _t7_require_trusted_gh
+
+  local tmp
+  tmp="$(mktemp -d)"
+  _t7_make_mock_repo "$tmp"
+
+  # Remove the mock dispatcher so the existence check fires if it is still
+  # at module-init scope rather than inside the third-party branch.
+  rm -f "$tmp/scripts/run-third-party-llm.sh"
+
+  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+
+  local exit_code=0
+  QRSPI_REPO_ROOT="$tmp" \
+    COPILOT_CLI=1 \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag fix-c-codex \
+      --output-dir "$tmp/out" \
+      --round 1 \
+      --subject-code "$tmp/src/subject.ts" \
+      --model "claude-sonnet-4-5" \
+      --output-file "$tmp/result.md" \
+      --artifact-dir "$tmp/artifact-dir" \
+    >/dev/null 2>/dev/null || exit_code=$?
+
+  [ "$exit_code" -eq 0 ] \
+    || { echo "first-party dispatch exited $exit_code (expected 0); DISPATCHER existence check still fires before host routing (FIX-C not applied)"; return 1; }
+
+  rm -rf "$tmp"
+}
+
+# FIX-D (sf-codex F01): on the third-party dispatch failure path, the real
+# dispatcher exit code must be propagated even when emit_dispatch_manifest_entry
+# itself fails (e.g., due to a broken jq).  Without the fix, emit's internal
+# exit 1 masks the dispatcher's non-zero exit code.
+@test "[dispatch-manifest FIX-D] third-party dispatch failure path propagates dispatcher exit code when manifest emit fails" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+  _t7_make_mock_repo "$TMP_DIR"
+
+  # Mock dispatcher that always exits with a distinctive non-zero code (42).
+  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+exit 42
+MOCK_EOF
+  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+
+  # Stub jq that always fails so emit_dispatch_manifest_entry calls exit 1
+  # internally.  Without FIX-D, this masks the dispatcher's exit 42.
+  mkdir -p "$TMP_DIR/bin"
+  cat > "$TMP_DIR/bin/jq" <<'JQ_EOF'
+#!/usr/bin/env bash
+echo "stub jq: forced failure for FIX-D test" >&2
+exit 1
+JQ_EOF
+  chmod +x "$TMP_DIR/bin/jq"
+
+  local exit_code=0
+  PATH="$TMP_DIR/bin:$PATH" \
+    QRSPI_REPO_ROOT="$TMP_DIR" \
+    COPILOT_CLI="" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag fix-d-codex \
+      --output-dir "$TMP_DIR/out" \
+      --round 1 \
+      --subject-code "$TMP_DIR/src/subject.ts" \
+      --model "gpt-5-codex-canary" \
+      --output-file "$TMP_DIR/result.md" \
+      --artifact-dir "$TMP_DIR/artifact-dir" \
+    >/dev/null 2>/dev/null || exit_code=$?
+
+  [ "$exit_code" -eq 42 ] \
+    || { echo "expected exit 42 (dispatcher code) but got $exit_code; emit_dispatch_manifest_entry failure is masking dispatcher exit code (FIX-D not applied)"; return 1; }
+
+  rm -rf "$TMP_DIR"
+}
+
+# FIX-E (sf-claude F01): the INT and TERM traps installed while the manifest
+# lock is held must exit the script after releasing the lock, not merely
+# release the lock and let bash resume the interrupted function.
+# Inspection test: the script must have separate INT (exit 130) and TERM
+# (exit 143) traps, distinct from the EXIT trap that only does rmdir.
+@test "[dispatch-manifest FIX-E] INT and TERM traps exit after releasing manifest lock" {
+  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  # INT trap must include exit 130.
+  grep -qE "trap.*exit 130.*INT|trap.*INT.*exit 130" "$script" \
+    || { echo "run-codex-review.sh: INT trap with exit 130 not found (FIX-E not applied)"; return 1; }
+  # TERM trap must include exit 143.
+  grep -qE "trap.*exit 143.*TERM|trap.*TERM.*exit 143" "$script" \
+    || { echo "run-codex-review.sh: TERM trap with exit 143 not found (FIX-E not applied)"; return 1; }
+  # EXIT trap must remain a pure rmdir (no exit call in EXIT trap).
+  # Extract the EXIT trap line and verify it does NOT contain "exit [0-9]".
+  local exit_trap_line
+  exit_trap_line="$(grep -E "trap.*EXIT" "$script" | grep -v "trap -" | head -1)"
+  echo "$exit_trap_line" | grep -qvE "exit [0-9]" \
+    || { echo "EXIT trap appears to include an exit call (EXIT trap must be pure rmdir): $exit_trap_line"; return 1; }
 }

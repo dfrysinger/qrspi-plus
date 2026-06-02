@@ -267,7 +267,14 @@ _append_manifest_entry() {
       # Record in a script-level variable so the EXIT trap string can
       # reference it even after this function's stack frame is gone.
       _manifest_lock_dir="$_lock_dir"
-      trap 'rmdir "$_manifest_lock_dir" 2>/dev/null || true' EXIT INT TERM
+      # EXIT: pure cleanup — just release the lock (no exit call so normal
+      # completion paths are not affected).
+      # INT/TERM: release the lock THEN exit so bash does not resume the
+      # interrupted function body without holding the lock (which would race
+      # concurrent writers).  exit 130 = 128+SIGINT(2); exit 143 = 128+SIGTERM(15).
+      trap 'rmdir "$_manifest_lock_dir" 2>/dev/null || true' EXIT
+      trap 'rmdir "$_manifest_lock_dir" 2>/dev/null || true; exit 130' INT
+      trap 'rmdir "$_manifest_lock_dir" 2>/dev/null || true; exit 143' TERM
       break
     fi
     # Stale-lock probe: if the lockdir is older than 30s, attempt to remove
@@ -292,10 +299,18 @@ _append_manifest_entry() {
     fi
     sleep 0.05
   done
-  # Use $BASHPID (actual subshell PID) if available (bash 4+), else fall back to
-  # $$ (parent PID on bash 3.x).  Subshell-unique tmp names prevent corruption
-  # even if the lock somehow breaks; with set +e above the lock is reliable.
-  local tmp="${manifest}.tmp.${BASHPID:-$$}"
+  # Use mktemp for the manifest tmpfile to avoid a predictable-name symlink
+  # pre-placement attack: BASHPID/$$ are enumerable and an attacker can place
+  # a symlink at ${manifest}.tmp.<predicted-pid> before the lock is acquired.
+  # mktemp uses O_EXCL (symlink-safe); the mv -f below promotes atomically.
+  local tmp
+  if ! tmp="$(mktemp "${manifest}.tmp.XXXXXX")"; then
+    echo "error: mktemp failed for manifest tmp" >&2
+    trap - EXIT INT TERM
+    rmdir "$_lock_dir" 2>/dev/null || true
+    eval "$_saved_opts"
+    return 1
+  fi
   if [[ -f "$manifest" ]]; then
     if ! jq --argjson new "$entry" '. + [$new]' "$manifest" > "$tmp"; then
       echo "error: _append_manifest_entry: jq append failed" >&2
@@ -789,24 +804,6 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
-DISPATCHER="$REPO_ROOT/scripts/run-third-party-llm.sh"
-if [[ ! -x "$DISPATCHER" && ! -r "$DISPATCHER" ]]; then
-  echo "error: run-third-party-llm.sh not found at $DISPATCHER" >&2
-  exit 1
-fi
-
-# Build dispatcher argv. --provider codex is hardcoded; --model, --output-file,
-# and --artifact-dir come from the shim's caller. Optional --timeout-seconds
-# is forwarded when present.
-DISPATCHER_ARGS=(
-  --provider codex
-  --model "$MODEL"
-  --output-file "$OUTPUT_FILE"
-  --artifact-dir "$ARTIFACT_DIR"
-)
-if [[ -n "$TIMEOUT_SECONDS" ]]; then
-  DISPATCHER_ARGS+=(--timeout-seconds "$TIMEOUT_SECONDS")
-fi
 
 # Pipe the assembled prompt to the dispatcher's stdin and propagate its
 # exit code unchanged (per the exit-code matrix above).
@@ -900,12 +897,23 @@ if [[ "$_detected_host" == "copilot-cli" ]]; then
   _fp_dispatch_dir="$OUTPUT_DIR/.dispatch"
   mkdir -p "$_fp_dispatch_dir" || { echo "error: cannot create dispatch dir $_fp_dispatch_dir" >&2; exit 1; }
   _fp_prompt_file="$_fp_dispatch_dir/$REVIEWER_TAG.prompt"
-  # Remove any pre-existing symlink at the prompt path before writing so an
-  # attacker-planted symlink cannot redirect the write to an arbitrary target.
-  rm -f "$_fp_prompt_file"
-  if ! compose_prompt > "$_fp_prompt_file"; then
-    rm -f "$_fp_prompt_file"
+  # Write prompt via mktemp + mv -f to avoid a TOCTOU symlink attack: the
+  # rm-f then open(2)-for-redirect pair is not atomic.  mktemp uses O_EXCL
+  # (symlink-safe); rename(2) replaces the destination atomically without
+  # following symlinks.
+  _fp_tmp=""
+  if ! _fp_tmp="$(mktemp "${_fp_prompt_file}.tmp.XXXXXX")"; then
+    echo "error: mktemp failed for first-party prompt tmpfile" >&2
+    exit 1
+  fi
+  if ! compose_prompt > "$_fp_tmp"; then
+    rm -f "$_fp_tmp"
     echo "error: compose_prompt failed for first-party dispatch" >&2
+    exit 1
+  fi
+  if ! mv -f "$_fp_tmp" "$_fp_prompt_file"; then
+    rm -f "$_fp_tmp"
+    echo "error: mv -f failed promoting first-party prompt tmpfile" >&2
     exit 1
   fi
   # Emit the orchestrator-facing DISPATCH_FILE reference to stdout.
@@ -917,6 +925,28 @@ fi
 echo "[transport: shell-pipeline]" >&2
 
 # Third-party (shell-pipeline) dispatch path.
+# DISPATCHER existence check is here (not at module-init scope) so the
+# first-party copilot-cli path is never blocked by a missing dispatcher
+# binary.  Only the third-party branch needs the dispatcher.
+DISPATCHER="$REPO_ROOT/scripts/run-third-party-llm.sh"
+if [[ ! -x "$DISPATCHER" && ! -r "$DISPATCHER" ]]; then
+  echo "error: run-third-party-llm.sh not found at $DISPATCHER" >&2
+  exit 1
+fi
+
+# Build dispatcher argv. --provider codex is hardcoded; --model, --output-file,
+# and --artifact-dir come from the shim's caller. Optional --timeout-seconds
+# is forwarded when present.
+DISPATCHER_ARGS=(
+  --provider codex
+  --model "$MODEL"
+  --output-file "$OUTPUT_FILE"
+  --artifact-dir "$ARTIFACT_DIR"
+)
+if [[ -n "$TIMEOUT_SECONDS" ]]; then
+  DISPATCHER_ARGS+=(--timeout-seconds "$TIMEOUT_SECONDS")
+fi
+
 # Capture the dispatcher's stdout to extract a JOB_ID line if present.
 # A future dispatch-companion.sh will emit JOB_ID; current dispatchers may
 # not, in which case a missing JOB_ID on success is treated as a dispatcher
@@ -947,7 +977,9 @@ fi
 if [[ "$_dispatch_exit" -ne 0 ]]; then
   # Dispatch failed: persist a "failed" audit entry so the round is auditable,
   # then propagate the non-zero exit code.
-  emit_dispatch_manifest_entry "" "failed"
+  # Run in a subshell so that emit_dispatch_manifest_entry's internal exit 1
+  # (e.g., on jq failure) does not mask the real dispatcher exit code.
+  ( emit_dispatch_manifest_entry "" "failed" ) || true
   exit "$_dispatch_exit"
 fi
 
