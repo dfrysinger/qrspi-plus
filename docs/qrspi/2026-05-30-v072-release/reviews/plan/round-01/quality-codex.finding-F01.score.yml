@@ -1,0 +1,2 @@
+score: 78
+reason: Verified — structure.md lines 122, 129, 132 require `tests/lint/test-design-altitude-boundary-include.bats`, `skills/structure/owns-defers.md`, and `tests/lint/test-structure-altitude-boundary-include.bats` for G34/G35, but none appear in any Plan task's Target files (T29/T37/T38 spot-checked); this violates Plan's contract to break all of structure into tasks, leaving three required files unowned — fix-recipe task assignments are slightly off (structure/owns-defers belongs naturally in T37, not T29) but the underlying coverage gap is real and high-impact.

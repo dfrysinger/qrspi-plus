@@ -1,0 +1,2 @@
+score: 65
+reason: Verified — T02 line 182 already lists scripts/verifier-fan-in.sh (create), and T05 line 347 redundantly marks the same file (create) while its own Scope/DoD/Out-of-scope clearly describe a modify; low-severity but real annotation drift that could mislead the implementer's Write-vs-Edit decision.

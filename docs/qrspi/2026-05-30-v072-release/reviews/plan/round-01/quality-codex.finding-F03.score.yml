@@ -1,0 +1,2 @@
+score: 45
+reason: Real low-severity clarity mismatch — Task 24 sits under Slice 1.4 but lists only Slice 1.1 goal IDs (G6/G11/G12), confirmed against phasing.md slice rosters; placement is defensible (CD-4 cross-cutting helper grouped with other Slice 1.4 dispatch infra) but the cross-slice rationale is implicit, so a one-line note would meaningfully aid reviewer orientation.

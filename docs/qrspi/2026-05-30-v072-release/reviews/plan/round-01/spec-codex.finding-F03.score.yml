@@ -1,0 +1,2 @@
+score: 32
+reason: T26 is ~140 LOC (under the 200-LOC splitting threshold) and represents one coherent observable change (plumbing G31 primitives across all consumer sites); Plan SKILL only forces split + sizing_exception above the LOC ceiling, and the closed exception list (schema migration, CI scaffolding, reusable primitives) wouldn't apply anyway — finding overreads the atomicity rule.

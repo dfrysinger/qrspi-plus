@@ -60,11 +60,11 @@ Task numbers are globally sequential. Cross-slice dependency (Slice 1.4 G4 → S
 ### Slice 1.4 — Dispatch infrastructure
 
 - **Task 12 — G4 canonical cumulative diff helper (`round-prepare.sh` + `await-round.sh` + section-anchor manifest + per-skill anchors JSON)** — goals: [G4] — deps: none — LOC: ~280 — sizing_exception: reusable primitives — task_type: code — model: opus
-- **Task 16 — G22 `model_routing` config schema and agent-sweep migration** — goals: [G22] — deps: none — LOC: ~320 — sizing_exception: schema migration — task_type: code — model: opus
+- **Task 16 — G22 `model_routing` config schema and agent-sweep migration** — goals: [G22] — deps: none — LOC: ~320 — sizing_exception: schema-migration — task_type: code — model: opus
 - **Task 17 — G23 validation table covers `model_routing` and cross-links fail-loud paragraphs** — goals: [G23] — deps: [Task 16] — LOC: ~80 — task_type: code — model: opus
 - **Task 18 — G25 dispatch-routing top-level fail-loud invariant paragraph** — goals: [G25] — deps: [Task 17] — LOC: ~70 — task_type: lightweight — model: sonnet
 - **Task 19 — G27 `second-reviewer-available.sh` helper, `_host-detect.sh` primitive, and Goals consumer migration** — goals: [G27] — deps: none — LOC: ~210 — sizing_exception: reusable primitives — task_type: code — model: opus
-- **Task 20 — G3 dispatch-script rename collapse (`run-codex-review.sh` → `dispatch-agent.sh`; `run-third-party-llm.sh` → `dispatch-companion.sh`; `codex-finding-splitter.sh` → `third-party-finding-splitter.sh`) and per-skill prose migration** — goals: [G3] — deps: [Task 12, Task 19] — LOC: ~260 — sizing_exception: reusable primitives — task_type: code — model: opus
+- **Task 20 — G3 dispatch-script rename collapse (`run-codex-review.sh` → `dispatch-agent.sh`; `run-third-party-llm.sh` → `dispatch-companion.sh`; `codex-finding-splitter.sh` → `third-party-finding-splitter.sh`) and per-skill prose migration** — goals: [G3] — deps: [Task 09, Task 11, Task 12, Task 13, Task 19] — LOC: ~260 — sizing_exception: reusable primitives — task_type: code — model: opus
 - **Task 21 — G16 path-filter exfil hardening in `dispatch-agent.sh`** — goals: [G16] — deps: [Task 20] — LOC: ~120 — task_type: code — model: opus
 - **Task 22 — G24-F02 `using-qrspi` per-H4 prose redundancy consolidation** — goals: [G24] — deps: [Task 18] — LOC: ~90 — task_type: lightweight — model: sonnet
 - **Task 23 — G24-F04 `using-qrspi` tier-regex consolidation** — goals: [G24] — deps: [Task 22] — LOC: ~70 — task_type: code — model: opus
@@ -108,6 +108,8 @@ Three cross-slice dependency clusters dominate the graph; everything else is wit
 2. **G22 model_routing schema (Slice 1.4) → G23 validation table → G25 fail-loud → G24-F02/F04 prose consolidation.** All four touch `skills/using-qrspi/SKILL.md` and `config.md`; sequential ordering within Slice 1.4 prevents merge conflicts on the shared edit surface and ensures the validation table covers the new schema before fail-loud paragraphs reference it.
 
 3. **G3 splitter rename (Slice 1.4) → G16 dispatch-agent path-filter (Slice 1.4) → G32 build pipeline (Slice 1.7).** G16 edits `scripts/dispatch-agent.sh` (the renamed file from G3); G32's `build/` allow-list and `!cat` resolver inspect every shipped script under its new name, so G32 lands after G3 + G16 are merged.
+
+4. **G20 `actual_model:` provenance (T09) + G29 dispatch-manifest provenance (T11) + G9 per-task round-prepare edits (T13) → G3 splitter rename (T20).** T09, T11, and T13 all modify the pre-rename dispatch surface (`scripts/run-codex-review.sh` for T09/T11; `scripts/round-prepare.sh` for T13); T20 hard-renames those files and migrates the 12 consumer SKILLs. Sequencing T09/T11/T13 ahead of T20 prevents the rename from clobbering in-flight provenance edits and prevents T20 from leaving stale pre-rename caller paths behind.
 
 Within-slice chains worth noting: G31 primitives (T25) before all G31 consumer sites (T26) and before G32 (T39 needs the `prompt-prose-detection.md` defensive-copy site to exist); G34 design-altitude-boundary (T29) before G35 structure-altitude-boundary (T37) so the two altitude primitives are reviewed against a shared template; G1 (T30) before G33 (T31) before G30 (T32) to serialize the three design/SKILL.md edits and prevent same-paragraph conflicts. Slice 1.7 G21 → G26 → G24-F01 → G24-F03 → G24-F05 is a single test-infrastructure chain (each task modifies overlapping bats files).
 
@@ -344,7 +346,7 @@ Centralize `change_type:` as the required reviewer finding-file frontmatter key 
 - **Goal IDs:** [G13]
 - **Task type:** code
 - **Model:** opus
-- **Target files:** scripts/verifier-fan-in.sh (create), skills/reviewer-protocol/SKILL.md (modify), tests/unit/test-change-type-partition.bats (modify)
+- **Target files:** scripts/verifier-fan-in.sh (modify), skills/reviewer-protocol/SKILL.md (modify), tests/unit/test-change-type-partition.bats (modify)
 - **Dependencies:** Task 02, Task 04
 - **LOC estimate:** ~110
 - **Dispatch order:** test-writer first, implementer second (RED-verification gate between).
@@ -565,7 +567,7 @@ Extend the verifier with a Cite Check path that rejects findings whose cited fil
 - **Task type:** code
 - **Model:** opus
 - **Target files:** agents/qrspi-finding-verifier.md (modify), skills/using-qrspi/SKILL.md (modify), scripts/run-codex-review.sh (modify), tests/unit/test-verified-file-shape.bats (modify), tests/acceptance/v07-phase1/test-phase1-acceptance.bats (modify)
-- **Dependencies:** Task 08. **Blocks:** T10 (G28 verifier convergent-evidence exception and sub-threshold-observations instrumentation).
+- **Dependencies:** Task 08. **Blocks:** T10 (G28 verifier convergent-evidence exception and sub-threshold-observations instrumentation), T20 (G3 dispatch-script rename consumes this task's `scripts/run-codex-review.sh` `actual_model:` manifest edits).
 - **LOC estimate:** ~160
 
 **Overview**
@@ -684,7 +686,7 @@ Add verifier-side `defect_class:` instrumentation and an informational sub-thres
 - **Task type:** code
 - **Model:** sonnet
 - **Target files:** skills/using-qrspi/SKILL.md (modify), scripts/run-codex-review.sh (modify), tests/acceptance/v07-phase1/test-phase1-acceptance.bats (modify)
-- **Dependencies:** none
+- **Dependencies:** none. **Blocks:** T20 (G3 dispatch-script rename consumes this task's `scripts/run-codex-review.sh` dispatch-manifest provenance edits).
 - **LOC estimate:** ~110
 - **Dispatch order:** test-writer first, implementer second (RED-verification gate between).
 
@@ -807,7 +809,7 @@ Create the canonical round-preparation and round-drain primitives that replace h
 - **Task type:** code
 - **Model:** opus
 - **Target files:** scripts/round-prepare.sh (modify), skills/implement/SKILL.md (modify), tests/unit/test-scope-tagger-dispatch.bats (modify)
-- **Dependencies:** Task 12
+- **Dependencies:** Task 12. **Blocks:** T20 (G3 dispatch-script rename consumes this task's `scripts/round-prepare.sh` per-task scope-tagger + commit-anchor edits).
 - **LOC estimate:** ~120
 - **Dispatch order:** test-writer first, implementer second (RED-verification gate between).
 
@@ -981,7 +983,7 @@ Add the Plan authoring contract and plan-reviewer enforcement for `cross_task_co
 - **Target files:** modify `config.md`; create/modify `scripts/_resolve-lib.sh`; create/modify `skills/_shared/config-validation-procedure.md`; modify `skills/using-qrspi/SKILL.md`; modify `skills/plan/SKILL.md`; modify `skills/implement/SKILL.md`; modify `skills/test/SKILL.md`; modify all `agents/qrspi-*.md`; modify `tests/unit/test-config-model-routing.bats`; modify `tests/unit/test-routing-matrix-application.bats`
 - **Dependencies:** none. **Blocks:** T17 (G23 validation-table row and fail-loud cross-links depend on this task's canonical schema and stable fail-loud paragraphs).
 - **LOC estimate:** ~320
-- **Sizing exception:** schema migration
+- **Sizing exception:** schema-migration
 
 **Overview**
 
@@ -1228,7 +1230,7 @@ Deliver the host-aware second-reviewer availability primitive and migrate the Go
 - **Task type:** code
 - **Model:** opus  (sizing_exception → opus)
 - **Target files:** rename `scripts/run-codex-review.sh` → `scripts/dispatch-agent.sh`; rename `scripts/run-third-party-llm.sh` → `scripts/dispatch-companion.sh`; rename `scripts/codex-finding-splitter.sh` → `scripts/third-party-finding-splitter.sh`; modify `scripts/await-round.sh`; create `skills/_shared/reviewer-dispatch-prose.md`; modify `skills/goals/SKILL.md`, `skills/questions/SKILL.md`, `skills/research/SKILL.md`, `skills/design/SKILL.md`, `skills/structure/SKILL.md`, `skills/phasing/SKILL.md`, `skills/plan/SKILL.md`, `skills/parallelize/SKILL.md`, `skills/replan/SKILL.md`, `skills/implement/SKILL.md`, `skills/integrate/SKILL.md`, `skills/test/SKILL.md`; rename/update `tests/unit/test-run-codex-review.bats` → `tests/unit/test-dispatch-agent.bats`; modify `tests/unit/test-dispatch-sites.bats`
-- **Dependencies:** Task 12, Task 19. **Blocks:** T21 (G16 path-filter exfil hardening in `dispatch-agent.sh`).
+- **Dependencies:** Task 09, Task 11, Task 12, Task 13, Task 19. **Blocks:** T21 (G16 path-filter exfil hardening in `dispatch-agent.sh`).
 - **LOC estimate:** ~260
 - **Sizing exception:** reusable primitives
 
@@ -1539,7 +1541,7 @@ Create the round-start interaction-mode detector that centralizes host-specific 
 - **Task type:** lightweight
 - **Model:** sonnet
 - **Target files:** skills/_shared/prompt-prose-detection.md (create), skills/_shared/prompt-prose-writer-addition.md (create), skills/_shared/prompt-prose-reviewer-addition.md (create), skills/_shared/prompt-design-rules.md (create-via-migrate from docs/prompt-design-guide.md), skills/prompt-prose-writer/SKILL.md (create), skills/prompt-prose-reviewer/SKILL.md (create), docs/prompt-design-guide.md (delete post-migration)
-- **Dependencies:** none. **Blocks:** T26 (Plan/Design `!cat` include sites), T27 (reviewer-protocol consumer), T28-T31 (remaining G31 consumers).
+- **Dependencies:** none. **Blocks:** T26 (G31 `!cat` include sites + skill-frontmatter preloads), T39 (G32 build pipeline's defensive copy of `skills/_shared/prompt-prose-detection.md`).
 - **LOC estimate:** ~340
 - **Sizing exception:** reusable primitives
 
@@ -1666,7 +1668,7 @@ Plumb the G31 prompt-prose primitives from T25 into the Design, Plan, lightweigh
 - **Goal IDs:** [G3, G4, G22, G27]
 - **Task type:** lightweight
 - **Model:** sonnet
-- **Target files:** `skills/_shared/evergreen-output-rule.md` (create), `skills/goals/SKILL.md`, `skills/questions/SKILL.md`, `skills/research/SKILL.md`, `skills/design/SKILL.md`, `skills/structure/SKILL.md`, `skills/phasing/SKILL.md`, `skills/plan/SKILL.md`, `skills/parallelize/SKILL.md`, `skills/replan/SKILL.md`
+- **Target files:** `skills/_shared/evergreen-output-rule.md` (create), `skills/goals/SKILL.md`, `skills/questions/SKILL.md`, `skills/research/SKILL.md`, `skills/design/SKILL.md`, `skills/structure/SKILL.md`, `skills/phasing/SKILL.md`, `skills/plan/SKILL.md`, `skills/parallelize/SKILL.md`, `skills/replan/SKILL.md`, `skills/reviewer-protocol/SKILL.md`, `skills/using-qrspi/SKILL.md`
 - **Dependencies:** none
 - **LOC estimate:** ~120
 
@@ -1682,13 +1684,14 @@ Create the canonical Evergreen-Output Rule snippet and include it in every artif
   - Place each include at the artifact-output contract section before the artifact template (or equivalent artifact-quality contract location) per structure.md ## Hook-Point Cross-Slice Index → CD-2 evergreen-output-rule `!cat` include sites.
   - Preserve the load-bearing anchor phrases and rule shape: `Litmus test (apply to every paragraph before write)`, `dialogue exhaust`, `Named antagonist patterns — strip on sight, substitute as shown`, the two ordered filters, and the exclusions parenthetical.
   - Keep consumer SKILL.md files DRY: the rule text is included with `!cat`, not copied or paraphrased inline.
+  - Author a one-line by-reference pointer to `skills/_shared/evergreen-output-rule.md` from the artifact-quality section of `skills/using-qrspi/SKILL.md` (pointer-only, NOT a `!cat` include, since `using-qrspi` is not an artifact-producing skill — per design.md ### CD-2 acceptance #5 and structure.md ### `skills/using-qrspi/SKILL.md` per-file block).
+  - Author the reviewer-protocol enforcement clause in `skills/reviewer-protocol/SKILL.md` so reviewer subagents surface a finding when an artifact carries any of the CD-2 named antagonist patterns (session/drafting notes, version-history narration, inside baseball, compaction-loss recovery, failure-modes-prevented lists, and any other pattern named in the locked `evergreen-output-rule.md` snippet). The clause is inserted alongside (NOT replacing) existing finding-schema/`change_type` requirements and uses the canonical `change_type: style` or `change_type: clarity` enum value per the locked snippet's filter taxonomy.
 
 - **Out:**
   - Canonical cumulative diff helpers, round preparation, and G4 anchor-manifest refreshes — T12 owns.
   - Unified `model_routing:` schema, agent `tier:` migration, and Plan/Test `model:` → `tier:` prose migration — T16 owns.
   - Host-aware second-reviewer availability helper and `second_reviewer:` consumer migration — T19 owns.
   - Dispatch script renames, shared reviewer-dispatch prose, and review-producing skill dispatch include migration — T20 owns.
-  - Pointer-only documentation in `skills/using-qrspi/SKILL.md` and reviewer-protocol enforcement for antagonist-pattern findings are not authored here because neither file appears in the existing Target files list.
 
 **Definition of done**
 
@@ -1698,6 +1701,8 @@ Create the canonical Evergreen-Output Rule snippet and include it in every artif
 - No consumer SKILL.md in scope embeds a copied or paraphrased version of the Evergreen-Output Rule; the shared snippet is the only inclusion path.
 - The snippet states the rule positively as current-state artifact writing, not only as a ban on history narration.
 - The implementation satisfies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention), including R5 DRY and positive-substitute guidance.
+- `skills/using-qrspi/SKILL.md` carries exactly one by-reference pointer line to `skills/_shared/evergreen-output-rule.md` at the artifact-quality section, with no `!cat` include of the snippet body (per CD-2 acceptance #5).
+- `skills/reviewer-protocol/SKILL.md` requires reviewer subagents to surface a finding when an artifact carries any CD-2 named antagonist pattern, alongside (NOT replacing) the existing finding-schema/`change_type` requirements.
 
 **Test expectations**
 
@@ -1707,6 +1712,8 @@ Create the canonical Evergreen-Output Rule snippet and include it in every artif
 - Grep audit confirms the in-scope consumer SKILL.md files do not inline-copy the rule's anchor phrases (`Litmus test (apply to every paragraph before write)`, `dialogue exhaust`, `Named antagonist patterns — strip on sight, substitute as shown`) outside the shared snippet include path.
 - Anchor-phrase audit confirms the snippet preserves the required phrases, the two ordered filters, and the exclusions parenthetical.
 - Content-semantic review applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` to verify R5 DRY, positive-substitute framing, anchor-phrase preservation, and load-bearing clarity for the ordered filters and exclusions parenthetical.
+- Grep audit of `skills/using-qrspi/SKILL.md` confirms exactly one pointer line to `skills/_shared/evergreen-output-rule.md` at the artifact-quality section and zero occurrences of `!cat skills/_shared/evergreen-output-rule.md` (pointer-only contract per CD-2 acceptance #5).
+- Grep audit of `skills/reviewer-protocol/SKILL.md` confirms the antagonist-pattern enforcement clause is present and references the CD-2 named patterns vocabulary from the locked `skills/_shared/evergreen-output-rule.md` snippet (no duplicated antagonist-pattern list — the reviewer clause cites the snippet rather than copying it).
 
 **References**
 
@@ -1787,7 +1794,7 @@ Create the shared Multi-Actor Flow Check snippet and include it in the four down
 - **Goal IDs:** [G34]
 - **Task type:** lightweight
 - **Model:** sonnet
-- **Target files:** create `skills/_shared/design-altitude-boundary.md`; modify `agents/qrspi-design-scope-reviewer.md`; modify `skills/design/owns-defers.md`
+- **Target files:** create `skills/_shared/design-altitude-boundary.md`; modify `agents/qrspi-design-scope-reviewer.md`; modify `skills/design/owns-defers.md`; create `tests/lint/test-design-altitude-boundary-include.bats`
 - **Dependencies:** none. **Blocks:** T30 (Design SKILL decision-completeness template consumes the superseded-G1-deliverable boundary), T37 (Structure-side boundary migration follows the Design boundary split).
 - **LOC estimate:** ~150
 
@@ -2046,7 +2053,7 @@ Add the Plan schema-migration task shape so Plan can author one narrow, self-ver
 - **Out:**
   - G15/G18 sweep-task `dependent_tests:` and cross-task consumer-surface contracts in the same Plan/reviewer files — T14 and T15 own those surfaces.
   - G31 prompt-prose classification, writer-addition, and reviewer preload/include work in the same Plan/reviewer structure rows — out of this G2-only task.
-  - Changing ordinary task-size limits or adding new sizing-exception categories beyond the existing closed set (`schema migration`, `CI scaffolding`, `reusable primitives`).
+  - Changing ordinary task-size limits or adding new sizing-exception categories beyond the existing closed set (`schema-migration`, `CI scaffolding`, `reusable primitives`).
 
 **Definition of done**
 
@@ -2064,7 +2071,7 @@ Add the Plan schema-migration task shape so Plan can author one narrow, self-ver
 - Content review confirms the Plan prose says the structural lint is mandatory, N-files are ungated only under the exception, and all three fields are mandatory together.
 - Content review confirms the reviewer prose emits a clear defect for an attempted schema-migration task missing `structural_lint`.
 - Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application, especially load-bearing-rule clarity for distinguishing schema migrations from ordinary oversized tasks and positive-substitute wording for what schema migrations do.
-- Anchor-phrase audit confirms the closed exception set remains clear (`schema migration`, `CI scaffolding`, `reusable primitives`) and reviewers exempt LOC/file-count ceilings only when all schema-migration fields are present and the lint succeeds.
+- Anchor-phrase audit confirms the closed exception set remains clear (`schema-migration`, `CI scaffolding`, `reusable primitives`) and reviewers exempt LOC/file-count ceilings only when all schema-migration fields are present and the lint succeeds.
 
 **References**
 
@@ -2256,7 +2263,7 @@ Reconcile three stale commit-hygiene prose surfaces after v0.7.1 Wave 1 T2 added
 - **Goal IDs:** [G35]
 - **Task type:** lightweight
 - **Model:** sonnet
-- **Target files:** skills/structure/SKILL.md (modify), skills/_shared/structure-altitude-boundary.md (create)
+- **Target files:** skills/structure/SKILL.md (modify), skills/_shared/structure-altitude-boundary.md (create), skills/structure/owns-defers.md (modify), tests/lint/test-structure-altitude-boundary-include.bats (create)
 - **Dependencies:** Task 29. **Blocks:** T38 (Structure reviewer/scope-reviewer enforcement of the G35 boundary).
 - **LOC estimate:** ~190
 
@@ -2410,6 +2417,7 @@ Implement the G32 plugin build pipeline that turns the source repo into a commit
 - CI remains a single workflow, runs the build-sync gate, includes the recursive BATS/lint coverage needed for this release, and contains no Actions auto-commit step.
 - `CONTRIBUTING.md` documents the local rebuild workflow, PR-blocking failure modes, why `build/` is committed, and the runtime/dev-time split between `scripts/` and `tools/`.
 - No variables, conditionals, fenced `!cat` syntax, tarball/release-asset pipeline, sibling build branch, pre-commit hook, or CI auto-commit behavior is introduced.
+- `tools/build-plugin.mjs` canonicalizes every `!cat` target path with `fs.realpathSync` (or equivalent) BEFORE reading the target's bytes, and fails non-zero with a `resolves outside repository` diagnostic when the canonical path is not lexically prefixed by the canonical `$REPO_ROOT/`. This closes a symlink-escape exfiltration surface where a checked-in `skills/<dir>/<name>.md` symlink could point at `/etc/passwd` or any other path outside the repo and have its contents inlined into a shipped `build/` file. The guard mirrors T21's `assert_path_under_repo_root <label> <abs-path>` shape from `scripts/dispatch-agent.sh` (see Task 21 Definition of done — both guards canonicalize with `realpath` / `readlink -f` and reject canonical targets outside canonical `$REPO_ROOT/`).
 
 **Test expectations**
 
@@ -2424,6 +2432,7 @@ Implement the G32 plugin build pipeline that turns the source repo into a commit
 - Assert CI runs `node tools/build-plugin.mjs` followed by `git diff --exit-code build/ .claude-plugin/marketplace.json`, keeps one workflow, includes recursive BATS/lint coverage needed for this release, and has no Actions auto-commit step.
 - Verify `CONTRIBUTING.md` documents the edit → build → add source plus `build/` → commit → push workflow, the two PR-blocking failure modes, the committed-`build/` rationale, and the `scripts/` vs `tools/` distinction.
 - Acceptance fixtures cover a legacy `${CLAUDE_SKILL_DIR}` directive failure and a deliberate include-cycle failure with the required diagnostics.
+- Symlink-escape regression: a fixture commits a `!cat`-targeted file that is itself a symlink whose canonical target is outside `$REPO_ROOT` (e.g., `/etc/passwd` or `/tmp/secret`); the build fails non-zero before any byte of the symlink's referent enters the `build/` tree, with a stderr diagnostic containing `resolves outside repository`. Mirrors T21's symlink-out-of-repo regression in `tests/unit/test-dispatch-agent.bats` so the two canonicalization surfaces use the same audit-friendly diagnostic phrase.
 
 **References**
 

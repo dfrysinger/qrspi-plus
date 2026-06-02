@@ -1,0 +1,2 @@
+score: 60
+reason: Real test-coverage gap — T11 DoD requires atomic/append-safe behavior across "multiple reviewer tags in one round" yet the test recipe is serial ("repeated invocations") and cannot falsify atomicity; T12's parallel-dispatch test recipe is similarly serial ("rerun with the same inputs"). Finding quotes the artifact accurately and offers actionable falsifiable alternatives. T11 case is strong (parallel reviewer dispatch is the real workload); T12 case is weaker since round-prepare.sh isn't typically run concurrently, which moderates the overall importance.

@@ -1,0 +1,2 @@
+score: 72
+reason: Verified — T33 spec uses hyphenated `schema-migration` (lines 2040/2053/2054/2062) while T16 task-list entry (line 63) and T33's own closed-set enumeration (lines 2049, 2067) use spaced `schema migration`; this is a real intra-plan contradiction that will misfire the structural lint or T16 once implemented.

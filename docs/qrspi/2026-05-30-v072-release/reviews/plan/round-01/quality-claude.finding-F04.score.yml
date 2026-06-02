@@ -1,0 +1,2 @@
+score: 40
+reason: Real two-task deviation from the canonical `- **Model:** opus` bullet shape used by T10/T12/T14/T25/T39 (parenthetical is redundant with the separate `Sizing exception:` bullet below it on T19/T20), but low severity / clarity-class with no Iron Rule violation and the parser-fragility concern is speculative.

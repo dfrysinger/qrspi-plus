@@ -1,0 +1,2 @@
+score: 25
+reason: Likely altitude mismatch — tag-traversal hardening is a goals/design-level concern that no upstream goal (G3, G16) requested, and `<tag>` derives from orchestrator-configured reviewer tags rather than untrusted user input, making this a speculative defense-in-depth ask rather than a concrete Plan-level scope gap.

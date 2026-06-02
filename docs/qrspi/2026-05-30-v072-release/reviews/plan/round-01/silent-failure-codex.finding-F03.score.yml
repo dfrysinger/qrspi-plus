@@ -1,0 +1,2 @@
+score: 15
+reason: Plan T19 faithfully implements design.md G27 § D3's explicit "skip silently and write second_reviewer: false" decision for hosts with no available second-reviewer vendor; the probe still emits a loud [second-reviewer-unavailable] stderr diagnostic (per T19 test expectations) and D4 enforces a runtime halt if a user manually sets second_reviewer: true on an unsupported host, so the finding's "treat as fatal" fix contradicts the approved upstream design rather than catching a real defect.

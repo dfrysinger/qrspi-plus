@@ -1,0 +1,2 @@
+score: 75
+reason: Verified — design.md CD-2 acceptance lines 288-289 (antagonist-pattern reviewer enforcement and using-qrspi/SKILL.md pointer) are explicitly excluded from T27's Out section (line 1691) and no other task (incl. T35 which is about procedural-authority anti-fabrication, not antagonist patterns) owns them, leaving two CD-2 acceptance surfaces without a plan-task home.
