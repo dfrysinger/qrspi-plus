@@ -232,6 +232,10 @@ _validate_job_id() {
 # EXIT/INT/TERM trap; SIGKILL still leaves stale lock but the 30s mtime probe
 # will recover on next invocation.
 _manifest_lock_dir=""
+# Script-level relay for the manifest tmpfile created inside _append_manifest_entry.
+# The EXIT/INT/TERM trap strings reference this so the tmpfile is cleaned up
+# even when a signal fires after mktemp but before mv-promotion completes.
+_manifest_tmp=""
 
 # _append_manifest_entry <entry-json> — shared atomic JSON array append.
 # Uses jq to parse and append so trailing-whitespace/newline variations in
@@ -272,9 +276,9 @@ _append_manifest_entry() {
       # INT/TERM: release the lock THEN exit so bash does not resume the
       # interrupted function body without holding the lock (which would race
       # concurrent writers).  exit 130 = 128+SIGINT(2); exit 143 = 128+SIGTERM(15).
-      trap 'rmdir "$_manifest_lock_dir" 2>/dev/null || true' EXIT
-      trap 'rmdir "$_manifest_lock_dir" 2>/dev/null || true; exit 130' INT
-      trap 'rmdir "$_manifest_lock_dir" 2>/dev/null || true; exit 143' TERM
+      trap 'rm -f "$_manifest_tmp" 2>/dev/null || true; rmdir "$_manifest_lock_dir" 2>/dev/null || true' EXIT
+      trap 'rm -f "$_manifest_tmp" 2>/dev/null || true; rmdir "$_manifest_lock_dir" 2>/dev/null || true; exit 130' INT
+      trap 'rm -f "$_manifest_tmp" 2>/dev/null || true; rmdir "$_manifest_lock_dir" 2>/dev/null || true; exit 143' TERM
       break
     fi
     # Stale-lock probe: if the lockdir is older than 30s, attempt to remove
@@ -309,12 +313,15 @@ _append_manifest_entry() {
     trap - EXIT INT TERM
     rmdir "$_lock_dir" 2>/dev/null || true
     eval "$_saved_opts"
-    return 1
+    exit 1
   fi
+  # Mirror tmp into the script-level relay so the EXIT/INT/TERM traps can
+  # clean it up if a signal fires before the mv-promotion completes.
+  _manifest_tmp="$tmp"
   if [[ -f "$manifest" ]]; then
     if ! jq --argjson new "$entry" '. + [$new]' "$manifest" > "$tmp"; then
       echo "error: _append_manifest_entry: jq append failed" >&2
-      rm -f "$tmp"
+      rm -f "$tmp"; _manifest_tmp=""
       trap - EXIT INT TERM
       rmdir "$_lock_dir" 2>/dev/null || true
       eval "$_saved_opts"
@@ -323,7 +330,7 @@ _append_manifest_entry() {
   else
     if ! jq -n --argjson new "$entry" '[$new]' > "$tmp"; then
       echo "error: _append_manifest_entry: jq init failed" >&2
-      rm -f "$tmp"
+      rm -f "$tmp"; _manifest_tmp=""
       trap - EXIT INT TERM
       rmdir "$_lock_dir" 2>/dev/null || true
       eval "$_saved_opts"
@@ -333,7 +340,7 @@ _append_manifest_entry() {
   # Validate output is parseable JSON array before clobbering.
   if ! jq -e 'type == "array"' "$tmp" > /dev/null; then
     echo "error: _append_manifest_entry: produced non-array output" >&2
-    rm -f "$tmp"
+    rm -f "$tmp"; _manifest_tmp=""
     trap - EXIT INT TERM
     rmdir "$_lock_dir" 2>/dev/null || true
     eval "$_saved_opts"
@@ -341,13 +348,15 @@ _append_manifest_entry() {
   fi
   if ! mv "$tmp" "$manifest"; then
     echo "error: _append_manifest_entry: mv failed" >&2
-    rm -f "$tmp"
+    rm -f "$tmp"; _manifest_tmp=""
     trap - EXIT INT TERM
     rmdir "$_lock_dir" 2>/dev/null || true
     eval "$_saved_opts"
     exit 1
   fi
-  # Release the lock and disarm the trap.
+  # Release the lock and disarm the trap.  Clear the relay first so a
+  # subsequent _append_manifest_entry call's trap installation starts clean.
+  _manifest_tmp=""
   trap - EXIT INT TERM
   rmdir "$_lock_dir" 2>/dev/null || true
   eval "$_saved_opts"
