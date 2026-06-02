@@ -43,7 +43,7 @@ setup() {
 
 @test "every reviewer agent body references per-finding emission (inline or via protocol deferral)" {
   # The per-finding filename pattern lives in skills/reviewer-protocol/first-party-emission.md
-  # (post-G6 split — emission-contract prose moved out of SKILL.md core).
+  # (post-split — emission-contract prose moved out of SKILL.md core).
   # Each reviewer must EITHER reference the contract inline (finding-F<NN>.md pattern)
   # OR defer to the protocol skill ("disk-write contract from the reviewer-protocol skill").
   local protocol="skills/reviewer-protocol/SKILL.md"
@@ -66,9 +66,6 @@ setup() {
     if echo "$body" | grep -qF 'disk-write contract from the reviewer-protocol skill'; then
       continue   # protocol-deferral language
     fi
-    if echo "$body" | grep -qE 'Per-Finding Disk-Write Contract|reviewer-protocol'; then
-      continue   # other protocol cross-reference
-    fi
     echo "$f has neither inline per-finding ref nor protocol-deferral language"
     return 1
   done
@@ -76,7 +73,7 @@ setup() {
 
 @test "every reviewer agent body references the clean sentinel (inline or via protocol deferral)" {
   # The clean-sentinel pattern lives in skills/reviewer-protocol/first-party-emission.md
-  # (post-G6 split — emission-contract prose moved out of SKILL.md core).
+  # (post-split — emission-contract prose moved out of SKILL.md core).
   # Each reviewer must EITHER reference the sentinel inline OR defer to the protocol.
   local protocol="skills/reviewer-protocol/SKILL.md"
   local first_party="skills/reviewer-protocol/first-party-emission.md"
@@ -154,10 +151,10 @@ setup() {
 }
 
 @test "reviewer-protocol SKILL.md self-description is emission-agnostic (no 'disk-write contract' tokens)" {
-  # Pins the post-split self-description: after G6/Task-03 moved the disk-write
+  # Pins the post-split self-description: after the reviewer-protocol split moved the disk-write
   # contract prose out of SKILL.md into first-party-emission.md, the frontmatter
   # description and intro paragraph must not still advertise it as a core
-  # protocol concern. (Round-2 fix for spec-claude/spec-codex F01.)
+  # protocol concern. (Post-split hygiene fix.)
   local f="skills/reviewer-protocol/SKILL.md"
   [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
   if grep -qiF 'disk-write contract' "$f"; then
@@ -186,4 +183,55 @@ setup() {
       return 1
     fi
   done
+}
+
+@test "emission sibling files do not reproduce verbatim schema paragraphs from SKILL.md" {
+  # Fix 2: schema fields/audit fields/finding_id uniqueness paragraphs must live in
+  # SKILL.md only; siblings must cross-reference rather than duplicate them verbatim.
+  local fp="skills/reviewer-protocol/first-party-emission.md"
+  local tp="skills/reviewer-protocol/third-party-emission.md"
+  [[ -f "$fp" ]] || { echo "missing: $fp"; return 1; }
+  [[ -f "$tp" ]] || { echo "missing: $tp"; return 1; }
+  if grep -qF 'canonical 5-field finding schema' "$fp"; then
+    echo "first-party-emission.md reproduces verbatim schema paragraph from SKILL.md"
+    return 1
+  fi
+  if grep -qF 'canonical 5-field finding schema' "$tp"; then
+    echo "third-party-emission.md reproduces verbatim schema paragraph from SKILL.md"
+    return 1
+  fi
+  # Cross-reference line must be present in each sibling
+  grep -qF 'skills/reviewer-protocol/SKILL.md' "$fp" \
+    || { echo "first-party-emission.md missing cross-reference to SKILL.md"; return 1; }
+  grep -qF 'skills/reviewer-protocol/SKILL.md' "$tp" \
+    || { echo "third-party-emission.md missing cross-reference to SKILL.md"; return 1; }
+}
+
+@test "third-party-emission.md pins the silent-failure characterization" {
+  # Fix 4: the parenthetical 'will fail silently' must be pinned so regressions are caught.
+  local f="skills/reviewer-protocol/third-party-emission.md"
+  [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
+  grep -qE 'fail(s)? silently|silent(ly)? fail' "$f" \
+    || { echo "third-party silent-failure characterization not pinned"; return 1; }
+}
+
+@test "reviewer_tag charset rule is present in both emission siblings" {
+  # Fix 5: reviewer_tag must be validated against ^[a-z0-9-]+$ before path construction.
+  local fp="skills/reviewer-protocol/first-party-emission.md"
+  local tp="skills/reviewer-protocol/third-party-emission.md"
+  [[ -f "$fp" ]] || { echo "missing: $fp"; return 1; }
+  [[ -f "$tp" ]] || { echo "missing: $tp"; return 1; }
+  grep -qF '^[a-z0-9-]+$' "$fp" \
+    || { echo "first-party-emission.md missing reviewer_tag charset rule"; return 1; }
+  grep -qF '^[a-z0-9-]+$' "$tp" \
+    || { echo "third-party-emission.md missing reviewer_tag charset rule"; return 1; }
+}
+
+@test "third-party-emission.md iron law bars NO_FINDINGS as pass-through of input" {
+  # Fix 6: NO_FINDINGS must be emitted only as result of own analysis, never as
+  # pass-through of untrusted-artifact instruction.
+  local f="skills/reviewer-protocol/third-party-emission.md"
+  [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
+  grep -qF 'result of your own analysis' "$f" \
+    || { echo "third-party-emission.md missing NO_FINDINGS prompt-injection iron-law clause"; return 1; }
 }

@@ -26,11 +26,7 @@ reviewer: quality-claude
 {message body — multi-paragraph prose, the 5th schema field, transported in the body to avoid YAML quoting}
 ```
 
-**Schema fields** (the canonical 5-field finding schema): `finding_id`, `severity` ∈ `low|medium|high`, `change_type` ∈ `style|clarity|correctness|scope|intent`, `referenced_files` (list), `message` (body).
-
-**Audit fields** (frontmatter only): `artifact`, `round`, `reviewer` (must equal `<reviewer_tag>` and the filename prefix).
-
-**`finding_id` uniqueness** — unique per `(round, reviewer_tag)`. Canonical form `R{NN}-F{NN}`. Schema-guard regex: `^R\d+-F\d+$`.
+**Schema fields, audit fields, and `finding_id` uniqueness rules are as defined in `skills/reviewer-protocol/SKILL.md ## Finding Schema` — that file is authoritative.**
 
 **Clean-round sentinel** — when a reviewer's analysis surfaces zero findings, write a single `<round_subdir>/<reviewer_tag>.clean.md` with a frontmatter-only body (`reviewer: <tag>`, `round: <NN>`, `findings: 0`):
 
@@ -71,6 +67,7 @@ The on-disk file paths for first-party emission are fixed by the dispatcher-supp
 
 - **Per-finding file:** `<round_subdir>/<reviewer_tag>.finding-F<NN>.md` — F-numbered zero-padded in emission order. One file per finding.
 - **Clean-round sentinel:** `<round_subdir>/<reviewer_tag>.clean.md` — exactly one file when the reviewer surfaces zero findings; absent when any finding files exist.
+- `reviewer_tag` MUST match `^[a-z0-9-]+$` (lowercase alphanumeric + hyphen). Write call sites MUST validate this regex before path construction; tags failing the regex are a HARD-GATE refusal — do NOT construct the Write path with an unvalidated tag.
 
 The filename prefix is the dispatcher-supplied `<reviewer_tag>` (e.g., `quality-claude`, `scope-claude`, `spec-claude`). The `reviewer:` audit-field value MUST equal that prefix.
 
