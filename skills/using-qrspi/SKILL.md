@@ -988,6 +988,38 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
 9. **Write `round-NN-dispositions.md`** (main-chat-authored, ≤30 lines) listing what was changed and why.
 
+   **Sub-threshold findings: NO orchestrator override.** Findings dropped by `scripts/verifier-fan-in.sh` per the `change_type` thresholds (`style|clarity` < 80, `correctness` < 70) MUST NOT be kept via orchestrator override. The script is the single source of truth for `kept-findings.txt` per CD-4's iron rule — there is no path from a dropped finding into the kept set, and the orchestrator MUST NOT apply patches addressing dropped findings under the guise of the round's apply-fix work. Standalone human-driven edits outside the apply-fix protocol are unaffected.
+
+   **Optional `## Sub-Threshold Observations` section (informational only).** When the orchestrator notices a pattern in dropped findings worth recording — e.g., multiple sub-threshold findings sharing a `defect_class` tag and clustering just below the floor — it MAY append a `## Sub-Threshold Observations` H2 section to `round-NN-dispositions.md` as evidence-collection signal for future calibration. The section is purely informational: it does NOT claim an override, it does NOT trigger any reapply behavior, and it is consumed by no current script. Zero observations on a clean round is the common case.
+
+   The section's body is a YAML-fenced block listing one entry per observation with: an `observation_summary` one-liner, the contributing `finding_paths` (relative to the round-NN directory under `reviews/{step}/`), each finding's `defect_class` tag, each finding's `score`, and the `threshold` that dropped them (80 for `style`/`clarity`, 70 for `correctness`). Canonical example:
+
+   ```yaml
+   observations:
+     - observation_summary: "4 clarity findings naming goal-leakage in different questions, all dropped just below the floor"
+       threshold: 80
+       finding_paths:
+         - round-01/quality-claude.finding-F02.md
+         - round-01/quality-claude.finding-F04.md
+         - round-01/quality-codex.finding-F01.md
+         - round-01/quality-codex.finding-F03.md
+       contributing_findings:
+         - path: round-01/quality-claude.finding-F02.md
+           defect_class: goal-leakage
+           score: 68
+         - path: round-01/quality-claude.finding-F04.md
+           defect_class: goal-leakage
+           score: 70
+         - path: round-01/quality-codex.finding-F01.md
+           defect_class: goal-leakage
+           score: 72
+         - path: round-01/quality-codex.finding-F03.md
+           defect_class: goal-leakage
+           score: 75
+   ```
+
+   This shape is informational-only and not consumed by any current script; downstream tooling may parse it in a future release once enough cluster occurrences accumulate to calibrate a programmatic rule.
+
 10. **`/compact`** to shed the verified-file Read content from main chat's transcript.
 
 11. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-scope-set.txt` (when emitted by step 6), `round-NN-verified.md`, and `round-NN-dispositions.md`.

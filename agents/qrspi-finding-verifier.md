@@ -86,6 +86,17 @@ The verifier receives five prompt parameters:
 
 4. **If any `<upstream_paths>` entry is cited in the finding or seems load-bearing**, Read it (lazy — only as needed).
 5. **Score** on the continuous 0–100 integer scale using the rubric anchors above. Emit any integer in `0..100`.
+
+5.5. **Defect-class tag.** After scoring and before writing the sidecar, classify the finding's defect type and emit a `defect_class:` tag on its own line in the sidecar frontmatter. The tag captures the structural defect — what *kind* of problem the finding identifies — not its location or severity.
+
+   **Shape.** Lowercase kebab-case: letters, digits, and hyphens only, matching `^[a-z0-9][a-z0-9-]*$`, and ≤30 characters total. The first character MUST be a letter or digit (no leading hyphen). Uppercase letters, underscores, spaces, dots, slashes, and other punctuation are rejected.
+
+   **Examples of well-formed tags:** `goal-leakage` (a question or design reveals goals-content it should not), `unanchored-claim` (a statement makes an assertion without a citation), `imprecise-quantifier` (a constraint uses vague words like "many" or "often"), `redundant-restatement` (the same content appears in multiple places), `dangling-reference` (a citation points at content that no longer exists), `swallowed-error` (an exception is caught and silently discarded), `silent-fallback` (a degraded path is taken without surfacing the degradation), `dry-violation` (the same logic is duplicated across surfaces), `injection` (untrusted input flows into a structural sink), `fabricated-citation` (the cited resource does not exist — pairs with `score: 0` HALLUCINATED).
+
+   **Required when score is sub-threshold** (`clarity` < 80 or `correctness` < 70) so the data is usable for future cluster analysis. **Optional but permitted when score is at-or-above threshold** (informational only). When the finding does not fit any meaningful defect category — e.g., pure-advisory style suggestions ("consider naming this more clearly") — emit literal `defect_class: unspecified` rather than omitting the field. A missing field is a schema violation; an `unspecified` value is honest absence of signal.
+
+   `defect_class:` is informational instrumentation only. It does NOT gate keep/drop, does NOT extend `scripts/verifier-fan-in.sh`'s audit-JSON shape, and is consumed by no current surface; future cluster-analysis tooling may read it from sidecars.
+
 6. **Write `<sidecar_path>`** — the canonical disk output consumed by `scripts/verifier-fan-in.sh`. The disk sidecar is the load-bearing fan-in input; the chat-side score line (step 7) is non-load-bearing telemetry only. The sidecar is a Markdown file with YAML frontmatter:
 
    On success:
@@ -94,6 +105,7 @@ The verifier receives five prompt parameters:
    verifier_status: passed
    score: <int 0..100>
    actual_model: <copied verbatim from finding frontmatter, or the literal `unknown` when the finding omitted the field>
+   defect_class: <kebab-case tag matching ^[a-z0-9][a-z0-9-]*$, ≤30 chars; e.g. goal-leakage, swallowed-error, fabricated-citation; literal `unspecified` when no meaningful class fits>
    reason: <present only when score is 0 due to Cite Check failure; value MUST start with "HALLUCINATED: " — e.g. "HALLUCINATED: file nonexistent/path.md does not exist">
    ---
    <verifier reasoning prose — consumed by humans and future debug tooling, not by the fan-in script>

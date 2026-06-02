@@ -1952,3 +1952,121 @@ _t9_simulate_verifier_sidecar_write() {
 
   rm -rf "$tmp"
 }
+
+# ===========================================================================
+# G28 — Convergent-evidence exception: verifier instrumentation + dispositions
+# observations section (apply-fix override forbidden).
+#
+# Coverage:
+#   AC1   Verifier agent body documents the `defect_class:` token (regression
+#         guard: defect-class rubric step is present and reachable).
+#   AC2   skills/using-qrspi/SKILL.md dispositions writer prose forbids
+#         keeping sub-threshold findings via orchestrator override (CD-4
+#         iron-rule consistency: kept-findings.txt has one path — the script).
+#   AC3   skills/using-qrspi/SKILL.md documents the optional
+#         `## Sub-Threshold Observations` H2 section as informational-only,
+#         with a YAML-fenced template carrying summary, contributing finding
+#         paths, defect_class tags, scores, and the threshold that dropped.
+#   AC4   Sub-threshold findings DO NOT reach `kept-findings.txt` through any
+#         path: a clarity-60 + correctness-65 fixture round produces a
+#         kept-findings.txt with neither finding present (script behavior is
+#         unchanged; no override surface exists in the documented protocol).
+#   AC5   A well-formed `## Sub-Threshold Observations` section parses as
+#         valid YAML inside the fenced block (informational fixture: lint
+#         the documented template against `python -c yaml.safe_load`).
+# ===========================================================================
+
+@test "[G28 AC1] verifier agent body carries defect_class: token (rubric-step regression guard)" {
+  grep -qF 'defect_class:' "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
+    || { echo "defect_class: token absent from verifier agent body"; return 1; }
+}
+
+@test "[G28 AC2] using-qrspi/SKILL.md forbids keeping sub-threshold findings via orchestrator override" {
+  # The dispositions writer prose MUST contain a prohibition against keeping
+  # dropped findings via override. We assert that prose like "MUST NOT" /
+  # "must not" appears in the same paragraph that names sub-threshold findings
+  # and either "override" or "kept-findings".
+  local skill="$SKILLS/using-qrspi/SKILL.md"
+  grep -qiE 'sub-threshold' "$skill" \
+    || { echo "sub-threshold prose missing from using-qrspi/SKILL.md"; return 1; }
+  # MUST NOT … override (kept-findings.txt is the script's exclusive output)
+  grep -qE 'MUST NOT.*(override|keep)' "$skill" \
+    || { echo "prohibition (MUST NOT … override) not documented"; return 1; }
+}
+
+@test "[G28 AC3] using-qrspi/SKILL.md documents the optional ## Sub-Threshold Observations H2 with YAML template" {
+  local skill="$SKILLS/using-qrspi/SKILL.md"
+  # H2 heading literal token.
+  grep -qF '## Sub-Threshold Observations' "$skill" \
+    || { echo "## Sub-Threshold Observations H2 heading missing from SKILL.md"; return 1; }
+  # Documented as informational-only / not consumed by scripts in v0.7.2.
+  grep -qiE 'informational[- ]only|purely informational|consumed by no script|not consumed' "$skill" \
+    || { echo "informational-only language for observations section missing"; return 1; }
+  # Carve out the section that documents the observations template and assert
+  # it names the required fields. Bound the slice so we don't accidentally
+  # match the same tokens elsewhere in the SKILL.
+  local slice
+  slice="$(awk '
+    /## Sub-Threshold Observations/ { flag=1 }
+    flag && /^[^#]*\*\*[A-Z]/ && !/Sub-Threshold Observations/ && got_fence==1 { exit }
+    flag { print }
+  ' "$skill")"
+  # The template MUST mention every field the design pins.
+  echo "$slice" | grep -qiE 'observation[_ ]?summary|summary' \
+    || { echo "observations template missing 'summary' field"; return 1; }
+  echo "$slice" | grep -qiE 'finding[_ ]?path|contributing.*finding' \
+    || { echo "observations template missing contributing finding paths field"; return 1; }
+  echo "$slice" | grep -qF 'defect_class' \
+    || { echo "observations template missing defect_class field"; return 1; }
+  echo "$slice" | grep -qiE 'score' \
+    || { echo "observations template missing score field"; return 1; }
+  echo "$slice" | grep -qiE 'threshold' \
+    || { echo "observations template missing threshold field"; return 1; }
+}
+
+@test "[G28 AC4] sub-threshold findings cannot reach kept-findings.txt: clarity-60 + correctness-65 are dropped end-to-end" {
+  local tmp
+  tmp="$(mktemp -d)"
+
+  # clarity at 60 (well below 80 floor) — sub-threshold drop
+  _t8_write_finding_pair "$tmp" "spec-claude.finding-F01" clarity 60 "" "[]" "Sub-threshold clarity finding."
+  # correctness at 65 (below 70 floor) — sub-threshold drop
+  _t8_write_finding_pair "$tmp" "spec-claude.finding-F02" correctness 65 "" "[]" "Sub-threshold correctness finding."
+
+  run bash "$REPO_ROOT/scripts/verifier-fan-in.sh" "$tmp"
+  [ "$status" -eq 0 ] \
+    || { echo "verifier-fan-in.sh exited $status"; cat "$tmp/.verifier-fan-in-audit.json" 2>/dev/null; return 1; }
+
+  # NEITHER F01 nor F02 may appear in kept-findings.txt — the script is the
+  # sole source of truth for the kept set, and there is NO override path.
+  if grep -q "spec-claude.finding-F01" "$tmp/kept-findings.txt" 2>/dev/null; then
+    echo "sub-threshold clarity-60 finding reached kept-findings.txt — override path leaked"
+    return 1
+  fi
+  if grep -q "spec-claude.finding-F02" "$tmp/kept-findings.txt" 2>/dev/null; then
+    echo "sub-threshold correctness-65 finding reached kept-findings.txt — override path leaked"
+    return 1
+  fi
+
+  rm -rf "$tmp"
+}
+
+@test "[G28 AC5] documented Sub-Threshold Observations YAML template parses as valid YAML" {
+  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
+  # Extract the first ```yaml ... ``` fenced block that follows the
+  # `## Sub-Threshold Observations` heading.
+  local yaml
+  yaml="$(awk '
+    /## Sub-Threshold Observations/ { in_section=1; next }
+    in_section && /^[[:space:]]*```yaml[[:space:]]*$/ { in_yaml=1; next }
+    in_yaml && /^[[:space:]]*```[[:space:]]*$/ { exit }
+    in_yaml { sub(/^   /, ""); print }
+  ' "$skill")"
+
+  [ -n "$yaml" ] \
+    || { echo 'no fenced yaml block found under ## Sub-Threshold Observations'; return 1; }
+
+  # Validate via python yaml (available in CI/test env).
+  python3 -c "import sys, yaml; yaml.safe_load(sys.stdin.read())" <<<"$yaml" \
+    || { echo "Sub-Threshold Observations YAML template did not parse cleanly"; printf '%s\n' "$yaml"; return 1; }
+}

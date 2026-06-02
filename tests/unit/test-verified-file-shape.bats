@@ -140,6 +140,57 @@ source_assembly() {
     || { echo "unknown fallback for actual_model not documented"; return 1; }
 }
 
+# ---------------------------------------------------------------------------
+# Defect-class rubric pins (G28 D1).
+#
+# The verifier MUST emit a `defect_class:` tag classifying the finding's
+# defect type — lowercase kebab-case (regex `^[a-z0-9][a-z0-9-]*$`), ≤30
+# characters, with `unspecified` accepted as the documented absence-of-signal
+# value. The rubric step lives AFTER scoring and BEFORE sidecar write.
+# ---------------------------------------------------------------------------
+
+@test "verifier agent body documents a Defect-class rubric step between Score and Write-sidecar" {
+  # Carve a slice of the procedure between the Score step (step 5) and the
+  # Write-sidecar step (step 6). The Defect-class step MUST appear inside it.
+  local agent slice
+  agent="agents/qrspi-finding-verifier.md"
+  slice="$(awk '
+    /^5\. \*\*Score\*\*/ { flag=1 }
+    flag && /^6\. \*\*Write `<sidecar_path>`\*\*/ { exit }
+    flag { print }
+  ' "$agent")"
+  echo "$slice" | grep -qiE 'defect[- ]class' \
+    || { echo "Defect-class rubric step missing between Score (step 5) and Write-sidecar (step 6)"; echo "$slice"; return 1; }
+  echo "$slice" | grep -qF 'defect_class:' \
+    || { echo "defect_class: token missing from rubric step"; return 1; }
+}
+
+@test "verifier agent body documents defect_class shape: kebab-case, ≤30 chars, regex anchor" {
+  local agent="agents/qrspi-finding-verifier.md"
+  # ≤30 character cap MUST be documented.
+  grep -qE '(≤|<=) ?30' "$agent" \
+    || { echo "30-char cap for defect_class not documented"; return 1; }
+  # kebab-case constraint MUST be documented.
+  grep -qiE 'kebab[- ]case' "$agent" \
+    || { echo "kebab-case shape for defect_class not documented"; return 1; }
+  # Lowercase letters / digits / hyphens charset MUST be documented (the
+  # regex `^[a-z0-9][a-z0-9-]*$` or the equivalent prose listing the chars).
+  grep -qE '\^\[a-z0-9\]\[a-z0-9-\]\*\$|lowercase.*hyphen|letters.*digits.*hyphen' "$agent" \
+    || { echo "defect_class charset (lowercase letters, digits, hyphens) not documented"; return 1; }
+}
+
+@test "verifier agent body documents 'unspecified' fallback for absence-of-signal defect_class" {
+  grep -qE 'defect_class: *unspecified' agents/qrspi-finding-verifier.md \
+    || { echo "'defect_class: unspecified' fallback not documented"; return 1; }
+}
+
+@test "verifier sidecar success-case example carries defect_class: in frontmatter alongside score:" {
+  local body
+  body="$(awk '/On success:/{flag=1} /On failure/{flag=0} flag' agents/qrspi-finding-verifier.md)"
+  echo "$body" | grep -qF 'defect_class:' \
+    || { echo "defect_class: not present in success-case sidecar example"; return 1; }
+}
+
 @test "skills/using-qrspi/SKILL.md still contains the structural markers this mirror depends on" {
   # Drift guard: if any of these markers disappears from the documented
   # snippet, the in-test mirror above is no longer testing the documented
