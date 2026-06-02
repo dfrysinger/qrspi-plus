@@ -1426,6 +1426,21 @@ MOCK_EOF
 
   local resolved_model="gpt-5-codex-canary"
 
+  # T09 R2 fix: capture the dispatch exit code explicitly rather than
+  # swallowing all non-zero with `|| true`. This test cannot fully
+  # complete the dispatch (the mock dispatcher above exits 0, but the
+  # codex availability probes upstream of dispatch may emit warnings, and
+  # in CI the launch-failure window can produce a documented non-zero
+  # exit). We therefore accept ANY exit code here but require, via the
+  # post-conditions below, that the manifest file was written before any
+  # such failure point — the manifest write is the actual T09 invariant
+  # under test. A regression that crashes the script BEFORE the manifest
+  # write would now surface as a missing-manifest failure instead of
+  # being silently swallowed by `|| true`. (No stable launch-failure
+  # exit-code contract exists between this wrapper and
+  # codex-companion-bg.sh today; if one is later established, this block
+  # can tighten to an allowlist.)
+  local exit_code=0
   QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
     bash "$REPO_ROOT/scripts/run-codex-review.sh" \
@@ -1437,11 +1452,11 @@ MOCK_EOF
       --model "$resolved_model" \
       --output-file "$TMP_DIR/result.md" \
       --artifact-dir "$TMP_DIR/artifact-dir" \
-    >/dev/null 2>/dev/null || true
+    >/dev/null 2>/dev/null || exit_code=$?
 
   local manifest="$OUTDIR/.dispatch-manifest.json"
   [ -f "$manifest" ] \
-    || { echo "manifest file not written at $manifest"; return 1; }
+    || { echo "manifest file not written at $manifest (dispatch exit_code=$exit_code)"; return 1; }
 
   # host / vendor / model fields all present (T09 in-scope provenance triple)
   grep -q '"host"' "$manifest" \
@@ -1482,6 +1497,213 @@ MOCK_EOF
   # joins and is not in T11/G3 ownership. Pin its presence.
   grep -q '"tag"' "$manifest" \
     || { echo "manifest missing tag field (greppability anchor)"; cat "$manifest"; return 1; }
+
+  rm -rf "$TMP_DIR"
+}
+
+# ---------------------------------------------------------------------------
+# AC5+/AC9: dispatch-manifest entries are well-formed JSON objects with
+# EXACTLY the four contracted fields {tag, host, vendor, model} — no extra
+# (potentially injected) keys. Pinning shape this way prevents an attacker
+# (or a future regression) who controls a stringly-typed input like
+# --reviewer-tag or --model from forging additional audit fields by
+# embedding JSON-structural characters in the input. Combined with the
+# allowlist validation guards exercised by AC10/AC11 below, this gives
+# defense-in-depth: even if validation is later weakened, the
+# structural-shape assertion would still trip on key-count drift.
+# ---------------------------------------------------------------------------
+@test "[reviewer-model-audit AC9] dispatch-manifest entries are well-formed JSON objects with exactly tag/host/vendor/model keys (no extra/injected keys)" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+
+  mkdir -p "$TMP_DIR/src"
+  printf 'const x = 1;\n' > "$TMP_DIR/src/subject.ts"
+  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
+  printf '## Reviewer Dispatch Contract\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
+  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
+  mkdir -p "$TMP_DIR/agents"
+  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
+    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
+  mkdir -p "$TMP_DIR/artifact-dir"
+  printf -- '---\ncodex_reviews: false\n---\n' \
+    > "$TMP_DIR/artifact-dir/config.md"
+  mkdir -p "$TMP_DIR/scripts"
+  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+exit 0
+MOCK_EOF
+  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+
+  local OUTDIR="$TMP_DIR/out"
+  mkdir -p "$OUTDIR"
+
+  local exit_code=0
+  QRSPI_REPO_ROOT="$TMP_DIR" \
+    COPILOT_CLI="" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$OUTDIR" \
+      --round 1 \
+      --subject-code "$TMP_DIR/src/subject.ts" \
+      --model "gpt-5-codex-canary" \
+      --output-file "$TMP_DIR/result.md" \
+      --artifact-dir "$TMP_DIR/artifact-dir" \
+    >/dev/null 2>/dev/null || exit_code=$?
+
+  local manifest="$OUTDIR/.dispatch-manifest.json"
+  [ -f "$manifest" ] \
+    || { echo "manifest file not written at $manifest (exit_code=$exit_code)"; return 1; }
+
+  # Whole file must parse as JSON (not just substring-match on field names).
+  jq -e '.' "$manifest" >/dev/null \
+    || { echo "manifest is not well-formed JSON"; cat "$manifest"; return 1; }
+
+  # Must be a non-empty array of objects.
+  jq -e 'type == "array" and length >= 1 and (.[0] | type == "object")' "$manifest" >/dev/null \
+    || { echo "manifest is not an array of objects"; cat "$manifest"; return 1; }
+
+  # Each entry must carry EXACTLY the four contracted keys.
+  jq -e 'all(.[]; has("tag") and has("host") and has("vendor") and has("model") and (keys | length == 4))' \
+    "$manifest" >/dev/null \
+    || { echo "manifest entry has missing or extra keys (T09 contract: exactly tag/host/vendor/model)"; cat "$manifest"; return 1; }
+
+  # And the values must be the strings supplied at dispatch time.
+  jq -e '.[0].tag == "spec-codex" and .[0].vendor == "openai-codex" and .[0].model == "gpt-5-codex-canary"' \
+    "$manifest" >/dev/null \
+    || { echo "manifest field values diverge from dispatch arguments"; cat "$manifest"; return 1; }
+
+  rm -rf "$TMP_DIR"
+}
+
+# ---------------------------------------------------------------------------
+# AC10: --reviewer-tag is allowlist-validated. Crafted values containing
+# JSON-structural characters (e.g. '"', ',', ':', '{', '}') must be rejected
+# at argument-parse time with a clear diagnostic AND no manifest file
+# written. This closes the JSON-injection vector against the audit trail
+# the manifest exists to record.
+# ---------------------------------------------------------------------------
+@test "[reviewer-model-audit AC10] --reviewer-tag containing JSON-structural characters is rejected with non-zero exit and no manifest written" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+
+  mkdir -p "$TMP_DIR/src"
+  printf 'const x = 1;\n' > "$TMP_DIR/src/subject.ts"
+  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
+  printf '## Reviewer Dispatch Contract\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
+  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
+  mkdir -p "$TMP_DIR/agents"
+  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
+    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
+  mkdir -p "$TMP_DIR/artifact-dir"
+  printf -- '---\ncodex_reviews: false\n---\n' \
+    > "$TMP_DIR/artifact-dir/config.md"
+  mkdir -p "$TMP_DIR/scripts"
+  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+exit 0
+MOCK_EOF
+  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+
+  local OUTDIR="$TMP_DIR/out"
+  mkdir -p "$OUTDIR"
+
+  # Crafted tag that, with un-escaped printf concatenation, would forge two
+  # extra JSON keys ("host" and "vendor") in the manifest.
+  local crafted_tag='evil","host":"attacker-host","vendor":"forged'
+
+  local exit_code=0
+  local err
+  err="$(QRSPI_REPO_ROOT="$TMP_DIR" \
+    COPILOT_CLI="" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag "$crafted_tag" \
+      --output-dir "$OUTDIR" \
+      --round 1 \
+      --subject-code "$TMP_DIR/src/subject.ts" \
+      --model "gpt-5-codex-canary" \
+      --output-file "$TMP_DIR/result.md" \
+      --artifact-dir "$TMP_DIR/artifact-dir" \
+      2>&1 1>/dev/null)" || exit_code=$?
+
+  [ "$exit_code" -ne 0 ] \
+    || { echo "expected non-zero exit for crafted --reviewer-tag, got 0; stderr: $err"; return 1; }
+
+  echo "$err" | grep -qiE 'reviewer-tag' \
+    || { echo "stderr does not name --reviewer-tag in rejection diagnostic; got: $err"; return 1; }
+
+  [ ! -f "$OUTDIR/.dispatch-manifest.json" ] \
+    || { echo "manifest file was written despite rejected --reviewer-tag"; cat "$OUTDIR/.dispatch-manifest.json"; return 1; }
+
+  rm -rf "$TMP_DIR"
+}
+
+# ---------------------------------------------------------------------------
+# AC11: --model is allowlist-validated symmetrically with --reviewer-tag.
+# A crafted --model containing JSON-structural characters must be rejected
+# at argument-parse time with a clear diagnostic AND no manifest file
+# written.
+# ---------------------------------------------------------------------------
+@test "[reviewer-model-audit AC11] --model containing JSON-structural characters is rejected with non-zero exit and no manifest written" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+
+  mkdir -p "$TMP_DIR/src"
+  printf 'const x = 1;\n' > "$TMP_DIR/src/subject.ts"
+  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
+  printf '## Reviewer Dispatch Contract\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
+  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
+  mkdir -p "$TMP_DIR/agents"
+  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
+    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
+  mkdir -p "$TMP_DIR/artifact-dir"
+  printf -- '---\ncodex_reviews: false\n---\n' \
+    > "$TMP_DIR/artifact-dir/config.md"
+  mkdir -p "$TMP_DIR/scripts"
+  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+exit 0
+MOCK_EOF
+  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+
+  local OUTDIR="$TMP_DIR/out"
+  mkdir -p "$OUTDIR"
+
+  local crafted_model='gpt-5","extra":"injected'
+
+  local exit_code=0
+  local err
+  err="$(QRSPI_REPO_ROOT="$TMP_DIR" \
+    COPILOT_CLI="" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$OUTDIR" \
+      --round 1 \
+      --subject-code "$TMP_DIR/src/subject.ts" \
+      --model "$crafted_model" \
+      --output-file "$TMP_DIR/result.md" \
+      --artifact-dir "$TMP_DIR/artifact-dir" \
+      2>&1 1>/dev/null)" || exit_code=$?
+
+  [ "$exit_code" -ne 0 ] \
+    || { echo "expected non-zero exit for crafted --model, got 0; stderr: $err"; return 1; }
+
+  echo "$err" | grep -qiE 'model' \
+    || { echo "stderr does not name --model in rejection diagnostic; got: $err"; return 1; }
+
+  [ ! -f "$OUTDIR/.dispatch-manifest.json" ] \
+    || { echo "manifest file was written despite rejected --model"; cat "$OUTDIR/.dispatch-manifest.json"; return 1; }
 
   rm -rf "$TMP_DIR"
 }
@@ -1558,21 +1780,15 @@ _t9_simulate_verifier_sidecar_write() {
     | grep -qF 'gpt-5-codex-canary' \
     || { echo "clean-sentinel actual_model not readable verbatim"; cat "$c1"; return 1; }
 
-  # --- Case 4: clean-sentinel WITHOUT actual_model — must not fail
-  # downstream. Symmetric to the finding case: the field is observability,
-  # not a correctness gate; absence is tolerated.
-  local c2="$tmp/scope-claude.clean.md"
-  printf -- '---\nreviewer_tag: scope-claude\n---\nNo findings this round.\n' \
-    >"$c2"
-  # If the helper were ever wired into clean-sentinel processing, the
-  # 'unknown' fallback would apply. Today we just assert no actual_model
-  # token is present and the file is well-formed YAML frontmatter.
-  if grep -q '^actual_model:' "$c2"; then
-    echo "fixture clean-sentinel unexpectedly carries actual_model"; cat "$c2"; return 1
-  fi
-  # Frontmatter is well-formed (two '---' delimiters present).
-  [[ "$(grep -c '^---[[:space:]]*$' "$c2")" -eq 2 ]] \
-    || { echo "fixture clean-sentinel frontmatter malformed"; cat "$c2"; return 1; }
+  # NOTE (T09 R2 fix): the clean-sentinel-WITHOUT-actual_model path is
+  # symmetric to the finding-WITHOUT-actual_model path covered by Case 2
+  # above — the field is observability, not a correctness gate, and
+  # absence is tolerated identically by the contract. A separate fixture
+  # case for that path was previously included as Case 4 but was
+  # tautological (it only verified that printf wrote what it was told)
+  # and was removed; if clean-sentinels are ever wired into a real
+  # verifier-side processing path that branches on absence, a meaningful
+  # case can be re-added then.
 
   rm -rf "$tmp"
 }
@@ -1582,6 +1798,19 @@ _t9_simulate_verifier_sidecar_write() {
   # verified-file header introduced". This is a regression-pin against
   # future drift — if some later edit accidentally references a
   # verified.md aggregate header as an output target, this test trips.
+  #
+  # T09 R2 fix: assert the target files exist BEFORE running grep.
+  # `grep -q` exits 2 (not 1) when the file is missing or unreadable,
+  # but the surrounding `if grep -q ...; then ...FAIL...; fi` treats both
+  # exit-1 ("not found") and exit-2 ("file missing") as the not-found
+  # branch — so a future rename or relocation of either target would
+  # silently pass this regression-pin. Explicit existence checks close
+  # that gap.
+  [ -f "$REPO_ROOT/agents/qrspi-finding-verifier.md" ] \
+    || { echo "AC8 precondition failed: agents/qrspi-finding-verifier.md missing"; return 1; }
+  [ -f "$REPO_ROOT/scripts/verifier-fan-in.sh" ] \
+    || { echo "AC8 precondition failed: scripts/verifier-fan-in.sh missing"; return 1; }
+
   if grep -qF 'verified.md' "$REPO_ROOT/agents/qrspi-finding-verifier.md"; then
     echo "verifier agent body references 'verified.md' — aggregate-header output target leaked into T09 scope"
     grep -nF 'verified.md' "$REPO_ROOT/agents/qrspi-finding-verifier.md"

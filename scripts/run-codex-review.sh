@@ -207,10 +207,35 @@ fi
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --agent-file)     require_value "--agent-file"   "$#"; AGENT_FILE="$2"; shift 2 ;;
-    --reviewer-tag)   require_value "--reviewer-tag" "$#"; REVIEWER_TAG="$2"; shift 2 ;;
+    --reviewer-tag)
+      require_value "--reviewer-tag" "$#"
+      # Allowlist validation (T09 R2 fix): --reviewer-tag is concatenated
+      # into the dispatch-manifest JSON entry. Restricting it to a safe
+      # token grammar ([a-z][a-z0-9_-]*) is defense-in-depth alongside the
+      # jq-based JSON construction below — it ensures crafted tags
+      # carrying JSON-structural characters cannot reach the manifest
+      # writer at all. The grammar mirrors the existing reviewer-tag
+      # values used in this codebase (e.g. spec-codex, sec-claude).
+      if [[ ! "$2" =~ ^[a-z][a-z0-9_-]*$ ]]; then
+        echo "error: --reviewer-tag must match [a-z][a-z0-9_-]* (got: $2)" >&2
+        exit 1
+      fi
+      REVIEWER_TAG="$2"; shift 2 ;;
     --output-dir)     require_value "--output-dir"   "$#"; OUTPUT_DIR="$2"; shift 2 ;;
     --round)          require_value "--round"        "$#"; ROUND="$2"; shift 2 ;;
-    --model)          require_value "--model"        "$#"; MODEL="$2"; shift 2 ;;
+    --model)
+      require_value "--model" "$#"
+      # Allowlist validation (T09 R2 fix): --model is concatenated into
+      # the dispatch-manifest JSON entry and into the reviewer-prompt
+      # body. The grammar permits the punctuation real model IDs use
+      # (dot, hyphen, underscore) but excludes JSON-structural characters
+      # ('"', ',', ':', '{', '}', whitespace). Defense-in-depth alongside
+      # the jq-based JSON construction below.
+      if [[ ! "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+        echo "error: --model must match [A-Za-z0-9][A-Za-z0-9._-]* (got: $2)" >&2
+        exit 1
+      fi
+      MODEL="$2"; shift 2 ;;
     --output-file)    require_value "--output-file"  "$#"; OUTPUT_FILE="$2"; shift 2 ;;
     --artifact-dir)   require_value "--artifact-dir" "$#"; ARTIFACT_DIR="$2"; shift 2 ;;
     --timeout-seconds) require_value "--timeout-seconds" "$#"; TIMEOUT_SECONDS="$2"; shift 2 ;;
@@ -575,9 +600,21 @@ emit_dispatch_manifest_entry() {
   # responsible for landing those fields once the rename + multi-vendor
   # dispatcher are in place. Emitting them here would pre-load T11 scope
   # and is explicitly out-of-scope per task-09.md line 32.
+  # T09 R2 fix: build the JSON entry with jq rather than concatenating
+  # values into a printf format string. Even though the argument-parse
+  # validators above already restrict --reviewer-tag and --model to safe
+  # grammars, building JSON via `jq -n --arg ...` is defense-in-depth: it
+  # guarantees the produced object is well-formed and that no input
+  # string can forge additional keys, regardless of future relaxation of
+  # the validators. jq is already a documented dependency of this
+  # codebase (see scripts/verifier-fan-in.sh).
   local entry
-  printf -v entry '{"tag":"%s","host":"%s","vendor":"openai-codex","model":"%s"}' \
-    "$REVIEWER_TAG" "$detected_host" "$MODEL"
+  entry="$(jq -nc \
+    --arg tag    "$REVIEWER_TAG" \
+    --arg host   "$detected_host" \
+    --arg vendor "openai-codex" \
+    --arg model  "$MODEL" \
+    '{tag: $tag, host: $host, vendor: $vendor, model: $model}')"
 
   mkdir -p "$round_dir"
   local tmp="${manifest}.tmp.$$"
