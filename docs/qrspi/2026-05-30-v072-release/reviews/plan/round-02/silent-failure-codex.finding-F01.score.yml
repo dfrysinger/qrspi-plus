@@ -1,0 +1,2 @@
+score: 38
+reason: Real internal tension between T16's hardcoded-medium fallback and T18's class-level fail-loud invariant, but the fallback is explicitly captured in design.md CD-1 step 1 ("Hard-coded fallback `medium` with loud warning"), so Plan is faithfully transcribing a Design decision; the "log-and-continue" framing is also softened by the explicit loud warning, putting this partially in altitude-mismatch territory.

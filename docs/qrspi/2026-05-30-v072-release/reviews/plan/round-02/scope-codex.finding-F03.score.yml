@@ -1,0 +1,2 @@
+score: 30
+reason: Low-severity boundary judgement call — items #6/#7 of plan.md's Phase 1 Acceptance Criteria do duplicate phasing.md's Acceptance gate items 2/3, but the block as a whole is defensible as cross-task aggregation of Plan's "Test expectations" OWNS; the author self-flags it as likely the false positive and scope-claude cleared it.

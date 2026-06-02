@@ -1,0 +1,2 @@
+score: 65
+reason: T37 has a direct, verified contradiction (Target files creates the lint .bats while Out-of-scope explicitly bans lint-test additions; DoD/Test expectations silent); T29 has an analogous gap (Target files lists 4 files but Out-of-scope and silence cover only 3, and the lint file has no DoD/test-expectations coverage), though the finding misattributed T37's "Test-code or lint-test additions" Out-of-scope quote to T29.

@@ -1,0 +1,2 @@
+score: 20
+reason: Altitude mismatch — the hard-rename and "no shim" decision is locked in approved design.md CD-1 (rename inventory, hard cutover) and the new canonical-helper relocation to `_host-detect.sh`/`_resolve-lib.sh` is the design-level resolution of the goals constraint's "single source of truth" spirit; goals' backward-compat clause names artifact directories + per-host dispatch conventions, not script filenames, and Plan is faithfully executing the approved design.

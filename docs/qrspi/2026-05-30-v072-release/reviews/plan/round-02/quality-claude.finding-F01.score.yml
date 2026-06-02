@@ -1,0 +1,2 @@
+score: 85
+reason: Verified — Target list line 2266 adds the bats lint file while Out (2285), DoD (2296), and Test-expectations scope audit (2304) all explicitly forbid test-code additions, leaving the task spec internally unsatisfiable.

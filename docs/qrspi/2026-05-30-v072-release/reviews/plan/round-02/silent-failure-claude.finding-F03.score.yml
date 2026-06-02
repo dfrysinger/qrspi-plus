@@ -1,0 +1,2 @@
+score: 68
+reason: Real plan gap — empty round-dir is byte-identical to all-clean per Task 02 DoD/halts list, and neither await-round.sh (drains only background entries) nor any other named script cross-checks expected reviewer tags vs disk output, directly leaving open the G6 chat-only-return failure surface this release exists to close.

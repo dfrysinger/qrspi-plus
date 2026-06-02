@@ -1,0 +1,2 @@
+score: 55
+reason: T21 plainly carries a function signature, which violates Plan SKILL's explicit "no function signatures (→ Structure)" rule at template line 222; T34/T39 cites are borderline (contract vs. algorithm/grammar) and the finding's own counter-argument concedes some are intentional fences, so the finding is real but mixed in scope.

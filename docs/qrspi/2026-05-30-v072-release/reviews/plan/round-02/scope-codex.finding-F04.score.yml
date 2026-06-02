@@ -1,0 +1,2 @@
+score: 25
+reason: Length (2742 lines) does exceed the 1000-2000 soft band per owns-defers.md, but the band is explicitly "soft target, not a ceiling," the per-task Overview/References overhead is intentional v0.7.3 shape (issue #292), and the finding's own counter-argument shows scope-claude cleared this same dimension in the same round — making this a low-severity stylistic nit rather than a real boundary-drift defect.

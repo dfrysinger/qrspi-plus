@@ -1,0 +1,2 @@
+score: 32
+reason: Plan faithfully reflects design.md's "read-and-delete (mechanical consequence)" altitude with an added diagnostic; the proposed exit-13 escalation is a defensible improvement but not mandated by design and the failure mode degrades narrowing performance rather than breaking correctness.

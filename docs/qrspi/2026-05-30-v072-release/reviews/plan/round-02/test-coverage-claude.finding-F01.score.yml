@@ -1,0 +1,2 @@
+score: 65
+reason: Real test-coverage gap — T27 DoD requires `change_type: style|clarity` enum and "alongside (NOT replacing)" semantics, but the single line-1716 test expectation verifies neither (no enum-value assertion, no no-removal regression guard); the vague "references CD-2 vocabulary" phrasing also lacks a greppable anchor, though plan-level test expectations have some latitude.

@@ -1,0 +1,2 @@
+score: 90
+reason: Verified self-contradiction — Target files (L2266) lists creating the lint-test file while Scope Out (L2285) and DoD (L2296) explicitly forbid test-code/lint-test additions, making the task unimplementable as written.

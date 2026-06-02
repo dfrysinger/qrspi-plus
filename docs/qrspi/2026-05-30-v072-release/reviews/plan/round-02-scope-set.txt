@@ -1,0 +1,9 @@
+# scope-set for round 02
+# generated_by: qrspi-scope-tagger
+# step: plan
+# total_findings_kept: 11
+# warning: quality-claude.finding-F01 has no referenced_files entry; tagged as full-artifact
+# warning: quality-claude.finding-F02 has no referenced_files entry; tagged as full-artifact
+plan.md
+design.md
+<full>

@@ -1,0 +1,2 @@
+score: 80
+reason: Verified — plan.md L21 still uses `codex_reviews: true` though design D1/D6 (L2178, L2209) lock the rename to `second_reviewer:` with the legacy name treated as a hard validation error; the phase-completion gate as written tests an invalid field.

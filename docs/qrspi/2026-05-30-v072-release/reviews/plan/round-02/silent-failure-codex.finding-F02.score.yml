@@ -1,0 +1,2 @@
+score: 18
+reason: Misreads G27's silent-failure class — probe-time `false` when no second reviewer exists for the host is the correct config-detection outcome (explicitly locked in design.md G27 D2/D3); the runtime-halt fail-loud requirement is satisfied by D4's `[second-reviewer-unavailable]` halt in `dispatch-agent.sh` (mirrored in plan T19 DoD), and the finding's recommendation contradicts an approved design decision.

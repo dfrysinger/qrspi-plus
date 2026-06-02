@@ -1,0 +1,2 @@
+score: 38
+reason: Real test-determinism gap on placement (grep audit only enforces cardinality, not location) but the "artifact-quality section" wording is inherited verbatim from upstream design.md CD-2 #5 and structure.md's per-file block — Plan did not introduce the looseness, and the proposed fix would have Plan lock heading text upstream artifacts deliberately left to the implementer.

@@ -1,0 +1,2 @@
+score: 30
+reason: Pattern exists as alleged (T22/T26/T27/T28/T30 etc. each carry an "Apply R1-R7 + cross-cutting principles" line), but R1-R7 are externalized in `skills/_shared/prompt-design-rules.md` and the R1-R7 check is always layered on top of concrete grep/diff audits — so the test expectations are not actually non-deterministic in isolation, and the finding's own counter-argument largely concedes this.

@@ -1,0 +1,2 @@
+score: 35
+reason: Real inconsistency exists — plan SKILL.md template (lines 169, 221) lists canonical enum as space-separated `schema migration`, while plan.md uses hyphenated `schema-migration`; however round-01 dispositions explicitly chose hyphenated as canonical (a user-recorded decision the finding itself flags as likely droppable), severity is correctly low, and the finding lacks evidence of any actual programmatic validator enforcing the enum.

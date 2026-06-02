@@ -8,7 +8,7 @@ test_writer_model: sonnet
 
 ## Overview
 
-v0.7.2 is a single-phase hardening drop against the deployed qrspi-plus v0.7.1 pipeline: 35 approved goals decomposed across seven vertical slices (1.1 through 1.7) into 44 tasks. The release ships cross-cutting fixes spanning four coherent surfaces — apply-fix / verifier backbone (1.1–1.2), per-task review pipeline (1.3), dispatch infrastructure (1.4), and skill-prose / structural / build hardening (1.5–1.7). The dependency-graph shape is shallow: slice 1.4's `scripts/round-prepare.sh` (G4) is the only cross-slice prerequisite (consumed by slice 1.3 G9), so G4 is sequenced as Task 12 ahead of the slice 1.3 tasks; otherwise each slice's tasks chain only within-slice (schema → consumer → tests), and slice 1.7 build tooling is fully independent of slices 1.1–1.6 and can ship last in parallel.
+v0.7.2 is a single-phase hardening drop against the deployed qrspi-plus v0.7.1 pipeline: 35 approved goals decomposed across seven vertical slices (1.1 through 1.7) into 38 tasks (task numbers 1–44 with gaps at 18, 22, 23, 41, 42, 43 — those goal IDs are moot/absorbed-by-CD-1 per design.md ## G24/G25/G26/G29 and ship no standalone v0.7.2 task; numbering preserved for stable cross-references). The release ships cross-cutting fixes spanning four coherent surfaces — apply-fix / verifier backbone (1.1–1.2), per-task review pipeline (1.3), dispatch infrastructure (1.4), and skill-prose / structural / build hardening (1.5–1.7). The dependency-graph shape is shallow: slice 1.4's `scripts/round-prepare.sh` (G4) is the only cross-slice prerequisite (consumed by slice 1.3 G9), so G4 is sequenced as Task 12 ahead of the slice 1.3 tasks; otherwise each slice's tasks chain only within-slice (schema → consumer → tests), and slice 1.7 build tooling is fully independent of slices 1.1–1.6 and can ship last in parallel.
 
 ## Phase 1: v0.7.2 release
 
@@ -18,7 +18,7 @@ Phase 1 is the whole release: all 35 goals, all seven slices, no future-phase co
 
 Per-phase criteria that must be observable end-to-end at phase boundary, independent of any single task. Each criterion is the cross-task observable behavior the Test phase verifies before the release PR opens:
 
-- [ ] **End-to-end pipeline run on a non-trivial sample project completes Goals → Test cleanly with `verifier_enabled: true`, `scope_tagger_enabled: true`, and `codex_reviews: true`** — every review round dispatches per-finding sidecars on disk with valid `change_type` values, `scripts/verifier-fan-in.sh` produces the expected aggregate, Codex and Claude reviewer outputs both reliably persist across rounds, and no orchestrator chat-parsing fallback fires.
+- [ ] **End-to-end pipeline run on a non-trivial sample project completes Goals → Test cleanly with `verifier_enabled: true`, `scope_tagger_enabled: true`, and `second_reviewer: true`** — every review round dispatches per-finding sidecars on disk with valid `change_type` values, `scripts/verifier-fan-in.sh` produces the expected aggregate, second-reviewer (Codex) and Claude reviewer outputs both reliably persist across rounds, and no orchestrator chat-parsing fallback fires.
 - [ ] **Every fail-loud invariant in the release fires loud on a seeded regression input** — splitter on adversarial Codex stdout, dispatch on misrouted `model_routing` entries, validation table on missing `model_routing:`, the dispatch-routing top-level fail-loud paragraph, reviewer-protocol against fabricated procedural-authority outputs, and the path-filter exfil guard in `scripts/dispatch-agent.sh` each produce non-zero exit with a diagnostic, never silent fallback.
 - [ ] **Apply-fix sub-threshold observations and disposition instrumentation fire correctly** — a review round producing both above-threshold and sub-threshold findings emits the Sub-Threshold Observations block in dispositions, and the verifier rejects wholesale-hallucination findings on the calibration seeds for the substituted Codex model.
 - [ ] **Plugin build pipeline produces a reproducible release artifact** — `node tools/build-plugin.mjs` exits 0 against the v0.7.2 HEAD source tree, `git diff --exit-code build/ .claude-plugin/marketplace.json` is empty, the built `build/` tree omits all dev-only paths (`docs/`, `tools/`, `tests/`), all `!cat` directives are expanded, and `${CLAUDE_SKILL_DIR}` does not appear anywhere in the shipped tree.
@@ -47,7 +47,7 @@ Task numbers are globally sequential. Cross-slice dependency (Slice 1.4 G4 → S
 - **Task 08 — G19 verifier wholesale-hallucination rubric class** — goals: [G19] — deps: [Task 07] — LOC: ~120 — task_type: code — model: sonnet
 - **Task 09 — G20 reviewer-model calibration for task-tool-substituted Codex model** — goals: [G20] — deps: [Task 08] — LOC: ~160 — task_type: code — model: opus
 - **Task 10 — G28 verifier convergent-evidence exception and sub-threshold-observations instrumentation** — goals: [G28] — deps: [Task 09] — LOC: ~150 — task_type: code — model: opus
-- **Task 11 — G29 reviewer-dispatch `artifact_path` escape hatch for large artifacts** — goals: [G29] — deps: none — LOC: ~110 — task_type: code — model: sonnet
+- **Task 11 — G3 dispatch-manifest provenance fields (`subagent_type`/`host`/`vendor`/`model`/`prompt_file` in `.dispatch-manifest.json`)** — goals: [G3] — deps: none — LOC: ~110 — task_type: code — model: sonnet
 
 ### Slice 1.3 — Per-task review pipeline corrections
 
@@ -62,12 +62,9 @@ Task numbers are globally sequential. Cross-slice dependency (Slice 1.4 G4 → S
 - **Task 12 — G4 canonical cumulative diff helper (`round-prepare.sh` + `await-round.sh` + section-anchor manifest + per-skill anchors JSON)** — goals: [G4] — deps: none — LOC: ~280 — sizing_exception: reusable primitives — task_type: code — model: opus
 - **Task 16 — G22 `model_routing` config schema and agent-sweep migration** — goals: [G22] — deps: none — LOC: ~320 — sizing_exception: schema-migration — task_type: code — model: opus
 - **Task 17 — G23 validation table covers `model_routing` and cross-links fail-loud paragraphs** — goals: [G23] — deps: [Task 16] — LOC: ~80 — task_type: code — model: opus
-- **Task 18 — G25 dispatch-routing top-level fail-loud invariant paragraph** — goals: [G25] — deps: [Task 17] — LOC: ~70 — task_type: lightweight — model: sonnet
 - **Task 19 — G27 `second-reviewer-available.sh` helper, `_host-detect.sh` primitive, and Goals consumer migration** — goals: [G27] — deps: none — LOC: ~210 — sizing_exception: reusable primitives — task_type: code — model: opus
 - **Task 20 — G3 dispatch-script rename collapse (`run-codex-review.sh` → `dispatch-agent.sh`; `run-third-party-llm.sh` → `dispatch-companion.sh`; `codex-finding-splitter.sh` → `third-party-finding-splitter.sh`) and per-skill prose migration** — goals: [G3] — deps: [Task 09, Task 11, Task 12, Task 13, Task 19] — LOC: ~260 — sizing_exception: reusable primitives — task_type: code — model: opus
 - **Task 21 — G16 path-filter exfil hardening in `dispatch-agent.sh`** — goals: [G16] — deps: [Task 20] — LOC: ~120 — task_type: code — model: opus
-- **Task 22 — G24-F02 `using-qrspi` per-H4 prose redundancy consolidation** — goals: [G24] — deps: [Task 18] — LOC: ~90 — task_type: lightweight — model: sonnet
-- **Task 23 — G24-F04 `using-qrspi` tier-regex consolidation** — goals: [G24] — deps: [Task 22] — LOC: ~70 — task_type: code — model: opus
 - **Task 24 — CD-4 `detect-interaction-mode.sh` helper** — goals: [G6, G11, G12] — deps: [Task 02] — LOC: ~110 — task_type: code — model: sonnet
 
 ### Slice 1.5 — Skill prose & interactive dialog quality
@@ -93,11 +90,8 @@ Task numbers are globally sequential. Cross-slice dependency (Slice 1.4 G4 → S
 ### Slice 1.7 — Build & release tooling + test-infrastructure hardening
 
 - **Task 39 — G32 plugin build pipeline (`tools/build-plugin.mjs` + `render-skill.sh` + `g4-section-anchor-refresh.sh` + marketplace.json + CI workflow + CONTRIBUTING)** — goals: [G32] — deps: [Task 25] — LOC: ~360 — sizing_exception: CI scaffolding — task_type: code — model: opus
-- **Task 40 — G21 bats short-circuit hardening with body-assertion-guard lint** — goals: [G21] — deps: none — LOC: ~140 — task_type: code — model: sonnet
-- **Task 41 — G26 bats deprecation cleanup on `test-codex-splitter.bats`** — goals: [G26] — deps: [Task 40] — LOC: ~70 — task_type: code — model: sonnet
-- **Task 42 — G24-F01 dispatch-routing assertion-caller test parameterization** — goals: [G24] — deps: [Task 23] — LOC: ~90 — task_type: code — model: sonnet
-- **Task 43 — G24-F03 shared bats helper deduplication for H4-extraction routines** — goals: [G24] — deps: [Task 42] — LOC: ~100 — task_type: code — model: sonnet
-- **Task 44 — G24-F05 anti-pattern pin regex hardening** — goals: [G24] — deps: [Task 43] — LOC: ~80 — task_type: code — model: sonnet
+- **Task 40 — G21 bats short-circuit hardening with body-assertion-guard lint (incl. G26 BW02/minimum-version rule)** — goals: [G21, G26] — deps: none — LOC: ~140 — task_type: code — model: sonnet
+- **Task 44 — G24-F05 anti-pattern pin regex hardening** — goals: [G24] — deps: [Task 17, Task 40] — LOC: ~80 — task_type: code — model: sonnet
 
 ### Dependency Graph
 
@@ -105,13 +99,13 @@ Three cross-slice dependency clusters dominate the graph; everything else is wit
 
 1. **G4 cumulative diff helper (Slice 1.4) → G9 per-task review (Slice 1.3).** `scripts/round-prepare.sh` and `scripts/await-round.sh` are created in Task 12 (Slice 1.4) but consumed by Task 13 (Slice 1.3 G9), so Task 12 is sequenced ahead of the 1.3 block in the global numbering. This is the only cross-slice forward dep that perturbs slice ordering.
 
-2. **G22 model_routing schema (Slice 1.4) → G23 validation table → G25 fail-loud → G24-F02/F04 prose consolidation.** All four touch `skills/using-qrspi/SKILL.md` and `config.md`; sequential ordering within Slice 1.4 prevents merge conflicts on the shared edit surface and ensures the validation table covers the new schema before fail-loud paragraphs reference it.
+2. **G22 model_routing schema (Slice 1.4) → G23 validation table.** Both touch `skills/using-qrspi/SKILL.md` and `config.md`; sequential ordering within Slice 1.4 prevents merge conflicts on the shared edit surface and ensures the validation table covers the new schema before fail-loud paragraphs reference it. (Note: G24-F02 prose consolidation and G25 top-level invariant — originally planned as T22 / T18 in this chain — were dropped per design.md ## G24 and ## G25 absorbing those goals into CD-1 with no separate v0.7.2 task.)
 
 3. **G3 splitter rename (Slice 1.4) → G16 dispatch-agent path-filter (Slice 1.4) → G32 build pipeline (Slice 1.7).** G16 edits `scripts/dispatch-agent.sh` (the renamed file from G3); G32's `build/` allow-list and `!cat` resolver inspect every shipped script under its new name, so G32 lands after G3 + G16 are merged.
 
-4. **G20 `actual_model:` provenance (T09) + G29 dispatch-manifest provenance (T11) + G9 per-task round-prepare edits (T13) → G3 splitter rename (T20).** T09, T11, and T13 all modify the pre-rename dispatch surface (`scripts/run-codex-review.sh` for T09/T11; `scripts/round-prepare.sh` for T13); T20 hard-renames those files and migrates the 12 consumer SKILLs. Sequencing T09/T11/T13 ahead of T20 prevents the rename from clobbering in-flight provenance edits and prevents T20 from leaving stale pre-rename caller paths behind.
+4. **G20 `actual_model:` provenance (T09) + G3 dispatch-manifest provenance (T11) + G9 per-task round-prepare edits (T13) → G3 splitter rename (T20).** T09, T11, and T13 all modify the pre-rename dispatch surface (`scripts/run-codex-review.sh` for T09/T11; `scripts/round-prepare.sh` for T13); T20 hard-renames those files and migrates the 12 consumer SKILLs. Sequencing T09/T11/T13 ahead of T20 prevents the rename from clobbering in-flight provenance edits and prevents T20 from leaving stale pre-rename caller paths behind.
 
-Within-slice chains worth noting: G31 primitives (T25) before all G31 consumer sites (T26) and before G32 (T39 needs the `prompt-prose-detection.md` defensive-copy site to exist); G34 design-altitude-boundary (T29) before G35 structure-altitude-boundary (T37) so the two altitude primitives are reviewed against a shared template; G1 (T30) before G33 (T31) before G30 (T32) to serialize the three design/SKILL.md edits and prevent same-paragraph conflicts. Slice 1.7 G21 → G26 → G24-F01 → G24-F03 → G24-F05 is a single test-infrastructure chain (each task modifies overlapping bats files).
+Within-slice chains worth noting: G31 primitives (T25) before all G31 consumer sites (T26) and before G32 (T39 needs the `prompt-prose-detection.md` defensive-copy site to exist); G34 design-altitude-boundary (T29) before G35 structure-altitude-boundary (T37) so the two altitude primitives are reviewed against a shared template; G1 (T30) before G33 (T31) before G30 (T32) to serialize the three design/SKILL.md edits and prevent same-paragraph conflicts. Slice 1.7 G21+G26 (T40) → G24-F05 (T44) is a short test-infrastructure chain (T40 lands the lint file and BW02 rule; T44 hardens the regex pins against the post-G22/G23 dispatch-routing wording).
 
 Slice 1.1 → Slice 1.2 is a soft chain (Slice 1.2 verifier rubric work assumes the Slice 1.1 verifier sidecar/`change_type` foundation is in place). Slice 1.6 depends on Slice 1.5's G34 (shared altitude-boundary pattern). Slice 1.7 is otherwise independent of Slices 1.1–1.6 (only T39 depends on T25 for the defensive-copy site).
 
@@ -585,7 +579,7 @@ Add observability for reviewer model calibration by carrying the already-resolve
 - **Out:**
   - G19 cite-check / `HALLUCINATED:` verifier-rubric behavior — T08 owns and this task depends on it.
   - G28 `defect_class:` sidecar tagging, sub-threshold observations prose, and no-override assertions — T10 owns.
-  - G29 large-artifact `artifact_path` escape-hatch absorption and no threshold/parser contract assertions beyond the G20 manifest provenance surface — T11 owns.
+  - G3 dispatch-manifest provenance fields (`subagent_type`/`host`/`vendor`/`model`/`prompt_file`) on pre-rename `scripts/run-codex-review.sh` — T11 owns; this task touches the same dispatch manifest only for the `actual_model:` flow.
   - Reviewer-protocol schema/template edits outside the listed Target files; this task verifies the emitted `actual_model:` flow from reviewer frontmatter rather than expanding the target-file set.
   - Any substituted-model-specific threshold, mitigation, `model_routing:` schema extension, or aggregate `verified.md` header.
 
@@ -678,11 +672,11 @@ Add verifier-side `defect_class:` instrumentation and an informational sub-thres
 - structure.md ### `tests/unit/test-verified-file-shape.bats` — unit-level sidecar shape assertions for `defect_class:`.
 - structure.md ### `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` → Slice 1.2 — release-level acceptance for defect-class emission, no override path to `kept-findings.txt`, and observations-section shape.
 
-### Task 11: G29 reviewer-dispatch `artifact_path` escape hatch for large artifacts
+### Task 11: G3 dispatch-manifest provenance fields (`subagent_type` / `host` / `vendor` / `model` / `prompt_file` in `.dispatch-manifest.json`)
 
 - **Phase:** 1
 - **Pipeline:** full
-- **Goal IDs:** [G29]
+- **Goal IDs:** [G3]
 - **Task type:** code
 - **Model:** sonnet
 - **Target files:** skills/using-qrspi/SKILL.md (modify), scripts/run-codex-review.sh (modify), tests/acceptance/v07-phase1/test-phase1-acceptance.bats (modify)
@@ -692,22 +686,21 @@ Add verifier-side `defect_class:` instrumentation and an informational sub-thres
 
 **Overview**
 
-Preserve large-artifact reviewer-dispatch scalability by making CD-1's off-LLM dispatch path auditable in the manifest, rather than adding a second inline-body escape contract. The task records resolved dispatch provenance, keeps reviewer prompt bodies out of orchestrator tool-call arguments, and pins that no threshold-based `artifact_path` parser contract is introduced. (Why: see goals.md ### G29. Approach: see design.md ## G29.)
+CD-1's universal dispatch architecture needs the `.dispatch-manifest.json` schema extended with resolved per-dispatch provenance so the off-LLM dispatch path is auditable end-to-end. This task lands the schema and write-side wiring on the pre-rename `scripts/run-codex-review.sh` so the changes are in place before T20 hard-renames the script to `scripts/dispatch-agent.sh`. (Why: see design.md ## CD-1 → "Dispatch manifest schema" subsection. Goal G3 is the dispatch-architecture umbrella; this task lands one of its CD-1 schema deliverables. G29 — the formerly-planned large-artifact escape-hatch goal — is moot per design.md ## G29 (absorbed by CD-1, no separate task ships).)
 
 **Scope**
 
 - **In:**
-  - Persist resolved reviewer-dispatch provenance in `<round-dir>/.dispatch-manifest.json` entries emitted by the reviewer dispatch script: `subagent_type`, `host`, `vendor`, `model`, and first-party `prompt_file` under `dispatch_spec`.
+  - Persist resolved reviewer-dispatch provenance in `<round-dir>/.dispatch-manifest.json` entries emitted by the reviewer dispatch script under a `dispatch_spec` object: `subagent_type`, `host`, `vendor`, `model`, and first-party `prompt_file`.
   - Persist equivalent third-party dispatch provenance plus the job metadata needed to await and split third-party results.
   - Keep first-party orchestrator-facing dispatch payloads to the emitted spec line / `DISPATCH_FILE=<PROMPT_FILE>` reference shape; reviewer prompt assembly remains outside orchestrator tool-call arguments.
   - Make manifest writes atomic and append-safe for repeated invocations and multiple reviewer tags in the same round.
-  - Pin the G29 absorbed-by-CD-1 behavior in `skills/using-qrspi/SKILL.md` / acceptance coverage: no size-threshold rule, no reviewer-side `artifact_path` parser contract, and no duplicated per-skill body-versus-path dispatch decision.
 
 - **Out:**
-  - Adding a threshold rule to `skills/reviewer-protocol/SKILL.md` for wrapped `artifact_body` versus `artifact_path` — explicit G29 non-goal under design.md ## G29.
-  - Adding reviewer-agent parser logic that accepts either `artifact_body` or `artifact_path` — explicit G29 non-goal under design.md ## G29.
-  - Hedging a standalone G29 implementation in case CD-1 slips — explicit non-goal; if CD-1 reintroduces orchestrator-side artifact-body assembly, G29 re-opens for a fresh design pass.
-  - Choosing body-versus-path internals inside CD-1's on-disk `PROMPT_FILE` assembly — deferred CD-1 implementation detail, not this task's contract surface.
+  - Renaming `scripts/run-codex-review.sh` to `scripts/dispatch-agent.sh` and migrating consumer SKILLs — T20 owns under G3.
+  - Adding host/vendor matrix branching inside the dispatch script — T20 owns under G3 (this task only records what the matrix resolved to).
+  - Authoring a threshold rule or reviewer-side `artifact_path` parser contract — explicit non-goal per design.md ## G29 (G29 absorbed-by-CD-1).
+  - Adding cleanup or regression-prevention prose to `skills/using-qrspi/SKILL.md` for the absorbed G29 surface — explicit non-goal per design.md ## G29 ("no separate v0.7.2 task ships under the G29 ID").
 
 **Definition of done**
 
@@ -715,25 +708,22 @@ Preserve large-artifact reviewer-dispatch scalability by making CD-1's off-LLM d
 - Third-party manifest entries include the same resolved `host` / `vendor` / `model` provenance plus the third-party job metadata needed by the await-and-split path.
 - Manifest append behavior is atomic and append-safe across multiple reviewer tags in one round and repeated invocations for the same output directory; no entries are lost or malformed.
 - Orchestrator-facing dispatch remains a prompt-file reference / spec-line flow; no reviewer artifact body is assembled into orchestrator tool-call arguments.
-- `skills/using-qrspi/SKILL.md` does not introduce per-skill size thresholds, a reviewer-side `artifact_path` parser contract, or a duplicated body-versus-path dispatch decision.
-- Acceptance coverage proves a large-artifact-shaped dispatch remains auditable end-to-end through `.dispatch-manifest.json` without expecting a separate threshold-based escape hatch.
+- Acceptance coverage proves a reviewer dispatch is auditable end-to-end through `.dispatch-manifest.json`'s `dispatch_spec` object.
 
 **Test expectations**
 
 - Exercise a first-party reviewer dispatch and inspect `.dispatch-manifest.json` for a `dispatch_spec` object containing `subagent_type`, `host`, `vendor`, `model`, and `prompt_file`.
 - Exercise a third-party/background dispatch path and inspect `.dispatch-manifest.json` for resolved `host`, `vendor`, `model`, plus the job metadata consumed by the await-and-split flow.
 - Run repeated dispatch-script invocations against the same round output directory with multiple reviewer tags, then validate the manifest remains well-formed JSON with all expected entries present.
-- Grep-audit `skills/using-qrspi/SKILL.md` to confirm no threshold-rule prose, reviewer-side `artifact_path` parser contract, or per-skill body-versus-path decision is introduced.
-- Acceptance coverage uses a large-artifact-shaped fixture and verifies the orchestrator-facing dispatch payload stays a prompt-file reference while the manifest records resolved host/vendor/model provenance.
-- Acceptance coverage verifies the large-artifact path is auditable end-to-end through `.dispatch-manifest.json` and that no test expects a separate threshold-based escape hatch.
+- Acceptance coverage verifies the orchestrator-facing dispatch payload stays a prompt-file reference while the manifest records resolved host/vendor/model provenance.
 
 **References**
 
-- goals.md ### G29 — original problem framing for large artifacts causing wrapped inline reviewer dispatch payloads to bloat orchestrator context.
-- design.md ## G29 — locked disposition: G29 is moot / absorbed by CD-1, with no threshold rule, no reviewer-side parser, and no standalone hedge implementation.
-- structure.md ### `skills/using-qrspi/SKILL.md` — Slice 1.2 note that G29 has no surface change in this file beyond preserving the absorbed-by-CD-1 dispatch shape.
+- goals.md ### G3 — dispatch-architecture umbrella goal (shell-pipeline splitter collapse + third-party renaming + provenance recording).
+- design.md ## CD-1 → "Dispatch manifest schema" — locked first-party and third-party `dispatch_spec` shapes consumed by this task.
+- design.md ## G29 — locked disposition that G29 is moot/absorbed by CD-1 with no standalone task; this task supplies the CD-1 schema fields that obviate G29's escape-hatch framing.
 - structure.md ### `scripts/run-codex-review.sh` — Slice 1.2 manifest-provenance persistence, atomic append behavior, and cross-slice rename note.
-- structure.md ### `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` — Slice 1.2 acceptance coverage for G29's manifest-auditable off-LLM dispatch path.
+- structure.md ### `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` — Slice 1.2 acceptance coverage for the manifest-auditable dispatch path.
 - structure.md ### 10. Dispatch manifest schema — canonical first-party and third-party manifest entry shapes.
 
 ### Task 12: G4 canonical cumulative diff helper (`round-prepare.sh` + `await-round.sh` + section-anchor manifest + per-skill anchors JSON)
@@ -1057,7 +1047,7 @@ Migrate routing to the unified vendor-neutral `model_routing:` schema and single
 - **Task type:** code
 - **Model:** opus
 - **Target files:** `skills/using-qrspi/SKILL.md` (modify), `tests/unit/test-config-model-routing.bats` (modify)
-- **Dependencies:** Task 16. **Blocks:** T18 (dispatch-routing top-level fail-loud invariant paragraph).
+- **Dependencies:** Task 16. **Blocks:** none.
 - **LOC estimate:** ~80
 
 **Overview**
@@ -1075,7 +1065,7 @@ Add the missing `model_routing:` validation-table row and bidirectional fail-lou
 
 - **Out:**
   - Defining the `model_routing:` schema, dispatch chain, per-vendor tier resolution, or `none`-halt semantics — Task 16 owns.
-  - Adding the top-level dispatch-routing fail-loud invariant paragraph — T18 owns.
+  - Adding the top-level dispatch-routing fail-loud invariant paragraph — dropped per design.md ## G25 (absorbed by CD-1; no separate v0.7.2 task ships under G25).
   - Replacing the validation table with a generated index, adding a canonical-source file, adding a validator framework, or adding rows for other config blocks (`providers:`, `trusted_path:`, `validators:`) — explicit non-goals in design.md ## G23.
 
 **Definition of done**
@@ -1101,58 +1091,6 @@ Add the missing `model_routing:` validation-table row and bidirectional fail-lou
 - design.md ## G23 — exact validation-table row contract, cross-link annotations, non-goals, and acceptance criteria.
 - structure.md ### `skills/using-qrspi/SKILL.md` → Goal IDs {G3, G22, G23, G24, G25, G27, CD-2} — production documentation edit surface for the validation-table row and cross-link annotations.
 - structure.md ### `tests/unit/test-config-model-routing.bats` — executable coverage for the schema shape, missing-block validation error, `none`-tier halt smoke test, and G23 validation-table row/cross-link verification.
-
-### Task 18: G25 dispatch-routing top-level fail-loud invariant paragraph
-
-- **Phase:** 1
-- **Pipeline:** full
-- **Goal IDs:** [G25]
-- **Task type:** lightweight
-- **Model:** sonnet
-- **Target files:** skills/using-qrspi/SKILL.md (modify)
-- **Dependencies:** Task 17. **Blocks:** T22 (later per-H4 prose redundancy consolidation).
-- **LOC estimate:** ~70
-
-**Overview**
-
-Add one class-level fail-loud invariant paragraph to the `skills/using-qrspi/SKILL.md` dispatch-routing documentation so the silent-fallback prohibition is owned once at the section level instead of relying on every future dispatch-path author to duplicate a mirror paragraph. This preserves Task 17's validation-table coverage and gives Task 22 a safer prose-consolidation base while keeping the change prose-only. (Why: see goals.md ### G25. Constraint context: see design.md ## G25. Target surface: see structure.md ### `skills/using-qrspi/SKILL.md` → Slice 1.4.)
-
-**Scope**
-
-- **In:**
-  - Add a single top-level invariant paragraph at the start of the dispatch-routing section, before per-path subsections.
-  - State in directive prose that any unresolved routing, model, provider, tier, trusted-path, validator-rerun, or fallback target must halt with a named diagnostic.
-  - Make the section-level invariant the canonical rule future dispatch-routing H4s inherit, so existing per-path text is illustrative rather than load-bearing.
-  - Preserve the G7b / #204 silent-fallback regression class as the reason the invariant exists.
-
-- **Out:**
-  - Validation-table coverage and cross-links for `model_routing:` / dispatch fail-loud behavior — T17 owns.
-  - Consolidating or deleting repeated per-H4 fail-loud prose after the invariant exists — T22 owns.
-  - Adding schema fields, route options, executable dispatch behavior, or bats enforcement — outside this prose-only task.
-  - Rewriting the broader CD-1 / G22 / G23 / G27 dispatch-routing surface — owned by those tasks' existing plan scopes, not by this G25 paragraph task.
-
-**Definition of done**
-
-- `skills/using-qrspi/SKILL.md` contains exactly one new class-level fail-loud invariant paragraph at the top of the dispatch-routing section before per-path subsections.
-- The paragraph is plain instructional prose and does not introduce a new schema field, route option, script behavior, or test-file change.
-- The paragraph explicitly requires a loud halt with a named diagnostic for unresolved routing, model, provider, tier, trusted-path, validator-rerun, or fallback target cases.
-- The paragraph prohibits silent fallback to neighboring tiers, agent-bundled defaults, host CLI rerouting, missing model-routing defaults, trusted-path bypasses without a concrete bundled model, and validator trusted-model reruns without a concrete bundled model.
-- Existing per-path fail-loud paragraphs are either left in place or shortened to references, but no new duplicated mirror paragraphs are added.
-- The wording remains compatible with Task 17's validation-table coverage and Task 22's later per-H4 prose consolidation.
-
-**Test expectations**
-
-- Inspect `skills/using-qrspi/SKILL.md` and confirm the new paragraph appears before the first dispatch-routing per-path subsection.
-- Grep/audit the paragraph text for the required halt targets: routing, model, provider, tier, trusted-path, validator-rerun, and fallback target.
-- Grep/audit the paragraph text for the prohibited silent-fallback surfaces: neighboring tier, agent-bundled default, host CLI rerouting, missing model-routing default, trusted-path bypass without a concrete bundled model, and validator trusted-model rerun without a concrete bundled model.
-- Confirm no new schema field, route option, script behavior, bats test, or additional mirror paragraph was introduced.
-- Apply R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer verifies R1 concision, R2 directive clarity, R5 shared-spine/reference discipline, positive-substitute wording, and load-bearing-rule clarity against the G7b / #204 silent-fallback class.
-
-**References**
-
-- goals.md ### G25 — original problem framing for replacing fragile per-H4 fail-loud mirrors with a class-level invariant.
-- design.md ## G25 — records the later absorbed-by-CD-1 disposition and non-goal boundaries; use as a constraint against expanding this prose-only task into executable or schema work.
-- structure.md ### `skills/using-qrspi/SKILL.md` → Slice 1.4 — target file block covering the dispatch-routing surface touched by G25 alongside G22/G23/G24/G27 work.
 
 ### Task 19: G27 `second-reviewer-available.sh` helper, `_host-detect.sh` primitive, and Goals consumer migration
 
@@ -1352,117 +1290,6 @@ Harden the post-rename dispatch wrapper so every prompt-ingested file path is ca
 - structure.md ### `tests/unit/test-run-codex-review.bats` → rename to `tests/unit/test-dispatch-agent.bats`; responsibility lists the G16 regression coverage.
 - structure.md ### `agents/qrspi-implementer.md` — top-of-body orchestrator-only script allowlist insertion site and post-rename-name note.
 - structure.md ### `scripts/run-third-party-llm.sh` → rename to `scripts/dispatch-companion.sh`; companion dispatcher surface to audit for raw-path inputs.
-
-### Task 22: G24-F02 `using-qrspi` per-H4 prose redundancy consolidation
-
-- **Phase:** 1
-- **Pipeline:** full
-- **Goal IDs:** [G24]
-- **Task type:** lightweight
-- **Model:** sonnet
-- **Target files:** `skills/using-qrspi/SKILL.md`
-- **Dependencies:** Task 18. **Blocks:** Task 23.
-- **LOC estimate:** ~90
-
-**Overview**
-
-Consolidate the repeated fail-loud / no-silent-fallback prose currently mirrored under the four dispatch-routing H4 surfaces in `skills/using-qrspi/SKILL.md`, after Task 18 has established the section-level invariant those H4s can reference. This reduces the G24-F02 drift risk without weakening any dispatch path's halt-loudly semantics. (Why: see goals.md ### G24. Approach: see design.md ## G24 and design.md ## G25.)
-
-**Scope**
-
-- **In:**
-  - Replace the four repeated per-H4 fail-loud paragraphs at the `model_routing:`, `trusted_path:`, `validators:`, and missing-`model_routing:` backfill surfaces with concise references to the class-level fail-loud contract established by Task 18.
-  - Preserve the semantic contract that unresolved routing, model/provider/tier lookup, trusted-path, validator rerun, or fallback-target failures halt loudly instead of silently falling back.
-  - Keep the resulting prose compatible with the G22/G23/G25 dispatch-routing wording that settles the same `skills/using-qrspi/SKILL.md` surface.
-  - Limit edits to prose in `skills/using-qrspi/SKILL.md`; this task does not edit tests or runtime behavior.
-
-- **Out:**
-  - Centralizing tier-vocabulary regexes in BATS tests — T23 owns G24-F04 after this prose settles.
-  - Parameterizing dispatch-routing assertion callers in the live test surface — T42 owns G24-F01.
-  - Promoting H4 extraction / routing-block parsing into shared BATS helpers — T43 owns G24-F03.
-  - Replacing literal silent-fallback anti-pattern pins with intent regex assertions and release-level acceptance coverage — T44 owns G24-F05.
-  - Authoring the section-level fail-loud invariant itself — T18 owns the prerequisite contract this task references.
-  - Adding, deleting, or reshaping dispatch-routing schema fields, route options, scripts, helpers, or executable behavior.
-
-**Definition of done**
-
-- `skills/using-qrspi/SKILL.md` no longer carries four independently worded load-bearing fail-loud paragraphs for `model_routing:`, `trusted_path:`, `validators:`, and missing-`model_routing:` backfill.
-- Each affected H4 retains a concise local reference or equivalent wording that points readers back to the single class-level fail-loud contract rather than restating the full invariant.
-- No dispatch path loses the no-silent-fallback / halt-loudly requirement for unresolved routing, provider/model/tier resolution, trusted-path use, validator reruns, or fallback targets.
-- The prose remains compatible with the G22/G23/G25 dispatch-routing wording and does not reintroduce mirror paragraphs future H4 authors would need to copy.
-- No BATS files, helper scripts, runtime scripts, config schemas, or generated artifacts are changed by this prose-only task.
-
-**Test expectations**
-
-- Grep/diff audit of `skills/using-qrspi/SKILL.md` confirms the four old H4-specific fail-loud mirror paragraphs have been collapsed to concise references while the class-level fail-loud contract remains present.
-- Content-semantic review applies R1-R7 plus cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention), verifying concision, shared-spine/reference discipline, and positive-substitute wording.
-- Manual review of the `model_routing:`, `trusted_path:`, `validators:`, and missing-`model_routing:` backfill surfaces confirms each still communicates halt-loudly/no-silent-fallback semantics.
-- Compatibility audit checks the edited prose against the settled G22/G23/G25 dispatch-routing wording; no stale reference to a removed or renamed dispatch surface is introduced.
-- Git diff confirms only `skills/using-qrspi/SKILL.md` changed and no BATS/test files were modified for this task.
-
-**References**
-
-- goals.md ### G24 — G24-F02 identifies the four mirrored fail-loud H4 paragraphs as redundancy and drift risk.
-- design.md ## G24 — records the G24 advisory bundle, including F02's deferral to the G25/top-level-invariant resolution.
-- design.md ## G25 — documents the fail-loud mirror-pattern concern and the single-contract resolution this task depends on.
-- structure.md ### `skills/using-qrspi/SKILL.md` — Slice 1.4 per-file block for the shared dispatch-routing prose surface touched by G24/G25-adjacent edits.
-
-### Task 23: G24-F04 `using-qrspi` tier-regex consolidation
-
-- **Phase:** 1
-- **Pipeline:** full
-- **Goal IDs:** [G24]
-- **Task type:** code
-- **Model:** opus
-- **Target files:** create `tests/helpers/tier-regex.bash`; modify `tests/unit/test-config-model-routing.bats`; modify `tests/unit/test-routing-matrix-application.bats`; modify `tests/unit/test-using-qrspi-vocab.bats`
-- **Dependencies:** Task 22. **Blocks:** T42 (G24-F01 dispatch-routing assertion-caller parameterization consumes the post-T23 tier-regex surface).
-- **LOC estimate:** ~70
-
-**Overview**
-
-Centralize the tier vocabulary used by bats tests that inspect `skills/using-qrspi/SKILL.md`, so future dispatch-schema edits have one reusable tier regex/list primitive instead of repeated literals. The helper encodes the authoritative five-tier grammar and migrates only the using-qrspi/model-routing bats surfaces named by this task. (Why: see goals.md ### G24. Vocabulary source: see structure.md ## Cross-Cutting Schemas → 7. Host-and-tier-aware second-reviewer override. Audit context: see design.md ## G24.)
-
-**Scope**
-
-- **In:**
-  - Create `tests/helpers/tier-regex.bash` with one reusable bats-facing primitive for the canonical five-tier set: `extra-low`, `low`, `medium`, `high`, and `extra-high`.
-  - Source that helper from `tests/unit/test-config-model-routing.bats`, `tests/unit/test-routing-matrix-application.bats`, and `tests/unit/test-using-qrspi-vocab.bats` wherever those files would otherwise carry an equivalent local tier alternation after T22.
-  - Add or preserve regression coverage that fails when a target bats file still contains a duplicated literal alternation for the canonical five-tier set instead of using the helper.
-  - Verify the helper accepts exactly the five canonical tiers and rejects retired or neighboring values such as `haiku`, `sonnet`, `opus`, and `inherit`.
-  - Preserve existing `skills/using-qrspi/SKILL.md` pin behavior after T22, including fail-loud handling for missing or empty extracted H4 bodies before any negative regex assertion runs.
-
-- **Out:**
-  - Consolidating per-H4 fail-loud / no-silent-fallback prose in `skills/using-qrspi/SKILL.md` — T22 owns.
-  - Parameterizing dispatch-routing assertion callers across host/tier matrix checks — T42 owns.
-  - Promoting H4 extraction into the shared `skill-markdown` helper and migrating H4/routing-block extractors — T43 owns.
-  - Rewriting silent-fallback prose pins into guarded semantic regex assertions and adding release-level acceptance coverage — T44 owns.
-  - Editing production dispatch-routing prose or the authoritative tier schema — this task only consumes the settled vocabulary.
-
-**Definition of done**
-
-- `tests/helpers/tier-regex.bash` exists and exposes a single reusable tier regex or tier-list primitive for bats tests.
-- All three target bats files source the helper for the canonical tier alternation instead of carrying their own equivalent five-tier literal.
-- A grep-based audit of the three target bats files finds no duplicated local alternation equivalent to `extra-low|low|medium|high|extra-high` outside the shared helper usage.
-- Helper-backed coverage accepts exactly `extra-low`, `low`, `medium`, `high`, and `extra-high`, and rejects `haiku`, `sonnet`, `opus`, and `inherit`.
-- Existing tests that pin `skills/using-qrspi/SKILL.md` continue to pass against the post-T22 prose, proving the helper matches final dispatch-routing wording rather than stale intermediate prose.
-- Missing or empty extracted H4 bodies still fail loudly before any negative regex assertion runs; no unguarded `$body` negation pattern is introduced.
-
-**Test expectations**
-
-- File-existence check for `tests/helpers/tier-regex.bash` and source/import checks in all three target bats files.
-- Grep audit over `tests/unit/test-config-model-routing.bats`, `tests/unit/test-routing-matrix-application.bats`, and `tests/unit/test-using-qrspi-vocab.bats` proving duplicated literal five-tier alternations were replaced by helper usage.
-- Targeted helper-consumer assertions cover all five accepted tier values and the rejected `haiku`, `sonnet`, `opus`, and `inherit` values.
-- Run the touched bats tests and confirm the using-qrspi/model-routing pins remain green against the post-T22 `skills/using-qrspi/SKILL.md` text.
-- Regression audit confirms missing/empty extracted H4 bodies are checked before negative regex assertions, so the task does not reintroduce a G21-style unguarded `$body` negation pattern.
-
-**References**
-
-- goals.md ### G24 — F04 identifies repeated tier regex literals as a deferred G24 code-quality simplification.
-- design.md ## G24 — G24 audit context and sibling-scope boundaries for the R4 simplify-claude advisory bundle.
-- structure.md ## Cross-Cutting Schemas → 7. Host-and-tier-aware second-reviewer override — authoritative five-tier grammar consumed by the helper.
-- structure.md ### `tests/unit/test-config-model-routing.bats` — target bats file covering the 5-tier model-routing schema surface.
-- structure.md ### `tests/unit/test-routing-matrix-application.bats` — target bats file covering tier override / routing-matrix behavior.
-- structure.md ### `tests/unit/test-using-qrspi-vocab.bats` — target bats file covering using-qrspi vocabulary pins and `$body` guard constraints.
 
 ### Task 24: CD-4 `detect-interaction-mode.sh` helper
 
@@ -1809,6 +1636,7 @@ Create a single shared Design altitude boundary and wire both Design enforcement
   - Replace the inline contract body in `skills/design/owns-defers.md` with the literal directive `!cat skills/_shared/design-altitude-boundary.md`, preserving the file's existing surrounding structure.
   - In `agents/qrspi-design-scope-reviewer.md`, insert the exact introducer prose `The contract you just read carries the following allowances and deferrals; restated here so they are present in your immediate reasoning context:` immediately after the Step 1 Read citation, followed by the literal directive `!cat skills/_shared/design-altitude-boundary.md`.
   - Preserve the boundary's positive OWNS allowances and matching DEFERS list so detailed solution descriptions, edge cases, flows, prompt-writing specifics, acceptance examples, per-solution diagrams, naming/rename inventory, and phasing labels are allowed while implementation bodies, full test code, executable shell, file architecture, unified architecture/test strategy, and task carving remain deferred.
+  - Create `tests/lint/test-design-altitude-boundary-include.bats` asserting that `agents/qrspi-design-scope-reviewer.md` contains the literal `!cat skills/_shared/design-altitude-boundary.md` directive on the line immediately after the Step 1 Read citation introducer prose, and that `skills/design/owns-defers.md` contains the same literal directive in place of the previous inline contract body. Removal of either include directive must fail the lint with a diagnostic naming the violating file and the missing directive.
 
 - **Out:**
   - Rewriting the Design SKILL's per-goal template and other G1 deliverables — T30 owns; G1 deliverable #6 is superseded by this task's positive OWNS plus DEFERS boundary and must not be implemented a second time.
@@ -1816,7 +1644,7 @@ Create a single shared Design altitude boundary and wire both Design enforcement
   - Auditing or changing non-Design artifact scope reviewers and their owns-defers files — explicitly deferred outside G34.
   - Changing dispatch parameters, reviewer model selection, tool grants, reviewer-protocol `change_type` semantics, or scope-finding pause behavior.
   - Moving file architecture, unified system architecture, unified test architecture, or task decomposition back into Design ownership.
-  - Adding or modifying files outside the three target files, unless a directly coupled include-resolution break prevents those files from being valid.
+  - Adding or modifying files outside the four target files, unless a directly coupled include-resolution break prevents those files from being valid.
 
 **Definition of done**
 
@@ -1827,6 +1655,7 @@ Create a single shared Design altitude boundary and wire both Design enforcement
 - Neither consumer inlines the full boundary contract; both rely on the `!cat` directive so build expansion remains the single-source mechanism.
 - No second Design owns-defers rewrite is introduced for G1 deliverable #6, and no non-Design scope-reviewer surfaces are broadened into this task.
 - Prompt prose remains concrete and audit-friendly: no TODO/TBD placeholders, no stale `docs/prompt-design-guide.md` reference, no bare prohibition without a positive substitute and decision rule.
+- `tests/lint/test-design-altitude-boundary-include.bats` exists and asserts the literal `!cat skills/_shared/design-altitude-boundary.md` directive is present in both consumer files at the canonical insertion points; removal of either directive fails the lint with a file-and-directive-naming diagnostic.
 
 **Test expectations**
 
@@ -1835,7 +1664,8 @@ Create a single shared Design altitude boundary and wire both Design enforcement
 - Ordering inspection confirms the Design scope-reviewer introducer prose appears immediately after the Step 1 Read citation and immediately before the `!cat` directive.
 - Boundary-body inspection confirms `Design OWNS:` precedes `Design DEFERS:` and includes the named OWNS allowances and DEFERS exclusions from design.md ## G34 D2/D3.
 - Consumer-source inspection confirms the full OWNS/DEFERS boundary is not duplicated inline in either consumer beyond the required `!cat` directive.
-- Diff audit confirms only the three target files changed, unless the implementer documents a directly coupled include-resolution break.
+- Run `tests/lint/test-design-altitude-boundary-include.bats` and confirm it passes against the implemented consumer files; a negative-test fixture (removing the include directive from one consumer) must cause the lint to fail with a diagnostic naming the violating file and the missing directive.
+- Diff audit confirms only the four target files changed, unless the implementer documents a directly coupled include-resolution break.
 - Apply R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) to the new prompt prose; reviewer verifies single-source prompt prose, positive OWNS allowances paired with DEFERS, exact anchor phrase preservation, evergreen/non-host-specific wording, no placeholder bodies, and compaction-resilient load-bearing instructions at the point of use.
 
 **References**
@@ -2278,11 +2108,11 @@ Move the destination side of the Design-to-Structure architecture migration into
   - Update `skills/structure/SKILL.md` so Structure explicitly acknowledges ownership of unified system architecture diagram(s), file maps, module-boundary contracts, cross-solution component interactions, unified test architecture, and per-type stitching of per-solution acceptance criteria.
   - Add the Structure-side `## Test Architecture` authoring procedure that runs after Design approval, enumerates per-solution `Acceptance` subsections from design.md, groups them by release test taxonomy, identifies cross-cutting test invariants, and names the test type that owns each invariant.
   - Preserve positive Structure authoring guidance: tell Structure what to produce without re-litigating locked Design choices or descending into Plan/Implement-level test assertions.
+  - Create `tests/lint/test-structure-altitude-boundary-include.bats` asserting that `agents/qrspi-structure-scope-reviewer.md` contains the literal `!cat skills/_shared/structure-altitude-boundary.md` directive on the line immediately after the introducer prose, and that `skills/structure/owns-defers.md` contains the same literal directive in place of the previous inline contract body. Removal of either include directive must fail the lint with a diagnostic naming the violating file and the missing directive.
 
 - **Out:**
   - Reviewer-agent recognition/enforcement of unified system architecture and `## Test Architecture` as expected Structure content — T38 owns.
   - Scope-reviewer immediate-reasoning placement of `!cat skills/_shared/structure-altitude-boundary.md` — T38 owns.
-  - Test-code or lint-test additions for the include guard — explicitly out of this prompt-prose task.
   - Re-litigating Design decisions, per-solution flows, vendor research, detailed solution rationale, or per-task/unit-test assertions — Structure defers these by the G35 boundary.
   - Unrelated Structure procedure rewrites outside the unified architecture posture and `## Test Architecture` procedure.
 
@@ -2293,15 +2123,17 @@ Move the destination side of the Design-to-Structure architecture migration into
 - `skills/structure/SKILL.md` contains a `## Test Architecture` authoring procedure that is explicitly after Design approval and includes the load-bearing anchor phrases `name the test taxonomy`, `enumerate cross-cutting test invariants`, and `name the test type that owns each invariant`.
 - The `## Test Architecture` procedure stitches locked per-solution `Acceptance` material from design.md into a release-level test taxonomy without re-opening Design rationale or adding Plan/Implement-level assertions.
 - The edited prompt prose uses positive-substitute wording that describes what Structure authors, not only what Design no longer owns.
-- The task does not edit reviewer agents, add test code, assume unresolved runtime `!cat` expansion beyond the primitive's intended source form, introduce implementation-level test assertions, or rewrite unrelated Structure procedures.
+- The task does not edit reviewer agents, assume unresolved runtime `!cat` expansion beyond the primitive's intended source form, introduce implementation-level test assertions beyond the named include-guard lint, or rewrite unrelated Structure procedures.
+- `tests/lint/test-structure-altitude-boundary-include.bats` exists and asserts the literal `!cat skills/_shared/structure-altitude-boundary.md` directive is present in both consumer files at the canonical insertion points; removal of either directive fails the lint with a file-and-directive-naming diagnostic.
 
 **Test expectations**
 
-- File-existence checks confirm `skills/_shared/structure-altitude-boundary.md` exists and `skills/structure/SKILL.md` remains the only modified existing target file for this task.
+- File-existence checks confirm `skills/_shared/structure-altitude-boundary.md` exists and `skills/structure/SKILL.md` remains a modified existing target file for this task.
 - Diff or grep audit confirms the primitive carries the locked Structure OWNS and Structure DEFERS content from design.md ## G35 / structure.md ### `skills/_shared/structure-altitude-boundary.md` without drift.
 - Grep `skills/structure/SKILL.md` for `## Test Architecture`, `after Design approval`, `name the test taxonomy`, `enumerate cross-cutting test invariants`, and `name the test type that owns each invariant`.
 - Content audit confirms `skills/structure/SKILL.md` names unified system architecture, module boundaries, cross-solution component interactions, unified test architecture, and per-type stitching as Structure-owned responsibilities.
-- Scope audit confirms no reviewer-agent edits, no test-code additions, no implementation-level test assertions, and no unrelated Structure procedure rewrites were introduced by this task.
+- Run `tests/lint/test-structure-altitude-boundary-include.bats` and confirm it passes against the implemented consumer files; a negative-test fixture (removing the include directive from one consumer) must cause the lint to fail with a diagnostic naming the violating file and the missing directive.
+- Scope audit confirms no reviewer-agent edits, no implementation-level test assertions beyond the named include-guard lint, and no unrelated Structure procedure rewrites were introduced by this task.
 - Implementer applies R1-R7 plus cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer verifies the same content-semantic rules application against the new primitive and Structure SKILL prose.
 
 **References**
@@ -2449,15 +2281,15 @@ Implement the G32 plugin build pipeline that turns the source repo into a commit
 - structure.md ### `tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats` — built-tree strip/copy and shipped-file invariants.
 - structure.md ### `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` — release-level G32 acceptance for `build/`, marketplace source, and resolver fixtures.
 
-### Task 40: G21 bats short-circuit hardening with body-assertion-guard lint
+### Task 40: G21 bats short-circuit hardening with body-assertion-guard lint (incl. G26 BW02/minimum-version rule)
 
 - **Phase:** 1
 - **Pipeline:** full
-- **Goal IDs:** [G21]
+- **Goal IDs:** [G21, G26]
 - **Task type:** code
 - **Model:** sonnet
 - **Target files:** `tests/unit/test-using-qrspi-vocab.bats`, `tests/lint/test-bats-body-assertion-guard.bats`, `tests/unit/test-ci-workflow-shape.bats`, `.github/workflows/ci.yml` (only if current CI/test entrypoints do not already execute `tests/lint/` or recursive `tests/` coverage)
-- **Dependencies:** none. **Blocks:** T41 (G26 bats deprecation cleanup on `test-codex-splitter.bats`).
+- **Dependencies:** none. **Blocks:** none.
 - **LOC estimate:** ~140
 
 **Overview**
@@ -2474,7 +2306,7 @@ Harden the BATS gate against vacuous `$body` assertions by guarding existing neg
   - Extend CI or the existing test runner only as needed so `tests/lint/test-bats-body-assertion-guard.bats` runs on the blocking path, and update/add workflow-shape coverage that asserts the new lint coverage is executed.
 
 - **Out:**
-  - BATS deprecation cleanup on `test-codex-splitter.bats` — T41 owns; this task only shapes the shared lint file so the BW02/minimum-version rule surface is ready.
+  - BATS deprecation sweep beyond the BW02/minimum-version rule surface this task lands — the BW02 rule is the canonical G26 deliverable (per design.md ## G26 + ## G21 Amendment at G26 design-lock); no further per-file deprecation cleanup ships under a standalone G26 task in v0.7.2.
   - G32 build-sync assertions and broader plugin build-pipeline CI behavior — T39 owns; this task keeps workflow-shape coverage scoped to G21 lint execution.
   - Shellcheck rules and pre-commit hooks — explicitly not part of G21; CI is the durable enforcement layer.
   - BATS upstream/root-cause investigation for #244 — deferred outside this task; the lint gate closes the v0.7.2 risk surface.
@@ -2502,185 +2334,14 @@ Harden the BATS gate against vacuous `$body` assertions by guarding existing neg
 **References**
 
 - goals.md ### G21 — problem framing for BATS short-circuit / empty-extractor silent passes.
-- design.md ## G21 — locked retrofit-only, lint-gate, CI-only, and BW02-amendment implementation shape.
+- goals.md ### G26 — problem framing for the BW02/minimum-version regression class (absorbed into this task's lint surface).
+- design.md ## G21 — locked retrofit-only, lint-gate, CI-only, and BW02-amendment implementation shape (Amendment at G26 design-lock specifies BW02 rides in the G21 lint file).
+- design.md ## G26 — locked disposition that G26's runtime concern is moot (splitter already fixed pre-v0.7.2) and remaining work is the BW02 lint rule consolidated into G21's lint file.
 - structure.md ### `tests/unit/test-using-qrspi-vocab.bats` — guarded `$body` retrofit surface and live positive controls.
-- structure.md ### `tests/lint/test-bats-body-assertion-guard.bats` — new lint file responsibilities for G21 and G26-ready BW02 coverage.
+- structure.md ### `tests/lint/test-bats-body-assertion-guard.bats` — new lint file responsibilities for G21 and G26 BW02 coverage.
 - structure.md ### `tests/unit/test-ci-workflow-shape.bats` — workflow-shape assertions for recursive lint coverage.
 - structure.md ### `.github/workflows/ci.yml` — CI/test-entrypoint surface that may need recursive lint coverage.
 - structure.md ## CI Pipeline — release-level CI shape for lint and BATS execution.
-
-### Task 41: G26 bats deprecation cleanup on `test-codex-splitter.bats`
-
-- **Phase:** 1
-- **Pipeline:** full
-- **Goal IDs:** [G26]
-- **Task type:** code
-- **Model:** sonnet
-- **Target files:** modify `tests/unit/test-codex-splitter.bats`; modify `tests/lint/test-bats-body-assertion-guard.bats`
-- **Dependencies:** Task 40
-- **LOC estimate:** ~70
-
-**Overview**
-
-Codify the actual BW02 fix for `tests/unit/test-codex-splitter.bats` and add the regression-prevention lint rule that catches future `run --separate-stderr` usage without an earlier `bats_require_minimum_version` declaration. The task preserves the already-correct bats shebang and avoids adding unused bats-support dependencies while making the minimum-version hygiene executable in the shared lint file. (Why: see goals.md ### G26. Approach: see design.md ## G26 and design.md ## G21 → Amendment at G26 design-lock.)
-
-**Scope**
-
-- **In:**
-  - Keep or restore `tests/unit/test-codex-splitter.bats` so it uses `#!/usr/bin/env bats`, does not load `bats-support`, and declares `bats_require_minimum_version 1.5.0` before any `run --separate-stderr` call.
-  - Preserve a short rationale near the splitter test header tying the minimum-version declaration to suppressing BW02 warning noise and failing clearly on too-old bats installs.
-  - Extend `tests/lint/test-bats-body-assertion-guard.bats` with the G26 BW02/minimum-version rule: walk `tests/**/*.bats` while excluding itself and fail when a file uses `run --separate-stderr` without an earlier `bats_require_minimum_version` declaration in that same file.
-  - Emit lint diagnostics that name the violating file, triggering line, and `run --separate-stderr` feature.
-  - Accept the current `test-codex-splitter.bats` header and any other existing `.bats` files that already declare the required minimum before using `run --separate-stderr`.
-
-- **Out:**
-  - Changing `.bats` shebangs to `#!/usr/bin/env -S bats -t` — explicit non-goal because the standard shebang is not the BW02 fix.
-  - Adding `bats_load_library bats-support` — explicit non-goal because the project does not need a new runtime dependency for this warning class.
-  - Backfilling `bats_require_minimum_version` into `.bats` files that do not use version-guarded features — the guard is feature-specific, not blanket boilerplate.
-  - Adding a standalone BW02 lint file, shellcheck rule, or pre-commit hook — the BW02 rule rides in the existing G21 lint test and CI gate.
-  - Implementing the G21 `$body` assertion guard rule or CI/test-runner wiring — T40 owns the base lint file and blocking-path integration.
-
-**Definition of done**
-
-- `tests/unit/test-codex-splitter.bats` retains `#!/usr/bin/env bats` and contains no `#!/usr/bin/env -S bats -t` shebang and no `bats_load_library bats-support` addition.
-- `tests/unit/test-codex-splitter.bats` declares `bats_require_minimum_version 1.5.0` before every `run --separate-stderr` usage, with rationale comments tied to BW02 warning suppression and clear failure on older bats.
-- `tests/lint/test-bats-body-assertion-guard.bats` contains a separate G26 BW02/minimum-version lint rule in the same file as the G21 `$body` rule.
-- The lint rule discovers `tests/**/*.bats`, excludes itself, and fails any file that uses `run --separate-stderr` before an earlier same-file `bats_require_minimum_version` declaration.
-- The lint failure message includes the violating file, line, and `run --separate-stderr` feature.
-- Existing `.bats` files that already declare the required minimum before `run --separate-stderr` remain accepted by the lint.
-- The targeted splitter test emits no bats-core BW0N warning or deprecation-warning text on stderr.
-
-**Test expectations**
-
-- Grep `tests/unit/test-codex-splitter.bats` to confirm the shebang is exactly `#!/usr/bin/env bats` and that no `#!/usr/bin/env -S bats -t` or `bats_load_library bats-support` text was introduced.
-- Order audit `tests/unit/test-codex-splitter.bats` to confirm `bats_require_minimum_version 1.5.0` appears before every `run --separate-stderr` line and retains the BW02/older-bats rationale.
-- Run the lint test or targeted fixture coverage to verify a `.bats` file using `run --separate-stderr` without an earlier same-file `bats_require_minimum_version` fails.
-- Inspect the lint failure output to confirm it names the violating file, triggering line, and `run --separate-stderr` feature.
-- Run the lint against the current corpus to confirm `test-codex-splitter.bats` and other existing guarded `run --separate-stderr` users pass.
-- Run the targeted splitter test and assert stderr contains no bats-core `BW0N`, `warning`, or `deprecat` text.
-
-**References**
-
-- goals.md ### G26 — original problem framing for recurring BW02 warning noise on `test-codex-splitter.bats`.
-- design.md ## G26 — corrected disposition: BW02 is a feature-version-guard warning, not a shebang deprecation; standard shebang and no bats-support dependency are explicit non-goals.
-- design.md ## G21 → Amendment at G26 design-lock — BW02 guard rule extension specification for the existing lint file.
-- structure.md ### `tests/lint/test-bats-body-assertion-guard.bats` — per-file block for the shared G21/G26 lint test and BW02 diagnostic/discovery shape.
-- structure.md ## Slice 1.7 — Build & release tooling + test-infrastructure hardening — file matrix entry showing `tests/lint/test-bats-body-assertion-guard.bats` as the G21/G26 lint surface.
-
-### Task 42: G24-F01 dispatch-routing assertion-caller test parameterization
-
-- **Phase:** 1
-- **Pipeline:** full
-- **Goal IDs:** [G24]
-- **Task type:** code
-- **Model:** sonnet
-- **Target files:** modify `tests/unit/test-agent-frontmatter-no-model.bats` (or the current `tests/acceptance/v07-phase1/test-t10-*.bats` successor that owns the T10 `model_routing:` host/tier assertions); no production files; no new helper file unless the helper stays local to the touched BATS file
-- **Dependencies:** Task 23. **Blocks:** T43 (shared BATS helper deduplication for H4/routing-block extractors after the post-Task-42 tree is known).
-- **LOC estimate:** ~90
-- **Dispatch order:** test-writer first, implementer second (RED-verification gate between).
-
-**Overview**
-
-Parameterize the live dispatch-routing test surface that asserts `model_routing:` host/tier mappings so the same assertion mechanics are not repeated for each host/tier row. The task keeps the existing F01 test intent intact while adapting to the current successor file if the historical T10 acceptance files and helper were restructured away. (Why: see goals.md ### G24. Approach/context: see design.md ## G24 and structure.md ## Slice 1.4 — Dispatch infrastructure.)
-
-**Scope**
-
-- **In:**
-  - Locate the current owner of the T10 `model_routing:` host/tier assertions, starting with `tests/unit/test-agent-frontmatter-no-model.bats` and only using the historical `tests/acceptance/v07-phase1/test-t10-*.bats` surface if it still exists.
-  - Replace repeated per-host/per-tier assertion bodies with one data-driven loop/table or equivalent local helper call so tier, expected model, and diagnostic label live in one list.
-  - Preserve coverage for both `claude-code` and `copilot-cli` host sub-blocks and every routed tier currently asserted by that F01 surface.
-  - Preserve row-specific failure diagnostics for missing host blocks, missing tier mappings, expected model mismatches, and the relevant T10/TE label or row label.
-  - Keep existing synthetic incomplete-`model_routing:` fixtures meaningful: absent block, missing host, and missing tier cases still fail loudly.
-
-- **Out:**
-  - Consolidating repeated fail-loud prose in `skills/using-qrspi/SKILL.md` — T22 owns.
-  - Centralizing tier vocabulary into a shared helper — T23 owns and is a dependency of this task.
-  - Extracting H4/routing-block parsing into `tests/helpers/skill-markdown.bash` — T43 owns after this task exposes the live post-parameterization callers.
-  - Hardening the four silent-fallback literal pins and release-level G24 acceptance — T44 owns.
-  - Recreating deleted `tests/acceptance/v07-phase1/test-t10-*.bats` files or resurrecting `_assert_host_block_has_routing` solely to match the old advisory wording.
-  - Adding production code or a new shared helper file; any helper introduced here stays local to the touched BATS file.
-
-**Definition of done**
-
-- The live F01 dispatch-routing assertion owner is parameterized in place; no removed T10 acceptance file or deleted helper is recreated.
-- Each host/tier mapping previously asserted by the F01 surface remains asserted after the refactor, including both supported host sub-blocks and the current routed tier set.
-- Tier/model/diagnostic input data is centralized in one local table/list or equivalent helper invocation, with no duplicated assertion body per tier or host.
-- Failure output remains specific enough to name the host, tier, expected model, source file, and T10/TE row label involved.
-- Incomplete `model_routing:` fixture coverage remains fail-loud for absent block, missing host, and missing tier cases.
-- The touched BATS remains Bash 3.2-compatible and follows the repository's existing helper style; no associative arrays or new process-substitution dependency are introduced.
-
-**Test expectations**
-
-- Run the touched BATS file directly and confirm it passes after parameterization.
-- Audit the diff to confirm the repeated per-tier/per-host assertion mechanics were replaced by one data-driven loop/table or equivalent local helper call.
-- Seed one expected-model value in the local table/fixture and confirm the parameterized assertion fails with the row-specific diagnostic, then restore it.
-- Exercise or preserve the existing RED-path fixtures for absent `model_routing:`, missing host, and missing tier so they cannot become vacuous passes.
-- Grep the tree to confirm no removed `tests/acceptance/v07-phase1/test-t10-*.bats` file or `_assert_host_block_has_routing` helper was recreated solely for this task.
-
-**References**
-
-- goals.md ### G24 — original R4 simplify-claude F01 advisory and sibling F02-F05 cleanup bundle.
-- design.md ## G24 — tree-audit context warning that historical F01 files/helpers may be moot; implement against the live successor rather than recreating removed surfaces.
-- structure.md ## Slice 1.4 — Dispatch infrastructure — dispatch-routing test context and current model-routing assertion surfaces.
-- structure.md ### `tests/unit/test-config-model-routing.bats` — current schema/fail-loud model-routing test surface to compare against when locating the live F01 owner.
-- structure.md ### `tests/unit/test-routing-matrix-application.bats` — neighboring host-aware routing test surface whose coverage must not be conflated with this F01 refactor.
-
-### Task 43: G24-F03 shared bats helper deduplication for H4-extraction routines
-
-- **Phase:** 1
-- **Pipeline:** full
-- **Goal IDs:** [G24]
-- **Task type:** code
-- **Model:** sonnet
-- **Target files:** `tests/helpers/skill-markdown.bash`, `tests/unit/test-helpers-skill-markdown.bats`, `tests/unit/test-config-model-routing.bats`, `tests/unit/test-using-qrspi-vocab.bats`, `tests/unit/test-using-qrspi-routing-block.bats` if present after Task 42
-- **Dependencies:** Task 42. **Blocks:** T44 (G24-F05 anti-pattern pin regex hardening consumes the post-T43 H4/routing-block extraction surface).
-- **LOC estimate:** ~100
-
-**Overview**
-
-Promote the duplicated H4/routing-block extraction behavior into the shared bats markdown helper so live tests use one fail-loud parser instead of local copies. Re-audit the post-T42 tree first and migrate only callers that still exist; do not recreate historical files solely to satisfy this cleanup. (Why: see goals.md ### G24. Scope boundary: see design.md ## G24.)
-
-**Scope**
-
-- **In:**
-  - Extend `tests/helpers/skill-markdown.bash` with shared H4 extraction behavior matching the existing helper style for H2/H3 parsing and diagnostics.
-  - Add failing-first coverage in `tests/unit/test-helpers-skill-markdown.bats` for H4 extraction from a fixture document, including headings with literal backticks.
-  - Preserve H4 body semantics: return only content after the matched `#### ...` anchor, stop before the next H1-H4 boundary, and keep nested lower-level content inside the returned body.
-  - Fail loudly for missing H4 anchors and empty H4 sections using the existing `skill-markdown:` diagnostic style.
-  - Re-audit `tests/unit/test-config-model-routing.bats`, `tests/unit/test-using-qrspi-vocab.bats`, and `tests/unit/test-using-qrspi-routing-block.bats` after T42, then remove every live local `_extract_h4` / `_extract_routing_block` definition from migrated callers in favor of the shared helper.
-
-- **Out:**
-  - Consolidating per-H4 fail-loud / no-silent-fallback prose in `skills/using-qrspi/SKILL.md` — T22 owns.
-  - Centralizing the tier vocabulary regex/list primitive — T23 owns.
-  - Parameterizing dispatch-routing assertion callers across host/tier matrix checks — T42 owns.
-  - Rewriting silent-fallback prose pins into guarded semantic regex assertions and adding release-level acceptance coverage — T44 owns.
-  - Recreating absent historical callers such as `tests/unit/test-using-qrspi-routing-block.bats` solely for this task; if a listed caller is absent after T42, leave it absent.
-
-**Definition of done**
-
-- `tests/helpers/skill-markdown.bash` exposes a shared H4 extraction helper consistent with the existing shared H2/H3 helper interface and `skill-markdown:` diagnostic style.
-- `tests/unit/test-helpers-skill-markdown.bats` covers H4 extraction from fixture markdown, including a `#### ...` heading containing literal backticks.
-- H4 extraction returns only the matched section body, preserves nested H5+ content, and stops before the next H1-H4 heading.
-- Missing H4 anchors and empty H4 sections fail loudly; no missing/empty extraction path exits successfully with empty output.
-- Existing H2/H3 helper behavior and diagnostics remain unchanged.
-- Every live migrated consumer uses the shared helper; grep finds no local `_extract_h4` / `_extract_routing_block` definitions remaining in migrated BATS files.
-- Historical target files that are absent after T42 are not recreated for this task.
-
-**Test expectations**
-
-- Run `tests/unit/test-helpers-skill-markdown.bats` and verify the new H4 tests fail before the helper change and pass after it.
-- Add helper self-tests for a normal H4 section, a backtick-containing H4 heading, stopping at the next H1-H4 boundary, preserving nested lower-level content, missing anchor failure, and empty-section failure.
-- Re-run existing H2/H3 helper tests to prove behavior and diagnostics are unchanged.
-- Grep audit migrated consumer files for `_extract_h4` and `_extract_routing_block`; local definitions should be absent after migration.
-- Run targeted BATS coverage for the helper self-test plus every migrated live consumer file, including `tests/unit/test-config-model-routing.bats`, `tests/unit/test-using-qrspi-vocab.bats`, and `tests/unit/test-using-qrspi-routing-block.bats` only if that file exists after T42.
-- Verify the migrated tests still pass against `skills/using-qrspi/SKILL.md` after Task 42.
-
-**References**
-
-- goals.md ### G24 — F03 identifies duplicated H4/routing-block extraction helpers as part of the deferred G24 code-quality simplification bundle.
-- design.md ## G24 — post-audit G24 scope boundary and caveat that absent or mooted F03 surfaces must not be recreated.
-- structure.md ### `tests/unit/test-config-model-routing.bats` — live target candidate that may contain the current H4 extraction helper surface after upstream routing-schema tasks.
-- structure.md ### `tests/unit/test-using-qrspi-vocab.bats` — live G24 bats target; migrate only if a local H4/routing-block extractor remains after T42.
 
 ### Task 44: G24-F05 anti-pattern pin regex hardening
 
@@ -2690,7 +2351,7 @@ Promote the duplicated H4/routing-block extraction behavior into the shared bats
 - **Task type:** code
 - **Model:** sonnet
 - **Target files:** modify `tests/unit/test-using-qrspi-vocab.bats`; modify `tests/acceptance/v07-phase1/test-phase1-acceptance.bats`
-- **Dependencies:** Task 43
+- **Dependencies:** [Task 17, Task 40]
 - **LOC estimate:** ~80
 
 **Overview**
@@ -2706,10 +2367,7 @@ Harden the G24-F05 silent-fallback prose pins so they guard the contract's meani
   - Add release-level coverage in `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` proving the hardened vocab pins are in the phase acceptance path and the semantic negative cases trip the pin.
 
 - **Out:**
-  - Consolidating repeated `using-qrspi` per-H4 fail-loud prose — T22 owns the G24-F02 prose redundancy surface.
-  - Centralizing tier vocabulary regexes in a shared helper — T23 owns the G24-F04 tier-regex surface.
-  - Parameterizing dispatch-routing assertion callers — T42 owns the G24-F01 caller-duplication surface.
-  - Promoting H4 extraction into a shared bats helper — T43 owns the G24-F03 helper-deduplication surface and this task depends on it.
+  - Consolidating repeated `using-qrspi` per-H4 fail-loud prose, centralizing tier vocabulary regexes, parameterizing dispatch-routing assertion callers, or promoting H4 extraction into shared bats helpers — all four of these G24-F01/F02/F03/F04 surfaces are moot in v0.7.2 per design.md ## G24 (F01/F03 helpers and target files do not exist in current tree; F02 auto-resolves via CD-1; F04 absorbed into the G3/CD-1 dispatch rewrite).
   - Adding a new shared bats helper or utility for the regex pin pattern — explicit non-goal for this four-site surface.
   - Editing the dispatch-routing prose itself — upstream dispatch-routing tasks settle that prose; this task only hardens the pins against the settled wording.
 
