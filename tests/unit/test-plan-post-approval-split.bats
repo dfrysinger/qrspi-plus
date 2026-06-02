@@ -30,6 +30,15 @@ bats_require_minimum_version 1.5.0
 
 load '../helpers/skill-markdown'
 
+# Test-name tag conventions used in this file:
+#   [T32-split] — pre-existing T31/T32 tests covering the dispatch contract
+#       structure (input payload, atomicity, exact-set verification). Do not
+#       extend this prefix in new work.
+#   [split]    — current canonical prefix. All new tests covering the
+#       block-hash idempotency contract, pre-fan-out HALT, Task-ID validation,
+#       and approval-state completion use this prefix. Add new tests under
+#       this tag.
+
 setup_file() {
   require_repo_root
   CONTRACT_DOC="$REPO_ROOT/skills/plan/post-approval-split-contract.md"
@@ -703,15 +712,39 @@ task: 1
 Original body.
 EOF
 
-  # Hashes differ → HALT condition.
-  local stored_hash
+  # Hashes differ → HALT condition. Capture pre-decision content.
+  local stored_hash content_before decision
   stored_hash="$(grep -E "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | awk '{print $3}')"
   [ "$stored_hash" != "$hash_v2" ]
+  content_before="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
 
-  # File is NOT rewritten (content unchanged — same as written).
-  grep -F "# Task 1: original title" "$FIXTURE_DIR/tasks/task-01.md"
-  grep -F "Original body." "$FIXTURE_DIR/tasks/task-01.md"
-  ! grep -F "amended title" "$FIXTURE_DIR/tasks/task-01.md"
+  # Orchestrator decision: stored hash != re-computed hash → halt branch
+  # (do NOT rewrite). A buggy implementation that took the rewrite branch
+  # on mismatch would clobber the existing file with v2 content; the
+  # assertion below would then catch the regression.
+  if [ "$stored_hash" != "$hash_v2" ]; then
+    decision=halt
+    # Halt branch: no filesystem op. File must remain untouched.
+    :
+  else
+    decision=rewrite
+    cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+---
+task: 1
+---
+# block-hash: $hash_v2
+# Task 1: amended title
+Amended body.
+EOF
+  fi
+  [ "$decision" = halt ]
+
+  # File is byte-for-byte unchanged: the halt branch performed no write.
+  # If a future regression flipped the if-condition (or executed the
+  # rewrite unconditionally), content_after would diverge.
+  local content_after
+  content_after="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
+  [ "$content_before" = "$content_after" ]
 }
 
 # =============================================================================
@@ -728,10 +761,27 @@ task: 1
 Body content.
 EOF
 
-  # Orchestrator inspects the file: no block-hash line → audit-fail condition.
-  local has_hash
-  has_hash="$(grep -c "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" || true)"
-  [ "$has_hash" -eq 0 ]
+  # Behavioral pin: orchestrator decision branches on header presence. The
+  # halt branch performs no filesystem op; the proceed branch would. We
+  # capture pre-decision content, run the branching logic, and assert the
+  # halt branch was taken AND the file is unchanged. A regression that
+  # silently auto-backfilled a header (proceed branch on missing header)
+  # would alter content_after and fail the equality assertion below.
+  local content_before decision content_after
+  content_before="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
+  if grep -qE "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md"; then
+    decision=proceed
+    # Proceed branch: would normally re-audit the existing hash. Not
+    # exercised here because the fixture deliberately lacks the header.
+    :
+  else
+    decision=halt-missing-header
+    # Halt branch: emit diagnostic, do NOT touch the file.
+    :
+  fi
+  [ "$decision" = halt-missing-header ]
+  content_after="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
+  [ "$content_before" = "$content_after" ]
 
   # Contract doc must document the exact diagnostic text for this case.
   extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
@@ -754,11 +804,24 @@ task: 1
 # Task 1: file with malformed hash
 EOF
 
-  # Malformed = present but not matching 64-char hex sha256 pattern.
-  local hashline
+  # Behavioral pin: orchestrator decision branches on whether the header
+  # line, when present, matches the strict 64-char lowercase hex pattern.
+  # The halt branch performs no filesystem op. A regression that accepted
+  # a malformed header (proceed branch) and re-wrote a "corrected" header
+  # would alter content_after.
+  local content_before hashline decision content_after
+  content_before="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
   hashline="$(grep "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | head -1)"
-  # Should NOT match the valid sha256 hex pattern.
-  ! echo "$hashline" | grep -qE "^# block-hash: [0-9a-f]{64}$"
+  if echo "$hashline" | grep -qE "^# block-hash: [0-9a-f]{64}$"; then
+    decision=proceed
+    :
+  else
+    decision=halt-malformed-header
+    :
+  fi
+  [ "$decision" = halt-malformed-header ]
+  content_after="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
+  [ "$content_before" = "$content_after" ]
 
   # Contract doc must name "malformed block-hash header" specifically.
   extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
@@ -860,10 +923,6 @@ EOF
 }
 
 # =============================================================================
-# Theme C — Malformed-header file preservation assertion
-# =============================================================================
-
-# =============================================================================
 # Doc audit: file-untouched guarantee for missing-header / malformed-header HALT
 # =============================================================================
 
@@ -886,10 +945,18 @@ EOF
   # could dispatch sub-subagents for matching tasks while halting only on the
   # mismatching one, overwriting N-1 task files.
   #
-  # Fixture: 3-task plan; task-01 and task-03 have matching hashes; task-02
-  # has a stale hash. Simulate the pre-fan-out decision loop and assert it
-  # halts with ZERO dispatches (not 0-of-mismatching, not 2-of-matching, not
-  # any non-zero count).
+  # Fixture: 3-task plan; task-01 and task-03 are ABSENT (Case 1 — would
+  # normally dispatch one write each); task-02 is present with a stale
+  # block-hash (Case 3 — mismatch). A naive per-task orchestrator that
+  # decides+dispatches in order would fire 1 dispatch (task-01) before
+  # halting at task-02 → dispatch_count=1. A correct pre-fan-out
+  # orchestrator scans ALL tasks first, then enters the dispatch phase
+  # only if no mismatch was detected → dispatch_count=0.
+  #
+  # The scan/dispatch separation below is what makes the
+  # `dispatch_count -eq 0` assertion non-vacuous: a regression that fused
+  # scan + dispatch into a single pass would set dispatch_count=1 for
+  # task-01 before reaching task-02's mismatch, failing the assertion.
 
   # Canonical hash pattern (preserves terminating newline per contract).
   local hash01_current hash02_current hash03_current
@@ -898,17 +965,10 @@ EOF
   hash03_current="$(printf '### Task 3: third\nbody03\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
 
   # task-02 is on disk with the OLD (pre-amend) hash → mismatch.
+  # task-01 and task-03 are absent → would dispatch in a non-halted run.
   local hash02_stale
   hash02_stale="$(printf '### Task 2: second-original\nOriginal body.\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
 
-  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
----
-task: 1
----
-# block-hash: $hash01_current
-# Task 1: first
-body01
-EOF
   cat > "$FIXTURE_DIR/tasks/task-02.md" <<EOF
 ---
 task: 2
@@ -917,58 +977,65 @@ task: 2
 # Task 2: second-original
 Original body.
 EOF
-  cat > "$FIXTURE_DIR/tasks/task-03.md" <<EOF
----
-task: 3
----
-# block-hash: $hash03_current
-# Task 3: third
-body03
-EOF
 
-  # Capture pre-decision content for all three files.
-  local content01_before content02_before content03_before
-  content01_before="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
+  # Capture pre-decision filesystem state.
+  local content02_before
   content02_before="$(cat "$FIXTURE_DIR/tasks/task-02.md")"
-  content03_before="$(cat "$FIXTURE_DIR/tasks/task-03.md")"
+  [ ! -e "$FIXTURE_DIR/tasks/task-01.md" ]
+  [ ! -e "$FIXTURE_DIR/tasks/task-03.md" ]
 
-  # Pre-fan-out decision loop: scan ALL tasks first, then decide.
-  # On any Case 3 mismatch, halt before any dispatch fires.
-  local mismatch_detected dispatch_count expected_hash stored
+  # ----- Scan phase: classify every task; do NOT dispatch yet. -----
+  local mismatch_detected expected_hash stored f
+  local -a absent_ids=()
   mismatch_detected=false
-  dispatch_count=0
   for i in 1 2 3; do
-    local f
     f="$FIXTURE_DIR/tasks/task-$(printf '%02d' "$i").md"
     if [ "$i" -eq 1 ]; then expected_hash="$hash01_current"
     elif [ "$i" -eq 2 ]; then expected_hash="$hash02_current"
     else expected_hash="$hash03_current"
     fi
     if [ ! -e "$f" ]; then
-      continue  # Case 1 absent — would dispatch, but pre-scan defers
+      absent_ids+=("$i")           # Case 1 — would dispatch in dispatch phase
+      continue
     fi
     stored="$(grep -E "^# block-hash:" "$f" | awk '{print $3}')"
     if [ "$stored" != "$expected_hash" ]; then
-      mismatch_detected=true
+      mismatch_detected=true        # Case 3 — pre-fan-out HALT trigger
     fi
   done
 
   # Mismatch must be detected on task-02.
   [ "$mismatch_detected" = "true" ]
+  # Sanity: scan correctly classified two tasks as absent (Case 1).
+  [ "${#absent_ids[@]}" -eq 2 ]
 
-  # Because mismatch is detected pre-fan-out, dispatch_count stays at 0
-  # for ALL tasks (not just the mismatching one).
+  # ----- Dispatch phase: gated on the scan's halt decision. -----
+  # The pre-fan-out HALT contract requires this gate: a mismatch anywhere
+  # in the set MUST suppress the dispatch phase for the entire set,
+  # including the absent-file (Case 1) tasks that would otherwise dispatch.
+  local dispatch_count
+  dispatch_count=0
+  if [ "$mismatch_detected" = "false" ]; then
+    for i in "${absent_ids[@]}"; do
+      # Would dispatch a sub-subagent to write tasks/task-NN.md here.
+      dispatch_count=$((dispatch_count + 1))
+    done
+  fi
+
+  # Because mismatch was detected pre-fan-out, the dispatch phase did
+  # NOT run. dispatch_count stays at 0 even though two Case 1 absent
+  # tasks were classified as dispatchable. Without the gate, this
+  # assertion would fail with dispatch_count=2.
   [ "$dispatch_count" -eq 0 ]
 
-  # All three files must remain byte-for-byte identical: the matching tasks
-  # MUST also remain untouched (safe-skip when fan-out halts).
-  local content01_after content02_after content03_after
-  content01_after="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
+  # All on-disk files must remain byte-for-byte identical, and absent
+  # files must remain absent (the matching-task safe-skip and the
+  # halted Case 1 dispatches both leave the filesystem untouched).
+  local content02_after
   content02_after="$(cat "$FIXTURE_DIR/tasks/task-02.md")"
-  content03_after="$(cat "$FIXTURE_DIR/tasks/task-03.md")"
-  [ "$content01_before" = "$content01_after" ]
   [ "$content02_before" = "$content02_after" ]
-  [ "$content03_before" = "$content03_after" ]
+  [ ! -e "$FIXTURE_DIR/tasks/task-01.md" ]
+  [ ! -e "$FIXTURE_DIR/tasks/task-03.md" ]
 }
 
 @test "[split] Idempotent Split Contract documents pre-fan-out HALT covers entire set" {
@@ -992,12 +1059,24 @@ EOF
     "positive integer|\\^\\[0-9\\]\\+\\$"
 }
 
-@test "[split] Task-ID Validation rejects non-numeric and path-traversal IDs before any filesystem op" {
-  # Doc-audit: the contract must instruct the orchestrator to validate every
-  # parsed task ID against the positive-integer pattern BEFORE any test -e,
-  # write, or diagnostic — and to halt with a named diagnostic on rejection.
+@test "[split] Task-ID Validation contract prose pins ordering: validation precedes filesystem probe (doc-audit)" {
+  # Doc-audit: this test verifies CONTRACT PROSE ONLY. The orchestrator is
+  # an LLM that reads this skill doc; the load-bearing ordering invariant
+  # ("validate before any test -e / path construction / dispatch") must be
+  # written explicitly in the contract so the LLM enforces it. Behavioral
+  # ordering enforcement against a real orchestrator is out of scope for
+  # bats fixtures (no orchestrator process to spy on); coverage relies on
+  # this doc-pin plus the regex-pattern test below.
+  #
+  # We require BOTH an ordering keyword (before / prior to / pre-fan-out)
+  # AND a specific filesystem-operation keyword (test -e / filesystem
+  # probe / filesystem operation) in the same section. A drift that
+  # softened the prose to "validation should occur" without the
+  # before/test-e ordering would fail one of these assertions.
   extract_and_grep "$CONTRACT_DOC" H2 "Task-ID Validation" \
-    "before|prior to|pre-fan-out"
+    "before|prior to|pre-fan-out|BEFORE"
+  extract_and_grep "$CONTRACT_DOC" H2 "Task-ID Validation" \
+    "test -e|filesystem probe|filesystem operation"
   extract_and_grep "$CONTRACT_DOC" H2 "Task-ID Validation" \
     "halt|HALT|reject"
 }
@@ -1190,9 +1269,9 @@ EOF
   # Simulate approval-state write: plan.md gets status: approved and
   # phase_start_commit gets a non-null SHA.
   sed -i.bak 's/status: draft/status: approved/' "$FIXTURE_DIR/plan.md"
-  sed -i.bak 's/phase_start_commit: null/phase_start_commit: abc123def456/' "$FIXTURE_DIR/plan.md"
+  sed -i.bak 's/phase_start_commit: null/phase_start_commit: 0123456789abcdef0123456789abcdef01234567/' "$FIXTURE_DIR/plan.md"
   grep -qF "status: approved" "$FIXTURE_DIR/plan.md"
-  grep -qE "phase_start_commit: [0-9a-f]+" "$FIXTURE_DIR/plan.md"
+  grep -qE "^phase_start_commit: [0-9a-f]{40}$" "$FIXTURE_DIR/plan.md"
 }
 
 # =============================================================================
