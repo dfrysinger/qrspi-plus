@@ -357,6 +357,8 @@ _t7_make_mock_repo() {
   printf -- '---\ncodex_reviews: false\n---\n' > "$tmp/artifact-dir/config.md"
 
   # Mock dispatcher.  Drains stdin so the upstream pipe never blocks.
+  # If MOCK_TRANSPORT_JOB_ID is set, emits a JOB_ID= line to stdout first
+  # (consumed by the wrapper's JOB_ID capture loop).
   # If MOCK_TRANSPORT_STDOUT is set, writes it to stdout.  If
   # MOCK_TRANSPORT_STDERR is set, writes it to stderr.  Exits
   # MOCK_TRANSPORT_EXIT (default 0).
@@ -365,6 +367,9 @@ _t7_make_mock_repo() {
 #!/usr/bin/env bash
 # Mock run-third-party-llm.sh for T7 dispatch-surface tests.
 cat > /dev/null
+if [ -n "${MOCK_TRANSPORT_JOB_ID:-}" ]; then
+  printf 'JOB_ID=%s\n' "${MOCK_TRANSPORT_JOB_ID}"
+fi
 if [ -n "${MOCK_TRANSPORT_STDOUT:-}" ]; then
   printf '%s\n' "${MOCK_TRANSPORT_STDOUT}"
 fi
@@ -782,9 +787,10 @@ _t7_require_trusted_gh() {
 }
 
 # ---------------------------------------------------------------------------
-# T7 / TE10: Copilot CLI path — mocked task-tool dispatch exits 0 AND
-# captured stdout contains a distinguishable marker the mock emitted.
-# Exit-code-0-alone is insufficient proof.
+# T7 / TE10: Copilot CLI (first-party) path — dispatch exits 0, stdout carries
+# a DISPATCH_FILE= reference pointing at the assembled prompt file, and the
+# manifest records a first_party entry whose dispatch_spec.prompt_file matches
+# the stdout DISPATCH_FILE= value.
 # ---------------------------------------------------------------------------
 
 @test "[T7 / TE10] dispatch surface: Copilot CLI path — first-party dispatch exits 0, stdout carries DISPATCH_FILE= reference, and manifest records first_party entry" {
@@ -856,6 +862,7 @@ _t7_require_trusted_gh() {
   local dispatch_status=0
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI="" \
+    MOCK_TRANSPORT_JOB_ID="te11-job-id" \
     MOCK_TRANSPORT_STDOUT="$mock_marker" \
     MOCK_TRANSPORT_EXIT=0 \
     bash "$REPO_ROOT/scripts/run-codex-review.sh" \
@@ -1413,11 +1420,12 @@ _t8_write_finding_pair() {
   printf -- '---\ncodex_reviews: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
 
-  # Mock dispatcher: drains stdin, exits 0
+  # Mock dispatcher: drains stdin, emits JOB_ID to stdout, exits 0
   mkdir -p "$TMP_DIR/scripts"
   cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
+echo "JOB_ID=test-job-ac5"
 exit 0
 MOCK_EOF
   chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
@@ -1474,23 +1482,23 @@ MOCK_EOF
     || grep -qF "\"model\": \"$resolved_model\"" "$manifest" \
     || { echo "manifest model value does not match resolved dispatch model"; cat "$manifest"; return 1; }
 
-  # ---- T11 CD-1 provenance fields (dispatch_spec + job metadata) --------
-  # T11 extends the manifest entry with a nested dispatch_spec object and
+  # ---- CD-1 provenance fields (dispatch_spec + job metadata) --------
+  # Extends the manifest entry with a nested dispatch_spec object and
   # top-level job metadata fields (agent/mode/status).  Assert they are all
   # present and that dispatch_spec carries the expected keys.
   grep -q '"dispatch_spec"' "$manifest" \
-    || { echo "manifest missing T11 'dispatch_spec' object"; cat "$manifest"; return 1; }
+    || { echo "manifest missing 'dispatch_spec' object"; cat "$manifest"; return 1; }
   jq -e '.[0].dispatch_spec | type == "object"' "$manifest" >/dev/null \
     || { echo "manifest dispatch_spec is not an object"; cat "$manifest"; return 1; }
   jq -e '.[0].dispatch_spec | has("subagent_type") and has("host") and has("vendor") and has("model")' \
     "$manifest" >/dev/null \
     || { echo "dispatch_spec missing required keys (subagent_type/host/vendor/model)"; cat "$manifest"; return 1; }
   grep -q '"agent"' "$manifest" \
-    || { echo "manifest missing T11 top-level 'agent' field"; cat "$manifest"; return 1; }
+    || { echo "manifest missing top-level 'agent' field"; cat "$manifest"; return 1; }
   grep -q '"mode"' "$manifest" \
-    || { echo "manifest missing T11 top-level 'mode' field"; cat "$manifest"; return 1; }
+    || { echo "manifest missing top-level 'mode' field"; cat "$manifest"; return 1; }
   grep -q '"status"' "$manifest" \
-    || { echo "manifest missing T11 top-level 'status' field"; cat "$manifest"; return 1; }
+    || { echo "manifest missing top-level 'status' field"; cat "$manifest"; return 1; }
 
   # Greppability anchor: tag is retained for host × vendor × model × tag
   # joins. Pin its presence.
@@ -1502,16 +1510,18 @@ MOCK_EOF
 
 # ---------------------------------------------------------------------------
 # AC5+/AC9: dispatch-manifest entries are well-formed JSON objects with
-# EXACTLY the four contracted fields {tag, host, vendor, model} — no extra
-# (potentially injected) keys. Pinning shape this way prevents an attacker
-# (or a future regression) who controls a stringly-typed input like
+# EXACTLY the 8 contracted top-level fields {tag, agent, mode, status,
+# job_id, dispatch_spec, await_cmd, split_cmd} — no extra (potentially
+# injected) keys.  dispatch_spec has EXACTLY the 4 contracted nested fields
+# {subagent_type, host, vendor, model}.  Pinning shape this way prevents an
+# attacker (or a future regression) who controls a stringly-typed input like
 # --reviewer-tag or --model from forging additional audit fields by
 # embedding JSON-structural characters in the input. Combined with the
 # allowlist validation guards exercised by AC10/AC11 below, this gives
 # defense-in-depth: even if validation is later weakened, the
 # structural-shape assertion would still trip on key-count drift.
 # ---------------------------------------------------------------------------
-@test "[reviewer-model-audit AC9] dispatch-manifest entries are well-formed JSON objects with exactly tag/host/vendor/model keys (no extra/injected keys)" {
+@test "[reviewer-model-audit AC9] dispatch-manifest entries have exactly the 8 contracted top-level keys and dispatch_spec has exactly 4 nested keys (no extra/injected keys)" {
   local TMP_DIR
   TMP_DIR="$(mktemp -d)"
 
@@ -1532,6 +1542,7 @@ MOCK_EOF
   cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
+echo "JOB_ID=test-job-ac9"
 exit 0
 MOCK_EOF
   chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
@@ -1565,18 +1576,20 @@ MOCK_EOF
   jq -e 'type == "array" and length >= 1 and (.[0] | type == "object")' "$manifest" >/dev/null \
     || { echo "manifest is not an array of objects"; cat "$manifest"; return 1; }
 
-  # Each entry must carry the contracted top-level keys (T11 CD-1 schema).
+  # Each entry must carry EXACTLY the 8 contracted top-level keys (CD-1 schema).
   # Third-party entries: tag/agent/mode/status/job_id/dispatch_spec/await_cmd/split_cmd.
   jq -e 'all(.[]; has("tag") and has("agent") and has("mode") and has("status") and
-           has("job_id") and has("dispatch_spec") and has("await_cmd") and has("split_cmd"))' \
+           has("job_id") and has("dispatch_spec") and has("await_cmd") and has("split_cmd")
+           and (keys | length == 8))' \
     "$manifest" >/dev/null \
-    || { echo "manifest entry missing required T11 top-level keys"; cat "$manifest"; return 1; }
+    || { echo "manifest entry missing required top-level keys or has unexpected extra keys"; cat "$manifest"; return 1; }
 
-  # dispatch_spec must carry exactly subagent_type/host/vendor/model.
+  # dispatch_spec must carry EXACTLY subagent_type/host/vendor/model (4 nested keys).
   jq -e 'all(.[]; .dispatch_spec | type == "object" and
-           has("subagent_type") and has("host") and has("vendor") and has("model"))' \
+           has("subagent_type") and has("host") and has("vendor") and has("model")
+           and (keys | length == 4))' \
     "$manifest" >/dev/null \
-    || { echo "dispatch_spec missing or malformed (expected subagent_type/host/vendor/model)"; cat "$manifest"; return 1; }
+    || { echo "dispatch_spec missing or malformed (expected exactly subagent_type/host/vendor/model, no extra keys)"; cat "$manifest"; return 1; }
 
   # And the values must be the strings supplied at dispatch time.
   jq -e '.[0].tag == "spec-codex" and .[0].dispatch_spec.vendor == "openai-codex" and .[0].dispatch_spec.model == "gpt-5-codex-canary"' \
@@ -1745,6 +1758,7 @@ MOCK_EOF
   cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
+echo "JOB_ID=test-job-ac12"
 exit 0
 MOCK_EOF
   chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
@@ -2200,7 +2214,7 @@ _t9_simulate_verifier_sidecar_write() {
 # fields plus background job metadata (mode/status/agent/job_id/await_cmd/
 # split_cmd).  The mock dispatcher echoes a JOB_ID line to stdout so the
 # wrapper script can capture and persist it in the manifest.
-@test "[T11 dispatch-manifest AC1] third-party manifest entry has nested dispatch_spec plus mode/status/agent/job_id/await_cmd/split_cmd" {
+@test "[dispatch-manifest AC1] third-party manifest entry has nested dispatch_spec plus mode/status/agent/job_id/await_cmd/split_cmd" {
   local TMP_DIR
   TMP_DIR="$(mktemp -d)"
 
@@ -2286,11 +2300,11 @@ MOCK_EOF
   rm -rf "$TMP_DIR"
 }
 
-# T11 AC2 — first-party manifest entry: dispatch_spec carries prompt_file;
+# dispatch-manifest AC2 — first-party manifest entry: dispatch_spec carries prompt_file;
 # mode=first_party, status=dispatched.  Tests emit_first_party_manifest_entry
 # exposed via QRSPI_SOURCE_ONLY=1 sourcing so the shape is verifiable without
-# a full first-party dispatch infrastructure (T20 lands that).
-@test "[T11 dispatch-manifest AC2] first-party manifest entry has dispatch_spec with prompt_file, mode=first_party, status=dispatched" {
+# a full first-party dispatch infrastructure (will be added when dispatch-companion.sh ships).
+@test "[dispatch-manifest AC2] first-party manifest entry has dispatch_spec with prompt_file, mode=first_party, status=dispatched" {
   local TMP_DIR
   TMP_DIR="$(mktemp -d)"
 
@@ -2361,7 +2375,7 @@ MOCK_EOF
 # T11 AC3 — append safety: two successive invocations with different reviewer
 # tags against the same output directory produce a well-formed two-entry
 # manifest with all entries carrying dispatch_spec.
-@test "[T11 dispatch-manifest AC3] repeated invocations with multiple reviewer tags produce well-formed manifest with all dispatch_spec entries present" {
+@test "[dispatch-manifest AC3] repeated invocations with multiple reviewer tags produce well-formed manifest with all dispatch_spec entries present" {
   local TMP_DIR
   TMP_DIR="$(mktemp -d)"
 
@@ -2443,7 +2457,7 @@ MOCK_EOF
 # Uses a start-barrier pattern so all subshells hit _append_manifest_entry
 # simultaneously, maximising collision probability on the R-M-W path.
 # Requires the mkdir-as-mutex lock added by the F01 fix.
-@test "[T11 dispatch-manifest AC4] concurrent _append_manifest_entry invocations all survive (no lost-update race)" {
+@test "[dispatch-manifest AC4] concurrent _append_manifest_entry invocations all survive (no lost-update race)" {
   local TMP_DIR
   TMP_DIR="$(mktemp -d)"
 
@@ -2462,14 +2476,27 @@ MOCK_EOF
       export QRSPI_SOURCE_ONLY=1
       source "$REPO_ROOT/scripts/run-codex-review.sh"
       export OUTPUT_DIR="$OUTDIR"
+      # Signal that this subshell has sourced the script and is ready to proceed;
+      # touch AFTER source completes so the parent's count means subshells are
+      # actually at the spin-loop, not mid-source.
+      touch "$SYNC_FILE.ready.$i"
       # Spin until the barrier is released so all writers fire at once.
-      while [[ ! -f "$SYNC_FILE" ]]; do sleep 0.001; done
+      while [[ ! -f "$SYNC_FILE" ]]; do sleep 0.01; done
       _append_manifest_entry "{\"tag\":\"tag-$i\",\"mode\":\"test\",\"i\":$i}"
     ) &
   done
 
-  # Give all subshells time to source the script and reach the barrier.
-  sleep 0.3
+  # Wait until all N subshells have signalled readiness (with a 10-second
+  # deadline to prevent a hung test suite on loaded CI).
+  local _deadline
+  _deadline=$(( $(date +%s) + 10 ))
+  while (( $(ls "$SYNC_FILE".ready.* 2>/dev/null | wc -l) < N )); do
+    sleep 0.05
+    if (( $(date +%s) > _deadline )); then
+      echo "AC4 barrier setup timed out: only $(ls "$SYNC_FILE".ready.* 2>/dev/null | wc -l) of $N subshells ready" >&2
+      return 1
+    fi
+  done
   # Release the barrier — all N subshells proceed to _append_manifest_entry
   # simultaneously.
   touch "$SYNC_FILE"
@@ -2487,14 +2514,56 @@ MOCK_EOF
   rm -rf "$TMP_DIR"
 }
 
-# T11 AC5 — first-party dispatch path end-to-end: COPILOT_CLI=1 invokes the
+# ---------------------------------------------------------------------------
+# dispatch-manifest AC6: _append_manifest_entry handles a manifest file that
+# has a trailing newline after the closing bracket (e.g. `]\n`) — a common
+# artifact of text editors and some write patterns.  The old sed-based
+# implementation would fail to strip `]` and produce double-bracket garbage.
+# The jq-based implementation is immune: jq parses the whole file as JSON,
+# ignoring trailing whitespace.  This test guards the regression.
+# ---------------------------------------------------------------------------
+@test "[dispatch-manifest AC6] manifest append with trailing newline after closing bracket produces valid JSON" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+  local OUTDIR="$TMP_DIR/out"
+  mkdir -p "$OUTDIR"
+  local manifest="$OUTDIR/.dispatch-manifest.json"
+
+  # Pre-populate manifest with trailing newline after ']' — this is the
+  # pathological input that broke the sed-based implementation.
+  printf '[\n  {"tag":"initial","mode":"test"}\n]\n' > "$manifest"
+
+  # Source the script so we can call _append_manifest_entry directly.
+  (
+    export QRSPI_SOURCE_ONLY=1
+    source "$REPO_ROOT/scripts/run-codex-review.sh"
+    export OUTPUT_DIR="$OUTDIR"
+    _append_manifest_entry '{"tag":"second","mode":"test"}'
+  )
+
+  # Result must be valid JSON.
+  jq -e '.' "$manifest" >/dev/null \
+    || { echo "manifest is not well-formed JSON after trailing-newline append"; cat "$manifest"; return 1; }
+
+  # Result must be an array with exactly 2 entries.
+  jq -e 'type == "array" and length == 2' "$manifest" >/dev/null \
+    || { echo "manifest does not have exactly 2 entries after append"; cat "$manifest"; return 1; }
+
+  # Both entries must be present.
+  jq -e '.[0].tag == "initial" and .[1].tag == "second"' "$manifest" >/dev/null \
+    || { echo "manifest entries have wrong values after append"; cat "$manifest"; return 1; }
+
+  rm -rf "$TMP_DIR"
+}
+
+
 # script, stdout carries a DISPATCH_FILE= reference, and the manifest records a
 # first_party entry whose dispatch_spec.prompt_file matches the stdout reference.
 # This tests the dispatch entry point (not just the manifest-emission helper)
 # and verifies the orchestrator-facing payload stays a prompt-file reference.
 # Requires a trusted gh binary (same precondition as detect_host returning
 # 'copilot-cli') — skips when gh is absent or not in a trusted prefix.
-@test "[T11 dispatch-manifest AC5] first-party dispatch path: COPILOT_CLI=1 → DISPATCH_FILE= on stdout and first_party manifest entry with matching prompt_file" {
+@test "[dispatch-manifest AC5] first-party dispatch path: COPILOT_CLI=1 → DISPATCH_FILE= on stdout and first_party manifest entry with matching prompt_file" {
   _t7_require_trusted_gh
 
   local tmp

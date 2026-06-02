@@ -197,53 +197,160 @@ check_codex_available() {
 # emit_first_party_manifest_entry is callable via source-only mode in tests.
 # ---------------------------------------------------------------------------
 
+# _validate_output_dir <value> — allowlist-validate OUTPUT_DIR.
+# OUTPUT_DIR is interpolated into split_cmd stored in the manifest; downstream
+# consumers eval-expand that field.  Restrict to an absolute path containing
+# only characters safe in an unquoted shell word (letters, digits,
+# . _ / : @ -).  Called from the --output-dir parse case and also internally
+# before writing the manifest.
+_validate_output_dir() {
+  local v="$1"
+  if [[ -z "$v" ]]; then echo "error: OUTPUT_DIR is empty" >&2; exit 1; fi
+  if [[ "${v:0:1}" != "/" ]]; then echo "error: OUTPUT_DIR must be absolute: $v" >&2; exit 1; fi
+  if ! [[ "$v" =~ ^/[A-Za-z0-9_./:@-]+$ ]]; then
+    echo "error: OUTPUT_DIR contains disallowed characters: $v" >&2
+    exit 1
+  fi
+}
+
+# _validate_job_id <value> — allowlist-validate a captured JOB_ID.
+# JOB_ID is interpolated into await_cmd stored in the manifest; downstream
+# consumers eval-expand that field.  Restrict to characters safe in an
+# unquoted shell word.  Only called when the value is non-empty.
+_validate_job_id() {
+  local v="$1"
+  if [[ -z "$v" ]]; then echo "error: job_id is empty" >&2; exit 1; fi
+  if ! [[ "$v" =~ ^[A-Za-z0-9_:@.-]+$ ]]; then
+    echo "error: job_id contains disallowed characters: $v" >&2
+    exit 1
+  fi
+}
+
+# Script-level variable used by the _append_manifest_entry lock trap so the
+# trap string can reference a non-local path when the EXIT trap fires after
+# the function's stack frame has been torn down.  Lock is released by the
+# EXIT/INT/TERM trap; SIGKILL still leaves stale lock but the 30s mtime probe
+# will recover on next invocation.
+_manifest_lock_dir=""
+
 # _append_manifest_entry <entry-json> — shared atomic JSON array append.
-# Strips the trailing ']' from an existing manifest and re-appends so each
-# invocation adds exactly one entry.  Writes with a stable
-# trailing-bracket-on-its-own-line shape so subsequent appends are
-# deterministic.
+# Uses jq to parse and append so trailing-whitespace/newline variations in
+# the existing manifest file cannot corrupt the output shape.
 #
 # Concurrency safety: uses a portable mkdir-as-mutex so concurrent invocations
 # (e.g. multiple reviewer tags dispatched in the same wave) cannot interleave
 # their reads and writes.  mkdir is atomic on POSIX filesystems; only one
 # writer creates the lock dir at a time.  The loser spins with a 50 ms back-off
 # for up to 100 attempts (~5 s) before aborting with a diagnostic.
+# Lock is released by EXIT/INT/TERM trap; SIGKILL still leaves stale lock but
+# the 30s mtime probe will recover on next invocation.
+#
+# NOTE: This function explicitly disables set -e / set -E / set -T on entry
+# to isolate the lock mechanics from any inherited shell flags (e.g. bats
+# test infrastructure sets -eET on its subshells). The flags are restored
+# on return so callers are not affected.
 _append_manifest_entry() {
+  # Save and disable set -e/-E/-T so inherited flags from test harnesses (e.g.
+  # bats -eET) cannot cause premature exits or cause $? to mutate inside the
+  # lock mechanics or cause the rmdir cleanup to return non-0 to set -e.
+  local _saved_opts; _saved_opts="$(set +o | grep -E 'errexit|errtrace|functrace')"
+  set +eET
+
   local entry="$1"
   local manifest="$OUTPUT_DIR/.dispatch-manifest.json"
-  mkdir -p "$OUTPUT_DIR"
+  mkdir -p "$OUTPUT_DIR" || { echo "error: _append_manifest_entry: cannot create OUTPUT_DIR $OUTPUT_DIR" >&2; eval "$_saved_opts"; exit 1; }
   # Acquire the lock: try to create the lock directory; spin on failure.
   local _lock_dir="${manifest}.lock"
   local _lock_attempt=0
-  while ! mkdir "$_lock_dir" 2>/dev/null; do
+  while true; do
+    if mkdir "$_lock_dir" 2>/dev/null; then
+      # Record in a script-level variable so the EXIT trap string can
+      # reference it even after this function's stack frame is gone.
+      _manifest_lock_dir="$_lock_dir"
+      trap 'rmdir "$_manifest_lock_dir" 2>/dev/null || true' EXIT INT TERM
+      break
+    fi
+    # Stale-lock probe: if the lockdir is older than 30s, attempt to remove
+    # and retry rather than spinning indefinitely.  Use current time as fallback
+    # when stat fails (TOCTOU: lock dir just released) so _lock_age stays 0,
+    # avoiding a false-positive stale detection.
+    if [[ -d "$_lock_dir" ]]; then
+      local _now; _now=$(date +%s)
+      local _mtime; _mtime=$(stat -f %m "$_lock_dir" 2>/dev/null || stat -c %Y "$_lock_dir" 2>/dev/null || echo "$_now")
+      _lock_age=$(( _now - _mtime ))
+      if (( _lock_age > 30 )); then
+        rmdir "$_lock_dir" 2>/dev/null || true
+        # Retry mkdir on next loop iteration.
+        continue
+      fi
+    fi
     _lock_attempt=$((_lock_attempt + 1))
     if (( _lock_attempt >= 100 )); then
       echo "error: _append_manifest_entry: could not acquire lock at ${_lock_dir} after 100 attempts" >&2
+      eval "$_saved_opts"
       exit 1
     fi
     sleep 0.05
   done
-  local tmp="${manifest}.tmp.$$"
+  # Use $BASHPID (actual subshell PID) if available (bash 4+), else fall back to
+  # $$ (parent PID on bash 3.x).  Subshell-unique tmp names prevent corruption
+  # even if the lock somehow breaks; with set +e above the lock is reliable.
+  local tmp="${manifest}.tmp.${BASHPID:-$$}"
   if [[ -f "$manifest" ]]; then
-    sed '$ s/\]$//' "$manifest" > "$tmp"
-    printf ',\n  %s\n]\n' "$entry" >> "$tmp"
+    if ! jq --argjson new "$entry" '. + [$new]' "$manifest" > "$tmp"; then
+      echo "error: _append_manifest_entry: jq append failed" >&2
+      rm -f "$tmp"
+      trap - EXIT INT TERM
+      rmdir "$_lock_dir" 2>/dev/null || true
+      eval "$_saved_opts"
+      exit 1
+    fi
   else
-    printf '[\n  %s\n]\n' "$entry" > "$tmp"
+    if ! jq -n --argjson new "$entry" '[$new]' > "$tmp"; then
+      echo "error: _append_manifest_entry: jq init failed" >&2
+      rm -f "$tmp"
+      trap - EXIT INT TERM
+      rmdir "$_lock_dir" 2>/dev/null || true
+      eval "$_saved_opts"
+      exit 1
+    fi
   fi
-  mv "$tmp" "$manifest"
-  # Release the lock.
-  rmdir "$_lock_dir"
+  # Validate output is parseable JSON array before clobbering.
+  if ! jq -e 'type == "array"' "$tmp" > /dev/null; then
+    echo "error: _append_manifest_entry: produced non-array output" >&2
+    rm -f "$tmp"
+    trap - EXIT INT TERM
+    rmdir "$_lock_dir" 2>/dev/null || true
+    eval "$_saved_opts"
+    exit 1
+  fi
+  if ! mv "$tmp" "$manifest"; then
+    echo "error: _append_manifest_entry: mv failed" >&2
+    rm -f "$tmp"
+    trap - EXIT INT TERM
+    rmdir "$_lock_dir" 2>/dev/null || true
+    eval "$_saved_opts"
+    exit 1
+  fi
+  # Release the lock and disarm the trap.
+  trap - EXIT INT TERM
+  rmdir "$_lock_dir" 2>/dev/null || true
+  eval "$_saved_opts"
 }
 
-# emit_dispatch_manifest_entry <job_id> — write a third-party/background
-# entry.  The dispatch_spec object carries subagent_type/host/vendor/model;
-# top-level fields carry mode=background, status=pending, agent, job_id,
-# await_cmd, split_cmd.  jq --arg provides unconditional JSON string escaping
-# (defense-in-depth alongside the argument-parse allowlist validators).
+# emit_dispatch_manifest_entry <job_id> [status] — write a third-party/
+# background entry.  The dispatch_spec object carries
+# subagent_type/host/vendor/model; top-level fields carry mode=background,
+# status (default "pending"), agent, job_id, await_cmd, split_cmd.
+# Pass status="failed" on the failure path so the manifest is auditable even
+# when the dispatcher exits non-zero.
+# jq --arg provides unconditional JSON string escaping (defense-in-depth
+# alongside the argument-parse allowlist validators).
 # The explicit jq-failure guard makes a missing or broken jq loud and aborts
 # before any tmp-file write, preventing silent manifest corruption.
 emit_dispatch_manifest_entry() {
   local job_id="${1:-}"
+  local status="${2:-pending}"
   local detected_host
   detected_host="$(detect_host)"
   local agent_name
@@ -253,7 +360,7 @@ emit_dispatch_manifest_entry() {
     --arg tag       "$REVIEWER_TAG" \
     --arg agent     "$agent_name" \
     --arg mode      "background" \
-    --arg status    "pending" \
+    --arg status    "$status" \
     --arg job_id    "$job_id" \
     --arg subtype   "$agent_name" \
     --arg host      "$detected_host" \
@@ -272,8 +379,8 @@ emit_dispatch_manifest_entry() {
 # first-party/dispatched entry.  The dispatch_spec object carries
 # subagent_type/host/vendor/model/prompt_file; top-level fields carry
 # mode=first_party, status=dispatched, agent.  Callable via
-# QRSPI_SOURCE_ONLY=1 for schema-shape acceptance testing before T20 lands
-# the full first-party dispatch path in scripts/dispatch-agent.sh.
+# QRSPI_SOURCE_ONLY=1 for schema-shape acceptance testing before the full
+# first-party dispatch path ships in scripts/dispatch-agent.sh.
 emit_first_party_manifest_entry() {
   local prompt_file="${1:-}"
   local vendor="${2:-claude}"
@@ -330,7 +437,10 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       REVIEWER_TAG="$2"; shift 2 ;;
-    --output-dir)     require_value "--output-dir"   "$#"; OUTPUT_DIR="$2"; shift 2 ;;
+    --output-dir)
+      require_value "--output-dir" "$#"
+      _validate_output_dir "$2"
+      OUTPUT_DIR="$2"; shift 2 ;;
     --round)          require_value "--round"        "$#"; ROUND="$2"; shift 2 ;;
     --model)
       require_value "--model" "$#"
@@ -780,17 +890,24 @@ fi
 # to run-third-party-llm.sh.  Capture the dispatcher's stdout to extract a
 # JOB_ID line if present.  After a successful dispatch, persist the manifest
 # entry with the captured job_id.  Exit code is propagated unchanged from
-# the transport; on non-zero we still persist the manifest so the round's
-# attempted dispatch is auditable.
+# the transport; on non-zero we persist a "failed" manifest entry so the
+# round's attempted dispatch is auditable.
 if [[ "$_detected_host" == "copilot-cli" ]]; then
   echo "[transport: task-tool]" >&2
   # First-party dispatch: write assembled prompt to a .dispatch/ file so the
   # orchestrator can reference it via DISPATCH_FILE= without embedding the
   # prompt body in its tool-call arguments (per design.md CD-1 PATH A).
   _fp_dispatch_dir="$OUTPUT_DIR/.dispatch"
-  mkdir -p "$_fp_dispatch_dir"
+  mkdir -p "$_fp_dispatch_dir" || { echo "error: cannot create dispatch dir $_fp_dispatch_dir" >&2; exit 1; }
   _fp_prompt_file="$_fp_dispatch_dir/$REVIEWER_TAG.prompt"
-  compose_prompt > "$_fp_prompt_file"
+  # Remove any pre-existing symlink at the prompt path before writing so an
+  # attacker-planted symlink cannot redirect the write to an arbitrary target.
+  rm -f "$_fp_prompt_file"
+  if ! compose_prompt > "$_fp_prompt_file"; then
+    rm -f "$_fp_prompt_file"
+    echo "error: compose_prompt failed for first-party dispatch" >&2
+    exit 1
+  fi
   # Emit the orchestrator-facing DISPATCH_FILE reference to stdout.
   printf 'DISPATCH_FILE=%s\n' "$_fp_prompt_file"
   emit_first_party_manifest_entry "$_fp_prompt_file"
@@ -800,12 +917,12 @@ fi
 echo "[transport: shell-pipeline]" >&2
 
 # Third-party (shell-pipeline) dispatch path.
-# Capture the dispatcher's stdout to extract a JOB_ID line if present
-# (T20's dispatch-companion.sh will emit one; pre-T20 the existing
-# run-third-party-llm.sh may or may not).  After a successful dispatch,
-# persist the manifest entry with the captured job_id.
-# Exit code is propagated unchanged from the transport; on non-zero we still
-# persist the manifest so the round's attempted dispatch is auditable.
+# Capture the dispatcher's stdout to extract a JOB_ID line if present.
+# A future dispatch-companion.sh will emit JOB_ID; current dispatchers may
+# not, in which case a missing JOB_ID on success is treated as a dispatcher
+# bug and the script fails loud.
+# On dispatch failure (non-zero exit), persist a "failed" manifest entry so
+# the round's attempted dispatch is auditable, then propagate the exit code.
 _dispatch_stdout=""
 _dispatch_exit=0
 _dispatch_stdout="$( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )" \
@@ -827,5 +944,18 @@ if [[ -n "$_dispatch_stdout" ]]; then
   done <<< "$_dispatch_stdout"
 fi
 
-emit_dispatch_manifest_entry "$_job_id"
-exit "$_dispatch_exit"
+if [[ "$_dispatch_exit" -ne 0 ]]; then
+  # Dispatch failed: persist a "failed" audit entry so the round is auditable,
+  # then propagate the non-zero exit code.
+  emit_dispatch_manifest_entry "" "failed"
+  exit "$_dispatch_exit"
+fi
+
+if [[ -z "$_job_id" ]]; then
+  echo "error: dispatcher exited 0 but emitted no JOB_ID" >&2
+  exit 1
+fi
+
+_validate_job_id "$_job_id"
+emit_dispatch_manifest_entry "$_job_id" "pending"
+exit 0
