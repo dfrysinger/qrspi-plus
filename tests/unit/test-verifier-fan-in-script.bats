@@ -389,3 +389,78 @@ EOF
   # grep -q exits 0 on match (bad), 1 on no match (good).
   ! grep -qE '\bG[0-9]+\b' "$script"
 }
+
+# ===========================================================================
+# Round-02 review fixes
+# ===========================================================================
+
+# --- R2 fix 1: integer overflow bypass (security-claude R2-F01) -----------
+# Bash $(()) wraps modulo 2^64; a 19-digit score string that overflows 64-bit
+# arithmetic bypasses the >100 ceiling check.
+# Fix: regex cap at 3 digits (max valid score 100 has 3 digits).
+
+@test "R2 fix 1: score with > 3 digits is rejected as score_unparseable" {
+  local f1
+  f1=$(write_finding "$ROUND" qc 01 F01 style)
+  write_sidecar "$f1" "18446744073709551706"
+
+  run "$SCRIPT" "$ROUND"
+  [ "$status" -ne 0 ]
+  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
+  [[ "$output" == "score_unparseable" ]]
+}
+
+# --- R2 fix 2: sidecar readability guard (silent-failure-claude R2-F01) ---
+# If sidecar exists but is unreadable (chmod 000), awk/extract silently fails
+# and the script records score_unparseable.  Fix: explicit readability check.
+
+@test "R2 fix 2: unreadable sidecar records halt cause sidecar_unreadable" {
+  local f1
+  f1=$(write_finding "$ROUND" qc 01 F01 style)
+  write_sidecar "$f1" 90
+  chmod 000 "${f1%.md}.score.md"
+
+  run "$SCRIPT" "$ROUND"
+  [ "$status" -ne 0 ]
+  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
+  [[ "$output" == "sidecar_unreadable" ]]
+}
+
+@test "R2 fix 2: unreadable sidecar emits cannot-read message to stderr" {
+  local f1
+  f1=$(write_finding "$ROUND" qc 01 F01 style)
+  write_sidecar "$f1" 90
+  chmod 000 "${f1%.md}.score.md"
+
+  run "$SCRIPT" "$ROUND"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cannot read sidecar"* || "$stderr" == *"cannot read sidecar"* ]]
+}
+
+# --- R2 fix 3: halt-cause misattribution for unreadable finding -----------
+# The R1 fix recorded missing_change_type when the finding file was unreadable.
+# missing_change_type means "frontmatter omits change_type:"; wrong root cause.
+# Fix: record finding_unreadable for I/O permission errors on finding files.
+
+@test "R2 fix 3: unreadable finding file records halt cause finding_unreadable" {
+  local f1
+  f1=$(write_finding "$ROUND" qc 01 F01 style)
+  write_sidecar "$f1" 90
+  chmod 000 "$f1"
+
+  run "$SCRIPT" "$ROUND"
+  [ "$status" -ne 0 ]
+  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
+  [[ "$output" == "finding_unreadable" ]]
+}
+
+@test "R2 fix 3: unreadable finding file still emits cannot-read message to stderr" {
+  local f1
+  f1=$(write_finding "$ROUND" qc 01 F01 style)
+  write_sidecar "$f1" 90
+  chmod 000 "$f1"
+
+  run "$SCRIPT" "$ROUND"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cannot read"* || "$stderr" == *"cannot read"* ]]
+}

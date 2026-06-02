@@ -32,7 +32,9 @@
 #   change_type_out_of_enum    — value present but not in CHANGE_TYPE_ENUM
 #   missing_sidecar            — no <stem>.score.* file found
 #   sidecar_wrong_extension    — sidecar exists at wrong extension (e.g. .score.yml)
-#   score_unparseable          — sidecar present but `score:` absent or non-integer
+#   sidecar_unreadable         — sidecar file exists but cannot be read (permission/I/O error)
+#   score_unparseable          — sidecar present but `score:` absent or not 1–3 decimal digits
+#   finding_unreadable         — finding file exists but cannot be read (permission/I/O error)
 
 set -euo pipefail
 
@@ -198,7 +200,7 @@ for finding in "${FINDINGS[@]}"; do
   if [[ ! -r "$finding" ]]; then
     echo "verifier-fan-in: cannot read finding file: $finding" >&2
     fid="${finding##*/}"; fid="${fid%.md}"
-    record_halt "$fid" missing_change_type
+    record_halt "$fid" finding_unreadable
     continue
   fi
 
@@ -232,12 +234,21 @@ for finding in "${FINDINGS[@]}"; do
     continue
   fi
 
+  # Readability check: a permission or I/O error on the sidecar must be
+  # reported with a distinct cause — not collapsed into score_unparseable.
+  if [[ ! -r "$sidecar" ]]; then
+    echo "verifier-fan-in: cannot read sidecar file: $sidecar" >&2
+    record_halt "$fid" sidecar_unreadable
+    continue
+  fi
+
   # 3. score must be a parseable decimal integer 0..100
   # Use 10# prefix to force decimal interpretation: a bare $((070)) would be
   # treated as octal 56 by bash; $((089)) crashes under set -e.  The regex
-  # allows only non-negative values (scores are always 0-100).
+  # caps at 3 digits to prevent integer-overflow bypass: an attacker could
+  # craft a 19-digit string that wraps modulo 2^64 back into the valid range.
   raw_score=$(extract_frontmatter_field "$sidecar" score || true)
-  if [[ -z "${raw_score:-}" ]] || ! [[ "$raw_score" =~ ^[0-9]+$ ]]; then
+  if [[ -z "${raw_score:-}" ]] || ! [[ "$raw_score" =~ ^[0-9]{1,3}$ ]]; then
     record_halt "$fid" score_unparseable
     continue
   fi
