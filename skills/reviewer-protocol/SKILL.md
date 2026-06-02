@@ -54,6 +54,10 @@ Every reviewer dispatch (Claude reviewer, scope reviewer, plan-family reviewers,
 
 Every reviewer finding (Claude reviewer, scope-reviewer, Codex reviewer) is a structured object with exactly five fields. Reviewers MUST emit findings in this shape — the review-loop pause gate dispatches on these fields and a finding that omits a field is malformed.
 
+**Required reviewer frontmatter field name.** The classifier value MUST be emitted under the key `change_type:` — that exact field name. The reviewer protocol does NOT accept any synonym or alias (in particular, `category:` is NOT recognized; reviewers that emit `category:` instead of `change_type:` produce malformed findings). Centralizing the field name on `change_type:` lets the verifier fan-in, scope-tagger, and pause-gate dispatcher route findings deterministically without per-reviewer field-name negotiation.
+
+**Loud-failure on missing `change_type:`.** When a finding's frontmatter lacks the required `change_type:` field, the schema guard halts with a named cause that explicitly names the missing `change_type:` field — it does not silently accept the finding, silently drop it, or default-route it to any change-type bucket. The named-cause halt surfaces field-name drift (e.g. a reviewer emitting legacy `category:`) at the verifier fan-in step rather than letting it leak into pause-gate routing.
+
 - **`finding_id`** — string. Stable identifier for the finding within the current review round (e.g. `R3-F02` for round 3 finding 02). Used to thread responses across rounds and across the pause-gate UI.
 - **`severity`** — one of `low`, `medium`, `high`. Reviewer-assigned magnitude. The pause gate does NOT dispatch on severity — it dispatches on `change_type`. Severity is shown to the user for prioritization within a round.
 - **`change_type`** — one of `style`, `clarity`, `correctness`, `scope`, `intent`. The classifier value (see `## Change-Type Classifier` below). Default action of the review loop depends on this field: `style`, `clarity`, `correctness` auto-apply; `scope` and `intent` pause for the user.
