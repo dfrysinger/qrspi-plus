@@ -55,14 +55,25 @@ setup() {
 # default-routed.
 # ---------------------------------------------------------------------------
 
-# Mirror of the schema-guard contract documented in
-# skills/reviewer-protocol/SKILL.md ## Finding Schema. Returns 0 and prints
-# the routed change_type on a well-formed finding; returns non-zero with a
-# named-cause diagnostic on missing change_type.
-_partition_finding() {
+# _test_mirror_partition_finding — test-local mirror of the schema-guard
+# contract documented in skills/reviewer-protocol/SKILL.md ## Finding Schema.
+# The production schema guard that enforces this contract is added in T05
+# (scripts/verifier-fan-in.sh); until T05 lands, these tests pin only the
+# contract shape, not its enforcement in production routing.
+#
+# Returns 0 and prints the routed change_type on a well-formed finding;
+# returns non-zero with a named-cause diagnostic on missing change_type.
+# Parsing is restricted to the frontmatter block (between the first two
+# `---` markers) so a `change_type:` token appearing only in body prose
+# does not falsely route a frontmatter-malformed finding.
+_test_mirror_partition_finding() {
   local f="$1"
   local ct
-  ct=$(awk -F': *' '/^change_type:/ {print $2; exit}' "$f")
+  ct=$(awk -F': *' '
+    BEGIN { in_fm = 0; fm_count = 0 }
+    /^---$/ { fm_count++; in_fm = (fm_count == 1); next }
+    in_fm && /^change_type:/ { print $2; exit }
+  ' "$f")
   if [[ -z "$ct" ]]; then
     echo "schema-guard: missing required field 'change_type:' in $f" >&2
     return 2
@@ -70,7 +81,7 @@ _partition_finding() {
   echo "$ct"
 }
 
-@test "schema guard halts with named cause when change_type is missing (legacy category-only finding)" {
+@test "schema guard halts with named cause when change_type is missing (legacy category-only finding) (test-mirror)" {
   local fixture=tests/fixtures/change-type-required/round-01/legacy-category-claude.finding-F01.md
   [[ -f "$fixture" ]] || { echo "fixture missing: $fixture"; return 1; }
 
@@ -84,8 +95,8 @@ _partition_finding() {
   # change_type printed on stdout) — i.e. neither silently accepted, silently
   # dropped, nor default-routed.
   local out err rc
-  out=$(_partition_finding "$fixture" 2>/tmp/ct-stderr-$$.log) && rc=0 || rc=$?
-  err=$(cat /tmp/ct-stderr-$$.log); rm -f /tmp/ct-stderr-$$.log
+  out=$(_test_mirror_partition_finding "$fixture" 2>"$BATS_TEST_TMPDIR/ct-stderr.log") && rc=0 || rc=$?
+  err=$(cat "$BATS_TEST_TMPDIR/ct-stderr.log")
 
   [[ "$rc" -ne 0 ]] || { echo "expected non-zero exit, got 0 (silent acceptance)"; return 1; }
   [[ -z "$out" ]] || { echo "expected no routed change_type on stdout, got: $out"; return 1; }
@@ -93,12 +104,12 @@ _partition_finding() {
     || { echo "expected named missing-field diagnostic, got: $err"; return 1; }
 }
 
-@test "well-formed change_type finding is accepted and routed by that field name" {
+@test "well-formed change_type finding is accepted and routed by that field name (test-mirror)" {
   local fixture=tests/fixtures/change-type-required/round-01/well-formed-claude.finding-F02.md
   [[ -f "$fixture" ]] || { echo "fixture missing: $fixture"; return 1; }
 
   local out rc
-  out=$(_partition_finding "$fixture" 2>/dev/null) && rc=0 || rc=$?
+  out=$(_test_mirror_partition_finding "$fixture" 2>/dev/null) && rc=0 || rc=$?
   [[ "$rc" -eq 0 ]] || { echo "expected acceptance, got rc=$rc"; return 1; }
   [[ "$out" == "scope" ]] || { echo "expected route by change_type=scope, got: $out"; return 1; }
 }
@@ -148,7 +159,7 @@ _partition_finding() {
   )
   local f
   for f in "${scope[@]}"; do
-    [[ -f "$f" ]] || continue
+    [[ -f "$f" ]] || { echo "scope audit: required file missing: $f" >&2; return 1; }
     # Match a frontmatter-style field at column zero. The legacy-drift
     # fixture is intentionally excluded — it is the negative test input,
     # not a valid example.
