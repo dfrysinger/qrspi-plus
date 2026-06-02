@@ -190,6 +190,96 @@ check_codex_available() {
   esac
 }
 
+# ---------------------------------------------------------------------------
+# Dispatch manifest persistence — per-dispatch provenance + job metadata
+# under <round-dir>/.dispatch-manifest.json (CD-1 dispatch-manifest schema,
+# structure.md §10).  Defined before the QRSPI_SOURCE_ONLY source guard so
+# emit_first_party_manifest_entry is callable via source-only mode in tests.
+# ---------------------------------------------------------------------------
+
+# _append_manifest_entry <entry-json> — shared atomic JSON array append.
+# Strips the trailing ']' from an existing manifest and re-appends so each
+# invocation adds exactly one entry.  Writes with a stable
+# trailing-bracket-on-its-own-line shape so subsequent appends are
+# deterministic.
+_append_manifest_entry() {
+  local entry="$1"
+  local manifest="$OUTPUT_DIR/.dispatch-manifest.json"
+  mkdir -p "$OUTPUT_DIR"
+  local tmp="${manifest}.tmp.$$"
+  if [[ -f "$manifest" ]]; then
+    sed '$ s/\]$//' "$manifest" > "$tmp"
+    printf ',\n  %s\n]\n' "$entry" >> "$tmp"
+  else
+    printf '[\n  %s\n]\n' "$entry" > "$tmp"
+  fi
+  mv "$tmp" "$manifest"
+}
+
+# emit_dispatch_manifest_entry <job_id> — write a third-party/background
+# entry.  The dispatch_spec object carries subagent_type/host/vendor/model;
+# top-level fields carry mode=background, status=pending, agent, job_id,
+# await_cmd, split_cmd.  jq --arg provides unconditional JSON string escaping
+# (defense-in-depth alongside the argument-parse allowlist validators).
+# The explicit jq-failure guard makes a missing or broken jq loud and aborts
+# before any tmp-file write, preventing silent manifest corruption.
+emit_dispatch_manifest_entry() {
+  local job_id="${1:-}"
+  local detected_host
+  detected_host="$(detect_host)"
+  local agent_name
+  agent_name="$(basename "${AGENT_FILE%.md}")"
+  local entry
+  entry="$(jq -nc \
+    --arg tag       "$REVIEWER_TAG" \
+    --arg agent     "$agent_name" \
+    --arg mode      "background" \
+    --arg status    "pending" \
+    --arg job_id    "$job_id" \
+    --arg subtype   "$agent_name" \
+    --arg host      "$detected_host" \
+    --arg vendor    "openai-codex" \
+    --arg model     "$MODEL" \
+    --arg await_cmd "scripts/run-third-party-llm.sh await $job_id" \
+    --arg split_cmd "scripts/codex-finding-splitter.sh --round-dir $OUTPUT_DIR --tag $REVIEWER_TAG" \
+    '{tag: $tag, agent: $agent, mode: $mode, status: $status, job_id: $job_id,
+      dispatch_spec: {subagent_type: $subtype, host: $host, vendor: $vendor, model: $model},
+      await_cmd: $await_cmd, split_cmd: $split_cmd}')" \
+    || { echo "error: jq failed building dispatch-manifest entry (jq exit $?)" >&2; exit 1; }
+  _append_manifest_entry "$entry"
+}
+
+# emit_first_party_manifest_entry <prompt_file> [vendor] [model] — write a
+# first-party/dispatched entry.  The dispatch_spec object carries
+# subagent_type/host/vendor/model/prompt_file; top-level fields carry
+# mode=first_party, status=dispatched, agent.  Callable via
+# QRSPI_SOURCE_ONLY=1 for schema-shape acceptance testing before T20 lands
+# the full first-party dispatch path in scripts/dispatch-agent.sh.
+emit_first_party_manifest_entry() {
+  local prompt_file="${1:-}"
+  local vendor="${2:-claude}"
+  local fp_model="${3:-${MODEL:-}}"
+  local detected_host
+  detected_host="$(detect_host)"
+  local agent_name
+  agent_name="$(basename "${AGENT_FILE%.md}")"
+  local entry
+  entry="$(jq -nc \
+    --arg tag     "$REVIEWER_TAG" \
+    --arg agent   "$agent_name" \
+    --arg mode    "first_party" \
+    --arg status  "dispatched" \
+    --arg subtype "$agent_name" \
+    --arg host    "$detected_host" \
+    --arg vendor  "$vendor" \
+    --arg model   "$fp_model" \
+    --arg pf      "$prompt_file" \
+    '{tag: $tag, agent: $agent, mode: $mode, status: $status,
+      dispatch_spec: {subagent_type: $subtype, host: $host, vendor: $vendor, model: $model, prompt_file: $pf}}')" \
+    || { echo "error: jq failed building first-party manifest entry (jq exit $?)" >&2; exit 1; }
+  _append_manifest_entry "$entry"
+}
+
 # Source guard: when QRSPI_SOURCE_ONLY=1, return after loading function
 # definitions so that function-isolation tests can source this file and call
 # detect_host / check_codex_available directly without triggering argument
@@ -570,78 +660,6 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
-# ---------------------------------------------------------------------------
-# Dispatch manifest persistence — record host/vendor/resolved-model metadata
-# per dispatch entry under <round-dir>/.dispatch-manifest.json so that every
-# dispatch is greppable by host × vendor × model after the fact. The
-# manifest 'model' value is the same resolved value reviewers are instructed
-# to copy as the audit field carried in finding/clean-sentinel frontmatter.
-# Atomic-mv pattern (no flock); idempotent across re-runs of the same
-# round/tag pair (each invocation appends one entry).
-# ---------------------------------------------------------------------------
-
-emit_dispatch_manifest_entry() {
-  local round_dir="$OUTPUT_DIR"
-  local manifest="$round_dir/.dispatch-manifest.json"
-  local detected_host
-  detected_host="$(detect_host)"
-
-  # JSON entry constructed via jq (defense-in-depth: jq --arg performs
-  # unconditional JSON string escaping, so the produced object is
-  # well-formed regardless of input content). The vendor is fixed to
-  # 'openai-codex' for this script; the post-rename dispatch script
-  # (scripts/dispatch-agent.sh) handles multi-vendor entries via
-  # _resolve-lib.sh.
-  #
-  # T09 scope: record ONLY host/vendor/model — the resolved
-  # provenance triple needed to close the host × vendor × model audit loop
-  # against finding/clean-sentinel actual_model values. The greppability
-  # anchor `tag` is retained to enable host × vendor × model × tag joins.
-  # The downstream G3 task (T11) owns the wider provenance schema —
-  # subagent_type / agent / mode / status / nested dispatch_spec — and is
-  # responsible for landing those fields once the rename + multi-vendor
-  # dispatcher are in place. Emitting them here would pre-load T11 scope
-  # and is explicitly out-of-scope per task-09.md line 32.
-  #
-  # T09 R2: build the JSON entry with jq rather than concatenating values
-  # into a printf format string. Even though the argument-parse validators
-  # above already restrict --reviewer-tag and --model to safe grammars,
-  # jq is already a documented dependency of this codebase (see
-  # scripts/verifier-fan-in.sh).
-  #
-  # T09 R3: this script intentionally runs without `set -e`, so the jq
-  # command substitution must be guarded explicitly — otherwise a missing
-  # or failing jq would leave $entry="" and the script would proceed to
-  # write a malformed manifest, atomically replacing any valid prior
-  # manifest with corruption (the very property T09 exists to protect).
-  # The `|| { ... exit 1; }` guard makes the failure loud and aborts
-  # before the tmp-file write below.
-  local entry
-  entry="$(jq -nc \
-    --arg tag    "$REVIEWER_TAG" \
-    --arg host   "$detected_host" \
-    --arg vendor "openai-codex" \
-    --arg model  "$MODEL" \
-    '{tag: $tag, host: $host, vendor: $vendor, model: $model}')" \
-    || { echo "error: jq failed building dispatch-manifest entry (jq exit $?)" >&2; exit 1; }
-
-  mkdir -p "$round_dir"
-  local tmp="${manifest}.tmp.$$"
-  if [[ -f "$manifest" ]]; then
-    # Replace the trailing ']' on the last line with ',\n  <entry>\n]' to
-    # append into the existing JSON array. The script writes the manifest
-    # with a stable trailing-bracket-on-its-own-line shape so this sed
-    # transformation is deterministic across re-runs.
-    sed '$ s/\]$//' "$manifest" > "$tmp"
-    printf ',\n  %s\n]\n' "$entry" >> "$tmp"
-  else
-    printf '[\n  %s\n]\n' "$entry" > "$tmp"
-  fi
-  mv "$tmp" "$manifest"
-}
-
-emit_dispatch_manifest_entry
-
 DISPATCHER="$REPO_ROOT/scripts/run-third-party-llm.sh"
 if [[ ! -x "$DISPATCHER" && ! -r "$DISPATCHER" ]]; then
   echo "error: run-third-party-llm.sh not found at $DISPATCHER" >&2
@@ -729,17 +747,38 @@ if [[ "$_codex_available" == "false" && "$_codex_reviews" == "true" ]]; then
   exit "$_check_exit"
 fi
 
-# Emit the transport marker and dispatch.  Exit code is propagated unchanged
-# from the transport; no suppression, no log-and-continue.  Each dispatch
-# pipeline runs in a subshell with set -o pipefail so that a compose_prompt
-# failure (e.g. partial output from a read error) is not silently masked by
-# the dispatcher's exit code.
+# Emit the transport marker and dispatch.  Capture the dispatcher's stdout
+# to extract a JOB_ID line if present (T20's dispatch-companion.sh will emit
+# one; pre-T20 the existing run-third-party-llm.sh may or may not).  After
+# a successful dispatch, persist the manifest entry with the captured job_id.
+# Exit code is propagated unchanged from the transport; on non-zero we still
+# persist the manifest so the round's attempted dispatch is auditable.
 if [[ "$_detected_host" == "copilot-cli" ]]; then
   echo "[transport: task-tool]" >&2
-  ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
-  exit "$?"
 else
   echo "[transport: shell-pipeline]" >&2
-  ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
-  exit "$?"
 fi
+
+_dispatch_stdout=""
+_dispatch_exit=0
+_dispatch_stdout="$( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )" \
+  || _dispatch_exit=$?
+
+# Forward all dispatcher stdout lines to our stdout EXCEPT JOB_ID= lines,
+# which are silently consumed for manifest persistence.  This preserves the
+# pass-through behavior expected by callers that inspect script stdout (e.g.,
+# transport-marker tests), while letting the manifest writer capture the
+# background job identifier.
+_job_id=""
+if [[ -n "$_dispatch_stdout" ]]; then
+  while IFS= read -r _line; do
+    if [[ "$_line" =~ ^JOB_ID= ]]; then
+      _job_id="${_line#JOB_ID=}"
+    else
+      printf '%s\n' "$_line"
+    fi
+  done <<< "$_dispatch_stdout"
+fi
+
+emit_dispatch_manifest_entry "$_job_id"
+exit "$_dispatch_exit"

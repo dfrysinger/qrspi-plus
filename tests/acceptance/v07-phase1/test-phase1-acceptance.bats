@@ -1472,29 +1472,26 @@ MOCK_EOF
     || grep -qF "\"model\": \"$resolved_model\"" "$manifest" \
     || { echo "manifest model value does not match resolved dispatch model"; cat "$manifest"; return 1; }
 
-  # ---- T09-scope narrowing -------------------------------------------
-  # T09 owns ONLY host/vendor/model in the dispatch manifest entry. The
-  # downstream G3 task owns subagent_type / agent / mode / status / nested
-  # dispatch_spec provenance. Pin their absence so this task does not leak
-  # T11/G3-scoped fields into the manifest before T11 lands.
-  if grep -q '"subagent_type"' "$manifest"; then
-    echo "manifest leaked T11/G3-scoped 'subagent_type' field — out of T09 scope"; cat "$manifest"; return 1
-  fi
-  if grep -q '"dispatch_spec"' "$manifest"; then
-    echo "manifest leaked T11/G3-scoped nested 'dispatch_spec' object — out of T09 scope"; cat "$manifest"; return 1
-  fi
-  if grep -q '"agent"' "$manifest"; then
-    echo "manifest carries non-T09 'agent' field"; cat "$manifest"; return 1
-  fi
-  if grep -q '"mode"' "$manifest"; then
-    echo "manifest carries non-T09 'mode' field"; cat "$manifest"; return 1
-  fi
-  if grep -q '"status"' "$manifest"; then
-    echo "manifest carries non-T09 'status' field"; cat "$manifest"; return 1
-  fi
+  # ---- T11 CD-1 provenance fields (dispatch_spec + job metadata) --------
+  # T11 extends the manifest entry with a nested dispatch_spec object and
+  # top-level job metadata fields (agent/mode/status).  Assert they are all
+  # present and that dispatch_spec carries the expected keys.
+  grep -q '"dispatch_spec"' "$manifest" \
+    || { echo "manifest missing T11 'dispatch_spec' object"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec | type == "object"' "$manifest" >/dev/null \
+    || { echo "manifest dispatch_spec is not an object"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec | has("subagent_type") and has("host") and has("vendor") and has("model")' \
+    "$manifest" >/dev/null \
+    || { echo "dispatch_spec missing required keys (subagent_type/host/vendor/model)"; cat "$manifest"; return 1; }
+  grep -q '"agent"' "$manifest" \
+    || { echo "manifest missing T11 top-level 'agent' field"; cat "$manifest"; return 1; }
+  grep -q '"mode"' "$manifest" \
+    || { echo "manifest missing T11 top-level 'mode' field"; cat "$manifest"; return 1; }
+  grep -q '"status"' "$manifest" \
+    || { echo "manifest missing T11 top-level 'status' field"; cat "$manifest"; return 1; }
 
   # Greppability anchor: tag is retained for host × vendor × model × tag
-  # joins and is not in T11/G3 ownership. Pin its presence.
+  # joins. Pin its presence.
   grep -q '"tag"' "$manifest" \
     || { echo "manifest missing tag field (greppability anchor)"; cat "$manifest"; return 1; }
 
@@ -1566,13 +1563,21 @@ MOCK_EOF
   jq -e 'type == "array" and length >= 1 and (.[0] | type == "object")' "$manifest" >/dev/null \
     || { echo "manifest is not an array of objects"; cat "$manifest"; return 1; }
 
-  # Each entry must carry EXACTLY the four contracted keys.
-  jq -e 'all(.[]; has("tag") and has("host") and has("vendor") and has("model") and (keys | length == 4))' \
+  # Each entry must carry the contracted top-level keys (T11 CD-1 schema).
+  # Third-party entries: tag/agent/mode/status/job_id/dispatch_spec/await_cmd/split_cmd.
+  jq -e 'all(.[]; has("tag") and has("agent") and has("mode") and has("status") and
+           has("job_id") and has("dispatch_spec") and has("await_cmd") and has("split_cmd"))' \
     "$manifest" >/dev/null \
-    || { echo "manifest entry has missing or extra keys (T09 contract: exactly tag/host/vendor/model)"; cat "$manifest"; return 1; }
+    || { echo "manifest entry missing required T11 top-level keys"; cat "$manifest"; return 1; }
+
+  # dispatch_spec must carry exactly subagent_type/host/vendor/model.
+  jq -e 'all(.[]; .dispatch_spec | type == "object" and
+           has("subagent_type") and has("host") and has("vendor") and has("model"))' \
+    "$manifest" >/dev/null \
+    || { echo "dispatch_spec missing or malformed (expected subagent_type/host/vendor/model)"; cat "$manifest"; return 1; }
 
   # And the values must be the strings supplied at dispatch time.
-  jq -e '.[0].tag == "spec-codex" and .[0].vendor == "openai-codex" and .[0].model == "gpt-5-codex-canary"' \
+  jq -e '.[0].tag == "spec-codex" and .[0].dispatch_spec.vendor == "openai-codex" and .[0].dispatch_spec.model == "gpt-5-codex-canary"' \
     "$manifest" >/dev/null \
     || { echo "manifest field values diverge from dispatch arguments"; cat "$manifest"; return 1; }
 
@@ -2179,4 +2184,246 @@ _t9_simulate_verifier_sidecar_write() {
     grep -nE 'defect_class|representative_score|sub.threshold.obs' "$script"
     return 1
   fi
+}
+
+# ---------------------------------------------------------------------------
+# T11: dispatch-manifest provenance schema
+#
+# These three tests drive the dispatch_spec / mode / status / agent / job_id
+# / await_cmd / split_cmd fields required by the CD-1 dispatch-manifest
+# schema (structure.md §10).
+# ---------------------------------------------------------------------------
+
+# T11 AC1 — third-party entry: nested dispatch_spec with all T11 provenance
+# fields plus background job metadata (mode/status/agent/job_id/await_cmd/
+# split_cmd).  The mock dispatcher echoes a JOB_ID line to stdout so the
+# wrapper script can capture and persist it in the manifest.
+@test "[T11 dispatch-manifest AC1] third-party manifest entry has nested dispatch_spec plus mode/status/agent/job_id/await_cmd/split_cmd" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+
+  mkdir -p "$TMP_DIR/src"
+  printf 'const x = 1;\n' > "$TMP_DIR/src/subject.ts"
+  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
+  printf '## Reviewer Dispatch Contract\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
+  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
+  mkdir -p "$TMP_DIR/agents"
+  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
+    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
+  mkdir -p "$TMP_DIR/artifact-dir"
+  printf -- '---\ncodex_reviews: false\n---\n' \
+    > "$TMP_DIR/artifact-dir/config.md"
+
+  # Mock dispatcher: drains stdin, emits JOB_ID to stdout, exits 0.
+  mkdir -p "$TMP_DIR/scripts"
+  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+echo "JOB_ID=test-job-123"
+exit 0
+MOCK_EOF
+  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+
+  local OUTDIR="$TMP_DIR/out"
+  mkdir -p "$OUTDIR"
+
+  local exit_code=0
+  QRSPI_REPO_ROOT="$TMP_DIR" \
+    COPILOT_CLI="" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$OUTDIR" \
+      --round 1 \
+      --subject-code "$TMP_DIR/src/subject.ts" \
+      --model "gpt-5-codex-canary" \
+      --output-file "$TMP_DIR/result.md" \
+      --artifact-dir "$TMP_DIR/artifact-dir" \
+    >/dev/null 2>/dev/null || exit_code=$?
+
+  local manifest="$OUTDIR/.dispatch-manifest.json"
+  [ -f "$manifest" ] \
+    || { echo "manifest not written (exit_code=$exit_code)"; return 1; }
+
+  # Must be valid JSON array.
+  jq -e 'type == "array" and length >= 1' "$manifest" >/dev/null \
+    || { echo "manifest is not a non-empty JSON array"; cat "$manifest"; return 1; }
+
+  # Top-level fields: tag, agent, mode, status present.
+  jq -e '.[0].tag == "spec-codex"' "$manifest" >/dev/null \
+    || { echo "manifest entry missing tag"; cat "$manifest"; return 1; }
+  jq -e '.[0].mode == "background"' "$manifest" >/dev/null \
+    || { echo "manifest entry missing mode=background"; cat "$manifest"; return 1; }
+  jq -e '.[0].status == "pending"' "$manifest" >/dev/null \
+    || { echo "manifest entry missing status=pending"; cat "$manifest"; return 1; }
+  jq -e '.[0].agent | type == "string" and length > 0' "$manifest" >/dev/null \
+    || { echo "manifest entry missing non-empty agent field"; cat "$manifest"; return 1; }
+
+  # Third-party job metadata: job_id, await_cmd, split_cmd.
+  jq -e '.[0].job_id | type == "string"' "$manifest" >/dev/null \
+    || { echo "manifest entry missing job_id field"; cat "$manifest"; return 1; }
+  jq -e '.[0].await_cmd | type == "string" and length > 0' "$manifest" >/dev/null \
+    || { echo "manifest entry missing await_cmd"; cat "$manifest"; return 1; }
+  jq -e '.[0].split_cmd | type == "string" and length > 0' "$manifest" >/dev/null \
+    || { echo "manifest entry missing split_cmd"; cat "$manifest"; return 1; }
+
+  # Nested dispatch_spec with all required provenance fields.
+  jq -e '.[0].dispatch_spec | type == "object"' "$manifest" >/dev/null \
+    || { echo "manifest entry missing dispatch_spec object"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec.subagent_type | type == "string" and length > 0' "$manifest" >/dev/null \
+    || { echo "dispatch_spec missing subagent_type"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec.host | type == "string" and length > 0' "$manifest" >/dev/null \
+    || { echo "dispatch_spec missing host"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec.vendor | type == "string" and length > 0' "$manifest" >/dev/null \
+    || { echo "dispatch_spec missing vendor"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec.model == "gpt-5-codex-canary"' "$manifest" >/dev/null \
+    || { echo "dispatch_spec.model does not match dispatched model"; cat "$manifest"; return 1; }
+
+  rm -rf "$TMP_DIR"
+}
+
+# T11 AC2 — first-party manifest entry: dispatch_spec carries prompt_file;
+# mode=first_party, status=dispatched.  Tests emit_first_party_manifest_entry
+# exposed via QRSPI_SOURCE_ONLY=1 sourcing so the shape is verifiable without
+# a full first-party dispatch infrastructure (T20 lands that).
+@test "[T11 dispatch-manifest AC2] first-party manifest entry has dispatch_spec with prompt_file, mode=first_party, status=dispatched" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+
+  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
+  printf '## Reviewer Dispatch Contract\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
+  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
+  mkdir -p "$TMP_DIR/agents"
+  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
+    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
+
+  local OUTDIR="$TMP_DIR/out"
+  mkdir -p "$OUTDIR"
+
+  local prompt_file="$OUTDIR/.dispatch/spec-claude.prompt"
+  mkdir -p "$OUTDIR/.dispatch"
+  printf 'DISPATCH_FILE=%s\n' "$prompt_file" > "$prompt_file"
+
+  # Source run-codex-review.sh in source-only mode, then call
+  # emit_first_party_manifest_entry directly.
+  local exit_code=0
+  (
+    export QRSPI_REPO_ROOT="$TMP_DIR"
+    export COPILOT_CLI=""
+    export QRSPI_SOURCE_ONLY=1
+    source "$REPO_ROOT/scripts/run-codex-review.sh"
+    # Set globals that the emit functions read (argument parsing is skipped
+    # in source-only mode, so we set them directly after sourcing).
+    REVIEWER_TAG="spec-claude"
+    OUTPUT_DIR="$OUTDIR"
+    AGENT_FILE="agents/qrspi-spec-reviewer.md"
+    MODEL="claude-sonnet-4-5"
+    emit_first_party_manifest_entry "$prompt_file"
+  ) || exit_code=$?
+
+  [ "$exit_code" -eq 0 ] \
+    || { echo "emit_first_party_manifest_entry failed with exit $exit_code"; return 1; }
+
+  local manifest="$OUTDIR/.dispatch-manifest.json"
+  [ -f "$manifest" ] \
+    || { echo "manifest not written"; return 1; }
+
+  jq -e '.[0].mode == "first_party"' "$manifest" >/dev/null \
+    || { echo "manifest entry mode != first_party"; cat "$manifest"; return 1; }
+  jq -e '.[0].status == "dispatched"' "$manifest" >/dev/null \
+    || { echo "manifest entry status != dispatched"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec | type == "object"' "$manifest" >/dev/null \
+    || { echo "manifest entry missing dispatch_spec"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec.subagent_type | type == "string" and length > 0' "$manifest" >/dev/null \
+    || { echo "dispatch_spec missing subagent_type"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec.prompt_file | type == "string" and length > 0' "$manifest" >/dev/null \
+    || { echo "dispatch_spec missing prompt_file"; cat "$manifest"; return 1; }
+  jq -e --arg pf "$prompt_file" '.[0].dispatch_spec.prompt_file == $pf' "$manifest" >/dev/null \
+    || { echo "dispatch_spec.prompt_file does not match supplied path"; cat "$manifest"; return 1; }
+
+  rm -rf "$TMP_DIR"
+}
+
+# T11 AC3 — append safety: two successive invocations with different reviewer
+# tags against the same output directory produce a well-formed two-entry
+# manifest with all entries carrying dispatch_spec.
+@test "[T11 dispatch-manifest AC3] repeated invocations with multiple reviewer tags produce well-formed manifest with all dispatch_spec entries present" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+
+  mkdir -p "$TMP_DIR/src"
+  printf 'const x = 1;\n' > "$TMP_DIR/src/subject.ts"
+  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
+  printf '## Reviewer Dispatch Contract\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
+  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
+  mkdir -p "$TMP_DIR/agents"
+  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
+    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
+  mkdir -p "$TMP_DIR/artifact-dir"
+  printf -- '---\ncodex_reviews: false\n---\n' \
+    > "$TMP_DIR/artifact-dir/config.md"
+  mkdir -p "$TMP_DIR/scripts"
+  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+echo "JOB_ID=test-job-${RANDOM}"
+exit 0
+MOCK_EOF
+  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+
+  local OUTDIR="$TMP_DIR/out"
+  mkdir -p "$OUTDIR"
+
+  # First invocation: reviewer tag spec-codex
+  QRSPI_REPO_ROOT="$TMP_DIR" COPILOT_CLI="" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$OUTDIR" --round 1 \
+      --subject-code "$TMP_DIR/src/subject.ts" \
+      --model "gpt-5-codex-canary" \
+      --output-file "$TMP_DIR/result1.md" \
+      --artifact-dir "$TMP_DIR/artifact-dir" \
+    >/dev/null 2>/dev/null || true
+
+  # Second invocation: reviewer tag sec-codex
+  QRSPI_REPO_ROOT="$TMP_DIR" COPILOT_CLI="" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag sec-codex \
+      --output-dir "$OUTDIR" --round 1 \
+      --subject-code "$TMP_DIR/src/subject.ts" \
+      --model "gpt-5-codex-canary" \
+      --output-file "$TMP_DIR/result2.md" \
+      --artifact-dir "$TMP_DIR/artifact-dir" \
+    >/dev/null 2>/dev/null || true
+
+  local manifest="$OUTDIR/.dispatch-manifest.json"
+  [ -f "$manifest" ] || { echo "manifest not written after two invocations"; return 1; }
+
+  # Valid JSON array with exactly 2 entries.
+  jq -e 'type == "array" and length == 2' "$manifest" >/dev/null \
+    || { echo "manifest does not have exactly 2 entries"; cat "$manifest"; return 1; }
+
+  # Both entries have dispatch_spec objects.
+  jq -e 'all(.[]; .dispatch_spec | type == "object")' "$manifest" >/dev/null \
+    || { echo "not all entries have dispatch_spec objects"; cat "$manifest"; return 1; }
+
+  # Both entries have the required dispatch_spec fields.
+  jq -e 'all(.[]; .dispatch_spec | has("subagent_type") and has("host") and has("vendor") and has("model"))' \
+    "$manifest" >/dev/null \
+    || { echo "dispatch_spec missing required provenance fields in one or both entries"; cat "$manifest"; return 1; }
+
+  # Both entries carry the top-level background fields.
+  jq -e 'all(.[]; has("mode") and has("status") and has("agent") and has("job_id") and has("await_cmd") and has("split_cmd"))' \
+    "$manifest" >/dev/null \
+    || { echo "one or both entries missing top-level background fields"; cat "$manifest"; return 1; }
+
+  rm -rf "$TMP_DIR"
 }
