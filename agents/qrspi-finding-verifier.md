@@ -8,11 +8,12 @@ description: "Score a single reviewer finding 0–100 against the /code-review c
 
 Score each finding on a continuous 0–100 integer scale. The anchors below are reference points — the verifier emits any integer in `0..100`. (Give this rubric to the agent verbatim.)
 
-a. **0:** Not confident at all. This is a false positive that doesn't stand up to light scrutiny, or is a pre-existing issue.
-b. **25:** Somewhat confident. This might be a real issue, but may also be a false positive. The agent wasn't able to verify that it's a real issue. If the issue is stylistic, it is one that was not explicitly called out in the relevant CLAUDE.md.
-c. **50:** Moderately confident. The agent was able to verify this is a real issue, but it might be a nitpick or not happen very often in practice. Relative to the rest of the PR, it's not very important.
-d. **75:** Highly confident. The agent double checked the issue, and verified that it is very likely it is a real issue that will be hit in practice. The existing approach in the PR is insufficient. The issue is very important and will directly impact the code's functionality, **or violates a documented "Iron Law", "Iron Rule", "MUST", or equivalent explicitly-load-bearing constraint in an upstream SKILL.md, agent file, or CLAUDE.md**, or it is an issue that is directly mentioned in the relevant CLAUDE.md.
-e. **100:** Absolutely certain. The agent double checked the issue, and confirmed that it is definitely a real issue, that will happen frequently in practice. The evidence directly confirms this.
+a. **0 / HALLUCINATED:** Cite Check (step 3.5) found that the finding cites content that does not exist at the cited location — file missing, line range out of bounds, quoted string absent at cited line, or named anchor absent in cited file. The finding is structurally untrustworthy regardless of how plausible its prose reads. Halt rubric, emit `score: 0` with reason `HALLUCINATED: <diagnostic>`.
+b. **0:** Not confident at all. This is a false positive that doesn't stand up to light scrutiny, or is a pre-existing issue.
+c. **25:** Somewhat confident. This might be a real issue, but may also be a false positive. The agent wasn't able to verify that it's a real issue. If the issue is stylistic, it is one that was not explicitly called out in the relevant CLAUDE.md.
+d. **50:** Moderately confident. The agent was able to verify this is a real issue, but it might be a nitpick or not happen very often in practice. Relative to the rest of the PR, it's not very important.
+e. **75:** Highly confident. The agent double checked the issue, and verified that it is very likely it is a real issue that will be hit in practice. The existing approach in the PR is insufficient. The issue is very important and will directly impact the code's functionality, **or violates a documented "Iron Law", "Iron Rule", "MUST", or equivalent explicitly-load-bearing constraint in an upstream SKILL.md, agent file, or CLAUDE.md**, or it is an issue that is directly mentioned in the relevant CLAUDE.md.
+f. **100:** Absolutely certain. The agent double checked the issue, and confirmed that it is definitely a real issue, that will happen frequently in practice. The evidence directly confirms this.
 
 ## False-positive examples
 
@@ -63,6 +64,19 @@ The verifier receives five prompt parameters:
 1. **Read `<finding_file_path>`** — parse the 5-field finding object (YAML frontmatter: `finding_id`, `severity`, `change_type`, `referenced_files`, plus the prose `message` body).
 2. **Read `<artifact_path>` + `<diff_file_path>`** eagerly when the parameter is provided. (When the artifact directory is not in a git repo the parameter is omitted — fall back to the artifact alone.) These are the primary evidence sources.
 3. **For each `referenced_files` entry**, Read it.
+3.5. **Cite Check** — verify cited resources actually contain what the finding claims they contain. The verifier MUST perform this check before scoring; mismatch produces `score: 0` and halts the rubric.
+
+   For each citation present in the finding (whether in `referenced_files` frontmatter or quoted in the finding's prose body), assert one of the following depending on citation shape:
+
+   - **File existence** — a bare path (no line number) in `referenced_files` MUST resolve to an existing file. Missing file → emit `score: 0`, reason `HALLUCINATED: file <path> does not exist`, write sidecar, halt.
+   - **Line range** — a `path:line` or `path:line-line` entry in `referenced_files` MUST resolve to an existing range in the file. Out-of-range → emit `score: 0`, reason `HALLUCINATED: <path> has <N> lines, cited <range> out of range`, write sidecar, halt.
+   - **Quoted content at cited location** — when the finding's prose quotes a specific string (in backticks, double quotes, or a fenced excerpt) and attributes it to a specific cited path:line, the verifier MUST read that line range and assert the quoted substring appears. Mismatch → emit `score: 0`, reason `HALLUCINATED: quoted content '<excerpt>' not found at <path:line>`, write sidecar, halt.
+   - **Named anchor** — when the finding names a heading, function, class, type, variable, configuration key, CLI flag, or other identifier and attributes it to a specific cited file, the verifier MUST grep the cited file for the anchor. Anchor absent → emit `score: 0`, reason `HALLUCINATED: anchor '<name>' not found in <path>`, write sidecar, halt.
+
+   Findings whose prose carries no specific factual cite (pure-advisory style notes such as "consider naming this more clearly") have nothing to cite-check. Cite Check on such findings is a no-op; proceed to step 4.
+
+   The verifier MUST NOT invent claims to check, MUST NOT extrapolate from a finding's general tone, and MUST NOT flag findings whose prose carries no specific factual cite. Cite Check fires only against citations the finding actually makes.
+
 4. **If any `<upstream_paths>` entry is cited in the finding or seems load-bearing**, Read it (lazy — only as needed).
 5. **Score** on the continuous 0–100 integer scale using the rubric anchors above. Emit any integer in `0..100`.
 6. **Write `<sidecar_path>`** — the canonical disk output consumed by `scripts/verifier-fan-in.sh`. The disk sidecar is the load-bearing fan-in input; the chat-side score line (step 7) is non-load-bearing telemetry only. The sidecar is a Markdown file with YAML frontmatter:
@@ -83,6 +97,8 @@ The verifier receives five prompt parameters:
    failure_reason: <one-sentence diagnosis>
    ---
    ```
+
+   When the score is `0` due to Cite Check failure (step 3.5), the `reason` value MUST start with the literal prefix `HALLUCINATED: ` so dropped sidecars can be greppable for the hallucination subset.
 
 7. **Return exactly one line (non-load-bearing telemetry):** `<reviewer_tag>.<finding_id>: <score>` (e.g. `quality-claude.R3-F02: 87`) on success, or `<reviewer_tag>.<finding_id>: VERIFY_FAILED:<reason>` on failure. This chat-side summary is telemetry for operator visibility only — the canonical score used by the fan-in filter is the `score:` integer in the sidecar frontmatter written in step 6 (present only on the success path; the failure path omits `score:` entirely and uses `verifier_status: failed` + `failure_reason:` instead). The reviewer-tag prefix disambiguates findings that share a `finding_id` across reviewer_tag values.
 

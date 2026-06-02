@@ -987,3 +987,265 @@ _t7_require_trusted_gh() {
 
   rm -rf "$tmp"
 }
+
+# ===========================================================================
+# T8 — cite-check: verifier Cite Check step + hallucination rubric tier
+#
+# Task spec: docs/qrspi/2026-05-30-v072-release/tasks/task-08.md
+# Target files (per spec):
+#   - agents/qrspi-finding-verifier.md  (gains Step 3.5 Cite Check prose,
+#     0 / HALLUCINATED rubric tier, sidecar reason-prefix convention in
+#     step 6)
+#   - tests/acceptance/v07-phase1/test-phase1-acceptance.bats  (this file —
+#     gains fixture-round tests exercising the fan-in drop path for each
+#     cite-check failure type)
+#
+# Coverage: bullets TC1..TC8 (doc-shape + fan-in fixture).
+#
+# RED scope at test-author time (i.e., before Task 8's implementer runs):
+#   TC1..TC3  RED: agents/qrspi-finding-verifier.md does not yet contain
+#             Step 3.5, the "0 / HALLUCINATED" rubric tier, or the
+#             HALLUCINATED: reason-prefix convention.
+#   TC4..TC8  Already-green fan-in behavior (score:0 < every non-always-keep
+#             threshold; score:72 correctness ≥ 70 threshold).  Added here so
+#             the acceptance gate proves fixture construction and fan-in
+#             drop/keep behavior end-to-end.
+#
+# Fixture strategy (TC4..TC8):
+#   Per-test, build a self-contained round directory in a fresh mktemp dir.
+#   Write a minimal finding file + pre-constructed score sidecar covering each
+#   cite-check failure type (file-existence, line-range, quoted-content,
+#   named-anchor) and one advisory-no-citation case.  Run verifier-fan-in.sh
+#   against the round dir and assert kept-findings.txt content.
+#
+# ID hygiene: test names and in-body error strings use neutral descriptors
+# ("cite-check:", "hallucination:") rather than unscoped goal IDs.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# T8 / TC1: verifier Step 3.5 Cite Check prose present in agent file
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TC1] verifier agent file contains Step 3.5 Cite Check between referenced-files read and lazy-upstream-read steps" {
+  # cite-check: this assertion is RED until the verifier gains the Step 3.5
+  # Cite Check paragraph between current step 3 (read referenced_files) and
+  # current step 4 (lazy-Read upstreams).
+  grep -qE "3\.5" "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
+    || { echo "cite-check: Step 3.5 not found in agents/qrspi-finding-verifier.md"; return 1; }
+  grep -q "Cite Check" "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
+    || { echo "cite-check: 'Cite Check' label not found in agents/qrspi-finding-verifier.md"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# T8 / TC2: verifier rubric contains 0 / HALLUCINATED top-anchor tier
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TC2] verifier rubric contains 0 / HALLUCINATED top-anchor tier above the existing confidence anchors" {
+  # cite-check: RED until the rubric gains the new 0 / HALLUCINATED anchor
+  # prepended above the existing a-e (0/25/50/75/100) anchors.
+  grep -q "0 / HALLUCINATED" "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
+    || { echo "cite-check: '0 / HALLUCINATED' rubric tier not found in agents/qrspi-finding-verifier.md"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# T8 / TC3: verifier sidecar write step documents literal HALLUCINATED:
+#           reason-prefix convention
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TC3] verifier sidecar write step (step 6) documents literal HALLUCINATED: reason-prefix convention for cite-check halts" {
+  # cite-check: RED until step 6 gains the sentence documenting that score:0
+  # Cite Check sidecars begin reason: with the literal prefix "HALLUCINATED: ".
+  grep -qF "HALLUCINATED: " "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
+    || { echo "cite-check: 'HALLUCINATED: ' prefix convention not found in agents/qrspi-finding-verifier.md"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# Shared helper: write a minimal finding + sidecar pair for fan-in tests.
+#   _t8_write_finding_pair <round-dir> <stem> <change_type> <score> <reason>
+#   - <stem>: file base like "quality-claude.finding-F01"
+#   - <change_type>: correctness | style | clarity | scope | intent
+#   - <score>: integer 0..100
+#   - <reason>: sidecar reason string (empty string = no reason field emitted)
+# ---------------------------------------------------------------------------
+
+_t8_write_finding_pair() {
+  local dir="$1" stem="$2" ct="$3" score="$4" reason="$5"
+  local finding="$dir/${stem}.md"
+  local sidecar="$dir/${stem}.score.md"
+
+  printf -- '---\nfinding_id: %s\nseverity: high\nchange_type: %s\nreferenced_files: []\n---\nFixture finding body.\n' \
+    "$stem" "$ct" >"$finding"
+
+  if [[ -n "$reason" ]]; then
+    printf -- '---\nverifier_status: passed\nscore: %s\nreason: %s\n---\nCite check fixture sidecar.\n' \
+      "$score" "$reason" >"$sidecar"
+  else
+    printf -- '---\nverifier_status: passed\nscore: %s\n---\nFixture sidecar.\n' \
+      "$score" >"$sidecar"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# T8 / TC4: file-existence cite-check failure — score:0, HALLUCINATED:
+#           reason, finding absent from kept-findings.txt (correctness drop)
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TC4] cite-check file-existence failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
+  local tmp
+  tmp="$(mktemp -d)"
+  local stem="quality-claude.finding-F01"
+  local reason="HALLUCINATED: file nonexistent/fabricated/path.md does not exist"
+
+  _t8_write_finding_pair "$tmp" "$stem" correctness 0 "$reason"
+
+  # Assert sidecar content: score is 0
+  local raw_score
+  raw_score=$(grep "^score:" "$tmp/${stem}.score.md" | awk '{print $2}')
+  [ "$raw_score" -eq 0 ] \
+    || { echo "hallucination: expected score 0 in sidecar, got: $raw_score"; return 1; }
+
+  # Assert sidecar content: reason begins with HALLUCINATED:
+  local raw_reason
+  raw_reason=$(grep "^reason:" "$tmp/${stem}.score.md" | sed 's/^reason: //')
+  [[ "$raw_reason" == HALLUCINATED:* ]] \
+    || { echo "hallucination: reason does not begin with 'HALLUCINATED:' — got: $raw_reason"; return 1; }
+
+  # Run fan-in; expect exit 0 (well-formed round, all findings processed)
+  run bash "$REPO_ROOT/scripts/verifier-fan-in.sh" "$tmp"
+  [ "$status" -eq 0 ] \
+    || { echo "hallucination: verifier-fan-in.sh exited $status (expected 0)"; cat "$tmp/.verifier-fan-in-audit.json" 2>/dev/null; return 1; }
+
+  # Finding must NOT appear in kept-findings.txt (score 0 < correctness threshold 70)
+  if [ -s "$tmp/kept-findings.txt" ]; then
+    grep -q "$stem" "$tmp/kept-findings.txt" \
+      && { echo "hallucination: file-existence cite-check finding reached kept-findings.txt"; return 1; }
+  fi
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T8 / TC5: line-range cite-check failure — score:0, HALLUCINATED: reason,
+#           finding absent from kept-findings.txt (correctness drop)
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TC5] cite-check line-range failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
+  local tmp
+  tmp="$(mktemp -d)"
+  local stem="quality-claude.finding-F02"
+  local reason="HALLUCINATED: agents/fake.md has 10 lines, cited 500-510 out of range"
+
+  _t8_write_finding_pair "$tmp" "$stem" correctness 0 "$reason"
+
+  local raw_score
+  raw_score=$(grep "^score:" "$tmp/${stem}.score.md" | awk '{print $2}')
+  [ "$raw_score" -eq 0 ]
+
+  local raw_reason
+  raw_reason=$(grep "^reason:" "$tmp/${stem}.score.md" | sed 's/^reason: //')
+  [[ "$raw_reason" == HALLUCINATED:* ]] \
+    || { echo "hallucination: reason does not begin with 'HALLUCINATED:' — got: $raw_reason"; return 1; }
+
+  run bash "$REPO_ROOT/scripts/verifier-fan-in.sh" "$tmp"
+  [ "$status" -eq 0 ]
+
+  if [ -s "$tmp/kept-findings.txt" ]; then
+    ! grep -q "$stem" "$tmp/kept-findings.txt" \
+      || { echo "hallucination: line-range cite-check finding reached kept-findings.txt"; return 1; }
+  fi
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T8 / TC6: quoted-content cite-check failure — score:0, HALLUCINATED:
+#           reason, finding absent from kept-findings.txt (style drop)
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TC6] cite-check quoted-content failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
+  local tmp
+  tmp="$(mktemp -d)"
+  local stem="quality-claude.finding-F03"
+  local reason="HALLUCINATED: quoted content 'widen/ref' not found at SKILL.md:516"
+
+  _t8_write_finding_pair "$tmp" "$stem" style 0 "$reason"
+
+  local raw_score
+  raw_score=$(grep "^score:" "$tmp/${stem}.score.md" | awk '{print $2}')
+  [ "$raw_score" -eq 0 ]
+
+  local raw_reason
+  raw_reason=$(grep "^reason:" "$tmp/${stem}.score.md" | sed 's/^reason: //')
+  [[ "$raw_reason" == HALLUCINATED:* ]] \
+    || { echo "hallucination: reason does not begin with 'HALLUCINATED:' — got: $raw_reason"; return 1; }
+
+  run bash "$REPO_ROOT/scripts/verifier-fan-in.sh" "$tmp"
+  [ "$status" -eq 0 ]
+
+  if [ -s "$tmp/kept-findings.txt" ]; then
+    ! grep -q "$stem" "$tmp/kept-findings.txt" \
+      || { echo "hallucination: quoted-content cite-check finding reached kept-findings.txt"; return 1; }
+  fi
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T8 / TC7: named-anchor cite-check failure — score:0, HALLUCINATED: reason,
+#           finding absent from kept-findings.txt (clarity drop)
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TC7] cite-check named-anchor failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
+  local tmp
+  tmp="$(mktemp -d)"
+  local stem="quality-claude.finding-F04"
+  local reason="HALLUCINATED: anchor 'FakeFunction' not found in agents/fake-agent.md"
+
+  _t8_write_finding_pair "$tmp" "$stem" clarity 0 "$reason"
+
+  local raw_score
+  raw_score=$(grep "^score:" "$tmp/${stem}.score.md" | awk '{print $2}')
+  [ "$raw_score" -eq 0 ]
+
+  local raw_reason
+  raw_reason=$(grep "^reason:" "$tmp/${stem}.score.md" | sed 's/^reason: //')
+  [[ "$raw_reason" == HALLUCINATED:* ]] \
+    || { echo "hallucination: reason does not begin with 'HALLUCINATED:' — got: $raw_reason"; return 1; }
+
+  run bash "$REPO_ROOT/scripts/verifier-fan-in.sh" "$tmp"
+  [ "$status" -eq 0 ]
+
+  if [ -s "$tmp/kept-findings.txt" ]; then
+    ! grep -q "$stem" "$tmp/kept-findings.txt" \
+      || { echo "hallucination: named-anchor cite-check finding reached kept-findings.txt"; return 1; }
+  fi
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T8 / TC8: advisory finding with no specific factual citation — Cite Check
+#           is a no-op; fan-in keeps the finding (score 72 ≥ correctness 70)
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TC8] advisory finding with no specific factual citation: cite-check is a no-op; fan-in keeps finding when score meets threshold" {
+  local tmp
+  tmp="$(mktemp -d)"
+  local stem="quality-claude.finding-F05"
+
+  # Advisory/stylistic finding — no HALLUCINATED: reason, score above threshold
+  _t8_write_finding_pair "$tmp" "$stem" correctness 72 ""
+
+  local raw_score
+  raw_score=$(grep "^score:" "$tmp/${stem}.score.md" | awk '{print $2}')
+  [ "$raw_score" -eq 72 ]
+
+  run bash "$REPO_ROOT/scripts/verifier-fan-in.sh" "$tmp"
+  [ "$status" -eq 0 ]
+
+  # Finding MUST appear in kept-findings.txt (72 ≥ correctness threshold 70)
+  grep -q "$stem" "$tmp/kept-findings.txt" \
+    || { echo "cite-check: advisory finding with score 72 unexpectedly absent from kept-findings.txt"; return 1; }
+
+  rm -rf "$tmp"
+}
