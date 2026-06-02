@@ -273,7 +273,7 @@ assert data.strip() == '$HEAD_SHA'
   # check requires HEAD~1 == round-(NN-1)-commit.txt content).
   echo "v3" > file.txt
   git commit -q -am "third"
-  # After the third commit: HEAD points to R3; HEAD~1 == HEAD_SHA.
+  # After the third commit: HEAD points to round 3; HEAD~1 == HEAD_SHA.
   # round-(NN-1) for NN=3 is round-02 → anchor must equal HEAD_SHA.
   printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
   printf '%s\n' "$BASE_SHA" > "$TASK_DIR/round-01-commit.txt"
@@ -480,8 +480,8 @@ assert d['narrowed'] is False
   [ "$status" -eq 0 ]  # round still proceeds; only diagnostic on stderr
   [[ "$output" == *"failed to delete backward-loop flag"* ]]
   # Diagnostic must reference the offending flag path so an operator can
-  # locate the file requiring manual cleanup (R2 silent-failure-claude
-  # R2-F01: prove the failure surface is attributable, not just present).
+  # locate the file requiring manual cleanup (proves the failure surface is
+  # attributable, not just present).
   [[ "$output" == *"$TASK_DIR/round-03-backward-loop.flag"* ]]
   # Flag path remains because deletion failed (consume attempt, not consume).
   [ -e "$TASK_DIR/round-03-backward-loop.flag" ]
@@ -504,7 +504,7 @@ assert d.get('diff_file'), d
 "
 }
 
-# ── Option-injection guards (R2 security-claude R2-F03) ──────────────────────
+# ── Option-injection guards ──────────────────────────────────────────────────
 
 @test "git-injection: --base-ref starting with '-' is rejected (no git invoked)" {
   # Without flag-parse validation, BASE_REF='--show-toplevel' would flow into

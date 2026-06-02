@@ -65,7 +65,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 # ---------------------------------------------------------------------------
-# Trust-boundary input validation (R2 hardening — security-claude R2-F03).
+# Trust-boundary input validation (option-injection hardening).
 # $BASE_REF and $ARTIFACT flow into `git rev-parse` / `git diff` invocations.
 # Without validation, an attacker controlling these flags can inject git
 # options (e.g. --output=/etc/cron.d/backdoor, --upload-pack=<cmd>). We
@@ -335,7 +335,9 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   SIDECAR_TMP="${SIDECAR}.tmp.$$"
   python3 - "$SIDECAR_TMP" <<'PYEOF'
 import json, sys
-sys.argv[1]
+# Fail early with IndexError if SIDECAR_TMP argument is missing — surfaces
+# a clear traceback rather than a silent no-op output write.
+out_path = sys.argv[1]
 out = {
   "ref": None,
   "narrowed": False,
@@ -343,7 +345,7 @@ out = {
   "diff_file": None,
   "reason": "non-git workspace — no diff or scope_hint fabricated"
 }
-open(sys.argv[1], "w").write(json.dumps(out, indent=2, sort_keys=True) + "\n")
+open(out_path, "w").write(json.dumps(out, indent=2, sort_keys=True) + "\n")
 PYEOF
   mv "$SIDECAR_TMP" "$SIDECAR"
   echo "round-prepare: non-git workspace; no diff produced." >&2
@@ -358,7 +360,7 @@ fi
 DIFF_PATH="$OUTPUT_DIR/round-${ROUND_NN}.diff"
 DIFF_TMP="${DIFF_PATH}.tmp.$$"
 # `--` separates revision from path arguments, blocking option injection
-# even past the flag-parse validation above (defense in depth — R2-F03).
+# even past the flag-parse validation above (defense in depth).
 if [ -n "$ARTIFACT" ]; then
   git diff "$REF" -- "$ARTIFACT" > "$DIFF_TMP" 2>/dev/null || true
 else

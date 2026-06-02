@@ -24,6 +24,12 @@ setup() {
   ROUND_DIR="$TEST_ROOT/round-01"
   mkdir -p "$ROUND_DIR/.dispatch"
   export ROUND_DIR
+
+  # Stubs in test fixtures live under TEST_ROOT (outside the repo's scripts/
+  # tree); register TEST_ROOT as an additional permitted exec root so the
+  # realpath-bounds check accepts test stubs while still rejecting paths
+  # outside it (e.g. /bin/sh, /usr/bin/touch, ../../../tmp/x).
+  export QRSPI_AWAIT_EXEC_ROOTS="$TEST_ROOT"
 }
 
 teardown() {
@@ -178,7 +184,11 @@ EOS
   [ ! -d "$ROUND_DIR/.dispatch" ]
 }
 
-# ── Command-injection guards (R2 security-claude R2-F01/F02) ─────────────────
+# ── Command-injection regression guards ──────────────────────────────────────
+# Behavioral coverage for the trust-boundary contract: manifest fields
+# `await_cmd` and `split_cmd` are read verbatim from disk, parsed via
+# shlex.split, never passed to a shell, and argv[0] is bounded by the
+# realpath-under-permitted-exec-roots check (or the bare-name allowlist).
 
 @test "command-injection: malicious await_cmd 'touch /tmp/pwned-...' is rejected" {
   # Pre-fix this manifest entry would execute `touch /tmp/pwned-<pid>` via
@@ -212,22 +222,31 @@ EOF
   rm -f "$PWN_PATH"
 }
 
-@test "command-injection: shell-metacharacter await_cmd does NOT spawn a shell" {
-  # `; rm -rf /` past a real binary would execute under shell=True. With
-  # shell=False + shlex.split, the entire string becomes argv and the
-  # nonexistent binary 'evil;' fails fast — no shell metachar interpretation.
-  PWN_PATH="/tmp/qrspi-await-round-shellmeta-$$-$RANDOM"
+@test "command-injection: absolute-path /usr/bin/touch outside permitted exec roots is rejected" {
+  # Replaces the previous metachar test which was vacuous: shell=False alone
+  # made `evil-no-such-binary;` unresolvable regardless of any guard, so the
+  # test asserted nothing about parse_and_validate. This rewrite uses a real
+  # absolute-path binary (/usr/bin/touch) whose argv[0] would be accepted by
+  # any guard that only checks bare names — only the realpath-under-exec-roots
+  # check rejects it. Removing the path-shaped bound would let touch run and
+  # create the file.
+  PWN_PATH="/tmp/qrspi-await-round-abspath-$$-$RANDOM"
   rm -f "$PWN_PATH"
+  if [ ! -x /usr/bin/touch ] && [ ! -x /bin/touch ]; then
+    skip "no /usr/bin/touch or /bin/touch available"
+  fi
+  TOUCH_BIN=/usr/bin/touch
+  [ -x "$TOUCH_BIN" ] || TOUCH_BIN=/bin/touch
 
   python3 - <<EOF
 import json
 m = [{
-  "tag": "evil2",
+  "tag": "abs-evil",
   "agent": "x",
   "mode": "background",
   "status": "pending",
   "job_id": "j",
-  "await_cmd": "evil-no-such-binary; touch $PWN_PATH",
+  "await_cmd": "$TOUCH_BIN $PWN_PATH",
   "split_cmd": "true"
 }]
 open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
@@ -236,6 +255,7 @@ EOF
   run "$AWAIT" --round-dir "$ROUND_DIR"
   [ "$status" -ne 0 ]
   [ ! -e "$PWN_PATH" ]
+  [[ "$output" == *"outside"* ]] || [[ "$output" == *"exec roots"* ]] || [[ "$output" == *"rejected"* ]]
   rm -f "$PWN_PATH"
 }
 
@@ -259,4 +279,174 @@ EOF
   run "$AWAIT" --round-dir "$ROUND_DIR"
   [ "$status" -ne 0 ]
   [[ "$output" == *"must not start with"* ]]
+}
+
+@test "command-injection: absolute-path shell interpreter '/bin/sh -c ...' is rejected" {
+  # An attacker with manifest-write only could set await_cmd to
+  # "/bin/sh -c 'touch /tmp/pwn'". argv[0] is path-shaped, so a guard that
+  # only checks bare names against an allowlist accepts it; subprocess.run
+  # with shell=False then invokes /bin/sh EXPLICITLY as argv[0] and -c is
+  # interpreted by sh, not Python. The realpath-bounds check must reject
+  # /bin/sh because it does not resolve under any permitted exec root.
+  PWN_PATH="/tmp/qrspi-await-round-shellrce-$$-$RANDOM"
+  rm -f "$PWN_PATH"
+
+  python3 - <<EOF
+import json
+m = [{
+  "tag": "shrce",
+  "agent": "x",
+  "mode": "background",
+  "status": "pending",
+  "job_id": "j",
+  "await_cmd": "/bin/sh -c 'touch $PWN_PATH'",
+  "split_cmd": "true"
+}]
+open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
+EOF
+
+  run "$AWAIT" --round-dir "$ROUND_DIR"
+  [ "$status" -ne 0 ]
+  [ ! -e "$PWN_PATH" ]
+  [[ "$output" == *"rejected"* ]] || [[ "$output" == *"outside"* ]] || [[ "$output" == *"exec roots"* ]]
+  rm -f "$PWN_PATH"
+}
+
+@test "command-injection: parent-traversal '../../../tmp/x' escapes confinement and is rejected" {
+  # Path-shaped argv[0] containing ../ traversal can climb out of
+  # DISPATCH_CWD into world-writable directories. The realpath bounds check
+  # must reject any argv[0] whose resolved path is not under a permitted
+  # exec root.
+  PWN_DIR="/tmp/qrspi-await-traversal-$$-$RANDOM"
+  mkdir -p "$PWN_DIR"
+  cat > "$PWN_DIR/attack.sh" <<'EOS'
+#!/usr/bin/env bash
+echo pwned > "$0.ran"
+EOS
+  chmod +x "$PWN_DIR/attack.sh"
+  # Build a relative path that climbs out of $ROUND_DIR/.dispatch up to /tmp.
+  # Count of "../" segments needed: depth from $ROUND_DIR/.dispatch to / is
+  # variable across systems, so we use absolute-path content with embedded
+  # "../" — realpath collapses it the same way cwd-relative resolution does.
+  REL_PATH="../../../../../../../../../../../../$PWN_DIR/attack.sh"
+
+  python3 - <<EOF
+import json
+m = [{
+  "tag": "trav",
+  "agent": "x",
+  "mode": "background",
+  "status": "pending",
+  "job_id": "j",
+  "await_cmd": "$REL_PATH",
+  "split_cmd": "true"
+}]
+open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
+EOF
+
+  run "$AWAIT" --round-dir "$ROUND_DIR"
+  [ "$status" -ne 0 ]
+  [ ! -e "$PWN_DIR/attack.sh.ran" ]
+  rm -rf "$PWN_DIR"
+}
+
+@test "command-injection: './codex' relative-cwd masquerade is rejected" {
+  # Bare-name "codex" is allowlisted (resolved via $PATH to the system codex
+  # CLI). "./codex" is path-shaped and would resolve under DISPATCH_CWD —
+  # i.e. <round-dir>/.dispatch/codex — bypassing the system PATH. The
+  # realpath-bounds check rejects it because the dispatch dir is not a
+  # permitted exec root.
+  PWN_PATH="/tmp/qrspi-await-codex-masq-$$-$RANDOM"
+  rm -f "$PWN_PATH"
+  cat > "$ROUND_DIR/.dispatch/codex" <<EOS
+#!/usr/bin/env bash
+echo pwned > "$PWN_PATH"
+EOS
+  chmod +x "$ROUND_DIR/.dispatch/codex"
+
+  python3 - <<EOF
+import json
+m = [{
+  "tag": "masq",
+  "agent": "x",
+  "mode": "background",
+  "status": "pending",
+  "job_id": "j",
+  "await_cmd": "./codex --reviewer-tag x out.json",
+  "split_cmd": "true"
+}]
+open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
+EOF
+
+  run "$AWAIT" --round-dir "$ROUND_DIR"
+  [ "$status" -ne 0 ]
+  [ ! -e "$PWN_PATH" ]
+  rm -f "$PWN_PATH"
+}
+
+@test "command-injection: split_cmd is independently validated when await_cmd succeeds" {
+  # Coverage gap closed: previous tests put the malicious payload in
+  # await_cmd and short-circuited before split_cmd validation ever ran. A
+  # legitimate stub await_cmd that exits 0 forces parse_and_validate to be
+  # invoked on split_cmd; a bare-name `touch` payload there must be
+  # rejected by the bare-name allowlist guard. This test would fail if the
+  # parse_and_validate call on split_cmd were ever removed.
+  PWN_PATH="/tmp/qrspi-await-split-pwn-$$-$RANDOM"
+  rm -f "$PWN_PATH"
+
+  STUB_AWAIT="$TEST_ROOT/stub-await-ok.sh"
+  cat > "$STUB_AWAIT" <<'EOS'
+#!/usr/bin/env bash
+exit 0
+EOS
+  chmod +x "$STUB_AWAIT"
+
+  python3 - <<EOF
+import json
+m = [{
+  "tag": "splitevil",
+  "agent": "x",
+  "mode": "background",
+  "status": "pending",
+  "job_id": "j",
+  "await_cmd": "$STUB_AWAIT",
+  "split_cmd": "touch $PWN_PATH"
+}]
+open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
+EOF
+
+  run "$AWAIT" --round-dir "$ROUND_DIR"
+  [ "$status" -ne 0 ]
+  [ ! -e "$PWN_PATH" ]
+  # Diagnostic must mention split_cmd so an operator knows which field
+  # carried the injection (await_cmd-only diagnostics would imply the
+  # split_cmd guard never ran).
+  [[ "$output" == *"split_cmd"* ]]
+  rm -f "$PWN_PATH"
+}
+
+@test "command-injection: shlex parse error surfaces the actual shlex message" {
+  # An unbalanced quote in await_cmd raises shlex.ValueError. The diagnostic
+  # must include the actual shlex error message (e.g. "No closing quotation")
+  # so a manifest author can self-diagnose; emitting only the type name
+  # ("ValueError") would force every malformed input to look identical.
+  python3 - <<EOF
+import json
+m = [{
+  "tag": "badquote",
+  "agent": "x",
+  "mode": "background",
+  "status": "pending",
+  "job_id": "j",
+  "await_cmd": "echo 'unbalanced",
+  "split_cmd": "true"
+}]
+open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
+EOF
+
+  run "$AWAIT" --round-dir "$ROUND_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"parse error"* ]]
+  # The actual shlex message must be present, not just the type name.
+  [[ "$output" == *"closing"* ]] || [[ "$output" == *"quotation"* ]]
 }
