@@ -257,16 +257,40 @@ source_assembly() {
 # subsequent line silently override the real score. Putting `defect_class:`
 # last bounds the blast radius.
 
-@test "sidecar field-order: success template has defect_class: as the LAST frontmatter field" {
-  # Extract the success-path fenced markdown block following 'On success:'.
-  local block
-  block=$(awk '
-    /^[[:space:]]*On success:[[:space:]]*$/ { flag=1; next }
+# Helper: assert that the sidecar template fenced block whose start marker
+# is "$start_marker" (e.g. 'On success:' or 'On failure') has defect_class:
+# as the LAST frontmatter field. Eliminates the duplicated 7-line
+# extract+frontmatter-slice+last-field sequence between the success and
+# failure pins. The success pin layers an additional score-precedes-
+# defect_class assertion on top via _assert_score_precedes_defect_class.
+_extract_template_block() {
+  local agent=$1 start_re=$2
+  awk -v start_re="$start_re" '
+    $0 ~ start_re { flag=1; next }
     flag && /^[[:space:]]*```markdown[[:space:]]*$/ { in_block=1; next }
     in_block && /^[[:space:]]*```[[:space:]]*$/ { exit }
     in_block { print }
-  ' agents/qrspi-finding-verifier.md)
+  ' "$agent"
+}
+
+_assert_defect_class_last() {
+  local label=$1 block=$2
+  [ -n "$block" ] || { echo "could not locate $label sidecar template block"; return 1; }
+  local fm
+  fm=$(echo "$block" | awk '/^[[:space:]]*---[[:space:]]*$/{n++; next} n==1{print}')
+  [ -n "$fm" ] || { echo "could not extract $label frontmatter"; return 1; }
+  local last_field
+  last_field=$(echo "$fm" | grep -E '^[[:space:]]*[a-z_]+:' | tail -1 | sed -E 's/^[[:space:]]*([a-z_]+):.*/\1/')
+  [ "$last_field" = "defect_class" ] \
+    || { echo "$label template's last frontmatter field is '$last_field' — must be 'defect_class' per the load-bearing field-ordering invariant"; echo "frontmatter:"; echo "$fm"; return 1; }
+}
+
+@test "sidecar field-order: success template has defect_class: as the LAST frontmatter field" {
+  local block
+  block=$(_extract_template_block agents/qrspi-finding-verifier.md '^[[:space:]]*On success:[[:space:]]*$')
   [ -n "$block" ] || { echo "could not locate On-success sidecar template block"; return 1; }
+  # Success path layers an additional ordering assertion: score: MUST appear
+  # before defect_class: in line order (not just last).
   local score_line defect_line
   score_line=$(echo "$block" | grep -nE '^\s*score:' | head -1 | cut -d: -f1)
   defect_line=$(echo "$block" | grep -nE '^\s*defect_class:' | head -1 | cut -d: -f1)
@@ -274,34 +298,13 @@ source_assembly() {
   [ -n "$defect_line" ] || { echo "no defect_class: in success template"; return 1; }
   [ "$score_line" -lt "$defect_line" ] \
     || { echo "success template field order violated: score: at line $score_line, defect_class: at line $defect_line (score MUST precede defect_class)"; return 1; }
-  # defect_class: MUST be the LAST frontmatter field on the success path.
-  local fm
-  fm=$(echo "$block" | awk '/^[[:space:]]*---[[:space:]]*$/{n++; next} n==1{print}')
-  [ -n "$fm" ] || { echo "could not extract success-template frontmatter"; return 1; }
-  local last_field
-  last_field=$(echo "$fm" | grep -E '^[[:space:]]*[a-z_]+:' | tail -1 | sed -E 's/^[[:space:]]*([a-z_]+):.*/\1/')
-  [ "$last_field" = "defect_class" ] \
-    || { echo "success template's last frontmatter field is '$last_field' — must be 'defect_class' per the load-bearing field-ordering invariant"; echo "frontmatter:"; echo "$fm"; return 1; }
+  _assert_defect_class_last "success" "$block"
 }
 
 @test "sidecar field-order: failure template has defect_class: as the LAST frontmatter field" {
-  # Extract the failure-path fenced markdown block following 'On failure'.
   local block
-  block=$(awk '
-    /^[[:space:]]*On failure/ { flag=1; next }
-    flag && /^[[:space:]]*```markdown[[:space:]]*$/ { in_block=1; next }
-    in_block && /^[[:space:]]*```[[:space:]]*$/ { exit }
-    in_block { print }
-  ' agents/qrspi-finding-verifier.md)
-  [ -n "$block" ] || { echo "could not locate On-failure sidecar template block"; return 1; }
-  # Extract frontmatter lines (between the two --- markers).
-  local fm
-  fm=$(echo "$block" | awk '/^[[:space:]]*---[[:space:]]*$/{n++; next} n==1{print}')
-  [ -n "$fm" ] || { echo "could not extract failure-template frontmatter"; return 1; }
-  local last_field
-  last_field=$(echo "$fm" | grep -E '^[[:space:]]*[a-z_]+:' | tail -1 | sed -E 's/^[[:space:]]*([a-z_]+):.*/\1/')
-  [ "$last_field" = "defect_class" ] \
-    || { echo "failure template's last frontmatter field is '$last_field' — must be 'defect_class' per the load-bearing field-ordering invariant"; echo "frontmatter:"; echo "$fm"; return 1; }
+  block=$(_extract_template_block agents/qrspi-finding-verifier.md '^[[:space:]]*On failure')
+  _assert_defect_class_last "failure" "$block"
 }
 
 @test "sidecar field-order: agent body documents the load-bearing invariant" {

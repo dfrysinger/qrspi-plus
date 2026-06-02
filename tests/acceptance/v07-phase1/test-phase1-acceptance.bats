@@ -2098,55 +2098,65 @@ _t9_simulate_verifier_sidecar_write() {
   [ -n "$yaml" ] \
     || { echo 'no fenced yaml block found under ## Sub-Threshold Observations'; return 1; }
 
+  # Env-dep guard: skip cleanly when python3 / pyyaml are unavailable in the
+  # local environment. CI and the documented test environment carry both;
+  # in a stripped local env the YAML-validation arm of this test would emit
+  # a noisy unrelated failure that masks real regressions. Skip with a
+  # diagnostic so the gap is visible.
+  command -v python3 >/dev/null 2>&1 \
+    || skip "python3 not available in this environment (env-dep — passes in CI)"
+  python3 -c "import yaml" 2>/dev/null \
+    || skip "python3 pyyaml not installed (env-dep — passes in CI)"
+
   # Validate via python yaml (available in CI/test env).
   python3 -c "import sys, yaml; yaml.safe_load(sys.stdin.read())" <<<"$yaml" \
-    || { echo "Sub-Threshold Observations YAML template did not parse cleanly"; printf '%s\n' "$yaml"; return 1; }
+    || { echo "Sub-Threshold Observations YAML template did not parse cleanly"; echo "$yaml"; return 1; }
 
   # Spec DoD pins the template's field shape. Assert each spec-pinned field
   # appears in the YAML template (exact spec spelling — no permissive
   # observation_summary alias). Asserting on the YAML slice (not the whole
   # SKILL) prevents incidental matches elsewhere in the doc.
-  printf '%s\n' "$yaml" | grep -qE '^\s*-?\s*summary:' \
-    || { echo "observations template missing 'summary:' field (spec spelling — not 'observation_summary:')"; printf '%s\n' "$yaml"; return 1; }
-  printf '%s\n' "$yaml" | grep -qE '^\s*finding_paths:' \
-    || { echo "observations template missing 'finding_paths:' list field"; printf '%s\n' "$yaml"; return 1; }
-  printf '%s\n' "$yaml" | grep -qE 'defect_class:' \
-    || { echo "observations template missing 'defect_class:' field"; printf '%s\n' "$yaml"; return 1; }
-  printf '%s\n' "$yaml" | grep -qE 'representative_score:' \
-    || { echo "observations template missing 'representative_score:' field (renamed from 'score:' in R2 — per-finding precision belongs in finding_paths[] sidecars)"; printf '%s\n' "$yaml"; return 1; }
-  printf '%s\n' "$yaml" | grep -qE 'threshold:' \
-    || { echo "observations template missing 'threshold:' field"; printf '%s\n' "$yaml"; return 1; }
+  echo "$yaml" | grep -qE '^\s*-?\s*summary:' \
+    || { echo "observations template missing 'summary:' field (spec spelling — not 'observation_summary:')"; echo "$yaml"; return 1; }
+  echo "$yaml" | grep -qE '^\s*finding_paths:' \
+    || { echo "observations template missing 'finding_paths:' list field"; echo "$yaml"; return 1; }
+  echo "$yaml" | grep -qE 'defect_class:' \
+    || { echo "observations template missing 'defect_class:' field"; echo "$yaml"; return 1; }
+  echo "$yaml" | grep -qE 'representative_score:' \
+    || { echo "observations template missing 'representative_score:' field (renamed from 'score:' in R2 — per-finding precision belongs in finding_paths[] sidecars)"; echo "$yaml"; return 1; }
+  echo "$yaml" | grep -qE 'threshold:' \
+    || { echo "observations template missing 'threshold:' field"; echo "$yaml"; return 1; }
 
   # Bare 'score:' (without the 'representative_' prefix) is the old field name
   # and MUST NOT appear — the rename is load-bearing because per-finding precision
   # is intentionally NOT preserved in this aggregate template.
-  if printf '%s\n' "$yaml" | grep -qE '^\s*score:'; then
+  if echo "$yaml" | grep -qE '^\s*score:'; then
     echo "observations template still uses bare 'score:' field — must be 'representative_score:' (R2 Fix A)"
-    printf '%s\n' "$yaml"
+    echo "$yaml"
     return 1
   fi
 
   # Path-traversal hardening (sec-claude R2 F02): finding_paths[] values MUST
   # be relative paths within the round-NN/ directory; '../' components and
   # absolute paths leak the round artifact surface.
-  if printf '%s\n' "$yaml" | grep -qE '(\.\./|^\s*-\s*/)'; then
+  if echo "$yaml" | grep -qE '(\.\./|^\s*-\s*/)'; then
     echo "observations template contains '../' or absolute-path entry in finding_paths[]"
-    printf '%s\n' "$yaml"
+    echo "$yaml"
     return 1
   fi
 
   # Strict spec-shape pin: the spec defines a flat field list. The
   # `contributing_findings:` substructure was implementation drift in R1
   # and MUST NOT appear — per-finding detail belongs in `finding_paths[]`.
-  if printf '%s\n' "$yaml" | grep -qE '^\s*contributing_findings:'; then
+  if echo "$yaml" | grep -qE '^\s*contributing_findings:'; then
     echo "observations template carries undocumented 'contributing_findings:' substructure (spec defines a flat shape — remove)"
-    printf '%s\n' "$yaml"
+    echo "$yaml"
     return 1
   fi
   # And no permissive observation_summary alias.
-  if printf '%s\n' "$yaml" | grep -qE 'observation_summary:'; then
+  if echo "$yaml" | grep -qE 'observation_summary:'; then
     echo "observations template uses 'observation_summary:' (spec spelling is 'summary:')"
-    printf '%s\n' "$yaml"
+    echo "$yaml"
     return 1
   fi
 
