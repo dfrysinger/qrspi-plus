@@ -7,3 +7,5 @@ description: Apply prompt-design rules when authoring or planning prompt-prose d
 !cat skills/_shared/prompt-prose-detection.md
 
 !cat skills/_shared/prompt-prose-writer-addition.md
+
+<!-- Guard: if either include above is unavailable, do NOT apply this skill. Surface a load error and stop — partial context is worse than no skill. -->

@@ -4,7 +4,7 @@
 #   security-claude F02 + silent-failure-claude F01: /tmp/ reference in prompt-design-rules.md
 #   silent-failure-claude F02: no fail-loud guard in writer/reviewer addition Read
 #   silent-failure-claude F03: writer addition lacks sub-block detection guidance
-#   code-quality-claude F01: goal IDs (G31, G1, G30) in runtime strings
+#   code-quality-claude F01: internal goal IDs in runtime strings
 
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd -P)"
@@ -58,13 +58,13 @@ setup_file() {
 # ── code-quality-claude F01 — no goal IDs in runtime strings ─────────────────
 
 @test "prompt-design-rules.md Last-applied line has no internal goal ID" {
-  # The Last applied: header must not reference G31 or similar IDs.
+  # The Last applied: header must not reference internal goal IDs.
   run grep -E 'Last applied:.*\bG[0-9]+\b' "$RULES"
   [ "$status" -ne 0 ]
 }
 
 @test "prompt-design-rules.md cross-cutting section has no inline (Sources: ...) parentheticals" {
-  # The Sources: G1 and Sources: G30 parentheticals must be removed (inside baseball, R1-cuttable).
+  # The inline (Sources: ...) parentheticals must be removed (inside baseball, R1-cuttable).
   run grep -E '\(Sources:' "$RULES"
   [ "$status" -ne 0 ]
 }
