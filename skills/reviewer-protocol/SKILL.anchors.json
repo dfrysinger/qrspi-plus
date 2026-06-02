@@ -9,70 +9,70 @@
   },
   "Finding Schema": {
     "line_start": 53,
-    "line_end": 62
+    "line_end": 64
   },
   "Change-Type Classifier": {
-    "line_start": 63,
-    "line_end": 114
+    "line_start": 65,
+    "line_end": 116
   },
   "style": {
-    "line_start": 80,
-    "line_end": 86
+    "line_start": 82,
+    "line_end": 88
   },
   "clarity": {
-    "line_start": 87,
-    "line_end": 93
+    "line_start": 89,
+    "line_end": 95
   },
   "correctness": {
-    "line_start": 94,
-    "line_end": 100
+    "line_start": 96,
+    "line_end": 102
   },
   "scope": {
-    "line_start": 101,
-    "line_end": 107
+    "line_start": 103,
+    "line_end": 109
   },
   "intent": {
-    "line_start": 108,
-    "line_end": 114
+    "line_start": 110,
+    "line_end": 116
   },
   "Disagreement-Valid Framing": {
-    "line_start": 115,
-    "line_end": 124
+    "line_start": 117,
+    "line_end": 126
   },
   "Untrusted Data Handling": {
-    "line_start": 125,
-    "line_end": 164
+    "line_start": 127,
+    "line_end": 166
   },
-  "Path A — content read from disk": {
-    "line_start": 131,
-    "line_end": 141
+  "Path A \u2014 content read from disk": {
+    "line_start": 133,
+    "line_end": 143
   },
-  "Path B — content embedded in the dispatch prompt": {
-    "line_start": 142,
-    "line_end": 164
+  "Path B \u2014 content embedded in the dispatch prompt": {
+    "line_start": 144,
+    "line_end": 166
   },
   "Phase Routing": {
-    "line_start": 165,
-    "line_end": 207
+    "line_start": 167,
+    "line_end": 209
   },
-  "Phase Signal — `task_definition`": {
-    "line_start": 174,
-    "line_end": 182
+  "Phase Signal \u2014 `task_definition`": {
+    "line_start": 176,
+    "line_end": 184
   },
   "Contradiction Refusal (FAIL-LOUD)": {
-    "line_start": 183,
-    "line_end": 192
+    "line_start": 185,
+    "line_end": 194
   },
   "Refusal Procedure": {
-    "line_start": 193,
-    "line_end": 207
+    "line_start": 195,
+    "line_end": 209
   },
   "Per-Finding Disk-Write Contract": {
-    "line_start": 208,
-    "line_end": 261
+    "line_start": 210,
+    "line_end": 263
   },
   "Quick-Tier Finding Disposition": {
-    "line_start": 262,
-    "line_end": 274
+    "line_start": 264,
+    "line_end": 276
   }
 }
