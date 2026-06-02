@@ -1405,6 +1405,7 @@ Create the shared prompt-prose primitives — three import snippets, two wrapper
 **Test expectations**
 
 - File-existence checks for all 6 new files; deletion check for `docs/prompt-design-guide.md`.
+- Repo-wide grep audit asserts zero remaining live references to `docs/prompt-design-guide.md` outside historical CHANGELOG entries (matches DoD invariant — fails the build on any stale source-of-truth reference).
 - Verbatim diff of File 1 / File 2 / File 3 bodies vs design.md ## G31 File 1 / File 2 / File 3 — exact match.
 - Frontmatter inspection of Files 4-5: `description:` field present; `!cat` directives appear in the expected order.
 - `git log --follow skills/_shared/prompt-design-rules.md` reaches commits older than the rename.

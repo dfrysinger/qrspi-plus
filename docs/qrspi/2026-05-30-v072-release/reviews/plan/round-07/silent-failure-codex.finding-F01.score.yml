@@ -1,0 +1,2 @@
+score: 15
+reason: Finding's own counter-context concedes the hardcoded-medium-with-loud-warning fallback is a deliberate design.md CD-1 / goals.md G22 decision, so this is a design-altitude objection to a captured decision rather than a plan-altitude correctness defect.

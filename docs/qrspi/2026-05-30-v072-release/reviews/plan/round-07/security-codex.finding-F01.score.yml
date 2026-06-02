@@ -1,0 +1,2 @@
+score: 25
+reason: Absolute/path-traversal cases are subsumed by AC #2's already-enumerated "malformed `!cat` directive" (bare-relative grammar) and "resolves outside repository" (canonicalization) halts, so this is a wording-alignment nit rather than a coverage gap; the reviewer's own footnote concedes round-06 sec-claude classified it as subsumable.

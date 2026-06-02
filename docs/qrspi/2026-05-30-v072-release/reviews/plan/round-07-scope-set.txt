@@ -1,0 +1,5 @@
+# scope-set for round 7
+# generated_by: qrspi-scope-tagger
+# total_findings_kept: 1
+# warning: F02 had no line-range; tagged as full-artifact
+<full>
