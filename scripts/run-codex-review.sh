@@ -236,6 +236,10 @@ _manifest_lock_dir=""
 # The EXIT/INT/TERM trap strings reference this so the tmpfile is cleaned up
 # even when a signal fires after mktemp but before mv-promotion completes.
 _manifest_tmp=""
+# Script-level relay for the first-party prompt tmpfile (_fp_tmp) created in
+# the copilot-cli dispatch path.  The trap installed after mktemp references
+# this so the assembled prompt (containing subject code) is removed on signal.
+_fp_tmp=""
 
 # _append_manifest_entry <entry-json> — shared atomic JSON array append.
 # Uses jq to parse and append so trailing-whitespace/newline variations in
@@ -271,6 +275,11 @@ _append_manifest_entry() {
       # Record in a script-level variable so the EXIT trap string can
       # reference it even after this function's stack frame is gone.
       _manifest_lock_dir="$_lock_dir"
+      # Reset the manifest-tmp relay to "" at lock-acquisition time so the
+      # trap's first reference is always "" rather than a stale path from a
+      # prior interrupted call.  Eliminates the "stale path from prior call"
+      # orphan hazard for the narrow window between mktemp and relay assignment.
+      _manifest_tmp=""
       # EXIT: pure cleanup — just release the lock (no exit call so normal
       # completion paths are not affected).
       # INT/TERM: release the lock THEN exit so bash does not resume the
@@ -915,16 +924,26 @@ if [[ "$_detected_host" == "copilot-cli" ]]; then
     echo "error: mktemp failed for first-party prompt tmpfile" >&2
     exit 1
   fi
+  # Install signal-cleanup trap for _fp_tmp so the assembled prompt (which
+  # contains subject code) is removed if SIGINT/SIGTERM fires before mv-promotion
+  # completes.  Mirror of the _manifest_tmp relay+trap pattern.
+  trap 'rm -f "$_fp_tmp" 2>/dev/null || true' EXIT INT TERM
   if ! compose_prompt > "$_fp_tmp"; then
-    rm -f "$_fp_tmp"
+    rm -f "$_fp_tmp"; _fp_tmp=""
+    trap - EXIT INT TERM
     echo "error: compose_prompt failed for first-party dispatch" >&2
     exit 1
   fi
   if ! mv -f "$_fp_tmp" "$_fp_prompt_file"; then
-    rm -f "$_fp_tmp"
+    rm -f "$_fp_tmp"; _fp_tmp=""
+    trap - EXIT INT TERM
     echo "error: mv -f failed promoting first-party prompt tmpfile" >&2
     exit 1
   fi
+  # mv succeeded: tmpfile has been promoted; clear relay and disarm trap before
+  # calling emit_first_party_manifest_entry (which installs its own traps).
+  _fp_tmp=""
+  trap - EXIT INT TERM
   # Emit the orchestrator-facing DISPATCH_FILE reference to stdout.
   printf 'DISPATCH_FILE=%s\n' "$_fp_prompt_file"
   emit_first_party_manifest_entry "$_fp_prompt_file"

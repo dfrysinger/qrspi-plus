@@ -2210,7 +2210,7 @@ _t9_simulate_verifier_sidecar_write() {
 # schema (structure.md §10).
 # ---------------------------------------------------------------------------
 
-# AC1 — third-party entry: nested dispatch_spec with all T11 provenance
+# AC1 — third-party entry: nested dispatch_spec with all provenance
 # fields plus background job metadata (mode/status/agent/job_id/await_cmd/
 # split_cmd).  The mock dispatcher echoes a JOB_ID line to stdout so the
 # wrapper script can capture and persist it in the manifest.
@@ -2633,7 +2633,6 @@ MOCK_EOF
 }
 
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
 # Signal-safety and security hardening for manifest atomic-append
 # ---------------------------------------------------------------------------
 
@@ -2776,7 +2775,7 @@ JQ_EOF
 }
 
 # ---------------------------------------------------------------------------
-# R6 audit-trail and signal-safety fixes
+# Audit-trail and signal-safety inspection tests
 # ---------------------------------------------------------------------------
 
 # mktemp failure path in _append_manifest_entry must use exit 1 (not return 1).
@@ -2785,7 +2784,10 @@ JQ_EOF
 # entry and the script exits 0, silently breaking the audit trail.
 @test "mktemp failure path in manifest append uses exit 1 not return 1" {
   local script="$REPO_ROOT/scripts/run-codex-review.sh"
-  # There must be no 'return 1' within the mktemp failure block.
+  # Guard: anchor must exist so the absence check below is not vacuously true.
+  grep -q 'mktemp failed for manifest tmp' "$script" \
+    || { echo "ERROR: anchor 'mktemp failed for manifest tmp' not found in script" >&2; return 1; }
+  # There must be no 'return N' within the mktemp failure block.
   ! grep -A5 'mktemp failed for manifest tmp' "$script" | grep -qE '\breturn [0-9]' \
     || { echo "mktemp failure path uses 'return N'; must use 'exit 1' consistent with all other error paths in _append_manifest_entry"; return 1; }
 }
@@ -2801,4 +2803,53 @@ JQ_EOF
     || { echo "INT trap does not clean up _manifest_tmp relay variable"; return 1; }
   grep -qE "trap '.*rm -f.*_manifest_tmp.*TERM" "$script" \
     || { echo "TERM trap does not clean up _manifest_tmp relay variable"; return 1; }
+}
+
+# ---------------------------------------------------------------------------
+# Signal-cleanup relay inspection tests
+# ---------------------------------------------------------------------------
+
+# First-party prompt tmpfile (_fp_tmp) must have a signal-cleanup trap so the
+# assembled prompt (containing subject code) is not orphaned on SIGINT/SIGTERM.
+# Mirror of the _manifest_tmp relay+trap pattern established for the manifest
+# atomic-append path.
+@test "first-party prompt tmpfile has signal-cleanup trap on EXIT/INT/TERM" {
+  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  # Guard: the first-party dispatch block must install a trap referencing _fp_tmp.
+  grep -q '_fp_tmp' "$script" \
+    || { echo "ERROR: _fp_tmp not found in script" >&2; return 1; }
+  # The trap install line must reference _fp_tmp and cover EXIT.
+  grep -qE "trap '.*rm -f.*\\\$_fp_tmp.*EXIT|trap '.*\\\$_fp_tmp.*EXIT" "$script" \
+    || { echo "EXIT trap does not clean up _fp_tmp relay variable"; return 1; }
+  # INT trap must reference _fp_tmp.
+  grep -qE "trap '.*rm -f.*\\\$_fp_tmp.*INT" "$script" \
+    || { echo "INT trap does not clean up _fp_tmp relay variable"; return 1; }
+  # TERM trap must reference _fp_tmp.
+  grep -qE "trap '.*rm -f.*\\\$_fp_tmp.*TERM" "$script" \
+    || { echo "TERM trap does not clean up _fp_tmp relay variable"; return 1; }
+}
+
+# The _manifest_tmp relay must be explicitly reset to "" at lock-acquisition
+# time (before the trap install) so the trap's first reference is always ""
+# rather than a stale path from a prior interrupted call.
+@test "manifest lock-held block resets _manifest_tmp before trap install" {
+  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  # Guard: the reset line must exist somewhere after the lock-acquire mkdir call.
+  grep -q '_manifest_tmp=""' "$script" \
+    || { echo "ERROR: _manifest_tmp=\"\" reset line not found in script" >&2; return 1; }
+  # The reset must appear between the lockdir creation and the trap install.
+  # Extract the line numbers for mkdir (lock acquire), the reset, and the first
+  # trap install to verify ordering: mkdir_line < reset_line < trap_line.
+  local mkdir_line reset_line trap_line
+  mkdir_line="$(grep -n 'mkdir "\$_lock_dir"' "$script" | head -1 | cut -d: -f1)"
+  reset_line="$(grep -n '_manifest_tmp=""' "$script" | grep -v '^\s*#' | awk -F: -v lo="${mkdir_line:-0}" '$1 > lo {print $1; exit}')"
+  trap_line="$(grep -n "trap '.*rm -f.*_manifest_tmp" "$script" | head -1 | cut -d: -f1)"
+  [ -n "$mkdir_line" ] \
+    || { echo "ERROR: lock-acquire mkdir line not found" >&2; return 1; }
+  [ -n "$reset_line" ] \
+    || { echo "ERROR: no _manifest_tmp=\"\" reset found after lockdir creation (line ${mkdir_line})" >&2; return 1; }
+  [ -n "$trap_line" ] \
+    || { echo "ERROR: trap install line for _manifest_tmp not found" >&2; return 1; }
+  (( reset_line < trap_line )) \
+    || { echo "ERROR: _manifest_tmp reset (line ${reset_line}) must come before trap install (line ${trap_line})"; return 1; }
 }
