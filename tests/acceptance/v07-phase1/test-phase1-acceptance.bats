@@ -2004,6 +2004,16 @@ _t9_simulate_verifier_sidecar_write() {
     flag && /^6\. \*\*Write `<sidecar_path>`\*\*/ { exit }
     flag { print }
   ' "$agent")"
+  # End-boundary drift guard (mirrors the unit-pin guard): non-empty slice
+  # AND the slice MUST NOT contain the step-6 marker; either would mean the
+  # awk exit-on-step-6 boundary failed and downstream assertions are running
+  # against the wrong region.
+  [ -n "$slice" ] \
+    || { echo "awk slice between step 5 and step 6 is empty — start boundary drifted"; return 1; }
+  if echo "$slice" | grep -qF '6. **Write'; then
+    echo "awk slice extends past step 6 — end boundary drifted"
+    return 1
+  fi
   echo "$slice" | grep -qE '(≤|<=) ?30|30[- ]char' \
     || { echo "≤30-character cap on defect_class not documented near the rubric step"; return 1; }
 }
@@ -2050,12 +2060,20 @@ _t9_simulate_verifier_sidecar_write() {
   fi
 
   # Prose half: SKILL.md dispositions writer prose forbids keeping
-  # sub-threshold findings via orchestrator override.
+  # sub-threshold findings via orchestrator override AND forbids applying
+  # patches addressing dropped findings under the guise of apply-fix work.
+  # Spec L53 carries TWO distinct MUST NOT clauses; both must be pinned.
   local skill="$SKILLS/using-qrspi/SKILL.md"
   grep -qiE 'sub-threshold' "$skill" \
     || { echo "sub-threshold prose missing from using-qrspi/SKILL.md"; return 1; }
   grep -qE 'MUST NOT.*(override|keep)' "$skill" \
     || { echo "prohibition (MUST NOT … override) not documented"; return 1; }
+  # Second MUST NOT clause: orchestrator MUST NOT apply patches addressing
+  # dropped findings as part of round apply-fix work. Without this pin the
+  # apply-fix patching prohibition is unenforced even though the override
+  # phrasing is intact.
+  grep -qE 'MUST NOT apply patches' "$skill" \
+    || { echo "apply-fix patching prohibition (MUST NOT apply patches) not documented"; return 1; }
 }
 
 @test "[AC5] SKILL.md documents optional ## Sub-Threshold Observations H2 with spec-pinned YAML template" {
@@ -2136,4 +2154,19 @@ _t9_simulate_verifier_sidecar_write() {
   # constraint on finding_paths[].
   grep -qE 'finding_paths.*MUST NOT contain.*\.\./|relative paths within the current `round-NN/`' "$skill" \
     || { echo "SKILL.md does not document the finding_paths[] path-traversal constraint"; return 1; }
+}
+
+@test "[AC6] verifier-fan-in.sh remains free of defect_class / representative_score / sub-threshold tokens (cluster-analysis deferral)" {
+  # G28 explicitly defers cluster-analysis automation to a future release.
+  # The fan-in script remains the single source of truth for keep/drop
+  # decisions per CD-4's iron rule and MUST NOT grow instrumentation tokens
+  # that would tempt future drift toward sidecar-shape coupling. Pin the
+  # invariance directly against the script body.
+  local script="$REPO_ROOT/scripts/verifier-fan-in.sh"
+  [ -f "$script" ] || { echo "scripts/verifier-fan-in.sh missing"; return 1; }
+  if grep -qE 'defect_class|representative_score|sub.threshold.obs' "$script"; then
+    echo "scripts/verifier-fan-in.sh references cluster-analysis tokens — G28 deferral violated"
+    grep -nE 'defect_class|representative_score|sub.threshold.obs' "$script"
+    return 1
+  fi
 }

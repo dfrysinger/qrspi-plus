@@ -159,6 +159,18 @@ source_assembly() {
     flag && /^6\. \*\*Write `<sidecar_path>`\*\*/ { exit }
     flag { print }
   ' "$agent")"
+  # End-boundary drift guard: the slice's open-ended awk pattern would
+  # silently grow if step 6's heading drifted (renumbered, reworded), and
+  # downstream assertions inside the slice would degrade into vacuous passes
+  # against the wrong region. Pin (a) the slice is non-empty AND (b) it does
+  # NOT contain the literal step-6 marker — the latter would prove the awk
+  # exit-on-step-6 guard fired too late.
+  [ -n "$slice" ] \
+    || { echo "awk slice between step 5 (Score) and step 6 (Write) is empty — start boundary drifted"; return 1; }
+  if echo "$slice" | grep -qF '6. **Write'; then
+    echo "awk slice extends past step 6 — end boundary drifted (heading renumbered or reworded)"
+    return 1
+  fi
   echo "$slice" | grep -qiE 'defect[- ]class' \
     || { echo "Defect-class rubric step missing between Score (step 5) and Write-sidecar (step 6)"; echo "$slice"; return 1; }
   echo "$slice" | grep -qF 'defect_class:' \
@@ -182,6 +194,18 @@ source_assembly() {
 @test "verifier agent body documents 'unspecified' fallback for absence-of-signal defect_class" {
   grep -qE 'defect_class: *unspecified' agents/qrspi-finding-verifier.md \
     || { echo "'defect_class: unspecified' fallback not documented"; return 1; }
+}
+
+@test "verifier agent body lists at least one canonical well-formed defect_class example tag" {
+  # Spec L50 / DoD pin: the agent body MUST document examples of well-formed
+  # tags so reviewers/operators have concrete reference shapes. Without this
+  # pin the implementer could remove all worked examples and still pass the
+  # shape/charset/cap assertions above. The four tokens below are the
+  # canonical examples the spec calls out (goal-leakage, swallowed-error,
+  # fabricated-citation, unanchored-claim); at least one MUST appear.
+  grep -qiE 'goal-leakage|swallowed-error|fabricated-citation|unanchored-claim' \
+    agents/qrspi-finding-verifier.md \
+    || { echo "no canonical well-formed defect_class example tags documented"; return 1; }
 }
 
 @test "verifier sidecar success-case example carries defect_class: in frontmatter alongside score:" {
