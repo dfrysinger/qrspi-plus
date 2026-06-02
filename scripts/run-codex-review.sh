@@ -545,6 +545,49 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
+# ---------------------------------------------------------------------------
+# Dispatch manifest persistence — record host/vendor/resolved-model metadata
+# per dispatch entry under <round-dir>/.dispatch-manifest.json so that every
+# dispatch is greppable by host × vendor × model after the fact. The
+# manifest 'model' value is the same resolved value reviewers are instructed
+# to copy as the audit field carried in finding/clean-sentinel frontmatter.
+# Atomic-mv pattern (no flock); idempotent across re-runs of the same
+# round/tag pair (each invocation appends one entry).
+# ---------------------------------------------------------------------------
+
+emit_dispatch_manifest_entry() {
+  local round_dir="$OUTPUT_DIR"
+  local manifest="$round_dir/.dispatch-manifest.json"
+  local agent_name
+  agent_name="$(basename "$AGENT_FILE" .md)"
+  local detected_host
+  detected_host="$(detect_host)"
+
+  # Hand-built JSON object — values are controlled (no embedded quotes from
+  # untrusted input). The vendor is fixed to 'openai-codex' for this script;
+  # the post-rename dispatch script (scripts/dispatch-agent.sh) handles
+  # multi-vendor entries via _resolve-lib.sh.
+  local entry
+  printf -v entry '{"tag":"%s","agent":"%s","mode":"third_party","status":"dispatched","dispatch_spec":{"subagent_type":"%s","host":"%s","vendor":"openai-codex","model":"%s"}}' \
+    "$REVIEWER_TAG" "$agent_name" "$agent_name" "$detected_host" "$MODEL"
+
+  mkdir -p "$round_dir"
+  local tmp="${manifest}.tmp.$$"
+  if [[ -f "$manifest" ]]; then
+    # Replace the trailing ']' on the last line with ',\n  <entry>\n]' to
+    # append into the existing JSON array. The script writes the manifest
+    # with a stable trailing-bracket-on-its-own-line shape so this sed
+    # transformation is deterministic across re-runs.
+    sed '$ s/\]$//' "$manifest" > "$tmp"
+    printf ',\n  %s\n]\n' "$entry" >> "$tmp"
+  else
+    printf '[\n  %s\n]\n' "$entry" > "$tmp"
+  fi
+  mv "$tmp" "$manifest"
+}
+
+emit_dispatch_manifest_entry
+
 DISPATCHER="$REPO_ROOT/scripts/run-third-party-llm.sh"
 if [[ ! -x "$DISPATCHER" && ! -r "$DISPATCHER" ]]; then
   echo "error: run-third-party-llm.sh not found at $DISPATCHER" >&2

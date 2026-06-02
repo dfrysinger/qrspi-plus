@@ -1322,3 +1322,193 @@ _t8_write_finding_pair() {
 
   rm -rf "$tmp"
 }
+
+# ===========================================================================
+# Reviewer-model audit-field flow (G20 acceptance)
+#
+# Coverage:
+#   AC1   Verifier agent body documents the audit field on the parse contract
+#         (Step 1) so reviewer-supplied frontmatter flows through to sidecars.
+#   AC2   Verifier sidecar frontmatter (success + VERIFY_FAILED) documents the
+#         audit field; the value is copied verbatim from finding frontmatter
+#         with a documented `unknown` fallback.
+#   AC3   skills/using-qrspi/SKILL.md reviewer-dispatch prose documents
+#         `actual_model: <resolved model ID>` as a record-keeping prompt
+#         parameter sourced from the dispatch model resolution.
+#   AC4   Clean-sentinel (*.clean.md) coverage: dispatch prose instructs
+#         reviewers to copy the audit field into clean-sentinel frontmatter
+#         alongside per-finding frontmatter.
+#   AC5   Dispatch manifest persists host, vendor, and resolved model per
+#         dispatch entry under <round-dir>/.dispatch-manifest.json; the
+#         manifest model value matches the resolved value reviewers are
+#         instructed to copy as the audit field.
+#   AC6   Existing keep behavior unchanged: correctness floor (<70 drops)
+#         and style/clarity floor (<80 drops); no substituted-model-specific
+#         threshold or aggregate verified-file header introduced.
+# ===========================================================================
+
+@test "[reviewer-model-audit AC1] verifier parse contract (Step 1) names the audit field" {
+  grep -qE 'parse.*5-field.*plus.*audit field' \
+    "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
+    || { echo "verifier Step 1 does not extend parse contract with the audit field"; return 1; }
+  grep -qF 'actual_model:' "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
+    || { echo "actual_model: token absent from verifier agent body"; return 1; }
+}
+
+@test "[reviewer-model-audit AC2] verifier sidecar shape documents audit field in both success and VERIFY_FAILED frontmatter" {
+  # Both sidecar shapes — success and unable-to-evaluate — MUST emit the
+  # audit field so observability does not have a gap on the failure path.
+  local agent="$REPO_ROOT/agents/qrspi-finding-verifier.md"
+  local success_block fail_block
+  success_block="$(awk '/On success:/{flag=1} /On failure/{flag=0} flag' "$agent")"
+  fail_block="$(awk '/On failure/{flag=1} /^7\. /{flag=0} flag' "$agent")"
+  echo "$success_block" | grep -qF 'actual_model:' \
+    || { echo "audit field absent from success-case sidecar frontmatter"; return 1; }
+  echo "$fail_block" | grep -qF 'actual_model:' \
+    || { echo "audit field absent from VERIFY_FAILED-case sidecar frontmatter"; return 1; }
+}
+
+@test "[reviewer-model-audit AC3] using-qrspi/SKILL.md documents the audit field as a reviewer-dispatch prompt parameter sourced from resolved dispatch model" {
+  grep -qE 'actual_model:[[:space:]]*<resolved model ID>' \
+    "$SKILLS/using-qrspi/SKILL.md" \
+    || { echo "reviewer-dispatch prose does not document 'actual_model: <resolved model ID>' parameter"; return 1; }
+  # Prose must anchor that the value is sourced from the already-resolved
+  # dispatch model (orchestrator/dispatch-path resolution), not invented by
+  # the reviewer.
+  grep -qE 'resolved.*dispatch.*model|dispatch.*model.*resolution|already.*resolved' \
+    "$SKILLS/using-qrspi/SKILL.md" \
+    || { echo "reviewer-dispatch prose does not anchor sourcing from the resolved dispatch model"; return 1; }
+}
+
+@test "[reviewer-model-audit AC4] clean-sentinel coverage: dispatch prose instructs copy into *.clean.md frontmatter alongside per-finding frontmatter" {
+  grep -qE 'clean.*md.*actual_model|actual_model.*clean.*\.md' \
+    "$SKILLS/using-qrspi/SKILL.md" \
+    || { echo "reviewer-dispatch prose does not extend audit-field copy to *.clean.md sentinels"; return 1; }
+}
+
+@test "[reviewer-model-audit AC5] dispatch manifest persists host, vendor, and resolved model per dispatch entry; manifest model matches the value reviewers copy" {
+  local TMP_DIR
+  TMP_DIR="$(mktemp -d)"
+
+  # Subject-code fixture
+  mkdir -p "$TMP_DIR/src"
+  printf 'const x = 1;\n' > "$TMP_DIR/src/subject.ts"
+
+  # Reviewer-protocol stubs (compose_prompt reads these)
+  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
+  printf '## Reviewer Dispatch Contract\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
+  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
+    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
+
+  # Minimal agent file (no extra skill deps)
+  mkdir -p "$TMP_DIR/agents"
+  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
+    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
+
+  # Artifact dir + config
+  mkdir -p "$TMP_DIR/artifact-dir"
+  printf -- '---\ncodex_reviews: false\n---\n' \
+    > "$TMP_DIR/artifact-dir/config.md"
+
+  # Mock dispatcher: drains stdin, exits 0
+  mkdir -p "$TMP_DIR/scripts"
+  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+#!/usr/bin/env bash
+cat > /dev/null
+exit 0
+MOCK_EOF
+  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+
+  # Output dir for manifest
+  local OUTDIR="$TMP_DIR/out"
+  mkdir -p "$OUTDIR"
+
+  local resolved_model="gpt-5-codex-canary"
+
+  QRSPI_REPO_ROOT="$TMP_DIR" \
+    COPILOT_CLI="" \
+    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+      --agent-file agents/qrspi-spec-reviewer.md \
+      --reviewer-tag spec-codex \
+      --output-dir "$OUTDIR" \
+      --round 1 \
+      --subject-code "$TMP_DIR/src/subject.ts" \
+      --model "$resolved_model" \
+      --output-file "$TMP_DIR/result.md" \
+      --artifact-dir "$TMP_DIR/artifact-dir" \
+    >/dev/null 2>/dev/null || true
+
+  local manifest="$OUTDIR/.dispatch-manifest.json"
+  [ -f "$manifest" ] \
+    || { echo "manifest file not written at $manifest"; return 1; }
+
+  # host / vendor / model fields all present
+  grep -q '"host"' "$manifest" \
+    || { echo "manifest missing host field"; cat "$manifest"; return 1; }
+  grep -q '"vendor"' "$manifest" \
+    || { echo "manifest missing vendor field"; cat "$manifest"; return 1; }
+  grep -q '"model"' "$manifest" \
+    || { echo "manifest missing model field"; cat "$manifest"; return 1; }
+
+  # Manifest 'model' value MUST equal the resolved model passed at dispatch —
+  # the same value reviewers are instructed to copy as the audit field.
+  grep -qF "\"model\":\"$resolved_model\"" "$manifest" \
+    || grep -qF "\"model\": \"$resolved_model\"" "$manifest" \
+    || { echo "manifest model value does not match resolved dispatch model"; cat "$manifest"; return 1; }
+
+  rm -rf "$TMP_DIR"
+}
+
+@test "[reviewer-model-audit AC6] keep behavior unchanged: correctness <70 drops, style/clarity <80 drops; no new substituted-model threshold introduced" {
+  local tmp
+  tmp="$(mktemp -d)"
+
+  # correctness at floor edge: 70 keeps, 69 drops
+  _t8_write_finding_pair "$tmp" "spec-claude.finding-F01" correctness 70 "" "[]" "ok"
+  _t8_write_finding_pair "$tmp" "spec-claude.finding-F02" correctness 69 "" "[]" "below"
+  # style at floor edge: 80 keeps, 79 drops
+  _t8_write_finding_pair "$tmp" "spec-claude.finding-F03" style 80 "" "[]" "ok"
+  _t8_write_finding_pair "$tmp" "spec-claude.finding-F04" style 79 "" "[]" "below"
+  # clarity at floor edge: 80 keeps, 79 drops
+  _t8_write_finding_pair "$tmp" "spec-claude.finding-F05" clarity 80 "" "[]" "ok"
+  _t8_write_finding_pair "$tmp" "spec-claude.finding-F06" clarity 79 "" "[]" "below"
+
+  run bash "$REPO_ROOT/scripts/verifier-fan-in.sh" "$tmp"
+  [ "$status" -eq 0 ] \
+    || { echo "verifier-fan-in.sh exited $status"; cat "$tmp/.verifier-fan-in-audit.json" 2>/dev/null; return 1; }
+
+  # F01, F03, F05 (at-floor) MUST be in kept-findings.txt
+  grep -q "spec-claude.finding-F01" "$tmp/kept-findings.txt" \
+    || { echo "correctness 70 (at floor) was dropped — keep behavior changed"; return 1; }
+  grep -q "spec-claude.finding-F03" "$tmp/kept-findings.txt" \
+    || { echo "style 80 (at floor) was dropped — keep behavior changed"; return 1; }
+  grep -q "spec-claude.finding-F05" "$tmp/kept-findings.txt" \
+    || { echo "clarity 80 (at floor) was dropped — keep behavior changed"; return 1; }
+
+  # F02, F04, F06 (below-floor) MUST NOT be in kept-findings.txt
+  if grep -q "spec-claude.finding-F02" "$tmp/kept-findings.txt"; then
+    echo "correctness 69 (below floor) reached kept-findings.txt — keep behavior changed"
+    return 1
+  fi
+  if grep -q "spec-claude.finding-F04" "$tmp/kept-findings.txt"; then
+    echo "style 79 (below floor) reached kept-findings.txt — keep behavior changed"
+    return 1
+  fi
+  if grep -q "spec-claude.finding-F06" "$tmp/kept-findings.txt"; then
+    echo "clarity 79 (below floor) reached kept-findings.txt — keep behavior changed"
+    return 1
+  fi
+
+  # No new substituted-model threshold introduced: the fan-in script's
+  # threshold constants remain the canonical pair. Grep the script for any
+  # token suggesting a model-keyed threshold ("model_threshold", "by_model:",
+  # etc.) — if any appears, this task accidentally introduced new gating.
+  if grep -qE 'model_threshold|threshold_by_model|substituted_model_threshold' \
+      "$REPO_ROOT/scripts/verifier-fan-in.sh"; then
+    echo "fan-in script grew model-keyed threshold tokens — out-of-scope gating introduced"
+    return 1
+  fi
+
+  rm -rf "$tmp"
+}

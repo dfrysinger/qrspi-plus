@@ -66,7 +66,7 @@ The verifier receives five prompt parameters:
 
 ## Procedure
 
-1. **Read `<finding_file_path>`** — parse the 5-field finding object (YAML frontmatter: `finding_id`, `severity`, `change_type`, `referenced_files`, plus the prose `message` body).
+1. **Read `<finding_file_path>`** — parse the 5-field finding object (YAML frontmatter: `finding_id`, `severity`, `change_type`, `referenced_files`, plus the prose `message` body) plus the audit field `actual_model:`. The audit field is a record-keeping channel carrying the resolved dispatch model ID the reviewer was instructed to copy at dispatch time; it is observability data only and does NOT gate scoring. When the finding frontmatter omits the field (older rounds, hand-written rounds, or pre-adoption reviewer drift), treat the value as the literal token `unknown` and continue — never fail the verification solely because the audit field is absent.
 2. **Read `<artifact_path>` + `<diff_file_path>`** eagerly when the parameter is provided. (When the artifact directory is not in a git repo the parameter is omitted — fall back to the artifact alone.) These are the primary evidence sources.
 3. **For each `referenced_files` entry**, Read it.
 3.5. **Cite Check** — verify cited resources actually contain what the finding claims they contain. The verifier MUST perform this check before scoring; mismatch produces `score: 0` and halts the rubric.
@@ -93,6 +93,7 @@ The verifier receives five prompt parameters:
    ---
    verifier_status: passed
    score: <int 0..100>
+   actual_model: <copied verbatim from finding frontmatter, or the literal `unknown` when the finding omitted the field>
    reason: <present only when score is 0 due to Cite Check failure; value MUST start with "HALLUCINATED: " — e.g. "HALLUCINATED: file nonexistent/path.md does not exist">
    ---
    <verifier reasoning prose — consumed by humans and future debug tooling, not by the fan-in script>
@@ -102,6 +103,7 @@ The verifier receives five prompt parameters:
    ```markdown
    ---
    verifier_status: failed
+   actual_model: <copied verbatim from finding frontmatter, or the literal `unknown` when the finding omitted the field>
    failure_reason: <one-sentence diagnosis>
    ---
    ```

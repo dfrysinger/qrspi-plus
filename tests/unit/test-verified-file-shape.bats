@@ -105,6 +105,41 @@ source_assembly() {
   ! grep -qF '<!-- @@SCORE:' "$out"
 }
 
+# ---------------------------------------------------------------------------
+# Audit-field shape pins — verifier sidecar frontmatter MUST always carry the
+# audit field documented as the resolved-model record-keeping channel. The
+# field is observability-only (does NOT gate keep/drop). Pinned at the doc
+# layer because the verifier agent body is the contract the orchestrator
+# ships to subagents — drift in the body silently breaks the audit flow even
+# when the fan-in script remains green.
+# ---------------------------------------------------------------------------
+@test "verifier agent body documents actual_model in success-case sidecar frontmatter" {
+  local body
+  body="$(awk '/On success:/{flag=1} /On failure/{flag=0} flag' agents/qrspi-finding-verifier.md)"
+  echo "$body" | grep -qF 'actual_model:' \
+    || { echo "actual_model: not documented in success-case sidecar frontmatter"; return 1; }
+}
+
+@test "verifier agent body documents actual_model in VERIFY_FAILED-case sidecar frontmatter" {
+  # The verifier emits a sidecar even on VERIFY_FAILED, and the audit field
+  # MUST appear there too so downstream observability does not drop entries
+  # whose verifier evaluation failed.
+  local body
+  body="$(awk '/On failure/{flag=1} /^7\. /{flag=0} flag' agents/qrspi-finding-verifier.md)"
+  echo "$body" | grep -qF 'actual_model:' \
+    || { echo "actual_model: not documented in VERIFY_FAILED-case sidecar frontmatter"; return 1; }
+}
+
+@test "verifier agent body documents verbatim copy + unknown fallback for actual_model" {
+  # When finding frontmatter supplies the audit field, the sidecar copies
+  # the value verbatim. When the finding omits it, the sidecar writes
+  # 'unknown' rather than failing — the field is observability, not a gate.
+  grep -qE 'verbatim|copied verbatim' agents/qrspi-finding-verifier.md \
+    || { echo "verbatim-copy contract for actual_model not documented"; return 1; }
+  grep -qE 'actual_model.*unknown|unknown.*actual_model' agents/qrspi-finding-verifier.md \
+    || { echo "unknown fallback for actual_model not documented"; return 1; }
+}
+
 @test "skills/using-qrspi/SKILL.md still contains the structural markers this mirror depends on" {
   # Drift guard: if any of these markers disappears from the documented
   # snippet, the in-test mirror above is no longer testing the documented
