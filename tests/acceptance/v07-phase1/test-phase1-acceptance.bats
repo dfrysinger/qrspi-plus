@@ -1147,7 +1147,7 @@ _t8_write_finding_pair() {
   local tmp
   tmp="$(mktemp -d)"
   local stem="quality-claude.finding-F02"
-  local reason="HALLUCINATED: agents/fake.md has 10 lines, cited 500-510 out of range"
+  local reason="HALLUCINATED: README.md has fewer lines than cited range L99999-L99999 (line 99999 out of range)"
   # cite-check: fixture finding cites README.md at a line range (L99999-L99999)
   # well past EOF (README.md is ~944 lines), so IF the verifier were invoked its
   # Cite Check would trigger line-range failure.
@@ -1185,7 +1185,7 @@ _t8_write_finding_pair() {
   local tmp
   tmp="$(mktemp -d)"
   local stem="quality-claude.finding-F03"
-  local reason="HALLUCINATED: quoted content 'widen/ref' not found at SKILL.md:516"
+  local reason="HALLUCINATED: quoted content 'const fabricatedFunction = () => {}' not found in README.md"
   # cite-check: fixture finding cites README.md and quotes a string that does NOT
   # appear anywhere in that file, so IF the verifier were invoked its Cite Check
   # would trigger quoted-content mismatch failure.
@@ -1223,7 +1223,7 @@ _t8_write_finding_pair() {
   local tmp
   tmp="$(mktemp -d)"
   local stem="quality-claude.finding-F04"
-  local reason="HALLUCINATED: anchor 'FakeFunction' not found in agents/fake-agent.md"
+  local reason="HALLUCINATED: anchor 'nonexistentFunc()' not found in README.md"
   # cite-check: fixture finding cites README.md and names a section/function anchor
   # (nonexistentFunc) that does not exist anywhere in the file, so IF the verifier
   # were invoked its Cite Check would trigger named-anchor failure.
@@ -1275,6 +1275,50 @@ _t8_write_finding_pair() {
   # Finding MUST appear in kept-findings.txt (72 ≥ correctness threshold 70)
   grep -q "$stem" "$tmp/kept-findings.txt" \
     || { echo "cite-check: advisory finding with score 72 unexpectedly absent from kept-findings.txt"; return 1; }
+
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# T8 / TC9: HALLUCINATED scope/intent bypass regression — a score:0 finding
+#           with change_type: scope must NOT reach kept-findings.txt.
+#           (Regression: pre-fix fan-in scope|intent arm unconditionally kept
+#           findings, bypassing the score:0 / HALLUCINATED gate.)
+# ---------------------------------------------------------------------------
+
+@test "[T8 / TC9] HALLUCINATED score-0 scope finding is dropped by fan-in (universal HALLUCINATED gate precedes change_type arm)" {
+  local tmp
+  tmp="$(mktemp -d)"
+  local stem="quality-claude.finding-F09"
+  local reason="HALLUCINATED: file nonexistent/scope-example.md does not exist"
+  # cite-check: fixture is a scope finding with score:0 (HALLUCINATED);
+  # the pre-fix fan-in scope|intent arm kept findings unconditionally —
+  # this test asserts the universal HALLUCINATED gate fires before the arm.
+  local refs="[nonexistent/scope-example.md]"
+  local body="The scope of this change extends beyond the task boundary per nonexistent/scope-example.md."
+
+  _t8_write_finding_pair "$tmp" "$stem" scope 0 "$reason" "$refs" "$body"
+
+  # Assert sidecar has score 0 and HALLUCINATED: reason
+  local raw_score raw_reason
+  raw_score=$(grep "^score:" "$tmp/${stem}.score.md" | awk '{print $2}')
+  [ "$raw_score" -eq 0 ] \
+    || { echo "cite-check: expected score 0 in sidecar, got: $raw_score"; return 1; }
+  raw_reason=$(grep "^reason:" "$tmp/${stem}.score.md" | sed 's/^reason: //')
+  [[ "$raw_reason" == HALLUCINATED:* ]] \
+    || { echo "hallucination: reason does not begin with 'HALLUCINATED:' — got: $raw_reason"; return 1; }
+
+  # Run fan-in; expect exit 0 (well-formed round, finding processed and dropped)
+  run bash "$REPO_ROOT/scripts/verifier-fan-in.sh" "$tmp"
+  [ "$status" -eq 0 ] \
+    || { echo "hallucination: verifier-fan-in.sh exited $status (expected 0)"; cat "$tmp/.verifier-fan-in-audit.json" 2>/dev/null; return 1; }
+
+  # Finding must NOT appear in kept-findings.txt — HALLUCINATED score:0 must be dropped
+  # regardless of change_type (scope/intent no longer bypasses the score filter for score:0)
+  if [ -s "$tmp/kept-findings.txt" ]; then
+    grep -q "$stem" "$tmp/kept-findings.txt" \
+      && { echo "hallucination: HALLUCINATED scope finding reached kept-findings.txt (universal gate missing)"; return 1; }
+  fi
 
   rm -rf "$tmp"
 }
