@@ -78,7 +78,7 @@
   body=$(awk '/^---$/{n++; next} n>=2{print}' agents/qrspi-finding-verifier.md)
   # Must document that score: is an integer in 0..100 in the sidecar frontmatter;
   # require both the type signal and the range signal.
-  echo "$body" | grep -qiE 'score.*integer.*0.*100|score.*int.*0.*100|integer 0.{0,3}100|score:.*<int.*0.{0,3}100>' \
+  echo "$body" | grep -qiE 'score.*integer.*0.*100|score.*int.*0.*100|score:.*<int.*0.{0,3}100>' \
     || { echo "verifier agent does not require score: integer 0-100 in sidecar frontmatter"; return 1; }
 }
 
