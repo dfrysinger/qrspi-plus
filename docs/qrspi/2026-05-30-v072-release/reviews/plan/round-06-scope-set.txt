@@ -1,0 +1,4 @@
+# scope-set for round 06
+# generated_by: qrspi-scope-tagger
+# total_findings_kept: 3
+docs/qrspi/2026-05-30-v072-release/plan.md

@@ -1,0 +1,2 @@
+score: 60
+reason: Verified narrative defect — L110 attributes T39→T21 edge to the dispatch-agent rename (which T20 owns) while T39's own DoD/test (L2253, L2268) document the real reason as mirroring T21's `assert_path_under_repo_root` shape and `resolves outside repository` diagnostic; deps field itself is correct, so this is a low-severity clarity fix.

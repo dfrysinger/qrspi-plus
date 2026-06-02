@@ -1,0 +1,2 @@
+score: 50
+reason: Verified consistency gap — AC #2 enumerates only the symlink-escape build-plugin halt while T39 DoD/Test expectations explicitly require four sibling fail-loud halts (include-cycle, malformed !cat, missing target, ${CLAUDE_SKILL_DIR}-in-shipped-files) with fixtures; real Plan-altitude completeness issue but partially mitigated by T39's per-task tests running in the release suite and AC #2 not being formally an exhaustive bill-of-materials.

@@ -1,0 +1,2 @@
+score: 55
+reason: T16 creates `_resolve-lib.sh` with tier-routing+halt-on-none semantics and T19 modifies the same file to extend host×vendor matrix and add `[second-reviewer-same-vendor]` halt, yet T19 declares Dependencies: none — a real shared-file/AC#2 coordination gap, though somewhat overstated (each fail-loud is independently tested per task and both feed T20).

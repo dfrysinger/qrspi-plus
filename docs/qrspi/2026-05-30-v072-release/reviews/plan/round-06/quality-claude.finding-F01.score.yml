@@ -1,0 +1,2 @@
+score: 78
+reason: Verified — T16 creates scripts/_resolve-lib.sh (L973/L986) and T19 extends it (L1102/L1116); both modify tests/unit/test-routing-matrix-application.bats; T19 declares deps: none (L65, L1103) and no transitive path forces T16→T19, so the missing dep edge is a real correctness gap on the authoritative ordering signal.

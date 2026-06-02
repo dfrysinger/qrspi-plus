@@ -1,0 +1,2 @@
+score: 22
+reason: Design G27 D1 and the DoD itself scope the codex_reviews rejection as a prose-defined Config Validation Procedure owned by using-qrspi SKILL.md (no runtime validator exists for unknown fields), so grep-pinned prose IS the appropriate executable verification; the "or" disjunction in the test expectation correctly accommodates both paths and the finding's premise that runtime validation could mask a grep pass does not apply to a prose-contract mechanism.

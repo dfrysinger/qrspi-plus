@@ -1,0 +1,2 @@
+score: 35
+reason: Real but minor — the cited R1-R7/mental-replay bullets are supplementary lines added alongside extensive deterministic grep/anchor/diff/file-existence checks (which dominate each Test expectations block), the Plan SKILL allows plain-language behaviors/edge-cases rather than purely mechanical assertions, and the finding itself concedes a valid second disposition (accept reviewer-applied altitude for prose tasks), making this closer to a stylistic nit than a correctness defect.
