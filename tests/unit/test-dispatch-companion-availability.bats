@@ -15,7 +15,7 @@ bats_require_minimum_version 1.5.0
 #   - Single-source-of-truth invariant: probe reads the CD-1 host×vendor matrix
 #     from _resolve-lib.sh, not a parallel hardcoded table
 #
-# RED state (before Task 19 implementation):
+# RED state (before implementation):
 #   scripts/second-reviewer-available.sh does not exist → all invocation-based
 #     tests fail; the skills grep audits fail because the old Codex glob is still
 #     present and second_reviewer: is not yet the canonical field.
@@ -53,13 +53,13 @@ teardown() {
 }
 
 # ===========================================================================
-# Host-aware availability: Copilot CLI exits 0 (D5 default = openai-codex)
+# Host-aware availability: Copilot CLI exits 0 (host×vendor default = openai-codex)
 # ===========================================================================
 
 # Test expectation: COPILOT_CLI=1 bash scripts/second-reviewer-available.sh returns 0
-# because D5 names openai-codex as the default second-reviewer vendor for copilot-cli.
+# because the host×vendor matrix names openai-codex as the default second-reviewer vendor for copilot-cli.
 @test "availability: Copilot CLI (COPILOT_CLI=1) exits 0 for default second-reviewer vendor" {
-  # Test expectation: on Copilot CLI both Claude and Codex are first-party; D5 maps
+  # Test expectation: on Copilot CLI both Claude and Codex are first-party; the host×vendor matrix maps
   # copilot-cli → openai-codex as the default second-reviewer vendor → probe exits 0.
   run bash -c "
     unset CLAUDE_PROJECT_DIR CODEX_CLI
@@ -70,14 +70,14 @@ teardown() {
 }
 
 # ===========================================================================
-# Host-aware availability: Claude Code exits 0 (D5 default = openai-codex)
+# Host-aware availability: Claude Code exits 0 (host×vendor default = openai-codex)
 # ===========================================================================
 
 # Test expectation: CLAUDE_PROJECT_DIR set → bash scripts/second-reviewer-available.sh
-# returns 0 because D5 names openai-codex as the default for claude-code.
+# returns 0 because the host×vendor matrix names openai-codex as the default for claude-code.
 @test "availability: Claude Code (CLAUDE_PROJECT_DIR set) exits 0 for default second-reviewer vendor" {
   # Test expectation: on Claude Code, Codex is third-party but reachable via
-  # dispatch-companion.sh; D5 maps claude-code → openai-codex → probe exits 0.
+  # dispatch-companion.sh; the host×vendor matrix maps claude-code → openai-codex → probe exits 0.
   run bash -c "
     unset COPILOT_CLI CODEX_CLI
     export CLAUDE_PROJECT_DIR=\"$TMP_DIR\"
@@ -128,11 +128,11 @@ teardown() {
 # ===========================================================================
 
 # Test expectation: skills/goals/SKILL.md must not contain the Claude-only inline
-# Codex availability glob after the D3 migration.
+# Codex availability glob after the vendor-neutral probe migration.
 @test "grep-audit: skills/goals/SKILL.md does not contain Claude-only Codex availability glob" {
   # Test expectation: the legacy glob
   # ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs
-  # must be absent from skills/goals/SKILL.md after the D3 migration.
+  # must be absent from skills/goals/SKILL.md after the vendor-neutral probe migration.
   # RED: the glob is still present in the file today.
   local match_count
   match_count="$(grep -c 'codex-companion\.mjs' "$GOALS_SKILL" 2>/dev/null || true)"
@@ -140,9 +140,9 @@ teardown() {
 }
 
 # Test expectation: skills/goals/SKILL.md must reference scripts/second-reviewer-available.sh
-# after the D3 migration (vendor-neutral probe replaces the inline glob).
+# after the vendor-neutral probe migration (vendor-neutral probe replaces the inline glob).
 @test "grep-audit: skills/goals/SKILL.md references scripts/second-reviewer-available.sh" {
-  # Test expectation: the D3 migration replaces the inline glob with a call to
+  # Test expectation: the vendor-neutral probe migration replaces the inline glob with a call to
   # bash scripts/second-reviewer-available.sh; confirm the reference is present.
   run grep -q 'second-reviewer-available\.sh' "$GOALS_SKILL"
   [ "$status" -eq 0 ]
@@ -153,7 +153,7 @@ teardown() {
 # ===========================================================================
 
 # Test expectation: skills/using-qrspi/SKILL.md must not contain the Claude-only inline
-# Codex availability glob after the D3 migration.
+# Codex availability glob after the vendor-neutral probe migration.
 @test "grep-audit: skills/using-qrspi/SKILL.md does not contain Claude-only Codex availability glob" {
   # Test expectation: the legacy glob is absent from skills/using-qrspi/SKILL.md
   # at L405 (the second drift site identified in the design references).
@@ -165,7 +165,7 @@ teardown() {
 
 # Test expectation: skills/using-qrspi/SKILL.md references scripts/second-reviewer-available.sh
 @test "grep-audit: skills/using-qrspi/SKILL.md references scripts/second-reviewer-available.sh" {
-  # Test expectation: the D3 migration adds a bash scripts/second-reviewer-available.sh
+  # Test expectation: the vendor-neutral probe migration adds a bash scripts/second-reviewer-available.sh
   # invocation at the Codex-detection paragraph site.
   run grep -q 'second-reviewer-available\.sh' "$USING_SKILL"
   [ "$status" -eq 0 ]
@@ -176,11 +176,11 @@ teardown() {
 # ===========================================================================
 
 # Test expectation: grep -nE 'codex_reviews' skills/reviewer-protocol/SKILL.md returns
-# no matches after the D6 Expected-Reviewer Matrix column-header sweep.
+# no matches after the Expected-Reviewer Matrix column-header sweep.
 @test "grep-audit: skills/reviewer-protocol/SKILL.md contains no codex_reviews field references" {
-  # Test expectation: the D6 sweep renames all 'codex_reviews: true | false' column
+  # Test expectation: the Expected-Reviewer Matrix column-header sweep renames all 'codex_reviews: true | false' column
   # headers in the Expected-Reviewer Matrix to 'second_reviewer: true | false'.
-  # Any remaining codex_reviews occurrence is a D6 miss.
+  # Any remaining codex_reviews occurrence is a miss from that sweep.
   # RED: one match still present today at line 23.
   local match_count
   match_count="$(grep -cE 'codex_reviews' "$REVIEWER_PROTOCOL" 2>/dev/null || true)"
@@ -190,7 +190,7 @@ teardown() {
 # Test expectation: skills/reviewer-protocol/SKILL.md Expected-Reviewer Matrix now uses
 # second_reviewer: true | false as the column headers.
 @test "grep-audit: skills/reviewer-protocol/SKILL.md Expected-Reviewer Matrix uses second_reviewer column headers" {
-  # Test expectation: after the D6 migration, the matrix column headers name
+  # Test expectation: after the Expected-Reviewer Matrix column-header sweep, the matrix column headers name
   # 'second_reviewer: true' and 'second_reviewer: false' (vendor-neutral).
   run grep -qE 'second_reviewer:[[:space:]]*(true|false)' "$REVIEWER_PROTOCOL"
   [ "$status" -eq 0 ]
@@ -216,7 +216,7 @@ teardown() {
   # Test expectation: the Config Validation Procedure (inside using-qrspi) documents
   # that an unknown 'codex_reviews:' field is a hard validation error with a message
   # that names the rename — e.g., 'renamed to second_reviewer:' or 'use second_reviewer:'.
-  # A silent alias would violate CD-1's no-silent-fallback rule and D1's clean-break design.
+  # A silent alias would violate CD-1's no-silent-fallback rule and the clean-break canonical-field rename design.
   # RED: using-qrspi still treats codex_reviews: as a known valid field today.
   run grep -qE "renamed.*second_reviewer|second_reviewer.*renamed|rename.*codex_reviews|codex_reviews.*rename" \
     "$USING_SKILL"

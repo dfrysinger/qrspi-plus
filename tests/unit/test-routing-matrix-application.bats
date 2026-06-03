@@ -474,16 +474,16 @@ setup_file() {
 }
 
 # ===========================================================================
-# second-reviewer D5 matrix and routing coverage (Task 19)
+# second-reviewer host×vendor matrix and routing coverage
 # Covers Test Expectations:
-#   - _resolve-lib.sh D5 default-second-reviewer column is present and correct
+#   - _resolve-lib.sh default-second-reviewer column is present and correct
 #   - [second-reviewer-unavailable] halt documented and behaviorally enforced
 #   - [second-reviewer-same-vendor] halt documented and behaviorally enforced
 #   - same-tier primary + second-reviewer dispatch documented in using-qrspi
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# D5 matrix column: lookup_default_second_reviewer values (behavioral)
+# host×vendor matrix column: lookup_default_second_reviewer values (behavioral)
 # ---------------------------------------------------------------------------
 
 # Source helper: run lookup_default_second_reviewer <host> against the live
@@ -494,23 +494,23 @@ _exec_lookup_default_second_reviewer() {
   lookup_default_second_reviewer "$host"
 }
 
-@test "_resolve-lib.sh D5 matrix: claude-code default second-reviewer vendor is openai-codex" {
+@test "_resolve-lib.sh host×vendor matrix: claude-code default second-reviewer vendor is openai-codex" {
   # Test expectation: lookup_default_second_reviewer('claude-code') returns 'openai-codex'
-  # per D5 — Codex is the default second reviewer for Claude Code hosts.
+  # the default second reviewer for Claude Code hosts is Codex (per the host×vendor matrix).
   run _exec_lookup_default_second_reviewer "claude-code"
   [ "$status" -eq 0 ]
   [ "$output" = "openai-codex" ]
 }
 
-@test "_resolve-lib.sh D5 matrix: copilot-cli default second-reviewer vendor is openai-codex" {
+@test "_resolve-lib.sh host×vendor matrix: copilot-cli default second-reviewer vendor is openai-codex" {
   # Test expectation: lookup_default_second_reviewer('copilot-cli') returns 'openai-codex'
-  # per D5 — Codex is also the default second reviewer for Copilot CLI hosts.
+  # the default second reviewer for Copilot CLI hosts is Codex (per the host×vendor matrix).
   run _exec_lookup_default_second_reviewer "copilot-cli"
   [ "$status" -eq 0 ]
   [ "$output" = "openai-codex" ]
 }
 
-@test "_resolve-lib.sh D5 matrix: unknown host default second-reviewer vendor is none" {
+@test "_resolve-lib.sh host×vendor matrix: unknown host default second-reviewer vendor is none" {
   # Test expectation: lookup_default_second_reviewer('unknown') returns 'none' because
   # there is no second-reviewer vendor entry for an unrecognised host — this is the
   # signal that causes [second-reviewer-unavailable] to fire at dispatch time.
@@ -649,7 +649,7 @@ _exec_lookup_default_second_reviewer() {
 }
 
 # Test expectation: skills/using-qrspi/SKILL.md documents second_reviewer: true as the
-# field that enables same-tier secondary dispatch (vendor-neutral canonical field from D1).
+# field that enables same-tier secondary dispatch (vendor-neutral canonical field).
 @test "using-qrspi: second_reviewer: true documented as the canonical field for enabling second-reviewer dispatch" {
   # Test expectation: using-qrspi/SKILL.md carries the canonical second_reviewer: field
   # documentation (not the legacy codex_reviews: field).
@@ -659,9 +659,9 @@ _exec_lookup_default_second_reviewer() {
 }
 
 # Test expectation: using-qrspi/SKILL.md no longer references codex_reviews: as a
-# valid config field — D1's clean-break rename means only second_reviewer: is valid.
-@test "using-qrspi: no live codex_reviews: field documentation remains after D1 rename" {
-  # Test expectation: after the D1 migration, using-qrspi treats codex_reviews: as an
+# valid config field — the clean-break canonical-field rename means only second_reviewer: is valid.
+@test "using-qrspi: no live codex_reviews: field documentation remains after the canonical-field rename" {
+  # Test expectation: after the canonical-field rename, using-qrspi treats codex_reviews: as an
   # unknown field (error) and does NOT document it as a valid schema key.
   # We check that the template/schema section no longer uses it as a valid field name.
   # RED: using-qrspi still documents codex_reviews: as a valid field today.

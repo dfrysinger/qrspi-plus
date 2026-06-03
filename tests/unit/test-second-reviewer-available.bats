@@ -11,7 +11,7 @@ bats_require_minimum_version 1.5.0
 #   - Shared-source guard: probe must consume _resolve-lib.sh helpers; no
 #     parallel hardcoded host×vendor table allowed in the probe itself
 #
-# RED state (before Task 19 implementation):
+# RED state (before implementation):
 #   scripts/_host-detect.sh does not exist  → all source-safety / host-signal
 #     tests fail at `[ -f ... ]` or at the `bash -c ". $HOST_DETECT ..."` step.
 #   scripts/second-reviewer-available.sh does not exist → executability and
@@ -201,7 +201,7 @@ teardown() {
 # second-reviewer-available.sh — default-path behavior (exit 0 paths)
 # ===========================================================================
 
-# Test expectation: Copilot CLI default path exits 0 — D5 names openai-codex
+# Test expectation: Copilot CLI default path exits 0 — the host×vendor matrix names openai-codex
 # as the default second-reviewer vendor for copilot-cli (both Claude and Codex
 # are first-party on Copilot CLI).
 @test "second-reviewer-available: Copilot CLI default path exits 0" {
@@ -215,7 +215,7 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-# Test expectation: Claude Code default path exits 0 — D5 names openai-codex
+# Test expectation: Claude Code default path exits 0 — the host×vendor matrix names openai-codex
 # as the default second-reviewer vendor for claude-code (Codex is third-party
 # on Claude Code but still potentially reachable via dispatch-companion.sh).
 @test "second-reviewer-available: Claude Code default path exits 0" {
