@@ -317,6 +317,8 @@ EOF
   # `none` without a grep command, and `none` with a grep returning >=1 hit.
   grep -E "[Mm]issing.*field|missing.*\`dependent_tests" "$PLAN_REVIEWER_AGENT"
   extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" "no paths"
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
+    "none.*without.*grep|no grep command follows|without.*grep command"
   grep -E "(returns? )?(>=|≥|>= ?1|one or more|≥ ?1) hit" "$PLAN_REVIEWER_AGENT"
 }
 
