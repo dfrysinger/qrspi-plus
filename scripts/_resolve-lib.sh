@@ -82,7 +82,7 @@ resolve_tier() {
 
   # Layer 2: the agent `tier:` frontmatter field.
   local agent_tier=""
-  if [ -n "$agent_file" ] && [ -r "$agent_file" ]; then
+  if [ -n "$agent_file" ] && [ -f "$agent_file" ] && [ -r "$agent_file" ]; then
     agent_tier="$(grep -E '^tier:[[:space:]]+' "$agent_file" 2>/dev/null \
       | head -1 | sed -E 's/^tier:[[:space:]]+//' | tr -d '[:space:]')"
   fi
@@ -96,7 +96,7 @@ resolve_tier() {
   # CONFIG_MD (Layer 3 cannot even be consulted) from a present config that
   # simply lacks a default_tier: — the Layer-4 warning below names the cause.
   local default_tier="" config_present=1
-  if [ -n "${CONFIG_MD:-}" ] && [ -r "${CONFIG_MD:-}" ]; then
+  if [ -n "${CONFIG_MD:-}" ] && [ -f "${CONFIG_MD:-}" ] && [ -r "${CONFIG_MD:-}" ]; then
     default_tier="$(grep -E '^default_tier:[[:space:]]+' "$CONFIG_MD" 2>/dev/null \
       | head -1 | sed -E 's/^default_tier:[[:space:]]+//' | tr -d '[:space:]')"
   else
@@ -139,7 +139,7 @@ resolve_model() {
   # tier is simply absent or `none`. A missing config is a config-path error,
   # NOT an unconfigured-tier error — emit a DISTINCT diagnostic so an operator
   # with a correct config is not sent down the wrong repair path.
-  if [ -z "${CONFIG_MD:-}" ] || [ ! -r "${CONFIG_MD:-}" ]; then
+  if [ -z "${CONFIG_MD:-}" ] || [ ! -f "${CONFIG_MD:-}" ] || [ ! -r "${CONFIG_MD:-}" ]; then
     printf '[routing] HALT: CONFIG_MD is unset or not a readable file; ' >&2
     printf 'cannot resolve model_routing for tier "%s".\n' "$tier" >&2
     return 1
