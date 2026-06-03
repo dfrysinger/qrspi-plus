@@ -463,7 +463,7 @@ The block carries exactly five tier rows — `extra-low`, `low`, `medium`, `high
 
 See `#### Precedence chain` below for the dispatch-time tier-resolution flow (and `scripts/_resolve-lib.sh` for the resolver implementation).
 
-The orchestrator validates these invariants at config-load time and on every dispatch (see `skills/_shared/config-validation-procedure.md`). When a dispatch resolves to a tier configured as `none`, the dispatcher halts loudly with a diagnostic naming the unconfigured tier and never falls back silently to a neighboring tier or the agent-bundled default — that fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
+The orchestrator validates these invariants at config-load time and on every dispatch (see `skills/_shared/config-validation-procedure.md`). When a dispatch resolves to a tier configured as `none`, the dispatcher halts loudly with a diagnostic naming the unconfigured tier and never falls back silently to a neighboring tier or the agent-bundled default — that fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close. This required block is enumerated in the validation table at `### Fields that affect pipeline behavior (must be validated)`.
 
 #### `trusted_path:` block
 
@@ -509,7 +509,7 @@ The resolved tier is then looked up in the `model_routing:` block to obtain the 
 
 #### Missing `model_routing:` block in `config.md`
 
-When `config.md` does not contain a `model_routing:` block, validation **fails loudly** through the shared config-validation procedure (`skills/_shared/config-validation-procedure.md`) — a missing block and a malformed block fail the same way. The dispatcher does not fire a transient warning and does not silently substitute defaults: an absent routing table has no tier→`(vendor, model)` mapping to resolve against, so the run halts and reports repair-or-abort guidance.
+When `config.md` does not contain a `model_routing:` block, validation **fails loudly** through the shared config-validation procedure (`skills/_shared/config-validation-procedure.md`) — a missing block and a malformed block fail the same way. The dispatcher does not fire a transient warning and does not silently substitute defaults: an absent routing table has no tier→`(vendor, model)` mapping to resolve against, so the run halts and reports repair-or-abort guidance. This required block is enumerated in the validation table at `### Fields that affect pipeline behavior (must be validated)`.
 
 - **Repair:** add the five-tier `model_routing:` block (with `default_tier: medium`) to `config.md` per the schema in `#### \`model_routing:\` block`.
 - **Abort:** if the operator cannot supply the block, abort the run. The dispatcher never falls back silently to an agent-bundled default, never substitutes an unannounced model, and never passes the dispatch through to the host CLI's silent re-routing — any such fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
@@ -612,6 +612,7 @@ Skills must not:
 | Field | Skills that validate it | Valid values |
 |-------|------------------------|--------------|
 | `route` | Goals, Plan, Parallelize, Implement, Integrate, using-qrspi | ordered list of skill names (see Route Templates) |
+| `model_routing:` | using-qrspi, Goals, Plan, Parallelize, Implement, Integrate | required top-level block — a per-vendor five-tier map (one `{ vendor:, model: }` per tier, per CD-1); see the schema heading `model_routing:` block for the definition and the fail-loud heading Missing `model_routing:` block in `config.md` for the enforcement when the block is absent |
 | `pipeline` | Goals, Plan, Parallelize | `full` or `quick` |
 | `codex_reviews` | Goals, Plan, Design, Phasing, Structure, Replan, Implement, Integrate, Test | `true` or `false` |
 | `review_depth` | Implement | `quick` or `deep` — set by Implement at phase start |
