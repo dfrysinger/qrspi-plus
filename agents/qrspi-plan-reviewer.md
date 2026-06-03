@@ -47,12 +47,12 @@ Read the `route` parameter to determine which checklist to run.
 Treat a task as a **sweep** when BOTH conditions hold:
 
 - `files_in_scope` (or the spec's `**Target files:**` bullet) lists strictly more than 5 files (`>5`, not `>=5`) of the same file type. File type means matching extension: `.md` agents in `agents/` count as one type, `.bats` tests count as another, etc.
-- The task title OR the task description body contains at least one of: `all`, `every`, `strip`, `remove`, `rename`, `replace`, `delete`, `sweep` — matched case-insensitive with word-boundary semantics. Word-boundary means `removal` matches `remove` (the keyword is a prefix at a word boundary) but `installer` does NOT match `all` (the keyword is embedded inside a longer word, not at a word boundary).
+- The task title OR the task description body contains at least one of: `all`, `every`, `strip`, `remove`, `rename`, `replace`, `delete`, `sweep` — matched case-insensitive with word-boundary semantics. Word-boundary means `removes` matches `remove` (the keyword is a prefix at a word boundary) but `installer` does NOT match `all` (the keyword is embedded inside a longer word, not at a word boundary).
 
 On detection, verify the task's Test Expectations block contains a `dependent_tests:` field per `skills/plan/SKILL.md` § Sweep Task Contract. The field is well-formed when its value is either:
 
 1. A list of test file paths (each a file, not a directory glob), each of which exists in the repository at review time, with a one-sentence per-file disposition.
-2. The literal string `none` followed on the next line by a `grep -rn '<pattern>' tests/` command — re-run the command from the repository root; well-formed iff it returns zero matches.
+2. The literal string `none` followed on the next line by a `grep -rn '<pattern>' tests/` command — before re-running, validate the command: it must match the exact shape `grep -rn '<quoted-pattern>' tests/` with no shell metacharacters (`;`, `|`, `&`, backtick, `$`, `(`, `)`, `<`, `>`) in the pattern argument and no additional tokens after `tests/`; if validation fails, emit a high-severity correctness finding for malformed grep proof rather than executing. Execute the validated command from the repository root; well-formed iff it returns zero matches.
 
 Emit a `severity: high, change_type: correctness` finding referencing the contract when ANY of the following holds:
 

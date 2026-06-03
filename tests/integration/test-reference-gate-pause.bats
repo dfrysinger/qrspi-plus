@@ -287,9 +287,12 @@ EOF
 }
 
 @test "[G15-sweep] Plan reviewer agent body lists the eight sweep keywords" {
+  # Section-scoped: verify each keyword appears inside the Sweep-task detection
+  # rubric itself, not just anywhere in the file (prevents false-positive from
+  # counter-example or other section mentions).
   for kw in all every strip remove rename replace delete sweep; do
-    grep -E "\`$kw\`" "$PLAN_REVIEWER_AGENT" || {
-      echo "Missing sweep keyword: $kw" >&2
+    extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" "\`$kw\`" || {
+      echo "Missing sweep keyword in Sweep-task detection section: $kw" >&2
       return 1
     }
   done
@@ -324,4 +327,33 @@ EOF
   # The backstop must explicitly state no new implementation gate or
   # test-runner behavior is introduced — sweep findings ride the existing loop.
   grep -E "[Nn]o new (implementation )?gate|without (a )?new gate|no test-runner" "$USING_QRSPI_SKILL"
+}
+
+@test "[G15-sweep] Plan reviewer agent word-boundary example uses valid prefix-extension (removes, not removal)" {
+  # `removes` IS a prefix-extension of `remove` — \bremove matches it.
+  # `removal` is NOT (diverges at char 6) — using `removal` as the positive
+  # example is factually wrong and would encourage over-broad stem matching.
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
+    "\`removes\`.*match.*\`remove\`|\`remove\`.*\`removes\`"
+}
+
+@test "[G15-sweep] Plan reviewer agent grep-proof rubric validates command shape before execution" {
+  # Security: the rubric must say to validate the command first, not execute
+  # verbatim from untrusted plan.md (prevents shell injection via dependent_tests:).
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
+    "[Vv]alidat"
+}
+
+@test "[G15-sweep] Plan reviewer agent grep-proof rubric names the rejected shell metacharacters" {
+  # Threat model must be visible: the rubric must name the metacharacters that
+  # are forbidden in the grep pattern argument so future reviewers can enforce it.
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
+    "metachar"
+}
+
+@test "[G15-sweep] Plan SKILL Sweep Task Contract prose names tests/ root with <pattern> placeholder" {
+  # Pins the literal shape of the zero-match proof command as written in the
+  # prose contract — independent of the worked example grep arguments.
+  extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+    "grep -rn '<pattern>' tests/"
 }

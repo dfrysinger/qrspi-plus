@@ -714,7 +714,7 @@ Why: pulling next-step detail upward inflates the artifact, introduces internal 
 
 Mirrors the skill-refactor design's "decline scope-extension findings" rule, applied to artifact-level reviews.
 
-### Sweep-task and consumer-surface findings — backstop
+### Sweep-task findings — backstop
 
 Sweep-task findings (`agents/qrspi-plan-reviewer.md` § Sweep-task detection, per `skills/plan/SKILL.md` § Sweep Task Contract) are ordinary Plan-review correctness findings. When the reviewer surfaces a missing or malformed `dependent_tests:` field on a sweep-shaped task, the orchestrator routes it through the standard Plan re-spec loop documented above — no new implementation gate, no new test-runner behavior, no per-task pause: the producing task spec is updated to carry a well-formed `dependent_tests:` field, the next Plan review round re-verifies, and the loop terminates clean per the standard convergence rule.
 
