@@ -307,6 +307,40 @@ setup_file() {
   echo "$output" | grep -q '^DETECTION_TYPE=user-override-only$'
 }
 
+# Interactive override must also win on a recognized host (COPILOT_CLI=1)
+@test "QRSPI_INTERACTION_MODE=interactive override wins even on COPILOT_CLI=1 host" {
+  run bash -c "
+    export COPILOT_CLI=1
+    unset CLAUDE_PROJECT_DIR
+    export QRSPI_INTERACTION_MODE=interactive
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^PLATFORM=copilot-cli$'
+  echo "$output" | grep -q '^VERDICT=interactive$'
+  # Must NOT emit DETECTION_TYPE=llm-context when override wins
+  ! echo "$output" | grep -q '^DETECTION_TYPE=llm-context$'
+  echo "$output" | grep -q '^DETECTION_TYPE=user-override-only$'
+  echo "$output" | grep -q '^EVIDENCE=.*QRSPI_INTERACTION_MODE.*interactive'
+}
+
+# Interactive override must also win on Claude Code host
+@test "QRSPI_INTERACTION_MODE=interactive override (Claude Code host): emits PLATFORM=claude-code" {
+  run bash -c "
+    unset COPILOT_CLI
+    export CLAUDE_PROJECT_DIR='/some/project'
+    export QRSPI_INTERACTION_MODE=interactive
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^PLATFORM=claude-code$'
+  echo "$output" | grep -q '^VERDICT=interactive$'
+  # Must NOT emit DETECTION_TYPE=llm-context when override wins
+  ! echo "$output" | grep -q '^DETECTION_TYPE=llm-context$'
+  echo "$output" | grep -q '^DETECTION_TYPE=user-override-only$'
+  echo "$output" | grep -q '^EVIDENCE=.*QRSPI_INTERACTION_MODE.*interactive'
+}
+
 # ===========================================================================
 # Failure paths
 # ===========================================================================
@@ -395,8 +429,8 @@ setup_file() {
 }
 
 @test "[T24] Header: override chain documented" {
-  # The header must document QRSPI_INTERACTION_MODE and the safe-default
-  run grep -c 'QRSPI_INTERACTION_MODE' "$SCRIPT"
+  # The header must contain the OVERRIDE CHAIN section anchor — unique to the header
+  run grep -c 'OVERRIDE CHAIN' "$SCRIPT"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
 }
@@ -606,6 +640,25 @@ setup_file() {
   run bash -c "
     unset COPILOT_CLI QRSPI_INTERACTION_MODE
     export CLAUDE_PROJECT_DIR='/some/project'
+    cd \"$tmpdir\"
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  # No regular files should have been created in the working directory
+  local n_files
+  n_files="$(find "$tmpdir" -maxdepth 1 -type f | wc -l | tr -d ' ')"
+  [ "$n_files" -eq 0 ]
+}
+
+# ===========================================================================
+# No-file-write assertion for the override branch
+# ===========================================================================
+
+@test "Override branch creates no files at all" {
+  local tmpdir="$BATS_TEST_TMPDIR"
+  run bash -c "
+    unset COPILOT_CLI CLAUDE_PROJECT_DIR
+    export QRSPI_INTERACTION_MODE=auto
     cd \"$tmpdir\"
     bash \"$SCRIPT\"
   "
