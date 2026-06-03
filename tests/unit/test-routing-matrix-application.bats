@@ -472,3 +472,199 @@ setup_file() {
   c=$(grep -ciE 'four[- ]layer' "$IMPLEMENT" || true)
   [ "$c" -eq 0 ]
 }
+
+# ===========================================================================
+# second-reviewer D5 matrix and routing coverage (Task 19)
+# Covers Test Expectations:
+#   - _resolve-lib.sh D5 default-second-reviewer column is present and correct
+#   - [second-reviewer-unavailable] halt documented and behaviorally enforced
+#   - [second-reviewer-same-vendor] halt documented and behaviorally enforced
+#   - same-tier primary + second-reviewer dispatch documented in using-qrspi
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# D5 matrix column: lookup_default_second_reviewer values (behavioral)
+# ---------------------------------------------------------------------------
+
+# Source helper: run lookup_default_second_reviewer <host> against the live
+# _resolve-lib.sh.  Usage: _exec_lookup_default_second_reviewer <host>
+_exec_lookup_default_second_reviewer() {
+  local host="$1"
+  QRSPI_SOURCE_ONLY=1 source "$REPO_ROOT/scripts/_resolve-lib.sh"
+  lookup_default_second_reviewer "$host"
+}
+
+@test "_resolve-lib.sh D5 matrix: claude-code default second-reviewer vendor is openai-codex" {
+  # Test expectation: lookup_default_second_reviewer('claude-code') returns 'openai-codex'
+  # per D5 — Codex is the default second reviewer for Claude Code hosts.
+  run _exec_lookup_default_second_reviewer "claude-code"
+  [ "$status" -eq 0 ]
+  [ "$output" = "openai-codex" ]
+}
+
+@test "_resolve-lib.sh D5 matrix: copilot-cli default second-reviewer vendor is openai-codex" {
+  # Test expectation: lookup_default_second_reviewer('copilot-cli') returns 'openai-codex'
+  # per D5 — Codex is also the default second reviewer for Copilot CLI hosts.
+  run _exec_lookup_default_second_reviewer "copilot-cli"
+  [ "$status" -eq 0 ]
+  [ "$output" = "openai-codex" ]
+}
+
+@test "_resolve-lib.sh D5 matrix: unknown host default second-reviewer vendor is none" {
+  # Test expectation: lookup_default_second_reviewer('unknown') returns 'none' because
+  # there is no second-reviewer vendor entry for an unrecognised host — this is the
+  # signal that causes [second-reviewer-unavailable] to fire at dispatch time.
+  run _exec_lookup_default_second_reviewer "unknown"
+  [ "$status" -eq 0 ]
+  [ "$output" = "none" ]
+}
+
+# ---------------------------------------------------------------------------
+# [second-reviewer-unavailable] halt behavior in _resolve-lib.sh
+# ---------------------------------------------------------------------------
+
+# Test expectation: _resolve-lib.sh contains a [second-reviewer-unavailable] diagnostic
+# string — the halt diagnostic must live in the shared library, not only in the probe
+# script, so the dispatcher-side check uses the same diagnostic tag.
+@test "_resolve-lib.sh: contains [second-reviewer-unavailable] halt diagnostic" {
+  # Test expectation: the [second-reviewer-unavailable] tag is defined in _resolve-lib.sh
+  # so there is a single source for the diagnostic format consumed by dispatch-agent.sh
+  # and by tests/unit/ pin files alike.
+  # RED: _resolve-lib.sh does not yet contain this diagnostic.
+  run grep -q 'second-reviewer-unavailable' "$REPO_ROOT/scripts/_resolve-lib.sh"
+  [ "$status" -eq 0 ]
+}
+
+# Test expectation: when a second_reviewer: true dispatch resolves to a 'none' default
+# vendor (e.g. unknown host), _resolve-lib.sh halts loudly — the halt function is
+# callable from a sourced context.
+@test "_resolve-lib.sh [exec]: [second-reviewer-unavailable] halt fires when default vendor is none (unknown host)" {
+  # Test expectation: source _resolve-lib.sh and call resolve_second_reviewer_vendor
+  # (or equivalent halt function) with host='unknown'; expect exit non-zero with
+  # [second-reviewer-unavailable] on stderr.
+  # RED: resolve_second_reviewer_vendor does not exist in _resolve-lib.sh yet.
+  local _stderr_file="$BATS_TEST_TMPDIR/unavail-halt-stderr.txt"
+  local _status=0
+  bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
+    resolve_second_reviewer_vendor 'unknown' 'anthropic-claude'
+  " >/dev/null 2>"$_stderr_file" || _status=$?
+  [ "$_status" -ne 0 ]
+  grep -q '\[second-reviewer-unavailable\]' "$_stderr_file"
+}
+
+@test "_resolve-lib.sh [exec]: [second-reviewer-unavailable] halt diagnostic names host and vendor" {
+  # Test expectation: the halt diagnostic emitted by resolve_second_reviewer_vendor
+  # names both host= and vendor= so operators can identify the cause.
+  # RED: resolve_second_reviewer_vendor does not exist in _resolve-lib.sh yet.
+  local _stderr_file="$BATS_TEST_TMPDIR/unavail-halt-named-stderr.txt"
+  bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
+    resolve_second_reviewer_vendor 'unknown' 'anthropic-claude'
+  " >/dev/null 2>"$_stderr_file" || true
+  grep -qE 'host=|vendor=' "$_stderr_file"
+}
+
+# ---------------------------------------------------------------------------
+# [second-reviewer-same-vendor] halt behavior in _resolve-lib.sh
+# ---------------------------------------------------------------------------
+
+# Test expectation: _resolve-lib.sh contains a [second-reviewer-same-vendor] diagnostic
+# string — the slot-distinctness check lives here as the single enforcement point.
+@test "_resolve-lib.sh: contains [second-reviewer-same-vendor] halt diagnostic" {
+  # Test expectation: the [second-reviewer-same-vendor] tag is defined in _resolve-lib.sh
+  # so there is one enforcement point for the primary≠second-reviewer invariant.
+  # RED: _resolve-lib.sh does not yet contain this diagnostic.
+  run grep -q 'second-reviewer-same-vendor' "$REPO_ROOT/scripts/_resolve-lib.sh"
+  [ "$status" -eq 0 ]
+}
+
+# Test expectation: when a second_reviewer: true dispatch resolves both the primary
+# and the second-reviewer slots to the same vendor, _resolve-lib.sh halts loudly
+# with [second-reviewer-same-vendor] and emits no dispatch spec lines.
+@test "_resolve-lib.sh [exec]: [second-reviewer-same-vendor] halt fires when primary and second vendor are equal" {
+  # Test expectation: call resolve_second_reviewer_vendor <host> <primary_vendor>
+  # where the default second-reviewer vendor for that host equals primary_vendor.
+  # In this test, primary_vendor = 'openai-codex' on copilot-cli where the default
+  # second-reviewer is ALSO openai-codex — same vendor → halt.
+  # RED: resolve_second_reviewer_vendor does not exist in _resolve-lib.sh yet.
+  local _stderr_file="$BATS_TEST_TMPDIR/same-vendor-halt-stderr.txt"
+  local _status=0
+  bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
+    resolve_second_reviewer_vendor 'copilot-cli' 'openai-codex'
+  " >/dev/null 2>"$_stderr_file" || _status=$?
+  [ "$_status" -ne 0 ]
+  grep -q '\[second-reviewer-same-vendor\]' "$_stderr_file"
+}
+
+# Test expectation: [second-reviewer-same-vendor] halt emits zero dispatch-spec lines.
+# The function must not output any dispatch spec lines when it halts.
+@test "_resolve-lib.sh [exec]: [second-reviewer-same-vendor] halt emits no stdout dispatch spec lines" {
+  # Test expectation: when the same-vendor halt fires, stdout carries zero lines
+  # (no partial dispatch spec line is emitted before the halt).
+  # RED: resolve_second_reviewer_vendor does not exist in _resolve-lib.sh yet.
+  local _stdout_file="$BATS_TEST_TMPDIR/same-vendor-halt-stdout.txt"
+  bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
+    resolve_second_reviewer_vendor 'copilot-cli' 'openai-codex'
+  " >"$_stdout_file" 2>/dev/null || true
+  local line_count
+  line_count="$(wc -l < "$_stdout_file" | tr -d ' ')"
+  [ "$line_count" -eq 0 ]
+}
+
+# Test expectation: [second-reviewer-same-vendor] halt diagnostic names both vendors
+# so operators can identify the collision.
+@test "_resolve-lib.sh [exec]: [second-reviewer-same-vendor] halt diagnostic names primary and second vendor" {
+  # Test expectation: the diagnostic names the conflicting vendor(s) so operators
+  # can edit config.md or second_reviewer_vendor: to resolve the collision.
+  # RED: resolve_second_reviewer_vendor does not exist in _resolve-lib.sh yet.
+  local _stderr_file="$BATS_TEST_TMPDIR/same-vendor-halt-named-stderr.txt"
+  bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
+    resolve_second_reviewer_vendor 'copilot-cli' 'openai-codex'
+  " >/dev/null 2>"$_stderr_file" || true
+  grep -q 'openai-codex' "$_stderr_file"
+}
+
+# ---------------------------------------------------------------------------
+# Same-tier primary + second-reviewer dispatch: skill prose coverage
+# ---------------------------------------------------------------------------
+
+# Test expectation: skills/using-qrspi/SKILL.md documents that when second_reviewer: true
+# is set, both the primary and second-reviewer dispatches use the same agent tier:
+# (from G22's rubric) — no separate tier knob for the second reviewer.
+@test "using-qrspi: second_reviewer: true dispatch uses same tier for primary and second reviewer" {
+  # Test expectation: the dispatch prose documents that the same tier: applies to both
+  # the primary reviewer dispatch and the second-reviewer dispatch when second_reviewer: true.
+  # RED: using-qrspi does not yet mention second_reviewer: at all.
+  run grep -qE 'second_reviewer.*tier|tier.*second_reviewer' "$USING_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+# Test expectation: skills/using-qrspi/SKILL.md documents second_reviewer: true as the
+# field that enables same-tier secondary dispatch (vendor-neutral canonical field from D1).
+@test "using-qrspi: second_reviewer: true documented as the canonical field for enabling second-reviewer dispatch" {
+  # Test expectation: using-qrspi/SKILL.md carries the canonical second_reviewer: field
+  # documentation (not the legacy codex_reviews: field).
+  # RED: using-qrspi still uses codex_reviews: today.
+  run grep -qE 'second_reviewer:[[:space:]]*(true|false)' "$USING_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+# Test expectation: using-qrspi/SKILL.md no longer references codex_reviews: as a
+# valid config field — D1's clean-break rename means only second_reviewer: is valid.
+@test "using-qrspi: no live codex_reviews: field documentation remains after D1 rename" {
+  # Test expectation: after the D1 migration, using-qrspi treats codex_reviews: as an
+  # unknown field (error) and does NOT document it as a valid schema key.
+  # We check that the template/schema section no longer uses it as a valid field name.
+  # RED: using-qrspi still documents codex_reviews: as a valid field today.
+  c=$(grep -cE '^codex_reviews:' "$USING_SKILL" || true)
+  [ "$c" -eq 0 ]
+}
