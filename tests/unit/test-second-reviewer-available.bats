@@ -133,10 +133,9 @@ teardown() {
 # Test expectation: future Codex CLI signal → detect_host returns 'codex-cli'
 # (v0.7.3+ deferred per design.md; codex-cli host support is not shipped in v0.7.2)
 @test "_host-detect: future Codex CLI signal (CODEX_CLI=1) returns codex-cli [v0.7.3+ deferred]" {
-  # Test expectation: when the future Codex CLI env signal is present, detect_host
-  # returns 'codex-cli'.  This pins the v0.7.3+ signal behavior now.
-  # RED: _host-detect.sh does not exist yet; RED after v0.7.2 implementation
-  # (codex-cli detection not shipped until v0.7.3+).
+  skip "codex-cli host detection deferred to v0.7.3+ (design.md: Codex CLI support out of scope for v0.7.2); identifier is enumerated but no detection branch ships this release"
+  # Test expectation (v0.7.3+): when the Codex CLI env signal is present, detect_host
+  # returns 'codex-cli'.  This documents the future signal contract.
   run bash -c "
     export QRSPI_SOURCE_ONLY=1
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
@@ -146,6 +145,27 @@ teardown() {
   "
   [ "$status" -eq 0 ]
   [ "$output" = "codex-cli" ]
+}
+
+# Test expectation: CODEX_CLI=1 with no copilot/claude signal → detect_host returns 'unknown'
+# This pins the actual v0.7.2 shipped behavior: an unrecognised env signal falls through
+# to the 'unknown' default because no codex-cli detection branch exists this release.
+@test "_host-detect: CODEX_CLI=1 with no copilot/claude signal returns unknown (v0.7.2 shipped behavior)" {
+  # Test expectation: when CODEX_CLI=1 is set but COPILOT_CLI and CLAUDE_PROJECT_DIR are
+  # absent, detect_host outputs exactly 'unknown' and exits 0.  The v0.7.2 implementation
+  # carries no CODEX_CLI branch; the signal is silently unrecognised and falls through to
+  # the default 'unknown' return value.
+  # RED: _host-detect.sh does not yet exist; this assertion will go GREEN once the script
+  # ships and returns 'unknown' for unrecognised signals.
+  run bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    unset COPILOT_CLI CLAUDE_PROJECT_DIR
+    export CODEX_CLI=1
+    . \"$HOST_DETECT\"
+    detect_host
+  "
+  [ "$status" -eq 0 ]
+  [ "$output" = "unknown" ]
 }
 
 # Test expectation: _host-detect.sh performs no filesystem probes
