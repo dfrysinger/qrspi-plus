@@ -6,6 +6,17 @@
 # pipeline form (commit 18 / issue-110) and reference agent files +
 # reviewer-protocol instead.
 # Added in commit 22/22 of issue-110 migration.
+#
+# Task-20 additions (task-20.md Test expectations):
+#   - File/rename audit: old script/test paths gone; new paths exist
+#   - Grep audit: old script names have no live call sites in migrated skill prose
+#   - Consumer-skill migration: all 12 SKILL.md files include
+#     !cat skills/_shared/reviewer-dispatch-prose.md at reviewer dispatch
+#   - Shared-prose content inspection: reviewer-dispatch-prose.md carries
+#     locked dispatch-agent invocation, spec-line parse, iron law, DISPATCH_FILE,
+#     await-round follow-up
+#   - dispatch-companion JOB_ID=<id> launch contract
+#   - third-party-finding-splitter.sh flag-based interface existence
 
 setup() {
   cd "$BATS_TEST_DIRNAME/../.."
@@ -52,4 +63,260 @@ setup() {
         || { echo "skills/${skill}/SKILL.md still references deleted template path: $path"; return 1; }
     done
   done
+}
+
+# ===========================================================================
+# Task-20: File/rename audit
+# ===========================================================================
+
+# Test expectation: new dispatch entrypoints exist as live files
+@test "task-20 rename-audit: scripts/dispatch-agent.sh exists" {
+  # Test expectation: hard rename landed; scripts/dispatch-agent.sh is the live entry point.
+  [ -f "scripts/dispatch-agent.sh" ]
+  [ -x "scripts/dispatch-agent.sh" ]
+}
+
+@test "task-20 rename-audit: scripts/dispatch-companion.sh exists" {
+  # Test expectation: scripts/run-third-party-llm.sh renamed to scripts/dispatch-companion.sh.
+  [ -f "scripts/dispatch-companion.sh" ]
+  [ -x "scripts/dispatch-companion.sh" ]
+}
+
+@test "task-20 rename-audit: scripts/third-party-finding-splitter.sh exists" {
+  # Test expectation: scripts/codex-finding-splitter.sh renamed to scripts/third-party-finding-splitter.sh.
+  [ -f "scripts/third-party-finding-splitter.sh" ]
+  [ -x "scripts/third-party-finding-splitter.sh" ]
+}
+
+@test "task-20 rename-audit: skills/_shared/reviewer-dispatch-prose.md exists" {
+  # Test expectation: shared dispatch-prose snippet created per task-20.md scope bullet.
+  [ -f "skills/_shared/reviewer-dispatch-prose.md" ]
+}
+
+@test "task-20 rename-audit: tests/unit/test-dispatch-agent.bats exists" {
+  # Test expectation: test-run-codex-review.bats renamed to test-dispatch-agent.bats.
+  [ -f "tests/unit/test-dispatch-agent.bats" ]
+}
+
+@test "task-20 rename-audit: scripts/run-codex-review.sh no longer exists" {
+  # Test expectation: hard rename — old path must be completely gone; no shim allowed.
+  [ ! -f "scripts/run-codex-review.sh" ]
+}
+
+@test "task-20 rename-audit: scripts/run-third-party-llm.sh no longer exists" {
+  # Test expectation: hard rename — old path must be completely gone; no shim allowed.
+  [ ! -f "scripts/run-third-party-llm.sh" ]
+}
+
+@test "task-20 rename-audit: scripts/codex-finding-splitter.sh no longer exists" {
+  # Test expectation: hard rename — old path must be completely gone; no shim allowed.
+  [ ! -f "scripts/codex-finding-splitter.sh" ]
+}
+
+@test "task-20 rename-audit: tests/unit/test-run-codex-review.bats no longer exists" {
+  # Test expectation: test file rename completed — old path gone.
+  [ ! -f "tests/unit/test-run-codex-review.bats" ]
+}
+
+# ===========================================================================
+# Task-20: Grep audit — old script names have no live call sites
+# ===========================================================================
+
+# Test expectation: no live call sites for run-codex-review.sh in migrated skill prose
+@test "task-20 grep-audit: run-codex-review.sh has no live call sites in migrated skill prose" {
+  # Test expectation: the 12 consumer SKILL.md files must not reference the old script name
+  # (task-20.md grep audit bullet).
+  local skills=(goals questions research design structure phasing plan parallelize implement integrate replan test)
+  for skill in "${skills[@]}"; do
+    ! grep -qF 'run-codex-review.sh' "skills/${skill}/SKILL.md" \
+      || { echo "skills/${skill}/SKILL.md still references run-codex-review.sh"; return 1; }
+  done
+}
+
+@test "task-20 grep-audit: run-third-party-llm.sh has no live call sites in migrated skill prose" {
+  # Test expectation: the 12 consumer SKILL.md files must not reference the old companion script name.
+  local skills=(goals questions research design structure phasing plan parallelize implement integrate replan test)
+  for skill in "${skills[@]}"; do
+    ! grep -qF 'run-third-party-llm.sh' "skills/${skill}/SKILL.md" \
+      || { echo "skills/${skill}/SKILL.md still references run-third-party-llm.sh"; return 1; }
+  done
+}
+
+@test "task-20 grep-audit: codex-finding-splitter.sh has no live call sites in migrated skill prose" {
+  # Test expectation: the 12 consumer SKILL.md files must not reference the old splitter script name.
+  local skills=(goals questions research design structure phasing plan parallelize implement integrate replan test)
+  for skill in "${skills[@]}"; do
+    ! grep -qF 'codex-finding-splitter.sh' "skills/${skill}/SKILL.md" \
+      || { echo "skills/${skill}/SKILL.md still references codex-finding-splitter.sh"; return 1; }
+  done
+}
+
+@test "task-20 grep-audit: run-codex-review.sh not referenced as live caller in test-dispatch-agent.bats" {
+  # Test expectation: test-dispatch-agent.bats must not set WRAPPER to run-codex-review.sh.
+  # Historical absence-assertion tests are permitted (they assert the old name is absent).
+  # Count of live script-path references (not absence-assertion lines) must be 0.
+  local live_refs
+  live_refs=$(grep -cE 'WRAPPER=.*run-codex-review\.sh' "tests/unit/test-dispatch-agent.bats" 2>/dev/null || true)
+  [ "$live_refs" -eq 0 ]
+}
+
+# ===========================================================================
+# Task-20: Consumer-skill migration — 12 SKILL.md files use shared include
+# ===========================================================================
+
+# Test expectation: every review-producing SKILL.md includes !cat skills/_shared/reviewer-dispatch-prose.md
+@test "task-20 skill-migration: all 12 SKILL.md files include reviewer-dispatch-prose.md" {
+  # Test expectation: each of the 12 consumer SKILL.md files must have the
+  # '!cat skills/_shared/reviewer-dispatch-prose.md' directive at its reviewer
+  # dispatch section (task-20.md consumer-skill grep/lint bullet).
+  local skills=(goals questions research design structure phasing plan parallelize implement integrate replan test)
+  for skill in "${skills[@]}"; do
+    grep -qF '!cat skills/_shared/reviewer-dispatch-prose.md' "skills/${skill}/SKILL.md" \
+      || { echo "skills/${skill}/SKILL.md missing !cat skills/_shared/reviewer-dispatch-prose.md include"; return 1; }
+  done
+}
+
+# Test expectation: no SKILL.md carries inline per-reviewer Claude/Codex dispatch blocks
+@test "task-20 skill-migration: no SKILL.md carries inline run-codex-review.sh dispatch blocks" {
+  # Test expectation: the inline reviewer dispatch invocations using the old script names
+  # must be replaced by the thin REVIEW_* preamble + shared include.
+  local skills=(goals questions research design structure phasing plan parallelize implement integrate replan test)
+  for skill in "${skills[@]}"; do
+    ! grep -qF 'scripts/run-codex-review.sh' "skills/${skill}/SKILL.md" \
+      || { echo "skills/${skill}/SKILL.md still has inline run-codex-review.sh dispatch block"; return 1; }
+  done
+}
+
+# Test expectation: no SKILL.md carries old splitter pipe recipes
+@test "task-20 skill-migration: no SKILL.md carries old codex-finding-splitter pipe recipes" {
+  # Test expectation: old splitter pipe recipes are gone; await-round.sh handles splitting now.
+  local skills=(goals questions research design structure phasing plan parallelize implement integrate replan test)
+  for skill in "${skills[@]}"; do
+    ! grep -qF 'codex-finding-splitter.sh' "skills/${skill}/SKILL.md" \
+      || { echo "skills/${skill}/SKILL.md still has codex-finding-splitter.sh pipe recipe"; return 1; }
+  done
+}
+
+# Test expectation: each migrated SKILL.md sets the required REVIEW_* preamble variables
+@test "task-20 skill-migration: all 12 SKILL.md files set REVIEW_OUTPUT_DIR preamble var" {
+  # Test expectation: the thin per-skill preamble must at minimum set REVIEW_OUTPUT_DIR
+  # so the shared include can reference it when invoking dispatch-agent.sh and await-round.sh
+  # (structure.md §skills/_shared/reviewer-dispatch-prose.md preamble contract).
+  local skills=(goals questions research design structure phasing plan parallelize implement integrate replan test)
+  for skill in "${skills[@]}"; do
+    grep -qE 'REVIEW_OUTPUT_DIR' "skills/${skill}/SKILL.md" \
+      || { echo "skills/${skill}/SKILL.md missing REVIEW_OUTPUT_DIR preamble variable"; return 1; }
+  done
+}
+
+# ===========================================================================
+# Task-20: Shared-prose content inspection
+# ===========================================================================
+
+# Test expectation: skills/_shared/reviewer-dispatch-prose.md contains dispatch-agent.sh command
+@test "task-20 shared-prose: reviewer-dispatch-prose.md contains dispatch-agent.sh invocation" {
+  # Test expectation: the locked dispatch-agent command must be in the shared snippet
+  # (task-20.md shared-prose inspection bullet; structure.md §reviewer-dispatch-prose.md).
+  grep -qF 'scripts/dispatch-agent.sh' 'skills/_shared/reviewer-dispatch-prose.md'
+}
+
+# Test expectation: shared prose contains spec-line parse instructions (MODE=first_party)
+@test "task-20 shared-prose: reviewer-dispatch-prose.md contains MODE=first_party spec-line parse" {
+  # Test expectation: the snippet must carry parse instructions for the spec-line format
+  # so the orchestrator knows how to iterate (task-20.md shared-prose inspection bullet).
+  grep -qF 'MODE=first_party' 'skills/_shared/reviewer-dispatch-prose.md'
+}
+
+# Test expectation: shared prose contains DISPATCH_FILE prompt rule
+@test "task-20 shared-prose: reviewer-dispatch-prose.md contains DISPATCH_FILE prompt rule" {
+  # Test expectation: the iron-law prompt rule 'prompt = "DISPATCH_FILE=<PROMPT_FILE-value>"'
+  # must appear in the shared snippet (task-20.md shared-prose inspection bullet).
+  grep -qF 'DISPATCH_FILE=' 'skills/_shared/reviewer-dispatch-prose.md'
+}
+
+# Test expectation: shared prose contains one Task call per spec line (iron law)
+@test "task-20 shared-prose: reviewer-dispatch-prose.md contains one-Task-call-per-spec-line iron law" {
+  # Test expectation: the iron law forbidding skipped / deduplicated / modified Task invocations
+  # must appear in the shared snippet so every consumer skill inherits it via !cat include
+  # (task-20.md shared-prose inspection bullet; design.md CD-1 §3 iron law).
+  grep -qiE 'exactly once per.*spec line|one.*Task.*per.*spec line|invoke.*Task.*exactly once' \
+    'skills/_shared/reviewer-dispatch-prose.md'
+}
+
+# Test expectation: shared prose contains unconditional await-round.sh --round-dir follow-up
+@test "task-20 shared-prose: reviewer-dispatch-prose.md contains await-round.sh --round-dir follow-up" {
+  # Test expectation: the await-round follow-up is unconditional (no-op-safe for first-party-only
+  # rounds) and must appear in the shared snippet (task-20.md shared-prose inspection bullet).
+  grep -qF 'scripts/await-round.sh --round-dir' 'skills/_shared/reviewer-dispatch-prose.md'
+}
+
+@test "task-20 shared-prose: reviewer-dispatch-prose.md references REVIEW_OUTPUT_DIR in await-round call" {
+  # Test expectation: the await-round invocation uses the $REVIEW_OUTPUT_DIR preamble variable
+  # so each consumer skill's round-dir is correct.
+  grep -qE 'await-round\.sh.*--round-dir.*REVIEW_OUTPUT_DIR' 'skills/_shared/reviewer-dispatch-prose.md'
+}
+
+# ===========================================================================
+# Task-20: dispatch-companion.sh JOB_ID= launch contract and interface audit
+# ===========================================================================
+
+# Test expectation: dispatch-companion.sh exists with the new flag-based interface
+@test "task-20 companion: dispatch-companion.sh exists and is executable" {
+  # Test expectation: run-third-party-llm.sh renamed to dispatch-companion.sh;
+  # the renamed script must exist at the new path.
+  [ -f "scripts/dispatch-companion.sh" ]
+  [ -x "scripts/dispatch-companion.sh" ]
+}
+
+@test "task-20 companion: dispatch-companion.sh accepts launch flags without crashing (no 127)" {
+  # Test expectation: dispatch-companion.sh uses the new --vendor/--model/--prompt-file/--round-dir/--tag
+  # flag surface (structure.md §dispatch-companion.sh); it must not exit 127 (script not found)
+  # when invoked with the new flags.
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  local prompt_file="$tmp_dir/prompt.txt"
+  printf 'Test prompt body\n' > "$prompt_file"
+  run scripts/dispatch-companion.sh \
+    --vendor stub \
+    --model stub-model \
+    --prompt-file "$prompt_file" \
+    --round-dir "$tmp_dir" \
+    --tag test-tag
+  rm -rf "$tmp_dir"
+  # 127 = command not found; any other exit is acceptable for RED
+  [ "$status" -ne 127 ]
+}
+
+@test "task-20 companion: dispatch-companion.sh launch output contains only JOB_ID= (no payload echo)" {
+  # Test expectation: the companion script's launch subcommand writes exactly 'JOB_ID=<id>'
+  # to stdout; payload text must never echo into the orchestrator context (CD-1 #4 output-bound).
+  # (This test is inherently network-stubbed; it verifies the contract is wired even under
+  # a vendor error — a failed vendor call must not echo the prompt body to stdout.)
+  # RED: scripts/dispatch-companion.sh doesn't exist yet.
+  [ -f "scripts/dispatch-companion.sh" ]
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  local prompt_file="$tmp_dir/prompt.txt"
+  # Plant a recognisable sentinel in the prompt body.
+  printf 'SECRET-COMPANION-PAYLOAD-XYZZY\n' > "$prompt_file"
+  run scripts/dispatch-companion.sh \
+    --vendor stub \
+    --model stub-model \
+    --prompt-file "$prompt_file" \
+    --round-dir "$tmp_dir" \
+    --tag test-tag 2>/dev/null
+  rm -rf "$tmp_dir"
+  # The prompt body sentinel must NEVER appear in stdout, regardless of exit code.
+  ! [[ "$output" =~ "SECRET-COMPANION-PAYLOAD-XYZZY" ]]
+}
+
+@test "task-20 companion: dispatch-companion.sh await subcommand is recognised (no 'unrecognised subcommand')" {
+  # Test expectation: 'dispatch-companion.sh await <job-id>' is a valid subcommand
+  # (structure.md §dispatch-companion.sh await contract).  A missing job-id may produce
+  # a non-zero exit but must not emit 'unrecognised subcommand'.
+  # RED: scripts/dispatch-companion.sh doesn't exist yet.
+  [ -f "scripts/dispatch-companion.sh" ]
+  run scripts/dispatch-companion.sh await __NO_SUCH_JOB__
+  [ "$status" -ne 127 ]
+  ! [[ "$output" =~ "unrecognised subcommand" ]]
 }

@@ -1,13 +1,22 @@
 #!/usr/bin/env bats
 #
-# Tests for scripts/run-codex-review.sh — the single-entrypoint Codex
-# reviewer-dispatch wrapper. Uses --dry-run mode so no Codex jobs are
-# launched; we assert on the assembled prompt's structure.
+# Tests for scripts/dispatch-agent.sh — renamed from scripts/run-codex-review.sh.
+# The universal batched dispatch entry point: resolves agent tiers, emits
+# MODE=first_party spec lines per first-party reviewer, routes background
+# entries via dispatch-companion.sh, and writes .dispatch-manifest.json.
+#
+# Task-expectation coverage (task-20.md):
+#   - File/rename audit: dispatch-agent.sh exists; run-codex-review.sh is gone
+#   - No residual run-codex-review.sh dependency inside dispatch-agent.sh body
+#   - Spec-line emission: MODE=first_party TAG=<tag> SUBAGENT_TYPE=<agent> MODEL=<model> PROMPT_FILE=<path>
+#   - PROMPT_FILE value is always an absolute path
+#   - .dispatch-manifest.json written after dispatch
+#   - All prior --dry-run prompt-assembly tests (migrated from test-run-codex-review.bats)
 
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd -P)"
   export REPO_ROOT
-  WRAPPER="$REPO_ROOT/scripts/run-codex-review.sh"
+  WRAPPER="$REPO_ROOT/scripts/dispatch-agent.sh"
   export WRAPPER
 }
 
@@ -965,4 +974,125 @@ EOF
     --dry-run
   [ "$status" -eq 0 ]
   ! [[ "$output" =~ "unbound variable" ]]
+}
+
+# ===========================================================================
+# Task-20 additions: rename audit + new interface pins
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# File/rename audit
+# ---------------------------------------------------------------------------
+
+# Test expectation: hard rename — scripts/dispatch-agent.sh is the live entry point
+@test "task-20 rename: scripts/dispatch-agent.sh exists and is executable" {
+  # Test expectation: old scripts/run-codex-review.sh is gone and
+  # scripts/dispatch-agent.sh is the new live file (task-20.md File/rename audit bullet).
+  [ -f "$REPO_ROOT/scripts/dispatch-agent.sh" ]
+  [ -x "$REPO_ROOT/scripts/dispatch-agent.sh" ]
+}
+
+# Test expectation: hard rename — no compatibility shim or live file at old path
+@test "task-20 rename: scripts/run-codex-review.sh no longer exists" {
+  # Test expectation: the old name must be completely gone; no shim, no redirect.
+  # (task-20.md "In-scope: Hard-rename…with no compatibility shim or live caller left on the old names.")
+  [ ! -f "$REPO_ROOT/scripts/run-codex-review.sh" ]
+}
+
+# Test expectation: no internal self-dependency on the old name
+@test "task-20 rename: dispatch-agent.sh body does not reference run-codex-review.sh" {
+  # Test expectation: the renamed script body must not call or source the old entrypoint name;
+  # any such reference would mean the rename is incomplete and callers would still need
+  # the old name on PATH.
+  [ -f "$REPO_ROOT/scripts/dispatch-agent.sh" ] \
+    || skip "dispatch-agent.sh not yet created — rename audit above covers existence"
+  ! grep -qF 'run-codex-review.sh' "$REPO_ROOT/scripts/dispatch-agent.sh"
+}
+
+# ---------------------------------------------------------------------------
+# New interface: --step/--round/--output-dir/--artifact/--agents spec-line emission
+# ---------------------------------------------------------------------------
+# The renamed dispatch-agent.sh adopts the universal batched dispatch CLI that
+# emits one "MODE=first_party TAG=<tag> SUBAGENT_TYPE=<agent> MODEL=<model> PROMPT_FILE=<path>"
+# spec line per first-party reviewer (design.md CD-1 §3; structure.md §dispatch-agent.sh).
+
+# Test expectation: first-party dispatch emits MODE=first_party spec line to stdout
+@test "task-20 spec-line: first-party dispatch emits MODE=first_party on stdout" {
+  # Test expectation: dispatch-agent.sh --step goals --round 1 --output-dir <dir>
+  # --artifact <file> --agents "quality-claude=<agent-file>" emits at least one
+  # "MODE=first_party" line on stdout for the first-party agent.
+  local round_dir
+  round_dir="$(mktemp -d)"
+  run "$WRAPPER" \
+    --step goals \
+    --round 1 \
+    --output-dir "$round_dir" \
+    --artifact "$TMP_DIR/plan.md" \
+    --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
+  rm -rf "$round_dir"
+  [[ "$output" =~ "MODE=first_party" ]]
+}
+
+# Test expectation: spec line contains TAG=, SUBAGENT_TYPE=, MODEL=, PROMPT_FILE= fields
+@test "task-20 spec-line: first-party spec line contains all required fields" {
+  # Test expectation: each spec line must contain all four required key=value fields so
+  # the orchestrator can parse verbatim values per the iron law (task-20.md §dispatch-agent
+  # unit coverage; design.md CD-1 §3 spec-line format).
+  local round_dir
+  round_dir="$(mktemp -d)"
+  run "$WRAPPER" \
+    --step goals \
+    --round 1 \
+    --output-dir "$round_dir" \
+    --artifact "$TMP_DIR/plan.md" \
+    --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
+  rm -rf "$round_dir"
+  [[ "$output" =~ "MODE=first_party" ]]
+  [[ "$output" =~ "TAG=" ]]
+  [[ "$output" =~ "SUBAGENT_TYPE=" ]]
+  [[ "$output" =~ "MODEL=" ]]
+  [[ "$output" =~ "PROMPT_FILE=" ]]
+}
+
+# Test expectation: PROMPT_FILE= value is always an absolute path (never session-scoped)
+@test "task-20 PROMPT_FILE: value in spec line is an absolute path" {
+  # Test expectation: PROMPT_FILE is resolved from <round-dir> at write time, never
+  # session-scoped (design.md CD-1 #3 L82; structure.md §dispatch-agent.sh PROMPT_FILE
+  # always-absolute emission).
+  local round_dir
+  round_dir="$(mktemp -d)"
+  run "$WRAPPER" \
+    --step goals \
+    --round 1 \
+    --output-dir "$round_dir" \
+    --artifact "$TMP_DIR/plan.md" \
+    --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
+  rm -rf "$round_dir"
+  # Extract PROMPT_FILE= value; assert it's present and starts with /
+  local prompt_file_value
+  prompt_file_value=$(printf '%s\n' "$output" | grep -oE 'PROMPT_FILE=[^ ]+' | head -1 | cut -d= -f2-)
+  # If PROMPT_FILE is missing entirely, the test fails here (missing assertion).
+  [ -n "$prompt_file_value" ]
+  [[ "$prompt_file_value" == /* ]]
+}
+
+# Test expectation: .dispatch-manifest.json written after dispatch invocation
+@test "task-20 manifest: .dispatch-manifest.json written in output-dir after dispatch" {
+  # Test expectation: dispatch-agent.sh appends per-tag entries to
+  # <output-dir>/.dispatch-manifest.json (design.md CD-1 #3; task-20.md dispatch-agent
+  # unit coverage bullet ".dispatch-manifest.json entries").
+  # If dispatch-agent.sh doesn't exist, the manifest is not created → test fails RED.
+  local round_dir
+  round_dir="$(mktemp -d)"
+  "$WRAPPER" \
+    --step goals \
+    --round 1 \
+    --output-dir "$round_dir" \
+    --artifact "$TMP_DIR/plan.md" \
+    --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md" \
+    2>/dev/null || true
+  local manifest_exists=0
+  [ -f "$round_dir/.dispatch-manifest.json" ] && manifest_exists=1
+  rm -rf "$round_dir"
+  [ "$manifest_exists" -eq 1 ]
 }
