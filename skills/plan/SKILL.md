@@ -651,8 +651,6 @@ Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defe
     - `grep -rn '^model:' tests/` returns zero matches as of plan-authoring time; if a future test introduces an assertion on `model:` before this task lands, the reviewer's re-run will surface the new hit and demand the field be re-shaped to a path list.
 ```
 
-**Sweep + consumer-surface composition.** A task that is both a sweep AND consumer-surface-touching carries both `dependent_tests:` and `cross_task_consumers:` fields independently — the two contracts remain separate subsections of the spec, not merged into a single field.
-
 ## Red Flags — STOP
 
 - A task spec contains "TBD", "TODO", "implement later", or "fill in details"
