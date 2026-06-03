@@ -920,14 +920,19 @@ if [[ "$_detected_host" == "copilot-cli" ]]; then
   # (symlink-safe); rename(2) replaces the destination atomically without
   # following symlinks.
   _fp_tmp=""
+  # Install signal-cleanup trap BEFORE mktemp so any signal between mktemp
+  # success and the if-check fires with relay still "" (rm -f "" is a no-op).
+  # Mirror of the _manifest_tmp relay+trap pattern (lines 288-290): three
+  # separate traps so INT/TERM exit with their canonical codes (130/143)
+  # instead of being swallowed by a bare cleanup.
+  trap 'rm -f "$_fp_tmp" 2>/dev/null || true' EXIT
+  trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 130' INT
+  trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 143' TERM
   if ! _fp_tmp="$(mktemp "${_fp_prompt_file}.tmp.XXXXXX")"; then
+    trap - EXIT INT TERM
     echo "error: mktemp failed for first-party prompt tmpfile" >&2
     exit 1
   fi
-  # Install signal-cleanup trap for _fp_tmp so the assembled prompt (which
-  # contains subject code) is removed if SIGINT/SIGTERM fires before mv-promotion
-  # completes.  Mirror of the _manifest_tmp relay+trap pattern.
-  trap 'rm -f "$_fp_tmp" 2>/dev/null || true' EXIT INT TERM
   if ! compose_prompt > "$_fp_tmp"; then
     rm -f "$_fp_tmp"; _fp_tmp=""
     trap - EXIT INT TERM
