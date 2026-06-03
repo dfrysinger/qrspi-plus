@@ -522,7 +522,7 @@ setup_file() {
 }
 
 # ===========================================================================
-# FINDING A — grep regression: ## Auto Mode Active absent from agents/
+# Grep regression: '## Auto Mode Active' absent from agents/ dir
 # ===========================================================================
 
 @test "Grep regression: '## Auto Mode Active' Claude Code signal absent from agents/ dir" {
@@ -540,7 +540,7 @@ setup_file() {
 }
 
 # ===========================================================================
-# FINDING B — output-shape KEY=VALUE loop test for Claude Code branch
+# Output-shape: Claude Code branch stdout is KEY=VALUE
 # ===========================================================================
 
 @test "Output-shape: every stdout line from Claude Code branch is KEY=VALUE" {
@@ -557,7 +557,7 @@ setup_file() {
 }
 
 # ===========================================================================
-# FINDING C — native-detection precedence: COPILOT_CLI wins over CLAUDE_PROJECT_DIR
+# Native-detection precedence: COPILOT_CLI wins over CLAUDE_PROJECT_DIR
 # ===========================================================================
 
 @test "Native-detection precedence: COPILOT_CLI=1 wins over CLAUDE_PROJECT_DIR when no override" {
@@ -579,7 +579,7 @@ setup_file() {
 }
 
 # ===========================================================================
-# FINDING D — semantic EVIDENCE assertion for the unknown-host safe-default
+# Semantic EVIDENCE assertion for the unknown-host safe-default
 # ===========================================================================
 
 @test "Unknown host safe-default EVIDENCE contains semantic safe-default content" {
@@ -598,7 +598,7 @@ setup_file() {
 }
 
 # ===========================================================================
-# FINDING E — no-file-write assertion for the Claude Code branch
+# No-file-write assertion for the Claude Code branch
 # ===========================================================================
 
 @test "Claude Code branch creates no files at all" {
