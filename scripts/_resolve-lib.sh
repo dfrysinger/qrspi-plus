@@ -41,10 +41,21 @@
 # ---------------------------------------------------------------------------
 
 # _normalize_tier_value <raw-value>
-# Strips a whitespace-preceded inline `#` comment, then all surrounding
-# whitespace, from a routing row's VALUE. Bash 3.2 portable.
+# Strips a whitespace-preceded inline `#` comment, then ALL whitespace (both
+# surrounding AND internal), from a routing row's VALUE. Bash 3.2 portable.
 _normalize_tier_value() {
   printf '%s' "$1" | sed -E 's/[[:space:]]+#.*$//' | tr -d '[:space:]'
+}
+
+# _halt_unconfigured_tier <tier-name>
+# Prints the shared unconfigured-tier (`none`/absent-row) diagnostic to stderr
+# and returns 1. Single source for the two byte-identical none halts so the
+# message cannot drift between the absent-row and explicit-`none` branches.
+# Bash 3.2 portable.
+_halt_unconfigured_tier() {
+  printf '[routing] HALT: tier "%s" resolves to none (unconfigured tier); ' "$1" >&2
+  printf 'no silent fallback to a neighboring tier — configure model_routing.%s in config.md.\n' "$1" >&2
+  return 1
 }
 
 # _validate_tier <tier-name>
@@ -71,7 +82,7 @@ resolve_tier() {
 
   # Layer 2: the agent `tier:` frontmatter field.
   local agent_tier=""
-  if [ -n "$agent_file" ] && [ -f "$agent_file" ]; then
+  if [ -n "$agent_file" ] && [ -r "$agent_file" ]; then
     agent_tier="$(grep -E '^tier:[[:space:]]+' "$agent_file" 2>/dev/null \
       | head -1 | sed -E 's/^tier:[[:space:]]+//' | tr -d '[:space:]')"
   fi
@@ -85,7 +96,7 @@ resolve_tier() {
   # CONFIG_MD (Layer 3 cannot even be consulted) from a present config that
   # simply lacks a default_tier: — the Layer-4 warning below names the cause.
   local default_tier="" config_present=1
-  if [ -n "${CONFIG_MD:-}" ] && [ -f "${CONFIG_MD:-}" ]; then
+  if [ -n "${CONFIG_MD:-}" ] && [ -r "${CONFIG_MD:-}" ]; then
     default_tier="$(grep -E '^default_tier:[[:space:]]+' "$CONFIG_MD" 2>/dev/null \
       | head -1 | sed -E 's/^default_tier:[[:space:]]+//' | tr -d '[:space:]')"
   else
@@ -128,7 +139,7 @@ resolve_model() {
   # tier is simply absent or `none`. A missing config is a config-path error,
   # NOT an unconfigured-tier error — emit a DISTINCT diagnostic so an operator
   # with a correct config is not sent down the wrong repair path.
-  if [ -z "${CONFIG_MD:-}" ] || [ ! -f "${CONFIG_MD:-}" ]; then
+  if [ -z "${CONFIG_MD:-}" ] || [ ! -r "${CONFIG_MD:-}" ]; then
     printf '[routing] HALT: CONFIG_MD is unset or not a readable file; ' >&2
     printf 'cannot resolve model_routing for tier "%s".\n' "$tier" >&2
     return 1
@@ -141,8 +152,7 @@ resolve_model() {
 
   # An empty row means the tier is not present in the block (unconfigured tier).
   if [ -z "$row" ]; then
-    printf '[routing] HALT: tier "%s" resolves to none (unconfigured tier); ' "$tier" >&2
-    printf 'no silent fallback to a neighboring tier — configure model_routing.%s in config.md.\n' "$tier" >&2
+    _halt_unconfigured_tier "$tier"
     return 1
   fi
 
@@ -154,11 +164,21 @@ resolve_model() {
   value="$(printf '%s\n' "$row" | sed -E "s/^[[:space:]]+${tier}:[[:space:]]+//")"
   value="$(_normalize_tier_value "$value")"
 
+  # Malformed-row guard: the row was PRESENT (matched the grep) but carries no
+  # value after key-strip + normalization (e.g. `  medium:   ` — key + trailing
+  # whitespace, or a row that is all inline comment). This is a DISTINCT failure
+  # from an unconfigured tier — the tier IS named in the block, just emptily —
+  # so it must HALT loudly rather than silently emit a blank line with exit 0.
+  if [ -z "$value" ]; then
+    printf '[routing] HALT: tier "%s" row is present in model_routing but carries no value ' "$tier" >&2
+    printf '(malformed/empty row); refusing to emit an empty result — set model_routing.%s in config.md.\n' "$tier" >&2
+    return 1
+  fi
+
   # none-tier halt: a tier configured as `none` (operator opt-in surface left
   # unconfigured) must HALT, never silently fall back to a neighboring tier.
   if [ "$value" = "none" ]; then
-    printf '[routing] HALT: tier "%s" resolves to none (unconfigured tier); ' "$tier" >&2
-    printf 'no silent fallback to a neighboring tier — configure model_routing.%s in config.md.\n' "$tier" >&2
+    _halt_unconfigured_tier "$tier"
     return 1
   fi
 

@@ -422,9 +422,11 @@ EOF
   local agent="$BATS_TEST_TMPDIR/agent.md"
   printf '# agent with no tier field\n' > "$agent"
   # No CONFIG_MD at all → Layer 3 skipped because config is missing, not because
-  # default_tier: is absent from a present config.
-  run bash -c 'QRSPI_SOURCE_ONLY=1 source "$RESOLVE_LIB"; unset CONFIG_MD; resolve_tier "'"$agent"'" "" 2>&1 1>/dev/null'
-  [[ "$output" == *CONFIG_MD* ]]
+  # default_tier: is absent from a present config. Passing an empty config to the
+  # helper unsets CONFIG_MD; the cause-naming warning lands on stderr.
+  run --separate-stderr _exec_resolve_tier "" "$agent" ""
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *CONFIG_MD* ]]
 }
 
 @test "_resolve-lib.sh [exec]: resolve_model HALTS on none WITH inline comment (F01 regression — extra-low: none # operator opts in)" {
@@ -460,6 +462,45 @@ default_tier: medium
 EOF
   run _exec_resolve_model "$cfg" "extra-low"
   [ "$status" -ne 0 ]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_model HALTS on a present-but-EMPTY tier row (malformed row, no silent blank emit)" {
+  local cfg="$BATS_TEST_TMPDIR/config-empty-medium.md"
+  cat > "$cfg" <<'EOF'
+```yaml
+model_routing:
+  low:    { vendor: claude, model: claude-haiku-4.5 }
+  medium:   
+high:   { vendor: claude, model: claude-opus-4.7 }
+default_tier: low
+```
+EOF
+  run --separate-stderr _exec_resolve_model "$cfg" "medium"
+  # The row is PRESENT (key + trailing whitespace) but carries no value. The
+  # resolver must HALT — never emit a blank line with exit 0.
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+  # The diagnostic must name the tier and flag the malformed/empty row — and
+  # must be DISTINCT from the unconfigured-tier "resolves to none" wording.
+  [[ "$stderr" == *HALT* ]]
+  [[ "$stderr" == *medium* ]]
+  [[ "$stderr" == *"no value"* ]]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_model HALTS with the truthful config-path diagnostic on an UNREADABLE CONFIG_MD" {
+  if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    skip "root bypasses chmod 000 permission bits — unreadable-file path not exercisable as root"
+  fi
+  local cfg="$BATS_TEST_TMPDIR/config-unreadable.md"
+  _write_routing_fixture "$cfg"
+  chmod 000 "$cfg"
+  run --separate-stderr _exec_resolve_model "$cfg" "low"
+  # An existing-but-unreadable config must be classified as a config-path error
+  # (readability check), not silently treated as a present config.
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *CONFIG_MD* ]]
+  # Restore perms so BATS_TEST_TMPDIR teardown can clean up.
+  chmod 644 "$cfg"
 }
 
 @test "_resolve-lib.sh [exec]: resolve_model fails with a DISTINCT config-missing diagnostic when CONFIG_MD is unset (F02)" {
