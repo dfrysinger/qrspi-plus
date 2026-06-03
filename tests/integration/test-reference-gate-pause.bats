@@ -583,6 +583,15 @@ EOF
     || { echo "Missing 'invalid disposition' failure mode" >&2; return 1; }
 }
 
+@test "[G18-consumers] Plan reviewer evaluates sweep and consumer clauses independently — finding may fire against either, both, or neither" {
+  # The two clauses (Sweep-task detection / Cross-task consumer surface detection)
+  # are evaluated independently: a task that triggers both carries both fields
+  # separately, and a task missing both fields is evaluated against each clause
+  # in isolation — a finding may fire against either, both, or neither.
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
+    "either.*both.*neither|evaluates each clause independently|finding may be emitted against either"
+}
+
 @test "[G18-consumers] Plan reviewer keeps Sweep-task detection and Cross-task consumer surface detection as separate clauses" {
   # G15 and G18 stay as two separate rubric clauses (decision E in design.md ## G18).
   # Both clause headings must be present in the file as distinct H3s.
