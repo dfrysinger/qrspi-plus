@@ -624,7 +624,7 @@ A **sweep task** removes, replaces, or enforces an invariant across many files a
 A sweep-task plan-spec MUST include, in its Test Expectations block, a `dependent_tests:` field with one of two values:
 
 - A **list of test file paths** the per-task gate must additionally run. Each path must be a file (not a directory glob) and must exist at plan-authoring time. Each listed test SHOULD be expected to either (a) pass unchanged once the sweep is applied or (b) require a specific predicted update — describe which in one sentence per file.
-- The literal string `none` followed on the next line by a grep-confirmable search command of shape `grep -rn '<pattern>' tests/` that demonstrably returns zero matches. The pattern is the swept identifier (e.g., `'^model:'`) — the plan-reviewer will re-run the grep and surface a finding if it returns one or more hits.
+- The literal string `none` followed on the next line by a grep-confirmable search command of shape `grep -rn -- '<pattern>' tests/` that demonstrably returns zero matches. The pattern is the swept identifier (e.g., `'^model:'`) — the plan-reviewer will re-run the grep and surface a finding if it returns one or more hits.
 
 Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defect, not a deferred-to-implementer concern. The Plan reviewer (`agents/qrspi-plan-reviewer.md` § Sweep-task detection) detects sweep-shaped tasks by heuristic (>5 same-extension files in `files_in_scope` plus one of eight sweep keywords in the title or description, case-insensitive word-boundary match) and emits a `severity: high, change_type: correctness` finding when the field is missing or malformed.
 
@@ -648,7 +648,7 @@ Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defe
 - **Test expectations:**
   - All 17 CD files have `${VAR}` references replaced with their resolved literals; behavior unchanged.
   - `dependent_tests: none`
-    - `grep -rn '^model:' tests/` returns zero matches as of plan-authoring time; if a future test introduces an assertion on `model:` before this task lands, the reviewer's re-run will surface the new hit and demand the field be re-shaped to a path list.
+    - `grep -rn -- '^model:' tests/` returns zero matches as of plan-authoring time; if a future test introduces an assertion on `model:` before this task lands, the reviewer's re-run will surface the new hit and demand the field be re-shaped to a path list.
 ```
 
 ## Red Flags — STOP
