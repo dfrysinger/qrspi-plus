@@ -733,7 +733,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     --worktree . \
     --base-ref "$base_sha"
   rm -rf "$tmp"
-  [ "$status" -ne 0 ] || { echo "expected non-zero exit for missing prior anchor, got 0; output: $output"; return 1; }
+  [ "$status" -eq 1 ] || { echo "expected exit 1 for missing prior anchor, got $status; output: $output"; return 1; }
   echo "$output" | grep -q 'round-01-commit.txt' \
     || { echo "diagnostic must name the missing prior-round commit anchor: $output"; return 1; }
 }
@@ -756,7 +756,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     --worktree . \
     --base-ref "$base_sha"
   rm -rf "$tmp"
-  [ "$status" -ne 0 ] || { echo "expected non-zero exit for malformed prior anchor, got 0; output: $output"; return 1; }
+  [ "$status" -eq 1 ] || { echo "expected exit 1 for malformed prior anchor, got $status; output: $output"; return 1; }
   echo "$output" | grep -q 'malformed' \
     || { echo "diagnostic must use the word 'malformed' for a malformed prior-round commit anchor: $output"; return 1; }
   echo "$output" | grep -q 'round-01-commit.txt' \
@@ -816,7 +816,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     --worktree . \
     --base-ref "$base_sha"
   rm -rf "$tmp"
-  [ "$status" -ne 0 ] || { echo "expected non-zero exit for missing scope-set, got 0; output: $output"; return 1; }
+  [ "$status" -eq 1 ] || { echo "expected exit 1 for missing scope-set, got $status; output: $output"; return 1; }
   echo "$output" | grep -q 'round-02-scope-set.txt' \
     || { echo "diagnostic must name the missing prior-round scope-set: $output"; return 1; }
 }
@@ -845,7 +845,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     --worktree . \
     --base-ref "$base_sha"
   rm -rf "$tmp"
-  [ "$status" -ne 0 ] || { echo "expected non-zero exit for empty scope-set, got 0; output: $output"; return 1; }
+  [ "$status" -eq 1 ] || { echo "expected exit 1 for empty scope-set, got $status; output: $output"; return 1; }
   echo "$output" | grep -q 'empty' \
     || { echo "diagnostic must use the word 'empty' for an empty prior-round scope-set: $output"; return 1; }
   echo "$output" | grep -q 'round-02-scope-set.txt' \
