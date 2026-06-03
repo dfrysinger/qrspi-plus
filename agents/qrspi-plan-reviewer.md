@@ -42,6 +42,27 @@ Read the `route` parameter to determine which checklist to run.
 - **Interpretation** — the plan's approach matches the goals' stated intent; no subtle misreadings.
 - **Phase alignment** — task phases match the phase definitions in `companion_phasing`.
 
+### Sweep-task detection
+
+Treat a task as a **sweep** when BOTH conditions hold:
+
+- `files_in_scope` (or the spec's `**Target files:**` bullet) lists strictly more than 5 files (`>5`, not `>=5`) of the same file type. File type means matching extension: `.md` agents in `agents/` count as one type, `.bats` tests count as another, etc.
+- The task title OR the task description body contains at least one of: `all`, `every`, `strip`, `remove`, `rename`, `replace`, `delete`, `sweep` — matched case-insensitive with word-boundary semantics. Word-boundary means `removal` matches `remove` (the keyword is a prefix at a word boundary) but `installer` does NOT match `all` (the keyword is embedded inside a longer word, not at a word boundary).
+
+On detection, verify the task's Test Expectations block contains a `dependent_tests:` field per `skills/plan/SKILL.md` § Sweep Task Contract. The field is well-formed when its value is either:
+
+1. A list of test file paths (each a file, not a directory glob), each of which exists in the repository at review time, with a one-sentence per-file disposition.
+2. The literal string `none` followed on the next line by a `grep -rn '<pattern>' tests/` command — re-run the command from the repository root; well-formed iff it returns zero matches.
+
+Emit a `severity: high, change_type: correctness` finding referencing the contract when ANY of the following holds:
+
+- **Missing field:** the task is sweep-shaped but the spec carries no `dependent_tests:` field.
+- **Malformed — no paths:** `dependent_tests:` is present but lists zero file paths and does not carry the `none` plus grep proof shape.
+- **Malformed — `none` without grep:** `dependent_tests: none` is present but no grep command follows on the next line.
+- **Malformed — non-zero grep:** `dependent_tests: none` is followed by a grep command that returns one or more hits when the reviewer re-runs it from the repository root. A single hit is sufficient to surface the finding; the `none` claim is then invalid and the field must be re-shaped to a path list.
+
+The finding cites `skills/plan/SKILL.md` § Sweep Task Contract as the contract reference. Sweep findings ride the existing reviewer-protocol 5-field schema — no new finding kind, no new severity tier.
+
 ### Full-pipeline-only checks (skip if `route: quick`)
 
 - **Design/structure traceability** — every task traces to a component or interface in `companion_design` and `companion_structure`; no tasks implement components the design didn't specify; no design components are absent from the task list.

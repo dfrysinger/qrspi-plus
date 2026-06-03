@@ -611,6 +611,48 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — plan", descrip
 
 If compaction was not done before splitting (user declined), recommend it now: "This is a good point to compact context before the next step (`/compact`)."
 
+## Test Expectations
+
+Each per-task spec carries a `**Test expectations:**` bullet list naming the observable behaviors, edge cases, and error conditions the implementer must cover (see the per-task template above and § Quick-Fix Plan Behavior for the standard authoring shape). The bullets describe behavior in plain language; the Test skill and the implementer's TDD cycle consume them as the source of truth for which tests must exist before implementation lands.
+
+The standard bullet shape covers the common case where every test the producing task must satisfy lives inside the task's `Target files:`. Sweep tasks — tasks that systematically remove, replace, or enforce an invariant across many files at once — break this assumption: the test files that assert on the swept property's previous values are not in the producing task's `files_in_scope`, so the per-task gate never runs them, the task ships GREEN, and the integrate phase surfaces stale-test failures the producing task should have owned. The subsection below closes that gap by requiring sweep-task plan-spec authors to enumerate dependent tests at plan-authoring time.
+
+### Sweep Task Contract
+
+A **sweep task** removes, replaces, or enforces an invariant across many files at once (e.g., "strip `model:` from all agent frontmatter," "rename `qrspi-foo` to `qrspi-bar` across all skills," "remove all `${VAR}` references in CDs"). Sweep tasks systematically invalidate test files that assert on the swept property's previous values, even when those test files are not in the task's `files_in_scope`.
+
+A sweep-task plan-spec MUST include, in its Test Expectations block, a `dependent_tests:` field with one of two values:
+
+- A **list of test file paths** the per-task gate must additionally run. Each path must be a file (not a directory glob) and must exist at plan-authoring time. Each listed test SHOULD be expected to either (a) pass unchanged once the sweep is applied or (b) require a specific predicted update — describe which in one sentence per file.
+- The literal string `none` followed on the next line by a grep-confirmable search command of shape `grep -rn '<pattern>' tests/` that demonstrably returns zero matches. The pattern is the swept identifier (e.g., `'^model:'`) — the plan-reviewer will re-run the grep and surface a finding if it returns one or more hits.
+
+Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defect, not a deferred-to-implementer concern. The Plan reviewer (`agents/qrspi-plan-reviewer.md` § Sweep-task detection) detects sweep-shaped tasks by heuristic (>5 same-extension files in `files_in_scope` plus one of eight sweep keywords in the title or description, case-insensitive word-boundary match) and emits a `severity: high, change_type: correctness` finding when the field is missing or malformed.
+
+**Worked example A — explicit dependent test path list with per-file dispositions.** A sweep task that strips `model:` from all 41 agent frontmatter files lists every test that asserts on the previous `model:` values, with a one-sentence disposition per file:
+
+```markdown
+- **Test expectations:**
+  - All 41 agent files have `model:` removed from frontmatter; no other frontmatter fields change.
+  - `dependent_tests:`
+    - `tests/unit/test-scope-tagger-dispatch.bats` — currently asserts `model: opus` on line 38; update to assert `model:` is absent post-sweep.
+    - `tests/unit/test-verifier-agent-file.bats` — currently asserts `model: sonnet` on line 7; update to assert `model:` is absent post-sweep.
+    - `tests/unit/test-visual-fidelity-reviewer-agent.bats` — currently asserts a specific model value on line 35; update to assert `model:` is absent post-sweep.
+    - `tests/unit/test-test-writer-dual-mode.bats` — currently asserts `model: opus` on line 52; update to assert `model:` is absent post-sweep.
+    - `tests/unit/test-change-type-partition.bats` — currently asserts model-routed dispatch on line 15; passes unchanged once the dispatcher's fallback path is exercised.
+    - `tests/unit/test-section-anchor-narrow-read.bats` — currently asserts `model: sonnet` on line 206; update to assert `model:` is absent post-sweep.
+```
+
+**Worked example B — `none` plus grep-confirmed zero-match proof.** A sweep task that removes a property no test currently asserts on cites a reproducible grep command the reviewer re-runs from the repo root:
+
+```markdown
+- **Test expectations:**
+  - All 17 CD files have `${VAR}` references replaced with their resolved literals; behavior unchanged.
+  - `dependent_tests: none`
+    - `grep -rn '^model:' tests/` returns zero matches as of plan-authoring time; if a future test introduces an assertion on `model:` before this task lands, the reviewer's re-run will surface the new hit and demand the field be re-shaped to a path list.
+```
+
+**Sweep + consumer-surface composition.** A task that is both a sweep AND consumer-surface-touching carries both `dependent_tests:` and `cross_task_consumers:` fields independently — the two contracts remain separate subsections of the spec, not merged into a single field.
+
 ## Red Flags — STOP
 
 - A task spec contains "TBD", "TODO", "implement later", or "fill in details"

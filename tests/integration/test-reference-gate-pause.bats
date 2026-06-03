@@ -31,7 +31,10 @@ setup_file() {
   require_repo_root
   PARALLELIZE_SKILL="$REPO_ROOT/skills/parallelize/SKILL.md"
   IMPLEMENT_SKILL="$REPO_ROOT/skills/implement/SKILL.md"
-  export PARALLELIZE_SKILL IMPLEMENT_SKILL
+  PLAN_SKILL="$REPO_ROOT/skills/plan/SKILL.md"
+  USING_QRSPI_SKILL="$REPO_ROOT/skills/using-qrspi/SKILL.md"
+  PLAN_REVIEWER_AGENT="$REPO_ROOT/agents/qrspi-plan-reviewer.md"
+  export PARALLELIZE_SKILL IMPLEMENT_SKILL PLAN_SKILL USING_QRSPI_SKILL PLAN_REVIEWER_AGENT
 }
 
 setup() {
@@ -223,4 +226,102 @@ EOF
 @test "[T30-rg-pause] Implement coordinates reference-gate with ui:true visual-fidelity dispatch" {
   extract_and_grep "$IMPLEMENT_SKILL" H3 "Reference-Gate Human Pause (per-task DONE handling)" \
     "ui: true"
+}
+
+# =============================================================================
+# G15: Plan Sweep Task Contract — dependent_tests: scope at plan time
+# =============================================================================
+#
+# Pins that the Plan skill, Plan reviewer agent, and shared pipeline guidance
+# carry the sweep-task contract surface that closes the v0.7.1 stale-test
+# integration gap. The pins are file-content + section-extract assertions —
+# the sweep contract is documentation + reviewer rubric, not runtime code.
+
+@test "[G15-sweep] Plan SKILL Test Expectations section carries Sweep Task Contract subsection" {
+  extract_and_grep "$PLAN_SKILL" H2 "Test Expectations" \
+    "### Sweep Task Contract"
+}
+
+@test "[G15-sweep] Plan SKILL Sweep Task Contract defines sweep task" {
+  extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+    "[Ss]weep task"
+}
+
+@test "[G15-sweep] Plan SKILL Sweep Task Contract names the dependent_tests: field" {
+  extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+    "dependent_tests:"
+}
+
+@test "[G15-sweep] Plan SKILL Sweep Task Contract documents the path-list shape" {
+  extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+    "list of test file paths"
+}
+
+@test "[G15-sweep] Plan SKILL Sweep Task Contract documents the none + grep proof shape" {
+  extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+    "dependent_tests: none"
+  extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+    "grep -rn '.+' tests/"
+}
+
+@test "[G15-sweep] Plan SKILL Sweep Task Contract carries worked example with explicit path list" {
+  extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+    "tests/.+\\.bats"
+}
+
+@test "[G15-sweep] Plan SKILL Sweep Task Contract carries worked example with none + grep" {
+  # The grep example must use the literal `tests/` directory argument so the
+  # reviewer can re-run the exact command shape the contract specifies.
+  extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+    "grep -rn '\\^model:' tests/"
+}
+
+@test "[G15-sweep] Plan reviewer agent body declares sweep-task detection rubric" {
+  grep -E "[Ss]weep-task detection" "$PLAN_REVIEWER_AGENT"
+}
+
+@test "[G15-sweep] Plan reviewer agent body uses strict >5 same-extension threshold" {
+  # Strict greater-than five files of the same extension — the design pins
+  # the >5 boundary deliberately (not >=5) so a 5-file task does NOT trip.
+  grep -E ">5|more than (five|5)|strictly greater than (five|5)" "$PLAN_REVIEWER_AGENT"
+}
+
+@test "[G15-sweep] Plan reviewer agent body lists the eight sweep keywords" {
+  for kw in all every strip remove rename replace delete sweep; do
+    grep -E "\`$kw\`" "$PLAN_REVIEWER_AGENT" || {
+      echo "Missing sweep keyword: $kw" >&2
+      return 1
+    }
+  done
+}
+
+@test "[G15-sweep] Plan reviewer agent body specifies case-insensitive word-boundary matching" {
+  grep -E "case-insensitive" "$PLAN_REVIEWER_AGENT"
+  grep -E "word-boundary" "$PLAN_REVIEWER_AGENT"
+}
+
+@test "[G15-sweep] Plan reviewer agent body emits high-severity correctness finding for missing dependent_tests:" {
+  # Missing `dependent_tests:` on a sweep-shaped task is a plan-spec defect —
+  # the reviewer surfaces a `severity: high, change_type: correctness` finding.
+  grep -E "severity: high" "$PLAN_REVIEWER_AGENT"
+  grep -E "change_type: correctness" "$PLAN_REVIEWER_AGENT"
+}
+
+@test "[G15-sweep] Plan reviewer agent body covers malformed dependent_tests: variants" {
+  # Malformed shapes named in the contract: missing-field, no paths,
+  # `none` without a grep command, and `none` with a grep returning >=1 hit.
+  grep -E "[Mm]issing.*field|missing.*\`dependent_tests" "$PLAN_REVIEWER_AGENT"
+  grep -E "[Mm]alformed|no paths|no .none." "$PLAN_REVIEWER_AGENT"
+  grep -E "(returns? )?(>=|≥|>= ?1|one or more|≥ ?1) hit" "$PLAN_REVIEWER_AGENT"
+}
+
+@test "[G15-sweep] using-qrspi SKILL backstop note routes sweep findings through normal Plan re-spec loop" {
+  grep -E "[Ss]weep" "$USING_QRSPI_SKILL"
+  grep -E "[Pp]lan re-spec|plan review.*re-spec|normal [Pp]lan review" "$USING_QRSPI_SKILL"
+}
+
+@test "[G15-sweep] using-qrspi SKILL backstop note disclaims a new gate / runner change" {
+  # The backstop must explicitly state no new implementation gate or
+  # test-runner behavior is introduced — sweep findings ride the existing loop.
+  grep -E "[Nn]o new (implementation )?gate|without (a )?new gate|no test-runner" "$USING_QRSPI_SKILL"
 }
