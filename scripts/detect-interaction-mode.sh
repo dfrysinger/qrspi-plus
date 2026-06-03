@@ -98,6 +98,19 @@ fi
 if [[ -n "${QRSPI_INTERACTION_MODE:-}" ]]; then
   case "${QRSPI_INTERACTION_MODE}" in
     auto|interactive)
+      # Determine the platform token at override time so the audit tuple is accurate.
+      # Mirrors the host-detection discriminators below; intentionally bounded duplication.
+      if [[ "${COPILOT_CLI:-}" == "1" ]]; then
+        _override_platform="copilot-cli"
+      elif [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
+        _override_platform="claude-code"
+      else
+        _override_platform="unknown"
+      fi
+      # Emit full user-override-only shape: PLATFORM, DETECTION_TYPE, VERDICT, EVIDENCE
+      # (design I.7 L655-664; L675: orchestrator copies all four directly from stdout)
+      printf 'PLATFORM=%s\n' "${_override_platform}"
+      printf 'DETECTION_TYPE=user-override-only\n'
       printf 'VERDICT=%s\n' "${QRSPI_INTERACTION_MODE}"
       printf 'EVIDENCE=QRSPI_INTERACTION_MODE=%s override\n' "${QRSPI_INTERACTION_MODE}"
       exit 0

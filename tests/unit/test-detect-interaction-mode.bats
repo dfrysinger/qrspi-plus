@@ -217,6 +217,85 @@ setup_file() {
   echo "$output" | grep -q '^EVIDENCE=.*QRSPI_INTERACTION_MODE.*interactive'
 }
 
+# F02: override path must emit DETECTION_TYPE=user-override-only
+@test "[T24] QRSPI_INTERACTION_MODE=auto override (unknown host): emits DETECTION_TYPE=user-override-only" {
+  run bash -c "
+    unset COPILOT_CLI CLAUDE_PROJECT_DIR
+    export QRSPI_INTERACTION_MODE=auto
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^DETECTION_TYPE=user-override-only$'
+}
+
+@test "[T24] QRSPI_INTERACTION_MODE=interactive override (unknown host): emits DETECTION_TYPE=user-override-only" {
+  run bash -c "
+    unset COPILOT_CLI CLAUDE_PROJECT_DIR
+    export QRSPI_INTERACTION_MODE=interactive
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^DETECTION_TYPE=user-override-only$'
+}
+
+# F02: override path must emit PLATFORM line with expected host token
+@test "[T24] QRSPI_INTERACTION_MODE=auto override (Copilot CLI host): emits PLATFORM=copilot-cli" {
+  run bash -c "
+    export COPILOT_CLI=1
+    unset CLAUDE_PROJECT_DIR
+    export QRSPI_INTERACTION_MODE=auto
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^PLATFORM=copilot-cli$'
+}
+
+@test "[T24] QRSPI_INTERACTION_MODE=auto override (unknown host): emits PLATFORM=unknown" {
+  run bash -c "
+    unset COPILOT_CLI CLAUDE_PROJECT_DIR
+    export QRSPI_INTERACTION_MODE=auto
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^PLATFORM=unknown$'
+}
+
+@test "[T24] QRSPI_INTERACTION_MODE=auto override (Claude Code host): emits PLATFORM=claude-code" {
+  run bash -c "
+    unset COPILOT_CLI
+    export CLAUDE_PROJECT_DIR='/some/project'
+    export QRSPI_INTERACTION_MODE=auto
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^PLATFORM=claude-code$'
+}
+
+# F02: output-shape test covering the override branch
+@test "[T24] Output-shape: every stdout line from override branch (unknown host) is KEY=VALUE" {
+  run bash -c "
+    unset COPILOT_CLI CLAUDE_PROJECT_DIR
+    export QRSPI_INTERACTION_MODE=auto
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[A-Z_]+=.+$ ]] || { echo "Bad line: $line"; return 1; }
+  done <<< "$output"
+}
+
+@test "[T24] Output-shape: DETECTION_TYPE from override branch is in allowed enum" {
+  run bash -c "
+    unset COPILOT_CLI CLAUDE_PROJECT_DIR
+    export QRSPI_INTERACTION_MODE=auto
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  local dt
+  dt="$(echo "$output" | grep '^DETECTION_TYPE=' | cut -d= -f2)"
+  [[ "$dt" == "shell-verdict" || "$dt" == "llm-context" || "$dt" == "user-override-only" ]]
+}
+
 # Override must win even on a recognized host (COPILOT_CLI=1)
 @test "[T24] QRSPI_INTERACTION_MODE=auto override wins even on COPILOT_CLI=1 host" {
   run bash -c "
