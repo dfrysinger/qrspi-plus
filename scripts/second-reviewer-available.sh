@@ -47,11 +47,12 @@ else
   _vendor="$_default_vendor"
 fi
 
-# Unavailable when the host names no default second-reviewer vendor (unknown /
-# unsupported host — reachability is host-dependent, so an override cannot make
-# an unsupported host available), the requested vendor is `none`, or the vendor
-# is not a recognised matrix vendor.
-if [ "$_default_vendor" = "none" ] || [ "$_vendor" = "none" ] || ! second_reviewer_vendor_known "$_vendor"; then
+# Unavailable when: the default vendor lookup yielded an empty string (e.g. a
+# missing or failed lookup — treated as no configured second reviewer), the host
+# names no default second-reviewer vendor (unknown/unsupported host — reachability
+# is host-dependent, so an override cannot make an unsupported host available),
+# the requested vendor is `none`, or the vendor is not a recognised matrix vendor.
+if [ -z "$_default_vendor" ] || [ "$_default_vendor" = "none" ] || [ "$_vendor" = "none" ] || ! second_reviewer_vendor_known "$_vendor"; then
   printf '[second-reviewer-unavailable] host=%s vendor=%s — no reachable second reviewer for this host\n' \
     "$_host" "$_vendor" >&2
   exit 1

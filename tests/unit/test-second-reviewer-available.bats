@@ -440,3 +440,58 @@ teardown() {
   # Line must name the requested vendor
   grep -q 'vendor=openai-codex' "$_stderr_file"
 }
+
+# ===========================================================================
+# Empty-default-vendor guard: probe must fail closed when lookup yields empty
+# ===========================================================================
+
+# Test expectation: an empty string from lookup_default_second_reviewer (simulating
+# a future refactor where the lookup silently yields nothing) must be treated as
+# unavailable — the probe must exit non-zero and emit exactly one stderr line
+# beginning [second-reviewer-unavailable]. This test fault-injects the condition
+# using stub copies of the dependency scripts in an isolated TMPDIR.
+@test "empty-default-vendor-guard: empty lookup result exits non-zero with [second-reviewer-unavailable]" {
+  local _work_dir="$TMP_DIR/stub-env"
+  mkdir -p "$_work_dir"
+
+  # Copy the probe script into the isolated work dir
+  cp "$SECOND_REVIEWER" "$_work_dir/second-reviewer-available.sh"
+  chmod +x "$_work_dir/second-reviewer-available.sh"
+
+  # Stub _host-detect.sh: defines detect_host to return a known host identifier
+  cat > "$_work_dir/_host-detect.sh" <<'EOF'
+detect_host() { printf 'copilot-cli\n'; }
+if [ "${QRSPI_SOURCE_ONLY:-}" = "1" ]; then return 0 2>/dev/null || true; fi
+EOF
+
+  # Stub _resolve-lib.sh: lookup_default_second_reviewer yields EMPTY (the fault
+  # being injected), but second_reviewer_vendor_known still returns 0 for openai-codex.
+  # This simulates the future-refactor scenario where the vendor-known check survives
+  # but the default lookup silently yields nothing.
+  cat > "$_work_dir/_resolve-lib.sh" <<'EOF'
+lookup_default_second_reviewer() { printf ''; }
+second_reviewer_vendor_known() {
+  case "$1" in
+    openai-codex|anthropic-claude) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+if [ "${QRSPI_SOURCE_ONLY:-}" = "1" ]; then return 0 2>/dev/null || true; fi
+EOF
+
+  local _stderr_file="$TMP_DIR/empty-default-stderr.txt"
+  local _status=0
+  bash -c "
+    unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
+    \"$_work_dir/second-reviewer-available.sh\" openai-codex
+  " >/dev/null 2>"$_stderr_file" || _status=$?
+
+  # Must exit non-zero — an empty default vendor means no configured second reviewer
+  [ "$_status" -ne 0 ]
+
+  # Exactly one stderr line beginning with the unavailability tag
+  local line_count
+  line_count="$(wc -l < "$_stderr_file" | tr -d ' ')"
+  [ "$line_count" -eq 1 ]
+  grep -q '^\[second-reviewer-unavailable\]' "$_stderr_file"
+}
