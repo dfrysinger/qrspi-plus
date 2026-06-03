@@ -51,13 +51,6 @@ setup_file() {
   export SCRIPT
 }
 
-# ---------------------------------------------------------------------------
-# Helper: run the script in a clean subshell with only supplied env vars set
-# (plus PATH so bash/sh builtins remain reachable).
-# Usage: run_clean_env [KEY=VALUE ...] -- [SCRIPT_ARGS ...]
-# Sets $output, $status via `run`.
-# ---------------------------------------------------------------------------
-
 # ===========================================================================
 # COPILOT_CLI=1 branch
 # ===========================================================================
@@ -217,7 +210,7 @@ setup_file() {
   echo "$output" | grep -q '^EVIDENCE=.*QRSPI_INTERACTION_MODE.*interactive'
 }
 
-# F02: override path must emit DETECTION_TYPE=user-override-only
+# override path must emit DETECTION_TYPE=user-override-only
 @test "[T24] QRSPI_INTERACTION_MODE=auto override (unknown host): emits DETECTION_TYPE=user-override-only" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
@@ -238,7 +231,7 @@ setup_file() {
   echo "$output" | grep -q '^DETECTION_TYPE=user-override-only$'
 }
 
-# F02: override path must emit PLATFORM line with expected host token
+# override path must emit PLATFORM line with expected host token
 @test "[T24] QRSPI_INTERACTION_MODE=auto override (Copilot CLI host): emits PLATFORM=copilot-cli" {
   run bash -c "
     export COPILOT_CLI=1
@@ -271,7 +264,7 @@ setup_file() {
   echo "$output" | grep -q '^PLATFORM=claude-code$'
 }
 
-# F02: output-shape test covering the override branch
+# output-shape test covering the override branch
 @test "[T24] Output-shape: every stdout line from override branch (unknown host) is KEY=VALUE" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
@@ -306,7 +299,8 @@ setup_file() {
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '^VERDICT=auto$'
   # Must NOT emit DETECTION_TYPE=llm-context when override wins
-  echo "$output" | grep -qv '^DETECTION_TYPE=llm-context$'
+  ! echo "$output" | grep -q '^DETECTION_TYPE=llm-context$'
+  echo "$output" | grep -q '^DETECTION_TYPE=user-override-only$'
 }
 
 # ===========================================================================
