@@ -89,7 +89,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
    - **Stop:** Halt pipeline.
 2. **Write tests** — dispatch the test-writer subagent.
 
-   Read `test_writer_model` from `plan.md` frontmatter (default `sonnet` if missing). Dispatch `Agent({ subagent_type: "qrspi-test-writer", model: "<plan.test_writer_model || 'sonnet'>" })` with a prompt containing only:
+   The test-writer dispatch resolves its tier through `scripts/_resolve-lib.sh` — the Test-phase acceptance dispatch uses the qrspi-test-writer agent's `tier: medium` default unless the plan pins `test_writer_tier:`. Dispatch `Agent({ subagent_type: "qrspi-test-writer" })` (the dispatcher resolves vendor+model from the resolved tier) with a prompt containing only:
    - `companion_plan`: `plan.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=plan.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=plan.md>>>` markers (canonical acceptance-criteria source per the strip-from-goals contract)
    - `companion_goals`: `goals.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=goals.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=goals.md>>>` markers (upstream traceability anchor only — NOT the criterion source)
    - `companion_design_or_research`: SINGLE key, dispatcher-selected by route — full pipeline passes wrapped `design.md` (phase definitions, test strategy); quick fix passes wrapped `research/summary.md` (context). The dispatcher reads `config.md.route` and chooses one.

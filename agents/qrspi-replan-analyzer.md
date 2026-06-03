@@ -1,4 +1,5 @@
 ---
+tier: medium
 name: qrspi-replan-analyzer
 description: Severity-classifies proposed changes from a completed phase. Reads fixes/, reviews/, tasks/ from disk and returns proposed-changes payload inline (orchestrator captures and passes to replan reviewer + scope-reviewer). Different role from qrspi-replan-reviewer.
 tools: Read, Write, Bash, Grep, Glob

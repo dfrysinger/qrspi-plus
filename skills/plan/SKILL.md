@@ -159,19 +159,19 @@ Edge cases:
 - Frontmatter-only edits to `agents/*.md` (e.g. flipping a `model:` value) → `lightweight` per the glob — that change has no runtime behavior to TDD against.
 - New file creation → use the planned final path against the same globs. The path is determined by the task spec, not by `git status`.
 
-**Step 2 — `model`.** Run after `task_type` is set.
+**Step 2 — `tier`.** Run after `task_type` is set. Emits the per-task `tier:` frontmatter field consumed by the implementer dispatch (and co-escalated to the TDD test-writer dispatch); it supersedes the legacy per-task `model:` field (G22 / design.md CD-1).
 
-- If `task_type == lightweight` → `model: sonnet`. No exception.
-- If `task_type == code` → `model: opus` if **any** of:
+- If `task_type == lightweight` → `tier: low`. No exception.
+- If `task_type == code` → `tier: high` if **any** of:
   - `Target files` count > 3 (multi-file architectural touch)
   - Any target file matches a "core surface" glob: `skills/**/SKILL.md`, `skills/_shared/**`, `agents/qrspi-implementer*.md`, `agents/qrspi-implementer-lightweight*.md`, `skills/reviewer-protocol/**`, `skills/implementer-protocol/**`
   - The task is a fix-task spawned by Replan after an earlier fix-round failure (Replan tags it `fix_task_retry: true`)
   - The task carries `sizing_exception` (deliberately-bundled task in the closed exception set — schema migration, CI scaffolding, reusable primitives — higher uncertainty by construction)
-- Otherwise `model: sonnet`.
+- Otherwise (ordinary code) → `tier: medium`.
 
-**Operator override.** Both fields are editable by the operator before plan approval. The heuristic is a default, not a contract. A user who knows a single-file task is high-stakes can flip `model: opus` manually; a user who knows a 4-file task is mechanical can flip it back to `sonnet`.
+**Operator override.** The `tier:` field is editable by the operator before plan approval. The heuristic is a default, not a contract. A user who knows a single-file task is high-stakes can flip `tier: high` manually; a user who knows a 4-file task is mechanical can flip it back to `tier: medium`.
 
-**Defaults when fields are absent.** Plan files that omit `task_type:` and `model_role:` are read by Implement as `code` / `sonnet` with a one-line warning at dispatch — no hard failure, no forced rewrite.
+**Defaults when fields are absent.** Plan files that omit `task_type:` and `tier:` are read by Implement as `code` with `default_tier:` from `config.md` (`medium`) and a one-line warning at dispatch — no hard failure, no forced rewrite.
 
 ### Plan Document Structure (During Review)
 
@@ -181,7 +181,7 @@ The output template below embeds **information-mapping patterns** directly: clai
 ---
 status: draft
 phase_start_commit: null
-test_writer_model: sonnet   # one of: sonnet | opus. default: sonnet. Operator override for qrspi-test-writer (per-phase dispatch). No heuristic — flip to opus when the test surface is gnarly (heavy e2e coverage, complex invariants, large acceptance-criterion set).
+test_writer_tier: null   # optional. one of: low | medium | high. When unset, the per-task `tier:` drives the co-escalated qrspi-test-writer dispatch (high-tier tasks co-escalate implementer + test-writer to the same tier per design.md CD-1). Set explicitly only to pin the test-writer tier independent of per-task tier.
 ---
 
 # Implementation Plan
@@ -489,7 +489,7 @@ phase: {phase number}
 pipeline: full
 goal_ids: [G1, G2]   # QRSPI-internal traceability metadata — see ID-Hygiene Contract below
 task_type: code      # one of: code | lightweight. default: code. See "Per-Task Classification" below.
-model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Classification" below.
+tier: medium         # one of: low | medium | high. default: medium. See "Per-Task Classification" below.
 # Optional: justify a legitimate bundle (multi-handler or >200 LOC).
 # Reason must be one of: schema migration, CI scaffolding, reusable primitives.
 # sizing_exception: <one-line reason>

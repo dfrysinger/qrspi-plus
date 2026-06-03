@@ -522,34 +522,33 @@ dispatch: Agent({ subagent_type: implementer_subagent, model: <model> })
 
 **Gate-level reviewer (cross-task).** The Batch Gate's `qrspi-implement-gate-reviewer` runs at batch altitude across all tasks in a wave; it is gated by `config.codex_reviews` (config-level), not by per-task `task_type`. A wave that mixes `code` and `lightweight` tasks still gets the gate-level Codex parallel if config enables it.
 
-#### Four-Layer Model Resolution Chain (per dispatch)
+#### Tier Resolution Chain (per dispatch — G22 / design.md CD-1)
 
-Every implementer and reviewer dispatch resolves its concrete `(provider, model)` pair via the chain below at the dispatch boundary, BEFORE the Agent({}) call is composed. The chain is evaluated in strict precedence order: the first layer that yields a value wins; later layers are not consulted.
+Every implementer and reviewer dispatch resolves its concrete `(vendor, model)` pair through the tier-precedence chain owned by `scripts/_resolve-lib.sh`, at the dispatch boundary, BEFORE the Agent({}) call is composed. The chain is evaluated in strict precedence order (top wins); the first layer that yields a tier wins, and that tier is then mapped to `(vendor, model)` via `config.md`'s `model_routing:` block:
 
-**Short-circuit: `trusted_path:` match.** Before entering the four-layer chain, main chat checks whether the dispatch target matches a `trusted_path:` entry in `config.md`'s `model_routing:` block (matched against either the agent file path under `agents/` OR the `model_role:` value from the agent's frontmatter). A `trusted_path:` hit short-circuits the chain — the trusted-path provider+model wins ahead of layers 1a/1b/2/3. This carve-out exists so safety-critical reviewer paths (e.g., security review, finding verifier) cannot be silently routed to a cheap model by a per-task override or a misconfigured routing table.
+1. **Per-dispatch `--tier-override`.** If the dispatch site passes a `--tier-override` (e.g., plan→implementer per-task escalation), that tier wins. Highest precedence.
+2. **Agent `tier:` frontmatter.** Otherwise the agent's own `tier:` field selects the tier.
+3. **`default_tier:` from `config.md`.** Covers agents missing a `tier:` field during migration.
+4. **Hardcoded `medium` with a loud warning.** Last-resort fallback; reaching it emits a loud stderr warning.
 
-When no `trusted_path:` match applies, the four-layer chain runs:
+The resolved tier is then looked up in `config.md`'s `model_routing:` block. A tier configured as `none` (the `extra-low`/`extra-high` operator opt-in surfaces by default) HALTS LOUDLY with a diagnostic naming the unconfigured tier — there is no silent fallback to a neighboring tier or to an agent-bundled model. (For the legacy `model_role:` routing key retired by G22, see the G5 default routing reference below; agents no longer carry `model_role:`.)
 
-1. **Layer 1a — per-task spec `model:` override.** If `tasks/task-NN.md` frontmatter carries a `model:` field, use its `(provider, model)` value verbatim. This is the highest-precedence non-trusted layer so plan-authored per-task escalations (e.g., "this task needs opus") win over routing-table defaults.
+**Short-circuit: `trusted_path:` match.** Before entering the tier chain, main chat checks whether the dispatch target matches a `trusted_path:` entry in `config.md`'s `model_routing:` block. A `trusted_path:` hit short-circuits the chain — the trusted-path route wins ahead of the tier layers. This carve-out exists so safety-critical reviewer paths (e.g., security review, finding verifier) cannot be silently routed to a cheap tier by a per-task override or a misconfigured routing table.
 
-2. **Layer 1b — hardcoded dispatch-site `model:` override.** If the dispatch call composes a per-call inline `model:` argument (e.g., a gate-reviewer that always wants `sonnet` regardless of routing), use that value. Layer 1b is a defense-in-depth surface for one-off site-specific pinning; most sites should NOT use it and instead rely on layer 2.
+**High-tier co-escalation invariant.** For a high-tier code task, the dispatcher applies the same `--tier-override` to both the implementer dispatch and the TDD test-writer dispatch, so both resolve to the same `(vendor, model)` pair. Co-escalation is not split between implementer and test-writer: when a task escalates to `tier: high`, the test-writer that pins its contract escalates in lockstep. This keeps the test author and the implementation at matched capability.
 
-3. **Layer 2 — `model_routing:` role-to-provider+model lookup.** Read the agent's `model_role:` frontmatter field, then look up `config.md`'s `model_routing:` table for that role. The lookup yields the `(provider, model)` pair the role currently maps to. This is the primary tuning surface — operators tune cost vs. quality by editing `model_routing:` in `config.md`, with no code changes.
+**Missing-routing-table fallback.** When `model_routing:` is absent from `config.md`, validation fails loudly per `skills/_shared/config-validation-procedure.md` (repair-or-abort guidance). See the `model_routing:` schema documentation in `skills/using-qrspi/SKILL.md` for the warning text and the runtime-backfill recovery contract; this section consumes that contract rather than re-deriving it.
 
-4. **Layer 3 — agent's bundled default.** If layers 1a/1b/2 all yield nothing (no per-task override, no dispatch-site override, no `model_routing:` entry for the role), fall back to the agent file's frontmatter `model:` default. Most agents bundle `model: inherit` so the Agent({}) call inherits main chat's model.
+**Dispatch-site forwarding.** Once the chain resolves to `(vendor, model)`, main chat forwards that pair to the dispatch transport:
 
-**Missing-routing-table fallback.** When `model_routing:` is absent from `config.md`, the chain emits exactly one warning at the first dispatch of the run and then proceeds with layers 1a/1b/3 only. See the `model_routing:` schema documentation in `skills/using-qrspi/SKILL.md` (T01) for the warning text and the runtime-backfill recovery contract. Do not re-derive or re-document the warning here; this section's role is to consume the contract authored in T01.
+- **First-party dispatches** (`Agent({ subagent_type })`) pass the resolved model to the Agent({}) call via the dispatcher.
+- **Third-party dispatches** (any vendor routed third-party on this host per the host × vendor matrix) pipe their prompt to `scripts/dispatch-companion.sh` with `--vendor <resolved-vendor> --model <resolved-model>`. The dispatcher resolves the transport branch from the matrix; the routing chain does NOT pass a transport flag.
 
-**Dispatch-site forwarding.** Once the chain resolves to `(provider, model)`, main chat forwards that pair to the dispatch transport:
+#### G5 default routing reference (default `model_routing:` table)
 
-- **Claude-side dispatches** (`Agent({ subagent_type, model })`) pass the resolved `model` directly to the Agent({}) call.
-- **Third-party dispatches** (any provider with `transport_type: openai-chat-completions` OR `transport_type: codex-broker` in `config.md`) pipe their prompt to `scripts/run-third-party-llm.sh` with `--provider <resolved-provider> --model <resolved-model>`. The dispatcher resolves the transport branch from `config.md` per the universal-dispatcher contract (T03); the routing chain does NOT pass a transport flag.
+The table below is the initial G5 deliverable — the agent-class-to-`(provider, model)` mapping that ships as the default `model_routing:` block in `config.md`. Each row's rationale is carried verbatim from the design.md G5 decision; operators may edit `config.md` to deviate per-run. (G22 supersedes the per-agent routing key: agents now carry a `tier:` frontmatter field resolved via `scripts/_resolve-lib.sh`, not a per-host model name; this reference table is retained for the cost/quality rationale it records.)
 
-#### G5 Initial Routing Matrix (default `model_routing:` table)
-
-The table below is the initial G5 deliverable — the role-to-`(provider, model)` mapping that ships as the default `model_routing:` block in `config.md`. Each row's rationale is carried verbatim from the design.md G5 decision; operators may edit `config.md` to deviate per-run.
-
-| `model_role:` (agent class)         | Default route                       | Tier                             | Rationale (verbatim from design.md G5) |
+| Agent class                         | Default route                       | Default-tier band                | Rationale (verbatim from design.md G5) |
 |-------------------------------------|-------------------------------------|----------------------------------|----------------------------------------|
 | `qrspi-research-collator`           | DeepSeek V3 (or current cheap tier) | cheap-model eligible             | Mechanical verbatim extraction; no synthesis. Cheap model is sufficient — the cost-per-collation dominates Wave fan-out at scale. |
 | `qrspi-implementer-lightweight`     | DeepSeek V3 (or current cheap tier) | cheap-model eligible             | Single-pass execution of well-specified lightweight tasks. Reviewer fan-out catches drift; routing the implementer to cheap saves dominant Wave token cost. |
@@ -865,7 +864,7 @@ All reviewer and fix work is dispatched via subagents; main chat only aggregates
 
 ### Dispatching Reviewers
 
-Per-task reviewers are agent-file subagents. Main chat dispatches them via `Agent({ subagent_type: "qrspi-{reviewer-name}", model: "sonnet" })`. The reviewer protocol (5-field finding schema, change-type classifier, untrusted-data handling, disk-write contract per `skills/reviewer-protocol/SKILL.md`) arrives via each agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The per-template checks (spec verification, security signals, type-design analysis, etc.) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for these dispatches.
+Per-task reviewers are agent-file subagents. Main chat dispatches them via `Agent({ subagent_type: "qrspi-{reviewer-name}" })`. The reviewer protocol (5-field finding schema, change-type classifier, untrusted-data handling, disk-write contract per `skills/reviewer-protocol/SKILL.md`) arrives via each agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The per-template checks (spec verification, security signals, type-design analysis, etc.) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for these dispatches.
 
 #### Reviewer Dispatch Template (orchestrator copy-paste)
 
@@ -930,17 +929,17 @@ The implementer dispatch is structured the same way per `implementer-protocol/SK
 
 Correctness reviewers (always run):
 
-- `Agent({ subagent_type: "qrspi-spec-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`, reviewer_tag: `spec-claude`
-- `Agent({ subagent_type: "qrspi-code-quality-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`, reviewer_tag: `code-quality-claude`
-- `Agent({ subagent_type: "qrspi-silent-failure-hunter", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception), reviewer_tag: `silent-failure-claude`
-- `Agent({ subagent_type: "qrspi-security-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`, reviewer_tag: `security-claude`
+- `Agent({ subagent_type: "qrspi-spec-reviewer" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`, reviewer_tag: `spec-claude`
+- `Agent({ subagent_type: "qrspi-code-quality-reviewer" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`, reviewer_tag: `code-quality-claude`
+- `Agent({ subagent_type: "qrspi-silent-failure-hunter" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception), reviewer_tag: `silent-failure-claude`
+- `Agent({ subagent_type: "qrspi-security-reviewer" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`, reviewer_tag: `security-claude`
 
 Thoroughness reviewers (deep mode only):
 
-- `Agent({ subagent_type: "qrspi-goal-traceability-reviewer", model: "sonnet" })` — additional companions: `companion_plan`, `companion_goals`. Output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`, reviewer_tag: `goal-traceability-claude`
-- `Agent({ subagent_type: "qrspi-test-coverage-reviewer", model: "sonnet" })` — additional companions: `companion_plan`, `companion_test_expectations`. Output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`, reviewer_tag: `test-coverage-claude`
-- `Agent({ subagent_type: "qrspi-type-design-analyzer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception), reviewer_tag: `type-design-claude`. Skip dispatch entirely when no new types are introduced; record skip in the review log per § Review Log Artifact.
-- `Agent({ subagent_type: "qrspi-code-simplifier", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception), reviewer_tag: `code-simplifier-claude`
+- `Agent({ subagent_type: "qrspi-goal-traceability-reviewer" })` — additional companions: `companion_plan`, `companion_goals`. Output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`, reviewer_tag: `goal-traceability-claude`
+- `Agent({ subagent_type: "qrspi-test-coverage-reviewer" })` — additional companions: `companion_plan`, `companion_test_expectations`. Output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`, reviewer_tag: `test-coverage-claude`
+- `Agent({ subagent_type: "qrspi-type-design-analyzer" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception), reviewer_tag: `type-design-claude`. Skip dispatch entirely when no new types are introduced; record skip in the review log per § Review Log Artifact.
+- `Agent({ subagent_type: "qrspi-code-simplifier" })` — output: `<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/` (no `-reviewer` suffix — naming convention exception), reviewer_tag: `code-simplifier-claude`
 
 Visual-fidelity reviewer (conditional — dispatched in parallel with the other per-task reviewers when both clauses of the activation gate are true). This reviewer supports wireframe-reference fidelity only; screenshot diffing is out of scope for this contract.
 
@@ -1001,7 +1000,7 @@ Visual-fidelity reviewer (conditional — dispatched in parallel with the other 
 
   Only if the Write tool confirms the sentinel was written successfully, proceed — do not proceed on assumption.
 
-- **Dispatch (when activation gate passes and neither silent-skip nor all-paths-rejected fires):** `Agent({ subagent_type: "qrspi-visual-fidelity-reviewer", model: "sonnet" })` — reviewer_tag: `visual-fidelity-claude`. The reviewer-protocol contract (5-field finding schema, change-type classifier, untrusted-data handling, disk-write contract) arrives via the agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt.
+- **Dispatch (when activation gate passes and neither silent-skip nor all-paths-rejected fires):** `Agent({ subagent_type: "qrspi-visual-fidelity-reviewer" })` — reviewer_tag: `visual-fidelity-claude`. The reviewer-protocol contract (5-field finding schema, change-type classifier, untrusted-data handling, disk-write contract) arrives via the agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt.
 
   Dispatch prompt parameters (exact set; no additional parameters):
 
@@ -1037,7 +1036,7 @@ Visual-fidelity reviewer (conditional — dispatched in parallel with the other 
 This is a **second, independent** activation path for `qrspi-visual-fidelity-reviewer` — distinct from the `visual_fidelity_check` gate above. When a task carries `ui: true` in its frontmatter, Implement dispatches `qrspi-visual-fidelity-reviewer` in parallel with the other per-task reviewers (correctness group and, in deep mode, thoroughness group), using the shared per-task reviewer dispatch shape:
 
 - **Activation condition:** task spec frontmatter carries `ui: true`. No `visual_fidelity_required` config flag is required; no `visual_fidelity_check` block is required. The `ui: true` flag is the sole activation signal on this path.
-- **Dispatch:** `Agent({ subagent_type: "qrspi-visual-fidelity-reviewer", model: "sonnet" })` — reviewer_tag: `visual-fidelity-claude`. Dispatched in parallel with the correctness reviewers (after spec-reviewer clears — same dispatch site as `qrspi-code-quality-reviewer` and peers).
+- **Dispatch:** `Agent({ subagent_type: "qrspi-visual-fidelity-reviewer" })` — reviewer_tag: `visual-fidelity-claude`. Dispatched in parallel with the correctness reviewers (after spec-reviewer clears — same dispatch site as `qrspi-code-quality-reviewer` and peers).
 - **Dispatch parameters** follow the shared per-task reviewer dispatch shape: `subject_code` (production files changed), `task_definition` (wrapped task spec body), `output` (`<ABS_ARTIFACT_DIR>/reviews/tasks/task-NN/round-NN/`), `round` (NN), `reviewer_tag` (`visual-fidelity-claude`), `diff_file_path` (round diff, omit when not in a git repo).
 - **`wave_number:` companion parameter (required on every dispatch on this path).** The orchestrator passes `wave_number: <N>` (integer, 1-indexed per the wave schedule) on every visual-fidelity reviewer dispatch on the `ui: true` path. The reviewer treats `wave_context:` absence as a load-bearing diagnostic when `wave_number > 1` AND the plan carries multiple sibling UI tasks — a missing `wave_context:` in that scenario indicates an orchestrator assembly bug and the reviewer fails loud rather than silently degrading to "first-wave with no sibling history."
 - **`wave_context:` companion assembly (later waves, multi-UI-task plans).** When the plan contains multiple tasks with `ui: true` (and optionally `lift_source:`) and the current task is in wave 2 or later, the orchestrator assembles a `wave_context:` companion from earlier-wave visual-fidelity reviewer findings on sibling UI tasks:
@@ -1419,7 +1418,7 @@ All tasks passed clean. Choose:
 
 After the menu, recommend compaction before the next step: "This is a good point to compact context before the next step (`/compact`)."
 
-**Gate-level reviewer dispatch (post-per-task-wave review).** When the user selects "Re-run all reviews" at the batch gate, Implement dispatches the cross-task gate-level reviewer subagent: `Agent({ subagent_type: "qrspi-implement-gate-reviewer", model: "sonnet" })`. The reviewer protocol (5-field finding schema, change-type classifier, untrusted-data handling, disk-write contract per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The agent body carries the cross-task gate criteria (consistency, wave completeness, aggregate test signal, spec drift, regression risk).
+**Gate-level reviewer dispatch (post-per-task-wave review).** When the user selects "Re-run all reviews" at the batch gate, Implement dispatches the cross-task gate-level reviewer subagent: `Agent({ subagent_type: "qrspi-implement-gate-reviewer" })`. The reviewer protocol (5-field finding schema, change-type classifier, untrusted-data handling, disk-write contract per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The agent body carries the cross-task gate criteria (consistency, wave completeness, aggregate test signal, spec drift, regression risk).
 
 Dispatch parameters:
 

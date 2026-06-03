@@ -92,20 +92,25 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-@test "[using-qrspi-vocab] schema doc carries the claude-code: host key" {
-  run grep -F -- 'claude-code:' "$USING_QRSPI_SKILL"
+@test "[using-qrspi-vocab] schema doc carries the medium tier row (vendor-neutral five-tier shape)" {
+  # G22 / T16 migration: the host-keyed claude-code:/copilot-cli: schema was
+  # retired in favor of the five-tier vendor-neutral model_routing: shape.
+  # The schema doc must carry the medium tier as a { vendor:, model: } object.
+  run grep -E 'medium:[[:space:]]+\{[[:space:]]*vendor:' "$USING_QRSPI_SKILL"
   [ "$status" -eq 0 ]
 }
 
-@test "[using-qrspi-vocab] schema doc carries the copilot-cli: host key" {
-  run grep -F -- 'copilot-cli:' "$USING_QRSPI_SKILL"
+@test "[using-qrspi-vocab] schema doc carries the default_tier: medium row" {
+  # G22 / T16 migration: default_tier replaces the per-host inherit row.
+  run grep -E 'default_tier:[[:space:]]+medium' "$USING_QRSPI_SKILL"
   [ "$status" -eq 0 ]
 }
 
-@test "[using-qrspi-vocab] schema doc carries a versioned tier row (haiku: claude-haiku-4.5)" {
+@test "[using-qrspi-vocab] schema doc carries a versioned tier model (claude-haiku-4.5)" {
   # Versioned-ID requirement: the doc must show the full versioned ID, not
-  # the bare tier short-form (Copilot CLI's proxy rejects bare names).
-  run grep -F -- 'haiku: claude-haiku-4.5' "$USING_QRSPI_SKILL"
+  # the bare tier short-form (Copilot CLI's proxy rejects bare names). After
+  # G22 the versioned ID lives inside the low tier's { vendor:, model: } object.
+  run grep -F -- 'claude-haiku-4.5' "$USING_QRSPI_SKILL"
   [ "$status" -eq 0 ]
 }
 

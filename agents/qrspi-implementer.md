@@ -1,4 +1,5 @@
 ---
+tier: medium
 name: qrspi-implementer
 description: "Per-task TDD implementation subagent. Handles initial implementation (mode: implement) and fix cycles (mode: fix). Per-task model selection is handled by the dispatcher via per-invocation override."
 tools: Read, Write, Bash, Edit, Grep, Glob

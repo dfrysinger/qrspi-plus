@@ -447,27 +447,23 @@ providers:
 
 #### `model_routing:` block
 
-Maps abstract Claude tier names to concrete versioned model IDs, per dispatch host. The dispatcher resolves an agent dispatch by (1) detecting the host CLI it is running under and (2) looking up the tier name carried on the agent (or `inherit` when the agent declares no explicit `model:` field).
+Maps the five vendor-neutral routing tiers to concrete `(vendor, model)` pairs (G22 / design.md CD-1). The dispatcher resolves an agent dispatch by (1) resolving the agent's `tier:` (with `--tier-override` and `default_tier:` precedence per `scripts/_resolve-lib.sh`) and (2) looking up that tier's `{ vendor:, model: }` entry in this block.
 
 ```yaml
 model_routing:
-  claude-code:
-    haiku: claude-haiku-4.5
-    sonnet: claude-sonnet-4.6
-    opus: claude-opus-4.7-high
-    inherit: claude-sonnet-4.6
-  copilot-cli:
-    haiku: claude-haiku-4.5
-    sonnet: claude-sonnet-4.6
-    opus: claude-opus-4.7-high
-    inherit: claude-sonnet-4.6
+  extra-low:  none                                              # operator opts in
+  low:        { vendor: claude, model: claude-haiku-4.5 }
+  medium:     { vendor: claude, model: claude-sonnet-4.6 }
+  high:       { vendor: claude, model: claude-opus-4.7 }
+  extra-high: { vendor: claude, model: claude-opus-4.7-high }
+default_tier: medium
 ```
 
-Top-level keys are the host names emitted by `detect_host` (see Codex dispatch transport routing). Each host sub-mapping contains exactly four tier rows: `haiku`, `sonnet`, `opus`, and `inherit`. Values are fully versioned model IDs (e.g. `claude-haiku-4.5`, not the bare tier short-form `haiku`) — Copilot CLI's model proxy emits a "model not available" warning for bare tier requests but accepts versioned IDs.
+The block carries exactly five tier rows — `extra-low`, `low`, `medium`, `high`, and `extra-high` — each a vendor-neutral `{ vendor:, model: }` object rather than a per-host model name. `extra-low` and `extra-high` are operator opt-in surfaces: they default to `none`, and no agent declares them in the G22 initial rubric. `default_tier: medium` supplies the tier for any agent missing a `tier:` field during migration.
 
 See `#### Model Routing` below for the dispatch-time resolution flow.
 
-The orchestrator validates these invariants at config-load time and on every dispatch. When `detect_host` returns a host value for which `model_routing:` has no matching top-level key, when an agent's tier name (or the implicit `inherit`) matches no row under the matched host's sub-mapping, or when a tier value is a bare short-form (`haiku`, `sonnet`, `opus`) rather than a fully versioned model ID, the dispatcher halts and reports the missing or invalid entry. The dispatcher never falls back silently to the agent-bundled default and never passes the dispatch through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
+The orchestrator validates these invariants at config-load time and on every dispatch (see `skills/_shared/config-validation-procedure.md`). When a dispatch resolves to a tier configured as `none`, the dispatcher halts loudly with a diagnostic naming the unconfigured tier and never falls back silently to a neighboring tier or the agent-bundled default — that fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
 
 #### `trusted_path:` block
 
