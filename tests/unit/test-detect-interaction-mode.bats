@@ -262,6 +262,10 @@ setup_file() {
   "
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '^PLATFORM=claude-code$'
+  echo "$output" | grep -q '^VERDICT=auto$'
+  # Must NOT emit DETECTION_TYPE=llm-context when override wins
+  ! echo "$output" | grep -q '^DETECTION_TYPE=llm-context$'
+  echo "$output" | grep -q '^DETECTION_TYPE=user-override-only$'
 }
 
 # output-shape test covering the override branch
@@ -351,8 +355,7 @@ setup_file() {
 # ===========================================================================
 
 @test "[T24] Copilot CLI branch creates no .interaction-mode-audit.json" {
-  local tmpdir
-  tmpdir="$(mktemp -d)"
+  local tmpdir="$BATS_TEST_TMPDIR"
   run bash -c "
     export COPILOT_CLI=1
     unset CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
@@ -365,12 +368,10 @@ setup_file() {
   local n_files
   n_files="$(find "$tmpdir" -maxdepth 1 -type f | wc -l | tr -d ' ')"
   [ "$n_files" -eq 0 ]
-  rm -rf "$tmpdir"
 }
 
 @test "[T24] Unknown host branch creates no files at all" {
-  local tmpdir
-  tmpdir="$(mktemp -d)"
+  local tmpdir="$BATS_TEST_TMPDIR"
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     cd \"$tmpdir\"
@@ -380,7 +381,6 @@ setup_file() {
   local n_files
   n_files="$(find "$tmpdir" -maxdepth 1 -type f | wc -l | tr -d ' ')"
   [ "$n_files" -eq 0 ]
-  rm -rf "$tmpdir"
 }
 
 # ===========================================================================
@@ -431,24 +431,28 @@ setup_file() {
   # autopilot_mode is a Copilot-CLI-specific signal injected by the CLI at runtime.
   # It must NOT appear in any skills/ file — only in scripts/detect-interaction-mode.sh
   # and its test fixture.
+  [ -d "$REPO_ROOT/skills" ]
   run grep -rl 'autopilot_mode' "$REPO_ROOT/skills"
-  # grep -rl exits non-zero (no matches) when absent — that's the passing state
-  [ "$status" -ne 0 ]
+  # grep -rl exits 1 (no matches) when absent — that's the passing state; exit 2 is an error
+  [ "$status" -eq 1 ]
 }
 
 @test "[T24] Grep regression: <autopilot_mode> literal absent from agents/ dir" {
+  [ -d "$REPO_ROOT/agents" ]
   run grep -rl 'autopilot_mode' "$REPO_ROOT/agents"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
 }
 
 @test "[T24] Grep regression: 'Autopilot mode is currently active' sentence absent from skills/" {
+  [ -d "$REPO_ROOT/skills" ]
   run grep -rl 'Autopilot mode is currently active' "$REPO_ROOT/skills"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
 }
 
 @test "[T24] Grep regression: 'Autopilot mode is currently active' sentence absent from agents/" {
+  [ -d "$REPO_ROOT/agents" ]
   run grep -rl 'Autopilot mode is currently active' "$REPO_ROOT/agents"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
 }
 
 # ===========================================================================
