@@ -518,3 +518,264 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   grep -qiE 'full-artifact|<full>.*fall.*back|fell back to <full>|full-artifact-fallback' "$intg" \
     || { echo "integrate/SKILL.md missing B8 full-artifact-fallback diagnostic"; return 1; }
 }
+
+# -----------------------------------------------------------------------------
+# 6. T13 / G9 — Per-task between-round checklist + round-prepare.sh artifact
+#    coverage + script-side architectural-boundary guard.
+#
+# T13 layers the G9 between-round checklist into the per-task reviewer fan-out
+# section of skills/implement/SKILL.md, removes the v0.7.1 main-chat-side
+# `rev-parse HEAD` comparison prose (now owned by `round-prepare.sh` exit
+# codes 10/11/12), and pins the inherited round-NN.diff + round-NN-commit.txt
+# artifact emission. The script-side guard is a regression test against any
+# accidental migration of first-party Task-tool dispatch into bash.
+# -----------------------------------------------------------------------------
+
+@test "[T13] implement/SKILL.md per-task fan-out has 'Between rounds — required sequence' checklist" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  grep -qF 'Between rounds — required sequence' "$impl" \
+    || { echo "implement/SKILL.md missing 'Between rounds — required sequence' checklist heading"; return 1; }
+}
+
+@test "[T13] checklist references qrspi-scope-tagger Task subagent dispatch" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  # Must appear inside the between-rounds checklist block (after the heading,
+  # before the next ### heading).
+  awk '/Between rounds — required sequence/{flag=1; print; next} flag && /^### /{exit} flag{print}' "$impl" \
+    | grep -qE 'qrspi-scope-tagger.*Task subagent|Dispatch .*qrspi-scope-tagger' \
+    || { echo "checklist missing qrspi-scope-tagger Task subagent dispatch step"; return 1; }
+}
+
+@test "[T13] checklist references implementer commit_sha extraction from Task return" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  awk '/Between rounds — required sequence/{flag=1; print; next} flag && /^### /{exit} flag{print}' "$impl" \
+    | grep -qE 'commit_sha.*Task tool return|read.*commit_sha:' \
+    || { echo "checklist missing 'read commit_sha: from Task tool return' step"; return 1; }
+}
+
+@test "[T13] checklist references dispatch-agent.sh --implementer-commit invocation" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  awk '/Between rounds — required sequence/{flag=1; print; next} flag && /^### /{exit} flag{print}' "$impl" \
+    | grep -qF 'dispatch-agent.sh --implementer-commit' \
+    || { echo "checklist missing 'dispatch-agent.sh --implementer-commit' invocation step"; return 1; }
+}
+
+@test "[T13] checklist enumerates exit-code branches 0/10/11/12" {
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  local block
+  block="$(awk '/Between rounds — required sequence/{flag=1; print; next} flag && /^### /{exit} flag{print}' "$impl")"
+  echo "$block" | grep -qE '\b0 →|exit.*\b0\b' \
+    || { echo "checklist missing exit-code 0 branch"; return 1; }
+  echo "$block" | grep -qE '\b10 →|exit.*\b10\b' \
+    || { echo "checklist missing exit-code 10 branch (orchestrator bug)"; return 1; }
+  echo "$block" | grep -qE '\b11 →|exit.*\b11\b' \
+    || { echo "checklist missing exit-code 11 branch (worktree integrity break)"; return 1; }
+  echo "$block" | grep -qE '\b12 →|exit.*\b12\b' \
+    || { echo "checklist missing exit-code 12 branch (re-dispatch implementer)"; return 1; }
+}
+
+@test "[T13] per-task review section contains zero 'rev-parse HEAD' main-chat instructions" {
+  # Per design.md §G9 L1356 companion lint: the per-task review section (Per-Task
+  # Convergence Narrowing — line range from "### Per-Task Convergence Narrowing"
+  # to the next "### " heading) MUST have zero `rev-parse HEAD` matches. Those
+  # checks are now owned by round-prepare.sh exit codes 10/11/12.
+  local impl="$REPO_ROOT/skills/implement/SKILL.md"
+  local section
+  section="$(awk '/^### Per-Task Convergence Narrowing$/{flag=1;next} flag && /^### /{exit} flag' "$impl")"
+  if echo "$section" | grep -q 'rev-parse HEAD'; then
+    echo "Per-Task Convergence Narrowing section still contains main-chat 'rev-parse HEAD' prose:"
+    echo "$section" | grep -n 'rev-parse HEAD'
+    return 1
+  fi
+}
+
+@test "[T13] round-prepare.sh task-branch mode writes round-NN-commit.txt with passed SHA + newline" {
+  # End-to-end: stage a tiny git repo, invoke round-prepare.sh in per-task
+  # happy-path mode (round 1, base ref pinned), and assert the commit-anchor
+  # file contains exactly the passed SHA + LF.
+  local repo="$REPO_ROOT"
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  local base_sha; base_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm impl
+  local head_sha; head_sha="$(git rev-parse HEAD)"
+  mkdir -p task/round-01
+  run "$repo/scripts/round-prepare.sh" 1 task/round-01 \
+    --task-branch main \
+    --implementer-commit "$head_sha" \
+    --worktree . \
+    --base-ref "$base_sha"
+  [ "$status" -eq 0 ] || { echo "expected exit 0, got $status; output: $output"; rm -rf "$tmp"; return 1; }
+  [ -f task/round-01-commit.txt ] || { echo "missing round-01-commit.txt"; rm -rf "$tmp"; return 1; }
+  local got; got="$(cat task/round-01-commit.txt)"
+  [ "$got" = "$head_sha" ] || { echo "anchor SHA mismatch: got '$got' want '$head_sha'"; rm -rf "$tmp"; return 1; }
+  # Must end with exactly one LF (POSIX `wc -l` counts newlines; 1 means file
+  # ends with one newline).
+  local nl; nl="$(wc -l < task/round-01-commit.txt | tr -d ' ')"
+  [ "$nl" = "1" ] || { echo "anchor file must end with single trailing LF; got newline-count=$nl"; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+}
+
+@test "[T13] round-prepare.sh task-branch mode emits round-NN.diff (G4 inheritance preserved)" {
+  local repo="$REPO_ROOT"
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  local base_sha; base_sha="$(git rev-parse HEAD)"
+  echo hi > a.txt
+  git add a.txt
+  git -c user.email=t@t -c user.name=t commit -qm change
+  local head_sha; head_sha="$(git rev-parse HEAD)"
+  mkdir -p task/round-01
+  run "$repo/scripts/round-prepare.sh" 1 task/round-01 \
+    --task-branch main \
+    --implementer-commit "$head_sha" \
+    --worktree . \
+    --base-ref "$base_sha"
+  [ "$status" -eq 0 ] || { echo "expected exit 0, got $status; output: $output"; rm -rf "$tmp"; return 1; }
+  [ -f task/round-01/round-01.diff ] || { echo "missing round-01.diff"; rm -rf "$tmp"; return 1; }
+  grep -q 'a.txt' task/round-01/round-01.diff \
+    || { echo "round-01.diff missing expected file change"; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+}
+
+@test "[T13] round-prepare.sh exits 10 when --task-branch set without --implementer-commit (orchestrator bug)" {
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  mkdir -p task/round-01
+  run "$REPO_ROOT/scripts/round-prepare.sh" 1 task/round-01 --task-branch main --worktree .
+  rm -rf "$tmp"
+  [ "$status" -eq 10 ] || { echo "expected exit 10, got $status; stderr/stdout: $output"; return 1; }
+  echo "$output" | grep -qiE 'orchestrator bug|implementer-commit' \
+    || { echo "missing recovery diagnostic: $output"; return 1; }
+}
+
+@test "[T13] round-prepare.sh exits 11 when implementer-commit != worktree HEAD (integrity break)" {
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  local base_sha; base_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm impl
+  mkdir -p task/round-01
+  run "$REPO_ROOT/scripts/round-prepare.sh" 1 task/round-01 \
+    --task-branch main \
+    --implementer-commit 0000000000000000000000000000000000000000 \
+    --worktree . \
+    --base-ref "$base_sha"
+  rm -rf "$tmp"
+  [ "$status" -eq 11 ] || { echo "expected exit 11, got $status; output: $output"; return 1; }
+  echo "$output" | grep -qiE 'HEAD mismatch|worktree integrity|HALT' \
+    || { echo "missing integrity-break diagnostic: $output"; return 1; }
+}
+
+@test "[T13] round-prepare.sh exits 12 round-1 with task-base diagnostic (not 'prior round anchor')" {
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  local base_sha; base_sha="$(git rev-parse HEAD)"
+  mkdir -p task/round-01
+  run "$REPO_ROOT/scripts/round-prepare.sh" 1 task/round-01 \
+    --task-branch main \
+    --implementer-commit "$base_sha" \
+    --worktree . \
+    --base-ref "$base_sha"
+  rm -rf "$tmp"
+  [ "$status" -eq 12 ] || { echo "expected exit 12, got $status; output: $output"; return 1; }
+  echo "$output" | grep -q 'task base commit' \
+    || { echo "round-1 diagnostic must name 'task base commit'; got: $output"; return 1; }
+  if echo "$output" | grep -q 'prior round anchor'; then
+    echo "round-1 diagnostic must NOT reference 'prior round anchor': $output"; return 1
+  fi
+}
+
+@test "[T13] round-prepare.sh exits 12 later-round when SHA equals prior-round anchor (re-dispatch implementer)" {
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  local base_sha; base_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r1
+  local r1_sha; r1_sha="$(git rev-parse HEAD)"
+  mkdir -p task/round-02
+  printf '%s\n' "$r1_sha" > task/round-01-commit.txt
+  run "$REPO_ROOT/scripts/round-prepare.sh" 2 task/round-02 \
+    --task-branch main \
+    --implementer-commit "$r1_sha" \
+    --worktree . \
+    --base-ref "$base_sha"
+  rm -rf "$tmp"
+  [ "$status" -eq 12 ] || { echo "expected exit 12, got $status; output: $output"; return 1; }
+  echo "$output" | grep -qE 'prior round anchor|did not advance' \
+    || { echo "later-round diagnostic missing prior-round-anchor language: $output"; return 1; }
+}
+
+@test "[T13] round-prepare.sh fails loudly when prior-round commit anchor is missing" {
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  local base_sha; base_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r1
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r2
+  local head_sha; head_sha="$(git rev-parse HEAD)"
+  mkdir -p task/round-02
+  # Deliberately omit task/round-01-commit.txt.
+  run "$REPO_ROOT/scripts/round-prepare.sh" 2 task/round-02 \
+    --task-branch main \
+    --implementer-commit "$head_sha" \
+    --worktree . \
+    --base-ref "$base_sha"
+  rm -rf "$tmp"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for missing prior anchor, got 0; output: $output"; return 1; }
+  echo "$output" | grep -q 'round-01-commit.txt' \
+    || { echo "diagnostic must name the missing prior-round commit anchor: $output"; return 1; }
+}
+
+@test "[T13] round-prepare.sh fails loudly on missing scope-set when narrowing-eligible + tagger enabled" {
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  local base_sha; base_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r1
+  local r1_sha; r1_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r2
+  local r2_sha; r2_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r3
+  local head_sha; head_sha="$(git rev-parse HEAD)"
+  mkdir -p task/round-03
+  printf '%s\n' "$r1_sha" > task/round-01-commit.txt
+  printf '%s\n' "$r2_sha" > task/round-02-commit.txt
+  # Deliberately omit round-02-scope-set.txt — narrowing-eligible (NN>=3)
+  # AND scope tagger enabled MUST fail loudly.
+  QRSPI_SCOPE_TAGGER_ENABLED=true run "$REPO_ROOT/scripts/round-prepare.sh" 3 task/round-03 \
+    --task-branch main \
+    --implementer-commit "$head_sha" \
+    --worktree . \
+    --base-ref "$base_sha"
+  rm -rf "$tmp"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for missing scope-set, got 0; output: $output"; return 1; }
+  echo "$output" | grep -q 'round-02-scope-set.txt' \
+    || { echo "diagnostic must name the missing prior-round scope-set: $output"; return 1; }
+}
+
+@test "[T13] scripts/ contain NO first-party Task-tool subagent dispatch or Task-tool return capture" {
+  # Architectural boundary (design.md §G9 L1358 acceptance criterion):
+  # bash scripts dispatch third-party CLIs only; first-party Task-tool
+  # subagents are dispatched from main chat. This guard catches any
+  # accidental migration.
+  local hits
+  hits="$(grep -rnE 'subagent_type|Task\(|Agent\(' "$REPO_ROOT/scripts/" 2>/dev/null || true)"
+  if [ -n "$hits" ]; then
+    echo "scripts/ must not contain Task-tool dispatch or return-capture patterns; found:"
+    echo "$hits"
+    return 1
+  fi
+}
