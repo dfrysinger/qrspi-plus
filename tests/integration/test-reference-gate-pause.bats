@@ -505,6 +505,9 @@ EOF
   # And at least one `no change` marker for the third consumer.
   printf '%s\n' "$section" | grep -qE '\bno change\b' \
     || { echo "Worked example A must list at least one 'no change' consumer disposition" >&2; return 1; }
+  # And the public-symbol rename framing must be present (not a prose-only co-edit mention).
+  printf '%s\n' "$section" | grep -qiE 'public.symbol rename' \
+    || { echo "Worked example A must show the public-symbol rename framing" >&2; return 1; }
 }
 
 @test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface carries worked example B: body-only bug fix non-trigger" {
@@ -580,7 +583,7 @@ EOF
 @test "[G18-consumers] Plan reviewer none-claim re-run requires -- argument separator" {
   # Without --, a pattern starting with - is interpreted by grep/rg as a flag.
   extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
-    "argument separator"
+    "\`--\` argument separator"
 }
 
 @test "[G18-consumers] Plan reviewer none-claim re-run rejects patterns starting with -" {
@@ -624,6 +627,8 @@ EOF
     || { echo "Missing 'malformed' failure mode" >&2; return 1; }
   printf '%s\n' "$section" | grep -qE "invalid disposition|disposition.*invalid|disposition value" \
     || { echo "Missing 'invalid disposition' failure mode" >&2; return 1; }
+  printf '%s\n' "$section" | grep -qE "[Nn]on-zero hits|false \`none\`|\`none\` claim|on \`none\` claim" \
+    || { echo "Missing false-'none' (non-zero hits on none claim) failure mode" >&2; return 1; }
 }
 
 @test "[G18-consumers] Plan reviewer evaluates sweep and consumer clauses independently — finding may fire against either, both, or neither" {
