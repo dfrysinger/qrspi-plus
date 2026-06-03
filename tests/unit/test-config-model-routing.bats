@@ -781,3 +781,12 @@ _extract_routing_blocks_intro() {
   out="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
   printf '%s\n' "$out" | grep -qF 'Fields that affect pipeline behavior (must be validated)'
 }
+
+@test "model_routing-block none-halt fail-loud paragraph back-links to validation table heading by literal text" {
+  # Test expectation: the '#### \`model_routing:\` block' section contains a
+  # back-pointer to the literal heading text
+  # '### Fields that affect pipeline behavior (must be validated)' for the
+  # none-halt fail-loud invariant (sibling coverage to the missing-block para).
+  out="$(_extract_h4 "$USING" '`model_routing:` block')"
+  printf '%s\n' "$out" | grep -qF 'Fields that affect pipeline behavior (must be validated)'
+}
