@@ -189,13 +189,10 @@ if [ "$ROUND_NUM" -ge 2 ]; then
     echo "round-prepare: missing prior-round commit anchor at $PRIOR_ANCHOR_PATH — implementer commit-anchor capture failed or skipped in round $((ROUND_NUM - 1))" >&2
     exit 1
   fi
-  ANCHOR_CONTENT="$(cat "$PRIOR_ANCHOR_PATH" 2>/dev/null || true)"
   # Required shape: ^[0-9a-f]{40}\n$ (40-char SHA + single trailing newline).
-  if ! printf '%s' "$ANCHOR_CONTENT" | python3 -c '
-import sys
-data = sys.stdin.buffer.read()
-import re
-sys.exit(0 if re.match(rb"^[0-9a-f]{40}\n$", data) else 1)
+  if ! python3 -c '
+import re, sys
+sys.exit(0 if re.match(rb"^[0-9a-f]{40}\n$", sys.stdin.buffer.read()) else 1)
 ' < "$PRIOR_ANCHOR_PATH"; then
     SAMPLE="$(head -c 80 "$PRIOR_ANCHOR_PATH" | python3 -c "import sys; print(repr(sys.stdin.read()))")"
     echo "round-prepare: malformed prior-round commit anchor at $PRIOR_ANCHOR_PATH — expected 40-char SHA + newline, got $SAMPLE" >&2
