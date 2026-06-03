@@ -60,31 +60,44 @@ setup_file() {
 }
 
 # ---------------------------------------------------------------------------
-# Precedence chain: all four layers named in order in using-qrspi prose.
+# Tier-precedence chain: the four tier-resolution layers named in order in
+# using-qrspi prose (G22 / design.md CD-1; mirrors scripts/_resolve-lib.sh
+# resolve_tier). The retired per-task/host-tier model: chain is gone.
 # ---------------------------------------------------------------------------
 
-@test "precedence chain: layer 1 (per-task model:) named in using-qrspi" {
+@test "precedence chain: layer 1 (--tier-override) named in using-qrspi" {
   out="$(_extract_h4 "$USING" "Precedence chain")"
-  [[ "$out" == *"Per-task"*"model:"*"override"* ]]
+  [[ "$out" == *"--tier-override"* ]]
 }
 
-@test "precedence chain: layer 2 (hardcoded dispatch-site model:) named in using-qrspi" {
+@test "precedence chain: layer 2 (agent tier: frontmatter) named in using-qrspi" {
   out="$(_extract_h4 "$USING" "Precedence chain")"
-  [[ "$out" == *"Hardcoded dispatch-site"* ]]
+  [[ "$out" == *"tier:"* ]]
+  [[ "$out" == *"frontmatter"* ]]
 }
 
-@test "precedence chain: layer 3 (model_routing: host/tier lookup) named in using-qrspi" {
-  # T10 R1 fix (schema replacement): v0.7.1 hardening retired the
-  # role→provider/model schema in favor of host→tier→model. Step 3's
-  # canonical wording is now "host/tier lookup" rather than "role lookup".
+@test "precedence chain: layer 3 (default_tier:) named in using-qrspi" {
   out="$(_extract_h4 "$USING" "Precedence chain")"
-  [[ "$out" == *"model_routing:"* ]]
-  [[ "$out" == *"host/tier lookup"* ]]
+  [[ "$out" == *"default_tier:"* ]]
 }
 
-@test "precedence chain: layer 4 (agent-bundled default) named in using-qrspi" {
+@test "precedence chain: layer 4 (hardcoded medium with loud warning) named in using-qrspi" {
   out="$(_extract_h4 "$USING" "Precedence chain")"
-  [[ "$out" == *"Agent-bundled default"* ]]
+  [[ "$out" == *"medium"* ]]
+  [[ "$out" == *"warning"* ]]
+}
+
+@test "precedence chain: retired per-task model: / host-tier layers are gone" {
+  # G22 migration: the old per-task model: → hardcoded dispatch-site model: →
+  # model_routing: host/tier lookup → agent-bundled default chain is replaced
+  # by the tier-precedence chain. Residue of the retired chain fails CI here.
+  out="$(_extract_h4 "$USING" "Precedence chain")"
+  c=$(grep -c "Per-task" <<<"$out" || true)
+  [ "$c" -eq 0 ]
+  c=$(grep -c "host/tier lookup" <<<"$out" || true)
+  [ "$c" -eq 0 ]
+  c=$(grep -c "Hardcoded dispatch-site" <<<"$out" || true)
+  [ "$c" -eq 0 ]
 }
 
 # ---------------------------------------------------------------------------
@@ -108,18 +121,22 @@ setup_file() {
 }
 
 # ---------------------------------------------------------------------------
-# Missing-model_routing one-time warning when the block is absent from config.md.
+# Missing-model_routing: fail-loud repair-or-abort when the block is absent
+# from config.md (G22 / design.md CD-1) — consistent with the shared
+# config-validation procedure (missing AND malformed both fail loudly).
 # ---------------------------------------------------------------------------
 
-@test "missing-model_routing warning: documented as one-time per session" {
+@test "missing-model_routing: documented as a loud validation failure (not a one-time warning)" {
   out="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
-  [[ "$out" == *"once per session"* ]] || [[ "$out" == *"one-time"* ]]
+  [[ "$out" == *"fails loudly"* ]] || [[ "$out" == *"fail loudly"* ]] || [[ "$out" == *"validation fail"* ]]
 }
 
-@test "missing-model_routing warning: in-memory only, on-disk config never silently mutated" {
+@test "missing-model_routing: repair-or-abort guidance present, no backfill/one-time-warning language" {
   out="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
-  [[ "$out" == *"never silently mutated"* ]]
-  [[ "$out" == *"in-memory"* ]]
+  [[ "$out" == *"Repair"* ]] || [[ "$out" == *"repair"* ]]
+  [[ "$out" == *"Abort"* ]] || [[ "$out" == *"abort"* ]]
+  c=$(grep -ci "one-time\|once per session\|backfill\|in-memory" <<<"$out" || true)
+  [ "$c" -eq 0 ]
 }
 
 # ---------------------------------------------------------------------------
@@ -144,57 +161,50 @@ setup_file() {
 }
 
 # ---------------------------------------------------------------------------
-# Role-resolution chain that consumes T06's model_role: agent frontmatter.
-# Implement's per-task routing wiring AND the G5 matrix both name model_role.
+# model_role: routing key retired release-wide (G22). The legacy role-keyed
+# routing field no longer drives any dispatch and must not appear in the
+# using-qrspi routing prose.
 # ---------------------------------------------------------------------------
 
-@test "role resolution: model_role: frontmatter from T06 referenced by implement" {
-  run grep -F "model_role:" "$IMPLEMENT"
-  [ "$status" -eq 0 ]
+@test "model_role: retired — not referenced in using-qrspi routing prose" {
+  c=$(grep -c "model_role:" "$USING" || true)
+  [ "$c" -eq 0 ]
 }
 
 # ---------------------------------------------------------------------------
-# Tie-break observation (layer-1a vs layer-1b) in a SINGLE shared section.
+# Tier-order observation in the SINGLE shared Precedence chain section.
 #
-# Contract: per-task `model:` override (1a) wins; hardcoded dispatch-site
-# `model:` (1b) wins in 1a's absence. Both halves must co-locate in the
-# Precedence chain section so a single-fixture rewrite that drops one half
-# fails loud here (where a split-fixture pin could silently pass).
+# Contract: --tier-override (layer 1) wins; the chain falls through agent
+# tier: → default_tier: → hardcoded medium. The ordering must be observable
+# from the one section so a rewrite that reorders or drops a layer fails loud.
 # ---------------------------------------------------------------------------
 
-@test "tie-break: layer 1a wins when per-task model: is present (contract ordering)" {
+@test "tier order: --tier-override precedes default_tier: in the precedence chain" {
   out="$(_extract_h4 "$USING" "Precedence chain")"
-  [[ "$out" == *"Per-task"*"model:"*"override"* ]]
-  [[ "$out" == *"Hardcoded dispatch-site"* ]]
-  # Order check: per-task line precedes hardcoded line (1a above 1b).
-  per_task_line="$(printf '%s\n' "$out" | grep -n "Per-task" | head -1 | cut -d: -f1)"
-  hardcoded_line="$(printf '%s\n' "$out" | grep -n "Hardcoded dispatch-site" | head -1 | cut -d: -f1)"
-  [ -n "$per_task_line" ]
-  [ -n "$hardcoded_line" ]
-  [ "$per_task_line" -lt "$hardcoded_line" ]
+  override_line="$(printf '%s\n' "$out" | grep -n -- "--tier-override" | head -1 | cut -d: -f1)"
+  default_line="$(printf '%s\n' "$out" | grep -n "default_tier:" | head -1 | cut -d: -f1)"
+  [ -n "$override_line" ]
+  [ -n "$default_line" ]
+  [ "$override_line" -lt "$default_line" ]
 }
 
-@test "tie-break: layer 1b active in 1a's absence (contract co-location)" {
+@test "tier order: all four tier layers co-located in the precedence chain section" {
   out="$(_extract_h4 "$USING" "Precedence chain")"
-  [[ "$out" == *"Per-task"* ]]
-  [[ "$out" == *"Hardcoded dispatch-site"* ]]
-  [[ "$out" == *"model_routing:"* ]]
-  [[ "$out" == *"Agent-bundled default"* ]]
+  [[ "$out" == *"--tier-override"* ]]
+  [[ "$out" == *"default_tier:"* ]]
+  [[ "$out" == *"medium"* ]]
 }
 
 # ---------------------------------------------------------------------------
-# Role-resolution fallback co-located observation: a role mapping resolves
-# via model_routing when the role entry is present; falls back to the
-# concrete model: when removed. Both halves must be observable from the
-# single Precedence chain section so a regression cannot silently pass.
+# Tier-to-(vendor,model) co-location: the resolved tier is looked up in the
+# model_routing: block. Both halves (tier resolution + model_routing: lookup)
+# must be observable so a regression cannot silently pass.
 # ---------------------------------------------------------------------------
 
-@test "precedence-chain co-location: model_routing: host/tier lookup AND agent-bundled default co-located in precedence chain" {
-  # T10 R2 fix (post-R1 schema replacement): step-3 wording is now "host/tier lookup", not "role lookup". This pin was silently passing pre-R2 because of a bats [[ ]] short-circuit quirk; the post-R2 pin asserts the GREEN behavior explicitly.
+@test "precedence-chain co-location: tier resolution AND model_routing: lookup co-located in precedence chain" {
   out="$(_extract_h4 "$USING" "Precedence chain")"
   [[ "$out" == *"model_routing:"* ]]
-  [[ "$out" == *"host/tier lookup"* ]]
-  [[ "$out" == *"Agent-bundled default"* ]]
+  [[ "$out" == *"tier"* ]]
 }
 
 # ===========================================================================
@@ -367,4 +377,35 @@ setup_file() {
   out="$(_extract_h4 "$USING" '`model_routing:` block')"
   [[ "$out" == *"extra-low"* ]]
   [[ "$out" == *"extra-high"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# F05 (G22 completion sweep) — the retired #### Model Routing host-column
+# section and its host-keyed indexing prose must be fully removed from
+# using-qrspi. Residual host-column language fails CI here.
+# ---------------------------------------------------------------------------
+
+@test "using-qrspi: #### Model Routing host-column section heading is gone" {
+  c=$(grep -c "^#### Model Routing[[:space:]]*$" "$USING" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "using-qrspi: host-column indexing prose (Host column selection / Tier row selection) is gone" {
+  c=$(grep -c "Host column selection\|Tier row selection" "$USING" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "using-qrspi: host-keyed routing-table column prose (claude-code/copilot-cli columns) is gone" {
+  c=$(grep -c "copilot-cli\` column\|claude-code\`) or (\`copilot-cli\|pick the matching top-level" "$USING" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "using-qrspi: bare inherit tier-row language is gone release-wide" {
+  c=$(grep -c "inherit" "$USING" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "using-qrspi: bare haiku/sonnet/opus tier-row request language is gone" {
+  c=$(grep -c 'bare `haiku`' "$USING" || true)
+  [ "$c" -eq 0 ]
 }

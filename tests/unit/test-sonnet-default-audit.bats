@@ -43,14 +43,16 @@ setup() {
   # whose subagent_type names a qrspi-*-reviewer / qrspi-*-hunter / qrspi-*-analyzer / qrspi-code-simplifier
   # agent. Every such line must carry model: somewhere on the same line.
   #
-  # G22 / T16: skills/implement/SKILL.md migrated to CD-1 universal dispatch —
-  # the dispatcher resolves vendor+model from the agent tier, so its dispatch
-  # prose names only the agent. The migrated skill is excluded from this guard;
-  # the un-migrated skills still pin model explicitly.
+  # G22 / T16: skills/implement/SKILL.md and skills/test/SKILL.md migrated to
+  # CD-1 universal dispatch — the dispatcher resolves vendor+model from the
+  # agent/reviewer tier, so their dispatch prose names only the agent. The
+  # migrated skills are excluded from this guard; the un-migrated skills still
+  # pin model explicitly.
   local offenders
   offenders=$(grep -rE '`Agent\(\{[^`]*subagent_type: "qrspi-([a-z-]+-reviewer|silent-failure-hunter|type-design-analyzer|code-simplifier)"' \
     skills/ \
     | grep -v '^skills/implement/' \
+    | grep -v '^skills/test/' \
     | grep -v 'model:' \
     || true)
   if [ -n "$offenders" ]; then

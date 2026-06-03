@@ -123,7 +123,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
 
    **Phase-routing fail-loud.** Per the canonical contract in `reviewer-protocol/SKILL.md` § Phase Routing, each per-task reviewer agent (spec, code-quality, goal-traceability) carries an agent-side Pre-Flight check that refuses the dispatch when `task_definition` is supplied AND the `output`/`round_subdir` parameter contains `/reviews/test/`. The agent returns a single-line text response prefixed `PHASE-ROUTING-VIOLATION:` instead of writing findings. **Orchestrator handling:** when any of the three reviewer dispatches returns text instead of writing the expected findings file, scan the first line for `PHASE-ROUTING-VIOLATION:`. On a hit, STOP — do not silently retry with the same prompt (would loop). The repair is to strip `task_definition` from the dispatch (the test-step dispatch must never carry it; `--task-def` was mistakenly added). Re-dispatch only after repair. The agent-side check is defense-in-depth; the primary regression guard is the bats test pinning the absence at CI time (`tests/unit/test-task-definition-absence-fail-loud.bats`).
 
-   - **Claude spec-reviewer** — dispatch `Agent({ subagent_type: "qrspi-spec-reviewer", model: "sonnet" })` with a prompt containing only:
+   - **Claude spec-reviewer** — dispatch `Agent({ subagent_type: "qrspi-spec-reviewer" })` (the dispatcher resolves vendor+model from the reviewer's resolved tier) with a prompt containing only:
      - `subject_code`, `companion_plan`, `companion_goals` (constructed above)
      - `output`: `<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`
      - `round`: NN
@@ -131,7 +131,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
 
      The reviewer protocol arrives via the agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Test-phase branch of the agent body checks: do the assertions verify what they claim? Are they meaningful, not vacuous?
 
-   - **Claude code-quality-reviewer** — dispatch `Agent({ subagent_type: "qrspi-code-quality-reviewer", model: "sonnet" })` with the same shape:
+   - **Claude code-quality-reviewer** — dispatch `Agent({ subagent_type: "qrspi-code-quality-reviewer" })` (the dispatcher resolves vendor+model from the reviewer's resolved tier) with the same shape:
      - `subject_code`, `companion_plan`, `companion_goals`
      - `output`: `<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`
      - `round`: NN
@@ -139,7 +139,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
 
      Test-phase branch checks: is the test reliable? Flaky setup? Race conditions? Proper cleanup?
 
-   - **Claude goal-traceability-reviewer** — dispatch `Agent({ subagent_type: "qrspi-goal-traceability-reviewer", model: "sonnet" })` with the same shape:
+   - **Claude goal-traceability-reviewer** — dispatch `Agent({ subagent_type: "qrspi-goal-traceability-reviewer" })` (the dispatcher resolves vendor+model from the reviewer's resolved tier) with the same shape:
      - `subject_code`, `companion_plan`, `companion_goals`
      - `output`: `<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`
      - `round`: NN

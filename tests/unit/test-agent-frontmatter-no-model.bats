@@ -675,37 +675,25 @@ _markdown_section() {
   fi
 }
 
-@test "[T10/TE6] SKILL.md contains a Model Routing section naming detect_host and model_routing" {
-  # Test expectation: skills/using-qrspi/SKILL.md contains a "Model Routing"
-  # section (at any heading depth) that names `detect_host` output as the
-  # host-selection input AND the `model_routing` table as the per-tier
-  # resolution source. The existing `#### \`model_routing:\` block` section
-  # (lowercase, code-formatted, about the YAML schema) does NOT satisfy this
-  # expectation — the new section must be a distinct heading titled
-  # "Model Routing" (capital M, capital R, no backticks) that documents the
-  # dispatcher resolution flow.
+@test "[T10/TE6] using-qrspi SKILL.md no longer carries the retired host-column Model Routing section (G22/T16)" {
+  # G22 / T16 migration (design.md CD-1): the retired `#### Model Routing`
+  # section documented a two-step host-column indexing flow — `detect_host`
+  # output picked a `claude-code` / `copilot-cli` column, then a tier row
+  # selected a versioned model. That host-keyed resolution is deleted
+  # release-wide; the vendor-neutral tier → `{ vendor:, model: }` resolution
+  # is described by the `#### \`model_routing:\` block` and `#### Precedence
+  # chain` sections instead. Pin the retired section's absence so a revert
+  # fails CI. Negative assertions use the count idiom (not `! grep -q`).
   local skill="skills/using-qrspi/SKILL.md"
   [ -f "$skill" ] || { echo "SKILL.md not found at expected path: $skill"; return 1; }
 
-  local section
-  section=$(_markdown_section "$skill" "Model Routing")
+  # No distinct capital-M-R "Model Routing" host-column section heading.
+  c=$(grep -c '^#\{1,\} Model Routing[[:space:]]*$' "$skill" || true)
+  [ "$c" -eq 0 ]
 
-  [ -n "$section" ] || {
-    echo "TE6: no 'Model Routing' section heading found in $skill"
-    echo "  expected a line matching '^#+ Model Routing\$' (case-sensitive)"
-    return 1
-  }
-
-  printf '%s\n' "$section" | grep -qF 'detect_host' || {
-    echo "TE6: 'Model Routing' section does not name detect_host as host-selection input"
-    printf 'section body:\n%s\n' "$section"
-    return 1
-  }
-  printf '%s\n' "$section" | grep -qF 'model_routing' || {
-    echo "TE6: 'Model Routing' section does not name the model_routing table as per-tier resolution source"
-    printf 'section body:\n%s\n' "$section"
-    return 1
-  }
+  # No host-column indexing prose.
+  c=$(grep -c 'Host column selection\|Tier row selection' "$skill" || true)
+  [ "$c" -eq 0 ]
 }
 
 @test "[T10/TE7] lint helper accepts a synthetic complete model_routing fixture (GREEN path)" {

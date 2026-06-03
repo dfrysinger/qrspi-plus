@@ -305,3 +305,39 @@ setup_file() {
   c=$(grep -c "Layer 1a\|Layer 1b\|layer 1a\|layer 1b" "$IMPLEMENT" || true)
   [ "$c" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# F05 (G22 completion sweep) — DISPATCH_FILE reviewer pins extended to the
+# two deep-mode reviewers (qrspi-code-simplifier, qrspi-type-design-analyzer)
+# and the test/SKILL.md reviewer dispatches resolve via tier (no hardcoded
+# model: "sonnet" argument).
+# ---------------------------------------------------------------------------
+
+@test "reviewer agents: qrspi-code-simplifier body has DISPATCH_FILE first-action instruction" {
+  run grep -q "DISPATCH_FILE" "$AGENTS_DIR/qrspi-code-simplifier.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "reviewer agents: qrspi-type-design-analyzer body has DISPATCH_FILE first-action instruction" {
+  run grep -q "DISPATCH_FILE" "$AGENTS_DIR/qrspi-type-design-analyzer.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "reviewer agents: DISPATCH_FILE instruction precedes any other procedural step in code-simplifier" {
+  first_action_line=$(grep -n "DISPATCH_FILE\|You are the\|Your job\|## " \
+    "$AGENTS_DIR/qrspi-code-simplifier.md" | head -1)
+  [[ "$first_action_line" == *"DISPATCH_FILE"* ]]
+}
+
+@test "reviewer agents: DISPATCH_FILE instruction precedes any other procedural step in type-design-analyzer" {
+  first_action_line=$(grep -n "DISPATCH_FILE\|You are the\|Your job\|## " \
+    "$AGENTS_DIR/qrspi-type-design-analyzer.md" | head -1)
+  [[ "$first_action_line" == *"DISPATCH_FILE"* ]]
+}
+
+@test "test SKILL.md: reviewer dispatches contain no hardcoded model: \"sonnet\" argument" {
+  # Test expectation: every reviewer dispatch resolves vendor+model via tier,
+  # mirroring the test-writer dispatch; no model: "sonnet" arg remains.
+  c=$(grep -c 'model: "sonnet"' "$TEST_SKILL" || true)
+  [ "$c" -eq 0 ]
+}

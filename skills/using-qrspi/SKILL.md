@@ -461,7 +461,7 @@ default_tier: medium
 
 The block carries exactly five tier rows — `extra-low`, `low`, `medium`, `high`, and `extra-high` — each a vendor-neutral `{ vendor:, model: }` object rather than a per-host model name. `extra-low` and `extra-high` are operator opt-in surfaces: they default to `none`, and no agent declares them in the G22 initial rubric. `default_tier: medium` supplies the tier for any agent missing a `tier:` field during migration.
 
-See `#### Model Routing` below for the dispatch-time resolution flow.
+See `#### Precedence chain` below for the dispatch-time tier-resolution flow (and `scripts/_resolve-lib.sh` for the resolver implementation).
 
 The orchestrator validates these invariants at config-load time and on every dispatch (see `skills/_shared/config-validation-procedure.md`). When a dispatch resolves to a tier configured as `none`, the dispatcher halts loudly with a diagnostic naming the unconfigured tier and never falls back silently to a neighboring tier or the agent-bundled default — that fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
 
@@ -477,7 +477,7 @@ trusted_path:
 
 Entries can be:
 - A relative path to an agent `.md` file (relative to the repo root, e.g. `agents/qrspi-implementer.md`).
-- A role name string (matches the `model_role:` value declared in an agent's frontmatter — independent of `model_routing:`'s host-keyed structure).
+- A role name string that matches an agent's declared role identity (e.g. `reviewer`), resolved independently of the `model_routing:` tier table.
 
 `trusted_path:` is documented separately from the precedence chain below because it is a short-circuit, not a step in the chain — matching agents or roles bypass the chain entirely.
 
@@ -498,54 +498,21 @@ When the validator triggers the trusted-model re-run and the matched agent's fro
 
 #### Precedence chain
 
-When the dispatcher resolves which model to call for a task, it applies this precedence order (highest to lowest):
+When the dispatcher resolves which tier to use for a dispatch, it applies this precedence order (highest to lowest) — this is the tier-resolution chain implemented by `scripts/_resolve-lib.sh` (`resolve_tier`):
 
-1. **Per-task `model:` override** — the `model:` field on an individual task spec, when present.
-2. **Hardcoded dispatch-site `model:`** — a `model:` value hard-coded at the dispatch site in a skill's SKILL.md.
-3. **`model_routing:` host/tier lookup** — the concrete model ID resolved via the `model_routing:` block in `config.md`, indexed by the active dispatch host (from `detect_host`) and the tier name carried on the agent (or `inherit` when the agent declares no explicit `model:` field). See `#### \`model_routing:\` block` and `#### Model Routing` for schema + resolution flow.
-4. **Agent-bundled default** — the model bundled in the agent's own definition file.
+1. **`--tier-override`** — a per-dispatch tier override flag supplied at the dispatch site (used by Plan → implementer for per-task complexity variance). Highest layer.
+2. **Agent `tier:` frontmatter** — the `tier:` field declared on the agent's own `.md` file.
+3. **`default_tier:`** — the `default_tier:` value in `config.md`, covering agents missing a `tier:` field during migration.
+4. **Hardcoded `medium` with a loud warning** — last-resort fallback when neither an agent `tier:` nor a config `default_tier:` is available. The dispatcher emits a loud warning rather than falling back silently.
 
-`trusted_path:` is a separate short-circuit outside this chain: when an agent-file path or role name matches a `trusted_path:` entry, the dispatcher skips steps 1–3 and routes directly to the agent-bundled default (step 4).
+The resolved tier is then looked up in the `model_routing:` block to obtain the concrete `{ vendor:, model: }` pair (see `#### \`model_routing:\` block`). `trusted_path:` is a separate short-circuit outside this chain: when an agent-file path or a `tier:`-bearing agent identity matches a `trusted_path:` entry, the dispatcher bypasses tier resolution and routes directly to the agent-bundled default.
 
 #### Missing `model_routing:` block in `config.md`
 
-When `config.md` does not contain a `model_routing:` block, the dispatcher fires a one-time in-memory warning:
+When `config.md` does not contain a `model_routing:` block, validation **fails loudly** through the shared config-validation procedure (`skills/_shared/config-validation-procedure.md`) — a missing block and a malformed block fail the same way. The dispatcher does not fire a transient warning and does not silently substitute defaults: an absent routing table has no tier→`(vendor, model)` mapping to resolve against, so the run halts and reports repair-or-abort guidance.
 
-> `model_routing: absent from config.md — using agent-bundled defaults for this session`
-
-**Backfill behavior:**
-- The warning fires **once per session**. Each new session that opens the same `config.md` re-fires the warning.
-- The on-disk `config.md` is **never silently mutated** by the backfill. Dispatch defaults are applied in-memory only; the file on disk is unchanged.
-- No persistent marker is written to disk to track that the warning has already fired. Because no marker is written, there is no write-failure surface that could leave the on-disk config in an inconsistent state.
-- Each session sees the backfill defaults applied in-memory without changing the file on disk.
-
-When the in-memory backfill resolves an agent's "bundled default" but the matched agent's frontmatter declares no `model:` field (the state established for all agents after the T9 sweep), the backfill has no concrete value to apply. The dispatcher halts and reports the missing-`model_routing:` condition plus the empty agent-bundled default. The dispatcher never falls back silently to the host CLI's silent re-routing and never substitutes an unannounced model — either fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` and `trusted_path:` paths. The one-time warning above announces the missing block; the halt-and-report on empty step 4 announces the consequence.
-
-#### Model Routing
-
-Resolution flow for agent tier names. When the dispatcher prepares an agent
-dispatch, it resolves the abstract Claude tier name carried on the agent
-(`haiku`, `sonnet`, `opus`, or the implicit `inherit` when the agent
-declares no explicit `model:` field) against the `model_routing` table in
-`config.md`. The lookup is a two-step indexing operation:
-
-1. **Host column selection.** The dispatcher calls `detect_host` (see the
-   per-host Codex dispatch transport routing section above) and uses its
-   output (`claude-code` or `copilot-cli`) to pick the matching top-level
-   key under `model_routing`.
-2. **Tier row selection.** The tier name on the agent (or `inherit` for
-   agents with no `model:` field) selects the row within the host's
-   sub-mapping. The mapped value is the concrete versioned model ID that
-   the dispatch transport will request.
-
-The `copilot-cli` column uses fully versioned Claude model IDs rather than
-bare tier short-forms because Copilot CLI's model proxy emits a
-"model not available" warning for bare `haiku` / `sonnet` / `opus` requests
-but accepts the full versioned IDs and routes them through to the upstream
-provider. The `inherit` row exists so that agents declaring no explicit
-`model:` field (the state established for all 41 agents after the T9 sweep)
-still resolve to a concrete model rather than relying on the host CLI's
-own fallback behavior, which differs between hosts.
+- **Repair:** add the five-tier `model_routing:` block (with `default_tier: medium`) to `config.md` per the schema in `#### \`model_routing:\` block`.
+- **Abort:** if the operator cannot supply the block, abort the run. The dispatcher never falls back silently to an agent-bundled default, never substitutes an unannounced model, and never passes the dispatch through to the host CLI's silent re-routing — any such fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
 
 ## Config Validation Procedure
 
