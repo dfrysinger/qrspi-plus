@@ -1740,7 +1740,7 @@ MOCK_EOF
   _t7_make_mock_repo "$TMP_DIR"
 
   # Value with a space — not in _validate_output_dir's allowlist.
-  local crafted_outdir='/tmp/foo bar/round-01'
+  local crafted_outdir="$TMP_DIR/foo bar/round-01"
 
   local exit_code=0
   local err
@@ -2515,12 +2515,12 @@ MOCK_EOF
     || { echo "dispatch_spec.vendor != claude"; cat "$manifest"; return 1; }
   jq -e '.[0].dispatch_spec.model == "claude-sonnet-4-5"' "$manifest" >/dev/null \
     || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
-  # First-party manifest entry exactly 5 top-level keys (defense-in-depth parity with AC9).
-  jq -e '.[0] | keys | length == 5' "$manifest" >/dev/null \
-    || { echo "first-party manifest entry has unexpected top-level key count (expected exactly 5)"; cat "$manifest"; return 1; }
-  # First-party dispatch_spec exactly 5 keys.
-  jq -e '.[0].dispatch_spec | keys | length == 5' "$manifest" >/dev/null \
-    || { echo "first-party dispatch_spec has unexpected key count (expected exactly 5: subagent_type/host/vendor/model/prompt_file)"; cat "$manifest"; return 1; }
+  # First-party manifest entry exact top-level key set (defense-in-depth parity with AC9).
+  jq -e '.[0] | (keys | sort) == ["agent","dispatch_spec","mode","status","tag"]' "$manifest" >/dev/null \
+    || { echo "AC2: first-party top-level missing required keys (expected agent,dispatch_spec,mode,status,tag)"; cat "$manifest"; return 1; }
+  # First-party dispatch_spec exact key set.
+  jq -e '.[0].dispatch_spec | (keys | sort) == ["host","model","prompt_file","subagent_type","vendor"]' "$manifest" >/dev/null \
+    || { echo "AC2: first-party dispatch_spec missing required keys (expected host,model,prompt_file,subagent_type,vendor)"; cat "$manifest"; return 1; }
 
   rm -rf "$TMP_DIR"
 }
@@ -2782,14 +2782,14 @@ MOCK_EOF
   jq -e '.[0].dispatch_spec.model == "claude-sonnet-4-5"' "$manifest" >/dev/null \
     || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
   # AC5: dispatch_spec.subagent_type asserted on the real end-to-end first-party dispatch path
-  # (T11 spec requires this field; AC2 covers the helper-function path).
+  # (the dispatch-manifest spec requires this field; AC2 covers the helper-function path).
   jq -e '.[0].dispatch_spec.subagent_type | type == "string" and length > 0' "$manifest" >/dev/null \
     || { echo "dispatch_spec missing subagent_type"; cat "$manifest"; return 1; }
   # AC5: first-party entry strict-shape parity with AC9's third-party pin (defense-in-depth).
-  jq -e '.[0] | keys | length == 5' "$manifest" >/dev/null \
-    || { echo "first-party manifest entry has unexpected top-level key count (expected exactly 5)"; cat "$manifest"; return 1; }
-  jq -e '.[0].dispatch_spec | keys | length == 5' "$manifest" >/dev/null \
-    || { echo "first-party dispatch_spec has unexpected key count (expected exactly 5)"; cat "$manifest"; return 1; }
+  jq -e '.[0] | (keys | sort) == ["agent","dispatch_spec","mode","status","tag"]' "$manifest" >/dev/null \
+    || { echo "AC5: first-party top-level missing required keys (expected agent,dispatch_spec,mode,status,tag)"; cat "$manifest"; return 1; }
+  jq -e '.[0].dispatch_spec | (keys | sort) == ["host","model","prompt_file","subagent_type","vendor"]' "$manifest" >/dev/null \
+    || { echo "AC5: first-party dispatch_spec missing required keys (expected host,model,prompt_file,subagent_type,vendor)"; cat "$manifest"; return 1; }
 
   rm -rf "$tmp"
 }
