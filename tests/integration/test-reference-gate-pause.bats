@@ -272,7 +272,7 @@ EOF
 @test "[G15-sweep] Plan SKILL Sweep Task Contract carries worked example with none + grep" {
   # The grep example must use the literal `tests/` directory argument so the
   # reviewer can re-run the exact command shape the contract specifies.
-  # Updated in R4: canonical shape now includes the -- argument separator.
+  # Canonical shape uses the -- argument separator to neutralize flag-shaped patterns.
   extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
     "grep -rn -- '\\^model:' tests/"
 }
@@ -348,8 +348,7 @@ EOF
 @test "[G15-sweep] Plan reviewer agent grep-proof rubric names the rejected shell metacharacters" {
   # Threat model must be visible: the rubric must name the metacharacters that
   # are forbidden in the grep pattern argument so future reviewers can enforce it.
-  # Tightened in R4: assert the three highest-risk characters are explicitly named,
-  # not just that the word "metachar" appears.
+  # Assert each highest-risk metachar is explicitly named, not just that the word "metachar" appears.
   local section
   section="$(extract_section "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection")"
   for char in ';' '|' '&'; do
@@ -359,7 +358,7 @@ EOF
 }
 
 @test "[G15-sweep] Plan reviewer agent grep-proof rubric explicitly names single-quote as rejected" {
-  # Defense-in-depth: single-quote enables extra-path injection (F01 sec-claude).
+  # Defense-in-depth: single-quote in a pattern can escape quoting and inject an extra path argument.
   # The rubric must explicitly name single-quote in its forbidden-character list
   # (not just use it as a shell delimiter in examples).
   extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
@@ -367,9 +366,7 @@ EOF
 }
 
 @test "[G15-sweep] Plan reviewer agent grep-proof rubric requires -- argument separator" {
-  # Flag-injection hardening (F01 sec-codex): the rubric must require the --
-  # argument separator between -rn and the quoted pattern so flag-shaped
-  # patterns cannot be passed to grep as options.
+  # Without --, a pattern starting with - is interpreted by grep as a flag.
   extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
     "-- '"
 }
@@ -378,13 +375,13 @@ EOF
   # Defense-in-depth: even with --, a pattern starting with - is almost certainly
   # malformed (not a real test-reference pattern); the rubric must say to reject it.
   extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
-    "start"
+    "NOT start with"
 }
 
 @test "[G15-sweep] Plan SKILL Sweep Task Contract prose names tests/ root with <pattern> placeholder" {
   # Pins the literal shape of the zero-match proof command as written in the
   # prose contract — independent of the worked example grep arguments.
-  # Updated in R4: canonical shape now includes the -- argument separator.
+  # Canonical shape uses the -- argument separator to neutralize flag-shaped patterns.
   extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
     "grep -rn -- '<pattern>' tests/"
 }
