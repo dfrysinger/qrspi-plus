@@ -561,7 +561,8 @@ EOF
   # are forbidden in the pattern argument so future reviewers can enforce it.
   # Assert each highest-risk metachar is explicitly named, not just that the word "metachar" appears.
   local section
-  section="$(extract_section "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection")"
+  section="$(extract_section "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection")" \
+    || return 1
   for char in ';' '|' '&'; do
     echo "$section" | grep -qF "$char" \
       || { echo "Missing rejected metachar '$char' in Cross-task consumer surface detection section" >&2; return 1; }
@@ -585,7 +586,7 @@ EOF
   # Defense-in-depth: even with --, a pattern starting with - is almost certainly
   # malformed (not a real consumer-surface search pattern); the rubric must say to reject it.
   extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
-    "reject.*patterns starting with|patterns starting with"
+    "reject.*patterns starting with"
 }
 
 @test "[G18-consumers] Plan reviewer Cross-task consumer surface detection validates the four dispositions" {
