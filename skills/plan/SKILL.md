@@ -131,9 +131,9 @@ For large plans, farm task spec writing to sub-subagents:
 
 Each sub-subagent writes `tasks/task-NN.md`. After all complete, the Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files — creating a single document as the only source of truth during review.
 
-### Per-Task Classification (`task_type` and `model`)
+### Per-Task Classification (`task_type` and `tier`)
 
-Every task spec — whether emitted by the merged-plan subagent or by a per-task sub-subagent — must set `task_type` and `model` in its frontmatter. Assign them in this order, per task. These flags drive Implement-skill routing: `task_type` selects between the TDD implementer and the lightweight implementer; `model` is forwarded as the per-invocation override on the implementer Agent dispatch.
+Every task spec — whether emitted by the merged-plan subagent or by a per-task sub-subagent — must set `task_type` and `tier` in its frontmatter (the per-task `model:` routing field is retired by G22 / design.md CD-1). Assign them in this order, per task. These flags drive Implement-skill routing: `task_type` selects between the TDD implementer and the lightweight implementer; `tier` is consumed at the dispatch boundary by the Tier Resolution Chain (owned by `scripts/_resolve-lib.sh`), which maps the tier to a concrete `(vendor, model)` pair via `config.md`'s `model_routing:` block — it is NOT a forwarded per-invocation model override.
 
 **`task_type` defaulting and dispatch-ordering note.** The `task_type` field drives which Implement-skill dispatch chain fires for the task:
 
@@ -156,7 +156,7 @@ Specs for `task_type: lightweight` tasks omit this note (no test-writer, no RED 
 
 Edge cases:
 - Mixed target file lists (one prose file + one code file) → `code`. Lightweight is all-or-nothing; any executable surface in the diff promotes the whole task to `code`.
-- Frontmatter-only edits to `agents/*.md` (e.g. flipping a `model:` value) → `lightweight` per the glob — that change has no runtime behavior to TDD against.
+- Frontmatter-only edits to `agents/*.md` (e.g. flipping a `tier:` value) → `lightweight` per the glob — that change has no runtime behavior to TDD against.
 - New file creation → use the planned final path against the same globs. The path is determined by the task spec, not by `git status`.
 
 **Step 2 — `tier`.** Run after `task_type` is set. Emits the per-task `tier:` frontmatter field consumed by the implementer dispatch (and co-escalated to the TDD test-writer dispatch); it supersedes the legacy per-task `model:` field (G22 / design.md CD-1).

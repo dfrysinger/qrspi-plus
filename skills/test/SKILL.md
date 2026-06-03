@@ -352,12 +352,14 @@ The gate MUST render only the two choices above. There is no third option in qui
 
 ## Model Selection Guidance
 
-| Task complexity | Recommended model |
+Task complexity maps to a routing **tier**, not a literal model name; the dispatcher resolves the tier to a concrete `(vendor, model)` pair via `config.md`'s `model_routing:` block. For the per-task tier-assignment rationale, see `skills/plan/SKILL.md` § Per-Task Classification (Step 2 — `tier`).
+
+| Task complexity | Recommended tier |
 |-----------------|-------------------|
-| Test-writer subagent | Standard (sonnet) — test writing from specs |
-| Test code reviewers | Standard (sonnet) — reusing Implement's templates |
-| Fix task writing | Standard (sonnet) — translating failures to task specs |
-| Phase routing / PR creation | Fast (haiku) — mechanical |
+| Test-writer subagent | `medium` — test writing from specs |
+| Test code reviewers | `medium` — reusing Implement's templates |
+| Fix task writing | `medium` — translating failures to task specs |
+| Phase routing / PR creation | `low` — mechanical |
 
 ## Task Tracking (TodoWrite)
 

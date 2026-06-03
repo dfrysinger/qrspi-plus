@@ -557,7 +557,7 @@ The table below is the initial G5 deliverable — the agent-class-to-`(provider,
 | general-purpose / Explore agent     | Sonnet (Claude)                     | trusted                          | General-purpose exploration that may surface ambiguous findings; cheap-model misreads here propagate through every downstream consumer. Stay trusted. |
 | `qrspi-test-writer`                 | Sonnet (Claude)                     | trusted                          | Test authoring is high-leverage — a bad test pins a wrong contract. Stay trusted; cost is dominated by reviewer fan-out, not test-writer dispatches. |
 
-The matrix is observable via the T07 `test-routing-matrix-application.bats` pin (which asserts each role resolves to its declared route under the default `model_routing:` block) and is the Slice 1 acceptance deliverable for G5. The Implement-skill consumes the matrix at every dispatch through the four-layer chain above; operator-edited `model_routing:` entries override the defaults without code changes.
+The matrix is observable via the T07 `test-routing-matrix-application.bats` pin (which asserts each role resolves to its declared route under the default `model_routing:` block) and is the Slice 1 acceptance deliverable for G5. The Implement-skill consumes the matrix at every dispatch through the Tier Resolution Chain above; operator-edited `model_routing:` entries override the defaults without code changes.
 
 #### Specialist Citation-Density Validator (post-output, trusted-model re-run)
 
@@ -567,7 +567,7 @@ Every `qrspi-research-specialist` dispatch is wrapped with a post-output validat
 
 2. **Below-floor result.** The dispatch re-runs the specialist EXACTLY ONCE on the trusted model (the role's `trusted_path:` route, or the matrix's trusted-tier default), with the same `question_body` and `question_ids` parameters. The rerun count is incremented in this task's telemetry record.
 
-3. **Second below-floor result (re-run also fails).** The validator emits a loud diagnostic naming the below-floor density value and exits non-zero, propagating a failure signal to the Implement orchestrator. The orchestrator treats the non-zero exit as a specialist-dispatch FAILURE (NOT a zero-exit-with-empty-body) — downstream consumers see the failure signal observably. The orchestrator may then choose to retry on a different topic angle, escalate to opus, or proceed with degraded output per the per-task BLOCKED escape hatch; the validator does NOT silently forward below-floor output to consumers.
+3. **Second below-floor result (re-run also fails).** The validator emits a loud diagnostic naming the below-floor density value and exits non-zero, propagating a failure signal to the Implement orchestrator. The orchestrator treats the non-zero exit as a specialist-dispatch FAILURE (NOT a zero-exit-with-empty-body) — downstream consumers see the failure signal observably. The orchestrator may then choose to retry on a different topic angle, escalate to a higher tier, or proceed with degraded output per the per-task BLOCKED escape hatch; the validator does NOT silently forward below-floor output to consumers.
 
 The validator-hook details (where in the specialist agent body the post-validation runs) are documented in `skills/research/SKILL.md` § Citation-Density Post-Validation Hook — that section cross-references the `validators.citation_density_floor:` config key by name. Implement consumes the hook through this dispatch-wrapping contract; the implementation lives in the specialist agent path, not in this skill.
 
@@ -612,7 +612,7 @@ For TDD tasks (`task_type: code` or absent `task_type:`), main chat runs a two-s
 
 **Lightweight bypass (preserved verbatim).** `task_type: lightweight` skips both the test-writer dispatch and the RED-verification gate entirely — neither step fires. Main chat proceeds directly from § Per-Task Routing to § Dispatching the Implementer with the resolved `qrspi-implementer-lightweight` agent. The lightweight bypass exists because lightweight tasks are single-pass executions of well-specified work and the TDD split would add dispatch overhead without TDD signal.
 
-**Step 1 — Test-writer dispatch (Implement-phase mode).** Main chat dispatches `Agent({ subagent_type: "qrspi-test-writer", model: <resolved per the four-layer routing chain in § Per-Task Routing> })` with:
+**Step 1 — Test-writer dispatch (Implement-phase mode).** Main chat dispatches `Agent({ subagent_type: "qrspi-test-writer" })` — the concrete `(vendor, model)` pair is resolved at the dispatch boundary by the Tier Resolution Chain in § Per-Task Routing (the test-writer's `tier:`, co-escalated to the task's tier for high-tier tasks), not passed as a literal `model:` argument — with:
 
 - `task_definition` — wrapped body of `tasks/task-NN.md` bracketed between `<<<UNTRUSTED-ARTIFACT-START id=tasks/task-NN.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=tasks/task-NN.md>>>` markers. Presence of a non-empty `task_definition` selects Implement-phase mode per `agents/qrspi-test-writer.md`.
 - `output_dir` — absolute path to the per-task test output directory inside the task's worktree (the test-writer writes failing tests here; the orchestrator and the implementer subsequently read from this directory).
@@ -1488,11 +1488,13 @@ When the user chooses "continue" at the batch gate, compute the next skill to in
 
 ## Model Selection Guidance
 
-| Task complexity | Recommended model |
+Task complexity maps to a routing **tier**, not a literal model name. The dispatcher resolves the tier to a concrete `(vendor, model)` pair via `config.md`'s `model_routing:` block (see the `#### Tier Resolution Chain`). For the per-task tier-assignment rationale, see `skills/plan/SKILL.md` § Per-Task Classification (Step 2 — `tier`).
+
+| Task complexity | Recommended tier |
 |-----------------|-------------------|
-| Mechanical tasks (1-2 files, clear spec) | Fast/cheap model (haiku) |
-| Integration tasks (multi-file, pattern matching) | Standard model (sonnet) |
-| Architecture/design/review | Most capable model (opus) |
+| Mechanical tasks (1-2 files, clear spec) | `low` |
+| Integration tasks (multi-file, pattern matching) | `medium` |
+| Architecture/design/review | `high` |
 
 ## Task Tracking (TodoWrite)
 

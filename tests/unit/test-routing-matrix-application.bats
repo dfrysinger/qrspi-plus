@@ -378,3 +378,61 @@ setup_file() {
   c=$(grep -c 'model: "sonnet"' "$TEST_SKILL" || true)
   [ "$c" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# F01/F02 (round-03) — plan/SKILL.md Per-Task Classification migration.
+# The Per-Task Classification section must emit `tier:` (not the retired
+# per-task `model:` routing field); the intro must not claim specs "must set
+# task_type and model" or that "model is forwarded" as a per-invocation
+# override.
+# ---------------------------------------------------------------------------
+
+@test "plan SKILL.md: no live 'must set task_type and model' residue" {
+  # Test expectation: the Per-Task Classification intro emits task_type + tier,
+  # not the retired per-task model: routing field
+  c=$(grep -c 'must set .task_type. and .model.' "$PLAN_SKILL" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "plan SKILL.md: no live 'model is forwarded as the per-invocation override' residue" {
+  # Test expectation: tier (not model) drives resolver-chain selection; there is
+  # no forwarded per-invocation model override on the implementer dispatch
+  c=$(grep -c '.model. is forwarded' "$PLAN_SKILL" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "plan SKILL.md: Per-Task Classification heading names tier (not model)" {
+  # Test expectation: heading migrated to (`task_type` and `tier`)
+  c=$(grep -c '### Per-Task Classification (.task_type. and .model.)' "$PLAN_SKILL" || true)
+  [ "$c" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# F03 (round-03) — implement/SKILL.md Model Selection Guidance table and
+# four-layer-chain routing language must be migrated to the tier vocabulary.
+# ---------------------------------------------------------------------------
+
+@test "implement: Model Selection Guidance table has no haiku/opus model-name routing residue" {
+  # Test expectation: the task-complexity table maps to tier names (low/medium/high),
+  # not haiku/sonnet/opus model names
+  c=$(grep -cE '\(haiku\)|\(opus\)' "$IMPLEMENT" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "implement: no 'four-layer chain' routing language remains" {
+  # Test expectation: routing-chain prose names the Tier Resolution Chain, not
+  # the retired four-layer chain
+  c=$(grep -c 'four-layer' "$IMPLEMENT" || true)
+  [ "$c" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# F03 sweep — test/SKILL.md Model Selection Guidance table must also be
+# migrated off model names (haiku) onto tier vocabulary.
+# ---------------------------------------------------------------------------
+
+@test "test SKILL.md: Model Selection Guidance table has no haiku model-name routing residue" {
+  # Test expectation: the test-skill complexity table maps to tier names, not haiku
+  c=$(grep -cE '\(haiku\)|\(opus\)' "$TEST_SKILL" || true)
+  [ "$c" -eq 0 ]
+}

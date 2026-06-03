@@ -43,7 +43,7 @@
     "line_start": 119,
     "line_end": 133
   },
-  "Per-Task Classification (`task_type` and `model`)": {
+  "Per-Task Classification (`task_type` and `tier`)": {
     "line_start": 134,
     "line_end": 175
   },
