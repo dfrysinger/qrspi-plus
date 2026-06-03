@@ -166,9 +166,10 @@ setup_file() {
 }
 
 @test "agent sweep: no agent carries a tier other than low or medium after sweep" {
-  # Test expectation: after T16, the only tier values in agent frontmatter are low and medium;
-  # this test will be RED now (no tiers exist at all → with_tier count == 0, total > 0)
-  # and GREEN after implementation when all 41 agents have a tier: field
+  # Test expectation: after the T16 sweep, every qrspi-* agent declares a tier:
+  # field and the only values present are low and medium. Invariant: the count of
+  # agents whose frontmatter carries `tier: low` or `tier: medium` equals the
+  # total agent count (no agent is missing a tier:, none carries any other tier).
   total=$(ls "$AGENTS_DIR"/qrspi-*.md | wc -l | tr -d ' ')
   with_low_or_medium=$(grep -rl "^tier: \(low\|medium\)$" "$AGENTS_DIR"/ | wc -l | tr -d ' ')
   [ "$with_low_or_medium" -eq "$total" ]

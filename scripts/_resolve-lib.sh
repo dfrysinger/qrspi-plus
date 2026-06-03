@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # _resolve-lib.sh — shared routing-resolution library (G22 / design.md CD-1).
 #
-# Sourced by scripts/dispatch-agent.sh and friends. Single source of truth for
-# the resolution algorithm: agent-frontmatter `tier:` parsing, the tier
-# precedence chain, tier -> (vendor, model) lookup from config.md
-# `model_routing:`, host x vendor matrix lookup, and the `none`-tier halt rule.
+# Sourced by scripts/dispatch-agent.sh and friends. Implements the tier-resolution
+# algorithm: agent-frontmatter `tier:` parsing, the tier precedence chain,
+# tier -> (vendor, model) lookup from config.md `model_routing:`, the host x
+# vendor matrix lookup, and the `none`-tier halt rule.
+#
+# NOT implemented here: the `trusted_path:` short-circuit is a dispatch-site
+# concern evaluated at the main-chat dispatcher BEFORE this library is consulted
+# (it bypasses the tier chain entirely); this library is intentionally not its
+# enforcement point.
 #
 # Bash 3.2 portable. Guard with QRSPI_SOURCE_ONLY=1 to source without running.
 #
@@ -35,6 +40,23 @@
 # *Codex CLI host support deferred to v0.7.3+.
 # ---------------------------------------------------------------------------
 
+# _normalize_tier_value <raw-value>
+# Strips a whitespace-preceded inline `#` comment, then all surrounding
+# whitespace, from a routing row's VALUE. Bash 3.2 portable.
+_normalize_tier_value() {
+  printf '%s' "$1" | sed -E 's/[[:space:]]+#.*$//' | tr -d '[:space:]'
+}
+
+# _validate_tier <tier-name>
+# Allowlist-guards a tier name against the five legal tiers; halts loudly
+# (diagnostic to stderr) and returns 1 on mismatch.
+_validate_tier() {
+  case "$1" in
+    extra-low|low|medium|high|extra-high) return 0 ;;
+    *) printf '[routing] HALT: invalid tier "%s" (not one of extra-low|low|medium|high|extra-high)\n' "$1" >&2; return 1 ;;
+  esac
+}
+
 # resolve_tier <agent-file> [<tier-override>]
 # Applies the precedence chain and echoes the resolved tier name.
 resolve_tier() {
@@ -42,6 +64,7 @@ resolve_tier() {
 
   # Layer 1: per-dispatch --tier-override flag (highest precedence).
   if [ -n "$tier_override" ]; then
+    _validate_tier "$tier_override" || return 1
     printf '%s\n' "$tier_override"
     return 0
   fi
@@ -53,25 +76,38 @@ resolve_tier() {
       | head -1 | sed -E 's/^tier:[[:space:]]+//' | tr -d '[:space:]')"
   fi
   if [ -n "$agent_tier" ]; then
+    _validate_tier "$agent_tier" || return 1
     printf '%s\n' "$agent_tier"
     return 0
   fi
 
-  # Layer 3: default_tier: from config.md.
-  local default_tier=""
+  # Layer 3: default_tier: from config.md. Distinguish a missing/unreadable
+  # CONFIG_MD (Layer 3 cannot even be consulted) from a present config that
+  # simply lacks a default_tier: — the Layer-4 warning below names the cause.
+  local default_tier="" config_present=1
   if [ -n "${CONFIG_MD:-}" ] && [ -f "${CONFIG_MD:-}" ]; then
     default_tier="$(grep -E '^default_tier:[[:space:]]+' "$CONFIG_MD" 2>/dev/null \
       | head -1 | sed -E 's/^default_tier:[[:space:]]+//' | tr -d '[:space:]')"
+  else
+    config_present=0
   fi
   if [ -n "$default_tier" ]; then
+    _validate_tier "$default_tier" || return 1
     printf '%s\n' "$default_tier"
     return 0
   fi
 
   # Layer 4: hardcoded `medium` fallback with a LOUD warning. Last resort —
   # reaching this layer means neither agent `tier:` nor config `default_tier:`
-  # was available, which is a migration smell worth shouting about.
-  printf '[routing] WARN: no tier resolved; falling back to hardcoded medium\n' >&2
+  # was available, which is a migration smell worth shouting about. The warning
+  # names WHY Layer 3 was skipped so an operator with a correct config is not
+  # sent down the wrong repair path (the `medium` value itself is known-legal,
+  # so it is not re-validated).
+  if [ "$config_present" -eq 0 ]; then
+    printf '[routing] WARN: no tier resolved (CONFIG_MD unset/missing — Layer 3 default_tier: could not be consulted); falling back to hardcoded medium\n' >&2
+  else
+    printf '[routing] WARN: no tier resolved (config present but no default_tier:); falling back to hardcoded medium\n' >&2
+  fi
   printf 'medium\n'
   return 0
 }
@@ -82,21 +118,52 @@ resolve_tier() {
 # or is unconfigured — the diagnostic names the unconfigured tier.
 resolve_model() {
   local tier="$1"
-  local row=""
-  if [ -n "${CONFIG_MD:-}" ] && [ -f "${CONFIG_MD:-}" ]; then
-    row="$(grep -E "^[[:space:]]*${tier}:[[:space:]]" "$CONFIG_MD" 2>/dev/null | head -1)"
+
+  # Validate $tier against the legal allowlist BEFORE any interpolation into a
+  # grep/sed pattern (rejects a crafted `low|medium` ERE-alternation injection
+  # and a `/`-bearing tier that would break the sed delimiter).
+  _validate_tier "$tier" || return 1
+
+  # Distinguish an unset/unreadable CONFIG_MD from a present config in which the
+  # tier is simply absent or `none`. A missing config is a config-path error,
+  # NOT an unconfigured-tier error — emit a DISTINCT diagnostic so an operator
+  # with a correct config is not sent down the wrong repair path.
+  if [ -z "${CONFIG_MD:-}" ] || [ ! -f "${CONFIG_MD:-}" ]; then
+    printf '[routing] HALT: CONFIG_MD is unset or not a readable file; ' >&2
+    printf 'cannot resolve model_routing for tier "%s".\n' "$tier" >&2
+    return 1
   fi
+
+  # Fetch the tier's routing row. The `^[[:space:]]+` anchor REQUIRES the row be
+  # indented under `model_routing:`, rejecting a column-0 out-of-block shadow.
+  local row=""
+  row="$(grep -E "^[[:space:]]+${tier}:[[:space:]]" "$CONFIG_MD" 2>/dev/null | head -1)"
+
+  # An empty row means the tier is not present in the block (unconfigured tier).
+  if [ -z "$row" ]; then
+    printf '[routing] HALT: tier "%s" resolves to none (unconfigured tier); ' "$tier" >&2
+    printf 'no silent fallback to a neighboring tier — configure model_routing.%s in config.md.\n' "$tier" >&2
+    return 1
+  fi
+
+  # Strip the `${tier}:` key prefix, then normalize ONCE (strip any inline
+  # `# comment` + surrounding whitespace). The SAME normalized value drives both
+  # the none-check and the success emit, so an inline comment can neither defeat
+  # the none-halt nor leak into the emitted value.
+  local value
+  value="$(printf '%s\n' "$row" | sed -E "s/^[[:space:]]+${tier}:[[:space:]]+//")"
+  value="$(_normalize_tier_value "$value")"
 
   # none-tier halt: a tier configured as `none` (operator opt-in surface left
   # unconfigured) must HALT, never silently fall back to a neighboring tier.
-  if [ -z "$row" ] || printf '%s' "$row" | grep -Eq "^[[:space:]]*${tier}:[[:space:]]+none[[:space:]]*$"; then
+  if [ "$value" = "none" ]; then
     printf '[routing] HALT: tier "%s" resolves to none (unconfigured tier); ' "$tier" >&2
     printf 'no silent fallback to a neighboring tier — configure model_routing.%s in config.md.\n' "$tier" >&2
     return 1
   fi
 
   # Echo the vendor/model object portion for the caller to parse.
-  printf '%s\n' "$row" | sed -E "s/^[[:space:]]*${tier}:[[:space:]]+//"
+  printf '%s\n' "$value"
   return 0
 }
 

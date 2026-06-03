@@ -459,7 +459,7 @@ model_routing:
 default_tier: medium
 ```
 
-The block carries exactly five tier rows — `extra-low`, `low`, `medium`, `high`, and `extra-high` — each a vendor-neutral `{ vendor:, model: }` object rather than a per-host model name. `extra-low` and `extra-high` are operator opt-in surfaces: they default to `none`, and no agent declares them in the G22 initial rubric. `default_tier: medium` supplies the tier for any agent missing a `tier:` field during migration.
+The block carries exactly five tier rows — `extra-low`, `low`, `medium`, `high`, and `extra-high` — each a vendor-neutral `{ vendor:, model: }` object rather than a per-host model name. `extra-low` is an operator opt-in surface: it defaults to `none`, and no agent declares it in the G22 initial rubric. `extra-high` is the pre-configured high-ceiling escalation tier (`claude-opus-4.7-high`) an operator MAY set to `none` to opt out. `default_tier: medium` supplies the tier for any agent missing a `tier:` field during migration.
 
 See `#### Precedence chain` below for the dispatch-time tier-resolution flow (and `scripts/_resolve-lib.sh` for the resolver implementation).
 
@@ -481,7 +481,7 @@ Entries can be:
 
 `trusted_path:` is documented separately from the precedence chain below because it is a short-circuit, not a step in the chain — matching agents or roles bypass the chain entirely.
 
-When `trusted_path:` matches but the matched agent's frontmatter declares no `model:` field (the state established for all agents after the T9 sweep), step 4 has no concrete value to return. The dispatcher halts and reports the trusted_path: match plus the empty agent-bundled default. The dispatcher never falls back silently to `model_routing:` (which `trusted_path:` explicitly bypasses) and never passes the dispatch through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` path.
+When `trusted_path:` matches, the dispatcher routes the matched agent or role directly, bypassing the tier chain entirely. In the new four-tier schema there is no agent-bundled `model:` field; for a normal dispatch the dispatcher resolves the model from the agent's own `tier:` via `resolve_tier` (with no override) and the `model_routing:` lookup. When a `trusted_path:` match cannot yield a concrete routing target, the dispatcher halts and reports the trusted_path: match. The dispatcher never falls back silently to `model_routing:` (which `trusted_path:` explicitly bypasses) and never passes the dispatch through to the host CLI's silent re-routing — both fallbacks would reproduce the G7b/#204 silent-fallback class this hardening release exists to close, one layer deeper than the `model_routing:` path.
 
 #### `validators:` block
 

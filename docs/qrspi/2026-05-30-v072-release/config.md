@@ -32,7 +32,7 @@ review_mode: loop_until_clean
 
 ## Model routing
 
-The five-tier vendor-neutral routing schema (G22 / design.md CD-1). Each tier maps to a concrete `{ vendor:, model: }` pair; `extra-low` and `extra-high` are operator opt-in surfaces that default to `none` (no agent declares them in the G22 initial rubric). `default_tier:` supplies the tier for any agent dispatch missing a `tier:` field. A dispatch that resolves to a tier configured as `none` halts loudly (see `scripts/_resolve-lib.sh` and `skills/_shared/config-validation-procedure.md`) — there is no silent fallback to a neighboring tier.
+The five-tier vendor-neutral routing schema (G22 / design.md CD-1). Each tier maps to a concrete `{ vendor:, model: }` pair; `extra-low` is an operator opt-in surface that defaults to `none` (no agent declares it in the G22 initial rubric). `extra-high` is the pre-configured high-ceiling escalation tier (`claude-opus-4.7-high`) — an operator MAY set it to `none` to opt out of that ceiling. `default_tier:` supplies the tier for any agent dispatch missing a `tier:` field. A dispatch that resolves to a tier configured as `none` halts loudly (see `scripts/_resolve-lib.sh` and `skills/_shared/config-validation-procedure.md`) — there is no silent fallback to a neighboring tier.
 
 ```yaml
 model_routing:

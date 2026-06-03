@@ -323,6 +323,203 @@ setup_file() {
 }
 
 # ---------------------------------------------------------------------------
+# _resolve-lib.sh — BEHAVIORAL execution coverage (F08).
+# The grep-only tests above pin the documented contract in the source; these
+# tests SOURCE the library under QRSPI_SOURCE_ONLY=1 and EXECUTE resolve_tier /
+# resolve_model against hermetic config + agent fixtures so real logic
+# regressions (precedence bugs, the none-on-comment halt failure, malformed-row
+# handling, tier injection) are caught at runtime rather than by keyword grep.
+# ---------------------------------------------------------------------------
+
+# Write the canonical five-tier model_routing fixture to $1. Mirrors the shipped
+# config.md block, including the inline-commented `extra-low: none` opt-in row.
+_write_routing_fixture() {
+  cat > "$1" <<'EOF'
+# fixture config.md for resolver behavioral tests
+
+## Model routing
+
+```yaml
+model_routing:
+  extra-low:  none                                              # operator opts in
+  low:        { vendor: claude, model: claude-haiku-4.5 }       # cheap
+  medium:     { vendor: claude, model: claude-sonnet-4.6 }
+  high:       { vendor: claude, model: claude-opus-4.7 }
+  extra-high: { vendor: claude, model: claude-opus-4.7-high }
+default_tier: medium
+```
+EOF
+}
+
+# Source the resolver and run resolve_model <tier> with CONFIG_MD=<config>.
+# Usage: run _exec_resolve_model <config-or-empty> <tier>
+_exec_resolve_model() {
+  local cfg="$1" tier="$2"
+  if [ -n "$cfg" ]; then export CONFIG_MD="$cfg"; else unset CONFIG_MD; fi
+  QRSPI_SOURCE_ONLY=1 source "$RESOLVE_LIB"
+  resolve_model "$tier"
+}
+
+# Source the resolver and run resolve_tier <agent-file> <override> with CONFIG_MD.
+# Usage: run _exec_resolve_tier <config-or-empty> <agent-file-or-empty> <override-or-empty>
+_exec_resolve_tier() {
+  local cfg="$1" agent="$2" override="$3"
+  if [ -n "$cfg" ]; then export CONFIG_MD="$cfg"; else unset CONFIG_MD; fi
+  QRSPI_SOURCE_ONLY=1 source "$RESOLVE_LIB"
+  resolve_tier "$agent" "$override"
+}
+
+@test "_resolve-lib.sh [exec]: resolve_tier layer 1 — --tier-override wins over agent tier: and default_tier:" {
+  local agent="$BATS_TEST_TMPDIR/agent.md"
+  printf 'tier: low\n' > "$agent"
+  local cfg="$BATS_TEST_TMPDIR/config.md"
+  _write_routing_fixture "$cfg"
+  run _exec_resolve_tier "$cfg" "$agent" "high"
+  [ "$status" -eq 0 ]
+  [ "$output" = "high" ]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_tier layer 2 — agent tier: used when no override" {
+  local agent="$BATS_TEST_TMPDIR/agent.md"
+  printf 'tier: low\n' > "$agent"
+  local cfg="$BATS_TEST_TMPDIR/config.md"
+  _write_routing_fixture "$cfg"
+  run _exec_resolve_tier "$cfg" "$agent" ""
+  [ "$status" -eq 0 ]
+  [ "$output" = "low" ]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_tier layer 3 — default_tier: used when agent has no tier:" {
+  local agent="$BATS_TEST_TMPDIR/agent.md"
+  printf '# agent with no tier field\n' > "$agent"
+  local cfg="$BATS_TEST_TMPDIR/config.md"
+  _write_routing_fixture "$cfg"
+  run _exec_resolve_tier "$cfg" "$agent" ""
+  [ "$status" -eq 0 ]
+  [ "$output" = "medium" ]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_tier layer 4 — hardcoded medium with loud warning when neither tier nor default_tier resolves" {
+  local agent="$BATS_TEST_TMPDIR/agent.md"
+  printf '# agent with no tier field\n' > "$agent"
+  local cfg="$BATS_TEST_TMPDIR/config-no-default.md"
+  cat > "$cfg" <<'EOF'
+```yaml
+model_routing:
+  low:    { vendor: claude, model: claude-haiku-4.5 }
+  medium: { vendor: claude, model: claude-sonnet-4.6 }
+```
+EOF
+  run --separate-stderr _exec_resolve_tier "$cfg" "$agent" ""
+  [ "$status" -eq 0 ]
+  [ "$output" = "medium" ]
+  # The fallback must be LOUD — a warning on stderr naming the medium fallback.
+  [[ "$stderr" == *WARN* ]]
+  [[ "$stderr" == *medium* ]]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_tier layer 4 warning names CONFIG_MD unset/missing as the cause (F02 de-mask)" {
+  local agent="$BATS_TEST_TMPDIR/agent.md"
+  printf '# agent with no tier field\n' > "$agent"
+  # No CONFIG_MD at all → Layer 3 skipped because config is missing, not because
+  # default_tier: is absent from a present config.
+  run bash -c 'QRSPI_SOURCE_ONLY=1 source "$RESOLVE_LIB"; unset CONFIG_MD; resolve_tier "'"$agent"'" "" 2>&1 1>/dev/null'
+  [[ "$output" == *CONFIG_MD* ]]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_model HALTS on none WITH inline comment (F01 regression — extra-low: none # operator opts in)" {
+  local cfg="$BATS_TEST_TMPDIR/config.md"
+  _write_routing_fixture "$cfg"
+  run --separate-stderr _exec_resolve_model "$cfg" "extra-low"
+  # MUST halt — the inline `# operator opts in` comment must NOT defeat the
+  # none-detection. This test FAILS against the pre-fix code (exit 0, garbage
+  # stdout) and PASSES after value normalization.
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *HALT* ]]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_model emits a clean value for a normal commented row (no trailing #)" {
+  local cfg="$BATS_TEST_TMPDIR/config.md"
+  _write_routing_fixture "$cfg"
+  run _exec_resolve_model "$cfg" "low"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *claude-haiku-4.5* ]]
+  # The emitted value must carry no inline comment marker.
+  [[ "$output" != *"#"* ]]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_model HALTS on an unconfigured/absent tier row" {
+  local cfg="$BATS_TEST_TMPDIR/config-no-extra-low.md"
+  cat > "$cfg" <<'EOF'
+```yaml
+model_routing:
+  low:    { vendor: claude, model: claude-haiku-4.5 }
+  medium: { vendor: claude, model: claude-sonnet-4.6 }
+default_tier: medium
+```
+EOF
+  run _exec_resolve_model "$cfg" "extra-low"
+  [ "$status" -ne 0 ]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_model fails with a DISTINCT config-missing diagnostic when CONFIG_MD is unset (F02)" {
+  run --separate-stderr _exec_resolve_model "" "low"
+  [ "$status" -ne 0 ]
+  # Distinct from the none/unconfigured-tier message — must name CONFIG_MD.
+  [[ "$stderr" == *CONFIG_MD* ]]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_model rejects an invalid/injected tier via allowlist (F03)" {
+  local cfg="$BATS_TEST_TMPDIR/config.md"
+  _write_routing_fixture "$cfg"
+  # Crafted ERE alternation must be rejected by the allowlist BEFORE interpolation.
+  run --separate-stderr _exec_resolve_model "$cfg" 'low|medium'
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *invalid* ]]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_tier rejects an invalid tier from --tier-override (F03 allowlist)" {
+  local cfg="$BATS_TEST_TMPDIR/config.md"
+  _write_routing_fixture "$cfg"
+  run _exec_resolve_tier "$cfg" "" "bogus-tier"
+  [ "$status" -ne 0 ]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_tier rejects an invalid tier from agent frontmatter (F03 allowlist)" {
+  local agent="$BATS_TEST_TMPDIR/agent-bad.md"
+  printf 'tier: nonsense\n' > "$agent"
+  local cfg="$BATS_TEST_TMPDIR/config.md"
+  _write_routing_fixture "$cfg"
+  run _exec_resolve_tier "$cfg" "$agent" ""
+  [ "$status" -ne 0 ]
+}
+
+@test "_resolve-lib.sh [exec]: resolve_tier rejects an invalid tier from default_tier: (F03 allowlist)" {
+  local agent="$BATS_TEST_TMPDIR/agent.md"
+  printf '# no tier\n' > "$agent"
+  local cfg="$BATS_TEST_TMPDIR/config-bad-default.md"
+  cat > "$cfg" <<'EOF'
+```yaml
+model_routing:
+  medium: { vendor: claude, model: claude-sonnet-4.6 }
+default_tier: nonsense
+```
+EOF
+  run _exec_resolve_tier "$cfg" "$agent" ""
+  [ "$status" -ne 0 ]
+}
+
+@test "_resolve-lib.sh [exec]: residual out-of-block shadow gap is documented (deferred to v0.7.3)" {
+  # KNOWN GAP: resolve_model's row grep is line-oriented and not block-scoped to
+  # the `model_routing:` map. The `^[[:space:]]+${tier}:` anchor requires the row
+  # be indented (rejecting a column-0 shadow), but a same-indent `<tier>:` line
+  # appearing OUTSIDE the model_routing: block elsewhere in config.md could still
+  # be matched. Full block-scoped YAML parsing is deferred to v0.7.3; this test
+  # documents the gap rather than asserting the (not-yet-implemented) behavior.
+  skip "out-of-block shadow: full block-scoped parsing deferred to v0.7.3"
+}
+
+# ---------------------------------------------------------------------------
 # config-validation-procedure.md — missing / malformed model_routing: fails loud
 # Test expectation: Verify missing and malformed model_routing: configurations
 # fail through the shared config-validation procedure with repair-or-abort guidance.
