@@ -297,7 +297,7 @@ _append_manifest_entry() {
     if [[ -d "$_lock_dir" ]]; then
       local _now; _now=$(date +%s)
       local _mtime; _mtime=$(stat -f %m "$_lock_dir" 2>/dev/null || stat -c %Y "$_lock_dir" 2>/dev/null || echo "$_now")
-      _lock_age=$(( _now - _mtime ))
+      local _lock_age=$(( _now - _mtime ))
       if (( _lock_age > 30 )); then
         rmdir "$_lock_dir" 2>/dev/null || true
         # Retry mkdir on next loop iteration.
@@ -571,13 +571,6 @@ if [[ "$DRY_RUN" != "true" ]]; then
   require_flag "model"        "$MODEL"
   require_flag "output-file"  "$OUTPUT_FILE"
   require_flag "artifact-dir" "$ARTIFACT_DIR"
-fi
-
-# --output-dir must be absolute (load-bearing for agent-side Phase Routing
-# fail-loud substring check on /reviews/test/).
-if [[ "$OUTPUT_DIR" != /* ]]; then
-  echo "error: --output-dir must be absolute (got: $OUTPUT_DIR)" >&2
-  exit 1
 fi
 
 if [[ ${#SUBJECT_CODE_PATHS[@]} -eq 0 && ${#ARTIFACT_BODY_PATHS[@]} -eq 0 ]]; then
