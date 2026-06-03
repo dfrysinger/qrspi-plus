@@ -419,7 +419,7 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 
 ### Dispatch routing blocks
 
-The following four blocks in `config.md` are consumed by Slice 1 dispatch sites (the dispatcher, the per-task routing chain, and role-frontmatter resolution). They are optional in the `config.md` frontmatter — their absence means dispatch falls back to agent-bundled defaults. When present, all four blocks are authoritative and override any agent-bundled default.
+The following four blocks in `config.md` are consumed by Slice 1 dispatch sites (the dispatcher, the per-task routing chain, and role-frontmatter resolution). Three of them — `providers:`, `trusted_path:`, and `validators:` — are optional in the `config.md` frontmatter: when one is absent, dispatch uses the agent-bundled defaults instead (no custom providers, no short-circuit paths, and the default citation-density floor, respectively). `model_routing:` is the exception and is NOT optional: its absence is a loud validation failure (see `#### Missing \`model_routing:\` block in \`config.md\`` below) — there is no silent fallback to agent-bundled defaults for the tier→`(vendor, model)` mapping. When present, all four blocks are authoritative and override any agent-bundled default.
 
 #### `providers:` block
 

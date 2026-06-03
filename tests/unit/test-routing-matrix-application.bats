@@ -307,6 +307,43 @@ setup_file() {
 }
 
 # ---------------------------------------------------------------------------
+# Per-Task Routing residue sweep (G22) — the retired per-task model schema
+# (model ∈ {sonnet,opus}, the model: <model> dispatch arg, and the
+# default-to-sonnet-via-model_role: prose) must be deleted from the
+# ### Per-Task Routing section. (vendor, model) resolution defers to the
+# #### Tier Resolution Chain that follows.
+# ---------------------------------------------------------------------------
+
+@test "implement: retired per-task model ∈ {sonnet,opus} schema line is gone" {
+  # Test expectation: the per-task model schema line is replaced by tier resolution
+  c=$(grep -c "model ∈" "$IMPLEMENT" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "implement: dispatch pseudo-code carries no model: <model> argument" {
+  # Test expectation: the dispatch line resolves (vendor, model) via the tier chain,
+  # not a per-task model: <model> argument read from task frontmatter
+  c=$(grep -c "model: <model>" "$IMPLEMENT" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "implement: Per-Task Routing no longer claims tasks default to a sonnet model via model_role:" {
+  # Test expectation: the default-flow prose no longer routes a missing-schema task to a
+  # sonnet model via the retired model_role: key; model/vendor resolution defers to the
+  # Tier Resolution Chain. The retired-default phrasing "default to `code` / `sonnet`"
+  # must be gone.
+  c=$(grep -c "default to .code. / .sonnet." "$IMPLEMENT" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "implement: Tier Resolution Chain section still owns (vendor, model) resolution" {
+  # Test expectation: the migrated successor section remains present (guard against an
+  # over-zealous deletion that removes the tier chain along with the residue)
+  run grep -E "Tier Resolution Chain" "$IMPLEMENT"
+  [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
 # F05 (G22 completion sweep) — DISPATCH_FILE reviewer pins extended to the
 # two deep-mode reviewers (qrspi-code-simplifier, qrspi-type-design-analyzer)
 # and the test/SKILL.md reviewer dispatches resolve via tier (no hardcoded

@@ -409,3 +409,50 @@ setup_file() {
   c=$(grep -c 'bare `haiku`' "$USING" || true)
   [ "$c" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# Dispatch-routing-blocks umbrella intro — model_routing: carve-out.
+# The umbrella intro must not describe model_routing: absence as a silent
+# "falls back to agent-bundled defaults"; that contradicts the per-block
+# model_routing: section (and the Missing-model_routing: section), which
+# require a loud validation failure. The carve-out must name model_routing:
+# as fail-loud so the two surfaces agree.
+# ---------------------------------------------------------------------------
+
+# Extract only the intro paragraph(s) of the "### Dispatch routing blocks"
+# section — the lines between the H3 anchor and the first H4 subsection — so
+# the assertions cannot be satisfied by fail-loud language that lives in the
+# per-block #### model_routing: subsection further down.
+_extract_routing_blocks_intro() {
+  local file="$1"
+  awk '
+    BEGIN { inside=0; found=0 }
+    {
+      if (inside == 1) {
+        if ($0 ~ /^#{1,4} /) { inside=0; next }
+        print $0
+        next
+      }
+      if ($0 == "### Dispatch routing blocks") { inside=1; found=1; next }
+    }
+    END { if (found == 0) exit 1 }
+  ' "$file"
+}
+
+@test "using-qrspi: dispatch-routing-blocks intro does not blanket all four blocks as optional-with-fallback" {
+  # Test expectation: the umbrella must not state that the absence of every block
+  # (model_routing: included) means dispatch falls back to agent-bundled defaults —
+  # model_routing: absence is fail-loud, not silent fallback.
+  out="$(_extract_routing_blocks_intro "$USING")"
+  c=$(grep -c "their absence means dispatch falls back to agent-bundled defaults" <<<"$out" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "using-qrspi: dispatch-routing-blocks intro carves model_routing: out as fail-loud" {
+  # Test expectation: the umbrella intro explicitly excepts model_routing: from the
+  # optional-with-fallback contract and names its absence as a loud validation failure.
+  out="$(_extract_routing_blocks_intro "$USING")"
+  [[ "$out" == *"model_routing:"* ]]
+  c=$(grep -ci "fail loud\|fails loud\|loud validation\|validation fail" <<<"$out" || true)
+  [ "$c" -ge 1 ]
+}

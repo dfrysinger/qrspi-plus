@@ -496,13 +496,12 @@ Correctness checks if code is right and safe — it always runs. Thoroughness ch
 >
 > A task may only be declared terminal CLEAN after the full depth-required reviewer set has cleared. Declaring terminal CLEAN on spec-gate evidence alone is a **P0 process violation** — it ships task code without the depth-mode safety net the user configured, especially catastrophic on security-relevant tasks.
 
-### Per-Task Routing (`task_type` and `model`)
+### Per-Task Routing (`task_type`)
 
-Before dispatching the implementer for a task, main chat reads `task_type` and `model` from the task's `tasks/task-NN.md` frontmatter and resolves three per-task flags:
+Before dispatching the implementer for a task, main chat reads `task_type` from the task's `tasks/task-NN.md` frontmatter and resolves three per-task flags:
 
 ```
 task_type ∈ {code, lightweight}              # from tasks/task-NN.md frontmatter (default: code)
-model ∈ {sonnet, opus}                       # from tasks/task-NN.md frontmatter (default: sonnet)
 
 if task_type == "lightweight":
     implementer_subagent = "qrspi-implementer-lightweight"
@@ -513,10 +512,12 @@ else:
     review_depth_effective = config.review_depth
     codex_enabled_per_task = config.codex_reviews
 
-dispatch: Agent({ subagent_type: implementer_subagent, model: <model> })
+dispatch: Agent({ subagent_type: implementer_subagent })   # (vendor, model) resolved by the Tier Resolution Chain below
 ```
 
-**Default flow for tasks without the schema fields.** Tasks that omit `task_type:` and `model_role:` default to `code` / `sonnet`, log a warning at dispatch, and proceed through the standard routing chain.
+The concrete `(vendor, model)` pair is NOT read from the task frontmatter — it is resolved at the dispatch boundary by the `#### Tier Resolution Chain` below, which owns vendor/model selection via the agent's `tier:`, any `--tier-override`, and `config.md`'s `model_routing:` block.
+
+**Default flow for tasks without the schema field.** Tasks that omit `task_type:` default to `code`, log a warning at dispatch, and proceed through the standard routing chain. Model/vendor selection is unaffected by a missing `task_type:` — it always defers to the `#### Tier Resolution Chain` (the retired `model_role:` key and the per-task `model` default are gone; agents carry a `tier:` field instead).
 
 **What's inherited unchanged.** The fix-loop round count (3 cycles, hardcoded), accepted-with-issues batch-gate behavior, BLOCKED escape hatch, SendMessage continuity rules, and reviewer parallelism all carry over without modification across both `task_type` values. Lightweight only flips the three flags above; the orchestration shape is identical.
 
