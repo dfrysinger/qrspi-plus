@@ -738,6 +738,31 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "diagnostic must name the missing prior-round commit anchor: $output"; return 1; }
 }
 
+@test "[T13] round-prepare.sh fails loudly when prior-round commit anchor is malformed" {
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  local base_sha; base_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r1
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r2
+  local head_sha; head_sha="$(git rev-parse HEAD)"
+  mkdir -p task/round-02
+  # Write a malformed prior-round anchor (not ^[0-9a-f]{40}\n$).
+  printf 'not-a-sha\n' > task/round-01-commit.txt
+  run "$REPO_ROOT/scripts/round-prepare.sh" 2 task/round-02 \
+    --task-branch main \
+    --implementer-commit "$head_sha" \
+    --worktree . \
+    --base-ref "$base_sha"
+  rm -rf "$tmp"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for malformed prior anchor, got 0; output: $output"; return 1; }
+  echo "$output" | grep -q 'malformed' \
+    || { echo "diagnostic must use the word 'malformed' for a malformed prior-round commit anchor: $output"; return 1; }
+  echo "$output" | grep -q 'round-01-commit.txt' \
+    || { echo "diagnostic must name the malformed prior-round commit anchor: $output"; return 1; }
+}
+
 @test "[T13] round-prepare.sh leaves NO stray current-round anchor when prior-round anchor missing (fail-closed)" {
   # Pins the §G9 invariant: a round NN>=2 invocation that exits non-zero due
   # to a MISSING prior-round anchor MUST NOT have already written round-NN-commit.txt
@@ -794,6 +819,37 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   [ "$status" -ne 0 ] || { echo "expected non-zero exit for missing scope-set, got 0; output: $output"; return 1; }
   echo "$output" | grep -q 'round-02-scope-set.txt' \
     || { echo "diagnostic must name the missing prior-round scope-set: $output"; return 1; }
+}
+
+@test "[T13] round-prepare.sh fails loudly on empty scope-set when narrowing-eligible + tagger enabled" {
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  local base_sha; base_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r1
+  local r1_sha; r1_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r2
+  local r2_sha; r2_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r3
+  local head_sha; head_sha="$(git rev-parse HEAD)"
+  mkdir -p task/round-03
+  printf '%s\n' "$r1_sha" > task/round-01-commit.txt
+  printf '%s\n' "$r2_sha" > task/round-02-commit.txt
+  # Create an empty prior-round scope-set — narrowing-eligible (NN>=3)
+  # AND scope tagger enabled MUST fail loudly on empty (zero tags).
+  : > task/round-02-scope-set.txt
+  QRSPI_SCOPE_TAGGER_ENABLED=true run "$REPO_ROOT/scripts/round-prepare.sh" 3 task/round-03 \
+    --task-branch main \
+    --implementer-commit "$head_sha" \
+    --worktree . \
+    --base-ref "$base_sha"
+  rm -rf "$tmp"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for empty scope-set, got 0; output: $output"; return 1; }
+  echo "$output" | grep -q 'empty' \
+    || { echo "diagnostic must use the word 'empty' for an empty prior-round scope-set: $output"; return 1; }
+  echo "$output" | grep -q 'round-02-scope-set.txt' \
+    || { echo "diagnostic must name the empty prior-round scope-set: $output"; return 1; }
 }
 
 @test "[T13] scripts/ contain NO first-party Task-tool subagent dispatch or Task-tool return capture" {
