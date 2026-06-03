@@ -284,10 +284,13 @@ teardown() {
   grep -qE 'vendor=' "$_stderr_file"
 }
 
-# Test expectation: unknown vendor override exits non-zero with [second-reviewer-unavailable]
+# Test expectation: unknown vendor override exits non-zero with [second-reviewer-unavailable],
+# emits exactly one stderr line, and names both host= and vendor= in that line.
 @test "second-reviewer-available: unknown vendor override exits non-zero with [second-reviewer-unavailable]" {
   # Test expectation: passing a vendor name that is not in the host×vendor matrix
   # causes the probe to exit non-zero with a [second-reviewer-unavailable] diagnostic.
+  # The diagnostic must be exactly ONE line naming host= and vendor= (mirrors the
+  # unknown-host single-line contract).
   local _stderr_file="$TMP_DIR/unknown-vendor-stderr.txt"
   local _status=0
   bash -c "
@@ -296,6 +299,12 @@ teardown() {
   " >/dev/null 2>"$_stderr_file" || _status=$?
   [ "$_status" -ne 0 ]
   grep -q '^\[second-reviewer-unavailable\]' "$_stderr_file"
+  # Exactly one stderr line (same single-line contract as unknown-host path)
+  local line_count
+  line_count="$(wc -l < "$_stderr_file" | tr -d ' ')"
+  [ "$line_count" -eq 1 ]
+  # Diagnostic must name the detected host
+  grep -q 'host=' "$_stderr_file"
 }
 
 # Test expectation: unavailable vendor diagnostic names the vendor (override case)
@@ -308,6 +317,34 @@ teardown() {
     \"$SECOND_REVIEWER\" nonexistent-vendor-xyz
   " >/dev/null 2>"$_stderr_file" || true
   grep -qE 'nonexistent-vendor-xyz|vendor=' "$_stderr_file"
+}
+
+# Test expectation: explicit 'none' vendor argument exits non-zero with exactly one
+# [second-reviewer-unavailable] stderr line naming host= and vendor=none.
+@test "second-reviewer-available: explicit 'none' vendor argument exits non-zero with [second-reviewer-unavailable]" {
+  # Test expectation: guard clause `[ "$_vendor" = "none" ]` in second-reviewer-available.sh
+  # fires when the caller passes literal 'none' as the vendor override — even on a known
+  # host with a valid default.  The probe must exit non-zero and emit exactly one
+  # [second-reviewer-unavailable] line naming host=copilot-cli and vendor=none.
+  local _stderr_file="$TMP_DIR/explicit-none-stderr.txt"
+  local _status=0
+  bash -c "
+    export COPILOT_CLI=1
+    \"$SECOND_REVIEWER\" none
+  " >/dev/null 2>"$_stderr_file" || _status=$?
+
+  # Must exit non-zero — 'none' is explicitly unavailable
+  [ "$_status" -ne 0 ]
+
+  # Exactly one stderr line beginning with the unavailability tag
+  local line_count
+  line_count="$(wc -l < "$_stderr_file" | tr -d ' ')"
+  [ "$line_count" -eq 1 ]
+  grep -q '^\[second-reviewer-unavailable\]' "$_stderr_file"
+
+  # Diagnostic must name the detected host and the passed vendor
+  grep -q 'host=copilot-cli' "$_stderr_file"
+  grep -q 'vendor=none' "$_stderr_file"
 }
 
 # ===========================================================================
@@ -494,4 +531,8 @@ EOF
   line_count="$(wc -l < "$_stderr_file" | tr -d ' ')"
   [ "$line_count" -eq 1 ]
   grep -q '^\[second-reviewer-unavailable\]' "$_stderr_file"
+
+  # Diagnostic must name the detected host and the requested vendor (naming contract)
+  grep -q 'host=' "$_stderr_file"
+  grep -q 'vendor=' "$_stderr_file"
 }

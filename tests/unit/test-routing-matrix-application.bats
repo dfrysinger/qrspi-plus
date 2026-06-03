@@ -634,6 +634,38 @@ _exec_lookup_default_second_reviewer() {
 }
 
 # ---------------------------------------------------------------------------
+# resolve_second_reviewer_vendor SUCCESS path: distinct primary + second vendor
+# ---------------------------------------------------------------------------
+
+# Test expectation: resolve_second_reviewer_vendor succeeds (exit 0) when the host
+# has a configured default second-reviewer vendor that differs from the primary vendor,
+# and emits the resolved second-reviewer vendor on stdout (exactly one line).
+@test "_resolve-lib.sh [exec]: resolve_second_reviewer_vendor emits second-reviewer vendor on stdout and exits 0 when primary and second vendor are distinct" {
+  # Test expectation: call resolve_second_reviewer_vendor with host='claude-code' and
+  # primary_vendor='anthropic-claude'.  The host×vendor matrix maps claude-code to
+  # default second-reviewer 'openai-codex', which differs from the primary — the
+  # SUCCESS path.  Expect exit 0 and stdout = 'openai-codex' (the resolved vendor).
+  local _stdout_file="$BATS_TEST_TMPDIR/resolve-success-stdout.txt"
+  local _status=0
+  bash -c "
+    export QRSPI_SOURCE_ONLY=1
+    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
+    resolve_second_reviewer_vendor 'claude-code' 'anthropic-claude'
+  " >"$_stdout_file" 2>/dev/null || _status=$?
+
+  # Must exit 0 — distinct vendors on a known host is the success path
+  [ "$_status" -eq 0 ]
+
+  # Stdout must carry exactly one line: the resolved second-reviewer vendor
+  local line_count
+  line_count="$(wc -l < "$_stdout_file" | tr -d ' ')"
+  [ "$line_count" -eq 1 ]
+
+  # The resolved vendor must be openai-codex (matrix-driven, not hardcoded)
+  grep -q '^openai-codex$' "$_stdout_file"
+}
+
+# ---------------------------------------------------------------------------
 # Same-tier primary + second-reviewer dispatch: skill prose coverage
 # ---------------------------------------------------------------------------
 
