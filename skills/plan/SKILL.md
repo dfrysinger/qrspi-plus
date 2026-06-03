@@ -651,6 +651,46 @@ Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defe
     - `grep -rn -- '^model:' tests/` returns zero matches as of plan-authoring time; if a future test introduces an assertion on `model:` before this task lands, the reviewer's re-run will surface the new hit and demand the field be re-shaped to a path list.
 ```
 
+### Cross-Task Consumer Surface
+
+A task is **consumer-surface-touching** when its description or `files_in_scope` indicates ANY of the following five trigger classes:
+
+- Adding, renaming, or removing a function, method, class, interface, exported symbol, or other named declaration.
+- Adding, renaming, removing, or moving a file listed in `files_in_scope`.
+- Changing the public signature (parameter list, return type, exceptions or errors raised, side effects, or visibility) of any callable in `files_in_scope`.
+- Changing the schema or structure of any structured document (JSON, YAML, frontmatter, TOML, XML, etc.) in `files_in_scope` whose keys, anchors, or top-level identifiers are referenced by name from other files.
+- Adding, renaming, or removing a documented contract — a configuration key, environment variable, CLI flag, URL route, RPC method, command-line subcommand, schema field, anchor heading, or any other named extension point declared in `files_in_scope`.
+
+A task that only modifies the body of an existing callable, edits prose paragraphs without changing referenced anchor names, or fixes formatting is NOT consumer-surface-touching. The trigger fires on changes that other code or documents could plausibly be coupled to *by name*.
+
+When the trigger fires, the plan-spec MUST include a `cross_task_consumers:` field with one of two shapes:
+
+- A **list of consumer file paths** outside `files_in_scope`, each followed on the next line by a one-sentence disposition. The disposition vocabulary is exactly four values: `no change` (consumer keeps working unmodified), `pass-through` (consumer's behavior intentionally unchanged but the consumer file must be re-verified), `co-edit` (consumer file must be modified inside this same task), or `break-and-fix-task` (consumer file will be intentionally broken by this task and repaired in a named follow-up task — the follow-up task ID MUST be cited and MUST already exist in the plan).
+- The literal string `none` followed on the next line by a reproducible search command demonstrating zero consumer references exist outside `files_in_scope`. Command shape is left to the author: `grep`, `rg`, `git grep`, a language-specific reference-finder (`go vet`, `tsc --noEmit -p`, `rustc --emit=metadata`, IDE-equivalent CLI), or any other reproducible zero-result probe. The reviewer re-runs the command and treats a non-zero hit count as a defect.
+
+Skipping the `cross_task_consumers:` field on a consumer-surface-touching task is a plan-spec defect, not a deferred-to-implementer concern. The Plan reviewer (`agents/qrspi-plan-reviewer.md` § Cross-task consumer surface detection) detects consumer-surface-touching tasks by the same trigger classes and emits a `severity: high, change_type: correctness` finding when the field is missing, malformed, claims `none` against a non-zero search hit, names an invalid disposition, or cites a `break-and-fix-task` follow-up task ID that does not exist in the plan.
+
+**Sweep + consumer composition.** A task that satisfies BOTH the sweep-task trigger (see § Sweep Task Contract above) AND the consumer-surface trigger carries `dependent_tests:` AND `cross_task_consumers:` as separate fields. The two contracts ask different questions about different downstream surfaces (test files that assert on swept values vs. consumer files referencing the changed contract by name) and are not merged — the reviewer evaluates each clause independently and may emit findings against either, both, or neither.
+
+**Worked example C — public-symbol rename with three consumers (trigger fires).** A task renames the public function `check_codex_available` to `check_second_reviewer_available` across the dispatcher script and one consumer skill, listing three consumer files outside `files_in_scope` with explicit dispositions:
+
+```markdown
+- **Test expectations:**
+  - `scripts/run-codex-review.sh` exports the renamed helper; `skills/using-qrspi/SKILL.md` calls the new name.
+  - `cross_task_consumers:`
+    - `skills/goals/SKILL.md` — references the old helper name in its inline availability probe; `co-edit` to rename the call site inside this task.
+    - `skills/implement/SKILL.md` — references the old helper name in the second-reviewer dispatch block; `co-edit` to rename the call site inside this task.
+    - `tests/unit/test-codex-host-vendor-matrix.bats` — asserts on the helper-name surface as documentation, not as an executable reference; `no change` because the test was rewritten in T07 to target the host×vendor matrix and no longer pins the helper name.
+```
+
+**Worked example D — body-only bug fix (trigger does not fire).** A task fixes an off-by-one error inside the body of an existing function in one file. No public-signature change, no rename, no schema change, no extension-point change. The `cross_task_consumers:` field is NOT required because the trigger does not fire — the change is body-only and no other file could be coupled to the bug-fix by name:
+
+```markdown
+- **Test expectations:**
+  - `lib/pagination.go` `paginate()` returns the correct slice when `offset == len(items)`; existing public signature unchanged.
+  - (no `cross_task_consumers:` field — the trigger does not fire because this is a body-only bug fix with no public-signature, schema, or extension-point change.)
+```
+
 ## Red Flags — STOP
 
 - A task spec contains "TBD", "TODO", "implement later", or "fill in details"

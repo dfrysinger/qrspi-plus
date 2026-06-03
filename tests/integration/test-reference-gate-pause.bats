@@ -388,3 +388,204 @@ EOF
   extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
     "grep -rn -- '<pattern>' tests/"
 }
+
+# =============================================================================
+# G18: Plan Cross-Task Consumer Surface Contract — cross_task_consumers: scope
+# =============================================================================
+#
+# Pins that the Plan skill and Plan reviewer agent carry the cross-task
+# consumer surface contract that generalizes the v0.7.1 under-scoping
+# prevention pattern beyond the narrow sweep-task case (T14/G15) to any
+# contract-carrier change. The pins are file-content + section-extract
+# assertions — like G15, the consumer-surface contract is documentation +
+# reviewer rubric, not runtime code.
+#
+# Independent-finding case: a task satisfying BOTH the sweep-task trigger
+# (G15) and the consumer-surface trigger (G18) carries both `dependent_tests:`
+# AND `cross_task_consumers:` as separate fields — the two clauses do not
+# merge. Pinned below as the composition note.
+
+@test "[G18-consumers] Plan SKILL Test Expectations section carries Cross-Task Consumer Surface subsection" {
+  extract_and_grep "$PLAN_SKILL" H2 "Test Expectations" \
+    "### Cross-Task Consumer Surface"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface defines consumer-surface-touching trigger" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "consumer-surface-touching"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names the cross_task_consumers: field" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "cross_task_consumers:"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface lists trigger class 1: named-declaration add/rename/remove" {
+  # Function/method/class/interface/exported-symbol/named-declaration adds, renames, removes.
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "function|method|class|interface|exported symbol|named declaration"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface lists trigger class 2: file add/rename/remove/move" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "[Aa]dding, renaming,? (or )?removing,? (or )?moving|file.*(add|rename|remove|move)"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface lists trigger class 3: public signature change" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "public signature|parameter list|return type"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface lists trigger class 4: structured-document schema change" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "schema or structure|JSON|YAML|frontmatter"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface lists trigger class 5: named extension-point add/rename/remove" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "configuration key|environment variable|CLI flag|extension point"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names body-only/prose-only non-trigger case" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "NOT consumer-surface-touching|not consumer-surface-touching"
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "body of an existing|prose paragraph|formatting"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface documents the path-list-with-disposition shape" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "list of consumer file paths|consumer file paths.*disposition"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface documents the none + search-command shape" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "literal string \`none\`|the literal.*none"
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "reproducible search command|reproducible.*search"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names disposition: no change" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "\`no change\`"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names disposition: pass-through" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "\`pass-through\`"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names disposition: co-edit" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "\`co-edit\`"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names disposition: break-and-fix-task" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "\`break-and-fix-task\`"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface requires follow-up task ID for break-and-fix-task" {
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "follow-up task ID|cited follow-up task|named follow-up task"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface carries worked example A: public-symbol rename with three consumers" {
+  # The rename worked example must show three consumer paths and use co-edit, co-edit, no change.
+  local section
+  section="$(extract_section "$PLAN_SKILL" H3 "Cross-Task Consumer Surface")"
+  # Must contain at least two `co-edit` markers (the two co-edit consumers).
+  local co_edit_count
+  co_edit_count="$(printf '%s\n' "$section" | grep -cE '\bco-edit\b' || true)"
+  if [ "$co_edit_count" -lt 2 ]; then
+    echo "Worked example A must list at least two co-edit consumer dispositions; found $co_edit_count" >&2
+    return 1
+  fi
+  # And at least one `no change` marker for the third consumer.
+  printf '%s\n' "$section" | grep -qE '\bno change\b' \
+    || { echo "Worked example A must list at least one 'no change' consumer disposition" >&2; return 1; }
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface carries worked example B: body-only bug fix non-trigger" {
+  # The non-trigger worked example must explicitly identify a body-only or
+  # bug-fix change and explain why the trigger does not fire.
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "body-only|bug fix"
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "trigger does not fire|trigger did not fire|does not fire"
+}
+
+@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface states sweep+consumer composition: both fields carried separately" {
+  # A task satisfying both the sweep-task trigger AND the consumer-surface
+  # trigger carries `dependent_tests:` AND `cross_task_consumers:` as
+  # separate fields — the two clauses do not merge.
+  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+    "dependent_tests:.*cross_task_consumers:|cross_task_consumers:.*dependent_tests:|both.*fields|separate fields"
+}
+
+# -----------------------------------------------------------------------------
+# Plan reviewer agent — Cross-task consumer surface detection rubric
+# -----------------------------------------------------------------------------
+
+@test "[G18-consumers] Plan reviewer agent body declares Cross-task consumer surface detection rubric" {
+  grep -E "[Cc]ross-task consumer surface detection" "$PLAN_REVIEWER_AGENT"
+}
+
+@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection names trigger conditions" {
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
+    "named.declaration|public.signature|structured.document|extension.point"
+}
+
+@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection requires field presence/shape check" {
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
+    "[Ff]ield present|well-formed|presence"
+}
+
+@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection re-runs none search command" {
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
+    "re-run|rerun"
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
+    "non-zero hit|non-zero hits|one or more hits|>=.?1 hit"
+}
+
+@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection validates the four dispositions" {
+  for d in "no change" "pass-through" "co-edit" "break-and-fix-task"; do
+    extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" "\`$d\`" || {
+      echo "Missing disposition vocab in Cross-task consumer surface detection section: $d" >&2
+      return 1
+    }
+  done
+}
+
+@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection requires existing follow-up task ID for break-and-fix-task" {
+  # break-and-fix-task disposition must cite a follow-up task ID that already exists in the plan.
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
+    "break-and-fix-task.*(follow-up task|task ID).*(exist|in the plan)|follow-up task ID exists"
+}
+
+@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection emits high-severity correctness finding" {
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
+    "severity: high"
+  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
+    "change_type: correctness"
+}
+
+@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection covers malformed-field and false-none cases" {
+  # The rubric must enumerate the failure modes: missing field, malformed
+  # field, false `none` claim, invalid disposition, missing follow-up ID.
+  local section
+  section="$(extract_section "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection")"
+  printf '%s\n' "$section" | grep -qE "[Mm]issing field|[Mm]issing.*\`cross_task_consumers" \
+    || { echo "Missing 'missing field' failure mode" >&2; return 1; }
+  printf '%s\n' "$section" | grep -qE "[Mm]alformed" \
+    || { echo "Missing 'malformed' failure mode" >&2; return 1; }
+  printf '%s\n' "$section" | grep -qE "invalid disposition|disposition.*invalid|disposition value" \
+    || { echo "Missing 'invalid disposition' failure mode" >&2; return 1; }
+}
+
+@test "[G18-consumers] Plan reviewer keeps Sweep-task detection and Cross-task consumer surface detection as separate clauses" {
+  # G15 and G18 stay as two separate rubric clauses (decision E in design.md ## G18).
+  # Both clause headings must be present in the file as distinct H3s.
+  grep -E "^### Sweep-task detection" "$PLAN_REVIEWER_AGENT"
+  grep -E "^### Cross-task consumer surface detection" "$PLAN_REVIEWER_AGENT"
+}

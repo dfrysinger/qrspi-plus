@@ -101,30 +101,34 @@
   },
   "Test Expectations": {
     "line_start": 614,
-    "line_end": 653
+    "line_end": 693
   },
   "Sweep Task Contract": {
     "line_start": 620,
     "line_end": 653
   },
-  "Red Flags — STOP": {
+  "Cross-Task Consumer Surface": {
     "line_start": 654,
-    "line_end": 682
+    "line_end": 693
+  },
+  "Red Flags — STOP": {
+    "line_start": 694,
+    "line_end": 722
   },
   "Visual-fidelity hard-gate (pre-fanout refusal condition)": {
-    "line_start": 673,
-    "line_end": 682
+    "line_start": 713,
+    "line_end": 722
   },
   "Common Rationalizations — STOP": {
-    "line_start": 683,
-    "line_end": 696
+    "line_start": 723,
+    "line_end": 736
   },
   "Worked Example": {
-    "line_start": 697,
-    "line_end": 734
+    "line_start": 737,
+    "line_end": 774
   },
   "Iron Laws — Final Reminder": {
-    "line_start": 735,
-    "line_end": 745
+    "line_start": 775,
+    "line_end": 785
   }
 }
