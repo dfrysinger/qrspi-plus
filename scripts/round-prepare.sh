@@ -169,16 +169,11 @@ if [ "$PER_TASK" -eq 1 ]; then
     echo "round-prepare: implementer-commit / HEAD mismatch — main chat passed $IMPLEMENTER_COMMIT, worktree HEAD is $ACTUAL_HEAD. Recovery: HALT — likely worktree corruption, wrong worktree path, concurrent commit by another process, or implementer self-report drift. Surface to user; do not auto-retry." >&2
     exit 11
   fi
-
-  # All three checks passed — write the round commit anchor (40-char SHA + LF).
-  ANCHOR_PATH="$TASK_DIR/round-${ROUND_NN}-commit.txt"
-  ANCHOR_TMP="${ANCHOR_PATH}.tmp.$$"
-  printf '%s\n' "$IMPLEMENTER_COMMIT" > "$ANCHOR_TMP"
-  if ! mv "$ANCHOR_TMP" "$ANCHOR_PATH"; then
-    rm -f "$ANCHOR_TMP"
-    echo "round-prepare: failed to write round-${ROUND_NN}-commit.txt at $ANCHOR_PATH (disk full / parent missing / permissions)." >&2
-    exit 1
-  fi
+  # NOTE: the round commit anchor is NOT written here. It is deferred until
+  # AFTER the Step 10 prior-artifact presence assertions below so that any
+  # exit-1 from a missing/malformed prior anchor or empty prior scope-set
+  # leaves NO stray current-round anchor on disk (preserves the documented
+  # "failed verification leaves no round-NN-commit.txt" invariant).
 fi
 
 # ---------------------------------------------------------------------------
@@ -219,6 +214,24 @@ if [ "$ROUND_NUM" -ge 3 ] && [ "$SCOPE_TAGGER_ENABLED" = "true" ]; then
   fi
   if [ ! -s "$PRIOR_SCOPE_PATH" ]; then
     echo "round-prepare: empty prior-round scope-set at $PRIOR_SCOPE_PATH — scope-tagger emitted zero tags in round $((ROUND_NUM - 1)), broaden manually or re-run tagger" >&2
+    exit 1
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Step 1 (continued) — write the round commit anchor (per-task only).
+# Deferred from Step 1 above so the anchor is NEVER written when a Step 10
+# prior-artifact presence assertion exits 1 (missing/malformed prior anchor,
+# or missing/empty prior scope-set on round NN >= 3 with tagger enabled).
+# Round 1 still writes the anchor (Step 10 is a no-op on round 1).
+# ---------------------------------------------------------------------------
+if [ "$PER_TASK" -eq 1 ]; then
+  ANCHOR_PATH="$TASK_DIR/round-${ROUND_NN}-commit.txt"
+  ANCHOR_TMP="${ANCHOR_PATH}.tmp.$$"
+  printf '%s\n' "$IMPLEMENTER_COMMIT" > "$ANCHOR_TMP"
+  if ! mv "$ANCHOR_TMP" "$ANCHOR_PATH"; then
+    rm -f "$ANCHOR_TMP"
+    echo "round-prepare: failed to write round-${ROUND_NN}-commit.txt at $ANCHOR_PATH (disk full / parent missing / permissions)." >&2
     exit 1
   fi
 fi

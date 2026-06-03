@@ -575,7 +575,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
 }
 
 @test "[T13] per-task review section contains zero 'rev-parse HEAD' main-chat instructions" {
-  # Per design.md §G9 L1356 companion lint: the per-task review section (Per-Task
+  # Per design.md §G9 companion lint: the per-task review section (Per-Task
   # Convergence Narrowing — line range from "### Per-Task Convergence Narrowing"
   # to the next "### " heading) MUST have zero `rev-parse HEAD` matches. Those
   # checks are now owned by round-prepare.sh exit codes 10/11/12.
@@ -738,6 +738,36 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "diagnostic must name the missing prior-round commit anchor: $output"; return 1; }
 }
 
+@test "[T13] round-prepare.sh leaves NO stray current-round anchor when prior-round anchor missing (fail-closed)" {
+  # Pins the §G9 invariant: a round NN>=2 invocation that exits non-zero due
+  # to a MISSING prior-round anchor MUST NOT have already written round-NN-commit.txt
+  # to disk. Before Fix A, the anchor was written in Step 1 (HEAD checks) BEFORE
+  # the Step 10 prior-artifact presence assertions, so a missing prior-anchor exit-1
+  # left a stray current-round anchor — silently advancing a later round into
+  # treating round NN as completed though no reviewers ran.
+  local tmp; tmp="$(mktemp -d)"
+  cd "$tmp"
+  git init -q
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm base
+  local base_sha; base_sha="$(git rev-parse HEAD)"
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r1
+  git -c user.email=t@t -c user.name=t commit --allow-empty -qm r2
+  local head_sha; head_sha="$(git rev-parse HEAD)"
+  mkdir -p task/round-02
+  # Deliberately omit task/round-01-commit.txt — must trigger Step 10 exit 1.
+  run "$REPO_ROOT/scripts/round-prepare.sh" 2 task/round-02 \
+    --task-branch main \
+    --implementer-commit "$head_sha" \
+    --worktree . \
+    --base-ref "$base_sha"
+  local stray_exists=0
+  if [ -e "task/round-02-commit.txt" ]; then stray_exists=1; fi
+  rm -rf "$tmp"
+  [ "$status" -ne 0 ] || { echo "expected non-zero exit for missing prior anchor, got 0; output: $output"; return 1; }
+  [ "$stray_exists" -eq 0 ] \
+    || { echo "stray current-round anchor task/round-02-commit.txt was written despite exit $status (Fix A regression — anchor write must be deferred until AFTER Step 10 prior-artifact presence assertions)"; return 1; }
+}
+
 @test "[T13] round-prepare.sh fails loudly on missing scope-set when narrowing-eligible + tagger enabled" {
   local tmp; tmp="$(mktemp -d)"
   cd "$tmp"
@@ -767,15 +797,20 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
 }
 
 @test "[T13] scripts/ contain NO first-party Task-tool subagent dispatch or Task-tool return capture" {
-  # Architectural boundary (design.md §G9 L1358 acceptance criterion):
+  # Architectural boundary (design.md §G9 acceptance criterion):
   # bash scripts dispatch third-party CLIs only; first-party Task-tool
   # subagents are dispatched from main chat. This guard catches any
   # accidental migration.
-  local hits
-  hits="$(grep -rnE 'subagent_type|Task\(|Agent\(' "$REPO_ROOT/scripts/" 2>/dev/null || true)"
-  if [ -n "$hits" ]; then
+  local hits grep_status=0
+  hits="$(grep -rnE 'subagent_type|Task\(|Agent\(' "$REPO_ROOT/scripts/" 2>/dev/null)" || grep_status=$?
+  if [ "$grep_status" -eq 0 ]; then
     echo "scripts/ must not contain Task-tool dispatch or return-capture patterns; found:"
     echo "$hits"
+    return 1
+  elif [ "$grep_status" -eq 1 ]; then
+    : # no match — pass
+  else
+    echo "grep failed with exit $grep_status while scanning $REPO_ROOT/scripts/ (missing/unreadable directory or grep error); fail-closed."
     return 1
   fi
 }
