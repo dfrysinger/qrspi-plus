@@ -156,7 +156,7 @@ teardown() {
 # Codex availability glob after the D3 migration.
 @test "grep-audit: skills/using-qrspi/SKILL.md does not contain Claude-only Codex availability glob" {
   # Test expectation: the legacy glob is absent from skills/using-qrspi/SKILL.md
-  # at L405 (the second drift site identified in design.md G27 References).
+  # at L405 (the second drift site identified in the design references).
   # RED: the glob is still present in the file today.
   local match_count
   match_count="$(grep -c 'codex-companion\.mjs' "$USING_SKILL" 2>/dev/null || true)"

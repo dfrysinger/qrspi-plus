@@ -639,7 +639,7 @@ _exec_lookup_default_second_reviewer() {
 
 # Test expectation: skills/using-qrspi/SKILL.md documents that when second_reviewer: true
 # is set, both the primary and second-reviewer dispatches use the same agent tier:
-# (from G22's rubric) — no separate tier knob for the second reviewer.
+# (per the established routing rubric) — no separate tier knob for the second reviewer.
 @test "using-qrspi: second_reviewer: true dispatch uses same tier for primary and second reviewer" {
   # Test expectation: the dispatch prose documents that the same tier: applies to both
   # the primary reviewer dispatch and the second-reviewer dispatch when second_reviewer: true.
