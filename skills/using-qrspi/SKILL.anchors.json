@@ -101,58 +101,62 @@
   },
   "Standard Review Loop": {
     "line_start": 673,
-    "line_end": 716
+    "line_end": 720
   },
   "Fix-altitude rule (F-5)": {
     "line_start": 709,
     "line_end": 716
   },
-  "Review Output Handling": {
+  "Sweep-task findings — backstop": {
     "line_start": 717,
-    "line_end": 1108
+    "line_end": 720
+  },
+  "Review Output Handling": {
+    "line_start": 721,
+    "line_end": 1137
   },
   "Review-Loop Pause Gate": {
-    "line_start": 1109,
-    "line_end": 1156
+    "line_start": 1138,
+    "line_end": 1185
   },
   "BATCH-WITH-OVERRIDES UI contract": {
-    "line_start": 1113,
-    "line_end": 1120
+    "line_start": 1142,
+    "line_end": 1149
   },
   "3-option menu (per paused finding)": {
-    "line_start": 1121,
-    "line_end": 1138
+    "line_start": 1150,
+    "line_end": 1167
   },
   "Paused rounds do not decrement the cap": {
-    "line_start": 1139,
-    "line_end": 1144
+    "line_start": 1168,
+    "line_end": 1173
   },
   "Pending-findings file": {
-    "line_start": 1145,
-    "line_end": 1156
+    "line_start": 1174,
+    "line_end": 1185
   },
   "Review Time Allocation": {
-    "line_start": 1157,
-    "line_end": 1164
+    "line_start": 1186,
+    "line_end": 1193
   },
   "Compaction Checkpoints": {
-    "line_start": 1165,
-    "line_end": 1196
+    "line_start": 1194,
+    "line_end": 1225
   },
   "Feedback File Format": {
-    "line_start": 1197,
-    "line_end": 1216
+    "line_start": 1226,
+    "line_end": 1245
   },
   "Common Rationalizations — STOP": {
-    "line_start": 1217,
-    "line_end": 1231
+    "line_start": 1246,
+    "line_end": 1260
   },
   "Skill Invocation": {
-    "line_start": 1232,
-    "line_end": 1237
+    "line_start": 1261,
+    "line_end": 1266
   },
   "Pipeline Iron Laws — Final Reminder": {
-    "line_start": 1238,
-    "line_end": 1260
+    "line_start": 1267,
+    "line_end": 1289
   }
 }

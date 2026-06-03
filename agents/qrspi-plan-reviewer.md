@@ -42,6 +42,48 @@ Read the `route` parameter to determine which checklist to run.
 - **Interpretation** — the plan's approach matches the goals' stated intent; no subtle misreadings.
 - **Phase alignment** — task phases match the phase definitions in `companion_phasing`.
 
+### Sweep-task detection
+
+Treat a task as a **sweep** when BOTH conditions hold:
+
+- `files_in_scope` (or the spec's `**Target files:**` bullet) lists strictly more than 5 files (`>5`, not `>=5`) of the same file type. File type means matching extension: `.md` agents in `agents/` count as one type, `.bats` tests count as another, etc.
+- The task title OR the task description body contains at least one of: `all`, `every`, `strip`, `remove`, `rename`, `replace`, `delete`, `sweep` — matched case-insensitive with word-boundary semantics. Word-boundary means `removes` matches `remove` (the keyword is a prefix at a word boundary) but `installer` does NOT match `all` (the keyword is embedded inside a longer word, not at a word boundary).
+
+On detection, verify the task's Test Expectations block contains a `dependent_tests:` field per `skills/plan/SKILL.md` § Sweep Task Contract. The field is well-formed when its value is either:
+
+1. A list of test file paths (each a file, not a directory glob), each of which exists in the repository at review time, with a one-sentence per-file disposition.
+2. The literal string `none` followed on the next line by a `grep -rn -- '<pattern>' tests/` command — before re-running, validate the command: it must match the exact shape `grep -rn -- '<quoted-pattern>' tests/` with the `--` argument separator between `-rn` and the quoted pattern; no shell metacharacters (`;`, `|`, `&`, backtick, `$`, `(`, `)`, `<`, `>`, single-quote) in the pattern argument; the pattern itself must NOT start with `-` (a dash-prefixed pattern would be interpreted as a grep flag, not a search term); and no additional tokens after `tests/`; if validation fails, emit a high-severity correctness finding for malformed grep proof rather than executing. Execute the validated command from the repository root; well-formed iff it returns zero matches.
+
+Emit a `severity: high, change_type: correctness` finding referencing the contract when ANY of the following holds:
+
+- **Missing field:** the task is sweep-shaped but the spec carries no `dependent_tests:` field.
+- **Malformed — no paths:** `dependent_tests:` is present but lists zero file paths and does not carry the `none` plus grep proof shape.
+- **Malformed — `none` without grep:** `dependent_tests: none` is present but no grep command follows on the next line.
+- **Malformed — non-zero grep:** `dependent_tests: none` is followed by a grep command that returns one or more hits when the reviewer re-runs it from the repository root. A single hit is sufficient to surface the finding; the `none` claim is then invalid and the field must be re-shaped to a path list.
+
+The finding cites `skills/plan/SKILL.md` § Sweep Task Contract as the contract reference. Sweep findings ride the existing reviewer-protocol 5-field schema — no new finding kind, no new severity tier.
+
+### Cross-task consumer surface detection
+
+Treat a task as **consumer-surface-touching** when ANY of the trigger conditions in `skills/plan/SKILL.md` § Cross-Task Consumer Surface apply: a named-declaration add/rename/remove (function, method, class, interface, exported symbol, or other named declaration); a file add/rename/remove/move within `files_in_scope`; a public-signature change (parameter list, return type, exceptions/errors raised, side effects, or visibility) on any callable in `files_in_scope`; a structured-document schema change (JSON, YAML, frontmatter, TOML, XML, etc.) to keys, anchors, or top-level identifiers referenced by name from other files; or a named extension-point add/rename/remove (configuration key, environment variable, CLI flag, URL route, RPC method, command-line subcommand, schema field, anchor heading, or other documented named extension point). Body-only callable changes, prose edits without anchor-name changes, and formatting fixes are NOT consumer-surface-touching.
+
+On detection, the reviewer MUST verify the task's plan-spec contains a `cross_task_consumers:` field per the contract:
+
+1. **Field present and well-formed** — exactly one of the two documented shapes (path list with per-consumer disposition, OR `none` followed on the next line by a reproducible search command). Field presence and shape conformance are the first checks.
+2. **`none` claim re-verification** — if the field value is `none`, validate the cited search command before executing (same shell-metacharacter and dash-prefix rejection rules as the Sweep-task detection grep-proof rubric: forbid `;`, `|`, `&`, backtick, `$`, `(`, `)`, `<`, `>`, single-quote in the pattern argument; reject patterns starting with `-`; require `--` argument separator for `grep`/`rg` shapes), then re-run the validated command from the repository root. A non-zero hit count invalidates the `none` claim and surfaces a finding.
+3. **Disposition vocabulary validation** — when the field lists consumers, verify each cited disposition is exactly one of `no change`, `pass-through`, `co-edit`, or `break-and-fix-task`. Variants (`co_edit`, `pass through`, `break-fix`, etc.) are invalid disposition values.
+4. **`break-and-fix-task` follow-up task ID validation** — when a consumer's disposition is `break-and-fix-task`, the disposition line MUST cite a follow-up task ID; that task ID MUST already exist in the plan (not be a placeholder, not be a forward-declared task that the plan never defines). A missing follow-up task ID, or a cited follow-up task ID that does not match any task in the plan, is a defect.
+
+Emit a `severity: high, change_type: correctness` finding referencing the contract when ANY of the following holds:
+
+- **Missing field:** the task is consumer-surface-touching but the spec carries no `cross_task_consumers:` field.
+- **Malformed field:** `cross_task_consumers:` is present but does not conform to either of the two documented shapes (e.g., paths without dispositions, `none` without a following search command, mixed shapes).
+- **Non-zero hits on `none` claim:** `cross_task_consumers: none` is followed by a search command that returns one or more hits when the reviewer re-runs it from the repository root.
+- **Invalid disposition value:** a listed consumer's disposition is not exactly one of `no change`, `pass-through`, `co-edit`, `break-and-fix-task`.
+- **Missing follow-up task ID for `break-and-fix-task`:** the disposition is `break-and-fix-task` but no follow-up task ID is cited, or the cited follow-up task ID does not exist in the plan.
+
+The finding cites `skills/plan/SKILL.md` § Cross-Task Consumer Surface as the contract reference. The Cross-task consumer surface detection clause is **independent of** the Sweep-task detection clause: a task that satisfies both triggers carries both `dependent_tests:` and `cross_task_consumers:` as separate fields, and the reviewer evaluates each clause independently — a finding may be emitted against either, both, or neither. The two clauses do not merge.
+
 ### Full-pipeline-only checks (skip if `route: quick`)
 
 - **Design/structure traceability** — every task traces to a component or interface in `companion_design` and `companion_structure`; no tasks implement components the design didn't specify; no design components are absent from the task list.

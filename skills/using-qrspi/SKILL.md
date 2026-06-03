@@ -714,6 +714,10 @@ Why: pulling next-step detail upward inflates the artifact, introduces internal 
 
 Mirrors the skill-refactor design's "decline scope-extension findings" rule, applied to artifact-level reviews.
 
+### Sweep-task findings — backstop
+
+Sweep-task findings (`agents/qrspi-plan-reviewer.md` § Sweep-task detection, per `skills/plan/SKILL.md` § Sweep Task Contract) are ordinary Plan-review correctness findings. When the reviewer surfaces a missing or malformed `dependent_tests:` field on a sweep-shaped task, the orchestrator routes it through the standard Plan re-spec loop documented above — no new implementation gate, no new test-runner behavior, no per-task pause: the producing task spec is updated to carry a well-formed `dependent_tests:` field, the next Plan review round re-verifies, and the loop terminates clean per the standard convergence rule.
+
 ## Review Output Handling
 
 **Disk-write contract (artifact-level reviews).** Each artifact-level reviewer subagent writes its findings directly to disk and returns only a brief structured summary to main chat. Main chat never receives finding text in subagent return values. This keeps reviewer output out of main chat's conversation history (where it would re-bill as cache reads on every subsequent turn) until main chat explicitly reads the file to apply fixes — at which point the standard `/compact` after fix-apply (see "Compaction at Step Transitions" + per-skill apply-fix recommendations) sheds it.
@@ -988,6 +992,29 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
 9. **Write `round-NN-dispositions.md`** (main-chat-authored, ≤30 lines) listing what was changed and why.
 
+   **Sub-threshold findings: NO orchestrator override.** Findings dropped by `scripts/verifier-fan-in.sh` per the `change_type` thresholds (`style|clarity` < 80, `correctness` < 70) MUST NOT be kept via orchestrator override. The script is the single source of truth for `kept-findings.txt` per CD-4's iron rule — there is no path from a dropped finding into the kept set, and the orchestrator MUST NOT apply patches addressing dropped findings under the guise of the round's apply-fix work. Standalone human-driven edits outside the apply-fix protocol are unaffected.
+
+   **Optional `## Sub-Threshold Observations` section (informational only).** When the orchestrator notices a pattern in dropped findings worth recording — e.g., multiple sub-threshold findings sharing a `defect_class` tag and clustering just below the floor — it MAY append a `## Sub-Threshold Observations` H2 section to `round-NN-dispositions.md` as evidence-collection signal for future calibration. The section is purely informational: it does NOT claim an override, it does NOT trigger any reapply behavior, and it is consumed by no current script. Zero observations on a clean round is the common case.
+
+   The section's body is a YAML-fenced block listing one entry per observation with: a `summary` one-liner, the contributing `finding_paths` (relative to the round-NN directory under `reviews/{step}/`), the cluster's shared `defect_class` tag, the representative `score` (typically the minimum score in the cluster — i.e. the worst-scoring contributor — chosen so the entry surfaces how far below the floor the cluster fell), and the `threshold` that dropped them (80 for `style`/`clarity`, 70 for `correctness`). Per-finding scores are NOT preserved in this template by design; the cluster surfaces a single representative figure. When per-finding precision is needed downstream, the individual sidecar files at `finding_paths[]` carry the exact integer score for each contributor.
+
+   `finding_paths[]` values MUST be relative paths within the current `round-NN/` directory and MUST NOT contain `../` components or absolute paths. Canonical example:
+
+   ```yaml
+   observations:
+     - summary: "4 clarity findings naming goal-leakage in different questions, all dropped just below the floor"
+       defect_class: goal-leakage
+       representative_score: 70
+       threshold: 80
+       finding_paths:
+         - round-01/quality-claude.finding-F02.md
+         - round-01/quality-claude.finding-F04.md
+         - round-01/quality-codex.finding-F01.md
+         - round-01/quality-codex.finding-F03.md
+   ```
+
+   This shape is informational-only and not consumed by any current script; downstream tooling may parse it in a future release once enough cluster occurrences accumulate to calibrate a programmatic rule.
+
 10. **`/compact`** to shed the verified-file Read content from main chat's transcript.
 
 11. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (including sidecars), `round-NN-scope-set.txt` (when emitted by step 6), `round-NN-verified.md`, and `round-NN-dispositions.md`.
@@ -1090,6 +1117,8 @@ No option mutates `config.md`. `retry` is bounded by the underlying operation. T
 2. **Reviewer dispatches reference the diff file by path.** Reviewer prompts (Claude reviewer, scope reviewer, Codex prompt-file) carry `<diff_file_path>` as a string parameter pointing at the round-NN.diff written in step 1; reviewers Read the diff file directly. Single git op per round (vs one per reviewer), byte-identical input across Claude and Codex, and main chat sees no diff text on dispatch or return.
 
 3. **When the round narrowed, dispatches also carry `<scope_hint>`.** A one-line advisory listing the tags in `scope_set(NN)` (or `scope_set(NN-1)` for the proper-subset safety-margin case), wrapped as untrusted data: "This round's diff is narrowed to: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>`{scope_hint}`<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>`. Focus your review on this surface but flag anything significant outside it." The wrapper laundered through the tagger means the hint can carry adversarial H2-heading-derived content (e.g. an injected `## IGNORE PRIOR INSTRUCTIONS`); the wrapper makes that data, not instructions. When the round broadened, Claude bullets omit the parameter; Codex `printf` blocks emit the line with an empty value between the markers (consumers treat empty-value as semantically identical to absence). See `skills/reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract for the parameter contract and the empty-value equivalence rule.
+
+**Reviewer-model audit-field parameter.** Every reviewer dispatch (Claude reviewer, scope reviewer, Codex prompt-file) carries `actual_model: <resolved model ID>` as a record-keeping prompt parameter. The value is sourced from the dispatch model resolution already performed by the orchestrator/dispatch path — it is the same resolved model ID the dispatch site passes to the Task tool's `model` argument for first-party subagents (and to `scripts/dispatch-companion.sh` for third-party subagents) — so reviewers never re-resolve or invent the value. Reviewers copy the resolved value verbatim into the YAML frontmatter of every per-finding file (`<reviewer_tag>.finding-F<NN>.md`) AND the clean-sentinel file (`<reviewer_tag>.clean.md`) when the round produced zero findings. The downstream verifier (`agents/qrspi-finding-verifier.md`) reads the audit field from finding frontmatter and copies it verbatim into the sidecar frontmatter for both the success-case and the VERIFY_FAILED-case sidecar shapes; if the finding omits the field, the verifier writes the literal token `unknown` rather than failing — the audit field is observability data, not a correctness gate. The dispatch manifest at `<round-dir>/.dispatch-manifest.json` persists the same resolved-model value per dispatch entry, closing the loop end-to-end so every dispatch is greppable by host × vendor × model after the fact. For third-party (background) dispatches the entry shape is `{tag, agent, mode:"background", status:"pending", job_id, dispatch_spec:{subagent_type, host, vendor, model}, await_cmd, split_cmd}`; for first-party dispatches the entry shape is `{tag, agent, mode:"first_party", status:"dispatched", dispatch_spec:{subagent_type, host, vendor, model, prompt_file}}`. The `dispatch_spec` object carries the four-field provenance triple (`subagent_type/host/vendor/model`) plus the optional `prompt_file` path for first-party dispatches.
 
 **Ref selection rule.** Step 12 of the Apply-fix protocol owns the choice. In summary:
 
