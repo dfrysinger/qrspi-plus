@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+bats_require_minimum_version 1.5.0
 #
 # T07 Slice 1 unit pin — config model_routing precedence + trusted_path
 # short-circuit + legacy-config warning + fail-loud provider-resolution +
@@ -51,7 +52,11 @@ setup_file() {
   require_repo_root
   USING="$REPO_ROOT/skills/using-qrspi/SKILL.md"
   IMPLEMENT="$REPO_ROOT/skills/implement/SKILL.md"
-  export USING IMPLEMENT
+  # G22 / T16 additions
+  CONFIG_MD="$REPO_ROOT/docs/qrspi/2026-05-30-v072-release/config.md"
+  RESOLVE_LIB="$REPO_ROOT/scripts/_resolve-lib.sh"
+  VALIDATION_PROC="$REPO_ROOT/skills/_shared/config-validation-procedure.md"
+  export USING IMPLEMENT CONFIG_MD RESOLVE_LIB VALIDATION_PROC
 }
 
 # ---------------------------------------------------------------------------
@@ -190,4 +195,176 @@ setup_file() {
   [[ "$out" == *"model_routing:"* ]]
   [[ "$out" == *"host/tier lookup"* ]]
   [[ "$out" == *"Agent-bundled default"* ]]
+}
+
+# ===========================================================================
+# G22 / T16 additions — five-tier vendor-neutral schema, _resolve-lib.sh
+# resolver behavior, and config-validation-procedure.md.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# config.md — five-tier vendor-neutral model_routing: schema
+# Test expectation: Inspect config.md for the five-tier vendor-neutral
+# model_routing: block, default_tier: medium, and explicit extra-low: none row.
+# ---------------------------------------------------------------------------
+
+@test "config.md: five-tier model_routing: block is present" {
+  # Test expectation: config.md documents the five-tier vendor-neutral model_routing: block
+  run grep -q "^model_routing:" "$CONFIG_MD"
+  [ "$status" -eq 0 ]
+}
+
+@test "config.md: model_routing: extra-low tier row is present" {
+  # Test expectation: five-tier block includes extra-low row
+  run grep -q "extra-low:" "$CONFIG_MD"
+  [ "$status" -eq 0 ]
+}
+
+@test "config.md: model_routing: low tier row is present" {
+  # Test expectation: five-tier block includes low row
+  run grep -q "low:" "$CONFIG_MD"
+  [ "$status" -eq 0 ]
+}
+
+@test "config.md: model_routing: medium tier row is present" {
+  # Test expectation: five-tier block includes medium row
+  run grep -q "medium:" "$CONFIG_MD"
+  [ "$status" -eq 0 ]
+}
+
+@test "config.md: model_routing: high tier row is present" {
+  # Test expectation: five-tier block includes high row
+  run grep -q "high:" "$CONFIG_MD"
+  [ "$status" -eq 0 ]
+}
+
+@test "config.md: model_routing: extra-high tier row is present" {
+  # Test expectation: five-tier block includes extra-high row
+  run grep -q "extra-high:" "$CONFIG_MD"
+  [ "$status" -eq 0 ]
+}
+
+@test "config.md: extra-low row is explicitly set to none (operator opt-in surface)" {
+  # Test expectation: explicit extra-low: none row (operator opt-in; no default consumers)
+  run grep -E "extra-low:[[:space:]]+none" "$CONFIG_MD"
+  [ "$status" -eq 0 ]
+}
+
+@test "config.md: default_tier is set to medium" {
+  # Test expectation: config.md has default_tier: medium
+  run grep -E "default_tier:[[:space:]]+medium" "$CONFIG_MD"
+  [ "$status" -eq 0 ]
+}
+
+@test "config.md: tier rows use vendor-neutral { vendor:, model: } shape (not per-host haiku/sonnet/opus)" {
+  # Test expectation: tier rows are vendor-neutral key-value objects, not host-keyed model names
+  run grep -E "vendor:[[:space:]]" "$CONFIG_MD"
+  [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# _resolve-lib.sh — tier resolution precedence chain and halt-on-none
+# Test expectation: Exercise/grep _resolve-lib.sh coverage for per-dispatch
+# tier override, agent tier:, default_tier:, hardcoded-medium-with-warning
+# precedence; verify none-tier halt with no silent fallback.
+# ---------------------------------------------------------------------------
+
+@test "_resolve-lib.sh: file exists (created by T16)" {
+  # Test expectation: scripts/_resolve-lib.sh is created by the implementer
+  [ -f "$RESOLVE_LIB" ]
+}
+
+@test "_resolve-lib.sh: documents --tier-override as highest-precedence layer" {
+  # Test expectation: per-dispatch/--tier-override is layer 1 in the precedence chain
+  run grep -E "\-\-tier-override" "$RESOLVE_LIB"
+  [ "$status" -eq 0 ]
+}
+
+@test "_resolve-lib.sh: documents agent tier: frontmatter as second-layer precedence" {
+  # Test expectation: agent tier: frontmatter is layer 2 in the precedence chain
+  run grep -E "agent.*tier:|tier:.*frontmatter|frontmatter.*tier:" "$RESOLVE_LIB"
+  [ "$status" -eq 0 ]
+}
+
+@test "_resolve-lib.sh: documents default_tier: from config.md as third-layer precedence" {
+  # Test expectation: default_tier: in config.md is layer 3 fallback
+  run grep -E "default_tier" "$RESOLVE_LIB"
+  [ "$status" -eq 0 ]
+}
+
+@test "_resolve-lib.sh: documents hardcoded medium fallback with loud warning as final layer" {
+  # Test expectation: hardcoded medium fallback with loud warning is layer 4 (last resort)
+  run grep -E "medium.*warn|warn.*medium|hardcoded.*medium|medium.*fallback" "$RESOLVE_LIB"
+  [ "$status" -eq 0 ]
+}
+
+@test "_resolve-lib.sh: halt-on-none behavior — no silent fallback when tier resolves to none" {
+  # Test expectation: dispatch resolving to a tier configured as none halts loudly;
+  # does not fall back to a neighboring tier
+  run grep -E "none.*halt|halt.*none|no.*silent.*fallback|silent.*fallback.*none" "$RESOLVE_LIB"
+  [ "$status" -eq 0 ]
+}
+
+@test "_resolve-lib.sh: none-tier halt names the unresolved tier in the diagnostic" {
+  # Test expectation: the halt diagnostic names the unconfigured tier so operators see
+  # which tier was targeted; opaque error messages are not acceptable
+  run grep -E "unconfigured.*tier|tier.*unconfigured|unresolved.*tier|tier.*name.*diag" "$RESOLVE_LIB"
+  [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# config-validation-procedure.md — missing / malformed model_routing: fails loud
+# Test expectation: Verify missing and malformed model_routing: configurations
+# fail through the shared config-validation procedure with repair-or-abort guidance.
+# ---------------------------------------------------------------------------
+
+@test "config-validation-procedure.md: file exists (created by T16)" {
+  # Test expectation: skills/_shared/config-validation-procedure.md is created by implementer
+  [ -f "$VALIDATION_PROC" ]
+}
+
+@test "config-validation-procedure.md: missing model_routing: block documented as a validation failure" {
+  # Test expectation: missing model_routing: configuration fails through the shared procedure
+  run grep -E "missing.*model_routing|model_routing.*missing|absent.*model_routing" "$VALIDATION_PROC"
+  [ "$status" -eq 0 ]
+}
+
+@test "config-validation-procedure.md: malformed tier values documented as a validation failure" {
+  # Test expectation: malformed model_routing: configuration fails through the shared procedure
+  run grep -E "malformed|invalid.*tier|tier.*invalid|bad.*value" "$VALIDATION_PROC"
+  [ "$status" -eq 0 ]
+}
+
+@test "config-validation-procedure.md: repair-or-abort guidance is present" {
+  # Test expectation: procedure includes repair-or-abort guidance (not just a bare error message)
+  run grep -Ei "repair|abort|fix.*config|config.*fix" "$VALIDATION_PROC"
+  [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# using-qrspi SKILL.md — old per-host haiku/sonnet/opus/inherit schema is gone
+# Test expectation: Grep skill prose to confirm the old per-host schema is
+# removed from the migrated surfaces.
+# ---------------------------------------------------------------------------
+
+@test "using-qrspi: old per-host haiku row is gone from model_routing: section" {
+  # Test expectation: using-qrspi no longer documents the haiku/sonnet/opus per-host schema;
+  # after G22 migration the model_routing: block is five-tier vendor-neutral
+  out="$(_extract_h4 "$USING" '`model_routing:` block')"
+  c=$(grep -c "haiku:" <<<"$out" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "using-qrspi: old per-host inherit row is gone from model_routing: section" {
+  # Test expectation: inherit tier name (legacy per-host schema) is not present in updated prose
+  out="$(_extract_h4 "$USING" '`model_routing:` block')"
+  c=$(grep -c "inherit:" <<<"$out" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "using-qrspi: new five-tier vendor-neutral model_routing: shape documented" {
+  # Test expectation: using-qrspi documents the new extra-low/low/medium/high/extra-high shape
+  out="$(_extract_h4 "$USING" '`model_routing:` block')"
+  [[ "$out" == *"extra-low"* ]]
+  [[ "$out" == *"extra-high"* ]]
 }
