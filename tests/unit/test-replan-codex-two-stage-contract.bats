@@ -22,8 +22,12 @@ setup() {
 }
 
 @test "replan SKILL.md documents Codex flow as 2 stages" {
-  grep -qE 'two stages|Stage 1|Stage 2' skills/replan/SKILL.md \
-    || { echo "skills/replan/SKILL.md no longer documents the 2-stage Codex contract"; return 1; }
+  # CD-1 (Task 20): the 2-stage sequencing contract survives as prose. Stage 1
+  # (analyzer worker) → await/capture → Stage 2 (reviewer round) routes through
+  # the universal dispatch chain. The load-bearing semantic is the sequencing
+  # dependency: the review round cannot start until the analyzer returns.
+  grep -qE 'two stages|Stage 1|Stage 2|sequencing dependency|cannot start until the analyzer returns' skills/replan/SKILL.md \
+    || { echo "skills/replan/SKILL.md no longer documents the 2-stage analyzer→reviewer sequencing contract"; return 1; }
 }
 
 @test "replan analyzer Codex pipeline does NOT preload reviewer-protocol" {
@@ -45,34 +49,27 @@ setup() {
 }
 
 @test "replan quality reviewer Codex pipeline DOES preload reviewer-protocol" {
-  # After the run-codex-review.sh migration, the reviewer-protocol body is
-  # preloaded inside the wrapper script (not via a literal awk + cat in the
-  # SKILL.md). Assert the quality reviewer block dispatches via the wrapper,
-  # and that the wrapper itself reads reviewer-protocol/SKILL.md.
-  local quality_block
-  quality_block=$(awk '/Replan quality reviewer \(Codex\)/,/--scope-hint/' \
-    skills/replan/SKILL.md)
-  echo "$quality_block" | grep -qE 'scripts/run-codex-review\.sh' \
-    || { echo "quality reviewer Codex pipeline must dispatch via run-codex-review.sh wrapper"; return 1; }
-  # The wrapper concatenates reviewer-protocol/SKILL.md into the prompt.
+  # CD-1 (Task 20): per-skill Codex wrapper invocations collapsed into the
+  # universal dispatch chain. The replan reviewer round (quality + scope) routes
+  # through the shared reviewer-dispatch include, and the universal dispatcher
+  # (dispatch-agent.sh) preloads reviewer-protocol/SKILL.md into every first-party
+  # reviewer prompt it assembles.
+  grep -qF '!cat skills/_shared/reviewer-dispatch-prose.md' skills/replan/SKILL.md \
+    || { echo "replan reviewer round must route through the shared reviewer-dispatch include"; return 1; }
   grep -qE 'skills/reviewer-protocol/SKILL\.md|REVIEWER_PROTOCOL_ABS' \
-    scripts/run-codex-review.sh \
-    || { echo "run-codex-review.sh must reference reviewer-protocol/SKILL.md"; return 1; }
+    scripts/dispatch-agent.sh \
+    || { echo "dispatch-agent.sh must preload reviewer-protocol/SKILL.md"; return 1; }
 }
 
 @test "replan scope reviewer Codex pipeline DOES preload reviewer-protocol" {
-  # After the run-codex-review.sh migration, the reviewer-protocol body is
-  # preloaded inside the wrapper script (not via a literal awk + cat in the
-  # SKILL.md). Assert the scope reviewer block dispatches via the wrapper,
-  # and that the wrapper itself reads reviewer-protocol/SKILL.md.
-  local scope_block
-  scope_block=$(awk '/Replan scope reviewer \(Codex\)/,/--scope-hint/' \
-    skills/replan/SKILL.md)
-  echo "$scope_block" | grep -qE 'scripts/run-codex-review\.sh' \
-    || { echo "scope reviewer Codex pipeline must dispatch via run-codex-review.sh wrapper"; return 1; }
+  # CD-1 (Task 20): see the quality-reviewer test above — the scope reviewer
+  # shares the same universal dispatch chain (dispatch-agent.sh preloads
+  # reviewer-protocol for both reviewer tags).
+  grep -qF '!cat skills/_shared/reviewer-dispatch-prose.md' skills/replan/SKILL.md \
+    || { echo "replan reviewer round must route through the shared reviewer-dispatch include"; return 1; }
   grep -qE 'skills/reviewer-protocol/SKILL\.md|REVIEWER_PROTOCOL_ABS' \
-    scripts/run-codex-review.sh \
-    || { echo "run-codex-review.sh must reference reviewer-protocol/SKILL.md"; return 1; }
+    scripts/dispatch-agent.sh \
+    || { echo "dispatch-agent.sh must preload reviewer-protocol/SKILL.md"; return 1; }
 }
 
 @test "replan SKILL documents await-and-capture before reviewer dispatch" {

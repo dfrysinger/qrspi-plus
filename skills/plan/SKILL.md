@@ -280,143 +280,17 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
 - `companion_design` — `design.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=design.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=design.md>>>` markers (**full pipeline only** — omit on `route: quick`)
 - `companion_structure` — `structure.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=structure.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=structure.md>>>` markers (**full pipeline only** — omit on `route: quick`)
 
-- **Claude unified plan-quality reviewer** — dispatch `Agent({ subagent_type: "qrspi-plan-reviewer", model: "sonnet" })` with a prompt containing only:
-  - `artifact_body`: `plan.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=plan.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=plan.md>>>` markers
-  - `companion_goals`, `companion_research`, `companion_phasing` (always present)
-  - `companion_design`, `companion_structure` (full pipeline only — omit on `route: quick`)
-  - `route`: `full` or `quick`
-  - `output`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/` (interpolate absolute path and round number)
-  - `round`: NN
-  - `reviewer_tag`: `quality-claude`
-  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` (omit when the artifact directory is not in a git repo)
-  - `scope_hint`: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>><scope_set as comma-separated tag list><<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` (scope-tagger narrowing — optional; include ONLY when using-qrspi step 12 (ref selection) narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
+The round's reviewers (Claude first-party + Codex third-party when `codex_reviews: true`) all dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh --agents` → Task fan-out → `scripts/await-round.sh`). `*-claude` tags route to the first-party Task path; `*-codex` tags route to the third-party companion path. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `codex_reviews: true`; on quick-fix routes the dispatcher omits `companion_design`/`companion_structure` automatically. Set the per-skill dispatch parameters, then include the shared reviewer-dispatch prose:
 
-  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Plan-specific quality checks (completeness, criterion authoring, no-scope-creep, no-placeholders, task sizing, interpretation, phase alignment, design/structure traceability on full route) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
+```sh
+REVIEW_STEP="plan"
+REVIEW_ROUND="${ROUND}"                                  # current review round (NN)
+REVIEW_OUTPUT_DIR="<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}/"
+REVIEW_ARTIFACT="plan.md"
+REVIEW_AGENTS="quality-claude=qrspi-plan-reviewer,spec-claude=qrspi-plan-spec-reviewer,security-claude=qrspi-plan-security-reviewer,silent-failure-claude=qrspi-plan-silent-failure-hunter,goal-traceability-claude=qrspi-plan-goal-traceability-reviewer,test-coverage-claude=qrspi-plan-test-coverage-reviewer,scope-claude=qrspi-plan-scope-reviewer,quality-codex=qrspi-plan-reviewer,spec-codex=qrspi-plan-spec-reviewer,security-codex=qrspi-plan-security-reviewer,silent-failure-codex=qrspi-plan-silent-failure-hunter,goal-traceability-codex=qrspi-plan-goal-traceability-reviewer,test-coverage-codex=qrspi-plan-test-coverage-reviewer,scope-codex=qrspi-plan-scope-reviewer"
+```
 
-- **Claude plan-artifact reviewers (five)** — dispatch the five plan-artifact reviewers in parallel with the unified plan-quality reviewer above. Each dispatch reuses the **full plan-reviewer dispatch schema** (artifact_body + companions + route key + output + round + reviewer_tag) — they share companion delivery because they all consume the same plan + companion context. Per-template checks live in each agent body.
-
-  - `Agent({ subagent_type: "qrspi-plan-spec-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `spec-claude`
-  - `Agent({ subagent_type: "qrspi-plan-security-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `security-claude`
-  - `Agent({ subagent_type: "qrspi-plan-silent-failure-hunter", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `silent-failure-claude`
-  - `Agent({ subagent_type: "qrspi-plan-goal-traceability-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `goal-traceability-claude`
-  - `Agent({ subagent_type: "qrspi-plan-test-coverage-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `test-coverage-claude`
-
-  Each prompt body carries: `artifact_body` (wrapped `plan.md`); `companion_goals`, `companion_research`, `companion_phasing` (always); `companion_design`, `companion_structure` (full pipeline only); `route`; `output` and `reviewer_tag` (per the bullets above); `round`: NN; `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` (omit when the artifact directory is not in a git repo); `scope_hint`: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>><scope_set as comma-separated tag list><<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` (scope-tagger narrowing — optional; include ONLY when using-qrspi step 12 (ref selection) narrowed for this round). The reviewer protocol arrives via each agent's `skills: [reviewer-protocol]` preload; the agent body carries the per-template checks. Zero rules content in main chat.
-
-- **Claude scope-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-plan-scope-reviewer", model: "sonnet" })` in parallel with the quality + plan-artifact reviewers, with a prompt containing only:
-  - `artifact_body`: same untrusted-data-wrapped `plan.md` body
-  - `output`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/` (interpolate absolute path and round number)
-  - `round`: NN
-  - `reviewer_tag`: `scope-claude`
-  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` (omit when the artifact directory is not in a git repo)
-  - `scope_hint`: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>><scope_set as comma-separated tag list><<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` (scope-tagger narrowing — optional; include ONLY when using-qrspi step 12 (ref selection) narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
-
-  The scope-reviewer's Step-1 Read of `skills/plan/owns-defers.md` delivers the Plan OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt. Scope-reviewer takes NO companions and NO `route` param.
-
-- **Codex reviews** (if `codex_reviews: true`) — dispatch SEVEN non-blocking Codex reviews in parallel (one unified quality + five plan-artifact + one scope) via shell pipelines:
-
-  All six artifact-quality reviewers below share the same companion set (`companion_goals`, `companion_research`, `companion_phasing`, `companion_design`, `companion_structure`) and the same `route` field; only the agent file and reviewer tag differ. On quick-fix routes, omit `--companion companion_design=...` and `--companion companion_structure=...` (those artifacts don't exist on the route).
-
-  ```sh
-  # Unified plan-quality reviewer (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-reviewer.md \
-    --reviewer-tag quality-codex \
-    --output-dir "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}/" \
-    --round "$ROUND" \
-    --artifact-body plan.md \
-    --companion companion_goals=goals.md \
-    --companion companion_research=research/summary.md \
-    --companion companion_phasing=phasing.md \
-    --companion companion_design=design.md \
-    --companion companion_structure=structure.md \
-    --field route="$ROUTE" \
-    --diff-file "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}.diff" \
-    --scope-hint "$SCOPE_HINT"
-
-  # Plan-artifact reviewer: spec (Codex) — same shape, --agent-file/--reviewer-tag swapped
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-spec-reviewer.md \
-    --reviewer-tag spec-codex \
-    [...same flags as above except agent-file + reviewer-tag...]
-
-  # Plan-artifact reviewer: security (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-security-reviewer.md \
-    --reviewer-tag security-codex \
-    [...same flags as above...]
-
-  # Plan-artifact reviewer: silent-failure-hunter (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-silent-failure-hunter.md \
-    --reviewer-tag silent-failure-codex \
-    [...same flags as above...]
-
-  # Plan-artifact reviewer: goal-traceability (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-goal-traceability-reviewer.md \
-    --reviewer-tag goal-traceability-codex \
-    [...same flags as above...]
-
-  # Plan-artifact reviewer: test-coverage (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-test-coverage-reviewer.md \
-    --reviewer-tag test-coverage-codex \
-    [...same flags as above...]
-
-  # Scope reviewer (Codex) — no companions
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-scope-reviewer.md \
-    --reviewer-tag scope-codex \
-    --output-dir "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}/" \
-    --round "$ROUND" \
-    --artifact-body plan.md \
-    --diff-file "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}.diff" \
-    --scope-hint "$SCOPE_HINT"
-  ```
-
-  Main chat sees only the jobIds Codex prints.
-
-  After `await` returns for each dispatched jobId, on exit 0 run the splitter to split Codex output into per-finding files:
-
-  ```sh
-  scripts/codex-companion-bg.sh await <qualityJobId> > /tmp/codex-stdout-<qualityJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<qualityJobId>.txt reviews/plan/round-NN/ quality-codex
-  fi
-  # On either failure path (await non-zero OR splitter non-zero), the round
-  # directory has zero output for the tag — step 2's schema guard catches it.
-
-  scripts/codex-companion-bg.sh await <specJobId> > /tmp/codex-stdout-<specJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<specJobId>.txt reviews/plan/round-NN/ spec-codex
-  fi
-
-  scripts/codex-companion-bg.sh await <securityJobId> > /tmp/codex-stdout-<securityJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<securityJobId>.txt reviews/plan/round-NN/ security-codex
-  fi
-
-  scripts/codex-companion-bg.sh await <silentFailureJobId> > /tmp/codex-stdout-<silentFailureJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<silentFailureJobId>.txt reviews/plan/round-NN/ silent-failure-codex
-  fi
-
-  scripts/codex-companion-bg.sh await <goalTraceabilityJobId> > /tmp/codex-stdout-<goalTraceabilityJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<goalTraceabilityJobId>.txt reviews/plan/round-NN/ goal-traceability-codex
-  fi
-
-  scripts/codex-companion-bg.sh await <testCoverageJobId> > /tmp/codex-stdout-<testCoverageJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<testCoverageJobId>.txt reviews/plan/round-NN/ test-coverage-codex
-  fi
-
-  scripts/codex-companion-bg.sh await <scopeJobId> > /tmp/codex-stdout-<scopeJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<scopeJobId>.txt reviews/plan/round-NN/ scope-codex
-  fi
-  ```
+!cat skills/_shared/reviewer-dispatch-prose.md
 
 - The default-option-2 recommendation in the Standard Review Loop is especially important here because plan reviews catch cross-file consistency / forward dependencies / migration ordering across 10+ task specs that the human cannot feasibly verify by hand.
 
@@ -676,7 +550,7 @@ Skipping the `cross_task_consumers:` field on a consumer-surface-touching task i
 
 ```markdown
 - **Test expectations:**
-  - `scripts/run-codex-review.sh` exports the renamed helper; `skills/using-qrspi/SKILL.md` calls the new name.
+  - `scripts/dispatch-agent.sh` exports the renamed helper; `skills/using-qrspi/SKILL.md` calls the new name.
   - `cross_task_consumers:`
     - `skills/goals/SKILL.md` — references the old helper name in its inline availability probe; `co-edit` to rename the call site inside this task.
     - `skills/implement/SKILL.md` — references the old helper name in the second-reviewer dispatch block; `co-edit` to rename the call site inside this task.

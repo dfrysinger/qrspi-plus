@@ -5,7 +5,7 @@ bats_require_minimum_version 1.5.0
 #
 # Migrated and updated availability tests for host-aware second-reviewer probing.
 # Renamed from test-codex-review-codex-availability.bats, which tested
-# check_codex_available in scripts/run-codex-review.sh.  This file pins the
+# check_codex_available in scripts/dispatch-agent.sh.  This file pins the
 # second-reviewer-available.sh availability contract introduced by the
 # vendor-neutral probe migration.
 #

@@ -154,100 +154,17 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
 
 **On-demand inputs apply to the quality reviewer only.** Only the Claude quality-reviewer subagent (`qrspi-design-reviewer`) inherits the read-on-demand permission for `research/q*.md` defined in `## Artifact Gating` — NOT the scope-reviewer. When `design.md` cites a specific `q*.md` file (e.g., "per `research/q07-codebase.md`") to justify a decision, the quality reviewer needs to be able to verify that citation against its source — without on-demand permission the audit loop cannot close. Scope-reviewers evaluate boundary/scope only against the OWNS/DEFERS rule and have no citation-verification need; granting them the same permission would dilute the "scope-reviewers only Read OWNS/DEFERS" invariant. The required quality-reviewer inputs remain `design.md` + `goals.md` + `research/summary.md`; `research/q*.md` is permissive for the quality reviewer alone (read only when verifying a synthesis citation or checking a decision against compressed source detail), not required, and does not enter the untrusted-data wrapper list unless actually loaded. Same anti-prophylactic discipline applies: do NOT load `q*.md` files prophylactically.
 
-- **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-design-reviewer", model: "sonnet" })` with a prompt containing only:
-  - `artifact_body`: `design.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=design.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=design.md>>>` markers
-  - `companion_goals`: `goals.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=goals.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=goals.md>>>` markers
-  - `companion_research`: `research/summary.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=research/summary.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=research/summary.md>>>` markers
-  - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/design/round-NN/` (interpolate absolute path and round number)
-  - `round`: NN
-  - `reviewer_tag`: `quality-claude`
-  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/design/round-NN.diff` (omit when the artifact directory is not in a git repo)
-  - `scope_hint`: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>><scope_set as comma-separated tag list><<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` (scope-tagger narrowing — optional; include ONLY when using-qrspi step 12 (ref selection) narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
+The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → Task fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
 
-  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Design-specific checks (addresses all goals, trade-offs, YAGNI, diagram, no phasing checks) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
+```sh
+REVIEW_STEP="design"
+REVIEW_ROUND="${ROUND}"                                  # current review round (NN)
+REVIEW_OUTPUT_DIR="<ABS_ARTIFACT_DIR>/reviews/design/round-${ROUND}/"
+REVIEW_ARTIFACT="design.md"
+REVIEW_AGENTS="quality-claude=qrspi-design-reviewer,scope-claude=qrspi-design-scope-reviewer,quality-codex=qrspi-design-reviewer,scope-codex=qrspi-design-scope-reviewer"
+```
 
-- **Claude scope-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-design-scope-reviewer", model: "sonnet" })` in parallel with the quality reviewer, with a prompt containing only:
-  - `artifact_body`: same untrusted-data-wrapped `design.md` body
-  - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/design/round-NN/` (interpolate absolute path and round number)
-  - `round`: NN
-  - `reviewer_tag`: `scope-claude`
-  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/design/round-NN.diff` (omit when the artifact directory is not in a git repo)
-  - `scope_hint`: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>><scope_set as comma-separated tag list><<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` (scope-tagger narrowing — optional; include ONLY when using-qrspi step 12 (ref selection) narrowed for this round)
-
-  The scope-reviewer's Step-1 Read of `skills/design/owns-defers.md` delivers the Design OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
-
-- **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (quality + scope) via shell pipelines:
-
-  **Output format (per-finding emission, #109).** Emit ONLY finding blocks (each preceded by exactly the literal line `<<<FINDING-BOUNDARY>>>`) or the literal sentinel `NO_FINDINGS` on its own line. No prose outside finding bodies. No preamble, no summary, no commentary between findings. The orchestrator's splitter (`scripts/codex-finding-splitter.sh`) treats anything before the first boundary as discardable preamble; anything that is neither boundary-prefixed nor the `NO_FINDINGS` sentinel is malformed and produces zero finding files for this tag (caught at apply-fix step 2 as "expected tag produced no output").
-
-  **Worked one-finding example** (the example uses concrete `design` / `quality-codex` values to keep the prompt template fully literal — the implementer should NOT swap these to other artifact names; only the per-skill `artifact:` field of REAL findings emitted at runtime varies. Substitution-tokens like `<round>` and `<NN>` are placeholders Codex itself fills in at emission time):
-
-  ```
-  <<<FINDING-BOUNDARY>>>
-  ---
-  finding_id: R3-F01
-  severity: high
-  change_type: correctness
-  referenced_files: [skills/design/SKILL.md]
-  artifact: design
-  round: 3
-  reviewer: quality-codex
-  ---
-
-  The artifact's "Default action" sentence contradicts the change-type classifier in skills/reviewer-protocol/SKILL.md (which lists `style|clarity|correctness` as auto-apply and `scope|intent` as pause). Fix: rewrite the sentence to cite the classifier verbatim.
-  ```
-
-  **Worked zero-findings example.** When the analysis surfaces no findings, the entire output is exactly one line:
-
-  ```
-  NO_FINDINGS
-  ```
-
-  Nothing else — no boundary, no frontmatter, no commentary.
-
-  **Constraint reminder.** Emit only finding blocks (each preceded by `<<<FINDING-BOUNDARY>>>`) or the literal `NO_FINDINGS` sentinel; no prose outside finding bodies.
-
-  ```sh
-  # Quality reviewer (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-design-reviewer.md \
-    --reviewer-tag quality-codex \
-    --output-dir "<ABS_ARTIFACT_DIR>/reviews/design/round-${ROUND}/" \
-    --round "$ROUND" \
-    --artifact-body design.md \
-    --companion companion_goals=goals.md \
-    --companion companion_research=research/summary.md \
-    --diff-file "<ABS_ARTIFACT_DIR>/reviews/design/round-${ROUND}.diff" \
-    --scope-hint "$SCOPE_HINT"
-
-  # Scope reviewer (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-design-scope-reviewer.md \
-    --reviewer-tag scope-codex \
-    --output-dir "<ABS_ARTIFACT_DIR>/reviews/design/round-${ROUND}/" \
-    --round "$ROUND" \
-    --artifact-body design.md \
-    --diff-file "<ABS_ARTIFACT_DIR>/reviews/design/round-${ROUND}.diff" \
-    --scope-hint "$SCOPE_HINT"
-  ```
-
-  Main chat sees only the jobIds Codex prints. `$SCOPE_HINT` is the comma-separated tag list when using-qrspi step 12 (ref selection) narrowed this round, OR the empty string when broadened/round-1-or-2/scope_tagger_enabled=false.
-
-  After `await` returns, on exit 0 run the splitter to split Codex output into per-finding files:
-
-  ```sh
-  scripts/codex-companion-bg.sh await <jobId> > /tmp/codex-stdout-<jobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<jobId>.txt reviews/design/round-NN/ quality-codex
-  fi
-  # On either failure path (await non-zero OR splitter non-zero), the round
-  # directory has zero output for the tag — step 2's schema guard catches it.
-
-  scripts/codex-companion-bg.sh await <scopeJobId> > /tmp/codex-stdout-<scopeJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<scopeJobId>.txt reviews/design/round-NN/ scope-codex
-  fi
-  ```
+!cat skills/_shared/reviewer-dispatch-prose.md
 
 ### Human Gate
 

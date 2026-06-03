@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# T07 Slice 1 unit pin — run-third-party-llm.sh dispatcher contract.
+# T07 Slice 1 unit pin — dispatch-companion.sh dispatcher contract.
 #
 # Exercises the dispatcher's stdin-only prompt contract, exit-code matrix
 # (0/1/10/11/13/14/15), <artifact-dir>/config.md resolution, transport-type
@@ -17,7 +17,7 @@ load '../helpers/skill-markdown'
 
 setup_file() {
   require_repo_root
-  DISPATCHER="$REPO_ROOT/scripts/run-third-party-llm.sh"
+  DISPATCHER="$REPO_ROOT/scripts/dispatch-companion.sh"
   export DISPATCHER
   [ -x "$DISPATCHER" ] || chmod +x "$DISPATCHER" 2>/dev/null || true
 }
@@ -1031,9 +1031,9 @@ _extract_ctrl_check_fn() {
   #    match the _cc_ prefix convention used by the other locals in the helper.
   # 2. The assignment must have a fallback (|| ...) so that a tr-pipeline
   #    failure does not silently produce an empty string in the die message.
-  run grep -F '_cc_safe_hname=$(printf' "$BATS_TEST_DIRNAME/../../scripts/run-third-party-llm.sh"
+  run grep -F '_cc_safe_hname=$(printf' "$BATS_TEST_DIRNAME/../../scripts/dispatch-companion.sh"
   [ "$status" -eq 0 ]
-  run grep -E '\|\| _cc_safe_hname=' "$BATS_TEST_DIRNAME/../../scripts/run-third-party-llm.sh"
+  run grep -E '\|\| _cc_safe_hname=' "$BATS_TEST_DIRNAME/../../scripts/dispatch-companion.sh"
   [ "$status" -eq 0 ]
 }
 
@@ -1071,7 +1071,7 @@ _extract_ctrl_check_fn() {
 
 # ---------------------------------------------------------------------------
 # T8 — Cache-mechanism retirement: grep-based absence assertions on
-# scripts/run-third-party-llm.sh and skills/using-qrspi/SKILL.md.
+# scripts/dispatch-companion.sh and skills/using-qrspi/SKILL.md.
 #
 # These tests verify that the three load-bearing cache-mechanism literal
 # strings — cache_control, supports_prompt_cache, emit_cache_control_markers
@@ -1119,28 +1119,28 @@ _extract_ctrl_check_fn() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no cache_control literal (absence assertion)" {
+@test "[T8 / TE7] scripts/dispatch-companion.sh contains no cache_control literal (absence assertion)" {
   # Test expectation (TE7): a grep-based absence assertion in
   # tests/unit/test-run-third-party-llm.bats verifies that the literal string
-  # cache_control [...] is absent from scripts/run-third-party-llm.sh.
+  # cache_control [...] is absent from scripts/dispatch-companion.sh.
   [ -f "$DISPATCHER" ]
   run grep -nwE 'cache_control' "$DISPATCHER"
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no supports_prompt_cache literal (absence assertion)" {
+@test "[T8 / TE7] scripts/dispatch-companion.sh contains no supports_prompt_cache literal (absence assertion)" {
   # Test expectation (TE7): a grep-based absence assertion in
   # tests/unit/test-run-third-party-llm.bats verifies that the literal string
-  # [...] supports_prompt_cache [...] is absent from scripts/run-third-party-llm.sh.
+  # [...] supports_prompt_cache [...] is absent from scripts/dispatch-companion.sh.
   [ -f "$DISPATCHER" ]
   run grep -nwE 'supports_prompt_cache' "$DISPATCHER"
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE7] scripts/run-third-party-llm.sh contains no emit_cache_control_markers literal (absence assertion)" {
+@test "[T8 / TE7] scripts/dispatch-companion.sh contains no emit_cache_control_markers literal (absence assertion)" {
   # Test expectation (TE7): a grep-based absence assertion in
   # tests/unit/test-run-third-party-llm.bats verifies that the literal string
-  # [...] emit_cache_control_markers is absent from scripts/run-third-party-llm.sh.
+  # [...] emit_cache_control_markers is absent from scripts/dispatch-companion.sh.
   [ -f "$DISPATCHER" ]
   run grep -nwE 'emit_cache_control_markers' "$DISPATCHER"
   [ "$status" -ne 0 ]

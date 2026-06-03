@@ -3,7 +3,7 @@
 # tests/unit/test-codex-review-codex-availability.bats
 # Task 6 — R5 security fix: sec.F02 — absolute-path enforcement for HOME in
 # check_codex_available.
-# Target: scripts/run-codex-review.sh
+# Target: scripts/dispatch-agent.sh
 #
 # RED test for sec.F02: check_codex_available(claude-code) must reject a
 # relative HOME value with exit 1 and a stderr message containing "absolute".
@@ -33,7 +33,7 @@ bats_require_minimum_version 1.5.0
 setup_file() {
   REAL_REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
   export REAL_REPO_ROOT
-  WRAPPER="$REAL_REPO_ROOT/scripts/run-codex-review.sh"
+  WRAPPER="$REAL_REPO_ROOT/scripts/dispatch-agent.sh"
   export WRAPPER
 }
 

@@ -29,7 +29,7 @@
   },
   "Process": {
     "line_start": 81,
-    "line_end": 613
+    "line_end": 487
   },
   "Plan Overview Subagent": {
     "line_start": 83,
@@ -61,74 +61,74 @@
   },
   "Review Round": {
     "line_start": 263,
-    "line_end": 422
+    "line_end": 296
   },
   "Human Gate": {
-    "line_start": 423,
-    "line_end": 457
+    "line_start": 297,
+    "line_end": 331
   },
   "Quick-Fix Auto-Approve Branch": {
-    "line_start": 458,
-    "line_end": 475
+    "line_start": 332,
+    "line_end": 349
   },
   "Merge/Split Mechanics": {
-    "line_start": 476,
-    "line_end": 539
+    "line_start": 350,
+    "line_end": 413
   },
   "SPEC OVERRIDES SOURCE authority": {
-    "line_start": 540,
-    "line_end": 545
+    "line_start": 414,
+    "line_end": 419
   },
   "Refuse-to-Write Contract": {
-    "line_start": 546,
-    "line_end": 560
+    "line_start": 420,
+    "line_end": 434
   },
   "Migration: `visual_fidelity_check.ui_producing` → top-level `ui:`": {
-    "line_start": 561,
-    "line_end": 588
+    "line_start": 435,
+    "line_end": 462
   },
   "Artifacts": {
-    "line_start": 589,
-    "line_end": 593
+    "line_start": 463,
+    "line_end": 467
   },
   "`phase_start_commit` capture at approval time": {
-    "line_start": 594,
-    "line_end": 601
+    "line_start": 468,
+    "line_end": 475
   },
   "Terminal State": {
-    "line_start": 602,
-    "line_end": 613
+    "line_start": 476,
+    "line_end": 487
   },
   "Test Expectations": {
-    "line_start": 614,
-    "line_end": 693
+    "line_start": 488,
+    "line_end": 567
   },
   "Sweep Task Contract": {
-    "line_start": 620,
-    "line_end": 653
+    "line_start": 494,
+    "line_end": 527
   },
   "Cross-Task Consumer Surface": {
-    "line_start": 654,
-    "line_end": 693
+    "line_start": 528,
+    "line_end": 567
   },
   "Red Flags — STOP": {
-    "line_start": 694,
-    "line_end": 722
+    "line_start": 568,
+    "line_end": 596
   },
   "Visual-fidelity hard-gate (pre-fanout refusal condition)": {
-    "line_start": 713,
-    "line_end": 722
+    "line_start": 587,
+    "line_end": 596
   },
   "Common Rationalizations — STOP": {
-    "line_start": 723,
-    "line_end": 736
+    "line_start": 597,
+    "line_end": 610
   },
   "Worked Example": {
-    "line_start": 737,
-    "line_end": 774
+    "line_start": 611,
+    "line_end": 648
   },
   "Iron Laws — Final Reminder": {
-    "line_start": 775,
-    "line_end": 785
+    "line_start": 649,
+    "line_end": 659
   }
 }

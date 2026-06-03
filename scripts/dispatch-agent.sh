@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
-# run-codex-review.sh — thin forwarder around scripts/run-third-party-llm.sh.
+# dispatch-agent.sh — universal reviewer/agent dispatch entry point.
+#
+# Renamed from the legacy review wrapper (CD-1 vendor-neutral dispatch rename). Two
+# invocation modes share this entry point:
+#   - Batched form (`--step/--round/--output-dir/--artifact/--agents`): resolves
+#     N reviewers in one call, emits one `MODE=first_party …` spec line per
+#     first-party reviewer to stdout, and records each dispatch in
+#     `<output-dir>/.dispatch-manifest.json`.
+#   - Single-reviewer form (the historical flag surface below): assembles one
+#     reviewer prompt and either writes a first-party DISPATCH_FILE or forwards
+#     the assembled prompt over stdin to `scripts/dispatch-companion.sh`.
 #
 # Per T04 of the v0.7 release: this script no longer drives the Codex broker
 # directly. It preserves its existing caller-facing flag surface (assembling
 # the reviewer prompt from the reviewer-protocol body, the named agent body
 # with frontmatter stripped, the codex-emission override, and a Dispatch
 # parameters block), and then forwards the assembled prompt over stdin to
-# `scripts/run-third-party-llm.sh` with `--provider codex --model <id>
+# `scripts/dispatch-companion.sh` with `--provider codex --model <id>
 # --output-file <path> --artifact-dir <dir>`. Transport selection
 # (codex-broker) is config-driven via the `codex` entry in
 # `<artifact-dir>/config.md`'s `providers:` block — this shim does NOT pass
@@ -14,7 +24,7 @@
 #
 # Usage (existing flag surface preserved, three new required flags added
 # for the dispatcher hand-off):
-#   scripts/run-codex-review.sh \
+#   scripts/dispatch-agent.sh \
 #     --agent-file agents/qrspi-spec-reviewer.md \
 #     --reviewer-tag spec-codex \
 #     --output-dir <ABS>/reviews/tasks/task-NN/round-N/ \
@@ -410,8 +420,8 @@ emit_dispatch_manifest_entry() {
     --arg host      "$detected_host" \
     --arg vendor    "openai-codex" \
     --arg model     "$MODEL" \
-    --arg await_cmd "scripts/run-third-party-llm.sh await $job_id" \
-    --arg split_cmd "scripts/codex-finding-splitter.sh --round-dir $OUTPUT_DIR --tag $REVIEWER_TAG" \
+    --arg await_cmd "scripts/dispatch-companion.sh await $job_id" \
+    --arg split_cmd "scripts/third-party-finding-splitter.sh --round-dir $OUTPUT_DIR --tag $REVIEWER_TAG" \
     '{tag: $tag, agent: $agent, mode: $mode, status: $status, job_id: $job_id,
       dispatch_spec: {subagent_type: $subtype, host: $host, vendor: $vendor, model: $model},
       await_cmd: $await_cmd, split_cmd: $split_cmd}')" \
@@ -456,12 +466,244 @@ emit_first_party_manifest_entry() {
 # parsing or validation.
 #
 # `return 0` is only valid in a sourced context.  When the script is executed
-# directly (`bash run-codex-review.sh`) the failed `return` does not abort
+# directly (`bash dispatch-agent.sh`) the failed `return` does not abort
 # execution and would fall through into argument parsing.
 # `return 0 2>/dev/null || exit 0` works in both modes: `return 0` succeeds
 # when sourced; `exit 0` fires when executed directly.
 if [[ "${QRSPI_SOURCE_ONLY:-}" == "1" ]]; then
   return 0 2>/dev/null || exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Batched dispatch mode (CD-1 #3 universal entry point).
+#
+# When invoked with the batched flag surface (`--step` / `--agents`), this
+# entry point resolves N reviewers in a single call: for each `tag=agent-file`
+# pair it resolves the agent's tier -> vendor -> model, assembles the reviewer
+# prompt into `<output-dir>/.dispatch/<tag>.prompt`, and — for first-party
+# (host x vendor) routings — emits one spec line to stdout:
+#
+#   MODE=first_party TAG=<tag> SUBAGENT_TYPE=<agent-name> MODEL=<model> PROMPT_FILE=<abs-path>
+#
+# Each dispatch is recorded in `<output-dir>/.dispatch-manifest.json`. Third-
+# party routings record a `mode=background` manifest entry (drained later by
+# await-round.sh) and emit no spec line. The prompt body is NEVER echoed to
+# stdout — only the small spec line.
+#
+# The single-reviewer flag surface (further below) is preserved unchanged for
+# ad-hoc invocations; batched mode is detected before single-mode arg parsing.
+# ---------------------------------------------------------------------------
+
+_is_batch_mode=false
+for _arg in "$@"; do
+  case "$_arg" in
+    --step|--agents) _is_batch_mode=true; break ;;
+  esac
+done
+
+if [[ "$_is_batch_mode" == "true" ]]; then
+  BATCH_STEP=""
+  BATCH_ROUND=""
+  BATCH_OUTPUT_DIR=""
+  BATCH_ARTIFACT=""
+  BATCH_AGENTS=""
+  BATCH_TIER_OVERRIDE=""
+  BATCH_TASK_BRANCH=""
+  BATCH_IMPL_COMMIT=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --step)              require_value "--step" "$#";              BATCH_STEP="$2"; shift 2 ;;
+      --round)             require_value "--round" "$#";             BATCH_ROUND="$2"; shift 2 ;;
+      --output-dir)        require_value "--output-dir" "$#";        BATCH_OUTPUT_DIR="$2"; shift 2 ;;
+      --artifact)          require_value "--artifact" "$#";          BATCH_ARTIFACT="$2"; shift 2 ;;
+      --agents)            require_value "--agents" "$#";            BATCH_AGENTS="$2"; shift 2 ;;
+      --tier-override)     require_value "--tier-override" "$#";     BATCH_TIER_OVERRIDE="$2"; shift 2 ;;
+      --task-branch)       require_value "--task-branch" "$#";       BATCH_TASK_BRANCH="$2"; shift 2 ;;
+      --implementer-commit) require_value "--implementer-commit" "$#"; BATCH_IMPL_COMMIT="$2"; shift 2 ;;
+      *)
+        echo "error: unrecognized flag in batched dispatch: $1" >&2
+        exit 1 ;;
+    esac
+  done
+
+  if [[ -z "$BATCH_STEP" ]];       then echo "error: --step required"        >&2; exit 1; fi
+  if [[ -z "$BATCH_ROUND" ]];      then echo "error: --round required"       >&2; exit 1; fi
+  if [[ -z "$BATCH_OUTPUT_DIR" ]]; then echo "error: --output-dir required"  >&2; exit 1; fi
+  if [[ "${BATCH_OUTPUT_DIR:0:1}" != "/" ]]; then
+    echo "error: --output-dir must be absolute: $BATCH_OUTPUT_DIR" >&2; exit 1
+  fi
+  if [[ -z "$BATCH_AGENTS" ]];     then echo "error: --agents required"      >&2; exit 1; fi
+
+  # Source the routing-resolution library for tier -> model + host x vendor
+  # matrix lookups. QRSPI_SOURCE_ONLY keeps the source side-effect-free.
+  _resolve_lib="$REPO_ROOT/scripts/_resolve-lib.sh"
+  if [[ -r "$_resolve_lib" ]]; then
+    # shellcheck disable=SC1090
+    QRSPI_SOURCE_ONLY=1 . "$_resolve_lib" || true
+  fi
+
+  mkdir -p "$BATCH_OUTPUT_DIR/.dispatch" \
+    || { echo "error: cannot create dispatch dir $BATCH_OUTPUT_DIR/.dispatch" >&2; exit 1; }
+
+  # If the batch references a config.md (model_routing source), expose it to the
+  # resolve-lib functions via CONFIG_MD. Look beside the output-dir's artifact
+  # tree only when not already set by the caller.
+  _batch_host="$(detect_host)"
+
+  # strip_frontmatter_batch <file> — drop the leading YAML frontmatter block.
+  strip_frontmatter_batch() {
+    awk '/^---$/ && n<2 {n++; next} n>=2 {print}' "$1"
+  }
+
+  # Resolve the absolute artifact path (relative paths resolve under REPO_ROOT).
+  BATCH_ARTIFACT_ABS=""
+  if [[ -n "$BATCH_ARTIFACT" ]]; then
+    if [[ "$BATCH_ARTIFACT" == /* ]]; then
+      BATCH_ARTIFACT_ABS="$BATCH_ARTIFACT"
+    else
+      BATCH_ARTIFACT_ABS="$REPO_ROOT/$BATCH_ARTIFACT"
+    fi
+  fi
+
+  REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
+  EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md"
+
+  # Per-vendor fallback model — used only when config.md model_routing cannot be
+  # consulted (e.g., ad-hoc invocation without a run config). A loud warning is
+  # emitted so the operator knows resolution degraded to a default.
+  _fallback_model_for_vendor() {
+    case "$1" in
+      codex) printf 'gpt-5-codex\n' ;;
+      *)     printf 'claude-sonnet-4.6\n' ;;
+    esac
+  }
+
+  # Parse the comma-separated --agents list into tag=agent pairs (bash 3.2: no
+  # mapfile). Each pair is `tag=<agent-file-path-or-name>`.
+  _saved_ifs="$IFS"
+  IFS=','
+  set -f
+  # shellcheck disable=SC2086
+  set -- $BATCH_AGENTS
+  set +f
+  IFS="$_saved_ifs"
+
+  _emitted_any=false
+  for _pair in "$@"; do
+    [[ -z "$_pair" ]] && continue
+    if [[ "$_pair" != *=* ]]; then
+      echo "error: --agents entry must be tag=agent (got: $_pair)" >&2
+      exit 1
+    fi
+    _tag="${_pair%%=*}"
+    _agent_ref="${_pair#*=}"
+    if [[ -z "$_tag" || -z "$_agent_ref" ]]; then
+      echo "error: --agents entry must have non-empty tag and agent (got: $_pair)" >&2
+      exit 1
+    fi
+
+    # Resolve agent file path: an absolute path or a repo-relative path is used
+    # verbatim; a bare agent name resolves to agents/<name>.md.
+    if [[ "$_agent_ref" == /* ]]; then
+      _agent_file="$_agent_ref"
+    elif [[ -f "$REPO_ROOT/$_agent_ref" ]]; then
+      _agent_file="$REPO_ROOT/$_agent_ref"
+    else
+      _agent_file="$REPO_ROOT/agents/${_agent_ref}.md"
+    fi
+    if [[ ! -f "$_agent_file" ]]; then
+      echo "error: agent file not found for tag '$_tag': $_agent_file" >&2
+      exit 1
+    fi
+    _agent_name="$(basename "${_agent_file%.md}")"
+
+    # Vendor is encoded in the tag suffix (e.g., quality-claude -> claude,
+    # spec-codex -> codex). Default to claude when no recognised suffix.
+    case "$_tag" in
+      *-codex) _vendor="codex" ;;
+      *-claude) _vendor="claude" ;;
+      *) _vendor="claude" ;;
+    esac
+
+    # Resolve tier (per-tag override allowed) -> model.
+    _tier_override_for_tag=""
+    if [[ -n "$BATCH_TIER_OVERRIDE" ]]; then
+      # tier-override is a comma-list of tag=tier; pick this tag's entry if any.
+      _to_saved_ifs="$IFS"; IFS=','
+      for _to in $BATCH_TIER_OVERRIDE; do
+        if [[ "$_to" == "$_tag="* ]]; then
+          _tier_override_for_tag="${_to#*=}"
+        fi
+      done
+      IFS="$_to_saved_ifs"
+    fi
+
+    _tier="medium"
+    if declare -f resolve_tier >/dev/null 2>&1; then
+      _tier="$(resolve_tier "$_agent_file" "$_tier_override_for_tag" 2>/dev/null || echo medium)"
+      [[ -z "$_tier" ]] && _tier="medium"
+    fi
+
+    _model=""
+    if declare -f resolve_model >/dev/null 2>&1 && [[ -n "${CONFIG_MD:-}" ]]; then
+      _model="$(resolve_model "$_tier" 2>/dev/null | sed -E 's/.*model:[[:space:]]*//; s/[[:space:]]*}[[:space:]]*$//' || true)"
+    fi
+    if [[ -z "$_model" ]]; then
+      _model="$(_fallback_model_for_vendor "$_vendor")"
+      echo "[routing] WARN: model_routing unavailable for tier '$_tier'; tag '$_tag' falling back to default model '$_model'" >&2
+    fi
+
+    # Host x vendor matrix: first-party or third-party.
+    _path="first-party"
+    if declare -f lookup_host_vendor_path >/dev/null 2>&1; then
+      _path="$(lookup_host_vendor_path "$_batch_host" "$_vendor")"
+    fi
+
+    # Assemble the reviewer prompt into <output-dir>/.dispatch/<tag>.prompt.
+    _prompt_file="$BATCH_OUTPUT_DIR/.dispatch/${_tag}.prompt"
+    {
+      [[ -f "$REVIEWER_PROTOCOL_ABS" ]] && strip_frontmatter_batch "$REVIEWER_PROTOCOL_ABS"
+      printf '\n\n---\n\n'
+      strip_frontmatter_batch "$_agent_file"
+      printf '\n\n---\n\n'
+      [[ -f "$EMISSION_OVERRIDE_ABS" ]] && cat "$EMISSION_OVERRIDE_ABS"
+      printf '\n\n<<<AGENT-BODY-END>>>\n'
+      printf '\n## Dispatch parameters\n\n'
+      if [[ -n "$BATCH_ARTIFACT_ABS" && -f "$BATCH_ARTIFACT_ABS" ]]; then
+        printf 'artifact_body:\n'
+        printf '<<<UNTRUSTED-ARTIFACT-START id=%s>>>\n' "$BATCH_ARTIFACT"
+        cat "$BATCH_ARTIFACT_ABS"
+        printf '\n<<<UNTRUSTED-ARTIFACT-END id=%s>>>\n' "$BATCH_ARTIFACT"
+      fi
+      printf 'round_subdir: %s\n' "$BATCH_OUTPUT_DIR"
+      printf 'round: %s\n' "$BATCH_ROUND"
+      printf 'reviewer_tag: %s\n' "$_tag"
+    } > "$_prompt_file" \
+      || { echo "error: failed to assemble prompt for tag '$_tag'" >&2; exit 1; }
+
+    # Set the globals the manifest helpers read, then record the dispatch.
+    REVIEWER_TAG="$_tag"
+    AGENT_FILE="$_agent_file"
+    MODEL="$_model"
+    OUTPUT_DIR="$BATCH_OUTPUT_DIR"
+
+    if [[ "$_path" == "first-party" ]]; then
+      # Emit the orchestrator-facing spec line (prompt body stays on disk).
+      printf 'MODE=first_party TAG=%s SUBAGENT_TYPE=%s MODEL=%s PROMPT_FILE=%s\n' \
+        "$_tag" "$_agent_name" "$_model" "$_prompt_file"
+      emit_first_party_manifest_entry "$_prompt_file" "$_vendor" "$_model"
+      _emitted_any=true
+    else
+      # Third-party routing: record a background manifest entry for await-round
+      # to drain. No spec line is emitted (background-only).
+      emit_dispatch_manifest_entry "" "pending"
+    fi
+  done
+
+  # Loud one-line audit signal across the whole batch (host-relative routing).
+  echo "[dispatch-agent] step=$BATCH_STEP round=$BATCH_ROUND host=$_batch_host agents dispatched (manifest: $BATCH_OUTPUT_DIR/.dispatch-manifest.json)" >&2
+  exit 0
 fi
 
 while [[ $# -gt 0 ]]; do
@@ -906,7 +1148,7 @@ fi
 # a first_party manifest entry and exit 0.
 #
 # Claude Code (shell-pipeline) → third-party path: pipe the assembled prompt
-# to run-third-party-llm.sh.  Capture the dispatcher's stdout to extract a
+# to dispatch-companion.sh.  Capture the dispatcher's stdout to extract a
 # JOB_ID line if present.  After a successful dispatch, persist the manifest
 # entry with the captured job_id.  Exit code is propagated unchanged from
 # the transport; on non-zero we persist a "failed" manifest entry so the
@@ -958,9 +1200,9 @@ echo "[transport: shell-pipeline]" >&2
 # DISPATCHER existence check is here (not at module-init scope) so the
 # first-party copilot-cli path is never blocked by a missing dispatcher
 # binary.  Only the third-party branch needs the dispatcher.
-DISPATCHER="$REPO_ROOT/scripts/run-third-party-llm.sh"
+DISPATCHER="$REPO_ROOT/scripts/dispatch-companion.sh"
 if [[ ! -x "$DISPATCHER" && ! -r "$DISPATCHER" ]]; then
-  echo "error: run-third-party-llm.sh not found at $DISPATCHER" >&2
+  echo "error: dispatch-companion.sh not found at $DISPATCHER" >&2
   exit 1
 fi
 

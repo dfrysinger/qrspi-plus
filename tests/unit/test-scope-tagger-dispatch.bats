@@ -233,55 +233,27 @@ setup() {
 # emit reviewer dispatches).
 SCOPED_SKILLS_LIST=(goals questions research design phasing structure parallelize plan replan integrate implement)
 
-@test "[112-PR2] every in-scope per-step SKILL.md wires --scope-hint into every Codex reviewer dispatch" {
-  # B9 contract pin: every Codex reviewer dispatch MUST pass --scope-hint.
-  # After the run-codex-review.sh migration, dispatches are wrapper invocations,
-  # not raw printf blocks. Count run-codex-review.sh occurrences and assert
-  # every one has a paired --scope-hint flag.
-  for skill in goals questions research design phasing structure parallelize plan replan integrate implement; do
-    skill_path="$REPO_ROOT/skills/$skill/SKILL.md"
-    [ -f "$skill_path" ] || { echo "missing $skill_path"; return 1; }
-
-    # Each invocation begins with `scripts/run-codex-review.sh \` (line continuation).
-    # Each MUST include `--scope-hint` somewhere in its multi-line command.
-    wrapper_count=$(grep -cE '^\s*scripts/run-codex-review\.sh \\$' "$skill_path" || true)
-    scope_hint_count=$(grep -cE '^\s*--scope-hint ' "$skill_path" || true)
-
-    # Plan/SKILL.md uses elision (`[...same flags as above...]`) for repeated
-    # reviewer blocks. Treat elided blocks as inheriting --scope-hint from the
-    # canonical block above. So scope_hint_count may be < wrapper_count when
-    # elision is used; the floor is "at least one --scope-hint per file".
-    if [[ "$wrapper_count" -lt 1 ]]; then
-      echo "skill $skill: zero run-codex-review.sh invocations (expected at least 1)"
-      return 1
-    fi
-    if [[ "$scope_hint_count" -lt 1 ]]; then
-      echo "skill $skill: zero --scope-hint flags (every reviewer dispatch must wire scope_hint)"
-      return 1
-    fi
-  done
+@test "[112-PR2] dispatch-agent.sh wires --scope-hint into the assembled reviewer prompt" {
+  # CD-1 (Task 20): per-skill Codex `--scope-hint` wiring collapsed into the
+  # universal dispatcher. dispatch-agent.sh accepts `--scope-hint` and emits a
+  # `scope_hint:` line into each first-party reviewer prompt; per-skill prose no
+  # longer carries the flag.
+  local s="$REPO_ROOT/scripts/dispatch-agent.sh"
+  [ -f "$s" ]
+  grep -qE '[-][-]scope-hint\)' "$s"
+  grep -qE 'scope_hint:' "$s"
 }
-
-@test "[112-PR2] every in-scope per-step SKILL.md wraps scope_hint values in untrusted-data markers (B2)" {
-  # The wrapper contract from B2: scope_hint values MUST be wrapped between
-  # <<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>> and -END markers. After the
-  # run-codex-review.sh migration, the wrapping is performed inside the wrapper
-  # script itself — assert the wrapper script contains the markers.
-  wrapper="$REPO_ROOT/scripts/run-codex-review.sh"
-  [ -f "$wrapper" ] || { echo "missing wrapper: $wrapper"; return 1; }
-  grep -qF '<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>' "$wrapper" \
-    || { echo "wrapper missing UNTRUSTED-SCOPE-HINT-START marker"; return 1; }
-  grep -qF '<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>' "$wrapper" \
-    || { echo "wrapper missing UNTRUSTED-SCOPE-HINT-END marker"; return 1; }
-
-  # Every in-scope per-step SKILL.md still describes scope_hint semantics in
-  # prose (the B2 contract surface), even though the markers themselves now
-  # live in the wrapper. Loose check — the prose mentions the wrapped form.
-  for skill in goals questions research design phasing structure parallelize plan replan integrate implement; do
-    skill_path="$REPO_ROOT/skills/$skill/SKILL.md"
-    grep -qF 'UNTRUSTED-SCOPE-HINT-START id=scope_hint' "$skill_path" \
-      || { echo "skill $skill: prose no longer references the UNTRUSTED-SCOPE-HINT-START marker"; return 1; }
-  done
+@test "[112-PR2] scope_hint values are wrapped in untrusted-data markers (B2)" {
+  # CD-1 (Task 20): the B2 untrusted-data wrapping for scope_hint now lives in
+  # the universal dispatcher (dispatch-agent.sh wraps the value between the
+  # UNTRUSTED-SCOPE-HINT markers when assembling the reviewer prompt), not in
+  # per-skill prose.
+  local s="$REPO_ROOT/scripts/dispatch-agent.sh"
+  [ -f "$s" ]
+  grep -qF 'UNTRUSTED-SCOPE-HINT-START id=scope_hint' "$s" \
+    || { echo "dispatch-agent.sh missing UNTRUSTED-SCOPE-HINT-START marker"; return 1; }
+  grep -qF 'UNTRUSTED-SCOPE-HINT-END id=scope_hint' "$s" \
+    || { echo "dispatch-agent.sh missing UNTRUSTED-SCOPE-HINT-END marker"; return 1; }
 }
 
 @test "[112-PR2] every in-scope reviewer agent has a ## Scope Hint section (B9)" {

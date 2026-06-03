@@ -109,104 +109,17 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel rev
 
 Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — phasing", description: "pre-fanout: parallel reviewer dispatch reads ten-artifact set. User decides whether to /compact." })`.
 
-- **Claude quality-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-phasing-reviewer", model: "sonnet" })` with a prompt containing only:
-  - `artifact_body`: `phasing.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=phasing.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=phasing.md>>>` markers
-  - `companion_roadmap`: `roadmap.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=roadmap.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=roadmap.md>>>` markers
-  - `companion_pruned_pairs`: concatenated content of the four pruned + four future-* artifacts, each wrapped in its own `<<<UNTRUSTED-ARTIFACT-START id={filename}>>>` / `<<<UNTRUSTED-ARTIFACT-END>>>` pair
-  - `companion_goals_snapshot`: pre-prune `goals.md` snapshot wrapped between `<<<UNTRUSTED-ARTIFACT-START id=goals-snapshot.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=goals-snapshot.md>>>` markers (if available)
-  - `companion_design_snapshot`: pre-prune `design.md` snapshot wrapped between `<<<UNTRUSTED-ARTIFACT-START id=design-snapshot.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=design-snapshot.md>>>` markers (if available)
-  - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/phasing/round-NN/` (interpolate absolute path and round number)
-  - `round`: NN
-  - `reviewer_tag`: `quality-claude`
-  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/phasing/round-NN.diff` (omit when the artifact directory is not in a git repo)
-  - `scope_hint`: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>><scope_set as comma-separated tag list><<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` (scope-tagger narrowing — optional; include ONLY when using-qrspi step 12 (ref selection) narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
+The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → Task fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
 
-  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Phasing-specific checks (Iron Law 1, Phase 1 PoC guideline, pruning procedure, goal-ID consistency) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
+```sh
+REVIEW_STEP="phasing"
+REVIEW_ROUND="${ROUND}"                                  # current review round (NN)
+REVIEW_OUTPUT_DIR="<ABS_ARTIFACT_DIR>/reviews/phasing/round-${ROUND}/"
+REVIEW_ARTIFACT="phasing.md"
+REVIEW_AGENTS="quality-claude=qrspi-phasing-reviewer,scope-claude=qrspi-phasing-scope-reviewer,quality-codex=qrspi-phasing-reviewer,scope-codex=qrspi-phasing-scope-reviewer"
+```
 
-- **Claude scope-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-phasing-scope-reviewer", model: "sonnet" })` in parallel with the quality reviewer, with a prompt containing only:
-  - `artifact_body`: same untrusted-data-wrapped `phasing.md` body
-  - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/phasing/round-NN/` (interpolate absolute path and round number)
-  - `round`: NN
-  - `reviewer_tag`: `scope-claude`
-  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/phasing/round-NN.diff` (omit when the artifact directory is not in a git repo)
-  - `scope_hint`: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>><scope_set as comma-separated tag list><<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` (scope-tagger narrowing — optional; include ONLY when using-qrspi step 12 (ref selection) narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
-
-  The scope-reviewer's Step-1 Read of `skills/phasing/owns-defers.md` delivers the Phasing OWNS/DEFERS contract at runtime. **Fail-closed on malformed OWNS/DEFERS:** if the `## Phasing OWNS / Phasing DEFERS` section is missing or malformed, the scope-reviewer MUST emit a finding with `severity: high` and `change_type: correctness` and refuse to proceed (the schema only permits severity ∈ {low, medium, high}). Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
-
-- **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (quality + scope) via shell pipelines:
-
-  **Output format (per-finding emission, #109).** Emit ONLY finding blocks (each preceded by exactly the literal line `<<<FINDING-BOUNDARY>>>`) or the literal sentinel `NO_FINDINGS` on its own line. No prose outside finding bodies. No preamble, no summary, no commentary between findings. The orchestrator's splitter (`scripts/codex-finding-splitter.sh`) treats anything before the first boundary as discardable preamble; anything that is neither boundary-prefixed nor the `NO_FINDINGS` sentinel is malformed and produces zero finding files for this tag (caught at apply-fix step 2 as "expected tag produced no output").
-
-  **Worked one-finding example** (the example uses concrete `design` / `quality-codex` values to keep the prompt template fully literal — the implementer should NOT swap these to other artifact names; only the per-skill `artifact:` field of REAL findings emitted at runtime varies. Substitution-tokens like `<round>` and `<NN>` are placeholders Codex itself fills in at emission time):
-
-  ```
-  <<<FINDING-BOUNDARY>>>
-  ---
-  finding_id: R3-F01
-  severity: high
-  change_type: correctness
-  referenced_files: [skills/design/SKILL.md]
-  artifact: design
-  round: 3
-  reviewer: quality-codex
-  ---
-
-  The artifact's "Default action" sentence contradicts the change-type classifier in skills/reviewer-protocol/SKILL.md (which lists `style|clarity|correctness` as auto-apply and `scope|intent` as pause). Fix: rewrite the sentence to cite the classifier verbatim.
-  ```
-
-  **Worked zero-findings example.** When the analysis surfaces no findings, the entire output is exactly one line:
-
-  ```
-  NO_FINDINGS
-  ```
-
-  Nothing else — no boundary, no frontmatter, no commentary.
-
-  **Constraint reminder.** Emit only finding blocks (each preceded by `<<<FINDING-BOUNDARY>>>`) or the literal `NO_FINDINGS` sentinel; no prose outside finding bodies.
-
-  ```sh
-  # Quality reviewer (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-phasing-reviewer.md \
-    --reviewer-tag quality-codex \
-    --output-dir "<ABS_ARTIFACT_DIR>/reviews/phasing/round-${ROUND}/" \
-    --round "$ROUND" \
-    --artifact-body phasing.md \
-    --companion companion_roadmap=roadmap.md \
-    --companion companion_pruned_pairs=<path to pruned-pairs file> \
-    --companion companion_goals_snapshot=<path to goals snapshot> \
-    --companion companion_design_snapshot=<path to design snapshot> \
-    --diff-file "<ABS_ARTIFACT_DIR>/reviews/phasing/round-${ROUND}.diff" \
-    --scope-hint "$SCOPE_HINT"
-
-  # Scope reviewer (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-phasing-scope-reviewer.md \
-    --reviewer-tag scope-codex \
-    --output-dir "<ABS_ARTIFACT_DIR>/reviews/phasing/round-${ROUND}/" \
-    --round "$ROUND" \
-    --artifact-body phasing.md \
-    --diff-file "<ABS_ARTIFACT_DIR>/reviews/phasing/round-${ROUND}.diff" \
-    --scope-hint "$SCOPE_HINT"
-  ```
-
-  Main chat sees only the jobIds Codex prints.
-
-  After `await` returns, on exit 0 run the splitter to split Codex output into per-finding files:
-
-  ```sh
-  scripts/codex-companion-bg.sh await <jobId> > /tmp/codex-stdout-<jobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<jobId>.txt reviews/phasing/round-NN/ quality-codex
-  fi
-  # On either failure path (await non-zero OR splitter non-zero), the round
-  # directory has zero output for the tag — step 2's schema guard catches it.
-
-  scripts/codex-companion-bg.sh await <scopeJobId> > /tmp/codex-stdout-<scopeJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<scopeJobId>.txt reviews/phasing/round-NN/ scope-codex
-  fi
-  ```
+!cat skills/_shared/reviewer-dispatch-prose.md
 
 ### Human Gate
 

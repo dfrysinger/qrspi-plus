@@ -179,19 +179,16 @@ setup() {
   fi
 }
 
-@test "[T36-1] design SKILL Review Round still asserts the design addresses all goals" {
-  # Replacement wording: the reviewer should still verify that design
-  # addresses goals (T9 keeps goals as the upstream traceability anchor).
-  # We assert the post-T9 canonical phrasing — "addresses all goals"
-  # (matches structure SKILL's analogous reviewer-prompt phrasing) — is
-  # present inside the Review Round subsection.
-  local section
-  section=$(extract_section_fence_aware "$DESIGN_FILE" "### Review Round")
-  if [ -z "$section" ]; then
-    echo "Could not extract '### Review Round' subsection from design SKILL.md" >&2
-    return 1
-  fi
-  echo "$section" | grep -Eiq "addresses (all )?goals"
+@test "[T36-1] design reviewer still asserts the design addresses all goals" {
+  # CD-1 (Task 20): the per-skill Review Round reviewer-prompt bullets collapsed
+  # into the shared reviewer-dispatch include; the "design addresses all goals"
+  # traceability check (T9 keeps goals as the upstream anchor) now lives in the
+  # reviewer agent body (agents/qrspi-design-reviewer.md). The design SKILL routes
+  # its Review Round through the shared include.
+  local agent="$BATS_TEST_DIRNAME/../../agents/qrspi-design-reviewer.md"
+  [ -f "$agent" ]
+  grep -Eiq "addresses (all )?goals" "$agent" \
+    || { echo "design-reviewer agent no longer asserts the design addresses all goals"; return 1; }
 }
 
 @test "[T36-2] design SKILL Artifact Gating no longer silently defaults codex_reviews to false" {

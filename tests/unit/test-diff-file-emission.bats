@@ -191,42 +191,15 @@ setup() {
   fi
 }
 
-@test "[112-PR1] every in-scope per-step SKILL.md names diff_file_path on the contract surface" {
-  # Couple the per-step prose check to the contract parameter name itself.
-  # After the run-codex-review.sh migration, Codex dispatches use `--diff-file`
-  # instead of the literal `diff_file_path:` printf format, but the contract
-  # surface is the union: prose mentions + Claude dispatch bullets (still
-  # `diff_file_path:`) + Codex wrapper invocations (`--diff-file`). Floor:
-  # 3 combined occurrences (1 prose + ≥1 Claude bullet + ≥1 Codex --diff-file).
-  local in_scope=(
-    goals
-    questions
-    research
-    design
-    phasing
-    structure
-    parallelize
-    replan
-    plan
-    integrate
-    implement
-  )
-  local missing=()
-  local skill
-  for skill in "${in_scope[@]}"; do
-    local f="$REPO_ROOT/skills/${skill}/SKILL.md"
-    local n_diff_file_path n_diff_file_flag n
-    n_diff_file_path=$(grep -c "diff_file_path" "$f")
-    n_diff_file_flag=$(grep -cE '^\s*--diff-file ' "$f")
-    n=$((n_diff_file_path + n_diff_file_flag))
-    if [ "$n" -lt 3 ]; then
-      missing+=("$f (combined count=$n: diff_file_path=$n_diff_file_path, --diff-file=$n_diff_file_flag)")
-    fi
-  done
-  if [ "${#missing[@]}" -gt 0 ]; then
-    printf 'FAIL: per-step SKILL.md has fewer than 3 combined diff_file_path/--diff-file occurrences (1 prose + Claude bullet + Codex wrapper invocation):\n%s\n' "${missing[@]}" >&2
-    return 1
-  fi
+@test "[112-PR1] diff_file_path is assembled on the universal dispatch contract surface" {
+  # CD-1 (Task 20): per-skill Codex `--diff-file` wiring collapsed into the
+  # universal dispatcher. dispatch-agent.sh derives the round diff and emits
+  # `diff_file_path:` into the assembled reviewer prompt; per-skill prose no
+  # longer carries the flag. The contract surface is now the dispatcher script.
+  local s="$REPO_ROOT/scripts/dispatch-agent.sh"
+  [ -f "$s" ]
+  grep -qE 'diff_file_path' "$s"
+  grep -qE '[-][-]diff-file' "$s"
 }
 
 @test "[112-PR1] every in-scope per-step SKILL.md wires diff_file_path into Claude dispatch bullets (per-dispatch)" {
@@ -281,61 +254,25 @@ setup() {
   fi
 }
 
-@test "[112-PR1] every in-scope per-step SKILL.md wires --diff-file into Codex wrapper invocations" {
-  # Per-step assertion: every Codex reviewer dispatch (run-codex-review.sh
-  # invocation) in in-scope SKILLs MUST carry the --diff-file flag. After the
-  # wrapper migration, the dispatch shape is `scripts/run-codex-review.sh \`
-  # followed by flags including `--diff-file`. Plan/SKILL.md uses elision
-  # (`[...same flags as above...]`) for repeated reviewer blocks; those
-  # elided blocks inherit --diff-file from their canonical sibling and don't
-  # need a literal flag — so the floor is "≥1 --diff-file per skill".
-  local in_scope=(
-    goals
-    questions
-    research
-    design
-    phasing
-    structure
-    parallelize
-    replan
-    plan
-    integrate
-    implement
-  )
-  local missing=()
-  local skill
-  for skill in "${in_scope[@]}"; do
-    local f="$REPO_ROOT/skills/${skill}/SKILL.md"
-    local n_wrapper n_diff_flag
-    n_wrapper=$(grep -cE '^\s*scripts/run-codex-review\.sh \\$' "$f" || true)
-    n_diff_flag=$(grep -cE '^\s*--diff-file ' "$f" || true)
-    if [ "$n_wrapper" -lt 1 ]; then
-      missing+=("$f (zero run-codex-review.sh invocations)")
-      continue
-    fi
-    if [ "$n_diff_flag" -lt 1 ]; then
-      missing+=("$f (zero --diff-file flags but $n_wrapper wrapper invocations)")
-    fi
-  done
-  if [ "${#missing[@]}" -gt 0 ]; then
-    printf 'FAIL: per-step SKILL.md missing --diff-file in Codex wrapper invocations:\n%s\n' "${missing[@]}" >&2
-    return 1
-  fi
+@test "[112-PR1] dispatch-agent.sh wires --diff-file into the assembled reviewer prompt" {
+  # CD-1 (Task 20): the per-reviewer Codex wrapper invocations are gone from
+  # skill prose; dispatch-agent.sh accepts `--diff-file` and emits the
+  # `diff_file_path:` line into each first-party reviewer prompt it assembles.
+  local s="$REPO_ROOT/scripts/dispatch-agent.sh"
+  [ -f "$s" ]
+  grep -qE '[-][-]diff-file\)' "$s"
+  grep -qE "diff_file_path:" "$s"
 }
 
-@test "[112-PR1] skills/test/SKILL.md Codex wrapper invocations do NOT carry --diff-file" {
-  # Defense-in-depth on the test-step opt-out: skills/test/SKILL.md is
-  # explicitly out-of-scope for #112 Mechanism A, so its run-codex-review.sh
-  # invocations must NOT pass --diff-file (Test-phase reuse signal).
+@test "[112-PR1] skills/test/SKILL.md does not wire --diff-file (test-step opt-out)" {
+  # CD-1 (Task 20): test/SKILL.md routes through the shared reviewer-dispatch
+  # include like every other step. The test-step diff opt-out is preserved by
+  # NOT carrying a `--diff-file` flag in the test skill prose (the orchestrator
+  # omits the round diff for the test step).
   local f="$REPO_ROOT/skills/test/SKILL.md"
   [ -f "$f" ]
-  local n_wrapper n_diff_flag
-  n_wrapper=$(grep -cE '^\s*scripts/run-codex-review\.sh \\$' "$f" || true)
+  local n_diff_flag
   n_diff_flag=$(grep -cE '^\s*--diff-file ' "$f" || true)
-  if [ "$n_wrapper" -lt 1 ]; then
-    echo "FAIL: skills/test/SKILL.md has zero run-codex-review.sh invocations (expected ≥1)"
-    return 1
-  fi
   if [ "$n_diff_flag" -ne 0 ]; then
     printf 'FAIL: skills/test/SKILL.md has %d --diff-file flag(s) (opt-out broken; expected 0)\n' "$n_diff_flag" >&2
     return 1
