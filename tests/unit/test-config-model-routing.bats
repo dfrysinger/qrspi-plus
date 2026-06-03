@@ -708,3 +708,76 @@ _extract_routing_blocks_intro() {
   c=$(grep -ci "fail loud\|fails loud\|loud validation\|validation fail" <<<"$out" || true)
   [ "$c" -ge 1 ]
 }
+
+# ===========================================================================
+# Validation-table model_routing: row + fail-loud back-pointer cross-links
+#
+# Test expectations:
+#   TE-1  Validation table contains EXACTLY ONE `model_routing:` row.
+#   TE-2  The row names the required per-vendor five-tier map shape AND
+#         cross-references the schema-definition heading by literal heading text.
+#   TE-3  The row cross-references the missing-block fail-loud enforcement
+#         paragraph by literal heading text (NOT by line number).
+#   TE-4  Each config-validation fail-loud paragraph back-links to the
+#         validation table heading by literal heading text.
+#   NOTE: Existing loud-failure path (a config missing model_routing: halts
+#         loudly) is already covered by the "missing-model_routing: documented
+#         as a loud validation failure" test above — no duplication here.
+# ===========================================================================
+
+@test "validation table lists exactly one model_routing: row" {
+  # Test expectation: the '### Fields that affect pipeline behavior (must be validated)'
+  # table contains EXACTLY ONE row for `model_routing:`.
+  local section
+  section="$(extract_section "$USING" "H3" "Fields that affect pipeline behavior (must be validated)")"
+  local count
+  count="$(printf '%s\n' "$section" | grep -c "model_routing:" || true)"
+  [ "$count" -eq 1 ]
+}
+
+@test "validation table model_routing: row names per-vendor five-tier map shape" {
+  # Test expectation: the row identifies the required per-vendor five-tier map shape
+  # (e.g. 'per-vendor five-tier map', 'five-tier vendor-neutral', etc.).
+  local section
+  section="$(extract_section "$USING" "H3" "Fields that affect pipeline behavior (must be validated)")"
+  local row
+  row="$(printf '%s\n' "$section" | grep "model_routing:" || true)"
+  [ -n "$row" ]
+  printf '%s\n' "$row" | grep -qE "five.tier|per.vendor|vendor.neutral"
+}
+
+@test "validation table model_routing: row cross-references schema-definition heading by literal text" {
+  # Test expectation: the row points to the schema-definition heading
+  # '#### \`model_routing:\` block' by its exact literal heading text.
+  local section
+  section="$(extract_section "$USING" "H3" "Fields that affect pipeline behavior (must be validated)")"
+  local row
+  row="$(printf '%s\n' "$section" | grep "model_routing:" || true)"
+  [ -n "$row" ]
+  printf '%s\n' "$row" | grep -qF '`model_routing:` block'
+}
+
+@test "validation table model_routing: row cross-references fail-loud paragraph by literal heading text not line number" {
+  # Test expectation: the row points to the fail-loud enforcement paragraph by
+  # literal heading text 'Missing \`model_routing:\` block in \`config.md\`'
+  # and NOT by a bare line number (e.g. 'line 510').
+  local section
+  section="$(extract_section "$USING" "H3" "Fields that affect pipeline behavior (must be validated)")"
+  local row
+  row="$(printf '%s\n' "$section" | grep "model_routing:" || true)"
+  [ -n "$row" ]
+  # Must reference the fail-loud paragraph by its literal heading text.
+  printf '%s\n' "$row" | grep -qF 'Missing `model_routing:` block in `config.md`'
+  # Must NOT reference by a bare line number form (e.g. "line 510" or "#510").
+  local c
+  c="$(printf '%s\n' "$row" | grep -cE "line [0-9]{2,}|#[0-9]{2,}" || true)"
+  [ "$c" -eq 0 ]
+}
+
+@test "missing-model_routing: fail-loud paragraph back-links to validation table heading by literal text" {
+  # Test expectation: the '#### Missing \`model_routing:\` block in \`config.md\`'
+  # section contains a one-sentence back-pointer to the literal heading text
+  # '### Fields that affect pipeline behavior (must be validated)'.
+  out="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
+  printf '%s\n' "$out" | grep -qF 'Fields that affect pipeline behavior (must be validated)'
+}
