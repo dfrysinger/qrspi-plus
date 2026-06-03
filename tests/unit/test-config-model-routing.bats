@@ -731,7 +731,7 @@ _extract_routing_blocks_intro() {
   local section
   section="$(extract_section "$USING" "H3" "Fields that affect pipeline behavior (must be validated)")"
   local count
-  count="$(printf '%s\n' "$section" | grep -cE '^[[:space:]]*\|.*model_routing:' || true)"
+  count="$(printf '%s\n' "$section" | grep -cE '^[[:space:]]*\|[[:space:]]*`?model_routing:`?[[:space:]]*\|' || true)"
   [ "$count" -eq 1 ]
 }
 
@@ -741,7 +741,7 @@ _extract_routing_blocks_intro() {
   local section
   section="$(extract_section "$USING" "H3" "Fields that affect pipeline behavior (must be validated)")"
   local row
-  row="$(printf '%s\n' "$section" | grep -E '^[[:space:]]*\|.*model_routing:' || true)"
+  row="$(printf '%s\n' "$section" | grep -E '^[[:space:]]*\|[[:space:]]*`?model_routing:`?[[:space:]]*\|' || true)"
   [ -n "$row" ]
   printf '%s\n' "$row" | grep -qE "five.tier|per.vendor|vendor.neutral"
 }
@@ -752,7 +752,7 @@ _extract_routing_blocks_intro() {
   local section
   section="$(extract_section "$USING" "H3" "Fields that affect pipeline behavior (must be validated)")"
   local row
-  row="$(printf '%s\n' "$section" | grep -E '^[[:space:]]*\|.*model_routing:' || true)"
+  row="$(printf '%s\n' "$section" | grep -E '^[[:space:]]*\|[[:space:]]*`?model_routing:`?[[:space:]]*\|' || true)"
   [ -n "$row" ]
   printf '%s\n' "$row" | grep -qF '`model_routing:` block'
 }
@@ -764,7 +764,7 @@ _extract_routing_blocks_intro() {
   local section
   section="$(extract_section "$USING" "H3" "Fields that affect pipeline behavior (must be validated)")"
   local row
-  row="$(printf '%s\n' "$section" | grep -E '^[[:space:]]*\|.*model_routing:' || true)"
+  row="$(printf '%s\n' "$section" | grep -E '^[[:space:]]*\|[[:space:]]*`?model_routing:`?[[:space:]]*\|' || true)"
   [ -n "$row" ]
   # Must reference the fail-loud paragraph by its literal heading text.
   printf '%s\n' "$row" | grep -qF 'Missing `model_routing:` block in `config.md`'
