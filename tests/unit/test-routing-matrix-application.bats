@@ -436,3 +436,38 @@ setup_file() {
   c=$(grep -cE '\(haiku\)|\(opus\)' "$TEST_SKILL" || true)
   [ "$c" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# F04 (round-04) — durable negative-assertion pins guarding against retired
+# model-routing residue that the hardcoded `model: "sonnet"` greps missed:
+# the `model: "<model>"` template placeholder, `model: inherit` prose, the
+# `1a`/`1b` resolution-layer telemetry enum, and "four-layer" chain language.
+# These pin the EXACT placeholder shapes that slipped through prior rounds.
+# ---------------------------------------------------------------------------
+
+@test "implement: no 'model: \"<model>\"' template-placeholder dispatch arg remains" {
+  # Test expectation: dispatch shapes resolve (vendor, model) via the Tier
+  # Resolution Chain off the agent's tier:, never via a literal model: arg
+  c=$(grep -c 'model: "<model>"' "$IMPLEMENT" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "implement: no 'model: inherit' frontmatter-default prose remains" {
+  # Test expectation: agents carry tier:, not model: inherit
+  c=$(grep -c 'model: inherit' "$IMPLEMENT" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "implement: telemetry layer enum has no retired '1a'/'1b' resolution-layer tokens" {
+  # Test expectation: routing_decision layer enum names the tier-precedence
+  # layers (tier-override/agent-tier/default-tier/hardcoded-medium), not the
+  # retired four-layer 1a/1b/2/3 enum
+  c=$(grep -cE '`1a`|`1b`' "$IMPLEMENT" || true)
+  [ "$c" -eq 0 ]
+}
+
+@test "implement: no 'four layer' routing language remains (hyphen or space)" {
+  # Test expectation: the chain is the Tier Resolution Chain
+  c=$(grep -ciE 'four[- ]layer' "$IMPLEMENT" || true)
+  [ "$c" -eq 0 ]
+}
