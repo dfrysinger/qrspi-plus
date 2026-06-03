@@ -38,17 +38,20 @@ QRSPI_SOURCE_ONLY=1 . "$_SCRIPT_DIR/_resolve-lib.sh"
 
 _host="$(detect_host)"
 
-# Argument handling: optional <vendor> override; otherwise the host's default
-# second-reviewer vendor from the shared matrix.
+_default_vendor="$(lookup_default_second_reviewer "$_host")"
+
+# optional <vendor> override; else the host default
 if [ "$#" -ge 1 ] && [ -n "$1" ]; then
   _vendor="$1"
 else
-  _vendor="$(lookup_default_second_reviewer "$_host")"
+  _vendor="$_default_vendor"
 fi
 
-# Unavailable when the host names no default vendor (`none`) or the requested
-# vendor is not a recognised matrix vendor (unreachable / unknown).
-if [ "$_vendor" = "none" ] || ! second_reviewer_vendor_known "$_vendor"; then
+# Unavailable when the host names no default second-reviewer vendor (unknown /
+# unsupported host — reachability is host-dependent, so an override cannot make
+# an unsupported host available), the requested vendor is `none`, or the vendor
+# is not a recognised matrix vendor.
+if [ "$_default_vendor" = "none" ] || [ "$_vendor" = "none" ] || ! second_reviewer_vendor_known "$_vendor"; then
   printf '[second-reviewer-unavailable] host=%s vendor=%s — no reachable second reviewer for this host\n' \
     "$_host" "$_vendor" >&2
   exit 1

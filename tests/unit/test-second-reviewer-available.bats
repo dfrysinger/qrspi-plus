@@ -402,3 +402,41 @@ teardown() {
   run grep -E '_host-detect\.sh|detect_host' "$SECOND_REVIEWER"
   [ "$status" -eq 0 ]
 }
+
+# ===========================================================================
+# Unknown-host guard: vendor override must not make an unsupported host appear available
+# ===========================================================================
+
+# Test expectation: unknown host + recognized vendor override must still exit non-zero.
+# A recognized vendor name passed as override argument cannot compensate for an unknown
+# host — reachability is host-dependent, and an unsupported host has no reachable path
+# to any second reviewer regardless of which vendor is named.
+@test "unknown-host-guard: unknown host with recognized vendor override exits non-zero with [second-reviewer-unavailable]" {
+  # Clear all host-detection signals so detect_host returns 'unknown'.
+  # Then invoke the probe with 'openai-codex' (a recognized matrix vendor) as override.
+  # Expected: non-zero exit AND exactly one stderr line beginning [second-reviewer-unavailable]
+  # containing both host=unknown and vendor=openai-codex.
+  local _stderr_file="$TMP_DIR/unknown-host-override-stderr.txt"
+  local _status=0
+  bash -c "
+    unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
+    \"$SECOND_REVIEWER\" openai-codex
+  " >/dev/null 2>"$_stderr_file" || _status=$?
+
+  # Must exit non-zero — an unknown host is never available
+  [ "$_status" -ne 0 ]
+
+  # Exactly one stderr line
+  local line_count
+  line_count="$(wc -l < "$_stderr_file" | tr -d ' ')"
+  [ "$line_count" -eq 1 ]
+
+  # Line must begin with the unavailability tag
+  grep -q '^\[second-reviewer-unavailable\]' "$_stderr_file"
+
+  # Line must name the detected host
+  grep -q 'host=unknown' "$_stderr_file"
+
+  # Line must name the requested vendor
+  grep -q 'vendor=openai-codex' "$_stderr_file"
+}
