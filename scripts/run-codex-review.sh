@@ -256,6 +256,26 @@ _append_manifest_fail() {
   exit 1
 }
 
+# Install the 3-trap signal-cleanup pattern for the first-party prompt tmpfile.
+# Mirror of the _manifest_tmp pattern in _append_manifest_entry: three separate
+# traps so INT/TERM exit with their canonical codes (130 = 128+SIGINT,
+# 143 = 128+SIGTERM) instead of being swallowed by a bare cleanup.
+_install_fp_traps() {
+  trap 'rm -f "$_fp_tmp" 2>/dev/null || true' EXIT
+  trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 130' INT
+  trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 143' TERM
+}
+
+# Cleanup the first-party prompt tmpfile: rm, clear the relay, disarm traps.
+# Used by both success-path (after mv promotes the tmpfile) and error-path
+# (after a named-failure exit-1 in the calling site). Safe when $_fp_tmp is
+# empty (mktemp-failed branch) — rm -f "" is a no-op.
+_cleanup_fp_tmp() {
+  rm -f "$_fp_tmp" 2>/dev/null || true
+  _fp_tmp=""
+  trap - EXIT INT TERM
+}
+
 # _append_manifest_entry <entry-json> — shared atomic JSON array append.
 # Uses jq to parse and append so trailing-whitespace/newline variations in
 # the existing manifest file cannot corrupt the output shape.
@@ -903,26 +923,6 @@ if [[ "$_detected_host" == "copilot-cli" ]]; then
   # rm-f then open(2)-for-redirect pair is not atomic.  mktemp uses O_EXCL
   # (symlink-safe); rename(2) replaces the destination atomically without
   # following symlinks.
-
-  # Install the 3-trap signal-cleanup pattern for the first-party prompt tmpfile.
-  # Mirror of the _manifest_tmp pattern: three separate traps so INT/TERM exit
-  # with their canonical codes (130 = 128+SIGINT, 143 = 128+SIGTERM) instead of
-  # being swallowed by a bare cleanup.
-  _install_fp_traps() {
-    trap 'rm -f "$_fp_tmp" 2>/dev/null || true' EXIT
-    trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 130' INT
-    trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 143' TERM
-  }
-
-  # Cleanup the first-party prompt tmpfile: rm, clear the relay, disarm traps.
-  # Used by both success-path (after mv promotes the tmpfile) and error-path
-  # (after a named-failure exit-1 in the calling site). Safe when $_fp_tmp is
-  # empty (mktemp-failed branch) — rm -f "" is a no-op.
-  _cleanup_fp_tmp() {
-    rm -f "$_fp_tmp" 2>/dev/null || true
-    _fp_tmp=""
-    trap - EXIT INT TERM
-  }
 
   _fp_tmp=""
   # Install signal-cleanup trap BEFORE mktemp so any signal between mktemp
