@@ -356,7 +356,7 @@ Every skill uses this standard pattern to verify its prerequisites:
 ---
 created: YYYY-MM-DD
 pipeline: full  # or: quick
-codex_reviews: true  # or false
+second_reviewer: true  # or false
 route:
   - goals
   - questions
@@ -381,7 +381,8 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 **Field definitions:**
 - `created`: ISO date the run was created (set once, never updated)
 - `pipeline`: human-readable label (`full` or `quick`) — informational only; `route` is authoritative
-- `codex_reviews`: whether to include Codex in review rounds
+- `second_reviewer`: whether to include a second-model reviewer in review rounds (canonical field)
+- `codex_reviews`: **removed** — this is the legacy name for `second_reviewer`; it was renamed during the second-reviewer migration. A stray `codex_reviews:` field in `config.md` is a hard validation error, never silently aliased to `second_reviewer:`.
 - `route`: ordered list of skill names this run will execute (see Route Templates above)
 - `review_depth`: `quick` (4 correctness reviewers) or `deep` (all 8 reviewers) — written by Implement at phase start
 - `review_mode`: `single` or `loop` — written alongside `review_depth`
@@ -390,11 +391,11 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 - `visual_fidelity_required`: boolean, default `false`. When `true`, the run opts into the visual-fidelity binding chain (Design must include a wireframe binding subsection, Phasing must cite wireframe artifacts per UI phase, Plan must populate `visual_fidelity_check` on UI-producing tasks, and Implement dispatches the visual-fidelity reviewer). When `false`, the chain is silent — no dispatch, no extra gates.
 - `question_budget`: integer, default `5`, valid range 1–50 inclusive. Used by the Research skill to cap the number of research specialists dispatched in parallel when `pipeline: quick`. Written to `config.md` ONLY when the run is `pipeline: quick`; on full-pipeline runs the field is omitted from `config.md` entirely (no cap applies — Research dispatches per its own scaling rules). The lower cap exists because quick-fix mode trades research breadth for throughput; a small fixed budget keeps the autonomous Research step bounded so the cascade gate documented under the pipeline-mode behavioral semantics below stays cheap. The upper cap of 50 exists because Research specialist dispatch fan-out wider than 50 exhausts orchestrator subagent slots and produces diminishing-returns coverage; the validator fixture (`tests/fixtures/validate-config-field.sh`) enforces both bounds.
 
-**Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. Goals also writes `verifier_enabled: true`, `scope_tagger_enabled: true`, and `visual_fidelity_required: false` (or `true` if the user opted into the visual-fidelity binding chain) at run creation — these fields are present on disk from the start of every fresh run. When the user selects `pipeline: quick`, Goals additionally writes `question_budget: 5` (the Research specialist dispatch cap); on `pipeline: full` the field is omitted entirely. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
+**Writing `config.md`:** After the user selects a pipeline mode and answers the second-reviewer question, write `created`, `pipeline`, `second_reviewer`, and `route` to `config.md` atomically. Goals also writes `verifier_enabled: true`, `scope_tagger_enabled: true`, and `visual_fidelity_required: false` (or `true` if the user opted into the visual-fidelity binding chain) at run creation — these fields are present on disk from the start of every fresh run. When the user selects `pipeline: quick`, Goals additionally writes `question_budget: 5` (the Research specialist dispatch cap); on `pipeline: full` the field is omitted entirely. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
 
 **Behavioral semantics — `pipeline: quick` (auto-approve cascade and surviving human gates):** The `pipeline: quick` mode is more than a route shortener — it changes how human approval is sequenced across the run. Three things hold under quick-fix mode:
 
-1. **Auto-approve cascade for Questions, Research, and Plan.** These three autonomous steps still run their full review loops (Claude reviewers, Codex reviewers when `codex_reviews: true`, the verifier when `verifier_enabled: true`), and findings still write to disk under `reviews/{step}/round-NN/`. What changes is the human gate after the loop. When a review round produces zero kept findings AFTER verifier filtering — either the initial round emerged clean, or the first fix round closed every kept finding from the prior round — the step writes `status: approved` automatically without prompting the user. The "zero kept findings" trigger is the post-verifier-filter count (the count after the artifact-level Apply-fix protocol applies the verifier's by-change_type threshold — ≥80 for style/clarity, ≥70 for correctness), NOT the pre-filter raw findings count emitted by reviewer subagents; this disambiguates the trigger so downstream cascade-branch implementations cannot diverge on whether a verifier-suppressed finding still counts toward the cascade gate. The cascade is a single hop per step (initial-clean OR first-fix-clean), not an unbounded loop; if the fix round still carries kept findings the step pauses for human input via the standard Review-Loop Pause Gate. The `question_budget` field (default `5`) caps Research specialist dispatch under this cascade so the autonomous Research step stays bounded. The line-by-line implementation of the cascade branch in each of these three skills is owned by the respective skill body — `using-qrspi/SKILL.md` is the contract surface that names the behavior; the per-skill implementations carry the wiring.
+1. **Auto-approve cascade for Questions, Research, and Plan.** These three autonomous steps still run their full review loops (Claude reviewers, second-model reviewers when `second_reviewer: true`, the verifier when `verifier_enabled: true`), and findings still write to disk under `reviews/{step}/round-NN/`. What changes is the human gate after the loop. When a review round produces zero kept findings AFTER verifier filtering — either the initial round emerged clean, or the first fix round closed every kept finding from the prior round — the step writes `status: approved` automatically without prompting the user. The "zero kept findings" trigger is the post-verifier-filter count (the count after the artifact-level Apply-fix protocol applies the verifier's by-change_type threshold — ≥80 for style/clarity, ≥70 for correctness), NOT the pre-filter raw findings count emitted by reviewer subagents; this disambiguates the trigger so downstream cascade-branch implementations cannot diverge on whether a verifier-suppressed finding still counts toward the cascade gate. The cascade is a single hop per step (initial-clean OR first-fix-clean), not an unbounded loop; if the fix round still carries kept findings the step pauses for human input via the standard Review-Loop Pause Gate. The `question_budget` field (default `5`) caps Research specialist dispatch under this cascade so the autonomous Research step stays bounded. The line-by-line implementation of the cascade branch in each of these three skills is owned by the respective skill body — `using-qrspi/SKILL.md` is the contract surface that names the behavior; the per-skill implementations carry the wiring.
 
    **Trust model — clean-sentinel forgery resistance.** The cascade auto-approve trigger reads the orchestrator's in-session "kept findings" count after fan-in completes; it does NOT read any on-disk `<reviewer-tag>.clean.md` sentinel directly to make the auto-approve decision. The on-disk sentinel is the audit-trail artifact, NOT the trigger. For the cascade-specific clean sentinel that records "this auto-approval fired against reviewer-tag X with zero kept findings", the orchestrator is the EXCLUSIVE writer — only the orchestrator writes the cascade clean sentinel after its in-session fan-in tally confirms zero kept findings AFTER verifier filtering for that reviewer tag. Reviewer subagents MUST NOT write the cascade clean sentinel (`<artifact_dir>/cascade-clean-<reviewer-tag>.md` or whatever the orchestrator names it); only the orchestrator writes it after its in-session fan-in tally confirms zero kept findings post-verifier-filter. Reviewer subagents emit per-finding files (`<reviewer-tag>.finding-FNN.md`) per their existing dispatch contract; any `<reviewer-tag>.clean.md` file a reviewer subagent emits under the existing dispatch surface is treated by the cascade as ADVISORY metadata, NOT as the auto-approve trigger. Without this two-layer rule (trigger-from-in-session-count + orchestrator-exclusive-writer for the cascade clean sentinel), a compromised or mis-prompted reviewer subagent could forge a `clean.md` sentinel and trick a sentinel-driven cascade into auto-approving without a real fan-in. Pinning the cascade trigger to the orchestrator's in-session count and pinning the cascade clean-sentinel write to the orchestrator closes the forgery surface end-to-end. This trust model mirrors the orchestrator-exclusive-writer framing already in place for `path-filtered.md` and `bypass-attempt-NN.md` records (see those sections for the parallel pattern).
 
@@ -402,11 +403,11 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 2. **Two mandatory human gates: Goals and Design (excluded from the cascade).** Goals and Design remain human-approved gates under `pipeline: quick`. They are NOT subject to the auto-approve cascade above. (Note: the canonical Quick-Fix route in `## Route Templates` does not include Design — quick-fix runs that elect Design must use a Full route variant; the exclusion-from-cascade contract applies whenever Design runs.) Goals captures user intent and Design captures the option-selection decision; both are framed as the irreducible places where human leverage adds value during a quick fix. Every other step routes around them with autonomous execution.
 3. **Test phase: binary ship/fix gate.** When Test runs under `pipeline: quick`, it presents a binary ship-or-fix decision rather than the multi-option per-failure menu used in full pipelines. On "ship" the run terminates as the canonical Test step does; on "fix" the routing-back target is **Plan** (not Goals or Design — the user has already approved both, and the fix is presumed to be a plan-level adjustment for the autonomous downstream steps to consume). The cascade resumes from Plan onward.
 
-**Codex detection:** Check if `codex:rescue` is available by globbing for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`. If the file doesn't exist, skip the Codex question silently and write `codex_reviews: false`. If available, ask:
+**Second-model-reviewer detection:** Check whether a second-reviewer vendor is available for the detected host by running `bash scripts/second-reviewer-available.sh` and checking its exit status. On a non-zero exit, skip the second-reviewer question silently and write `second_reviewer: false`. When the same agent tier drives both the primary and the second reviewer, the `second_reviewer: true` dispatch reuses the resolved `tier:` for both the primary reviewer dispatch and the second-reviewer dispatch — there is no separate tier knob for the second reviewer. If the probe exits 0, ask:
 
-> Codex reviews:
-> 1) No Codex reviews
-> 2) Use Codex for second reviews
+> Second-model reviews:
+> 1) No second-model reviews
+> 2) Use a second model for second reviews
 
 **Per-host Codex dispatch transport routing.** The Codex review dispatch surface routes per detected host. Two transports are supported, selected by `detect_host` at dispatch time:
 
@@ -539,8 +540,12 @@ Stop and present the field-specific menu below. For an invalid value, also name 
 1. Edit config.md and set `pipeline: full` or `pipeline: quick`
 2. Abort
 
-**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
-1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
+**If `second_reviewer` is missing or invalid (expected `true` or `false`):**
+1. Edit config.md and set `second_reviewer: true` or `second_reviewer: false`
+2. Abort
+
+**If a legacy `codex_reviews:` field is present (renamed to `second_reviewer:`):**
+1. `codex_reviews:` is no longer a valid field — it was renamed to `second_reviewer:`. Reject it loudly with a rename-naming diagnostic; do NOT silently alias `codex_reviews:` to `second_reviewer:`. Edit config.md: remove the `codex_reviews:` line and set `second_reviewer: true` or `second_reviewer: false`.
 2. Abort
 
 **If `visual_fidelity_required` is missing or invalid (expected `true` or `false`):**
@@ -584,7 +589,7 @@ Stop and present the field-specific menu below. For an invalid value, also name 
 
 Skills must not:
 - Assume `pipeline: full` when `pipeline` is missing
-- Assume `codex_reviews: false` when `codex_reviews` is missing
+- Assume `second_reviewer: false` when `second_reviewer` is missing
 - Attempt to derive `route` from `pipeline` when `route` is missing
 - Proceed with a guessed or inferred field value
 
@@ -614,7 +619,7 @@ Skills must not:
 | `route` | Goals, Plan, Parallelize, Implement, Integrate, using-qrspi | ordered list of skill names (see Route Templates) |
 | `model_routing:` | using-qrspi, Goals, Plan, Parallelize, Implement, Integrate | required top-level block — a per-vendor five-tier map (one `{ vendor:, model: }` per tier, per CD-1); see the schema heading `model_routing:` block for the definition and the fail-loud heading Missing `model_routing:` block in `config.md` for the enforcement when the block is absent |
 | `pipeline` | Goals, Plan, Parallelize | `full` or `quick` |
-| `codex_reviews` | Goals, Plan, Design, Phasing, Structure, Replan, Implement, Integrate, Test | `true` or `false` |
+| `second_reviewer` | Goals, Plan, Design, Phasing, Structure, Replan, Implement, Integrate, Test | `true` or `false` |
 | `review_depth` | Implement | `quick` or `deep` — set by Implement at phase start |
 | `review_mode` | Implement | `single` or `loop` — set by Implement at phase start |
 | `verifier_enabled` | Goals, Implement | `true` or `false` — set at run creation; gates per-finding verifier dispatch in the Apply-fix protocol |

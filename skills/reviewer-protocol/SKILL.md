@@ -20,7 +20,7 @@ The current set of sections — `## Finding Schema`, `## Change-Type Classifier`
 
 For each artifact step, the apply-fix step-2 schema-violation guard asserts the round directory contains at least one of `<tag>.finding-*.md` or `<tag>.clean.md` for every expected tag in the row below — based on the run's `config.md`.
 
-| Step | `codex_reviews: true` | `codex_reviews: false` |
+| Step | `second_reviewer: true` | `second_reviewer: false` |
 |---|---|---|
 | `goals` | `quality-claude`, `scope-claude`, `quality-codex`, `scope-codex` | `quality-claude`, `scope-claude` |
 | `questions` | `quality-claude`, `quality-codex` | `quality-claude` |

@@ -208,6 +208,54 @@ lookup_default_second_reviewer() {
   esac
 }
 
+# second_reviewer_vendor_known <vendor>
+# Returns 0 if <vendor> is a recognised second-reviewer vendor id in the host x
+# vendor matrix, 1 otherwise. This is a flat vendor allowlist (NOT a host x
+# vendor table) so the availability probe can validate an override vendor
+# against the single source of truth without duplicating the matrix.
+second_reviewer_vendor_known() {
+  case "$1" in
+    openai-codex|anthropic-claude) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# resolve_second_reviewer_vendor <host> <primary-vendor>
+# Resolves the second-reviewer vendor for a second_reviewer: true dispatch on
+# <host> whose primary slot resolved to <primary-vendor>. On success echoes the
+# resolved second-reviewer vendor on stdout (exactly one line) and returns 0.
+#
+# This is the single enforcement point for the primary-not-equal-second-reviewer
+# invariant (the availability probe checks reachability only). It halts loudly,
+# emitting ZERO stdout dispatch-spec lines, in two cases:
+#   1. The host names no default second-reviewer vendor (lookup returns `none`):
+#      emits a [second-reviewer-unavailable] diagnostic naming host and vendor.
+#   2. The default second-reviewer vendor equals the primary slot vendor: emits a
+#      [second-reviewer-same-vendor] diagnostic naming both vendors so the round
+#      never produces two dispatch lines that resolve to the same vendor under
+#      distinct reviewer tags.
+resolve_second_reviewer_vendor() {
+  local host="$1" primary_vendor="$2"
+  local second_vendor
+  second_vendor="$(lookup_default_second_reviewer "$host")"
+
+  if [ "$second_vendor" = "none" ]; then
+    printf '[second-reviewer-unavailable] host=%s vendor=%s — ' "$host" "$second_vendor" >&2
+    printf 'no default second-reviewer vendor is configured for this host.\n' >&2
+    return 1
+  fi
+
+  if [ "$second_vendor" = "$primary_vendor" ]; then
+    printf '[second-reviewer-same-vendor] host=%s primary-vendor=%s second-vendor=%s — ' \
+      "$host" "$primary_vendor" "$second_vendor" >&2
+    printf 'primary and second-reviewer slots resolved to the same vendor; refusing to emit a duplicate dispatch.\n' >&2
+    return 1
+  fi
+
+  printf '%s\n' "$second_vendor"
+  return 0
+}
+
 # Allow `QRSPI_SOURCE_ONLY=1 source _resolve-lib.sh` without side effects.
 if [ "${QRSPI_SOURCE_ONLY:-}" = "1" ]; then
   return 0 2>/dev/null || true

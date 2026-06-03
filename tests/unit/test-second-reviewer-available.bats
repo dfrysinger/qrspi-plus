@@ -390,7 +390,7 @@ teardown() {
   local match_count
   match_count="$(grep -cE \
     'claude-code[[:space:]]*\)[[:space:]]*(openai-codex|anthropic-claude)|copilot-cli[[:space:]]*\)[[:space:]]*(openai-codex|anthropic-claude)' \
-    "$SECOND_REVIEWER" 2>/dev/null || echo 0)"
+    "$SECOND_REVIEWER" 2>/dev/null || true)"
   [ "$match_count" -eq 0 ]
 }
 

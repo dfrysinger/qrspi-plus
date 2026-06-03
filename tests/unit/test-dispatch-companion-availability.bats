@@ -135,7 +135,7 @@ teardown() {
   # must be absent from skills/goals/SKILL.md after the D3 migration.
   # RED: the glob is still present in the file today.
   local match_count
-  match_count="$(grep -c 'codex-companion\.mjs' "$GOALS_SKILL" 2>/dev/null || echo 0)"
+  match_count="$(grep -c 'codex-companion\.mjs' "$GOALS_SKILL" 2>/dev/null || true)"
   [ "$match_count" -eq 0 ]
 }
 
@@ -159,7 +159,7 @@ teardown() {
   # at L405 (the second drift site identified in design.md G27 References).
   # RED: the glob is still present in the file today.
   local match_count
-  match_count="$(grep -c 'codex-companion\.mjs' "$USING_SKILL" 2>/dev/null || echo 0)"
+  match_count="$(grep -c 'codex-companion\.mjs' "$USING_SKILL" 2>/dev/null || true)"
   [ "$match_count" -eq 0 ]
 }
 
@@ -183,7 +183,7 @@ teardown() {
   # Any remaining codex_reviews occurrence is a D6 miss.
   # RED: one match still present today at line 23.
   local match_count
-  match_count="$(grep -cE 'codex_reviews' "$REVIEWER_PROTOCOL" 2>/dev/null || echo 0)"
+  match_count="$(grep -cE 'codex_reviews' "$REVIEWER_PROTOCOL" 2>/dev/null || true)"
   [ "$match_count" -eq 0 ]
 }
 
