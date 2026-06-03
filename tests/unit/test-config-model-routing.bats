@@ -503,12 +503,11 @@ EOF
   chmod 644 "$cfg"
 }
 
-@test "_resolve-lib.sh [exec]: resolve_model HALTS with the config-path diagnostic when CONFIG_MD points at a DIRECTORY (R7-F01 regular-file guard)" {
+@test "_resolve-lib.sh [exec]: resolve_model HALTS with the config-path diagnostic when CONFIG_MD points at a DIRECTORY (readable non-regular path)" {
   # A readable DIRECTORY satisfies `[ -r ]` but is NOT a regular config file.
   # The resolver must classify it as a config-path error (naming CONFIG_MD as
   # not a readable file), NOT silently fall through to the unconfigured-tier
-  # halt. This FAILS against a `[ -r ]`-only guard (which mis-halts as an
-  # unconfigured tier) and PASSES once the `[ -f ]` regular-file check is added.
+  # halt.
   local cfgdir="$BATS_TEST_TMPDIR/config-as-dir"
   mkdir -p "$cfgdir"
   run --separate-stderr _exec_resolve_model "$cfgdir" "medium"
