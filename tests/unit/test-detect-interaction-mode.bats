@@ -520,3 +520,98 @@ setup_file() {
   # Also no TODO or PLACEHOLDER tokens
   ! echo "$output" | grep -qE 'TODO|PLACEHOLDER'
 }
+
+# ===========================================================================
+# FINDING A — grep regression: ## Auto Mode Active absent from agents/
+# ===========================================================================
+
+@test "Grep regression: '## Auto Mode Active' Claude Code signal absent from agents/ dir" {
+  # ## Auto Mode Active is the Claude Code in-context auto-mode signal.
+  # It must NOT appear in any agents/ file — only in scripts/detect-interaction-mode.sh
+  # and its test fixture (tests/unit/test-detect-interaction-mode.bats).
+  # Note: skills/ is intentionally excluded here because the string already
+  # legitimately appears in skills/goals/SKILL.md and skills/design/SKILL.md as
+  # documented precedent; a skills/ check would produce a false failure.
+  [ -d "$REPO_ROOT/agents" ]
+  run grep -rl '## Auto Mode Active' "$REPO_ROOT/agents"
+  # grep -rl exits 1 (no matches) when absent — that is the passing state.
+  # Do NOT use -ne 0; exit 2 (grep error) would also pass that check.
+  [ "$status" -eq 1 ]
+}
+
+# ===========================================================================
+# FINDING B — output-shape KEY=VALUE loop test for Claude Code branch
+# ===========================================================================
+
+@test "Output-shape: every stdout line from Claude Code branch is KEY=VALUE" {
+  run bash -c "
+    unset COPILOT_CLI QRSPI_INTERACTION_MODE
+    export CLAUDE_PROJECT_DIR='/some/project'
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  # Every line must match ^[A-Z_]+=.+$  (KEY=value, non-empty value)
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[A-Z_]+=.+$ ]] || { echo "Bad line: $line"; return 1; }
+  done <<< "$output"
+}
+
+# ===========================================================================
+# FINDING C — native-detection precedence: COPILOT_CLI wins over CLAUDE_PROJECT_DIR
+# ===========================================================================
+
+@test "Native-detection precedence: COPILOT_CLI=1 wins over CLAUDE_PROJECT_DIR when no override" {
+  # With both host signals present and no QRSPI_INTERACTION_MODE override,
+  # the if-elif chain must resolve to COPILOT_CLI first (top of chain).
+  run bash -c "
+    unset QRSPI_INTERACTION_MODE
+    export COPILOT_CLI=1
+    export CLAUDE_PROJECT_DIR='/some/project'
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  # Must be the Copilot CLI platform
+  echo "$output" | grep -q '^PLATFORM=copilot-cli$'
+  # Must be llm-context (Copilot CLI shape)
+  echo "$output" | grep -q '^DETECTION_TYPE=llm-context$'
+  # Must NOT emit claude-code platform
+  ! echo "$output" | grep -q '^PLATFORM=claude-code$'
+}
+
+# ===========================================================================
+# FINDING D — semantic EVIDENCE assertion for the unknown-host safe-default
+# ===========================================================================
+
+@test "Unknown host safe-default EVIDENCE contains semantic safe-default content" {
+  # The script emits:
+  #   EVIDENCE=no host signal; QRSPI_INTERACTION_MODE absent; safe default applied
+  # Verify the semantic content rather than just non-empty presence.
+  run bash -c "
+    unset COPILOT_CLI CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  # Must name the safe-default outcome
+  echo "$output" | grep -q '^EVIDENCE=.*safe default'
+  # Must also name the absence of the override variable
+  echo "$output" | grep -q '^EVIDENCE=.*QRSPI_INTERACTION_MODE'
+}
+
+# ===========================================================================
+# FINDING E — no-file-write assertion for the Claude Code branch
+# ===========================================================================
+
+@test "Claude Code branch creates no files at all" {
+  local tmpdir="$BATS_TEST_TMPDIR"
+  run bash -c "
+    unset COPILOT_CLI QRSPI_INTERACTION_MODE
+    export CLAUDE_PROJECT_DIR='/some/project'
+    cd \"$tmpdir\"
+    bash \"$SCRIPT\"
+  "
+  [ "$status" -eq 0 ]
+  # No regular files should have been created in the working directory
+  local n_files
+  n_files="$(find "$tmpdir" -maxdepth 1 -type f | wc -l | tr -d ' ')"
+  [ "$n_files" -eq 0 ]
+}
