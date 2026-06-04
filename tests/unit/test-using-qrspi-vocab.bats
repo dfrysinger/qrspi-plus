@@ -139,9 +139,10 @@ setup() {
   # G21 body-guard: assert non-empty before testing content.
   [ -n "$body" ]
   # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
-  # not the literal historic phrase.  Catches "silently fall/falls back" and
-  # "silently degrade/degrades" regardless of exact phrasing after the verb.
-  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
+  # not the literal historic phrase.  Catches "silently fall/falls back",
+  # "silently degrade/degrades", and "silently substitute/substitutes"
+  # regardless of exact phrasing after the verb.
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
   # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
   # covers "no silent fallback to a neighboring tier" anti-pattern variants.
   [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
@@ -173,9 +174,10 @@ setup() {
   # G21 body-guard: assert non-empty before testing content.
   [ -n "$body" ]
   # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
-  # not the literal historic phrase.  Catches "silently fall/falls back" and
-  # "silently degrade/degrades" regardless of exact phrasing after the verb.
-  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
+  # not the literal historic phrase.  Catches "silently fall/falls back",
+  # "silently degrade/degrades", and "silently substitute/substitutes"
+  # regardless of exact phrasing after the verb.
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
   # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
   # covers "no silent fallback to a neighboring tier" anti-pattern variants.
   [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
@@ -205,9 +207,10 @@ setup() {
   # G21 body-guard: assert non-empty before testing content.
   [ -n "$body" ]
   # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
-  # not the literal historic phrase.  Catches "silently fall/falls back" and
-  # "silently degrade/degrades" regardless of exact phrasing after the verb.
-  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
+  # not the literal historic phrase.  Catches "silently fall/falls back",
+  # "silently degrade/degrades", and "silently substitute/substitutes"
+  # regardless of exact phrasing after the verb.
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
   # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
   # covers "no silent fallback to a neighboring tier" anti-pattern variants.
   [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
@@ -241,15 +244,12 @@ setup() {
   # G21 body-guard: assert non-empty before testing content.
   [ -n "$body" ]
   # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
-  # not the literal historic phrase.  Catches "silently fall/falls back" and
-  # "silently degrade/degrades" regardless of exact phrasing after the verb.
-  # Note: this H4 body contains "does not silently substitute defaults" (the
-  # negated, non-anti-pattern form); the regex intentionally uses (fall|degrad)
-  # rather than adding "substitut" to avoid false-positives on that negated phrase.
-  # The acceptance test (test-phase1-acceptance.bats G24 C-3) demonstrates the
-  # extended regex including "substitut" catches "silently substitutes the bundled
-  # default" when the negation is absent.
-  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
+  # not the literal historic phrase.  Catches "silently fall/falls back",
+  # "silently degrade/degrades", and "silently substitute/substitutes"
+  # regardless of exact phrasing after the verb.  The false-positive risk
+  # ("does not silently substitute defaults") was removed from this H4 body
+  # by replacing that phrase with "uses no implicit default substitution".
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
   # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
   # covers "no silent fallback to a neighboring tier" anti-pattern variants.
   [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]

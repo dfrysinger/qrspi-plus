@@ -291,27 +291,28 @@ run_pin() {
 
 @test "[Phase1 G24 negative-case C-3] anti-pattern regex trips on semantic equivalent phrasings" {
   # Demonstrates the intent-based regex family is genuinely broader than the
-  # original literal pin it replaces.  Applies the regex directly to synthetic
-  # anti-pattern strings; each must match (=~ returns 0 on match).
+  # original literal pin it replaces.  Extracts the DEPLOYED regex patterns
+  # directly from test-using-qrspi-vocab.bats so future drift in the unit-pin
+  # pattern is immediately visible here rather than silently diverging.
   #
-  # Two complementary patterns mirror those used in test-using-qrspi-vocab.bats:
-  #   REGEX_ADVERB — catches "silently" as an adverb before a problematic verb
-  #                  (fall/degrade/substitute); extended here with "substitut" to
-  #                  cover the "silently substitutes the bundled default" variant
-  #                  whose negated form ("does not silently substitute") prevents
-  #                  its inclusion in the unit-test regex without false-positives.
-  #   REGEX_NOUN   — catches "silent fallback" as a noun phrase (space-separated,
-  #                  not hyphenated) to cover "no silent fallback to a neighboring
-  #                  tier" phrasings.
-  local REGEX_ADVERB='silently[[:space:]]+(fall|degrad|substitut)'
-  local REGEX_NOUN='(^|[[:space:]])silent[[:space:]]+fallback'
+  # Assertions use `printf | grep -qE` (simple command, enforced by set -e on
+  # bash 3.2+) rather than bare `[[ =~ ]]` (compound command, exempt from set -e
+  # on bash 3.2 / macOS default bash).
+  local pin_file="$PINS/test-using-qrspi-vocab.bats"
+  [ -f "$pin_file" ]
+  # Extract the deployed regex literals from the unit-pin assertions.
+  local REGEX_ADVERB REGEX_NOUN
+  REGEX_ADVERB=$(grep -oE 'silently\[.*\]\+\(.*\)' "$pin_file" | head -1)
+  REGEX_NOUN=$(grep -oE '\(.*\)silent\[.*\]\+fallback' "$pin_file" | head -1)
+  [ -n "$REGEX_ADVERB" ]
+  [ -n "$REGEX_NOUN" ]
 
-  # "silently degrades to the agent default" trips REGEX_ADVERB.
-  [[ "silently degrades to the agent default"  =~ $REGEX_ADVERB ]]
-  # "silently substitutes the bundled default" trips REGEX_ADVERB (extended).
-  [[ "silently substitutes the bundled default" =~ $REGEX_ADVERB ]]
-  # "no silent fallback to a neighboring tier" trips REGEX_NOUN.
-  [[ "no silent fallback to a neighboring tier" =~ $REGEX_NOUN  ]]
+  # "silently degrades to the agent default" must trip REGEX_ADVERB.
+  printf '%s' "silently degrades to the agent default" | grep -qE "$REGEX_ADVERB"
+  # "silently substitutes the bundled default" must trip REGEX_ADVERB (semantic equivalent).
+  printf '%s' "silently substitutes the bundled default" | grep -qE "$REGEX_ADVERB"
+  # "no silent fallback to a neighboring tier" must trip REGEX_NOUN.
+  printf '%s' "no silent fallback to a neighboring tier" | grep -qE "$REGEX_NOUN"
 }
 
 # --------------------------------------------------------------------------
