@@ -95,26 +95,26 @@ A task declares `sizing_exception: schema-migration` when the author claims the 
 
 1. `sizing_exception: schema-migration` — value must be exactly `schema-migration`.
 2. `sizing_rationale:` — present and non-empty; must contain a human-readable reason.
-3. `structural_lint:` — present and non-empty; must name a concrete bash command.
+3. `structural_lint:` — present and non-empty; must be a repo-relative path under `scripts/structural-lints/` (not an inline command).
 
 Emit a `severity: high, change_type: correctness` finding referencing `skills/plan/SKILL.md` § Schema-Migration Task Shape for each absent or empty field. Do not proceed to Step 2 if any field is missing.
 
-**Step 2 — Validate the structural-lint command.** Before executing, validate the `structural_lint` command:
+**Step 2 — Validate the structural-lint script path.** Before executing, validate the `structural_lint` value as a named-script path:
 
-- Reject commands containing shell metacharacters (`;`, `|`, `&`, backtick, `$`, `(`, `)`, `<`, `>`) that are unrelated to the diff assertion and could execute arbitrary code.
-- Reject commands where the primary pattern argument starts with `-` (would be interpreted as a flag, not a search term).
+- Reject any value that does not start with the exact prefix `scripts/structural-lints/` — inline bash commands, paths outside this prefix, and any value containing shell metacharacters are all invalid.
+- Reject paths containing `..` (directory traversal) or absolute paths (starting with `/`).
 
-If validation fails, emit a `severity: high, change_type: correctness` finding for a malformed structural-lint command rather than executing it.
+If validation fails, emit a `severity: high, change_type: correctness` finding for a malformed structural-lint value rather than executing anything. Do not attempt to execute inline commands.
 
-**Step 3 — Execute the structural-lint command.** Run the validated command from the repository root against the proposed diff. If the command exits non-zero or produces output indicating non-structural diff content is present, emit a `severity: high, change_type: correctness` finding: the structural lint failed — the claimed mechanical-only migration contains non-structural diff content; the LOC/file-count exemption is denied.
+**Step 3 — Execute the structural-lint script.** First verify the proposed diff is non-empty; if the diff is empty, emit a `severity: high, change_type: correctness` finding: the diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the LOC/file-count exemption is denied. Then run `bash <validated-path>` from the repository root with no spec-controlled arguments. Interpret the result by exit code only: if the script exits non-zero, emit a `severity: high, change_type: correctness` finding: the structural lint failed — the claimed mechanical-only migration contains non-structural diff content; the LOC/file-count exemption is denied.
 
 **Step 4 — Grant exemption.** Grant the LOC ceiling and file-count exemption only when:
 
 - All three mandatory fields are present and non-empty (Step 1 passes), AND
-- The `structural_lint` command is valid (Step 2 passes), AND
-- The `structural_lint` command executes successfully (Step 3 passes).
+- The `structural_lint` value is a valid repo-relative path under `scripts/structural-lints/` (Step 2 passes), AND
+- The proposed diff is non-empty and the `structural_lint` script exits 0 (Step 3 passes).
 
-When the exemption is denied — because any mandatory field is absent, the command is malformed, or the lint fails — apply the standard LOC ceiling and file-count guidance as if no exception were declared.
+When the exemption is denied — because any mandatory field is absent, the path is invalid, the diff is empty, or the lint fails — apply the standard LOC ceiling and file-count guidance as if no exception were declared.
 
 ### Full-pipeline-only checks (skip if `route: quick`)
 

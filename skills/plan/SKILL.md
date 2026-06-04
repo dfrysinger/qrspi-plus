@@ -98,7 +98,7 @@ When `sizing_exception: schema-migration` is declared, the task spec MUST carry 
 
 - `sizing_exception: schema-migration` — declares the exception; must be exactly this value for schema-migration tasks.
 - `sizing_rationale: <human-readable reason>` — one sentence explaining why this specific change is a mechanical same-shape migration (e.g., "removes the deprecated `model:` key added uniformly by T40 from all 41 agent frontmatter files").
-- `structural_lint: <bash check>` — a concrete bash command asserting that every modified file received the same structural change and no other diff content exists. The command must be falsifiable: it must exit 0 (or output `0`) when the diff is mechanical-only, and exit non-zero (or output a non-zero count) when non-structural lines are present.
+- `structural_lint: <script-path>` — a repo-relative path to a checked-in script under `scripts/structural-lints/` (e.g., `scripts/structural-lints/check-model-key-removal.sh`). The path must start with `scripts/structural-lints/`, must not contain `..`, and must not be an absolute path. The script receives no spec-controlled arguments; it is invoked as `bash <path>` from the repository root against the proposed diff. The script must exit 0 when the diff is mechanical-only and non-empty, and exit non-zero when non-structural content is present or the diff is empty. Inline bash commands are not accepted as the field value; a literal command string instead of a valid script path is a plan-spec defect.
 
 ### Effect on sizing limits
 
@@ -115,10 +115,11 @@ A schema-migration declaration is incomplete — and the LOC/file-count exemptio
 
 - `sizing_exception: schema-migration` is declared but `sizing_rationale:` is absent or empty.
 - `sizing_exception: schema-migration` is declared but `structural_lint:` is absent or empty.
-- `structural_lint:` is present but the command is malformed (contains shell metacharacters that could execute unrelated code, or a pattern beginning with `-`).
-- `structural_lint:` is present but the command exits non-zero or outputs non-zero matching lines, indicating the diff contains non-structural content.
+- `structural_lint:` is present but its value is not a valid repo-relative path under `scripts/structural-lints/` (is an inline command, contains `..`, or is an absolute path).
+- `structural_lint:` names a valid script path but the proposed diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the exemption is denied.
+- `structural_lint:` names a valid script path but the script exits non-zero, indicating the diff contains non-structural content.
 
-The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception review) verifies all four conditions and emits a `severity: high, change_type: correctness` finding for each defect.
+The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception review) verifies all five conditions and emits a `severity: high, change_type: correctness` finding for each defect.
 
 ## Multi-Actor Flow Check
 
