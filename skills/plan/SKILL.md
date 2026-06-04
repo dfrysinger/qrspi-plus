@@ -78,6 +78,54 @@ Each task implements **exactly one observable behavior** — one request handler
 
 A task that fails any floor check merges into the parent task that gives it observable behavior; do not ship sub-atomic tasks.
 
+## Schema-Migration Task Shape
+
+A **schema-migration task** applies an identical mechanical change to N files of the same shape — for example, deleting one frontmatter key from every agent file, replacing a single identifier uniformly across all skill prose, or renaming a top-level YAML field across a glob of config files. This task shape recurs in this codebase and is the narrow exception to the ordinary LOC ceiling and file-count guidance.
+
+### When to use this shape
+
+Use `sizing_exception: schema-migration` only when ALL of the following hold:
+
+- Every file in `Target files:` receives the same structural change (same pattern, same before/after; not "similar" or "related").
+- The change is mechanical-only — no logic modification, no behavioral delta, no per-file judgment calls.
+- A single bash check can assert the mechanical-only nature of the resulting diff.
+
+Do not use this exception for multi-feature bundles that happen to touch many files, for behavioral changes dressed up as migrations, or for any task where per-file human judgment is needed. The closed exception set remains: schema migration, CI scaffolding, reusable primitives — no new category is added by this contract.
+
+### Mandatory trio — all three fields required together
+
+When `sizing_exception: schema-migration` is declared, the task spec MUST carry all three of the following fields. No field is optional when the exception is used; omitting any one is a plan-spec defect:
+
+- `sizing_exception: schema-migration` — declares the exception; must be exactly this value for schema-migration tasks.
+- `sizing_rationale: <human-readable reason>` — one sentence explaining why this specific change is a mechanical same-shape migration (e.g., "removes the deprecated `model:` key added uniformly by T40 from all 41 agent frontmatter files").
+- `structural_lint: <script-path>` — a repo-relative path to a checked-in script under `scripts/structural-lints/` (e.g., `scripts/structural-lints/check-model-key-removal.sh`). The value must be a single token matching the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$`; whitespace, tab, newline, and any character outside that token class are rejected. The script must exist as a regular readable file at that path in the repository; a path that passes the token check but is absent from the repository is a plan-spec defect. The script receives no spec-controlled arguments; it is invoked as `bash -- <path>` from the repository root with the path passed as a single argv element (never interpolated into a `bash -c` string) against the proposed diff. The script must exit 0 when the diff is mechanical-only and non-empty, and exit non-zero when non-structural content is present or the diff is empty. Inline bash commands are not accepted as the field value; a literal command string instead of a valid script path is a plan-spec defect.
+
+### Effect on sizing limits
+
+When the mandatory trio is present and the `structural_lint` check executes successfully on the proposed diff:
+
+- **N-files: ungated.** No upper limit applies to the number of files the task may touch; the structural lint is the real ceiling, not a file count.
+- **LOC ceiling: exempted.** The ordinary 200-LOC ceiling does not apply to this task.
+
+Ordinary task-size discipline is not relaxed for non-schema-migration work. A task without the full mandatory trio is evaluated against the standard ceiling.
+
+### Plan-spec defects
+
+A schema-migration declaration is incomplete — and the LOC/file-count exemption is NOT granted — when ANY of the following holds:
+
+- `sizing_exception: schema-migration` is declared but `sizing_rationale:` is absent or empty.
+- `sizing_exception: schema-migration` is declared but `structural_lint:` is absent or empty.
+- `structural_lint:` is present but its value does not match the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` (is an inline command, contains whitespace/tab/newline, contains `..`, is an absolute path, or uses characters outside the allowed token class).
+- `structural_lint:` carries a token-valid path but the named script does not exist as a regular readable file at the repository root; a missing or unreadable script is a configuration defect, not a content defect, and the exemption is denied.
+- `structural_lint:` names a valid, readable script path but the proposed diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the exemption is denied.
+- `structural_lint:` names a valid, readable script path but the script exits non-zero, indicating the diff contains non-structural content.
+
+The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception review) verifies all six conditions and emits a `severity: high, change_type: correctness` finding for each defect.
+
+## Multi-Actor Flow Check
+
+!cat skills/_shared/multi-actor-flow-check.md
+
 ## Process
 
 ### Plan Overview Subagent

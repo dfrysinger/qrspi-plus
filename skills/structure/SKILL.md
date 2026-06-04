@@ -50,6 +50,10 @@ Do NOT proceed to Plan without user approval of the structure.
 
 When generating `structure.md`, Structure honors the phase scope set by Phasing: structure.md reflects ONLY current-phase file maps and interfaces (per `phasing.md` + the pruned `design.md`). Entries are tagged with goal IDs. File maps for goals not in the current phase (per `roadmap.md`, which Phasing authors) do not appear in `structure.md`. Structure verifies every goal ID in the file map exists in the current-phase `goals.md`; cross-phase scoping decisions and any change to the phase boundary itself are Phasing's responsibility — Structure refers the user back to Phasing if a scope shift is needed rather than re-authoring the phase split.
 
+## Multi-Actor Flow Check
+
+!cat skills/_shared/multi-actor-flow-check.md
+
 ## Process
 
 ### Structure Subagent

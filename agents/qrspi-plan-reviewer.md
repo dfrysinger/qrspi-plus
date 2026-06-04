@@ -87,6 +87,39 @@ Emit a `severity: high, change_type: correctness` finding referencing the contra
 
 The finding cites `skills/plan/SKILL.md` § Cross-Task Consumer Surface as the contract reference. The Cross-task consumer surface detection clause is **independent of** the Sweep-task detection clause: a task that satisfies both triggers carries both `dependent_tests:` and `cross_task_consumers:` as separate fields, and the reviewer evaluates each clause independently — a finding may be emitted against either, both, or neither. The two clauses do not merge.
 
+### Schema-migration exception review
+
+A task declares `sizing_exception: schema-migration` when the author claims the schema-migration exception to the LOC ceiling and file-count guidance. The reviewer MUST verify the exception before granting it; declaring the exception without passing verification does not grant the exemption.
+
+**Step 1 — Verify the mandatory trio.** Confirm ALL three fields are present and non-empty:
+
+1. `sizing_exception: schema-migration` — value must be exactly `schema-migration`.
+2. `sizing_rationale:` — present and non-empty; must contain a human-readable reason.
+3. `structural_lint:` — present and non-empty; must be a repo-relative path under `scripts/structural-lints/` (not an inline command).
+
+Emit a `severity: high, change_type: correctness` finding referencing `skills/plan/SKILL.md` § Schema-Migration Task Shape for each absent or empty field. Do not proceed to Step 2 if any field is missing.
+
+**Step 2 — Validate the structural-lint script path.** Before executing, validate the `structural_lint` value as a named-script path:
+
+- Require the value to match the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` — a single filename token with no whitespace, tab, newline, or character outside `[A-Za-z0-9_.-]` between the prefix and the `.sh` suffix. Reject any value that fails this match: inline bash commands, paths outside this prefix, paths containing `..`, absolute paths (starting with `/`), and any value containing whitespace or shell metacharacters are all invalid.
+
+If the regex validation fails, emit a `severity: high, change_type: correctness` finding for a malformed structural-lint value rather than executing anything. Do not attempt to execute inline commands.
+
+- After the regex passes, verify the named script exists as a regular readable file at the repository root (e.g., `[ -f "<path>" ] && [ -r "<path>" ]`). If the file is absent or not readable, emit a `severity: high, change_type: correctness` finding: "the `structural_lint` script `<path>` does not exist (or is not readable) at the repository root; check in the script or fix the path. The LOC/file-count exemption is denied." Do NOT proceed to Step 3.
+
+If both checks pass (regex valid and file exists and is readable), proceed to Step 3.
+
+**Step 3 — Execute the structural-lint script.** First verify the proposed diff is non-empty; if the diff is empty, emit a `severity: high, change_type: correctness` finding: the diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the LOC/file-count exemption is denied. Then run `bash -- <validated-path>` from the repository root, passing the path as a single argv element — never interpolate it into a `bash -c` string. Interpret the result by exit code only: if the script exits non-zero, emit a `severity: high, change_type: correctness` finding: the structural lint failed — the claimed mechanical-only migration contains non-structural diff content; the LOC/file-count exemption is denied.
+
+**Step 4 — Grant exemption.** Grant the LOC ceiling and file-count exemption only when:
+
+- All three mandatory fields are present and non-empty (Step 1 passes), AND
+- The `structural_lint` value matches the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` (Step 2 regex passes), AND
+- The named script exists as a regular readable file at the repository root (Step 2 existence check passes), AND
+- The proposed diff is non-empty and the `structural_lint` script exits 0 (Step 3 passes).
+
+When the exemption is denied — because any mandatory field is absent, the path is invalid, the diff is empty, or the lint fails — apply the standard LOC ceiling and file-count guidance as if no exception were declared.
+
 ### Full-pipeline-only checks (skip if `route: quick`)
 
 - **Design/structure traceability** — every task traces to a component or interface in `companion_design` and `companion_structure`; no tasks implement components the design didn't specify; no design components are absent from the task list.
