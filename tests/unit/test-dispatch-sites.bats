@@ -268,10 +268,11 @@ setup() {
   [ -x "scripts/dispatch-companion.sh" ]
 }
 
-@test "task-20 companion: dispatch-companion.sh accepts launch flags without crashing (no 127)" {
-  # Test expectation: dispatch-companion.sh uses the new --vendor/--model/--prompt-file/--round-dir/--tag
-  # flag surface (structure.md §dispatch-companion.sh); it must not exit 127 (script not found)
-  # when invoked with the new flags.
+@test "task-20 companion: dispatch-companion.sh accepts launch flags and exits 0 with full flag set" {
+  # Test expectation: dispatch-companion.sh accepts the full --vendor/--model/--prompt-file/
+  # --round-dir/--tag flag surface and exits 0 when all required flags are present and valid.
+  # Strengthened from the original "no 127" vacuous check: exit == 0 proves every required-flag
+  # die() guard was satisfied, not merely that the script was found (task-20 R5 F01).
   local tmp_dir
   tmp_dir="$(mktemp -d)"
   local prompt_file="$tmp_dir/prompt.txt"
@@ -283,8 +284,96 @@ setup() {
     --round-dir "$tmp_dir" \
     --tag test-tag
   rm -rf "$tmp_dir"
-  # 127 = command not found; any other exit is acceptable for RED
-  [ "$status" -ne 127 ]
+  [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# F01 (R5 fix-cycle): dispatch-companion.sh launch — loud failure for each
+# individually omitted required flag.  DoD: "loud failure for missing flags"
+# (task-20.md §companion/splitter fixture coverage, L55).
+# Each test omits exactly one required flag (by passing an empty value) and
+# asserts: (a) exit != 0, (b) stderr carries the flag name so the caller
+# can diagnose which flag was missing.
+# Falsifiability: replace the five `[ -n "$L_<FLAG>" ] || die ...` guards
+# in dispatch-companion.sh (lines 582-586) with `:` no-ops; these tests fail.
+# ---------------------------------------------------------------------------
+
+@test "task-20 companion (F01): launch dies loudly when --vendor is omitted (empty)" {
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  local prompt_file="$tmp_dir/prompt.txt"
+  printf 'Test prompt body\n' > "$prompt_file"
+  run --separate-stderr scripts/dispatch-companion.sh \
+    --vendor "" \
+    --model stub-model \
+    --prompt-file "$prompt_file" \
+    --round-dir "$tmp_dir" \
+    --tag test-tag
+  rm -rf "$tmp_dir"
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *"--vendor"* ]]
+}
+
+@test "task-20 companion (F01): launch dies loudly when --model is omitted (empty)" {
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  local prompt_file="$tmp_dir/prompt.txt"
+  printf 'Test prompt body\n' > "$prompt_file"
+  run --separate-stderr scripts/dispatch-companion.sh \
+    --vendor stub \
+    --model "" \
+    --prompt-file "$prompt_file" \
+    --round-dir "$tmp_dir" \
+    --tag test-tag
+  rm -rf "$tmp_dir"
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *"--model"* ]]
+}
+
+@test "task-20 companion (F01): launch dies loudly when --prompt-file is omitted (empty)" {
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  run --separate-stderr scripts/dispatch-companion.sh \
+    --vendor stub \
+    --model stub-model \
+    --prompt-file "" \
+    --round-dir "$tmp_dir" \
+    --tag test-tag
+  rm -rf "$tmp_dir"
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *"--prompt-file"* ]]
+}
+
+@test "task-20 companion (F01): launch dies loudly when --round-dir is omitted (empty)" {
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  local prompt_file="$tmp_dir/prompt.txt"
+  printf 'Test prompt body\n' > "$prompt_file"
+  run --separate-stderr scripts/dispatch-companion.sh \
+    --vendor stub \
+    --model stub-model \
+    --prompt-file "$prompt_file" \
+    --round-dir "" \
+    --tag test-tag
+  rm -rf "$tmp_dir"
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *"--round-dir"* ]]
+}
+
+@test "task-20 companion (F01): launch dies loudly when --tag is omitted (empty)" {
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  local prompt_file="$tmp_dir/prompt.txt"
+  printf 'Test prompt body\n' > "$prompt_file"
+  run --separate-stderr scripts/dispatch-companion.sh \
+    --vendor stub \
+    --model stub-model \
+    --prompt-file "$prompt_file" \
+    --round-dir "$tmp_dir" \
+    --tag ""
+  rm -rf "$tmp_dir"
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *"--tag"* ]]
 }
 
 @test "task-20 companion: dispatch-companion.sh launch output contains only JOB_ID= (no payload echo)" {
@@ -401,15 +490,18 @@ setup() {
   [ -n "$job_id" ]
 
   # 2. Await — must write raw to <round-dir>/.dispatch/<tag>.raw and emit no
-  #    payload to stdout. await-round.sh runs await_cmd with
+  #    payload to stdout OR stderr. await-round.sh runs await_cmd with
   #    cwd=<round-dir>/.dispatch/ (so the .jobs/ record lookup is relative);
   #    we mirror that calling convention here.
+  #    R5 F02: use --separate-stderr to capture stdout and stderr independently
+  #    so we can assert the raw payload marker is absent from BOTH channels.
   local repo_root_abs
   repo_root_abs="$(pwd)"
   pushd "$tmp_dir/.dispatch" >/dev/null
-  run "$repo_root_abs/scripts/dispatch-companion.sh" await "$job_id"
+  run --separate-stderr "$repo_root_abs/scripts/dispatch-companion.sh" await "$job_id"
   local await_status="$status"
   local await_stdout="$output"
+  local await_stderr="$stderr"
   popd >/dev/null
 
   local raw_file="$tmp_dir/.dispatch/spec-codex.raw"
@@ -425,6 +517,9 @@ setup() {
   [ "$raw_exists" -eq 1 ]
   [ -n "$raw_contents" ]
   [[ "$raw_contents" == *"STUB-REVIEWER-RAW-OUTPUT-MARKER-AAA"* ]]
-  # Payload-silent: the raw marker must NOT appear in await's stdout.
+  # Payload-silent on stdout: the raw marker must NOT appear in await's stdout.
   ! [[ "$await_stdout" == *"STUB-REVIEWER-RAW-OUTPUT-MARKER-AAA"* ]]
+  # Payload-silent on stderr (R5 F02): the raw marker must NOT appear in await's
+  # stderr either.  DoD: "stdout or stderr payload silence" (task-20.md L43, L55).
+  ! [[ "$await_stderr" == *"STUB-REVIEWER-RAW-OUTPUT-MARKER-AAA"* ]]
 }
