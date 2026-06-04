@@ -192,3 +192,127 @@ setup_file() {
   run grep -nF '[T7 / TE6] dispatch surface: COPILOT_CLI-unset path emits [transport: shell-pipeline]' "$PHASE1_ACCEPTANCE"
   [ "$status" -eq 0 ]
 }
+
+# ===========================================================================
+# T39 / G32 — built-tree strip/copy invariants and shipped-file invariants.
+#
+# Per docs/qrspi/2026-05-30-v072-release/structure.md
+# §`tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats`
+# (Slice 1.7) and tasks/task-39.md §"Test expectations":
+#
+#   - build/ exists with manifest-driven content and the fixed include list.
+#   - build/skills/goals/SKILL.md contains inlined skills/goals/owns-defers.md
+#     content with no remaining `!cat` directive for that include.
+#   - build/skills/_shared/prompt-prose-detection.md exists (defensive copy).
+#   - build/docs/, build/tools/, build/tests/ do NOT exist.
+#   - scripts/ ships in full.
+#   - Zero ${CLAUDE_SKILL_DIR} occurrences in shipped files (under build/).
+#   - tools/render-skill.sh and tools/g4-section-anchor-refresh.sh exist;
+#     scripts/render-skill.sh and scripts/g4-section-anchor-refresh.sh gone.
+# ===========================================================================
+
+@test "[T39/G32] build/ tree exists at the repo root" {
+  [ -d "$REPO_ROOT/build" ]
+}
+
+@test "[T39/G32] build/skills/goals/SKILL.md exists and contains inlined owns-defers.md content" {
+  local built="$REPO_ROOT/build/skills/goals/SKILL.md"
+  local source="$REPO_ROOT/skills/goals/owns-defers.md"
+  [ -f "$built" ]
+  [ -f "$source" ]
+  # Pick a stable, non-trivial token from owns-defers.md and assert it landed
+  # inline in the built SKILL.md.
+  run grep -F 'Goals OWNS' "$source"
+  [ "$status" -eq 0 ]
+  run grep -F 'Goals OWNS' "$built"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32] build/skills/goals/SKILL.md retains NO !cat directive for owns-defers.md" {
+  local built="$REPO_ROOT/build/skills/goals/SKILL.md"
+  [ -f "$built" ]
+  run grep -F '!cat skills/goals/owns-defers.md' "$built"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T39/G32] build/skills/goals/SKILL.md retains NO !cat directives at all (full transitive expansion)" {
+  local built="$REPO_ROOT/build/skills/goals/SKILL.md"
+  [ -f "$built" ]
+  # Strict whole-line bare-relative grammar: `^\s*!cat <relpath>\s*$`.
+  run grep -E '^[[:space:]]*!cat[[:space:]]+[A-Za-z0-9_./-]+[[:space:]]*$' "$built"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T39/G32] build/skills/_shared/prompt-prose-detection.md exists (defensive shared-snippet copy)" {
+  [ -f "$REPO_ROOT/build/skills/_shared/prompt-prose-detection.md" ]
+}
+
+@test "[T39/G32] build/docs/ does NOT exist (dev-only path stripped)" {
+  [ ! -e "$REPO_ROOT/build/docs" ]
+}
+
+@test "[T39/G32] build/tools/ does NOT exist (dev-only path stripped)" {
+  [ ! -e "$REPO_ROOT/build/tools" ]
+}
+
+@test "[T39/G32] build/tests/ does NOT exist (dev-only path stripped)" {
+  [ ! -e "$REPO_ROOT/build/tests" ]
+}
+
+@test "[T39/G32] build/scripts/ exists (scripts/ ships in full as runtime)" {
+  [ -d "$REPO_ROOT/build/scripts" ]
+}
+
+@test "[T39/G32] build/templates/ exists (fixed include list)" {
+  [ -d "$REPO_ROOT/build/templates" ]
+}
+
+@test "[T39/G32] build/.claude-plugin/ exists (manifest ships)" {
+  [ -d "$REPO_ROOT/build/.claude-plugin" ]
+  [ -f "$REPO_ROOT/build/.claude-plugin/plugin.json" ]
+}
+
+@test "[T39/G32] build/LICENSE and build/README.md exist (fixed include list)" {
+  [ -f "$REPO_ROOT/build/LICENSE" ]
+  [ -f "$REPO_ROOT/build/README.md" ]
+}
+
+@test "[T39/G32] zero \${CLAUDE_SKILL_DIR} occurrences in shipped files under build/" {
+  [ -d "$REPO_ROOT/build" ]
+  # Search across the entire build/ tree; any hit is a regression.
+  run bash -c "grep -RF '\${CLAUDE_SKILL_DIR}' '$REPO_ROOT/build' || true"
+  [ -z "$output" ]
+}
+
+@test "[T39/G32] zero \${CLAUDE_SKILL_DIR} occurrences in source skills/ either (legacy sites converted)" {
+  # Source-side cleanup invariant — every legacy site converted to bare form.
+  run bash -c "grep -RF '\${CLAUDE_SKILL_DIR}' '$REPO_ROOT/skills' || true"
+  [ -z "$output" ]
+}
+
+@test "[T39/G32] tools/render-skill.sh exists at the new path" {
+  [ -f "$REPO_ROOT/tools/render-skill.sh" ]
+}
+
+@test "[T39/G32] tools/g4-section-anchor-refresh.sh exists at the new path" {
+  [ -f "$REPO_ROOT/tools/g4-section-anchor-refresh.sh" ]
+}
+
+@test "[T39/G32] scripts/render-skill.sh has been removed from the old path" {
+  [ ! -e "$REPO_ROOT/scripts/render-skill.sh" ]
+}
+
+@test "[T39/G32] scripts/g4-section-anchor-refresh.sh has been removed from the old path" {
+  [ ! -e "$REPO_ROOT/scripts/g4-section-anchor-refresh.sh" ]
+}
+
+@test "[T39/G32] no remaining caller references to scripts/render-skill.sh in source tree" {
+  # Search the source tree (excluding build/, docs/, reviews/, .git, fixtures).
+  run bash -c "grep -RF --exclude-dir=build --exclude-dir=docs --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures 'scripts/render-skill.sh' '$REPO_ROOT' || true"
+  [ -z "$output" ]
+}
+
+@test "[T39/G32] no remaining caller references to scripts/g4-section-anchor-refresh.sh in source tree" {
+  run bash -c "grep -RF --exclude-dir=build --exclude-dir=docs --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures 'scripts/g4-section-anchor-refresh.sh' '$REPO_ROOT' || true"
+  [ -z "$output" ]
+}

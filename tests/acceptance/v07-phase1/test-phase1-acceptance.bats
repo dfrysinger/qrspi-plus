@@ -3034,3 +3034,96 @@ JQ_EOF
   [ "$trap_line" -lt "$mktemp_line" ] \
     || { echo "ERROR: _fp_tmp trap (line $trap_line) must precede mktemp (line $mktemp_line)"; return 1; }
 }
+
+# ===========================================================================
+# T39 / G32 — Release-level acceptance for the plugin build pipeline.
+#
+# Per docs/qrspi/2026-05-30-v072-release/structure.md
+# §`tests/acceptance/v07-phase1/test-phase1-acceptance.bats` (Slice 1.7)
+# and tasks/task-39.md §"Test expectations":
+#
+#   - build/ directory exists with the full expanded plugin tree.
+#   - .claude-plugin/marketplace.json `qrspi` entry has `source: "./build"`
+#     and v0.7.2 release metadata landed.
+#   - CONTRIBUTING.md documents the rebuild workflow + failure modes +
+#     committed-build rationale + scripts/ vs tools/ distinction.
+#   - Resolver acceptance fixtures (legacy ${CLAUDE_SKILL_DIR} + cycle) exist
+#     and demonstrate fail-loud diagnostics.
+# ===========================================================================
+
+@test "[T39/G32 acceptance] build/ exists at the repo root with the expanded plugin tree" {
+  [ -d "$REPO_ROOT/build" ]
+  [ -d "$REPO_ROOT/build/skills" ]
+  [ -d "$REPO_ROOT/build/.claude-plugin" ]
+}
+
+@test "[T39/G32 acceptance] .claude-plugin/marketplace.json qrspi plugin source points at ./build" {
+  local mkt="$REPO_ROOT/.claude-plugin/marketplace.json"
+  [ -f "$mkt" ]
+  # Tolerate object-form or string-form; require the value `./build` to
+  # appear in association with the qrspi plugin entry.
+  run bash -c "node -e 'const m=JSON.parse(require(\"fs\").readFileSync(\"$mkt\",\"utf8\"));const q=(m.plugins||[]).find(p=>p.name===\"qrspi\");if(!q)process.exit(2);const s=typeof q.source===\"string\"?q.source:(q.source&&q.source.path);process.exit(s===\"./build\"?0:3);'"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] .claude-plugin/marketplace.json qrspi plugin carries v0.7.2 release metadata" {
+  local mkt="$REPO_ROOT/.claude-plugin/marketplace.json"
+  [ -f "$mkt" ]
+  run bash -c "node -e 'const m=JSON.parse(require(\"fs\").readFileSync(\"$mkt\",\"utf8\"));const q=(m.plugins||[]).find(p=>p.name===\"qrspi\");if(!q)process.exit(2);process.exit(q.version===\"0.7.2\"?0:3);'"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] CONTRIBUTING.md documents the local rebuild workflow (node tools/build-plugin.mjs)" {
+  [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
+  run grep -F 'node tools/build-plugin.mjs' "$REPO_ROOT/CONTRIBUTING.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] CONTRIBUTING.md documents the committed-build rationale" {
+  [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
+  # Either the rationale heading or load-bearing tokens (atomic source/build
+  # diffs, one-revert release rollback, git blame across the seam).
+  run grep -E -i 'why.*commit.*build|atomic source/build|one-revert|build/.*commit' "$REPO_ROOT/CONTRIBUTING.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] CONTRIBUTING.md documents the two PR-blocking build-sync failure modes" {
+  [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
+  # Failure mode A: build script exits non-zero (any D3 fail-loud condition).
+  run grep -E -i 'fail.?loud|non-zero|malformed.*!cat|missing target|cycle' "$REPO_ROOT/CONTRIBUTING.md"
+  [ "$status" -eq 0 ]
+  # Failure mode B: build/ on the PR branch differs from resolver output.
+  run grep -E -i 'forgot to (regenerate|rebuild)|build/.*differs|out of sync' "$REPO_ROOT/CONTRIBUTING.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] CONTRIBUTING.md anchors the scripts/ (runtime) vs tools/ (dev-time) distinction" {
+  [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
+  run grep -E -i 'scripts/.*runtime|tools/.*dev|runtime.*scripts|dev-?(time|only).*tools' "$REPO_ROOT/CONTRIBUTING.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] resolver acceptance fixture exists for legacy \${CLAUDE_SKILL_DIR} failure" {
+  # Fixture lives under tests/fixtures/ so it does not pollute the real
+  # !cat resolution surface (per structure.md "Fixture authoring").
+  run bash -c "find '$REPO_ROOT/tests/fixtures' -type d -name 'build-resolver*' -print -quit"
+  [ -n "$output" ]
+  # Some file under that subtree must contain a literal ${CLAUDE_SKILL_DIR}
+  # token to drive the fail-loud rejection.
+  run bash -c "grep -RF '\${CLAUDE_SKILL_DIR}' \"$output\" || true"
+  [ -n "$output" ]
+}
+
+@test "[T39/G32 acceptance] resolver acceptance fixture exists for include-cycle failure" {
+  run bash -c "find '$REPO_ROOT/tests/fixtures' -type d -name 'build-resolver*' -print -quit"
+  [ -n "$output" ]
+  # A cycle fixture must contain at least two files that include each other
+  # via bare-relative !cat directives. Use a coarse test: at least two
+  # `!cat` directives under the cycle fixture path.
+  local fixroot="$output"
+  run bash -c "find '$fixroot' -type d -name '*cycle*' -print -quit"
+  [ -n "$output" ]
+  run bash -c "grep -RE '^[[:space:]]*!cat[[:space:]]+' \"$output\" | wc -l | tr -d ' '"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 2 ]
+}
