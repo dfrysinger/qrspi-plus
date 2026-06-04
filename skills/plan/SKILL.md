@@ -92,6 +92,17 @@ A task that fails any floor check merges into the parent task that gives it obse
 **Task:** Break the structure into ordered tasks following vertical slices and phases.
 
 1. Break structure into ordered tasks following vertical slices and phases from `design.md`
+
+!cat skills/_shared/prompt-prose-detection.md
+
+!cat skills/_shared/prompt-prose-writer-addition.md
+
+**Test-Expectations clause for prompt-prose tasks.** For tasks classified `task_type: lightweight` because the deliverable IS prompt prose (per Addition A's content-semantic test), Test Expectations cannot be RED-gate failing tests — prompt prose has no executable behavior to verify by test execution. Instead, encode rules-application as the verification mechanism using this template:
+
+> Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy].
+
+Other lightweight task categories (non-prompt prose, ordinary documentation, configuration) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause.
+
 2. Each task spec includes:
    - Exact file paths to create/modify
    - Description of what the task accomplishes
@@ -129,6 +140,16 @@ For large plans, farm task spec writing to sub-subagents:
 - Relevant sections of `structure.md`
 - `design.md` (for test strategy and vertical slice context)
 
+!cat skills/_shared/prompt-prose-detection.md
+
+!cat skills/_shared/prompt-prose-writer-addition.md
+
+**Test-Expectations clause for prompt-prose tasks.** For tasks classified `task_type: lightweight` because the deliverable IS prompt prose (per Addition A's content-semantic test), Test Expectations cannot be RED-gate failing tests — prompt prose has no executable behavior to verify by test execution. Instead, encode rules-application as the verification mechanism using this template:
+
+> Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy].
+
+Other lightweight task categories (non-prompt prose, ordinary documentation, configuration) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause.
+
 Each sub-subagent writes `tasks/task-NN.md`. After all complete, the Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files — creating a single document as the only source of truth during review.
 
 ### Per-Task Classification (`task_type` and `tier`)
@@ -147,17 +168,15 @@ Every per-task spec for a TDD task (`task_type: code` or absent) must carry an e
 
 Specs for `task_type: lightweight` tasks omit this note (no test-writer, no RED gate).
 
-**Step 1 — `task_type`.** Default `code`. Assign `task_type: lightweight` only when **all** target files match one of these globs:
-- `skills/**/SKILL.md`
-- `skills/**/templates/*.md`
-- `agents/qrspi-*.md`
-- `docs/**/*.md` (excluding `docs/qrspi/**` — those are pipeline artifacts, not docs)
-- `*.md` at repo root (e.g., CHANGELOG, AGENTS, README)
+**Step 1 — Classify each task as `code` or `lightweight`.** Default `task_type: code`.
 
-Edge cases:
-- Mixed target file lists (one prose file + one code file) → `code`. Lightweight is all-or-nothing; any executable surface in the diff promotes the whole task to `code`.
-- Frontmatter-only edits to `agents/*.md` (e.g. flipping a `tier:` value) → `lightweight` per the glob — that change has no runtime behavior to TDD against.
-- New file creation → use the planned final path against the same globs. The path is determined by the task spec, not by `git status`.
+Assign `task_type: lightweight` when the task's primary deliverable is prompt prose OR non-prompt prose / docs / config that has no executable behavior to test.
+
+!cat skills/_shared/prompt-prose-detection.md
+
+Apply the detection above to the planned target files. If the target IS prompt prose, classify lightweight. Mixed-deliverable tasks (one prompt-prose file + one code file in the same task) require ALL target files to satisfy the lightweight test; mixed tasks default to `task_type: code` — split per Goal-Specificity rules if genuinely mixed in nature.
+
+The classification gates downstream behavior: lightweight tasks dispatch to `qrspi-implementer-lightweight` (which inherits its own prompt-prose detection via the `prompt-prose-writer` skill preload); code tasks dispatch to `qrspi-implementer` (TDD path). Prompt prose NEVER lands on the TDD path by classification.
 
 **Step 2 — `tier`.** Run after `task_type` is set. Emits the per-task `tier:` frontmatter field consumed by the implementer dispatch (and co-escalated to the TDD test-writer dispatch); it supersedes the legacy per-task `model:` field (G22 / design.md CD-1).
 

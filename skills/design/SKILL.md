@@ -74,6 +74,12 @@ Once the discussion settles, launch a **subagent** to synthesize `design.md`.
 - Any prior feedback files
 - **On-demand:** `research/q*.md` files per the read-on-demand permission in `## Artifact Gating` (single source of truth for the trigger condition, citation requirement, and anti-prophylactic guard — not restated here). The orchestrator surfaces available `q*.md` filenames in the subagent prompt; the subagent decides which (if any) to load.
 
+**Prompt-prose authoring step.** When the synthesis subagent authors `<!-- prose-design: target -->` blocks (verbatim prompt-prose destined for an LLM-consumable file), apply the detection and writer rules:
+
+!cat skills/_shared/prompt-prose-detection.md
+
+!cat skills/_shared/prompt-prose-writer-addition.md
+
 **Output format for `design.md`:**
 
 > **Per-section template guidance is embedded inline as HTML comments below.** Each section block carries a one-line guidance comment and a conformance reminder so future design.md content can be linted for boundary-drift signals (the scope-reviewer's boundary-drift sub-check looks for downstream-stage jargon — DDL keywords, full TypeScript signatures, literal `expect(...)` assertions, phase-split language — leaking into design.md; design.md owns approach/rationale/trade-offs/test-strategy/system-diagram, not Plan/Implement-layer surfaces or Phasing-layer slice authoring).

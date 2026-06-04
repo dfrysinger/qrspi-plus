@@ -35,6 +35,10 @@ Findings emission follows the disk-write contract from the reviewer-protocol ski
 
 ## Review Criteria
 
+**Scope: only `task_type: code` tasks.** Skip evaluation of any task with `task_type: lightweight` — those tasks (prose, prompts, docs, config) have no executable RED gate by design, and applying RED-gate coverage criteria to them would emit false-positive findings ("missing failing test"). The plan-test-coverage-reviewer's domain is the subset of tasks where test execution IS the verification mechanism; for prompt-prose tasks, verification flows through `qrspi-code-quality-reviewer` / `qrspi-design-reviewer` content-semantic rules application, evaluated separately.
+
+Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare lightweight task Test Expectations to RED-gate criteria. Silently skip lightweight task sections.
+
 For each category, examine every task's test expectations section.
 When you find a problem, note the task number and explain what test scenario
 will be unverifiable.
