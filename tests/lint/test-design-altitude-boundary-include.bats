@@ -71,6 +71,53 @@ setup() {
   fi
 }
 
+@test "skills/_shared/design-altitude-boundary.md exists and is non-empty" {
+  local file="${REPO_ROOT}/skills/_shared/design-altitude-boundary.md"
+  if [[ ! -s "${file}" ]]; then
+    echo "single source of truth missing or empty in ${file}: the shared design-altitude-boundary snippet must exist and be non-empty so the '!cat skills/_shared/design-altitude-boundary.md' include in both consumers expands to a real OWNS/DEFERS contract — deletion or emptying silently collapses the boundary" >&2
+    return 1
+  fi
+}
+
+@test "skills/_shared/design-altitude-boundary.md body contains 'Design OWNS:' preceding 'Design DEFERS:'" {
+  local file="${REPO_ROOT}/skills/_shared/design-altitude-boundary.md"
+  local owns='Design OWNS:'
+  local defers='Design DEFERS:'
+  local owns_line defers_line
+  owns_line=$(grep -nF -- "${owns}" "${file}" | head -n1 | cut -d: -f1)
+  defers_line=$(grep -nF -- "${defers}" "${file}" | head -n1 | cut -d: -f1)
+  if [[ -z "${owns_line}" ]]; then
+    echo "OWNS anchor missing in ${file}: expected literal line containing '${owns}' (single-source-of-truth snippet must carry the Design OWNS block)" >&2
+    return 1
+  fi
+  if [[ -z "${defers_line}" ]]; then
+    echo "DEFERS anchor missing in ${file}: expected literal line containing '${defers}' (single-source-of-truth snippet must carry the Design DEFERS block)" >&2
+    return 1
+  fi
+  if (( owns_line >= defers_line )); then
+    echo "OWNS/DEFERS order inverted in ${file}: '${owns}' (line ${owns_line}) must precede '${defers}' (line ${defers_line}); polarity inversion silently flips the boundary contract" >&2
+    return 1
+  fi
+}
+
+@test "skills/_shared/design-altitude-boundary.md contains canonical OWNS allowance and DEFERS exclusion anchors" {
+  local file="${REPO_ROOT}/skills/_shared/design-altitude-boundary.md"
+  local -a anchors=(
+    'Per-goal outcome statements'
+    'Per-solution diagrams'
+    'Function bodies'
+    'File architecture'
+    'Task carving'
+  )
+  local anchor
+  for anchor in "${anchors[@]}"; do
+    if ! grep -qF -- "${anchor}" "${file}"; then
+      echo "canonical boundary anchor missing in ${file}: expected literal substring '${anchor}' — paraphrasing or removing named OWNS allowances/DEFERS exclusions silently weakens the single-source-of-truth contract" >&2
+      return 1
+    fi
+  done
+}
+
 @test "skills/design/owns-defers.md replaces inline OWNS/DEFERS body with the !cat include (no residual inline body)" {
   local file="${REPO_ROOT}/skills/design/owns-defers.md"
   # Patterns that would only appear if the previous inline OWNS/DEFERS
