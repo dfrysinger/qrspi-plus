@@ -42,6 +42,32 @@ _SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/lib/llm-prompt-utils.sh
 . "$_SCRIPT_DIR/lib/llm-prompt-utils.sh"
 
+# Repo-boundary guard for raw file-path surfaces.
+#
+# The legacy `--provider/--artifact-dir` form below is stdin-only: the prompt
+# body never enters this script as a file path argument (positional args and
+# `--prompt-file` are explicitly rejected with non-zero exit). It receives
+# only assembled prompt data on stdin, so no `assert_path_under_repo_root`
+# call is needed there.
+#
+# The vendor-neutral `launch` subcommand DOES accept a raw `--prompt-file`
+# path that is later piped to the upstream transport — that path is a
+# sanctioned-channel exfil surface, so it shares the same canonical-
+# $REPO_ROOT/ guard that `dispatch-agent.sh` enforces on every prompt-
+# ingested path. The shared library is sourced unconditionally so the guard
+# is available for both the launch-mode and any future raw-path entry point.
+#
+# REPO_ROOT defaults to this script's parent directory (one level above
+# scripts/), with a `QRSPI_REPO_ROOT` env override for tests.
+REPO_ROOT="${QRSPI_REPO_ROOT:-$(cd "$_SCRIPT_DIR/.." && pwd -P)}"
+export REPO_ROOT
+# shellcheck source=scripts/lib/path-guard.sh
+. "$_SCRIPT_DIR/lib/path-guard.sh"
+command -v assert_path_under_repo_root >/dev/null 2>&1 \
+  || { echo "error: assert_path_under_repo_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+command -v assert_ancestor_under_repo_root >/dev/null 2>&1 \
+  || { echo "error: assert_ancestor_under_repo_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+
 # ---------------------------------------------------------------------------
 # die <message>  — write message to stderr and exit 1
 die() {
@@ -520,6 +546,20 @@ if [ "$#" -gt 0 ] && [ "$1" = "await" ]; then
     exit 13
   fi
 
+  # Re-validate tag from job record: mirrors the [a-z][a-z0-9_-]* allowlist
+  # enforced at launch time. A crafted job record with a traversal tag
+  # like '../../other-task/evil' would otherwise redirect the raw-capture file
+  # outside the intended task tree.
+  case "$_job_tag" in
+    *[!a-z0-9_-]*|[^a-z]*)
+      printf 'dispatch-companion: await: invalid tag in job record %s\n' "$_await_job" >&2
+      exit 1 ;;
+  esac
+  # Re-validate round_dir from job record: a crafted job record with
+  # round_dir=/tmp/... or any out-of-repo path would write raw LLM output
+  # outside the repo tree. Reject before constructing _raw_dir.
+  assert_path_under_repo_root "await:round_dir" "$_job_round_dir"
+
   _raw_dir="$_job_round_dir/.dispatch"
   mkdir -p "$_raw_dir" || {
     printf 'dispatch-companion: await: cannot create raw-capture dir: %s\n' "$_raw_dir" >&2
@@ -584,14 +624,67 @@ if [ "$_has_vendor_flag" = "true" ]; then
   [ -n "$L_PROMPT_FILE" ] || die "launch: missing required flag: --prompt-file"
   [ -n "$L_ROUND_DIR" ]   || die "launch: missing required flag: --round-dir"
   [ -n "$L_TAG" ]         || die "launch: missing required flag: --tag"
+  # Job-record line-injection guard: every value below is later written into
+  # the per-job record as `key=<value>\n` and parsed line-by-line at await
+  # time. A value carrying an embedded newline or carriage-return could
+  # synthesize additional record lines (e.g., a forged codex_job_id= or
+  # tag=) and divert await to an attacker-chosen broker job or output path.
+  # Reject any control characters in raw arg values up front.
+  for _pair in "vendor:$L_VENDOR" "model:$L_MODEL" "prompt-file:$L_PROMPT_FILE" "round-dir:$L_ROUND_DIR" "tag:$L_TAG"; do
+    case "${_pair#*:}" in
+      *$'\n'*|*$'\r'*)
+        die "launch: --${_pair%%:*} value contains an embedded newline/carriage-return; reject" ;;
+    esac
+  done
+  unset _pair
+  # Tag allowlist: _job_id is constructed from L_TAG and used as a filename.
+  # Restricting to safe token grammar prevents path traversal via crafted tags.
+  if [[ ! "$L_TAG" =~ ^[a-z][a-z0-9_-]*$ ]]; then
+    die "launch: --tag must match [a-z][a-z0-9_-]* (got: $L_TAG)"
+  fi
   [ -f "$L_PROMPT_FILE" ] || die "launch: --prompt-file not found: $L_PROMPT_FILE"
+  # Boundary guard: the prompt-file path is a raw user-supplied file
+  # surface that is later piped to the upstream transport. Reject any path
+  # whose canonical target falls outside $REPO_ROOT/.
+  assert_path_under_repo_root "launch:--prompt-file" "$L_PROMPT_FILE"
+  # Boundary guard for --round-dir, in two stages to avoid creating
+  # filesystem state outside the repo on rejected inputs:
+  #   (1) Pre-mkdir: walk --round-dir upward to its deepest existing
+  #       ancestor and assert that ancestor is under $REPO_ROOT. This
+  #       prevents `mkdir -p` from materializing directories outside the
+  #       repo when the leaf path would later be rejected.
+  #   (2) Post-mkdir: run the full canonical (realpath-resolved) boundary
+  #       check on the now-existing leaf to catch symlink-resolution
+  #       attacks where a freshly created path's canonical target points
+  #       outside the repo.
+  assert_ancestor_under_repo_root "launch:--round-dir" "$L_ROUND_DIR"
+  _jobs_dir="$L_ROUND_DIR/.dispatch/.jobs"
+  mkdir -p "$_jobs_dir" || die "launch: cannot create jobs dir: $_jobs_dir"
+  assert_path_under_repo_root "launch:--round-dir" "$L_ROUND_DIR"
+  # Canonicalize once after the boundary check so the stored round_dir value
+  # is always an absolute path regardless of how the caller supplied
+  # --round-dir. Using the same _qrspi_canonicalize helper that
+  # assert_path_under_repo_root uses internally ensures the stored form
+  # matches what await re-validates even when the cwd differs at await time.
+  _canon_round_dir="$(_qrspi_canonicalize "$L_ROUND_DIR")" \
+    || die "launch: cannot canonicalize --round-dir after boundary check: $L_ROUND_DIR"
+  # The newline/CR check above validated the raw --round-dir arg, but the
+  # value persisted to the job record below is the canonical (realpath)
+  # form. realpath will faithfully return any byte present in an on-disk
+  # directory name (POSIX permits any byte except '/' and NUL). A symlink
+  # under the repo whose target directory has a literal '\n' in its name
+  # would let the canonical form synthesize forged record lines even
+  # though the raw input was clean. Re-check post-canonicalization.
+  case "$_canon_round_dir" in
+    *$'\n'*|*$'\r'*)
+      die "launch: canonical --round-dir contains an embedded newline/carriage-return; reject (job-record injection via on-disk directory name)" ;;
+  esac
+  _jobs_dir="$_canon_round_dir/.dispatch/.jobs"
 
   # Generate a round-unique job id and persist a job record so a later
   # `await <job-id>` can resolve the vendor/model/prompt-file/tag. The prompt
   # body is NEVER read into a variable here — only its path is recorded — so it
   # cannot leak onto stdout (output-bound contract).
-  _jobs_dir="$L_ROUND_DIR/.dispatch/.jobs"
-  mkdir -p "$_jobs_dir" || die "launch: cannot create jobs dir: $_jobs_dir"
   _job_id="${L_TAG}-$$-$(date +%s)"
 
   # Vendor-specific launch: for codex, invoke the existing background
@@ -617,6 +710,8 @@ if [ "$_has_vendor_flag" = "true" ]; then
     case "$_codex_job_id" in
       */*|*..*|"")
         die "launch: codex transport returned invalid job id: $_codex_job_id" ;;
+      *$'\n'*|*$'\r'*)
+        die "launch: codex transport returned job id with embedded newline/carriage-return; reject (job-record injection via subprocess stdout)" ;;
     esac
     _job_id="$_codex_job_id"
   fi
@@ -625,7 +720,7 @@ if [ "$_has_vendor_flag" = "true" ]; then
     printf 'vendor=%s\n' "$L_VENDOR"
     printf 'model=%s\n' "$L_MODEL"
     printf 'prompt_file=%s\n' "$L_PROMPT_FILE"
-    printf 'round_dir=%s\n' "$L_ROUND_DIR"
+    printf 'round_dir=%s\n' "$_canon_round_dir"
     printf 'tag=%s\n' "$L_TAG"
     if [ -n "$_codex_job_id" ]; then
       printf 'codex_job_id=%s\n' "$_codex_job_id"

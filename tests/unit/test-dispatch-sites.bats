@@ -275,7 +275,7 @@ setup() {
   # Strengthened from the original "no 127" vacuous check: exit == 0 proves every required-flag
   # die() guard was satisfied, not merely that the script was found (task-20 R5 F01).
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
   local prompt_file="$tmp_dir/prompt.txt"
   printf 'Test prompt body\n' > "$prompt_file"
   run scripts/dispatch-companion.sh \
@@ -301,7 +301,7 @@ setup() {
 
 @test "task-20 companion (F01): launch dies loudly when --vendor is omitted (empty)" {
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
   local prompt_file="$tmp_dir/prompt.txt"
   printf 'Test prompt body\n' > "$prompt_file"
   run --separate-stderr scripts/dispatch-companion.sh \
@@ -317,7 +317,7 @@ setup() {
 
 @test "task-20 companion (F01): launch dies loudly when --model is omitted (empty)" {
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
   local prompt_file="$tmp_dir/prompt.txt"
   printf 'Test prompt body\n' > "$prompt_file"
   run --separate-stderr scripts/dispatch-companion.sh \
@@ -333,7 +333,7 @@ setup() {
 
 @test "task-20 companion (F01): launch dies loudly when --prompt-file is omitted (empty)" {
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
   run --separate-stderr scripts/dispatch-companion.sh \
     --vendor stub \
     --model stub-model \
@@ -347,7 +347,7 @@ setup() {
 
 @test "task-20 companion (F01): launch dies loudly when --round-dir is omitted (empty)" {
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
   local prompt_file="$tmp_dir/prompt.txt"
   printf 'Test prompt body\n' > "$prompt_file"
   run --separate-stderr scripts/dispatch-companion.sh \
@@ -363,7 +363,7 @@ setup() {
 
 @test "task-20 companion (F01): launch dies loudly when --tag is omitted (empty)" {
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
   local prompt_file="$tmp_dir/prompt.txt"
   printf 'Test prompt body\n' > "$prompt_file"
   run --separate-stderr scripts/dispatch-companion.sh \
@@ -385,7 +385,7 @@ setup() {
   # RED: scripts/dispatch-companion.sh doesn't exist yet.
   [ -f "scripts/dispatch-companion.sh" ]
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
   local prompt_file="$tmp_dir/prompt.txt"
   # Plant a recognisable sentinel in the prompt body.
   printf 'SECRET-COMPANION-PAYLOAD-XYZZY\n' > "$prompt_file"
@@ -428,7 +428,7 @@ setup() {
   [ -f "tests/fixtures/stub-codex-companion.mjs" ]
 
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
   local prompt_file="$tmp_dir/prompt.txt"
   printf 'PROMPT-BODY-SENTINEL-LAUNCH-XYZZY\n' > "$prompt_file"
 
@@ -463,7 +463,7 @@ setup() {
   [ -f "tests/fixtures/stub-codex-companion.mjs" ]
 
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
   local prompt_file="$tmp_dir/prompt.txt"
   printf 'launch prompt body\n' > "$prompt_file"
 
