@@ -185,6 +185,8 @@ The synthesis subagent MUST emit all 8 pruning files (4 pruned + 4 future-*) ato
 
 The synthesis subagent writes `phasing.md` in the following shape. **Each section's first sentence is the load-bearing claim** (claim-before-evidence; Nielsen inverted pyramid). Paragraphs stay ≤150 words; sections >300 words use bullets or numbered lists. No "be concise"-style instructions appear in the output.
 
+!cat skills/_shared/evergreen-output-rule.md
+
 ```markdown
 ---
 status: draft

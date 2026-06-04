@@ -80,6 +80,12 @@ In addition to the five schema fields above, every emitted finding carries three
 - **`round`** — integer. The review-round number this finding was emitted in. MUST equal the round prefix embedded in `finding_id` (the `{NN}` after `R`); a mismatch is malformed.
 - **`reviewer`** — string. The reviewer tag that produced the finding. The `reviewer` audit-field value MUST equal the dispatcher-supplied `<reviewer_tag>` for the current dispatch (and equivalently the filename prefix used by the emission contract). This pin closes a confused-deputy surface: a reviewer cannot impersonate another reviewer's tag in its own emitted findings, because the orchestrator validates `reviewer == <reviewer_tag>` before threading.
 
+### Evergreen-Output Rule Enforcement
+
+When reviewing any artifact governed by `status: draft → approved` frontmatter promotion (the in-scope artifact set is named in `skills/_shared/evergreen-output-rule.md`), reviewer subagents MUST surface a finding when the artifact carries any of the named antagonist patterns enumerated in that snippet. The canonical antagonist-pattern vocabulary lives there — cite the snippet by reference; do NOT duplicate the antagonist-pattern list here.
+
+This clause is **additional** to (NOT a replacement for) the finding-schema and `change_type` requirements above. The finding still carries the canonical 5-field schema (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`) plus the audit fields. Tag the `change_type` per the snippet's filter taxonomy: dialogue-exhaust phrasing whose excision affects only artifact tone or paragraph density (without changing the decisions the artifact records) is `change_type: style`; dialogue-exhaust phrasing whose excision sharpens claim-before-evidence ordering, removes load-bearing structural meta-explanation, or otherwise unburies the decision the artifact is meant to express is `change_type: clarity`. Do NOT invent a sixth bucket or coerce the value to a non-canonical alias — out-of-enum values are a contract violation per the loud-failure rule above.
+
 ## Change-Type Classifier
 
 Five categories. Each entry below names the category, gives the rule of thumb, and shows a positive example (a finding that fits the category) and a negative example (a finding that looks similar at a glance but belongs to a different category — to prevent miscategorization).

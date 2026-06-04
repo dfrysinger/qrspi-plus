@@ -72,6 +72,8 @@ When generating `structure.md`, Structure honors the phase scope set by Phasing:
 
 **Output format for `structure.md`:**
 
+!cat skills/_shared/evergreen-output-rule.md
+
 > **Per-section template guidance is embedded inline as HTML comments below.** Each section block carries a one-line guidance comment and a conformance reminder so future structure.md content can be linted for boundary-drift signals (the scope-reviewer's boundary-drift sub-check looks for skill-implementation jargon — specific tool names, hook syntax, subagent dispatch verbs — leaking into earlier-stage artifacts; structure.md owns file paths and interfaces, not Plan/Implement-layer language).
 >
 > **Conformance applies to every section of structure.md.** Claim-before-evidence (lead each subsection with its decision sentence; supporting detail follows). Paragraph density: ≤150 words / ≤8 lines per paragraph; if longer, split. Scannability: bullets in any section longer than ~12 lines. Required-section heading match: the headings below (`## File Map`, `## Interfaces`, `## Architectural Diagram`, `## CI Pipeline`) are the canonical set; do not silently rename. No-brevity prohibition: do NOT add "be concise", "brief summary", "≤ N lines" framing; the soft length target is set in this SKILL.md, not in the artifact.

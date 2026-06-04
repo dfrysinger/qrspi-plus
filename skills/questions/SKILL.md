@@ -56,6 +56,8 @@ Do NOT pass goals.md to any research subagent — research isolation is structur
 
 **Output format for `questions.md`:**
 
+!cat skills/_shared/evergreen-output-rule.md
+
 ```markdown
 ---
 status: draft

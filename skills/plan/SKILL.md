@@ -194,6 +194,8 @@ The classification gates downstream behavior: lightweight tasks dispatch to `qrs
 
 The output template below embeds **information-mapping patterns** directly: claim-before-evidence (the task title and Description's first sentence carry the load-bearing claim — what observable behavior the task delivers); one-paragraph-per-claim density (each bullet carries one claim, no compound bullets); scannable bullets and required headings (Phase / Target files / Dependencies / LOC estimate / Description / Test expectations are required structural slots, not optional prose); no "be concise" instructions (research-backed: brevity directives degrade factual reliability per the Phare benchmark and Hakim). Per-task specs are short by structural design (terse bullets, no narrative), not by an explicit brevity instruction.
 
+!cat skills/_shared/evergreen-output-rule.md
+
 ```markdown
 ---
 status: draft

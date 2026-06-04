@@ -125,6 +125,8 @@ The implementer running parallelize does NOT auto-apply patches. Patches are adv
 
 ## Artifact
 
+!cat skills/_shared/evergreen-output-rule.md
+
 `parallelization.md` — written with `status: draft` in YAML frontmatter. Required sections:
 
 - **Execution Mode** — sequential / parallel / hybrid with one-sentence rationale

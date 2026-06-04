@@ -225,6 +225,10 @@ Each skill checks that its required input artifacts exist on disk before proceed
 
 If a required artifact is missing, the skill refuses to run and tells the user which artifact is needed.
 
+## Artifact Quality
+
+Every artifact-producing skill in this pipeline applies the cross-cutting Evergreen-Output Rule to the artifact it emits. See `skills/_shared/evergreen-output-rule.md` for the canonical rule (litmus test, named antagonist patterns, permitted substantive content); the rule is `!cat`-included by every artifact-producing SKILL.md at its artifact-output contract section, and reviewer subagents enforce it via the antagonist-pattern clause in `skills/reviewer-protocol/SKILL.md`.
+
 ## Approval Markers
 
 When the user approves an artifact, the skill writes `status: approved` in the artifact's YAML frontmatter:

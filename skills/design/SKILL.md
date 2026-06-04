@@ -84,6 +84,8 @@ Once the discussion settles, launch a **subagent** to synthesize `design.md`.
 
 **Output format for `design.md`:**
 
+!cat skills/_shared/evergreen-output-rule.md
+
 > **Per-section template guidance is embedded inline as HTML comments below.** Each section block carries a one-line guidance comment and a conformance reminder so future design.md content can be linted for boundary-drift signals (the scope-reviewer's boundary-drift sub-check looks for downstream-stage jargon — DDL keywords, full TypeScript signatures, literal `expect(...)` assertions, phase-split language — leaking into design.md; design.md owns approach/rationale/trade-offs/test-strategy/system-diagram, not Plan/Implement-layer surfaces or Phasing-layer slice authoring).
 >
 > **Conformance applies to every section of design.md.** Claim-before-evidence (lead each subsection with its decision sentence; supporting detail follows). Paragraph density: ≤150 words / ≤8 lines per paragraph; if longer, split. Scannability: bullets in any section longer than ~12 lines. Required-section heading match: the headings below (`## Approach`, `## Key Decisions`, `## Trade-offs Considered`, `## Test Strategy`, `## System Diagram`) are the canonical set; do not silently rename. No-brevity prohibition: do NOT add "be concise", "brief summary", "≤ N lines" framing; the soft length target lives in this SKILL.md, not in the artifact.

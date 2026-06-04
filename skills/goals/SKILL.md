@@ -157,6 +157,8 @@ Once the conversation settles, launch a **subagent** to synthesize `goals.md`:
 **Subagent task:**
 Produce `goals.md` with this structure. The template is the **conformance contract** for goals.md: required sections and per-goal subsections are enumerated here, claim-before-evidence ordering is mandated, scannable bullets are required, and "be concise" instructions are forbidden (synthesize the substance, do not truncate it).
 
+!cat skills/_shared/evergreen-output-rule.md
+
 ```markdown
 ---
 status: draft

@@ -53,6 +53,8 @@ If a subagent prompt contains goals.md content, the isolation invariant is broke
 
 ### Per-Researcher Subagent
 
+!cat skills/_shared/evergreen-output-rule.md
+
 **Inputs:** Only the assigned question(s) from `questions.md`. NO `goals.md`. NO raw `feedback/research-round-*.md` files (raw feedback may carry user goals/intent — forwarding it to a research subagent breaks the research-isolation invariant). The orchestrator also passes the absolute output path (`{ABS_RESEARCH_DIR}/q{NN}-{type}.md`) and, for grouped questions, the full set of question IDs the report should cover. On re-dispatch via Rejection path 2, the orchestrator passes a **sanitized defect summary** it authors itself from the user's feedback — defect-only bullet points (e.g., "missed the auth module", "TL;DR is missing", "broken file:line citation"). Goal-bearing or intent-bearing language is stripped before the summary reaches the subagent.
 
 **Dispatch** — for each question (or grouped set of related questions), dispatch `Agent({ subagent_type: "qrspi-research-specialist", model: "sonnet" })` in parallel via concurrent Agent tool calls. The agent body (loaded by the runtime) carries the full research-agent rules, output-format template, and contract; the dispatch prompt carries only the parameters below.
