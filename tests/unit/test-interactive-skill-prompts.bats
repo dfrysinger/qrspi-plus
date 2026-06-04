@@ -184,3 +184,33 @@ setup() {
   grep -F "simulated compaction" "$REPO_ROOT/skills/goals/SKILL.md"
   grep -F "identical to a no-compaction run" "$REPO_ROOT/skills/goals/SKILL.md"
 }
+
+# ---------------------------------------------------------------------------
+# spec-F01: five-field per-goal template fields in design/SKILL.md
+# ---------------------------------------------------------------------------
+
+@test "design/SKILL.md references the five-field per-goal template fields" {
+  grep -F "Outcome" "$REPO_ROOT/skills/design/SKILL.md"
+  grep -F "Why this approach" "$REPO_ROOT/skills/design/SKILL.md"
+  grep -F "Dependencies + edge cases" "$REPO_ROOT/skills/design/SKILL.md"
+  grep -F "Acceptance" "$REPO_ROOT/skills/design/SKILL.md"
+}
+
+# ---------------------------------------------------------------------------
+# spec-F02: Goals preservation — question-topic checklist, Pipeline Mode
+# Selection step, and per-goal template fields
+# ---------------------------------------------------------------------------
+
+@test "goals/SKILL.md preserves the Interactive Dialogue question-topic checklist" {
+  grep -F "Questions to cover" "$REPO_ROOT/skills/goals/SKILL.md"
+}
+
+@test "goals/SKILL.md preserves the Pipeline Mode Selection step" {
+  grep -F "Pipeline Mode Selection" "$REPO_ROOT/skills/goals/SKILL.md"
+}
+
+@test "goals/SKILL.md preserves the existing per-goal template fields" {
+  grep -F "Problem" "$REPO_ROOT/skills/goals/SKILL.md"
+  grep -F "Why we care" "$REPO_ROOT/skills/goals/SKILL.md"
+  grep -F "What we know so far" "$REPO_ROOT/skills/goals/SKILL.md"
+}
