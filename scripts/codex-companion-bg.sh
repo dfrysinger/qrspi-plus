@@ -3,10 +3,10 @@
 #
 # Caller layout (post-T04, v0.7):
 #   The user-facing entrypoint for Codex reviewer dispatches is the universal
-#   dispatcher `scripts/run-third-party-llm.sh` (codex-broker transport branch).
+#   dispatcher `scripts/dispatch-companion.sh` (codex-broker transport branch).
 #   The dispatcher invokes this script as `launch` (forward stdin prompt) and
 #   then `await <jobId>` (block for the result) and writes the result body to
-#   its --output-file. The thin forwarder `scripts/run-codex-review.sh` no
+#   its --output-file. The dispatch entry point `scripts/dispatch-agent.sh` no
 #   longer invokes this script directly; it pipes the assembled prompt to the
 #   dispatcher, which chains launch+await internally. This script's launch /
 #   await / JSONL lifecycle behavior is unchanged by the T04 migration; only

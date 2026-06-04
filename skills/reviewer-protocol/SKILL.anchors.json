@@ -9,70 +9,78 @@
   },
   "Finding Schema": {
     "line_start": 53,
-    "line_end": 64
+    "line_end": 82
+  },
+  "`finding_id` Uniqueness Rule": {
+    "line_start": 69,
+    "line_end": 74
+  },
+  "Audit Fields": {
+    "line_start": 75,
+    "line_end": 82
   },
   "Change-Type Classifier": {
-    "line_start": 65,
-    "line_end": 116
+    "line_start": 83,
+    "line_end": 134
   },
   "style": {
-    "line_start": 82,
-    "line_end": 88
+    "line_start": 100,
+    "line_end": 106
   },
   "clarity": {
-    "line_start": 89,
-    "line_end": 95
+    "line_start": 107,
+    "line_end": 113
   },
   "correctness": {
-    "line_start": 96,
-    "line_end": 102
+    "line_start": 114,
+    "line_end": 120
   },
   "scope": {
-    "line_start": 103,
-    "line_end": 109
+    "line_start": 121,
+    "line_end": 127
   },
   "intent": {
-    "line_start": 110,
-    "line_end": 116
+    "line_start": 128,
+    "line_end": 134
   },
   "Disagreement-Valid Framing": {
-    "line_start": 117,
-    "line_end": 126
+    "line_start": 135,
+    "line_end": 144
+  },
+  "Informational Findings": {
+    "line_start": 145,
+    "line_end": 158
   },
   "Untrusted Data Handling": {
-    "line_start": 127,
-    "line_end": 166
+    "line_start": 159,
+    "line_end": 198
   },
-  "Path A \u2014 content read from disk": {
-    "line_start": 133,
-    "line_end": 143
+  "Path A — content read from disk": {
+    "line_start": 165,
+    "line_end": 175
   },
-  "Path B \u2014 content embedded in the dispatch prompt": {
-    "line_start": 144,
-    "line_end": 166
+  "Path B — content embedded in the dispatch prompt": {
+    "line_start": 176,
+    "line_end": 198
   },
   "Phase Routing": {
-    "line_start": 167,
-    "line_end": 209
+    "line_start": 199,
+    "line_end": 241
   },
-  "Phase Signal \u2014 `task_definition`": {
-    "line_start": 176,
-    "line_end": 184
+  "Phase Signal — `task_definition`": {
+    "line_start": 208,
+    "line_end": 216
   },
   "Contradiction Refusal (FAIL-LOUD)": {
-    "line_start": 185,
-    "line_end": 194
+    "line_start": 217,
+    "line_end": 226
   },
   "Refusal Procedure": {
-    "line_start": 195,
-    "line_end": 209
-  },
-  "Per-Finding Disk-Write Contract": {
-    "line_start": 210,
-    "line_end": 263
+    "line_start": 227,
+    "line_end": 241
   },
   "Quick-Tier Finding Disposition": {
-    "line_start": 264,
-    "line_end": 276
+    "line_start": 242,
+    "line_end": 254
   }
 }

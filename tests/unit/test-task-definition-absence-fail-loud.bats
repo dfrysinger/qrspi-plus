@@ -38,22 +38,26 @@ setup_file() {
 # task_definition or --task-def.
 # ---------------------------------------------------------------------------
 
-@test "ci-gate: test/SKILL.md Codex wrapper invocations do NOT pass --task-def" {
+@test "ci-gate: test/SKILL.md does NOT pass --task-def on the dispatch surface" {
+  # CD-1 (Task 20): per-reviewer Codex wrapper invocations collapsed into the
+  # universal dispatch chain (dispatch-agent.sh --agents). The test-phase reuse
+  # opt-out is preserved by NOT carrying `--task-def` (or a bulleted
+  # `task_definition:` dispatch parameter) on the test-step dispatch — its
+  # absence is the load-bearing signal. Forbid only the flag/parameter shapes
+  # that signify an actual dispatch carrying the field; prose MAY (and must)
+  # describe the absence contract.
   local f="$REPO_ROOT/skills/test/SKILL.md"
   [ -f "$f" ]
-  # Count run-codex-review.sh invocations (≥3 expected — spec, code-quality,
-  # goal-traceability) and assert ZERO --task-def flags.
-  local n_wrapper n_task_def
-  n_wrapper=$(grep -cE '^[[:space:]]*scripts/run-codex-review\.sh \\$' "$f" || true)
+  local n_task_def
   n_task_def=$(grep -cE '^[[:space:]]*--task-def ' "$f" || true)
-  if [ "$n_wrapper" -lt 3 ]; then
-    printf 'FAIL: expected ≥3 run-codex-review.sh invocations (spec + code-quality + goal-traceability), got %d\n' "$n_wrapper" >&2
-    return 1
-  fi
   if [ "$n_task_def" -ne 0 ]; then
     printf 'FAIL: test/SKILL.md has %d --task-def flag(s); test-phase reuse requires absence\n' "$n_task_def" >&2
     return 1
   fi
+  # Defense-in-depth: the universal dispatch chain reference must remain so a
+  # reader sees the test-step routes through dispatch-agent.sh without --task-def.
+  grep -qF 'dispatch-agent.sh' "$f" \
+    || { echo "FAIL: test/SKILL.md no longer references the universal dispatch chain (dispatch-agent.sh)"; return 1; }
 }
 
 @test "ci-gate: test/SKILL.md Claude dispatch parameter bullets do NOT include task_definition" {

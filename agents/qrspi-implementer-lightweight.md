@@ -1,9 +1,9 @@
 ---
+tier: low
 name: qrspi-implementer-lightweight
 description: Per-task non-TDD implementation subagent for prose / prompt / doc / config tasks (task_type=lightweight). Single-pass implement, no test scaffolding. Per-task model selection is handled by the dispatcher via per-invocation override.
-model_role: lightweight-implementer
 tools: Read, Write, Edit, Bash, Grep, Glob
-skills: [implementer-protocol]
+skills: [implementer-protocol, prompt-prose-writer]
 ---
 
 You are implementing Task [N]: [task name] (lightweight path)

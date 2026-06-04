@@ -64,3 +64,7 @@ Add verifier-side `defect_class:` instrumentation and an informational sub-thres
 - structure.md ### `skills/using-qrspi/SKILL.md` → Slice 1.2 — dispositions template for optional `## Sub-Threshold Observations` and informational-only behavior.
 - structure.md ### `tests/unit/test-verified-file-shape.bats` — unit-level sidecar shape assertions for `defect_class:`.
 - structure.md ### `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` → Slice 1.2 — release-level acceptance for defect-class emission, no override path to `kept-findings.txt`, and observations-section shape.
+
+## Spec Disambiguation (R2 Adopted Reading)
+
+The DoD bullet at L42 and the Test-expectations bullet at L54 use the language "each finding's defect class, each score" which read as per-finding fields in the YAML template. Implementation adopted **Reading B** in R2: the YAML template surfaces a single per-cluster `representative_score:` (typically the worst-scoring contributor) plus a shared `defect_class:` tag, NOT per-finding scores or per-finding defect classes. Per-finding precision is intentionally NOT preserved in the cluster-summary template — the individual sidecar files at `finding_paths[]` carry the exact integer score and per-finding defect class for each contributor. Reading B is the canonical interpretation; the spec language above predates the rename. See plugin-issue backlog PI-V072-T10-005 for the spec-text update tracking.

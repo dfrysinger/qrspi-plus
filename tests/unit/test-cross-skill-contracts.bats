@@ -237,10 +237,17 @@ setup_file() {
 # silently materializes findings under a wrong path, and the next round's
 # fan-in reads stale or empty content.
 # ---------------------------------------------------------------------------
-@test "contract-11: codex-finding-splitter is invoked by multiple step skills" {
-  count=$(grep -lF "codex-finding-splitter" "$REPO_ROOT/skills/"*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-  # Expect at least 4 emitters: design, parallelize, integrate, test (and likely research)
+@test "contract-11: third-party-finding-splitter is invoked by the universal await path" {
+  # CD-1 (Task 20): per-skill splitter invocations collapsed into the universal
+  # dispatch chain. The renamed third-party-finding-splitter.sh is now invoked by
+  # scripts/await-round.sh (which fans the round's companion output through the
+  # splitter); step skills route their reviewer rounds through the shared
+  # reviewer-dispatch include rather than naming the splitter directly.
+  grep -qF "third-party-finding-splitter" "$REPO_ROOT/scripts/await-round.sh" \
+    || { echo "await-round.sh must invoke third-party-finding-splitter.sh"; return 1; }
+  count=$(grep -lF "reviewer-dispatch-prose.md" "$REPO_ROOT/skills/"*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+  # Expect at least 4 step skills routing through the shared reviewer-dispatch include.
   [ "$count" -ge 4 ]
-  # The reviewer-protocol codex-emission-override is the canonical contract owner
+  # The reviewer-protocol codex-emission-override is the canonical contract owner.
   [ -f "$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md" ]
 }

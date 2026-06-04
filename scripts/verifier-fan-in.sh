@@ -266,10 +266,21 @@ for finding in "${FINDINGS[@]}"; do
   fi
 
   # 4. threshold rule keyed on change_type
+  #
+  # Universal HALLUCINATED gate: a score:0 finding is always dropped,
+  # regardless of change_type.  This must precede the case statement so
+  # that scope|intent findings produced by Cite Check failures (which emit
+  # score:0 + reason "HALLUCINATED: ...") are not unconditionally kept by
+  # the always-keep scope|intent arm below.
+  if (( score == 0 )); then
+    DROPPED=$((DROPPED + 1))
+    continue
+  fi
+
   case "$ct" in
     scope|intent)
       # Always-keep: scope/intent flow to the orchestrator pause gate
-      # rather than the score filter.
+      # rather than the score filter.  Score:0 is already handled above.
       KEPT=$((KEPT + 1))
       KEPT_PATHS+=("$finding")
       ;;
