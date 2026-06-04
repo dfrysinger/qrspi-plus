@@ -121,9 +121,18 @@ const CLAUDE_SKILL_DIR_TOKEN = '${CLAUDE_SKILL_DIR}';
 
 // Hard cap on `!cat` include nesting. Defends against billion-laughs-style
 // diamond DoS (cycle-stack alone catches direct ancestor cycles, not
-// non-cyclic deep nesting). 16 is comfortably above any legitimate fan-in
-// observed in v0.7.2 source.
-const MAX_INCLUDE_DEPTH = 16;
+// non-cyclic deep nesting). 8 is comfortably above any legitimate fan-in
+// observed in v0.7.2 source (deepest legitimate chain is well under 8);
+// it acts as a structural backstop alongside the per-entry byte cap.
+const MAX_INCLUDE_DEPTH = 8;
+
+// Per-cache-entry materialized-output cap. Defends against intra-file
+// fan-out blow-up that the depth cap alone does not bound: a file with N
+// `!cat <child>` directives caches an expansion of size N×|expand(child)|,
+// so depth-D fan-out reaches N^D × |leaf| in worst case. 4 MB is far
+// above any legitimate single-skill expansion (largest extant skill bodies
+// are tens of KB). Primary defense against materialized-size DoS.
+const MAX_EXPAND_BYTES = 4 * 1024 * 1024;
 
 class BuildError extends Error {}
 
@@ -221,6 +230,14 @@ function expand(relPath, stack, ctx) {
       resolveTarget(target, relPath, lineNo, ctx);
       const expandedChild = expand(target, [...stack, relPath], ctx);
       out += expandedChild;
+      if (out.length > MAX_EXPAND_BYTES) {
+        const chain = [...stack, relPath].join(' -> ');
+        throw new BuildError(
+          `${relPath}:${lineNo}: include expansion size cap exceeded ` +
+            `(max ${MAX_EXPAND_BYTES} bytes per file; got ${out.length}); ` +
+            `chain: ${chain}`,
+        );
+      }
     } else {
       out += line + '\n';
     }
@@ -501,18 +518,6 @@ function main() {
     );
     process.exit(1);
   }
-
-  // Compute outDir relative to rootReal (if inside root) — kept for parity
-  // with prior versions, though manifest-driven copy never walks outside
-  // the listed roots so an inside-root build/ is naturally excluded.
-  let outRelFromRoot = null;
-  if (outDirAbs.startsWith(rootReal + path.sep)) {
-    outRelFromRoot = path.relative(rootReal, outDirAbs);
-    if (outRelFromRoot === '') outRelFromRoot = null;
-  }
-  // outRelFromRoot is intentionally unused below — kept as a documented
-  // observability hook should a future caller want to assert shape.
-  void outRelFromRoot;
 
   // Wipe + recreate outDir for reproducibility. Safe now: the guard above
   // has already rejected any --out that could destroy the source tree.

@@ -361,6 +361,52 @@ L3" ]
   echo "$output" | grep -E -i 'depth|too deep|nesting'
 }
 
+# ---------------------------------------------------------------------------
+# Round-2 hardening: per-cache-entry byte-size cap defends against
+# materialized-output blow-up under intra-file fan-out. A file with N copies
+# of `!cat <child>` caches an expansion of size N×|expand(child)|; with N=10
+# at each of D levels the top-of-chain materialized size is N^D × |leaf|.
+# Depth-cap alone bounds D but does NOT bound the materialized bytes.
+#
+# Fixture: 4 levels of N=10 fan-out (depth 4, well under MAX_INCLUDE_DEPTH=8)
+# with a non-trivial leaf — top-level materialized size ~ 10^4 × leaf bytes,
+# which exceeds the 4 MB per-entry cap. Build must fail-loud with the full
+# include chain printed.
+# ---------------------------------------------------------------------------
+@test "[T39/G32] fail-loud: per-cache-entry byte-size cap rejects intra-file fan-out blow-up" {
+  local root="$BATS_TEST_TMPDIR/fanout"
+  _t39_stage_root "$root" "TOP"$'\n'"!cat skills/sample/lvl0.md"$'\n'
+  # Leaf: ~500 bytes so 10^4 × leaf > 4 MB.
+  local leaf_line
+  leaf_line=$(printf 'X%.0s' {1..499})
+  printf '%s\n' "$leaf_line" >"$root/skills/sample/leaf.md"
+  # Build 4 levels of 10× fan-out: lvl0 -> 10× lvl1 -> 10× lvl2 -> 10× lvl3 -> 10× leaf.
+  local L next
+  for L in 0 1 2 3; do
+    next="leaf.md"
+    if [ "$L" -lt 3 ]; then
+      next="lvl$((L + 1)).md"
+    fi
+    : >"$root/skills/sample/lvl${L}.md"
+    local k
+    for k in $(seq 1 10); do
+      printf '!cat skills/sample/%s\n' "$next" >>"$root/skills/sample/lvl${L}.md"
+    done
+  done
+  run _t39_run_build "$root"
+  [ "$status" -ne 0 ]
+  # Diagnostic must indicate size-cap excess and print the include chain.
+  echo "$output" | grep -E -i 'size|bytes|too large|cap'
+  echo "$output" | grep -F 'skills/sample/lvl0.md'
+  # No partial build/ output should leak the materialized blow-up.
+  if [ -f "$root/build/skills/sample/SKILL.md" ]; then
+    # Built file (if any) must be much smaller than 4 MB.
+    local sz
+    sz=$(wc -c <"$root/build/skills/sample/SKILL.md")
+    [ "$sz" -lt 4194304 ]
+  fi
+}
+
 @test "[T39/G32] CI workflow text references node tools/build-plugin.mjs in the build-sync gate failure path" {
   [ -f "$REPO_ROOT/.github/workflows/ci.yml" ]
   run grep -F 'node tools/build-plugin.mjs' "$REPO_ROOT/.github/workflows/ci.yml"
