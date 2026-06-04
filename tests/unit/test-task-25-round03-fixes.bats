@@ -1,0 +1,143 @@
+#!/usr/bin/env bats
+# Tests for Task 25 round-03 review findings (fix pass).
+# Findings addressed:
+#   silent-failure (partial-include): assembly guard cannot self-trigger on partial-include
+#   failure because no include-boundary delimiters surround each !cat block.
+
+setup_file() {
+  REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd -P)"
+  export REPO_ROOT
+  REVIEWER_SKILL="$REPO_ROOT/skills/prompt-prose-reviewer/SKILL.md"
+  WRITER_SKILL="$REPO_ROOT/skills/prompt-prose-writer/SKILL.md"
+  export REVIEWER_SKILL WRITER_SKILL
+}
+
+# ── INCLUDE-BEGIN/END markers present — reviewer SKILL.md ────────────────────
+
+@test "reviewer SKILL.md has INCLUDE-BEGIN marker for prompt-prose-detection" {
+  run grep -F 'INCLUDE-BEGIN: prompt-prose-detection' "$REVIEWER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+@test "reviewer SKILL.md has INCLUDE-END marker for prompt-prose-detection" {
+  run grep -F 'INCLUDE-END: prompt-prose-detection' "$REVIEWER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+@test "reviewer SKILL.md has INCLUDE-BEGIN marker for prompt-prose-reviewer-addition" {
+  run grep -F 'INCLUDE-BEGIN: prompt-prose-reviewer-addition' "$REVIEWER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+@test "reviewer SKILL.md has INCLUDE-END marker for prompt-prose-reviewer-addition" {
+  run grep -F 'INCLUDE-END: prompt-prose-reviewer-addition' "$REVIEWER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+# ── INCLUDE-BEGIN/END markers present — writer SKILL.md ──────────────────────
+
+@test "writer SKILL.md has INCLUDE-BEGIN marker for prompt-prose-detection" {
+  run grep -F 'INCLUDE-BEGIN: prompt-prose-detection' "$WRITER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+@test "writer SKILL.md has INCLUDE-END marker for prompt-prose-detection" {
+  run grep -F 'INCLUDE-END: prompt-prose-detection' "$WRITER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+@test "writer SKILL.md has INCLUDE-BEGIN marker for prompt-prose-writer-addition" {
+  run grep -F 'INCLUDE-BEGIN: prompt-prose-writer-addition' "$WRITER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+@test "writer SKILL.md has INCLUDE-END marker for prompt-prose-writer-addition" {
+  run grep -F 'INCLUDE-END: prompt-prose-writer-addition' "$WRITER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+# ── Structural ordering: BEGIN before !cat before END — reviewer ──────────────
+
+@test "reviewer SKILL.md: INCLUDE-BEGIN for detection precedes its !cat line" {
+  begin_line=$(grep -n 'INCLUDE-BEGIN: prompt-prose-detection' "$REVIEWER_SKILL" | head -1 | cut -d: -f1)
+  cat_line=$(grep -n '!cat skills/_shared/prompt-prose-detection.md' "$REVIEWER_SKILL" | head -1 | cut -d: -f1)
+  [ -n "$begin_line" ] && [ -n "$cat_line" ]
+  [ "$begin_line" -lt "$cat_line" ]
+}
+
+@test "reviewer SKILL.md: !cat for detection precedes its INCLUDE-END line" {
+  cat_line=$(grep -n '!cat skills/_shared/prompt-prose-detection.md' "$REVIEWER_SKILL" | head -1 | cut -d: -f1)
+  end_line=$(grep -n 'INCLUDE-END: prompt-prose-detection' "$REVIEWER_SKILL" | head -1 | cut -d: -f1)
+  [ -n "$cat_line" ] && [ -n "$end_line" ]
+  [ "$cat_line" -lt "$end_line" ]
+}
+
+@test "reviewer SKILL.md: INCLUDE-BEGIN for reviewer-addition precedes its !cat line" {
+  begin_line=$(grep -n 'INCLUDE-BEGIN: prompt-prose-reviewer-addition' "$REVIEWER_SKILL" | head -1 | cut -d: -f1)
+  cat_line=$(grep -n '!cat skills/_shared/prompt-prose-reviewer-addition.md' "$REVIEWER_SKILL" | head -1 | cut -d: -f1)
+  [ -n "$begin_line" ] && [ -n "$cat_line" ]
+  [ "$begin_line" -lt "$cat_line" ]
+}
+
+@test "reviewer SKILL.md: !cat for reviewer-addition precedes its INCLUDE-END line" {
+  cat_line=$(grep -n '!cat skills/_shared/prompt-prose-reviewer-addition.md' "$REVIEWER_SKILL" | head -1 | cut -d: -f1)
+  end_line=$(grep -n 'INCLUDE-END: prompt-prose-reviewer-addition' "$REVIEWER_SKILL" | head -1 | cut -d: -f1)
+  [ -n "$cat_line" ] && [ -n "$end_line" ]
+  [ "$cat_line" -lt "$end_line" ]
+}
+
+# ── Structural ordering: BEGIN before !cat before END — writer ────────────────
+
+@test "writer SKILL.md: INCLUDE-BEGIN for detection precedes its !cat line" {
+  begin_line=$(grep -n 'INCLUDE-BEGIN: prompt-prose-detection' "$WRITER_SKILL" | head -1 | cut -d: -f1)
+  cat_line=$(grep -n '!cat skills/_shared/prompt-prose-detection.md' "$WRITER_SKILL" | head -1 | cut -d: -f1)
+  [ -n "$begin_line" ] && [ -n "$cat_line" ]
+  [ "$begin_line" -lt "$cat_line" ]
+}
+
+@test "writer SKILL.md: !cat for detection precedes its INCLUDE-END line" {
+  cat_line=$(grep -n '!cat skills/_shared/prompt-prose-detection.md' "$WRITER_SKILL" | head -1 | cut -d: -f1)
+  end_line=$(grep -n 'INCLUDE-END: prompt-prose-detection' "$WRITER_SKILL" | head -1 | cut -d: -f1)
+  [ -n "$cat_line" ] && [ -n "$end_line" ]
+  [ "$cat_line" -lt "$end_line" ]
+}
+
+@test "writer SKILL.md: INCLUDE-BEGIN for writer-addition precedes its !cat line" {
+  begin_line=$(grep -n 'INCLUDE-BEGIN: prompt-prose-writer-addition' "$WRITER_SKILL" | head -1 | cut -d: -f1)
+  cat_line=$(grep -n '!cat skills/_shared/prompt-prose-writer-addition.md' "$WRITER_SKILL" | head -1 | cut -d: -f1)
+  [ -n "$begin_line" ] && [ -n "$cat_line" ]
+  [ "$begin_line" -lt "$cat_line" ]
+}
+
+@test "writer SKILL.md: !cat for writer-addition precedes its INCLUDE-END line" {
+  cat_line=$(grep -n '!cat skills/_shared/prompt-prose-writer-addition.md' "$WRITER_SKILL" | head -1 | cut -d: -f1)
+  end_line=$(grep -n 'INCLUDE-END: prompt-prose-writer-addition' "$WRITER_SKILL" | head -1 | cut -d: -f1)
+  [ -n "$cat_line" ] && [ -n "$end_line" ]
+  [ "$cat_line" -lt "$end_line" ]
+}
+
+# ── Guard text references INCLUDE-BEGIN/INCLUDE-END markers ──────────────────
+
+@test "reviewer SKILL.md guard references INCLUDE-BEGIN" {
+  run grep -F 'INCLUDE-BEGIN' "$REVIEWER_SKILL"
+  # Must appear in the guard block (at minimum, present in the file)
+  [ "$status" -eq 0 ]
+  # The guard comment itself must reference the marker scheme
+  run grep -iE 'INCLUDE-BEGIN.*INCLUDE-END|INCLUDE-BEGIN/INCLUDE-END|BEGIN.*END.*pair' "$REVIEWER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+@test "writer SKILL.md guard references INCLUDE-BEGIN" {
+  run grep -iE 'INCLUDE-BEGIN.*INCLUDE-END|INCLUDE-BEGIN/INCLUDE-END|BEGIN.*END.*pair' "$WRITER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+@test "reviewer SKILL.md guard instructs agent to name the missing block" {
+  run grep -iE 'naming the missing block|missing block|missing include' "$REVIEWER_SKILL"
+  [ "$status" -eq 0 ]
+}
+
+@test "writer SKILL.md guard instructs agent to name the missing block" {
+  run grep -iE 'naming the missing block|missing block|missing include' "$WRITER_SKILL"
+  [ "$status" -eq 0 ]
+}
