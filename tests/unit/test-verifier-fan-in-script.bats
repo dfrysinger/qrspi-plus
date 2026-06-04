@@ -369,6 +369,9 @@ EOF
   local f1
   f1=$(write_finding "$ROUND" qc 01 F01 style)
   write_sidecar "$f1" 90
+  if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    skip "root bypasses chmod 000 permission bits — unreadable-file path not exercisable as root"
+  fi
   chmod 000 "$f1"  # make finding unreadable
 
   run "$SCRIPT" "$ROUND"
@@ -442,6 +445,9 @@ EOF
   local f1
   f1=$(write_finding "$ROUND" qc 01 F01 style)
   write_sidecar "$f1" 90
+  if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    skip "root bypasses chmod 000 permission bits — unreadable-file path not exercisable as root"
+  fi
   chmod 000 "${f1%.md}.score.md"
 
   run "$SCRIPT" "$ROUND"
@@ -454,6 +460,9 @@ EOF
   local f1
   f1=$(write_finding "$ROUND" qc 01 F01 style)
   write_sidecar "$f1" 90
+  if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    skip "root bypasses chmod 000 permission bits — unreadable-file path not exercisable as root"
+  fi
   chmod 000 "${f1%.md}.score.md"
 
   run "$SCRIPT" "$ROUND"
@@ -470,6 +479,9 @@ EOF
   local f1
   f1=$(write_finding "$ROUND" qc 01 F01 style)
   write_sidecar "$f1" 90
+  if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    skip "root bypasses chmod 000 permission bits — unreadable-file path not exercisable as root"
+  fi
   chmod 000 "$f1"
 
   run "$SCRIPT" "$ROUND"
