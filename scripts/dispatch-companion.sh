@@ -505,13 +505,57 @@ if [ "$#" -gt 0 ] && [ "$1" = "await" ]; then
   fi
   # A found record carries vendor/model/prompt-file/tag/round-dir lines. The
   # concrete vendor-transport capture wires through codex-companion-bg.sh for
-  # the codex vendor; other vendors are not yet wired in this release. Fail
-  # loudly rather than silently producing an empty raw file.
+  # the codex vendor; other vendors fail loudly rather than silently producing
+  # an empty raw file. The vendor-output is captured payload-silently to
+  # <round-dir>/.dispatch/<tag>.raw so await-round.sh can hand it to the
+  # third-party-finding-splitter without any payload appearing on stdout/stderr.
   _job_vendor="$(sed -n 's/^vendor=//p' "$_job_record" | head -1)"
   _job_tag="$(sed -n 's/^tag=//p' "$_job_record" | head -1)"
-  printf 'dispatch-companion: await: vendor %s transport capture for job %s is not wired in this build\n' \
-    "${_job_vendor:-unknown}" "$_await_job" >&2
-  exit 13
+  _job_round_dir="$(sed -n 's/^round_dir=//p' "$_job_record" | head -1)"
+  _job_codex_id="$(sed -n 's/^codex_job_id=//p' "$_job_record" | head -1)"
+
+  if [ -z "$_job_tag" ] || [ -z "$_job_round_dir" ]; then
+    printf 'dispatch-companion: await: malformed job record for %s (missing tag or round_dir)\n' \
+      "$_await_job" >&2
+    exit 13
+  fi
+
+  _raw_dir="$_job_round_dir/.dispatch"
+  mkdir -p "$_raw_dir" || {
+    printf 'dispatch-companion: await: cannot create raw-capture dir: %s\n' "$_raw_dir" >&2
+    exit 13
+  }
+  _raw_file="$_raw_dir/${_job_tag}.raw"
+
+  case "$_job_vendor" in
+    codex)
+      if [ -z "$_job_codex_id" ]; then
+        printf 'dispatch-companion: await: codex job record %s missing codex_job_id (launch did not capture broker id)\n' \
+          "$_await_job" >&2
+        exit 13
+      fi
+      # Delegate to the existing codex transport.  Stdout is the reviewer
+      # markdown — redirect it to the raw-capture file payload-silently.
+      # Stderr from codex-companion-bg.sh is diagnostic (not payload) and is
+      # forwarded to our own stderr; await-round.sh runs us with stderr=DEVNULL,
+      # so it never reaches the orchestrator context either way.
+      "$_SCRIPT_DIR/codex-companion-bg.sh" await "$_job_codex_id" >"$_raw_file"
+      _await_rc=$?
+      if [ "$_await_rc" -ne 0 ]; then
+        printf 'dispatch-companion: await: codex transport returned rc=%d for job %s (codex_job_id=%s)\n' \
+          "$_await_rc" "$_await_job" "$_job_codex_id" >&2
+        # Leave any partial output in the raw file for diagnostic inspection
+        # but propagate the failure so await-round.sh marks the entry failed.
+        exit "$_await_rc"
+      fi
+      exit 0
+      ;;
+    *)
+      printf 'dispatch-companion: await: vendor %s transport capture for job %s is not wired in this build\n' \
+        "${_job_vendor:-unknown}" "$_await_job" >&2
+      exit 13
+      ;;
+  esac
 fi
 
 _has_vendor_flag=false
@@ -549,12 +593,43 @@ if [ "$_has_vendor_flag" = "true" ]; then
   _jobs_dir="$L_ROUND_DIR/.dispatch/.jobs"
   mkdir -p "$_jobs_dir" || die "launch: cannot create jobs dir: $_jobs_dir"
   _job_id="${L_TAG}-$$-$(date +%s)"
+
+  # Vendor-specific launch: for codex, invoke the existing background
+  # transport (codex-companion-bg.sh launch) by piping the prompt file on
+  # stdin, capture the broker job-id (printed alone on stdout), and persist
+  # it in the job record so `await` can recover it. Other vendors retain the
+  # synthetic-id flow (no real backend launch) — they will fail loudly at
+  # await time with a clear diagnostic until their transport is wired.
+  _codex_job_id=""
+  if [ "$L_VENDOR" = "codex" ]; then
+    # codex-companion-bg.sh prints exactly the broker job id on stdout on
+    # success; its stderr carries diagnostics only. We deliberately do NOT
+    # echo its stdout to our own stdout (output-bound: only `JOB_ID=<id>`
+    # may reach our caller's stdout).
+    _codex_job_id="$("$_SCRIPT_DIR/codex-companion-bg.sh" launch <"$L_PROMPT_FILE")" \
+      || die "launch: codex transport failed for tag $L_TAG (rc=$?)"
+    if [ -z "$_codex_job_id" ]; then
+      die "launch: codex transport returned empty job id for tag $L_TAG"
+    fi
+    # Use the broker id as the dispatch-companion job id so the await record
+    # path is unambiguous. Re-validate against the await-side grammar to
+    # defend against unexpected broker-id shapes reaching our path lookup.
+    case "$_codex_job_id" in
+      */*|*..*|"")
+        die "launch: codex transport returned invalid job id: $_codex_job_id" ;;
+    esac
+    _job_id="$_codex_job_id"
+  fi
+
   {
     printf 'vendor=%s\n' "$L_VENDOR"
     printf 'model=%s\n' "$L_MODEL"
     printf 'prompt_file=%s\n' "$L_PROMPT_FILE"
     printf 'round_dir=%s\n' "$L_ROUND_DIR"
     printf 'tag=%s\n' "$L_TAG"
+    if [ -n "$_codex_job_id" ]; then
+      printf 'codex_job_id=%s\n' "$_codex_job_id"
+    fi
   } > "$_jobs_dir/$_job_id" || die "launch: cannot write job record"
 
   # Emit ONLY the job id to stdout.

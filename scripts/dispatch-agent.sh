@@ -695,9 +695,31 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       emit_first_party_manifest_entry "$_prompt_file" "$_vendor" "$_model"
       _emitted_any=true
     else
-      # Third-party routing: record a background manifest entry for await-round
-      # to drain. No spec line is emitted (background-only).
-      emit_dispatch_manifest_entry "" "pending"
+      # Third-party routing: launch the dispatch-companion in background and
+      # capture the JOB_ID it prints on stdout, then record a `pending`
+      # manifest entry whose `await_cmd` carries that real job-id. Without
+      # this real launch, the manifest's await_cmd would carry an empty
+      # job-id and await-round.sh could never drain the entry.
+      _launch_out=""
+      _launch_rc=0
+      _launch_out=$("$REPO_ROOT/scripts/dispatch-companion.sh" launch \
+        --vendor "$_vendor" \
+        --model "$_model" \
+        --prompt-file "$_prompt_file" \
+        --round-dir "$BATCH_OUTPUT_DIR" \
+        --tag "$_tag" 2>&1) || _launch_rc=$?
+      if [[ "$_launch_rc" -ne 0 ]]; then
+        echo "[dispatch-agent] WARN: dispatch-companion launch failed for tag '$_tag' (rc=$_launch_rc): $_launch_out" >&2
+        emit_dispatch_manifest_entry "" "failed"
+        continue
+      fi
+      _job_id=$(printf '%s\n' "$_launch_out" | sed -n 's/^JOB_ID=//p' | head -1)
+      if [[ -z "$_job_id" ]]; then
+        echo "[dispatch-agent] WARN: dispatch-companion launch produced no JOB_ID line for tag '$_tag'" >&2
+        emit_dispatch_manifest_entry "" "failed"
+        continue
+      fi
+      emit_dispatch_manifest_entry "$_job_id" "pending"
     fi
   done
 

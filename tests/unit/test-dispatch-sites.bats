@@ -320,3 +320,111 @@ setup() {
   [ "$status" -ne 127 ]
   ! [[ "$output" =~ "unrecognised subcommand" ]]
 }
+
+# ---------------------------------------------------------------------------
+# F02 (round-1 fix-cycle): positive launch / await contract assertions for the
+# dispatch-companion vendor-neutral interface. The earlier two companion tests
+# above are negative-only (no payload echo / subcommand recognised) — they let
+# the await stub pass. The two tests below exercise the codex transport via
+# the existing test stub fixture (tests/fixtures/stub-codex-companion.mjs)
+# wired through CODEX_COMPANION, then assert:
+#   1. launch emits exactly `JOB_ID=<id>` on stdout (positive grammar match);
+#   2. await writes raw vendor output to <round-dir>/.dispatch/<tag>.raw and
+#      the await invocation itself emits no payload to stdout.
+# ---------------------------------------------------------------------------
+
+@test "task-20 companion (F02): launch --vendor codex emits JOB_ID=<id> on stdout via stubbed codex transport" {
+  [ -f "scripts/dispatch-companion.sh" ]
+  [ -f "tests/fixtures/stub-codex-companion.mjs" ]
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  local prompt_file="$tmp_dir/prompt.txt"
+  printf 'PROMPT-BODY-SENTINEL-LAUNCH-XYZZY\n' > "$prompt_file"
+
+  # Stub codex broker; speed up codex-companion-bg.sh polling intervals.
+  export CODEX_COMPANION="$BATS_TEST_DIRNAME/../fixtures/stub-codex-companion.mjs"
+  export STUB_STATE_FILE="$tmp_dir/stub-state.json"
+  export QRSPI_CODEX_POLL_INTERVAL_FAST=1
+  export QRSPI_CODEX_POLL_INTERVAL_SLOW=1
+  export QRSPI_CODEX_POLL_BACKOFF_AFTER=2
+  export QRSPI_CODEX_CEILING_SECONDS=10
+  export QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS=5
+
+  run scripts/dispatch-companion.sh \
+    --vendor codex \
+    --model stub-model \
+    --prompt-file "$prompt_file" \
+    --round-dir "$tmp_dir" \
+    --tag spec-codex
+
+  local job_id_line="$output"
+  rm -rf "$tmp_dir"
+
+  [ "$status" -eq 0 ]
+  # Exactly one line, exactly the JOB_ID=<id> grammar — no payload prefix/suffix.
+  [[ "$job_id_line" =~ ^JOB_ID=[A-Za-z0-9._-]+$ ]]
+  # The prompt sentinel must never appear on stdout (output-bound contract).
+  ! [[ "$job_id_line" =~ "PROMPT-BODY-SENTINEL" ]]
+}
+
+@test "task-20 companion (F02): await captures raw vendor output to <round-dir>/.dispatch/<tag>.raw payload-silently" {
+  [ -f "scripts/dispatch-companion.sh" ]
+  [ -f "tests/fixtures/stub-codex-companion.mjs" ]
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  local prompt_file="$tmp_dir/prompt.txt"
+  printf 'launch prompt body\n' > "$prompt_file"
+
+  export CODEX_COMPANION="$BATS_TEST_DIRNAME/../fixtures/stub-codex-companion.mjs"
+  export STUB_STATE_FILE="$tmp_dir/stub-state.json"
+  export QRSPI_CODEX_POLL_INTERVAL_FAST=1
+  export QRSPI_CODEX_POLL_INTERVAL_SLOW=1
+  export QRSPI_CODEX_POLL_BACKOFF_AFTER=2
+  export QRSPI_CODEX_CEILING_SECONDS=10
+  export QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS=5
+  # Drive the stub to terminal status on poll #1 and emit a recognisable
+  # rawOutput body so we can positively assert the .raw file content.
+  export STUB_COMPLETE_AT_POLL=1
+  export STUB_RESULT_RAW='STUB-REVIEWER-RAW-OUTPUT-MARKER-AAA'
+
+  # 1. Launch — capture JOB_ID.
+  run scripts/dispatch-companion.sh \
+    --vendor codex \
+    --model stub-model \
+    --prompt-file "$prompt_file" \
+    --round-dir "$tmp_dir" \
+    --tag spec-codex
+  [ "$status" -eq 0 ]
+  local job_id="${output#JOB_ID=}"
+  [ -n "$job_id" ]
+
+  # 2. Await — must write raw to <round-dir>/.dispatch/<tag>.raw and emit no
+  #    payload to stdout. await-round.sh runs await_cmd with
+  #    cwd=<round-dir>/.dispatch/ (so the .jobs/ record lookup is relative);
+  #    we mirror that calling convention here.
+  local repo_root_abs
+  repo_root_abs="$(pwd)"
+  pushd "$tmp_dir/.dispatch" >/dev/null
+  run "$repo_root_abs/scripts/dispatch-companion.sh" await "$job_id"
+  local await_status="$status"
+  local await_stdout="$output"
+  popd >/dev/null
+
+  local raw_file="$tmp_dir/.dispatch/spec-codex.raw"
+  local raw_exists=0
+  local raw_contents=""
+  if [ -f "$raw_file" ]; then
+    raw_exists=1
+    raw_contents="$(cat "$raw_file")"
+  fi
+  rm -rf "$tmp_dir"
+
+  [ "$await_status" -eq 0 ]
+  [ "$raw_exists" -eq 1 ]
+  [ -n "$raw_contents" ]
+  [[ "$raw_contents" == *"STUB-REVIEWER-RAW-OUTPUT-MARKER-AAA"* ]]
+  # Payload-silent: the raw marker must NOT appear in await's stdout.
+  ! [[ "$await_stdout" == *"STUB-REVIEWER-RAW-OUTPUT-MARKER-AAA"* ]]
+}
