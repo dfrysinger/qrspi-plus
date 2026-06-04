@@ -150,9 +150,11 @@ EOF
   ! grep -q "F05.md$" "$ROUND/kept-findings.txt"
 }
 
-@test "threshold rule: scope and intent kept regardless of score" {
+@test "threshold rule: scope and intent kept regardless of score (above HALLUCINATED gate)" {
   local f1 f2
-  f1=$(write_finding "$ROUND" qc 01 F01 scope);  write_sidecar "$f1" 0
+  # score:0 is dropped by the universal HALLUCINATED gate (added in task-08 R2)
+  # regardless of change_type; scope/intent with any score > 0 are kept.
+  f1=$(write_finding "$ROUND" qc 01 F01 scope);  write_sidecar "$f1" 1
   f2=$(write_finding "$ROUND" qc 02 F02 intent); write_sidecar "$f2" 5
 
   run "$SCRIPT" "$ROUND"
@@ -160,6 +162,18 @@ EOF
   run jq -r '.kept,.dropped' "$ROUND/.verifier-fan-in-audit.json"
   [[ "${lines[0]}" == "2" ]]
   [[ "${lines[1]}" == "0" ]]
+}
+
+@test "threshold rule: scope/intent with score:0 dropped by HALLUCINATED gate" {
+  local f1 f2
+  f1=$(write_finding "$ROUND" qc 01 F01 scope);  write_sidecar "$f1" 0
+  f2=$(write_finding "$ROUND" qc 02 F02 intent); write_sidecar "$f2" 0
+
+  run "$SCRIPT" "$ROUND"
+  [ "$status" -eq 0 ]
+  run jq -r '.kept,.dropped' "$ROUND/.verifier-fan-in-audit.json"
+  [[ "${lines[0]}" == "0" ]]
+  [[ "${lines[1]}" == "2" ]]
 }
 
 # --- halt: missing change_type --------------------------------------------

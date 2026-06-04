@@ -88,6 +88,38 @@ extract_section() {
   # next same-level heading (or EOF). Boundary lines excluded.
   # Same-level heading boundary = a line that begins with exactly `prefix` and
   # whose next character is not `#` (i.e. not a deeper heading like H3 inside H2).
+  # Resolve `!cat <path>` build-directive lines in-line so tests can extract
+  # H3 anchors from the included content (matches tools/build-plugin.mjs).
+  # Path resolution is anchored at REPO_ROOT (the qrspi-plus repo root).
+  local resolved_tmp="/tmp/skill-md-resolved-$$"
+  local repo_root="${REPO_ROOT:-}"
+  if [ -z "$repo_root" ] && command -v require_repo_root >/dev/null 2>&1; then
+    require_repo_root >/dev/null 2>&1 || true
+    repo_root="${REPO_ROOT:-}"
+  fi
+  awk -v root="$repo_root" '
+    /^!cat[[:space:]]+/ {
+      sub(/^!cat[[:space:]]+/, "")
+      path = $0
+      if (root != "" && substr(path, 1, 1) != "/") {
+        path = root "/" path
+      }
+      while ((getline incl < path) > 0) {
+        # Demote any H2 in included content to H3 so it does not terminate
+        # the H2 extract boundary check in the next awk pass. The build plugin
+        # accepts H2s in included content as authoring quirks; for extraction
+        # we treat them as logical subsections of the including H2.
+        if (substr(incl, 1, 3) == "## " && substr(incl, 4, 1) != "#") {
+          incl = "#" incl
+        }
+        print incl
+      }
+      close(path)
+      next
+    }
+    { print }
+  ' "$file" > "$resolved_tmp"
+
   local target_line="${prefix}${text}"
   local found_marker="__SKILL_MD_FOUND_ANCHOR__"
   local stderr_tmp="/tmp/skill-md-extract-stderr-$$"
@@ -117,8 +149,9 @@ extract_section() {
         printf "%s\n", found_marker > "/dev/stderr"
       }
     }
-  ' "$file" 2>"$stderr_tmp")"
+  ' "$resolved_tmp" 2>"$stderr_tmp")"
   local awk_rc=$?
+  rm -f "$resolved_tmp"
 
   local stderr_payload=""
   if [ -r "$stderr_tmp" ]; then

@@ -2,27 +2,30 @@
 
 The OWNS/DEFERS contract below is the locked rule set the scope-reviewer dispatch loads at review time (Read by the `qrspi-design-scope-reviewer` agent at runtime per its rules-loading procedure). Boundary-drift detection runs against the DEFERS list; scope-compliance runs against the OWNS list.
 
+## Design Altitude Boundary
+
 ### Design OWNS
 
-- **Approach selection.** Which architectural approach was chosen, stated with one claim sentence.
-- **Technical trade-offs with rationale.** The 2–3 alternatives weighed, what each trades off (cost, complexity, latency, blast radius), and why the chosen approach won.
-- **Test strategy at the design level.** What types of tests (unit, integration, E2E), what layers get tested, what frameworks. Behavior-level — assertion text and per-test-file layout are deferred (see DEFERS).
-- **Key architectural decisions.** Major decisions made during discussion, each with reasoning grounded in goals and research findings (data-flow boundaries, persistence model, transport choice, security posture).
-- **System diagram (high-level boxes/flow).** Mermaid diagram of major components, their relationships, and data flow at the architecture level. Not file/module layout — that's Structure's diagram.
+Design OWNS:
+- Per-goal outcome statements (the end-state being targeted)
+- Per-goal solution definitions at outcome altitude including: detailed descriptions of the solutions with full edge cases, end-to-end flows specifying actor sequence and per-step inputs/outputs, prompt-writing specifics (the actual prose a SKILL or agent file will carry, paraphrased or verbatim when load-bearing), acceptance criteria including concrete examples and rough test-pairing shapes (e.g., "one bats file per script under `scripts/`"; naming the shape is acceptance-criteria-altitude — authoring the test code is Plan/Implement's job)
+- Cross-Goal Decisions (CDs) that establish vocabulary, named architectural components by purpose, and cross-cutting invariants
+- Per-solution diagrams (zero or more per goal block or per cross-cutting CD block) when they aid comprehension of that specific solution — Mermaid sequence diagrams for per-solution end-to-end flows, or Mermaid flowcharts for branch-heavy per-solution control flow. NOT a unified system-wide architecture diagram across goals/CDs (Structure's job).
+- Test Strategy at the per-solution altitude: each goal/CD block carries its own Acceptance subsection with concrete examples and rough test-pairing shapes; design.md does NOT carry a top-level Test Strategy section stitching acceptance criteria across goals (Structure's job).
+- Naming and renames that establish cross-skill vocabulary (rename inventory blocks)
+- Phasing/release-assignment phrases that name which goal/CD ships in which release (operator-authoritative; phasing.md is the canonical artifact but design.md may carry the labels inline for self-host reasoning)
 
 ### Design DEFERS
 
-- **Full DDL** (CREATE TABLE statements, column types, NOT NULL clauses) → Plan / Implement.
-- **CHECK constraints** spelled out (`CHECK (status IN ('a','b','c'))`) → Plan / Implement.
-- **RLS matrices** (per-role per-table policy text) → Plan / Implement.
-- **Column commentary** (per-column documentation, COMMENT ON statements) → Plan / Implement.
-- **Full function signatures** with parameter types and return types — design states what a function does at the boundary, not its TypeScript/Python signature → Structure / Plan / Implement.
-- **Full assertion text** (literal `expect(...).toEqual(...)` lines) → Implement (TDD).
-- **Line-by-line logic** (procedural pseudocode, control-flow detail) → Plan / Implement.
-- **Vertical slice authoring** (Iron Law 1 — vertical-not-horizontal slicing) → `qrspi:phasing`.
-- **Phase boundaries and replan gates** (Phase 1 PoC guideline — prove the full stack end-to-end when possible; replan-gate criteria) → `qrspi:phasing`.
-- **roadmap.md** (goal-to-phase assignment table) → `qrspi:phasing`.
+Design DEFERS:
+- Function bodies (procedural code blocks with executable logic — full implementations belong in Implement)
+- Full unit-test code (specific assertion text, fixture file contents, test scaffolding — belongs in Plan/Implement; Design names the test type and rough shape only)
+- Executable shell beyond a few illustrative lines (a 2-3 line block illustrating shape is fine; a 20-line script body is not)
+- File architecture (which file holds which component, directory layout, module boundary lines — Structure's job)
+- Unified system-wide architecture diagrams that stitch components across goals/CDs into a single architectural overview (Structure's job; per-solution diagrams inside a single goal/CD block remain in Design's OWNS)
+- Unified Test Strategy / Test Architecture section that stitches per-solution acceptance criteria from individual goal/CD blocks into a release-wide test plan, names cross-cutting test invariants by type, or enumerates the release's test taxonomy (Structure's job; per-solution Acceptance subsections inside individual goal/CD blocks remain in Design's OWNS)
+- Task carving (per-task LOC budgets, per-task dependency graphs, per-task test-case enumeration — Plan's job)
 
 **Phasing pointer.** Phasing concerns (vertical slices, phase boundaries, Iron Law 1, the Phase 1 PoC guideline) are owned by `qrspi:phasing` — see `skills/phasing/SKILL.md`.
 
-A finding citing design.md prose that asserts any DEFERS item — for example, embedding a CREATE TABLE block, listing a CHECK constraint inline, pasting a literal function signature, or authoring a phase split — is a boundary-drift finding emitted by the scope-reviewer with `change_type: scope` (per the schema in `skills/reviewer-protocol/SKILL.md`).
+A finding citing design.md prose that asserts any DEFERS item from the included contract above is a boundary-drift finding emitted by the scope-reviewer with `change_type: scope` (per the schema in `skills/reviewer-protocol/SKILL.md`).

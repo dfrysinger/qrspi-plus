@@ -116,6 +116,10 @@ cat > /dev/null
 if [ -n "${MOCK_TRANSPORT_STDERR:-}" ]; then
   printf '%s\n' "${MOCK_TRANSPORT_STDERR}" >&2
 fi
+# Emit a JOB_ID line on stdout so the dispatch-agent wrapper can record
+# the manifest entry. Real dispatchers emit JOB_ID=<id>; a synthetic value
+# is sufficient for tests that only assert dispatch ran and exit code.
+printf 'JOB_ID=mock-job-%d\n' "$$"
 exit "${MOCK_TRANSPORT_EXIT:-0}"
 MOCK_DISPATCHER_EOF
   chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"

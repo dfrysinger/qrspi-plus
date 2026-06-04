@@ -13,6 +13,8 @@ description: Use when design.md is approved and the QRSPI pipeline needs file/co
 
 Map the design's vertical slices to specific files, components, and interfaces. Define what gets created vs modified, show how slices map to the stack, and produce a detailed architectural diagram. This is the bridge between abstract design and concrete implementation.
 
+Structure authors: the unified system architecture diagram(s) for the release (Mermaid or equivalent — stitching the components named across design.md's per-solution and cross-cutting-CD blocks into a single architectural overview); file maps and module-boundary contracts; cross-solution component interactions; unified test architecture (the `## Test Architecture` section in structure.md); and per-type stitching of per-solution acceptance criteria from design.md.
+
 <!-- Soft length target: 300–500 lines for this SKILL.md. The marker is a guidance signal — long enough to carry per-section template guidance + worked examples + iron laws, short enough to keep the prompt scannable in a single context window. -->
 
 ## Structure OWNS / Structure DEFERS
@@ -21,25 +23,26 @@ Map the design's vertical slices to specific files, components, and interfaces. 
 
 The OWNS/DEFERS contract below is the locked rule set the scope-reviewer dispatch loads at review time (Read by the `qrspi-structure-scope-reviewer` agent at runtime per its rules-loading procedure). Boundary-drift detection runs against the DEFERS list; scope-compliance runs against the OWNS list.
 
+## Structure Altitude Boundary
+
 ### Structure OWNS
 
-- **File paths and module boundaries.** Concrete repo-relative paths for every file the project creates or modifies, grouped by vertical slice. No directory placeholders, no "various", no "TBD".
-- **Section-list contracts per file.** Which top-level sections each file must contain (e.g., for a SKILL.md: `## Overview`, `## Process`, `## Red Flags`); which named blocks live where. Heading-level granularity, not prose content.
-- **Function/script exports and parameter shapes.** Public function signatures, exported types, script entry points, CLI argument shapes — what the unit exposes at its boundary.
-- **Inter-file dependencies.** Which files import/consume which other files; consumer-producer edges between modules; data-flow direction.
-- **Cross-cutting hook-point locations.** The *places* where hooks fire across files (e.g., the four compaction-callout placement sites per skill — which sections of which files they live in) — locations only, never the text.
-- **Test file layout (behavior level).** Which test files exist, the behavior each test file exercises at a one-line description level. Not assertion code, not assertion text, not commit ranges.
-- **Architectural diagram.** Mermaid diagram of file/module relationships, API endpoints, data flow, interface boundaries.
+Structure OWNS:
+- Unified system architecture diagram(s) for the release (Mermaid or equivalent) — stitches the components named across design.md's per-solution + cross-cutting-CD blocks into a single architectural overview
+- File map: which file holds which component, directory layout, module boundaries
+- Module-boundary contracts: which module exports what to which other module (the structural commitments Plan's task carving consumes)
+- Cross-solution component interaction specification: how the components named in design.md's per-solution blocks interact at the system-architecture level (distinct from design.md's per-solution end-to-end flows, which are inter-actor-only inside one solution)
+- Unified test architecture: a top-level `## Test Architecture` section in structure.md that names the test taxonomy for the release (e.g., unit, integration, end-to-end, smoke, contract — exact taxonomy varies by release), names the coverage boundary of each type, and enumerates the cross-cutting test invariants (drawn from CDs and goals in design.md) along with which test type owns each invariant
+- Per-type stitching of per-solution acceptance criteria: for each type in the test taxonomy, enumerate which per-solution `Acceptance` subsections from design.md (per goal + per CD) feed into that test type — naming the design.md source by goal/CD identifier
 
 ### Structure DEFERS
 
-- **Actual prompt or SKILL.md text content** → Plan / Implement.
-- **Actual reviewer-protocol or agent-file body content** → `skills/reviewer-protocol/SKILL.md` and `agents/qrspi-*.md`. (structure.md must not paste reviewer infrastructure prose; the protocol lives in the dedicated skill, agent bodies live in agent files.)
-- **Actual compaction-callout wording at each placement site** (Structure owns the *locations*; Plan/Implement own the *words*) → Plan / Implement.
-- **Test assertion code** → Implement (TDD).
-- **Per-task LOC, full assertion text, per-task commit ranges, line-by-line logic** → Plan / Implement.
-- **Architecture decisions** (which approach, which components exist at all) → Design.
-- **Phasing / vertical slice authoring** (Iron Law 1, the Phase 1 PoC guideline, which slices belong in this phase, replan-gate criteria) → Phasing.
+Structure DEFERS:
+- Per-solution choice rationale or alternatives weighed (Design's job — Structure consumes the locked solution, does not re-litigate it)
+- Per-task assertions / unit-test code (Plan/Implement's job — Structure names the test taxonomy and per-type coverage boundary; Plan authors the per-task `Test Expectations` against the taxonomy; Implement writes the test code)
+- Per-solution end-to-end flows or per-solution sequence diagrams (Design's job — Structure shows components at the architectural level, not per-solution choreography)
+- External-system contracts or vendor research (Design's job — Structure consumes the cited answers, does not re-research; Design is the last research-bearing phase)
+- Detailed solution descriptions or per-solution decision rationale (Design's job — Structure stitches the locked solutions into a unified architecture; Design defines them)
 
 A finding citing structure.md prose that asserts any DEFERS item — for example, embedding a literal compaction-callout sentence rather than just the placement site, or specifying per-task LOC inside a structure entry — is a boundary-drift finding emitted by the scope-reviewer with `change_type: scope` (per the schema in `skills/reviewer-protocol/SKILL.md`).
 
@@ -74,6 +77,33 @@ Do NOT proceed to Plan without user approval of the structure.
 
 When generating `structure.md`, Structure honors the phase scope set by Phasing: structure.md reflects ONLY current-phase file maps and interfaces (per `phasing.md` + the pruned `design.md`). Entries are tagged with goal IDs. File maps for goals not in the current phase (per `roadmap.md`, which Phasing authors) do not appear in `structure.md`. Structure verifies every goal ID in the file map exists in the current-phase `goals.md`; cross-phase scoping decisions and any change to the phase boundary itself are Phasing's responsibility — Structure refers the user back to Phasing if a scope shift is needed rather than re-authoring the phase split.
 
+## Multi-Actor Flow Check
+
+## Multi-Actor Flow Check
+
+Before authoring any deliverable that operationalizes a design decision involving two or more actors — where "actor" means anything that performs an operation and hands off to another: scripts, subagents, orchestrators, tools, services, protocol participants, object-call participants, workflow steps, queue producers/consumers, function callers/callees — verify that the design specifies all six choreography elements:
+
+1. **Actor inventory** — every participant named, with its role.
+2. **Sequence of operations** — ordered list of who-does-what; parallelism boundaries explicit.
+3. **Per-step inputs and outputs** — what each actor receives and produces at each step; where outputs are written (stdout, file path, return value, manifest entry, message).
+4. **Consumer identification** — for every output, who reads it next. Outputs with no named consumer must be removed or the consumer surfaced.
+5. **Loud-failure paths** — what happens when each step fails; where the failure surfaces; which actor catches it. Silent fallback is never the answer.
+6. **Context-cost call-out** — for any flow that crosses a context boundary (orchestrator/subagent, process, network), explicitly state what crosses vs. what stays on disk or in the other context.
+
+If any element is missing for an in-scope decision, **STOP** authoring against this decision and surface a concrete diagnostic to the user. Do NOT guess the missing hand-off and continue.
+
+Diagnostic template:
+
+> Design decision **X** enumerates actors **A, B, C** but does not specify **[missing element — e.g., "what happens if B produces no output", "how A invokes B", "who reads C's output"]**.
+>
+> Stopping before guessing.
+>
+> Recommended path: trigger the **Backward Loops** procedure (see `using-qrspi/SKILL.md` § Backward Loops) to re-open Design via its per-decision dialogue, lock the missing element, re-review + re-approve `design.md`, then cascade forward — every dependent artifact from Design onward (Phasing if phase boundaries are affected, Structure, Plan, Parallelize if task dependencies are affected) re-runs against the updated design.
+>
+> Alternative: provide explicit guidance to accept the gap with a documented assumption recorded against this decision in the deliverable. The assumption becomes the de-facto contract — name what you are choosing for the missing element.
+
+**Iron law:** silently inventing a missing hand-off is a contract violation that ships half-finished features which only surface at Test or in production. Guessing-instead-of-stopping is a process failure and must be reported even if the deliverable otherwise looks complete.
+
 ## Process
 
 ### Structure Subagent
@@ -95,6 +125,37 @@ When generating `structure.md`, Structure honors the phase scope set by Phasing:
 6. If CI setup noted in Design, define pipeline structure (workflow file, test commands, lint config) and project convention files (CLAUDE.md, linting config, etc.) for greenfield projects
 
 **Output format for `structure.md`:**
+
+## Evergreen-Output Rule
+
+Any artifact in the QRSPI run directory governed by `status: draft → approved` frontmatter promotion (goals, design, structure, phasing, plan, parallelization, roadmap, future-goals, and any future artifact adopting this lifecycle) describes the **current state** of decisions. The reader is a downstream agent or future maintainer.
+
+*(Excludes by design: `SKILL.md` files — skills carry rule rationale legitimately; `feedback/*.md` — the designated home for dialogue exhaust; `reviews/**/*.md` — finding rationale; `config.md` — non-narrative.)*
+
+**Litmus test (apply to every paragraph before write).** Two filters, in order:
+
+1. Is the subject the **decision** (the thing being designed / planned / scoped)? → keep.
+2. Is the subject the **document itself** — its drafts, its history, the dialogue that produced it, "us"? → cut.
+
+A sentence that only makes sense as a delta from a prior state is **dialogue exhaust** — strip it.
+
+**Permitted substantive content** (do NOT confuse with dialogue exhaust):
+
+- Chosen approach and its rationale (inline)
+- Rejected alternatives and tradeoffs, where the artifact template asks for them (e.g., design.md's `## Trade-offs Considered` — substantive content about the decision space, not about the document's history)
+- Rationale embedded inline as one parenthetical when a downstream reader needs it
+
+**Named antagonist patterns — strip on sight, substitute as shown:**
+
+| Antagonist pattern | Recognize by | Replace with |
+|---|---|---|
+| Session / drafting notes | "Rule X drafting note," "this collapsed from 3 to 1 because…" | Nothing — delete. If a fact matters, embed inline in the decision. |
+| Version-history narration | "earlier draft said X," "previously," "originally," "pre-cleanup" | Nothing — git history holds versions. |
+| Inside baseball | text addressed to "us" / "the author," meta-explanation of the document's own structure ("this section is split into A and B because…") | The decision the structure expresses — without the structural explanation. |
+| Compaction-loss recovery notes | "this nuance was almost lost during…" | Nothing — if the nuance is needed, the rule itself carries it. |
+| Failure-modes-prevented lists | bullets that justify why a rule exists rather than state what to do | Strengthen the rule's wording; delete the justification list. |
+
+Decision-process history (drafts, review rounds, feedback applied, compaction recovery) lives in feedback files, review findings, PR descriptions, and git history — never in the artifact.
 
 > **Per-section template guidance is embedded inline as HTML comments below.** Each section block carries a one-line guidance comment and a conformance reminder so future structure.md content can be linted for boundary-drift signals (the scope-reviewer's boundary-drift sub-check looks for skill-implementation jargon — specific tool names, hook syntax, subagent dispatch verbs — leaking into earlier-stage artifacts; structure.md owns file paths and interfaces, not Plan/Implement-layer language).
 >
@@ -251,6 +312,19 @@ If the artifact directory is inside a git repository, commit the approved `struc
 Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — structure", description: "pre-handoff: next skill reads structure.md + prior artifacts + reviewer findings. User decides whether to /compact." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `structure`.
+
+## Test Architecture
+
+Author the unified `## Test Architecture` section in structure.md after Design approval. Design authors per-solution `Acceptance` subsections per goal/CD block; Structure stitches them into a release-level test architecture. This is new authoring behavior for Structure — do not re-open Design rationale or add Plan/Implement-level assertions.
+
+**Procedure (run after Design approval):**
+
+1. Enumerate every per-solution `Acceptance` subsection in design.md — one per goal block and one per CD block. Record each by goal/CD identifier (e.g., G1, G5, CD-4).
+2. Name the test taxonomy for the release (e.g., unit, integration, end-to-end, smoke, contract — exact taxonomy varies by release). Group the acceptance criteria from step 1 by test type per the named taxonomy, citing the design.md source identifier for each entry.
+3. Enumerate cross-cutting test invariants drawn from CD blocks and cross-cutting goals in design.md. For each invariant, name the test type that owns each invariant.
+4. Author the result as a top-level `## Test Architecture` section in structure.md: named-taxonomy-first (T1, T2, …), one paragraph per type naming the coverage boundary and which design.md `Acceptance` subsections feed into it, and a final `### Cross-cutting invariants` subsection listing the invariants from step 3 with their owning test type.
+
+Structure's role in this section: name the test taxonomy, enumerate cross-cutting test invariants, and name the test type that owns each invariant. Structure does not author per-task test expectations or assertion code — those belong to Plan and Implement respectively.
 
 ## Section-Anchor Index
 

@@ -77,7 +77,7 @@ for the source of truth):
 - **BATS under bash 3.2**: `bats -r tests` runs every `*.bats` file
   under `tests/` recursively inside an alpine `bash:3.2` Docker
   image, so no test silently relies on a bash 4+ feature.
-- **Build-sync gate** (G32, v0.7.2+): CI runs
+- **Build-sync gate** (G32): CI runs
   `node tools/build-plugin.mjs` against the source tree, then
   `git diff --exit-code build/ .claude-plugin/marketplace.json`.
   Two PR-blocking failure modes:
@@ -102,7 +102,7 @@ trigger CI; open a PR (draft is fine) to see check results. All
 checks must be green before merge. If a CI failure looks unrelated to
 your change, mention it in the PR body so the maintainer can confirm.
 
-## Local rebuild workflow (G32, v0.7.2+)
+## Local rebuild workflow (G32)
 
 The repo ships a committed `build/` plugin tree that hosts install
 from. After editing a SKILL.md or any `_shared/*.md` snippet inlined

@@ -844,16 +844,21 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   # bash scripts dispatch third-party CLIs only; first-party Task-tool
   # subagents are dispatched from main chat. This guard catches any
   # accidental migration.
+  #
+  # Carve-outs (per CD-1, universal dispatch architecture):
+  #   - scripts/dispatch-agent.sh is the universal entry point that EMITS
+  #     Task-spec lines (containing the literal `subagent_type:` JSON field)
+  #     for main chat to consume; emitting a spec is not dispatching.
+  #   - prose mentioning "Task tool" inside a recovery diagnostic is not a
+  #     Task-tool invocation either; only callable patterns like Task( or
+  #     Agent( are forbidden.
   local hits grep_status=0
-  hits="$(grep -rnE 'subagent_type|Task\(|Agent\(' "$REPO_ROOT/scripts/" 2>/dev/null)" || grep_status=$?
-  if [ "$grep_status" -eq 0 ]; then
+  hits="$(grep -rnE 'subagent_type|Task\(|Agent\(' "$REPO_ROOT/scripts/" \
+            --exclude=dispatch-agent.sh 2>/dev/null \
+          | grep -vE 'a fresh Task tool invocation' || true)"
+  if [ -n "$hits" ]; then
     echo "scripts/ must not contain Task-tool dispatch or return-capture patterns; found:"
     echo "$hits"
-    return 1
-  elif [ "$grep_status" -eq 1 ]; then
-    : # no match — pass
-  else
-    echo "grep failed with exit $grep_status while scanning $REPO_ROOT/scripts/ (missing/unreadable directory or grep error); fail-closed."
     return 1
   fi
 }

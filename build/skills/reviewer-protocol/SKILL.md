@@ -80,6 +80,12 @@ In addition to the five schema fields above, every emitted finding carries three
 - **`round`** — integer. The review-round number this finding was emitted in. MUST equal the round prefix embedded in `finding_id` (the `{NN}` after `R`); a mismatch is malformed.
 - **`reviewer`** — string. The reviewer tag that produced the finding. The `reviewer` audit-field value MUST equal the dispatcher-supplied `<reviewer_tag>` for the current dispatch (and equivalently the filename prefix used by the emission contract). This pin closes a confused-deputy surface: a reviewer cannot impersonate another reviewer's tag in its own emitted findings, because the orchestrator validates `reviewer == <reviewer_tag>` before threading.
 
+### Evergreen-Output Rule Enforcement
+
+The rule applies to every QRSPI artifact whose producing `SKILL.md` `!cat`-includes `skills/_shared/evergreen-output-rule.md` — scope authority is delegated to the include topology, not to any hardcoded artifact list. When reviewing such an artifact, reviewer subagents MUST surface a finding when it carries any of the named antagonist patterns enumerated in that snippet. The canonical antagonist-pattern vocabulary lives there — cite the snippet by reference; do NOT duplicate the antagonist-pattern list here.
+
+This clause is **additional** to (NOT a replacement for) the finding-schema and `change_type` requirements above. The finding still carries the canonical 5-field schema (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`) plus the audit fields. Tag the `change_type` per the snippet's filter taxonomy: dialogue-exhaust phrasing whose excision affects only artifact tone or paragraph density (without changing the decisions the artifact records) is `change_type: style`; dialogue-exhaust phrasing whose excision sharpens claim-before-evidence ordering, removes load-bearing structural meta-explanation, or otherwise unburies the decision the artifact is meant to express is `change_type: clarity`. Do NOT invent a sixth bucket or coerce the value to a non-canonical alias — out-of-enum values are a contract violation per the loud-failure rule above.
+
 ## Change-Type Classifier
 
 Five categories. Each entry below names the category, gives the rule of thumb, and shows a positive example (a finding that fits the category) and a negative example (a finding that looks similar at a glance but belongs to a different category — to prevent miscategorization).
@@ -238,6 +244,33 @@ On contradiction detection:
 3. End the turn. The orchestrator repairs the dispatch (removes `task_definition` per the absence-as-signal contract) and re-dispatches.
 
 Silent fall-through is forbidden — running the wrong checklist masks the contract drift exactly when it most needs to be visible.
+
+### Anti-Fabrication Rule (FAIL-LOUD)
+
+The Contradiction Refusal procedure above applies to ONE specific dispatch malformation
+(`task_definition` present with a test-phase `output` path). It does NOT generalize.
+
+Do NOT invent, paraphrase, or attribute to `reviewer-protocol/SKILL.md` any contradiction-
+refusal or escape-hatch procedure that is not present verbatim above. If you believe a
+documented contract (the per-finding first-party emission contract, change-type classifier, finding
+schema, untrusted-data handling, phase routing, or any consumer skill's HARD-GATE) is in
+conflict with another rule or with finding quality, do NOT confabulate a generic resolution
+to bypass it. Surface the conflict by name:
+
+1. Do NOT call the `Write` tool. Do NOT emit findings or sentinels. Do NOT proceed.
+2. Return a single-line text response with this load-bearing prefix (orchestrator detects it):
+
+   ```
+   CONTRACT-CONFLICT: <contract A name> conflicts with <contract B name or quality concern>; cannot proceed
+   ```
+
+3. End the turn. The orchestrator surfaces the conflict to the operator, who resolves it
+   by name (amend a contract, adjust the dispatch, or instruct the reviewer to proceed
+   under one specific contract).
+
+Quoting a procedure from `reviewer-protocol/SKILL.md` that is not literally present in this
+file is a fabrication. Treat the absence of a named escape hatch as the rule, not as an
+invitation to invent one.
 
 ## Quick-Tier Finding Disposition
 

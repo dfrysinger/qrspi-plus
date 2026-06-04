@@ -1,7 +1,7 @@
 # QRSPI Prompt Design Rules
 
 **Status:** Active rule set for skill prompt authoring and review.
-**Last applied:** 2026-06-02 (v0.7.2 refresh — rules-file relocation + eight updates A-H).
+**Last applied:** 2026-06-02 (rules-file relocation + eight updates A-H). <!-- evergreen-exempt -->
 
 This document is the canonical rule set for designing and reviewing the prompt content of QRSPI skill files (`SKILL.md`, reviewer templates, hook prompts). It exists so future skill changes — and future skill rewrites when we learn more — apply a consistent, evidence-backed standard rather than re-deriving it each time.
 
@@ -37,7 +37,7 @@ The skill prompt is read by an orchestrator LLM that acts on instructions: what 
 
 - **Dialogue exhaust** — back-and-forth negotiation text, prior-round findings, "we agreed that…" summaries. (Substitute: the locked decision itself, stated as present-tense fact.)
 - **Session/drafting notes** — "I initially wrote X but then realized Y," "as a first pass…," "TODO: revisit." (Substitute: the final decision only; if genuinely undecided, mark with `status: draft` on the artifact, not inline.)
-- **Version-history narration** — "in v0.7.1 this was different," "previously the rule said…." (Substitute: the current rule, verbatim; history lives in git log, not prompt prose.)
+- **Version-history narration** — "in v0.7.1 this was different," "previously the rule said…." (Substitute: the current rule, verbatim; history lives in git log, not prompt prose.) <!-- evergreen-exempt -->
 - **Inside baseball** — references to internal process mechanics that the LLM consumer has no action to take on. (Substitute: cut; if action is required, state the action directly.)
 - **Compaction-loss recovery notes** — "if you resumed after /compact, re-read…," "context may have been lost." (Substitute: compaction-resilient design per the cross-cutting principle below — instruct incremental persistence and a recovery diagnostic in the SKILL.md itself, not inline in the artifact.)
 - **Failure-modes-prevented lists** — "this design prevents X, Y, Z failures." (Substitute: cut; the design's correctness is evaluated by reviewers, not narrated by the author.)
@@ -179,7 +179,7 @@ The seven rules are derived from:
 - **OpenAI Codex harness engineering** (AGENTS.md guidance, "give Codex a map" post) — for ~100-line target, "imperative phrasing > prose," structural enforcement over instructional discipline
 - **2024-2025 prompt-engineering research** (Liu et al. 2024 "Lost in the Middle"; IFEval++; LIFBench; NoLiMa; the 2025 Few-Shot Dilemma paper) — for verbosity bias, instruction-following degradation, lexical anchoring, the example cap
 
-The load-bearing derivations for the rules are inlined in this file (each rule carries its source citation inline). For broader research context, the v0.7.2 release research summary at `docs/qrspi/2026-05-30-v072-release/research/summary.md` covers Q1-Q5 (prompt-prose detection, rules applicability across host platforms, model-era calibration, content-semantic vs. path heuristics, and vendor-neutrality findings). No external `general2/...` paths — those working documents predated this repo's self-contained structure and are not accessible at plugin install time.
+The load-bearing derivations for the rules are inlined in this file (each rule carries its source citation inline). For broader research context, the v0.7.2 release research summary at `docs/qrspi/2026-05-30-v072-release/research/summary.md` covers Q1-Q5 (prompt-prose detection, rules applicability across host platforms, model-era calibration, content-semantic vs. path heuristics, and vendor-neutrality findings). No external `general2/...` paths — those working documents predated this repo's self-contained structure and are not accessible at plugin install time. <!-- evergreen-exempt -->
 
 ---
 

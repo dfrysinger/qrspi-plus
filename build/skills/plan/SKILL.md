@@ -111,6 +111,77 @@ Each task implements **exactly one observable behavior** — one request handler
 
 A task that fails any floor check merges into the parent task that gives it observable behavior; do not ship sub-atomic tasks.
 
+## Schema-Migration Task Shape
+
+A **schema-migration task** applies an identical mechanical change to N files of the same shape — for example, deleting one frontmatter key from every agent file, replacing a single identifier uniformly across all skill prose, or renaming a top-level YAML field across a glob of config files. This task shape recurs in this codebase and is the narrow exception to the ordinary LOC ceiling and file-count guidance.
+
+### When to use this shape
+
+Use `sizing_exception: schema-migration` only when ALL of the following hold:
+
+- Every file in `Target files:` receives the same structural change (same pattern, same before/after; not "similar" or "related").
+- The change is mechanical-only — no logic modification, no behavioral delta, no per-file judgment calls.
+- A single bash check can assert the mechanical-only nature of the resulting diff.
+
+Do not use this exception for multi-feature bundles that happen to touch many files, for behavioral changes dressed up as migrations, or for any task where per-file human judgment is needed. The closed exception set remains: schema migration, CI scaffolding, reusable primitives — no new category is added by this contract.
+
+### Mandatory trio — all three fields required together
+
+When `sizing_exception: schema-migration` is declared, the task spec MUST carry all three of the following fields. No field is optional when the exception is used; omitting any one is a plan-spec defect:
+
+- `sizing_exception: schema-migration` — declares the exception; must be exactly this value for schema-migration tasks.
+- `sizing_rationale: <human-readable reason>` — one sentence explaining why this specific change is a mechanical same-shape migration (e.g., "removes the deprecated `model:` key added uniformly by T40 from all 41 agent frontmatter files").
+- `structural_lint: <script-path>` — a repo-relative path to a checked-in script under `scripts/structural-lints/` (e.g., `scripts/structural-lints/check-model-key-removal.sh`). The value must be a single token matching the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$`; whitespace, tab, newline, and any character outside that token class are rejected. The script must exist as a regular readable file at that path in the repository; a path that passes the token check but is absent from the repository is a plan-spec defect. The script receives no spec-controlled arguments; it is invoked as `bash -- <path>` from the repository root with the path passed as a single argv element (never interpolated into a `bash -c` string) against the proposed diff. The script must exit 0 when the diff is mechanical-only and non-empty, and exit non-zero when non-structural content is present or the diff is empty. Inline bash commands are not accepted as the field value; a literal command string instead of a valid script path is a plan-spec defect.
+
+### Effect on sizing limits
+
+When the mandatory trio is present and the `structural_lint` check executes successfully on the proposed diff:
+
+- **N-files: ungated.** No upper limit applies to the number of files the task may touch; the structural lint is the real ceiling, not a file count.
+- **LOC ceiling: exempted.** The ordinary 200-LOC ceiling does not apply to this task.
+
+Ordinary task-size discipline is not relaxed for non-schema-migration work. A task without the full mandatory trio is evaluated against the standard ceiling.
+
+### Plan-spec defects
+
+A schema-migration declaration is incomplete — and the LOC/file-count exemption is NOT granted — when ANY of the following holds:
+
+- `sizing_exception: schema-migration` is declared but `sizing_rationale:` is absent or empty.
+- `sizing_exception: schema-migration` is declared but `structural_lint:` is absent or empty.
+- `structural_lint:` is present but its value does not match the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` (is an inline command, contains whitespace/tab/newline, contains `..`, is an absolute path, or uses characters outside the allowed token class).
+- `structural_lint:` carries a token-valid path but the named script does not exist as a regular readable file at the repository root; a missing or unreadable script is a configuration defect, not a content defect, and the exemption is denied.
+- `structural_lint:` names a valid, readable script path but the proposed diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the exemption is denied.
+- `structural_lint:` names a valid, readable script path but the script exits non-zero, indicating the diff contains non-structural content.
+
+The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception review) verifies all six conditions and emits a `severity: high, change_type: correctness` finding for each defect.
+
+## Multi-Actor Flow Check
+
+## Multi-Actor Flow Check
+
+Before authoring any deliverable that operationalizes a design decision involving two or more actors — where "actor" means anything that performs an operation and hands off to another: scripts, subagents, orchestrators, tools, services, protocol participants, object-call participants, workflow steps, queue producers/consumers, function callers/callees — verify that the design specifies all six choreography elements:
+
+1. **Actor inventory** — every participant named, with its role.
+2. **Sequence of operations** — ordered list of who-does-what; parallelism boundaries explicit.
+3. **Per-step inputs and outputs** — what each actor receives and produces at each step; where outputs are written (stdout, file path, return value, manifest entry, message).
+4. **Consumer identification** — for every output, who reads it next. Outputs with no named consumer must be removed or the consumer surfaced.
+5. **Loud-failure paths** — what happens when each step fails; where the failure surfaces; which actor catches it. Silent fallback is never the answer.
+6. **Context-cost call-out** — for any flow that crosses a context boundary (orchestrator/subagent, process, network), explicitly state what crosses vs. what stays on disk or in the other context.
+
+If any element is missing for an in-scope decision, **STOP** authoring against this decision and surface a concrete diagnostic to the user. Do NOT guess the missing hand-off and continue.
+
+Diagnostic template:
+
+> Design decision **X** enumerates actors **A, B, C** but does not specify **[missing element — e.g., "what happens if B produces no output", "how A invokes B", "who reads C's output"]**.
+>
+> Stopping before guessing.
+>
+> Recommended path: trigger the **Backward Loops** procedure (see `using-qrspi/SKILL.md` § Backward Loops) to re-open Design via its per-decision dialogue, lock the missing element, re-review + re-approve `design.md`, then cascade forward — every dependent artifact from Design onward (Phasing if phase boundaries are affected, Structure, Plan, Parallelize if task dependencies are affected) re-runs against the updated design.
+>
+> Alternative: provide explicit guidance to accept the gap with a documented assumption recorded against this decision in the deliverable. The assumption becomes the de-facto contract — name what you are choosing for the missing element.
+
+**Iron law:** silently inventing a missing hand-off is a contract violation that ships half-finished features which only surface at Test or in production. Guessing-instead-of-stopping is a process failure and must be reported even if the deliverable otherwise looks complete.
+
 ## Process
 
 ### Plan Overview Subagent
@@ -325,6 +396,37 @@ The classification gates downstream behavior: lightweight tasks dispatch to `qrs
 ### Plan Document Structure (During Review)
 
 The output template below embeds **information-mapping patterns** directly: claim-before-evidence (the task title and Description's first sentence carry the load-bearing claim — what observable behavior the task delivers); one-paragraph-per-claim density (each bullet carries one claim, no compound bullets); scannable bullets and required headings (Phase / Target files / Dependencies / LOC estimate / Description / Test expectations are required structural slots, not optional prose); no "be concise" instructions (research-backed: brevity directives degrade factual reliability per the Phare benchmark and Hakim). Per-task specs are short by structural design (terse bullets, no narrative), not by an explicit brevity instruction.
+
+## Evergreen-Output Rule
+
+Any artifact in the QRSPI run directory governed by `status: draft → approved` frontmatter promotion (goals, design, structure, phasing, plan, parallelization, roadmap, future-goals, and any future artifact adopting this lifecycle) describes the **current state** of decisions. The reader is a downstream agent or future maintainer.
+
+*(Excludes by design: `SKILL.md` files — skills carry rule rationale legitimately; `feedback/*.md` — the designated home for dialogue exhaust; `reviews/**/*.md` — finding rationale; `config.md` — non-narrative.)*
+
+**Litmus test (apply to every paragraph before write).** Two filters, in order:
+
+1. Is the subject the **decision** (the thing being designed / planned / scoped)? → keep.
+2. Is the subject the **document itself** — its drafts, its history, the dialogue that produced it, "us"? → cut.
+
+A sentence that only makes sense as a delta from a prior state is **dialogue exhaust** — strip it.
+
+**Permitted substantive content** (do NOT confuse with dialogue exhaust):
+
+- Chosen approach and its rationale (inline)
+- Rejected alternatives and tradeoffs, where the artifact template asks for them (e.g., design.md's `## Trade-offs Considered` — substantive content about the decision space, not about the document's history)
+- Rationale embedded inline as one parenthetical when a downstream reader needs it
+
+**Named antagonist patterns — strip on sight, substitute as shown:**
+
+| Antagonist pattern | Recognize by | Replace with |
+|---|---|---|
+| Session / drafting notes | "Rule X drafting note," "this collapsed from 3 to 1 because…" | Nothing — delete. If a fact matters, embed inline in the decision. |
+| Version-history narration | "earlier draft said X," "previously," "originally," "pre-cleanup" | Nothing — git history holds versions. |
+| Inside baseball | text addressed to "us" / "the author," meta-explanation of the document's own structure ("this section is split into A and B because…") | The decision the structure expresses — without the structural explanation. |
+| Compaction-loss recovery notes | "this nuance was almost lost during…" | Nothing — if the nuance is needed, the rule itself carries it. |
+| Failure-modes-prevented lists | bullets that justify why a rule exists rather than state what to do | Strengthen the rule's wording; delete the justification list. |
+
+Decision-process history (drafts, review rounds, feedback applied, compaction recovery) lives in feedback files, review findings, PR descriptions, and git history — never in the artifact.
 
 ```markdown
 ---

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# Tests for scripts/dispatch-agent.sh — renamed from scripts/run-codex-review.sh.
+# Tests for scripts/dispatch-agent.sh — renamed from scripts/dispatch-agent.sh.
 # The universal batched dispatch entry point: resolves agent tiers, emits
 # MODE=first_party spec lines per first-party reviewer, routes background
 # entries via dispatch-companion.sh, and writes .dispatch-manifest.json.
@@ -90,7 +90,7 @@ teardown() {
 #
 # These three pin tests document the design choice that --model,
 # --output-file, and --artifact-dir feed only the dispatcher hand-off
-# (see scripts/run-codex-review.sh near `if [[ "$DRY_RUN" != "true" ]]`).
+# (see scripts/dispatch-agent.sh near `if [[ "$DRY_RUN" != "true" ]]`).
 # --dry-run prints the assembled prompt and exits — it never invokes the
 # dispatcher — so requiring them in dry-run would conflate two scopes:
 # prompt-assembly invariants (what dry-run tests) vs dispatch invariants
@@ -986,7 +986,7 @@ EOF
 
 # Test expectation: hard rename — scripts/dispatch-agent.sh is the live entry point
 @test "task-20 rename: scripts/dispatch-agent.sh exists and is executable" {
-  # Test expectation: old scripts/run-codex-review.sh is gone and
+  # Test expectation: old scripts/dispatch-agent.sh is gone and
   # scripts/dispatch-agent.sh is the new live file (task-20.md File/rename audit bullet).
   [ -f "$REPO_ROOT/scripts/dispatch-agent.sh" ]
   [ -x "$REPO_ROOT/scripts/dispatch-agent.sh" ]

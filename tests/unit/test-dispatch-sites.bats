@@ -78,7 +78,7 @@ setup() {
 }
 
 @test "task-20 rename-audit: scripts/dispatch-companion.sh exists" {
-  # Test expectation: scripts/run-third-party-llm.sh renamed to scripts/dispatch-companion.sh.
+  # Test expectation: scripts/dispatch-companion.sh renamed to scripts/dispatch-companion.sh.
   [ -f "scripts/dispatch-companion.sh" ]
   [ -x "scripts/dispatch-companion.sh" ]
 }

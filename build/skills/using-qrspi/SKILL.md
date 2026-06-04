@@ -225,6 +225,10 @@ Each skill checks that its required input artifacts exist on disk before proceed
 
 If a required artifact is missing, the skill refuses to run and tells the user which artifact is needed.
 
+## Artifact Quality
+
+Every artifact-producing skill in this pipeline applies the cross-cutting Evergreen-Output Rule to the artifact it emits. See `skills/_shared/evergreen-output-rule.md` for the canonical rule (litmus test, named antagonist patterns, permitted substantive content); the rule is `!cat`-included by every artifact-producing SKILL.md at its artifact-output contract section, and reviewer subagents enforce it via the antagonist-pattern clause in `skills/reviewer-protocol/SKILL.md`.
+
 ## Approval Markers
 
 When the user approves an artifact, the skill writes `status: approved` in the artifact's YAML frontmatter:
@@ -510,7 +514,7 @@ The resolved tier is then looked up in the `model_routing:` block to obtain the 
 
 #### Missing `model_routing:` block in `config.md`
 
-When `config.md` does not contain a `model_routing:` block, validation **fails loudly** through the shared config-validation procedure (`skills/_shared/config-validation-procedure.md`) — a missing block and a malformed block fail the same way. The dispatcher does not fire a transient warning and does not silently substitute defaults: an absent routing table has no tier→`(vendor, model)` mapping to resolve against, so the run halts and reports repair-or-abort guidance. This required block is enumerated in the validation table at `### Fields that affect pipeline behavior (must be validated)`.
+When `config.md` does not contain a `model_routing:` block, validation **fails loudly** through the shared config-validation procedure (`skills/_shared/config-validation-procedure.md`) — a missing block and a malformed block fail the same way. The dispatcher does not fire a transient warning and uses no implicit default substitution: an absent routing table has no tier→`(vendor, model)` mapping to resolve against, so the run halts and reports repair-or-abort guidance. This required block is enumerated in the validation table at `### Fields that affect pipeline behavior (must be validated)`.
 
 - **Repair:** add the five-tier `model_routing:` block (with `default_tier: medium`) to `config.md` per the schema in `#### \`model_routing:\` block`.
 - **Abort:** if the operator cannot supply the block, abort the run. The dispatcher never falls back silently to an agent-bundled default, never substitutes an unannounced model, and never passes the dispatch through to the host CLI's silent re-routing — any such fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.

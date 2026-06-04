@@ -267,11 +267,11 @@ run_pin() {
 
 @test "[Phase1 G24 regex-pin C-1] vocab anti-pattern pin uses regex assertions (not glob literals)" {
   # The four anti-pattern @test blocks in test-using-qrspi-vocab.bats must use
-  # [[ ! "$body" =~ PATTERN ]] (ERE regex) rather than [[ "$body" != *"literal"* ]]
-  # (glob literal).  A regex pin matches intent; a glob pin matches only the
-  # exact historic phrase.  Grep for the ERE-regex negation form inside the four
-  # "anti-pattern wording absent" blocks; the file must carry at least four such
-  # assertions (one per H4 block under test).
+  # ERE-regex negation against $body (the [[ ! ... =~ PATTERN ]] form) rather
+  # than the glob-literal form. A regex pin matches intent; a glob pin matches
+  # only the exact historic phrase. Grep for the ERE-regex negation form inside
+  # the four "anti-pattern wording absent" blocks; the file must carry at least
+  # four such assertions (one per H4 block under test).
   local pin_file="$PINS/test-using-qrspi-vocab.bats"
   [ -f "$pin_file" ]
   # Count lines matching the regex-negation form for silent-fallback pins.
@@ -386,7 +386,7 @@ run_pin() {
 # Mock strategy (shared by TE5..TE13):
 #   Per-test, build a self-contained mock REPO_ROOT in a fresh mktemp dir
 #   (mirrors the pattern in tests/unit/test-host-detection.bats).  The mock
-#   `scripts/run-third-party-llm.sh` drains stdin, optionally writes
+#   `scripts/dispatch-companion.sh` drains stdin, optionally writes
 #   ${MOCK_TRANSPORT_STDOUT} to stdout, optionally writes
 #   ${MOCK_TRANSPORT_STDERR} to stderr, and exits ${MOCK_TRANSPORT_EXIT:-0}.
 #   The wrapper is invoked with QRSPI_REPO_ROOT pointing at the mock dir, so
@@ -434,7 +434,7 @@ _t7_make_mock_repo() {
   # MOCK_TRANSPORT_STDERR is set, writes it to stderr.  Exits
   # MOCK_TRANSPORT_EXIT (default 0).
   mkdir -p "$tmp/scripts"
-  cat > "$tmp/scripts/run-third-party-llm.sh" <<'MOCK_DISPATCHER_EOF'
+  cat > "$tmp/scripts/dispatch-companion.sh" <<'MOCK_DISPATCHER_EOF'
 #!/usr/bin/env bash
 # Mock run-third-party-llm.sh for T7 dispatch-surface tests.
 cat > /dev/null
@@ -449,7 +449,7 @@ if [ -n "${MOCK_TRANSPORT_STDERR:-}" ]; then
 fi
 exit "${MOCK_TRANSPORT_EXIT:-0}"
 MOCK_DISPATCHER_EOF
-  chmod +x "$tmp/scripts/run-third-party-llm.sh"
+  chmod +x "$tmp/scripts/dispatch-companion.sh"
 
   # HOME fixture for the claude-code companion-glob probe.  Empty by default;
   # tests that want check_codex_available(claude-code) to succeed must
@@ -528,17 +528,17 @@ _t7_require_trusted_gh() {
 }
 
 # ---------------------------------------------------------------------------
-# T7 / TE3: SKILL prose names scripts/run-codex-review.sh as the Claude Code
+# T7 / TE3: SKILL prose names scripts/dispatch-agent.sh as the Claude Code
 # Codex dispatch mechanism.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE3] using-qrspi SKILL prose names scripts/run-codex-review.sh as the Claude Code Codex dispatch mechanism" {
-  # Test expectation: the SKILL prose names `scripts/run-codex-review.sh`
+@test "[T7 / TE3] using-qrspi SKILL prose names scripts/dispatch-agent.sh as the Claude Code Codex dispatch mechanism" {
+  # Test expectation: the SKILL prose names `scripts/dispatch-agent.sh`
   # as the Claude Code Codex dispatch mechanism.  The token must appear
   # in the Codex-related prose slice (not just incidentally elsewhere).
   local skill="$SKILLS/using-qrspi/SKILL.md"
   [ -f "$skill" ]
-  grep -q "scripts/run-codex-review.sh" "$skill"
+  grep -q "scripts/dispatch-agent.sh" "$skill"
   # Co-location anchor: the script path must appear in the same Codex
   # detection prose slice as the shell-pipeline token from TE1.
   local slice
@@ -547,7 +547,7 @@ _t7_require_trusted_gh() {
     capture && /^#{2,4} / && NR>start { exit }
     capture { print; if (start==0) start=NR }
   ' "$skill")"
-  printf '%s\n' "$slice" | grep -q "scripts/run-codex-review.sh"
+  printf '%s\n' "$slice" | grep -q "scripts/dispatch-agent.sh"
 }
 
 # ---------------------------------------------------------------------------
@@ -606,7 +606,7 @@ _t7_require_trusted_gh() {
     COPILOT_CLI=1 \
     MOCK_TRANSPORT_STDOUT="te5-task-tool-mock-marker-2026-05-27" \
     MOCK_TRANSPORT_EXIT=0 \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -629,12 +629,12 @@ _t7_require_trusted_gh() {
 
 # ---------------------------------------------------------------------------
 # T7 / TE6: COPILOT_CLI unset → [transport: shell-pipeline] exactly once,
-# no [transport: task-tool].  Mocked scripts/run-codex-review.sh path.
+# no [transport: task-tool].  Mocked scripts/dispatch-agent.sh path.
 # ---------------------------------------------------------------------------
 
 @test "[T7 / TE6] dispatch surface: COPILOT_CLI-unset path emits [transport: shell-pipeline] exactly once and never [transport: task-tool]" {
   # Test expectation: with COPILOT_CLI unset and the shell pipeline via
-  # `scripts/run-codex-review.sh` mocked, the dispatch surface emits the
+  # `scripts/dispatch-agent.sh` mocked, the dispatch surface emits the
   # `[transport: shell-pipeline]` marker to stderr exactly once and does
   # not emit the `[transport: task-tool]` marker.
   local tmp
@@ -646,7 +646,7 @@ _t7_require_trusted_gh() {
     COPILOT_CLI="" \
     MOCK_TRANSPORT_STDOUT="te6-shell-pipeline-mock-marker-2026-05-27" \
     MOCK_TRANSPORT_EXIT=0 \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -694,7 +694,7 @@ _t7_require_trusted_gh() {
     COPILOT_CLI="" \
     HOME="$tmp/mock-home" \
     MOCK_TRANSPORT_EXIT=0 \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -733,7 +733,7 @@ _t7_require_trusted_gh() {
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI=1 \
     MOCK_TRANSPORT_STDOUT="te8a-marker-2026-05-27" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -770,7 +770,7 @@ _t7_require_trusted_gh() {
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI="" \
     MOCK_TRANSPORT_STDOUT="te8b-marker-2026-05-27" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -803,7 +803,7 @@ _t7_require_trusted_gh() {
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI="" \
     MOCK_TRANSPORT_STDOUT="te9a-marker-2026-05-27" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -841,7 +841,7 @@ _t7_require_trusted_gh() {
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI=1 \
     MOCK_TRANSPORT_STDOUT="te9b-marker-2026-05-27" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -883,7 +883,7 @@ _t7_require_trusted_gh() {
   local dispatch_status=0
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI=1 \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -912,14 +912,14 @@ _t7_require_trusted_gh() {
 }
 
 # ---------------------------------------------------------------------------
-# T7 / TE11: Claude Code path — mocked scripts/run-codex-review.sh dispatch
+# T7 / TE11: Claude Code path — mocked scripts/dispatch-agent.sh dispatch
 # exits 0 AND captured stdout contains a distinguishable marker emitted by
 # the mock.  Exit-code-0-alone is insufficient proof.
 # ---------------------------------------------------------------------------
 
 @test "[T7 / TE11] dispatch surface: Claude Code path — mocked shell-pipeline dispatch exits 0 AND stdout carries a distinguishable mock-emitted marker (exit 0 alone insufficient)" {
   # Test expectation: for the Claude Code path, the mocked
-  # `scripts/run-codex-review.sh` dispatch exits with code 0 and captured
+  # `scripts/dispatch-agent.sh` dispatch exits with code 0 and captured
   # stdout contains a distinguishable marker string emitted by the mock
   # transport, proving the dispatch invoked the mock rather than falling
   # back.
@@ -936,7 +936,7 @@ _t7_require_trusted_gh() {
     MOCK_TRANSPORT_JOB_ID="te11-job-id" \
     MOCK_TRANSPORT_STDOUT="$mock_marker" \
     MOCK_TRANSPORT_EXIT=0 \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -985,7 +985,7 @@ _t7_require_trusted_gh() {
     HOME="$tmp/mock-home" \
     MOCK_TRANSPORT_STDOUT="te12-marker-2026-05-27" \
     MOCK_TRANSPORT_EXIT=42 \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -1037,7 +1037,7 @@ _t7_require_trusted_gh() {
   local dispatch_status=0
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI=1 \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -1493,13 +1493,13 @@ _t8_write_finding_pair() {
 
   # Mock dispatcher: drains stdin, emits JOB_ID to stdout, exits 0
   mkdir -p "$TMP_DIR/scripts"
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
 echo "JOB_ID=test-job-ac5"
 exit 0
 MOCK_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   # Output dir for manifest
   local OUTDIR="$TMP_DIR/out"
@@ -1524,7 +1524,7 @@ MOCK_EOF
   local exit_code=0
   QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$OUTDIR" \
@@ -1610,13 +1610,13 @@ MOCK_EOF
   printf -- '---\ncodex_reviews: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
   mkdir -p "$TMP_DIR/scripts"
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
 echo "JOB_ID=test-job-ac9"
 exit 0
 MOCK_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   local OUTDIR="$TMP_DIR/out"
   mkdir -p "$OUTDIR"
@@ -1624,7 +1624,7 @@ MOCK_EOF
   local exit_code=0
   QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$OUTDIR" \
@@ -1695,12 +1695,12 @@ MOCK_EOF
   printf -- '---\ncodex_reviews: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
   mkdir -p "$TMP_DIR/scripts"
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
 exit 0
 MOCK_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   local OUTDIR="$TMP_DIR/out"
   mkdir -p "$OUTDIR"
@@ -1713,7 +1713,7 @@ MOCK_EOF
   local err
   err="$(QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag "$crafted_tag" \
       --output-dir "$OUTDIR" \
@@ -1760,12 +1760,12 @@ MOCK_EOF
   printf -- '---\ncodex_reviews: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
   mkdir -p "$TMP_DIR/scripts"
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
 exit 0
 MOCK_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   local OUTDIR="$TMP_DIR/out"
   mkdir -p "$OUTDIR"
@@ -1776,7 +1776,7 @@ MOCK_EOF
   local err
   err="$(QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$OUTDIR" \
@@ -1817,7 +1817,7 @@ MOCK_EOF
   local err
   err="$(QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$crafted_outdir" \
@@ -1857,13 +1857,13 @@ MOCK_EOF
   # The default _t7_make_mock_repo config already sets codex_reviews: false.
 
   # Override the mock dispatcher to emit a JOB_ID with a double-quote.
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
 printf 'JOB_ID=evil"injected\n'
 exit 0
 MOCK_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   local OUTDIR="$TMP_DIR/out"
   mkdir -p "$OUTDIR"
@@ -1872,7 +1872,7 @@ MOCK_EOF
   local err
   err="$(QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$OUTDIR" \
@@ -1902,7 +1902,7 @@ MOCK_EOF
 # ---------------------------------------------------------------------------
 # dispatch-manifest AC14: dispatcher exits 0 but emits no JOB_ID line →
 # guard fires → non-zero exit + diagnostic.
-# The guard at scripts/run-codex-review.sh lines 1019-1022 must detect
+# The guard at scripts/dispatch-agent.sh lines 1019-1022 must detect
 # a missing JOB_ID= line and exit 1 with a "no JOB_ID" message.
 # ---------------------------------------------------------------------------
 @test "[dispatch-manifest AC14] dispatcher exits 0 but emits no JOB_ID line → guard fires → non-zero exit + diagnostic" {
@@ -1911,13 +1911,13 @@ MOCK_EOF
   _t7_make_mock_repo "$TMP_DIR"
 
   # Mock dispatcher exits 0 writing only a status message — no JOB_ID= line.
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
 echo "dispatch: status=submitted"
 exit 0
 MOCK_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   local OUTDIR="$TMP_DIR/out"
   mkdir -p "$OUTDIR"
@@ -1926,7 +1926,7 @@ MOCK_EOF
   local err
   err="$(QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$OUTDIR" \
@@ -1973,13 +1973,13 @@ MOCK_EOF
   printf -- '---\ncodex_reviews: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
   mkdir -p "$TMP_DIR/scripts"
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
 echo "JOB_ID=test-job-ac12"
 exit 0
 MOCK_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   # Fixture bin/ whose only `jq` exits 1 with a recognizable diagnostic.
   # Prepended to PATH so emit_dispatch_manifest_entry's jq call hits this
@@ -2001,7 +2001,7 @@ JQ_EOF
   err="$(PATH="$TMP_DIR/bin:$PATH" \
     QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$OUTDIR" \
@@ -2452,13 +2452,13 @@ _t9_simulate_verifier_sidecar_write() {
 
   # Mock dispatcher: drains stdin, emits JOB_ID to stdout, exits 0.
   mkdir -p "$TMP_DIR/scripts"
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
 echo "JOB_ID=test-job-123"
 exit 0
 MOCK_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   local OUTDIR="$TMP_DIR/out"
   mkdir -p "$OUTDIR"
@@ -2466,7 +2466,7 @@ MOCK_EOF
   local exit_code=0
   QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$OUTDIR" \
@@ -2549,7 +2549,7 @@ MOCK_EOF
     export QRSPI_REPO_ROOT="$TMP_DIR"
     export COPILOT_CLI=""
     export QRSPI_SOURCE_ONLY=1
-    source "$REPO_ROOT/scripts/run-codex-review.sh"
+    source "$REPO_ROOT/scripts/dispatch-agent.sh"
     # Set globals that the emit functions read (argument parsing is skipped
     # in source-only mode, so we set them directly after sourcing).
     REVIEWER_TAG="spec-claude"
@@ -2617,20 +2617,20 @@ MOCK_EOF
   printf -- '---\ncodex_reviews: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
   mkdir -p "$TMP_DIR/scripts"
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
 echo "JOB_ID=test-job-${RANDOM}"
 exit 0
 MOCK_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   local OUTDIR="$TMP_DIR/out"
   mkdir -p "$OUTDIR"
 
   # First invocation: reviewer tag spec-codex
   QRSPI_REPO_ROOT="$TMP_DIR" COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$OUTDIR" --round 1 \
@@ -2642,7 +2642,7 @@ MOCK_EOF
 
   # Second invocation: reviewer tag sec-codex
   QRSPI_REPO_ROOT="$TMP_DIR" COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag sec-codex \
       --output-dir "$OUTDIR" --round 1 \
@@ -2698,7 +2698,7 @@ MOCK_EOF
   for i in $(seq 1 $N); do
     (
       export QRSPI_SOURCE_ONLY=1
-      source "$REPO_ROOT/scripts/run-codex-review.sh"
+      source "$REPO_ROOT/scripts/dispatch-agent.sh"
       export OUTPUT_DIR="$OUTDIR"
       # Signal that this subshell has sourced the script and is ready to proceed;
       # touch AFTER source completes so the parent's count means subshells are
@@ -2760,7 +2760,7 @@ MOCK_EOF
   # Source the script so we can call _append_manifest_entry directly.
   (
     export QRSPI_SOURCE_ONLY=1
-    source "$REPO_ROOT/scripts/run-codex-review.sh"
+    source "$REPO_ROOT/scripts/dispatch-agent.sh"
     export OUTPUT_DIR="$OUTDIR"
     _append_manifest_entry '{"tag":"second","mode":"test"}'
   )
@@ -2801,7 +2801,7 @@ MOCK_EOF
   local dispatch_status=0
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI=1 \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag spec-codex \
       --output-dir "$tmp/out" \
@@ -2877,11 +2877,11 @@ MOCK_EOF
   # Requires mktemp producing a name stored in _fp_tmp, then compose_prompt
   # writing to that tmpfile, then mv -f promoting it.
   grep -qE 'mktemp.*_fp_prompt_file.*XXXXXX|_fp_tmp=.*mktemp' \
-    "$REPO_ROOT/scripts/run-codex-review.sh" \
+    "$REPO_ROOT/scripts/dispatch-agent.sh" \
     || { echo "run-codex-review.sh: mktemp-based first-party prompt write not found"; return 1; }
   # Also confirm the mv -f promotion is present (not just the mktemp call).
   grep -qE 'mv -f.*\$_fp_tmp.*\$_fp_prompt_file|mv -f "\$_fp_tmp" "\$_fp_prompt_file"' \
-    "$REPO_ROOT/scripts/run-codex-review.sh" \
+    "$REPO_ROOT/scripts/dispatch-agent.sh" \
     || { echo "run-codex-review.sh: mv -f promotion of _fp_tmp not found"; return 1; }
 }
 
@@ -2890,7 +2890,7 @@ MOCK_EOF
 # The _append_manifest_entry function must assign tmp via mktemp, not via
 # ${manifest}.tmp.${BASHPID:-$$}.
 @test "manifest tmp uses mktemp (no predictable-path)" {
-  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  local script="$REPO_ROOT/scripts/dispatch-agent.sh"
   # After fix, the predictable-name pattern must be gone from the function.
   ! grep -qE 'tmp.*BASHPID|tmp.*\$\$' "$script" \
     || { echo "run-codex-review.sh: predictable BASHPID/\$\$ tmp pattern still present"; return 1; }
@@ -2911,14 +2911,14 @@ MOCK_EOF
 
   # Remove the mock dispatcher so the existence check fires if it is still
   # at module-init scope rather than inside the third-party branch.
-  rm -f "$tmp/scripts/run-third-party-llm.sh"
+  rm -f "$tmp/scripts/dispatch-companion.sh"
 
   printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
 
   local exit_code=0
   QRSPI_REPO_ROOT="$tmp" \
     COPILOT_CLI=1 \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag fix-c-codex \
       --output-dir "$tmp/out" \
@@ -2945,12 +2945,12 @@ MOCK_EOF
   _t7_make_mock_repo "$TMP_DIR"
 
   # Mock dispatcher that always exits with a distinctive non-zero code (42).
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
 #!/usr/bin/env bash
 cat > /dev/null
 exit 42
 MOCK_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   # Stub jq that always fails so emit_dispatch_manifest_entry calls exit 1
   # internally — masking the dispatcher's exit 42 is the defect under test.
@@ -2966,7 +2966,7 @@ JQ_EOF
   PATH="$TMP_DIR/bin:$PATH" \
     QRSPI_REPO_ROOT="$TMP_DIR" \
     COPILOT_CLI="" \
-    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+    bash "$REPO_ROOT/scripts/dispatch-agent.sh" \
       --agent-file agents/qrspi-spec-reviewer.md \
       --reviewer-tag failure-path-codex \
       --output-dir "$TMP_DIR/out" \
@@ -2989,7 +2989,7 @@ JQ_EOF
 # The script must have separate INT (exit 130) and TERM (exit 143) traps,
 # distinct from the EXIT trap that does only cleanup (no exit call).
 @test "split EXIT/INT/TERM traps so signals don't resume function" {
-  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  local script="$REPO_ROOT/scripts/dispatch-agent.sh"
   # INT trap must include exit 130.
   grep -qE "trap.*exit 130.*INT|trap.*INT.*exit 130" "$script" \
     || { echo "run-codex-review.sh: INT trap with exit 130 not found"; return 1; }
@@ -3016,7 +3016,7 @@ JQ_EOF
 # callers (which do not check the return value) proceed with an empty manifest
 # entry and the script exits 0, silently breaking the audit trail.
 @test "mktemp failure path in manifest append uses exit 1 not return 1" {
-  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  local script="$REPO_ROOT/scripts/dispatch-agent.sh"
   # Guard: anchor must exist so the absence check below is not vacuously true.
   grep -q 'mktemp failed for manifest tmp' "$script" \
     || { echo "ERROR: anchor 'mktemp failed for manifest tmp' not found in script" >&2; return 1; }
@@ -3029,7 +3029,7 @@ JQ_EOF
 # so that a tmpfile created by mktemp is not orphaned when SIGINT or SIGTERM
 # fires after mktemp but before the mv-promotion completes.
 @test "manifest lock traps clean up tmpfile relay on EXIT/INT/TERM" {
-  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  local script="$REPO_ROOT/scripts/dispatch-agent.sh"
   grep -qE "trap '.*rm -f.*_manifest_tmp.*EXIT|trap '.*_manifest_tmp.*rmdir.*EXIT" "$script" \
     || { echo "EXIT trap does not clean up _manifest_tmp relay variable"; return 1; }
   grep -qE "trap '.*rm -f.*_manifest_tmp.*INT" "$script" \
@@ -3047,7 +3047,7 @@ JQ_EOF
 # Mirror of the _manifest_tmp relay+trap pattern established for the manifest
 # atomic-append path.
 @test "first-party prompt tmpfile has signal-cleanup trap on EXIT/INT/TERM" {
-  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  local script="$REPO_ROOT/scripts/dispatch-agent.sh"
   # Guard: the first-party dispatch block must install a trap referencing _fp_tmp.
   grep -q '_fp_tmp' "$script" \
     || { echo "ERROR: _fp_tmp not found in script" >&2; return 1; }
@@ -3067,7 +3067,7 @@ JQ_EOF
 # time (before the trap install) so the trap's first reference is always ""
 # rather than a stale path from a prior interrupted call.
 @test "manifest lock-held block resets _manifest_tmp before trap install" {
-  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  local script="$REPO_ROOT/scripts/dispatch-agent.sh"
   # Guard: the reset line must exist somewhere after the lock-acquire mkdir call.
   grep -q '_manifest_tmp=""' "$script" \
     || { echo "ERROR: _manifest_tmp=\"\" reset line not found in script" >&2; return 1; }
@@ -3092,7 +3092,7 @@ JQ_EOF
 # window exists between mktemp success and trap install.  Mirror of the
 # _manifest_tmp relay+trap ordering assertion above.
 @test "_fp_tmp trap is installed before mktemp" {
-  local script="$REPO_ROOT/scripts/run-codex-review.sh"
+  local script="$REPO_ROOT/scripts/dispatch-agent.sh"
   local trap_line mktemp_line
   # Find the first trap line that references _fp_tmp cleanup.
   trap_line=$(grep -n "trap '.*rm -f.*\$_fp_tmp" "$script" | head -1 | cut -d: -f1)

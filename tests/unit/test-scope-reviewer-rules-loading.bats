@@ -76,16 +76,28 @@ extract_h3_subsection() {
 
 # extract_h3_direct <file> <h3-heading>
 # Extracts an H3 sub-block directly from a file (no H2 wrapper required).
-# Used for owns-defers.md files which start at H3 level.
+# Used for owns-defers.md files which start at H3 level. Resolves any
+# `!cat <path>` build directives by inlining the referenced file's body
+# before extraction (paths are repo-root-relative).
 extract_h3_direct() {
   local file="$1"
   local h3="$2"
-  awk -v h="$h3" '
+  awk -v root="$ROOT" '
+    /^!cat / {
+      sub(/^!cat /, "")
+      path = root "/" $0
+      while ((getline line < path) > 0) print line
+      close(path)
+      next
+    }
+    { print }
+  ' "$file" \
+  | awk -v h="$h3" '
     $0 == h { in_b = 1; print; next }
     in_b && /^### / { exit }
     in_b && /^## / { exit }
     in_b { print }
-  ' "$file"
+  '
 }
 
 # count_enumerated_items <stdin>

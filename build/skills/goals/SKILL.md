@@ -122,6 +122,73 @@ Questions to cover (not necessarily in order — follow the conversation):
 
 Do NOT ask the user for per-goal acceptance criteria, file maps, phasing, or "what's out of scope" at this step — those concerns are owned by downstream artifacts (see "Goals OWNS / Goals DEFERS").
 
+### Dialogue Conduct
+
+When working a goal with the user, follow these rules. The numbering mirrors the Design SKILL's Dialogue Conduct rules verbatim except: Rule 3 is adjusted to drop the research-summary tier (Goals runs before Research, so no research artifacts exist yet), and Rule 5 — Design's dialog-clarity directive — is intentionally absent from Goals per the current scope.
+
+1. **Open with questions.** Surface your list of open questions for the goal in chat. Work
+   through them with the user one decision at a time.
+
+2. **One question at a time, with a recommended answer.** Each question carries your proposed
+   answer; the user confirms, amends, or rejects.
+
+3. **Ground first, ask second.** Before asking the user any question — your own or one the
+   user has asked back — consult, in order: the codebase, then the web. When a question
+   touches industry best practice, conventions, or external patterns, search the web liberally
+   for cited evidence rather than speculating or punting the question back. Only escalate to
+   the user when no source surfaces a defensible answer.
+
+4. **When the user asks for your call, provide one.** When the user solicits your opinion,
+   asks which option is best, or asks what you would recommend, give a grounded recommendation
+   (sources per Rule 3) with named tradeoffs. Do not deflect with more questions or punt the
+   choice back. If grounding genuinely leaves the call indeterminate, say so explicitly and
+   name what additional evidence would resolve it.
+
+6. **Sharpen fuzzy language.** When the user uses imprecise vocabulary, propose the canonical
+   term and ask for confirmation before moving on.
+
+7. **Walk every branch of the decision tree, including flow gaps.** For each goal, resolve
+   dependencies between decisions one-by-one. Do not move to the next goal until every branch
+   surfaced for the current one is either decided, explicitly deferred with a written reason,
+   or split out as a separate goal. Branch completeness explicitly includes the end-to-end
+   flow between any multi-actor decisions — actors named, operations sequenced, per-step
+   inputs/outputs traced to producer and consumer, loud-failure paths named, context-cost
+   call-out present. A flow with implicit hand-offs is an open branch; close it before moving
+   on.
+
+8. **Lock decisions as they settle.** Write each decision into the goal block under
+   `status: draft` as it is confirmed. Do not accumulate decisions in chat across multiple
+   goals before persisting.
+
+### Incremental Persistence (Direct-to-Artifact Drafting)
+
+Per Rule 8 above, write each locked goal **directly to `goals.md`** with `status: draft` in the frontmatter as it is confirmed during dialogue — no separate staging file, no end-of-phase synthesis-from-scratch. The draft `goals.md` on disk is the durable record of locked decisions; the chat transcript is not.
+
+**Presence ≡ locked.** The draft `goals.md` is a keyed map of locked goals. A goal is locked if and only if its block appears in the file. Tentative bodies, placeholder bodies, `to be filled` markers, TODO markers, and any other not-yet-formed content NEVER enter the draft artifact. If a goal is not fully formed (Problem, Why we care, What we know so far all populated; concrete `type` value), it does not appear in the file. This is the Evergreen-Output Rule applied to incremental persistence — dialogue exhaust never enters the artifact.
+
+**Keyed in-place overwrite on re-lock.** Per-goal blocks are keyed by goal ID (`### G1 — ...`). If the user re-opens a previously-locked goal, overwrite that goal's block in place — do NOT append a duplicate. The artifact is a keyed map persisted as ordered markdown, not an append-only log.
+
+**Resume after compaction.** If `/compact` fires mid-phase, on resume:
+
+1. Read the draft `goals.md` from disk and enumerate the goals already locked.
+2. Compute remaining work by **asking the user** whether all desired goals have been articulated. Goals runs before Research and has no upstream inventory, so there is no file to diff against — the user is the only authority on what remains.
+3. Surface the recovery diagnostic to the user, verbatim:
+
+   `"Resumed after compaction — last locked decision: GNN (M decisions locked, K remaining). Continuing from G(NN+1)."`
+
+4. Continue dialogue from the next unlocked goal.
+
+**Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
+
+**End-of-phase finalize pass.** After the per-goal walkthrough completes, run a lightweight finalize pass:
+
+- Validate that every locked goal carries the three required subsections (Problem, Why we care, What we know so far) and a concrete `type` value.
+- Optionally append a Purpose section if absent.
+- **Only flip status if all validations pass.** If any validation step fails, halt immediately before the status flip, surface the specific failure to the user, and re-enter dialogue to resolve the invariant violation before re-attempting the finalize pass. Do NOT advance the gate with a failing artifact.
+- Flip frontmatter `status: draft` to `status: approved`.
+
+Hand-edits that flip `status: draft` to `status: approved` mid-phase (before the finalize pass) are forbidden — only the finalize pass writes `approved`. When the user picks "Approve, skip review" at the human gate, the finalize pass still runs (it is mechanical validation, not synthesis) and the reviewer round is skipped.
+
 ### Pipeline Mode Selection
 
 After intent capture (the interactive dialogue above) but before synthesizing `goals.md`, determine the pipeline configuration. Ask these questions — one at a time, using numbered choices:
@@ -172,11 +239,43 @@ After writing `config.md`, rewrite the Level 1 pipeline tasks to match the route
 Once the conversation settles, launch a **subagent** to synthesize `goals.md`:
 
 **Subagent inputs:**
+- The existing incremental draft `goals.md` on disk (REQUIRED — the draft is the source of truth for pre-compaction locked decisions; the subagent MUST merge this draft with new conversation content rather than re-synthesizing from conversation alone)
 - The conversation content (user's answers to the dialogue questions)
 - This skill's "Goals OWNS / Goals DEFERS" section (the locked scope contract)
 
 **Subagent task:**
 Produce `goals.md` with this structure. The template is the **conformance contract** for goals.md: required sections and per-goal subsections are enumerated here, claim-before-evidence ordering is mandated, scannable bullets are required, and "be concise" instructions are forbidden (synthesize the substance, do not truncate it).
+
+## Evergreen-Output Rule
+
+Any artifact in the QRSPI run directory governed by `status: draft → approved` frontmatter promotion (goals, design, structure, phasing, plan, parallelization, roadmap, future-goals, and any future artifact adopting this lifecycle) describes the **current state** of decisions. The reader is a downstream agent or future maintainer.
+
+*(Excludes by design: `SKILL.md` files — skills carry rule rationale legitimately; `feedback/*.md` — the designated home for dialogue exhaust; `reviews/**/*.md` — finding rationale; `config.md` — non-narrative.)*
+
+**Litmus test (apply to every paragraph before write).** Two filters, in order:
+
+1. Is the subject the **decision** (the thing being designed / planned / scoped)? → keep.
+2. Is the subject the **document itself** — its drafts, its history, the dialogue that produced it, "us"? → cut.
+
+A sentence that only makes sense as a delta from a prior state is **dialogue exhaust** — strip it.
+
+**Permitted substantive content** (do NOT confuse with dialogue exhaust):
+
+- Chosen approach and its rationale (inline)
+- Rejected alternatives and tradeoffs, where the artifact template asks for them (e.g., design.md's `## Trade-offs Considered` — substantive content about the decision space, not about the document's history)
+- Rationale embedded inline as one parenthetical when a downstream reader needs it
+
+**Named antagonist patterns — strip on sight, substitute as shown:**
+
+| Antagonist pattern | Recognize by | Replace with |
+|---|---|---|
+| Session / drafting notes | "Rule X drafting note," "this collapsed from 3 to 1 because…" | Nothing — delete. If a fact matters, embed inline in the decision. |
+| Version-history narration | "earlier draft said X," "previously," "originally," "pre-cleanup" | Nothing — git history holds versions. |
+| Inside baseball | text addressed to "us" / "the author," meta-explanation of the document's own structure ("this section is split into A and B because…") | The decision the structure expresses — without the structural explanation. |
+| Compaction-loss recovery notes | "this nuance was almost lost during…" | Nothing — if the nuance is needed, the rule itself carries it. |
+| Failure-modes-prevented lists | bullets that justify why a rule exists rather than state what to do | Strengthen the rule's wording; delete the justification list. |
+
+Decision-process history (drafts, review rounds, feedback applied, compaction recovery) lives in feedback files, review findings, PR descriptions, and git history — never in the artifact.
 
 ```markdown
 ---
@@ -242,7 +341,7 @@ status: draft
 
 **Iron Rule (template):** the goals.md output has NO top-level `Out of Scope` section and NO top-level `Success Criteria` / `Acceptance Criteria` section. What isn't a goal isn't in scope; acceptance is owned by Design's Test Strategy and Plan's per-task expectations. If the user volunteers exclusions during dialogue, capture them as constraints (when they shape the solution space) or simply omit them — do NOT reintroduce an `Out of Scope` heading.
 
-**Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Emitting only some of them (e.g. omitting `Why we care` because the answer feels obvious) is a synthesis defect, not a permitted shortcut. If the user did not articulate one of the three during dialogue, write a one-sentence honest placeholder under that subsection (e.g. under `Why we care`: "Impact not yet articulated — Design should probe before committing solution work.") rather than dropping the heading. Likewise, do NOT add a fourth subsection under any goal — additional content belongs in `What we know so far` or in a Constraint, not a new heading.
+**Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Emitting only some of them (e.g. omitting `Why we care` because the answer feels obvious) is a synthesis defect, not a permitted shortcut. If the user did not articulate one of the three during dialogue, re-enter dialogue to obtain the missing content before persisting the goal block — do NOT write a placeholder, partial, or tentative body (presence ≡ locked; a goal block in the artifact asserts the goal is fully settled). Likewise, do NOT add a fourth subsection under any goal — additional content belongs in `What we know so far` or in a Constraint, not a new heading.
 
 **Iron Rule (type field — concrete value).** Emit ONE concrete value for each goal's `type` field — either `known-fix` OR `exploratory`. NEVER emit the alternation literal `known-fix | exploratory` (that string appears in the template as a placeholder showing the allowed values; it is not a valid output). If uncertain which applies, default to `exploratory` and explain the uncertainty under that goal's `What we know so far` subsection.
 
