@@ -47,8 +47,15 @@ setup_file() {
 # ---------------------------------------------------------------------------
 
 @test "research SKILL documents companion_qfile_paths as the canonical Claude reviewer dispatch parameter" {
-  run grep -F "companion_qfile_paths" "$REPO_ROOT/skills/research/SKILL.md"
-  [ "$status" -eq 0 ]
+  # CD-1 (Task 20): per-skill reviewer-dispatch mechanics collapsed into the
+  # shared reviewer-dispatch include + the reviewer agent body. The canonical
+  # companion_qfile_paths contract now lives in agents/qrspi-research-reviewer.md
+  # (covered by the agent-body tests below); the research SKILL routes its
+  # reviewer round through the shared include.
+  grep -qF '!cat skills/_shared/reviewer-dispatch-prose.md' "$REPO_ROOT/skills/research/SKILL.md" \
+    || { echo "research SKILL must route its reviewer round through the shared reviewer-dispatch include"; return 1; }
+  grep -qF 'companion_qfile_paths' "$REPO_ROOT/agents/qrspi-research-reviewer.md" \
+    || { echo "agent body must carry the canonical companion_qfile_paths contract"; return 1; }
 }
 
 @test "research SKILL does not document companion_qfiles as the canonical Claude inline parameter" {
@@ -70,43 +77,41 @@ setup_file() {
 }
 
 @test "research SKILL describes orchestrator precondition for companion_qfile_paths: every listed path must be readable" {
-  # The precondition must be tied to companion_qfile_paths specifically —
-  # not just any "readable" mention in the file (which exists for diff-file)
-  run awk '
-    /companion_qfile_paths/ { found_param=1 }
-    found_param && /readable|unreadable/ { found=1; exit }
-    END { exit found ? 0 : 1 }
-  ' "$REPO_ROOT/skills/research/SKILL.md"
-  [ "$status" -eq 0 ]
+  # CD-1 (Task 20): superseded. The orchestrator-side companion-readable
+  # precondition was a per-skill dispatch responsibility; when companions left
+  # the per-skill dispatch interface (universal dispatch chain), the SKILL-prose
+  # precondition moved off the research SKILL. The behavioral contract is
+  # retained by the check-qfile-paths.sh fixture tests below (readable/unreadable
+  # gate, path-name surfacing).
+  skip "superseded by CD-1 universal dispatch (Task 20); companion-readable precondition removed from the SKILL when companions left the per-skill dispatch interface — behavioral coverage retained by check-qfile-paths.sh fixture tests"
 }
 
 @test "research SKILL describes that on companion_qfile_paths precondition failure the unreadable path is surfaced and dispatch is refused" {
-  # The precondition failure behavior must be documented in the context of
-  # companion_qfile_paths (within the same paragraph or nearby section),
-  # not in an unrelated part of the file
-  run awk '
-    /companion_qfile_paths/ { found_param=1 }
-    found_param && /unreadable.*path|path.*unreadable|surfaces.*path|refuse.*dispatch|dispatch.*refused/ { found=1; exit }
-    END { exit found ? 0 : 1 }
-  ' "$REPO_ROOT/skills/research/SKILL.md"
-  [ "$status" -eq 0 ]
+  # CD-1 (Task 20): superseded — see the readable-precondition test above. The
+  # surface-and-refuse behavior on an unreadable path is retained behaviorally
+  # by the check-qfile-paths.sh fixture tests below (non-zero exit + path name
+  # in stderr).
+  skip "superseded by CD-1 universal dispatch (Task 20); SKILL-prose precondition-failure description removed when companions left the per-skill dispatch interface — behavioral coverage retained by check-qfile-paths.sh fixture tests"
 }
 
 @test "research SKILL preserves Codex reviewer dispatch unchanged (companion_qfiles still in Codex block)" {
-  # The Codex run-codex-review.sh companion_qfiles= flag must still be present
-  run grep -F "companion_qfiles=" "$REPO_ROOT/skills/research/SKILL.md"
-  [ "$status" -eq 0 ]
+  # CD-1 (Task 20): the per-skill Codex reviewer block (with its
+  # `companion_qfiles=` flag to the old wrapper) collapsed into the universal
+  # companion dispatch path. `*-codex` reviewer tags now route through
+  # scripts/dispatch-companion.sh via the shared reviewer-dispatch include.
+  [ -f "$REPO_ROOT/scripts/dispatch-companion.sh" ] \
+    || { echo "universal companion dispatcher scripts/dispatch-companion.sh must exist"; return 1; }
+  grep -qF '!cat skills/_shared/reviewer-dispatch-prose.md' "$REPO_ROOT/skills/research/SKILL.md" \
+    || { echo "research SKILL must route its reviewer round (incl. companion path) through the shared include"; return 1; }
 }
 
 @test "research SKILL documents empty companion_qfile_paths list as a precondition failure (not a vacuous clean review)" {
-  # The empty-list condition must be documented specifically in the context
-  # of companion_qfile_paths — not just any "empty" mention in the file
-  run awk '
-    /companion_qfile_paths/ { found_param=1 }
-    found_param && /empty|zero.*path|no.*q.file|no.*path.*list/ { found=1; exit }
-    END { exit found ? 0 : 1 }
-  ' "$REPO_ROOT/skills/research/SKILL.md"
-  [ "$status" -eq 0 ]
+  # CD-1 (Task 20): superseded — the empty-list precondition was a per-skill
+  # orchestrator responsibility that moved off the research SKILL when companions
+  # left the per-skill dispatch interface. The empty-list-is-a-failure behavior
+  # is retained by the check-qfile-paths.sh fixture tests below (non-zero exit +
+  # zero-file diagnostic on stderr).
+  skip "superseded by CD-1 universal dispatch (Task 20); empty-list precondition removed from the SKILL when companions left the per-skill dispatch interface — behavioral coverage retained by check-qfile-paths.sh fixture tests"
 }
 
 # ---------------------------------------------------------------------------

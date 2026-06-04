@@ -22,48 +22,48 @@ setup() {
 }
 
 @test "plan skill exposes ## Per-Task Classification H3 section" {
-  out="$(extract_section "$PLAN_SKILL" H3 "Per-Task Classification (\`task_type\` and \`model\`)")"
+  out="$(extract_section "$PLAN_SKILL" H3 "Per-Task Classification (\`task_type\` and \`tier\`)")"
   [ -n "$out" ]
 }
 
 @test "plan: task_type: code produces test-writer-then-implementer order" {
   run assert_section_contains "$PLAN_SKILL" H3 \
-    "Per-Task Classification (\`task_type\` and \`model\`)" \
+    "Per-Task Classification (\`task_type\` and \`tier\`)" \
     "task_type: code.*test-writer dispatches first|test-writer.*then.*implementer"
   [ "$status" -eq 0 ]
 }
 
 @test "plan: explicit Dispatch order line documents test-writer → RED gate → implementer" {
   run assert_section_contains "$PLAN_SKILL" H3 \
-    "Per-Task Classification (\`task_type\` and \`model\`)" \
+    "Per-Task Classification (\`task_type\` and \`tier\`)" \
     "Dispatch order: test-writer.*RED.*implementer"
   [ "$status" -eq 0 ]
 }
 
 @test "plan: absent task_type defaults to the TDD path" {
   run assert_section_contains "$PLAN_SKILL" H3 \
-    "Per-Task Classification (\`task_type\` and \`model\`)" \
+    "Per-Task Classification (\`task_type\` and \`tier\`)" \
     "Absent.*task_type.*defaults to the TDD path"
   [ "$status" -eq 0 ]
 }
 
 @test "plan: task_type: lightweight produces lightweight-only dispatch (no test-writer, no RED gate)" {
   run assert_section_contains "$PLAN_SKILL" H3 \
-    "Per-Task Classification (\`task_type\` and \`model\`)" \
+    "Per-Task Classification (\`task_type\` and \`tier\`)" \
     "task_type: lightweight.*lightweight-only dispatch.*no test-writer.*no RED gate"
   [ "$status" -eq 0 ]
 }
 
 @test "plan: lightweight dispatch order is implementer only" {
   run assert_section_contains "$PLAN_SKILL" H3 \
-    "Per-Task Classification (\`task_type\` and \`model\`)" \
+    "Per-Task Classification (\`task_type\` and \`tier\`)" \
     "Dispatch order: implementer only"
   [ "$status" -eq 0 ]
 }
 
 @test "plan: per-task TDD specs MUST carry an explicit dispatch-ordering note" {
   run assert_section_contains "$PLAN_SKILL" H3 \
-    "Per-Task Classification (\`task_type\` and \`model\`)" \
+    "Per-Task Classification (\`task_type\` and \`tier\`)" \
     "must carry an explicit dispatch-ordering note"
   [ "$status" -eq 0 ]
 }

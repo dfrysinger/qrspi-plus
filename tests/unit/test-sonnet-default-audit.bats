@@ -28,19 +28,31 @@ setup() {
     skills/replan/SKILL.md > /dev/null
 }
 
-@test "test/SKILL.md reads test_writer_model from plan.md frontmatter" {
-  # Either reads plan.test_writer_model (with sonnet fallback) or pins literal sonnet.
-  grep -E 'subagent_type: "qrspi-test-writer".*model: "(sonnet|<plan\.test_writer_model)' \
-    skills/test/SKILL.md > /dev/null
+@test "test/SKILL.md dispatches qrspi-test-writer via tier resolution (no hardcoded model)" {
+  # G22 / T16 migration: test/SKILL.md no longer reads the deprecated
+  # test_writer_model plan field or pins a literal model. The dispatcher
+  # resolves vendor+model from the test-writer's tier (medium default),
+  # so the dispatch names only the agent.
+  grep -E 'subagent_type: "qrspi-test-writer"' skills/test/SKILL.md > /dev/null
+  # The deprecated field/pin must be gone.
+  ! grep -F 'test_writer_model' skills/test/SKILL.md
 }
 
-@test "every reviewer Agent dispatch in skills/**/SKILL.md pins model" {
+@test "every reviewer Agent dispatch in skills/**/SKILL.md pins model (excluding G22-migrated skills)" {
   # A reviewer dispatch line is a bullet item containing a backticked Agent({...}) call
   # whose subagent_type names a qrspi-*-reviewer / qrspi-*-hunter / qrspi-*-analyzer / qrspi-code-simplifier
   # agent. Every such line must carry model: somewhere on the same line.
+  #
+  # G22 / T16: skills/implement/SKILL.md and skills/test/SKILL.md migrated to
+  # CD-1 universal dispatch — the dispatcher resolves vendor+model from the
+  # agent/reviewer tier, so their dispatch prose names only the agent. The
+  # migrated skills are excluded from this guard; the un-migrated skills still
+  # pin model explicitly.
   local offenders
   offenders=$(grep -rE '`Agent\(\{[^`]*subagent_type: "qrspi-([a-z-]+-reviewer|silent-failure-hunter|type-design-analyzer|code-simplifier)"' \
     skills/ \
+    | grep -v '^skills/implement/' \
+    | grep -v '^skills/test/' \
     | grep -v 'model:' \
     || true)
   if [ -n "$offenders" ]; then

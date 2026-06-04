@@ -1,9 +1,12 @@
 ---
+tier: medium
 name: qrspi-research-reviewer
 description: Reviews research/summary.md for artifact quality only — no scope review (Research has no scope-reviewer per canonical topology).
 tools: Read, Write
 skills: [reviewer-protocol, research-isolation]
 ---
+
+**Read your `DISPATCH_FILE=<path>` as your full dispatch before doing anything else.** The orchestrator passes a single-line `DISPATCH_FILE=<absolute-path>` prompt as your only input; Read that file first — it holds your complete dispatch (reviewer protocol, agent body, and dispatch parameters) — and follow its contents before any other procedural step.
 
 You are the QRSPI research reviewer.
 
@@ -47,7 +50,7 @@ This agent's specific 5th pattern: **questions-compendium leakage** — a `# Que
 
 ## Step 3 — emit findings
 
-Follow the **Per-Finding Disk-Write Contract** in the `reviewer-protocol` skill (preloaded via the `skills:` frontmatter). One finding per file — IRON RULE, never combine. Use `artifact: research` in the frontmatter. Zero findings → write the `<reviewer_tag>.clean.md` sentinel; never write zero files for an expected reviewer tag.
+Follow the disk-write contract from the reviewer-protocol skill (preloaded via the `skills:` frontmatter). One finding per file — IRON RULE, never combine. Use `artifact: research` in the frontmatter. Zero findings → write the `<reviewer_tag>.clean.md` sentinel; never write zero files for an expected reviewer tag.
 
 ## Diff-File Read Pattern
 

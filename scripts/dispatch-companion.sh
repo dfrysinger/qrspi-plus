@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# run-third-party-llm.sh — Universal stdin-prompt dispatcher for QRSPI.
+# dispatch-companion.sh — universal stdin-prompt dispatcher for QRSPI.
 #
+# Renamed from dispatch-companion.sh (CD-1 vendor-neutral dispatch rename).
 # Reads the prompt from stdin ONLY; any positional argument or --prompt-file
 # exits 1 with a validation diagnostic.  Resolves the named provider from
 # <artifact-dir>/config.md, branches on transport_type:, blocks until the
 # result is written to --output-file, and emits numbered exit codes.
 #
 # Usage:
-#   run-third-party-llm.sh \
+#   dispatch-companion.sh \
 #     --artifact-dir <path>      # required; absolute path to artifact directory
 #     --provider <name>          # required; matches a providers: entry in config.md
 #     --model <id>               # required; concrete model identifier
@@ -44,7 +45,7 @@ _SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # ---------------------------------------------------------------------------
 # die <message>  — write message to stderr and exit 1
 die() {
-  printf 'run-third-party-llm: %s\n' "$1" >&2
+  printf 'dispatch-companion: %s\n' "$1" >&2
   exit 1
 }
 
@@ -264,8 +265,8 @@ process.stdout.write(JSON.stringify(body));
 
   local chat_url="${BASE_URL%/}/chat/completions"
   local tmp_response tmp_stderr
-  tmp_response=$(mktemp -t run-third-party-llm-resp.XXXXXX) || { rm -f "$STDIN_TEMP"; die "mktemp failed"; }
-  tmp_stderr=$(mktemp -t run-third-party-llm-err.XXXXXX) || { rm -f "$STDIN_TEMP" "$tmp_response"; die "mktemp failed"; }
+  tmp_response=$(mktemp -t dispatch-companion-resp.XXXXXX) || { rm -f "$STDIN_TEMP"; die "mktemp failed"; }
+  tmp_stderr=$(mktemp -t dispatch-companion-err.XXXXXX) || { rm -f "$STDIN_TEMP" "$tmp_response"; die "mktemp failed"; }
 
   local timeout_val="120"
   if [ -n "$TIMEOUT_SECONDS" ]; then
@@ -322,13 +323,13 @@ process.stdout.write(JSON.stringify(body));
   # Map curl exit codes to dispatcher exit codes.
   if [ "$curl_rc" -eq 28 ]; then
     rm -f "$tmp_response"
-    printf 'run-third-party-llm: upstream timeout (curl exit 28) for provider %s\n' "$PROVIDER" >&2
+    printf 'dispatch-companion: upstream timeout (curl exit 28) for provider %s\n' "$PROVIDER" >&2
     exit 10
   fi
 
   if [ "$curl_rc" -ne 0 ]; then
     rm -f "$tmp_response"
-    printf 'run-third-party-llm: upstream hard-error from provider %s (curl exit %d)\n' "$PROVIDER" "$curl_rc" >&2
+    printf 'dispatch-companion: upstream hard-error from provider %s (curl exit %d)\n' "$PROVIDER" "$curl_rc" >&2
     exit 13
   fi
 
@@ -366,13 +367,13 @@ process.stdin.on('end', () => {
     # The node script may output both the extracted content and an error message
     # to the same variable (stdout+stderr merged above).  On error we discard
     # the variable content and emit the fixed diagnostic.
-    printf 'run-third-party-llm: malformed result body from provider %s\n' "$PROVIDER" >&2
+    printf 'dispatch-companion: malformed result body from provider %s\n' "$PROVIDER" >&2
     exit 14
   fi
 
   # Write atomically to --output-file.
   local tmp_out
-  tmp_out=$(mktemp -t run-third-party-llm-out.XXXXXX) || die "mktemp failed for output"
+  tmp_out=$(mktemp -t dispatch-companion-out.XXXXXX) || die "mktemp failed for output"
   printf '%s' "$extracted_content" > "$tmp_out"
   mv "$tmp_out" "$OUTPUT_FILE" || {
     rm -f "$tmp_out"
@@ -402,21 +403,21 @@ _dispatch_codex_broker() {
   rm -f "$STDIN_TEMP"
 
   if [ "$launch_rc" -eq 15 ]; then
-    printf 'run-third-party-llm: phantom-launch from codex-broker (LAUNCH_PHANTOM)\n' >&2
+    printf 'dispatch-companion: phantom-launch from codex-broker (LAUNCH_PHANTOM)\n' >&2
     exit 15
   fi
   if [ "$launch_rc" -ne 0 ]; then
-    printf 'run-third-party-llm: codex-broker launch failed (exit %d)\n' "$launch_rc" >&2
+    printf 'dispatch-companion: codex-broker launch failed (exit %d)\n' "$launch_rc" >&2
     exit 1
   fi
   if [ -z "$job_id" ]; then
-    printf 'run-third-party-llm: codex-broker launch returned empty jobId\n' >&2
+    printf 'dispatch-companion: codex-broker launch returned empty jobId\n' >&2
     exit 1
   fi
 
   # Await: write result markdown to a temp file, then move atomically.
   local tmp_out
-  tmp_out=$(mktemp -t run-third-party-llm-out.XXXXXX) || die "mktemp failed for output"
+  tmp_out=$(mktemp -t dispatch-companion-out.XXXXXX) || die "mktemp failed for output"
 
   local await_rc=0
   if [ -n "$TIMEOUT_SECONDS" ]; then
@@ -435,23 +436,23 @@ _dispatch_codex_broker() {
       exit 0 ;;
     10)
       rm -f "$tmp_out"
-      printf 'run-third-party-llm: codex-broker await timeout (exit 10)\n' >&2
+      printf 'dispatch-companion: codex-broker await timeout (exit 10)\n' >&2
       exit 10 ;;
     11)
       rm -f "$tmp_out"
-      printf 'run-third-party-llm: codex-broker job not found (exit 11)\n' >&2
+      printf 'dispatch-companion: codex-broker job not found (exit 11)\n' >&2
       exit 11 ;;
     14)
       rm -f "$tmp_out"
-      printf 'run-third-party-llm: codex-broker malformed result body (exit 14)\n' >&2
+      printf 'dispatch-companion: codex-broker malformed result body (exit 14)\n' >&2
       exit 14 ;;
     15)
       rm -f "$tmp_out"
-      printf 'run-third-party-llm: codex-broker phantom-launch (exit 15)\n' >&2
+      printf 'dispatch-companion: codex-broker phantom-launch (exit 15)\n' >&2
       exit 15 ;;
     *)
       rm -f "$tmp_out"
-      printf 'run-third-party-llm: codex-broker hard-error (exit %d)\n' "$await_rc" >&2
+      printf 'dispatch-companion: codex-broker hard-error (exit %d)\n' "$await_rc" >&2
       exit 13 ;;
   esac
 }
@@ -459,6 +460,182 @@ _dispatch_codex_broker() {
 # ===========================================================================
 # MAIN — argument parsing and dispatch
 # ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Vendor-neutral launch/await interface (CD-1 #5 dispatch-companion contract).
+#
+# Two subcommand shapes are recognised in addition to the legacy stdin
+# dispatcher form below:
+#
+#   dispatch-companion.sh --vendor <v> --model <m> --prompt-file <f> \
+#       --round-dir <d> --tag <t>
+#       Launches a background third-party dispatch. Writes ONLY `JOB_ID=<id>`
+#       to stdout; the prompt body is never echoed (output-bound contract).
+#
+#   dispatch-companion.sh await <job-id>
+#       Resolves a previously-launched job and captures its raw reviewer output
+#       to <round-dir>/.dispatch/<tag>.raw, payload-silently (no stdout/stderr
+#       payload echo). Drained by await-round.sh.
+#
+# These two shapes are detected BEFORE the legacy `--provider/--artifact-dir`
+# stdin dispatcher so the universal dispatch chain (dispatch-agent ->
+# dispatch-companion -> await-round -> third-party-finding-splitter) routes
+# through a single vendor-neutral entry point.
+# ---------------------------------------------------------------------------
+
+if [ "$#" -gt 0 ] && [ "$1" = "await" ]; then
+  shift
+  _await_job="${1:-}"
+  if [ -z "$_await_job" ]; then
+    die "await: missing <job-id> argument"
+  fi
+  # Validate the job-id grammar (defense against path traversal in the record
+  # lookup below); a crafted job-id must not escape the dispatch directory.
+  case "$_await_job" in
+    */*|*..*|"")
+      die "await: invalid job-id: $_await_job" ;;
+  esac
+  # Job records are written by `launch` under the round-scoped
+  # <round-dir>/.dispatch/.jobs/<job-id>. await-round.sh runs this command with
+  # cwd=<round-dir>/.dispatch/, so resolve the record relative to cwd.
+  _job_record="./.jobs/${_await_job}"
+  if [ ! -f "$_job_record" ]; then
+    printf 'dispatch-companion: await: job not found: %s\n' "$_await_job" >&2
+    exit 11
+  fi
+  # A found record carries vendor/model/prompt-file/tag/round-dir lines. The
+  # concrete vendor-transport capture wires through codex-companion-bg.sh for
+  # the codex vendor; other vendors fail loudly rather than silently producing
+  # an empty raw file. The vendor-output is captured payload-silently to
+  # <round-dir>/.dispatch/<tag>.raw so await-round.sh can hand it to the
+  # third-party-finding-splitter without any payload appearing on stdout/stderr.
+  _job_vendor="$(sed -n 's/^vendor=//p' "$_job_record" | head -1)"
+  _job_tag="$(sed -n 's/^tag=//p' "$_job_record" | head -1)"
+  _job_round_dir="$(sed -n 's/^round_dir=//p' "$_job_record" | head -1)"
+  _job_codex_id="$(sed -n 's/^codex_job_id=//p' "$_job_record" | head -1)"
+
+  if [ -z "$_job_tag" ] || [ -z "$_job_round_dir" ]; then
+    printf 'dispatch-companion: await: malformed job record for %s (missing tag or round_dir)\n' \
+      "$_await_job" >&2
+    exit 13
+  fi
+
+  _raw_dir="$_job_round_dir/.dispatch"
+  mkdir -p "$_raw_dir" || {
+    printf 'dispatch-companion: await: cannot create raw-capture dir: %s\n' "$_raw_dir" >&2
+    exit 13
+  }
+  _raw_file="$_raw_dir/${_job_tag}.raw"
+
+  case "$_job_vendor" in
+    codex)
+      if [ -z "$_job_codex_id" ]; then
+        printf 'dispatch-companion: await: codex job record %s missing codex_job_id (launch did not capture broker id)\n' \
+          "$_await_job" >&2
+        exit 13
+      fi
+      # Delegate to the existing codex transport.  Stdout is the reviewer
+      # markdown — redirect it to the raw-capture file payload-silently.
+      # Stderr from codex-companion-bg.sh is diagnostic (not payload) and is
+      # forwarded to our own stderr; await-round.sh runs us with stderr=DEVNULL,
+      # so it never reaches the orchestrator context either way.
+      "$_SCRIPT_DIR/codex-companion-bg.sh" await "$_job_codex_id" >"$_raw_file"
+      _await_rc=$?
+      if [ "$_await_rc" -ne 0 ]; then
+        printf 'dispatch-companion: await: codex transport returned rc=%d for job %s (codex_job_id=%s)\n' \
+          "$_await_rc" "$_await_job" "$_job_codex_id" >&2
+        # Leave any partial output in the raw file for diagnostic inspection
+        # but propagate the failure so await-round.sh marks the entry failed.
+        exit "$_await_rc"
+      fi
+      exit 0
+      ;;
+    *)
+      printf 'dispatch-companion: await: vendor %s transport capture for job %s is not wired in this build\n' \
+        "${_job_vendor:-unknown}" "$_await_job" >&2
+      exit 13
+      ;;
+  esac
+fi
+
+_has_vendor_flag=false
+for _a in "$@"; do
+  case "$_a" in --vendor) _has_vendor_flag=true; break ;; esac
+done
+
+if [ "$_has_vendor_flag" = "true" ]; then
+  L_VENDOR=""
+  L_MODEL=""
+  L_PROMPT_FILE=""
+  L_ROUND_DIR=""
+  L_TAG=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --vendor)      [ "$#" -ge 2 ] || die "launch: missing value for --vendor";      L_VENDOR="$2"; shift 2 ;;
+      --model)       [ "$#" -ge 2 ] || die "launch: missing value for --model";       L_MODEL="$2"; shift 2 ;;
+      --prompt-file) [ "$#" -ge 2 ] || die "launch: missing value for --prompt-file"; L_PROMPT_FILE="$2"; shift 2 ;;
+      --round-dir)   [ "$#" -ge 2 ] || die "launch: missing value for --round-dir";   L_ROUND_DIR="$2"; shift 2 ;;
+      --tag)         [ "$#" -ge 2 ] || die "launch: missing value for --tag";         L_TAG="$2"; shift 2 ;;
+      *) die "launch: unrecognised flag: $1" ;;
+    esac
+  done
+  [ -n "$L_VENDOR" ]      || die "launch: missing required flag: --vendor"
+  [ -n "$L_MODEL" ]       || die "launch: missing required flag: --model"
+  [ -n "$L_PROMPT_FILE" ] || die "launch: missing required flag: --prompt-file"
+  [ -n "$L_ROUND_DIR" ]   || die "launch: missing required flag: --round-dir"
+  [ -n "$L_TAG" ]         || die "launch: missing required flag: --tag"
+  [ -f "$L_PROMPT_FILE" ] || die "launch: --prompt-file not found: $L_PROMPT_FILE"
+
+  # Generate a round-unique job id and persist a job record so a later
+  # `await <job-id>` can resolve the vendor/model/prompt-file/tag. The prompt
+  # body is NEVER read into a variable here — only its path is recorded — so it
+  # cannot leak onto stdout (output-bound contract).
+  _jobs_dir="$L_ROUND_DIR/.dispatch/.jobs"
+  mkdir -p "$_jobs_dir" || die "launch: cannot create jobs dir: $_jobs_dir"
+  _job_id="${L_TAG}-$$-$(date +%s)"
+
+  # Vendor-specific launch: for codex, invoke the existing background
+  # transport (codex-companion-bg.sh launch) by piping the prompt file on
+  # stdin, capture the broker job-id (printed alone on stdout), and persist
+  # it in the job record so `await` can recover it. Other vendors retain the
+  # synthetic-id flow (no real backend launch) — they will fail loudly at
+  # await time with a clear diagnostic until their transport is wired.
+  _codex_job_id=""
+  if [ "$L_VENDOR" = "codex" ]; then
+    # codex-companion-bg.sh prints exactly the broker job id on stdout on
+    # success; its stderr carries diagnostics only. We deliberately do NOT
+    # echo its stdout to our own stdout (output-bound: only `JOB_ID=<id>`
+    # may reach our caller's stdout).
+    _codex_job_id="$("$_SCRIPT_DIR/codex-companion-bg.sh" launch <"$L_PROMPT_FILE")" \
+      || die "launch: codex transport failed for tag $L_TAG (rc=$?)"
+    if [ -z "$_codex_job_id" ]; then
+      die "launch: codex transport returned empty job id for tag $L_TAG"
+    fi
+    # Use the broker id as the dispatch-companion job id so the await record
+    # path is unambiguous. Re-validate against the await-side grammar to
+    # defend against unexpected broker-id shapes reaching our path lookup.
+    case "$_codex_job_id" in
+      */*|*..*|"")
+        die "launch: codex transport returned invalid job id: $_codex_job_id" ;;
+    esac
+    _job_id="$_codex_job_id"
+  fi
+
+  {
+    printf 'vendor=%s\n' "$L_VENDOR"
+    printf 'model=%s\n' "$L_MODEL"
+    printf 'prompt_file=%s\n' "$L_PROMPT_FILE"
+    printf 'round_dir=%s\n' "$L_ROUND_DIR"
+    printf 'tag=%s\n' "$L_TAG"
+    if [ -n "$_codex_job_id" ]; then
+      printf 'codex_job_id=%s\n' "$_codex_job_id"
+    fi
+  } > "$_jobs_dir/$_job_id" || die "launch: cannot write job record"
+
+  # Emit ONLY the job id to stdout.
+  printf 'JOB_ID=%s\n' "$_job_id"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Argument parsing — no positional arguments, no --prompt-file accepted.
@@ -490,19 +667,19 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || die "missing value for --timeout-seconds"
       TIMEOUT_SECONDS="$2"; shift 2 ;;
     --prompt-file)
-      printf 'run-third-party-llm: --prompt-file is not accepted; pipe the prompt on stdin\n' >&2
+      printf 'dispatch-companion: --prompt-file is not accepted; pipe the prompt on stdin\n' >&2
       exit 1 ;;
     --)
       shift
       if [ "$#" -gt 0 ]; then
-        printf 'run-third-party-llm: positional arguments are not accepted; pipe the prompt on stdin (got: %s)\n' "$1" >&2
+        printf 'dispatch-companion: positional arguments are not accepted; pipe the prompt on stdin (got: %s)\n' "$1" >&2
         exit 1
       fi
       break ;;
     -*)
       die "unrecognised flag: $1" ;;
     *)
-      printf 'run-third-party-llm: positional arguments are not accepted; pipe the prompt on stdin (got: %s)\n' "$1" >&2
+      printf 'dispatch-companion: positional arguments are not accepted; pipe the prompt on stdin (got: %s)\n' "$1" >&2
       exit 1 ;;
   esac
 done
@@ -653,7 +830,7 @@ if [ -t 0 ]; then
 fi
 
 STDIN_TEMP=""
-STDIN_TEMP=$(mktemp -t run-third-party-llm.XXXXXX) || die "mktemp failed for stdin capture"
+STDIN_TEMP=$(mktemp -t dispatch-companion.XXXXXX) || die "mktemp failed for stdin capture"
 cat > "$STDIN_TEMP"
 if [ ! -s "$STDIN_TEMP" ]; then
   rm -f "$STDIN_TEMP"
@@ -665,7 +842,7 @@ fi
 # Non-zero return: abort dispatch with named diagnostic; no network call.
 if ! guard_marker_injection "stdin-prompt" "$STDIN_TEMP"; then
   rm -f "$STDIN_TEMP"
-  printf 'run-third-party-llm: prompt-injection abort: stdin prompt contains the wrapper-private boundary marker; dispatch cancelled\n' >&2
+  printf 'dispatch-companion: prompt-injection abort: stdin prompt contains the wrapper-private boundary marker; dispatch cancelled\n' >&2
   exit 1
 fi
 

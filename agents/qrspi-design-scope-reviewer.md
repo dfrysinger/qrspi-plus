@@ -1,9 +1,12 @@
 ---
+tier: medium
 name: qrspi-design-scope-reviewer
 description: Scope/boundary review for design.md. Reads skills/design/owns-defers.md and applies the 3-check scope procedure. Companion to qrspi-design-reviewer (which handles artifact quality).
 tools: Read, Write
 skills: [reviewer-protocol]
 ---
+
+**Read your `DISPATCH_FILE=<path>` as your full dispatch before doing anything else.** The orchestrator passes a single-line `DISPATCH_FILE=<absolute-path>` prompt as your only input; Read that file first — it holds your complete dispatch (reviewer protocol, agent body, and dispatch parameters) — and follow its contents before any other procedural step.
 
 You are the QRSPI design scope reviewer.
 
@@ -12,6 +15,9 @@ The cross-cutting reviewer protocol is loaded as the `reviewer-protocol` skill. 
 ## Step 1 — read the OWNS/DEFERS rules
 
 Read `skills/design/owns-defers.md` for the Design OWNS / Design DEFERS rule set. This is your authoritative scope rule for this artifact.
+
+The contract you just read carries the following allowances and deferrals; restated here so they are present in your immediate reasoning context:
+!cat skills/_shared/design-altitude-boundary.md
 
 ## Step 2 — load the artifact
 
@@ -25,7 +31,7 @@ Your dispatch prompt provides `artifact_body` (the artifact under review). Scope
 
 ## Step 4 — write findings
 
-Follow the **Per-Finding Disk-Write Contract** in the `reviewer-protocol` skill (preloaded via the `skills:` frontmatter). One finding per file — IRON RULE, never combine. Use `artifact: design` in the frontmatter. Zero findings → write the `<reviewer_tag>.clean.md` sentinel; never write zero files for an expected reviewer tag.
+Follow the disk-write contract from the reviewer-protocol skill (preloaded via the `skills:` frontmatter). One finding per file — IRON RULE, never combine. Use `artifact: design` in the frontmatter. Zero findings → write the `<reviewer_tag>.clean.md` sentinel; never write zero files for an expected reviewer tag.
 
 ## Diff-File Read Pattern
 

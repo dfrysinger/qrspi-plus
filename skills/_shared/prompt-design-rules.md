@@ -1,7 +1,7 @@
-# QRSPI Prompt Design Guide
+# QRSPI Prompt Design Rules
 
 **Status:** Active rule set for skill prompt authoring and review.
-**Last applied:** 2026-04-25 (Phase 4 refactor + task-sizing amendment).
+**Last applied:** 2026-06-02 (v0.7.2 refresh — rules-file relocation + eight updates A-H).
 
 This document is the canonical rule set for designing and reviewing the prompt content of QRSPI skill files (`SKILL.md`, reviewer templates, hook prompts). It exists so future skill changes — and future skill rewrites when we learn more — apply a consistent, evidence-backed standard rather than re-deriving it each time.
 
@@ -33,6 +33,15 @@ The skill prompt is read by an orchestrator LLM that acts on instructions: what 
 - Explanatory padding around imperative rules
 - Mermaid diagrams that duplicate Process Steps (see R6)
 
+**Named antagonist patterns (CD-2).** Six categories of prose that fail the R1 test and must be cut from any LLM-consumable artifact (substitute pattern in parentheses):
+
+- **Dialogue exhaust** — back-and-forth negotiation text, prior-round findings, "we agreed that…" summaries. (Substitute: the locked decision itself, stated as present-tense fact.)
+- **Session/drafting notes** — "I initially wrote X but then realized Y," "as a first pass…," "TODO: revisit." (Substitute: the final decision only; if genuinely undecided, mark with `status: draft` on the artifact, not inline.)
+- **Version-history narration** — "in v0.7.1 this was different," "previously the rule said…." (Substitute: the current rule, verbatim; history lives in git log, not prompt prose.)
+- **Inside baseball** — references to internal process mechanics that the LLM consumer has no action to take on. (Substitute: cut; if action is required, state the action directly.)
+- **Compaction-loss recovery notes** — "if you resumed after /compact, re-read…," "context may have been lost." (Substitute: compaction-resilient design per the cross-cutting principle below — instruct incremental persistence and a recovery diagnostic in the SKILL.md itself, not inline in the artifact.)
+- **Failure-modes-prevented lists** — "this design prevents X, Y, Z failures." (Substitute: cut; the design's correctness is evaluated by reviewers, not narrated by the author.)
+
 **Keep:**
 - Rationale where the failure mode is non-obvious (model would rationalize past — see R2)
 - Examples for failure modes you have actually observed (see R4)
@@ -50,7 +59,7 @@ Use `"Do X. Do not do Y."` for hot-path rules. Add a one-line `Why:` only where 
 
 ### R3 — Load-bearing rules at the END
 
-Anthropic measured ~30% improvement when critical instructions sit at the end of long context. The "lost in the middle" effect (Liu et al. 2024) is flatter on Opus 4.6 / GPT-5 but not gone, and instruction-following degrades with length faster than retrieval does (LIFBench).
+Anthropic measured ~30% improvement when critical instructions sit at the end of long context. The "lost in the middle" effect (Liu et al. 2024) is flatter on Opus 4.6 / GPT-5 but not gone, and instruction-following degrades with length faster than retrieval does (LIFBench). May 2026 status: confirmed on Opus 4.7-high and GPT-5.5 (end-of-context placement still yields measurable improvement; the magnitude is reduced at shorter context lengths but the ordering principle holds). GPT-5.3-Codex: confirmed (instruction-following at end of context window measurably stronger than mid-context). Sonnet 4.6: confirmed (consistent with Opus 4.6 pattern).
 
 - Repeat the most override-critical rules (Iron Laws) at start AND end of each skill.
 - Place Red Flags / Common Rationalizations sections toward the end.
@@ -68,7 +77,7 @@ The 2025 Few-Shot Dilemma research shows that past 2-3 examples, frontier models
 
 ### R5 — `references/` only when reads are genuinely optional
 
-For Claude Code: spine + references saves zero tokens if the spine always instructs the read. Move content to `references/X.md` only when:
+For agent platforms that pre-load skill text (Claude Code, Codex CLI, Copilot CLI, and equivalent hosts): spine + references saves zero tokens if the spine always instructs the read. Move content to `references/X.md` only when:
 
 - (a) Most invocations of the skill won't need it (recovery procedures, rare error paths)
 - (b) It's for human review, not LLM execution
@@ -97,8 +106,11 @@ These come from the Phase 2 prompt-best-practices research and apply across all 
 - **XML tags structure distinct content types.** Use `<HARD-GATE>`, `<BEHAVIORAL-DIRECTIVES>`, etc. — Claude was specifically trained to treat XML tag boundaries as semantic separators.
 - **Provide rationale alongside prohibitions.** "Never use ellipses" is weaker than "Never use ellipses — the TTS engine cannot pronounce them." The model generalizes from the explanation.
 - **Reduce aggressive MUST/CRITICAL language for Claude 4.x.** Opus 4.5+/4.6 are more responsive to system prompts than older models; aggressive phrasing causes overtriggering.
-- **Positive framing outperforms negative framing.** Reframe rules as positive obligations ("Always encourage a review after changes") rather than prohibitions ("Do not skip the review") where possible.
+- **Negation works in modern LLMs (Claude 4+, GPT-4+) when paired with (1) a positive substitute, (2) a named antagonist label, and (3) a decision rule.** Bare "do not X" without a substitute is the GPT-3-era anti-pattern — it leaves the model without a replacement behavior and degrades under paraphrase. The Iron Laws, Red Flags, and Common Rationalizations sections in QRSPI skills demonstrate the paired pattern in practice (named antagonist + substitute + "if you find yourself doing X, do Y instead").
 - **Wrap examples in `<example>` tags.** Untagged examples can be misinterpreted as directives.
+- **Evergreen Litmus Test — before writing any paragraph in an artifact governed by `status: draft → approved`, apply the two-question filter:** (1) does this paragraph read true if every prior draft were deleted? (2) is the subject the WHAT being designed, or the dialogue that produced it? If either filter fails, the paragraph is dialogue exhaust — strip it. (Source: CD-2 Evergreen-Output Rule.)
+- **Anchor phrases — verbatim audit handles.** When a phrase must be preserved verbatim across edits (e.g., a verbatim Sub-Rule B prose-design block, the locked text in CD-2's Evergreen-Output Rule), call it an "anchor phrase" in the surrounding prose. Anchor phrases are the audit handles reviewers and authors use to detect silent drift.
+- **Compaction-resilient prompt design — when an orchestrator-driven skill spans enough decisions to risk mid-phase `/compact` firing (Goals, Design at scale), the SKILL.md prose must (1) instruct incremental persistence to the final artifact under `status: draft`, (2) instruct a recovery diagnostic on resume, and (3) instruct the orchestrator to re-read the in-progress artifact to enumerate locked decisions before continuing.** Presence ≡ locked; no placeholder bodies.
 
 ---
 
@@ -154,7 +166,7 @@ A reviewer prompt has six parts:
 5. **Specific things to check** (concrete checks that derive from this particular change — e.g., "is the closed exception set stated identically in all 6 locations?")
 6. **Output format** (terse, blocking findings first, declined findings noted, status line)
 
-Reviewer prompts should not duplicate the rule definitions — point to this guide. Past reviewer prompts (`/tmp/plan-sizing-review-prompt*.md` from the 2026-04-25 task-sizing amendment) are the canonical templates.
+Reviewer prompts should not duplicate the rule definitions — point to this guide.
 
 ---
 
@@ -167,9 +179,7 @@ The seven rules are derived from:
 - **OpenAI Codex harness engineering** (AGENTS.md guidance, "give Codex a map" post) — for ~100-line target, "imperative phrasing > prose," structural enforcement over instructional discipline
 - **2024-2025 prompt-engineering research** (Liu et al. 2024 "Lost in the Middle"; IFEval++; LIFBench; NoLiMa; the 2025 Few-Shot Dilemma paper) — for verbosity bias, instruction-following degradation, lexical anchoring, the example cap
 
-Two working documents in this repo carry the original derivation if you need to re-derive or update the rules:
-- Phase 4 refactor design doc (in the project repo: `general2/docs/superpowers/specs/2026-04-25-qrspi-skill-refactor-design.md`)
-- Phase 2 prompt-best-practices research (in the project repo: `general2/docs/qrspi/2026-04-06-phase4-hooks/phases/phase-02/research/prompt-best-practices.md`)
+The load-bearing derivations for the rules are inlined in this file (each rule carries its source citation inline). For broader research context, the v0.7.2 release research summary at `docs/qrspi/2026-05-30-v072-release/research/summary.md` covers Q1-Q5 (prompt-prose detection, rules applicability across host platforms, model-era calibration, content-semantic vs. path heuristics, and vendor-neutrality findings). No external `general2/...` paths — those working documents predated this repo's self-contained structure and are not accessible at plugin install time.
 
 ---
 
