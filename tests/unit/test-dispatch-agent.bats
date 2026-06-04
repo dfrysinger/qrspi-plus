@@ -1112,7 +1112,7 @@ EOF
   [ -f "$REPO_ROOT/tests/fixtures/stub-codex-companion.mjs" ]
 
   local round_dir
-  round_dir="$(mktemp -d)"
+  round_dir="$(mktemp -d "$TMP_DIR/round-XXXXXX")"
 
   # Force host detection to claude-code so codex routes through the third-party
   # path (claude-code:codex → third-party per _resolve-lib.sh::lookup_host_vendor_path).
@@ -1133,13 +1133,26 @@ EOF
   # spec-codex tag suffix routes vendor=codex; default detected host claude-code
   # routes claude-code:codex through the third-party path (per
   # _resolve-lib.sh::lookup_host_vendor_path).
+  # Capture rc + stderr so a CLI-shape mismatch or missing agent file produces a
+  # useful diagnostic rather than a silent manifest-missing assertion failure.
+  local wrapper_rc=0
+  local wrapper_stderr_file
+  wrapper_stderr_file="$(mktemp "$TMP_DIR/wrapper-stderr-XXXXXX")"
   "$WRAPPER" \
     --step spec \
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
     --agents "spec-codex=$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
-    >/dev/null 2>&1 || true
+    >/dev/null 2>"$wrapper_stderr_file" || wrapper_rc=$?
+  if [ "$wrapper_rc" -ne 0 ]; then
+    echo "dispatch-agent.sh failed (rc=$wrapper_rc):" >&2
+    cat "$wrapper_stderr_file" >&2
+    rm -f "$wrapper_stderr_file"
+    rm -rf "$round_dir"
+    return 1
+  fi
+  rm -f "$wrapper_stderr_file"
 
   local manifest="$round_dir/.dispatch-manifest.json"
   [ -f "$manifest" ]
@@ -1179,7 +1192,7 @@ EOF
   [ -f "$REPO_ROOT/tests/fixtures/stub-codex-companion.mjs" ]
 
   local round_dir
-  round_dir="$(mktemp -d)"
+  round_dir="$(mktemp -d "$TMP_DIR/round-XXXXXX")"
 
   unset COPILOT_CLI
 
@@ -1203,13 +1216,26 @@ EOF
   # validator's default EXEC_ROOTS computation yields the empty set).
   export QRSPI_AWAIT_EXEC_ROOTS="$REPO_ROOT/scripts"
 
+  # Capture rc + stderr from the setup invocation; emit on failure so a
+  # --step parse error or missing agent file produces a useful diagnostic
+  # rather than a silent ERR-trap assertion at the manifest check below.
+  local wrapper_rc=0
+  local wrapper_stderr_file
+  wrapper_stderr_file="$(mktemp "$TMP_DIR/wrapper-stderr-XXXXXX")"
   "$WRAPPER" \
     --step spec \
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
     --agents "spec-codex=$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
-    >/dev/null 2>&1
+    >/dev/null 2>"$wrapper_stderr_file" || wrapper_rc=$?
+  if [ "$wrapper_rc" -ne 0 ]; then
+    echo "dispatch-agent.sh failed (rc=$wrapper_rc):" >&2
+    cat "$wrapper_stderr_file" >&2
+    rm -f "$wrapper_stderr_file"
+    return 1
+  fi
+  rm -f "$wrapper_stderr_file"
 
   local manifest="$round_dir/.dispatch-manifest.json"
   [ -f "$manifest" ]
@@ -1224,8 +1250,17 @@ EOF
   [[ "$split_cmd_emitted" == /* ]]
 
   # Drive the drain end to end via await-round.sh against the emitted manifest.
+  # Capture stderr to a tmpfile so any validator-reject or splitter error is
+  # available as a diagnostic when await_rc is non-zero (the falsifying case
+  # for the relative-path manifest bug emits a path-validator rejection on
+  # stderr that would otherwise be silenced).
   local await_rc=0
-  "$REPO_ROOT/scripts/await-round.sh" --round-dir "$round_dir" >/dev/null 2>&1 || await_rc=$?
+  local await_stderr_file
+  await_stderr_file="$(mktemp "$TMP_DIR/await-stderr-XXXXXX")"
+  "$REPO_ROOT/scripts/await-round.sh" --round-dir "$round_dir" >/dev/null 2>"$await_stderr_file" || await_rc=$?
+  local await_stderr_content=""
+  [ -f "$await_stderr_file" ] && await_stderr_content="$(cat "$await_stderr_file")"
+  rm -f "$await_stderr_file"
 
   # Snapshot artefacts before teardown so failure messages remain meaningful.
   # Note: <round-dir>/.dispatch/ (and the <tag>.raw inside it) is intentionally
@@ -1246,6 +1281,9 @@ EOF
 
   # await-round must succeed end to end — this is the falsifying bit for the
   # relative-path manifest bug (which exited 1 with the validator-reject error).
+  if [ "$await_rc" -ne 0 ]; then
+    echo "await-round.sh stderr: $await_stderr_content" >&2
+  fi
   [ "$await_rc" -eq 0 ]
   # The splitter must have consumed the NO_FINDINGS sentinel (delivered via
   # the await_cmd's <tag>.raw materialization) and written the clean.md
