@@ -78,6 +78,48 @@ Each task implements **exactly one observable behavior** — one request handler
 
 A task that fails any floor check merges into the parent task that gives it observable behavior; do not ship sub-atomic tasks.
 
+## Schema-Migration Task Shape
+
+A **schema-migration task** applies an identical mechanical change to N files of the same shape — for example, deleting one frontmatter key from every agent file, replacing a single identifier uniformly across all skill prose, or renaming a top-level YAML field across a glob of config files. This task shape recurs in this codebase and is the narrow exception to the ordinary LOC ceiling and file-count guidance.
+
+### When to use this shape
+
+Use `sizing_exception: schema-migration` only when ALL of the following hold:
+
+- Every file in `Target files:` receives the same structural change (same pattern, same before/after; not "similar" or "related").
+- The change is mechanical-only — no logic modification, no behavioral delta, no per-file judgment calls.
+- A single bash check can assert the mechanical-only nature of the resulting diff.
+
+Do not use this exception for multi-feature bundles that happen to touch many files, for behavioral changes dressed up as migrations, or for any task where per-file human judgment is needed. The closed exception set remains: schema migration, CI scaffolding, reusable primitives — no new category is added by this contract.
+
+### Mandatory trio — all three fields required together
+
+When `sizing_exception: schema-migration` is declared, the task spec MUST carry all three of the following fields. No field is optional when the exception is used; omitting any one is a plan-spec defect:
+
+- `sizing_exception: schema-migration` — declares the exception; must be exactly this value for schema-migration tasks.
+- `sizing_rationale: <human-readable reason>` — one sentence explaining why this specific change is a mechanical same-shape migration (e.g., "removes the deprecated `model:` key added uniformly by T40 from all 41 agent frontmatter files").
+- `structural_lint: <bash check>` — a concrete bash command asserting that every modified file received the same structural change and no other diff content exists. The command must be falsifiable: it must exit 0 (or output `0`) when the diff is mechanical-only, and exit non-zero (or output a non-zero count) when non-structural lines are present.
+
+### Effect on sizing limits
+
+When the mandatory trio is present and the `structural_lint` check executes successfully on the proposed diff:
+
+- **N-files: ungated.** No upper limit applies to the number of files the task may touch; the structural lint is the real ceiling, not a file count.
+- **LOC ceiling: exempted.** The ordinary 200-LOC ceiling does not apply to this task.
+
+Ordinary task-size discipline is not relaxed for non-schema-migration work. A task without the full mandatory trio is evaluated against the standard ceiling.
+
+### Plan-spec defects
+
+A schema-migration declaration is incomplete — and the LOC/file-count exemption is NOT granted — when ANY of the following holds:
+
+- `sizing_exception: schema-migration` is declared but `sizing_rationale:` is absent or empty.
+- `sizing_exception: schema-migration` is declared but `structural_lint:` is absent or empty.
+- `structural_lint:` is present but the command is malformed (contains shell metacharacters that could execute unrelated code, or a pattern beginning with `-`).
+- `structural_lint:` is present but the command exits non-zero or outputs non-zero matching lines, indicating the diff contains non-structural content.
+
+The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception review) verifies all four conditions and emits a `severity: high, change_type: correctness` finding for each defect.
+
 ## Multi-Actor Flow Check
 
 !cat skills/_shared/multi-actor-flow-check.md
