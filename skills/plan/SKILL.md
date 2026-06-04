@@ -98,7 +98,7 @@ When `sizing_exception: schema-migration` is declared, the task spec MUST carry 
 
 - `sizing_exception: schema-migration` — declares the exception; must be exactly this value for schema-migration tasks.
 - `sizing_rationale: <human-readable reason>` — one sentence explaining why this specific change is a mechanical same-shape migration (e.g., "removes the deprecated `model:` key added uniformly by T40 from all 41 agent frontmatter files").
-- `structural_lint: <script-path>` — a repo-relative path to a checked-in script under `scripts/structural-lints/` (e.g., `scripts/structural-lints/check-model-key-removal.sh`). The path must start with `scripts/structural-lints/`, must not contain `..`, and must not be an absolute path. The script receives no spec-controlled arguments; it is invoked as `bash <path>` from the repository root against the proposed diff. The script must exit 0 when the diff is mechanical-only and non-empty, and exit non-zero when non-structural content is present or the diff is empty. Inline bash commands are not accepted as the field value; a literal command string instead of a valid script path is a plan-spec defect.
+- `structural_lint: <script-path>` — a repo-relative path to a checked-in script under `scripts/structural-lints/` (e.g., `scripts/structural-lints/check-model-key-removal.sh`). The value must be a single token matching the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$`; whitespace, tab, newline, and any character outside that token class are rejected. The script must exist as a regular readable file at that path in the repository; a path that passes the token check but is absent from the repository is a plan-spec defect. The script receives no spec-controlled arguments; it is invoked as `bash -- <path>` from the repository root with the path passed as a single argv element (never interpolated into a `bash -c` string) against the proposed diff. The script must exit 0 when the diff is mechanical-only and non-empty, and exit non-zero when non-structural content is present or the diff is empty. Inline bash commands are not accepted as the field value; a literal command string instead of a valid script path is a plan-spec defect.
 
 ### Effect on sizing limits
 
@@ -115,11 +115,12 @@ A schema-migration declaration is incomplete — and the LOC/file-count exemptio
 
 - `sizing_exception: schema-migration` is declared but `sizing_rationale:` is absent or empty.
 - `sizing_exception: schema-migration` is declared but `structural_lint:` is absent or empty.
-- `structural_lint:` is present but its value is not a valid repo-relative path under `scripts/structural-lints/` (is an inline command, contains `..`, or is an absolute path).
-- `structural_lint:` names a valid script path but the proposed diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the exemption is denied.
-- `structural_lint:` names a valid script path but the script exits non-zero, indicating the diff contains non-structural content.
+- `structural_lint:` is present but its value does not match the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` (is an inline command, contains whitespace/tab/newline, contains `..`, is an absolute path, or uses characters outside the allowed token class).
+- `structural_lint:` carries a token-valid path but the named script does not exist as a regular readable file at the repository root; a missing or unreadable script is a configuration defect, not a content defect, and the exemption is denied.
+- `structural_lint:` names a valid, readable script path but the proposed diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the exemption is denied.
+- `structural_lint:` names a valid, readable script path but the script exits non-zero, indicating the diff contains non-structural content.
 
-The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception review) verifies all five conditions and emits a `severity: high, change_type: correctness` finding for each defect.
+The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception review) verifies all six conditions and emits a `severity: high, change_type: correctness` finding for each defect.
 
 ## Multi-Actor Flow Check
 

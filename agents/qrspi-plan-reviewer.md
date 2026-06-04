@@ -101,17 +101,21 @@ Emit a `severity: high, change_type: correctness` finding referencing `skills/pl
 
 **Step 2 — Validate the structural-lint script path.** Before executing, validate the `structural_lint` value as a named-script path:
 
-- Reject any value that does not start with the exact prefix `scripts/structural-lints/` — inline bash commands, paths outside this prefix, and any value containing shell metacharacters are all invalid.
-- Reject paths containing `..` (directory traversal) or absolute paths (starting with `/`).
+- Require the value to match the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` — a single filename token with no whitespace, tab, newline, or character outside `[A-Za-z0-9_.-]` between the prefix and the `.sh` suffix. Reject any value that fails this match: inline bash commands, paths outside this prefix, paths containing `..`, absolute paths (starting with `/`), and any value containing whitespace or shell metacharacters are all invalid.
 
-If validation fails, emit a `severity: high, change_type: correctness` finding for a malformed structural-lint value rather than executing anything. Do not attempt to execute inline commands.
+If the regex validation fails, emit a `severity: high, change_type: correctness` finding for a malformed structural-lint value rather than executing anything. Do not attempt to execute inline commands.
 
-**Step 3 — Execute the structural-lint script.** First verify the proposed diff is non-empty; if the diff is empty, emit a `severity: high, change_type: correctness` finding: the diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the LOC/file-count exemption is denied. Then run `bash <validated-path>` from the repository root with no spec-controlled arguments. Interpret the result by exit code only: if the script exits non-zero, emit a `severity: high, change_type: correctness` finding: the structural lint failed — the claimed mechanical-only migration contains non-structural diff content; the LOC/file-count exemption is denied.
+- After the regex passes, verify the named script exists as a regular readable file at the repository root (e.g., `[ -f "<path>" ] && [ -r "<path>" ]`). If the file is absent or not readable, emit a `severity: high, change_type: correctness` finding: "the `structural_lint` script `<path>` does not exist (or is not readable) at the repository root; check in the script or fix the path. The LOC/file-count exemption is denied." Do NOT proceed to Step 3.
+
+If both checks pass (regex valid and file exists and is readable), proceed to Step 3.
+
+**Step 3 — Execute the structural-lint script.** First verify the proposed diff is non-empty; if the diff is empty, emit a `severity: high, change_type: correctness` finding: the diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the LOC/file-count exemption is denied. Then run `bash -- <validated-path>` from the repository root, passing the path as a single argv element — never interpolate it into a `bash -c` string. Interpret the result by exit code only: if the script exits non-zero, emit a `severity: high, change_type: correctness` finding: the structural lint failed — the claimed mechanical-only migration contains non-structural diff content; the LOC/file-count exemption is denied.
 
 **Step 4 — Grant exemption.** Grant the LOC ceiling and file-count exemption only when:
 
 - All three mandatory fields are present and non-empty (Step 1 passes), AND
-- The `structural_lint` value is a valid repo-relative path under `scripts/structural-lints/` (Step 2 passes), AND
+- The `structural_lint` value matches the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` (Step 2 regex passes), AND
+- The named script exists as a regular readable file at the repository root (Step 2 existence check passes), AND
 - The proposed diff is non-empty and the `structural_lint` script exits 0 (Step 3 passes).
 
 When the exemption is denied — because any mandatory field is absent, the path is invalid, the diff is empty, or the lint fails — apply the standard LOC ceiling and file-count guidance as if no exception were declared.
