@@ -13,6 +13,8 @@ description: Use when design.md is approved and the QRSPI pipeline needs file/co
 
 Map the design's vertical slices to specific files, components, and interfaces. Define what gets created vs modified, show how slices map to the stack, and produce a detailed architectural diagram. This is the bridge between abstract design and concrete implementation.
 
+Structure authors: the unified system architecture diagram(s) for the release (Mermaid or equivalent — stitching the components named across design.md's per-solution and cross-cutting-CD blocks into a single architectural overview); file maps and module-boundary contracts; cross-solution component interactions; unified test architecture (the `## Test Architecture` section in structure.md); and per-type stitching of per-solution acceptance criteria from design.md.
+
 <!-- Soft length target: 300–500 lines for this SKILL.md. The marker is a guidance signal — long enough to carry per-section template guidance + worked examples + iron laws, short enough to keep the prompt scannable in a single context window. -->
 
 ## Structure OWNS / Structure DEFERS
@@ -199,6 +201,19 @@ If the artifact directory is inside a git repository, commit the approved `struc
 Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — structure", description: "pre-handoff: next skill reads structure.md + prior artifacts + reviewer findings. User decides whether to /compact." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `structure`.
+
+## Test Architecture
+
+Author the unified `## Test Architecture` section in structure.md after Design approval. Design authors per-solution `Acceptance` subsections per goal/CD block; Structure stitches them into a release-level test architecture. This is new authoring behavior for Structure — do not re-open Design rationale or add Plan/Implement-level assertions.
+
+**Procedure (run after Design approval):**
+
+1. Enumerate every per-solution `Acceptance` subsection in design.md — one per goal block and one per CD block. Record each by goal/CD identifier (e.g., G1, G5, CD-4).
+2. Name the test taxonomy for the release (e.g., unit, integration, end-to-end, smoke, contract — exact taxonomy varies by release). Group the acceptance criteria from step 1 by test type per the named taxonomy, citing the design.md source identifier for each entry.
+3. Enumerate cross-cutting test invariants drawn from CD blocks and cross-cutting goals in design.md. For each invariant, name the test type that owns each invariant.
+4. Author the result as a top-level `## Test Architecture` section in structure.md: named-taxonomy-first (T1, T2, …), one paragraph per type naming the coverage boundary and which design.md `Acceptance` subsections feed into it, and a final `### Cross-cutting invariants` subsection listing the invariants from step 3 with their owning test type.
+
+Structure's role in this section: name the test taxonomy, enumerate cross-cutting test invariants, and name the test type that owns each invariant. Structure does not author per-task test expectations or assertion code — those belong to Plan and Implement respectively.
 
 ## Section-Anchor Index
 
