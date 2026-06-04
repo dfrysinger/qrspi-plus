@@ -69,7 +69,7 @@
   },
   "Phase Routing": {
     "line_start": 205,
-    "line_end": 247
+    "line_end": 274
   },
   "Phase Signal — `task_definition`": {
     "line_start": 214,
@@ -83,8 +83,12 @@
     "line_start": 233,
     "line_end": 247
   },
-  "Quick-Tier Finding Disposition": {
+  "Anti-Fabrication Rule (FAIL-LOUD)": {
     "line_start": 248,
-    "line_end": 260
+    "line_end": 274
+  },
+  "Quick-Tier Finding Disposition": {
+    "line_start": 275,
+    "line_end": 287
   }
 }
