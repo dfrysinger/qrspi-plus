@@ -346,3 +346,45 @@ setup_file() {
   run grep -F '.claude-plugin/marketplace.json' "$CI_YML"
   [ "$status" -eq 0 ]
 }
+
+# ===========================================================================
+# T40 / G21 — BATS body-guard lint + G26 BW02 guard lint on blocking path.
+#
+# Per docs/qrspi/2026-05-30-v072-release/structure.md
+# §`tests/unit/test-ci-workflow-shape.bats` (Slice 1.7) and
+# tasks/task-40.md §"Definition of done":
+#
+#   - tests/lint/test-bats-body-assertion-guard.bats exists and is covered by
+#     the recursive `bats -r tests` invocation in the bash32 job.
+#   - No pre-commit hook or shellcheck rule is added for G21/G26.
+# ===========================================================================
+
+@test "[T40/G21] tests/lint/test-bats-body-assertion-guard.bats exists" {
+  require_repo_root
+  # The G21 lint file must be present so the recursive bats run picks it up.
+  # This pin is RED until the lint file is created.
+  [ -f "$REPO_ROOT/tests/lint/test-bats-body-assertion-guard.bats" ]
+}
+
+@test "[T40/G21] bash32 BATS job covers tests/lint/ via recursive tests/ run (G21 + G26 BW02 lint on blocking path)" {
+  require_repo_root
+  [ -f "$CI_YML" ]
+  # tests/lint/test-bats-body-assertion-guard.bats reaches the blocking CI path
+  # through the `bats -r tests` recursive invocation already present in the
+  # bash32 job (T39/G32 pin). This T40/G21 pin explicitly anchors the
+  # dependency from the G21 lint file to that run step.
+  run grep -E 'bats[[:space:]]+-r[[:space:]]+tests' "$CI_YML"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T40/G21] no pre-commit hook script for G21 body-guard rule" {
+  require_repo_root
+  # G21 sub-decision C1: CI gate only; no pre-commit hook.
+  # A .git/hooks/pre-commit or scripts/pre-commit* would be a C1 violation.
+  local hooks_dir="$REPO_ROOT/.git/hooks"
+  if [ -f "$hooks_dir/pre-commit" ]; then
+    # Allowed only if it does not reference body-guard or bats-body-assertion
+    run grep -E 'body.guard|bats-body-assertion' "$hooks_dir/pre-commit"
+    [ "$status" -ne 0 ]
+  fi
+}

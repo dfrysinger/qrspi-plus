@@ -123,6 +123,8 @@ setup() {
   # fully versioned IDs). The schema doc MUST carry a fail-loud rule
   # naming what the dispatcher does on partial corruption, or the
   # G7b/#204 silent-fallback class reopens one layer deeper.
+  # G21 body-guard: assert non-empty before testing content.
+  [ -n "$body" ]
   [[ "$body" == *"halts and reports"* ]]
   [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
 }
@@ -134,6 +136,8 @@ setup() {
   # Pin the absence of anti-pattern wording G7b/#204 was filed
   # against. If a future edit "softens" the fail-loud rule into a
   # silent-fallback, this pin RED-fails.
+  # G21 body-guard: assert non-empty before testing content.
+  [ -n "$body" ]
   [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
   [[ "$body" != *"silently degrade"* ]]
 }
@@ -147,6 +151,8 @@ setup() {
   # step 4. Without a fail-loud rule pinned here, two of three plausible
   # dispatcher implementations reproduce the G7b/#204 silent-fallback
   # class one layer deeper than the model_routing: path.
+  # G21 body-guard: assert non-empty before testing content.
+  [ -n "$body" ]
   [[ "$body" == *"halts and reports"* ]]
   [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
 }
@@ -159,6 +165,8 @@ setup() {
   # scoped to the trusted_path: H4 body specifically. If a future edit
   # softens the trusted_path: fail-loud rule into a silent-fallback,
   # this pin RED-fails.
+  # G21 body-guard: assert non-empty before testing content.
+  [ -n "$body" ]
   [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
   [[ "$body" != *"silently degrade"* ]]
 }
