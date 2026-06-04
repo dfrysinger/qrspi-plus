@@ -277,6 +277,7 @@ Per-goal blocks use the five-field template defined in `## Per-goal block templa
 - Validate that every goal in `goals.md` has a corresponding per-goal block in `design.md` with all five fields populated (Outcome, Solution, Why this approach, Dependencies + edge cases, Acceptance).
 - Validate the `## Cross-Goal Decisions` section is well-formed (each entry keyed by ID, each entry carries rationale + scope).
 - Optionally append a top-level summary if absent.
+- **Only flip status if all validations pass.** If any validation step fails, halt immediately before the status flip, surface the specific failure to the user, and re-enter dialogue to resolve the invariant violation before re-attempting the finalize pass. Do NOT advance the gate with a failing artifact.
 - Flip frontmatter `status: draft` to `status: approved-pending-review`.
 
 Hand-edits that flip `status: draft` to `status: approved-pending-review` (or directly to `approved`) mid-phase, before the finalize pass, are forbidden — only the finalize pass writes the next-gate status.

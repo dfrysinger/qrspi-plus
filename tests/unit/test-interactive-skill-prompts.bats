@@ -244,3 +244,16 @@ setup() {
   # emitting a placeholder, which would violate the presence-as-locked contract.
   grep -F "re-enter dialogue" "$REPO_ROOT/skills/goals/SKILL.md"
 }
+
+# ---------------------------------------------------------------------------
+# sf-F01: Finalize pass must gate the status flip on all-validations-passed.
+# If any validation fails, halt before the status flip and re-enter dialogue.
+# ---------------------------------------------------------------------------
+
+@test "goals/SKILL.md finalize pass gates status flip on all-validations-passed (sf-F01)" {
+  grep -F "Only flip status if all validations pass" "$REPO_ROOT/skills/goals/SKILL.md"
+}
+
+@test "design/SKILL.md finalize pass gates status flip on all-validations-passed (sf-F01)" {
+  grep -F "Only flip status if all validations pass" "$REPO_ROOT/skills/design/SKILL.md"
+}

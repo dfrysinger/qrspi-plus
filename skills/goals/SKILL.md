@@ -163,6 +163,7 @@ Per Rule 8 above, write each locked goal **directly to `goals.md`** with `status
 
 - Validate that every locked goal carries the three required subsections (Problem, Why we care, What we know so far) and a concrete `type` value.
 - Optionally append a Purpose section if absent.
+- **Only flip status if all validations pass.** If any validation step fails, halt immediately before the status flip, surface the specific failure to the user, and re-enter dialogue to resolve the invariant violation before re-attempting the finalize pass. Do NOT advance the gate with a failing artifact.
 - Flip frontmatter `status: draft` to `status: approved`.
 
 Hand-edits that flip `status: draft` to `status: approved` mid-phase (before the finalize pass) are forbidden — only the finalize pass writes `approved`. When the user picks "Approve, skip review" at the human gate, the finalize pass still runs (it is mechanical validation, not synthesis) and the reviewer round is skipped.
