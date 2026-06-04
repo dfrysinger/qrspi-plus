@@ -300,10 +300,22 @@ run_pin() {
   # on bash 3.2 / macOS default bash).
   local pin_file="$PINS/test-using-qrspi-vocab.bats"
   [ -f "$pin_file" ]
-  # Extract the deployed regex literals from the unit-pin assertions.
-  local REGEX_ADVERB REGEX_NOUN
-  REGEX_ADVERB=$(grep -oE 'silently\[.*\]\+\(.*\)' "$pin_file" | head -1)
-  REGEX_NOUN=$(grep -oE '\(.*\)silent\[.*\]\+fallback' "$pin_file" | head -1)
+  # Extract ALL deployed regex literals from the unit-pin assertions and verify
+  # every site is consistent — if any of the 4 sites drift the assertions below
+  # fail loudly rather than silently passing on the one un-drifted match.
+  local REGEX_ADVERB REGEX_NOUN adverb_regexes adverb_count noun_regexes noun_count
+  adverb_regexes=$(grep -oE 'silently\[.*\]\+\(.*\)' "$pin_file" | sort -u)
+  adverb_count=$(grep -cE 'silently\[.*\]\+\(.*\)' "$pin_file")
+  noun_regexes=$(grep -oE '\(.*\)silent\[.*\]\+fallback' "$pin_file" | sort -u)
+  noun_count=$(grep -cE '\(.*\)silent\[.*\]\+fallback' "$pin_file")
+  # Exactly 4 adverb-branch and 4 noun-branch sites must be deployed.
+  [ "$adverb_count" -eq 4 ]
+  [ "$noun_count" -eq 4 ]
+  # All 4 adverb-branch sites must carry the identical regex; ditto noun-branch.
+  [ "$(printf '%s\n' "$adverb_regexes" | wc -l | tr -d ' ')" -eq 1 ]
+  [ "$(printf '%s\n' "$noun_regexes" | wc -l | tr -d ' ')" -eq 1 ]
+  REGEX_ADVERB="$adverb_regexes"
+  REGEX_NOUN="$noun_regexes"
   [ -n "$REGEX_ADVERB" ]
   [ -n "$REGEX_NOUN" ]
 
