@@ -128,7 +128,7 @@ The 2 new paragraphs shift line numbers in SKILL.md. Regenerate the
 anchors index:
 
 ```bash
-bash scripts/g4-section-anchor-refresh.sh
+bash tools/g4-section-anchor-refresh.sh
 ```
 
 Verify the regeneration is mechanical (line-count bookkeeping only) by

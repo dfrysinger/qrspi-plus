@@ -190,7 +190,7 @@ run_pin() {
   [ -f "$SKILLS/reviewer-protocol/SKILL.anchors.json" ]
   [ -f "$SKILLS/using-qrspi/SKILL.anchors.json" ]
   [ -f "$SKILLS/plan/SKILL.anchors.json" ]
-  [ -f "$REPO_ROOT/scripts/g4-section-anchor-manifest.json" ]
+  [ -f "$REPO_ROOT/tools/g4-section-anchor-manifest.json" ]
   run run_pin "$PINS/test-section-anchor-index-shape.bats"
   [ "$status" -eq 0 ]
   # narrow-read pin contains 4 T36 expected-failures documenting the T35
@@ -254,6 +254,77 @@ run_pin() {
 
 @test "[Phase1 Slice 10 C-3] Integrate-phase Replan dry-run against future-goals fixture (human-verified gate)" {
   skip "human-verified Integrate-phase gate per plan.md line 135; not enforced by BATS per spec"
+}
+
+# --------------------------------------------------------------------------
+# G24-F05 — Anti-pattern pin regex hardening (T44)
+#
+# G24 re-scoped to F05 after tree audit: replace the four brittle literal-
+# substring pins in test-using-qrspi-vocab.bats with intent-based regex
+# assertions so future re-phrasings of the silent-fallback contract still
+# trip the pin.  See design.md ## G24 and structure.md §test-using-qrspi-vocab.bats.
+# --------------------------------------------------------------------------
+
+@test "[Phase1 G24 regex-pin C-1] vocab anti-pattern pin uses regex assertions (not glob literals)" {
+  # The four anti-pattern @test blocks in test-using-qrspi-vocab.bats must use
+  # [[ ! "$body" =~ PATTERN ]] (ERE regex) rather than [[ "$body" != *"literal"* ]]
+  # (glob literal).  A regex pin matches intent; a glob pin matches only the
+  # exact historic phrase.  Grep for the ERE-regex negation form inside the four
+  # "anti-pattern wording absent" blocks; the file must carry at least four such
+  # assertions (one per H4 block under test).
+  local pin_file="$PINS/test-using-qrspi-vocab.bats"
+  [ -f "$pin_file" ]
+  # Count lines matching the regex-negation form for silent-fallback pins.
+  local regex_count
+  regex_count=$(grep -cE '!\s+"\$body"\s+=~\s+.*silent' "$pin_file" || true)
+  # Require at least 4 regex assertions (one per H4 anti-pattern block).
+  [ "$regex_count" -ge 4 ]
+}
+
+@test "[Phase1 G24 regex-pin C-2] vocab pin green against post-CD1 settled dispatch prose" {
+  # The rewritten regex pins must pass against the current (post-G22/G23/G25)
+  # prose in skills/using-qrspi/SKILL.md.  If this test fails the regex is too
+  # broad and false-positives on valid contract language.
+  run run_pin "$PINS/test-using-qrspi-vocab.bats"
+  [ "$status" -eq 0 ]
+}
+
+@test "[Phase1 G24 negative-case C-3] anti-pattern regex trips on semantic equivalent phrasings" {
+  # Demonstrates the intent-based regex family is genuinely broader than the
+  # original literal pin it replaces.  Extracts the DEPLOYED regex patterns
+  # directly from test-using-qrspi-vocab.bats so future drift in the unit-pin
+  # pattern is immediately visible here rather than silently diverging.
+  #
+  # Assertions use `printf | grep -qE` (simple command, enforced by set -e on
+  # bash 3.2+) rather than bare `[[ =~ ]]` (compound command, exempt from set -e
+  # on bash 3.2 / macOS default bash).
+  local pin_file="$PINS/test-using-qrspi-vocab.bats"
+  [ -f "$pin_file" ]
+  # Extract ALL deployed regex literals from the unit-pin assertions and verify
+  # every site is consistent — if any of the 4 sites drift the assertions below
+  # fail loudly rather than silently passing on the one un-drifted match.
+  local REGEX_ADVERB REGEX_NOUN adverb_regexes adverb_count noun_regexes noun_count
+  adverb_regexes=$(grep -oE 'silently\[.*\]\+\(.*\)' "$pin_file" | sort -u)
+  adverb_count=$(grep -cE 'silently\[.*\]\+\(.*\)' "$pin_file")
+  noun_regexes=$(grep -oE '\(.*\)silent\[.*\]\+fallback' "$pin_file" | sort -u)
+  noun_count=$(grep -cE '\(.*\)silent\[.*\]\+fallback' "$pin_file")
+  # Exactly 4 adverb-branch and 4 noun-branch sites must be deployed.
+  [ "$adverb_count" -eq 4 ]
+  [ "$noun_count" -eq 4 ]
+  # All 4 adverb-branch sites must carry the identical regex; ditto noun-branch.
+  [ "$(printf '%s\n' "$adverb_regexes" | wc -l | tr -d ' ')" -eq 1 ]
+  [ "$(printf '%s\n' "$noun_regexes" | wc -l | tr -d ' ')" -eq 1 ]
+  REGEX_ADVERB="$adverb_regexes"
+  REGEX_NOUN="$noun_regexes"
+  [ -n "$REGEX_ADVERB" ]
+  [ -n "$REGEX_NOUN" ]
+
+  # "silently degrades to the agent default" must trip REGEX_ADVERB.
+  printf '%s' "silently degrades to the agent default" | grep -qE "$REGEX_ADVERB"
+  # "silently substitutes the bundled default" must trip REGEX_ADVERB (semantic equivalent).
+  printf '%s' "silently substitutes the bundled default" | grep -qE "$REGEX_ADVERB"
+  # "no silent fallback to a neighboring tier" must trip REGEX_NOUN.
+  printf '%s' "no silent fallback to a neighboring tier" | grep -qE "$REGEX_NOUN"
 }
 
 # --------------------------------------------------------------------------
@@ -3033,4 +3104,166 @@ JQ_EOF
     || { echo "ERROR: _fp_tmp mktemp line not found in script"; return 1; }
   [ "$trap_line" -lt "$mktemp_line" ] \
     || { echo "ERROR: _fp_tmp trap (line $trap_line) must precede mktemp (line $mktemp_line)"; return 1; }
+}
+
+# ===========================================================================
+# T39 / G32 — Release-level acceptance for the plugin build pipeline.
+#
+# Per docs/qrspi/2026-05-30-v072-release/structure.md
+# §`tests/acceptance/v07-phase1/test-phase1-acceptance.bats` (Slice 1.7)
+# and tasks/task-39.md §"Test expectations":
+#
+#   - build/ directory exists with the full expanded plugin tree.
+#   - .claude-plugin/marketplace.json `qrspi` entry has `source: "./build"`
+#     and v0.7.2 release metadata landed.
+#   - CONTRIBUTING.md documents the rebuild workflow + failure modes +
+#     committed-build rationale + scripts/ vs tools/ distinction.
+#   - Resolver acceptance fixtures (legacy ${CLAUDE_SKILL_DIR} + cycle) exist
+#     and demonstrate fail-loud diagnostics.
+# ===========================================================================
+
+@test "[T39/G32 acceptance] build/ exists at the repo root with the expanded plugin tree" {
+  [ -d "$REPO_ROOT/build" ]
+  [ -d "$REPO_ROOT/build/skills" ]
+  [ -d "$REPO_ROOT/build/.claude-plugin" ]
+}
+
+@test "[T39/G32 acceptance] .claude-plugin/marketplace.json qrspi plugin source points at ./build" {
+  local mkt="$REPO_ROOT/.claude-plugin/marketplace.json"
+  [ -f "$mkt" ]
+  # Tolerate object-form or string-form; require the value `./build` to
+  # appear in association with the qrspi plugin entry.
+  run bash -c "node -e 'const m=JSON.parse(require(\"fs\").readFileSync(\"$mkt\",\"utf8\"));const q=(m.plugins||[]).find(p=>p.name===\"qrspi\");if(!q)process.exit(2);const s=typeof q.source===\"string\"?q.source:(q.source&&q.source.path);process.exit(s===\"./build\"?0:3);'"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] .claude-plugin/marketplace.json qrspi plugin carries v0.7.2 release metadata" {
+  local mkt="$REPO_ROOT/.claude-plugin/marketplace.json"
+  [ -f "$mkt" ]
+  run bash -c "node -e 'const m=JSON.parse(require(\"fs\").readFileSync(\"$mkt\",\"utf8\"));const q=(m.plugins||[]).find(p=>p.name===\"qrspi\");if(!q)process.exit(2);process.exit(q.version===\"0.7.2\"?0:3);'"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] CONTRIBUTING.md documents the local rebuild workflow (node tools/build-plugin.mjs)" {
+  [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
+  run grep -F 'node tools/build-plugin.mjs' "$REPO_ROOT/CONTRIBUTING.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] CONTRIBUTING.md documents the committed-build rationale" {
+  [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
+  # Either the rationale heading or load-bearing tokens (atomic source/build
+  # diffs, one-revert release rollback, git blame across the seam).
+  run grep -E -i 'why.*commit.*build|atomic source/build|one-revert|build/.*commit' "$REPO_ROOT/CONTRIBUTING.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] CONTRIBUTING.md documents the two PR-blocking build-sync failure modes" {
+  [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
+  # Failure mode A: build script exits non-zero (any D3 fail-loud condition).
+  run grep -E -i 'fail.?loud|non-zero|malformed.*!cat|missing target|cycle' "$REPO_ROOT/CONTRIBUTING.md"
+  [ "$status" -eq 0 ]
+  # Failure mode B: build/ on the PR branch differs from resolver output.
+  run grep -E -i 'forgot to (regenerate|rebuild)|build/.*differs|out of sync' "$REPO_ROOT/CONTRIBUTING.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] CONTRIBUTING.md anchors the scripts/ (runtime) vs tools/ (dev-time) distinction" {
+  [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
+  run grep -E -i 'scripts/.*runtime|tools/.*dev|runtime.*scripts|dev-?(time|only).*tools' "$REPO_ROOT/CONTRIBUTING.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32 acceptance] resolver acceptance fixture exists for legacy \${CLAUDE_SKILL_DIR} failure" {
+  # Fixture lives under tests/fixtures/ so it does not pollute the real
+  # !cat resolution surface (per structure.md "Fixture authoring").
+  run bash -c "find '$REPO_ROOT/tests/fixtures' -type d -name 'build-resolver*' -print -quit"
+  [ -n "$output" ]
+  # Some file under that subtree must contain a literal ${CLAUDE_SKILL_DIR}
+  # token to drive the fail-loud rejection.
+  run bash -c "grep -RF '\${CLAUDE_SKILL_DIR}' \"$output\" || true"
+  [ -n "$output" ]
+}
+
+@test "[T39/G32 acceptance] resolver acceptance fixture exists for include-cycle failure" {
+  run bash -c "find '$REPO_ROOT/tests/fixtures' -type d -name 'build-resolver*' -print -quit"
+  [ -n "$output" ]
+  # A cycle fixture must contain at least two files that include each other
+  # via bare-relative !cat directives. Use a coarse test: at least two
+  # `!cat` directives under the cycle fixture path.
+  local fixroot="$output"
+  run bash -c "find '$fixroot' -type d -name '*cycle*' -print -quit"
+  [ -n "$output" ]
+  run bash -c "grep -RE '^[[:space:]]*!cat[[:space:]]+' \"$output\" | wc -l | tr -d ' '"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 2 ]
+}
+
+# ---------------------------------------------------------------------------
+# Round-3 hardening (tc-F01): the two existence tests above only assert that
+# the fixtures sit on disk — they never invoke the resolver against them and
+# never verify the spec-required diagnostic phrasing (task-39 line 70: "with
+# the required diagnostics"). The two tests below close that gap by staging
+# each fixture's content into a minimal source root and actually running
+# `node tools/build-plugin.mjs` against it, asserting non-zero exit + the
+# load-bearing diagnostic phrase.
+#
+# Why stage rather than `--root tests/fixtures/...` directly: the resolver
+# requires a manifest-shaped source root (skills/ + .claude-plugin/ + LICENSE
+# + README.md) that the bare fixture dirs intentionally do not provide.
+# Staging keeps the fixture dirs minimal (their canonical purpose is to hold
+# the offending content) while still exercising the documented `--root` CLI
+# surface against fixture-sourced bytes.
+# ---------------------------------------------------------------------------
+
+@test "[T39/G32 acceptance] resolver fails non-zero with \${CLAUDE_SKILL_DIR} diagnostic when invoked against legacy-claude-skill-dir fixture content" {
+  local fixture="$REPO_ROOT/tests/fixtures/build-resolver/legacy-claude-skill-dir/README.md"
+  [ -f "$fixture" ]
+  local root="$BATS_TEST_TMPDIR/legacy-fixture-root"
+  mkdir -p "$root/.claude-plugin" "$root/skills/legacy-fixture"
+  cat >"$root/.claude-plugin/plugin.json" <<JSON
+{ "name": "qrspi-fixture", "version": "0.0.0", "skills": ["./skills"] }
+JSON
+  : >"$root/LICENSE"
+  : >"$root/README.md"
+  # Stage the fixture content as a shipped skill body; the legacy
+  # \${CLAUDE_SKILL_DIR} token in the fixture must trip the build's
+  # legacy-token gate during expansion.
+  cp "$fixture" "$root/skills/legacy-fixture/SKILL.md"
+  run bash -c "node '$REPO_ROOT/tools/build-plugin.mjs' --root '$root' --out '$root/build' 2>&1"
+  [ "$status" -ne 0 ]
+  # Required diagnostic: must name the legacy token.
+  echo "$output" | grep -F 'CLAUDE_SKILL_DIR'
+  # Diagnostic must include file:line so the author can locate the offense.
+  echo "$output" | grep -E 'SKILL\.md:[0-9]+'
+  # And must phrase the rejection (legacy form / shipped file).
+  echo "$output" | grep -E -i 'legacy|shipped|forbidden|occurrence'
+}
+
+@test "[T39/G32 acceptance] resolver fails non-zero with cycle diagnostic (full chain) when invoked against include-cycle fixture content" {
+  local fa="$REPO_ROOT/tests/fixtures/build-resolver/include-cycle/a.md"
+  local fb="$REPO_ROOT/tests/fixtures/build-resolver/include-cycle/b.md"
+  [ -f "$fa" ]
+  [ -f "$fb" ]
+  local root="$BATS_TEST_TMPDIR/cycle-fixture-root"
+  mkdir -p "$root/.claude-plugin" "$root/skills/cycle-fixture"
+  # Replicate the fixture pair at paths the fixture's bare-relative !cat
+  # directives expect (`tests/fixtures/build-resolver/include-cycle/{a,b}.md`).
+  mkdir -p "$root/tests/fixtures/build-resolver/include-cycle"
+  cp "$fa" "$root/tests/fixtures/build-resolver/include-cycle/a.md"
+  cp "$fb" "$root/tests/fixtures/build-resolver/include-cycle/b.md"
+  cat >"$root/.claude-plugin/plugin.json" <<JSON
+{ "name": "qrspi-fixture", "version": "0.0.0", "skills": ["./skills"] }
+JSON
+  : >"$root/LICENSE"
+  : >"$root/README.md"
+  # Shipped skill that enters the cycle via the fixture's first hop.
+  printf '# Entry\n!cat tests/fixtures/build-resolver/include-cycle/a.md\n' \
+    >"$root/skills/cycle-fixture/SKILL.md"
+  run bash -c "node '$REPO_ROOT/tools/build-plugin.mjs' --root '$root' --out '$root/build' 2>&1"
+  [ "$status" -ne 0 ]
+  # Required diagnostic: cycle / circular keyword + FULL chain (both files).
+  echo "$output" | grep -E -i 'cycle|circular'
+  echo "$output" | grep -F 'tests/fixtures/build-resolver/include-cycle/a.md'
+  echo "$output" | grep -F 'tests/fixtures/build-resolver/include-cycle/b.md'
 }

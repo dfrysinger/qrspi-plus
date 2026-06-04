@@ -16,7 +16,7 @@ load '../helpers/skill-markdown'
 
 setup_file() {
   require_repo_root
-  MANIFEST="$REPO_ROOT/scripts/g4-section-anchor-manifest.json"
+  MANIFEST="$REPO_ROOT/tools/g4-section-anchor-manifest.json"
   [ -f "$MANIFEST" ] || { echo "manifest missing: $MANIFEST" >&2; return 1; }
   export MANIFEST
 }

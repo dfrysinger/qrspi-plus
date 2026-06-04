@@ -69,19 +69,98 @@ for the source of truth):
 
 - **Lint (shellcheck + bash32 ban-list)**: `shellcheck --severity=error`
   plus a grep ban-list applied to `*.sh` and `*.bash` files under
-  `scripts/` and `tests/helpers/`. The ban-list rejects bash 4+
-  constructs that break under the bash:3.2 alpine harness: `mapfile`,
+  `scripts/` and `tests/` (recursive, so `tests/lint/` and any future
+  test subtree are covered). The ban-list rejects bash 4+ constructs
+  that break under the bash:3.2 alpine harness: `mapfile`,
   `declare -A`, `${var,,}` / `${var^^}` lowercasing/uppercasing,
   `coproc`, and `wait -n`.
-- **BATS under bash 3.2**: the full unit and acceptance suites run
-  inside an alpine `bash:3.2` Docker image, so no test silently
-  relies on a bash 4+ feature.
+- **BATS under bash 3.2**: `bats -r tests` runs every `*.bats` file
+  under `tests/` recursively inside an alpine `bash:3.2` Docker
+  image, so no test silently relies on a bash 4+ feature.
+- **Build-sync gate** (G32, v0.7.2+): CI runs
+  `node tools/build-plugin.mjs` against the source tree, then
+  `git diff --exit-code build/ .claude-plugin/marketplace.json`.
+  Two PR-blocking failure modes:
+  1. **The builder exits non-zero (fail-loud).** The resolver
+     surfaced a malformed `!cat` directive, a missing target, an
+     include cycle, an absolute or `..`-traversal path, an
+     outside-root include, or a leftover `${CLAUDE_SKILL_DIR}`
+     occurrence in a shipped file. The diagnostic on stderr
+     identifies the offending file:line plus reason; fix the source
+     and rebuild.
+  2. **The diff gate exits non-zero (out-of-sync `build/`).** The
+     PR branch's committed `build/` (or `.claude-plugin/marketplace.json`)
+     differs from what the builder produces from current source —
+     i.e. the contributor forgot to regenerate `build/` after editing
+     a SKILL.md (or the shared snippet it inlines). Fix locally with
+     `node tools/build-plugin.mjs`, then `git add build/
+     .claude-plugin/marketplace.json` and amend the PR commit.
 - **CodeQL**: JavaScript/TypeScript and GitHub Actions analysis.
 
 CI runs on every pull request. Pushes to feature branches do not
 trigger CI; open a PR (draft is fine) to see check results. All
 checks must be green before merge. If a CI failure looks unrelated to
 your change, mention it in the PR body so the maintainer can confirm.
+
+## Local rebuild workflow (G32, v0.7.2+)
+
+The repo ships a committed `build/` plugin tree that hosts install
+from. After editing a SKILL.md or any `_shared/*.md` snippet inlined
+via `!cat`, regenerate the build before pushing:
+
+```sh
+# 1. Edit source (skills/, agents/, scripts/, templates/, etc.).
+$EDITOR skills/<name>/SKILL.md
+
+# 2. Rebuild the install tree.
+node tools/build-plugin.mjs
+
+# 3. Stage BOTH the source edit AND the regenerated build/.
+git add skills/<name>/SKILL.md build/
+
+# 4. (If the change is release-cutting) bump
+#    .claude-plugin/marketplace.json + plugin.json and `git add` them too.
+
+# 5. Commit + push as a single atomic source-and-build pair.
+git commit -m "..."
+git push
+```
+
+If you forget step 2/3, CI's diff gate (above) fails the PR and tells
+you to rebuild.
+
+### Why `build/` is committed
+
+We commit the resolver output for three reasons:
+
+- **Atomic source/build diffs.** Every PR's diff shows the source
+  edit and the regenerated `build/` content side-by-side, so the
+  reviewer can spot drift (e.g. a `_shared/*.md` change whose
+  expansion landed in unexpected SKILLs) without running the build
+  locally.
+- **One-revert release rollback.** A bad release is rolled back by
+  reverting one commit; consumers re-installing from `marketplace.json`
+  pick up the prior `build/` tree atomically.
+- **Git blame across the seam.** `git blame build/skills/X/SKILL.md`
+  walks back through resolver-output history to the source commit that
+  actually changed the inlined content, even though the build/ file
+  itself was machine-written.
+
+### `scripts/` (runtime) vs `tools/` (dev-time)
+
+- **`scripts/`** is runtime-only: shell helpers that the plugin's
+  skills shell out to at runtime (e.g. `dispatch-agent.sh`,
+  `render-skill.sh` is moved out — see below). `scripts/` ships
+  inside `build/scripts/` and is part of the install surface.
+- **`tools/`** is dev-time only: helpers contributors run locally
+  (the build pipeline `tools/build-plugin.mjs`, anchor refresh
+  `tools/g4-section-anchor-refresh.sh`, the offline cat-emulator
+  `tools/render-skill.sh`). `tools/` is omitted from `build/` and
+  never reaches a plugin install.
+
+If you add a new helper, decide which side of the seam it belongs on
+before writing the first line: ask "does the runtime plugin need
+this?" — yes → `scripts/`, no → `tools/`.
 
 ## Skill prose authoring (no design-doc anchors in runtime prose)
 

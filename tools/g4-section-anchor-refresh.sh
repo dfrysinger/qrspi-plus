@@ -16,7 +16,7 @@
 # a single source artifact (duplicates make narrow-read targeting ambiguous).
 #
 # Usage:
-#   scripts/g4-section-anchor-refresh.sh
+#   tools/g4-section-anchor-refresh.sh
 #
 # Exit codes:
 #   0   all indexes regenerated successfully
@@ -30,7 +30,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
-MANIFEST_PATH="$REPO_ROOT/scripts/g4-section-anchor-manifest.json"
+MANIFEST_PATH="$REPO_ROOT/tools/g4-section-anchor-manifest.json"
 
 if [ ! -f "$MANIFEST_PATH" ]; then
   echo "g4-section-anchor-refresh: missing-manifest: $MANIFEST_PATH does not exist" >&2

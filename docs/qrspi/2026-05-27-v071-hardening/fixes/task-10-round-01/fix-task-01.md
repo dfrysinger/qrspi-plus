@@ -84,7 +84,7 @@ with:
 
 ### Slice 3: Anchor regeneration
 
-The above edits will shift downstream line offsets. Run `bash scripts/g4-section-anchor-refresh.sh` to regenerate `skills/using-qrspi/SKILL.anchors.json`. Re-run the unit suite and confirm `test-section-anchor-narrow-read.bats` passes.
+The above edits will shift downstream line offsets. Run `bash tools/g4-section-anchor-refresh.sh` to regenerate `skills/using-qrspi/SKILL.anchors.json`. Re-run the unit suite and confirm `test-section-anchor-narrow-read.bats` passes.
 
 ### Slice 4: Pinning test (optional but recommended)
 

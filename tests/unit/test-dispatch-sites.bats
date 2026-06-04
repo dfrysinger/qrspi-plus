@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+bats_require_minimum_version 1.5.0
 
 # Cross-cutting CI test: verifies no migrated SKILL.md still embeds legacy
 # reviewer-boilerplate content or uses the legacy /tmp or .codex-prompts

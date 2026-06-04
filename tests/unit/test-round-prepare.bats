@@ -72,7 +72,7 @@ teardown() {
 @test "g4-section-anchor-manifest.json is valid JSON with entries[]" {
   python3 -c "
 import json,sys
-d=json.load(open('$REPO_ROOT/scripts/g4-section-anchor-manifest.json'))
+d=json.load(open('$REPO_ROOT/tools/g4-section-anchor-manifest.json'))
 assert isinstance(d.get('entries'), list) and len(d['entries']) >= 1
 for e in d['entries']:
     assert isinstance(e['source'], str) and isinstance(e['index'], str)
@@ -94,7 +94,7 @@ for e in d['entries']:
 @test "anchor refresh is idempotent: rerun produces no diff against tracked indexes" {
   # Round-trip the refresh script in a clean copy of the repo's relevant files.
   cd "$REPO_ROOT"
-  bash scripts/g4-section-anchor-refresh.sh
+  bash tools/g4-section-anchor-refresh.sh
   # If indexes drift, git would detect it inside the worktree.
   run git -C "$REPO_ROOT" diff --exit-code -- \
       skills/using-qrspi/SKILL.anchors.json \
@@ -603,7 +603,7 @@ assert e['line_start']>0 and e['line_end']>=e['line_start'], (hits[0],e)
 @test "g4-section-anchor-manifest references all three per-skill SKILL sources" {
   python3 -c "
 import json
-d=json.load(open('$REPO_ROOT/scripts/g4-section-anchor-manifest.json'))
+d=json.load(open('$REPO_ROOT/tools/g4-section-anchor-manifest.json'))
 sources={e['source'] for e in d['entries']}
 for s in ('skills/using-qrspi/SKILL.md','skills/reviewer-protocol/SKILL.md','skills/plan/SKILL.md'):
     assert s in sources, 'missing manifest source: '+s
