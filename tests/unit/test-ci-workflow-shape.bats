@@ -377,14 +377,19 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "[T40/G21] no pre-commit hook script for G21 body-guard rule" {
+@test "[T40/G21] no tracked hook script wires body-guard or bats-body-assertion (C1 enforcement)" {
   require_repo_root
   # G21 sub-decision C1: CI gate only; no pre-commit hook.
-  # A .git/hooks/pre-commit or scripts/pre-commit* would be a C1 violation.
-  local hooks_dir="$REPO_ROOT/.git/hooks"
-  if [ -f "$hooks_dir/pre-commit" ]; then
-    # Allowed only if it does not reference body-guard or bats-body-assertion
-    run grep -E 'body.guard|bats-body-assertion' "$hooks_dir/pre-commit"
-    [ "$status" -ne 0 ]
-  fi
+  # Assert no tracked file under scripts/, .husky/, .githooks/, or lefthook.*
+  # references body-guard or bats-body-assertion. Load-bearing in CI: fails
+  # loudly if a C1 violation is merged. Uses git ls-files (index-tracked) so
+  # this fires on a clean CI checkout, not only on a developer workstation.
+  local violations
+  violations=""
+  while IFS= read -r f; do
+    if grep -qE 'body-guard|bats-body-assertion' "$REPO_ROOT/$f"; then
+      violations="$violations $f"
+    fi
+  done < <(git -C "$REPO_ROOT" ls-files | grep -E '^(scripts|\.husky|\.githooks|lefthook)')
+  [ -z "$violations" ]
 }
