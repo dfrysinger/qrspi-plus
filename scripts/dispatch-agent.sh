@@ -364,7 +364,18 @@ _append_manifest_entry() {
     # avoiding a false-positive stale detection.
     if [[ -d "$_lock_dir" ]]; then
       local _now; _now=$(date +%s)
-      local _mtime; _mtime=$(stat -f %m "$_lock_dir" 2>/dev/null || stat -c %Y "$_lock_dir" 2>/dev/null || echo "$_now")
+      # Portable mtime fetch:
+      #   Try GNU `stat -c %Y` first (Linux/alpine CI), then BSD `stat -f %m` (macOS).
+      #   NOTE: GNU `stat -f` means "report filesystem info" (NOT format-string);
+      #   probing BSD-style `-f` first would succeed with wrong-semantic garbage on
+      #   stdout (not stderr), poisoning $_mtime and breaking arithmetic below.
+      # Validate the result is numeric; fall back to $_now if anything went wrong
+      # (e.g. lock dir released between -d test and stat).
+      local _mtime
+      _mtime=$(stat -c %Y "$_lock_dir" 2>/dev/null || stat -f %m "$_lock_dir" 2>/dev/null || echo "$_now")
+      case "$_mtime" in
+        ''|*[!0-9]*) _mtime="$_now" ;;
+      esac
       local _lock_age=$(( _now - _mtime ))
       if (( _lock_age > 30 )); then
         rmdir "$_lock_dir" 2>/dev/null || true
