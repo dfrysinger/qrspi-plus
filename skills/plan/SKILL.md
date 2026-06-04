@@ -78,6 +78,10 @@ Each task implements **exactly one observable behavior** — one request handler
 
 A task that fails any floor check merges into the parent task that gives it observable behavior; do not ship sub-atomic tasks.
 
+## Multi-Actor Flow Check
+
+!cat skills/_shared/multi-actor-flow-check.md
+
 ## Process
 
 ### Plan Overview Subagent

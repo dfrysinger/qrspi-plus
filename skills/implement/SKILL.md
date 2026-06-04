@@ -410,6 +410,10 @@ If tests fail, present failure summary with 3 options:
 - **(b) Proceed anyway:** delete `.worktrees/{slug}/baseline/` immediately after writing `reviews/baseline-failures.md`, before entering Step 6.
 - **(c) Stop:** no deletion required — the pipeline halts. The user can clean up `.worktrees/{slug}/baseline/` manually if they want.
 
+## Multi-Actor Flow Check
+
+!cat skills/_shared/multi-actor-flow-check.md
+
 ## Wave Dispatch (Full Pipeline)
 
 **Compaction checkpoint: pre-fanout.** Per-task wave fan-out dispatches an implementer subagent (>10K tokens of TDD transcript) plus reviewer subagents whose findings drive the fix loop; saturated context here silently swallows critical reviewer signal. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
