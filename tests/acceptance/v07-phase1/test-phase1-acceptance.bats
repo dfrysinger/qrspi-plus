@@ -257,6 +257,64 @@ run_pin() {
 }
 
 # --------------------------------------------------------------------------
+# G24-F05 — Anti-pattern pin regex hardening (T44)
+#
+# G24 re-scoped to F05 after tree audit: replace the four brittle literal-
+# substring pins in test-using-qrspi-vocab.bats with intent-based regex
+# assertions so future re-phrasings of the silent-fallback contract still
+# trip the pin.  See design.md ## G24 and structure.md §test-using-qrspi-vocab.bats.
+# --------------------------------------------------------------------------
+
+@test "[Phase1 G24 regex-pin C-1] vocab anti-pattern pin uses regex assertions (not glob literals)" {
+  # The four anti-pattern @test blocks in test-using-qrspi-vocab.bats must use
+  # [[ ! "$body" =~ PATTERN ]] (ERE regex) rather than [[ "$body" != *"literal"* ]]
+  # (glob literal).  A regex pin matches intent; a glob pin matches only the
+  # exact historic phrase.  Grep for the ERE-regex negation form inside the four
+  # "anti-pattern wording absent" blocks; the file must carry at least four such
+  # assertions (one per H4 block under test).
+  local pin_file="$PINS/test-using-qrspi-vocab.bats"
+  [ -f "$pin_file" ]
+  # Count lines matching the regex-negation form for silent-fallback pins.
+  local regex_count
+  regex_count=$(grep -cE '!\s+"\$body"\s+=~\s+.*silent' "$pin_file" || true)
+  # Require at least 4 regex assertions (one per H4 anti-pattern block).
+  [ "$regex_count" -ge 4 ]
+}
+
+@test "[Phase1 G24 regex-pin C-2] vocab pin green against post-CD1 settled dispatch prose" {
+  # The rewritten regex pins must pass against the current (post-G22/G23/G25)
+  # prose in skills/using-qrspi/SKILL.md.  If this test fails the regex is too
+  # broad and false-positives on valid contract language.
+  run run_pin "$PINS/test-using-qrspi-vocab.bats"
+  [ "$status" -eq 0 ]
+}
+
+@test "[Phase1 G24 negative-case C-3] anti-pattern regex trips on semantic equivalent phrasings" {
+  # Demonstrates the intent-based regex family is genuinely broader than the
+  # original literal pin it replaces.  Applies the regex directly to synthetic
+  # anti-pattern strings; each must match (=~ returns 0 on match).
+  #
+  # Two complementary patterns mirror those used in test-using-qrspi-vocab.bats:
+  #   REGEX_ADVERB — catches "silently" as an adverb before a problematic verb
+  #                  (fall/degrade/substitute); extended here with "substitut" to
+  #                  cover the "silently substitutes the bundled default" variant
+  #                  whose negated form ("does not silently substitute") prevents
+  #                  its inclusion in the unit-test regex without false-positives.
+  #   REGEX_NOUN   — catches "silent fallback" as a noun phrase (space-separated,
+  #                  not hyphenated) to cover "no silent fallback to a neighboring
+  #                  tier" phrasings.
+  local REGEX_ADVERB='silently[[:space:]]+(fall|degrad|substitut)'
+  local REGEX_NOUN='(^|[[:space:]])silent[[:space:]]+fallback'
+
+  # "silently degrades to the agent default" trips REGEX_ADVERB.
+  [[ "silently degrades to the agent default"  =~ $REGEX_ADVERB ]]
+  # "silently substitutes the bundled default" trips REGEX_ADVERB (extended).
+  [[ "silently substitutes the bundled default" =~ $REGEX_ADVERB ]]
+  # "no silent fallback to a neighboring tier" trips REGEX_NOUN.
+  [[ "no silent fallback to a neighboring tier" =~ $REGEX_NOUN  ]]
+}
+
+# --------------------------------------------------------------------------
 # Regression / known-bug guards (implement-summary.md known issues)
 # --------------------------------------------------------------------------
 

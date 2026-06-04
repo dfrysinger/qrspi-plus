@@ -138,8 +138,13 @@ setup() {
   # silent-fallback, this pin RED-fails.
   # G21 body-guard: assert non-empty before testing content.
   [ -n "$body" ]
-  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
-  [[ "$body" != *"silently degrade"* ]]
+  # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+  # not the literal historic phrase.  Catches "silently fall/falls back" and
+  # "silently degrade/degrades" regardless of exact phrasing after the verb.
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
+  # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+  # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+  [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
 }
 
 @test "trusted_path block: fail-loud contract pinned for empty step 4" {
@@ -167,8 +172,13 @@ setup() {
   # this pin RED-fails.
   # G21 body-guard: assert non-empty before testing content.
   [ -n "$body" ]
-  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
-  [[ "$body" != *"silently degrade"* ]]
+  # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+  # not the literal historic phrase.  Catches "silently fall/falls back" and
+  # "silently degrade/degrades" regardless of exact phrasing after the verb.
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
+  # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+  # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+  [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
 }
 
 @test "validators block: fail-loud contract pinned for empty step 4" {
@@ -192,9 +202,15 @@ setup() {
   body="$(_extract_h4 "$USING" '`validators:` block')"
   # R5-F01 fix: pin absence of the anti-pattern wording G7b/#204 was
   # filed against, scoped to the validators: H4 body specifically.
+  # G21 body-guard: assert non-empty before testing content.
   [ -n "$body" ]
-  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
-  [[ "$body" != *"silently degrade"* ]]
+  # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+  # not the literal historic phrase.  Catches "silently fall/falls back" and
+  # "silently degrade/degrades" regardless of exact phrasing after the verb.
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
+  # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+  # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+  [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
 }
 
 @test "missing model_routing block: fail-loud contract pinned for empty step 4" {
@@ -222,7 +238,19 @@ setup() {
   body="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
   # R5-F01 fix: pin absence of the anti-pattern wording scoped to the
   # missing-block H4 body specifically.
+  # G21 body-guard: assert non-empty before testing content.
   [ -n "$body" ]
-  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
-  [[ "$body" != *"silently degrade"* ]]
+  # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+  # not the literal historic phrase.  Catches "silently fall/falls back" and
+  # "silently degrade/degrades" regardless of exact phrasing after the verb.
+  # Note: this H4 body contains "does not silently substitute defaults" (the
+  # negated, non-anti-pattern form); the regex intentionally uses (fall|degrad)
+  # rather than adding "substitut" to avoid false-positives on that negated phrase.
+  # The acceptance test (test-phase1-acceptance.bats G24 C-3) demonstrates the
+  # extended regex including "substitut" catches "silently substitutes the bundled
+  # default" when the negation is absent.
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
+  # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+  # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+  [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
 }
