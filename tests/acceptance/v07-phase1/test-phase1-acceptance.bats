@@ -465,7 +465,9 @@ MOCK_DISPATCHER_EOF
 # Mirrors the [r5-sec.F01] skip-guard pattern in test-host-detection.bats.
 _t7_require_trusted_gh() {
   local _gh
-  _gh="$(command -v gh 2>/dev/null)"
+  # command -v exits non-zero when gh is absent; append '|| true' to allow
+  # the skip-guard below to fire rather than aborting the helper early.
+  _gh="$(command -v gh 2>/dev/null || true)"
   if [ -z "$_gh" ]; then
     skip "no gh binary on this host (precondition for copilot-cli detection)"
   fi

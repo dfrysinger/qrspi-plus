@@ -93,7 +93,8 @@ jobs:
             findutils \
             gawk \
             nodejs \
-            perl-utils
+            perl-utils \
+            python3
           # alpine ships `awk` as a busybox applet. Tests rely on GNU awk
           # semantics (e.g. POSIX character-class regexes inside `/.../`,
           # multi-statement actions), so replace the busybox symlink with
