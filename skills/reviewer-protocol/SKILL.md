@@ -245,6 +245,33 @@ On contradiction detection:
 
 Silent fall-through is forbidden — running the wrong checklist masks the contract drift exactly when it most needs to be visible.
 
+### Anti-Fabrication Rule (FAIL-LOUD)
+
+The Contradiction Refusal procedure above applies to ONE specific dispatch malformation
+(`task_definition` present with a test-phase `output` path). It does NOT generalize.
+
+Do NOT invent, paraphrase, or attribute to `reviewer-protocol/SKILL.md` any contradiction-
+refusal or escape-hatch procedure that is not present verbatim above. If you believe a
+documented contract (the per-finding first-party emission contract, change-type classifier, finding
+schema, untrusted-data handling, phase routing, or any consumer skill's HARD-GATE) is in
+conflict with another rule or with finding quality, do NOT confabulate a generic resolution
+to bypass it. Surface the conflict by name:
+
+1. Do NOT call the `Write` tool. Do NOT emit findings or sentinels. Do NOT proceed.
+2. Return a single-line text response with this load-bearing prefix (orchestrator detects it):
+
+   ```
+   CONTRACT-CONFLICT: <contract A name> conflicts with <contract B name or quality concern>; cannot proceed
+   ```
+
+3. End the turn. The orchestrator surfaces the conflict to the operator, who resolves it
+   by name (amend a contract, adjust the dispatch, or instruct the reviewer to proceed
+   under one specific contract).
+
+Quoting a procedure from `reviewer-protocol/SKILL.md` that is not literally present in this
+file is a fabrication. Treat the absence of a named escape hatch as the rule, not as an
+invitation to invent one.
+
 ## Quick-Tier Finding Disposition
 
 When the orchestrator invokes the quick-tier batch (a round that processes all findings together before the next reviewer pass), reviewers and the orchestrator apply this disposition rule to each finding:
