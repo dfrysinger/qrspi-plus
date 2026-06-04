@@ -250,6 +250,37 @@ The only external-to-codebase knowledge downstream skills are expected to bring 
 
 **Scope clarification.** Sub-Rule D does NOT require Design to restate common-knowledge programming patterns or ordinary tool usage. It targets specifically **claims about external systems whose behavior the implementer cannot verify by reading project code or relying on general programming knowledge**. "We use `git diff` to compare commits" is not a Sub-Rule D claim (basic tool usage). "Vendor X's webhook fires on event Y with payload shape Z" is a Sub-Rule D claim (external-contract specifics). When in doubt, ask: "could a competent implementer answer this from project code + their own knowledge?" If no, Sub-Rule D applies.
 
+## Incremental Persistence (Direct-to-Artifact Drafting)
+
+Per Dialogue Conduct Rule 8 above, after each per-decision lock signal (the user says "approved" or equivalent for a goal block or a cross-goal decision), write the resulting block **directly to `design.md`** with `status: draft` in the frontmatter — no separate staging file, no end-of-phase synthesis-from-scratch transformation step. The draft `design.md` on disk is the durable record of locked decisions; the chat transcript is not.
+
+Per-goal blocks use the five-field template defined in `## Per-goal block template` above (Outcome, Solution, Why this approach, Dependencies + edge cases, Acceptance). Cross-goal decisions live in a dedicated **`## Cross-Goal Decisions`** section at the top of `design.md` (above the per-goal blocks). Goals SKILL has no equivalent cross-decision section — its template is purely per-goal.
+
+**Presence ≡ locked.** The draft `design.md` is a keyed map of locked decisions. A decision is locked if and only if its block appears in the file. Tentative bodies, placeholder bodies, `to be filled` markers, TODO markers, "placeholder for synthesis" markers, or any other not-yet-formed content NEVER enter the draft artifact. If a decision is not fully formed (per-goal block missing one of the five fields, cross-goal decision missing rationale or scope), it does not appear in the file. This is the Evergreen-Output Rule applied to incremental persistence — dialogue exhaust never enters the artifact.
+
+**Keyed in-place overwrite on re-lock.** Per-goal and cross-goal decision blocks are keyed by decision ID (`### G3 — ...`, `### CD-1 — ...`). If the user re-opens a previously-locked decision (e.g., revises G3 after walking G15), overwrite that decision's block in place — do NOT append a duplicate. The artifact is a keyed map persisted as ordered markdown, not an append-only log.
+
+**Resume after compaction.** If `/compact` fires mid-phase, on resume:
+
+1. Read the draft `design.md` from disk and enumerate the decisions already locked.
+2. Compute remaining work as `goals.md` goals minus per-goal blocks already locked in `design.md`. The upstream inventory is the approved `goals.md` goal list — every goal in `goals.md` requires one per-goal solution definition in `design.md`. Cross-Goal Decisions are additive (they emerge during walkthrough) and are not pre-enumerable from the upstream inventory; they do not contribute to `K remaining`.
+3. Surface the recovery diagnostic to the user, verbatim:
+
+   `"Resumed after compaction — last locked decision: GNN (M decisions locked, K remaining). Continuing from G(NN+1)."`
+
+4. Continue dialogue from the next unlocked decision.
+
+**Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
+
+**End-of-phase finalize pass.** After the per-goal walkthrough completes, run a lightweight finalize pass:
+
+- Validate that every goal in `goals.md` has a corresponding per-goal block in `design.md` with all five fields populated (Outcome, Solution, Why this approach, Dependencies + edge cases, Acceptance).
+- Validate the `## Cross-Goal Decisions` section is well-formed (each entry keyed by ID, each entry carries rationale + scope).
+- Optionally append a top-level summary if absent.
+- Flip frontmatter `status: draft` to `status: approved-pending-review`.
+
+Hand-edits that flip `status: draft` to `status: approved-pending-review` (or directly to `approved`) mid-phase, before the finalize pass, are forbidden — only the finalize pass writes the next-gate status.
+
 ## Design OWNS / Design DEFERS
 
 !cat skills/design/owns-defers.md

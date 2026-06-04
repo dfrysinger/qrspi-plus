@@ -101,6 +101,72 @@ Questions to cover (not necessarily in order — follow the conversation):
 
 Do NOT ask the user for per-goal acceptance criteria, file maps, phasing, or "what's out of scope" at this step — those concerns are owned by downstream artifacts (see "Goals OWNS / Goals DEFERS").
 
+### Dialogue Conduct
+
+When working a goal with the user, follow these rules. The numbering mirrors the Design SKILL's Dialogue Conduct rules verbatim except: Rule 3 is adjusted to drop the research-summary tier (Goals runs before Research, so no research artifacts exist yet), and Rule 5 — Design's dialog-clarity directive — is intentionally absent from Goals per the current scope.
+
+1. **Open with questions.** Surface your list of open questions for the goal in chat. Work
+   through them with the user one decision at a time.
+
+2. **One question at a time, with a recommended answer.** Each question carries your proposed
+   answer; the user confirms, amends, or rejects.
+
+3. **Ground first, ask second.** Before asking the user any question — your own or one the
+   user has asked back — consult, in order: the codebase, then the web. When a question
+   touches industry best practice, conventions, or external patterns, search the web liberally
+   for cited evidence rather than speculating or punting the question back. Only escalate to
+   the user when no source surfaces a defensible answer.
+
+4. **When the user asks for your call, provide one.** When the user solicits your opinion,
+   asks which option is best, or asks what you would recommend, give a grounded recommendation
+   (sources per Rule 3) with named tradeoffs. Do not deflect with more questions or punt the
+   choice back. If grounding genuinely leaves the call indeterminate, say so explicitly and
+   name what additional evidence would resolve it.
+
+6. **Sharpen fuzzy language.** When the user uses imprecise vocabulary, propose the canonical
+   term and ask for confirmation before moving on.
+
+7. **Walk every branch of the decision tree, including flow gaps.** For each goal, resolve
+   dependencies between decisions one-by-one. Do not move to the next goal until every branch
+   surfaced for the current one is either decided, explicitly deferred with a written reason,
+   or split out as a separate goal. Branch completeness explicitly includes the end-to-end
+   flow between any multi-actor decisions — actors named, operations sequenced, per-step
+   inputs/outputs traced to producer and consumer, loud-failure paths named, context-cost
+   call-out present. A flow with implicit hand-offs is an open branch; close it before moving
+   on.
+
+8. **Lock decisions as they settle.** Write each decision into the goal block under
+   `status: draft` as it is confirmed. Do not accumulate decisions in chat across multiple
+   goals before persisting.
+
+### Incremental Persistence (Direct-to-Artifact Drafting)
+
+Per Rule 8 above, write each locked goal **directly to `goals.md`** with `status: draft` in the frontmatter as it is confirmed during dialogue — no separate staging file, no end-of-phase synthesis-from-scratch. The draft `goals.md` on disk is the durable record of locked decisions; the chat transcript is not.
+
+**Presence ≡ locked.** The draft `goals.md` is a keyed map of locked goals. A goal is locked if and only if its block appears in the file. Tentative bodies, placeholder bodies, `to be filled` markers, TODO markers, and any other not-yet-formed content NEVER enter the draft artifact. If a goal is not fully formed (Problem, Why we care, What we know so far all populated; concrete `type` value), it does not appear in the file. This is the Evergreen-Output Rule applied to incremental persistence — dialogue exhaust never enters the artifact.
+
+**Keyed in-place overwrite on re-lock.** Per-goal blocks are keyed by goal ID (`### G1 — ...`). If the user re-opens a previously-locked goal, overwrite that goal's block in place — do NOT append a duplicate. The artifact is a keyed map persisted as ordered markdown, not an append-only log.
+
+**Resume after compaction.** If `/compact` fires mid-phase, on resume:
+
+1. Read the draft `goals.md` from disk and enumerate the goals already locked.
+2. Compute remaining work by **asking the user** whether all desired goals have been articulated. Goals runs before Research and has no upstream inventory, so there is no file to diff against — the user is the only authority on what remains.
+3. Surface the recovery diagnostic to the user, verbatim:
+
+   `"Resumed after compaction — last locked decision: GNN (M decisions locked, K remaining). Continuing from G(NN+1)."`
+
+4. Continue dialogue from the next unlocked goal.
+
+**Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
+
+**End-of-phase finalize pass.** After the per-goal walkthrough completes, run a lightweight finalize pass:
+
+- Validate that every locked goal carries the three required subsections (Problem, Why we care, What we know so far) and a concrete `type` value.
+- Optionally append a Purpose section if absent.
+- Flip frontmatter `status: draft` to `status: approved`.
+
+Hand-edits that flip `status: draft` to `status: approved` mid-phase (before the finalize pass) are forbidden — only the finalize pass writes `approved`. When the user picks "Approve, skip review" at the human gate, the finalize pass still runs (it is mechanical validation, not synthesis) and the reviewer round is skipped.
+
 ### Pipeline Mode Selection
 
 After intent capture (the interactive dialogue above) but before synthesizing `goals.md`, determine the pipeline configuration. Ask these questions — one at a time, using numbered choices:
