@@ -191,6 +191,7 @@ setup() {
 
 @test "design/SKILL.md references the five-field per-goal template fields" {
   grep -F "Outcome" "$REPO_ROOT/skills/design/SKILL.md"
+  grep -F "Solution" "$REPO_ROOT/skills/design/SKILL.md"
   grep -F "Why this approach" "$REPO_ROOT/skills/design/SKILL.md"
   grep -F "Dependencies + edge cases" "$REPO_ROOT/skills/design/SKILL.md"
   grep -F "Acceptance" "$REPO_ROOT/skills/design/SKILL.md"
