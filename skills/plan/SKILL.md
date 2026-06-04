@@ -97,11 +97,7 @@ A task that fails any floor check merges into the parent task that gives it obse
 
 !cat skills/_shared/prompt-prose-writer-addition.md
 
-**Test-Expectations clause for prompt-prose tasks.** For tasks classified `task_type: lightweight` because the deliverable IS prompt prose (per Addition A's content-semantic test), Test Expectations cannot be RED-gate failing tests — prompt prose has no executable behavior to verify by test execution. Instead, encode rules-application as the verification mechanism using this template:
-
-> Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy].
-
-Other lightweight task categories (non-prompt prose, ordinary documentation, configuration) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause.
+!cat skills/_shared/prompt-prose-test-expectations-clause.md
 
 2. Each task spec includes:
    - Exact file paths to create/modify
@@ -144,11 +140,7 @@ For large plans, farm task spec writing to sub-subagents:
 
 !cat skills/_shared/prompt-prose-writer-addition.md
 
-**Test-Expectations clause for prompt-prose tasks.** For tasks classified `task_type: lightweight` because the deliverable IS prompt prose (per Addition A's content-semantic test), Test Expectations cannot be RED-gate failing tests — prompt prose has no executable behavior to verify by test execution. Instead, encode rules-application as the verification mechanism using this template:
-
-> Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention); reviewer (`qrspi-code-quality-reviewer` and/or `qrspi-design-reviewer` per surface in scope) verifies via the same content-semantic rules application; specific findings to verify: [task-specific list of R-rules or principles the deliverable must satisfy].
-
-Other lightweight task categories (non-prompt prose, ordinary documentation, configuration) keep their existing Test-Expectations shape (presence / well-formedness / observable-behavior assertions as appropriate); only prompt-prose tasks carry the rules-application clause.
+!cat skills/_shared/prompt-prose-test-expectations-clause.md
 
 Each sub-subagent writes `tasks/task-NN.md`. After all complete, the Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files — creating a single document as the only source of truth during review.
 
