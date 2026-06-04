@@ -164,11 +164,19 @@ setup() {
   # Pin a finalize-block-unique phrase so this test fails if the finalize block is deleted
   # but the mid-phase prohibition line (which also contains "status: draft" and "approved") remains.
   grep -F "Validate that every locked goal" "$REPO_ROOT/skills/goals/SKILL.md"
+  # Pin the exact flip-target sentence (unique to the finalize block).
+  grep -F "Flip frontmatter \`status: draft\` to \`status: approved\`" "$REPO_ROOT/skills/goals/SKILL.md"
+  # Regression guard: goals must flip to 'approved', NOT 'approved-pending-review'.
+  run grep -F "approved-pending-review" "$REPO_ROOT/skills/goals/SKILL.md"
+  [ "$status" -ne 0 ]
 }
 
 @test "design/SKILL.md finalize pass flips status: draft to approved-pending-review" {
   grep -F "finalize" "$REPO_ROOT/skills/design/SKILL.md"
   grep -F "approved-pending-review" "$REPO_ROOT/skills/design/SKILL.md"
+  # Pin the two distinct validation gates required by the finalize block.
+  grep -F "all five fields populated" "$REPO_ROOT/skills/design/SKILL.md"
+  grep -F "section is well-formed" "$REPO_ROOT/skills/design/SKILL.md"
 }
 
 # ---------------------------------------------------------------------------
