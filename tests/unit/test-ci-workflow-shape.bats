@@ -390,6 +390,6 @@ setup_file() {
     if grep -qE 'body-guard|bats-body-assertion' "$REPO_ROOT/$f"; then
       violations="$violations $f"
     fi
-  done < <(git -C "$REPO_ROOT" ls-files | grep -E '^(scripts|\.husky|\.githooks|lefthook)')
+  done < <(git -C "$REPO_ROOT" ls-files | grep -E '^(scripts|\.husky|\.githooks|lefthook|\.pre-commit-config|\.pre-commit-hooks)')
   [ -z "$violations" ]
 }
