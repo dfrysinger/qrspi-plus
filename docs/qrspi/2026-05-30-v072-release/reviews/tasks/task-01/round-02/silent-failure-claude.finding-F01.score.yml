@@ -1,0 +1,2 @@
+score: 75
+reason: "The disjunction 'halt or surface the error' permits a silent-failure pattern (log-and-continue) that contradicts the intent that absent kept-findings.txt is a non-recoverable pipeline error; this violates the task's load-bearing-rule-clarity requirement in the DoD."

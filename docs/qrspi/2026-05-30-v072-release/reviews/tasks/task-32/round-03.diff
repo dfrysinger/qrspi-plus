@@ -1,0 +1,12 @@
+diff --git a/tests/unit/test-interactive-skill-prompts.bats b/tests/unit/test-interactive-skill-prompts.bats
+index 328d7e1..97a8642 100644
+--- a/tests/unit/test-interactive-skill-prompts.bats
++++ b/tests/unit/test-interactive-skill-prompts.bats
+@@ -191,6 +191,7 @@ setup() {
+ 
+ @test "design/SKILL.md references the five-field per-goal template fields" {
+   grep -F "Outcome" "$REPO_ROOT/skills/design/SKILL.md"
++  grep -F "Solution" "$REPO_ROOT/skills/design/SKILL.md"
+   grep -F "Why this approach" "$REPO_ROOT/skills/design/SKILL.md"
+   grep -F "Dependencies + edge cases" "$REPO_ROOT/skills/design/SKILL.md"
+   grep -F "Acceptance" "$REPO_ROOT/skills/design/SKILL.md"

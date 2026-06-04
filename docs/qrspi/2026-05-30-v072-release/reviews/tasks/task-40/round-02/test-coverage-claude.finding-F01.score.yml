@@ -1,0 +1,2 @@
+score: 68
+reason: Real completeness gap — the C1 enforcement regex omits the canonical pre-commit framework config (`.pre-commit-config.yaml`) at repo root, the single most likely vector for a C1 violation, so the only automated C1 gate would silently pass.

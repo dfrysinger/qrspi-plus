@@ -1,0 +1,197 @@
+diff --git a/scripts/run-codex-review.sh b/scripts/run-codex-review.sh
+index 8f77ae4..0be6dc3 100755
+--- a/scripts/run-codex-review.sh
++++ b/scripts/run-codex-review.sh
+@@ -241,6 +241,21 @@ _manifest_tmp=""
+ # this so the assembled prompt (containing subject code) is removed on signal.
+ _fp_tmp=""
+ 
++# Internal helper for _append_manifest_entry: emit a named error, clean up the
++# manifest tmpfile + relay, disarm traps, release the lock dir, restore caller
++# opts, and exit 1. Safe to call when $_manifest_tmp is empty (mktemp-failed
++# branch) — rm -f "" is a no-op.
++_append_manifest_fail() {
++  local _msg="$1"
++  echo "error: _append_manifest_entry: $_msg" >&2
++  rm -f "$_manifest_tmp" 2>/dev/null || true
++  _manifest_tmp=""
++  trap - EXIT INT TERM
++  rmdir "$_lock_dir" 2>/dev/null || true
++  eval "$_saved_opts"
++  exit 1
++}
++
+ # _append_manifest_entry <entry-json> — shared atomic JSON array append.
+ # Uses jq to parse and append so trailing-whitespace/newline variations in
+ # the existing manifest file cannot corrupt the output shape.
+@@ -318,50 +333,26 @@ _append_manifest_entry() {
+   # mktemp uses O_EXCL (symlink-safe); the mv -f below promotes atomically.
+   local tmp
+   if ! tmp="$(mktemp "${manifest}.tmp.XXXXXX")"; then
+-    echo "error: mktemp failed for manifest tmp" >&2
+-    trap - EXIT INT TERM
+-    rmdir "$_lock_dir" 2>/dev/null || true
+-    eval "$_saved_opts"
+-    exit 1
++    _append_manifest_fail "mktemp failed for manifest tmp"
+   fi
+   # Mirror tmp into the script-level relay so the EXIT/INT/TERM traps can
+   # clean it up if a signal fires before the mv-promotion completes.
+   _manifest_tmp="$tmp"
+   if [[ -f "$manifest" ]]; then
+     if ! jq --argjson new "$entry" '. + [$new]' "$manifest" > "$tmp"; then
+-      echo "error: _append_manifest_entry: jq append failed" >&2
+-      rm -f "$tmp"; _manifest_tmp=""
+-      trap - EXIT INT TERM
+-      rmdir "$_lock_dir" 2>/dev/null || true
+-      eval "$_saved_opts"
+-      exit 1
++      _append_manifest_fail "jq append failed"
+     fi
+   else
+     if ! jq -n --argjson new "$entry" '[$new]' > "$tmp"; then
+-      echo "error: _append_manifest_entry: jq init failed" >&2
+-      rm -f "$tmp"; _manifest_tmp=""
+-      trap - EXIT INT TERM
+-      rmdir "$_lock_dir" 2>/dev/null || true
+-      eval "$_saved_opts"
+-      exit 1
++      _append_manifest_fail "jq init failed"
+     fi
+   fi
+   # Validate output is parseable JSON array before clobbering.
+   if ! jq -e 'type == "array"' "$tmp" > /dev/null; then
+-    echo "error: _append_manifest_entry: produced non-array output" >&2
+-    rm -f "$tmp"; _manifest_tmp=""
+-    trap - EXIT INT TERM
+-    rmdir "$_lock_dir" 2>/dev/null || true
+-    eval "$_saved_opts"
+-    exit 1
++    _append_manifest_fail "produced non-array output"
+   fi
+   if ! mv "$tmp" "$manifest"; then
+-    echo "error: _append_manifest_entry: mv failed" >&2
+-    rm -f "$tmp"; _manifest_tmp=""
+-    trap - EXIT INT TERM
+-    rmdir "$_lock_dir" 2>/dev/null || true
+-    eval "$_saved_opts"
+-    exit 1
++    _append_manifest_fail "mv failed"
+   fi
+   # Release the lock and disarm the trap.  Clear the relay first so a
+   # subsequent _append_manifest_entry call's trap installation starts clean.
+@@ -912,36 +903,49 @@ if [[ "$_detected_host" == "copilot-cli" ]]; then
+   # rm-f then open(2)-for-redirect pair is not atomic.  mktemp uses O_EXCL
+   # (symlink-safe); rename(2) replaces the destination atomically without
+   # following symlinks.
++
++  # Install the 3-trap signal-cleanup pattern for the first-party prompt tmpfile.
++  # Mirror of the _manifest_tmp pattern: three separate traps so INT/TERM exit
++  # with their canonical codes (130 = 128+SIGINT, 143 = 128+SIGTERM) instead of
++  # being swallowed by a bare cleanup.
++  _install_fp_traps() {
++    trap 'rm -f "$_fp_tmp" 2>/dev/null || true' EXIT
++    trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 130' INT
++    trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 143' TERM
++  }
++
++  # Cleanup the first-party prompt tmpfile: rm, clear the relay, disarm traps.
++  # Used by both success-path (after mv promotes the tmpfile) and error-path
++  # (after a named-failure exit-1 in the calling site). Safe when $_fp_tmp is
++  # empty (mktemp-failed branch) — rm -f "" is a no-op.
++  _cleanup_fp_tmp() {
++    rm -f "$_fp_tmp" 2>/dev/null || true
++    _fp_tmp=""
++    trap - EXIT INT TERM
++  }
++
+   _fp_tmp=""
+   # Install signal-cleanup trap BEFORE mktemp so any signal between mktemp
+   # success and the if-check fires with relay still "" (rm -f "" is a no-op).
+-  # Mirror of the _manifest_tmp relay+trap pattern (lines 288-290): three
+-  # separate traps so INT/TERM exit with their canonical codes (130/143)
+-  # instead of being swallowed by a bare cleanup.
+-  trap 'rm -f "$_fp_tmp" 2>/dev/null || true' EXIT
+-  trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 130' INT
+-  trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 143' TERM
++  _install_fp_traps
+   if ! _fp_tmp="$(mktemp "${_fp_prompt_file}.tmp.XXXXXX")"; then
+-    trap - EXIT INT TERM
++    _cleanup_fp_tmp
+     echo "error: mktemp failed for first-party prompt tmpfile" >&2
+     exit 1
+   fi
+   if ! compose_prompt > "$_fp_tmp"; then
+-    rm -f "$_fp_tmp"; _fp_tmp=""
+-    trap - EXIT INT TERM
++    _cleanup_fp_tmp
+     echo "error: compose_prompt failed for first-party dispatch" >&2
+     exit 1
+   fi
+   if ! mv -f "$_fp_tmp" "$_fp_prompt_file"; then
+-    rm -f "$_fp_tmp"; _fp_tmp=""
+-    trap - EXIT INT TERM
++    _cleanup_fp_tmp
+     echo "error: mv -f failed promoting first-party prompt tmpfile" >&2
+     exit 1
+   fi
+   # mv succeeded: tmpfile has been promoted; clear relay and disarm trap before
+   # calling emit_first_party_manifest_entry (which installs its own traps).
+-  _fp_tmp=""
+-  trap - EXIT INT TERM
++  _cleanup_fp_tmp
+   # Emit the orchestrator-facing DISPATCH_FILE reference to stdout.
+   printf 'DISPATCH_FILE=%s\n' "$_fp_prompt_file"
+   emit_first_party_manifest_entry "$_fp_prompt_file"
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index d9fb00e..974d3b2 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -1740,7 +1740,7 @@ MOCK_EOF
+   _t7_make_mock_repo "$TMP_DIR"
+ 
+   # Value with a space — not in _validate_output_dir's allowlist.
+-  local crafted_outdir='/tmp/foo bar/round-01'
++  local crafted_outdir="$TMP_DIR/foo bar/round-01"
+ 
+   local exit_code=0
+   local err
+@@ -2515,12 +2515,12 @@ MOCK_EOF
+     || { echo "dispatch_spec.vendor != claude"; cat "$manifest"; return 1; }
+   jq -e '.[0].dispatch_spec.model == "claude-sonnet-4-5"' "$manifest" >/dev/null \
+     || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
+-  # First-party manifest entry exactly 5 top-level keys (defense-in-depth parity with AC9).
+-  jq -e '.[0] | keys | length == 5' "$manifest" >/dev/null \
+-    || { echo "first-party manifest entry has unexpected top-level key count (expected exactly 5)"; cat "$manifest"; return 1; }
+-  # First-party dispatch_spec exactly 5 keys.
+-  jq -e '.[0].dispatch_spec | keys | length == 5' "$manifest" >/dev/null \
+-    || { echo "first-party dispatch_spec has unexpected key count (expected exactly 5: subagent_type/host/vendor/model/prompt_file)"; cat "$manifest"; return 1; }
++  # First-party manifest entry exact top-level key set (defense-in-depth parity with AC9).
++  jq -e '.[0] | (keys | sort) == ["agent","dispatch_spec","mode","status","tag"]' "$manifest" >/dev/null \
++    || { echo "AC2: first-party top-level missing required keys (expected agent,dispatch_spec,mode,status,tag)"; cat "$manifest"; return 1; }
++  # First-party dispatch_spec exact key set.
++  jq -e '.[0].dispatch_spec | (keys | sort) == ["host","model","prompt_file","subagent_type","vendor"]' "$manifest" >/dev/null \
++    || { echo "AC2: first-party dispatch_spec missing required keys (expected host,model,prompt_file,subagent_type,vendor)"; cat "$manifest"; return 1; }
+ 
+   rm -rf "$TMP_DIR"
+ }
+@@ -2782,14 +2782,14 @@ MOCK_EOF
+   jq -e '.[0].dispatch_spec.model == "claude-sonnet-4-5"' "$manifest" >/dev/null \
+     || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
+   # AC5: dispatch_spec.subagent_type asserted on the real end-to-end first-party dispatch path
+-  # (T11 spec requires this field; AC2 covers the helper-function path).
++  # (the dispatch-manifest spec requires this field; AC2 covers the helper-function path).
+   jq -e '.[0].dispatch_spec.subagent_type | type == "string" and length > 0' "$manifest" >/dev/null \
+     || { echo "dispatch_spec missing subagent_type"; cat "$manifest"; return 1; }
+   # AC5: first-party entry strict-shape parity with AC9's third-party pin (defense-in-depth).
+-  jq -e '.[0] | keys | length == 5' "$manifest" >/dev/null \
+-    || { echo "first-party manifest entry has unexpected top-level key count (expected exactly 5)"; cat "$manifest"; return 1; }
+-  jq -e '.[0].dispatch_spec | keys | length == 5' "$manifest" >/dev/null \
+-    || { echo "first-party dispatch_spec has unexpected key count (expected exactly 5)"; cat "$manifest"; return 1; }
++  jq -e '.[0] | (keys | sort) == ["agent","dispatch_spec","mode","status","tag"]' "$manifest" >/dev/null \
++    || { echo "AC5: first-party top-level missing required keys (expected agent,dispatch_spec,mode,status,tag)"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec | (keys | sort) == ["host","model","prompt_file","subagent_type","vendor"]' "$manifest" >/dev/null \
++    || { echo "AC5: first-party dispatch_spec missing required keys (expected host,model,prompt_file,subagent_type,vendor)"; cat "$manifest"; return 1; }
+ 
+   rm -rf "$tmp"
+ }

@@ -1,0 +1,2 @@
+score: 75
+reason: Confirmed real gap — Copilot CLI, Claude Code, and unknown-host branches each have a no-file-write test (lines 357–371, 373–384, 604–617), but the override branch (QRSPI_INTERACTION_MODE=auto|interactive) has none, directly violating the task-spec Test Expectation #6 that covers all execution paths.

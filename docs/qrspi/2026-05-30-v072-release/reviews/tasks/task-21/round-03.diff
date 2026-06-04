@@ -1,0 +1,868 @@
+diff --git a/agents/qrspi-implementer.md b/agents/qrspi-implementer.md
+index f7d2fdd..d7c7123 100644
+--- a/agents/qrspi-implementer.md
++++ b/agents/qrspi-implementer.md
+@@ -6,6 +6,44 @@ tools: Read, Write, Bash, Edit, Grep, Glob
+ skills: [implementer-protocol]
+ ---
+ 
++## Orchestrator-Only Scripts (Bash Allowlist)
++
++The following scripts are **orchestrator-only** and MUST NOT be invoked from
++any implementer or reviewer Bash tool call, in any path shape:
++
++- `scripts/dispatch-agent.sh`
++- `scripts/dispatch-companion.sh`
++
++This applies to every invocation shape, including:
++
++- **Relative-path** invocations: `scripts/dispatch-agent.sh ...`,
++  `./scripts/dispatch-agent.sh ...`, `../scripts/dispatch-companion.sh ...`
++- **Absolute-path** invocations: `/abs/.../scripts/dispatch-agent.sh ...`,
++  `$REPO_ROOT/scripts/dispatch-companion.sh ...`
++- **Alias** invocations: any shell alias, function wrapper, or `bash`
++  sub-invocation that resolves to either script (e.g. `bash -c "$(cat
++  scripts/dispatch-agent.sh)"`, an alias defined elsewhere in the session,
++  or a wrapper script that re-execs them).
++- **Shell-expansion** invocations: any path constructed via parameter
++  expansion, command substitution, brace/glob expansion, `eval`, or any
++  other indirection that ultimately invokes either script (e.g.
++  `script="scripts/dispatch-agent.sh"; "$script" ...`,
++  `$(echo scripts/dispatch-agent.sh) ...`,
++  `scripts/dispatch-{agent,companion}.sh ...`).
++
++These dispatchers assemble prompts from caller-supplied paths and forward
++their bytes into sanctioned LLM channels; the orchestrator alone is
++responsible for choosing the agent, model, round, and inputs. Implementer
++agents that need a third-party reviewer's findings receive them as already-
++captured artifacts under their round directory — never by re-running the
++dispatcher themselves.
++
++If a task appears to require dispatching a sub-agent or third-party
++reviewer, that is an orchestrator-level decision: report BLOCKED rather
++than invoking either script under any path shape above.
++
++---
++
+ You are implementing Task [N]: [task name]
+ 
+ The cross-cutting implementer contract — dispatch parameters, mode payloads, before-you-begin guidance, code organization, commenting, ID hygiene, the combined hygiene contract (internal-ID + evergreen-markdown forbidden tokens, path-shaped carve-outs, inline carve-outs, pre-DONE self-check), the BLOCKED escape hatch, the shared self-review block, and report format — is defined in the `implementer-protocol` skill (auto-loaded via the `skills:` frontmatter above). Apply that contract first; the sections below carry only the TDD-path-specific guidance that distinguishes this agent from `qrspi-implementer-lightweight`.
+diff --git a/scripts/dispatch-agent.sh b/scripts/dispatch-agent.sh
+index 2a40b2b..3fe77a8 100755
+--- a/scripts/dispatch-agent.sh
++++ b/scripts/dispatch-agent.sh
+@@ -69,6 +69,13 @@ set -u
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ REPO_ROOT_DEFAULT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+ REPO_ROOT="${QRSPI_REPO_ROOT:-$REPO_ROOT_DEFAULT}"
++export REPO_ROOT
++
++# G16 — repo-boundary guard for every prompt-ingested path argument. Sourced
++# from a shared lib so dispatch-companion.sh's launch-mode `--prompt-file`
++# surface uses the same canonical-$REPO_ROOT/ enforcement.
++# shellcheck source=scripts/lib/path-guard.sh
++. "$SCRIPT_DIR/lib/path-guard.sh"
+ 
+ AGENT_FILE=""
+ REVIEWER_TAG=""
+@@ -565,6 +572,11 @@ if [[ "$_is_batch_mode" == "true" ]]; then
+       BATCH_ARTIFACT_ABS="$REPO_ROOT/$BATCH_ARTIFACT"
+     fi
+   fi
++  # G16: apply repo-boundary guard AFTER existence check and BEFORE any cat/read
++  # (spec line 19: "every prompt-ingested file path"). Matches single-mode invariant.
++  if [[ -n "$BATCH_ARTIFACT_ABS" && -f "$BATCH_ARTIFACT_ABS" ]]; then
++    assert_path_under_repo_root "--artifact" "$BATCH_ARTIFACT_ABS"
++  fi
+ 
+   REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
+   EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md"
+@@ -616,6 +628,9 @@ if [[ "$_is_batch_mode" == "true" ]]; then
+       echo "error: agent file not found for tag '$_tag': $_agent_file" >&2
+       exit 1
+     fi
++    # G16: apply repo-boundary guard AFTER existence check and BEFORE any
++    # strip_frontmatter_batch/resolve_tier read (spec line 19).
++    assert_path_under_repo_root "--agents" "$_agent_file"
+     _agent_name="$(basename "${_agent_file%.md}")"
+ 
+     # Vendor is encoded in the tag suffix (e.g., quality-claude -> claude,
+@@ -884,6 +899,7 @@ assert_file_exists() {
+ 
+ AGENT_FILE_ABS="$(resolve_path "$AGENT_FILE")"
+ assert_file_exists "agent-file" "$AGENT_FILE_ABS"
++assert_path_under_repo_root "agent-file" "$AGENT_FILE_ABS"
+ 
+ REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
+ assert_file_exists "reviewer-protocol/SKILL.md" "$REVIEWER_PROTOCOL_ABS"
+@@ -932,6 +948,7 @@ PRIMARY_ABS=()
+ for sc in "${PRIMARY_PATHS[@]}"; do
+   abs="$(resolve_path "$sc")"
+   assert_file_exists "$PRIMARY_FIELD" "$abs"
++  assert_path_under_repo_root "$PRIMARY_FIELD" "$abs"
+   PRIMARY_ABS+=("$abs")
+ done
+ 
+@@ -939,6 +956,7 @@ TASK_DEF_ABS=""
+ if [[ -n "$TASK_DEF" ]]; then
+   TASK_DEF_ABS="$(resolve_path "$TASK_DEF")"
+   assert_file_exists "task-def" "$TASK_DEF_ABS"
++  assert_path_under_repo_root "task-def" "$TASK_DEF_ABS"
+ fi
+ 
+ COMPANION_ABS=()
+@@ -947,14 +965,17 @@ for i in "${!COMPANION_PATHS[@]}"; do
+   cname="${COMPANION_NAMES[$i]}"
+   abs="$(resolve_path "$cpath")"
+   assert_file_exists "companion[$cname]" "$abs"
++  assert_path_under_repo_root "companion[$cname]" "$abs"
+   COMPANION_ABS+=("$abs")
+ done
+ 
+ if [[ -n "$DIFF_FILE" ]]; then
++  DIFF_FILE="$(resolve_path "$DIFF_FILE")"
+   if [[ ! -f "$DIFF_FILE" ]]; then
+     echo "error: diff-file not found: $DIFF_FILE" >&2
+     exit 1
+   fi
++  assert_path_under_repo_root "diff-file" "$DIFF_FILE"
+ fi
+ 
+ # ---------------------------------------------------------------------------
+diff --git a/scripts/dispatch-companion.sh b/scripts/dispatch-companion.sh
+index c99ed75..59c027c 100755
+--- a/scripts/dispatch-companion.sh
++++ b/scripts/dispatch-companion.sh
+@@ -42,6 +42,28 @@ _SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ # shellcheck source=scripts/lib/llm-prompt-utils.sh
+ . "$_SCRIPT_DIR/lib/llm-prompt-utils.sh"
+ 
++# G16 — repo-boundary guard for raw file-path surfaces.
++#
++# The legacy `--provider/--artifact-dir` form below is stdin-only: the prompt
++# body never enters this script as a file path argument (positional args and
++# `--prompt-file` are explicitly rejected with non-zero exit). It receives
++# only assembled prompt data on stdin, so no `assert_path_under_repo_root`
++# call is needed there.
++#
++# The vendor-neutral `launch` subcommand DOES accept a raw `--prompt-file`
++# path that is later piped to the upstream transport — that path is a
++# sanctioned-channel exfil surface, so it shares the same canonical-
++# $REPO_ROOT/ guard that `dispatch-agent.sh` enforces on every prompt-
++# ingested path. The shared library is sourced unconditionally so the guard
++# is available for both the launch-mode and any future raw-path entry point.
++#
++# REPO_ROOT defaults to this script's parent directory (one level above
++# scripts/), with a `QRSPI_REPO_ROOT` env override for tests.
++REPO_ROOT="${QRSPI_REPO_ROOT:-$(cd "$_SCRIPT_DIR/.." && pwd -P)}"
++export REPO_ROOT
++# shellcheck source=scripts/lib/path-guard.sh
++. "$_SCRIPT_DIR/lib/path-guard.sh"
++
+ # ---------------------------------------------------------------------------
+ # die <message>  — write message to stderr and exit 1
+ die() {
+@@ -585,6 +607,10 @@ if [ "$_has_vendor_flag" = "true" ]; then
+   [ -n "$L_ROUND_DIR" ]   || die "launch: missing required flag: --round-dir"
+   [ -n "$L_TAG" ]         || die "launch: missing required flag: --tag"
+   [ -f "$L_PROMPT_FILE" ] || die "launch: --prompt-file not found: $L_PROMPT_FILE"
++  # G16 — boundary guard: the prompt-file path is a raw user-supplied file
++  # surface that is later piped to the upstream transport. Reject any path
++  # whose canonical target falls outside $REPO_ROOT/.
++  assert_path_under_repo_root "launch:--prompt-file" "$L_PROMPT_FILE"
+ 
+   # Generate a round-unique job id and persist a job record so a later
+   # `await <job-id>` can resolve the vendor/model/prompt-file/tag. The prompt
+diff --git a/scripts/lib/path-guard.sh b/scripts/lib/path-guard.sh
+new file mode 100644
+index 0000000..2af7451
+--- /dev/null
++++ b/scripts/lib/path-guard.sh
+@@ -0,0 +1,98 @@
++#!/usr/bin/env bash
++# path-guard.sh — shared fail-closed repo-boundary guard for QRSPI dispatch
++# scripts (G16: path-filter exfil hardening).
++#
++# Source this file from any dispatch script that ingests file paths from
++# user-supplied flags. The single exported function:
++#
++#   assert_path_under_repo_root <label> <path>
++#
++# canonicalizes <path> via `realpath` (with a `readlink -f` fallback) and
++# rejects any path whose canonical target is not strictly under the
++# canonical $REPO_ROOT/. Use it AFTER the existence check (so missing files
++# fail with their own clearer diagnostic) and BEFORE any `cat` read or
++# prompt-emission step that could ferry the file's bytes into a sanctioned
++# LLM channel.
++#
++# Failure modes (all exit 1, all write to stderr):
++#   - $REPO_ROOT not exported, empty, or fails to canonicalize
++#       → "cannot canonicalize $REPO_ROOT"
++#   - <path> fails to canonicalize (broken symlink, missing parent, etc.)
++#       → "cannot canonicalize path"
++#   - canonical <path> is not under canonical $REPO_ROOT/
++#       → "<path> resolves outside repository (canonical: ...; root: ...)"
++#
++# The diagnostic substring `resolves outside repository` is the cross-script
++# contract that test coverage pins on.
++#
++# Implementation notes:
++#   - macOS BSD `realpath` (10.15+) accepts a single path argument and
++#     resolves the full canonical path including symlinks. GNU `realpath`
++#     behaves the same. We treat any non-zero exit OR empty stdout as a
++#     canonicalization failure (fail-closed).
++#   - `readlink -f` is a Linux-coreutils fallback for environments where
++#     `realpath` is not on PATH; on macOS it's a no-op (BSD readlink lacks
++#     -f), so the realpath branch is taken on every QRSPI dev host today.
++#   - The under-root check uses a trailing-slash-anchored prefix match so
++#     `/repo-evil/` cannot masquerade as `/repo/`-prefixed.
++
++# ---------------------------------------------------------------------------
++# _qrspi_canonicalize <path>  →  prints canonical path on stdout, exits 0
++# on success and non-zero on canonicalization failure (also empty stdout).
++_qrspi_canonicalize() {
++  local raw="$1"
++  local out=""
++  if command -v realpath >/dev/null 2>&1; then
++    out="$(realpath "$raw" 2>/dev/null)" || out=""
++  fi
++  if [ -z "$out" ]; then
++    # Fallback: GNU readlink -f. (BSD readlink on macOS lacks -f and exits
++    # non-zero, leaving $out empty — fail-closed handled by caller.)
++    out="$(readlink -f "$raw" 2>/dev/null)" || out=""
++  fi
++  if [ -z "$out" ]; then
++    return 1
++  fi
++  printf '%s\n' "$out"
++}
++
++assert_path_under_repo_root() {
++  local label="$1"
++  local raw="$2"
++
++  if [ -z "${REPO_ROOT:-}" ]; then
++    printf 'error: %s: $REPO_ROOT is unset; cannot enforce repository boundary (fail-closed).\n' \
++      "$label" >&2
++    exit 1
++  fi
++
++  local canon_root
++  if ! canon_root="$(_qrspi_canonicalize "$REPO_ROOT")"; then
++    printf 'error: %s: cannot canonicalize $REPO_ROOT (%s); fail-closed.\n' \
++      "$label" "$REPO_ROOT" >&2
++    exit 1
++  fi
++  if [ ! -d "$canon_root" ]; then
++    printf 'error: %s: canonical $REPO_ROOT (%s) is not a directory; fail-closed.\n' \
++      "$label" "$canon_root" >&2
++    exit 1
++  fi
++
++  local canon
++  if ! canon="$(_qrspi_canonicalize "$raw")"; then
++    printf 'error: %s: cannot canonicalize path (%s); fail-closed.\n' \
++      "$label" "$raw" >&2
++    exit 1
++  fi
++
++  # Trailing-slash-anchored prefix match: /repo/ must be a strict ancestor
++  # of /repo/foo, but not of /repo-evil/foo.
++  case "$canon/" in
++    "$canon_root"/*) : ;;
++    *)
++      printf 'error: %s: path %s resolves outside repository (canonical: %s; root: %s)\n' \
++        "$label" "$raw" "$canon" "$canon_root" >&2
++      exit 1
++      ;;
++  esac
++}
+diff --git a/skills/using-qrspi/SKILL.anchors.json b/skills/using-qrspi/SKILL.anchors.json
+index 87bf5f1..7af1d91 100644
+--- a/skills/using-qrspi/SKILL.anchors.json
++++ b/skills/using-qrspi/SKILL.anchors.json
+@@ -65,98 +65,98 @@
+   },
+   "Config File (`config.md`)": {
+     "line_start": 349,
+-    "line_end": 516
++    "line_end": 517
+   },
+   "Dispatch routing blocks": {
+-    "line_start": 420,
+-    "line_end": 516
++    "line_start": 421,
++    "line_end": 517
+   },
+   "Config Validation Procedure": {
+-    "line_start": 517,
+-    "line_end": 635
++    "line_start": 518,
++    "line_end": 641
+   },
+   "When config.md is missing entirely": {
+-    "line_start": 521,
+-    "line_end": 529
++    "line_start": 522,
++    "line_end": 530
+   },
+   "When a required field is missing or has an invalid value": {
+-    "line_start": 530,
+-    "line_end": 582
++    "line_start": 531,
++    "line_end": 587
+   },
+   "No silent defaults": {
+-    "line_start": 583,
+-    "line_end": 590
++    "line_start": 588,
++    "line_end": 595
+   },
+   "Exceptions to the no-silent-defaults rule": {
+-    "line_start": 591,
+-    "line_end": 609
++    "line_start": 596,
++    "line_end": 614
+   },
+   "Fields that affect pipeline behavior (must be validated)": {
+-    "line_start": 610,
+-    "line_end": 629
++    "line_start": 615,
++    "line_end": 635
+   },
+   "Fields that do NOT require validation (informational only)": {
+-    "line_start": 630,
+-    "line_end": 635
++    "line_start": 636,
++    "line_end": 641
+   },
+   "Standard Review Loop": {
+-    "line_start": 636,
+-    "line_end": 683
++    "line_start": 642,
++    "line_end": 689
+   },
+   "Fix-altitude rule (F-5)": {
+-    "line_start": 672,
+-    "line_end": 679
++    "line_start": 678,
++    "line_end": 685
+   },
+   "Sweep-task findings — backstop": {
+-    "line_start": 680,
+-    "line_end": 683
++    "line_start": 686,
++    "line_end": 689
+   },
+   "Review Output Handling": {
+-    "line_start": 684,
+-    "line_end": 1100
++    "line_start": 690,
++    "line_end": 1106
+   },
+   "Review-Loop Pause Gate": {
+-    "line_start": 1101,
+-    "line_end": 1148
++    "line_start": 1107,
++    "line_end": 1154
+   },
+   "BATCH-WITH-OVERRIDES UI contract": {
+-    "line_start": 1105,
+-    "line_end": 1112
++    "line_start": 1111,
++    "line_end": 1118
+   },
+   "3-option menu (per paused finding)": {
+-    "line_start": 1113,
+-    "line_end": 1130
++    "line_start": 1119,
++    "line_end": 1136
+   },
+   "Paused rounds do not decrement the cap": {
+-    "line_start": 1131,
+-    "line_end": 1136
++    "line_start": 1137,
++    "line_end": 1142
+   },
+   "Pending-findings file": {
+-    "line_start": 1137,
+-    "line_end": 1148
++    "line_start": 1143,
++    "line_end": 1154
+   },
+   "Review Time Allocation": {
+-    "line_start": 1149,
+-    "line_end": 1156
++    "line_start": 1155,
++    "line_end": 1162
+   },
+   "Compaction Checkpoints": {
+-    "line_start": 1157,
+-    "line_end": 1188
++    "line_start": 1163,
++    "line_end": 1194
+   },
+   "Feedback File Format": {
+-    "line_start": 1189,
+-    "line_end": 1208
++    "line_start": 1195,
++    "line_end": 1214
+   },
+   "Common Rationalizations — STOP": {
+-    "line_start": 1209,
+-    "line_end": 1223
++    "line_start": 1215,
++    "line_end": 1229
+   },
+   "Skill Invocation": {
+-    "line_start": 1224,
+-    "line_end": 1229
++    "line_start": 1230,
++    "line_end": 1235
+   },
+   "Pipeline Iron Laws — Final Reminder": {
+-    "line_start": 1230,
+-    "line_end": 1252
++    "line_start": 1236,
++    "line_end": 1258
+   }
+ }
+diff --git a/tests/unit/test-dispatch-agent.bats b/tests/unit/test-dispatch-agent.bats
+index 282f5c0..6eed5b7 100644
+--- a/tests/unit/test-dispatch-agent.bats
++++ b/tests/unit/test-dispatch-agent.bats
+@@ -21,7 +21,11 @@ setup_file() {
+ }
+ 
+ setup() {
+-  TMP_DIR="$(mktemp -d)"
++  # G16: TMP_DIR must canonicalize UNDER $REPO_ROOT/ so the dispatch wrapper's
++  # repo-boundary guard accepts the per-test fixture paths. The default macOS
++  # mktemp directory (/var/folders/...) lives outside the repo and would be
++  # rejected by assert_path_under_repo_root.
++  TMP_DIR="$(mktemp -d "$REPO_ROOT/.bats-tmp.XXXXXX")"
+   cd "$TMP_DIR"
+ 
+   # Minimal subject_code, task_def, and plan/goals fixtures.
+@@ -30,7 +34,9 @@ setup() {
+   echo "Task spec body" > tasks/task-99.md
+   echo "Plan body" > plan.md
+   echo "Goals body" > goals.md
+-  echo "Test expectations block" > /tmp/test-exp-fixture.md
++  # G16: keep the test-expectations companion fixture inside TMP_DIR (which
++  # lives under $REPO_ROOT) rather than /tmp, for the same boundary reason.
++  echo "Test expectations block" > "$TMP_DIR/test-exp-fixture.md"
+ 
+   # The wrapper's `--diff-file` is checked for existence (-f) so we provide
+   # a real file when the test passes the flag.
+@@ -42,7 +48,6 @@ setup() {
+ teardown() {
+   cd /
+   rm -rf "$TMP_DIR"
+-  rm -f /tmp/test-exp-fixture.md
+ }
+ 
+ # ---------------------------------------------------------------------------
+@@ -416,12 +421,12 @@ teardown() {
+     --subject-code "$TMP_DIR/src/foo.ts" \
+     --task-def "$TMP_DIR/tasks/task-99.md" \
+     --companion "companion_plan=$TMP_DIR/plan.md" \
+-    --companion "companion_test_expectations=/tmp/test-exp-fixture.md" \
++    --companion "companion_test_expectations=$TMP_DIR/test-exp-fixture.md" \
+     --dry-run
+   [ "$status" -eq 0 ]
+   [[ "$output" =~ "companion_test_expectations:" ]]
+   # id defaults to the path the caller passed (no special hardcode)
+-  [[ "$output" =~ "<<<UNTRUSTED-ARTIFACT-START id=/tmp/test-exp-fixture.md>>>" ]]
++  [[ "$output" =~ "<<<UNTRUSTED-ARTIFACT-START id=$TMP_DIR/test-exp-fixture.md>>>" ]]
+   [[ "$output" =~ "Test expectations block" ]]
+ }
+ 
+@@ -1404,3 +1409,302 @@ EOF
+   true
+ }
+ 
++# ===========================================================================
++# G16 — Path-filter exfil hardening (assert_path_under_repo_root guard).
++#
++# These tests pin the fail-closed canonical-$REPO_ROOT/ boundary check that
++# every prompt-ingested path argument must traverse before its bytes can be
++# read with `cat` or otherwise enter a sanctioned LLM channel. The diagnostic
++# string `resolves outside repository` is the contract.
++#
++# Fixture conventions for this section:
++#   - $REPO_LOCAL_TMP is a per-test mktemp directory created UNDER $REPO_ROOT
++#     so legitimate dry-run inputs canonicalize inside the repo boundary.
++#   - $OUT_OF_REPO_TMP is an out-of-tree mktemp directory whose canonical path
++#     is provably outside $REPO_ROOT (used to drive the rejection cases).
++# ===========================================================================
++
++# Helpers --------------------------------------------------------------------
++
++_g16_setup_fixtures() {
++  REPO_LOCAL_TMP="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16.XXXXXX")"
++  OUT_OF_REPO_TMP="$(mktemp -d "${TMPDIR:-/tmp}/bats-g16-oor.XXXXXX")"
++  # Repo-local minimal fixtures
++  mkdir -p "$REPO_LOCAL_TMP/src" "$REPO_LOCAL_TMP/tasks"
++  echo "export const x = 1;" > "$REPO_LOCAL_TMP/src/foo.ts"
++  echo "Task spec body"      > "$REPO_LOCAL_TMP/tasks/task-99.md"
++  echo "diff body"           > "$REPO_LOCAL_TMP/round-1.diff"
++  echo "companion body"      > "$REPO_LOCAL_TMP/companion.md"
++  # Out-of-repo readable fixtures — provably outside $REPO_ROOT.
++  echo "secret"              > "$OUT_OF_REPO_TMP/oor-subject.ts"
++  echo "secret-art"          > "$OUT_OF_REPO_TMP/oor-artifact.md"
++  echo "secret-comp"         > "$OUT_OF_REPO_TMP/oor-companion.md"
++  echo "secret-diff"         > "$OUT_OF_REPO_TMP/oor.diff"
++  export REPO_LOCAL_TMP OUT_OF_REPO_TMP
++}
++
++_g16_teardown_fixtures() {
++  [ -n "${REPO_LOCAL_TMP:-}" ] && rm -rf "$REPO_LOCAL_TMP"
++  [ -n "${OUT_OF_REPO_TMP:-}" ] && rm -rf "$OUT_OF_REPO_TMP"
++}
++
++# --- Rejection cases: out-of-repo absolute paths ---------------------------
++
++@test "G16: --subject-code outside repo root rejected with 'resolves outside repository'" {
++  _g16_setup_fixtures
++  run "$WRAPPER" \
++    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code "$OUT_OF_REPO_TMP/oor-subject.ts" \
++    --dry-run
++  _g16_teardown_fixtures
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++@test "G16: --subject-code /etc/hosts rejected (readable system file outside repo)" {
++  run "$WRAPPER" \
++    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code /etc/hosts \
++    --dry-run
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++@test "G16: --artifact-body outside repo root rejected" {
++  _g16_setup_fixtures
++  run "$WRAPPER" \
++    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --artifact-body "$OUT_OF_REPO_TMP/oor-artifact.md" \
++    --dry-run
++  _g16_teardown_fixtures
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++@test "G16: --companion outside repo root rejected (boundary, not missing-file)" {
++  _g16_setup_fixtures
++  # Sanity: the companion file IS readable, so a passing-by-missing-file mode
++  # would let it through. The boundary guard must reject by canonical-root.
++  [ -r "$OUT_OF_REPO_TMP/oor-companion.md" ]
++  run "$WRAPPER" \
++    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
++    --companion "companion_plan=$OUT_OF_REPO_TMP/oor-companion.md" \
++    --dry-run
++  _g16_teardown_fixtures
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++@test "G16: --diff-file outside repo root rejected" {
++  _g16_setup_fixtures
++  run "$WRAPPER" \
++    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
++    --diff-file "$OUT_OF_REPO_TMP/oor.diff" \
++    --dry-run
++  _g16_teardown_fixtures
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++# --- Rejection cases: symlink whose canonical target is outside repo -------
++
++@test "G16: symlink under repo whose canonical target is outside repo is rejected" {
++  _g16_setup_fixtures
++  # A symlink located lexically under $REPO_ROOT but whose canonical target
++  # lives outside the repo — the lexical-prefix-only check would pass; the
++  # canonical-target check must reject.
++  ln -s "$OUT_OF_REPO_TMP/oor-subject.ts" "$REPO_LOCAL_TMP/symlink-out.ts"
++  run "$WRAPPER" \
++    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code "$REPO_LOCAL_TMP/symlink-out.ts" \
++    --dry-run
++  _g16_teardown_fixtures
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++  # Spec line 50: rejection MUST happen BEFORE any prompt file is emitted.
++  # If the guard fired after emission the markers below would appear; they must
++  # not appear in stdout+stderr when early rejection fires correctly.
++  [[ ! "$output" =~ "<<<AGENT-BODY-END>>>" ]]
++  [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
++}
++
++# --- Canonicalization-failure case (fail-closed) ---------------------------
++
++@test "G16: unresolvable \$REPO_ROOT fails closed before any path is read" {
++  _g16_setup_fixtures
++  # Spec line 54: no raw path is read before existence/boundary checks pass.
++  # Write a unique sentinel into the subject file; if the guard were to fire
++  # AFTER reading the file, the sentinel would appear in the --dry-run output
++  # (via emit_untrusted_artifact).  It must NOT appear.
++  local sentinel="G16CANONFAIL_SENTINEL_NOREAD_XQZ_SHOULD_NOT_EMIT"
++  echo "$sentinel" >> "$REPO_LOCAL_TMP/src/foo.ts"
++  run env QRSPI_REPO_ROOT=/no/such/repo/root/anywhere "$WRAPPER" \
++    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
++    --dry-run
++  _g16_teardown_fixtures
++  [ "$status" -ne 0 ]
++  # Diagnostic clearly identifies the canonicalization failure (does not echo
++  # the input file's bytes — only the failing root path appears).
++  [[ "$output" =~ "canonicalize" ]] || [[ "$output" =~ "resolves outside repository" ]]
++  # Spec line 54: sentinel must be absent — proves no read happened before
++  # the guard rejected.
++  [[ ! "$output" =~ "$sentinel" ]]
++}
++
++# --- Pass cases: legitimate repo-local inputs ------------------------------
++
++@test "G16: repo-local --subject-code dry-run preserves spec-line / prompt-file contract" {
++  _g16_setup_fixtures
++  run "$WRAPPER" \
++    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
++    --task-def "$REPO_LOCAL_TMP/tasks/task-99.md" \
++    --dry-run
++  _g16_teardown_fixtures
++  [ "$status" -eq 0 ]
++  [[ "$output" =~ "subject_code:" ]]
++}
++
++@test "G16: repo-local --artifact-body / --companion / --diff-file dry-run all pass" {
++  _g16_setup_fixtures
++  run "$WRAPPER" \
++    --agent-file "$REPO_ROOT/agents/qrspi-design-reviewer.md" \
++    --reviewer-tag design-codex \
++    --output-dir /tmp/out --round 1 \
++    --artifact-body "$REPO_LOCAL_TMP/tasks/task-99.md" \
++    --companion "companion_plan=$REPO_LOCAL_TMP/companion.md" \
++    --diff-file "$REPO_LOCAL_TMP/round-1.diff" \
++    --dry-run
++  _g16_teardown_fixtures
++  [ "$status" -eq 0 ]
++  [[ "$output" =~ "artifact_body:" ]]
++  [[ "$output" =~ "companion_plan:" ]]
++}
++
++# --- Static / structural assertions ----------------------------------------
++
++@test "G16: dispatch-agent.sh defines the assert_path_under_repo_root guard" {
++  grep -q 'assert_path_under_repo_root' "$REPO_ROOT/scripts/dispatch-agent.sh"
++}
++
++@test "G16: agents/qrspi-implementer.md carries the Orchestrator-Only Scripts allowlist" {
++  agent_md="$REPO_ROOT/agents/qrspi-implementer.md"
++  grep -q '^## Orchestrator-Only Scripts' "$agent_md"
++  # Both post-rename script names are forbidden under implementer Bash
++  grep -q 'scripts/dispatch-agent.sh'      "$agent_md"
++  grep -q 'scripts/dispatch-companion.sh'  "$agent_md"
++  # All four invocation shapes covered
++  grep -qi 'relative'         "$agent_md"
++  grep -qi 'absolute'         "$agent_md"
++  grep -qi 'alias'            "$agent_md"
++  grep -qi 'shell.expansion\|shell expansion' "$agent_md"
++}
++
++@test "G16: dispatch-companion.sh either shares the guard or documents no-raw-path surface" {
++  comp="$REPO_ROOT/scripts/dispatch-companion.sh"
++  # Either the boundary guard is invoked OR a documented no-raw-path comment
++  # explains why it's not needed for the stdin-only surface.
++  if grep -q 'assert_path_under_repo_root' "$comp"; then
++    true
++  else
++    grep -qi 'no.raw.path\|assembled prompt data\|stdin-only' "$comp"
++  fi
++}
++
++# ===========================================================================
++# G16 — Batch-mode path-filter hardening: --artifact and --agents (R2-F01)
++#
++# Spec line 19 is explicit: "every prompt-ingested file path" must pass
++# assert_path_under_repo_root. Two batch-mode sites were missed:
++#   - BATCH_ARTIFACT_ABS: the --artifact file is cat'd into the prompt at the
++#     <<<UNTRUSTED-ARTIFACT-START>>> block.
++#   - _agent_file: the --agents file is read via strip_frontmatter_batch.
++# These four cases parallel the single-mode G16 block above.
++# ===========================================================================
++
++@test "G16: batch --artifact /etc/hosts rejected (readable system file outside repo)" {
++  local round_dir
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16batch.XXXXXX")"
++  run "$WRAPPER" \
++    --step goals \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --artifact /etc/hosts \
++    --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
++  rm -rf "$round_dir"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++  # Before-emission check: artifact bytes must not have been cat'd into the prompt.
++  [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
++}
++
++@test "G16: batch --artifact symlink-to-outside rejected" {
++  _g16_setup_fixtures
++  local round_dir
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16batch.XXXXXX")"
++  # Symlink lexically inside repo whose canonical target is outside the repo.
++  ln -s "$OUT_OF_REPO_TMP/oor-artifact.md" "$REPO_LOCAL_TMP/symlink-oor-artifact.md"
++  run "$WRAPPER" \
++    --step goals \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --artifact "$REPO_LOCAL_TMP/symlink-oor-artifact.md" \
++    --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
++  rm -rf "$round_dir"
++  _g16_teardown_fixtures
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++  [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
++}
++
++@test "G16: batch --agents /etc/hosts rejected (readable system file outside repo)" {
++  local round_dir
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16batch.XXXXXX")"
++  run "$WRAPPER" \
++    --step goals \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --artifact "$TMP_DIR/plan.md" \
++    --agents "quality-claude=/etc/hosts"
++  rm -rf "$round_dir"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++@test "G16: batch --agents symlink-to-outside rejected" {
++  _g16_setup_fixtures
++  local round_dir
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16batch.XXXXXX")"
++  # Symlink lexically inside repo whose canonical target is outside the repo.
++  ln -s "$OUT_OF_REPO_TMP/oor-artifact.md" "$REPO_LOCAL_TMP/symlink-oor-agent.md"
++  run "$WRAPPER" \
++    --step goals \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --artifact "$TMP_DIR/plan.md" \
++    --agents "quality-claude=$REPO_LOCAL_TMP/symlink-oor-agent.md"
++  rm -rf "$round_dir"
++  _g16_teardown_fixtures
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
+diff --git a/tests/unit/test-dispatch-sites.bats b/tests/unit/test-dispatch-sites.bats
+index d369464..bd6a4d5 100644
+--- a/tests/unit/test-dispatch-sites.bats
++++ b/tests/unit/test-dispatch-sites.bats
+@@ -274,7 +274,7 @@ setup() {
+   # Strengthened from the original "no 127" vacuous check: exit == 0 proves every required-flag
+   # die() guard was satisfied, not merely that the script was found (task-20 R5 F01).
+   local tmp_dir
+-  tmp_dir="$(mktemp -d)"
++  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
+   local prompt_file="$tmp_dir/prompt.txt"
+   printf 'Test prompt body\n' > "$prompt_file"
+   run scripts/dispatch-companion.sh \
+@@ -300,7 +300,7 @@ setup() {
+ 
+ @test "task-20 companion (F01): launch dies loudly when --vendor is omitted (empty)" {
+   local tmp_dir
+-  tmp_dir="$(mktemp -d)"
++  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
+   local prompt_file="$tmp_dir/prompt.txt"
+   printf 'Test prompt body\n' > "$prompt_file"
+   run --separate-stderr scripts/dispatch-companion.sh \
+@@ -316,7 +316,7 @@ setup() {
+ 
+ @test "task-20 companion (F01): launch dies loudly when --model is omitted (empty)" {
+   local tmp_dir
+-  tmp_dir="$(mktemp -d)"
++  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
+   local prompt_file="$tmp_dir/prompt.txt"
+   printf 'Test prompt body\n' > "$prompt_file"
+   run --separate-stderr scripts/dispatch-companion.sh \
+@@ -332,7 +332,7 @@ setup() {
+ 
+ @test "task-20 companion (F01): launch dies loudly when --prompt-file is omitted (empty)" {
+   local tmp_dir
+-  tmp_dir="$(mktemp -d)"
++  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
+   run --separate-stderr scripts/dispatch-companion.sh \
+     --vendor stub \
+     --model stub-model \
+@@ -346,7 +346,7 @@ setup() {
+ 
+ @test "task-20 companion (F01): launch dies loudly when --round-dir is omitted (empty)" {
+   local tmp_dir
+-  tmp_dir="$(mktemp -d)"
++  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
+   local prompt_file="$tmp_dir/prompt.txt"
+   printf 'Test prompt body\n' > "$prompt_file"
+   run --separate-stderr scripts/dispatch-companion.sh \
+@@ -362,7 +362,7 @@ setup() {
+ 
+ @test "task-20 companion (F01): launch dies loudly when --tag is omitted (empty)" {
+   local tmp_dir
+-  tmp_dir="$(mktemp -d)"
++  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
+   local prompt_file="$tmp_dir/prompt.txt"
+   printf 'Test prompt body\n' > "$prompt_file"
+   run --separate-stderr scripts/dispatch-companion.sh \
+@@ -384,7 +384,7 @@ setup() {
+   # RED: scripts/dispatch-companion.sh doesn't exist yet.
+   [ -f "scripts/dispatch-companion.sh" ]
+   local tmp_dir
+-  tmp_dir="$(mktemp -d)"
++  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
+   local prompt_file="$tmp_dir/prompt.txt"
+   # Plant a recognisable sentinel in the prompt body.
+   printf 'SECRET-COMPANION-PAYLOAD-XYZZY\n' > "$prompt_file"
+@@ -427,7 +427,7 @@ setup() {
+   [ -f "tests/fixtures/stub-codex-companion.mjs" ]
+ 
+   local tmp_dir
+-  tmp_dir="$(mktemp -d)"
++  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
+   local prompt_file="$tmp_dir/prompt.txt"
+   printf 'PROMPT-BODY-SENTINEL-LAUNCH-XYZZY\n' > "$prompt_file"
+ 
+@@ -462,7 +462,7 @@ setup() {
+   [ -f "tests/fixtures/stub-codex-companion.mjs" ]
+ 
+   local tmp_dir
+-  tmp_dir="$(mktemp -d)"
++  tmp_dir="$(mktemp -d "$(pwd)/.bats-tmp.XXXXXX")"
+   local prompt_file="$tmp_dir/prompt.txt"
+   printf 'launch prompt body\n' > "$prompt_file"
+ 

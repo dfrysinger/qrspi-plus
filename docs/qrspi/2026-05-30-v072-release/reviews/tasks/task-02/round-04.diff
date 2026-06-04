@@ -1,0 +1,373 @@
+diff --git a/scripts/verifier-fan-in.sh b/scripts/verifier-fan-in.sh
+index 9b8ea55..271041b 100755
+--- a/scripts/verifier-fan-in.sh
++++ b/scripts/verifier-fan-in.sh
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env bash
+-# scripts/verifier-fan-in.sh — CD-4 canonical verifier fan-in filter (G12).
++# scripts/verifier-fan-in.sh — CD-4 canonical verifier fan-in filter.
+ #
+ # Usage: scripts/verifier-fan-in.sh <round-dir>
+ #
+@@ -32,10 +32,27 @@
+ #   change_type_out_of_enum    — value present but not in CHANGE_TYPE_ENUM
+ #   missing_sidecar            — no <stem>.score.* file found
+ #   sidecar_wrong_extension    — sidecar exists at wrong extension (e.g. .score.yml)
+-#   score_unparseable          — sidecar present but `score:` absent or non-integer
++#   sidecar_unreadable         — sidecar file exists but cannot be read (permission/I/O error)
++#   score_unparseable          — sidecar present but `score:` absent or not 1–3 decimal digits
++#   finding_unreadable         — finding file exists but cannot be read (permission/I/O error)
+ 
+ set -euo pipefail
+ 
++# ---- Dependency check -------------------------------------------------------
++# jq is required for record_halt and write_audit.  Fail loudly at startup
++# rather than silently crashing mid-loop if jq is absent.
++command -v jq >/dev/null 2>&1 || {
++  echo "verifier-fan-in: jq is required but not found in PATH" >&2
++  exit 2
++}
++# awk is required for extract_frontmatter_field.  Guard here mirrors the jq
++# guard above: without it, awk failures would be swallowed by "|| true" and
++# misattributed to missing_change_type or score_unparseable.
++command -v awk >/dev/null 2>&1 || {
++  echo "verifier-fan-in: awk is required but not found in PATH" >&2
++  exit 2
++}
++
+ # ---- Canonical enum + threshold constants (single source of truth) -------
+ 
+ CHANGE_TYPE_ENUM=(style clarity correctness scope intent)
+@@ -184,6 +201,16 @@ KEPT_PATHS=()
+ 
+ for finding in "${FINDINGS[@]}"; do
+   SCORED=$((SCORED + 1))
++
++  # Readability check: a permission or I/O error on the finding file must be
++  # reported as a diagnostic — not silently collapsed into missing_change_type.
++  if [[ ! -r "$finding" ]]; then
++    echo "verifier-fan-in: cannot read finding file: $finding" >&2
++    fid="${finding##*/}"; fid="${fid%.md}"
++    record_halt "$fid" finding_unreadable
++    continue
++  fi
++
+   fid=$(finding_id_for "$finding")
+ 
+   # 1. change_type required
+@@ -214,14 +241,26 @@ for finding in "${FINDINGS[@]}"; do
+     continue
+   fi
+ 
+-  # 3. score must be a parseable integer 0..100
++  # Readability check: a permission or I/O error on the sidecar must be
++  # reported with a distinct cause — not collapsed into score_unparseable.
++  if [[ ! -r "$sidecar" ]]; then
++    echo "verifier-fan-in: cannot read sidecar file: $sidecar" >&2
++    record_halt "$fid" sidecar_unreadable
++    continue
++  fi
++
++  # 3. score must be a parseable decimal integer 0..100
++  # Use 10# prefix to force decimal interpretation: a bare $((070)) would be
++  # treated as octal 56 by bash; $((089)) crashes under set -e.  The regex
++  # caps at 3 digits to prevent integer-overflow bypass: an attacker could
++  # craft a 19-digit string that wraps modulo 2^64 back into the valid range.
+   raw_score=$(extract_frontmatter_field "$sidecar" score || true)
+-  if [[ -z "${raw_score:-}" ]] || ! [[ "$raw_score" =~ ^-?[0-9]+$ ]]; then
++  if [[ -z "${raw_score:-}" ]] || ! [[ "$raw_score" =~ ^[0-9]{1,3}$ ]]; then
+     record_halt "$fid" score_unparseable
+     continue
+   fi
+-  score=$((raw_score))
+-  if (( score < 0 || score > 100 )); then
++  score=$((10#$raw_score))
++  if (( score > 100 )); then
+     record_halt "$fid" score_unparseable
+     continue
+   fi
+@@ -261,17 +300,21 @@ done
+ # ---- Emit outputs + exit --------------------------------------------------
+ 
+ if [[ -n "$FIRST_HALT_CAUSE" ]]; then
+-  # Halt path: write audit (with halts) but NOT kept-findings.txt — the
+-  # round failed to converge and downstream apply-fix MUST NOT run.
+-  write_audit "$SCORED" "$KEPT" "$DROPPED"
++  # Halt path: emit the halt-cause diagnostic to stderr FIRST (before any disk
++  # write), so the message is visible even if write_audit fails.  Remove any
++  # stale kept-findings.txt from a prior successful run so downstream consumers
++  # cannot act on data that is now invalid.
+   echo "verifier-fan-in: halt: $FIRST_HALT_CAUSE" >&2
++  rm -f "$KEPT_TXT"
++  write_audit "$SCORED" "$KEPT" "$DROPPED" || true
+   exit 1
+ fi
+ 
+-# Clean path: write kept-findings.txt + audit, exit 0.
++# Clean path: write audit FIRST so that if the write fails under set -e,
++# kept-findings.txt is never created (no partial state on disk).
++write_audit "$SCORED" "$KEPT" "$DROPPED"
+ : >"$KEPT_TXT"
+-for p in "${KEPT_PATHS[@]}"; do
++for p in "${KEPT_PATHS[@]+"${KEPT_PATHS[@]}"}"; do
+   printf '%s\n' "$p" >>"$KEPT_TXT"
+ done
+-write_audit "$SCORED" "$KEPT" "$DROPPED"
+ exit 0
+diff --git a/tests/unit/test-verifier-fan-in-script.bats b/tests/unit/test-verifier-fan-in-script.bats
+index ac4a9b9..3b44ea0 100644
+--- a/tests/unit/test-verifier-fan-in-script.bats
++++ b/tests/unit/test-verifier-fan-in-script.bats
+@@ -11,6 +11,11 @@ setup() {
+   mkdir -p "$ROUND"
+ }
+ 
++teardown() {
++  # Restore permissions so BATS tmpdir cleanup can remove chmod 000 fixtures.
++  chmod -R u+r "$BATS_TEST_TMPDIR" 2>/dev/null || true
++}
++
+ # --- helpers ---------------------------------------------------------------
+ 
+ write_finding() {
+@@ -252,3 +257,240 @@ EOF
+   [ "$status" -ne 0 ]
+   [[ "$output" == *"Usage"* || "$stderr" == *"Usage"* || "$output" == *"usage"* || "$stderr" == *"usage"* ]]
+ }
++
++# ===========================================================================
++# Round-01 review fixes
++# ===========================================================================
++
++# --- fix F01: octal arithmetic trap (security-claude) ---------------------
++# Bash interprets a leading-zero integer as octal: $((089)) crashes under
++# set -e; $((070)) silently gives 56 (wrong value).  Fix: $((10#$raw_score)).
++
++@test "fix F01: score 089 treated as decimal 89 (not crash), style finding kept" {
++  # $((089)) triggers "value too great for base" under set -e → script crashes
++  # before writing any audit.  After fix (10# prefix): 089 → 89 ≥ 80 → KEPT.
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" "089"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -eq 0 ]
++  run jq -r '.kept' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "1" ]]
++}
++
++@test "fix F01: score 070 treated as decimal 70 (not octal 56), correctness finding kept at threshold" {
++  # $((070)) = 56 under bash octal rules; 56 < 70 → incorrectly DROPPED.
++  # After fix: 10#070 = 70 ≥ correctness threshold 70 → KEPT.
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 correctness)
++  write_sidecar "$f1" "070"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -eq 0 ]
++  run jq -r '.kept,.dropped' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "${lines[0]}" == "1" ]]
++  [[ "${lines[1]}" == "0" ]]
++}
++
++# --- fix F02: halt path stderr ordering (silent-failure-claude) -----------
++# write_audit ran BEFORE stderr echo; if write_audit fails under set -e the
++# halt-cause message is never emitted.  Fix: echo >&2 FIRST, then
++# write_audit || true.
++
++@test "fix F02: stderr halt-cause emitted even when audit JSON cannot be written" {
++  # Pre-create a directory at the audit JSON path to force write_audit failure.
++  mkdir "$ROUND/.verifier-fan-in-audit.json"
++  write_finding_no_change_type "$ROUND" qc 01 F01 >/dev/null
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  # stderr must name the halt cause even though write_audit failed
++  [[ "$output" == *"missing_change_type"* || "$stderr" == *"missing_change_type"* ]]
++}
++
++# --- fix F03: jq dependency check (silent-failure-claude) ----------------
++# jq absence causes a silent crash inside record_halt/write_audit under
++# set -e.  Fix: upfront command -v jq check.
++
++@test "fix F03: absent jq exits non-zero with jq-related diagnostic" {
++  # Build a PATH that excludes every directory containing jq.
++  local newpath="" d
++  local saved_IFS="$IFS"
++  IFS=':'
++  for d in $PATH; do
++    IFS="$saved_IFS"
++    [[ -x "$d/jq" ]] && continue
++    newpath="${newpath:+$newpath:}$d"
++  done
++  IFS="$saved_IFS"
++
++  run env PATH="$newpath" "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"jq"* || "$stderr" == *"jq"* ]]
++}
++
++# --- fix F04: clean-path write ordering (silent-failure-claude) -----------
++# kept-findings.txt was written BEFORE write_audit; if write_audit failed,
++# kept-findings.txt was left on disk without a paired audit JSON.
++# Fix: write audit first (or use ERR trap to remove kept-findings.txt).
++
++@test "fix F04: if write_audit fails on clean path, kept-findings.txt not left on disk" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" 90
++  # Block audit write by pre-creating a directory at the audit JSON path.
++  mkdir "$ROUND/.verifier-fan-in-audit.json"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  [ ! -f "$ROUND/kept-findings.txt" ]
++}
++
++# --- fix F05: extract_frontmatter_field I/O errors (silent-failure-codex) -
++# || true collapsed real read/permission errors into field-absent, masking the
++# root cause.  Fix: check file readability and emit a diagnostic.
++
++@test "fix F05: unreadable finding file emits I/O diagnostic to stderr" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" 90
++  chmod 000 "$f1"  # make finding unreadable
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  # Must emit a "cannot read" (or similar) message — not silently treat as
++  # missing_change_type without any I/O diagnostic.
++  [[ "$output" == *"cannot read"* || "$stderr" == *"cannot read"* ]]
++}
++
++# --- fix F06: stale kept-findings.txt on halt (silent-failure-codex) ------
++# Halt path did not remove an existing kept-findings.txt from a prior
++# successful run; downstream consumers saw stale data.
++# Fix: rm -f kept-findings.txt at start of halt path.
++
++@test "fix F06: halt path removes stale kept-findings.txt from prior run" {
++  # Simulate a prior successful run leaving kept-findings.txt.
++  printf 'stale/path/finding.md\n' > "$ROUND/kept-findings.txt"
++  # Trigger a halt via missing_change_type.
++  write_finding_no_change_type "$ROUND" qc 01 F01 >/dev/null
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  [ ! -f "$ROUND/kept-findings.txt" ]
++}
++
++# --- fix F07: goal-ID hygiene (code-quality-claude) -----------------------
++# G\d+ goal IDs must not appear in scripts/verifier-fan-in.sh (CONTRIBUTING.md
++# prohibits self-referencing IDs in runtime-context files).
++
++@test "fix F07: verifier-fan-in.sh contains no goal-ID tokens (G-pattern)" {
++  local script="$REPO_ROOT/scripts/verifier-fan-in.sh"
++  # grep -q exits 0 on match (bad), 1 on no match (good).
++  ! grep -qE '\bG[0-9]+\b' "$script"
++}
++
++# ===========================================================================
++# Round-02 review fixes
++# ===========================================================================
++
++# --- R2 fix 1: integer overflow bypass (security-claude R2-F01) -----------
++# Bash $(()) wraps modulo 2^64; a 19-digit score string that overflows 64-bit
++# arithmetic bypasses the >100 ceiling check.
++# Fix: regex cap at 3 digits (max valid score 100 has 3 digits).
++
++@test "score with > 3 digits is rejected as score_unparseable" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" "18446744073709551706"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "score_unparseable" ]]
++}
++
++@test "overflow score emits halt-cause diagnostic to stderr" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" "18446744073709551706"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"score_unparseable"* || "$stderr" == *"score_unparseable"* ]]
++}
++
++# --- R2 fix 2: sidecar readability guard (silent-failure-claude R2-F01) ---
++# If sidecar exists but is unreadable (chmod 000), awk/extract silently fails
++# and the script records score_unparseable.  Fix: explicit readability check.
++
++@test "unreadable sidecar records halt cause sidecar_unreadable" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" 90
++  chmod 000 "${f1%.md}.score.md"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "sidecar_unreadable" ]]
++}
++
++@test "unreadable sidecar emits cannot-read message to stderr" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" 90
++  chmod 000 "${f1%.md}.score.md"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"cannot read sidecar"* || "$stderr" == *"cannot read sidecar"* ]]
++}
++
++# --- R2 fix 3: halt-cause misattribution for unreadable finding -----------
++# The R1 fix recorded missing_change_type when the finding file was unreadable.
++# missing_change_type means "frontmatter omits change_type:"; wrong root cause.
++# Fix: record finding_unreadable for I/O permission errors on finding files.
++
++@test "unreadable finding file records halt cause finding_unreadable" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" 90
++  chmod 000 "$f1"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "finding_unreadable" ]]
++}
++
++# --- R3 fix: absent awk startup guard (silent-failure-claude R3-F02) ------
++# extract_frontmatter_field calls awk.  Without an awk startup guard, awk
++# failures (absent from PATH, OOM, fd exhaustion) are silently swallowed by
++# "|| true" and misattributed to missing_change_type / score_unparseable.
++# Fix: add command -v awk guard mirroring the existing jq guard.
++
++@test "absent awk exits non-zero with awk-related diagnostic" {
++  # Create a fake bin directory that exposes jq but not awk, so the jq guard
++  # passes and only the awk guard fires.
++  local fakebin="$BATS_TEST_TMPDIR/fake-bin"
++  mkdir -p "$fakebin"
++  ln -sf "$(command -v jq)" "$fakebin/jq"
++
++  # Build a PATH that leads with fakebin (jq present, awk absent) and
++  # excludes every directory that contains awk or a second copy of jq.
++  local newpath="$fakebin" d
++  local saved_IFS="$IFS"
++  IFS=':'
++  for d in $PATH; do
++    IFS="$saved_IFS"
++    [[ -x "$d/awk" ]] && continue
++    [[ -x "$d/jq"  ]] && continue
++    newpath="${newpath:+$newpath:}$d"
++  done
++  IFS="$saved_IFS"
++
++  run env PATH="$newpath" "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"awk"* || "$stderr" == *"awk"* ]]
++}

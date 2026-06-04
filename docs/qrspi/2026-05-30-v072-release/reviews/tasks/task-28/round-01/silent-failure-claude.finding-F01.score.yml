@@ -1,0 +1,2 @@
+score: 40
+reason: Real concern about gate not being wired into Process flows, but task DoD scopes the work narrowly to authoring the shared snippet and adding exactly one !cat include per consumer at the gate; the snippet is intentionally self-triggering, and the implementer-dispatch wiring the finding wants is outside this task's modify-list.

@@ -1,0 +1,2 @@
+score: 45
+reason: Real wording ambiguity — header asserts "present and coherent" but body's "When present, verify…" makes absence non-actionable; partially mitigated by the existing "No missing components" / "Structure matches the design" checks, so impact is moderate not severe.

@@ -1,0 +1,2 @@
+score: 88
+reason: Verified at line 92 — the `[[:space:]]*$` anchor in the none-check regex fails on a `none` row carrying an inline `# operator opts in` comment, so the row is non-empty and falls through to the sed echo path returning exit 0 with garbage, defeating the core halt-on-none safety property for the exact tier shipped as none.

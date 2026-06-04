@@ -1,0 +1,2 @@
+score: 80
+reason: Critical security issue verified - task ID parsed from plan.md without sanitization; path traversal via `### Task ../../../foo:` allows writing outside tasks/ directory before any filesystem check.

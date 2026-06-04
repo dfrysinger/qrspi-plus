@@ -1,0 +1,2 @@
+score: 95
+reason: Lines 499–519 of skills/implement/SKILL.md in the task-16 worktree still contain verbatim the retired schema (`model ∈ {sonnet, opus}`, `dispatch: Agent({ ..., model: <model> })`, and the `model_role:`/`sonnet` default sentence), directly contradicting the new `#### Tier Resolution Chain` added at line 525 — both the exact stale text and the DoD violation ("no longer document or consume the superseded schema fields") are confirmed in the live file.

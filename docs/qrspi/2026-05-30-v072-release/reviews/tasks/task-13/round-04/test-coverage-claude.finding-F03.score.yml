@@ -1,0 +1,2 @@
+score: 50
+reason: Verified-real test-coverage gap — the "no stray anchor" assertion pins only path 1 of the four Step-10 exit-1 paths that share the deferred write — but low-severity defensive refinement, not a functional defect.

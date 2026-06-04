@@ -1,0 +1,2 @@
+score: 72
+reason: Verified self-inconsistency — code checks `-f` while diagnostics claim "readable file," misrouting an existing-but-unreadable CONFIG_MD against the code's own stated repair-path intent; edge-case but real and trivially fixable.

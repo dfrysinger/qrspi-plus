@@ -1,0 +1,2 @@
+score: 92
+reason: Directly verified — SKILL.md lines 499-508 (step 3 of precedence chain) still references `detect_host`/`inherit`/host-keyed lookup, and lines 524-548 ("#### Model Routing") fully describes the old `claude-code`/`copilot-cli` columns and `haiku`/`sonnet`/`opus`/`inherit` tier rows, coexisting with the new five-tier block at lines 450-462; T16 DOD line 46 explicitly requires these superseded surfaces be removed from `skills/using-qrspi/SKILL.md`.

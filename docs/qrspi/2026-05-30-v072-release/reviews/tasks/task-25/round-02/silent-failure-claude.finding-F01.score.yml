@@ -1,0 +1,2 @@
+score: 75
+reason: Real load-bearing issue - SKILL.md `!cat` chains lack post-assembly guards, causing silent failures when included files are unavailable, leaving skill incomplete.

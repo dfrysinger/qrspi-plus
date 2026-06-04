@@ -1,0 +1,2 @@
+score: 100
+reason: Task spec test expectation (line 54) requires fixtures for backward-loop flag deletion failure diagnostic. Test file only covers successful flag deletion (line 341-358); no deletion-failure fixture or diagnostic verification exists.

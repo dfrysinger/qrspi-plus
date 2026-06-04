@@ -1,0 +1,2 @@
+score: 45
+reason: Real under-specification of the M=0 / no-draft edge case in the resume diagnostic template, but low-severity and a competent agent would likely adapt the wording rather than emit literal "G0" nonsense; minor polish rather than load-bearing.

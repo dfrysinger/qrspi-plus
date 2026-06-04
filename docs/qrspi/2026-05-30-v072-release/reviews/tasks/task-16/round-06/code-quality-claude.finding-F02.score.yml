@@ -1,0 +1,2 @@
+score: 38
+reason: Real, verifiable verbatim duplication of the none-halt diagnostic across two branches, but a minor non-blocking DRY nitpick (both branches individually correct, not a documented constraint).

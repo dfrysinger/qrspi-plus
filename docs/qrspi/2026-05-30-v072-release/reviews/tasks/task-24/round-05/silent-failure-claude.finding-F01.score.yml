@@ -1,0 +1,2 @@
+score: 12
+reason: False positive — the bash `!`+`set -e` exemption is a real rule, but line 578 is the LAST statement in the test function, so its exit status of 1 (pattern found → grep exits 0 → `!` inverts to 1) propagates directly as the function's return code; bats catches the non-zero exit and fails the test, making the assertion non-vacuous; genuine vacuousness only arises when `! grep` is a non-final statement followed by succeeding commands (as at pre-existing lines 267 and 306, which the finding itself correctly marks out-of-scope).

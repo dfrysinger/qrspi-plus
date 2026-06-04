@@ -1,0 +1,2 @@
+score: 82
+reason: Confirmed — lines 54–59 are a standalone comment advertising a `run_clean_env` helper (with formal Usage: signature) that has no implementation anywhere in the 525-line file; all ~25 tests inline the equivalent pattern, making the comment genuinely dead and misleading.

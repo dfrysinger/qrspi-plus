@@ -1,0 +1,2 @@
+score: 92
+rationale: The test code definitively confirms the coverage gap. Lines 1110-1157 invoke dispatch-agent (which produces the manifest) but never call await-round.sh against it before cleanup (line 1153). Since R3-F01 is a production bug triggered specifically when await-round.sh validates manifest paths, and the test stops one step before that validation occurs, the test genuinely cannot falsify R3-F01. The claim about the coverage gap is accurate and important for end-to-end correctness verification.

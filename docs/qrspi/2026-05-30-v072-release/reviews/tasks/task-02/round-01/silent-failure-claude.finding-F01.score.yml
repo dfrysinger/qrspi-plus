@@ -1,0 +1,3 @@
+finding_tag: silent-failure-claude.R1-F01
+score: 85
+reason: Halt-path write_audit-before-stderr violates the script's own header contract ("stderr names the first halt cause"). set -e silences diagnostic on infrastructure failure. Real silent-failure introduced by this task.

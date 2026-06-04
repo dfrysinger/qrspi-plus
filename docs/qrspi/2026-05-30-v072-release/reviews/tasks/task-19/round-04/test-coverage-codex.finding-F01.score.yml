@@ -1,0 +1,2 @@
+score: 82
+reason: Confirmed — no test passes explicit `none` to a known host, leaving production clause 3 (`[ "$_vendor" = "none" ]`) untested as sole trigger; DoD L42 and L52 explicitly name "unavailable vendor" as a distinct required case alongside unknown-host, missing-default-vendor, and unknown-vendor.

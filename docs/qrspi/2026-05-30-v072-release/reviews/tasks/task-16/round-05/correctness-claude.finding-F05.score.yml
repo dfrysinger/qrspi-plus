@@ -1,0 +1,2 @@
+score: 80
+reason: Confirmed real self-contradiction in task-16 docs — SKILL.md line 462 prose says extra-high defaults to none, but line 458 example maps it to a concrete model (claude-opus-4.7-high); any reader hits it, though it is clarity-only.

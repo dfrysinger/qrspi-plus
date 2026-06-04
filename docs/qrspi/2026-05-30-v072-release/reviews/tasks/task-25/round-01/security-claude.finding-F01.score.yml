@@ -1,0 +1,2 @@
+score: 18
+reason: Pre-existing architectural pattern (altitude mismatch). The `!cat` mechanism and its security properties are QRSPI-wide, not T25-introduced; T25 correctly uses the standard mechanism per spec while T39 is designated to address defensive integrity concerns at build time.

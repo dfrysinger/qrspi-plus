@@ -1,0 +1,2 @@
+score: 60
+reason: Real concern — implementation walks repo subtractively while task-39 §DoD specifies manifest-driven include from plugin.json + fixed list; nested STRIP_TOPLEVEL names also leak. Practical exploitation requires contributor adding secret files (typically gitignored), so impact is moderate, but recommendation (1) directly aligns with task spec.

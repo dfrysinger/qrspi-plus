@@ -1,0 +1,2 @@
+score: 85
+reason: Real high-severity issue — denylist of 9 metacharacters permits trivially destructive/exfiltrating single commands (rm, curl --upload-file, git push --force) and prose-encoded execution by an LLM has no sandbox; design is not salvageable without an allowlist or fixed-vocabulary mapping.

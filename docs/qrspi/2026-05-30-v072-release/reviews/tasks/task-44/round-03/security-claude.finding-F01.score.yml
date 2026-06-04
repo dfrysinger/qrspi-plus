@@ -1,0 +1,2 @@
+score: 20
+reason: Threat model requires a malicious contributor to land catastrophic-backtracking regex in a sibling in-repo test pin file; this is contributor-trust scope, not untrusted input, and the extraction regex shape constrains contents enough that a "trivial-pass" pattern would itself fail to match the extraction grep — largely hypothetical for a test harness.

@@ -1,0 +1,683 @@
+diff --git a/scripts/verifier-fan-in.sh b/scripts/verifier-fan-in.sh
+new file mode 100755
+index 0000000..9b8ea55
+--- /dev/null
++++ b/scripts/verifier-fan-in.sh
+@@ -0,0 +1,277 @@
++#!/usr/bin/env bash
++# scripts/verifier-fan-in.sh — CD-4 canonical verifier fan-in filter (G12).
++#
++# Usage: scripts/verifier-fan-in.sh <round-dir>
++#
++# Reads `<round-dir>/*.finding-F*.md` reviewer findings + paired
++# `<reviewer-tag>.finding-F<NN>.score.md` verifier sidecars, applies the
++# script-owned threshold rule keyed on `change_type:`, and emits two
++# load-bearing artifacts:
++#
++#   <round-dir>/kept-findings.txt          (one absolute path per kept finding,
++#                                           one per line, no header, no comments)
++#   <round-dir>/.verifier-fan-in-audit.json
++#       {
++#         "scored":  <int>, "kept": <int>, "dropped": <int>,
++#         "halts":   [{"finding_id": "...", "cause": "..."}, ...],
++#         "thresholds": {"style": 80, "clarity": 80, "correctness": 70}
++#       }
++#
++# Exit 0: well-formed round, kept-findings.txt + audit JSON written.
++# Exit 1: contract violation; audit JSON written with populated halts[];
++#         stderr names the first halt cause on a single line.
++#
++# This script is the SINGLE SOURCE OF TRUTH (per design.md CD-4) for:
++#   - the canonical `change_type` enum (CHANGE_TYPE_ENUM below)
++#   - the per-`change_type` threshold floor constants
++# No other consumer (skill prose, agent body, fixture) may duplicate these
++# values; consumers point at this script's header instead.
++#
++# Halt cause taxonomy (matches design.md CD-4 §I.1):
++#   missing_change_type        — finding frontmatter omits `change_type:`
++#   change_type_out_of_enum    — value present but not in CHANGE_TYPE_ENUM
++#   missing_sidecar            — no <stem>.score.* file found
++#   sidecar_wrong_extension    — sidecar exists at wrong extension (e.g. .score.yml)
++#   score_unparseable          — sidecar present but `score:` absent or non-integer
++
++set -euo pipefail
++
++# ---- Canonical enum + threshold constants (single source of truth) -------
++
++CHANGE_TYPE_ENUM=(style clarity correctness scope intent)
++
++# Per-`change_type` floor; findings with score below the floor are dropped.
++# `scope` and `intent` carry no floor — kept regardless of score (reviewer's
++# scope/intent calls flow to the orchestrator's pause gate, not the score
++# filter).
++THRESHOLD_STYLE=80
++THRESHOLD_CLARITY=80
++THRESHOLD_CORRECTNESS=70
++
++# ---- Argument handling ----------------------------------------------------
++
++usage() {
++  echo "Usage: scripts/verifier-fan-in.sh <round-dir>" >&2
++}
++
++if [[ $# -lt 1 ]]; then
++  usage
++  exit 2
++fi
++
++ROUND_DIR="$1"
++
++if [[ ! -d "$ROUND_DIR" ]]; then
++  echo "verifier-fan-in: round-dir does not exist: $ROUND_DIR" >&2
++  exit 2
++fi
++
++# Resolve to absolute path (kept-findings.txt is required to carry absolute
++# finding-file paths per CD-4 §D).
++ROUND_DIR_ABS="$(cd "$ROUND_DIR" && pwd -P)"
++
++AUDIT_JSON="$ROUND_DIR_ABS/.verifier-fan-in-audit.json"
++KEPT_TXT="$ROUND_DIR_ABS/kept-findings.txt"
++
++# ---- Halt accumulator -----------------------------------------------------
++
++HALTS_JSON=""           # comma-joined "{finding_id, cause}" objects
++FIRST_HALT_CAUSE=""
++
++record_halt() {
++  # record_halt <finding_id> <cause>
++  local fid="$1" cause="$2"
++  if [[ -z "$FIRST_HALT_CAUSE" ]]; then
++    FIRST_HALT_CAUSE="$cause"
++  fi
++  local entry
++  entry=$(jq -nc --arg id "$fid" --arg c "$cause" '{finding_id:$id, cause:$c}')
++  if [[ -z "$HALTS_JSON" ]]; then
++    HALTS_JSON="$entry"
++  else
++    HALTS_JSON="$HALTS_JSON,$entry"
++  fi
++}
++
++write_audit() {
++  # write_audit <scored> <kept> <dropped>
++  local scored="$1" kept="$2" dropped="$3"
++  jq -n \
++    --argjson scored "$scored" \
++    --argjson kept "$kept" \
++    --argjson dropped "$dropped" \
++    --argjson halts "[${HALTS_JSON}]" \
++    --argjson tstyle "$THRESHOLD_STYLE" \
++    --argjson tclarity "$THRESHOLD_CLARITY" \
++    --argjson tcorr "$THRESHOLD_CORRECTNESS" \
++    '{
++       scored: $scored,
++       kept: $kept,
++       dropped: $dropped,
++       halts: $halts,
++       thresholds: {style: $tstyle, clarity: $tclarity, correctness: $tcorr}
++     }' >"$AUDIT_JSON"
++}
++
++# ---- Frontmatter helpers --------------------------------------------------
++
++# Extract a single top-level scalar value from a YAML frontmatter block.
++# Reads the leading `---`-delimited block only; ignores body.
++extract_frontmatter_field() {
++  # extract_frontmatter_field <file> <field>
++  local file="$1" field="$2"
++  awk -v field="$field" '
++    BEGIN { in_fm = 0; n = 0 }
++    /^---[[:space:]]*$/ {
++      n++
++      if (n == 1) { in_fm = 1; next }
++      if (n == 2) { exit }
++    }
++    in_fm {
++      if (match($0, "^[[:space:]]*" field "[[:space:]]*:[[:space:]]*")) {
++        val = substr($0, RSTART + RLENGTH)
++        sub(/[[:space:]]+$/, "", val)
++        # strip simple surrounding double or single quotes if present
++        if (val ~ /^".*"$/) { val = substr(val, 2, length(val) - 2) }
++        else if (val ~ /^'\''.*'\''$/) { val = substr(val, 2, length(val) - 2) }
++        print val
++        exit
++      }
++    }
++  ' "$file"
++}
++
++in_enum() {
++  local needle="$1" v
++  for v in "${CHANGE_TYPE_ENUM[@]}"; do
++    [[ "$v" == "$needle" ]] && return 0
++  done
++  return 1
++}
++
++# Derive a stable finding identifier from the file path (used in halt
++# records). Prefers `finding_id:` from frontmatter; falls back to the
++# `<reviewer-tag>.finding-F<NN>` filename stem.
++finding_id_for() {
++  local file="$1" fid
++  fid=$(extract_frontmatter_field "$file" finding_id || true)
++  if [[ -n "${fid:-}" ]]; then
++    printf '%s\n' "$fid"
++    return 0
++  fi
++  local base="${file##*/}"
++  printf '%s\n' "${base%.md}"
++}
++
++# ---- Enumerate findings ---------------------------------------------------
++
++shopt -s nullglob
++FINDINGS=()
++for f in "$ROUND_DIR_ABS"/*.finding-F*.md; do
++  # Exclude verifier sidecars (they also match `*.finding-F*.md` because
++  # their suffix is `.score.md`).
++  [[ "$f" == *.score.md ]] && continue
++  FINDINGS+=("$f")
++done
++shopt -u nullglob
++
++SCORED=0
++KEPT=0
++DROPPED=0
++KEPT_PATHS=()
++
++# ---- Per-finding processing ----------------------------------------------
++
++for finding in "${FINDINGS[@]}"; do
++  SCORED=$((SCORED + 1))
++  fid=$(finding_id_for "$finding")
++
++  # 1. change_type required
++  ct=$(extract_frontmatter_field "$finding" change_type || true)
++  if [[ -z "${ct:-}" ]]; then
++    record_halt "$fid" missing_change_type
++    continue
++  fi
++  if ! in_enum "$ct"; then
++    record_halt "$fid" change_type_out_of_enum
++    continue
++  fi
++
++  # 2. paired sidecar at <stem>.score.md
++  stem="${finding%.md}"
++  sidecar="${stem}.score.md"
++  if [[ ! -f "$sidecar" ]]; then
++    # Distinguish wrong-extension from missing-altogether: if any sibling
++    # at <stem>.score.* exists, the sidecar is on the wrong extension.
++    shopt -s nullglob
++    siblings=("$stem".score.*)
++    shopt -u nullglob
++    if [[ ${#siblings[@]} -gt 0 ]]; then
++      record_halt "$fid" sidecar_wrong_extension
++    else
++      record_halt "$fid" missing_sidecar
++    fi
++    continue
++  fi
++
++  # 3. score must be a parseable integer 0..100
++  raw_score=$(extract_frontmatter_field "$sidecar" score || true)
++  if [[ -z "${raw_score:-}" ]] || ! [[ "$raw_score" =~ ^-?[0-9]+$ ]]; then
++    record_halt "$fid" score_unparseable
++    continue
++  fi
++  score=$((raw_score))
++  if (( score < 0 || score > 100 )); then
++    record_halt "$fid" score_unparseable
++    continue
++  fi
++
++  # 4. threshold rule keyed on change_type
++  case "$ct" in
++    scope|intent)
++      # Always-keep: scope/intent flow to the orchestrator pause gate
++      # rather than the score filter.
++      KEPT=$((KEPT + 1))
++      KEPT_PATHS+=("$finding")
++      ;;
++    style)
++      if (( score >= THRESHOLD_STYLE )); then
++        KEPT=$((KEPT + 1)); KEPT_PATHS+=("$finding")
++      else
++        DROPPED=$((DROPPED + 1))
++      fi
++      ;;
++    clarity)
++      if (( score >= THRESHOLD_CLARITY )); then
++        KEPT=$((KEPT + 1)); KEPT_PATHS+=("$finding")
++      else
++        DROPPED=$((DROPPED + 1))
++      fi
++      ;;
++    correctness)
++      if (( score >= THRESHOLD_CORRECTNESS )); then
++        KEPT=$((KEPT + 1)); KEPT_PATHS+=("$finding")
++      else
++        DROPPED=$((DROPPED + 1))
++      fi
++      ;;
++  esac
++done
++
++# ---- Emit outputs + exit --------------------------------------------------
++
++if [[ -n "$FIRST_HALT_CAUSE" ]]; then
++  # Halt path: write audit (with halts) but NOT kept-findings.txt — the
++  # round failed to converge and downstream apply-fix MUST NOT run.
++  write_audit "$SCORED" "$KEPT" "$DROPPED"
++  echo "verifier-fan-in: halt: $FIRST_HALT_CAUSE" >&2
++  exit 1
++fi
++
++# Clean path: write kept-findings.txt + audit, exit 0.
++: >"$KEPT_TXT"
++for p in "${KEPT_PATHS[@]}"; do
++  printf '%s\n' "$p" >>"$KEPT_TXT"
++done
++write_audit "$SCORED" "$KEPT" "$DROPPED"
++exit 0
+diff --git a/skills/_shared/verifier-dispatch-prose.md b/skills/_shared/verifier-dispatch-prose.md
+new file mode 100644
+index 0000000..e113890
+--- /dev/null
++++ b/skills/_shared/verifier-dispatch-prose.md
+@@ -0,0 +1,80 @@
++<!-- skills/_shared/verifier-dispatch-prose.md
++     Shared verifier-dispatch snippet, `!cat`-included into:
++       - skills/using-qrspi/SKILL.md   (artifact-level Apply-fix protocol)
++       - skills/implement/SKILL.md     (task-level Apply-fix protocol)
++     Source of truth: design.md CD-4 §H + structure.md Slice 1.1.
++     Mirrors skills/_shared/reviewer-dispatch-prose.md (CD-1 §11). The two
++     snippets are deliberately separate because each names a different
++     `dispatch-agent.sh` mode flag at the call site (the load-bearing
++     difference) — see design.md CD-4 §H rationale (L494). -->
++
++## Verifier Dispatch
++
++The verifier round dispatches one verifier per reviewer finding through the
++universal `dispatch-agent.sh` entry point and consumes scored sidecars
++through `scripts/verifier-fan-in.sh`. The orchestrator NEVER loops per
++finding and NEVER chat-parses verifier output to compute the kept set —
++the script is the only path (CD-4 iron rule).
++
++The orchestrator-side flow is exactly four Bash invocations plus one
++parallel `Task` batch:
++
++1. **Dispatch.** ONE Bash call that enumerates findings under
++   `<round-dir>` and prepares per-finding `PROMPT_FILE`s:
++
++   ```sh
++   scripts/dispatch-agent.sh --verifier-fanout \
++     --step <step> --round <N> --output-dir <round-dir> \
++     [--tier-override <tier>]
++   ```
++
++   `--tier-override` takes a bare `<tier>` value (e.g. `low`, `medium`).
++   It does NOT use the reviewer-fanout `tag=tier` CSV grammar — the
++   verifier is a singleton agent (`qrspi-finding-verifier`), so there is
++   nothing to key the override on. The script enumerates
++   `<round-dir>/*.finding-F*.md`, builds one `PROMPT_FILE` per finding
++   under `<round-dir>/.dispatch/`, appends one entry to the round's
++   `dispatch-manifest.json`, and emits one spec line per first-party
++   verifier on stdout (background-dispatching any third-party
++   verifiers).
++
++2. **Iterate spec lines (one Task call per line).** ONE parallel `Task`
++   batch — invoke the `Task` tool exactly once per emitted spec line,
++   copying `SUBAGENT_TYPE`, `MODEL`, and `PROMPT_FILE` verbatim from the
++   spec line. The prompt argument is literally the string
++   `"DISPATCH_FILE=<absolute-path-from-PROMPT_FILE>"` and nothing else.
++   Same iron law as reviewer dispatch: one Task call per emitted spec
++   line, verbatim values, no inline reasoning, no per-finding loop in
++   orchestrator prose. Verifier reasoning prose lives only in the
++   on-disk `<reviewer-tag>.finding-F<NN>.score.md` sidecars; the
++   orchestrator MUST NOT echo sidecar bodies to stdout/stderr.
++
++3. **Await.** ONE Bash call to wait on any background entries
++   (no-op-safe when the round is first-party only):
++
++   ```sh
++   scripts/await-round.sh --round-dir <round-dir>
++   ```
++
++4. **Fan in.** ONE Bash call to filter the round through the
++   script-owned threshold rule and emit `kept-findings.txt`:
++
++   ```sh
++   scripts/verifier-fan-in.sh <round-dir>
++   ```
++
++   `scripts/verifier-fan-in.sh` is the canonical filter: it reads each
++   reviewer finding + its paired `<reviewer-tag>.finding-F<NN>.score.md`
++   sidecar, applies the threshold rule from its header constants
++   (single source of truth for `change_type` enum + per-`change_type`
++   floors), and writes `<round-dir>/kept-findings.txt` (one absolute
++   finding-file path per kept finding, one per line) plus
++   `<round-dir>/.verifier-fan-in-audit.json` (counts + threshold echo +
++   halts list). Apply-fix MUST consume `kept-findings.txt` rather than
++   verifier chat output.
++
++A non-zero exit from `scripts/verifier-fan-in.sh` means the round failed
++to converge (missing `change_type`, out-of-enum value, missing sidecar,
++sidecar at wrong extension, or unparseable score). The orchestrator
++surfaces the named halt cause from `.verifier-fan-in-audit.json` and
++does NOT proceed to apply-fix.
+diff --git a/tests/unit/test-verifier-dispatch-prose.bats b/tests/unit/test-verifier-dispatch-prose.bats
+new file mode 100644
+index 0000000..749444f
+--- /dev/null
++++ b/tests/unit/test-verifier-dispatch-prose.bats
+@@ -0,0 +1,48 @@
++#!/usr/bin/env bats
++# Unit tests for skills/_shared/verifier-dispatch-prose.md — the shared
++# verifier-dispatch snippet `!cat`-included by using-qrspi/SKILL.md and
++# implement/SKILL.md per CD-4 §H / structure.md Slice 1.1.
++
++setup() {
++  REPO_ROOT="$(git rev-parse --show-toplevel)"
++  SNIPPET="$REPO_ROOT/skills/_shared/verifier-dispatch-prose.md"
++}
++
++@test "snippet file exists" {
++  [ -f "$SNIPPET" ]
++}
++
++@test "snippet declares the dispatch-agent.sh --verifier-fanout invocation" {
++  grep -qE 'scripts/dispatch-agent\.sh.*--verifier-fanout' "$SNIPPET"
++}
++
++@test "snippet documents one Task call per emitted spec line (verbatim DISPATCH_FILE)" {
++  grep -qE 'one Task call per .*spec line|one Task per .*spec line|exactly once per .*spec line' "$SNIPPET"
++  grep -qE 'DISPATCH_FILE=' "$SNIPPET"
++}
++
++@test "snippet calls await-round.sh after the verifier dispatch" {
++  grep -qE 'scripts/await-round\.sh' "$SNIPPET"
++}
++
++@test "snippet calls scripts/verifier-fan-in.sh after await" {
++  grep -qE 'scripts/verifier-fan-in\.sh' "$SNIPPET"
++}
++
++@test "snippet does NOT contain a per-finding verifier loop (eliminated by CD-4)" {
++  [ -f "$SNIPPET" ]  # guard: negative-grep on a missing file would vacuously pass
++  ! grep -qE 'loop per finding|for each finding.*verifier' "$SNIPPET"
++}
++
++@test "snippet does NOT echo verifier payloads to stdout/stderr" {
++  [ -f "$SNIPPET" ]  # guard against vacuous pass on missing file
++  ! grep -qiE 'echo.*verifier (payload|reasoning|score|sidecar body)' "$SNIPPET"
++  ! grep -qiE 'cat.*\.score\.md' "$SNIPPET"
++}
++
++@test "snippet uses bare <tier> for --tier-override (not reviewer CSV grammar)" {
++  [ -f "$SNIPPET" ]  # guard against vacuous pass on missing file
++  # reviewer-fanout uses tag=tier CSV; verifier-fanout uses bare <tier>
++  ! grep -qE 'tier-override.*tag=' "$SNIPPET"
++  ! grep -qE 'tier-override.*[a-z]+=' "$SNIPPET"
++}
+diff --git a/tests/unit/test-verifier-fan-in-script.bats b/tests/unit/test-verifier-fan-in-script.bats
+new file mode 100644
+index 0000000..ac4a9b9
+--- /dev/null
++++ b/tests/unit/test-verifier-fan-in-script.bats
+@@ -0,0 +1,254 @@
++#!/usr/bin/env bats
++# Unit tests for scripts/verifier-fan-in.sh — the canonical fan-in filter.
++# Pins the script-owned threshold rule (single source of truth per CD-4),
++# the kept-findings.txt + .verifier-fan-in-audit.json output contract, and
++# the loud-failure halt-cause taxonomy.
++
++setup() {
++  REPO_ROOT="$(git rev-parse --show-toplevel)"
++  SCRIPT="$REPO_ROOT/scripts/verifier-fan-in.sh"
++  ROUND="$BATS_TEST_TMPDIR/round-NN"
++  mkdir -p "$ROUND"
++}
++
++# --- helpers ---------------------------------------------------------------
++
++write_finding() {
++  # write_finding <round-dir> <tag> <NN> <finding_id> <change_type>
++  local dir="$1" tag="$2" nn="$3" fid="$4" ct="$5"
++  local f="$dir/${tag}.finding-F${nn}.md"
++  cat >"$f" <<EOF
++---
++finding_id: ${fid}
++change_type: ${ct}
++artifact: goals
++round: 1
++reviewer: ${tag}
++---
++
++Body of finding ${fid}.
++EOF
++  printf '%s\n' "$f"
++}
++
++write_finding_no_change_type() {
++  local dir="$1" tag="$2" nn="$3" fid="$4"
++  local f="$dir/${tag}.finding-F${nn}.md"
++  cat >"$f" <<EOF
++---
++finding_id: ${fid}
++artifact: goals
++round: 1
++reviewer: ${tag}
++---
++
++Body.
++EOF
++  printf '%s\n' "$f"
++}
++
++write_sidecar() {
++  # write_sidecar <finding-path> <score>
++  local f="$1" score="$2"
++  local s="${f%.md}.score.md"
++  cat >"$s" <<EOF
++---
++score: ${score}
++defect_class: unspecified
++---
++
++Reasoning prose for sidecar.
++EOF
++}
++
++write_sidecar_unparseable() {
++  local f="$1"
++  local s="${f%.md}.score.md"
++  cat >"$s" <<EOF
++---
++score: not-a-number
++---
++
++Reasoning.
++EOF
++}
++
++write_sidecar_wrong_ext() {
++  local f="$1" score="$2"
++  local s="${f%.md}.score.yml"
++  cat >"$s" <<EOF
++score: ${score}
++EOF
++}
++
++# --- well-formed round -----------------------------------------------------
++
++@test "well-formed round: exit 0, kept-findings.txt absolute paths, audit halts:[]" {
++  local f1 f2 f3
++  f1=$(write_finding "$ROUND" quality-claude 01 R1-F01 style)
++  f2=$(write_finding "$ROUND" quality-claude 02 R1-F02 correctness)
++  f3=$(write_finding "$ROUND" quality-claude 03 R1-F03 scope)
++  write_sidecar "$f1" 90    # style 90 -> keep
++  write_sidecar "$f2" 75    # correctness 75 -> keep
++  write_sidecar "$f3" 10    # scope -> keep regardless of score
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -eq 0 ]
++  [ -f "$ROUND/kept-findings.txt" ]
++  [ -f "$ROUND/.verifier-fan-in-audit.json" ]
++
++  # all kept, in absolute-path form
++  run wc -l "$ROUND/kept-findings.txt"
++  [[ "$output" =~ ^[[:space:]]*3 ]]
++  while IFS= read -r line; do
++    [[ "$line" = /* ]] || { echo "non-absolute path: $line"; return 1; }
++  done <"$ROUND/kept-findings.txt"
++
++  # audit JSON shape
++  run jq -r '.scored,.kept,.dropped,(.halts|length),.thresholds.style,.thresholds.clarity,.thresholds.correctness' \
++    "$ROUND/.verifier-fan-in-audit.json"
++  [ "$status" -eq 0 ]
++  [[ "${lines[0]}" == "3" ]]
++  [[ "${lines[1]}" == "3" ]]
++  [[ "${lines[2]}" == "0" ]]
++  [[ "${lines[3]}" == "0" ]]
++  [[ "${lines[4]}" == "80" ]]
++  [[ "${lines[5]}" == "80" ]]
++  [[ "${lines[6]}" == "70" ]]
++}
++
++# --- threshold rule --------------------------------------------------------
++
++@test "threshold rule: style/clarity below 80 dropped; correctness below 70 dropped" {
++  local f1 f2 f3 f4 f5 f6
++  f1=$(write_finding "$ROUND" qc 01 F01 style);       write_sidecar "$f1" 79  # drop
++  f2=$(write_finding "$ROUND" qc 02 F02 style);       write_sidecar "$f2" 80  # keep
++  f3=$(write_finding "$ROUND" qc 03 F03 clarity);     write_sidecar "$f3" 79  # drop
++  f4=$(write_finding "$ROUND" qc 04 F04 clarity);     write_sidecar "$f4" 80  # keep
++  f5=$(write_finding "$ROUND" qc 05 F05 correctness); write_sidecar "$f5" 69  # drop
++  f6=$(write_finding "$ROUND" qc 06 F06 correctness); write_sidecar "$f6" 70  # keep
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -eq 0 ]
++
++  run jq -r '.scored,.kept,.dropped' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "${lines[0]}" == "6" ]]
++  [[ "${lines[1]}" == "3" ]]
++  [[ "${lines[2]}" == "3" ]]
++
++  # only the keep findings appear in kept-findings.txt
++  grep -q "F02.md$" "$ROUND/kept-findings.txt"
++  grep -q "F04.md$" "$ROUND/kept-findings.txt"
++  grep -q "F06.md$" "$ROUND/kept-findings.txt"
++  ! grep -q "F01.md$" "$ROUND/kept-findings.txt"
++  ! grep -q "F03.md$" "$ROUND/kept-findings.txt"
++  ! grep -q "F05.md$" "$ROUND/kept-findings.txt"
++}
++
++@test "threshold rule: scope and intent kept regardless of score" {
++  local f1 f2
++  f1=$(write_finding "$ROUND" qc 01 F01 scope);  write_sidecar "$f1" 0
++  f2=$(write_finding "$ROUND" qc 02 F02 intent); write_sidecar "$f2" 5
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -eq 0 ]
++  run jq -r '.kept,.dropped' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "${lines[0]}" == "2" ]]
++  [[ "${lines[1]}" == "0" ]]
++}
++
++# --- halt: missing change_type --------------------------------------------
++
++@test "halt: missing change_type exits non-zero and records cause" {
++  local f1
++  f1=$(write_finding_no_change_type "$ROUND" qc 01 F01)
++  write_sidecar "$f1" 90
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "missing_change_type" ]]
++}
++
++# --- halt: out-of-enum change_type ----------------------------------------
++
++@test "halt: out-of-enum change_type exits non-zero and records cause" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 bogus-category)
++  write_sidecar "$f1" 90
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "change_type_out_of_enum" ]]
++}
++
++# --- halt: missing sidecar -------------------------------------------------
++
++@test "halt: missing sidecar exits non-zero and records cause" {
++  write_finding "$ROUND" qc 01 F01 style >/dev/null
++  # no sidecar at all
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "missing_sidecar" ]]
++}
++
++# --- halt: sidecar wrong extension ----------------------------------------
++
++@test "halt: sidecar with wrong extension exits non-zero and records cause" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar_wrong_ext "$f1" 90  # writes .score.yml not .score.md
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "sidecar_wrong_extension" ]]
++}
++
++# --- halt: unparseable score ----------------------------------------------
++
++@test "halt: unparseable score exits non-zero and records cause" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar_unparseable "$f1"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  run jq -r '.halts[0].cause' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "score_unparseable" ]]
++}
++
++# --- halt: stderr names the first cause -----------------------------------
++
++@test "halt: stderr emits one-line message naming the first halt cause" {
++  write_finding_no_change_type "$ROUND" qc 01 F01 >/dev/null
++  # no sidecar either, but missing_change_type fires first
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  [[ "$stderr" == *"missing_change_type"* || "$output" == *"missing_change_type"* ]]
++}
++
++# --- ignores .score.md files when enumerating findings --------------------
++
++@test "enumeration: *.finding-F*.md glob does not treat .score.md sidecars as findings" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" 90
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -eq 0 ]
++  run jq -r '.scored' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "1" ]]
++}
++
++# --- usage error ----------------------------------------------------------
++
++@test "missing round-dir argument exits non-zero with usage on stderr" {
++  run "$SCRIPT"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"Usage"* || "$stderr" == *"Usage"* || "$output" == *"usage"* || "$stderr" == *"usage"* ]]
++}

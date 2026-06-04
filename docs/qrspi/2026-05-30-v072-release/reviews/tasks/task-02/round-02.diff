@@ -1,0 +1,245 @@
+diff --git a/scripts/verifier-fan-in.sh b/scripts/verifier-fan-in.sh
+index 9b8ea55..332fd3e 100755
+--- a/scripts/verifier-fan-in.sh
++++ b/scripts/verifier-fan-in.sh
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env bash
+-# scripts/verifier-fan-in.sh — CD-4 canonical verifier fan-in filter (G12).
++# scripts/verifier-fan-in.sh — CD-4 canonical verifier fan-in filter.
+ #
+ # Usage: scripts/verifier-fan-in.sh <round-dir>
+ #
+@@ -36,6 +36,14 @@
+ 
+ set -euo pipefail
+ 
++# ---- Dependency check -------------------------------------------------------
++# jq is required for record_halt and write_audit.  Fail loudly at startup
++# rather than silently crashing mid-loop if jq is absent.
++command -v jq >/dev/null 2>&1 || {
++  echo "verifier-fan-in: jq is required but not found in PATH" >&2
++  exit 2
++}
++
+ # ---- Canonical enum + threshold constants (single source of truth) -------
+ 
+ CHANGE_TYPE_ENUM=(style clarity correctness scope intent)
+@@ -184,6 +192,16 @@ KEPT_PATHS=()
+ 
+ for finding in "${FINDINGS[@]}"; do
+   SCORED=$((SCORED + 1))
++
++  # Readability check: a permission or I/O error on the finding file must be
++  # reported as a diagnostic — not silently collapsed into missing_change_type.
++  if [[ ! -r "$finding" ]]; then
++    echo "verifier-fan-in: cannot read finding file: $finding" >&2
++    fid="${finding##*/}"; fid="${fid%.md}"
++    record_halt "$fid" missing_change_type
++    continue
++  fi
++
+   fid=$(finding_id_for "$finding")
+ 
+   # 1. change_type required
+@@ -214,14 +232,17 @@ for finding in "${FINDINGS[@]}"; do
+     continue
+   fi
+ 
+-  # 3. score must be a parseable integer 0..100
++  # 3. score must be a parseable decimal integer 0..100
++  # Use 10# prefix to force decimal interpretation: a bare $((070)) would be
++  # treated as octal 56 by bash; $((089)) crashes under set -e.  The regex
++  # allows only non-negative values (scores are always 0-100).
+   raw_score=$(extract_frontmatter_field "$sidecar" score || true)
+-  if [[ -z "${raw_score:-}" ]] || ! [[ "$raw_score" =~ ^-?[0-9]+$ ]]; then
++  if [[ -z "${raw_score:-}" ]] || ! [[ "$raw_score" =~ ^[0-9]+$ ]]; then
+     record_halt "$fid" score_unparseable
+     continue
+   fi
+-  score=$((raw_score))
+-  if (( score < 0 || score > 100 )); then
++  score=$((10#$raw_score))
++  if (( score > 100 )); then
+     record_halt "$fid" score_unparseable
+     continue
+   fi
+@@ -261,17 +282,21 @@ done
+ # ---- Emit outputs + exit --------------------------------------------------
+ 
+ if [[ -n "$FIRST_HALT_CAUSE" ]]; then
+-  # Halt path: write audit (with halts) but NOT kept-findings.txt — the
+-  # round failed to converge and downstream apply-fix MUST NOT run.
+-  write_audit "$SCORED" "$KEPT" "$DROPPED"
++  # Halt path: emit the halt-cause diagnostic to stderr FIRST (before any disk
++  # write), so the message is visible even if write_audit fails.  Remove any
++  # stale kept-findings.txt from a prior successful run so downstream consumers
++  # cannot act on data that is now invalid.
+   echo "verifier-fan-in: halt: $FIRST_HALT_CAUSE" >&2
++  rm -f "$KEPT_TXT"
++  write_audit "$SCORED" "$KEPT" "$DROPPED" || true
+   exit 1
+ fi
+ 
+-# Clean path: write kept-findings.txt + audit, exit 0.
++# Clean path: write audit FIRST so that if the write fails under set -e,
++# kept-findings.txt is never created (no partial state on disk).
++write_audit "$SCORED" "$KEPT" "$DROPPED"
+ : >"$KEPT_TXT"
+-for p in "${KEPT_PATHS[@]}"; do
++for p in "${KEPT_PATHS[@]+"${KEPT_PATHS[@]}"}"; do
+   printf '%s\n' "$p" >>"$KEPT_TXT"
+ done
+-write_audit "$SCORED" "$KEPT" "$DROPPED"
+ exit 0
+diff --git a/tests/unit/test-verifier-fan-in-script.bats b/tests/unit/test-verifier-fan-in-script.bats
+index ac4a9b9..df712bc 100644
+--- a/tests/unit/test-verifier-fan-in-script.bats
++++ b/tests/unit/test-verifier-fan-in-script.bats
+@@ -11,6 +11,11 @@ setup() {
+   mkdir -p "$ROUND"
+ }
+ 
++teardown() {
++  # Restore permissions so BATS tmpdir cleanup can remove chmod 000 fixtures.
++  chmod -R u+r "$BATS_TEST_TMPDIR" 2>/dev/null || true
++}
++
+ # --- helpers ---------------------------------------------------------------
+ 
+ write_finding() {
+@@ -252,3 +257,135 @@ EOF
+   [ "$status" -ne 0 ]
+   [[ "$output" == *"Usage"* || "$stderr" == *"Usage"* || "$output" == *"usage"* || "$stderr" == *"usage"* ]]
+ }
++
++# ===========================================================================
++# Round-01 review fixes
++# ===========================================================================
++
++# --- fix F01: octal arithmetic trap (security-claude) ---------------------
++# Bash interprets a leading-zero integer as octal: $((089)) crashes under
++# set -e; $((070)) silently gives 56 (wrong value).  Fix: $((10#$raw_score)).
++
++@test "fix F01: score 089 treated as decimal 89 (not crash), style finding kept" {
++  # $((089)) triggers "value too great for base" under set -e → script crashes
++  # before writing any audit.  After fix (10# prefix): 089 → 89 ≥ 80 → KEPT.
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" "089"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -eq 0 ]
++  run jq -r '.kept' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "$output" == "1" ]]
++}
++
++@test "fix F01: score 070 treated as decimal 70 (not octal 56), correctness finding kept at threshold" {
++  # $((070)) = 56 under bash octal rules; 56 < 70 → incorrectly DROPPED.
++  # After fix: 10#070 = 70 ≥ correctness threshold 70 → KEPT.
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 correctness)
++  write_sidecar "$f1" "070"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -eq 0 ]
++  run jq -r '.kept,.dropped' "$ROUND/.verifier-fan-in-audit.json"
++  [[ "${lines[0]}" == "1" ]]
++  [[ "${lines[1]}" == "0" ]]
++}
++
++# --- fix F02: halt path stderr ordering (silent-failure-claude) -----------
++# write_audit ran BEFORE stderr echo; if write_audit fails under set -e the
++# halt-cause message is never emitted.  Fix: echo >&2 FIRST, then
++# write_audit || true.
++
++@test "fix F02: stderr halt-cause emitted even when audit JSON cannot be written" {
++  # Pre-create a directory at the audit JSON path to force write_audit failure.
++  mkdir "$ROUND/.verifier-fan-in-audit.json"
++  write_finding_no_change_type "$ROUND" qc 01 F01 >/dev/null
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  # stderr must name the halt cause even though write_audit failed
++  [[ "$output" == *"missing_change_type"* || "$stderr" == *"missing_change_type"* ]]
++}
++
++# --- fix F03: jq dependency check (silent-failure-claude) ----------------
++# jq absence causes a silent crash inside record_halt/write_audit under
++# set -e.  Fix: upfront command -v jq check.
++
++@test "fix F03: absent jq exits non-zero with jq-related diagnostic" {
++  # Build a PATH that excludes every directory containing jq.
++  local newpath="" d
++  local saved_IFS="$IFS"
++  IFS=':'
++  for d in $PATH; do
++    IFS="$saved_IFS"
++    [[ -x "$d/jq" ]] && continue
++    newpath="${newpath:+$newpath:}$d"
++  done
++  IFS="$saved_IFS"
++
++  run env PATH="$newpath" "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"jq"* || "$stderr" == *"jq"* ]]
++}
++
++# --- fix F04: clean-path write ordering (silent-failure-claude) -----------
++# kept-findings.txt was written BEFORE write_audit; if write_audit failed,
++# kept-findings.txt was left on disk without a paired audit JSON.
++# Fix: write audit first (or use ERR trap to remove kept-findings.txt).
++
++@test "fix F04: if write_audit fails on clean path, kept-findings.txt not left on disk" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" 90
++  # Block audit write by pre-creating a directory at the audit JSON path.
++  mkdir "$ROUND/.verifier-fan-in-audit.json"
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  [ ! -f "$ROUND/kept-findings.txt" ]
++}
++
++# --- fix F05: extract_frontmatter_field I/O errors (silent-failure-codex) -
++# || true collapsed real read/permission errors into field-absent, masking the
++# root cause.  Fix: check file readability and emit a diagnostic.
++
++@test "fix F05: unreadable finding file emits I/O diagnostic to stderr" {
++  local f1
++  f1=$(write_finding "$ROUND" qc 01 F01 style)
++  write_sidecar "$f1" 90
++  chmod 000 "$f1"  # make finding unreadable
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  # Must emit a "cannot read" (or similar) message — not silently treat as
++  # missing_change_type without any I/O diagnostic.
++  [[ "$output" == *"cannot read"* || "$stderr" == *"cannot read"* ]]
++}
++
++# --- fix F06: stale kept-findings.txt on halt (silent-failure-codex) ------
++# Halt path did not remove an existing kept-findings.txt from a prior
++# successful run; downstream consumers saw stale data.
++# Fix: rm -f kept-findings.txt at start of halt path.
++
++@test "fix F06: halt path removes stale kept-findings.txt from prior run" {
++  # Simulate a prior successful run leaving kept-findings.txt.
++  printf 'stale/path/finding.md\n' > "$ROUND/kept-findings.txt"
++  # Trigger a halt via missing_change_type.
++  write_finding_no_change_type "$ROUND" qc 01 F01 >/dev/null
++
++  run "$SCRIPT" "$ROUND"
++  [ "$status" -ne 0 ]
++  [ ! -f "$ROUND/kept-findings.txt" ]
++}
++
++# --- fix F07: goal-ID hygiene (code-quality-claude) -----------------------
++# G\d+ goal IDs must not appear in scripts/verifier-fan-in.sh (CONTRIBUTING.md
++# prohibits self-referencing IDs in runtime-context files).
++
++@test "fix F07: verifier-fan-in.sh contains no goal-ID tokens (G-pattern)" {
++  local script="$REPO_ROOT/scripts/verifier-fan-in.sh"
++  # grep -q exits 0 on match (bad), 1 on no match (good).
++  ! grep -qE '\bG[0-9]+\b' "$script"
++}

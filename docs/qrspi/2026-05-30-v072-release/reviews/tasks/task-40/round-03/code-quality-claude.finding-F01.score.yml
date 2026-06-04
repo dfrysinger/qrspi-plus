@@ -1,0 +1,2 @@
+score: 35
+reason: Real comment/code drift — comment lists 4 surfaces while regex now scans 6 — but it's a low-severity stylistic nit not flagged by CLAUDE.md.

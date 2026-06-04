@@ -1,0 +1,2 @@
+score: 80
+reason: Spec/DoD/Test-expectations explicitly require positional ("immediately after"/"in place of") assertions and the implemented bats only does presence-only grep, leaving the named drift modes (re-inlining OWNS/DEFERS, moving introducer away from Step 1) silently passing.

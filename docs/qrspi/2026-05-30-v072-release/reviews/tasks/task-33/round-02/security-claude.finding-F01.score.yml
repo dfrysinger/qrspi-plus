@@ -1,0 +1,2 @@
+score: 68
+reason: Verified — Step 2's validator at lines 102-105 rejects only the round-1 metacharacter set and does not forbid whitespace/tab/newline, so a value like `scripts/structural-lints/foo.sh -- :!path` passes validation and, when interpolated into `bash <validated-path>`, introduces spec-controlled argv tokens that Step 3 promises not to allow; real correctness gap, though exploitability depends on a cooperating lint script.

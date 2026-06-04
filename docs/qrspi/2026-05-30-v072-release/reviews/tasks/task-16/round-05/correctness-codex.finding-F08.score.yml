@@ -1,0 +1,2 @@
+score: 80
+reason: Verified — all seven _resolve-lib.sh tests (lines 282-323) only grep the script source for keyword strings and never source/execute resolve_tier/resolve_model against fixtures, a real behavioral-coverage gap that let the F01 none-on-comment halt bug pass spec-gate rounds.

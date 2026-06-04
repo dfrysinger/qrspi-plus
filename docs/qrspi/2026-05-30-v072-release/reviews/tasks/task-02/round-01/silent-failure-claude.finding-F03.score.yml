@@ -1,0 +1,3 @@
+finding_tag: silent-failure-claude.R1-F03
+score: 75
+reason: kept-findings.txt written before write_audit; failure leaves half the output pair. Naive presence-check downstream proceeds without audit. Edge-case but real correctness gap.

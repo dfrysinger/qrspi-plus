@@ -1,0 +1,122 @@
+diff --git a/scripts/dispatch-agent.sh b/scripts/dispatch-agent.sh
+index e1ed8b4..2a40b2b 100755
+--- a/scripts/dispatch-agent.sh
++++ b/scripts/dispatch-agent.sh
+@@ -420,8 +420,8 @@ emit_dispatch_manifest_entry() {
+     --arg host      "$detected_host" \
+     --arg vendor    "openai-codex" \
+     --arg model     "$MODEL" \
+-    --arg await_cmd "scripts/dispatch-companion.sh await $job_id" \
+-    --arg split_cmd "scripts/third-party-finding-splitter.sh --round-dir $OUTPUT_DIR --tag $REVIEWER_TAG" \
++    --arg await_cmd "$REPO_ROOT/scripts/dispatch-companion.sh await $job_id" \
++    --arg split_cmd "$REPO_ROOT/scripts/third-party-finding-splitter.sh --round-dir $OUTPUT_DIR --tag $REVIEWER_TAG" \
+     '{tag: $tag, agent: $agent, mode: $mode, status: $status, job_id: $job_id,
+       dispatch_spec: {subagent_type: $subtype, host: $host, vendor: $vendor, model: $model},
+       await_cmd: $await_cmd, split_cmd: $split_cmd}')" \
+diff --git a/tests/unit/test-dispatch-agent.bats b/tests/unit/test-dispatch-agent.bats
+index 40e10c7..2a891e2 100644
+--- a/tests/unit/test-dispatch-agent.bats
++++ b/tests/unit/test-dispatch-agent.bats
+@@ -1155,3 +1155,102 @@ EOF
+   [ -n "$job_id" ]
+   [ "$job_id" != "null" ]
+ }
++
++# Test expectation: end-to-end async drain via the manifest's await_cmd /
++# split_cmd is functionally complete — i.e. await-round.sh accepts the manifest
++# emitted by `dispatch-agent.sh --agents`, drives the dispatch-companion await
++# subcommand to materialize <round-dir>/.dispatch/<tag>.raw, and runs the
++# splitter to produce the per-finding (or NO_FINDINGS clean) artefacts. This is
++# the falsifiable production-path smoke for task-20.md DoD bullet 3 (dispatch-
++# companion launch+await contract end-to-end functional).
++#
++# Falsifiability: under the prior bug (manifest emitting RELATIVE
++# `scripts/dispatch-companion.sh await …` and `scripts/third-party-finding-
++# splitter.sh …`), await-round.sh's path-shaped argv[0] validator
++# realpath-resolves the relative exe against DISPATCH_CWD = <round-dir>/.dispatch
++# and rejects the result as outside permitted exec roots, exiting non-zero
++# before any drain happens. The fix is to emit ABSOLUTE paths under
++# $REPO_ROOT/scripts/ so the validator's realpath lands inside the
++# QRSPI_AWAIT_EXEC_ROOTS-permitted scripts directory.
++@test "task-20 end-to-end: await-round.sh drains the dispatch-agent manifest and produces the splitter sentinel" {
++  [ -f "$REPO_ROOT/scripts/dispatch-companion.sh" ]
++  [ -f "$REPO_ROOT/scripts/await-round.sh" ]
++  [ -f "$REPO_ROOT/scripts/third-party-finding-splitter.sh" ]
++  [ -f "$REPO_ROOT/tests/fixtures/stub-codex-companion.mjs" ]
++
++  local round_dir
++  round_dir="$(mktemp -d)"
++
++  unset COPILOT_CLI
++
++  # Wire the codex broker to the stub so launch + status + result complete
++  # deterministically without invoking real codex. STUB_RESULT_RAW is set to
++  # the literal "NO_FINDINGS" sentinel so the splitter exits 0 and writes the
++  # clean.md artefact (rather than rejecting unstructured text as malformed).
++  export CODEX_COMPANION="$REPO_ROOT/tests/fixtures/stub-codex-companion.mjs"
++  export STUB_STATE_FILE="$round_dir/stub-state.json"
++  export STUB_RESULT_RAW="NO_FINDINGS"
++  export STUB_COMPLETE_AT_POLL=1
++  export QRSPI_CODEX_POLL_INTERVAL_FAST=1
++  export QRSPI_CODEX_POLL_INTERVAL_SLOW=1
++  export QRSPI_CODEX_POLL_BACKOFF_AFTER=2
++  export QRSPI_CODEX_CEILING_SECONDS=10
++  export QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS=5
++
++  # Allow await-round.sh's path-shaped argv[0] validator to accept absolute
++  # paths under the worktree's scripts/ directory even when the round-dir is
++  # in /tmp (i.e. outside the git toplevel of the round-dir, where the
++  # validator's default EXEC_ROOTS computation yields the empty set).
++  export QRSPI_AWAIT_EXEC_ROOTS="$REPO_ROOT/scripts"
++
++  "$WRAPPER" \
++    --step spec \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --artifact "$TMP_DIR/plan.md" \
++    --agents "spec-codex=$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
++    >/dev/null 2>&1
++
++  local manifest="$round_dir/.dispatch-manifest.json"
++  [ -f "$manifest" ]
++
++  # Sanity: manifest must carry ABSOLUTE-path await_cmd / split_cmd values
++  # (the actual fix). A relative-path emission under repo-root would still
++  # be a string but would cause the await-round drain below to fail.
++  local await_cmd_emitted split_cmd_emitted
++  await_cmd_emitted="$(jq -r '.[] | select(.tag=="spec-codex") | .await_cmd' "$manifest")"
++  split_cmd_emitted="$(jq -r '.[] | select(.tag=="spec-codex") | .split_cmd' "$manifest")"
++  [[ "$await_cmd_emitted" == /* ]]
++  [[ "$split_cmd_emitted" == /* ]]
++
++  # Drive the drain end to end via await-round.sh against the emitted manifest.
++  local await_rc=0
++  "$REPO_ROOT/scripts/await-round.sh" --round-dir "$round_dir" >/dev/null 2>&1 || await_rc=$?
++
++  # Snapshot artefacts before teardown so failure messages remain meaningful.
++  # Note: <round-dir>/.dispatch/ (and the <tag>.raw inside it) is intentionally
++  # removed by await-round.sh after the splitter consumes it (await-round.sh
++  # § "remove the round-scoped dispatch subdir AFTER the summary is on disk"),
++  # so the splitter's clean.md output is the on-disk proof that the raw
++  # capture was materialized and consumed.
++  local clean_path="$round_dir/spec-codex.clean.md"
++  local complete_path="$round_dir/.round-complete.json"
++  local clean_exists=0
++  [ -f "$clean_path" ] && clean_exists=1
++  local entry_status=""
++  if [ -f "$complete_path" ]; then
++    entry_status="$(jq -r '.entries[] | select(.tag=="spec-codex") | .status' "$complete_path" 2>/dev/null | head -1)"
++  fi
++
++  rm -rf "$round_dir"
++
++  # await-round must succeed end to end — this is the falsifying bit for the
++  # relative-path manifest bug (which exited 1 with the validator-reject error).
++  [ "$await_rc" -eq 0 ]
++  # The splitter must have consumed the NO_FINDINGS sentinel (delivered via
++  # the await_cmd's <tag>.raw materialization) and written the clean.md
++  # artefact in the round-dir.
++  [ "$clean_exists" -eq 1 ]
++  # And the per-entry summary must reflect a successful drain.
++  [ "$entry_status" = "complete-clean" ] || [ "$entry_status" = "complete" ]
++}

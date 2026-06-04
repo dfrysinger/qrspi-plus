@@ -1,0 +1,2 @@
+score: 70
+reason: Real, verified shlex.split tokenization failure if paths contain spaces; breaks async chain functionality (in-scope for T20); but edge-case dependent on deployment paths; simple fix (printf %q escaping).

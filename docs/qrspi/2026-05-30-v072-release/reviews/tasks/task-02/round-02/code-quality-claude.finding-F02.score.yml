@@ -1,0 +1,2 @@
+score: 25
+reason: Style nitpick about test comments embedding review process artifacts; not explicitly required by CLAUDE.md and senior practitioners often retain reviewer context for traceability.

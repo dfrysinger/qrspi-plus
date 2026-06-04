@@ -1,0 +1,2 @@
+score: 55
+reason: Real silent-failure mode — grep exit 2 (missing/unreadable file) satisfies `-ne 0` so the absence guard passes vacuously if goals/SKILL.md is renamed; fix (`-eq 1` plus `-f` precondition) is straightforward, though impact is modest for a cheap grep guard.

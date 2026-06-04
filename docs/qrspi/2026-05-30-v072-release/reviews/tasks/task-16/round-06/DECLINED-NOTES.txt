@@ -1,0 +1,28 @@
+# Round-06 Declined / Deferred Findings — task-16
+
+Adjudicated after the 6-reviewer correctness fan-out (cq/sf/sec ×2 families)
+against the fix-5 delta. Kept findings (acted on in fix-6) carry verifier
+sidecars and feed the implementer-fix dispatch. The items below are NOT acted on.
+
+## DEFERRED to v0.7.3 backlog
+
+### D4 — duplicate tier rows silently first-win (silent-failure-codex.finding-F02)
+`resolve_model` row lookup uses `grep ... | head -1`, so duplicate `<tier>:` rows
+under `model_routing:` are accepted with first-match-wins and no diagnostic.
+Deferred because duplicate-key detection requires match-counting logic (a new
+behavior, not an additive guard on the existing path), first-wins is
+deterministic, and duplicate YAML keys are operator error most parsers accept.
+Out of scope for the G7b/#204 none-halt + injection hardening task. Tracked as a
+config-hygiene backlog item for v0.7.3.
+
+## DECLINED — false positive
+
+### code-quality-codex.finding-F03 — QRSPI-internal IDs in comments/tests
+Claim: `G22`/`T16`/`F02` tokens in code comments/test surfaces are forbidden
+outside `docs/qrspi/`. DECLINED: design-ID provenance references in code comments
+are an established repo convention — `grep` finds 17 such references across 8
+scripts (round-prepare.sh, verifier-fan-in.sh, run-codex-review.sh,
+await-round.sh, codex-companion-bg.sh, g4-section-anchor-refresh.sh, and
+_resolve-lib.sh itself). The header provenance comment aids traceability and
+matches existing style; the reviewer over-applied a contract rule that does not
+match actual repo convention.

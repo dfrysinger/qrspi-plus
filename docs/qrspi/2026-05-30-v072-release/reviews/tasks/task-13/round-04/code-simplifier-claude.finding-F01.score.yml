@@ -1,0 +1,2 @@
+score: 60
+reason: Verified-correct dead-code claim (file redirect supersedes the pipe, making the printf pipe and ANCHOR_CONTENT write-only) on task-13's own lines, but it's a minor non-blocking cosmetic simplification with no functional impact.

@@ -1,0 +1,2 @@
+score: 15
+reason: Pre-existing pattern that T38 was explicitly required to mirror from qrspi-design-scope-reviewer.md; trusting in-repo skills/_shared content is an existing project decision, not a T38-introduced flaw.

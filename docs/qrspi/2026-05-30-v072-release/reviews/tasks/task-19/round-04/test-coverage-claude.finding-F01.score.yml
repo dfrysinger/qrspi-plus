@@ -1,0 +1,2 @@
+score: 75
+reason: Confirmed gap — spec L42 mandates "exactly one stderr line" for unknown-vendor paths, the unknown-host test (L248–261) asserts line_count=1, but neither unknown-vendor-override test (L288–311) does, leaving the one-line contract unverified for that code path.

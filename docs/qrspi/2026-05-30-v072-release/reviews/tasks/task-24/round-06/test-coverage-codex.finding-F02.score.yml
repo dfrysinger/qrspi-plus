@@ -1,0 +1,2 @@
+score: 40
+reason: Finding is a real and confirmed coverage gap — the placeholder-value assertion at bats:509-521 is COPILOT_CLI-branch-only while Claude Code and override branches lack it — but the task spec (Test Expectation #9) says "no placeholder values are present" without mandating per-branch coverage, and KEY=VALUE shape tests (which would catch most placeholder-like anomalies) already cover all branches; the gap is low-severity and already tagged accepted-with-issue by the ORCHESTRATOR.

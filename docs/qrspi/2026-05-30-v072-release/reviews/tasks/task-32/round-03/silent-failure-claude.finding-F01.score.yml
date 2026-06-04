@@ -1,0 +1,2 @@
+score: 65
+reason: Real unresolved tension — Incremental Persistence declares the on-disk draft as the single durability source across compaction, yet the Design/Goals synthesis-subagent input lists were not updated to include the existing draft (only conversation + upstream artifacts), creating a plausible silent-loss path on mid-phase /compact + resume; partially mitigated by the durability-contract prose but not made structurally explicit.

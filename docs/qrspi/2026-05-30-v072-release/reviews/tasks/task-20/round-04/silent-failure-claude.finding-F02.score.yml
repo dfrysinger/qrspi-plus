@@ -1,0 +1,2 @@
+score: 72
+reason: Real issue introduced by task: WRAPPER call silences stderr and doesn't capture exit code (lines 1206-1212), causing silent failures with misleading diagnostics; contrast with line 1228 shows correct pattern exists in same test; will obscure CI debugging when WRAPPER fails.

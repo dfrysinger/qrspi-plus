@@ -1,0 +1,51 @@
+diff --git a/tests/integration/test-reference-gate-pause.bats b/tests/integration/test-reference-gate-pause.bats
+index 1f561f5..2e04ec8 100644
+--- a/tests/integration/test-reference-gate-pause.bats
++++ b/tests/integration/test-reference-gate-pause.bats
+@@ -548,6 +548,46 @@ EOF
+     "non-zero hit|non-zero hits|one or more hits|>=.?1 hit"
+ }
+ 
++@test "[G18-consumers] Plan reviewer none-claim re-run validates command shape before execution" {
++  # Security: the `none`-claim re-run must validate the cited search command first,
++  # not execute verbatim from untrusted plan.md (prevents shell injection via
++  # cross_task_consumers: none + malicious search command).
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "[Vv]alidat"
++}
++
++@test "[G18-consumers] Plan reviewer none-claim re-run names the rejected shell metacharacters" {
++  # Threat model must be visible: the rubric must name the metacharacters that
++  # are forbidden in the pattern argument so future reviewers can enforce it.
++  # Assert each highest-risk metachar is explicitly named, not just that the word "metachar" appears.
++  local section
++  section="$(extract_section "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection")"
++  for char in ';' '|' '&'; do
++    echo "$section" | grep -qF "$char" \
++      || { echo "Missing rejected metachar '$char' in Cross-task consumer surface detection section" >&2; return 1; }
++  done
++}
++
++@test "[G18-consumers] Plan reviewer none-claim re-run explicitly names single-quote as rejected" {
++  # Defense-in-depth: single-quote in a pattern can escape quoting and inject an extra path argument.
++  # The rubric must explicitly name single-quote in its forbidden-character list.
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "single.quote"
++}
++
++@test "[G18-consumers] Plan reviewer none-claim re-run requires -- argument separator" {
++  # Without --, a pattern starting with - is interpreted by grep/rg as a flag.
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "argument separator"
++}
++
++@test "[G18-consumers] Plan reviewer none-claim re-run rejects patterns starting with -" {
++  # Defense-in-depth: even with --, a pattern starting with - is almost certainly
++  # malformed (not a real consumer-surface search pattern); the rubric must say to reject it.
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "reject.*patterns starting with|patterns starting with"
++}
++
+ @test "[G18-consumers] Plan reviewer Cross-task consumer surface detection validates the four dispositions" {
+   for d in "no change" "pass-through" "co-edit" "break-and-fix-task"; do
+     extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" "\`$d\`" || {

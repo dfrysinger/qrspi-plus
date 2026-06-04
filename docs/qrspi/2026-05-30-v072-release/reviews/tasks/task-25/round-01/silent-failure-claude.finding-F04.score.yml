@@ -1,0 +1,2 @@
+score: 68
+reason: Real schema incompleteness — the artifact references "the standard reviewer schema" but only documents change_type tagging, not the full field set (finding_id, reviewer_tag, severity, etc. are discoverable only from the finding file itself). Silent schema deviation risk is credible if the skill is used as designed; however, the artifact may rely on downstream agent context to provide full schema definition per Task 26 scope.

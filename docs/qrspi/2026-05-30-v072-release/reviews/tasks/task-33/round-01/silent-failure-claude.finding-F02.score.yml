@@ -1,0 +1,2 @@
+score: 55
+reason: Real gap — at plan-spec review time the migration diff doesn't exist, so a typical `grep -vE … | grep -q .` lint passes vacuously and grants the exemption; "the proposed diff" referent is also unspecified. Moderately important but partly mitigated by other Step-1/2 mandatory-field checks, and authors aren't typically adversarial.

@@ -1,0 +1,4 @@
+---
+score: 78
+reason: The task spec (line 55) explicitly requires testing "payload-silent await behavior, raw capture under `.dispatch/`", and the Definition of Done (line 43) specifies that await must write to `.dispatch/<tag>.raw`. The actual test (lines 313-321) only verifies the subcommand exists and doesn't emit "unrecognised subcommand", not the required raw-file capture behavior. The incomplete implementation (lines 486-515) exits with "not wired in this build" rather than capturing output, which passes the insufficient test—a genuine gap that violates documented test expectations.
+---

@@ -1,0 +1,2 @@
+score: 60
+reason: The stderr assertion test at lines 457-465 is genuinely redundant with R1's fix F05 test (lines 354-365)—both chmod 000 a finding and assert stderr output. However, the paired R2-specific JSON halt-cause test (lines 445-455) is legitimately new, so this is a partial duplicate rather than a total redundancy.

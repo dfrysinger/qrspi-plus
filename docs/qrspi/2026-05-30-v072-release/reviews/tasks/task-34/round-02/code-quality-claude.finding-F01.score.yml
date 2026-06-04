@@ -1,0 +1,2 @@
+score: 85
+reason: Verified - six diagnostic tests hardcode expected text in local variables and grep those same variables; zero orchestrator code path invoked, making tests vacuous with no detection power.

@@ -1,0 +1,45 @@
+diff --git a/tests/integration/test-reference-gate-pause.bats b/tests/integration/test-reference-gate-pause.bats
+index f0cd8d3..5a8f8aa 100644
+--- a/tests/integration/test-reference-gate-pause.bats
++++ b/tests/integration/test-reference-gate-pause.bats
+@@ -490,7 +490,7 @@ EOF
+     "follow-up task ID|cited follow-up task|named follow-up task"
+ }
+ 
+-@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface carries worked example A: public-symbol rename with three consumers" {
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface carries worked example C: public-symbol rename with three consumers" {
+   # The rename worked example must show three consumer paths and use co-edit, co-edit, no change.
+   local section
+   section="$(extract_section "$PLAN_SKILL" H3 "Cross-Task Consumer Surface")" \
+@@ -499,18 +499,18 @@ EOF
+   local co_edit_count
+   co_edit_count="$(printf '%s\n' "$section" | grep -cE '\bco-edit\b' || true)"
+   if [ "$co_edit_count" -lt 2 ]; then
+-    echo "Worked example A must list at least two co-edit consumer dispositions; found $co_edit_count" >&2
++    echo "Worked example C must list at least two co-edit consumer dispositions; found $co_edit_count" >&2
+     return 1
+   fi
+   # And at least one `no change` marker for the third consumer.
+   printf '%s\n' "$section" | grep -qE '\bno change\b' \
+-    || { echo "Worked example A must list at least one 'no change' consumer disposition" >&2; return 1; }
++    || { echo "Worked example C must list at least one 'no change' consumer disposition" >&2; return 1; }
+   # And the public-symbol rename framing must be present (not a prose-only co-edit mention).
+   printf '%s\n' "$section" | grep -qiE 'public.symbol rename' \
+-    || { echo "Worked example A must show the public-symbol rename framing" >&2; return 1; }
++    || { echo "Worked example C must show the public-symbol rename framing" >&2; return 1; }
+ }
+ 
+-@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface carries worked example B: body-only bug fix non-trigger" {
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface carries worked example D: body-only bug fix non-trigger" {
+   # The non-trigger worked example must explicitly identify a body-only or
+   # bug-fix change and explain why the trigger does not fire.
+   extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
+@@ -550,6 +550,8 @@ EOF
+     "re-run|rerun"
+   extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
+     "non-zero hit|non-zero hits|one or more hits|>=.?1 hit"
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "repository root|repo root"
+ }
+ 
+ @test "[G18-consumers] Plan reviewer none-claim re-run validates command shape before execution" {

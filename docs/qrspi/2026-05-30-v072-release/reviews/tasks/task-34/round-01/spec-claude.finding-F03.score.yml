@@ -1,0 +1,3 @@
+finding_tag: spec-claude.R1-F03
+score: 75
+reason: Malformed-header test lacks mtime/content preservation assertions that spec DoD line 43 and test expectation line 57 both require. In-scope, verifiable, mismatch test (lines 689-721) already follows this pattern.

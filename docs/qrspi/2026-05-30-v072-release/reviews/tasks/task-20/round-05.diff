@@ -1,0 +1,257 @@
+diff --git a/skills/using-qrspi/SKILL.anchors.json b/skills/using-qrspi/SKILL.anchors.json
+index 87bf5f1..7af1d91 100644
+--- a/skills/using-qrspi/SKILL.anchors.json
++++ b/skills/using-qrspi/SKILL.anchors.json
+@@ -65,98 +65,98 @@
+   },
+   "Config File (`config.md`)": {
+     "line_start": 349,
+-    "line_end": 516
++    "line_end": 517
+   },
+   "Dispatch routing blocks": {
+-    "line_start": 420,
+-    "line_end": 516
++    "line_start": 421,
++    "line_end": 517
+   },
+   "Config Validation Procedure": {
+-    "line_start": 517,
+-    "line_end": 635
++    "line_start": 518,
++    "line_end": 641
+   },
+   "When config.md is missing entirely": {
+-    "line_start": 521,
+-    "line_end": 529
++    "line_start": 522,
++    "line_end": 530
+   },
+   "When a required field is missing or has an invalid value": {
+-    "line_start": 530,
+-    "line_end": 582
++    "line_start": 531,
++    "line_end": 587
+   },
+   "No silent defaults": {
+-    "line_start": 583,
+-    "line_end": 590
++    "line_start": 588,
++    "line_end": 595
+   },
+   "Exceptions to the no-silent-defaults rule": {
+-    "line_start": 591,
+-    "line_end": 609
++    "line_start": 596,
++    "line_end": 614
+   },
+   "Fields that affect pipeline behavior (must be validated)": {
+-    "line_start": 610,
+-    "line_end": 629
++    "line_start": 615,
++    "line_end": 635
+   },
+   "Fields that do NOT require validation (informational only)": {
+-    "line_start": 630,
+-    "line_end": 635
++    "line_start": 636,
++    "line_end": 641
+   },
+   "Standard Review Loop": {
+-    "line_start": 636,
+-    "line_end": 683
++    "line_start": 642,
++    "line_end": 689
+   },
+   "Fix-altitude rule (F-5)": {
+-    "line_start": 672,
+-    "line_end": 679
++    "line_start": 678,
++    "line_end": 685
+   },
+   "Sweep-task findings — backstop": {
+-    "line_start": 680,
+-    "line_end": 683
++    "line_start": 686,
++    "line_end": 689
+   },
+   "Review Output Handling": {
+-    "line_start": 684,
+-    "line_end": 1100
++    "line_start": 690,
++    "line_end": 1106
+   },
+   "Review-Loop Pause Gate": {
+-    "line_start": 1101,
+-    "line_end": 1148
++    "line_start": 1107,
++    "line_end": 1154
+   },
+   "BATCH-WITH-OVERRIDES UI contract": {
+-    "line_start": 1105,
+-    "line_end": 1112
++    "line_start": 1111,
++    "line_end": 1118
+   },
+   "3-option menu (per paused finding)": {
+-    "line_start": 1113,
+-    "line_end": 1130
++    "line_start": 1119,
++    "line_end": 1136
+   },
+   "Paused rounds do not decrement the cap": {
+-    "line_start": 1131,
+-    "line_end": 1136
++    "line_start": 1137,
++    "line_end": 1142
+   },
+   "Pending-findings file": {
+-    "line_start": 1137,
+-    "line_end": 1148
++    "line_start": 1143,
++    "line_end": 1154
+   },
+   "Review Time Allocation": {
+-    "line_start": 1149,
+-    "line_end": 1156
++    "line_start": 1155,
++    "line_end": 1162
+   },
+   "Compaction Checkpoints": {
+-    "line_start": 1157,
+-    "line_end": 1188
++    "line_start": 1163,
++    "line_end": 1194
+   },
+   "Feedback File Format": {
+-    "line_start": 1189,
+-    "line_end": 1208
++    "line_start": 1195,
++    "line_end": 1214
+   },
+   "Common Rationalizations — STOP": {
+-    "line_start": 1209,
+-    "line_end": 1223
++    "line_start": 1215,
++    "line_end": 1229
+   },
+   "Skill Invocation": {
+-    "line_start": 1224,
+-    "line_end": 1229
++    "line_start": 1230,
++    "line_end": 1235
+   },
+   "Pipeline Iron Laws — Final Reminder": {
+-    "line_start": 1230,
+-    "line_end": 1252
++    "line_start": 1236,
++    "line_end": 1258
+   }
+ }
+diff --git a/tests/unit/test-dispatch-agent.bats b/tests/unit/test-dispatch-agent.bats
+index 2a891e2..1295db5 100644
+--- a/tests/unit/test-dispatch-agent.bats
++++ b/tests/unit/test-dispatch-agent.bats
+@@ -1112,7 +1112,7 @@ EOF
+   [ -f "$REPO_ROOT/tests/fixtures/stub-codex-companion.mjs" ]
+ 
+   local round_dir
+-  round_dir="$(mktemp -d)"
++  round_dir="$(mktemp -d "$TMP_DIR/round-XXXXXX")"
+ 
+   # Force host detection to claude-code so codex routes through the third-party
+   # path (claude-code:codex → third-party per _resolve-lib.sh::lookup_host_vendor_path).
+@@ -1133,13 +1133,26 @@ EOF
+   # spec-codex tag suffix routes vendor=codex; default detected host claude-code
+   # routes claude-code:codex through the third-party path (per
+   # _resolve-lib.sh::lookup_host_vendor_path).
++  # Capture rc + stderr so a CLI-shape mismatch or missing agent file produces a
++  # useful diagnostic rather than a silent manifest-missing assertion failure.
++  local wrapper_rc=0
++  local wrapper_stderr_file
++  wrapper_stderr_file="$(mktemp "$TMP_DIR/wrapper-stderr-XXXXXX")"
+   "$WRAPPER" \
+     --step spec \
+     --round 1 \
+     --output-dir "$round_dir" \
+     --artifact "$TMP_DIR/plan.md" \
+     --agents "spec-codex=$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+-    >/dev/null 2>&1 || true
++    >/dev/null 2>"$wrapper_stderr_file" || wrapper_rc=$?
++  if [ "$wrapper_rc" -ne 0 ]; then
++    echo "dispatch-agent.sh failed (rc=$wrapper_rc):" >&2
++    cat "$wrapper_stderr_file" >&2
++    rm -f "$wrapper_stderr_file"
++    rm -rf "$round_dir"
++    return 1
++  fi
++  rm -f "$wrapper_stderr_file"
+ 
+   local manifest="$round_dir/.dispatch-manifest.json"
+   [ -f "$manifest" ]
+@@ -1179,7 +1192,7 @@ EOF
+   [ -f "$REPO_ROOT/tests/fixtures/stub-codex-companion.mjs" ]
+ 
+   local round_dir
+-  round_dir="$(mktemp -d)"
++  round_dir="$(mktemp -d "$TMP_DIR/round-XXXXXX")"
+ 
+   unset COPILOT_CLI
+ 
+@@ -1203,13 +1216,26 @@ EOF
+   # validator's default EXEC_ROOTS computation yields the empty set).
+   export QRSPI_AWAIT_EXEC_ROOTS="$REPO_ROOT/scripts"
+ 
++  # Capture rc + stderr from the setup invocation; emit on failure so a
++  # --step parse error or missing agent file produces a useful diagnostic
++  # rather than a silent ERR-trap assertion at the manifest check below.
++  local wrapper_rc=0
++  local wrapper_stderr_file
++  wrapper_stderr_file="$(mktemp "$TMP_DIR/wrapper-stderr-XXXXXX")"
+   "$WRAPPER" \
+     --step spec \
+     --round 1 \
+     --output-dir "$round_dir" \
+     --artifact "$TMP_DIR/plan.md" \
+     --agents "spec-codex=$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+-    >/dev/null 2>&1
++    >/dev/null 2>"$wrapper_stderr_file" || wrapper_rc=$?
++  if [ "$wrapper_rc" -ne 0 ]; then
++    echo "dispatch-agent.sh failed (rc=$wrapper_rc):" >&2
++    cat "$wrapper_stderr_file" >&2
++    rm -f "$wrapper_stderr_file"
++    return 1
++  fi
++  rm -f "$wrapper_stderr_file"
+ 
+   local manifest="$round_dir/.dispatch-manifest.json"
+   [ -f "$manifest" ]
+@@ -1224,8 +1250,17 @@ EOF
+   [[ "$split_cmd_emitted" == /* ]]
+ 
+   # Drive the drain end to end via await-round.sh against the emitted manifest.
++  # Capture stderr to a tmpfile so any validator-reject or splitter error is
++  # available as a diagnostic when await_rc is non-zero (the falsifying case
++  # for the relative-path manifest bug emits a path-validator rejection on
++  # stderr that would otherwise be silenced).
+   local await_rc=0
+-  "$REPO_ROOT/scripts/await-round.sh" --round-dir "$round_dir" >/dev/null 2>&1 || await_rc=$?
++  local await_stderr_file
++  await_stderr_file="$(mktemp "$TMP_DIR/await-stderr-XXXXXX")"
++  "$REPO_ROOT/scripts/await-round.sh" --round-dir "$round_dir" >/dev/null 2>"$await_stderr_file" || await_rc=$?
++  local await_stderr_content=""
++  [ -f "$await_stderr_file" ] && await_stderr_content="$(cat "$await_stderr_file")"
++  rm -f "$await_stderr_file"
+ 
+   # Snapshot artefacts before teardown so failure messages remain meaningful.
+   # Note: <round-dir>/.dispatch/ (and the <tag>.raw inside it) is intentionally
+@@ -1246,6 +1281,9 @@ EOF
+ 
+   # await-round must succeed end to end — this is the falsifying bit for the
+   # relative-path manifest bug (which exited 1 with the validator-reject error).
++  if [ "$await_rc" -ne 0 ]; then
++    echo "await-round.sh stderr: $await_stderr_content" >&2
++  fi
+   [ "$await_rc" -eq 0 ]
+   # The splitter must have consumed the NO_FINDINGS sentinel (delivered via
+   # the await_cmd's <tag>.raw materialization) and written the clean.md

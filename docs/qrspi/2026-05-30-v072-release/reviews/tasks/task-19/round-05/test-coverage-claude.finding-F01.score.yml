@@ -1,0 +1,2 @@
+score: 82
+reason: Confirmed gap — L248-285 three fragmented tests only check key presence (host=, vendor=) not exact values; no single test pins joint contract host=unknown vendor=none on the default no-arg unknown-host path, as DoD L42/L52 requires; round-05 delta did not address this path.

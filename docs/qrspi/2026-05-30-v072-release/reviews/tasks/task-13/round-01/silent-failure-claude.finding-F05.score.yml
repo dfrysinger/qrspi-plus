@@ -1,0 +1,2 @@
+score: 18
+reason: Self-admitted pinned/unchanged code from T12 plus a test-coverage-gap recommendation against a largely hypothetical git-diff-failure path; empty diff is a valid no-change signal and `|| true` is standard.

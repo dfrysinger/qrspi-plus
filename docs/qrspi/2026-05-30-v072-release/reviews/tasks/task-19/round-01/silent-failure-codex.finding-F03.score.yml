@@ -1,0 +1,2 @@
+score: 40
+reason: The set -u arity hazard in resolve_second_reviewer_vendor is technically real in T19-introduced code, but no caller in the v0.7.2 T19 dispatch path (second-reviewer-available.sh does not call this function) can trigger it — the hazard is entirely latent until Task 20 introduces dispatch callers.

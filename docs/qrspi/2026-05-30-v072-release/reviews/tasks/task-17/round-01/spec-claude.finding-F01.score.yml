@@ -1,0 +1,2 @@
+score: 90
+reason: Confirmed — task-17.md L49 requires bats coverage for EACH of the two post-Task-16 fail-loud paragraphs; the bats file ends at L783 with only the `Missing model_routing:` paragraph covered, and no assertion exists for the `#### model_routing: block` (none-halt) paragraph whose back-pointer is present at SKILL.md L466.

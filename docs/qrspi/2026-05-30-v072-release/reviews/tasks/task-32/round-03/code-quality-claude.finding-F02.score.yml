@@ -1,0 +1,2 @@
+score: 30
+reason: Real naming/intent mismatch verified in the file, but it's a stylistic nit not called out in CLAUDE.md and the surrounding tests follow the same documentation-presence convention.

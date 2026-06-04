@@ -1,0 +1,2 @@
+score: 50
+reason: Real correctness issue - "stop" is ambiguous inside per-file loop, allowing silent partial enforcement when first-file Read fails but later Reads succeed.

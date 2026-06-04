@@ -10,7 +10,7 @@ model: sonnet
 
 # Task 44: G24-F05 anti-pattern pin regex hardening
 
-- **Target files:** modify `tests/unit/test-using-qrspi-vocab.bats`; modify `tests/acceptance/v07-phase1/test-phase1-acceptance.bats`
+- **Target files:** modify `tests/unit/test-using-qrspi-vocab.bats`; modify `tests/acceptance/v07-phase1/test-phase1-acceptance.bats`; minimally edit `skills/using-qrspi/SKILL.md` if and only if a one-phrase semantically-equivalent rewrite is required to resolve the constraint conflict between the regex's `substitut` branch (DoD bullet 3) and the existing settled prose (the negated-form clause "does not silently substitute defaults" in the missing-`model_routing:` H4 body).
 - **Dependencies:** [Task 17, Task 40]
 - **LOC estimate:** ~80
 

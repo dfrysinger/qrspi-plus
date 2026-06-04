@@ -1,0 +1,2 @@
+score: 80
+reason: Both "see G35" (line 30) and "G3-class concerns" (line 208) are confirmed present in the shipped skills/design/SKILL.md prompt prose; these are run-local QRSPI goal IDs that fail the evergreen-prose / ID-hygiene rule the task spec explicitly invokes.

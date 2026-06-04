@@ -1,0 +1,25 @@
+DECLINED: spec-codex R5-F01 (using-qrspi 470-471/484/497) — post-T9-sweep fail-loud halt is retirement-documentation/hardening, corroborated by migrated precedence-chain summary line ~521; not live consumption of a superseded field. Same class as round-04 F3 decline.
+
+=== Round-05 correctness fan-out — DECLINED / DEFERRED ===
+D1 [sec-claude F02 deep, sec-codex F1] "add trusted_path: enforcement to _resolve-lib.sh":
+  ARCHITECTURALLY OUT OF SCOPE for T16's resolver. trusted_path is a documented
+  short-circuit at the MAIN-CHAT dispatch site, BEFORE/OUTSIDE the tier chain
+  (implement/SKILL.md:537, using-qrspi ~508). T16 spec scopes _resolve-lib.sh to
+  tier parse/precedence/lookup/none-halt only. Verified zero executable exposure:
+  dispatch-agent.sh does not exist; nothing executable sources _resolve-lib.sh
+  (only the lib's own header + QRSPI_SOURCE_ONLY guard reference its name). The
+  in-scope sliver (header overclaim) is fixed as F07. BACKLOG: verify trusted_path
+  is wired end-to-end at the dispatch site when the executable dispatcher lands
+  (T19+ / integration). Filed as plugin/backlog issue.
+D2 [sec-codex F2 deep] "block-scoped YAML parsing instead of global grep":
+  DEFERRED. Partial mitigation shipped via F03's indented-row anchor
+  (^[[:space:]]+) which rejects a column-0 out-of-block shadow. The shipped
+  config.md has NO out-of-block tier-key lines (verified), so this is latent
+  fragility, not a concrete bug, and requires config.md write access (already a
+  trusted surface) to exploit. Full block extractor -> v0.7.3 backlog. F08 adds a
+  test documenting the residual indented-shadow gap.
+D3 [sf-codex F1/F2] "remove 2>/dev/null masking in grep pipelines":
+  DECLINED as framed. The 2>/dev/null is on -f-guarded grep (stderr only on file
+  access errors already excluded by the -f test); it is not the source of masking.
+  The real masking sub-issue (CONFIG_MD-unset -> misleading none/medium) is the
+  legitimate core, accepted and fixed as F02.

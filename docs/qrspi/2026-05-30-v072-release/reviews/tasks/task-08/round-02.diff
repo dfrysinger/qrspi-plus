@@ -1,0 +1,95 @@
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index 8c40e57..3f24d65 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -1062,19 +1062,29 @@ _t7_require_trusted_gh() {
+ # ---------------------------------------------------------------------------
+ # Shared helper: write a minimal finding + sidecar pair for fan-in tests.
+ #   _t8_write_finding_pair <round-dir> <stem> <change_type> <score> <reason>
++#                          [referenced_files] [body]
+ #   - <stem>: file base like "quality-claude.finding-F01"
+ #   - <change_type>: correctness | style | clarity | scope | intent
+ #   - <score>: integer 0..100
+ #   - <reason>: sidecar reason string (empty string = no reason field emitted)
++#   - [referenced_files]: YAML inline list for finding frontmatter (default: [])
++#   - [body]: finding markdown body (default: "Fixture finding body.")
++#
++# TC4..TC7 pass realistic fabricated citations so that IF the verifier were
++# invoked on the finding, the Cite Check would actually trigger the claimed
++# failure shape (file-existence / line-range / quoted-content / named-anchor).
++# TC8 keeps referenced_files: [] — the no-citation no-op path.
+ # ---------------------------------------------------------------------------
+ 
+ _t8_write_finding_pair() {
+   local dir="$1" stem="$2" ct="$3" score="$4" reason="$5"
++  local refs="${6:-[]}"
++  local body="${7:-Fixture finding body.}"
+   local finding="$dir/${stem}.md"
+   local sidecar="$dir/${stem}.score.md"
+ 
+-  printf -- '---\nfinding_id: %s\nseverity: high\nchange_type: %s\nreferenced_files: []\n---\nFixture finding body.\n' \
+-    "$stem" "$ct" >"$finding"
++  printf -- '---\nfinding_id: %s\nseverity: high\nchange_type: %s\nreferenced_files: %s\n---\n%s\n' \
++    "$stem" "$ct" "$refs" "$body" >"$finding"
+ 
+   if [[ -n "$reason" ]]; then
+     printf -- '---\nverifier_status: passed\nscore: %s\nreason: %s\n---\nCite check fixture sidecar.\n' \
+@@ -1095,8 +1105,12 @@ _t8_write_finding_pair() {
+   tmp="$(mktemp -d)"
+   local stem="quality-claude.finding-F01"
+   local reason="HALLUCINATED: file nonexistent/fabricated/path.md does not exist"
++  # cite-check: fixture finding cites a file that does not exist in the repo,
++  # so IF the verifier were invoked its Cite Check would trigger file-existence failure.
++  local refs="[src/does-not-exist.ts]"
++  local body="The helper function in src/does-not-exist.ts should be extracted into a shared utility."
+ 
+-  _t8_write_finding_pair "$tmp" "$stem" correctness 0 "$reason"
++  _t8_write_finding_pair "$tmp" "$stem" correctness 0 "$reason" "$refs" "$body"
+ 
+   # Assert sidecar content: score is 0
+   local raw_score
+@@ -1134,8 +1148,13 @@ _t8_write_finding_pair() {
+   tmp="$(mktemp -d)"
+   local stem="quality-claude.finding-F02"
+   local reason="HALLUCINATED: agents/fake.md has 10 lines, cited 500-510 out of range"
++  # cite-check: fixture finding cites README.md at a line range (L99999-L99999)
++  # well past EOF (README.md is ~944 lines), so IF the verifier were invoked its
++  # Cite Check would trigger line-range failure.
++  local refs="[README.md#L99999-L99999]"
++  local body="As documented in README.md lines 99999-99999, the pipeline configuration should be updated."
+ 
+-  _t8_write_finding_pair "$tmp" "$stem" correctness 0 "$reason"
++  _t8_write_finding_pair "$tmp" "$stem" correctness 0 "$reason" "$refs" "$body"
+ 
+   local raw_score
+   raw_score=$(grep "^score:" "$tmp/${stem}.score.md" | awk '{print $2}')
+@@ -1167,8 +1186,13 @@ _t8_write_finding_pair() {
+   tmp="$(mktemp -d)"
+   local stem="quality-claude.finding-F03"
+   local reason="HALLUCINATED: quoted content 'widen/ref' not found at SKILL.md:516"
++  # cite-check: fixture finding cites README.md and quotes a string that does NOT
++  # appear anywhere in that file, so IF the verifier were invoked its Cite Check
++  # would trigger quoted-content mismatch failure.
++  local refs="[README.md]"
++  local body="The implementation contains \`const fabricatedFunction = () => {}\` which should be extracted into a shared module per README.md."
+ 
+-  _t8_write_finding_pair "$tmp" "$stem" style 0 "$reason"
++  _t8_write_finding_pair "$tmp" "$stem" style 0 "$reason" "$refs" "$body"
+ 
+   local raw_score
+   raw_score=$(grep "^score:" "$tmp/${stem}.score.md" | awk '{print $2}')
+@@ -1200,8 +1224,13 @@ _t8_write_finding_pair() {
+   tmp="$(mktemp -d)"
+   local stem="quality-claude.finding-F04"
+   local reason="HALLUCINATED: anchor 'FakeFunction' not found in agents/fake-agent.md"
++  # cite-check: fixture finding cites README.md and names a section/function anchor
++  # (nonexistentFunc) that does not exist anywhere in the file, so IF the verifier
++  # were invoked its Cite Check would trigger named-anchor failure.
++  local refs="[README.md]"
++  local body="The nonexistentFunc() documented in README.md should be split into smaller helpers for clarity."
+ 
+-  _t8_write_finding_pair "$tmp" "$stem" clarity 0 "$reason"
++  _t8_write_finding_pair "$tmp" "$stem" clarity 0 "$reason" "$refs" "$body"
+ 
+   local raw_score
+   raw_score=$(grep "^score:" "$tmp/${stem}.score.md" | awk '{print $2}')

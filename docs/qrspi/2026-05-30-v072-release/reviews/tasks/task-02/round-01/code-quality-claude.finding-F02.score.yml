@@ -1,0 +1,3 @@
+finding_tag: code-quality-claude.R1-F02
+score: 60
+reason: $stderr empty under default BATS run — conditions are dead code but tests pass via $output OR. Clarity/maintainability concern, not functional defect. DROP.

@@ -1,0 +1,3 @@
+finding_tag: spec-codex.R1-F03
+score: 80
+reason: Single block-hash line uniqueness assertion missing. Same theme as spec-claude F02 (82). KEEP.

@@ -1,0 +1,3 @@
+finding_tag: spec-codex.R2-F01
+score: 28
+reason: Substring vs exact-match test assertions — implementation diagnostics verbatim per spec (spec-claude confirms). Test-strictness preference, not real defect. DROP.

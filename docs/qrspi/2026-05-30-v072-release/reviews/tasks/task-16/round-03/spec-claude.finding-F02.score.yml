@@ -1,0 +1,2 @@
+score: 15
+reason: The stale `model:` example on line 159 is real, but `skills/plan/SKILL.md` does not appear anywhere in the round-03.diff (nor any round diff), placing this squarely outside task-16's authorship and making it a pre-existing issue by the rubric's `referenced_files`-vs-diff overlap test.

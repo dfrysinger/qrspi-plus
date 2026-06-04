@@ -1,0 +1,2 @@
+score: 100
+reason: Genuine integer overflow vulnerability; regex accepts arbitrary-length digit strings, Bash wraps modulo 2^64, attacker can craft oversized scores to bypass threshold filters. Attack scenario verified, math confirmed, code introduces vulnerability.

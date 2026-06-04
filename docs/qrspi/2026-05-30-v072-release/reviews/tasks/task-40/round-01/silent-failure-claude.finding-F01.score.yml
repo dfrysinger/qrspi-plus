@@ -1,0 +1,2 @@
+score: 70
+reason: Verified vacuous-in-CI pin — .git/hooks/pre-commit is per-clone untracked so the `if [ -f ]` short-circuits to a pass on every CI run, and the comment-promised scripts/pre-commit* surface is not asserted, matching the silent-failure category.

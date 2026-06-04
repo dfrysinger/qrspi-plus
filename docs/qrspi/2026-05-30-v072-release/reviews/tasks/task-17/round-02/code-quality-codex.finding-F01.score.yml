@@ -1,0 +1,2 @@
+score: 42
+reason: Verified real test-fragility gap (grep unanchored to table rows, post-table prose block exists as a concrete attack surface), but currently no stray line matches so this is a future-reformatting risk rather than a present bug or vacuous pass.

@@ -1,0 +1,2 @@
+score: 60
+reason: Verified real gap — no NN>=2 test reaches exit 0 / passes Step-10 anchor validation into the deferred write; tempered because the round-agnostic write block is already exercised by round 1.

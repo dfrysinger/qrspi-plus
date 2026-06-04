@@ -1,0 +1,3 @@
+finding_tag: spec-claude.R1-F02
+score: 82
+reason: Spec line 38 requires exactly one block-hash header. All tests use presence-only grep; a file with two valid block-hash lines would pass. Trivial fix (grep -c == 1) and load-bearing for spec compliance.

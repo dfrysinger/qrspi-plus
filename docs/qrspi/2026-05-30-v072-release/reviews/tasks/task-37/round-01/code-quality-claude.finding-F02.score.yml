@@ -1,0 +1,2 @@
+score: 20
+reason: The cited "ID hygiene / strict surface" rule for prompt templates is not documented in prompt-design-rules.md or the QRSPI rule set; "e.g., G1, G5, CD-4" is clearly an illustrative example, and the concern is a stylistic nitpick not backed by an explicit constraint.

@@ -1,0 +1,619 @@
+diff --git a/scripts/await-round.sh b/scripts/await-round.sh
+index 2782fbb..41c8911 100755
+--- a/scripts/await-round.sh
++++ b/scripts/await-round.sh
+@@ -26,6 +26,16 @@
+ #   1  unrecoverable transport failure on a background entry, or invalid args
+ #
+ # Bash 3.2 compatible (macOS system /bin/bash).
++#
++# Trust boundary (R2 hardening — security-claude R2-F01/F02):
++#   The .dispatch-manifest.json fields `await_cmd` and `split_cmd` are read
++#   verbatim from disk. They are NEVER passed to a shell. The embedded Python
++#   helper below parses each command via shlex.split, validates argv[0]
++#   against an executable allowlist (path-shaped OR `codex`), and execs with
++#   `shell=False` and `cwd=<round-dir>/.dispatch/`. This blocks the canonical
++#   RCE shape (`touch /tmp/pwned`) and confines relative-path writes to the
++#   round-scoped dispatch directory which is removed on completion.
++#   See parse_and_validate() in the inline python block.
+ 
+ set -u
+ 
+@@ -75,7 +85,7 @@ RC_FILE_E="$RC_FILE" \
+ SUM_FILE_E="$SUM_FILE" \
+ ERR_FILE_E="$ERR_FILE" \
+ python3 - <<'PYEOF'
+-import json, os, subprocess, sys
++import json, os, shlex, subprocess, sys
+ 
+ round_dir = os.environ["ROUND_DIR_E"]
+ manifest_path = os.environ["MANIFEST_E"]
+@@ -84,6 +94,46 @@ rc_file = os.environ["RC_FILE_E"]
+ sum_file = os.environ["SUM_FILE_E"]
+ err_file = os.environ["ERR_FILE_E"]
+ 
++# Trust boundary (R2 hardening — security-claude R2-F01/F02):
++# `await_cmd` and `split_cmd` are read VERBATIM from
++# <round-dir>/.dispatch-manifest.json, which is on disk and writable by
++# anything that has the round-dir path. We MUST NOT pass these strings to a
++# shell. Instead:
++#   1. Parse via shlex.split → argv list, exec with shell=False.
++#   2. Validate argv[0]: must contain '/' (relative or absolute path) OR be
++#      a bare basename in BARE_NAME_ALLOWLIST. This blocks bare commands like
++#      `touch`, `curl`, `rm` while permitting real callers (scripts/<name>.sh
++#      and the `codex` CLI).
++#   3. Run with cwd=<round-dir>/.dispatch/ so any relative-path writes from
++#      legitimate callers stay confined; absolute-path writes outside the
++#      workspace are still possible only if the executable allowlist permits
++#      them (and our allowlist permits no general-purpose write tools).
++# Documented in script header comments above (see "Trust boundary").
++BARE_NAME_ALLOWLIST = {"codex"}
++DISPATCH_CWD = os.path.join(round_dir, ".dispatch")
++
++def parse_and_validate(cmdstr, kind, tag):
++    """Return (argv, err_or_None). kind ∈ {"await_cmd","split_cmd"}."""
++    try:
++        argv = shlex.split(cmdstr)
++    except ValueError as e:
++        return None, "await-round: %s parse error for %r: %s" % (kind, tag, type(e).__name__)
++    if not argv:
++        return None, "await-round: %s empty after parse for %r" % (kind, tag)
++    exe = argv[0]
++    # Reject any argv[0] that begins with '-' (option-style — never a real
++    # executable; could feed unintended flags to a downstream wrapper).
++    if exe.startswith("-"):
++        return None, "await-round: %s rejected for %r: argv[0] must not start with '-'" % (kind, tag)
++    # Bare-name (no '/') executables are rejected unless explicitly allowed.
++    # This blocks the canonical RCE shape: `touch /tmp/pwned`, `curl ...`, etc.
++    if "/" not in exe and exe not in BARE_NAME_ALLOWLIST:
++        return None, ("await-round: %s rejected for %r: bare-name executable %r "
++                      "not in allowlist; manifest commands must use a path "
++                      "(e.g. 'scripts/foo.sh') or an allowed binary (codex)."
++                      % (kind, tag, exe))
++    return argv, None
++
+ errs = []
+ with open(manifest_path) as f:
+     manifest = json.load(f)
+@@ -121,11 +171,26 @@ for entry in manifest:
+         final_rc = 1
+         continue
+ 
+-    # Execute await_cmd. Capture & DISCARD stdout/stderr — they may contain
+-    # raw third-party payload fragments that must not surface (CD-1 #4).
++    # Execute await_cmd. shell=False + parsed argv (R2 hardening). Captured
++    # stdout/stderr remain DEVNULL — they may carry raw third-party payload
++    # fragments that must not surface (CD-1 #4).
++    argv, perr = parse_and_validate(await_cmd, "await_cmd", tag)
++    if argv is None:
++        errs.append(perr)
++        entry["status"] = "failed"
++        final_rc = 1
++        continue
++    # Ensure the confinement directory exists so cwd= doesn't blow up on
++    # already-cleaned rounds; any prior `rm -rf .dispatch` leaves a clean
++    # slate, and we want await_cmd's relative writes to land here.
++    try:
++        os.makedirs(DISPATCH_CWD, exist_ok=True)
++    except Exception:
++        pass
+     try:
+         r = subprocess.run(
+-            await_cmd, shell=True,
++            argv, shell=False,
++            cwd=DISPATCH_CWD,
+             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+         )
+     except Exception as e:
+@@ -139,11 +204,18 @@ for entry in manifest:
+         final_rc = 1
+         continue
+ 
+-    # Execute split_cmd if present.
++    # Execute split_cmd if present (shell=False + parsed argv).
+     if split_cmd:
++        argv_s, perr_s = parse_and_validate(split_cmd, "split_cmd", tag)
++        if argv_s is None:
++            errs.append(perr_s)
++            entry["status"] = "failed"
++            final_rc = 1
++            continue
+         try:
+             rs = subprocess.run(
+-                split_cmd, shell=True,
++                argv_s, shell=False,
++                cwd=DISPATCH_CWD,
+                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+             )
+         except Exception as e:
+@@ -219,7 +291,7 @@ fi
+ # parity with dispatch-companion `await`). Per structure.md §14: stdout is
+ # the short status line.
+ RC_VALUE="$(cat "$RC_FILE" 2>/dev/null || echo 0)"
+-SUM_LINE="$(cat "$SUM_FILE" 2>/dev/null || true)"
++SUM_LINE="$(cat "$SUM_FILE" 2>/dev/null | head -c 4096 || true)"
+ ERR_TEXT="$(cat "$ERR_FILE" 2>/dev/null || true)"
+ 
+ # Strip any errant payload-shaped material that might somehow have leaked
+diff --git a/scripts/g4-section-anchor-manifest.json b/scripts/g4-section-anchor-manifest.json
+index 88893ab..3fbfb5f 100644
+--- a/scripts/g4-section-anchor-manifest.json
++++ b/scripts/g4-section-anchor-manifest.json
+@@ -1,6 +1,6 @@
+ {
+   "version": 1,
+-  "description": "G4 section-anchor manifest. Lists every SKILL.md source file that has a colocated .anchors.json index. The refresh script reads this manifest to know which sources to regenerate against. Add new entries here when extending section-anchor indexing to additional skill files.",
++  "description": "G4 section-anchor manifest. Lists every SKILL.md source file that has a colocated .anchors.json index. The refresh script reads this manifest to know which sources to regenerate against. Add new entries here when extending section-anchor indexing to additional skill files. v0.7.2 coverage: refreshed windows track the dispatch, round-preparation, reviewer-protocol, and plan-classification sections changed by this release (Standard Review Loop and Backward Loops in using-qrspi; Reviewer Dispatch Contract and Phase Routing in reviewer-protocol; Per-Task Classification and Reviewer Dispatch in plan).",
+   "entries": [
+     {
+       "source": "skills/reviewer-protocol/SKILL.md",
+diff --git a/scripts/round-prepare.sh b/scripts/round-prepare.sh
+index e720225..793d0b4 100755
+--- a/scripts/round-prepare.sh
++++ b/scripts/round-prepare.sh
+@@ -64,6 +64,34 @@ while [ "$#" -gt 0 ]; do
+   esac
+ done
+ 
++# ---------------------------------------------------------------------------
++# Trust-boundary input validation (R2 hardening — security-claude R2-F03).
++# $BASE_REF and $ARTIFACT flow into `git rev-parse` / `git diff` invocations.
++# Without validation, an attacker controlling these flags can inject git
++# options (e.g. --output=/etc/cron.d/backdoor, --upload-pack=<cmd>). We
++# reject any value beginning with '-' here, and additionally pass refs after
++# `--end-of-options` (where supported) and use `--` separators on `git diff`.
++# Path-shaped values (legitimate ARTIFACT paths) may begin with '.' or '/'
++# but must not begin with '-'.
++# ---------------------------------------------------------------------------
++case "$BASE_REF" in
++  -*) echo "round-prepare: --base-ref must not begin with '-' (got: $BASE_REF). Refusing to invoke git with option-shaped ref." >&2; exit 1 ;;
++esac
++case "$ARTIFACT" in
++  -*) echo "round-prepare: --artifact must not begin with '-' (got: $ARTIFACT)." >&2; exit 1 ;;
++esac
++# Additionally validate $TASK_BRANCH and $IMPLEMENTER_COMMIT — they are not
++# currently fed to git, but defense in depth keeps future refactors safe.
++case "$TASK_BRANCH" in
++  -*) echo "round-prepare: --task-branch must not begin with '-' (got: $TASK_BRANCH)." >&2; exit 1 ;;
++esac
++case "$IMPLEMENTER_COMMIT" in
++  -*) echo "round-prepare: --implementer-commit must not begin with '-' (got: $IMPLEMENTER_COMMIT)." >&2; exit 1 ;;
++esac
++case "$WORKTREE" in
++  -*) echo "round-prepare: --worktree must not begin with '-' (got: $WORKTREE)." >&2; exit 1 ;;
++esac
++
+ # Normalize round number to integer-safe NN string + value.
+ case "$ROUND" in
+   ''|*[!0-9]*)
+@@ -106,6 +134,10 @@ if [ "$PER_TASK" -eq 1 ]; then
+   # base on per-task invocations.
+   TASK_BASE_SHA=""
+   if [ -n "$BASE_REF" ]; then
++    # Input validation above (BASE_REF must not begin with '-') already
++    # closes the option-injection vector at the flag-parse boundary, so we
++    # don't pass --end-of-options here (git rev-parse echoes the literal
++    # marker on stdout, polluting the captured SHA).
+     TASK_BASE_SHA="$(git -C "${WORKTREE:-.}" rev-parse "$BASE_REF" 2>/dev/null || true)"
+   fi
+ 
+@@ -325,10 +357,12 @@ fi
+ 
+ DIFF_PATH="$OUTPUT_DIR/round-${ROUND_NN}.diff"
+ DIFF_TMP="${DIFF_PATH}.tmp.$$"
++# `--` separates revision from path arguments, blocking option injection
++# even past the flag-parse validation above (defense in depth — R2-F03).
+ if [ -n "$ARTIFACT" ]; then
+   git diff "$REF" -- "$ARTIFACT" > "$DIFF_TMP" 2>/dev/null || true
+ else
+-  git diff "$REF" > "$DIFF_TMP" 2>/dev/null || true
++  git diff "$REF" -- > "$DIFF_TMP" 2>/dev/null || true
+ fi
+ if ! mv "$DIFF_TMP" "$DIFF_PATH"; then
+   rm -f "$DIFF_TMP"
+diff --git a/tests/unit/test-await-round.bats b/tests/unit/test-await-round.bats
+index 8807da4..fb0c7b4 100644
+--- a/tests/unit/test-await-round.bats
++++ b/tests/unit/test-await-round.bats
+@@ -138,3 +138,125 @@ EOF
+   [ "$status" -ne 0 ]
+   [[ "$output" == *"--round-dir"* ]]
+ }
++
++@test "output-bound: prompt-body fixture in .dispatch is NOT echoed" {
++  # Per task-12.md "Test expectations" bullet 9: combined stdout+stderr must
++  # not echo prompt-body fragments either. This fixture stages a dispatch
++  # prompt file under <round-dir>/.dispatch/ containing a recognisable
++  # sentinel; await-round consumes and removes the directory but must never
++  # surface the sentinel string.
++  STUB_AWAIT="$TEST_ROOT/stub-await.sh"
++  STUB_SPLIT="$TEST_ROOT/stub-split.sh"
++  cat > "$STUB_AWAIT" <<EOS
++#!/usr/bin/env bash
++exit 0
++EOS
++  cat > "$STUB_SPLIT" <<EOS
++#!/usr/bin/env bash
++exit 0
++EOS
++  chmod +x "$STUB_AWAIT" "$STUB_SPLIT"
++
++  # Stage a dispatch prompt body with a unique sentinel.
++  python3 -c "open('$ROUND_DIR/.dispatch/prompt-codex-quality.txt','w').write('SECRET-PROMPT-BODY-QFXBR '*5000)"
++
++  python3 - <<EOS
++import json
++m=[{"tag":"codex-quality","agent":"x","mode":"background","status":"pending","job_id":"j",
++    "await_cmd":"$STUB_AWAIT","split_cmd":"$STUB_SPLIT"}]
++open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
++EOS
++
++  out_file="$TEST_ROOT/combined.out"
++  "$AWAIT" --round-dir "$ROUND_DIR" >"$out_file" 2>&1
++  status=$?
++  [ "$status" -eq 0 ]
++  byte_count=$(wc -c < "$out_file")
++  [ "$byte_count" -le 2048 ]
++  ! grep -q 'SECRET-PROMPT-BODY-QFXBR' "$out_file"
++  # And the round-scoped dispatch dir must be gone after completion.
++  [ ! -d "$ROUND_DIR/.dispatch" ]
++}
++
++# ── Command-injection guards (R2 security-claude R2-F01/F02) ─────────────────
++
++@test "command-injection: malicious await_cmd 'touch /tmp/pwned-...' is rejected" {
++  # Pre-fix this manifest entry would execute `touch /tmp/pwned-<pid>` via
++  # subprocess.run(shell=True), creating the file as the current user. The
++  # parse_and_validate() guard rejects bare-name executables not in the
++  # allowlist, so /tmp/<sentinel> must NOT be created.
++  PWN_PATH="/tmp/qrspi-await-round-pwned-$$-$RANDOM"
++  rm -f "$PWN_PATH"
++
++  python3 - <<EOF
++import json
++m = [{
++  "tag": "evil",
++  "agent": "x",
++  "mode": "background",
++  "status": "pending",
++  "job_id": "j",
++  "await_cmd": "touch $PWN_PATH",
++  "split_cmd": "true"
++}]
++open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
++EOF
++
++  run "$AWAIT" --round-dir "$ROUND_DIR"
++  # Drain reports failure (rc != 0) because the entry was rejected.
++  [ "$status" -ne 0 ]
++  # The malicious file MUST NOT have been created.
++  [ ! -e "$PWN_PATH" ]
++  # The diagnostic should explain why (bare-name executable rejected).
++  [[ "$output" == *"rejected"* ]] || [[ "$output" == *"allowlist"* ]]
++  rm -f "$PWN_PATH"
++}
++
++@test "command-injection: shell-metacharacter await_cmd does NOT spawn a shell" {
++  # `; rm -rf /` past a real binary would execute under shell=True. With
++  # shell=False + shlex.split, the entire string becomes argv and the
++  # nonexistent binary 'evil;' fails fast — no shell metachar interpretation.
++  PWN_PATH="/tmp/qrspi-await-round-shellmeta-$$-$RANDOM"
++  rm -f "$PWN_PATH"
++
++  python3 - <<EOF
++import json
++m = [{
++  "tag": "evil2",
++  "agent": "x",
++  "mode": "background",
++  "status": "pending",
++  "job_id": "j",
++  "await_cmd": "evil-no-such-binary; touch $PWN_PATH",
++  "split_cmd": "true"
++}]
++open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
++EOF
++
++  run "$AWAIT" --round-dir "$ROUND_DIR"
++  [ "$status" -ne 0 ]
++  [ ! -e "$PWN_PATH" ]
++  rm -f "$PWN_PATH"
++}
++
++@test "command-injection: option-shaped await_cmd argv[0] is rejected" {
++  # An await_cmd starting with '--something' would be rejected as a
++  # defensive guard (argv[0] starting with '-' is never a real executable).
++  python3 - <<EOF
++import json
++m = [{
++  "tag": "evil3",
++  "agent": "x",
++  "mode": "background",
++  "status": "pending",
++  "job_id": "j",
++  "await_cmd": "--no-such-option=value",
++  "split_cmd": "true"
++}]
++open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
++EOF
++
++  run "$AWAIT" --round-dir "$ROUND_DIR"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"must not start with"* ]]
++}
+diff --git a/tests/unit/test-round-prepare.bats b/tests/unit/test-round-prepare.bats
+index c1c1865..ca46af3 100644
+--- a/tests/unit/test-round-prepare.bats
++++ b/tests/unit/test-round-prepare.bats
+@@ -238,8 +238,10 @@ assert data.strip() == '$HEAD_SHA'
+   PREV_SHA=$(git rev-parse HEAD~1)
+   printf '%s\n' "$PREV_SHA" > "$TASK_DIR/round-02-commit.txt"
+   # round-02-scope-set.txt deliberately absent.
+-  QRSPI_SCOPE_TAGGER_ENABLED=true \
+-  run "$PREP" 3 "$TASK_DIR/round-03" \
++  # `env VAR=val "$PREP"` (rather than `VAR=val run "$PREP"`) makes the
++  # scope-tagger gate explicit in the subprocess environment regardless of
++  # how the bats `run` function propagates assignment-prefix variables.
++  run env QRSPI_SCOPE_TAGGER_ENABLED=true "$PREP" 3 "$TASK_DIR/round-03" \
+       --task-branch main \
+       --implementer-commit "$HEAD_SHA" \
+       --worktree "$TEST_ROOT/repo" \
+@@ -254,8 +256,7 @@ assert data.strip() == '$HEAD_SHA'
+   PREV_SHA=$(git rev-parse HEAD~1)
+   printf '%s\n' "$PREV_SHA" > "$TASK_DIR/round-02-commit.txt"
+   : > "$TASK_DIR/round-02-scope-set.txt"  # empty
+-  QRSPI_SCOPE_TAGGER_ENABLED=true \
+-  run "$PREP" 3 "$TASK_DIR/round-03" \
++  run env QRSPI_SCOPE_TAGGER_ENABLED=true "$PREP" 3 "$TASK_DIR/round-03" \
+       --task-branch main \
+       --implementer-commit "$HEAD_SHA" \
+       --worktree "$TEST_ROOT/repo" \
+@@ -336,6 +337,109 @@ assert d.get('reason') and 'HEAD~1' in d['reason']
+ "
+ }
+ 
++# Convergence-table coverage gap fixtures: missing, empty, full-artifact,
++# overlap (partial), proper-subset-with-safety-margin. These exercise the
++# table rows enumerated in task-12.md "Test expectations" bullet 6.
++
++@test "convergence: missing scope-set (tagger disabled) broadens via decide_narrow path" {
++  # When the scope-tagger is disabled, missing scope-set files are NOT a
++  # blocking error (that branch is gated by SCOPE_TAGGER_ENABLED). Instead,
++  # decide_narrow's `[ ! -s "$prev1" ]` check fires and the round broadens.
++  cd "$TEST_ROOT/repo"
++  PREV=$(git rev-parse HEAD~1)
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
++  # Both scope-set files deliberately absent; tagger disabled (default).
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++assert d['narrowed'] is False, d
++assert d.get('reason') and 'scope-set missing or empty' in d['reason'], d
++"
++}
++
++@test "convergence: empty scope-set (tagger disabled) broadens via decide_narrow path" {
++  cd "$TEST_ROOT/repo"
++  PREV=$(git rev-parse HEAD~1)
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
++  : > "$TASK_DIR/round-01-scope-set.txt"
++  : > "$TASK_DIR/round-02-scope-set.txt"
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++assert d['narrowed'] is False, d
++assert d.get('reason') and 'scope-set missing or empty' in d['reason'], d
++"
++}
++
++@test "convergence: full-artifact scope-set (sentinel vs concrete prior) broadens" {
++  # 'Full-artifact' is modeled here as a scope-set that uses an artifact-wide
++  # sentinel ('*') rather than a concrete file list. Compared against a
++  # concrete prior scope-set, the sets are non-equal and not a proper subset
++  # (s1\s2 = {*} non-empty), so decide_narrow's diverge-broaden path fires.
++  cd "$TEST_ROOT/repo"
++  PREV=$(git rev-parse HEAD~1)
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
++  printf '*\n'          > "$TASK_DIR/round-01-scope-set.txt"
++  printf 'a\nb\nc\n'    > "$TASK_DIR/round-02-scope-set.txt"
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++assert d['narrowed'] is False, d
++"
++}
++
++@test "convergence: partial-overlap scope-sets broaden" {
++  cd "$TEST_ROOT/repo"
++  PREV=$(git rev-parse HEAD~1)
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
++  # NN-1 = {a,b,c}; NN-2 = {b,c,d}. Sets share {b,c} but neither is a subset
++  # of the other (s1\s2 = {a} non-empty), so decide_narrow broadens.
++  printf 'a\nb\nc\n' > "$TASK_DIR/round-01-scope-set.txt"
++  printf 'b\nc\nd\n' > "$TASK_DIR/round-02-scope-set.txt"
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++assert d['narrowed'] is False, d
++"
++}
++
++@test "convergence: proper-subset (NN-1 ⊂ NN-2) with HEAD~1 safety match narrows" {
++  cd "$TEST_ROOT/repo"
++  # Add a third commit so HEAD~1 == HEAD_SHA matches the round-02 anchor
++  # (SHA safety margin satisfied for narrow eligibility).
++  echo "v3" > file.txt
++  git commit -q -am "third"
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  printf '%s\n' "$BASE_SHA" > "$TASK_DIR/round-01-commit.txt"
++  # NN-1 (round-02) = {a,b}; NN-2 (round-01) = {a,b,c}. Every element of NN-1
++  # is in NN-2 (s1\s2 = {} ); decide_narrow returns the proper-subset narrow
++  # path with the SCOPE_HINT carrying the round-NN-1 set.
++  printf 'a\nb\nc\n' > "$TASK_DIR/round-01-scope-set.txt"
++  printf 'a\nb\n'   > "$TASK_DIR/round-02-scope-set.txt"
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++assert d['narrowed'] is True, d
++hint=d.get('scope_hint') or ''
++# Hint sourced from round-(NN-1) scope-set = {a,b}; not the NN-2 superset.
++assert 'a' in hint and 'b' in hint and 'c' not in hint, hint
++"
++}
++
+ # ── Backward-loop flag ──────────────────────────────────────────────────────
+ 
+ @test "backward-loop: present flag forces broaden + flag is consumed (deleted)" {
+@@ -357,6 +461,85 @@ assert d['narrowed'] is False
+ "
+ }
+ 
++@test "backward-loop: deletion failure surfaces a diagnostic on stderr" {
++  # Make the flag path a non-empty directory rather than a regular file.
++  # `[ -e PATH ]` is true for both, so round-prepare enters the consume-once
++  # branch; but `rm -f PATH` on a non-empty directory fails (rm: is a
++  # directory), exercising the deletion-failure diagnostic branch in
++  # round-prepare.sh (lines 203-205).
++  cd "$TEST_ROOT/repo"
++  PREV=$(git rev-parse HEAD~1)
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
++  printf 'a\n' > "$TASK_DIR/round-01-scope-set.txt"
++  printf 'a\n' > "$TASK_DIR/round-02-scope-set.txt"
++  mkdir -p "$TASK_DIR/round-03-backward-loop.flag"
++  # Put a child inside so the dir is non-empty and `rm -f` fails on it.
++  : > "$TASK_DIR/round-03-backward-loop.flag/sentinel"
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]  # round still proceeds; only diagnostic on stderr
++  [[ "$output" == *"failed to delete backward-loop flag"* ]]
++  # Diagnostic must reference the offending flag path so an operator can
++  # locate the file requiring manual cleanup (R2 silent-failure-claude
++  # R2-F01: prove the failure surface is attributable, not just present).
++  [[ "$output" == *"$TASK_DIR/round-03-backward-loop.flag"* ]]
++  # Flag path remains because deletion failed (consume attempt, not consume).
++  [ -e "$TASK_DIR/round-03-backward-loop.flag" ]
++  # Sidecar must still be written even when deletion failed — this proves the
++  # downstream observable state is materialised on disk and the failure path
++  # is not "silent" (no .round-prepare.json would mean the round halted
++  # without a record).
++  [ -f "$TASK_DIR/round-03/.round-prepare.json" ]
++  python3 -c "
++import json
++d = json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++# narrowed must be False (deletion failure still consumed the flag in
++# semantics — BACKWARD_FORCED=1 short-circuits decide_narrow to broaden).
++assert d.get('narrowed') is False, d
++# Reason field must reference the backward-loop forcing — without this the
++# observable state would be indistinguishable from an ordinary broaden.
++assert 'backward-loop' in (d.get('reason') or '').lower(), d
++# diff_file must be present (non-halt path).
++assert d.get('diff_file'), d
++"
++}
++
++# ── Option-injection guards (R2 security-claude R2-F03) ──────────────────────
++
++@test "git-injection: --base-ref starting with '-' is rejected (no git invoked)" {
++  # Without flag-parse validation, BASE_REF='--show-toplevel' would flow into
++  # `git rev-parse "$BASE_REF"` and exfiltrate the workspace path; an attacker
++  # could also pass --output=<path> to git diff to write arbitrary files.
++  cd "$TEST_ROOT/repo"
++  run "$PREP" 1 "$TASK_DIR/round-01" --base-ref "--show-toplevel"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"--base-ref must not begin with '-'"* ]]
++  # No diff or sidecar should have been produced.
++  [ ! -f "$TASK_DIR/round-01/round-01.diff" ]
++  [ ! -f "$TASK_DIR/round-01/.round-prepare.json" ]
++}
++
++@test "git-injection: --artifact starting with '-' is rejected" {
++  cd "$TEST_ROOT/repo"
++  run "$PREP" 1 "$TASK_DIR/round-01" --base-ref "$BASE_SHA" --artifact "--output=/tmp/pwned"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"--artifact must not begin with '-'"* ]]
++  [ ! -e /tmp/pwned ]
++}
++
++@test "git-injection: legitimate refs containing '-' (e.g. feature-x) still work" {
++  # Defense-in-depth must not break legitimate refs whose names contain
++  # internal dashes — only LEADING '-' is rejected.
++  cd "$TEST_ROOT/repo"
++  git checkout -q -b feature-x
++  echo "v3" > file.txt
++  git commit -q -am "third on feature-x"
++  git checkout -q main
++  run "$PREP" 1 "$TASK_DIR/round-01" --base-ref "feature-x"
++  [ "$status" -eq 0 ]
++  [ -f "$TASK_DIR/round-01/.round-prepare.json" ]
++}
++
+ # ── Non-git workspace ───────────────────────────────────────────────────────
+ 
+ @test "non-git workspace: exits 2 with no fabricated diff_file or scope_hint" {
+@@ -377,3 +560,52 @@ assert not d.get('scope_hint')
+ "
+   fi
+ }
++
++# ── Anchor JSON content coverage (per task-12.md test-expectation bullet 10) ─
++# Pin the specific section keys the v0.7.2 release touches so a future
++# refactor of the SKILL.md section structure does not silently drop a key
++# the dispatch / round-preparation / reviewer-protocol / plan-classification
++# narrow-read consumers depend on.
++
++@test "using-qrspi anchors cover Standard Review Loop + Backward Loops sections" {
++  python3 -c "
++import json
++d=json.load(open('$REPO_ROOT/skills/using-qrspi/SKILL.anchors.json'))
++for key in ('Standard Review Loop','Backward Loops (New Learnings)'):
++    assert key in d, 'missing anchor: '+key
++    e=d[key]
++    assert e['line_start']>0 and e['line_end']>=e['line_start'], (key,e)
++"
++}
++
++@test "reviewer-protocol anchors cover Reviewer Dispatch Contract + Phase Routing" {
++  python3 -c "
++import json
++d=json.load(open('$REPO_ROOT/skills/reviewer-protocol/SKILL.anchors.json'))
++for key in ('Reviewer Dispatch Contract','Phase Routing'):
++    assert key in d, 'missing anchor: '+key
++    e=d[key]
++    assert e['line_start']>0 and e['line_end']>=e['line_start'], (key,e)
++"
++}
++
++@test "plan anchors cover Per-Task Classification section" {
++  python3 -c "
++import json
++d=json.load(open('$REPO_ROOT/skills/plan/SKILL.anchors.json'))
++hits=[k for k in d if 'Per-Task Classification' in k]
++assert hits, 'missing Per-Task Classification anchor; got keys='+repr(list(d.keys())[:5])
++e=d[hits[0]]
++assert e['line_start']>0 and e['line_end']>=e['line_start'], (hits[0],e)
++"
++}
++
++@test "g4-section-anchor-manifest references all three per-skill SKILL sources" {
++  python3 -c "
++import json
++d=json.load(open('$REPO_ROOT/scripts/g4-section-anchor-manifest.json'))
++sources={e['source'] for e in d['entries']}
++for s in ('skills/using-qrspi/SKILL.md','skills/reviewer-protocol/SKILL.md','skills/plan/SKILL.md'):
++    assert s in sources, 'missing manifest source: '+s
++"
++}

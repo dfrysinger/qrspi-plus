@@ -1,0 +1,2 @@
+score: 12
+reason: The override-exits-0-on-unknown-host path is real but intentionally designed — _resolve-lib.sh documents the flat vendor allowlist as deliberate, the override is diagnostic-only per the script header and task spec, the DoD's "unknown host exits non-zero" applies to the no-override default path, and downstream is not fail-open (requires explicit second_reviewer: true).

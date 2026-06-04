@@ -1,0 +1,2 @@
+score: 72
+reason: Confirmed real gap — the test at line 166 uses `^EVIDENCE=.` (matches any non-empty value) while the task spec (task-24.md lines 43, 55) explicitly requires "evidence naming the safe default," the script emits a fixed semantic string (`EVIDENCE=no host signal; QRSPI_INTERACTION_MODE absent; safe default applied`), and the parallel override test at line 190 demonstrates a stronger pattern (`^EVIDENCE=.*QRSPI_INTERACTION_MODE.*auto`) is both feasible and already in use — the inconsistency is actionable and a non-brittle fix is straightforward.

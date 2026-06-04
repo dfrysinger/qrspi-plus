@@ -1,0 +1,2 @@
+score: 60
+reason: Real coverage gap — DoD/test-expectations explicitly require verifying "callers/docs/reference sites are updated" but the grep excludes --exclude-dir=docs, structurally preventing detection of stale doc references; the exclusion is defensible only because of historical narrative (task-39.md itself names the old path), which is exactly why suggested remediation Option 2 (tighten to invocation patterns) is appropriate.

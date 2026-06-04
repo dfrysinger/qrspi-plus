@@ -1,0 +1,2 @@
+score: 52
+reason: Verified real coverage gap — only the enabled+fail corner of the compound scope-set gate is tested; no [T13] test exercises gate-off (disabled round-3), the round-2 boundary, or the enabled+valid pass path, but this is defensive negative-branch coverage rather than a current functional defect.

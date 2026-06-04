@@ -1,0 +1,2 @@
+score: 45
+reason: Real, behavior-preserving stylistic simplification consistent with the `! grep -qF` pattern already used at line 383; low severity and non-load-bearing.

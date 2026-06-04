@@ -1,0 +1,2 @@
+score: 45
+reason: The grep anchoring weakness is real and introduced by this work-unit, but the false-positive scenario (field row absent, value-cell mention remaining) is unlikely; the more probable failure mode is a false-negative (test breaks unnecessarily if another row's value mentions model_routing:), which the finding mis-characterizes as "silently becoming a false positive" — reducing confidence somewhat, though the fix is still sound.

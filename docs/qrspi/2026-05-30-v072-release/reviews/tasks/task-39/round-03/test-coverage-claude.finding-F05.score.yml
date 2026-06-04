@@ -1,0 +1,2 @@
+score: 60
+reason: Real issue — `grep -U` is GNU-only; BSD grep (macOS) and BusyBox grep (bash:3.2 Alpine image) reject it with exit 2, which still satisfies `-ne 0`, making the CR-stripping assertion vacuous on most CI/dev hosts. Severity is correctly low (test fidelity, not product behavior).

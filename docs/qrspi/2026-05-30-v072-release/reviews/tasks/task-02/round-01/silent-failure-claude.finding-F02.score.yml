@@ -1,0 +1,3 @@
+finding_tag: silent-failure-claude.R1-F02
+score: 75
+reason: jq fail inside record_halt exits mid-loop with no output. Task spec line 41 requires fail-loudly-with-audit; missing jq violates contract. Upfront jq check is the appropriate fix.

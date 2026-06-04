@@ -1,0 +1,2 @@
+score: 80
+reason: Verified - bash command substitution strips trailing newline; Pattern A (direct printf) vs Pattern B (captured then printf '%s') produce different SHA-256 hashes for equivalent content.

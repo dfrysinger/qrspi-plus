@@ -1,0 +1,151 @@
+diff --git a/scripts/run-codex-review.sh b/scripts/run-codex-review.sh
+index 5d86335..4c99f35 100755
+--- a/scripts/run-codex-review.sh
++++ b/scripts/run-codex-review.sh
+@@ -236,6 +236,10 @@ _manifest_lock_dir=""
+ # The EXIT/INT/TERM trap strings reference this so the tmpfile is cleaned up
+ # even when a signal fires after mktemp but before mv-promotion completes.
+ _manifest_tmp=""
++# Script-level relay for the first-party prompt tmpfile (_fp_tmp) created in
++# the copilot-cli dispatch path.  The trap installed after mktemp references
++# this so the assembled prompt (containing subject code) is removed on signal.
++_fp_tmp=""
+ 
+ # _append_manifest_entry <entry-json> — shared atomic JSON array append.
+ # Uses jq to parse and append so trailing-whitespace/newline variations in
+@@ -271,6 +275,11 @@ _append_manifest_entry() {
+       # Record in a script-level variable so the EXIT trap string can
+       # reference it even after this function's stack frame is gone.
+       _manifest_lock_dir="$_lock_dir"
++      # Reset the manifest-tmp relay to "" at lock-acquisition time so the
++      # trap's first reference is always "" rather than a stale path from a
++      # prior interrupted call.  Eliminates the "stale path from prior call"
++      # orphan hazard for the narrow window between mktemp and relay assignment.
++      _manifest_tmp=""
+       # EXIT: pure cleanup — just release the lock (no exit call so normal
+       # completion paths are not affected).
+       # INT/TERM: release the lock THEN exit so bash does not resume the
+@@ -915,16 +924,26 @@ if [[ "$_detected_host" == "copilot-cli" ]]; then
+     echo "error: mktemp failed for first-party prompt tmpfile" >&2
+     exit 1
+   fi
++  # Install signal-cleanup trap for _fp_tmp so the assembled prompt (which
++  # contains subject code) is removed if SIGINT/SIGTERM fires before mv-promotion
++  # completes.  Mirror of the _manifest_tmp relay+trap pattern.
++  trap 'rm -f "$_fp_tmp" 2>/dev/null || true' EXIT INT TERM
+   if ! compose_prompt > "$_fp_tmp"; then
+-    rm -f "$_fp_tmp"
++    rm -f "$_fp_tmp"; _fp_tmp=""
++    trap - EXIT INT TERM
+     echo "error: compose_prompt failed for first-party dispatch" >&2
+     exit 1
+   fi
+   if ! mv -f "$_fp_tmp" "$_fp_prompt_file"; then
+-    rm -f "$_fp_tmp"
++    rm -f "$_fp_tmp"; _fp_tmp=""
++    trap - EXIT INT TERM
+     echo "error: mv -f failed promoting first-party prompt tmpfile" >&2
+     exit 1
+   fi
++  # mv succeeded: tmpfile has been promoted; clear relay and disarm trap before
++  # calling emit_first_party_manifest_entry (which installs its own traps).
++  _fp_tmp=""
++  trap - EXIT INT TERM
+   # Emit the orchestrator-facing DISPATCH_FILE reference to stdout.
+   printf 'DISPATCH_FILE=%s\n' "$_fp_prompt_file"
+   emit_first_party_manifest_entry "$_fp_prompt_file"
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index 92801d1..d7310d8 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -2210,7 +2210,7 @@ _t9_simulate_verifier_sidecar_write() {
+ # schema (structure.md §10).
+ # ---------------------------------------------------------------------------
+ 
+-# AC1 — third-party entry: nested dispatch_spec with all T11 provenance
++# AC1 — third-party entry: nested dispatch_spec with all provenance
+ # fields plus background job metadata (mode/status/agent/job_id/await_cmd/
+ # split_cmd).  The mock dispatcher echoes a JOB_ID line to stdout so the
+ # wrapper script can capture and persist it in the manifest.
+@@ -2632,7 +2632,6 @@ MOCK_EOF
+   rm -rf "$tmp"
+ }
+ 
+-# ---------------------------------------------------------------------------
+ # ---------------------------------------------------------------------------
+ # Signal-safety and security hardening for manifest atomic-append
+ # ---------------------------------------------------------------------------
+@@ -2776,7 +2775,7 @@ JQ_EOF
+ }
+ 
+ # ---------------------------------------------------------------------------
+-# R6 audit-trail and signal-safety fixes
++# Audit-trail and signal-safety inspection tests
+ # ---------------------------------------------------------------------------
+ 
+ # mktemp failure path in _append_manifest_entry must use exit 1 (not return 1).
+@@ -2785,7 +2784,10 @@ JQ_EOF
+ # entry and the script exits 0, silently breaking the audit trail.
+ @test "mktemp failure path in manifest append uses exit 1 not return 1" {
+   local script="$REPO_ROOT/scripts/run-codex-review.sh"
+-  # There must be no 'return 1' within the mktemp failure block.
++  # Guard: anchor must exist so the absence check below is not vacuously true.
++  grep -q 'mktemp failed for manifest tmp' "$script" \
++    || { echo "ERROR: anchor 'mktemp failed for manifest tmp' not found in script" >&2; return 1; }
++  # There must be no 'return N' within the mktemp failure block.
+   ! grep -A5 'mktemp failed for manifest tmp' "$script" | grep -qE '\breturn [0-9]' \
+     || { echo "mktemp failure path uses 'return N'; must use 'exit 1' consistent with all other error paths in _append_manifest_entry"; return 1; }
+ }
+@@ -2802,3 +2804,52 @@ JQ_EOF
+   grep -qE "trap '.*rm -f.*_manifest_tmp.*TERM" "$script" \
+     || { echo "TERM trap does not clean up _manifest_tmp relay variable"; return 1; }
+ }
++
++# ---------------------------------------------------------------------------
++# Signal-cleanup relay inspection tests
++# ---------------------------------------------------------------------------
++
++# First-party prompt tmpfile (_fp_tmp) must have a signal-cleanup trap so the
++# assembled prompt (containing subject code) is not orphaned on SIGINT/SIGTERM.
++# Mirror of the _manifest_tmp relay+trap pattern established for the manifest
++# atomic-append path.
++@test "first-party prompt tmpfile has signal-cleanup trap on EXIT/INT/TERM" {
++  local script="$REPO_ROOT/scripts/run-codex-review.sh"
++  # Guard: the first-party dispatch block must install a trap referencing _fp_tmp.
++  grep -q '_fp_tmp' "$script" \
++    || { echo "ERROR: _fp_tmp not found in script" >&2; return 1; }
++  # The trap install line must reference _fp_tmp and cover EXIT.
++  grep -qE "trap '.*rm -f.*\\\$_fp_tmp.*EXIT|trap '.*\\\$_fp_tmp.*EXIT" "$script" \
++    || { echo "EXIT trap does not clean up _fp_tmp relay variable"; return 1; }
++  # INT trap must reference _fp_tmp.
++  grep -qE "trap '.*rm -f.*\\\$_fp_tmp.*INT" "$script" \
++    || { echo "INT trap does not clean up _fp_tmp relay variable"; return 1; }
++  # TERM trap must reference _fp_tmp.
++  grep -qE "trap '.*rm -f.*\\\$_fp_tmp.*TERM" "$script" \
++    || { echo "TERM trap does not clean up _fp_tmp relay variable"; return 1; }
++}
++
++# The _manifest_tmp relay must be explicitly reset to "" at lock-acquisition
++# time (before the trap install) so the trap's first reference is always ""
++# rather than a stale path from a prior interrupted call.
++@test "manifest lock-held block resets _manifest_tmp before trap install" {
++  local script="$REPO_ROOT/scripts/run-codex-review.sh"
++  # Guard: the reset line must exist somewhere after the lock-acquire mkdir call.
++  grep -q '_manifest_tmp=""' "$script" \
++    || { echo "ERROR: _manifest_tmp=\"\" reset line not found in script" >&2; return 1; }
++  # The reset must appear between the lockdir creation and the trap install.
++  # Extract the line numbers for mkdir (lock acquire), the reset, and the first
++  # trap install to verify ordering: mkdir_line < reset_line < trap_line.
++  local mkdir_line reset_line trap_line
++  mkdir_line="$(grep -n 'mkdir "\$_lock_dir"' "$script" | head -1 | cut -d: -f1)"
++  reset_line="$(grep -n '_manifest_tmp=""' "$script" | grep -v '^\s*#' | awk -F: -v lo="${mkdir_line:-0}" '$1 > lo {print $1; exit}')"
++  trap_line="$(grep -n "trap '.*rm -f.*_manifest_tmp" "$script" | head -1 | cut -d: -f1)"
++  [ -n "$mkdir_line" ] \
++    || { echo "ERROR: lock-acquire mkdir line not found" >&2; return 1; }
++  [ -n "$reset_line" ] \
++    || { echo "ERROR: no _manifest_tmp=\"\" reset found after lockdir creation (line ${mkdir_line})" >&2; return 1; }
++  [ -n "$trap_line" ] \
++    || { echo "ERROR: trap install line for _manifest_tmp not found" >&2; return 1; }
++  (( reset_line < trap_line )) \
++    || { echo "ERROR: _manifest_tmp reset (line ${reset_line}) must come before trap install (line ${trap_line})"; return 1; }
++}

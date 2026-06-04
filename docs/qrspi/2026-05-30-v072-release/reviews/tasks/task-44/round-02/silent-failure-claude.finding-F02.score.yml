@@ -1,0 +1,2 @@
+score: 45
+reason: Real but minor — threshold of 4 vs deployed 8 does permit silent halving of one regex family, but reviewer concedes C-3 exercises both patterns end-to-end so the practical impact is bounded.

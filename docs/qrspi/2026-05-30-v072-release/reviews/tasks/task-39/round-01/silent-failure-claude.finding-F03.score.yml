@@ -1,0 +1,2 @@
+score: 55
+reason: Real silent-skip that contradicts task-39's fail-loud posture (matches resolveTarget/copyFilePreservingMode's ENOENT→BuildError pattern), but limited to the dangling-symlink edge case unlikely in tracked source trees.

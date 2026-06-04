@@ -1,0 +1,2 @@
+score: 35
+reason: The missing source guards are a real hardening gap confirmed in code T19 introduced, but both libraries ship in-repo alongside the script making the failure path reachable only in broken-installation edge cases; the DoD's "exactly one [second-reviewer-unavailable] line" clause covers enumerated unavailability modes (unknown host, missing vendor, etc.) not library-load faults, so the contract violation is real but peripheral rather than a direct DoD breach for normal operation.

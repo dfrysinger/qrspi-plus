@@ -1,0 +1,2 @@
+score: 62
+reason: The three `# F02:` comments at lines 220, 241, 274 are confirmed real — introduced in the round-02 commit (not round-01), they are review-iteration narration tokens with no behavioral meaning, and removing them is a legitimate cleanup; however, no explicitly documented upstream "ID-hygiene" Iron Law or MUST rule was found that specifically prohibits finding-ID tokens in test comments, so the severity is moderate rather than high.

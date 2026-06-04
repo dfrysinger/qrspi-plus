@@ -1,0 +1,2 @@
+score: 90
+reason: Confirmed: L289-308 omits vendor= from the unknown-vendor test (only checks non-zero + tag + line_count + host=), and L311-320 uses weak OR semantics (nonexistent-vendor-xyz|vendor=) that allow a non-conforming key name to pass — both directly contradict DoD L42/L52's explicit requirement to name the detected host plus requested/default vendor in the [second-reviewer-unavailable] diagnostic.

@@ -1,0 +1,2 @@
+score: 55
+reason: Real out-of-scope edit to a non-target file confirmed by diff; advisory severity is appropriate since the change is semantically equivalent and resolves a documented round-1 constraint conflict, warranting operator awareness but not blocking.

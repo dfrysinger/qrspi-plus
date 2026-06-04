@@ -1,0 +1,2 @@
+score: 25
+reason: Finding self-acknowledges the @test scoping is by-design per DoD; suggestion is just an inline comment — low-severity stylistic nit with no current corpus impact.

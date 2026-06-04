@@ -1,0 +1,342 @@
+diff --git a/agents/qrspi-plan-reviewer.md b/agents/qrspi-plan-reviewer.md
+index 65303e6..03bf306 100644
+--- a/agents/qrspi-plan-reviewer.md
++++ b/agents/qrspi-plan-reviewer.md
+@@ -63,6 +63,27 @@ Emit a `severity: high, change_type: correctness` finding referencing the contra
+ 
+ The finding cites `skills/plan/SKILL.md` § Sweep Task Contract as the contract reference. Sweep findings ride the existing reviewer-protocol 5-field schema — no new finding kind, no new severity tier.
+ 
++### Cross-task consumer surface detection
++
++Treat a task as **consumer-surface-touching** when ANY of the trigger conditions in `skills/plan/SKILL.md` § Cross-Task Consumer Surface apply: a named-declaration add/rename/remove (function, method, class, interface, exported symbol, or other named declaration); a file add/rename/remove/move within `files_in_scope`; a public-signature change (parameter list, return type, exceptions/errors raised, side effects, or visibility) on any callable in `files_in_scope`; a structured-document schema change (JSON, YAML, frontmatter, TOML, XML, etc.) to keys, anchors, or top-level identifiers referenced by name from other files; or a named extension-point add/rename/remove (configuration key, environment variable, CLI flag, URL route, RPC method, command-line subcommand, schema field, anchor heading, or other documented named extension point). Body-only callable changes, prose edits without anchor-name changes, and formatting fixes are NOT consumer-surface-touching.
++
++On detection, the reviewer MUST verify the task's plan-spec contains a `cross_task_consumers:` field per the contract:
++
++1. **Field present and well-formed** — exactly one of the two documented shapes (path list with per-consumer disposition, OR `none` followed on the next line by a reproducible search command). Field presence and shape conformance are the first checks.
++2. **`none` claim re-verification** — if the field value is `none`, validate the cited search command before executing (same shell-metacharacter and dash-prefix rejection rules as the Sweep-task detection grep-proof rubric: forbid `;`, `|`, `&`, backtick, `$`, `(`, `)`, `<`, `>`, single-quote in the pattern argument; reject patterns starting with `-`; require `--` argument separator for `grep`/`rg` shapes), then re-run the validated command from the repository root. A non-zero hit count invalidates the `none` claim and surfaces a finding.
++3. **Disposition vocabulary validation** — when the field lists consumers, verify each cited disposition is exactly one of `no change`, `pass-through`, `co-edit`, or `break-and-fix-task`. Variants (`co_edit`, `pass through`, `break-fix`, etc.) are invalid disposition values.
++4. **`break-and-fix-task` follow-up task ID validation** — when a consumer's disposition is `break-and-fix-task`, the disposition line MUST cite a follow-up task ID; that task ID MUST already exist in the plan (not be a placeholder, not be a forward-declared task that the plan never defines). A missing follow-up task ID, or a cited follow-up task ID that does not match any task in the plan, is a defect.
++
++Emit a `severity: high, change_type: correctness` finding referencing the contract when ANY of the following holds:
++
++- **Missing field:** the task is consumer-surface-touching but the spec carries no `cross_task_consumers:` field.
++- **Malformed field:** `cross_task_consumers:` is present but does not conform to either of the two documented shapes (e.g., paths without dispositions, `none` without a following search command, mixed shapes).
++- **Non-zero hits on `none` claim:** `cross_task_consumers: none` is followed by a search command that returns one or more hits when the reviewer re-runs it from the repository root.
++- **Invalid disposition value:** a listed consumer's disposition is not exactly one of `no change`, `pass-through`, `co-edit`, `break-and-fix-task`.
++- **Missing follow-up task ID for `break-and-fix-task`:** the disposition is `break-and-fix-task` but no follow-up task ID is cited, or the cited follow-up task ID does not exist in the plan.
++
++The finding cites `skills/plan/SKILL.md` § Cross-Task Consumer Surface as the contract reference. The Cross-task consumer surface detection clause is **independent of** the Sweep-task detection clause: a task that satisfies both triggers carries both `dependent_tests:` and `cross_task_consumers:` as separate fields, and the reviewer evaluates each clause independently — a finding may be emitted against either, both, or neither. The two clauses do not merge.
++
+ ### Full-pipeline-only checks (skip if `route: quick`)
+ 
+ - **Design/structure traceability** — every task traces to a component or interface in `companion_design` and `companion_structure`; no tasks implement components the design didn't specify; no design components are absent from the task list.
+diff --git a/skills/plan/SKILL.anchors.json b/skills/plan/SKILL.anchors.json
+index f96a7ec..799783d 100644
+--- a/skills/plan/SKILL.anchors.json
++++ b/skills/plan/SKILL.anchors.json
+@@ -101,30 +101,34 @@
+   },
+   "Test Expectations": {
+     "line_start": 614,
+-    "line_end": 653
++    "line_end": 693
+   },
+   "Sweep Task Contract": {
+     "line_start": 620,
+     "line_end": 653
+   },
+-  "Red Flags — STOP": {
++  "Cross-Task Consumer Surface": {
+     "line_start": 654,
+-    "line_end": 682
++    "line_end": 693
++  },
++  "Red Flags — STOP": {
++    "line_start": 694,
++    "line_end": 722
+   },
+   "Visual-fidelity hard-gate (pre-fanout refusal condition)": {
+-    "line_start": 673,
+-    "line_end": 682
++    "line_start": 713,
++    "line_end": 722
+   },
+   "Common Rationalizations — STOP": {
+-    "line_start": 683,
+-    "line_end": 696
++    "line_start": 723,
++    "line_end": 736
+   },
+   "Worked Example": {
+-    "line_start": 697,
+-    "line_end": 734
++    "line_start": 737,
++    "line_end": 774
+   },
+   "Iron Laws — Final Reminder": {
+-    "line_start": 735,
+-    "line_end": 745
++    "line_start": 775,
++    "line_end": 785
+   }
+ }
+diff --git a/skills/plan/SKILL.md b/skills/plan/SKILL.md
+index 579d602..552e88c 100644
+--- a/skills/plan/SKILL.md
++++ b/skills/plan/SKILL.md
+@@ -651,6 +651,46 @@ Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defe
+     - `grep -rn -- '^model:' tests/` returns zero matches as of plan-authoring time; if a future test introduces an assertion on `model:` before this task lands, the reviewer's re-run will surface the new hit and demand the field be re-shaped to a path list.
+ ```
+ 
++### Cross-Task Consumer Surface
++
++A task is **consumer-surface-touching** when its description or `files_in_scope` indicates ANY of the following five trigger classes:
++
++- Adding, renaming, or removing a function, method, class, interface, exported symbol, or other named declaration.
++- Adding, renaming, removing, or moving a file listed in `files_in_scope`.
++- Changing the public signature (parameter list, return type, exceptions or errors raised, side effects, or visibility) of any callable in `files_in_scope`.
++- Changing the schema or structure of any structured document (JSON, YAML, frontmatter, TOML, XML, etc.) in `files_in_scope` whose keys, anchors, or top-level identifiers are referenced by name from other files.
++- Adding, renaming, or removing a documented contract — a configuration key, environment variable, CLI flag, URL route, RPC method, command-line subcommand, schema field, anchor heading, or any other named extension point declared in `files_in_scope`.
++
++A task that only modifies the body of an existing callable, edits prose paragraphs without changing referenced anchor names, or fixes formatting is NOT consumer-surface-touching. The trigger fires on changes that other code or documents could plausibly be coupled to *by name*.
++
++When the trigger fires, the plan-spec MUST include a `cross_task_consumers:` field with one of two shapes:
++
++- A **list of consumer file paths** outside `files_in_scope`, each followed on the next line by a one-sentence disposition. The disposition vocabulary is exactly four values: `no change` (consumer keeps working unmodified), `pass-through` (consumer's behavior intentionally unchanged but the consumer file must be re-verified), `co-edit` (consumer file must be modified inside this same task), or `break-and-fix-task` (consumer file will be intentionally broken by this task and repaired in a named follow-up task — the follow-up task ID MUST be cited and MUST already exist in the plan).
++- The literal string `none` followed on the next line by a reproducible search command demonstrating zero consumer references exist outside `files_in_scope`. Command shape is left to the author: `grep`, `rg`, `git grep`, a language-specific reference-finder (`go vet`, `tsc --noEmit -p`, `rustc --emit=metadata`, IDE-equivalent CLI), or any other reproducible zero-result probe. The reviewer re-runs the command and treats a non-zero hit count as a defect.
++
++Skipping the `cross_task_consumers:` field on a consumer-surface-touching task is a plan-spec defect, not a deferred-to-implementer concern. The Plan reviewer (`agents/qrspi-plan-reviewer.md` § Cross-task consumer surface detection) detects consumer-surface-touching tasks by the same trigger classes and emits a `severity: high, change_type: correctness` finding when the field is missing, malformed, claims `none` against a non-zero search hit, names an invalid disposition, or cites a `break-and-fix-task` follow-up task ID that does not exist in the plan.
++
++**Sweep + consumer composition.** A task that satisfies BOTH the sweep-task trigger (see § Sweep Task Contract above) AND the consumer-surface trigger carries `dependent_tests:` AND `cross_task_consumers:` as separate fields. The two contracts ask different questions about different downstream surfaces (test files that assert on swept values vs. consumer files referencing the changed contract by name) and are not merged — the reviewer evaluates each clause independently and may emit findings against either, both, or neither.
++
++**Worked example C — public-symbol rename with three consumers (trigger fires).** A task renames the public function `check_codex_available` to `check_second_reviewer_available` across the dispatcher script and one consumer skill, listing three consumer files outside `files_in_scope` with explicit dispositions:
++
++```markdown
++- **Test expectations:**
++  - `scripts/run-codex-review.sh` exports the renamed helper; `skills/using-qrspi/SKILL.md` calls the new name.
++  - `cross_task_consumers:`
++    - `skills/goals/SKILL.md` — references the old helper name in its inline availability probe; `co-edit` to rename the call site inside this task.
++    - `skills/implement/SKILL.md` — references the old helper name in the second-reviewer dispatch block; `co-edit` to rename the call site inside this task.
++    - `tests/unit/test-codex-host-vendor-matrix.bats` — asserts on the helper-name surface as documentation, not as an executable reference; `no change` because the test was rewritten in T07 to target the host×vendor matrix and no longer pins the helper name.
++```
++
++**Worked example D — body-only bug fix (trigger does not fire).** A task fixes an off-by-one error inside the body of an existing function in one file. No public-signature change, no rename, no schema change, no extension-point change. The `cross_task_consumers:` field is NOT required because the trigger does not fire — the change is body-only and no other file could be coupled to the bug-fix by name:
++
++```markdown
++- **Test expectations:**
++  - `lib/pagination.go` `paginate()` returns the correct slice when `offset == len(items)`; existing public signature unchanged.
++  - (no `cross_task_consumers:` field — the trigger does not fire because this is a body-only bug fix with no public-signature, schema, or extension-point change.)
++```
++
+ ## Red Flags — STOP
+ 
+ - A task spec contains "TBD", "TODO", "implement later", or "fill in details"
+diff --git a/tests/integration/test-reference-gate-pause.bats b/tests/integration/test-reference-gate-pause.bats
+index 4ffc4d5..2d53ea2 100644
+--- a/tests/integration/test-reference-gate-pause.bats
++++ b/tests/integration/test-reference-gate-pause.bats
+@@ -388,3 +388,204 @@ EOF
+   extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+     "grep -rn -- '<pattern>' tests/"
+ }
++
++# =============================================================================
++# G18: Plan Cross-Task Consumer Surface Contract — cross_task_consumers: scope
++# =============================================================================
++#
++# Pins that the Plan skill and Plan reviewer agent carry the cross-task
++# consumer surface contract that generalizes the v0.7.1 under-scoping
++# prevention pattern beyond the narrow sweep-task case (T14/G15) to any
++# contract-carrier change. The pins are file-content + section-extract
++# assertions — like G15, the consumer-surface contract is documentation +
++# reviewer rubric, not runtime code.
++#
++# Independent-finding case: a task satisfying BOTH the sweep-task trigger
++# (G15) and the consumer-surface trigger (G18) carries both `dependent_tests:`
++# AND `cross_task_consumers:` as separate fields — the two clauses do not
++# merge. Pinned below as the composition note.
++
++@test "[G18-consumers] Plan SKILL Test Expectations section carries Cross-Task Consumer Surface subsection" {
++  extract_and_grep "$PLAN_SKILL" H2 "Test Expectations" \
++    "### Cross-Task Consumer Surface"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface defines consumer-surface-touching trigger" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "consumer-surface-touching"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names the cross_task_consumers: field" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "cross_task_consumers:"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface lists trigger class 1: named-declaration add/rename/remove" {
++  # Function/method/class/interface/exported-symbol/named-declaration adds, renames, removes.
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "function|method|class|interface|exported symbol|named declaration"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface lists trigger class 2: file add/rename/remove/move" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "[Aa]dding, renaming,? (or )?removing,? (or )?moving|file.*(add|rename|remove|move)"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface lists trigger class 3: public signature change" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "public signature|parameter list|return type"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface lists trigger class 4: structured-document schema change" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "schema or structure|JSON|YAML|frontmatter"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface lists trigger class 5: named extension-point add/rename/remove" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "configuration key|environment variable|CLI flag|extension point"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names body-only/prose-only non-trigger case" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "NOT consumer-surface-touching|not consumer-surface-touching"
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "body of an existing|prose paragraph|formatting"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface documents the path-list-with-disposition shape" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "list of consumer file paths|consumer file paths.*disposition"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface documents the none + search-command shape" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "literal string \`none\`|the literal.*none"
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "reproducible search command|reproducible.*search"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names disposition: no change" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "\`no change\`"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names disposition: pass-through" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "\`pass-through\`"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names disposition: co-edit" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "\`co-edit\`"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface names disposition: break-and-fix-task" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "\`break-and-fix-task\`"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface requires follow-up task ID for break-and-fix-task" {
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "follow-up task ID|cited follow-up task|named follow-up task"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface carries worked example A: public-symbol rename with three consumers" {
++  # The rename worked example must show three consumer paths and use co-edit, co-edit, no change.
++  local section
++  section="$(extract_section "$PLAN_SKILL" H3 "Cross-Task Consumer Surface")"
++  # Must contain at least two `co-edit` markers (the two co-edit consumers).
++  local co_edit_count
++  co_edit_count="$(printf '%s\n' "$section" | grep -cE '\bco-edit\b' || true)"
++  if [ "$co_edit_count" -lt 2 ]; then
++    echo "Worked example A must list at least two co-edit consumer dispositions; found $co_edit_count" >&2
++    return 1
++  fi
++  # And at least one `no change` marker for the third consumer.
++  printf '%s\n' "$section" | grep -qE '\bno change\b' \
++    || { echo "Worked example A must list at least one 'no change' consumer disposition" >&2; return 1; }
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface carries worked example B: body-only bug fix non-trigger" {
++  # The non-trigger worked example must explicitly identify a body-only or
++  # bug-fix change and explain why the trigger does not fire.
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "body-only|bug fix"
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "trigger does not fire|trigger did not fire|does not fire"
++}
++
++@test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface states sweep+consumer composition: both fields carried separately" {
++  # A task satisfying both the sweep-task trigger AND the consumer-surface
++  # trigger carries `dependent_tests:` AND `cross_task_consumers:` as
++  # separate fields — the two clauses do not merge.
++  extract_and_grep "$PLAN_SKILL" H3 "Cross-Task Consumer Surface" \
++    "dependent_tests:.*cross_task_consumers:|cross_task_consumers:.*dependent_tests:|both.*fields|separate fields"
++}
++
++# -----------------------------------------------------------------------------
++# Plan reviewer agent — Cross-task consumer surface detection rubric
++# -----------------------------------------------------------------------------
++
++@test "[G18-consumers] Plan reviewer agent body declares Cross-task consumer surface detection rubric" {
++  grep -E "[Cc]ross-task consumer surface detection" "$PLAN_REVIEWER_AGENT"
++}
++
++@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection names trigger conditions" {
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "named.declaration|public.signature|structured.document|extension.point"
++}
++
++@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection requires field presence/shape check" {
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "[Ff]ield present|well-formed|presence"
++}
++
++@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection re-runs none search command" {
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "re-run|rerun"
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "non-zero hit|non-zero hits|one or more hits|>=.?1 hit"
++}
++
++@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection validates the four dispositions" {
++  for d in "no change" "pass-through" "co-edit" "break-and-fix-task"; do
++    extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" "\`$d\`" || {
++      echo "Missing disposition vocab in Cross-task consumer surface detection section: $d" >&2
++      return 1
++    }
++  done
++}
++
++@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection requires existing follow-up task ID for break-and-fix-task" {
++  # break-and-fix-task disposition must cite a follow-up task ID that already exists in the plan.
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "break-and-fix-task.*(follow-up task|task ID).*(exist|in the plan)|follow-up task ID exists"
++}
++
++@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection emits high-severity correctness finding" {
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "severity: high"
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection" \
++    "change_type: correctness"
++}
++
++@test "[G18-consumers] Plan reviewer Cross-task consumer surface detection covers malformed-field and false-none cases" {
++  # The rubric must enumerate the failure modes: missing field, malformed
++  # field, false `none` claim, invalid disposition, missing follow-up ID.
++  local section
++  section="$(extract_section "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection")"
++  printf '%s\n' "$section" | grep -qE "[Mm]issing field|[Mm]issing.*\`cross_task_consumers" \
++    || { echo "Missing 'missing field' failure mode" >&2; return 1; }
++  printf '%s\n' "$section" | grep -qE "[Mm]alformed" \
++    || { echo "Missing 'malformed' failure mode" >&2; return 1; }
++  printf '%s\n' "$section" | grep -qE "invalid disposition|disposition.*invalid|disposition value" \
++    || { echo "Missing 'invalid disposition' failure mode" >&2; return 1; }
++}
++
++@test "[G18-consumers] Plan reviewer keeps Sweep-task detection and Cross-task consumer surface detection as separate clauses" {
++  # G15 and G18 stay as two separate rubric clauses (decision E in design.md ## G18).
++  # Both clause headings must be present in the file as distinct H3s.
++  grep -E "^### Sweep-task detection" "$PLAN_REVIEWER_AGENT"
++  grep -E "^### Cross-task consumer surface detection" "$PLAN_REVIEWER_AGENT"
++}

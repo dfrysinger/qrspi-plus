@@ -1,0 +1,2 @@
+score: 55
+reason: Real gap — the blocklist omits newlines and braces, and YAML block scalars can deliver multi-line scripts that pass Step 2; threat surface is small (human-authored specs) but the silent-bypass shape matches the rubric's purpose, and an allow-list/single-line constraint is a clear improvement.

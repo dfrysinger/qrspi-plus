@@ -1,0 +1,838 @@
+diff --git a/scripts/dispatch-agent.sh b/scripts/dispatch-agent.sh
+index bc94d50..ddd51c8 100755
+--- a/scripts/dispatch-agent.sh
++++ b/scripts/dispatch-agent.sh
+@@ -71,11 +71,13 @@ REPO_ROOT_DEFAULT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+ REPO_ROOT="${QRSPI_REPO_ROOT:-$REPO_ROOT_DEFAULT}"
+ export REPO_ROOT
+ 
+-# G16 — repo-boundary guard for every prompt-ingested path argument. Sourced
++# Repo-boundary guard for every prompt-ingested path argument. Sourced
+ # from a shared lib so dispatch-companion.sh's launch-mode `--prompt-file`
+ # surface uses the same canonical-$REPO_ROOT/ enforcement.
+ # shellcheck source=scripts/lib/path-guard.sh
+ . "$SCRIPT_DIR/lib/path-guard.sh"
++command -v assert_path_under_repo_root >/dev/null 2>&1 \
++  || { echo "error: assert_path_under_repo_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+ 
+ AGENT_FILE=""
+ REVIEWER_TAG=""
+@@ -107,6 +109,18 @@ require_value() {
+   fi
+ }
+ 
++# assert_file_exists <label> <path> — verify a required file exists; exits 1
++# with a clear diagnostic when it does not.  Defined early (before the batch
++# block) so it is available in both batched-mode and single-mode code paths.
++assert_file_exists() {
++  local label="$1"
++  local p="$2"
++  if [[ ! -f "$p" ]]; then
++    echo "error: ${label} not found: $p" >&2
++    exit 1
++  fi
++}
++
+ # ---------------------------------------------------------------------------
+ # Host identification and Codex availability probes (added in v0.7.1 task-06)
+ # ---------------------------------------------------------------------------
+@@ -231,9 +245,11 @@ _validate_output_dir() {
+ }
+ 
+ # _validate_job_id <value> — allowlist-validate a captured JOB_ID.
+-# JOB_ID is interpolated into await_cmd stored in the manifest; downstream
+-# consumers eval-expand that field.  Restrict to characters safe in an
+-# unquoted shell word.  Only called when the value is non-empty.
++# JOB_ID is stored in the manifest and later passed to await-round.sh via
++# shlex.split (shell=False); a job ID containing shlex-special characters
++# causes shlex.split to raise ValueError, which marks the manifest entry
++# failed and silently drops the finding. Restricting to a safe token grammar
++# prevents that denial-of-service vector. Only called when the value is non-empty.
+ _validate_job_id() {
+   local v="$1"
+   if [[ -z "$v" ]]; then echo "error: job_id is empty" >&2; exit 1; fi
+@@ -572,6 +588,13 @@ if [[ "$_is_batch_mode" == "true" ]]; then
+       BATCH_ARTIFACT_ABS="$REPO_ROOT/$BATCH_ARTIFACT"
+     fi
+   fi
++  # Apply repo-boundary guard AFTER existence check and BEFORE any cat/read.
++  # Two-step pattern mirrors single-mode: existence fails with a clear diagnostic,
++  # then the boundary check rejects traversal before any prompt emission.
++  if [[ -n "$BATCH_ARTIFACT_ABS" ]]; then
++    assert_file_exists "--artifact" "$BATCH_ARTIFACT_ABS"
++    assert_path_under_repo_root "--artifact" "$BATCH_ARTIFACT_ABS"
++  fi
+ 
+   REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
+   EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md"
+@@ -609,6 +632,13 @@ if [[ "$_is_batch_mode" == "true" ]]; then
+       echo "error: --agents entry must have non-empty tag and agent (got: $_pair)" >&2
+       exit 1
+     fi
++    # Tag allowlist: mirrors single-mode --reviewer-tag grammar. Prevents crafted
++    # tags from redirecting the assembled prompt to attacker-controlled paths via
++    # the prompt-file path construction below.
++    if [[ ! "$_tag" =~ ^[a-z][a-z0-9_-]*$ ]]; then
++      echo "error: --agents tag must match [a-z][a-z0-9_-]* (got: $_tag)" >&2
++      exit 1
++    fi
+ 
+     # Resolve agent file path: an absolute path or a repo-relative path is used
+     # verbatim; a bare agent name resolves to agents/<name>.md.
+@@ -623,6 +653,9 @@ if [[ "$_is_batch_mode" == "true" ]]; then
+       echo "error: agent file not found for tag '$_tag': $_agent_file" >&2
+       exit 1
+     fi
++    # Apply repo-boundary guard AFTER existence check and BEFORE any
++    # strip_frontmatter_batch/resolve_tier read (spec line 19).
++    assert_path_under_repo_root "--agents" "$_agent_file"
+     _agent_name="$(basename "${_agent_file%.md}")"
+ 
+     # Vendor is encoded in the tag suffix (e.g., quality-claude -> claude,
+@@ -677,7 +710,7 @@ if [[ "$_is_batch_mode" == "true" ]]; then
+       [[ -f "$EMISSION_OVERRIDE_ABS" ]] && cat "$EMISSION_OVERRIDE_ABS"
+       printf '\n\n<<<AGENT-BODY-END>>>\n'
+       printf '\n## Dispatch parameters\n\n'
+-      if [[ -n "$BATCH_ARTIFACT_ABS" && -f "$BATCH_ARTIFACT_ABS" ]]; then
++      if [[ -n "$BATCH_ARTIFACT_ABS" ]]; then
+         printf 'artifact_body:\n'
+         printf '<<<UNTRUSTED-ARTIFACT-START id=%s>>>\n' "$BATCH_ARTIFACT"
+         cat "$BATCH_ARTIFACT_ABS"
+@@ -726,6 +759,7 @@ if [[ "$_is_batch_mode" == "true" ]]; then
+         emit_dispatch_manifest_entry "" "failed"
+         continue
+       fi
++      _validate_job_id "$_job_id"
+       emit_dispatch_manifest_entry "$_job_id" "pending"
+     fi
+   done
+@@ -880,14 +914,8 @@ resolve_path() {
+   fi
+ }
+ 
+-assert_file_exists() {
+-  local label="$1"
+-  local p="$2"
+-  if [[ ! -f "$p" ]]; then
+-    echo "error: ${label} not found: $p" >&2
+-    exit 1
+-  fi
+-}
++# assert_file_exists is defined earlier in this script (above the batch block)
++# so it is available in both batched-mode and single-mode code paths.
+ 
+ AGENT_FILE_ABS="$(resolve_path "$AGENT_FILE")"
+ assert_file_exists "agent-file" "$AGENT_FILE_ABS"
+@@ -933,6 +961,7 @@ while IFS= read -r skill_name; do
+   fi
+   skill_path="$REPO_ROOT/skills/$skill_name/SKILL.md"
+   assert_file_exists "skill[$skill_name]" "$skill_path"
++  assert_path_under_repo_root "skill[$skill_name]" "$skill_path"
+   ADDITIONAL_SKILL_PATHS+=("$skill_path")
+ done <<< "$SKILL_NAMES_OUTPUT"
+ 
+diff --git a/scripts/dispatch-companion.sh b/scripts/dispatch-companion.sh
+index 59c027c..81c297c 100755
+--- a/scripts/dispatch-companion.sh
++++ b/scripts/dispatch-companion.sh
+@@ -42,7 +42,7 @@ _SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ # shellcheck source=scripts/lib/llm-prompt-utils.sh
+ . "$_SCRIPT_DIR/lib/llm-prompt-utils.sh"
+ 
+-# G16 — repo-boundary guard for raw file-path surfaces.
++# Repo-boundary guard for raw file-path surfaces.
+ #
+ # The legacy `--provider/--artifact-dir` form below is stdin-only: the prompt
+ # body never enters this script as a file path argument (positional args and
+@@ -63,6 +63,8 @@ REPO_ROOT="${QRSPI_REPO_ROOT:-$(cd "$_SCRIPT_DIR/.." && pwd -P)}"
+ export REPO_ROOT
+ # shellcheck source=scripts/lib/path-guard.sh
+ . "$_SCRIPT_DIR/lib/path-guard.sh"
++command -v assert_path_under_repo_root >/dev/null 2>&1 \
++  || { echo "error: assert_path_under_repo_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+ 
+ # ---------------------------------------------------------------------------
+ # die <message>  — write message to stderr and exit 1
+@@ -542,6 +544,20 @@ if [ "$#" -gt 0 ] && [ "$1" = "await" ]; then
+     exit 13
+   fi
+ 
++  # Re-validate tag from job record: mirrors the [a-z][a-z0-9_-]* allowlist
++  # enforced at launch time. A crafted job record with a traversal tag
++  # like '../../other-task/evil' would otherwise redirect the raw-capture file
++  # outside the intended task tree.
++  case "$_job_tag" in
++    *[!a-z0-9_-]*|[^a-z]*)
++      printf 'dispatch-companion: await: invalid tag in job record %s\n' "$_await_job" >&2
++      exit 13 ;;
++  esac
++  # Re-validate round_dir from job record: a crafted job record with
++  # round_dir=/tmp/... or any out-of-repo path would write raw LLM output
++  # outside the repo tree. Reject before constructing _raw_dir.
++  assert_path_under_repo_root "await:round_dir" "$_job_round_dir"
++
+   _raw_dir="$_job_round_dir/.dispatch"
+   mkdir -p "$_raw_dir" || {
+     printf 'dispatch-companion: await: cannot create raw-capture dir: %s\n' "$_raw_dir" >&2
+@@ -606,18 +622,42 @@ if [ "$_has_vendor_flag" = "true" ]; then
+   [ -n "$L_PROMPT_FILE" ] || die "launch: missing required flag: --prompt-file"
+   [ -n "$L_ROUND_DIR" ]   || die "launch: missing required flag: --round-dir"
+   [ -n "$L_TAG" ]         || die "launch: missing required flag: --tag"
++  # Tag allowlist: _job_id is constructed from L_TAG and used as a filename.
++  # Restricting to safe token grammar prevents path traversal via crafted tags.
++  if [[ ! "$L_TAG" =~ ^[a-z][a-z0-9_-]*$ ]]; then
++    die "launch: --tag must match [a-z][a-z0-9_-]* (got: $L_TAG)"
++  fi
+   [ -f "$L_PROMPT_FILE" ] || die "launch: --prompt-file not found: $L_PROMPT_FILE"
+-  # G16 — boundary guard: the prompt-file path is a raw user-supplied file
++  # Boundary guard: the prompt-file path is a raw user-supplied file
+   # surface that is later piped to the upstream transport. Reject any path
+   # whose canonical target falls outside $REPO_ROOT/.
+   assert_path_under_repo_root "launch:--prompt-file" "$L_PROMPT_FILE"
++  # Create the jobs directory before the boundary check so that realpath
++  # (used internally by assert_path_under_repo_root) can canonicalize the
++  # path on BSD/macOS where realpath requires the target to exist. The
++  # assertion immediately follows; launch dies if the path falls outside
++  # the repo even though mkdir has already run.
++  _jobs_dir="$L_ROUND_DIR/.dispatch/.jobs"
++  mkdir -p "$_jobs_dir" || die "launch: cannot create jobs dir: $_jobs_dir"
++  # Boundary guard: --round-dir is used to construct the job-record directory
++  # and, via the persisted round_dir field, is later used by `await` to
++  # construct the raw-capture path. Reject any path whose canonical target
++  # falls outside $REPO_ROOT/ so a caller cannot redirect job records or raw
++  # LLM output to an arbitrary out-of-tree location.
++  assert_path_under_repo_root "launch:--round-dir" "$L_ROUND_DIR"
++  # Canonicalize once after the boundary check so the stored round_dir value
++  # is always an absolute path regardless of how the caller supplied
++  # --round-dir. Using the same _qrspi_canonicalize helper that
++  # assert_path_under_repo_root uses internally ensures the stored form
++  # matches what await re-validates even when the cwd differs at await time.
++  _canon_round_dir="$(_qrspi_canonicalize "$L_ROUND_DIR")" \
++    || die "launch: cannot canonicalize --round-dir after boundary check: $L_ROUND_DIR"
++  _jobs_dir="$_canon_round_dir/.dispatch/.jobs"
+ 
+   # Generate a round-unique job id and persist a job record so a later
+   # `await <job-id>` can resolve the vendor/model/prompt-file/tag. The prompt
+   # body is NEVER read into a variable here — only its path is recorded — so it
+   # cannot leak onto stdout (output-bound contract).
+-  _jobs_dir="$L_ROUND_DIR/.dispatch/.jobs"
+-  mkdir -p "$_jobs_dir" || die "launch: cannot create jobs dir: $_jobs_dir"
+   _job_id="${L_TAG}-$$-$(date +%s)"
+ 
+   # Vendor-specific launch: for codex, invoke the existing background
+@@ -651,7 +691,7 @@ if [ "$_has_vendor_flag" = "true" ]; then
+     printf 'vendor=%s\n' "$L_VENDOR"
+     printf 'model=%s\n' "$L_MODEL"
+     printf 'prompt_file=%s\n' "$L_PROMPT_FILE"
+-    printf 'round_dir=%s\n' "$L_ROUND_DIR"
++    printf 'round_dir=%s\n' "$_canon_round_dir"
+     printf 'tag=%s\n' "$L_TAG"
+     if [ -n "$_codex_job_id" ]; then
+       printf 'codex_job_id=%s\n' "$_codex_job_id"
+diff --git a/scripts/lib/path-guard.sh b/scripts/lib/path-guard.sh
+index 2af7451..8abfce5 100644
+--- a/scripts/lib/path-guard.sh
++++ b/scripts/lib/path-guard.sh
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env bash
+ # path-guard.sh — shared fail-closed repo-boundary guard for QRSPI dispatch
+-# scripts (G16: path-filter exfil hardening).
++# scripts.
+ #
+ # Source this file from any dispatch script that ingests file paths from
+ # user-supplied flags. The single exported function:
+diff --git a/tests/unit/test-dispatch-agent.bats b/tests/unit/test-dispatch-agent.bats
+index 6306ead..7ab7d30 100644
+--- a/tests/unit/test-dispatch-agent.bats
++++ b/tests/unit/test-dispatch-agent.bats
+@@ -21,7 +21,7 @@ setup_file() {
+ }
+ 
+ setup() {
+-  # G16: TMP_DIR must canonicalize UNDER $REPO_ROOT/ so the dispatch wrapper's
++  # TMP_DIR must canonicalize UNDER $REPO_ROOT/ so the dispatch wrapper's
+   # repo-boundary guard accepts the per-test fixture paths. The default macOS
+   # mktemp directory (/var/folders/...) lives outside the repo and would be
+   # rejected by assert_path_under_repo_root.
+@@ -34,7 +34,7 @@ setup() {
+   echo "Task spec body" > tasks/task-99.md
+   echo "Plan body" > plan.md
+   echo "Goals body" > goals.md
+-  # G16: keep the test-expectations companion fixture inside TMP_DIR (which
++  # Keep the test-expectations companion fixture inside TMP_DIR (which
+   # lives under $REPO_ROOT) rather than /tmp, for the same boundary reason.
+   echo "Test expectations block" > "$TMP_DIR/test-exp-fixture.md"
+ 
+@@ -1299,7 +1299,7 @@ EOF
+ }
+ 
+ # ---------------------------------------------------------------------------
+-# R5 F04: Multi-reviewer batched dispatch (the canonical production-path case)
++# Multi-reviewer batched dispatch (the canonical production-path case)
+ #
+ # Every prior batch-mode test passes a SINGLE tag=agent pair.  Production
+ # rounds dispatch multiple reviewers in one invocation.  This test exercises
+@@ -1410,7 +1410,7 @@ EOF
+ }
+ 
+ # ===========================================================================
+-# G16 — Path-filter exfil hardening (assert_path_under_repo_root guard).
++# Path-filter exfil hardening (assert_path_under_repo_root guard).
+ #
+ # These tests pin the fail-closed canonical-$REPO_ROOT/ boundary check that
+ # every prompt-ingested path argument must traverse before its bytes can be
+@@ -1426,9 +1426,9 @@ EOF
+ 
+ # Helpers --------------------------------------------------------------------
+ 
+-_g16_setup_fixtures() {
+-  REPO_LOCAL_TMP="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16.XXXXXX")"
+-  OUT_OF_REPO_TMP="$(mktemp -d "${TMPDIR:-/tmp}/bats-g16-oor.XXXXXX")"
++_path_guard_setup_fixtures() {
++  REPO_LOCAL_TMP="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard.XXXXXX")"
++  OUT_OF_REPO_TMP="$(mktemp -d "${TMPDIR:-/tmp}/bats-pguard-oor.XXXXXX")"
+   # Repo-local minimal fixtures
+   mkdir -p "$REPO_LOCAL_TMP/src" "$REPO_LOCAL_TMP/tasks"
+   echo "export const x = 1;" > "$REPO_LOCAL_TMP/src/foo.ts"
+@@ -1443,27 +1443,27 @@ _g16_setup_fixtures() {
+   export REPO_LOCAL_TMP OUT_OF_REPO_TMP
+ }
+ 
+-_g16_teardown_fixtures() {
++_path_guard_teardown_fixtures() {
+   [ -n "${REPO_LOCAL_TMP:-}" ] && rm -rf "$REPO_LOCAL_TMP"
+   [ -n "${OUT_OF_REPO_TMP:-}" ] && rm -rf "$OUT_OF_REPO_TMP"
+ }
+ 
+ # --- Rejection cases: out-of-repo absolute paths ---------------------------
+ 
+-@test "G16: --subject-code outside repo root rejected with 'resolves outside repository'" {
+-  _g16_setup_fixtures
++@test "--subject-code outside repo root rejected with 'resolves outside repository'" {
++  _path_guard_setup_fixtures
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+     --reviewer-tag spec-codex \
+     --output-dir /tmp/out --round 1 \
+     --subject-code "$OUT_OF_REPO_TMP/oor-subject.ts" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+ }
+ 
+-@test "G16: --subject-code /etc/hosts rejected (readable system file outside repo)" {
++@test "--subject-code /etc/hosts rejected (readable system file outside repo)" {
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+     --reviewer-tag spec-codex \
+@@ -1474,21 +1474,21 @@ _g16_teardown_fixtures() {
+   [[ "$output" =~ "resolves outside repository" ]]
+ }
+ 
+-@test "G16: --artifact-body outside repo root rejected" {
+-  _g16_setup_fixtures
++@test "--artifact-body outside repo root rejected" {
++  _path_guard_setup_fixtures
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+     --reviewer-tag spec-codex \
+     --output-dir /tmp/out --round 1 \
+     --artifact-body "$OUT_OF_REPO_TMP/oor-artifact.md" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+ }
+ 
+-@test "G16: --companion outside repo root rejected (boundary, not missing-file)" {
+-  _g16_setup_fixtures
++@test "--companion outside repo root rejected (boundary, not missing-file)" {
++  _path_guard_setup_fixtures
+   # Sanity: the companion file IS readable, so a passing-by-missing-file mode
+   # would let it through. The boundary guard must reject by canonical-root.
+   [ -r "$OUT_OF_REPO_TMP/oor-companion.md" ]
+@@ -1499,13 +1499,13 @@ _g16_teardown_fixtures() {
+     --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
+     --companion "companion_plan=$OUT_OF_REPO_TMP/oor-companion.md" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+ }
+ 
+-@test "G16: --diff-file outside repo root rejected" {
+-  _g16_setup_fixtures
++@test "--diff-file outside repo root rejected" {
++  _path_guard_setup_fixtures
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+     --reviewer-tag spec-codex \
+@@ -1513,15 +1513,15 @@ _g16_teardown_fixtures() {
+     --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
+     --diff-file "$OUT_OF_REPO_TMP/oor.diff" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+ }
+ 
+ # --- Rejection cases: symlink whose canonical target is outside repo -------
+ 
+-@test "G16: symlink under repo whose canonical target is outside repo is rejected" {
+-  _g16_setup_fixtures
++@test "symlink under repo whose canonical target is outside repo is rejected" {
++  _path_guard_setup_fixtures
+   # A symlink located lexically under $REPO_ROOT but whose canonical target
+   # lives outside the repo — the lexical-prefix-only check would pass; the
+   # canonical-target check must reject.
+@@ -1532,32 +1532,46 @@ _g16_teardown_fixtures() {
+     --output-dir /tmp/out --round 1 \
+     --subject-code "$REPO_LOCAL_TMP/symlink-out.ts" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
++  # Spec line 50: rejection MUST happen BEFORE any prompt file is emitted.
++  # If the guard fired after emission the markers below would appear; they must
++  # not appear in stdout+stderr when early rejection fires correctly.
++  [[ ! "$output" =~ "<<<AGENT-BODY-END>>>" ]]
++  [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
+ }
+ 
+ # --- Canonicalization-failure case (fail-closed) ---------------------------
+ 
+-@test "G16: unresolvable \$REPO_ROOT fails closed before any path is read" {
+-  _g16_setup_fixtures
++@test "unresolvable \$REPO_ROOT fails closed before any path is read" {
++  _path_guard_setup_fixtures
++  # Spec line 54: no raw path is read before existence/boundary checks pass.
++  # Write a unique sentinel into the subject file; if the guard were to fire
++  # AFTER reading the file, the sentinel would appear in the --dry-run output
++  # (via emit_untrusted_artifact).  It must NOT appear.
++  local sentinel="CANONFAIL_SENTINEL_NOREAD_XQZ_SHOULD_NOT_EMIT"
++  echo "$sentinel" >> "$REPO_LOCAL_TMP/src/foo.ts"
+   run env QRSPI_REPO_ROOT=/no/such/repo/root/anywhere "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+     --reviewer-tag spec-codex \
+     --output-dir /tmp/out --round 1 \
+     --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   # Diagnostic clearly identifies the canonicalization failure (does not echo
+   # the input file's bytes — only the failing root path appears).
+   [[ "$output" =~ "canonicalize" ]] || [[ "$output" =~ "resolves outside repository" ]]
++  # Spec line 54: sentinel must be absent — proves no read happened before
++  # the guard rejected.
++  [[ ! "$output" =~ "$sentinel" ]]
+ }
+ 
+ # --- Pass cases: legitimate repo-local inputs ------------------------------
+ 
+-@test "G16: repo-local --subject-code dry-run preserves spec-line / prompt-file contract" {
+-  _g16_setup_fixtures
++@test "repo-local --subject-code dry-run preserves spec-line / prompt-file contract" {
++  _path_guard_setup_fixtures
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+     --reviewer-tag spec-codex \
+@@ -1565,13 +1579,13 @@ _g16_teardown_fixtures() {
+     --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
+     --task-def "$REPO_LOCAL_TMP/tasks/task-99.md" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -eq 0 ]
+   [[ "$output" =~ "subject_code:" ]]
+ }
+ 
+-@test "G16: repo-local --artifact-body / --companion / --diff-file dry-run all pass" {
+-  _g16_setup_fixtures
++@test "repo-local --artifact-body / --companion / --diff-file dry-run all pass" {
++  _path_guard_setup_fixtures
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-design-reviewer.md" \
+     --reviewer-tag design-codex \
+@@ -1580,7 +1594,7 @@ _g16_teardown_fixtures() {
+     --companion "companion_plan=$REPO_LOCAL_TMP/companion.md" \
+     --diff-file "$REPO_LOCAL_TMP/round-1.diff" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -eq 0 ]
+   [[ "$output" =~ "artifact_body:" ]]
+   [[ "$output" =~ "companion_plan:" ]]
+@@ -1588,11 +1602,11 @@ _g16_teardown_fixtures() {
+ 
+ # --- Static / structural assertions ----------------------------------------
+ 
+-@test "G16: dispatch-agent.sh defines the assert_path_under_repo_root guard" {
++@test "dispatch-agent.sh defines the assert_path_under_repo_root guard" {
+   grep -q 'assert_path_under_repo_root' "$REPO_ROOT/scripts/dispatch-agent.sh"
+ }
+ 
+-@test "G16: agents/qrspi-implementer.md carries the Orchestrator-Only Scripts allowlist" {
++@test "agents/qrspi-implementer.md carries the Orchestrator-Only Scripts allowlist" {
+   agent_md="$REPO_ROOT/agents/qrspi-implementer.md"
+   grep -q '^## Orchestrator-Only Scripts' "$agent_md"
+   # Both post-rename script names are forbidden under implementer Bash
+@@ -1605,7 +1619,7 @@ _g16_teardown_fixtures() {
+   grep -qi 'shell.expansion\|shell expansion' "$agent_md"
+ }
+ 
+-@test "G16: dispatch-companion.sh either shares the guard or documents no-raw-path surface" {
++@test "dispatch-companion.sh either shares the guard or documents no-raw-path surface" {
+   comp="$REPO_ROOT/scripts/dispatch-companion.sh"
+   # Either the boundary guard is invoked OR a documented no-raw-path comment
+   # explains why it's not needed for the stdin-only surface.
+@@ -1616,3 +1630,343 @@ _g16_teardown_fixtures() {
+   fi
+ }
+ 
++# ===========================================================================
++# Batch-mode path-filter hardening: --artifact and --agents
++#
++# Spec line 19 is explicit: "every prompt-ingested file path" must pass
++# assert_path_under_repo_root. Two batch-mode sites were missed:
++#   - BATCH_ARTIFACT_ABS: the --artifact file is cat'd into the prompt at the
++#     <<<UNTRUSTED-ARTIFACT-START>>> block.
++#   - _agent_file: the --agents file is read via strip_frontmatter_batch.
++# These four cases parallel the single-mode path-filter block above.
++# ===========================================================================
++
++@test "batch --artifact /etc/hosts rejected (readable system file outside repo)" {
++  local round_dir
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
++  run "$WRAPPER" \
++    --step goals \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --artifact /etc/hosts \
++    --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
++  rm -rf "$round_dir"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++  # Before-emission check: artifact bytes must not have been cat'd into the prompt.
++  [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
++}
++
++@test "batch --artifact symlink-to-outside rejected" {
++  _path_guard_setup_fixtures
++  local round_dir
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
++  # Symlink lexically inside repo whose canonical target is outside the repo.
++  ln -s "$OUT_OF_REPO_TMP/oor-artifact.md" "$REPO_LOCAL_TMP/symlink-oor-artifact.md"
++  run "$WRAPPER" \
++    --step goals \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --artifact "$REPO_LOCAL_TMP/symlink-oor-artifact.md" \
++    --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
++  rm -rf "$round_dir"
++  _path_guard_teardown_fixtures
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++  [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
++}
++
++@test "batch --agents /etc/hosts rejected (readable system file outside repo)" {
++  local round_dir
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
++  run "$WRAPPER" \
++    --step goals \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --artifact "$TMP_DIR/plan.md" \
++    --agents "quality-claude=/etc/hosts"
++  rm -rf "$round_dir"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++@test "batch --agents symlink-to-outside rejected" {
++  _path_guard_setup_fixtures
++  local round_dir
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
++  # Symlink lexically inside repo whose canonical target is outside the repo.
++  ln -s "$OUT_OF_REPO_TMP/oor-artifact.md" "$REPO_LOCAL_TMP/symlink-oor-agent.md"
++  run "$WRAPPER" \
++    --step goals \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --artifact "$TMP_DIR/plan.md" \
++    --agents "quality-claude=$REPO_LOCAL_TMP/symlink-oor-agent.md"
++  rm -rf "$round_dir"
++  _path_guard_teardown_fixtures
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++# ===========================================================================
++# Additional path-guard correctness cases surfaced in round-3 review:
++#   1. Batch --agents tag with path-traversal characters rejected by allowlist.
++#   2. Skill path from agent frontmatter with traversal rejected by boundary guard.
++#   3. Batch --artifact referencing a missing file fails at existence check.
++# ===========================================================================
++
++@test "batch --agents tag with path traversal rejected by tag allowlist" {
++  # A crafted tag like "../../etc/cron" can redirect the assembled prompt
++  # to an arbitrary path outside .dispatch/. The tag allowlist must reject it
++  # before any file write attempt.
++  local round_dir
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
++  run "$WRAPPER" \
++    --step goals \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --agents "../../etc/cron=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
++  rm -rf "$round_dir"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "--agents tag must match" ]]
++}
++
++@test "skill path traversal in agent frontmatter rejected by boundary guard" {
++  # When an agent's skills: frontmatter lists a name containing path components
++  # (e.g. "../../outside"), the assembled skill path resolves outside REPO_ROOT.
++  # assert_path_under_repo_root must catch this BEFORE strip_frontmatter cats
++  # the skill file into the LLM prompt.
++  local fake_root oor_skill_dir oor_skill_basename rel_skill_name
++  fake_root="$(mktemp -d "$REPO_ROOT/.bats-tmp-skill-root.XXXXXX")"
++  oor_skill_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-oor-skill.XXXXXX")"
++  oor_skill_basename="$(basename "$oor_skill_dir")"
++  # "../../$oor_skill_basename" from fake_root/skills/ resolves to
++  # $REPO_ROOT/$oor_skill_basename — outside fake_root but creatable in the test.
++  rel_skill_name="../../$oor_skill_basename"
++
++  mkdir -p "$fake_root/agents" \
++           "$fake_root/skills/reviewer-protocol" \
++           "$fake_root/src"
++  echo "# reviewer protocol stub" > "$fake_root/skills/reviewer-protocol/SKILL.md"
++  echo "# emission override stub" > "$fake_root/skills/reviewer-protocol/codex-emission-override.md"
++  printf -- '---\nskills: [%s]\n---\n# test agent\n' "$rel_skill_name" \
++    > "$fake_root/agents/test-skill-agent.md"
++  echo "export const x = 1;" > "$fake_root/src/foo.ts"
++  # The skill SKILL.md exists (so assert_file_exists passes) but is outside
++  # fake_root (so assert_path_under_repo_root should reject it).
++  echo "# outside skill content" > "$oor_skill_dir/SKILL.md"
++
++  run env QRSPI_REPO_ROOT="$fake_root" "$WRAPPER" \
++    --agent-file "$fake_root/agents/test-skill-agent.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code "$fake_root/src/foo.ts" \
++    --dry-run
++  rm -rf "$fake_root" "$oor_skill_dir"
++
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++@test "batch --artifact missing file fails at existence check before boundary guard" {
++  # When --artifact names a file that does not exist the script must emit a
++  # clear "not found" diagnostic and exit non-zero. The previous combined
++  # [[ -n ... && -f ... ]] guard silently skipped both the existence check
++  # and the boundary guard when the file was absent.
++  local round_dir
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
++  run "$WRAPPER" \
++    --step goals \
++    --round 1 \
++    --output-dir "$round_dir" \
++    --artifact "$REPO_ROOT/does-not-exist-artifact-$(date +%s).md" \
++    --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
++  rm -rf "$round_dir"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "not found" ]]
++  [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
++}
++
++# ===========================================================================
++# Fail-loud path-guard.sh source guard
++#
++# When path-guard.sh is present but does not define assert_path_under_repo_root
++# (e.g. it is empty or corrupt), dispatch-agent.sh must exit non-zero with a
++# clear diagnostic rather than continuing with no-op boundary enforcement.
++# ===========================================================================
++
++@test "dispatch-agent.sh exits non-zero with diagnostic when path-guard.sh does not define the guard" {
++  # Stand up a minimal fake repo root with a corrupt (empty) path-guard.sh
++  # so the sourcing succeeds but the function is absent.
++  local fake_root
++  fake_root="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-corrupt.XXXXXX")"
++  mkdir -p "$fake_root/scripts/lib" \
++           "$fake_root/agents" \
++           "$fake_root/skills/reviewer-protocol" \
++           "$fake_root/src"
++  # Copy only the files the wrapper needs to exist; corrupt lib/path-guard.sh.
++  cp "$REPO_ROOT/scripts/dispatch-agent.sh" "$fake_root/scripts/"
++  cp "$REPO_ROOT/scripts/lib/llm-prompt-utils.sh" \
++     "$fake_root/scripts/lib/" 2>/dev/null || touch "$fake_root/scripts/lib/llm-prompt-utils.sh"
++  # Intentionally empty — sources without error but defines no functions.
++  touch "$fake_root/scripts/lib/path-guard.sh"
++  cp "$REPO_ROOT/skills/reviewer-protocol/SKILL.md" \
++     "$fake_root/skills/reviewer-protocol/"
++  cp "$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md" \
++     "$fake_root/skills/reviewer-protocol/" 2>/dev/null || \
++     touch "$fake_root/skills/reviewer-protocol/codex-emission-override.md"
++  cp "$REPO_ROOT/agents/qrspi-spec-reviewer.md" "$fake_root/agents/"
++  echo "export const x = 1;" > "$fake_root/src/foo.ts"
++
++  run env QRSPI_REPO_ROOT="$fake_root" "$fake_root/scripts/dispatch-agent.sh" \
++    --agent-file "$fake_root/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code "$fake_root/src/foo.ts" \
++    --dry-run
++  rm -rf "$fake_root"
++
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "not defined after sourcing" ]]
++}
++
++# ===========================================================================
++# dispatch-companion.sh launch/await raw-file-path surface hardening
++#
++# --round-dir in launch mode is boundary-checked with
++#   assert_path_under_repo_root before _jobs_dir is constructed, so a caller
++#   cannot redirect job records and raw LLM output to an arbitrary path outside
++#   the repo tree.
++#
++# await mode re-validates _job_tag (allowlist) and _job_round_dir (boundary)
++#   extracted from the job record before using them to construct _raw_dir and
++#   _raw_file, so a crafted job record cannot traverse outside the intended
++#   task tree.
++# ===========================================================================
++
++COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
++
++@test "companion launch: --round-dir outside repo rejected with 'resolves outside repository'" {
++  # launch mode asserts assert_path_under_repo_root on --round-dir so a
++  # caller cannot point job-record writes to /tmp or any out-of-tree path.
++  local oor_dir
++  oor_dir="$(mktemp -d "${TMPDIR:-/tmp}/bats-companion-oor.XXXXXX")"
++  # --prompt-file must be a real file inside the repo so the prompt-file
++  # boundary check passes — the round-dir check fires independently.
++  local prompt_file="$TMP_DIR/prompt.txt"
++  echo "test prompt" > "$prompt_file"
++
++  run "$COMPANION" \
++    --vendor codex \
++    --model gpt-4 \
++    --prompt-file "$prompt_file" \
++    --round-dir "$oor_dir" \
++    --tag mytest
++  rm -rf "$oor_dir"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++@test "companion await: job record with traversal tag rejected with 'invalid tag'" {
++  # await mode validates _job_tag from the job record against the
++  # [a-z][a-z0-9_-]* allowlist.  A crafted tag like '../../other-task/...'
++  # redirects raw output to a sibling task tree.
++  local jobs_dir
++  jobs_dir="$(mktemp -d "$TMP_DIR/.jobs-XXXXXX")"
++  local bad_job_id="testjob-$$"
++  # Write a crafted job record with path-traversal in the tag field.
++  printf 'vendor=codex\nmodel=gpt-4\nprompt_file=%s/p.txt\nround_dir=%s\ntag=../../other-task/evil\n' \
++    "$TMP_DIR" "$TMP_DIR" > "$jobs_dir/$bad_job_id"
++
++  # await runs with cwd=<round-dir>/.dispatch/ and resolves records relative
++  # to that cwd; replicate the expected CWD by creating .jobs/ there.
++  local dispatch_dir="$TMP_DIR/.dispatch"
++  mkdir -p "$dispatch_dir/.jobs"
++  cp "$jobs_dir/$bad_job_id" "$dispatch_dir/.jobs/$bad_job_id"
++
++  run bash -c "cd '$dispatch_dir' && '$COMPANION' await '$bad_job_id'"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "invalid tag" ]]
++}
++
++@test "companion await: job record with out-of-repo round_dir rejected with 'resolves outside repository'" {
++  # await mode must assert_path_under_repo_root on _job_round_dir extracted
++  # from the job record, preventing raw LLM output from being written to /etc
++  # or any out-of-tree path.
++  local oor_dir
++  oor_dir="$(mktemp -d "${TMPDIR:-/tmp}/bats-companion-rdoor.XXXXXX")"
++  local bad_job_id="testjob-rdoor-$$"
++
++  local dispatch_dir="$TMP_DIR/.dispatch"
++  mkdir -p "$dispatch_dir/.jobs"
++  # Craft a job record whose round_dir is outside the repo.
++  printf 'vendor=codex\nmodel=gpt-4\nprompt_file=%s/p.txt\nround_dir=%s\ntag=validtag\n' \
++    "$TMP_DIR" "$oor_dir" > "$dispatch_dir/.jobs/$bad_job_id"
++
++  run bash -c "cd '$dispatch_dir' && '$COMPANION' await '$bad_job_id'"
++  rm -rf "$oor_dir"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++@test "companion launch: relative --round-dir at launch resolves to canonical path stored in record" {
++  # The round_dir stored in the job record must be the canonical (absolute)
++  # form of the caller-supplied path, not the raw relative input.
++  # A non-codex vendor skips the broker transport entirely so the record is
++  # written without any external I/O.
++  local round_subdir="round-dir-rel-test"
++  mkdir -p "$TMP_DIR/$round_subdir"
++  local prompt_file="$TMP_DIR/prompt.txt"
++  echo "test prompt" > "$prompt_file"
++
++  # Run with cwd=$TMP_DIR and a relative --round-dir so the raw value has no
++  # leading slash — the stored value must be absolute.
++  run bash -c "cd '$TMP_DIR' && '$COMPANION' \
++    --vendor claude \
++    --model claude-3-opus \
++    --prompt-file '$prompt_file' \
++    --round-dir '$round_subdir' \
++    --tag reltest"
++  [ "$status" -eq 0 ]
++
++  local job_id
++  job_id=$(printf '%s\n' "$output" | sed -n 's/^JOB_ID=//p' | head -1)
++  [ -n "$job_id" ]
++
++  local record_file="$TMP_DIR/$round_subdir/.dispatch/.jobs/$job_id"
++  [ -f "$record_file" ] || {
++    echo "job record not found: $record_file" >&2
++    return 1
++  }
++
++  local stored_round_dir
++  stored_round_dir=$(sed -n 's/^round_dir=//p' "$record_file" | head -1)
++  # The stored round_dir must be an absolute path (not the raw relative input).
++  [[ "$stored_round_dir" == /* ]]
++  # And must match the canonical absolute path of the relative input.
++  [[ "$stored_round_dir" == "$TMP_DIR/$round_subdir" ]]
++}
++
++@test "companion launch: previously nonexistent --round-dir inside repo is created before boundary check" {
++  # mkdir is run before assert_path_under_repo_root so that realpath can
++  # canonicalize a freshly-created directory on BSD/macOS where realpath
++  # requires the target to exist. A caller supplying a round-dir that does
++  # not yet exist (but whose path is inside the repo) should get a successful
++  # launch with the directory created.
++  local new_round_dir="$TMP_DIR/brand-new-round-dir-$$"
++  [ ! -d "$new_round_dir" ]  # Confirm it does not exist before the call.
++  local prompt_file="$TMP_DIR/prompt.txt"
++  echo "test prompt" > "$prompt_file"
++
++  run "$COMPANION" \
++    --vendor claude \
++    --model claude-3-opus \
++    --prompt-file "$prompt_file" \
++    --round-dir "$new_round_dir" \
++    --tag newdirtest
++
++  [ "$status" -eq 0 ]
++  [[ "$output" =~ "JOB_ID=" ]]
++  # The jobs directory must have been created as a side-effect of launch.
++  [ -d "$new_round_dir/.dispatch/.jobs" ]
++}

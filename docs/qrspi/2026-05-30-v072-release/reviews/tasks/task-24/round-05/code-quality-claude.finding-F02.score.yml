@@ -1,0 +1,2 @@
+score: 62
+reason: Confirmed real cleanliness issue — section headers at lines 524–602 embed ephemeral reviewer-artifact labels (`FINDING A`…`FINDING E`) that are opaque to any reader of the file in isolation; the descriptive subtitles after the em-dash are fully self-sufficient, making the `FINDING X —` prefixes pure review-round noise in production test source.

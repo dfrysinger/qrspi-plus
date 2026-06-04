@@ -1,0 +1,2 @@
+score: 62
+reason: Verified — the four unknown-host/no-override tests at L237-285 check only key presence (`host=`, `vendor=`) without pinning specific values (`host=unknown`, `vendor=none`), and no single joint test combines all required properties in one invocation, while the analogous copilot-cli/explicit-none path at L322-348 does pin both values jointly, making the gap real and asymmetric relative to DoD L42/52's "naming the detected host plus requested/default vendor" language.

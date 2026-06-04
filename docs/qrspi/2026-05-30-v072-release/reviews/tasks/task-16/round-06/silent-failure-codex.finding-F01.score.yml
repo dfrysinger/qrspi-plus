@@ -1,0 +1,2 @@
+score: 68
+reason: Verified — a row like `low:   ` matches L140's space-anchored grep, normalizes to empty, bypasses the none-check, and emits a blank line with exit 0, a genuine silent-success gap against this task's fail-loud DoD; edge-case but real and convergent with a second reviewer.

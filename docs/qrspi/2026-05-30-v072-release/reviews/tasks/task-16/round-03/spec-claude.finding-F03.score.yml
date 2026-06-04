@@ -1,0 +1,2 @@
+score: 90
+reason: The `## Model Selection Guidance` table at lines 1489–1495 of `skills/implement/SKILL.md` is confirmed present and unchanged in the diff; it still names `haiku`/`sonnet`/`opus` as routing vocabulary, directly contradicting the tier-based routing the task migrated, and falls squarely within the task spec's explicit removal scope ("remove the old per-host haiku/sonnet/opus/inherit schema" from implement/SKILL.md) and the DoD's grep-coverage acceptance criterion.

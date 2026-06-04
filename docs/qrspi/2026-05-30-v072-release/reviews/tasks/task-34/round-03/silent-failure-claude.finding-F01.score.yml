@@ -1,0 +1,2 @@
+score: 100
+reason: SF04 test dispatch_count is initialized to 0 and never incremented anywhere in the loop; the assertion [ "$dispatch_count" -eq 0 ] is trivially true by construction and cannot fail; this is a genuine vacuous test defect confirmed by diff inspection.

@@ -1,0 +1,125 @@
+diff --git a/scripts/dispatch-companion.sh b/scripts/dispatch-companion.sh
+index 7b9ee7f..2254766 100755
+--- a/scripts/dispatch-companion.sh
++++ b/scripts/dispatch-companion.sh
+@@ -544,6 +544,20 @@ if [ "$#" -gt 0 ] && [ "$1" = "await" ]; then
+     exit 13
+   fi
+ 
++  # Re-validate tag from job record: mirrors the [a-z][a-z0-9_-]* allowlist
++  # enforced at launch time (L613). A crafted job record with a traversal tag
++  # like '../../other-task/evil' would otherwise redirect the raw-capture file
++  # outside the intended task tree.
++  case "$_job_tag" in
++    ""|*[!a-z0-9_-]*|[^a-z]*)
++      printf 'dispatch-companion: await: invalid tag in job record %s\n' "$_await_job" >&2
++      exit 13 ;;
++  esac
++  # Re-validate round_dir from job record: a crafted job record with
++  # round_dir=/tmp/... or any out-of-repo path would write raw LLM output
++  # outside the repo tree. Reject before constructing _raw_dir.
++  assert_path_under_repo_root "await:round_dir" "$_job_round_dir"
++
+   _raw_dir="$_job_round_dir/.dispatch"
+   mkdir -p "$_raw_dir" || {
+     printf 'dispatch-companion: await: cannot create raw-capture dir: %s\n' "$_raw_dir" >&2
+@@ -618,6 +632,12 @@ if [ "$_has_vendor_flag" = "true" ]; then
+   # surface that is later piped to the upstream transport. Reject any path
+   # whose canonical target falls outside $REPO_ROOT/.
+   assert_path_under_repo_root "launch:--prompt-file" "$L_PROMPT_FILE"
++  # Boundary guard: --round-dir is used to construct the job-record directory
++  # and, via the persisted round_dir field, is later used by `await` to
++  # construct the raw-capture path. Reject any path whose canonical target
++  # falls outside $REPO_ROOT/ so a caller cannot redirect job records or raw
++  # LLM output to an arbitrary out-of-tree location.
++  assert_path_under_repo_root "launch:--round-dir" "$L_ROUND_DIR"
+ 
+   # Generate a round-unique job id and persist a job record so a later
+   # `await <job-id>` can resolve the vendor/model/prompt-file/tag. The prompt
+diff --git a/tests/unit/test-dispatch-agent.bats b/tests/unit/test-dispatch-agent.bats
+index faafa4f..c9ef0c7 100644
+--- a/tests/unit/test-dispatch-agent.bats
++++ b/tests/unit/test-dispatch-agent.bats
+@@ -1829,3 +1829,82 @@ _path_guard_teardown_fixtures() {
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "not defined after sourcing" ]]
+ }
++
++# ===========================================================================
++# dispatch-companion.sh launch/await raw-file-path surface hardening
++#
++# Fix 1 (F01): --round-dir in launch mode must be boundary-checked with
++#   assert_path_under_repo_root before _jobs_dir is constructed, so a caller
++#   cannot redirect job records and raw LLM output to an arbitrary path outside
++#   the repo tree.
++#
++# Fix 2 (F02): await mode must re-validate _job_tag (allowlist) and
++#   _job_round_dir (boundary) extracted from the job record before using them
++#   to construct _raw_dir and _raw_file, so a crafted job record cannot
++#   traverse outside the intended task tree.
++# ===========================================================================
++
++COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
++
++@test "companion launch: --round-dir outside repo rejected with 'resolves outside repository'" {
++  # Fix 1: launch mode must assert_path_under_repo_root on --round-dir so a
++  # caller cannot point job-record writes to /tmp or any out-of-tree path.
++  local oor_dir
++  oor_dir="$(mktemp -d "${TMPDIR:-/tmp}/bats-companion-oor.XXXXXX")"
++  # --prompt-file must be a real file inside the repo so the prompt-file
++  # boundary check passes — the round-dir check fires independently.
++  local prompt_file="$TMP_DIR/prompt.txt"
++  echo "test prompt" > "$prompt_file"
++
++  run "$COMPANION" \
++    --vendor codex \
++    --model gpt-4 \
++    --prompt-file "$prompt_file" \
++    --round-dir "$oor_dir" \
++    --tag mytest
++  rm -rf "$oor_dir"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
++@test "companion await: job record with traversal tag rejected with 'invalid tag'" {
++  # Fix 2: await mode must validate _job_tag from the job record against the
++  # [a-z][a-z0-9_-]* allowlist.  A crafted tag like '../../other-task/...'
++  # redirects raw output to a sibling task tree.
++  local jobs_dir
++  jobs_dir="$(mktemp -d "$TMP_DIR/.jobs-XXXXXX")"
++  local bad_job_id="testjob-$$"
++  # Write a crafted job record with path-traversal in the tag field.
++  printf 'vendor=codex\nmodel=gpt-4\nprompt_file=%s/p.txt\nround_dir=%s\ntag=../../other-task/evil\n' \
++    "$TMP_DIR" "$TMP_DIR" > "$jobs_dir/$bad_job_id"
++
++  # await runs with cwd=<round-dir>/.dispatch/ and resolves records relative
++  # to that cwd; replicate the expected CWD by creating .jobs/ there.
++  local dispatch_dir="$TMP_DIR/.dispatch"
++  mkdir -p "$dispatch_dir/.jobs"
++  cp "$jobs_dir/$bad_job_id" "$dispatch_dir/.jobs/$bad_job_id"
++
++  run bash -c "cd '$dispatch_dir' && '$COMPANION' await '$bad_job_id'"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "invalid tag" ]]
++}
++
++@test "companion await: job record with out-of-repo round_dir rejected with 'resolves outside repository'" {
++  # Fix 2: await mode must assert_path_under_repo_root on _job_round_dir
++  # extracted from the job record, preventing raw LLM output from being
++  # written to /etc or any out-of-tree path.
++  local oor_dir
++  oor_dir="$(mktemp -d "${TMPDIR:-/tmp}/bats-companion-rdoor.XXXXXX")"
++  local bad_job_id="testjob-rdoor-$$"
++
++  local dispatch_dir="$TMP_DIR/.dispatch"
++  mkdir -p "$dispatch_dir/.jobs"
++  # Craft a job record whose round_dir is outside the repo.
++  printf 'vendor=codex\nmodel=gpt-4\nprompt_file=%s/p.txt\nround_dir=%s\ntag=validtag\n' \
++    "$TMP_DIR" "$oor_dir" > "$dispatch_dir/.jobs/$bad_job_id"
++
++  run bash -c "cd '$dispatch_dir' && '$COMPANION' await '$bad_job_id'"
++  rm -rf "$oor_dir"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}

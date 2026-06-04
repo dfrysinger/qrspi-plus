@@ -1,0 +1,2 @@
+score: 10
+reason: The plan/SKILL.md tests and G5 matrix-removal test that the finding claims are absent are in fact present in the round-03 diff additions to test-routing-matrix-application.bats (diff lines +2047–+2090), making this a false positive.

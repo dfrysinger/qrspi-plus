@@ -1,0 +1,3 @@
+finding_tag: spec-claude.R1-F04
+score: 25
+reason: Intentional but undocumented asymmetry between HALT Diagnostic (offers delete-or-revert) and Pre-G5 Migration Diagnostic (delete only). Pre-G5 files lack hash so revert-plan path doesn't help — by design. Consistency/doc concern, not functional correctness.

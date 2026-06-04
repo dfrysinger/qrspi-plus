@@ -1,0 +1,2 @@
+score: 75
+reason: Real defect mirroring the F05 finding-file fix; sidecar readability unguarded, unreadable sidecars silently misdirect as `score_unparseable`. Identical defect class, newly introduced, no regression test.

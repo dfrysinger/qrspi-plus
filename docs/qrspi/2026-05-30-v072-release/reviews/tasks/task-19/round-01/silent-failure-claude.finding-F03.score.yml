@@ -1,0 +1,2 @@
+score: 35
+reason: The empty-$2 guard gap is real in T19-authored code, but no T19 caller passes an empty primary_vendor (second-reviewer-available.sh never calls resolve_second_reviewer_vendor; all bats tests use hardcoded non-empty args), so the silent-bypass path is only triggerable by T20 dispatch code not yet written, making this a speculative robustness finding rather than a currently reachable failure.

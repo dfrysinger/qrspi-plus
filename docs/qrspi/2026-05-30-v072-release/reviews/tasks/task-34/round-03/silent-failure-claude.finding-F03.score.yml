@@ -1,0 +1,2 @@
+score: 100
+reason: Missing-header and malformed-header tests create files with the condition already present, then assert detection of that condition; the assertions are trivially true because no orchestrator logic is ever exercised or could fail them.

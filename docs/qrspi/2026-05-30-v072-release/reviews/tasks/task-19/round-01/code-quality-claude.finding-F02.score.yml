@@ -1,0 +1,2 @@
+score: 15
+reason: Lines 412-418 are the dispatch-transport-routing section; task-19 Scope Out explicitly assigns dispatch-script renames (run-codex-review.sh / check_codex_available) to Task 20, making the bulk of this finding out-of-scope and a scope false-positive.

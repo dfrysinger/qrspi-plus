@@ -1,0 +1,4 @@
+---
+score: 100
+rationale: The artifact's `dispatch-companion.sh await <job-id>` subcommand (lines 486–515) unconditionally exits 13 with "vendor <vendor> transport capture for job <job-id> is not wired in this build" without writing any output file. The DoD bullet 3 explicitly requires "dispatch-companion.sh await <job-id> writes raw reviewer output to <round-dir>/.dispatch/<tag>.raw without echoing payload text to stdout or stderr." The finding is fully accurate: the implementation is a stub that breaks the entire third-party dispatch chain. This is a load-bearing correctness defect introduced by this task and directly blocks task acceptance.
+---

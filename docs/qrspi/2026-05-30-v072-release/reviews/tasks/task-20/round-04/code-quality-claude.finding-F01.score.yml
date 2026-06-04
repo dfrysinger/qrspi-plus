@@ -1,0 +1,2 @@
+score: 55
+reason: Real test-hygiene issue verified: mktemp -d at line 1182 outside $TMP_DIR will leak on failure before inline cleanup (line 1245); pattern affects multiple tests; trivial one-line fix suggested; however low-severity (test-only, no production impact) and minor relative to task's main substance (absolute-path manifest fix).

@@ -1,0 +1,2 @@
+score: 62
+reason: Real gap introduced by T19 — missing source guards on lines 36-37 can produce multi-line stderr output violating the DoD's explicit "exactly one [second-reviewer-unavailable] line" contract, but both libs ship co-located in the same scripts/ directory making the failure path unusual in normal deployment.

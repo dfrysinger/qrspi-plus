@@ -1,0 +1,363 @@
+diff --git a/agents/qrspi-finding-verifier.md b/agents/qrspi-finding-verifier.md
+index 7f14f18..15d550d 100644
+--- a/agents/qrspi-finding-verifier.md
++++ b/agents/qrspi-finding-verifier.md
+@@ -89,7 +89,7 @@ The verifier receives five prompt parameters:
+ 
+ 5.5. **Defect-class tag.** After scoring and before writing the sidecar, classify the finding's defect type and emit a `defect_class:` tag on its own line in the sidecar frontmatter. The tag captures the structural defect — what *kind* of problem the finding identifies — not its location or severity.
+ 
+-   **Shape.** Lowercase kebab-case: letters, digits, and hyphens only, matching `^[a-z0-9][a-z0-9-]*$`, and ≤30 characters total. The first character MUST be a letter or digit (no leading hyphen). Uppercase letters, underscores, spaces, dots, slashes, and other punctuation are rejected.
++   **Shape.** Lowercase kebab-case: letters, digits, and hyphens only, matching `^[a-z0-9][a-z0-9-]*$`, and ≤30 characters total. The first character MUST be a letter or digit (no leading hyphen). Uppercase letters, underscores, spaces, dots, slashes, and other punctuation are rejected. If the token you are about to emit would fail this rule — for any reason including length, character class, or leading hyphen — emit `defect_class: unspecified` instead.
+ 
+    **Examples of well-formed tags:** `goal-leakage` (a question or design reveals goals-content it should not), `unanchored-claim` (a statement makes an assertion without a citation), `imprecise-quantifier` (a constraint uses vague words like "many" or "often"), `redundant-restatement` (the same content appears in multiple places), `dangling-reference` (a citation points at content that no longer exists), `swallowed-error` (an exception is caught and silently discarded), `silent-fallback` (a degraded path is taken without surfacing the degradation), `dry-violation` (the same logic is duplicated across surfaces), `injection` (untrusted input flows into a structural sink), `fabricated-citation` (the cited resource does not exist — pairs with `score: 0` HALLUCINATED).
+ 
+@@ -121,7 +121,7 @@ The verifier receives five prompt parameters:
+    ---
+    ```
+ 
+-   **Field-ordering invariant (load-bearing).** In every sidecar the `score:` field (when present) MUST precede the `defect_class:` field, and `defect_class:` MUST appear LAST among the YAML frontmatter fields. The ordering is a security invariant against duplicate-key YAML parser drift: pyyaml-style "last value wins" parsers used by future cluster-analysis tooling would let a malformed `defect_class:` value containing an injected `score:` (or any other recognized key) on a subsequent line silently override real values that came earlier. Putting `defect_class:` last bounds the blast radius — nothing the value carries on follow-on lines can shadow a load-bearing field above it. Today's `scripts/verifier-fan-in.sh` already exits on the FIRST `score:` match, so the invariant is doubly enforced; future tooling adopting a real YAML parser inherits the same guarantee.
++   **Field-ordering invariant (load-bearing).** In every sidecar the `score:` field (when present) MUST precede the `defect_class:` field, and `defect_class:` MUST appear LAST among the YAML frontmatter fields. The PRIMARY defense against duplicate-key YAML injection is the shape constraint above (`^[a-z0-9][a-z0-9-]*$`, ≤30 chars) — a value matching that regex cannot carry a newline followed by an injected `score:` (or any other) key, regardless of where the field sits in the frontmatter. Field-ordering is defense-in-depth layered on top of the shape regex, and is load-bearing for the CURRENT awk first-value-wins (FVW) implementation in `scripts/verifier-fan-in.sh`: the script exits on the FIRST `score:` match, so placing real fields ABOVE `defect_class:` guarantees a malformed value (one that somehow slipped past the shape gate) cannot shadow them. **Future parsers using last-value-wins (LVW) semantics MUST validate `defect_class:` values against the shape regex before consuming the sidecar — field ordering alone does NOT protect against LVW injection.** Combined, the shape regex and the field-ordering invariant bound the blast radius end-to-end.
+ 
+    When the score is `0` due to Cite Check failure (step 3.5), the `reason` value MUST start with the literal prefix `HALLUCINATED: ` so dropped sidecars can be greppable for the hallucination subset.
+ 
+diff --git a/docs/qrspi/2026-05-30-v072-release/tasks/task-10.md b/docs/qrspi/2026-05-30-v072-release/tasks/task-10.md
+index 3079eab..df09079 100644
+--- a/docs/qrspi/2026-05-30-v072-release/tasks/task-10.md
++++ b/docs/qrspi/2026-05-30-v072-release/tasks/task-10.md
+@@ -64,3 +64,7 @@ Add verifier-side `defect_class:` instrumentation and an informational sub-thres
+ - structure.md ### `skills/using-qrspi/SKILL.md` → Slice 1.2 — dispositions template for optional `## Sub-Threshold Observations` and informational-only behavior.
+ - structure.md ### `tests/unit/test-verified-file-shape.bats` — unit-level sidecar shape assertions for `defect_class:`.
+ - structure.md ### `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` → Slice 1.2 — release-level acceptance for defect-class emission, no override path to `kept-findings.txt`, and observations-section shape.
++
++## Spec Disambiguation (R2 Adopted Reading)
++
++The DoD bullet at L42 and the Test-expectations bullet at L54 use the language "each finding's defect class, each score" which read as per-finding fields in the YAML template. Implementation adopted **Reading B** in R2: the YAML template surfaces a single per-cluster `representative_score:` (typically the worst-scoring contributor) plus a shared `defect_class:` tag, NOT per-finding scores or per-finding defect classes. Per-finding precision is intentionally NOT preserved in the cluster-summary template — the individual sidecar files at `finding_paths[]` carry the exact integer score and per-finding defect class for each contributor. Reading B is the canonical interpretation; the spec language above predates the rename. See plugin-issue backlog PI-V072-T10-005 for the spec-text update tracking.
+diff --git a/skills/using-qrspi/SKILL.md b/skills/using-qrspi/SKILL.md
+index 87d8a13..c5304a9 100644
+--- a/skills/using-qrspi/SKILL.md
++++ b/skills/using-qrspi/SKILL.md
+@@ -992,7 +992,7 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
+ 
+    **Optional `## Sub-Threshold Observations` section (informational only).** When the orchestrator notices a pattern in dropped findings worth recording — e.g., multiple sub-threshold findings sharing a `defect_class` tag and clustering just below the floor — it MAY append a `## Sub-Threshold Observations` H2 section to `round-NN-dispositions.md` as evidence-collection signal for future calibration. The section is purely informational: it does NOT claim an override, it does NOT trigger any reapply behavior, and it is consumed by no current script. Zero observations on a clean round is the common case.
+ 
+-   The section's body is a YAML-fenced block listing one entry per observation with: a `summary` one-liner, the contributing `finding_paths` (relative to the round-NN directory under `reviews/{step}/`), the cluster's shared `defect_class` tag, the representative `score` (typically the minimum score in the cluster — i.e. the worst-scoring contributor — chosen so the entry surfaces how far below the floor the cluster fell), and the `threshold` that dropped them (80 for `style`/`clarity`, 70 for `correctness`). Per-finding scores are NOT preserved in this template by design; the cluster surfaces a single representative figure. When per-finding precision is needed downstream, the individual sidecar files at `finding_paths[]` carry the exact integer score for each contributor. (Spec text disambiguation around the cluster-summary vs per-finding reading is tracked in the plugin-issue backlog as PI-V072-T10-005.)
++   The section's body is a YAML-fenced block listing one entry per observation with: a `summary` one-liner, the contributing `finding_paths` (relative to the round-NN directory under `reviews/{step}/`), the cluster's shared `defect_class` tag, the representative `score` (typically the minimum score in the cluster — i.e. the worst-scoring contributor — chosen so the entry surfaces how far below the floor the cluster fell), and the `threshold` that dropped them (80 for `style`/`clarity`, 70 for `correctness`). Per-finding scores are NOT preserved in this template by design; the cluster surfaces a single representative figure. When per-finding precision is needed downstream, the individual sidecar files at `finding_paths[]` carry the exact integer score for each contributor.
+ 
+    `finding_paths[]` values MUST be relative paths within the current `round-NN/` directory and MUST NOT contain `../` components or absolute paths. Canonical example:
+ 
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index 9b9103c..1ebf548 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -1954,7 +1954,7 @@ _t9_simulate_verifier_sidecar_write() {
+ }
+ 
+ # ===========================================================================
+-# G28 — Convergent-evidence exception: verifier instrumentation + dispositions
++# Convergent-evidence exception: verifier instrumentation + dispositions
+ # observations section (apply-fix override forbidden).
+ #
+ # Coverage (labels mirror spec ACs 1-5 verbatim):
+@@ -1966,12 +1966,21 @@ _t9_simulate_verifier_sidecar_write() {
+ #         fallback for absence-of-signal findings.
+ #   AC4   Sub-threshold findings DO NOT reach `kept-findings.txt` through any
+ #         path (behavior pin) AND `skills/using-qrspi/SKILL.md` prose forbids
+-#         keeping sub-threshold findings via orchestrator override (prose pin).
++#         keeping sub-threshold findings via orchestrator override AND forbids
++#         applying patches that address dropped findings under the guise of
++#         the round's apply-fix work (two distinct MUST NOT clauses).
+ #   AC5   `skills/using-qrspi/SKILL.md` documents the optional
+ #         `## Sub-Threshold Observations` H2 section (template + informational
+ #         language) AND the YAML template parses as valid YAML carrying
+ #         exactly the spec-pinned fields (summary, finding_paths,
+-#         defect_class, score, threshold).
++#         defect_class, representative_score, threshold) — the score field
++#         was renamed from bare 'score:' to 'representative_score:' in R2 to
++#         make the per-cluster (not per-finding) reading load-bearing.
++#   AC6   Fan-in script invariance: scripts/verifier-fan-in.sh does NOT
++#         reference defect_class / representative_score / sub-threshold
++#         observations tokens. Pins the deferral of cluster-analysis
++#         automation — the script remains the single source of truth for
++#         keep/drop decisions and carries no instrumentation tokens.
+ # ===========================================================================
+ 
+ @test "[AC1] verifier agent body documents defect_class field + regex ^[a-z0-9][a-z0-9-]*$" {
+@@ -1995,6 +2004,16 @@ _t9_simulate_verifier_sidecar_write() {
+     flag && /^6\. \*\*Write `<sidecar_path>`\*\*/ { exit }
+     flag { print }
+   ' "$agent")"
++  # End-boundary drift guard (mirrors the unit-pin guard): non-empty slice
++  # AND the slice MUST NOT contain the step-6 marker; either would mean the
++  # awk exit-on-step-6 boundary failed and downstream assertions are running
++  # against the wrong region.
++  [ -n "$slice" ] \
++    || { echo "awk slice between step 5 and step 6 is empty — start boundary drifted"; return 1; }
++  if echo "$slice" | grep -qF '6. **Write'; then
++    echo "awk slice extends past step 6 — end boundary drifted"
++    return 1
++  fi
+   echo "$slice" | grep -qE '(≤|<=) ?30|30[- ]char' \
+     || { echo "≤30-character cap on defect_class not documented near the rubric step"; return 1; }
+ }
+@@ -2041,12 +2060,20 @@ _t9_simulate_verifier_sidecar_write() {
+   fi
+ 
+   # Prose half: SKILL.md dispositions writer prose forbids keeping
+-  # sub-threshold findings via orchestrator override.
++  # sub-threshold findings via orchestrator override AND forbids applying
++  # patches addressing dropped findings under the guise of apply-fix work.
++  # Spec L53 carries TWO distinct MUST NOT clauses; both must be pinned.
+   local skill="$SKILLS/using-qrspi/SKILL.md"
+   grep -qiE 'sub-threshold' "$skill" \
+     || { echo "sub-threshold prose missing from using-qrspi/SKILL.md"; return 1; }
+   grep -qE 'MUST NOT.*(override|keep)' "$skill" \
+     || { echo "prohibition (MUST NOT … override) not documented"; return 1; }
++  # Second MUST NOT clause: orchestrator MUST NOT apply patches addressing
++  # dropped findings as part of round apply-fix work. Without this pin the
++  # apply-fix patching prohibition is unenforced even though the override
++  # phrasing is intact.
++  grep -qE 'MUST NOT apply patches' "$skill" \
++    || { echo "apply-fix patching prohibition (MUST NOT apply patches) not documented"; return 1; }
+ }
+ 
+ @test "[AC5] SKILL.md documents optional ## Sub-Threshold Observations H2 with spec-pinned YAML template" {
+@@ -2071,55 +2098,65 @@ _t9_simulate_verifier_sidecar_write() {
+   [ -n "$yaml" ] \
+     || { echo 'no fenced yaml block found under ## Sub-Threshold Observations'; return 1; }
+ 
++  # Env-dep guard: skip cleanly when python3 / pyyaml are unavailable in the
++  # local environment. CI and the documented test environment carry both;
++  # in a stripped local env the YAML-validation arm of this test would emit
++  # a noisy unrelated failure that masks real regressions. Skip with a
++  # diagnostic so the gap is visible.
++  command -v python3 >/dev/null 2>&1 \
++    || skip "python3 not available in this environment (env-dep — passes in CI)"
++  python3 -c "import yaml" 2>/dev/null \
++    || skip "python3 pyyaml not installed (env-dep — passes in CI)"
++
+   # Validate via python yaml (available in CI/test env).
+   python3 -c "import sys, yaml; yaml.safe_load(sys.stdin.read())" <<<"$yaml" \
+-    || { echo "Sub-Threshold Observations YAML template did not parse cleanly"; printf '%s\n' "$yaml"; return 1; }
++    || { echo "Sub-Threshold Observations YAML template did not parse cleanly"; echo "$yaml"; return 1; }
+ 
+   # Spec DoD pins the template's field shape. Assert each spec-pinned field
+   # appears in the YAML template (exact spec spelling — no permissive
+   # observation_summary alias). Asserting on the YAML slice (not the whole
+   # SKILL) prevents incidental matches elsewhere in the doc.
+-  printf '%s\n' "$yaml" | grep -qE '^\s*-?\s*summary:' \
+-    || { echo "observations template missing 'summary:' field (spec spelling — not 'observation_summary:')"; printf '%s\n' "$yaml"; return 1; }
+-  printf '%s\n' "$yaml" | grep -qE '^\s*finding_paths:' \
+-    || { echo "observations template missing 'finding_paths:' list field"; printf '%s\n' "$yaml"; return 1; }
+-  printf '%s\n' "$yaml" | grep -qE 'defect_class:' \
+-    || { echo "observations template missing 'defect_class:' field"; printf '%s\n' "$yaml"; return 1; }
+-  printf '%s\n' "$yaml" | grep -qE 'representative_score:' \
+-    || { echo "observations template missing 'representative_score:' field (renamed from 'score:' in R2 — per-finding precision belongs in finding_paths[] sidecars)"; printf '%s\n' "$yaml"; return 1; }
+-  printf '%s\n' "$yaml" | grep -qE 'threshold:' \
+-    || { echo "observations template missing 'threshold:' field"; printf '%s\n' "$yaml"; return 1; }
++  echo "$yaml" | grep -qE '^\s*-?\s*summary:' \
++    || { echo "observations template missing 'summary:' field (spec spelling — not 'observation_summary:')"; echo "$yaml"; return 1; }
++  echo "$yaml" | grep -qE '^\s*finding_paths:' \
++    || { echo "observations template missing 'finding_paths:' list field"; echo "$yaml"; return 1; }
++  echo "$yaml" | grep -qE 'defect_class:' \
++    || { echo "observations template missing 'defect_class:' field"; echo "$yaml"; return 1; }
++  echo "$yaml" | grep -qE 'representative_score:' \
++    || { echo "observations template missing 'representative_score:' field (renamed from 'score:' in R2 — per-finding precision belongs in finding_paths[] sidecars)"; echo "$yaml"; return 1; }
++  echo "$yaml" | grep -qE 'threshold:' \
++    || { echo "observations template missing 'threshold:' field"; echo "$yaml"; return 1; }
+ 
+   # Bare 'score:' (without the 'representative_' prefix) is the old field name
+   # and MUST NOT appear — the rename is load-bearing because per-finding precision
+   # is intentionally NOT preserved in this aggregate template.
+-  if printf '%s\n' "$yaml" | grep -qE '^\s*score:'; then
++  if echo "$yaml" | grep -qE '^\s*score:'; then
+     echo "observations template still uses bare 'score:' field — must be 'representative_score:' (R2 Fix A)"
+-    printf '%s\n' "$yaml"
++    echo "$yaml"
+     return 1
+   fi
+ 
+   # Path-traversal hardening (sec-claude R2 F02): finding_paths[] values MUST
+   # be relative paths within the round-NN/ directory; '../' components and
+   # absolute paths leak the round artifact surface.
+-  if printf '%s\n' "$yaml" | grep -qE '(\.\./|^\s*-\s*/)'; then
++  if echo "$yaml" | grep -qE '(\.\./|^\s*-\s*/)'; then
+     echo "observations template contains '../' or absolute-path entry in finding_paths[]"
+-    printf '%s\n' "$yaml"
++    echo "$yaml"
+     return 1
+   fi
+ 
+   # Strict spec-shape pin: the spec defines a flat field list. The
+   # `contributing_findings:` substructure was implementation drift in R1
+   # and MUST NOT appear — per-finding detail belongs in `finding_paths[]`.
+-  if printf '%s\n' "$yaml" | grep -qE '^\s*contributing_findings:'; then
++  if echo "$yaml" | grep -qE '^\s*contributing_findings:'; then
+     echo "observations template carries undocumented 'contributing_findings:' substructure (spec defines a flat shape — remove)"
+-    printf '%s\n' "$yaml"
++    echo "$yaml"
+     return 1
+   fi
+   # And no permissive observation_summary alias.
+-  if printf '%s\n' "$yaml" | grep -qE 'observation_summary:'; then
++  if echo "$yaml" | grep -qE 'observation_summary:'; then
+     echo "observations template uses 'observation_summary:' (spec spelling is 'summary:')"
+-    printf '%s\n' "$yaml"
++    echo "$yaml"
+     return 1
+   fi
+ 
+@@ -2128,3 +2165,18 @@ _t9_simulate_verifier_sidecar_write() {
+   grep -qE 'finding_paths.*MUST NOT contain.*\.\./|relative paths within the current `round-NN/`' "$skill" \
+     || { echo "SKILL.md does not document the finding_paths[] path-traversal constraint"; return 1; }
+ }
++
++@test "[AC6] verifier-fan-in.sh remains free of defect_class / representative_score / sub-threshold tokens (cluster-analysis deferral)" {
++  # Cluster-analysis automation is explicitly deferred to a future release.
++  # The fan-in script remains the single source of truth for keep/drop
++  # decisions per CD-4's iron rule and MUST NOT grow instrumentation tokens
++  # that would tempt future drift toward sidecar-shape coupling. Pin the
++  # invariance directly against the script body.
++  local script="$REPO_ROOT/scripts/verifier-fan-in.sh"
++  [ -f "$script" ] || { echo "scripts/verifier-fan-in.sh missing"; return 1; }
++  if grep -qE 'defect_class|representative_score|sub.threshold.obs' "$script"; then
++    echo "scripts/verifier-fan-in.sh references cluster-analysis tokens — deferral violated"
++    grep -nE 'defect_class|representative_score|sub.threshold.obs' "$script"
++    return 1
++  fi
++}
+diff --git a/tests/unit/test-verified-file-shape.bats b/tests/unit/test-verified-file-shape.bats
+index dccea56..5afa47a 100644
+--- a/tests/unit/test-verified-file-shape.bats
++++ b/tests/unit/test-verified-file-shape.bats
+@@ -141,7 +141,7 @@ source_assembly() {
+ }
+ 
+ # ---------------------------------------------------------------------------
+-# Defect-class rubric pins (G28 D1).
++# Defect-class rubric pins — verifier sidecar instrumentation.
+ #
+ # The verifier MUST emit a `defect_class:` tag classifying the finding's
+ # defect type — lowercase kebab-case (regex `^[a-z0-9][a-z0-9-]*$`), ≤30
+@@ -159,6 +159,18 @@ source_assembly() {
+     flag && /^6\. \*\*Write `<sidecar_path>`\*\*/ { exit }
+     flag { print }
+   ' "$agent")"
++  # End-boundary drift guard: the slice's open-ended awk pattern would
++  # silently grow if step 6's heading drifted (renumbered, reworded), and
++  # downstream assertions inside the slice would degrade into vacuous passes
++  # against the wrong region. Pin (a) the slice is non-empty AND (b) it does
++  # NOT contain the literal step-6 marker — the latter would prove the awk
++  # exit-on-step-6 guard fired too late.
++  [ -n "$slice" ] \
++    || { echo "awk slice between step 5 (Score) and step 6 (Write) is empty — start boundary drifted"; return 1; }
++  if echo "$slice" | grep -qF '6. **Write'; then
++    echo "awk slice extends past step 6 — end boundary drifted (heading renumbered or reworded)"
++    return 1
++  fi
+   echo "$slice" | grep -qiE 'defect[- ]class' \
+     || { echo "Defect-class rubric step missing between Score (step 5) and Write-sidecar (step 6)"; echo "$slice"; return 1; }
+   echo "$slice" | grep -qF 'defect_class:' \
+@@ -184,6 +196,18 @@ source_assembly() {
+     || { echo "'defect_class: unspecified' fallback not documented"; return 1; }
+ }
+ 
++@test "verifier agent body lists at least one canonical well-formed defect_class example tag" {
++  # Spec L50 / DoD pin: the agent body MUST document examples of well-formed
++  # tags so reviewers/operators have concrete reference shapes. Without this
++  # pin the implementer could remove all worked examples and still pass the
++  # shape/charset/cap assertions above. The four tokens below are the
++  # canonical examples the spec calls out (goal-leakage, swallowed-error,
++  # fabricated-citation, unanchored-claim); at least one MUST appear.
++  grep -qiE 'goal-leakage|swallowed-error|fabricated-citation|unanchored-claim' \
++    agents/qrspi-finding-verifier.md \
++    || { echo "no canonical well-formed defect_class example tags documented"; return 1; }
++}
++
+ @test "verifier sidecar success-case example carries defect_class: in frontmatter alongside score:" {
+   local body
+   body="$(awk '/On success:/{flag=1} /On failure/{flag=0} flag' agents/qrspi-finding-verifier.md)"
+@@ -233,16 +257,40 @@ source_assembly() {
+ # subsequent line silently override the real score. Putting `defect_class:`
+ # last bounds the blast radius.
+ 
+-@test "sidecar field-order: success template has defect_class: as the LAST frontmatter field" {
+-  # Extract the success-path fenced markdown block following 'On success:'.
+-  local block
+-  block=$(awk '
+-    /^[[:space:]]*On success:[[:space:]]*$/ { flag=1; next }
++# Helper: assert that the sidecar template fenced block whose start marker
++# is "$start_marker" (e.g. 'On success:' or 'On failure') has defect_class:
++# as the LAST frontmatter field. Eliminates the duplicated 7-line
++# extract+frontmatter-slice+last-field sequence between the success and
++# failure pins. The success pin layers an additional score-precedes-
++# defect_class assertion on top via _assert_score_precedes_defect_class.
++_extract_template_block() {
++  local agent=$1 start_re=$2
++  awk -v start_re="$start_re" '
++    $0 ~ start_re { flag=1; next }
+     flag && /^[[:space:]]*```markdown[[:space:]]*$/ { in_block=1; next }
+     in_block && /^[[:space:]]*```[[:space:]]*$/ { exit }
+     in_block { print }
+-  ' agents/qrspi-finding-verifier.md)
++  ' "$agent"
++}
++
++_assert_defect_class_last() {
++  local label=$1 block=$2
++  [ -n "$block" ] || { echo "could not locate $label sidecar template block"; return 1; }
++  local fm
++  fm=$(echo "$block" | awk '/^[[:space:]]*---[[:space:]]*$/{n++; next} n==1{print}')
++  [ -n "$fm" ] || { echo "could not extract $label frontmatter"; return 1; }
++  local last_field
++  last_field=$(echo "$fm" | grep -E '^[[:space:]]*[a-z_]+:' | tail -1 | sed -E 's/^[[:space:]]*([a-z_]+):.*/\1/')
++  [ "$last_field" = "defect_class" ] \
++    || { echo "$label template's last frontmatter field is '$last_field' — must be 'defect_class' per the load-bearing field-ordering invariant"; echo "frontmatter:"; echo "$fm"; return 1; }
++}
++
++@test "sidecar field-order: success template has defect_class: as the LAST frontmatter field" {
++  local block
++  block=$(_extract_template_block agents/qrspi-finding-verifier.md '^[[:space:]]*On success:[[:space:]]*$')
+   [ -n "$block" ] || { echo "could not locate On-success sidecar template block"; return 1; }
++  # Success path layers an additional ordering assertion: score: MUST appear
++  # before defect_class: in line order (not just last).
+   local score_line defect_line
+   score_line=$(echo "$block" | grep -nE '^\s*score:' | head -1 | cut -d: -f1)
+   defect_line=$(echo "$block" | grep -nE '^\s*defect_class:' | head -1 | cut -d: -f1)
+@@ -250,34 +298,13 @@ source_assembly() {
+   [ -n "$defect_line" ] || { echo "no defect_class: in success template"; return 1; }
+   [ "$score_line" -lt "$defect_line" ] \
+     || { echo "success template field order violated: score: at line $score_line, defect_class: at line $defect_line (score MUST precede defect_class)"; return 1; }
+-  # defect_class: MUST be the LAST frontmatter field on the success path.
+-  local fm
+-  fm=$(echo "$block" | awk '/^[[:space:]]*---[[:space:]]*$/{n++; next} n==1{print}')
+-  [ -n "$fm" ] || { echo "could not extract success-template frontmatter"; return 1; }
+-  local last_field
+-  last_field=$(echo "$fm" | grep -E '^[[:space:]]*[a-z_]+:' | tail -1 | sed -E 's/^[[:space:]]*([a-z_]+):.*/\1/')
+-  [ "$last_field" = "defect_class" ] \
+-    || { echo "success template's last frontmatter field is '$last_field' — must be 'defect_class' per the load-bearing field-ordering invariant"; echo "frontmatter:"; echo "$fm"; return 1; }
++  _assert_defect_class_last "success" "$block"
+ }
+ 
+ @test "sidecar field-order: failure template has defect_class: as the LAST frontmatter field" {
+-  # Extract the failure-path fenced markdown block following 'On failure'.
+   local block
+-  block=$(awk '
+-    /^[[:space:]]*On failure/ { flag=1; next }
+-    flag && /^[[:space:]]*```markdown[[:space:]]*$/ { in_block=1; next }
+-    in_block && /^[[:space:]]*```[[:space:]]*$/ { exit }
+-    in_block { print }
+-  ' agents/qrspi-finding-verifier.md)
+-  [ -n "$block" ] || { echo "could not locate On-failure sidecar template block"; return 1; }
+-  # Extract frontmatter lines (between the two --- markers).
+-  local fm
+-  fm=$(echo "$block" | awk '/^[[:space:]]*---[[:space:]]*$/{n++; next} n==1{print}')
+-  [ -n "$fm" ] || { echo "could not extract failure-template frontmatter"; return 1; }
+-  local last_field
+-  last_field=$(echo "$fm" | grep -E '^[[:space:]]*[a-z_]+:' | tail -1 | sed -E 's/^[[:space:]]*([a-z_]+):.*/\1/')
+-  [ "$last_field" = "defect_class" ] \
+-    || { echo "failure template's last frontmatter field is '$last_field' — must be 'defect_class' per the load-bearing field-ordering invariant"; echo "frontmatter:"; echo "$fm"; return 1; }
++  block=$(_extract_template_block agents/qrspi-finding-verifier.md '^[[:space:]]*On failure')
++  _assert_defect_class_last "failure" "$block"
+ }
+ 
+ @test "sidecar field-order: agent body documents the load-bearing invariant" {

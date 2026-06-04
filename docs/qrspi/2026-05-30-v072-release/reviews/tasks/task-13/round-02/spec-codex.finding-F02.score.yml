@@ -1,0 +1,2 @@
+score: 70
+reason: Verified contradiction — L1189 says "writes anchor ... then asserts" but the actual code (assert L186-219, write L228-237) and L1205 both describe assert-then-write; a real, operator-facing doc inconsistency, though doc-only clarity.

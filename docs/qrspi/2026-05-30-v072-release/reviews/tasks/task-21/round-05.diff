@@ -1,0 +1,355 @@
+diff --git a/scripts/dispatch-agent.sh b/scripts/dispatch-agent.sh
+index f95f9cb..b70ca61 100755
+--- a/scripts/dispatch-agent.sh
++++ b/scripts/dispatch-agent.sh
+@@ -76,6 +76,8 @@ export REPO_ROOT
+ # surface uses the same canonical-$REPO_ROOT/ enforcement.
+ # shellcheck source=scripts/lib/path-guard.sh
+ . "$SCRIPT_DIR/lib/path-guard.sh"
++command -v assert_path_under_repo_root >/dev/null 2>&1 \
++  || { echo "error: assert_path_under_repo_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+ 
+ AGENT_FILE=""
+ REVIEWER_TAG=""
+@@ -107,6 +109,18 @@ require_value() {
+   fi
+ }
+ 
++# assert_file_exists <label> <path> — verify a required file exists; exits 1
++# with a clear diagnostic when it does not.  Defined early (before the batch
++# block) so it is available in both batched-mode and single-mode code paths.
++assert_file_exists() {
++  local label="$1"
++  local p="$2"
++  if [[ ! -f "$p" ]]; then
++    echo "error: ${label} not found: $p" >&2
++    exit 1
++  fi
++}
++
+ # ---------------------------------------------------------------------------
+ # Host identification and Codex availability probes (added in v0.7.1 task-06)
+ # ---------------------------------------------------------------------------
+@@ -897,14 +911,8 @@ resolve_path() {
+   fi
+ }
+ 
+-assert_file_exists() {
+-  local label="$1"
+-  local p="$2"
+-  if [[ ! -f "$p" ]]; then
+-    echo "error: ${label} not found: $p" >&2
+-    exit 1
+-  fi
+-}
++# assert_file_exists is defined earlier in this script (above the batch block)
++# so it is available in both batched-mode and single-mode code paths.
+ 
+ AGENT_FILE_ABS="$(resolve_path "$AGENT_FILE")"
+ assert_file_exists "agent-file" "$AGENT_FILE_ABS"
+diff --git a/scripts/dispatch-companion.sh b/scripts/dispatch-companion.sh
+index 2709c54..7b9ee7f 100755
+--- a/scripts/dispatch-companion.sh
++++ b/scripts/dispatch-companion.sh
+@@ -63,6 +63,8 @@ REPO_ROOT="${QRSPI_REPO_ROOT:-$(cd "$_SCRIPT_DIR/.." && pwd -P)}"
+ export REPO_ROOT
+ # shellcheck source=scripts/lib/path-guard.sh
+ . "$_SCRIPT_DIR/lib/path-guard.sh"
++command -v assert_path_under_repo_root >/dev/null 2>&1 \
++  || { echo "error: assert_path_under_repo_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+ 
+ # ---------------------------------------------------------------------------
+ # die <message>  — write message to stderr and exit 1
+diff --git a/tests/unit/test-dispatch-agent.bats b/tests/unit/test-dispatch-agent.bats
+index 541e0fb..faafa4f 100644
+--- a/tests/unit/test-dispatch-agent.bats
++++ b/tests/unit/test-dispatch-agent.bats
+@@ -1426,9 +1426,9 @@ EOF
+ 
+ # Helpers --------------------------------------------------------------------
+ 
+-_g16_setup_fixtures() {
+-  REPO_LOCAL_TMP="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16.XXXXXX")"
+-  OUT_OF_REPO_TMP="$(mktemp -d "${TMPDIR:-/tmp}/bats-g16-oor.XXXXXX")"
++_path_guard_setup_fixtures() {
++  REPO_LOCAL_TMP="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard.XXXXXX")"
++  OUT_OF_REPO_TMP="$(mktemp -d "${TMPDIR:-/tmp}/bats-pguard-oor.XXXXXX")"
+   # Repo-local minimal fixtures
+   mkdir -p "$REPO_LOCAL_TMP/src" "$REPO_LOCAL_TMP/tasks"
+   echo "export const x = 1;" > "$REPO_LOCAL_TMP/src/foo.ts"
+@@ -1443,7 +1443,7 @@ _g16_setup_fixtures() {
+   export REPO_LOCAL_TMP OUT_OF_REPO_TMP
+ }
+ 
+-_g16_teardown_fixtures() {
++_path_guard_teardown_fixtures() {
+   [ -n "${REPO_LOCAL_TMP:-}" ] && rm -rf "$REPO_LOCAL_TMP"
+   [ -n "${OUT_OF_REPO_TMP:-}" ] && rm -rf "$OUT_OF_REPO_TMP"
+ }
+@@ -1451,14 +1451,14 @@ _g16_teardown_fixtures() {
+ # --- Rejection cases: out-of-repo absolute paths ---------------------------
+ 
+ @test "--subject-code outside repo root rejected with 'resolves outside repository'" {
+-  _g16_setup_fixtures
++  _path_guard_setup_fixtures
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+     --reviewer-tag spec-codex \
+     --output-dir /tmp/out --round 1 \
+     --subject-code "$OUT_OF_REPO_TMP/oor-subject.ts" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+ }
+@@ -1475,20 +1475,20 @@ _g16_teardown_fixtures() {
+ }
+ 
+ @test "--artifact-body outside repo root rejected" {
+-  _g16_setup_fixtures
++  _path_guard_setup_fixtures
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+     --reviewer-tag spec-codex \
+     --output-dir /tmp/out --round 1 \
+     --artifact-body "$OUT_OF_REPO_TMP/oor-artifact.md" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+ }
+ 
+ @test "--companion outside repo root rejected (boundary, not missing-file)" {
+-  _g16_setup_fixtures
++  _path_guard_setup_fixtures
+   # Sanity: the companion file IS readable, so a passing-by-missing-file mode
+   # would let it through. The boundary guard must reject by canonical-root.
+   [ -r "$OUT_OF_REPO_TMP/oor-companion.md" ]
+@@ -1499,13 +1499,13 @@ _g16_teardown_fixtures() {
+     --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
+     --companion "companion_plan=$OUT_OF_REPO_TMP/oor-companion.md" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+ }
+ 
+ @test "--diff-file outside repo root rejected" {
+-  _g16_setup_fixtures
++  _path_guard_setup_fixtures
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+     --reviewer-tag spec-codex \
+@@ -1513,7 +1513,7 @@ _g16_teardown_fixtures() {
+     --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
+     --diff-file "$OUT_OF_REPO_TMP/oor.diff" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+ }
+@@ -1521,7 +1521,7 @@ _g16_teardown_fixtures() {
+ # --- Rejection cases: symlink whose canonical target is outside repo -------
+ 
+ @test "symlink under repo whose canonical target is outside repo is rejected" {
+-  _g16_setup_fixtures
++  _path_guard_setup_fixtures
+   # A symlink located lexically under $REPO_ROOT but whose canonical target
+   # lives outside the repo — the lexical-prefix-only check would pass; the
+   # canonical-target check must reject.
+@@ -1532,7 +1532,7 @@ _g16_teardown_fixtures() {
+     --output-dir /tmp/out --round 1 \
+     --subject-code "$REPO_LOCAL_TMP/symlink-out.ts" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+   # Spec line 50: rejection MUST happen BEFORE any prompt file is emitted.
+@@ -1545,12 +1545,12 @@ _g16_teardown_fixtures() {
+ # --- Canonicalization-failure case (fail-closed) ---------------------------
+ 
+ @test "unresolvable \$REPO_ROOT fails closed before any path is read" {
+-  _g16_setup_fixtures
++  _path_guard_setup_fixtures
+   # Spec line 54: no raw path is read before existence/boundary checks pass.
+   # Write a unique sentinel into the subject file; if the guard were to fire
+   # AFTER reading the file, the sentinel would appear in the --dry-run output
+   # (via emit_untrusted_artifact).  It must NOT appear.
+-  local sentinel="G16CANONFAIL_SENTINEL_NOREAD_XQZ_SHOULD_NOT_EMIT"
++  local sentinel="CANONFAIL_SENTINEL_NOREAD_XQZ_SHOULD_NOT_EMIT"
+   echo "$sentinel" >> "$REPO_LOCAL_TMP/src/foo.ts"
+   run env QRSPI_REPO_ROOT=/no/such/repo/root/anywhere "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+@@ -1558,7 +1558,7 @@ _g16_teardown_fixtures() {
+     --output-dir /tmp/out --round 1 \
+     --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   # Diagnostic clearly identifies the canonicalization failure (does not echo
+   # the input file's bytes — only the failing root path appears).
+@@ -1571,7 +1571,7 @@ _g16_teardown_fixtures() {
+ # --- Pass cases: legitimate repo-local inputs ------------------------------
+ 
+ @test "repo-local --subject-code dry-run preserves spec-line / prompt-file contract" {
+-  _g16_setup_fixtures
++  _path_guard_setup_fixtures
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+     --reviewer-tag spec-codex \
+@@ -1579,13 +1579,13 @@ _g16_teardown_fixtures() {
+     --subject-code "$REPO_LOCAL_TMP/src/foo.ts" \
+     --task-def "$REPO_LOCAL_TMP/tasks/task-99.md" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -eq 0 ]
+   [[ "$output" =~ "subject_code:" ]]
+ }
+ 
+ @test "repo-local --artifact-body / --companion / --diff-file dry-run all pass" {
+-  _g16_setup_fixtures
++  _path_guard_setup_fixtures
+   run "$WRAPPER" \
+     --agent-file "$REPO_ROOT/agents/qrspi-design-reviewer.md" \
+     --reviewer-tag design-codex \
+@@ -1594,7 +1594,7 @@ _g16_teardown_fixtures() {
+     --companion "companion_plan=$REPO_LOCAL_TMP/companion.md" \
+     --diff-file "$REPO_LOCAL_TMP/round-1.diff" \
+     --dry-run
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -eq 0 ]
+   [[ "$output" =~ "artifact_body:" ]]
+   [[ "$output" =~ "companion_plan:" ]]
+@@ -1643,7 +1643,7 @@ _g16_teardown_fixtures() {
+ 
+ @test "batch --artifact /etc/hosts rejected (readable system file outside repo)" {
+   local round_dir
+-  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16batch.XXXXXX")"
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
+   run "$WRAPPER" \
+     --step goals \
+     --round 1 \
+@@ -1658,9 +1658,9 @@ _g16_teardown_fixtures() {
+ }
+ 
+ @test "batch --artifact symlink-to-outside rejected" {
+-  _g16_setup_fixtures
++  _path_guard_setup_fixtures
+   local round_dir
+-  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16batch.XXXXXX")"
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
+   # Symlink lexically inside repo whose canonical target is outside the repo.
+   ln -s "$OUT_OF_REPO_TMP/oor-artifact.md" "$REPO_LOCAL_TMP/symlink-oor-artifact.md"
+   run "$WRAPPER" \
+@@ -1670,7 +1670,7 @@ _g16_teardown_fixtures() {
+     --artifact "$REPO_LOCAL_TMP/symlink-oor-artifact.md" \
+     --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
+   rm -rf "$round_dir"
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+   [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
+@@ -1678,7 +1678,7 @@ _g16_teardown_fixtures() {
+ 
+ @test "batch --agents /etc/hosts rejected (readable system file outside repo)" {
+   local round_dir
+-  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16batch.XXXXXX")"
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
+   run "$WRAPPER" \
+     --step goals \
+     --round 1 \
+@@ -1691,9 +1691,9 @@ _g16_teardown_fixtures() {
+ }
+ 
+ @test "batch --agents symlink-to-outside rejected" {
+-  _g16_setup_fixtures
++  _path_guard_setup_fixtures
+   local round_dir
+-  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16batch.XXXXXX")"
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
+   # Symlink lexically inside repo whose canonical target is outside the repo.
+   ln -s "$OUT_OF_REPO_TMP/oor-artifact.md" "$REPO_LOCAL_TMP/symlink-oor-agent.md"
+   run "$WRAPPER" \
+@@ -1703,7 +1703,7 @@ _g16_teardown_fixtures() {
+     --artifact "$TMP_DIR/plan.md" \
+     --agents "quality-claude=$REPO_LOCAL_TMP/symlink-oor-agent.md"
+   rm -rf "$round_dir"
+-  _g16_teardown_fixtures
++  _path_guard_teardown_fixtures
+   [ "$status" -ne 0 ]
+   [[ "$output" =~ "resolves outside repository" ]]
+ }
+@@ -1720,7 +1720,7 @@ _g16_teardown_fixtures() {
+   # to an arbitrary path outside .dispatch/. The tag allowlist must reject it
+   # before any file write attempt.
+   local round_dir
+-  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16batch.XXXXXX")"
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
+   run "$WRAPPER" \
+     --step goals \
+     --round 1 \
+@@ -1774,7 +1774,7 @@ _g16_teardown_fixtures() {
+   # [[ -n ... && -f ... ]] guard silently skipped both the existence check
+   # and the boundary guard when the file was absent.
+   local round_dir
+-  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-g16batch.XXXXXX")"
++  round_dir="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-batch.XXXXXX")"
+   run "$WRAPPER" \
+     --step goals \
+     --round 1 \
+@@ -1786,3 +1786,46 @@ _g16_teardown_fixtures() {
+   [[ "$output" =~ "not found" ]]
+   [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
+ }
++
++# ===========================================================================
++# Fail-loud path-guard.sh source guard
++#
++# When path-guard.sh is present but does not define assert_path_under_repo_root
++# (e.g. it is empty or corrupt), dispatch-agent.sh must exit non-zero with a
++# clear diagnostic rather than continuing with no-op boundary enforcement.
++# ===========================================================================
++
++@test "dispatch-agent.sh exits non-zero with diagnostic when path-guard.sh does not define the guard" {
++  # Stand up a minimal fake repo root with a corrupt (empty) path-guard.sh
++  # so the sourcing succeeds but the function is absent.
++  local fake_root
++  fake_root="$(mktemp -d "$REPO_ROOT/.bats-tmp-pguard-corrupt.XXXXXX")"
++  mkdir -p "$fake_root/scripts/lib" \
++           "$fake_root/agents" \
++           "$fake_root/skills/reviewer-protocol" \
++           "$fake_root/src"
++  # Copy only the files the wrapper needs to exist; corrupt lib/path-guard.sh.
++  cp "$REPO_ROOT/scripts/dispatch-agent.sh" "$fake_root/scripts/"
++  cp "$REPO_ROOT/scripts/lib/llm-prompt-utils.sh" \
++     "$fake_root/scripts/lib/" 2>/dev/null || touch "$fake_root/scripts/lib/llm-prompt-utils.sh"
++  # Intentionally empty — sources without error but defines no functions.
++  touch "$fake_root/scripts/lib/path-guard.sh"
++  cp "$REPO_ROOT/skills/reviewer-protocol/SKILL.md" \
++     "$fake_root/skills/reviewer-protocol/"
++  cp "$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md" \
++     "$fake_root/skills/reviewer-protocol/" 2>/dev/null || \
++     touch "$fake_root/skills/reviewer-protocol/codex-emission-override.md"
++  cp "$REPO_ROOT/agents/qrspi-spec-reviewer.md" "$fake_root/agents/"
++  echo "export const x = 1;" > "$fake_root/src/foo.ts"
++
++  run env QRSPI_REPO_ROOT="$fake_root" "$fake_root/scripts/dispatch-agent.sh" \
++    --agent-file "$fake_root/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code "$fake_root/src/foo.ts" \
++    --dry-run
++  rm -rf "$fake_root"
++
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "not defined after sourcing" ]]
++}

@@ -1,0 +1,2 @@
+score: 10
+reason: This is an optional test-refactor suggestion (change_type: clarity) proposing to centralize duplicated helper patterns across two bats suites; T19's scope is adding/updating test coverage for new behavior, the user has explicitly disfavored substantive refactors in this hardening release, and there is no correctness or functional defect.

@@ -1,0 +1,2 @@
+score: 97
+reason: Token `R7-F01` is present verbatim in the @test name at tests/unit/test-config-model-routing.bats:506, matches the `R\d+-F\d+` forbidden Reviewer-finding-ID regex at implementer-protocol/SKILL.md:100, and test names outside docs/qrspi/ are an explicitly-listed MUST NOT surface (lines 83, 107) — definitively confirmed Iron Rule violation with direct textual evidence.

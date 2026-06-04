@@ -1,0 +1,2 @@
+score: 35
+reason: Real observation that two tests assert primitive-body content beyond the named include-guard contract per the task DoD's negative list, but the finding is explicitly advisory, self-defers to spec-reviewer, and the tests themselves are clean — borderline scope nitpick.

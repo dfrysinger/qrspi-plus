@@ -1,0 +1,2 @@
+score: 100
+reason: Task spec test expectation (line 58) requires grepping anchor JSON windows to confirm coverage of dispatch/round-preparation/reviewer-protocol/plan-classification sections changed by this release. No such content-checking test exists; idempotency test passes trivially whether files were refreshed or not.

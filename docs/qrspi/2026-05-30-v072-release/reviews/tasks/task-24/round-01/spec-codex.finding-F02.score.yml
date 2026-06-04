@@ -1,0 +1,2 @@
+score: 20
+reason: The override path intentionally emits only VERDICT+EVIDENCE (no PLATFORM/DETECTION_TYPE) per the DoD — "the override wins and the helper emits a direct VERDICT with evidence naming the override value" — and the test expectations explicitly require only "assert the override verdict and evidence win"; the bats header further carries the "when present" qualifier for DETECTION_TYPE, meaning the absence of DETECTION_TYPE on the override branch is by design and the tests correctly reflect that contract.

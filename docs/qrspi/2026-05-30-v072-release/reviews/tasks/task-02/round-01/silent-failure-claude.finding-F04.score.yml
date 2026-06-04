@@ -1,0 +1,3 @@
+finding_tag: silent-failure-claude.R1-F04
+score: 68
+reason: Prose contract gives orchestrator no fallback for missing audit on non-zero exit. Below floor — prose fix is incremental, doesn't directly cause downstream wrong behavior beyond what F01/F02 already cover.

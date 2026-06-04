@@ -1,0 +1,2 @@
+score: 80
+reason: Real DoD violation — assertNoClaudeSkillDir runs only on the .md branch, so non-md shipped files (scripts/*.sh, templates, .claude-plugin/*.json) bypass the legacy-token guard the task spec lists unqualified under "any ${CLAUDE_SKILL_DIR} occurrence in shipped files".

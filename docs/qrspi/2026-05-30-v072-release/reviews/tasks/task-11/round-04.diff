@@ -1,0 +1,1173 @@
+diff --git a/scripts/run-codex-review.sh b/scripts/run-codex-review.sh
+index 7a8ceb1..8cb9e95 100755
+--- a/scripts/run-codex-review.sh
++++ b/scripts/run-codex-review.sh
+@@ -190,6 +190,222 @@ check_codex_available() {
+   esac
+ }
+ 
++# ---------------------------------------------------------------------------
++# Dispatch manifest persistence — per-dispatch provenance + job metadata
++# under <round-dir>/.dispatch-manifest.json (CD-1 dispatch-manifest schema,
++# structure.md §10).  Defined before the QRSPI_SOURCE_ONLY source guard so
++# emit_first_party_manifest_entry is callable via source-only mode in tests.
++# ---------------------------------------------------------------------------
++
++# _validate_output_dir <value> — allowlist-validate OUTPUT_DIR.
++# OUTPUT_DIR is interpolated into split_cmd stored in the manifest; downstream
++# consumers eval-expand that field.  Restrict to an absolute path containing
++# only characters safe in an unquoted shell word (letters, digits,
++# . _ / : @ -).  Called from the --output-dir parse case and also internally
++# before writing the manifest.
++_validate_output_dir() {
++  local v="$1"
++  if [[ -z "$v" ]]; then echo "error: OUTPUT_DIR is empty" >&2; exit 1; fi
++  if [[ "${v:0:1}" != "/" ]]; then echo "error: OUTPUT_DIR must be absolute: $v" >&2; exit 1; fi
++  if ! [[ "$v" =~ ^/[A-Za-z0-9_./:@-]+$ ]]; then
++    echo "error: OUTPUT_DIR contains disallowed characters: $v" >&2
++    exit 1
++  fi
++}
++
++# _validate_job_id <value> — allowlist-validate a captured JOB_ID.
++# JOB_ID is interpolated into await_cmd stored in the manifest; downstream
++# consumers eval-expand that field.  Restrict to characters safe in an
++# unquoted shell word.  Only called when the value is non-empty.
++_validate_job_id() {
++  local v="$1"
++  if [[ -z "$v" ]]; then echo "error: job_id is empty" >&2; exit 1; fi
++  if ! [[ "$v" =~ ^[A-Za-z0-9_:@.-]+$ ]]; then
++    echo "error: job_id contains disallowed characters: $v" >&2
++    exit 1
++  fi
++}
++
++# Script-level variable used by the _append_manifest_entry lock trap so the
++# trap string can reference a non-local path when the EXIT trap fires after
++# the function's stack frame has been torn down.  Lock is released by the
++# EXIT/INT/TERM trap; SIGKILL still leaves stale lock but the 30s mtime probe
++# will recover on next invocation.
++_manifest_lock_dir=""
++
++# _append_manifest_entry <entry-json> — shared atomic JSON array append.
++# Uses jq to parse and append so trailing-whitespace/newline variations in
++# the existing manifest file cannot corrupt the output shape.
++#
++# Concurrency safety: uses a portable mkdir-as-mutex so concurrent invocations
++# (e.g. multiple reviewer tags dispatched in the same wave) cannot interleave
++# their reads and writes.  mkdir is atomic on POSIX filesystems; only one
++# writer creates the lock dir at a time.  The loser spins with a 50 ms back-off
++# for up to 100 attempts (~5 s) before aborting with a diagnostic.
++# Lock is released by EXIT/INT/TERM trap; SIGKILL still leaves stale lock but
++# the 30s mtime probe will recover on next invocation.
++#
++# NOTE: This function explicitly disables set -e / set -E / set -T on entry
++# to isolate the lock mechanics from any inherited shell flags (e.g. bats
++# test infrastructure sets -eET on its subshells). The flags are restored
++# on return so callers are not affected.
++_append_manifest_entry() {
++  # Save and disable set -e/-E/-T so inherited flags from test harnesses (e.g.
++  # bats -eET) cannot cause premature exits or cause $? to mutate inside the
++  # lock mechanics or cause the rmdir cleanup to return non-0 to set -e.
++  local _saved_opts; _saved_opts="$(set +o | grep -E 'errexit|errtrace|functrace')"
++  set +eET
++
++  local entry="$1"
++  local manifest="$OUTPUT_DIR/.dispatch-manifest.json"
++  mkdir -p "$OUTPUT_DIR" || { echo "error: _append_manifest_entry: cannot create OUTPUT_DIR $OUTPUT_DIR" >&2; eval "$_saved_opts"; exit 1; }
++  # Acquire the lock: try to create the lock directory; spin on failure.
++  local _lock_dir="${manifest}.lock"
++  local _lock_attempt=0
++  while true; do
++    if mkdir "$_lock_dir" 2>/dev/null; then
++      # Record in a script-level variable so the EXIT trap string can
++      # reference it even after this function's stack frame is gone.
++      _manifest_lock_dir="$_lock_dir"
++      trap 'rmdir "$_manifest_lock_dir" 2>/dev/null || true' EXIT INT TERM
++      break
++    fi
++    # Stale-lock probe: if the lockdir is older than 30s, attempt to remove
++    # and retry rather than spinning indefinitely.  Use current time as fallback
++    # when stat fails (TOCTOU: lock dir just released) so _lock_age stays 0,
++    # avoiding a false-positive stale detection.
++    if [[ -d "$_lock_dir" ]]; then
++      local _now; _now=$(date +%s)
++      local _mtime; _mtime=$(stat -f %m "$_lock_dir" 2>/dev/null || stat -c %Y "$_lock_dir" 2>/dev/null || echo "$_now")
++      _lock_age=$(( _now - _mtime ))
++      if (( _lock_age > 30 )); then
++        rmdir "$_lock_dir" 2>/dev/null || true
++        # Retry mkdir on next loop iteration.
++        continue
++      fi
++    fi
++    _lock_attempt=$((_lock_attempt + 1))
++    if (( _lock_attempt >= 100 )); then
++      echo "error: _append_manifest_entry: could not acquire lock at ${_lock_dir} after 100 attempts" >&2
++      eval "$_saved_opts"
++      exit 1
++    fi
++    sleep 0.05
++  done
++  # Use $BASHPID (actual subshell PID) if available (bash 4+), else fall back to
++  # $$ (parent PID on bash 3.x).  Subshell-unique tmp names prevent corruption
++  # even if the lock somehow breaks; with set +e above the lock is reliable.
++  local tmp="${manifest}.tmp.${BASHPID:-$$}"
++  if [[ -f "$manifest" ]]; then
++    if ! jq --argjson new "$entry" '. + [$new]' "$manifest" > "$tmp"; then
++      echo "error: _append_manifest_entry: jq append failed" >&2
++      rm -f "$tmp"
++      trap - EXIT INT TERM
++      rmdir "$_lock_dir" 2>/dev/null || true
++      eval "$_saved_opts"
++      exit 1
++    fi
++  else
++    if ! jq -n --argjson new "$entry" '[$new]' > "$tmp"; then
++      echo "error: _append_manifest_entry: jq init failed" >&2
++      rm -f "$tmp"
++      trap - EXIT INT TERM
++      rmdir "$_lock_dir" 2>/dev/null || true
++      eval "$_saved_opts"
++      exit 1
++    fi
++  fi
++  # Validate output is parseable JSON array before clobbering.
++  if ! jq -e 'type == "array"' "$tmp" > /dev/null; then
++    echo "error: _append_manifest_entry: produced non-array output" >&2
++    rm -f "$tmp"
++    trap - EXIT INT TERM
++    rmdir "$_lock_dir" 2>/dev/null || true
++    eval "$_saved_opts"
++    exit 1
++  fi
++  if ! mv "$tmp" "$manifest"; then
++    echo "error: _append_manifest_entry: mv failed" >&2
++    rm -f "$tmp"
++    trap - EXIT INT TERM
++    rmdir "$_lock_dir" 2>/dev/null || true
++    eval "$_saved_opts"
++    exit 1
++  fi
++  # Release the lock and disarm the trap.
++  trap - EXIT INT TERM
++  rmdir "$_lock_dir" 2>/dev/null || true
++  eval "$_saved_opts"
++}
++
++# emit_dispatch_manifest_entry <job_id> [status] — write a third-party/
++# background entry.  The dispatch_spec object carries
++# subagent_type/host/vendor/model; top-level fields carry mode=background,
++# status (default "pending"), agent, job_id, await_cmd, split_cmd.
++# Pass status="failed" on the failure path so the manifest is auditable even
++# when the dispatcher exits non-zero.
++# jq --arg provides unconditional JSON string escaping (defense-in-depth
++# alongside the argument-parse allowlist validators).
++# The explicit jq-failure guard makes a missing or broken jq loud and aborts
++# before any tmp-file write, preventing silent manifest corruption.
++emit_dispatch_manifest_entry() {
++  local job_id="${1:-}"
++  local status="${2:-pending}"
++  local detected_host
++  detected_host="$(detect_host)"
++  local agent_name
++  agent_name="$(basename "${AGENT_FILE%.md}")"
++  local entry
++  entry="$(jq -nc \
++    --arg tag       "$REVIEWER_TAG" \
++    --arg agent     "$agent_name" \
++    --arg mode      "background" \
++    --arg status    "$status" \
++    --arg job_id    "$job_id" \
++    --arg subtype   "$agent_name" \
++    --arg host      "$detected_host" \
++    --arg vendor    "openai-codex" \
++    --arg model     "$MODEL" \
++    --arg await_cmd "scripts/run-third-party-llm.sh await $job_id" \
++    --arg split_cmd "scripts/codex-finding-splitter.sh --round-dir $OUTPUT_DIR --tag $REVIEWER_TAG" \
++    '{tag: $tag, agent: $agent, mode: $mode, status: $status, job_id: $job_id,
++      dispatch_spec: {subagent_type: $subtype, host: $host, vendor: $vendor, model: $model},
++      await_cmd: $await_cmd, split_cmd: $split_cmd}')" \
++    || { echo "error: jq failed building dispatch-manifest entry (jq exit $?)" >&2; exit 1; }
++  _append_manifest_entry "$entry"
++}
++
++# emit_first_party_manifest_entry <prompt_file> [vendor] [model] — write a
++# first-party/dispatched entry.  The dispatch_spec object carries
++# subagent_type/host/vendor/model/prompt_file; top-level fields carry
++# mode=first_party, status=dispatched, agent.  Callable via
++# QRSPI_SOURCE_ONLY=1 for schema-shape acceptance testing before the full
++# first-party dispatch path ships in scripts/dispatch-agent.sh.
++emit_first_party_manifest_entry() {
++  local prompt_file="${1:-}"
++  local vendor="${2:-claude}"
++  local fp_model="${3:-${MODEL:-}}"
++  local detected_host
++  detected_host="$(detect_host)"
++  local agent_name
++  agent_name="$(basename "${AGENT_FILE%.md}")"
++  local entry
++  entry="$(jq -nc \
++    --arg tag     "$REVIEWER_TAG" \
++    --arg agent   "$agent_name" \
++    --arg mode    "first_party" \
++    --arg status  "dispatched" \
++    --arg subtype "$agent_name" \
++    --arg host    "$detected_host" \
++    --arg vendor  "$vendor" \
++    --arg model   "$fp_model" \
++    --arg pf      "$prompt_file" \
++    '{tag: $tag, agent: $agent, mode: $mode, status: $status,
++      dispatch_spec: {subagent_type: $subtype, host: $host, vendor: $vendor, model: $model, prompt_file: $pf}}')" \
++    || { echo "error: jq failed building first-party manifest entry (jq exit $?)" >&2; exit 1; }
++  _append_manifest_entry "$entry"
++}
++
+ # Source guard: when QRSPI_SOURCE_ONLY=1, return after loading function
+ # definitions so that function-isolation tests can source this file and call
+ # detect_host / check_codex_available directly without triggering argument
+@@ -221,7 +437,10 @@ while [[ $# -gt 0 ]]; do
+         exit 1
+       fi
+       REVIEWER_TAG="$2"; shift 2 ;;
+-    --output-dir)     require_value "--output-dir"   "$#"; OUTPUT_DIR="$2"; shift 2 ;;
++    --output-dir)
++      require_value "--output-dir" "$#"
++      _validate_output_dir "$2"
++      OUTPUT_DIR="$2"; shift 2 ;;
+     --round)          require_value "--round"        "$#"; ROUND="$2"; shift 2 ;;
+     --model)
+       require_value "--model" "$#"
+@@ -570,78 +789,6 @@ if [[ "$DRY_RUN" == "true" ]]; then
+   exit 0
+ fi
+ 
+-# ---------------------------------------------------------------------------
+-# Dispatch manifest persistence — record host/vendor/resolved-model metadata
+-# per dispatch entry under <round-dir>/.dispatch-manifest.json so that every
+-# dispatch is greppable by host × vendor × model after the fact. The
+-# manifest 'model' value is the same resolved value reviewers are instructed
+-# to copy as the audit field carried in finding/clean-sentinel frontmatter.
+-# Atomic-mv pattern (no flock); idempotent across re-runs of the same
+-# round/tag pair (each invocation appends one entry).
+-# ---------------------------------------------------------------------------
+-
+-emit_dispatch_manifest_entry() {
+-  local round_dir="$OUTPUT_DIR"
+-  local manifest="$round_dir/.dispatch-manifest.json"
+-  local detected_host
+-  detected_host="$(detect_host)"
+-
+-  # JSON entry constructed via jq (defense-in-depth: jq --arg performs
+-  # unconditional JSON string escaping, so the produced object is
+-  # well-formed regardless of input content). The vendor is fixed to
+-  # 'openai-codex' for this script; the post-rename dispatch script
+-  # (scripts/dispatch-agent.sh) handles multi-vendor entries via
+-  # _resolve-lib.sh.
+-  #
+-  # T09 scope: record ONLY host/vendor/model — the resolved
+-  # provenance triple needed to close the host × vendor × model audit loop
+-  # against finding/clean-sentinel actual_model values. The greppability
+-  # anchor `tag` is retained to enable host × vendor × model × tag joins.
+-  # The downstream G3 task (T11) owns the wider provenance schema —
+-  # subagent_type / agent / mode / status / nested dispatch_spec — and is
+-  # responsible for landing those fields once the rename + multi-vendor
+-  # dispatcher are in place. Emitting them here would pre-load T11 scope
+-  # and is explicitly out-of-scope per task-09.md line 32.
+-  #
+-  # T09 R2: build the JSON entry with jq rather than concatenating values
+-  # into a printf format string. Even though the argument-parse validators
+-  # above already restrict --reviewer-tag and --model to safe grammars,
+-  # jq is already a documented dependency of this codebase (see
+-  # scripts/verifier-fan-in.sh).
+-  #
+-  # T09 R3: this script intentionally runs without `set -e`, so the jq
+-  # command substitution must be guarded explicitly — otherwise a missing
+-  # or failing jq would leave $entry="" and the script would proceed to
+-  # write a malformed manifest, atomically replacing any valid prior
+-  # manifest with corruption (the very property T09 exists to protect).
+-  # The `|| { ... exit 1; }` guard makes the failure loud and aborts
+-  # before the tmp-file write below.
+-  local entry
+-  entry="$(jq -nc \
+-    --arg tag    "$REVIEWER_TAG" \
+-    --arg host   "$detected_host" \
+-    --arg vendor "openai-codex" \
+-    --arg model  "$MODEL" \
+-    '{tag: $tag, host: $host, vendor: $vendor, model: $model}')" \
+-    || { echo "error: jq failed building dispatch-manifest entry (jq exit $?)" >&2; exit 1; }
+-
+-  mkdir -p "$round_dir"
+-  local tmp="${manifest}.tmp.$$"
+-  if [[ -f "$manifest" ]]; then
+-    # Replace the trailing ']' on the last line with ',\n  <entry>\n]' to
+-    # append into the existing JSON array. The script writes the manifest
+-    # with a stable trailing-bracket-on-its-own-line shape so this sed
+-    # transformation is deterministic across re-runs.
+-    sed '$ s/\]$//' "$manifest" > "$tmp"
+-    printf ',\n  %s\n]\n' "$entry" >> "$tmp"
+-  else
+-    printf '[\n  %s\n]\n' "$entry" > "$tmp"
+-  fi
+-  mv "$tmp" "$manifest"
+-}
+-
+-emit_dispatch_manifest_entry
+-
+ DISPATCHER="$REPO_ROOT/scripts/run-third-party-llm.sh"
+ if [[ ! -x "$DISPATCHER" && ! -r "$DISPATCHER" ]]; then
+   echo "error: run-third-party-llm.sh not found at $DISPATCHER" >&2
+@@ -729,17 +876,86 @@ if [[ "$_codex_available" == "false" && "$_codex_reviews" == "true" ]]; then
+   exit "$_check_exit"
+ fi
+ 
+-# Emit the transport marker and dispatch.  Exit code is propagated unchanged
+-# from the transport; no suppression, no log-and-continue.  Each dispatch
+-# pipeline runs in a subshell with set -o pipefail so that a compose_prompt
+-# failure (e.g. partial output from a read error) is not silently masked by
+-# the dispatcher's exit code.
++# Emit the transport marker and dispatch.
++#
++# Copilot CLI (task-tool) → first-party path: assemble the full reviewer
++# prompt and write it to <round-dir>/.dispatch/<tag>.prompt so the
++# orchestrator can pass the file reference to the Task tool as
++# DISPATCH_FILE=<path>.  Emit the DISPATCH_FILE= reference to stdout (the
++# orchestrator-facing dispatch payload stays a prompt-file reference; the
++# prompt body never enters the orchestrator's tool-call arguments).  Record
++# a first_party manifest entry and exit 0.
++#
++# Claude Code (shell-pipeline) → third-party path: pipe the assembled prompt
++# to run-third-party-llm.sh.  Capture the dispatcher's stdout to extract a
++# JOB_ID line if present.  After a successful dispatch, persist the manifest
++# entry with the captured job_id.  Exit code is propagated unchanged from
++# the transport; on non-zero we persist a "failed" manifest entry so the
++# round's attempted dispatch is auditable.
+ if [[ "$_detected_host" == "copilot-cli" ]]; then
+   echo "[transport: task-tool]" >&2
+-  ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
+-  exit "$?"
+-else
+-  echo "[transport: shell-pipeline]" >&2
+-  ( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )
+-  exit "$?"
++  # First-party dispatch: write assembled prompt to a .dispatch/ file so the
++  # orchestrator can reference it via DISPATCH_FILE= without embedding the
++  # prompt body in its tool-call arguments (per design.md CD-1 PATH A).
++  _fp_dispatch_dir="$OUTPUT_DIR/.dispatch"
++  mkdir -p "$_fp_dispatch_dir" || { echo "error: cannot create dispatch dir $_fp_dispatch_dir" >&2; exit 1; }
++  _fp_prompt_file="$_fp_dispatch_dir/$REVIEWER_TAG.prompt"
++  # Remove any pre-existing symlink at the prompt path before writing so an
++  # attacker-planted symlink cannot redirect the write to an arbitrary target.
++  rm -f "$_fp_prompt_file"
++  if ! compose_prompt > "$_fp_prompt_file"; then
++    rm -f "$_fp_prompt_file"
++    echo "error: compose_prompt failed for first-party dispatch" >&2
++    exit 1
++  fi
++  # Emit the orchestrator-facing DISPATCH_FILE reference to stdout.
++  printf 'DISPATCH_FILE=%s\n' "$_fp_prompt_file"
++  emit_first_party_manifest_entry "$_fp_prompt_file"
++  exit 0
+ fi
++
++echo "[transport: shell-pipeline]" >&2
++
++# Third-party (shell-pipeline) dispatch path.
++# Capture the dispatcher's stdout to extract a JOB_ID line if present.
++# A future dispatch-companion.sh will emit JOB_ID; current dispatchers may
++# not, in which case a missing JOB_ID on success is treated as a dispatcher
++# bug and the script fails loud.
++# On dispatch failure (non-zero exit), persist a "failed" manifest entry so
++# the round's attempted dispatch is auditable, then propagate the exit code.
++_dispatch_stdout=""
++_dispatch_exit=0
++_dispatch_stdout="$( set -o pipefail; compose_prompt | bash "$DISPATCHER" "${DISPATCHER_ARGS[@]}" )" \
++  || _dispatch_exit=$?
++
++# Forward all dispatcher stdout lines to our stdout EXCEPT JOB_ID= lines,
++# which are silently consumed for manifest persistence.  This preserves the
++# pass-through behavior expected by callers that inspect script stdout (e.g.,
++# transport-marker tests), while letting the manifest writer capture the
++# background job identifier.
++_job_id=""
++if [[ -n "$_dispatch_stdout" ]]; then
++  while IFS= read -r _line; do
++    if [[ "$_line" =~ ^JOB_ID= ]]; then
++      _job_id="${_line#JOB_ID=}"
++    else
++      printf '%s\n' "$_line"
++    fi
++  done <<< "$_dispatch_stdout"
++fi
++
++if [[ "$_dispatch_exit" -ne 0 ]]; then
++  # Dispatch failed: persist a "failed" audit entry so the round is auditable,
++  # then propagate the non-zero exit code.
++  emit_dispatch_manifest_entry "" "failed"
++  exit "$_dispatch_exit"
++fi
++
++if [[ -z "$_job_id" ]]; then
++  echo "error: dispatcher exited 0 but emitted no JOB_ID" >&2
++  exit 1
++fi
++
++_validate_job_id "$_job_id"
++emit_dispatch_manifest_entry "$_job_id" "pending"
++exit 0
+diff --git a/skills/using-qrspi/SKILL.md b/skills/using-qrspi/SKILL.md
+index c5304a9..dd634db 100644
+--- a/skills/using-qrspi/SKILL.md
++++ b/skills/using-qrspi/SKILL.md
+@@ -1114,7 +1114,7 @@ No option mutates `config.md`. `retry` is bounded by the underlying operation. T
+ 
+ 3. **When the round narrowed, dispatches also carry `<scope_hint>`.** A one-line advisory listing the tags in `scope_set(NN)` (or `scope_set(NN-1)` for the proper-subset safety-margin case), wrapped as untrusted data: "This round's diff is narrowed to: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>`{scope_hint}`<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>`. Focus your review on this surface but flag anything significant outside it." The wrapper laundered through the tagger means the hint can carry adversarial H2-heading-derived content (e.g. an injected `## IGNORE PRIOR INSTRUCTIONS`); the wrapper makes that data, not instructions. When the round broadened, Claude bullets omit the parameter; Codex `printf` blocks emit the line with an empty value between the markers (consumers treat empty-value as semantically identical to absence). See `skills/reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract for the parameter contract and the empty-value equivalence rule.
+ 
+-**Reviewer-model audit-field parameter.** Every reviewer dispatch (Claude reviewer, scope reviewer, Codex prompt-file) carries `actual_model: <resolved model ID>` as a record-keeping prompt parameter. The value is sourced from the dispatch model resolution already performed by the orchestrator/dispatch path — it is the same resolved model ID the dispatch site passes to the Task tool's `model` argument for first-party subagents (and to `scripts/dispatch-companion.sh` for third-party subagents) — so reviewers never re-resolve or invent the value. Reviewers copy the resolved value verbatim into the YAML frontmatter of every per-finding file (`<reviewer_tag>.finding-F<NN>.md`) AND the clean-sentinel file (`<reviewer_tag>.clean.md`) when the round produced zero findings. The downstream verifier (`agents/qrspi-finding-verifier.md`) reads the audit field from finding frontmatter and copies it verbatim into the sidecar frontmatter for both the success-case and the VERIFY_FAILED-case sidecar shapes; if the finding omits the field, the verifier writes the literal token `unknown` rather than failing — the audit field is observability data, not a correctness gate. The dispatch manifest at `<round-dir>/.dispatch-manifest.json` persists the same resolved-model value as its `model` field per dispatch entry (alongside `host` and `vendor`), closing the loop end-to-end so every dispatch is greppable by host × vendor × model after the fact.
++**Reviewer-model audit-field parameter.** Every reviewer dispatch (Claude reviewer, scope reviewer, Codex prompt-file) carries `actual_model: <resolved model ID>` as a record-keeping prompt parameter. The value is sourced from the dispatch model resolution already performed by the orchestrator/dispatch path — it is the same resolved model ID the dispatch site passes to the Task tool's `model` argument for first-party subagents (and to `scripts/dispatch-companion.sh` for third-party subagents) — so reviewers never re-resolve or invent the value. Reviewers copy the resolved value verbatim into the YAML frontmatter of every per-finding file (`<reviewer_tag>.finding-F<NN>.md`) AND the clean-sentinel file (`<reviewer_tag>.clean.md`) when the round produced zero findings. The downstream verifier (`agents/qrspi-finding-verifier.md`) reads the audit field from finding frontmatter and copies it verbatim into the sidecar frontmatter for both the success-case and the VERIFY_FAILED-case sidecar shapes; if the finding omits the field, the verifier writes the literal token `unknown` rather than failing — the audit field is observability data, not a correctness gate. The dispatch manifest at `<round-dir>/.dispatch-manifest.json` persists the same resolved-model value per dispatch entry, closing the loop end-to-end so every dispatch is greppable by host × vendor × model after the fact. For third-party (background) dispatches the entry shape is `{tag, agent, mode:"background", status:"pending", job_id, dispatch_spec:{subagent_type, host, vendor, model}, await_cmd, split_cmd}`; for first-party dispatches the entry shape is `{tag, agent, mode:"first_party", status:"dispatched", dispatch_spec:{subagent_type, host, vendor, model, prompt_file}}`. The `dispatch_spec` object carries the four-field provenance triple (`subagent_type/host/vendor/model`) plus the optional `prompt_file` path for first-party dispatches.
+ 
+ **Ref selection rule.** Step 12 of the Apply-fix protocol owns the choice. In summary:
+ 
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index 1ebf548..72e4072 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -357,6 +357,8 @@ _t7_make_mock_repo() {
+   printf -- '---\ncodex_reviews: false\n---\n' > "$tmp/artifact-dir/config.md"
+ 
+   # Mock dispatcher.  Drains stdin so the upstream pipe never blocks.
++  # If MOCK_TRANSPORT_JOB_ID is set, emits a JOB_ID= line to stdout first
++  # (consumed by the wrapper's JOB_ID capture loop).
+   # If MOCK_TRANSPORT_STDOUT is set, writes it to stdout.  If
+   # MOCK_TRANSPORT_STDERR is set, writes it to stderr.  Exits
+   # MOCK_TRANSPORT_EXIT (default 0).
+@@ -365,6 +367,9 @@ _t7_make_mock_repo() {
+ #!/usr/bin/env bash
+ # Mock run-third-party-llm.sh for T7 dispatch-surface tests.
+ cat > /dev/null
++if [ -n "${MOCK_TRANSPORT_JOB_ID:-}" ]; then
++  printf 'JOB_ID=%s\n' "${MOCK_TRANSPORT_JOB_ID}"
++fi
+ if [ -n "${MOCK_TRANSPORT_STDOUT:-}" ]; then
+   printf '%s\n' "${MOCK_TRANSPORT_STDOUT}"
+ fi
+@@ -782,17 +787,19 @@ _t7_require_trusted_gh() {
+ }
+ 
+ # ---------------------------------------------------------------------------
+-# T7 / TE10: Copilot CLI path — mocked task-tool dispatch exits 0 AND
+-# captured stdout contains a distinguishable marker the mock emitted.
+-# Exit-code-0-alone is insufficient proof.
++# T7 / TE10: Copilot CLI (first-party) path — dispatch exits 0, stdout carries
++# a DISPATCH_FILE= reference pointing at the assembled prompt file, and the
++# manifest records a first_party entry whose dispatch_spec.prompt_file matches
++# the stdout DISPATCH_FILE= value.
+ # ---------------------------------------------------------------------------
+ 
+-@test "[T7 / TE10] dispatch surface: Copilot CLI path — mocked task-tool dispatch exits 0 AND stdout carries a distinguishable mock-emitted marker (exit 0 alone insufficient)" {
+-  # Test expectation: for the Copilot CLI path, the mocked task-tool
+-  # dispatch exits with code 0 and captured stdout contains a
+-  # distinguishable marker string emitted by the mock transport (a value
+-  # the mock produces and no other code path produces), proving the
+-  # dispatch invoked the mock rather than falling back.
++@test "[T7 / TE10] dispatch surface: Copilot CLI path — first-party dispatch exits 0, stdout carries DISPATCH_FILE= reference, and manifest records first_party entry" {
++  # Test expectation: for the Copilot CLI path, the first-party dispatch
++  # mechanism writes the assembled prompt to a .dispatch/<tag>.prompt file,
++  # emits a DISPATCH_FILE= reference on stdout (so the orchestrator passes
++  # the file reference to the Task tool, keeping the prompt body out of
++  # tool-call arguments), records a first_party manifest entry, and exits 0.
++  # The mock transport (run-third-party-llm.sh) is NOT invoked on this path.
+   _t7_require_trusted_gh
+ 
+   local tmp
+@@ -800,16 +807,11 @@ _t7_require_trusted_gh() {
+   _t7_make_mock_repo "$tmp"
+   printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+ 
+-  # Distinguishable marker — unique enough that no fallback code path could
+-  # produce it incidentally.
+-  local mock_marker="te10-task-tool-mock-emitted-DAB72CC1-1429-46E0-8D0F-A8EF92AB1230"
+   local stdout_log="$tmp/te10-stdout.log"
+   local stderr_log="$tmp/te10-stderr.log"
+   local dispatch_status=0
+   QRSPI_REPO_ROOT="$tmp" \
+     COPILOT_CLI=1 \
+-    MOCK_TRANSPORT_STDOUT="$mock_marker" \
+-    MOCK_TRANSPORT_EXIT=0 \
+     bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+       --agent-file agents/qrspi-spec-reviewer.md \
+       --reviewer-tag spec-codex \
+@@ -821,13 +823,19 @@ _t7_require_trusted_gh() {
+       --artifact-dir "$tmp/artifact-dir" \
+     >"$stdout_log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
+ 
+-  # Trace marker proves the COPILOT_CLI branch ran.
++  # Trace marker confirms the Copilot CLI task-tool branch ran.
+   grep -q '\[transport: task-tool\]' "$stderr_log"
+-  # Mock marker on stdout proves the mock transport was actually invoked
+-  # (not a fallback).
+-  grep -q "$mock_marker" "$stdout_log"
+-  # Exit 0.
++  # First-party path exits 0.
+   [ "$dispatch_status" -eq 0 ]
++  # Stdout carries a DISPATCH_FILE= reference (prompt-file reference shape,
++  # not inline prompt body — the orchestrator-facing dispatch contract).
++  grep -q '^DISPATCH_FILE=' "$stdout_log" \
++    || { echo "stdout does not contain DISPATCH_FILE= line"; cat "$stdout_log"; return 1; }
++  # Manifest records a first_party entry.
++  local manifest="$tmp/out/.dispatch-manifest.json"
++  [ -f "$manifest" ] || { echo "manifest not written"; return 1; }
++  jq -e '.[0].mode == "first_party"' "$manifest" >/dev/null \
++    || { echo "manifest entry mode != first_party"; cat "$manifest"; return 1; }
+ 
+   rm -rf "$tmp"
+ }
+@@ -854,6 +862,7 @@ _t7_require_trusted_gh() {
+   local dispatch_status=0
+   QRSPI_REPO_ROOT="$tmp" \
+     COPILOT_CLI="" \
++    MOCK_TRANSPORT_JOB_ID="te11-job-id" \
+     MOCK_TRANSPORT_STDOUT="$mock_marker" \
+     MOCK_TRANSPORT_EXIT=0 \
+     bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+@@ -932,24 +941,18 @@ _t7_require_trusted_gh() {
+ # unchanged.  The mismatch warning does not suppress dispatch failures.
+ # ---------------------------------------------------------------------------
+ 
+-@test "[T7 / TE13] dispatch surface: mismatch-warning path does not suppress non-zero transport exit (mismatch emitted, transport ran, non-zero propagated)" {
++@test "[T7 / TE13] dispatch surface: mismatch-warning path does not suppress first-party dispatch (mismatch emitted, first-party ran, exits 0)" {
+   # Test expectation: when the dispatch-surface detects a mismatch
+-  # (warning emitted) and then invokes a mocked transport that exits with
+-  # a non-zero exit code, the dispatch surface propagates that same
+-  # non-zero exit code to the caller.  The mismatch warning path does not
+-  # suppress dispatch failures.
++  # (copilot-cli detected but codex_reviews=false), the mismatch warning is
++  # emitted to stderr but the first-party dispatch path still runs.
++  # Stdout carries a DISPATCH_FILE= reference and the script exits 0 —
++  # the mismatch warning does not abort or suppress the dispatch.
+   #
+   # Scenario: detected_host=copilot-cli (COPILOT_CLI=1, trusted gh),
+-  # config codex_reviews=false → host-vs-config mismatch.
+-  # check_codex_available(copilot-cli) returns 0 trivially (no filesystem
+-  # probe), so dispatch reaches the mock transport.  Mock exits 7.
+-  #
+-  # RED state under Task-6 code: the current mismatch line fires ONLY when
+-  # check_codex_available fails AND codex_reviews=true.  In this scenario
+-  # check_codex_available SUCCEEDS, so no `[mismatch]` line fires under
+-  # current code → the warning-emitted assertion is RED.  Task 7 is
+-  # expected to decouple the mismatch warning from check_codex_available
+-  # failure so it fires on any host-vs-config disagreement.
++  # config codex_reviews=false → host-vs-config mismatch warning fires.
++  # check_codex_available(copilot-cli) returns 0 trivially, so dispatch is
++  # not short-circuited.  First-party path writes prompt file and emits
++  # DISPATCH_FILE= to stdout; exits 0.
+   _t7_require_trusted_gh
+ 
+   local tmp
+@@ -958,12 +961,11 @@ _t7_require_trusted_gh() {
+   # Explicit mismatch: detected copilot-cli but config says no Codex.
+   printf -- '---\ncodex_reviews: false\n---\n' > "$tmp/artifact-dir/config.md"
+ 
++  local stdout_log="$tmp/te13-stdout.log"
+   local stderr_log="$tmp/te13-stderr.log"
+   local dispatch_status=0
+   QRSPI_REPO_ROOT="$tmp" \
+     COPILOT_CLI=1 \
+-    MOCK_TRANSPORT_STDOUT="te13-marker-2026-05-27" \
+-    MOCK_TRANSPORT_EXIT=7 \
+     bash "$REPO_ROOT/scripts/run-codex-review.sh" \
+       --agent-file agents/qrspi-spec-reviewer.md \
+       --reviewer-tag spec-codex \
+@@ -973,17 +975,24 @@ _t7_require_trusted_gh() {
+       --model gpt-5.3-codex \
+       --output-file "$tmp/result.md" \
+       --artifact-dir "$tmp/artifact-dir" \
+-    >"$tmp/te13-stdout.log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
++    >"$stdout_log" 2>"$stderr_log" && dispatch_status=0 || dispatch_status=$?
+ 
+   # Mismatch warning must be present in stderr — naming both the detected
+   # host and the config value on a single line.
+-  grep -qE "(mismatch|disagree).*copilot-cli|copilot-cli.*(mismatch|disagree)|mismatch.*false|false.*mismatch" "$stderr_log"
++  grep -qE "(mismatch|disagree).*copilot-cli|copilot-cli.*(mismatch|disagree)|mismatch.*false|false.*mismatch" "$stderr_log" \
++    || { echo "mismatch warning not found in stderr"; cat "$stderr_log"; return 1; }
+   # Transport marker for the copilot-cli branch must also be present
+   # (proves dispatch was NOT short-circuited by the mismatch warning).
+-  grep -q '\[transport: task-tool\]' "$stderr_log"
+-  # Exit code MUST be 7 (propagated from mock transport — mismatch warning
+-  # path does not suppress the failure).
+-  [ "$dispatch_status" -eq 7 ]
++  grep -q '\[transport: task-tool\]' "$stderr_log" \
++    || { echo "[transport: task-tool] not found in stderr"; return 1; }
++  # First-party path emits DISPATCH_FILE= to stdout despite the mismatch
++  # warning (warning does not suppress dispatch).
++  grep -q '^DISPATCH_FILE=' "$stdout_log" \
++    || { echo "stdout does not contain DISPATCH_FILE= line after mismatch warning"; cat "$stdout_log"; return 1; }
++  # Exit code MUST be 0 (first-party path succeeded; mismatch warning does
++  # not convert a successful dispatch into a failure).
++  [ "$dispatch_status" -eq 0 ] \
++    || { echo "expected exit 0 for first-party dispatch, got $dispatch_status"; return 1; }
+ 
+   rm -rf "$tmp"
+ }
+@@ -1411,11 +1420,12 @@ _t8_write_finding_pair() {
+   printf -- '---\ncodex_reviews: false\n---\n' \
+     > "$TMP_DIR/artifact-dir/config.md"
+ 
+-  # Mock dispatcher: drains stdin, exits 0
++  # Mock dispatcher: drains stdin, emits JOB_ID to stdout, exits 0
+   mkdir -p "$TMP_DIR/scripts"
+   cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+ #!/usr/bin/env bash
+ cat > /dev/null
++echo "JOB_ID=test-job-ac5"
+ exit 0
+ MOCK_EOF
+   chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+@@ -1472,29 +1482,26 @@ MOCK_EOF
+     || grep -qF "\"model\": \"$resolved_model\"" "$manifest" \
+     || { echo "manifest model value does not match resolved dispatch model"; cat "$manifest"; return 1; }
+ 
+-  # ---- T09-scope narrowing -------------------------------------------
+-  # T09 owns ONLY host/vendor/model in the dispatch manifest entry. The
+-  # downstream G3 task owns subagent_type / agent / mode / status / nested
+-  # dispatch_spec provenance. Pin their absence so this task does not leak
+-  # T11/G3-scoped fields into the manifest before T11 lands.
+-  if grep -q '"subagent_type"' "$manifest"; then
+-    echo "manifest leaked T11/G3-scoped 'subagent_type' field — out of T09 scope"; cat "$manifest"; return 1
+-  fi
+-  if grep -q '"dispatch_spec"' "$manifest"; then
+-    echo "manifest leaked T11/G3-scoped nested 'dispatch_spec' object — out of T09 scope"; cat "$manifest"; return 1
+-  fi
+-  if grep -q '"agent"' "$manifest"; then
+-    echo "manifest carries non-T09 'agent' field"; cat "$manifest"; return 1
+-  fi
+-  if grep -q '"mode"' "$manifest"; then
+-    echo "manifest carries non-T09 'mode' field"; cat "$manifest"; return 1
+-  fi
+-  if grep -q '"status"' "$manifest"; then
+-    echo "manifest carries non-T09 'status' field"; cat "$manifest"; return 1
+-  fi
++  # ---- CD-1 provenance fields (dispatch_spec + job metadata) --------
++  # Extends the manifest entry with a nested dispatch_spec object and
++  # top-level job metadata fields (agent/mode/status).  Assert they are all
++  # present and that dispatch_spec carries the expected keys.
++  grep -q '"dispatch_spec"' "$manifest" \
++    || { echo "manifest missing 'dispatch_spec' object"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec | type == "object"' "$manifest" >/dev/null \
++    || { echo "manifest dispatch_spec is not an object"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec | has("subagent_type") and has("host") and has("vendor") and has("model")' \
++    "$manifest" >/dev/null \
++    || { echo "dispatch_spec missing required keys (subagent_type/host/vendor/model)"; cat "$manifest"; return 1; }
++  grep -q '"agent"' "$manifest" \
++    || { echo "manifest missing top-level 'agent' field"; cat "$manifest"; return 1; }
++  grep -q '"mode"' "$manifest" \
++    || { echo "manifest missing top-level 'mode' field"; cat "$manifest"; return 1; }
++  grep -q '"status"' "$manifest" \
++    || { echo "manifest missing top-level 'status' field"; cat "$manifest"; return 1; }
+ 
+   # Greppability anchor: tag is retained for host × vendor × model × tag
+-  # joins and is not in T11/G3 ownership. Pin its presence.
++  # joins. Pin its presence.
+   grep -q '"tag"' "$manifest" \
+     || { echo "manifest missing tag field (greppability anchor)"; cat "$manifest"; return 1; }
+ 
+@@ -1503,16 +1510,18 @@ MOCK_EOF
+ 
+ # ---------------------------------------------------------------------------
+ # AC5+/AC9: dispatch-manifest entries are well-formed JSON objects with
+-# EXACTLY the four contracted fields {tag, host, vendor, model} — no extra
+-# (potentially injected) keys. Pinning shape this way prevents an attacker
+-# (or a future regression) who controls a stringly-typed input like
++# EXACTLY the 8 contracted top-level fields {tag, agent, mode, status,
++# job_id, dispatch_spec, await_cmd, split_cmd} — no extra (potentially
++# injected) keys.  dispatch_spec has EXACTLY the 4 contracted nested fields
++# {subagent_type, host, vendor, model}.  Pinning shape this way prevents an
++# attacker (or a future regression) who controls a stringly-typed input like
+ # --reviewer-tag or --model from forging additional audit fields by
+ # embedding JSON-structural characters in the input. Combined with the
+ # allowlist validation guards exercised by AC10/AC11 below, this gives
+ # defense-in-depth: even if validation is later weakened, the
+ # structural-shape assertion would still trip on key-count drift.
+ # ---------------------------------------------------------------------------
+-@test "[reviewer-model-audit AC9] dispatch-manifest entries are well-formed JSON objects with exactly tag/host/vendor/model keys (no extra/injected keys)" {
++@test "[reviewer-model-audit AC9] dispatch-manifest entries have exactly the 8 contracted top-level keys and dispatch_spec has exactly 4 nested keys (no extra/injected keys)" {
+   local TMP_DIR
+   TMP_DIR="$(mktemp -d)"
+ 
+@@ -1533,6 +1542,7 @@ MOCK_EOF
+   cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+ #!/usr/bin/env bash
+ cat > /dev/null
++echo "JOB_ID=test-job-ac9"
+ exit 0
+ MOCK_EOF
+   chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+@@ -1566,13 +1576,23 @@ MOCK_EOF
+   jq -e 'type == "array" and length >= 1 and (.[0] | type == "object")' "$manifest" >/dev/null \
+     || { echo "manifest is not an array of objects"; cat "$manifest"; return 1; }
+ 
+-  # Each entry must carry EXACTLY the four contracted keys.
+-  jq -e 'all(.[]; has("tag") and has("host") and has("vendor") and has("model") and (keys | length == 4))' \
++  # Each entry must carry EXACTLY the 8 contracted top-level keys (CD-1 schema).
++  # Third-party entries: tag/agent/mode/status/job_id/dispatch_spec/await_cmd/split_cmd.
++  jq -e 'all(.[]; has("tag") and has("agent") and has("mode") and has("status") and
++           has("job_id") and has("dispatch_spec") and has("await_cmd") and has("split_cmd")
++           and (keys | length == 8))' \
+     "$manifest" >/dev/null \
+-    || { echo "manifest entry has missing or extra keys (T09 contract: exactly tag/host/vendor/model)"; cat "$manifest"; return 1; }
++    || { echo "manifest entry missing required top-level keys or has unexpected extra keys"; cat "$manifest"; return 1; }
++
++  # dispatch_spec must carry EXACTLY subagent_type/host/vendor/model (4 nested keys).
++  jq -e 'all(.[]; .dispatch_spec | type == "object" and
++           has("subagent_type") and has("host") and has("vendor") and has("model")
++           and (keys | length == 4))' \
++    "$manifest" >/dev/null \
++    || { echo "dispatch_spec missing or malformed (expected exactly subagent_type/host/vendor/model, no extra keys)"; cat "$manifest"; return 1; }
+ 
+   # And the values must be the strings supplied at dispatch time.
+-  jq -e '.[0].tag == "spec-codex" and .[0].vendor == "openai-codex" and .[0].model == "gpt-5-codex-canary"' \
++  jq -e '.[0].tag == "spec-codex" and .[0].dispatch_spec.vendor == "openai-codex" and .[0].dispatch_spec.model == "gpt-5-codex-canary"' \
+     "$manifest" >/dev/null \
+     || { echo "manifest field values diverge from dispatch arguments"; cat "$manifest"; return 1; }
+ 
+@@ -1738,6 +1758,7 @@ MOCK_EOF
+   cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
+ #!/usr/bin/env bash
+ cat > /dev/null
++echo "JOB_ID=test-job-ac12"
+ exit 0
+ MOCK_EOF
+   chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+@@ -2180,3 +2201,433 @@ _t9_simulate_verifier_sidecar_write() {
+     return 1
+   fi
+ }
++
++# ---------------------------------------------------------------------------
++# T11: dispatch-manifest provenance schema
++#
++# These three tests drive the dispatch_spec / mode / status / agent / job_id
++# / await_cmd / split_cmd fields required by the CD-1 dispatch-manifest
++# schema (structure.md §10).
++# ---------------------------------------------------------------------------
++
++# T11 AC1 — third-party entry: nested dispatch_spec with all T11 provenance
++# fields plus background job metadata (mode/status/agent/job_id/await_cmd/
++# split_cmd).  The mock dispatcher echoes a JOB_ID line to stdout so the
++# wrapper script can capture and persist it in the manifest.
++@test "[dispatch-manifest AC1] third-party manifest entry has nested dispatch_spec plus mode/status/agent/job_id/await_cmd/split_cmd" {
++  local TMP_DIR
++  TMP_DIR="$(mktemp -d)"
++
++  mkdir -p "$TMP_DIR/src"
++  printf 'const x = 1;\n' > "$TMP_DIR/src/subject.ts"
++  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
++  printf '## Reviewer Dispatch Contract\nStub.\n' \
++    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
++  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
++    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
++  mkdir -p "$TMP_DIR/agents"
++  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
++    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
++  mkdir -p "$TMP_DIR/artifact-dir"
++  printf -- '---\ncodex_reviews: false\n---\n' \
++    > "$TMP_DIR/artifact-dir/config.md"
++
++  # Mock dispatcher: drains stdin, emits JOB_ID to stdout, exits 0.
++  mkdir -p "$TMP_DIR/scripts"
++  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
++#!/usr/bin/env bash
++cat > /dev/null
++echo "JOB_ID=test-job-123"
++exit 0
++MOCK_EOF
++  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
++
++  local OUTDIR="$TMP_DIR/out"
++  mkdir -p "$OUTDIR"
++
++  local exit_code=0
++  QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$OUTDIR" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model "gpt-5-codex-canary" \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >/dev/null 2>/dev/null || exit_code=$?
++
++  local manifest="$OUTDIR/.dispatch-manifest.json"
++  [ -f "$manifest" ] \
++    || { echo "manifest not written (exit_code=$exit_code)"; return 1; }
++
++  # Must be valid JSON array.
++  jq -e 'type == "array" and length >= 1' "$manifest" >/dev/null \
++    || { echo "manifest is not a non-empty JSON array"; cat "$manifest"; return 1; }
++
++  # Top-level fields: tag, agent, mode, status present.
++  jq -e '.[0].tag == "spec-codex"' "$manifest" >/dev/null \
++    || { echo "manifest entry missing tag"; cat "$manifest"; return 1; }
++  jq -e '.[0].mode == "background"' "$manifest" >/dev/null \
++    || { echo "manifest entry missing mode=background"; cat "$manifest"; return 1; }
++  jq -e '.[0].status == "pending"' "$manifest" >/dev/null \
++    || { echo "manifest entry missing status=pending"; cat "$manifest"; return 1; }
++  jq -e '.[0].agent | type == "string" and length > 0' "$manifest" >/dev/null \
++    || { echo "manifest entry missing non-empty agent field"; cat "$manifest"; return 1; }
++
++  # Third-party job metadata: job_id, await_cmd, split_cmd.
++  jq -e '.[0].job_id | type == "string"' "$manifest" >/dev/null \
++    || { echo "manifest entry missing job_id field"; cat "$manifest"; return 1; }
++  jq -e '.[0].await_cmd | type == "string" and length > 0' "$manifest" >/dev/null \
++    || { echo "manifest entry missing await_cmd"; cat "$manifest"; return 1; }
++  jq -e '.[0].split_cmd | type == "string" and length > 0' "$manifest" >/dev/null \
++    || { echo "manifest entry missing split_cmd"; cat "$manifest"; return 1; }
++
++  # Nested dispatch_spec with all required provenance fields.
++  jq -e '.[0].dispatch_spec | type == "object"' "$manifest" >/dev/null \
++    || { echo "manifest entry missing dispatch_spec object"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec.subagent_type | type == "string" and length > 0' "$manifest" >/dev/null \
++    || { echo "dispatch_spec missing subagent_type"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec.host | type == "string" and length > 0' "$manifest" >/dev/null \
++    || { echo "dispatch_spec missing host"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec.vendor | type == "string" and length > 0' "$manifest" >/dev/null \
++    || { echo "dispatch_spec missing vendor"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec.model == "gpt-5-codex-canary"' "$manifest" >/dev/null \
++    || { echo "dispatch_spec.model does not match dispatched model"; cat "$manifest"; return 1; }
++
++  rm -rf "$TMP_DIR"
++}
++
++# dispatch-manifest AC2 — first-party manifest entry: dispatch_spec carries prompt_file;
++# mode=first_party, status=dispatched.  Tests emit_first_party_manifest_entry
++# exposed via QRSPI_SOURCE_ONLY=1 sourcing so the shape is verifiable without
++# a full first-party dispatch infrastructure (will be added when dispatch-companion.sh ships).
++@test "[dispatch-manifest AC2] first-party manifest entry has dispatch_spec with prompt_file, mode=first_party, status=dispatched" {
++  local TMP_DIR
++  TMP_DIR="$(mktemp -d)"
++
++  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
++  printf '## Reviewer Dispatch Contract\nStub.\n' \
++    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
++  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
++    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
++  mkdir -p "$TMP_DIR/agents"
++  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
++    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
++
++  local OUTDIR="$TMP_DIR/out"
++  mkdir -p "$OUTDIR"
++
++  local prompt_file="$OUTDIR/.dispatch/spec-claude.prompt"
++  mkdir -p "$OUTDIR/.dispatch"
++  printf 'DISPATCH_FILE=%s\n' "$prompt_file" > "$prompt_file"
++
++  # Source run-codex-review.sh in source-only mode, then call
++  # emit_first_party_manifest_entry directly.
++  local exit_code=0
++  (
++    export QRSPI_REPO_ROOT="$TMP_DIR"
++    export COPILOT_CLI=""
++    export QRSPI_SOURCE_ONLY=1
++    source "$REPO_ROOT/scripts/run-codex-review.sh"
++    # Set globals that the emit functions read (argument parsing is skipped
++    # in source-only mode, so we set them directly after sourcing).
++    REVIEWER_TAG="spec-claude"
++    OUTPUT_DIR="$OUTDIR"
++    AGENT_FILE="agents/qrspi-spec-reviewer.md"
++    MODEL="claude-sonnet-4-5"
++    emit_first_party_manifest_entry "$prompt_file"
++  ) || exit_code=$?
++
++  [ "$exit_code" -eq 0 ] \
++    || { echo "emit_first_party_manifest_entry failed with exit $exit_code"; return 1; }
++
++  local manifest="$OUTDIR/.dispatch-manifest.json"
++  [ -f "$manifest" ] \
++    || { echo "manifest not written"; return 1; }
++
++  jq -e '.[0].mode == "first_party"' "$manifest" >/dev/null \
++    || { echo "manifest entry mode != first_party"; cat "$manifest"; return 1; }
++  jq -e '.[0].status == "dispatched"' "$manifest" >/dev/null \
++    || { echo "manifest entry status != dispatched"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec | type == "object"' "$manifest" >/dev/null \
++    || { echo "manifest entry missing dispatch_spec"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec.subagent_type | type == "string" and length > 0' "$manifest" >/dev/null \
++    || { echo "dispatch_spec missing subagent_type"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec.prompt_file | type == "string" and length > 0' "$manifest" >/dev/null \
++    || { echo "dispatch_spec missing prompt_file"; cat "$manifest"; return 1; }
++  jq -e --arg pf "$prompt_file" '.[0].dispatch_spec.prompt_file == $pf' "$manifest" >/dev/null \
++    || { echo "dispatch_spec.prompt_file does not match supplied path"; cat "$manifest"; return 1; }
++  # dispatch_spec.host/vendor/model must be present and match known call-site values.
++  # COPILOT_CLI="" → detect_host returns "claude-code".
++  jq -e '.[0].dispatch_spec.host == "claude-code"' "$manifest" >/dev/null \
++    || { echo "dispatch_spec.host != claude-code"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec.vendor == "claude"' "$manifest" >/dev/null \
++    || { echo "dispatch_spec.vendor != claude"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec.model == "claude-sonnet-4-5"' "$manifest" >/dev/null \
++    || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
++
++  rm -rf "$TMP_DIR"
++}
++
++# T11 AC3 — append safety: two successive invocations with different reviewer
++# tags against the same output directory produce a well-formed two-entry
++# manifest with all entries carrying dispatch_spec.
++@test "[dispatch-manifest AC3] repeated invocations with multiple reviewer tags produce well-formed manifest with all dispatch_spec entries present" {
++  local TMP_DIR
++  TMP_DIR="$(mktemp -d)"
++
++  mkdir -p "$TMP_DIR/src"
++  printf 'const x = 1;\n' > "$TMP_DIR/src/subject.ts"
++  mkdir -p "$TMP_DIR/skills/reviewer-protocol"
++  printf '## Reviewer Dispatch Contract\nStub.\n' \
++    > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
++  printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
++    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
++  mkdir -p "$TMP_DIR/agents"
++  printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
++    > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
++  mkdir -p "$TMP_DIR/artifact-dir"
++  printf -- '---\ncodex_reviews: false\n---\n' \
++    > "$TMP_DIR/artifact-dir/config.md"
++  mkdir -p "$TMP_DIR/scripts"
++  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
++#!/usr/bin/env bash
++cat > /dev/null
++echo "JOB_ID=test-job-${RANDOM}"
++exit 0
++MOCK_EOF
++  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
++
++  local OUTDIR="$TMP_DIR/out"
++  mkdir -p "$OUTDIR"
++
++  # First invocation: reviewer tag spec-codex
++  QRSPI_REPO_ROOT="$TMP_DIR" COPILOT_CLI="" \
++    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$OUTDIR" --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model "gpt-5-codex-canary" \
++      --output-file "$TMP_DIR/result1.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >/dev/null 2>/dev/null || true
++
++  # Second invocation: reviewer tag sec-codex
++  QRSPI_REPO_ROOT="$TMP_DIR" COPILOT_CLI="" \
++    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag sec-codex \
++      --output-dir "$OUTDIR" --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model "gpt-5-codex-canary" \
++      --output-file "$TMP_DIR/result2.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++    >/dev/null 2>/dev/null || true
++
++  local manifest="$OUTDIR/.dispatch-manifest.json"
++  [ -f "$manifest" ] || { echo "manifest not written after two invocations"; return 1; }
++
++  # Valid JSON array with exactly 2 entries.
++  jq -e 'type == "array" and length == 2' "$manifest" >/dev/null \
++    || { echo "manifest does not have exactly 2 entries"; cat "$manifest"; return 1; }
++
++  # Both entries have dispatch_spec objects.
++  jq -e 'all(.[]; .dispatch_spec | type == "object")' "$manifest" >/dev/null \
++    || { echo "not all entries have dispatch_spec objects"; cat "$manifest"; return 1; }
++
++  # Both entries have the required dispatch_spec fields.
++  jq -e 'all(.[]; .dispatch_spec | has("subagent_type") and has("host") and has("vendor") and has("model"))' \
++    "$manifest" >/dev/null \
++    || { echo "dispatch_spec missing required provenance fields in one or both entries"; cat "$manifest"; return 1; }
++
++  # Both entries carry the top-level background fields.
++  jq -e 'all(.[]; has("mode") and has("status") and has("agent") and has("job_id") and has("await_cmd") and has("split_cmd"))' \
++    "$manifest" >/dev/null \
++    || { echo "one or both entries missing top-level background fields"; cat "$manifest"; return 1; }
++
++  rm -rf "$TMP_DIR"
++}
++
++# T11 AC4 — concurrency safety: N≥2 concurrent _append_manifest_entry
++# invocations against the same manifest path all survive (no lost-update race).
++# Uses a start-barrier pattern so all subshells hit _append_manifest_entry
++# simultaneously, maximising collision probability on the R-M-W path.
++# Requires the mkdir-as-mutex lock added by the F01 fix.
++@test "[dispatch-manifest AC4] concurrent _append_manifest_entry invocations all survive (no lost-update race)" {
++  local TMP_DIR
++  TMP_DIR="$(mktemp -d)"
++
++  local OUTDIR="$TMP_DIR/out"
++  mkdir -p "$OUTDIR"
++
++  # SYNC_FILE: all subshells source the script first, then wait here before
++  # writing.  Releasing the barrier simultaneously maximises concurrency at
++  # the write site.
++  local SYNC_FILE="$TMP_DIR/sync-start"
++
++  local N=5
++  local i
++  for i in $(seq 1 $N); do
++    (
++      export QRSPI_SOURCE_ONLY=1
++      source "$REPO_ROOT/scripts/run-codex-review.sh"
++      export OUTPUT_DIR="$OUTDIR"
++      # Signal that this subshell has sourced the script and is ready to proceed;
++      # touch AFTER source completes so the parent's count means subshells are
++      # actually at the spin-loop, not mid-source.
++      touch "$SYNC_FILE.ready.$i"
++      # Spin until the barrier is released so all writers fire at once.
++      while [[ ! -f "$SYNC_FILE" ]]; do sleep 0.01; done
++      _append_manifest_entry "{\"tag\":\"tag-$i\",\"mode\":\"test\",\"i\":$i}"
++    ) &
++  done
++
++  # Wait until all N subshells have signalled readiness (with a 10-second
++  # deadline to prevent a hung test suite on loaded CI).
++  local _deadline
++  _deadline=$(( $(date +%s) + 10 ))
++  while (( $(ls "$SYNC_FILE".ready.* 2>/dev/null | wc -l) < N )); do
++    sleep 0.05
++    if (( $(date +%s) > _deadline )); then
++      echo "AC4 barrier setup timed out: only $(ls "$SYNC_FILE".ready.* 2>/dev/null | wc -l) of $N subshells ready" >&2
++      return 1
++    fi
++  done
++  # Release the barrier — all N subshells proceed to _append_manifest_entry
++  # simultaneously.
++  touch "$SYNC_FILE"
++  wait
++
++  local manifest="$OUTDIR/.dispatch-manifest.json"
++  [ -f "$manifest" ] \
++    || { echo "manifest not written"; return 1; }
++
++  # All N entries must survive.  Without locking, the R-M-W race causes the
++  # last mv to overwrite entries written by other subshells.
++  jq -e --argjson n "$N" 'type == "array" and length == $n' "$manifest" >/dev/null \
++    || { echo "manifest does not have exactly $N entries (concurrent writes lost some)"; cat "$manifest"; return 1; }
++
++  rm -rf "$TMP_DIR"
++}
++
++# ---------------------------------------------------------------------------
++# dispatch-manifest AC6: _append_manifest_entry handles a manifest file that
++# has a trailing newline after the closing bracket (e.g. `]\n`) — a common
++# artifact of text editors and some write patterns.  The old sed-based
++# implementation would fail to strip `]` and produce double-bracket garbage.
++# The jq-based implementation is immune: jq parses the whole file as JSON,
++# ignoring trailing whitespace.  This test guards the regression.
++# ---------------------------------------------------------------------------
++@test "[dispatch-manifest AC6] manifest append with trailing newline after closing bracket produces valid JSON" {
++  local TMP_DIR
++  TMP_DIR="$(mktemp -d)"
++  local OUTDIR="$TMP_DIR/out"
++  mkdir -p "$OUTDIR"
++  local manifest="$OUTDIR/.dispatch-manifest.json"
++
++  # Pre-populate manifest with trailing newline after ']' — this is the
++  # pathological input that broke the sed-based implementation.
++  printf '[\n  {"tag":"initial","mode":"test"}\n]\n' > "$manifest"
++
++  # Source the script so we can call _append_manifest_entry directly.
++  (
++    export QRSPI_SOURCE_ONLY=1
++    source "$REPO_ROOT/scripts/run-codex-review.sh"
++    export OUTPUT_DIR="$OUTDIR"
++    _append_manifest_entry '{"tag":"second","mode":"test"}'
++  )
++
++  # Result must be valid JSON.
++  jq -e '.' "$manifest" >/dev/null \
++    || { echo "manifest is not well-formed JSON after trailing-newline append"; cat "$manifest"; return 1; }
++
++  # Result must be an array with exactly 2 entries.
++  jq -e 'type == "array" and length == 2' "$manifest" >/dev/null \
++    || { echo "manifest does not have exactly 2 entries after append"; cat "$manifest"; return 1; }
++
++  # Both entries must be present.
++  jq -e '.[0].tag == "initial" and .[1].tag == "second"' "$manifest" >/dev/null \
++    || { echo "manifest entries have wrong values after append"; cat "$manifest"; return 1; }
++
++  rm -rf "$TMP_DIR"
++}
++
++
++# script, stdout carries a DISPATCH_FILE= reference, and the manifest records a
++# first_party entry whose dispatch_spec.prompt_file matches the stdout reference.
++# This tests the dispatch entry point (not just the manifest-emission helper)
++# and verifies the orchestrator-facing payload stays a prompt-file reference.
++# Requires a trusted gh binary (same precondition as detect_host returning
++# 'copilot-cli') — skips when gh is absent or not in a trusted prefix.
++@test "[dispatch-manifest AC5] first-party dispatch path: COPILOT_CLI=1 → DISPATCH_FILE= on stdout and first_party manifest entry with matching prompt_file" {
++  _t7_require_trusted_gh
++
++  local tmp
++  tmp="$(mktemp -d)"
++  _t7_make_mock_repo "$tmp"
++  # codex_reviews: true — copilot-cli + codex available (trivially) → no
++  # mismatch warning, dispatch proceeds cleanly to the first-party path.
++  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
++
++  local stdout_log="$tmp/ac5-stdout.log"
++  local dispatch_status=0
++  QRSPI_REPO_ROOT="$tmp" \
++    COPILOT_CLI=1 \
++    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$tmp/out" \
++      --round 1 \
++      --subject-code "$tmp/src/subject.ts" \
++      --model claude-sonnet-4-5 \
++      --output-file "$tmp/result.md" \
++      --artifact-dir "$tmp/artifact-dir" \
++    >"$stdout_log" 2>/dev/null && dispatch_status=0 || dispatch_status=$?
++
++  # First-party path exits 0.
++  [ "$dispatch_status" -eq 0 ] \
++    || { echo "script exited $dispatch_status (expected 0 for first-party path)"; return 1; }
++
++  # Stdout carries a DISPATCH_FILE= reference — the orchestrator-facing
++  # payload is a file reference, NOT inline prompt body.
++  grep -q '^DISPATCH_FILE=' "$stdout_log" \
++    || { echo "stdout does not contain DISPATCH_FILE= line (first-party dispatch contract broken)"; cat "$stdout_log"; return 1; }
++
++  # Extract the prompt file path from the DISPATCH_FILE= line.
++  local prompt_file
++  prompt_file="$(grep '^DISPATCH_FILE=' "$stdout_log" | head -1 | sed 's/^DISPATCH_FILE=//')"
++
++  # Prompt file exists on disk (prompt body was written, not echoed inline).
++  [ -f "$prompt_file" ] \
++    || { echo "prompt file $prompt_file does not exist on disk"; return 1; }
++
++  # Manifest was written.
++  local manifest="$tmp/out/.dispatch-manifest.json"
++  [ -f "$manifest" ] \
++    || { echo "manifest not written"; return 1; }
++
++  # Manifest entry records first_party mode and dispatched status.
++  jq -e '.[0].mode == "first_party"' "$manifest" >/dev/null \
++    || { echo "manifest entry mode != first_party"; cat "$manifest"; return 1; }
++  jq -e '.[0].status == "dispatched"' "$manifest" >/dev/null \
++    || { echo "manifest entry status != dispatched"; cat "$manifest"; return 1; }
++
++  # dispatch_spec.prompt_file in the manifest matches the DISPATCH_FILE
++  # reference emitted on stdout — the audit trail is consistent.
++  jq -e --arg pf "$prompt_file" '.[0].dispatch_spec.prompt_file == $pf' "$manifest" >/dev/null \
++    || { echo "manifest dispatch_spec.prompt_file does not match stdout DISPATCH_FILE reference"; cat "$manifest"; return 1; }
++  # dispatch_spec.host/vendor/model must be present and match known call-site values.
++  # COPILOT_CLI=1 with trusted gh → detect_host returns "copilot-cli".
++  jq -e '.[0].dispatch_spec.host == "copilot-cli"' "$manifest" >/dev/null \
++    || { echo "dispatch_spec.host != copilot-cli"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec.vendor == "claude"' "$manifest" >/dev/null \
++    || { echo "dispatch_spec.vendor != claude"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec.model == "claude-sonnet-4-5"' "$manifest" >/dev/null \
++    || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
++
++  rm -rf "$tmp"
++}

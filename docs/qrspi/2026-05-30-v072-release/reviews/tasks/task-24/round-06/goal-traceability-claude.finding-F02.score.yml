@@ -1,0 +1,2 @@
+score: 90
+reason: Confirmed: the test at bats:397-401 greps `QRSPI_INTERACTION_MODE` (-ge 1), which appears 11x in functional code, so it passes even if the header OVERRIDE CHAIN section (line 39, unique) were deleted — the test does not actually pin spec expectation #7 ("header asserts override chain documented").

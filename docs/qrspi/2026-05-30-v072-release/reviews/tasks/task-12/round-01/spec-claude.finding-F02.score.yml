@@ -1,0 +1,2 @@
+score: 100
+reason: Five of nine required convergence fixture classes documented in task spec (lines 53-54) are completely missing from test-round-prepare.bats: missing, empty, full-artifact, partial-overlap, and proper-subset-with-safety-margin. Only equal/superset/disjoint/HEAD~1-mismatch covered.

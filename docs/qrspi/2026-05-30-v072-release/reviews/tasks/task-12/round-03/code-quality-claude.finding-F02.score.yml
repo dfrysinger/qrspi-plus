@@ -1,0 +1,2 @@
+score: 50
+reason: Verified import glob at line 235 inside for loop; Python caches imports so no functional impact. Minor style/consistency issue; senior practitioners may not flag this as requiring immediate fix given module caching behavior.

@@ -1,0 +1,2 @@
+score: 35
+reason: Real DoD-vs-code discrepancy (DoD says "unknown host exits non-zero" with no override exception) but the buggy path is manual/diagnostic-only — automated SKILL invocations (no args) correctly exit 1 on unknown host, and _resolve-lib.sh explicitly documents the flat-allowlist design as intentional.

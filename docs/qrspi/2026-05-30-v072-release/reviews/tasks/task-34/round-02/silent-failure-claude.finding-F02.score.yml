@@ -1,0 +1,2 @@
+score: 70
+reason: Verified - tests capture original_content but no orchestrator invoked between snapshots; comparison always passes, exercising no code path that could detect file rewrite.

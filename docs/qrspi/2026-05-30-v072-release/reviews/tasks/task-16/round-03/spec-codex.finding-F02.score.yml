@@ -1,0 +1,2 @@
+score: 85
+reason: Directly confirmed — the round-03 diff renamed the section header (Four-Layer → Tier Resolution Chain) and updated many dispatch calls, but the prose body at line 560 ("through the four-layer chain above") and the test-writer dispatch template at line 615 (`model: <resolved per the four-layer routing chain in § Per-Task Routing>`) remain untouched; both violate the DoD's explicit requirement to sweep "role-keyed G5 routing matrix, `model:` task-routing field guidance" from migrated surfaces and to read `tier:` for Implement-phase test-writer dispatches.

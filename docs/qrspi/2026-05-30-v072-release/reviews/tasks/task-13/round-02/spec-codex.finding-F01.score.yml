@@ -1,0 +1,2 @@
+score: 76
+reason: Verified — the T13 bats block (L677–816) covers missing prior-anchor and missing scope-set but has no test for the distinct malformed-anchor (L194–203) or empty-scope-set (L215–218) branches that task-13.md L49 explicitly enumerates as required fixtures.

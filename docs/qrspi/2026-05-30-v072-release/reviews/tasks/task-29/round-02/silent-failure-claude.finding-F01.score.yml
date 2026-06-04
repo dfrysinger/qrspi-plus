@@ -1,0 +1,2 @@
+score: 60
+reason: Real gap — the lint bats test as scoped in DoD (line 47) and Scope (line 28) only asserts directive presence in consumers, so deletion/empty/inversion/paraphrase of the source target would not fail the lint; test-expectation #4's "boundary-body inspection" is mentioned but not wired into the named bats file, making the single-source-of-truth thesis under-guarded, though severity is closer to medium than high since manual inspection is referenced.

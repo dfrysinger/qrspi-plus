@@ -1,0 +1,2 @@
+score: 90
+reason: Confirmed gap — the override branch (QRSPI_INTERACTION_MODE=auto|interactive) has no no-file-write test in the "stdout/stderr-only" section (lines 353–617), while Copilot CLI (357), unknown-host (373), and Claude Code (604) branches each do; Test Expectation #6 explicitly requires "across execution paths" coverage.

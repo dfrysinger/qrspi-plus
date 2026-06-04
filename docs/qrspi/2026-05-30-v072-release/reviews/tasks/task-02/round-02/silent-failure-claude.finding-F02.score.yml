@@ -1,0 +1,2 @@
+score: 50
+reason: Same halt-cause semantic mismatch as code-quality-claude F01; marked as redundant/overlapping finding; real issue but lower score due to duplication with F01.

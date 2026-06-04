@@ -1,0 +1,2 @@
+score: 48
+reason: Real and accurate coverage gap — the lone malformed fixture ('not-a-sha\n') fails charset/length so the regex's trailing-newline branch is never independently pinned — but it is a low-severity nitpick that a regression would likely also trip elsewhere.

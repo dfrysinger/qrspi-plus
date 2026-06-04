@@ -1,0 +1,2 @@
+score: 25
+reason: Speculative prompt-injection concern; the agent reads its own just-written draft of user-confirmed goal text, no documented UNTRUSTED-wrapper convention is cited as applying to artifact self-reads, and the suggested "structural tokens only" extraction is defensive nitpick not grounded in upstream constraint.

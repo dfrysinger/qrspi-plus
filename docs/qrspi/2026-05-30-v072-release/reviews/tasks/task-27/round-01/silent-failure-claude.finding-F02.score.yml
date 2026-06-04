@@ -1,0 +1,2 @@
+score: 20
+reason: Altitude mismatch — task-27 faithfully implements design.md CD-2's mandated consumer list (which includes replan); whether replan should be on that list is a Design-level decision, not a task-implementation defect, and replan does produce/update artifact files distinct from its feedback/reviews exhaust which the snippet's exclusions correctly carve out.

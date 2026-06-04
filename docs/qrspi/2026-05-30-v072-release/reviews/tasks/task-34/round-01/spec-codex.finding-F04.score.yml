@@ -1,0 +1,3 @@
+finding_tag: spec-codex.R1-F04
+score: 88
+reason: Partial-crash + complete re-run behavioral assertions miss outcomes (mtime/content preservation + completion verification). High value: foundational property of idempotency guarantee that whole task introduces. KEEP.

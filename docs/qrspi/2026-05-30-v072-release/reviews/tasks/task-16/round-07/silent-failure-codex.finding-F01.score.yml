@@ -1,0 +1,2 @@
+score: 70
+reason: Confirmed real: `[ -r dir ]` is TRUE for a readable directory at all three sites — L142's comment explicitly declares a "DISTINCT diagnostic so an operator … is not sent down the wrong repair path", yet the directory case reaches `_halt_unconfigured_tier` (wrong message) in resolve_model and a misleading Layer-4 "config present but no default_tier:" WARN in resolve_tier, directly defeating the task's fail-loud-on-malformed-config mandate; fix (`-f && -r`) is straightforward and within scope.

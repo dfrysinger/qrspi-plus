@@ -1,0 +1,2 @@
+score: 92
+reason: Confirmed: L289-308 omits vendor= from the joint assertion (only checks non-zero + tag + line_count + host=), and the separate L311-320 test uses weak OR semantics (`nonexistent-vendor-xyz|vendor=`) with `|| true` swallowing the exit status — neither test enforces the full 5-property joint contract that DoD task-19.md L42/L52 explicitly require for the unknown-vendor case.

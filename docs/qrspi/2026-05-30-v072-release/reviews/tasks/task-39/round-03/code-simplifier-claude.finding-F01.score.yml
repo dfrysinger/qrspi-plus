@@ -1,0 +1,2 @@
+score: 42
+reason: Real triplicated canonicalize-under-root block (lines 157-176, 265-281, 345-361) verified in artifact; suggestion is semantics-preserving and accurate, but explicitly non-blocking (code-simplifier role) and consistent with prior round's deferred 45.

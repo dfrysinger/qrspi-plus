@@ -1,0 +1,3 @@
+finding_tag: spec-codex.R1-F01
+score: 75
+reason: HALT diagnostic text not behaviorally asserted (only file-state asserted). Load-bearing for orchestrator guidance — diagnostic phrasing IS the operator UX. Should be asserted in tests per the spec's diagnostic text contract.

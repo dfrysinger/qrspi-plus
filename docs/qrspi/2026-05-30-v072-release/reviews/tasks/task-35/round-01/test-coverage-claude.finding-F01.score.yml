@@ -1,0 +1,2 @@
+score: 40
+reason: Real but minor completeness gap — upper-boundary assertion already pins adjacency to Refusal Procedure; the spec-vs-code wording drift it surfaces (Per-Finding Disk-Write Contract vs Quick-Tier Finding Disposition) is the more substantive observation.

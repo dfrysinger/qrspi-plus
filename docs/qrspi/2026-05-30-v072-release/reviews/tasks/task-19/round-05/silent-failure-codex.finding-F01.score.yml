@@ -1,0 +1,2 @@
+score: 80
+reason: Confirmed real gap — test lines 287-308 docstring explicitly contracts both host= and vendor= in the diagnostic but the test body only asserts grep -q 'host=' (line 307), meaning a production regression dropping vendor= from the [second-reviewer-unavailable] line would pass this test silently.

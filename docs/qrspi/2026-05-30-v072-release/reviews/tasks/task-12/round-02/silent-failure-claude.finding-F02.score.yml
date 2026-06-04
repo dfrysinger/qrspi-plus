@@ -1,0 +1,2 @@
+score: 18
+reason: Comment labels are inverted (NN-1/NN-2 backwards, s1\s2={d} not {a}), but test is functionally correct and passes regardless; this is a clarity/documentation issue, not a test correctness issue.

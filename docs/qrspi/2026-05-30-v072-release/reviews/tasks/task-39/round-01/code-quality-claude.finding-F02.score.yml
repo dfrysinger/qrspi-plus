@@ -1,0 +1,2 @@
+score: 45
+reason: Real but minor DRY observation; three near-identical canonicalize-and-check blocks exist as described, drift risk is genuine but small, classified minor by reviewer.

@@ -1,0 +1,2 @@
+score: 72
+reason: Finding is accurate — unknown-vendor path lacks both exactly-one-line and host= assertions, empty-default-vendor path lacks host=/vendor= naming assertions, both directly violating DoD L42/L52 wording that explicitly requires one-line + host + vendor in every unavailable path.

@@ -1,0 +1,3 @@
+finding_tag: code-quality-claude.R1-F01
+score: 72
+reason: Goal IDs (G31, G1, G30) embedded in prompt-prose runtime strings at lines 4, 112, 113 violates ID-hygiene at strict-surface; line 4 clear bug, lines 112-113 borderline source attribution that finding over-aggregates.

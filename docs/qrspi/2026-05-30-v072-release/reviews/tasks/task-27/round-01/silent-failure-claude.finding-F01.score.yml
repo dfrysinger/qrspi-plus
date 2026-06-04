@@ -1,0 +1,2 @@
+score: 65
+reason: Real asymmetry — the snippet's named in-scope set ("goals, design, structure, phasing, plan, parallelization, roadmap, future-goals") omits questions.md and research/q*.md, yet both consumer SKILL.md files `!cat`-include the rule, so the reviewer-protocol clause that defers scope to the snippet leaves enforcement on those artifacts ambiguous; medium-impact correctness gap with a clear fix.

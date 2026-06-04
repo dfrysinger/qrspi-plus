@@ -1,0 +1,7 @@
+---
+reviewer_tag: silent-failure-claude
+round: 4
+status: clean
+---
+
+The round-03 additive guard (`[ -z "$_default_vendor" ]` as the first OR-clause on line 55 of `scripts/second-reviewer-available.sh`) closes every reachable exit-0 path where the second reviewer should not be treated as available. All critical paths were traced: (A) empty `_default_vendor` with a recognized vendor override — the new first clause short-circuits before `second_reviewer_vendor_known` can return 0; (B) `_default_vendor="none"` (unknown host) with vendor override — caught by the second clause; (C) `_resolve-lib.sh` source failure with helpers undefined — `lookup_default_second_reviewer` subshell returns empty string so `_default_vendor=""` and the first clause fires; (D) unknown/unrecognized vendor override on a known host — caught by `! second_reviewer_vendor_known`; (E) `none` vendor override — caught by the third clause. The guard ordering is correct: the empty-default check is positioned leftmost in the OR chain so it cannot be bypassed by a valid vendor-known result. No log-and-continue, swallowed-error, or inappropriate-fallback patterns exist on the exit-0 path. The new fault-injection bats test (T28, `empty-default-vendor-guard`) exercises the exact scenario with a stub that returns empty from `lookup_default_second_reviewer` while passing `openai-codex` as override, and correctly asserts non-zero exit and exactly one `[second-reviewer-unavailable]` stderr line. No silent failure issues found.

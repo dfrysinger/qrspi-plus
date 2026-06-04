@@ -1,0 +1,2 @@
+score: 85
+reason: Confirmed — SKILL.md line 858 retains `model: "<model>"` in the fix-cycle implementer dispatch shape; round-04 diff removed model: from test-writer (line 615/981), all reviewer dispatches, and the Per-Task Routing pseudocode, but left line 858 (and line 645) unchanged, making this a real in-scope miss from this task's own edits.

@@ -1,0 +1,2 @@
+score: 95
+reason: Lines 126/134/142 of skills/test/SKILL.md in the worktree demonstrably retain `model: "sonnet"` in reviewer dispatches while T16's DoD explicitly requires a grep-clean sweep of all migrated surfaces including test/SKILL.md.

@@ -1,0 +1,2 @@
+score: 20
+reason: Finalize reads user-approved goals.md to validate goal→block coverage; treating an approved upstream artifact as untrusted prompt-injection vector is speculative and not anchored to a documented threat model.

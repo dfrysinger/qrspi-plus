@@ -1,0 +1,2 @@
+score: 85
+reason: Test at lines 215-240 is indeed vacuous. Payload "evil-no-such-binary; touch" fails ONLY because binary doesn't exist, not because parse_and_validate blocks it. Removing parse_and_validate doesn't change test outcome. Real coverage gap exposing false confidence.

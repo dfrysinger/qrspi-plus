@@ -1,0 +1,61 @@
+diff --git a/agents/qrspi-plan-reviewer.md b/agents/qrspi-plan-reviewer.md
+index 778bc9e..353715d 100644
+--- a/agents/qrspi-plan-reviewer.md
++++ b/agents/qrspi-plan-reviewer.md
+@@ -101,17 +101,21 @@ Emit a `severity: high, change_type: correctness` finding referencing `skills/pl
+ 
+ **Step 2 — Validate the structural-lint script path.** Before executing, validate the `structural_lint` value as a named-script path:
+ 
+-- Reject any value that does not start with the exact prefix `scripts/structural-lints/` — inline bash commands, paths outside this prefix, and any value containing shell metacharacters are all invalid.
+-- Reject paths containing `..` (directory traversal) or absolute paths (starting with `/`).
++- Require the value to match the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` — a single filename token with no whitespace, tab, newline, or character outside `[A-Za-z0-9_.-]` between the prefix and the `.sh` suffix. Reject any value that fails this match: inline bash commands, paths outside this prefix, paths containing `..`, absolute paths (starting with `/`), and any value containing whitespace or shell metacharacters are all invalid.
+ 
+-If validation fails, emit a `severity: high, change_type: correctness` finding for a malformed structural-lint value rather than executing anything. Do not attempt to execute inline commands.
++If the regex validation fails, emit a `severity: high, change_type: correctness` finding for a malformed structural-lint value rather than executing anything. Do not attempt to execute inline commands.
+ 
+-**Step 3 — Execute the structural-lint script.** First verify the proposed diff is non-empty; if the diff is empty, emit a `severity: high, change_type: correctness` finding: the diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the LOC/file-count exemption is denied. Then run `bash <validated-path>` from the repository root with no spec-controlled arguments. Interpret the result by exit code only: if the script exits non-zero, emit a `severity: high, change_type: correctness` finding: the structural lint failed — the claimed mechanical-only migration contains non-structural diff content; the LOC/file-count exemption is denied.
++- After the regex passes, verify the named script exists as a regular readable file at the repository root (e.g., `[ -f "<path>" ] && [ -r "<path>" ]`). If the file is absent or not readable, emit a `severity: high, change_type: correctness` finding: "the `structural_lint` script `<path>` does not exist (or is not readable) at the repository root; check in the script or fix the path. The LOC/file-count exemption is denied." Do NOT proceed to Step 3.
++
++If both checks pass (regex valid and file exists and is readable), proceed to Step 3.
++
++**Step 3 — Execute the structural-lint script.** First verify the proposed diff is non-empty; if the diff is empty, emit a `severity: high, change_type: correctness` finding: the diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the LOC/file-count exemption is denied. Then run `bash -- <validated-path>` from the repository root, passing the path as a single argv element — never interpolate it into a `bash -c` string. Interpret the result by exit code only: if the script exits non-zero, emit a `severity: high, change_type: correctness` finding: the structural lint failed — the claimed mechanical-only migration contains non-structural diff content; the LOC/file-count exemption is denied.
+ 
+ **Step 4 — Grant exemption.** Grant the LOC ceiling and file-count exemption only when:
+ 
+ - All three mandatory fields are present and non-empty (Step 1 passes), AND
+-- The `structural_lint` value is a valid repo-relative path under `scripts/structural-lints/` (Step 2 passes), AND
++- The `structural_lint` value matches the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` (Step 2 regex passes), AND
++- The named script exists as a regular readable file at the repository root (Step 2 existence check passes), AND
+ - The proposed diff is non-empty and the `structural_lint` script exits 0 (Step 3 passes).
+ 
+ When the exemption is denied — because any mandatory field is absent, the path is invalid, the diff is empty, or the lint fails — apply the standard LOC ceiling and file-count guidance as if no exception were declared.
+diff --git a/skills/plan/SKILL.md b/skills/plan/SKILL.md
+index 6d07099..7040bb9 100644
+--- a/skills/plan/SKILL.md
++++ b/skills/plan/SKILL.md
+@@ -98,7 +98,7 @@ When `sizing_exception: schema-migration` is declared, the task spec MUST carry
+ 
+ - `sizing_exception: schema-migration` — declares the exception; must be exactly this value for schema-migration tasks.
+ - `sizing_rationale: <human-readable reason>` — one sentence explaining why this specific change is a mechanical same-shape migration (e.g., "removes the deprecated `model:` key added uniformly by T40 from all 41 agent frontmatter files").
+-- `structural_lint: <script-path>` — a repo-relative path to a checked-in script under `scripts/structural-lints/` (e.g., `scripts/structural-lints/check-model-key-removal.sh`). The path must start with `scripts/structural-lints/`, must not contain `..`, and must not be an absolute path. The script receives no spec-controlled arguments; it is invoked as `bash <path>` from the repository root against the proposed diff. The script must exit 0 when the diff is mechanical-only and non-empty, and exit non-zero when non-structural content is present or the diff is empty. Inline bash commands are not accepted as the field value; a literal command string instead of a valid script path is a plan-spec defect.
++- `structural_lint: <script-path>` — a repo-relative path to a checked-in script under `scripts/structural-lints/` (e.g., `scripts/structural-lints/check-model-key-removal.sh`). The value must be a single token matching the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$`; whitespace, tab, newline, and any character outside that token class are rejected. The script must exist as a regular readable file at that path in the repository; a path that passes the token check but is absent from the repository is a plan-spec defect. The script receives no spec-controlled arguments; it is invoked as `bash -- <path>` from the repository root with the path passed as a single argv element (never interpolated into a `bash -c` string) against the proposed diff. The script must exit 0 when the diff is mechanical-only and non-empty, and exit non-zero when non-structural content is present or the diff is empty. Inline bash commands are not accepted as the field value; a literal command string instead of a valid script path is a plan-spec defect.
+ 
+ ### Effect on sizing limits
+ 
+@@ -115,11 +115,12 @@ A schema-migration declaration is incomplete — and the LOC/file-count exemptio
+ 
+ - `sizing_exception: schema-migration` is declared but `sizing_rationale:` is absent or empty.
+ - `sizing_exception: schema-migration` is declared but `structural_lint:` is absent or empty.
+-- `structural_lint:` is present but its value is not a valid repo-relative path under `scripts/structural-lints/` (is an inline command, contains `..`, or is an absolute path).
+-- `structural_lint:` names a valid script path but the proposed diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the exemption is denied.
+-- `structural_lint:` names a valid script path but the script exits non-zero, indicating the diff contains non-structural content.
++- `structural_lint:` is present but its value does not match the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` (is an inline command, contains whitespace/tab/newline, contains `..`, is an absolute path, or uses characters outside the allowed token class).
++- `structural_lint:` carries a token-valid path but the named script does not exist as a regular readable file at the repository root; a missing or unreadable script is a configuration defect, not a content defect, and the exemption is denied.
++- `structural_lint:` names a valid, readable script path but the proposed diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the exemption is denied.
++- `structural_lint:` names a valid, readable script path but the script exits non-zero, indicating the diff contains non-structural content.
+ 
+-The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception review) verifies all five conditions and emits a `severity: high, change_type: correctness` finding for each defect.
++The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception review) verifies all six conditions and emits a `severity: high, change_type: correctness` finding for each defect.
+ 
+ ## Multi-Actor Flow Check
+ 

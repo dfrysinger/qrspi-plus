@@ -1,0 +1,2 @@
+score: 55
+reason: The gap is real and introduced in this round's diff — the test docstring promises joint host= + vendor= + single-line verification but the body only asserts host= (no vendor= grep), while the sibling vendor-check test uses a weak OR pattern and omits the single-line assertion; however the production script always emits both fields, making this a test-quality/docstring mismatch rather than a functional defect, and partial vendor= coverage exists nearby.
