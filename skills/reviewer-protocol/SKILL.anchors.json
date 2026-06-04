@@ -9,7 +9,7 @@
   },
   "Finding Schema": {
     "line_start": 53,
-    "line_end": 82
+    "line_end": 88
   },
   "`finding_id` Uniqueness Rule": {
     "line_start": 69,
@@ -19,68 +19,72 @@
     "line_start": 75,
     "line_end": 82
   },
-  "Change-Type Classifier": {
+  "Evergreen-Output Rule Enforcement": {
     "line_start": 83,
-    "line_end": 134
+    "line_end": 88
+  },
+  "Change-Type Classifier": {
+    "line_start": 89,
+    "line_end": 140
   },
   "style": {
-    "line_start": 100,
-    "line_end": 106
+    "line_start": 106,
+    "line_end": 112
   },
   "clarity": {
-    "line_start": 107,
-    "line_end": 113
+    "line_start": 113,
+    "line_end": 119
   },
   "correctness": {
-    "line_start": 114,
-    "line_end": 120
+    "line_start": 120,
+    "line_end": 126
   },
   "scope": {
-    "line_start": 121,
-    "line_end": 127
+    "line_start": 127,
+    "line_end": 133
   },
   "intent": {
-    "line_start": 128,
-    "line_end": 134
+    "line_start": 134,
+    "line_end": 140
   },
   "Disagreement-Valid Framing": {
-    "line_start": 135,
-    "line_end": 144
+    "line_start": 141,
+    "line_end": 150
   },
   "Informational Findings": {
-    "line_start": 145,
-    "line_end": 158
+    "line_start": 151,
+    "line_end": 164
   },
   "Untrusted Data Handling": {
-    "line_start": 159,
-    "line_end": 198
+    "line_start": 165,
+    "line_end": 204
   },
   "Path A — content read from disk": {
-    "line_start": 165,
-    "line_end": 175
+    "line_start": 171,
+    "line_end": 181
   },
   "Path B — content embedded in the dispatch prompt": {
-    "line_start": 176,
-    "line_end": 198
+    "line_start": 182,
+    "line_end": 204
   },
   "Phase Routing": {
-    "line_start": 199,
-    "line_end": 241
+    "line_start": 205,
+    "line_end": 247
   },
   "Phase Signal — `task_definition`": {
-    "line_start": 208,
-    "line_end": 216
+    "line_start": 214,
+    "line_end": 222
   },
   "Contradiction Refusal (FAIL-LOUD)": {
-    "line_start": 217,
-    "line_end": 226
+    "line_start": 223,
+    "line_end": 232
   },
   "Refusal Procedure": {
-    "line_start": 227,
-    "line_end": 241
+    "line_start": 233,
+    "line_end": 247
   },
   "Quick-Tier Finding Disposition": {
-    "line_start": 242,
-    "line_end": 254
+    "line_start": 248,
+    "line_end": 260
   }
 }
