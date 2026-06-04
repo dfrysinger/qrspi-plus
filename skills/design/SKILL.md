@@ -27,7 +27,7 @@ and the reasoning behind it. Per-goal acceptance criteria are inline in each goa
 Design may include zero or more per-solution diagrams (per goal block or per cross-cutting CD)
 when they aid comprehension of that specific solution. Unified system architecture, file maps,
 module boundaries, and the unified test architecture that stitches per-solution acceptance
-criteria into a coherent test plan are Structure's job (see G35); per-test specification
+criteria into a coherent test plan are Structure's job (see Structure's owns/defers contract); per-test specification
 (per-assertion test code) is Plan's job.
 
 ## Per-goal block template
@@ -205,7 +205,7 @@ When a decision involves multiple actors that hand off to each other, the design
 - **Per-step inputs and outputs** — what each actor receives at each step and what it produces. Cite where outputs are written (stdout, file path, manifest entry, Task tool return value).
 - **Consumer identification** — for every output, name who reads it next. An output with no named consumer is dead and must be removed or its consumer surfaced.
 - **Loud-failure paths** — what happens when each step fails (the step's failure mode, where the failure surfaces, which actor catches it). "Silent fallback" is never the answer — name the diagnostic.
-- **Context-cost call-out** — for any flow that crosses the orchestrator/subagent boundary, explicitly state what enters the orchestrator's context vs. what stays in subagent context or on disk. This is the substrate for G3-class concerns; flows that bloat the orchestrator window without saying so leak prompt content silently.
+- **Context-cost call-out** — for any flow that crosses the orchestrator/subagent boundary, explicitly state what enters the orchestrator's context vs. what stays in subagent context or on disk. This is the substrate for orchestrator-context-budget concerns; flows that bloat the orchestrator window without saying so leak prompt content silently.
 
 **Altitude test.** Ask: "Can Structure / Plan / Implement enumerate the per-round (or per-cycle) orchestrator actions in order, naming inputs and outputs for each step, without inventing sequencing decisions the design failed to commit?"
 - If yes → flow is specified at the right altitude.
