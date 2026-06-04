@@ -190,7 +190,7 @@ run_pin() {
   [ -f "$SKILLS/reviewer-protocol/SKILL.anchors.json" ]
   [ -f "$SKILLS/using-qrspi/SKILL.anchors.json" ]
   [ -f "$SKILLS/plan/SKILL.anchors.json" ]
-  [ -f "$REPO_ROOT/scripts/g4-section-anchor-manifest.json" ]
+  [ -f "$REPO_ROOT/tools/g4-section-anchor-manifest.json" ]
   run run_pin "$PINS/test-section-anchor-index-shape.bats"
   [ "$status" -eq 0 ]
   # narrow-read pin contains 4 T36 expected-failures documenting the T35

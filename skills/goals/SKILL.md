@@ -5,7 +5,7 @@ description: Use when starting a new QRSPI pipeline run — captures user intent
 
 # Goals (QRSPI Step 1)
 
-!`cat ${CLAUDE_SKILL_DIR}/../_shared/precondition-block.md`
+!cat skills/_shared/precondition-block.md
 
 **Announce at start:** "I'm using the QRSPI Goals skill to capture what you want to build."
 

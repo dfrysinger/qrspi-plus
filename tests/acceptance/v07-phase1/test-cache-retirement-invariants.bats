@@ -307,12 +307,15 @@ setup_file() {
 }
 
 @test "[T39/G32] no remaining caller references to scripts/render-skill.sh in source tree" {
-  # Search the source tree (excluding build/, docs/, reviews/, .git, fixtures).
-  run bash -c "grep -RF --exclude-dir=build --exclude-dir=docs --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures 'scripts/render-skill.sh' '$REPO_ROOT' || true"
+  # Search the source tree (excluding build/, docs/, reviews/, .git, fixtures,
+  # and the tests/ subtree which carries this assertion's own bytes plus
+  # neighbor RED-test fixtures that legitimately reference the legacy path
+  # in @test-name strings).
+  run bash -c "grep -RF --exclude-dir=build --exclude-dir=docs --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests 'scripts/render-skill.sh' '$REPO_ROOT' || true"
   [ -z "$output" ]
 }
 
 @test "[T39/G32] no remaining caller references to scripts/g4-section-anchor-refresh.sh in source tree" {
-  run bash -c "grep -RF --exclude-dir=build --exclude-dir=docs --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures 'scripts/g4-section-anchor-refresh.sh' '$REPO_ROOT' || true"
+  run bash -c "grep -RF --exclude-dir=build --exclude-dir=docs --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests 'scripts/g4-section-anchor-refresh.sh' '$REPO_ROOT' || true"
   [ -z "$output" ]
 }
