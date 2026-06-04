@@ -217,6 +217,7 @@ After writing `config.md`, rewrite the Level 1 pipeline tasks to match the route
 Once the conversation settles, launch a **subagent** to synthesize `goals.md`:
 
 **Subagent inputs:**
+- The existing incremental draft `goals.md` on disk (REQUIRED — the draft is the source of truth for pre-compaction locked decisions; the subagent MUST merge this draft with new conversation content rather than re-synthesizing from conversation alone)
 - The conversation content (user's answers to the dialogue questions)
 - This skill's "Goals OWNS / Goals DEFERS" section (the locked scope contract)
 
@@ -289,7 +290,7 @@ status: draft
 
 **Iron Rule (template):** the goals.md output has NO top-level `Out of Scope` section and NO top-level `Success Criteria` / `Acceptance Criteria` section. What isn't a goal isn't in scope; acceptance is owned by Design's Test Strategy and Plan's per-task expectations. If the user volunteers exclusions during dialogue, capture them as constraints (when they shape the solution space) or simply omit them — do NOT reintroduce an `Out of Scope` heading.
 
-**Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Emitting only some of them (e.g. omitting `Why we care` because the answer feels obvious) is a synthesis defect, not a permitted shortcut. If the user did not articulate one of the three during dialogue, write a one-sentence honest placeholder under that subsection (e.g. under `Why we care`: "Impact not yet articulated — Design should probe before committing solution work.") rather than dropping the heading. Likewise, do NOT add a fourth subsection under any goal — additional content belongs in `What we know so far` or in a Constraint, not a new heading.
+**Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Emitting only some of them (e.g. omitting `Why we care` because the answer feels obvious) is a synthesis defect, not a permitted shortcut. If the user did not articulate one of the three during dialogue, re-enter dialogue to obtain the missing content before persisting the goal block — do NOT write a placeholder, partial, or tentative body (presence ≡ locked; a goal block in the artifact asserts the goal is fully settled). Likewise, do NOT add a fourth subsection under any goal — additional content belongs in `What we know so far` or in a Constraint, not a new heading.
 
 **Iron Rule (type field — concrete value).** Emit ONE concrete value for each goal's `type` field — either `known-fix` OR `exploratory`. NEVER emit the alternation literal `known-fix | exploratory` (that string appears in the template as a placeholder showing the allowed values; it is not a valid output). If uncertain which applies, default to `exploratory` and explain the uncertainty under that goal's `What we know so far` subsection.
 

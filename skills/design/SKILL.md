@@ -328,6 +328,7 @@ Do NOT proceed to Structure without user approval of the design.
 Once the discussion settles, launch a **subagent** to synthesize `design.md`.
 
 **Subagent inputs:**
+- The existing incremental draft `design.md` on disk (REQUIRED — the draft is the source of truth for pre-compaction locked decisions; the subagent MUST merge this draft with new conversation content rather than re-synthesizing from conversation alone)
 - `goals.md`
 - `research/summary.md`
 - A summary of the design discussion (key decisions, user preferences, chosen approach)

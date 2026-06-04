@@ -161,7 +161,9 @@ setup() {
 
 @test "goals/SKILL.md finalize pass flips status: draft to approved" {
   grep -F "finalize" "$REPO_ROOT/skills/goals/SKILL.md"
-  grep -F "status: draft" "$REPO_ROOT/skills/goals/SKILL.md" | grep -qF "approved"
+  # Pin a finalize-block-unique phrase so this test fails if the finalize block is deleted
+  # but the mid-phase prohibition line (which also contains "status: draft" and "approved") remains.
+  grep -F "Validate that every locked goal" "$REPO_ROOT/skills/goals/SKILL.md"
 }
 
 @test "design/SKILL.md finalize pass flips status: draft to approved-pending-review" {
@@ -214,4 +216,31 @@ setup() {
   grep -F "Problem" "$REPO_ROOT/skills/goals/SKILL.md"
   grep -F "Why we care" "$REPO_ROOT/skills/goals/SKILL.md"
   grep -F "What we know so far" "$REPO_ROOT/skills/goals/SKILL.md"
+}
+
+# ---------------------------------------------------------------------------
+# sf-F01: Synthesis subagents must include on-disk incremental draft as input
+# and instruct merge-with-draft rather than re-synthesizing from conversation.
+# ---------------------------------------------------------------------------
+
+@test "goals/SKILL.md synthesis subagent lists on-disk incremental draft as a REQUIRED input" {
+  # The synthesis subagent inputs section must explicitly list the incremental draft
+  # so that pre-compaction locked decisions survive a /compact + resume cycle.
+  grep -F "MUST merge" "$REPO_ROOT/skills/goals/SKILL.md"
+}
+
+@test "design/SKILL.md synthesis subagent lists on-disk incremental draft as a REQUIRED input" {
+  # Same requirement for the Design synthesis subagent.
+  grep -F "MUST merge" "$REPO_ROOT/skills/design/SKILL.md"
+}
+
+# ---------------------------------------------------------------------------
+# sf-F02: Iron Rule must align with presence-as-locked — re-enter dialogue
+# for missing subsections, not write placeholders.
+# ---------------------------------------------------------------------------
+
+@test "goals/SKILL.md Iron Rule directs re-enter dialogue for missing subsections (not placeholder)" {
+  # The Iron Rule (three subsections) must instruct re-entering dialogue rather than
+  # emitting a placeholder, which would violate the presence-as-locked contract.
+  grep -F "re-enter dialogue" "$REPO_ROOT/skills/goals/SKILL.md"
 }
