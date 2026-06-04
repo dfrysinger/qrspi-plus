@@ -27,108 +27,132 @@
     "line_start": 59,
     "line_end": 80
   },
-  "Process": {
+  "Schema-Migration Task Shape": {
     "line_start": 81,
-    "line_end": 506
+    "line_end": 124
+  },
+  "When to use this shape": {
+    "line_start": 85,
+    "line_end": 94
+  },
+  "Mandatory trio — all three fields required together": {
+    "line_start": 95,
+    "line_end": 102
+  },
+  "Effect on sizing limits": {
+    "line_start": 103,
+    "line_end": 111
+  },
+  "Plan-spec defects": {
+    "line_start": 112,
+    "line_end": 124
+  },
+  "Multi-Actor Flow Check": {
+    "line_start": 125,
+    "line_end": 128
+  },
+  "Process": {
+    "line_start": 129,
+    "line_end": 554
   },
   "Plan Overview Subagent": {
-    "line_start": 83,
-    "line_end": 115
+    "line_start": 131,
+    "line_end": 163
   },
   "Quick-Fix Plan Behavior": {
-    "line_start": 116,
-    "line_end": 127
+    "line_start": 164,
+    "line_end": 175
   },
   "Sub-Subagent Dispatch (Large Plans Only)": {
-    "line_start": 128,
-    "line_end": 150
+    "line_start": 176,
+    "line_end": 198
   },
   "Per-Task Classification (`task_type` and `tier`)": {
-    "line_start": 151,
-    "line_end": 192
+    "line_start": 199,
+    "line_end": 240
   },
   "Plan Document Structure (During Review)": {
-    "line_start": 193,
-    "line_end": 256
+    "line_start": 241,
+    "line_end": 304
   },
   "Project Environment Fields": {
-    "line_start": 257,
-    "line_end": 265
+    "line_start": 305,
+    "line_end": 313
   },
   "Plan Reviewer Agents": {
-    "line_start": 266,
-    "line_end": 281
+    "line_start": 314,
+    "line_end": 329
   },
   "Review Round": {
-    "line_start": 282,
-    "line_end": 315
+    "line_start": 330,
+    "line_end": 363
   },
   "Human Gate": {
-    "line_start": 316,
-    "line_end": 350
+    "line_start": 364,
+    "line_end": 398
   },
   "Quick-Fix Auto-Approve Branch": {
-    "line_start": 351,
-    "line_end": 368
+    "line_start": 399,
+    "line_end": 416
   },
   "Merge/Split Mechanics": {
-    "line_start": 369,
-    "line_end": 432
+    "line_start": 417,
+    "line_end": 480
   },
   "SPEC OVERRIDES SOURCE authority": {
-    "line_start": 433,
-    "line_end": 438
-  },
-  "Refuse-to-Write Contract": {
-    "line_start": 439,
-    "line_end": 453
-  },
-  "Migration: `visual_fidelity_check.ui_producing` → top-level `ui:`": {
-    "line_start": 454,
-    "line_end": 481
-  },
-  "Artifacts": {
-    "line_start": 482,
+    "line_start": 481,
     "line_end": 486
   },
-  "`phase_start_commit` capture at approval time": {
+  "Refuse-to-Write Contract": {
     "line_start": 487,
-    "line_end": 494
+    "line_end": 501
+  },
+  "Migration: `visual_fidelity_check.ui_producing` → top-level `ui:`": {
+    "line_start": 502,
+    "line_end": 529
+  },
+  "Artifacts": {
+    "line_start": 530,
+    "line_end": 534
+  },
+  "`phase_start_commit` capture at approval time": {
+    "line_start": 535,
+    "line_end": 542
   },
   "Terminal State": {
-    "line_start": 495,
-    "line_end": 506
+    "line_start": 543,
+    "line_end": 554
   },
   "Test Expectations": {
-    "line_start": 507,
-    "line_end": 586
+    "line_start": 555,
+    "line_end": 634
   },
   "Sweep Task Contract": {
-    "line_start": 513,
-    "line_end": 546
+    "line_start": 561,
+    "line_end": 594
   },
   "Cross-Task Consumer Surface": {
-    "line_start": 547,
-    "line_end": 586
+    "line_start": 595,
+    "line_end": 634
   },
   "Red Flags — STOP": {
-    "line_start": 587,
-    "line_end": 615
+    "line_start": 635,
+    "line_end": 663
   },
   "Visual-fidelity hard-gate (pre-fanout refusal condition)": {
-    "line_start": 606,
-    "line_end": 615
+    "line_start": 654,
+    "line_end": 663
   },
   "Common Rationalizations — STOP": {
-    "line_start": 616,
-    "line_end": 629
+    "line_start": 664,
+    "line_end": 677
   },
   "Worked Example": {
-    "line_start": 630,
-    "line_end": 667
+    "line_start": 678,
+    "line_end": 715
   },
   "Iron Laws — Final Reminder": {
-    "line_start": 668,
-    "line_end": 678
+    "line_start": 716,
+    "line_end": 726
   }
 }
