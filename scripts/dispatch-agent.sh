@@ -420,8 +420,8 @@ emit_dispatch_manifest_entry() {
     --arg host      "$detected_host" \
     --arg vendor    "openai-codex" \
     --arg model     "$MODEL" \
-    --arg await_cmd "scripts/dispatch-companion.sh await $job_id" \
-    --arg split_cmd "scripts/third-party-finding-splitter.sh --round-dir $OUTPUT_DIR --tag $REVIEWER_TAG" \
+    --arg await_cmd "$REPO_ROOT/scripts/dispatch-companion.sh await $job_id" \
+    --arg split_cmd "$REPO_ROOT/scripts/third-party-finding-splitter.sh --round-dir $OUTPUT_DIR --tag $REVIEWER_TAG" \
     '{tag: $tag, agent: $agent, mode: $mode, status: $status, job_id: $job_id,
       dispatch_spec: {subagent_type: $subtype, host: $host, vendor: $vendor, model: $model},
       await_cmd: $await_cmd, split_cmd: $split_cmd}')" \
