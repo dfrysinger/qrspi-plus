@@ -702,7 +702,7 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       # job-id and await-round.sh could never drain the entry.
       _launch_out=""
       _launch_rc=0
-      _launch_out=$("$REPO_ROOT/scripts/dispatch-companion.sh" launch \
+      _launch_out=$("$REPO_ROOT/scripts/dispatch-companion.sh" \
         --vendor "$_vendor" \
         --model "$_model" \
         --prompt-file "$_prompt_file" \

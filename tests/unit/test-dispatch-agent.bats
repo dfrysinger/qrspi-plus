@@ -1096,3 +1096,62 @@ EOF
   rm -rf "$round_dir"
   [ "$manifest_exists" -eq 1 ]
 }
+
+# Test expectation: end-to-end batched dispatch of a third-party (codex) reviewer
+# tag launches dispatch-companion via its real CLI shape and records a manifest
+# entry whose job_id field is non-empty (i.e. a real broker-issued id captured
+# from the companion's `JOB_ID=<id>` stdout line). This is the falsifiable
+# end-to-end smoke for the launch-and-await wiring contract — task-20.md DoD
+# bullet 3 (dispatch-companion launch+await contract) and Test expectations
+# bullet (companion/splitter coverage). It exercises the BATCHED path that
+# `dispatch-agent.sh --agents` actually uses (not just the companion in
+# isolation) so any caller-vs-callee CLI-shape mismatch in the launch
+# invocation surfaces here as an empty job_id in the manifest.
+@test "task-20 end-to-end: --agents batched dispatch of third-party tag records non-empty job_id in manifest" {
+  [ -f "$REPO_ROOT/scripts/dispatch-companion.sh" ]
+  [ -f "$REPO_ROOT/tests/fixtures/stub-codex-companion.mjs" ]
+
+  local round_dir
+  round_dir="$(mktemp -d)"
+
+  # Force host detection to claude-code so codex routes through the third-party
+  # path (claude-code:codex → third-party per _resolve-lib.sh::lookup_host_vendor_path).
+  # Without this, a developer machine with COPILOT_CLI=1 would resolve to
+  # copilot-cli:codex (first-party) and skip the launch invocation under test.
+  unset COPILOT_CLI
+
+  # Wire the codex broker to the stub so the launch path completes deterministically
+  # and prints a recognisable JOB_ID without invoking real codex.
+  export CODEX_COMPANION="$REPO_ROOT/tests/fixtures/stub-codex-companion.mjs"
+  export STUB_STATE_FILE="$round_dir/stub-state.json"
+  export QRSPI_CODEX_POLL_INTERVAL_FAST=1
+  export QRSPI_CODEX_POLL_INTERVAL_SLOW=1
+  export QRSPI_CODEX_POLL_BACKOFF_AFTER=2
+  export QRSPI_CODEX_CEILING_SECONDS=10
+  export QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS=5
+
+  # spec-codex tag suffix routes vendor=codex; default detected host claude-code
+  # routes claude-code:codex through the third-party path (per
+  # _resolve-lib.sh::lookup_host_vendor_path).
+  "$WRAPPER" \
+    --step spec \
+    --round 1 \
+    --output-dir "$round_dir" \
+    --artifact "$TMP_DIR/plan.md" \
+    --agents "spec-codex=$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    >/dev/null 2>&1 || true
+
+  local manifest="$round_dir/.dispatch-manifest.json"
+  [ -f "$manifest" ]
+
+  # The third-party launch must have produced exactly one entry for spec-codex
+  # whose job_id is non-empty. An empty job_id indicates the launch invocation
+  # failed (e.g., CLI-shape mismatch between dispatch-agent and
+  # dispatch-companion) and the manifest carries a `failed` placeholder.
+  local job_id
+  job_id="$(jq -r '.[] | select(.tag=="spec-codex") | .job_id' "$manifest" 2>/dev/null | head -1)"
+  rm -rf "$round_dir"
+
+  [ -n "$job_id" ]
+  [ "$job_id" != "null" ]
+}
