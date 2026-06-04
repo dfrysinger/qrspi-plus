@@ -29,106 +29,106 @@
   },
   "Process": {
     "line_start": 81,
-    "line_end": 498
+    "line_end": 504
   },
   "Plan Overview Subagent": {
     "line_start": 83,
-    "line_end": 113
+    "line_end": 115
   },
   "Quick-Fix Plan Behavior": {
-    "line_start": 114,
-    "line_end": 125
+    "line_start": 116,
+    "line_end": 127
   },
   "Sub-Subagent Dispatch (Large Plans Only)": {
-    "line_start": 126,
-    "line_end": 146
+    "line_start": 128,
+    "line_end": 150
   },
   "Per-Task Classification (`task_type` and `tier`)": {
-    "line_start": 147,
-    "line_end": 186
+    "line_start": 151,
+    "line_end": 192
   },
   "Plan Document Structure (During Review)": {
-    "line_start": 187,
-    "line_end": 248
+    "line_start": 193,
+    "line_end": 254
   },
   "Project Environment Fields": {
-    "line_start": 249,
-    "line_end": 257
+    "line_start": 255,
+    "line_end": 263
   },
   "Plan Reviewer Agents": {
-    "line_start": 258,
-    "line_end": 273
+    "line_start": 264,
+    "line_end": 279
   },
   "Review Round": {
-    "line_start": 274,
-    "line_end": 307
+    "line_start": 280,
+    "line_end": 313
   },
   "Human Gate": {
-    "line_start": 308,
-    "line_end": 342
+    "line_start": 314,
+    "line_end": 348
   },
   "Quick-Fix Auto-Approve Branch": {
-    "line_start": 343,
-    "line_end": 360
+    "line_start": 349,
+    "line_end": 366
   },
   "Merge/Split Mechanics": {
-    "line_start": 361,
-    "line_end": 424
-  },
-  "SPEC OVERRIDES SOURCE authority": {
-    "line_start": 425,
+    "line_start": 367,
     "line_end": 430
   },
-  "Refuse-to-Write Contract": {
+  "SPEC OVERRIDES SOURCE authority": {
     "line_start": 431,
-    "line_end": 445
+    "line_end": 436
+  },
+  "Refuse-to-Write Contract": {
+    "line_start": 437,
+    "line_end": 451
   },
   "Migration: `visual_fidelity_check.ui_producing` → top-level `ui:`": {
-    "line_start": 446,
-    "line_end": 473
+    "line_start": 452,
+    "line_end": 479
   },
   "Artifacts": {
-    "line_start": 474,
-    "line_end": 478
+    "line_start": 480,
+    "line_end": 484
   },
   "`phase_start_commit` capture at approval time": {
-    "line_start": 479,
-    "line_end": 486
+    "line_start": 485,
+    "line_end": 492
   },
   "Terminal State": {
-    "line_start": 487,
-    "line_end": 498
+    "line_start": 493,
+    "line_end": 504
   },
   "Test Expectations": {
-    "line_start": 499,
-    "line_end": 578
+    "line_start": 505,
+    "line_end": 584
   },
   "Sweep Task Contract": {
-    "line_start": 505,
-    "line_end": 538
+    "line_start": 511,
+    "line_end": 544
   },
   "Cross-Task Consumer Surface": {
-    "line_start": 539,
-    "line_end": 578
+    "line_start": 545,
+    "line_end": 584
   },
   "Red Flags — STOP": {
-    "line_start": 579,
-    "line_end": 607
+    "line_start": 585,
+    "line_end": 613
   },
   "Visual-fidelity hard-gate (pre-fanout refusal condition)": {
-    "line_start": 598,
-    "line_end": 607
+    "line_start": 604,
+    "line_end": 613
   },
   "Common Rationalizations — STOP": {
-    "line_start": 608,
-    "line_end": 621
+    "line_start": 614,
+    "line_end": 627
   },
   "Worked Example": {
-    "line_start": 622,
-    "line_end": 659
+    "line_start": 628,
+    "line_end": 665
   },
   "Iron Laws — Final Reminder": {
-    "line_start": 660,
-    "line_end": 670
+    "line_start": 666,
+    "line_end": 676
   }
 }

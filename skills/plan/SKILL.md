@@ -93,6 +93,8 @@ A task that fails any floor check merges into the parent task that gives it obse
 
 1. Break structure into ordered tasks following vertical slices and phases from `design.md`
 
+**PRECONDITION:** `skills/_shared/prompt-prose-detection.md`, `skills/_shared/prompt-prose-writer-addition.md`, and `skills/_shared/prompt-prose-test-expectations-clause.md` MUST exist on disk; halt the subagent with a named diagnostic if any required shared file is missing rather than proceeding with empty include content.
+
 !cat skills/_shared/prompt-prose-detection.md
 
 !cat skills/_shared/prompt-prose-writer-addition.md
@@ -136,6 +138,8 @@ For large plans, farm task spec writing to sub-subagents:
 - Relevant sections of `structure.md`
 - `design.md` (for test strategy and vertical slice context)
 
+**PRECONDITION:** `skills/_shared/prompt-prose-detection.md`, `skills/_shared/prompt-prose-writer-addition.md`, and `skills/_shared/prompt-prose-test-expectations-clause.md` MUST exist on disk; halt the subagent with a named diagnostic if any required shared file is missing rather than proceeding with empty include content.
+
 !cat skills/_shared/prompt-prose-detection.md
 
 !cat skills/_shared/prompt-prose-writer-addition.md
@@ -163,6 +167,8 @@ Specs for `task_type: lightweight` tasks omit this note (no test-writer, no RED 
 **Step 1 — Classify each task as `code` or `lightweight`.** Default `task_type: code`.
 
 Assign `task_type: lightweight` when the task's primary deliverable is prompt prose OR non-prompt prose / docs / config that has no executable behavior to test.
+
+**PRECONDITION:** `skills/_shared/prompt-prose-detection.md` MUST exist on disk; halt the subagent with a named diagnostic if the shared file is missing rather than proceeding with empty include content.
 
 !cat skills/_shared/prompt-prose-detection.md
 

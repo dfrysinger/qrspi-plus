@@ -37,7 +37,7 @@ Findings emission follows the disk-write contract from the reviewer-protocol ski
 
 **Scope: only `task_type: code` tasks.** Skip evaluation of any task with `task_type: lightweight` — those tasks (prose, prompts, docs, config) have no executable RED gate by design, and applying RED-gate coverage criteria to them would emit false-positive findings ("missing failing test"). The plan-test-coverage-reviewer's domain is the subset of tasks where test execution IS the verification mechanism; for prompt-prose tasks, verification flows through `qrspi-code-quality-reviewer` / `qrspi-design-reviewer` content-semantic rules application, evaluated separately.
 
-Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare lightweight task Test Expectations to RED-gate criteria. Silently skip lightweight task sections.
+Do NOT emit findings about missing tests for lightweight tasks. Do NOT compare lightweight task Test Expectations to RED-gate criteria. Skip lightweight task sections AND append a `skipped_lightweight_tasks: [task-NN, task-MM, …]` entry (with each task's `task_type` value) to the clean sentinel (or, when emitting findings for non-lightweight tasks, include the same list as a SKIP-RECORD note) so the pipeline audit trail can verify classifications.
 
 For each category, examine every task's test expectations section.
 When you find a problem, note the task number and explain what test scenario

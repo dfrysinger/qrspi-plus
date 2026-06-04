@@ -76,6 +76,8 @@ Once the discussion settles, launch a **subagent** to synthesize `design.md`.
 
 **Prompt-prose authoring step.** When the synthesis subagent authors `<!-- prose-design: target -->` blocks (verbatim prompt-prose destined for an LLM-consumable file), apply the detection and writer rules:
 
+**PRECONDITION:** `skills/_shared/prompt-prose-detection.md` and `skills/_shared/prompt-prose-writer-addition.md` MUST exist on disk; halt the subagent with a named diagnostic if any required shared file is missing rather than proceeding with empty include content.
+
 !cat skills/_shared/prompt-prose-detection.md
 
 !cat skills/_shared/prompt-prose-writer-addition.md
