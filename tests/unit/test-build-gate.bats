@@ -162,9 +162,15 @@ JSON
   printf 'CRLF_LINE\r\nNEXT\r\n' >"$root/skills/sample/crlf.md"
   run _t39_run_build "$root"
   [ "$status" -eq 0 ]
-  # No CR bytes should appear in the built file.
-  run grep -U $'\r' "$root/build/skills/sample/SKILL.md"
-  [ "$status" -ne 0 ]
+  # No CR bytes should appear in the built file. R3 fix tc-F05: replaced
+  # `grep -U $'\r'` (GNU-only `-U` makes the assertion vacuously pass on
+  # BSD/BusyBox grep) with a size-diff check using `tr -d '\r'`, which is
+  # portable across bash 3.2 + BSD/GNU/BusyBox.
+  local _bg_built="$root/build/skills/sample/SKILL.md"
+  local _bg_sz_with _bg_sz_without
+  _bg_sz_with=$(wc -c <"$_bg_built")
+  _bg_sz_without=$(tr -d '\r' <"$_bg_built" | wc -c)
+  [ "$_bg_sz_with" -eq "$_bg_sz_without" ]
 }
 
 @test "[T39/G32] resolver: directive line is replaced 1:1 with include content (no extra blank lines)" {
@@ -413,4 +419,49 @@ L3" ]
   [ "$status" -eq 0 ]
   run grep -F 'git diff --exit-code build/' "$REPO_ROOT/.github/workflows/ci.yml"
   [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# Round-3 hardening (tc-F03): SECRET_BASENAME_PATTERNS denylist coverage.
+# Plant secret/credential basenames inside fixture source roots and assert
+# the build fails non-zero with a diagnostic naming the offending file.
+# Covers both call paths through which the denylist fires:
+#   - recurseDir (nested under a manifest dir like skills/ or scripts/)
+#   - recurseDir at a manifest-dir top level (.claude-plugin/)
+# Both paths flow through `isSecretBasename(entry.name)` in recurseDir.
+# ---------------------------------------------------------------------------
+@test "[T39/G32] denylist: .env in skills/ subtree is rejected with file path in diagnostic" {
+  local root="$BATS_TEST_TMPDIR/denylist-env"
+  _t39_stage_root "$root" "# clean"$'\n'
+  printf 'SECRET=value\n' >"$root/skills/sample/.env"
+  run _t39_run_build "$root"
+  [ "$status" -ne 0 ]
+  # Diagnostic must name the offending file path so the contributor can
+  # locate and remove it (or git rm + rebuild).
+  echo "$output" | grep -F 'skills/sample/.env'
+  echo "$output" | grep -E -i 'denylist|secret|refused'
+  # No build/ output should have been created for the offending path.
+  [ ! -e "$root/build/skills/sample/.env" ]
+}
+
+@test "[T39/G32] denylist: id_rsa in scripts/ subtree is rejected with file path in diagnostic" {
+  local root="$BATS_TEST_TMPDIR/denylist-id-rsa"
+  _t39_stage_root "$root" "# clean"$'\n'
+  printf 'BEGIN OPENSSH PRIVATE KEY\n' >"$root/scripts/id_rsa"
+  run _t39_run_build "$root"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -F 'scripts/id_rsa'
+  echo "$output" | grep -E -i 'denylist|secret|refused'
+  [ ! -e "$root/build/scripts/id_rsa" ]
+}
+
+@test "[T39/G32] denylist: *.pem in .claude-plugin/ is rejected with file path in diagnostic" {
+  local root="$BATS_TEST_TMPDIR/denylist-pem"
+  _t39_stage_root "$root" "# clean"$'\n'
+  printf -- '-----BEGIN CERTIFICATE-----\n' >"$root/.claude-plugin/server.pem"
+  run _t39_run_build "$root"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -F '.claude-plugin/server.pem'
+  echo "$output" | grep -E -i 'denylist|secret|refused'
+  [ ! -e "$root/build/.claude-plugin/server.pem" ]
 }

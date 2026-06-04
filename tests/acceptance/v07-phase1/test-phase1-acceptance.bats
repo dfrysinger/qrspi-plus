@@ -3127,3 +3127,72 @@ JQ_EOF
   [ "$status" -eq 0 ]
   [ "$output" -ge 2 ]
 }
+
+# ---------------------------------------------------------------------------
+# Round-3 hardening (tc-F01): the two existence tests above only assert that
+# the fixtures sit on disk — they never invoke the resolver against them and
+# never verify the spec-required diagnostic phrasing (task-39 line 70: "with
+# the required diagnostics"). The two tests below close that gap by staging
+# each fixture's content into a minimal source root and actually running
+# `node tools/build-plugin.mjs` against it, asserting non-zero exit + the
+# load-bearing diagnostic phrase.
+#
+# Why stage rather than `--root tests/fixtures/...` directly: the resolver
+# requires a manifest-shaped source root (skills/ + .claude-plugin/ + LICENSE
+# + README.md) that the bare fixture dirs intentionally do not provide.
+# Staging keeps the fixture dirs minimal (their canonical purpose is to hold
+# the offending content) while still exercising the documented `--root` CLI
+# surface against fixture-sourced bytes.
+# ---------------------------------------------------------------------------
+
+@test "[T39/G32 acceptance] resolver fails non-zero with \${CLAUDE_SKILL_DIR} diagnostic when invoked against legacy-claude-skill-dir fixture content" {
+  local fixture="$REPO_ROOT/tests/fixtures/build-resolver/legacy-claude-skill-dir/README.md"
+  [ -f "$fixture" ]
+  local root="$BATS_TEST_TMPDIR/legacy-fixture-root"
+  mkdir -p "$root/.claude-plugin" "$root/skills/legacy-fixture"
+  cat >"$root/.claude-plugin/plugin.json" <<JSON
+{ "name": "qrspi-fixture", "version": "0.0.0", "skills": ["./skills"] }
+JSON
+  : >"$root/LICENSE"
+  : >"$root/README.md"
+  # Stage the fixture content as a shipped skill body; the legacy
+  # \${CLAUDE_SKILL_DIR} token in the fixture must trip the build's
+  # legacy-token gate during expansion.
+  cp "$fixture" "$root/skills/legacy-fixture/SKILL.md"
+  run bash -c "node '$REPO_ROOT/tools/build-plugin.mjs' --root '$root' --out '$root/build' 2>&1"
+  [ "$status" -ne 0 ]
+  # Required diagnostic: must name the legacy token.
+  echo "$output" | grep -F 'CLAUDE_SKILL_DIR'
+  # Diagnostic must include file:line so the author can locate the offense.
+  echo "$output" | grep -E 'SKILL\.md:[0-9]+'
+  # And must phrase the rejection (legacy form / shipped file).
+  echo "$output" | grep -E -i 'legacy|shipped|forbidden|occurrence'
+}
+
+@test "[T39/G32 acceptance] resolver fails non-zero with cycle diagnostic (full chain) when invoked against include-cycle fixture content" {
+  local fa="$REPO_ROOT/tests/fixtures/build-resolver/include-cycle/a.md"
+  local fb="$REPO_ROOT/tests/fixtures/build-resolver/include-cycle/b.md"
+  [ -f "$fa" ]
+  [ -f "$fb" ]
+  local root="$BATS_TEST_TMPDIR/cycle-fixture-root"
+  mkdir -p "$root/.claude-plugin" "$root/skills/cycle-fixture"
+  # Replicate the fixture pair at paths the fixture's bare-relative !cat
+  # directives expect (`tests/fixtures/build-resolver/include-cycle/{a,b}.md`).
+  mkdir -p "$root/tests/fixtures/build-resolver/include-cycle"
+  cp "$fa" "$root/tests/fixtures/build-resolver/include-cycle/a.md"
+  cp "$fb" "$root/tests/fixtures/build-resolver/include-cycle/b.md"
+  cat >"$root/.claude-plugin/plugin.json" <<JSON
+{ "name": "qrspi-fixture", "version": "0.0.0", "skills": ["./skills"] }
+JSON
+  : >"$root/LICENSE"
+  : >"$root/README.md"
+  # Shipped skill that enters the cycle via the fixture's first hop.
+  printf '# Entry\n!cat tests/fixtures/build-resolver/include-cycle/a.md\n' \
+    >"$root/skills/cycle-fixture/SKILL.md"
+  run bash -c "node '$REPO_ROOT/tools/build-plugin.mjs' --root '$root' --out '$root/build' 2>&1"
+  [ "$status" -ne 0 ]
+  # Required diagnostic: cycle / circular keyword + FULL chain (both files).
+  echo "$output" | grep -E -i 'cycle|circular'
+  echo "$output" | grep -F 'tests/fixtures/build-resolver/include-cycle/a.md'
+  echo "$output" | grep -F 'tests/fixtures/build-resolver/include-cycle/b.md'
+}

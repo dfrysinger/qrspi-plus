@@ -307,15 +307,21 @@ setup_file() {
 }
 
 @test "[T39/G32] no remaining caller references to scripts/render-skill.sh in source tree" {
-  # Search the source tree (excluding build/, docs/, reviews/, .git, fixtures,
-  # and the tests/ subtree which carries this assertion's own bytes plus
-  # neighbor RED-test fixtures that legitimately reference the legacy path
-  # in @test-name strings).
-  run bash -c "grep -RF --exclude-dir=build --exclude-dir=docs --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests 'scripts/render-skill.sh' '$REPO_ROOT' || true"
+  # Tightened pattern (R3 fix tc-F02): match invocation forms only — `bash
+  # scripts/render-skill.sh` or `./scripts/render-skill.sh`. Bare path
+  # strings in historical narrative no longer false-positive, but actual
+  # stale callers do. `--exclude-dir=docs` is intentionally dropped so docs
+  # that document today's workflow are gated against pointing at the
+  # retired path. `--exclude-dir=fixtures` and `--exclude-dir=tests` remain
+  # because the tests subtree carries this assertion's own bytes plus
+  # neighbor RED-test name strings that legitimately reference the legacy
+  # path.
+  run bash -c "grep -RnE --exclude-dir=build --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests '(bash[[:space:]]+|\\./)scripts/render-skill\\.sh' '$REPO_ROOT' || true"
   [ -z "$output" ]
 }
 
 @test "[T39/G32] no remaining caller references to scripts/g4-section-anchor-refresh.sh in source tree" {
-  run bash -c "grep -RF --exclude-dir=build --exclude-dir=docs --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests 'scripts/g4-section-anchor-refresh.sh' '$REPO_ROOT' || true"
+  # Tightened pattern (R3 fix tc-F02): see neighbor render-skill.sh test.
+  run bash -c "grep -RnE --exclude-dir=build --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests '(bash[[:space:]]+|\\./)scripts/g4-section-anchor-refresh\\.sh' '$REPO_ROOT' || true"
   [ -z "$output" ]
 }
