@@ -110,20 +110,20 @@ jobs:
         run: git config --global --add safe.directory '*'
 
       - name: Run BATS suites (recursive over tests/)
-        # T39 / G32: walk tests/ recursively so any new top-level subtree
+        # Walk tests/ recursively so any new top-level subtree
         # (e.g. tests/lint/) lands on the same blocking path as
         # tests/unit/ and tests/acceptance/. `bats -r tests` discovers
         # *.bats under any subdirectory.
         run: bats --tap -r tests
 
       - name: Build-sync gate — node tools/build-plugin.mjs
-        # T39 / G32: rebuild the committed `build/` plugin tree from
+        # Rebuild the committed `build/` plugin tree from
         # source. Must precede the diff gate below so the diff can compare
         # the freshly-rebuilt tree against what the PR branch shipped.
         run: node tools/build-plugin.mjs
 
       - name: Build-sync gate — git diff --exit-code build/ + marketplace.json
-        # T39 / G32: PR-blocking failure mode if `build/` on the branch
+        # PR-blocking failure mode if `build/` on the branch
         # differs from what the resolver produces from current source, or
         # if `.claude-plugin/marketplace.json` was not refreshed alongside
         # a source change. Fix locally with `node tools/build-plugin.mjs`

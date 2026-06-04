@@ -285,6 +285,82 @@ L3" ]
 # Asserted at the workflow-text level here; the live behavior is exercised
 # by tests/unit/test-ci-workflow-shape.bats.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Round-2 hardening: --out cannot resolve to the repository root, nor to any
+# ancestor directory of the repository root. The wipe step
+# (`fs.rmSync(outDirAbs, {recursive:true, force:true})`) would otherwise
+# erase the working tree (including .git) silently — `force:true` swallows
+# errors. Guard must fire BEFORE any rmSync call.
+# ---------------------------------------------------------------------------
+@test "[T39/G32] fail-loud: --out resolving to repo root rejected before any rmSync" {
+  local root="$BATS_TEST_TMPDIR/out-is-root"
+  _t39_stage_root "$root" "# sample"$'\n'
+  # Sentinel file at the source root — must remain after the failed run.
+  printf 'SENTINEL\n' >"$root/CANARY.txt"
+  run _t39_run_build "$root" "$root"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -E -i 'repository root|cannot.*root|--out'
+  # Source tree must still be intact: rmSync must not have wiped the root.
+  [ -f "$root/CANARY.txt" ]
+  [ -f "$root/.claude-plugin/plugin.json" ]
+  [ -f "$root/skills/sample/SKILL.md" ]
+}
+
+@test "[T39/G32] fail-loud: --out resolving to an ancestor of repo root rejected" {
+  local parent="$BATS_TEST_TMPDIR/anc-parent"
+  local root="$parent/repo"
+  mkdir -p "$parent"
+  _t39_stage_root "$root" "# sample"$'\n'
+  printf 'PARENT_CANARY\n' >"$parent/PARENT_CANARY.txt"
+  run _t39_run_build "$root" "$parent"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -E -i 'repository root|ancestor|--out'
+  [ -f "$parent/PARENT_CANARY.txt" ]
+  [ -f "$root/skills/sample/SKILL.md" ]
+}
+
+# ---------------------------------------------------------------------------
+# Round-2 hardening: legacy `${CLAUDE_SKILL_DIR}` must be rejected in NON-.md
+# shipped files too (scripts/*.sh, templates/*, .claude-plugin/*.json).
+# Original implementation only scanned expanded .md files; non-.md content
+# bypassed the guard.
+# ---------------------------------------------------------------------------
+@test "[T39/G32] fail-loud: \${CLAUDE_SKILL_DIR} in shipped non-.md file rejected" {
+  local root="$BATS_TEST_TMPDIR/legacy-non-md"
+  _t39_stage_root "$root" "# clean"$'\n'
+  # Place legacy token in a shipped shell script.
+  printf '#!/usr/bin/env bash\necho "${CLAUDE_SKILL_DIR}/foo"\n' \
+    >"$root/scripts/legacy-helper.sh"
+  chmod +x "$root/scripts/legacy-helper.sh"
+  run _t39_run_build "$root"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -F 'CLAUDE_SKILL_DIR'
+  echo "$output" | grep -F 'scripts/legacy-helper.sh'
+}
+
+# ---------------------------------------------------------------------------
+# Round-2 hardening: include depth cap defends against billion-laughs
+# diamond-expansion DoS. Cycle-stack alone catches direct ancestor cycles
+# but does not bound non-cyclic deep nesting.
+# ---------------------------------------------------------------------------
+@test "[T39/G32] fail-loud: include depth cap rejects pathologically deep nesting" {
+  local root="$BATS_TEST_TMPDIR/deep"
+  _t39_stage_root "$root" "TOP"$'\n'"!cat skills/sample/n00.md"$'\n'
+  # Build a 24-level linear chain: n00 -> n01 -> ... -> n23 -> leaf.
+  # Cap is around ~16, so this must trip.
+  local i
+  for i in $(seq 0 23); do
+    local nxt
+    nxt=$(printf 'n%02d' $((i + 1)))
+    printf 'L%02d\n!cat skills/sample/%s.md\n' "$i" "$nxt" \
+      >"$root/skills/sample/$(printf 'n%02d' "$i").md"
+  done
+  printf 'LEAF\n' >"$root/skills/sample/n24.md"
+  run _t39_run_build "$root"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -E -i 'depth|too deep|nesting'
+}
+
 @test "[T39/G32] CI workflow text references node tools/build-plugin.mjs in the build-sync gate failure path" {
   [ -f "$REPO_ROOT/.github/workflows/ci.yml" ]
   run grep -F 'node tools/build-plugin.mjs' "$REPO_ROOT/.github/workflows/ci.yml"
