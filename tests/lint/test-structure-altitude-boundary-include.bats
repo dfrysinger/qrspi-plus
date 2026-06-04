@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 bats_require_minimum_version 1.5.0
 #
-# Task 37 — G35: regression guard for the structure-altitude-boundary `!cat`
+# Regression guard for the structure-altitude-boundary `!cat`
 # inclusions. Asserts that the literal directive
 #
 #     !cat skills/_shared/structure-altitude-boundary.md
