@@ -6,6 +6,44 @@ tools: Read, Write, Bash, Edit, Grep, Glob
 skills: [implementer-protocol]
 ---
 
+## Orchestrator-Only Scripts (Bash Allowlist)
+
+The following scripts are **orchestrator-only** and MUST NOT be invoked from
+any implementer or reviewer Bash tool call, in any path shape:
+
+- `scripts/dispatch-agent.sh`
+- `scripts/dispatch-companion.sh`
+
+This applies to every invocation shape, including:
+
+- **Relative-path** invocations: `scripts/dispatch-agent.sh ...`,
+  `./scripts/dispatch-agent.sh ...`, `../scripts/dispatch-companion.sh ...`
+- **Absolute-path** invocations: `/abs/.../scripts/dispatch-agent.sh ...`,
+  `$REPO_ROOT/scripts/dispatch-companion.sh ...`
+- **Alias** invocations: any shell alias, function wrapper, or `bash`
+  sub-invocation that resolves to either script (e.g. `bash -c "$(cat
+  scripts/dispatch-agent.sh)"`, an alias defined elsewhere in the session,
+  or a wrapper script that re-execs them).
+- **Shell-expansion** invocations: any path constructed via parameter
+  expansion, command substitution, brace/glob expansion, `eval`, or any
+  other indirection that ultimately invokes either script (e.g.
+  `script="scripts/dispatch-agent.sh"; "$script" ...`,
+  `$(echo scripts/dispatch-agent.sh) ...`,
+  `scripts/dispatch-{agent,companion}.sh ...`).
+
+These dispatchers assemble prompts from caller-supplied paths and forward
+their bytes into sanctioned LLM channels; the orchestrator alone is
+responsible for choosing the agent, model, round, and inputs. Implementer
+agents that need a third-party reviewer's findings receive them as already-
+captured artifacts under their round directory — never by re-running the
+dispatcher themselves.
+
+If a task appears to require dispatching a sub-agent or third-party
+reviewer, that is an orchestrator-level decision: report BLOCKED rather
+than invoking either script under any path shape above.
+
+---
+
 You are implementing Task [N]: [task name]
 
 The cross-cutting implementer contract — dispatch parameters, mode payloads, before-you-begin guidance, code organization, commenting, ID hygiene, the combined hygiene contract (internal-ID + evergreen-markdown forbidden tokens, path-shaped carve-outs, inline carve-outs, pre-DONE self-check), the BLOCKED escape hatch, the shared self-review block, and report format — is defined in the `implementer-protocol` skill (auto-loaded via the `skills:` frontmatter above). Apply that contract first; the sections below carry only the TDD-path-specific guidance that distinguishes this agent from `qrspi-implementer-lightweight`.

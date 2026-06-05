@@ -11,7 +11,7 @@
 #     reviewer prompt and either writes a first-party DISPATCH_FILE or forwards
 #     the assembled prompt over stdin to `scripts/dispatch-companion.sh`.
 #
-# Per T04 of the v0.7 release: this script no longer drives the Codex broker
+# Per-task implementer dispatch shim: this script no longer drives the Codex broker
 # directly. It preserves its existing caller-facing flag surface (assembling
 # the reviewer prompt from the reviewer-protocol body, the named agent body
 # with frontmatter stripped, the codex-emission override, and a Dispatch
@@ -69,6 +69,15 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT_DEFAULT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 REPO_ROOT="${QRSPI_REPO_ROOT:-$REPO_ROOT_DEFAULT}"
+export REPO_ROOT
+
+# Repo-boundary guard for every prompt-ingested path argument. Sourced
+# from a shared lib so dispatch-companion.sh's launch-mode `--prompt-file`
+# surface uses the same canonical-$REPO_ROOT/ enforcement.
+# shellcheck source=scripts/lib/path-guard.sh
+. "$SCRIPT_DIR/lib/path-guard.sh"
+command -v assert_path_under_repo_root >/dev/null 2>&1 \
+  || { echo "error: assert_path_under_repo_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
 
 AGENT_FILE=""
 REVIEWER_TAG=""
@@ -96,6 +105,18 @@ SCALAR_VALUES=()
 require_value() {
   if [[ "$2" -lt 2 ]]; then
     echo "error: $1 requires a value" >&2
+    exit 1
+  fi
+}
+
+# assert_file_exists <label> <path> — verify a required file exists; exits 1
+# with a clear diagnostic when it does not.  Defined early (before the batch
+# block) so it is available in both batched-mode and single-mode code paths.
+assert_file_exists() {
+  local label="$1"
+  local p="$2"
+  if [[ ! -f "$p" ]]; then
+    echo "error: ${label} not found: $p" >&2
     exit 1
   fi
 }
@@ -224,9 +245,11 @@ _validate_output_dir() {
 }
 
 # _validate_job_id <value> — allowlist-validate a captured JOB_ID.
-# JOB_ID is interpolated into await_cmd stored in the manifest; downstream
-# consumers eval-expand that field.  Restrict to characters safe in an
-# unquoted shell word.  Only called when the value is non-empty.
+# JOB_ID is stored in the manifest and later passed to await-round.sh via
+# shlex.split (shell=False); a job ID containing shlex-special characters
+# causes shlex.split to raise ValueError, which marks the manifest entry
+# failed and silently drops the finding. Restricting to a safe token grammar
+# prevents that denial-of-service vector. Only called when the value is non-empty.
 _validate_job_id() {
   local v="$1"
   if [[ -z "$v" ]]; then echo "error: job_id is empty" >&2; exit 1; fi
@@ -341,7 +364,18 @@ _append_manifest_entry() {
     # avoiding a false-positive stale detection.
     if [[ -d "$_lock_dir" ]]; then
       local _now; _now=$(date +%s)
-      local _mtime; _mtime=$(stat -f %m "$_lock_dir" 2>/dev/null || stat -c %Y "$_lock_dir" 2>/dev/null || echo "$_now")
+      # Portable mtime fetch:
+      #   Try GNU `stat -c %Y` first (Linux/alpine CI), then BSD `stat -f %m` (macOS).
+      #   NOTE: GNU `stat -f` means "report filesystem info" (NOT format-string);
+      #   probing BSD-style `-f` first would succeed with wrong-semantic garbage on
+      #   stdout (not stderr), poisoning $_mtime and breaking arithmetic below.
+      # Validate the result is numeric; fall back to $_now if anything went wrong
+      # (e.g. lock dir released between -d test and stat).
+      local _mtime
+      _mtime=$(stat -c %Y "$_lock_dir" 2>/dev/null || stat -f %m "$_lock_dir" 2>/dev/null || echo "$_now")
+      case "$_mtime" in
+        ''|*[!0-9]*) _mtime="$_now" ;;
+      esac
       local _lock_age=$(( _now - _mtime ))
       if (( _lock_age > 30 )); then
         rmdir "$_lock_dir" 2>/dev/null || true
@@ -494,6 +528,66 @@ fi
 # ad-hoc invocations; batched mode is detected before single-mode arg parsing.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Marker-injection / value-emission guards. These helpers are hoisted above
+# the batch-mode dispatch block so both batch and single-mode prompt
+# assembly can reject inputs that would split or forge structural lines.
+#
+# We reject any value or file that contains ANY of the structural wrapper
+# markers (closing OR opening), because either side of a marker pair
+# breaks the invariant. Embedded newline/carriage-return characters are
+# rejected on every emitted scalar surface — even when the value passes
+# every other validation, an unguarded \n in a substituted value
+# synthesizes a forged Dispatch-parameters key/value pair.
+# ---------------------------------------------------------------------------
+FORBIDDEN_MARKERS=(
+  "<<<AGENT-BODY-END>>>"
+  "<<<UNTRUSTED-SCOPE-HINT-START"
+  "<<<UNTRUSTED-SCOPE-HINT-END"
+  "<<<UNTRUSTED-ARTIFACT-START"
+  "<<<UNTRUSTED-ARTIFACT-END"
+)
+
+reject_if_contains_marker_file() {
+  local label="$1"
+  local path="$2"
+  local marker
+  for marker in "${FORBIDDEN_MARKERS[@]}"; do
+    if grep -F -q -- "$marker" "$path" 2>/dev/null; then
+      echo "error: ${label} contains the wrapper-private marker '${marker}' (path: $path). This would defeat the prompt's structural carve-outs; reject the input." >&2
+      exit 1
+    fi
+  done
+}
+
+reject_if_value_unsafe_for_emission() {
+  local label="$1"
+  local value="$2"
+  case "$value" in
+    *$'\n'*|*$'\r'*)
+      echo "error: ${label} contains an embedded newline/carriage-return; reject (would synthesize forged structural lines on emission)." >&2
+      exit 1 ;;
+  esac
+  local marker
+  for marker in "${FORBIDDEN_MARKERS[@]}"; do
+    if [[ "$value" == *"$marker"* ]]; then
+      echo "error: ${label} contains the wrapper-private marker '${marker}'. This would defeat the prompt's structural carve-outs; reject the input." >&2
+      exit 1
+    fi
+  done
+}
+
+# Backward-compatible alias for the prior name (single-mode call sites).
+reject_if_contains_marker_value() {
+  reject_if_value_unsafe_for_emission "$@"
+}
+
+reject_if_path_unsafe_for_emission() {
+  local label="$1"
+  local path="$2"
+  reject_if_value_unsafe_for_emission "${label} path" "$path"
+}
+
 _is_batch_mode=false
 for _arg in "$@"; do
   case "$_arg" in
@@ -514,7 +608,12 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --step)              require_value "--step" "$#";              BATCH_STEP="$2"; shift 2 ;;
-      --round)             require_value "--round" "$#";             BATCH_ROUND="$2"; shift 2 ;;
+      --round)             require_value "--round" "$#"
+                           if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+                             echo "error: --round must be a non-negative integer (got: $2)" >&2
+                             exit 1
+                           fi
+                           BATCH_ROUND="$2"; shift 2 ;;
       --output-dir)        require_value "--output-dir" "$#";        BATCH_OUTPUT_DIR="$2"; shift 2 ;;
       --artifact)          require_value "--artifact" "$#";          BATCH_ARTIFACT="$2"; shift 2 ;;
       --agents)            require_value "--agents" "$#";            BATCH_AGENTS="$2"; shift 2 ;;
@@ -530,9 +629,12 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   if [[ -z "$BATCH_STEP" ]];       then echo "error: --step required"        >&2; exit 1; fi
   if [[ -z "$BATCH_ROUND" ]];      then echo "error: --round required"       >&2; exit 1; fi
   if [[ -z "$BATCH_OUTPUT_DIR" ]]; then echo "error: --output-dir required"  >&2; exit 1; fi
-  if [[ "${BATCH_OUTPUT_DIR:0:1}" != "/" ]]; then
-    echo "error: --output-dir must be absolute: $BATCH_OUTPUT_DIR" >&2; exit 1
-  fi
+  # Mirror single-mode's --output-dir discipline: allowlist-validate the path
+  # (rejects \n/\r/marker bytes/non-grammar chars) BEFORE any use, then run
+  # the emission guard so a newline-bearing value cannot forge sibling
+  # Dispatch-parameter lines via the `printf 'round_subdir: %s\n'` site.
+  _validate_output_dir "$BATCH_OUTPUT_DIR"
+  reject_if_path_unsafe_for_emission "--output-dir" "$BATCH_OUTPUT_DIR"
   if [[ -z "$BATCH_AGENTS" ]];     then echo "error: --agents required"      >&2; exit 1; fi
 
   # Source the routing-resolution library for tier -> model + host x vendor
@@ -564,6 +666,19 @@ if [[ "$_is_batch_mode" == "true" ]]; then
     else
       BATCH_ARTIFACT_ABS="$REPO_ROOT/$BATCH_ARTIFACT"
     fi
+  fi
+  # Apply repo-boundary guard AFTER existence check and BEFORE any cat/read.
+  # Two-step pattern mirrors single-mode: existence fails with a clear diagnostic,
+  # then the boundary check rejects traversal before any prompt emission.
+  if [[ -n "$BATCH_ARTIFACT_ABS" ]]; then
+    assert_file_exists "--artifact" "$BATCH_ARTIFACT_ABS"
+    assert_path_under_repo_root "--artifact" "$BATCH_ARTIFACT_ABS"
+    # The raw --artifact value is later substituted into the prompt
+    # skeleton via `<<<UNTRUSTED-ARTIFACT-START id=%s>>>`; protect against
+    # newline/marker injection symmetrically with the single-mode path
+    # surface.
+    reject_if_path_unsafe_for_emission "--artifact" "$BATCH_ARTIFACT"
+    reject_if_contains_marker_file "--artifact body" "$BATCH_ARTIFACT_ABS"
   fi
 
   REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
@@ -602,6 +717,13 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       echo "error: --agents entry must have non-empty tag and agent (got: $_pair)" >&2
       exit 1
     fi
+    # Tag allowlist: mirrors single-mode --reviewer-tag grammar. Prevents crafted
+    # tags from redirecting the assembled prompt to attacker-controlled paths via
+    # the prompt-file path construction below.
+    if [[ ! "$_tag" =~ ^[a-z][a-z0-9_-]*$ ]]; then
+      echo "error: --agents tag must match [a-z][a-z0-9_-]* (got: $_tag)" >&2
+      exit 1
+    fi
 
     # Resolve agent file path: an absolute path or a repo-relative path is used
     # verbatim; a bare agent name resolves to agents/<name>.md.
@@ -616,6 +738,9 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       echo "error: agent file not found for tag '$_tag': $_agent_file" >&2
       exit 1
     fi
+    # Apply repo-boundary guard AFTER existence check and BEFORE any
+    # strip_frontmatter_batch/resolve_tier read (spec line 19).
+    assert_path_under_repo_root "--agents" "$_agent_file"
     _agent_name="$(basename "${_agent_file%.md}")"
 
     # Vendor is encoded in the tag suffix (e.g., quality-claude -> claude,
@@ -670,7 +795,7 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       [[ -f "$EMISSION_OVERRIDE_ABS" ]] && cat "$EMISSION_OVERRIDE_ABS"
       printf '\n\n<<<AGENT-BODY-END>>>\n'
       printf '\n## Dispatch parameters\n\n'
-      if [[ -n "$BATCH_ARTIFACT_ABS" && -f "$BATCH_ARTIFACT_ABS" ]]; then
+      if [[ -n "$BATCH_ARTIFACT_ABS" ]]; then
         printf 'artifact_body:\n'
         printf '<<<UNTRUSTED-ARTIFACT-START id=%s>>>\n' "$BATCH_ARTIFACT"
         cat "$BATCH_ARTIFACT_ABS"
@@ -719,6 +844,18 @@ if [[ "$_is_batch_mode" == "true" ]]; then
         emit_dispatch_manifest_entry "" "failed"
         continue
       fi
+      # Inline grammar check (mirrors _validate_job_id allowlist) so a
+      # broker-supplied job-id outside the safe-token grammar is logged and
+      # recorded as a failed manifest entry instead of hard-exiting the
+      # batch loop. A bare _validate_job_id call here would `exit 1` after
+      # the upstream broker job had already been launched, orphaning that
+      # running job (no manifest entry → await-round.sh cannot drain it)
+      # and aborting any remaining tags in the batch.
+      if ! [[ "$_job_id" =~ ^[A-Za-z0-9_:@.-]+$ ]]; then
+        echo "[dispatch-agent] WARN: dispatch-companion returned invalid JOB_ID for tag '$_tag' (orphaned broker job, no manifest entry): '$_job_id'" >&2
+        emit_dispatch_manifest_entry "" "failed"
+        continue
+      fi
       emit_dispatch_manifest_entry "$_job_id" "pending"
     fi
   done
@@ -733,13 +870,13 @@ while [[ $# -gt 0 ]]; do
     --agent-file)     require_value "--agent-file"   "$#"; AGENT_FILE="$2"; shift 2 ;;
     --reviewer-tag)
       require_value "--reviewer-tag" "$#"
-      # Allowlist validation (T09 R2 fix): --reviewer-tag is concatenated
+      # Allowlist validation: --reviewer-tag is concatenated
       # into the dispatch-manifest JSON entry. Restricting it to a safe
       # token grammar ([a-z][a-z0-9_-]*) is defense-in-depth alongside the
       # jq-based JSON construction below — it ensures crafted tags
       # carrying JSON-structural characters cannot reach the manifest
       # writer at all. The grammar mirrors the existing reviewer-tag
-      # values used in this codebase (e.g. spec-codex, sec-claude).
+      # values used in this codebase (e.g. <reviewer>-<vendor> tokens).
       if [[ ! "$2" =~ ^[a-z][a-z0-9_-]*$ ]]; then
         echo "error: --reviewer-tag must match [a-z][a-z0-9_-]* (got: $2)" >&2
         exit 1
@@ -749,10 +886,15 @@ while [[ $# -gt 0 ]]; do
       require_value "--output-dir" "$#"
       _validate_output_dir "$2"
       OUTPUT_DIR="$2"; shift 2 ;;
-    --round)          require_value "--round"        "$#"; ROUND="$2"; shift 2 ;;
+    --round)          require_value "--round"        "$#"
+                      if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+                        echo "error: --round must be a non-negative integer (got: $2)" >&2
+                        exit 1
+                      fi
+                      ROUND="$2"; shift 2 ;;
     --model)
       require_value "--model" "$#"
-      # Allowlist validation (T09 R2 fix): --model is concatenated into
+      # Allowlist validation: --model is concatenated into
       # the dispatch-manifest JSON entry and into the reviewer-prompt
       # body. The grammar permits the punctuation real model IDs use
       # (dot, hyphen, underscore) but excludes JSON-structural characters
@@ -873,17 +1015,9 @@ resolve_path() {
   fi
 }
 
-assert_file_exists() {
-  local label="$1"
-  local p="$2"
-  if [[ ! -f "$p" ]]; then
-    echo "error: ${label} not found: $p" >&2
-    exit 1
-  fi
-}
-
 AGENT_FILE_ABS="$(resolve_path "$AGENT_FILE")"
 assert_file_exists "agent-file" "$AGENT_FILE_ABS"
+assert_path_under_repo_root "agent-file" "$AGENT_FILE_ABS"
 
 REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
 assert_file_exists "reviewer-protocol/SKILL.md" "$REVIEWER_PROTOCOL_ABS"
@@ -892,7 +1026,7 @@ EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/codex-emission-overri
 assert_file_exists "codex-emission-override.md" "$EMISSION_OVERRIDE_ABS"
 
 # Parse the agent's `skills:` frontmatter field to discover additional
-# shared skills the agent depends on (load chain unchanged from pre-T04).
+# shared skills the agent depends on (load chain unchanged from earlier shim refactor).
 extract_skill_names() {
   awk '
     /^---$/ { n++; if (n == 2) exit; next }
@@ -925,6 +1059,7 @@ while IFS= read -r skill_name; do
   fi
   skill_path="$REPO_ROOT/skills/$skill_name/SKILL.md"
   assert_file_exists "skill[$skill_name]" "$skill_path"
+  assert_path_under_repo_root "skill[$skill_name]" "$skill_path"
   ADDITIONAL_SKILL_PATHS+=("$skill_path")
 done <<< "$SKILL_NAMES_OUTPUT"
 
@@ -932,6 +1067,7 @@ PRIMARY_ABS=()
 for sc in "${PRIMARY_PATHS[@]}"; do
   abs="$(resolve_path "$sc")"
   assert_file_exists "$PRIMARY_FIELD" "$abs"
+  assert_path_under_repo_root "$PRIMARY_FIELD" "$abs"
   PRIMARY_ABS+=("$abs")
 done
 
@@ -939,6 +1075,7 @@ TASK_DEF_ABS=""
 if [[ -n "$TASK_DEF" ]]; then
   TASK_DEF_ABS="$(resolve_path "$TASK_DEF")"
   assert_file_exists "task-def" "$TASK_DEF_ABS"
+  assert_path_under_repo_root "task-def" "$TASK_DEF_ABS"
 fi
 
 COMPANION_ABS=()
@@ -947,36 +1084,38 @@ for i in "${!COMPANION_PATHS[@]}"; do
   cname="${COMPANION_NAMES[$i]}"
   abs="$(resolve_path "$cpath")"
   assert_file_exists "companion[$cname]" "$abs"
+  assert_path_under_repo_root "companion[$cname]" "$abs"
   COMPANION_ABS+=("$abs")
 done
 
 if [[ -n "$DIFF_FILE" ]]; then
+  DIFF_FILE="$(resolve_path "$DIFF_FILE")"
   if [[ ! -f "$DIFF_FILE" ]]; then
     echo "error: diff-file not found: $DIFF_FILE" >&2
     exit 1
   fi
+  assert_path_under_repo_root "diff-file" "$DIFF_FILE"
 fi
 
 # ---------------------------------------------------------------------------
-# Marker-injection guard (unchanged from pre-T04). The dispatcher applies
-# its own boundary-marker guard on stdin; this shim's guard is an additional
-# defense-in-depth layer on the per-flag inputs before the prompt is
-# assembled.
-MARKER_LITERAL="<<<AGENT-BODY-END>>>"
-
-reject_if_contains_marker_file() {
-  if grep -F -q -- "$MARKER_LITERAL" "$2" 2>/dev/null; then
-    echo "error: ${1} contains the wrapper-private marker '${MARKER_LITERAL}' (path: $2). This would defeat the agent-body carve-out; reject the input." >&2
-    exit 1
-  fi
-}
-
-reject_if_contains_marker_value() {
-  if [[ "$2" == *"$MARKER_LITERAL"* ]]; then
-    echo "error: ${1} contains the wrapper-private marker '${MARKER_LITERAL}'. This would defeat the agent-body carve-out; reject the input." >&2
-    exit 1
-  fi
-}
+# Marker-injection guards on per-flag inputs. The helpers (FORBIDDEN_MARKERS,
+# reject_if_contains_marker_file, reject_if_value_unsafe_for_emission,
+# reject_if_path_unsafe_for_emission) are defined above the batch-mode
+# dispatch block so both batch and single-mode paths can call them; this
+# section only wires them onto the single-mode arg surface.
+# ---------------------------------------------------------------------------
+for i in "${!PRIMARY_PATHS[@]}"; do
+  reject_if_path_unsafe_for_emission "${PRIMARY_FIELD}" "${PRIMARY_PATHS[$i]}"
+done
+if [[ -n "$TASK_DEF" ]]; then
+  reject_if_path_unsafe_for_emission "task-def" "$TASK_DEF"
+fi
+for i in "${!COMPANION_PATHS[@]}"; do
+  reject_if_path_unsafe_for_emission "companion[${COMPANION_NAMES[$i]}]" "${COMPANION_PATHS[$i]}"
+done
+if [[ -n "$DIFF_FILE" ]]; then
+  reject_if_path_unsafe_for_emission "diff-file" "$DIFF_FILE"
+fi
 
 for p in "${PRIMARY_ABS[@]}"; do
   reject_if_contains_marker_file "${PRIMARY_FIELD}" "$p"
@@ -998,7 +1137,7 @@ for i in "${!SCALAR_NAMES[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# Prompt-assembly helpers (unchanged from pre-T04)
+# Prompt-assembly helpers (unchanged from earlier shim refactor)
 # ---------------------------------------------------------------------------
 
 strip_frontmatter() {
@@ -1078,7 +1217,7 @@ compose_prompt() {
 
 # ---------------------------------------------------------------------------
 # Forward to the universal dispatcher.
-# Per T04: this shim does NOT pass a transport flag — transport selection is
+# This shim does NOT pass a transport flag — transport selection is
 # config-driven through the `codex` entry in `<artifact-dir>/config.md`'s
 # `providers:` block (which carries `transport_type: codex-broker`). The
 # shim does NOT source or invoke `scripts/codex-companion-bg.sh` directly;
