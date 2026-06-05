@@ -700,6 +700,21 @@ marketplace listing).
 
 After installation, the `using-qrspi` skill is the entry point. The pipeline activates whenever the user wants to build something.
 
+### Recommended: a Markdown viewer for artifacts
+
+Every qrspi-plus run produces a tree of Markdown artifacts under
+`docs/qrspi/<run-id>/` — `goals.md`, `questions.md`, per-question
+research files, `design.md`, `plan.md`, `parallelization.md`, per-task
+specs, review findings, and so on. Reading these in a rendered viewer
+beats scrolling raw Markdown.
+
+On macOS, [Open Markdown](https://ptheofan.github.io/open-markdown/)
+is a free native app with GitHub-style rendering, live reload, Mermaid
+diagrams, and inline editing. Set it as the default handler for `.md`
+files (Finder → right-click any `.md` → **Open With** → **Always Open
+With** → **Open Markdown**) and double-clicking artifacts in the
+finder just works.
+
 ---
 
 ## Configuration
