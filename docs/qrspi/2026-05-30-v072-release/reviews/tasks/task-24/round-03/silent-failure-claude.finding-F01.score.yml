@@ -1,0 +1,2 @@
+score: 90
+reason: Confirmed real gap — test at lines 256–265 asserts only PLATFORM=claude-code, which both the override path and the Claude Code host-detection path emit identically, making it non-discriminating; the Copilot CLI + override equivalent at lines 293–304 has the correct triple-assertion guard (VERDICT=auto, !DETECTION_TYPE=llm-context, DETECTION_TYPE=user-override-only) and no parallel guard exists for Claude Code.

@@ -1,0 +1,3 @@
+# scope-set for round 02
+# generated_by: orchestrator (round CLEAN — no kept findings, no further narrowing needed)
+# total_findings_kept: 0

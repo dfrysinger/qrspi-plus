@@ -1,0 +1,13 @@
+diff --git a/tests/lint/test-structure-altitude-boundary-include.bats b/tests/lint/test-structure-altitude-boundary-include.bats
+index fa0b0cd..42f7c18 100644
+--- a/tests/lint/test-structure-altitude-boundary-include.bats
++++ b/tests/lint/test-structure-altitude-boundary-include.bats
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env bats
+ bats_require_minimum_version 1.5.0
+ #
+-# Task 37 — G35: regression guard for the structure-altitude-boundary `!cat`
++# Regression guard for the structure-altitude-boundary `!cat`
+ # inclusions. Asserts that the literal directive
+ #
+ #     !cat skills/_shared/structure-altitude-boundary.md

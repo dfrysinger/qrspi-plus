@@ -1,0 +1,2 @@
+score: 95
+reason: Lines 134–136 of skills/plan/SKILL.md still carry the retired `model` heading and intro paragraph ("must set task_type and model … model is forwarded as the per-invocation override") while Step 2 (line 162+) was correctly migrated to tier:, directly violating the T16 DoD bullet requiring plan/SKILL.md to no longer document superseded schema fields.

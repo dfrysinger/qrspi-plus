@@ -1,0 +1,2 @@
+score: 85
+reason: Verified — design.md G31 Distribution Table requires 5 agents + Consumer #3 (skills/design/SKILL.md) wiring; structure.md captures only 2 of the agents and omits G31 from the design-skill rows entirely; sweep row at line 93 explicitly excludes behavioral logic, so three preload additions are unassigned and the Design authoring `!cat` step is unassigned, leaving Plan with no surface to package these G31 tasks.

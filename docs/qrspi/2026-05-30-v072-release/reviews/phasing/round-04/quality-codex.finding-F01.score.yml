@@ -1,0 +1,2 @@
+score: 15
+reason: Directly contradicts the R3 scope-driven boundary fix (schema-field names cross the Phasing→Structure DEFERS line); reverting to the literal `change_type` would re-introduce the residual drift R3 just closed, and G-ID grounding already preserves checkability.

@@ -1,0 +1,2 @@
+score: 80
+reason: Confirmed — T05 Target files line 347 marks scripts/verifier-fan-in.sh as (create) while T02 (line 182) already creates it and T05 depends on T02; this is a real Scope-vs-Target-files contradiction and a duplicate-create ownership ambiguity explicitly in scope for this reviewer.

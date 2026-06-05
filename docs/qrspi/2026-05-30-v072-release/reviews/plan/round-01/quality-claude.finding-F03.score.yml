@@ -1,0 +1,2 @@
+score: 55
+reason: Gap A (T13→T20 rename/file-conflict dep missing from the graph for a task whose grep audit pins the post-rename script name) is a real Plan-level cross-task-surface oversight matching the G18 closure goal; Gap B materially misreads `--implementer-commit` as a missing subcommand when design.md CD-1 documents it as a flag on the universal dispatch-agent owned implicitly by T20's rename + universal-entry-point responsibility, so the finding is partially correct, partially overreached.

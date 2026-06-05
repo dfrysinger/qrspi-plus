@@ -1,0 +1,2 @@
+score: 22
+reason: Test bullet 1's "containing X/Y/Z/Q/R" presence check already fails on missing-field regressions, and value-type validation belongs to consumer/validator code that is not in this emit-side task's scope.

@@ -1,0 +1,2 @@
+score: 65
+reason: Real gap in filter-boundary documentation — artifact says script processes "each finding's verifier sidecar" but omits behavior for missing sidecars, leaving consumer understanding incomplete; arguably required by task DoD's "clearly explain the filter boundary" clause, though error-handling spec (T03-T05) may partially sit outside Task 01's scope.

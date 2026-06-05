@@ -1,0 +1,2 @@
+score: 72
+reason: Real correctness issue with R2 fix; guard comments were added but without include-boundary delimiters, the LLM cannot detect partial-include failure and will silently apply the skill with incomplete context. The fix is incomplete; neither proposed solution (boundary markers or explicit platform dependency) was implemented.

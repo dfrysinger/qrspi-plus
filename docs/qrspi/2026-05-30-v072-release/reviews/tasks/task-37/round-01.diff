@@ -1,0 +1,240 @@
+diff --git a/skills/_shared/structure-altitude-boundary.md b/skills/_shared/structure-altitude-boundary.md
+new file mode 100644
+index 0000000..16fd500
+--- /dev/null
++++ b/skills/_shared/structure-altitude-boundary.md
+@@ -0,0 +1,20 @@
++## Structure Altitude Boundary
++
++### What Structure OWNS
++
++Structure OWNS:
++- Unified system architecture diagram(s) for the release (Mermaid or equivalent) — stitches the components named across design.md's per-solution + cross-cutting-CD blocks into a single architectural overview
++- File map: which file holds which component, directory layout, module boundaries
++- Module-boundary contracts: which module exports what to which other module (the structural commitments Plan's task carving consumes)
++- Cross-solution component interaction specification: how the components named in design.md's per-solution blocks interact at the system-architecture level (distinct from design.md's per-solution end-to-end flows, which are inter-actor-only inside one solution)
++- Unified test architecture: a top-level `## Test Architecture` section in structure.md that names the test taxonomy for the release (e.g., unit, integration, end-to-end, smoke, contract — exact taxonomy varies by release), names the coverage boundary of each type, and enumerates the cross-cutting test invariants (drawn from CDs and goals in design.md) along with which test type owns each invariant
++- Per-type stitching of per-solution acceptance criteria: for each type in the test taxonomy, enumerate which per-solution `Acceptance` subsections from design.md (per goal + per CD) feed into that test type — naming the design.md source by goal/CD identifier
++
++### What Structure DEFERS
++
++Structure DEFERS:
++- Per-solution choice rationale or alternatives weighed (Design's job — Structure consumes the locked solution, does not re-litigate it)
++- Per-task assertions / unit-test code (Plan/Implement's job — Structure names the test taxonomy and per-type coverage boundary; Plan authors the per-task `Test Expectations` against the taxonomy; Implement writes the test code)
++- Per-solution end-to-end flows or per-solution sequence diagrams (Design's job — Structure shows components at the architectural level, not per-solution choreography)
++- External-system contracts or vendor research (Design's job — Structure consumes the cited answers, does not re-research; Design is the last research-bearing phase)
++- Detailed solution descriptions or per-solution decision rationale (Design's job — Structure stitches the locked solutions into a unified architecture; Design defines them)
+diff --git a/skills/structure/SKILL.md b/skills/structure/SKILL.md
+index 899b659..39bb236 100644
+--- a/skills/structure/SKILL.md
++++ b/skills/structure/SKILL.md
+@@ -13,6 +13,8 @@ description: Use when design.md is approved and the QRSPI pipeline needs file/co
+ 
+ Map the design's vertical slices to specific files, components, and interfaces. Define what gets created vs modified, show how slices map to the stack, and produce a detailed architectural diagram. This is the bridge between abstract design and concrete implementation.
+ 
++Structure authors: the unified system architecture diagram(s) for the release (Mermaid or equivalent — stitching the components named across design.md's per-solution and cross-cutting-CD blocks into a single architectural overview); file maps and module-boundary contracts; cross-solution component interactions; unified test architecture (the `## Test Architecture` section in structure.md); and per-type stitching of per-solution acceptance criteria from design.md.
++
+ <!-- Soft length target: 300–500 lines for this SKILL.md. The marker is a guidance signal — long enough to carry per-section template guidance + worked examples + iron laws, short enough to keep the prompt scannable in a single context window. -->
+ 
+ ## Structure OWNS / Structure DEFERS
+@@ -200,6 +202,19 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — structure", de
+ 
+ **REQUIRED:** Invoke the next skill in the `config.md` route after `structure`.
+ 
++## Test Architecture
++
++Author the unified `## Test Architecture` section in structure.md after Design approval. Design authors per-solution `Acceptance` subsections per goal/CD block; Structure stitches them into a release-level test architecture. This is new authoring behavior for Structure — do not re-open Design rationale or add Plan/Implement-level assertions.
++
++**Procedure (run after Design approval):**
++
++1. Enumerate every per-solution `Acceptance` subsection in design.md — one per goal block and one per CD block. Record each by goal/CD identifier (e.g., G1, G5, CD-4).
++2. Name the test taxonomy for the release (e.g., unit, integration, end-to-end, smoke, contract — exact taxonomy varies by release). Group the acceptance criteria from step 1 by test type per the named taxonomy, citing the design.md source identifier for each entry.
++3. Enumerate cross-cutting test invariants drawn from CD blocks and cross-cutting goals in design.md. For each invariant, name the test type that owns each invariant.
++4. Author the result as a top-level `## Test Architecture` section in structure.md: named-taxonomy-first (T1, T2, …), one paragraph per type naming the coverage boundary and which design.md `Acceptance` subsections feed into it, and a final `### Cross-cutting invariants` subsection listing the invariants from step 3 with their owning test type.
++
++Structure's role in this section: name the test taxonomy, enumerate cross-cutting test invariants, and name the test type that owns each invariant. Structure does not author per-task test expectations or assertion code — those belong to Plan and Implement respectively.
++
+ ## Section-Anchor Index
+ 
+ The Section-Anchor Index is the G4 scope-tagger narrowing contract — narrow, byte-identical reads of named H2 / H3 sections inside large SKILL.md artifacts. scope-tagger narrowing ships unconditionally and is consumed by skill authors who need a stable section slice (e.g., a reviewer that wants the `## Dispatch Contract` section of `skills/reviewer-protocol/SKILL.md` without rescanning the file for headings every dispatch).
+diff --git a/skills/structure/owns-defers.md b/skills/structure/owns-defers.md
+index 304aabd..9dbfbac 100644
+--- a/skills/structure/owns-defers.md
++++ b/skills/structure/owns-defers.md
+@@ -2,24 +2,6 @@
+ 
+ The OWNS/DEFERS contract below is the locked rule set the scope-reviewer dispatch loads at review time (Read by the `qrspi-structure-scope-reviewer` agent at runtime per its rules-loading procedure). Boundary-drift detection runs against the DEFERS list; scope-compliance runs against the OWNS list.
+ 
+-### Structure OWNS
+-
+-- **File paths and module boundaries.** Concrete repo-relative paths for every file the project creates or modifies, grouped by vertical slice. No directory placeholders, no "various", no "TBD".
+-- **Section-list contracts per file.** Which top-level sections each file must contain (e.g., for a SKILL.md: `## Overview`, `## Process`, `## Red Flags`); which named blocks live where. Heading-level granularity, not prose content.
+-- **Function/script exports and parameter shapes.** Public function signatures, exported types, script entry points, CLI argument shapes — what the unit exposes at its boundary.
+-- **Inter-file dependencies.** Which files import/consume which other files; consumer-producer edges between modules; data-flow direction.
+-- **Cross-cutting hook-point locations.** The *places* where hooks fire across files (e.g., the four compaction-callout placement sites per skill — which sections of which files they live in) — locations only, never the text.
+-- **Test file layout (behavior level).** Which test files exist, the behavior each test file exercises at a one-line description level. Not assertion code, not assertion text, not commit ranges.
+-- **Architectural diagram.** Mermaid diagram of file/module relationships, API endpoints, data flow, interface boundaries.
+-
+-### Structure DEFERS
+-
+-- **Actual prompt or SKILL.md text content** → Plan / Implement.
+-- **Actual reviewer-protocol or agent-file body content** → `skills/reviewer-protocol/SKILL.md` and `agents/qrspi-*.md`. (structure.md must not paste reviewer infrastructure prose; the protocol lives in the dedicated skill, agent bodies live in agent files.)
+-- **Actual compaction-callout wording at each placement site** (Structure owns the *locations*; Plan/Implement own the *words*) → Plan / Implement.
+-- **Test assertion code** → Implement (TDD).
+-- **Per-task LOC, full assertion text, per-task commit ranges, line-by-line logic** → Plan / Implement.
+-- **Architecture decisions** (which approach, which components exist at all) → Design.
+-- **Phasing / vertical slice authoring** (Iron Law 1, the Phase 1 PoC guideline, which slices belong in this phase, replan-gate criteria) → Phasing.
++!cat skills/_shared/structure-altitude-boundary.md
+ 
+ A finding citing structure.md prose that asserts any DEFERS item — for example, embedding a literal compaction-callout sentence rather than just the placement site, or specifying per-task LOC inside a structure entry — is a boundary-drift finding emitted by the scope-reviewer with `change_type: scope` (per the schema in `skills/reviewer-protocol/SKILL.md`).
+diff --git a/tests/lint/test-structure-altitude-boundary-include.bats b/tests/lint/test-structure-altitude-boundary-include.bats
+new file mode 100644
+index 0000000..fa0b0cd
+--- /dev/null
++++ b/tests/lint/test-structure-altitude-boundary-include.bats
+@@ -0,0 +1,145 @@
++#!/usr/bin/env bats
++bats_require_minimum_version 1.5.0
++#
++# Task 37 — G35: regression guard for the structure-altitude-boundary `!cat`
++# inclusions. Asserts that the literal directive
++#
++#     !cat skills/_shared/structure-altitude-boundary.md
++#
++# is present in BOTH consumer source files AT THEIR CANONICAL INSERTION
++# POINTS:
++#
++# 1. `agents/qrspi-structure-scope-reviewer.md` — the directive must sit on
++#    the line IMMEDIATELY AFTER the Step 1 Read citation introducer prose
++#    ("The contract you just read carries the following allowances and
++#    deferrals; restated here so they are present in your immediate
++#    reasoning context:"). Drift that moves the directive away from the
++#    introducer (or removes it entirely) fails this test.
++#
++# 2. `skills/structure/owns-defers.md` — the directive must REPLACE the
++#    previous inline OWNS/DEFERS body. Drift that re-inlines OWNS/DEFERS
++#    bullets or headings alongside the `!cat` include fails this test.
++#
++# Drift-via-subtraction (a future edit removes the include from one
++# consumer) and drift-via-augmentation (a future edit reintroduces the
++# inline body alongside the include) both fail this test with a
++# diagnostic naming the violating file and the missing/misplaced
++# directive. Single source of truth means content drift is structurally
++# impossible only when these positional invariants hold.
++
++setup() {
++  REPO_ROOT="$(git -C "${BATS_TEST_DIRNAME}" rev-parse --show-toplevel)"
++  export REPO_ROOT
++}
++
++@test "skills/structure/owns-defers.md includes !cat skills/_shared/structure-altitude-boundary.md" {
++  local file="${REPO_ROOT}/skills/structure/owns-defers.md"
++  local directive='!cat skills/_shared/structure-altitude-boundary.md'
++  if ! grep -qF -- "${directive}" "${file}"; then
++    echo "structure-altitude-boundary include missing in ${file}: expected literal directive '${directive}'" >&2
++    return 1
++  fi
++}
++
++@test "agents/qrspi-structure-scope-reviewer.md includes !cat skills/_shared/structure-altitude-boundary.md" {
++  local file="${REPO_ROOT}/agents/qrspi-structure-scope-reviewer.md"
++  local directive='!cat skills/_shared/structure-altitude-boundary.md'
++  if ! grep -qF -- "${directive}" "${file}"; then
++    echo "structure-altitude-boundary include missing in ${file}: expected literal directive '${directive}'" >&2
++    return 1
++  fi
++}
++
++@test "agents/qrspi-structure-scope-reviewer.md places !cat directive on the line immediately after the introducer prose" {
++  local file="${REPO_ROOT}/agents/qrspi-structure-scope-reviewer.md"
++  local introducer='The contract you just read carries the following allowances and deferrals; restated here so they are present in your immediate reasoning context:'
++  local directive='!cat skills/_shared/structure-altitude-boundary.md'
++  local introducer_line directive_line
++  introducer_line=$(grep -nF -- "${introducer}" "${file}" | head -n1 | cut -d: -f1)
++  directive_line=$(grep -nF -- "${directive}" "${file}" | head -n1 | cut -d: -f1)
++  if [[ -z "${introducer_line}" ]]; then
++    echo "introducer prose missing in ${file}: expected literal line '${introducer}' (Step 1 Read citation introducer; canonical insertion point for the structure-altitude-boundary include)" >&2
++    return 1
++  fi
++  if [[ -z "${directive_line}" ]]; then
++    echo "directive missing in ${file}: expected literal line '${directive}' (canonical insertion point: line immediately after the introducer prose)" >&2
++    return 1
++  fi
++  if (( directive_line != introducer_line + 1 )); then
++    echo "directive misplaced in ${file}: expected '${directive}' on the line immediately after the introducer prose (introducer at line ${introducer_line}, directive at line ${directive_line}; required: directive_line == introducer_line + 1)" >&2
++    return 1
++  fi
++}
++
++@test "skills/_shared/structure-altitude-boundary.md exists and is non-empty" {
++  local file="${REPO_ROOT}/skills/_shared/structure-altitude-boundary.md"
++  if [[ ! -s "${file}" ]]; then
++    echo "single source of truth missing or empty in ${file}: the shared structure-altitude-boundary snippet must exist and be non-empty so the '!cat skills/_shared/structure-altitude-boundary.md' include in both consumers expands to a real OWNS/DEFERS contract — deletion or emptying silently collapses the boundary" >&2
++    return 1
++  fi
++}
++
++@test "skills/_shared/structure-altitude-boundary.md body contains 'Structure OWNS:' preceding 'Structure DEFERS:'" {
++  local file="${REPO_ROOT}/skills/_shared/structure-altitude-boundary.md"
++  local owns='Structure OWNS:'
++  local defers='Structure DEFERS:'
++  local owns_line defers_line
++  owns_line=$(grep -nF -- "${owns}" "${file}" | head -n1 | cut -d: -f1)
++  defers_line=$(grep -nF -- "${defers}" "${file}" | head -n1 | cut -d: -f1)
++  if [[ -z "${owns_line}" ]]; then
++    echo "OWNS anchor missing in ${file}: expected literal line containing '${owns}' (single-source-of-truth snippet must carry the Structure OWNS block)" >&2
++    return 1
++  fi
++  if [[ -z "${defers_line}" ]]; then
++    echo "DEFERS anchor missing in ${file}: expected literal line containing '${defers}' (single-source-of-truth snippet must carry the Structure DEFERS block)" >&2
++    return 1
++  fi
++  if (( owns_line >= defers_line )); then
++    echo "OWNS/DEFERS order inverted in ${file}: '${owns}' (line ${owns_line}) must precede '${defers}' (line ${defers_line}); polarity inversion silently flips the boundary contract" >&2
++    return 1
++  fi
++}
++
++@test "skills/_shared/structure-altitude-boundary.md contains canonical OWNS allowance and DEFERS exclusion anchors" {
++  local file="${REPO_ROOT}/skills/_shared/structure-altitude-boundary.md"
++  local -a anchors=(
++    'Unified system architecture diagram'
++    'Module-boundary contracts'
++    'Unified test architecture'
++    'Per-type stitching of per-solution acceptance criteria'
++    'Per-solution choice rationale'
++    'Per-task assertions'
++  )
++  local anchor
++  for anchor in "${anchors[@]}"; do
++    if ! grep -qF -- "${anchor}" "${file}"; then
++      echo "canonical boundary anchor missing in ${file}: expected literal substring '${anchor}' — paraphrasing or removing named OWNS allowances/DEFERS exclusions silently weakens the single-source-of-truth contract" >&2
++      return 1
++    fi
++  done
++}
++
++@test "skills/structure/owns-defers.md replaces inline OWNS/DEFERS body with the !cat include (no residual inline body)" {
++  local file="${REPO_ROOT}/skills/structure/owns-defers.md"
++  # Patterns that would only appear if the previous inline OWNS/DEFERS
++  # body were reintroduced alongside the !cat include. The canonical
++  # OWNS/DEFERS body now lives in skills/_shared/structure-altitude-boundary.md
++  # and must not be duplicated in this consumer. We grep the consumer
++  # source itself (not the expanded include), so headings inside the
++  # shared snippet do not trigger these checks.
++  local -a inline_patterns=(
++    '^### Structure OWNS'
++    '^### Structure DEFERS'
++    '^Structure OWNS:'
++    '^Structure DEFERS:'
++    '\*\*Structure OWNS:\*\*'
++    '\*\*Structure DEFERS:\*\*'
++  )
++  local pat
++  for pat in "${inline_patterns[@]}"; do
++    if grep -qE -- "${pat}" "${file}"; then
++      echo "inline OWNS/DEFERS body reintroduced in ${file}: pattern '${pat}' must not appear alongside the '!cat skills/_shared/structure-altitude-boundary.md' include — the shared snippet is the single source of truth and the previous inline body must remain replaced, not augmented" >&2
++      return 1
++    fi
++  done
++}

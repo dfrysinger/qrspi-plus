@@ -1,0 +1,2 @@
+score: 35
+reason: The finding claims Q2 doesn't cover G13's out-of-enum values, but Q2's text explicitly asks if agent files "enumerate the allowed values" — which should address enum correctness. The finding conflates field-name drift (G8) with value drift (G13), but Q2's explicit mention of "allowed values" suggests it should cover both. The actual gap (Q2 asks about enumeration but not enforcement or validation) is real but not clearly articulated in the finding.

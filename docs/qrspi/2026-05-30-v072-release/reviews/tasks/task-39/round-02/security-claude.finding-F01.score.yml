@@ -1,0 +1,2 @@
+score: 55
+reason: Real flaw — memoization caches the materialized text per file so intra-file fan-out (N copies of `!cat X` in one parent) multiplies output by N at each level, yielding N^depth bytes well within the depth=16 cap; attack requires only a fork PR and the strict grammar permits it. Impact is bounded to CI DoS (no secrets via pull_request), making it a moderate but legitimate concern with a cheap mitigation (lower depth, output-size cap, or per-file directive cap).

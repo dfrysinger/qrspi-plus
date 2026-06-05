@@ -78,6 +78,54 @@ Each task implements **exactly one observable behavior** — one request handler
 
 A task that fails any floor check merges into the parent task that gives it observable behavior; do not ship sub-atomic tasks.
 
+## Schema-Migration Task Shape
+
+A **schema-migration task** applies an identical mechanical change to N files of the same shape — for example, deleting one frontmatter key from every agent file, replacing a single identifier uniformly across all skill prose, or renaming a top-level YAML field across a glob of config files. This task shape recurs in this codebase and is the narrow exception to the ordinary LOC ceiling and file-count guidance.
+
+### When to use this shape
+
+Use `sizing_exception: schema-migration` only when ALL of the following hold:
+
+- Every file in `Target files:` receives the same structural change (same pattern, same before/after; not "similar" or "related").
+- The change is mechanical-only — no logic modification, no behavioral delta, no per-file judgment calls.
+- A single bash check can assert the mechanical-only nature of the resulting diff.
+
+Do not use this exception for multi-feature bundles that happen to touch many files, for behavioral changes dressed up as migrations, or for any task where per-file human judgment is needed. The closed exception set remains: schema migration, CI scaffolding, reusable primitives — no new category is added by this contract.
+
+### Mandatory trio — all three fields required together
+
+When `sizing_exception: schema-migration` is declared, the task spec MUST carry all three of the following fields. No field is optional when the exception is used; omitting any one is a plan-spec defect:
+
+- `sizing_exception: schema-migration` — declares the exception; must be exactly this value for schema-migration tasks.
+- `sizing_rationale: <human-readable reason>` — one sentence explaining why this specific change is a mechanical same-shape migration (e.g., "removes the deprecated `model:` key added uniformly by T40 from all 41 agent frontmatter files").
+- `structural_lint: <script-path>` — a repo-relative path to a checked-in script under `scripts/structural-lints/` (e.g., `scripts/structural-lints/check-model-key-removal.sh`). The value must be a single token matching the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$`; whitespace, tab, newline, and any character outside that token class are rejected. The script must exist as a regular readable file at that path in the repository; a path that passes the token check but is absent from the repository is a plan-spec defect. The script receives no spec-controlled arguments; it is invoked as `bash -- <path>` from the repository root with the path passed as a single argv element (never interpolated into a `bash -c` string) against the proposed diff. The script must exit 0 when the diff is mechanical-only and non-empty, and exit non-zero when non-structural content is present or the diff is empty. Inline bash commands are not accepted as the field value; a literal command string instead of a valid script path is a plan-spec defect.
+
+### Effect on sizing limits
+
+When the mandatory trio is present and the `structural_lint` check executes successfully on the proposed diff:
+
+- **N-files: ungated.** No upper limit applies to the number of files the task may touch; the structural lint is the real ceiling, not a file count.
+- **LOC ceiling: exempted.** The ordinary 200-LOC ceiling does not apply to this task.
+
+Ordinary task-size discipline is not relaxed for non-schema-migration work. A task without the full mandatory trio is evaluated against the standard ceiling.
+
+### Plan-spec defects
+
+A schema-migration declaration is incomplete — and the LOC/file-count exemption is NOT granted — when ANY of the following holds:
+
+- `sizing_exception: schema-migration` is declared but `sizing_rationale:` is absent or empty.
+- `sizing_exception: schema-migration` is declared but `structural_lint:` is absent or empty.
+- `structural_lint:` is present but its value does not match the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$` (is an inline command, contains whitespace/tab/newline, contains `..`, is an absolute path, or uses characters outside the allowed token class).
+- `structural_lint:` carries a token-valid path but the named script does not exist as a regular readable file at the repository root; a missing or unreadable script is a configuration defect, not a content defect, and the exemption is denied.
+- `structural_lint:` names a valid, readable script path but the proposed diff is empty — a vacuous pass on an empty diff does not prove mechanical-only nature; the exemption is denied.
+- `structural_lint:` names a valid, readable script path but the script exits non-zero, indicating the diff contains non-structural content.
+
+The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception review) verifies all six conditions and emits a `severity: high, change_type: correctness` finding for each defect.
+
+## Multi-Actor Flow Check
+
+!cat skills/_shared/multi-actor-flow-check.md
+
 ## Process
 
 ### Plan Overview Subagent
@@ -92,6 +140,15 @@ A task that fails any floor check merges into the parent task that gives it obse
 **Task:** Break the structure into ordered tasks following vertical slices and phases.
 
 1. Break structure into ordered tasks following vertical slices and phases from `design.md`
+
+**PRECONDITION:** `skills/_shared/prompt-prose-detection.md`, `skills/_shared/prompt-prose-writer-addition.md`, and `skills/_shared/prompt-prose-test-expectations-clause.md` MUST exist on disk; halt the subagent with a named diagnostic if any required shared file is missing rather than proceeding with empty include content.
+
+!cat skills/_shared/prompt-prose-detection.md
+
+!cat skills/_shared/prompt-prose-writer-addition.md
+
+!cat skills/_shared/prompt-prose-test-expectations-clause.md
+
 2. Each task spec includes:
    - Exact file paths to create/modify
    - Description of what the task accomplishes
@@ -129,11 +186,19 @@ For large plans, farm task spec writing to sub-subagents:
 - Relevant sections of `structure.md`
 - `design.md` (for test strategy and vertical slice context)
 
+**PRECONDITION:** `skills/_shared/prompt-prose-detection.md`, `skills/_shared/prompt-prose-writer-addition.md`, and `skills/_shared/prompt-prose-test-expectations-clause.md` MUST exist on disk; halt the subagent with a named diagnostic if any required shared file is missing rather than proceeding with empty include content.
+
+!cat skills/_shared/prompt-prose-detection.md
+
+!cat skills/_shared/prompt-prose-writer-addition.md
+
+!cat skills/_shared/prompt-prose-test-expectations-clause.md
+
 Each sub-subagent writes `tasks/task-NN.md`. After all complete, the Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files — creating a single document as the only source of truth during review.
 
-### Per-Task Classification (`task_type` and `model`)
+### Per-Task Classification (`task_type` and `tier`)
 
-Every task spec — whether emitted by the merged-plan subagent or by a per-task sub-subagent — must set `task_type` and `model` in its frontmatter. Assign them in this order, per task. These flags drive Implement-skill routing: `task_type` selects between the TDD implementer and the lightweight implementer; `model` is forwarded as the per-invocation override on the implementer Agent dispatch.
+Every task spec — whether emitted by the merged-plan subagent or by a per-task sub-subagent — must set `task_type` and `tier` in its frontmatter (the per-task `model:` routing field is retired by G22 / design.md CD-1). Assign them in this order, per task. These flags drive Implement-skill routing: `task_type` selects between the TDD implementer and the lightweight implementer; `tier` is consumed at the dispatch boundary by the Tier Resolution Chain (owned by `scripts/_resolve-lib.sh`), which maps the tier to a concrete `(vendor, model)` pair via `config.md`'s `model_routing:` block — it is NOT a forwarded per-invocation model override.
 
 **`task_type` defaulting and dispatch-ordering note.** The `task_type` field drives which Implement-skill dispatch chain fires for the task:
 
@@ -147,41 +212,43 @@ Every per-task spec for a TDD task (`task_type: code` or absent) must carry an e
 
 Specs for `task_type: lightweight` tasks omit this note (no test-writer, no RED gate).
 
-**Step 1 — `task_type`.** Default `code`. Assign `task_type: lightweight` only when **all** target files match one of these globs:
-- `skills/**/SKILL.md`
-- `skills/**/templates/*.md`
-- `agents/qrspi-*.md`
-- `docs/**/*.md` (excluding `docs/qrspi/**` — those are pipeline artifacts, not docs)
-- `*.md` at repo root (e.g., CHANGELOG, AGENTS, README)
+**Step 1 — Classify each task as `code` or `lightweight`.** Default `task_type: code`.
 
-Edge cases:
-- Mixed target file lists (one prose file + one code file) → `code`. Lightweight is all-or-nothing; any executable surface in the diff promotes the whole task to `code`.
-- Frontmatter-only edits to `agents/*.md` (e.g. flipping a `model:` value) → `lightweight` per the glob — that change has no runtime behavior to TDD against.
-- New file creation → use the planned final path against the same globs. The path is determined by the task spec, not by `git status`.
+Assign `task_type: lightweight` when the task's primary deliverable is prompt prose OR non-prompt prose / docs / config that has no executable behavior to test.
 
-**Step 2 — `model`.** Run after `task_type` is set.
+**PRECONDITION:** `skills/_shared/prompt-prose-detection.md` MUST exist on disk; halt the subagent with a named diagnostic if the shared file is missing rather than proceeding with empty include content.
 
-- If `task_type == lightweight` → `model: sonnet`. No exception.
-- If `task_type == code` → `model: opus` if **any** of:
+!cat skills/_shared/prompt-prose-detection.md
+
+Apply the detection above to the planned target files. If the target IS prompt prose, classify lightweight. Mixed-deliverable tasks (one prompt-prose file + one code file in the same task) require ALL target files to satisfy the lightweight test; mixed tasks default to `task_type: code` — split per Goal-Specificity rules if genuinely mixed in nature.
+
+The classification gates downstream behavior: lightweight tasks dispatch to `qrspi-implementer-lightweight` (which inherits its own prompt-prose detection via the `prompt-prose-writer` skill preload); code tasks dispatch to `qrspi-implementer` (TDD path). Prompt prose NEVER lands on the TDD path by classification.
+
+**Step 2 — `tier`.** Run after `task_type` is set. Emits the per-task `tier:` frontmatter field consumed by the implementer dispatch (and co-escalated to the TDD test-writer dispatch); it supersedes the legacy per-task `model:` field (G22 / design.md CD-1).
+
+- If `task_type == lightweight` → `tier: low`. No exception.
+- If `task_type == code` → `tier: high` if **any** of:
   - `Target files` count > 3 (multi-file architectural touch)
   - Any target file matches a "core surface" glob: `skills/**/SKILL.md`, `skills/_shared/**`, `agents/qrspi-implementer*.md`, `agents/qrspi-implementer-lightweight*.md`, `skills/reviewer-protocol/**`, `skills/implementer-protocol/**`
   - The task is a fix-task spawned by Replan after an earlier fix-round failure (Replan tags it `fix_task_retry: true`)
   - The task carries `sizing_exception` (deliberately-bundled task in the closed exception set — schema migration, CI scaffolding, reusable primitives — higher uncertainty by construction)
-- Otherwise `model: sonnet`.
+- Otherwise (ordinary code) → `tier: medium`.
 
-**Operator override.** Both fields are editable by the operator before plan approval. The heuristic is a default, not a contract. A user who knows a single-file task is high-stakes can flip `model: opus` manually; a user who knows a 4-file task is mechanical can flip it back to `sonnet`.
+**Operator override.** The `tier:` field is editable by the operator before plan approval. The heuristic is a default, not a contract. A user who knows a single-file task is high-stakes can flip `tier: high` manually; a user who knows a 4-file task is mechanical can flip it back to `tier: medium`.
 
-**Defaults when fields are absent.** Plan files that omit `task_type:` and `model_role:` are read by Implement as `code` / `sonnet` with a one-line warning at dispatch — no hard failure, no forced rewrite.
+**Defaults when fields are absent.** Plan files that omit `task_type:` and `tier:` are read by Implement as `code` with `default_tier:` from `config.md` (`medium`) and a one-line warning at dispatch — no hard failure, no forced rewrite.
 
 ### Plan Document Structure (During Review)
 
 The output template below embeds **information-mapping patterns** directly: claim-before-evidence (the task title and Description's first sentence carry the load-bearing claim — what observable behavior the task delivers); one-paragraph-per-claim density (each bullet carries one claim, no compound bullets); scannable bullets and required headings (Phase / Target files / Dependencies / LOC estimate / Description / Test expectations are required structural slots, not optional prose); no "be concise" instructions (research-backed: brevity directives degrade factual reliability per the Phare benchmark and Hakim). Per-task specs are short by structural design (terse bullets, no narrative), not by an explicit brevity instruction.
 
+!cat skills/_shared/evergreen-output-rule.md
+
 ```markdown
 ---
 status: draft
 phase_start_commit: null
-test_writer_model: sonnet   # one of: sonnet | opus. default: sonnet. Operator override for qrspi-test-writer (per-phase dispatch). No heuristic — flip to opus when the test surface is gnarly (heavy e2e coverage, complex invariants, large acceptance-criterion set).
+test_writer_tier: null   # optional. one of: low | medium | high. When unset, the per-task `tier:` drives the co-escalated qrspi-test-writer dispatch (high-tier tasks co-escalate implementer + test-writer to the same tier per design.md CD-1). Set explicitly only to pin the test-writer tier independent of per-task tier.
 ---
 
 # Implementation Plan
@@ -280,143 +347,17 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Seven parallel r
 - `companion_design` — `design.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=design.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=design.md>>>` markers (**full pipeline only** — omit on `route: quick`)
 - `companion_structure` — `structure.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=structure.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=structure.md>>>` markers (**full pipeline only** — omit on `route: quick`)
 
-- **Claude unified plan-quality reviewer** — dispatch `Agent({ subagent_type: "qrspi-plan-reviewer", model: "sonnet" })` with a prompt containing only:
-  - `artifact_body`: `plan.md` content wrapped between `<<<UNTRUSTED-ARTIFACT-START id=plan.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=plan.md>>>` markers
-  - `companion_goals`, `companion_research`, `companion_phasing` (always present)
-  - `companion_design`, `companion_structure` (full pipeline only — omit on `route: quick`)
-  - `route`: `full` or `quick`
-  - `output`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/` (interpolate absolute path and round number)
-  - `round`: NN
-  - `reviewer_tag`: `quality-claude`
-  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` (omit when the artifact directory is not in a git repo)
-  - `scope_hint`: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>><scope_set as comma-separated tag list><<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` (scope-tagger narrowing — optional; include ONLY when using-qrspi step 12 (ref selection) narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
+The round's reviewers (Claude first-party + Codex third-party when `codex_reviews: true`) all dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh --agents` → Task fan-out → `scripts/await-round.sh`). `*-claude` tags route to the first-party Task path; `*-codex` tags route to the third-party companion path. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `codex_reviews: true`; on quick-fix routes the dispatcher omits `companion_design`/`companion_structure` automatically. Set the per-skill dispatch parameters, then include the shared reviewer-dispatch prose:
 
-  The reviewer protocol (5-field schema, change-type classifier, disk-write contract, untrusted-data handling per `skills/reviewer-protocol/SKILL.md`) arrives via the agent file's `skills:` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Plan-specific quality checks (completeness, criterion authoring, no-scope-creep, no-placeholders, task sizing, interpretation, phase alignment, design/structure traceability on full route) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat for this dispatch.
+```sh
+REVIEW_STEP="plan"
+REVIEW_ROUND="${ROUND}"                                  # current review round (NN)
+REVIEW_OUTPUT_DIR="<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}/"
+REVIEW_ARTIFACT="plan.md"
+REVIEW_AGENTS="quality-claude=qrspi-plan-reviewer,spec-claude=qrspi-plan-spec-reviewer,security-claude=qrspi-plan-security-reviewer,silent-failure-claude=qrspi-plan-silent-failure-hunter,goal-traceability-claude=qrspi-plan-goal-traceability-reviewer,test-coverage-claude=qrspi-plan-test-coverage-reviewer,scope-claude=qrspi-plan-scope-reviewer,quality-codex=qrspi-plan-reviewer,spec-codex=qrspi-plan-spec-reviewer,security-codex=qrspi-plan-security-reviewer,silent-failure-codex=qrspi-plan-silent-failure-hunter,goal-traceability-codex=qrspi-plan-goal-traceability-reviewer,test-coverage-codex=qrspi-plan-test-coverage-reviewer,scope-codex=qrspi-plan-scope-reviewer"
+```
 
-- **Claude plan-artifact reviewers (five)** — dispatch the five plan-artifact reviewers in parallel with the unified plan-quality reviewer above. Each dispatch reuses the **full plan-reviewer dispatch schema** (artifact_body + companions + route key + output + round + reviewer_tag) — they share companion delivery because they all consume the same plan + companion context. Per-template checks live in each agent body.
-
-  - `Agent({ subagent_type: "qrspi-plan-spec-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `spec-claude`
-  - `Agent({ subagent_type: "qrspi-plan-security-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `security-claude`
-  - `Agent({ subagent_type: "qrspi-plan-silent-failure-hunter", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `silent-failure-claude`
-  - `Agent({ subagent_type: "qrspi-plan-goal-traceability-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `goal-traceability-claude`
-  - `Agent({ subagent_type: "qrspi-plan-test-coverage-reviewer", model: "sonnet" })` — output: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/`, reviewer_tag: `test-coverage-claude`
-
-  Each prompt body carries: `artifact_body` (wrapped `plan.md`); `companion_goals`, `companion_research`, `companion_phasing` (always); `companion_design`, `companion_structure` (full pipeline only); `route`; `output` and `reviewer_tag` (per the bullets above); `round`: NN; `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` (omit when the artifact directory is not in a git repo); `scope_hint`: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>><scope_set as comma-separated tag list><<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` (scope-tagger narrowing — optional; include ONLY when using-qrspi step 12 (ref selection) narrowed for this round). The reviewer protocol arrives via each agent's `skills: [reviewer-protocol]` preload; the agent body carries the per-template checks. Zero rules content in main chat.
-
-- **Claude scope-reviewer subagent** — dispatch `Agent({ subagent_type: "qrspi-plan-scope-reviewer", model: "sonnet" })` in parallel with the quality + plan-artifact reviewers, with a prompt containing only:
-  - `artifact_body`: same untrusted-data-wrapped `plan.md` body
-  - `output`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/` (interpolate absolute path and round number)
-  - `round`: NN
-  - `reviewer_tag`: `scope-claude`
-  - `diff_file_path`: `<ABS_ARTIFACT_DIR>/reviews/plan/round-NN.diff` (omit when the artifact directory is not in a git repo)
-  - `scope_hint`: `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>><scope_set as comma-separated tag list><<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` (scope-tagger narrowing — optional; include ONLY when using-qrspi step 12 (ref selection) narrowed for this round; omit on rounds 1–2, broaden decisions, backward-loop resets, missing scope-sets, and `scope_tagger_enabled: false`)
-
-  The scope-reviewer's Step-1 Read of `skills/plan/owns-defers.md` delivers the Plan OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt. Scope-reviewer takes NO companions and NO `route` param.
-
-- **Codex reviews** (if `codex_reviews: true`) — dispatch SEVEN non-blocking Codex reviews in parallel (one unified quality + five plan-artifact + one scope) via shell pipelines:
-
-  All six artifact-quality reviewers below share the same companion set (`companion_goals`, `companion_research`, `companion_phasing`, `companion_design`, `companion_structure`) and the same `route` field; only the agent file and reviewer tag differ. On quick-fix routes, omit `--companion companion_design=...` and `--companion companion_structure=...` (those artifacts don't exist on the route).
-
-  ```sh
-  # Unified plan-quality reviewer (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-reviewer.md \
-    --reviewer-tag quality-codex \
-    --output-dir "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}/" \
-    --round "$ROUND" \
-    --artifact-body plan.md \
-    --companion companion_goals=goals.md \
-    --companion companion_research=research/summary.md \
-    --companion companion_phasing=phasing.md \
-    --companion companion_design=design.md \
-    --companion companion_structure=structure.md \
-    --field route="$ROUTE" \
-    --diff-file "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}.diff" \
-    --scope-hint "$SCOPE_HINT"
-
-  # Plan-artifact reviewer: spec (Codex) — same shape, --agent-file/--reviewer-tag swapped
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-spec-reviewer.md \
-    --reviewer-tag spec-codex \
-    [...same flags as above except agent-file + reviewer-tag...]
-
-  # Plan-artifact reviewer: security (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-security-reviewer.md \
-    --reviewer-tag security-codex \
-    [...same flags as above...]
-
-  # Plan-artifact reviewer: silent-failure-hunter (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-silent-failure-hunter.md \
-    --reviewer-tag silent-failure-codex \
-    [...same flags as above...]
-
-  # Plan-artifact reviewer: goal-traceability (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-goal-traceability-reviewer.md \
-    --reviewer-tag goal-traceability-codex \
-    [...same flags as above...]
-
-  # Plan-artifact reviewer: test-coverage (Codex)
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-test-coverage-reviewer.md \
-    --reviewer-tag test-coverage-codex \
-    [...same flags as above...]
-
-  # Scope reviewer (Codex) — no companions
-  scripts/run-codex-review.sh \
-    --agent-file agents/qrspi-plan-scope-reviewer.md \
-    --reviewer-tag scope-codex \
-    --output-dir "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}/" \
-    --round "$ROUND" \
-    --artifact-body plan.md \
-    --diff-file "<ABS_ARTIFACT_DIR>/reviews/plan/round-${ROUND}.diff" \
-    --scope-hint "$SCOPE_HINT"
-  ```
-
-  Main chat sees only the jobIds Codex prints.
-
-  After `await` returns for each dispatched jobId, on exit 0 run the splitter to split Codex output into per-finding files:
-
-  ```sh
-  scripts/codex-companion-bg.sh await <qualityJobId> > /tmp/codex-stdout-<qualityJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<qualityJobId>.txt reviews/plan/round-NN/ quality-codex
-  fi
-  # On either failure path (await non-zero OR splitter non-zero), the round
-  # directory has zero output for the tag — step 2's schema guard catches it.
-
-  scripts/codex-companion-bg.sh await <specJobId> > /tmp/codex-stdout-<specJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<specJobId>.txt reviews/plan/round-NN/ spec-codex
-  fi
-
-  scripts/codex-companion-bg.sh await <securityJobId> > /tmp/codex-stdout-<securityJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<securityJobId>.txt reviews/plan/round-NN/ security-codex
-  fi
-
-  scripts/codex-companion-bg.sh await <silentFailureJobId> > /tmp/codex-stdout-<silentFailureJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<silentFailureJobId>.txt reviews/plan/round-NN/ silent-failure-codex
-  fi
-
-  scripts/codex-companion-bg.sh await <goalTraceabilityJobId> > /tmp/codex-stdout-<goalTraceabilityJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<goalTraceabilityJobId>.txt reviews/plan/round-NN/ goal-traceability-codex
-  fi
-
-  scripts/codex-companion-bg.sh await <testCoverageJobId> > /tmp/codex-stdout-<testCoverageJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<testCoverageJobId>.txt reviews/plan/round-NN/ test-coverage-codex
-  fi
-
-  scripts/codex-companion-bg.sh await <scopeJobId> > /tmp/codex-stdout-<scopeJobId>.txt
-  if [[ $? -eq 0 ]]; then
-    scripts/codex-finding-splitter.sh /tmp/codex-stdout-<scopeJobId>.txt reviews/plan/round-NN/ scope-codex
-  fi
-  ```
+!cat skills/_shared/reviewer-dispatch-prose.md
 
 - The default-option-2 recommendation in the Standard Review Loop is especially important here because plan reviews catch cross-file consistency / forward dependencies / migration ordering across 10+ task specs that the human cannot feasibly verify by hand.
 
@@ -489,7 +430,7 @@ phase: {phase number}
 pipeline: full
 goal_ids: [G1, G2]   # QRSPI-internal traceability metadata — see ID-Hygiene Contract below
 task_type: code      # one of: code | lightweight. default: code. See "Per-Task Classification" below.
-model: sonnet        # one of: sonnet | opus. default: sonnet. See "Per-Task Classification" below.
+tier: medium         # one of: low | medium | high. default: medium. See "Per-Task Classification" below.
 # Optional: justify a legitimate bundle (multi-handler or >200 LOC).
 # Reason must be one of: schema migration, CI scaffolding, reusable primitives.
 # sizing_exception: <one-line reason>
@@ -610,6 +551,86 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — plan", descrip
 **REQUIRED:** Invoke the next skill in the `config.md` route after `plan`.
 
 If compaction was not done before splitting (user declined), recommend it now: "This is a good point to compact context before the next step (`/compact`)."
+
+## Test Expectations
+
+Each per-task spec carries a `**Test expectations:**` bullet list naming the observable behaviors, edge cases, and error conditions the implementer must cover (see the per-task template above and § Quick-Fix Plan Behavior for the standard authoring shape). The bullets describe behavior in plain language; the Test skill and the implementer's TDD cycle consume them as the source of truth for which tests must exist before implementation lands.
+
+The standard bullet shape covers the common case where every test the producing task must satisfy lives inside the task's `Target files:`. Sweep tasks — tasks that systematically remove, replace, or enforce an invariant across many files at once — break this assumption: the test files that assert on the swept property's previous values are not in the producing task's `files_in_scope`, so the per-task gate never runs them, the task ships GREEN, and the integrate phase surfaces stale-test failures the producing task should have owned. The subsection below closes that gap by requiring sweep-task plan-spec authors to enumerate dependent tests at plan-authoring time.
+
+### Sweep Task Contract
+
+A **sweep task** removes, replaces, or enforces an invariant across many files at once (e.g., "strip `model:` from all agent frontmatter," "rename `qrspi-foo` to `qrspi-bar` across all skills," "remove all `${VAR}` references in CDs"). Sweep tasks systematically invalidate test files that assert on the swept property's previous values, even when those test files are not in the task's `files_in_scope`.
+
+A sweep-task plan-spec MUST include, in its Test Expectations block, a `dependent_tests:` field with one of two values:
+
+- A **list of test file paths** the per-task gate must additionally run. Each path must be a file (not a directory glob) and must exist at plan-authoring time. Each listed test SHOULD be expected to either (a) pass unchanged once the sweep is applied or (b) require a specific predicted update — describe which in one sentence per file.
+- The literal string `none` followed on the next line by a grep-confirmable search command of shape `grep -rn -- '<pattern>' tests/` that demonstrably returns zero matches. The pattern is the swept identifier (e.g., `'^model:'`) — the plan-reviewer will re-run the grep and surface a finding if it returns one or more hits.
+
+Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defect, not a deferred-to-implementer concern. The Plan reviewer (`agents/qrspi-plan-reviewer.md` § Sweep-task detection) detects sweep-shaped tasks by heuristic (>5 same-extension files in `files_in_scope` plus one of eight sweep keywords in the title or description, case-insensitive word-boundary match) and emits a `severity: high, change_type: correctness` finding when the field is missing or malformed.
+
+**Worked example A — explicit dependent test path list with per-file dispositions.** A sweep task that strips `model:` from all 41 agent frontmatter files lists every test that asserts on the previous `model:` values, with a one-sentence disposition per file:
+
+```markdown
+- **Test expectations:**
+  - All 41 agent files have `model:` removed from frontmatter; no other frontmatter fields change.
+  - `dependent_tests:`
+    - `tests/unit/test-scope-tagger-dispatch.bats` — currently asserts `model: opus` on line 38; update to assert `model:` is absent post-sweep.
+    - `tests/unit/test-verifier-agent-file.bats` — currently asserts `model: sonnet` on line 7; update to assert `model:` is absent post-sweep.
+    - `tests/unit/test-visual-fidelity-reviewer-agent.bats` — currently asserts a specific model value on line 35; update to assert `model:` is absent post-sweep.
+    - `tests/unit/test-test-writer-dual-mode.bats` — currently asserts `model: opus` on line 52; update to assert `model:` is absent post-sweep.
+    - `tests/unit/test-change-type-partition.bats` — currently asserts model-routed dispatch on line 15; passes unchanged once the dispatcher's fallback path is exercised.
+    - `tests/unit/test-section-anchor-narrow-read.bats` — currently asserts `model: sonnet` on line 206; update to assert `model:` is absent post-sweep.
+```
+
+**Worked example B — `none` plus grep-confirmed zero-match proof.** A sweep task that removes a property no test currently asserts on cites a reproducible grep command the reviewer re-runs from the repo root:
+
+```markdown
+- **Test expectations:**
+  - All 17 CD files have `${VAR}` references replaced with their resolved literals; behavior unchanged.
+  - `dependent_tests: none`
+    - `grep -rn -- '^model:' tests/` returns zero matches as of plan-authoring time; if a future test introduces an assertion on `model:` before this task lands, the reviewer's re-run will surface the new hit and demand the field be re-shaped to a path list.
+```
+
+### Cross-Task Consumer Surface
+
+A task is **consumer-surface-touching** when its description or `files_in_scope` indicates ANY of the following five trigger classes:
+
+- Adding, renaming, or removing a function, method, class, interface, exported symbol, or other named declaration.
+- Adding, renaming, removing, or moving a file listed in `files_in_scope`.
+- Changing the public signature (parameter list, return type, exceptions or errors raised, side effects, or visibility) of any callable in `files_in_scope`.
+- Changing the schema or structure of any structured document (JSON, YAML, frontmatter, TOML, XML, etc.) in `files_in_scope` whose keys, anchors, or top-level identifiers are referenced by name from other files.
+- Adding, renaming, or removing a documented contract — a configuration key, environment variable, CLI flag, URL route, RPC method, command-line subcommand, schema field, anchor heading, or any other named extension point declared in `files_in_scope`.
+
+A task that only modifies the body of an existing callable, edits prose paragraphs without changing referenced anchor names, or fixes formatting is NOT consumer-surface-touching. The trigger fires on changes that other code or documents could plausibly be coupled to *by name*.
+
+When the trigger fires, the plan-spec MUST include a `cross_task_consumers:` field with one of two shapes:
+
+- A **list of consumer file paths** outside `files_in_scope`, each followed on the next line by a one-sentence disposition. The disposition vocabulary is exactly four values: `no change` (consumer keeps working unmodified), `pass-through` (consumer's behavior intentionally unchanged but the consumer file must be re-verified), `co-edit` (consumer file must be modified inside this same task), or `break-and-fix-task` (consumer file will be intentionally broken by this task and repaired in a named follow-up task — the follow-up task ID MUST be cited and MUST already exist in the plan).
+- The literal string `none` followed on the next line by a reproducible search command demonstrating zero consumer references exist outside `files_in_scope`. Command shape is left to the author: `grep`, `rg`, `git grep`, a language-specific reference-finder (`go vet`, `tsc --noEmit -p`, `rustc --emit=metadata`, IDE-equivalent CLI), or any other reproducible zero-result probe. The reviewer re-runs the command and treats a non-zero hit count as a defect.
+
+Skipping the `cross_task_consumers:` field on a consumer-surface-touching task is a plan-spec defect, not a deferred-to-implementer concern. The Plan reviewer (`agents/qrspi-plan-reviewer.md` § Cross-task consumer surface detection) detects consumer-surface-touching tasks by the same trigger classes and emits a `severity: high, change_type: correctness` finding when the field is missing, malformed, claims `none` against a non-zero search hit, names an invalid disposition, or cites a `break-and-fix-task` follow-up task ID that does not exist in the plan.
+
+**Sweep + consumer composition.** A task that satisfies BOTH the sweep-task trigger (see § Sweep Task Contract above) AND the consumer-surface trigger carries `dependent_tests:` AND `cross_task_consumers:` as separate fields. The two contracts ask different questions about different downstream surfaces (test files that assert on swept values vs. consumer files referencing the changed contract by name) and are not merged — the reviewer evaluates each clause independently and may emit findings against either, both, or neither.
+
+**Worked example C — public-symbol rename with three consumers (trigger fires).** A task renames the public function `check_codex_available` to `check_second_reviewer_available` across the dispatcher script and one consumer skill, listing three consumer files outside `files_in_scope` with explicit dispositions:
+
+```markdown
+- **Test expectations:**
+  - `scripts/dispatch-agent.sh` exports the renamed helper; `skills/using-qrspi/SKILL.md` calls the new name.
+  - `cross_task_consumers:`
+    - `skills/goals/SKILL.md` — references the old helper name in its inline availability probe; `co-edit` to rename the call site inside this task.
+    - `skills/implement/SKILL.md` — references the old helper name in the second-reviewer dispatch block; `co-edit` to rename the call site inside this task.
+    - `tests/unit/test-codex-host-vendor-matrix.bats` — asserts on the helper-name surface as documentation, not as an executable reference; `no change` because the test was rewritten in T07 to target the host×vendor matrix and no longer pins the helper name.
+```
+
+**Worked example D — body-only bug fix (trigger does not fire).** A task fixes an off-by-one error inside the body of an existing function in one file. No public-signature change, no rename, no schema change, no extension-point change. The `cross_task_consumers:` field is NOT required because the trigger does not fire — the change is body-only and no other file could be coupled to the bug-fix by name:
+
+```markdown
+- **Test expectations:**
+  - `lib/pagination.go` `paginate()` returns the correct slice when `offset == len(items)`; existing public signature unchanged.
+  - (no `cross_task_consumers:` field — the trigger does not fire because this is a body-only bug fix with no public-signature, schema, or extension-point change.)
+```
 
 ## Red Flags — STOP
 

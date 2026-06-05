@@ -1,0 +1,2 @@
+score: 33
+reason: Real but minor doc-completeness nit; the exit-1 conditions already emit distinct named stderr diagnostics that "surface diagnostic" forwards, and all are halt-and-surface (not auto-recoverable), so the distinguishability hazard is largely overstated.

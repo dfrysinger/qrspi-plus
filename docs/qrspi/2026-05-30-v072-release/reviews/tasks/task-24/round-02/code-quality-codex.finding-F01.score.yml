@@ -1,0 +1,2 @@
+score: 100
+reason: Confirmed: multi-line output (VERDICT=auto always present) makes `grep -qv '^DETECTION_TYPE=llm-context$'` trivially exit 0 regardless of whether the pattern is present, so the negative assertion is permanently defeated and a regression emitting DETECTION_TYPE=llm-context would silently pass.

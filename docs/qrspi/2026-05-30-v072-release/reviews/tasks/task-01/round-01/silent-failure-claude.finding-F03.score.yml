@@ -1,0 +1,2 @@
+score: 68
+reason: Real correctness issue—orchestration rules must specify exit-code validation to prevent silent partial-output consumption. However, task definition's "short canonical statement" constraint and lack of explicit error-handling requirement in DoD create some ambiguity about whether this belongs in the snippet vs. broader orchestrator prose.

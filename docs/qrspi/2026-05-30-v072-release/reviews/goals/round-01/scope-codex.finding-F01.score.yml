@@ -1,0 +1,2 @@
+score: 85
+reason: Finding correctly identifies phasing/ordering guidance (lines 689, 739, 798-802) that violates the explicit Goals DEFERS contract ("Phasing decisions, vertical slice authoring, roadmap → Phasing"), which is labeled as a locked scope contract in skills/goals/owns-defers.md and a Prohibition in skills/goals/SKILL.md.

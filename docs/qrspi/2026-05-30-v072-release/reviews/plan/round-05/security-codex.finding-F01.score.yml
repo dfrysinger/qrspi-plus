@@ -1,0 +1,2 @@
+score: 22
+reason: Altitude mismatch (Plan reviewer flagging a documented Design D3 decision); the probe-failure → `second_reviewer:false` path is intentional per D3, the stderr `[second-reviewer-unavailable]` diagnostic is already required by plan line 1134, and D4 enforces a loud halt at dispatch time if a `true` value is hand-edited in — so the proposed "fix (b)" is substantively already met and "fix (a)" contradicts a recorded design posture.

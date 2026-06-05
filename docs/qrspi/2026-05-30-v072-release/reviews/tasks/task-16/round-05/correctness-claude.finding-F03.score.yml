@@ -1,0 +1,2 @@
+score: 72
+reason: Verified in artifact — $tier is interpolated raw into grep ERE (87,92) and sed (99) with no allowlist in resolve_tier/resolve_model, enabling alternation injection that selects a wrong row without firing the none-halt, a real gap defeating the CD-1 loud-halt guarantee though from semi-controlled tier sources.

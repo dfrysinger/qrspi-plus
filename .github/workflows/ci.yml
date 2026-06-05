@@ -33,8 +33,10 @@ jobs:
         # and SC2016 flags single-quoted `$VAR` strings in printf/diagnostic
         # messages where literal `$VAR` is intentional. Keep warnings visible in
         # logs but non-blocking; the ban-list job is the real bash-3.2 backstop.
+        # Walks tests/ recursively so tests/lint/* shell helpers (when added)
+        # are covered on the same blocking lint path.
         run: |
-          find scripts tests/helpers \
+          find scripts tests \
             \( -name '*.sh' -o -name '*.bash' \) \
             -print0 \
           | xargs -0 shellcheck --shell=bash --severity=error
@@ -42,7 +44,7 @@ jobs:
       - name: Option B ban-list grep (bash 4+ constructs)
         run: |
           set +e
-          hits=$(find scripts tests/helpers \
+          hits=$(find scripts tests \
             \( -name '*.sh' -o -name '*.bash' \) \
             -print0 \
           | xargs -0 grep --color=never -En \
@@ -91,7 +93,8 @@ jobs:
             findutils \
             gawk \
             nodejs \
-            perl-utils
+            perl-utils \
+            python3
           # alpine ships `awk` as a busybox applet. Tests rely on GNU awk
           # semantics (e.g. POSIX character-class regexes inside `/.../`,
           # multi-statement actions), so replace the busybox symlink with
@@ -107,8 +110,25 @@ jobs:
         # evergreen-markdown scan that shell out to `git ls-files`.
         run: git config --global --add safe.directory '*'
 
-      - name: Run unit BATS suite
-        run: bats --tap tests/unit/
+      - name: Run BATS suites (recursive over tests/)
+        # Walk tests/ recursively so any new top-level subtree
+        # (e.g. tests/lint/) lands on the same blocking path as
+        # tests/unit/ and tests/acceptance/. `bats -r tests` discovers
+        # *.bats under any subdirectory.
+        run: bats --tap -r tests
 
-      - name: Run acceptance BATS suite
-        run: bats --tap tests/acceptance/
+      - name: Build-sync gate — node tools/build-plugin.mjs
+        # Rebuild the committed `build/` plugin tree from
+        # source. Must precede the diff gate below so the diff can compare
+        # the freshly-rebuilt tree against what the PR branch shipped.
+        run: node tools/build-plugin.mjs
+
+      - name: Build-sync gate — git diff --exit-code build/ + marketplace.json
+        # PR-blocking failure mode if `build/` on the branch
+        # differs from what the resolver produces from current source, or
+        # if `.claude-plugin/marketplace.json` was not refreshed alongside
+        # a source change. Fix locally with `node tools/build-plugin.mjs`
+        # then `git add build/ .claude-plugin/marketplace.json` and amend
+        # the PR commit. (CI does NOT auto-commit — v0.7.2 keeps the
+        # source/build pairing under contributor control.)
+        run: git diff --exit-code build/ .claude-plugin/marketplace.json

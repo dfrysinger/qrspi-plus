@@ -1,0 +1,2 @@
+score: 82
+reason: The bats file has no test combining no-host-signals + recognized vendor override (openai-codex) + non-zero exit assertion; all unknown-host tests use no override and all override tests use a known host (COPILOT_CLI=1), confirming the gap is real and the probe's current logic would exit 0 (passing) for this uncovered path despite the spec (task-19.md:42) requiring non-zero for unknown-host scenarios.

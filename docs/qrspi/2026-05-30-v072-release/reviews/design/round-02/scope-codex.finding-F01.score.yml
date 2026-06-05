@@ -1,0 +1,2 @@
+score: 60
+reason: Real OWNS/DEFERS drift exists (notably "one bats file per script" = per-test-file layout, and T5's enumerated per-agent assertion items), though some flagged content is defensible as coverage-boundary and the line citation is slightly off.

@@ -1,0 +1,2 @@
+score: 22
+reason: Design G16 § C and deliverable 4 explicitly lock the "1-paragraph audit; if no raw paths, document with a one-line comment" option and defer broader scripts/ sweeps to v0.7.3 (#268); Plan's T21 faithfully transcribes that locked design decision, so the finding re-litigates a Design-altitude choice rather than identifying a Plan-altitude defect.

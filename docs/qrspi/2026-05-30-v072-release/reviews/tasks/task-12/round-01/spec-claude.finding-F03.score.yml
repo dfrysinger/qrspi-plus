@@ -1,0 +1,2 @@
+score: 100
+reason: Bash environment-variable semantics: VAR=value run_function does not export VAR to subprocesses. Script sees QRSPI_SCOPE_TAGGER_ENABLED as false (default), skips blocking check entirely, falls through to broaden decision, exits 0. Test incorrectly expects non-zero status; CRITICAL test correctness failure.

@@ -1,0 +1,42 @@
+diff --git a/tests/integration/test-reference-gate-pause.bats b/tests/integration/test-reference-gate-pause.bats
+index dc557a2..656bbcc 100644
+--- a/tests/integration/test-reference-gate-pause.bats
++++ b/tests/integration/test-reference-gate-pause.bats
+@@ -284,7 +284,8 @@ EOF
+ @test "[G15-sweep] Plan reviewer agent body uses strict >5 same-extension threshold" {
+   # Strict greater-than five files of the same extension — the design pins
+   # the >5 boundary deliberately (not >=5) so a 5-file task does NOT trip.
+-  grep -E ">5|more than (five|5)|strictly greater than (five|5)" "$PLAN_REVIEWER_AGENT"
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
++    ">5|more than (five|5)|strictly greater than (five|5)"
+ }
+ 
+ @test "[G15-sweep] Plan reviewer agent body lists the eight sweep keywords" {
+@@ -300,22 +301,22 @@ EOF
+ }
+ 
+ @test "[G15-sweep] Plan reviewer agent body specifies case-insensitive word-boundary matching" {
+-  grep -E "case-insensitive" "$PLAN_REVIEWER_AGENT"
+-  grep -E "word-boundary" "$PLAN_REVIEWER_AGENT"
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" "case-insensitive"
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" "word-boundary"
+ }
+ 
+ @test "[G15-sweep] Plan reviewer agent body emits high-severity correctness finding for missing dependent_tests:" {
+   # Missing `dependent_tests:` on a sweep-shaped task is a plan-spec defect —
+   # the reviewer surfaces a `severity: high, change_type: correctness` finding.
+-  grep -E "severity: high" "$PLAN_REVIEWER_AGENT"
+-  grep -E "change_type: correctness" "$PLAN_REVIEWER_AGENT"
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" "severity: high"
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" "change_type: correctness"
+ }
+ 
+ @test "[G15-sweep] Plan reviewer agent body covers malformed dependent_tests: variants" {
+   # Malformed shapes named in the contract: missing-field, no paths,
+   # `none` without a grep command, and `none` with a grep returning >=1 hit.
+   grep -E "[Mm]issing.*field|missing.*\`dependent_tests" "$PLAN_REVIEWER_AGENT"
+-  grep -E "[Mm]alformed|no paths|no .none." "$PLAN_REVIEWER_AGENT"
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" "no paths"
+   grep -E "(returns? )?(>=|≥|>= ?1|one or more|≥ ?1) hit" "$PLAN_REVIEWER_AGENT"
+ }
+ 

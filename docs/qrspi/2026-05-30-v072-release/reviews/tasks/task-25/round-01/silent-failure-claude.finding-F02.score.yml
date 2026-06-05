@@ -1,0 +1,3 @@
+finding_tag: silent-failure-claude.R1-F02
+score: 76
+reason: Real correctness issue—addition files instruct agents to Read rules with no error handling, silent-failure risk defeats their purpose of enforcing rule compliance; fix is straightforward and load-bearing.

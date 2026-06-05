@@ -1,0 +1,2 @@
+score: 50
+reason: Mixed [T32-split] vs [split] prefixes exist (26 pre-existing tests use [T32-split], new T34 tests use [split]), but no documenting comment exists as finding claims; this is a moderate inconsistency that doesn't affect correctness.

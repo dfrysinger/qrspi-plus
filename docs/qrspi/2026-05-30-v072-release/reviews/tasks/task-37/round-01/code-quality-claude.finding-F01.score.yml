@@ -1,0 +1,2 @@
+score: 78
+reason: Verified — `G35` (Goal ID `\bG\d+\b`) appears on line 4 of a bats file under `tests/lint/`, which is outside `docs/qrspi/` and matches the implementer-protocol ID Hygiene MUST forbidding QRSPI-internal IDs in code comments and test surfaces.

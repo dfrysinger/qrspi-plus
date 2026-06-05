@@ -1,0 +1,2 @@
+score: 60
+reason: Verified — SECRET_BASENAME_PATTERNS denylist (two call sites with divergent messages) is shipped production defense-in-depth code with zero coverage in test-build-gate.bats; legitimate medium test-coverage gap, though impact is bounded since this is defense-in-depth.

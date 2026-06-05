@@ -1,0 +1,43 @@
+diff --git a/skills/reviewer-protocol/SKILL.md b/skills/reviewer-protocol/SKILL.md
+index e858374..b1786dd 100644
+--- a/skills/reviewer-protocol/SKILL.md
++++ b/skills/reviewer-protocol/SKILL.md
+@@ -1,11 +1,11 @@
+ ---
+ name: reviewer-protocol
+-description: Cross-cutting QRSPI reviewer protocol — finding schema, change-type classifier, untrusted-data handling, disk-write contract.
++description: Cross-cutting QRSPI reviewer protocol — finding schema, change-type classifier, untrusted-data handling, and dispatch contract. Per-channel emission contracts live in sibling files first-party-emission.md and third-party-emission.md.
+ ---
+ 
+ # QRSPI Reviewer Protocol
+ 
+-This skill is the single consolidated reviewer-shared content asset for the QRSPI pipeline. It defines the cross-cutting reviewer contract — finding schema, change-type classifier, disk-write contract, and untrusted-data handling — that every reviewer subagent uses.
++This skill is the single consolidated reviewer-shared content asset for the QRSPI pipeline. It defines the cross-cutting transport-neutral reviewer contract — finding schema, change-type classifier, dispatch contract, and untrusted-data handling — that every reviewer subagent uses. The per-channel emission contracts live in sibling files (`first-party-emission.md`, `third-party-emission.md`).
+ 
+ **Delivery.** This skill is delivered to reviewer subagents two ways:
+ 
+diff --git a/tests/unit/test-per-finding-file-emission.bats b/tests/unit/test-per-finding-file-emission.bats
+index f4d4b18..b05c4cd 100644
+--- a/tests/unit/test-per-finding-file-emission.bats
++++ b/tests/unit/test-per-finding-file-emission.bats
+@@ -153,6 +153,20 @@ setup() {
+   fi
+ }
+ 
++@test "reviewer-protocol SKILL.md self-description is emission-agnostic (no 'disk-write contract' tokens)" {
++  # Pins the post-split self-description: after G6/Task-03 moved the disk-write
++  # contract prose out of SKILL.md into first-party-emission.md, the frontmatter
++  # description and intro paragraph must not still advertise it as a core
++  # protocol concern. (Round-2 fix for spec-claude/spec-codex F01.)
++  local f="skills/reviewer-protocol/SKILL.md"
++  [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
++  if grep -qiF 'disk-write contract' "$f"; then
++    grep -niF 'disk-write contract' "$f"
++    echo "SKILL.md self-description still advertises 'disk-write contract' as core protocol surface"
++    return 1
++  fi
++}
++
+ @test "reviewer-protocol SKILL.md carries no pre-rename script/file references" {
+   local f="skills/reviewer-protocol/SKILL.md"
+   if grep -qE 'run-codex-review|codex-emission-override|codex-finding-splitter' "$f"; then

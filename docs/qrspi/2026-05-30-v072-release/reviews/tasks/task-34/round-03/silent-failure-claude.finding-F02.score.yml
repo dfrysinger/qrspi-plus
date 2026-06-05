@@ -1,0 +1,2 @@
+score: 100
+reason: Mismatch HALT test creates file once, then immediately greps it without any intervening code that could modify it; all three content-assertions are guaranteed to pass from the moment the file is written, making the test vacuous.

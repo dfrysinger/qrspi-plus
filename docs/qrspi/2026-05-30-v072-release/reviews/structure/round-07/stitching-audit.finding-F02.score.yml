@@ -1,0 +1,2 @@
+score: 88
+reason: Verified — design.md G31 Distribution Table row 9 requires inline Addition C in agents/qrspi-plan-test-coverage-reviewer.md, but structure.md File Map has no row for that file in any slice (sweep row at line 93 only covers tier/DISPATCH_FILE, not Addition C); all 8 other G31 consumers have dedicated rows, making consumer #9 a clear omission that will cause Implement to skip Addition C and the G31 acceptance check (design.md line 2704) to fail.

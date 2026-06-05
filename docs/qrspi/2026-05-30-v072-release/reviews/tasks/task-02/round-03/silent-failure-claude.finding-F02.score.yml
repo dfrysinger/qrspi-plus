@@ -1,0 +1,2 @@
+score: 50
+reason: The `|| true` pattern at lines 210 and 250 suppresses awk subprocess failures (missing awk, OOM, TOCTOU), causing wrong halt-cause attribution. This is a legitimate correctness gap and asymmetric with the explicit jq guard. However, the pattern appears pre-existing (not introduced in R2/R3 diff); R2's readability guards are incomplete but not attempting to address subprocess failure modes.

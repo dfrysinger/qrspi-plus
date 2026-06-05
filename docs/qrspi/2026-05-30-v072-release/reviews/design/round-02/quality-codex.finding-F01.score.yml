@@ -1,0 +1,2 @@
+score: 75
+reason: Diff snapshot at review time confirms rename-inventory said `third-party-emission-override.md` while component-map/G6-split/path-table said `third-party-emission.md` — real intra-doc canonical-name conflict that would have caused implementation drift; correctly diagnosed.

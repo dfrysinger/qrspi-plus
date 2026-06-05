@@ -1,0 +1,2 @@
+score: 90
+reason: Directly confirmed — task-17.md:49 DoD requires "each" post-Task-16 fail-loud paragraph to be asserted; SKILL.md carries back-pointer sentences in both L466 (none-halt) and L512 (missing-block), but the bats file contains only one assertion (L777-783, missing-block) and ends at L784 with no test covering the L466 none-halt paragraph's back-pointer.

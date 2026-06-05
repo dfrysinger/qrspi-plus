@@ -1,0 +1,2 @@
+score: 55
+reason: R2 fix 1 test (lines 402–411) is asymmetric with fixes 2 and 3, which each have paired JSON-cause and stderr-diagnostic tests. This test verifies only the JSON halt cause; a regression suppressing stderr output for this code path would slip through undetected. Real test coverage gap, but the main behavior (halt cause in JSON) is verified.

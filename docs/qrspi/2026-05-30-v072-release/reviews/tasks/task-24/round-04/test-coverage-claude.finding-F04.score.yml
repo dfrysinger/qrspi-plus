@@ -1,0 +1,2 @@
+score: 55
+reason: Gap is real and confirmed — no test combines COPILOT_CLI=1 + CLAUDE_PROJECT_DIR simultaneously to prove if-elif precedence — but the task-24.md bullet spec explicitly requires only the isolated "no COPILOT_CLI" form for the Claude Code branch, making this an unstated coverage best-practice rather than a violation of a documented test requirement, keeping practical severity low.

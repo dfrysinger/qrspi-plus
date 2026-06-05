@@ -1,0 +1,2 @@
+score: 50
+reason: Test uses 12-char hash in fixture but asserts with [0-9a-f]+ (1+ chars) instead of contract-required [0-9a-f]{40}; this is a real inconsistency with the existing "Successful approval" fixture but is low-severity since the test is about presence not correctness of SHA format.

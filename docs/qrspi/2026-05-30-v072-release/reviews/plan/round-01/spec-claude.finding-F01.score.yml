@@ -1,0 +1,2 @@
+score: 78
+reason: Verified — T09 (line 567) and T11 (line 686) list `scripts/run-codex-review.sh` as a Target with no dep on T20 (T11 deps: none), and T13 (line 823) references the post-rename `dispatch-agent.sh --implementer-commit` in `skills/implement/SKILL.md` while depending only on Task 12; T20's `Dependencies: Task 12, Task 19` / `Blocks: T21` confirm the missing edges around the T20 rename cluster — a concrete correctness gap in the dep graph that ironically embodies the very G18 under-scoping pattern this release is closing.

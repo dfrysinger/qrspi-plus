@@ -1,0 +1,2 @@
+score: 82
+reason: Contradiction is real and introduced by this task — the round-02.diff changed the "#### Missing `model_routing:` block" section (old line ~502, new ~498) from warn-and-continue to fail-loudly, but left the umbrella intro at line 422 ("all four blocks are optional… falls back to agent-bundled defaults") untouched, creating a direct contradiction that will mislead anyone reading only the umbrella statement.

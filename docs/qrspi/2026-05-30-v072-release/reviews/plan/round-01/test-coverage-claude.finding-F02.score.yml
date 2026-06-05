@@ -1,0 +1,2 @@
+score: 38
+reason: Mental-replay bullet is genuinely weaker (non-falsifiable thought experiment), but task is lightweight prompt-prose (non-TDD), other 5 bullets already cover auditable content via grep/inspect, and design.md ## G35 itself uses "mental-replay acceptance criterion" terminology — severity:high overstates a largely-redundant qualitative check.

@@ -1,0 +1,13 @@
+diff --git a/tests/unit/test-ci-workflow-shape.bats b/tests/unit/test-ci-workflow-shape.bats
+index 52366b5..30f529d 100644
+--- a/tests/unit/test-ci-workflow-shape.bats
++++ b/tests/unit/test-ci-workflow-shape.bats
+@@ -380,7 +380,7 @@ setup_file() {
+ @test "[T40/G21] no tracked hook script wires body-guard or bats-body-assertion (C1 enforcement)" {
+   require_repo_root
+   # G21 sub-decision C1: CI gate only; no pre-commit hook.
+-  # Assert no tracked file under scripts/, .husky/, .githooks/, or lefthook.*
++  # Assert no tracked file under scripts/, .husky/, .githooks/, lefthook.*, .pre-commit-config.*, or .pre-commit-hooks.*
+   # references body-guard or bats-body-assertion. Load-bearing in CI: fails
+   # loudly if a C1 violation is merged. Uses git ls-files (index-tracked) so
+   # this fires on a clean CI checkout, not only on a developer workstation.

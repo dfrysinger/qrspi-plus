@@ -1,0 +1,2 @@
+score: 28
+reason: Real hygiene observation (leftover `.dispatch/` on interrupted runs is tracked-tree-adjacent), but the "sensitive payload leak/exfil" framing overstates what reviewer prompt/raw outputs actually contain, and no upstream artifact (goals.md G3, design.md CD-1) establishes a `.gitignore`/durable-safeguard acceptance criterion the Plan would be failing to carry; severity "high/correctness" is not supported.

@@ -1,0 +1,2 @@
+score: 40
+reason: Real test-design weakness — bare token greps pass on any occurrence, so an accidental TODO/placeholder elsewhere in the SKILL would not be caught; however these tests still detect removal of the prohibition section entirely, so the regression window is narrow and the issue is more of a robustness nit than a load-bearing flaw.

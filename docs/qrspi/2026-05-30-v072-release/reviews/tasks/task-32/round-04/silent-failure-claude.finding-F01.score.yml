@@ -1,0 +1,2 @@
+score: 60
+reason: Real gap — finalize-pass bullets list "Validate ..." then "Flip status" with no explicit failure clause, so a reasonable execution path flips the gate despite invariant violations; medium-severity design-altitude fix consistent with the reviewer's silent-failure mandate.

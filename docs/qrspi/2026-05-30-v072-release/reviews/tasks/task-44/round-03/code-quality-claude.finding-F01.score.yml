@@ -1,0 +1,2 @@
+score: 35
+reason: Real but minor self-consistency nit; semantics could diverge if two pins shared a line, which doesn't happen today — author flagged severity low.

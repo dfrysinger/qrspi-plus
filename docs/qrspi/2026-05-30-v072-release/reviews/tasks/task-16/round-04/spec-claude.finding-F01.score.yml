@@ -1,0 +1,2 @@
+score: 90
+reason: Confirmed: both lines 645 and 858 of implement/SKILL.md still carry `model: "<model>"` in prose dispatch shapes (and line 645 retains the `model: inherit` Layer-3 default sentence); the round-04 diff fixed only the pseudocode block (`model: <model>` → dropped) and did not touch either prose paragraph, and the new bats test (`grep -c "model: <model>"`) misses the quoted form `model: "<model>"` used in the prose—so the regression is live and untested.

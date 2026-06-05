@@ -1,0 +1,2 @@
+score: 12
+reason: Comment line numbers (203-205) are actually correct in the current file, and while avoiding line-number comments is good practice, this is a stylistic suggestion not a functional bug.

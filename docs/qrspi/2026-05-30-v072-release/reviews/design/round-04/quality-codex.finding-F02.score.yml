@@ -1,0 +1,8 @@
+---
+finding_id: R4-F02
+reviewer_tag: quality-codex
+score: 68
+change_type: correctness
+reason: Rescue-off accounting gap is real but very low severity. Under orchestrator_rescue=false, no rescue events fire so .orchestrator-fixes.json stays empty, and the dispositions "Rescue tier breakdown" sourced from it would show zeros. Mitigations: (1) E2 escalations under rescue=off are trivially countable from halt events themselves, not dependent on this file; (2) v0.7.2 may opt to leave this implicit (the breakdown is implicitly rescue-on context). Below the 70 correctness threshold; dropped. Recorded under Sub-Threshold Observations for v0.7.3 calibration.
+defect_class: implicit-disposition-context
+---

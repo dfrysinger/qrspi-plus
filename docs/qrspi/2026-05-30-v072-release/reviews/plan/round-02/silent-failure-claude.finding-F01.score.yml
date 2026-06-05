@@ -1,0 +1,2 @@
+score: 18
+reason: Altitude mismatch — the "hardcoded medium with loud warning" precedence step is an explicit decision in approved design.md ### CD-1 step 1.4 (migration safety net for agents missing `tier:`), and the alleged in-task contradiction doesn't hold (the DoD's halt clause covers `none`-configured tiers, not the migration fallback; a loud warning is not "silent").

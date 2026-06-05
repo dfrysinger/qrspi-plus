@@ -1,0 +1,2 @@
+score: 85
+reason: Confirmed: line 580 of the worktree file still encodes `(role, provider, model, layer)` with `layer ∈ {trusted_path, 1a, 1b, 2, 3}` — the retired four-layer chain — while the round-04 diff rewrote the routing-chain section but left the §Per-Task Telemetry Emission block entirely untouched, directly violating Task-16's DoD requirement that implement/SKILL.md "no longer document or consume the superseded schema fields."

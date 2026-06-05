@@ -1,0 +1,2 @@
+score: 75
+reason: Verified — T16 creates `_resolve-lib.sh` and `test-routing-matrix-application.bats` and T19 modifies both while declaring `deps: none`, contradicting the plan's own stated rationale for sequencing T16→T17 on shared edit surfaces and the prose "Extend `scripts/_resolve-lib.sh`" that presupposes T16.

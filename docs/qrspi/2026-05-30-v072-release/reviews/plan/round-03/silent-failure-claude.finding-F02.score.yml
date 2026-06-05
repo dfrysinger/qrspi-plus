@@ -1,0 +1,2 @@
+score: 50
+reason: Real ambiguity — T11's DoD/Test Expectations only assert field presence and never specify behavior when host/vendor/model resolve to placeholder/unknown values, but the gap is partially covered upstream by T16's resolver fail-loud (CD-1) which T11 inherits transitively when it shells out; the residual "host: unknown" / vendor-not-in-matrix surface is a legitimate but secondary concern, and the fix is small and well-scoped.

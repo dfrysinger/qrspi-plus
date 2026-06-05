@@ -1,0 +1,2 @@
+score: 60
+reason: Real completeness gap — AC #2 enumerates per-task fail-loud halts in detail for other tasks (verifier-fan-in lists five causes) but only lists one of T39's six locked fail-loud conditions; task-level tests still cover these so impact is mitigated, but phase-level gate is asymmetric.

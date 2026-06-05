@@ -1,0 +1,2 @@
+score: 75
+reason: The finding accurately identifies a clear violation of the Goals OWNS/DEFERS scope contract. G27's "(preferred)" label converts a candidate solution into a commitment (violating the explicit rule that candidates must not be pre-committed), and the specific bash code with flags and function signatures violates the stated rule that "Implementation logic, function signatures, assertion text → Structure / Plan / Implement." The issue is load-bearing and directly impacts scoping correctness as documented in owns-defers.md and SKILL.md.

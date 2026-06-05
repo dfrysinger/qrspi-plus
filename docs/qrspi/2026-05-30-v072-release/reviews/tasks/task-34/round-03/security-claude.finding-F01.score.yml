@@ -1,0 +1,2 @@
+score: 75
+reason: Test name promises "before any filesystem op" behavioral verification but only greps contract document for keywords; the ordering invariant (validation before test -e) is load-bearing for path-traversal defense but is not behaviorally tested, creating false assurance.

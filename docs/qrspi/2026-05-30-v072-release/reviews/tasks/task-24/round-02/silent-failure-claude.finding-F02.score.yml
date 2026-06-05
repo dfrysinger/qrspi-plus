@@ -1,0 +1,2 @@
+score: 35
+reason: The embedded `=` in the EVIDENCE value is a real and verifiable output-shape ambiguity, but the concern is hypothetical (no actual consumer using `cut -d= -f2` is demonstrated), impact is explicitly limited to audit fidelity only (not decision-making), and the correct `${line#*=}` idiom is standard shell practice — making this a valid but low-importance nitpick.

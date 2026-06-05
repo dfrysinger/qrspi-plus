@@ -1,0 +1,2 @@
+score: 55
+reason: Real boundary drift — phasing.md explicitly names files/scripts (`run-codex-review.sh`, `scripts/build-plugin.sh`, `round-NN.diff`, `~/.copilot/...`) and gives Plan-level procedural test specs in the gate, which DEFERS lists assign to Structure/Plan; but acceptance gates legitimately need some concrete handles so the fix is partial/debatable rather than clearly load-bearing.

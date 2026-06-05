@@ -1,0 +1,2 @@
+score: 78
+reason: Confirmed gap — interactive override tests (lines 193–232) always unset COPILOT_CLI and CLAUDE_PROJECT_DIR (unknown-host only), while auto override is tested across all three host contexts (unknown, Copilot CLI, Claude Code); task-24.md expectation #4 requires both values assert override verdict and evidence win, making this a verifiable, asymmetric coverage omission.

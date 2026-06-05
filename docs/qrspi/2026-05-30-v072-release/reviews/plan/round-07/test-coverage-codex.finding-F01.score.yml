@@ -1,0 +1,2 @@
+score: 28
+reason: The CI build-sync gate (build + git diff --exit-code against committed build/) already functions as a cross-run determinism check, and resolver idempotence is explicitly tested at L2260; an additional intra-run "build twice" test is belt-and-suspenders rather than a real coverage gap.

@@ -1,0 +1,2 @@
+score: 60
+reason: Real test-coverage issue — T22 expectation #3 literally says "Manual review … confirms" (non-falsifiable) and "concise references" has no measurable property; the alternative is concrete; mitigated only by T22 being prose-only and T44 adding stronger pins downstream.

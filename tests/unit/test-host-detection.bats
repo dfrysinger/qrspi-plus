@@ -2,7 +2,7 @@
 #
 # tests/unit/test-host-detection.bats
 # Task 6 — Host-aware Codex availability detection
-# Target: scripts/run-codex-review.sh
+# Target: scripts/dispatch-agent.sh
 #
 # Covers every test-expectation bullet from tasks/task-06.md:
 #
@@ -30,10 +30,10 @@
 # Test strategy:
 #   Function-isolation tests (TE1–TE11, TE15):
 #     Each test runs a bash -c subshell that exports QRSPI_SOURCE_ONLY=1, sources
-#     run-codex-review.sh to load only function definitions, then calls detect_host or
+#     dispatch-agent.sh to load only function definitions, then calls detect_host or
 #     check_codex_available directly.
 #
-#     The implementer MUST add this guard in run-codex-review.sh, after the new function
+#     The implementer MUST add this guard in dispatch-agent.sh, after the new function
 #     definitions and before the argument-parsing block:
 #
 #         [[ "${QRSPI_SOURCE_ONLY:-}" == "1" ]] && return 0
@@ -42,9 +42,9 @@
 #     calls exit 1 (no --agent-file flag) → bash -c exits non-zero → tests fail. ✓
 #
 #   Dispatch surface tests (TE12–TE14, TE16–TE17):
-#     Invoke run-codex-review.sh in full dispatch mode (no --dry-run) with
+#     Invoke dispatch-agent.sh in full dispatch mode (no --dry-run) with
 #     QRSPI_REPO_ROOT pointing at a per-test mock directory containing:
-#       scripts/run-third-party-llm.sh  (mock dispatcher, exits MOCK_TRANSPORT_EXIT)
+#       scripts/dispatch-companion.sh  (mock dispatcher, exits MOCK_TRANSPORT_EXIT)
 #       skills/reviewer-protocol/SKILL.md + codex-emission-override.md  (stubs)
 #       agents/qrspi-spec-reviewer.md  (minimal, no extra skill deps)
 #       artifact-dir/config.md  (codex_reviews: value per test)
@@ -70,7 +70,7 @@ bats_require_minimum_version 1.5.0
 setup_file() {
   REAL_REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
   export REAL_REPO_ROOT
-  WRAPPER="$REAL_REPO_ROOT/scripts/run-codex-review.sh"
+  WRAPPER="$REAL_REPO_ROOT/scripts/dispatch-agent.sh"
   export WRAPPER
 }
 
@@ -108,17 +108,21 @@ setup() {
   # exits with MOCK_TRANSPORT_EXIT (default 0).  Lives at the path the wrapper expects
   # when QRSPI_REPO_ROOT=$TMP_DIR.
   mkdir -p "$TMP_DIR/scripts"
-  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_DISPATCHER_EOF'
+  cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_DISPATCHER_EOF'
 #!/usr/bin/env bash
-# Mock run-third-party-llm.sh for host-detection tests.
+# Mock dispatch-companion.sh for host-detection tests.
 # Drain stdin so the upstream pipe does not block.
 cat > /dev/null
 if [ -n "${MOCK_TRANSPORT_STDERR:-}" ]; then
   printf '%s\n' "${MOCK_TRANSPORT_STDERR}" >&2
 fi
+# Emit a JOB_ID line on stdout so the dispatch-agent wrapper can record
+# the manifest entry. Real dispatchers emit JOB_ID=<id>; a synthetic value
+# is sufficient for tests that only assert dispatch ran and exit code.
+printf 'JOB_ID=mock-job-%d\n' "$$"
 exit "${MOCK_TRANSPORT_EXIT:-0}"
 MOCK_DISPATCHER_EOF
-  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
+  chmod +x "$TMP_DIR/scripts/dispatch-companion.sh"
 
   # HOME directory fixture for companion-glob tests (TE9, TE10).
   # Tests that want the companion to exist create the file tree inside here.
@@ -438,9 +442,9 @@ teardown() {
 # ===========================================================================
 # SECTION 4: Dispatch surface — transport markers, mismatch, exit-code propagation
 #
-# All tests in this section invoke run-codex-review.sh in full dispatch mode
+# All tests in this section invoke dispatch-agent.sh in full dispatch mode
 # (no --dry-run) with QRSPI_REPO_ROOT=$TMP_DIR so the mock dispatcher at
-# $TMP_DIR/scripts/run-third-party-llm.sh is used.
+# $TMP_DIR/scripts/dispatch-companion.sh is used.
 #
 # Stderr from the whole invocation is captured to a temp file for assertion.
 #
@@ -795,7 +799,7 @@ teardown() {
 
 @test "[r3-sf.F01] source guard exits cleanly when script is directly executed with QRSPI_SOURCE_ONLY=1" {
   # sf.F01: `return 0` at the source guard is valid only in a sourced context.
-  # When the script is executed directly (`bash run-codex-review.sh`), `return`
+  # When the script is executed directly (`bash dispatch-agent.sh`), `return`
   # outside a function emits an error but — because set -e is disabled — does
   # NOT halt execution.  The script falls through into argument parsing and
   # exits 1 on missing --agent-file.  After the fix, the guard uses

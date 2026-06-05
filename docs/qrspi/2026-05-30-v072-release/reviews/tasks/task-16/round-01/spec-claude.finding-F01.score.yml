@@ -1,0 +1,2 @@
+score: 95
+reason: Both agent files are confirmed missing the DISPATCH_FILE first-action paragraph that DoD bullet 6 explicitly requires for every reviewer agent; the omission is directly visible in the task-16 worktree files introduced by this task's own sweep.

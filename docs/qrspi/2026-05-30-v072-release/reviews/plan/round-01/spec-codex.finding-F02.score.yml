@@ -1,0 +1,2 @@
+score: 50
+reason: Real determinism concern — T43's target file list literally says "if present after Task 42" and "re-audit post-T42 tree", which violates the plan SKILL's self-contained-task expectation; the planner could have inventoried the tree now since T42 does not create/delete the listed BATS files, though the conditional language is partly defensible given design.md's caveat that historical F01 surfaces may be moot.

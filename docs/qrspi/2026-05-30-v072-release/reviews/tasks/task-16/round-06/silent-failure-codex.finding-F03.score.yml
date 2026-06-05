@@ -1,0 +1,2 @@
+score: 55
+reason: Verified diagnostic-vs-check mismatch — `-f` existence guard with "readable file" wording masks an unreadable config as an unconfigured-tier HALT; real but an uncommon edge case (existing-but-unreadable config).

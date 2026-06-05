@@ -1,0 +1,2 @@
+score: 75
+reason: The finding correctly identifies dead else-branches in three tests (mismatch HALT, missing-header, malformed-header) where fixture construction guarantees the if-condition; the test's misleading comment and unfalsifiable assertion are real issues, though the supporting content_before/after checks retain value. This is a legitimate code-quality finding, though not fixable in this verification-only round.

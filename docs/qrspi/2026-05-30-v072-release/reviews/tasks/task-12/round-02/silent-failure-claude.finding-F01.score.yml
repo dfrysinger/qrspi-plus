@@ -1,0 +1,2 @@
+score: 75
+reason: Test does not assert .round-prepare.json was written or contains correct narrowed/reason values; a regression that skipped sidecar write would silently pass, directly impacting downstream orchestrator dispatch logic.

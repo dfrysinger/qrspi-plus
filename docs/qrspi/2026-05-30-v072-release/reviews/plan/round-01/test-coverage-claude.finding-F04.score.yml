@@ -1,0 +1,2 @@
+score: 35
+reason: Real but minor coverage refinement; Plan-altitude expectations already specify shape-matching fixtures, and boundary/rejection-row enumeration is typically Test-phase detail rather than a Plan-blocking gap.

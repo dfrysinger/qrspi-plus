@@ -1,0 +1,2 @@
+score: 15
+reason: The D5 tokens are confirmed present in the cited test lines, but the rule invoked ("design-ID tokens allowed ONLY in skills/ prose — forbidden in test names/comments") does not exist in CONTRIBUTING.md or any reviewed SKILL.md; the actual ID-hygiene rule in CONTRIBUTING.md targets G/CD labels inside runtime-loaded SKILL.md prose (not test code), making this a stylistic false positive with no documented prohibition backing it.

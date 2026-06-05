@@ -1,0 +1,2 @@
+score: 68
+reason: Verified real gap — a whitespace-only value row (e.g. `  medium:   `) passes the grep's trailing-`[[:space:]]` match, sed+normalize yields `value=""`, the none-check is false, and the code emits a blank line with exit 0, a silent-success path squarely against this fail-loud task's "malformed tier values" mandate, though it requires a specifically blank-but-whitespace config row to trigger.

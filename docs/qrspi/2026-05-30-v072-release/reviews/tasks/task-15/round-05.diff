@@ -1,0 +1,24 @@
+diff --git a/tests/integration/test-reference-gate-pause.bats b/tests/integration/test-reference-gate-pause.bats
+index 6e6a81c..1d62b22 100644
+--- a/tests/integration/test-reference-gate-pause.bats
++++ b/tests/integration/test-reference-gate-pause.bats
+@@ -493,7 +493,8 @@ EOF
+ @test "[G18-consumers] Plan SKILL Cross-Task Consumer Surface carries worked example A: public-symbol rename with three consumers" {
+   # The rename worked example must show three consumer paths and use co-edit, co-edit, no change.
+   local section
+-  section="$(extract_section "$PLAN_SKILL" H3 "Cross-Task Consumer Surface")"
++  section="$(extract_section "$PLAN_SKILL" H3 "Cross-Task Consumer Surface")" \
++    || return 1
+   # Must contain at least two `co-edit` markers (the two co-edit consumers).
+   local co_edit_count
+   co_edit_count="$(printf '%s\n' "$section" | grep -cE '\bco-edit\b' || true)"
+@@ -615,7 +616,8 @@ EOF
+   # The rubric must enumerate the failure modes: missing field, malformed
+   # field, false `none` claim, invalid disposition, missing follow-up ID.
+   local section
+-  section="$(extract_section "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection")"
++  section="$(extract_section "$PLAN_REVIEWER_AGENT" H3 "Cross-task consumer surface detection")" \
++    || return 1
+   printf '%s\n' "$section" | grep -qE "[Mm]issing field|[Mm]issing.*\`cross_task_consumers" \
+     || { echo "Missing 'missing field' failure mode" >&2; return 1; }
+   printf '%s\n' "$section" | grep -qE "[Mm]alformed" \

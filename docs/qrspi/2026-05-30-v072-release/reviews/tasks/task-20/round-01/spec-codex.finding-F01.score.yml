@@ -1,0 +1,4 @@
+---
+score: 95
+rationale: The finding correctly identifies a critical bug in dispatch-agent.sh batched mode (line 700) where third-party dispatch is recorded with an empty job_id instead of actually launching via dispatch-companion.sh. This directly violates Task-20 DoD lines 27 and 43 which require dispatch-companion.sh launch to print JOB_ID and await to capture raw output. The manifest entry's await_cmd will fail with exit 13, breaking the entire third-party dispatch+split chain. This is a real correctness issue that affects all third-party dispatch in batched mode.
+---

@@ -1,0 +1,2 @@
+score: 75
+reason: The finding correctly identifies that lines 423–432 embed field-level JSON schema and concrete threshold values that should be deferred per the Design DEFERS rule; this is a clear scope violation of documented upstream constraints that the reviewer properly flags for remediation.

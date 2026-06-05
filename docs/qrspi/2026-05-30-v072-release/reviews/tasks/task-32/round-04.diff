@@ -1,0 +1,357 @@
+diff --git a/skills/design/SKILL.md b/skills/design/SKILL.md
+index ea9467b..81f1011 100644
+--- a/skills/design/SKILL.md
++++ b/skills/design/SKILL.md
+@@ -250,6 +250,37 @@ The only external-to-codebase knowledge downstream skills are expected to bring
+ 
+ **Scope clarification.** Sub-Rule D does NOT require Design to restate common-knowledge programming patterns or ordinary tool usage. It targets specifically **claims about external systems whose behavior the implementer cannot verify by reading project code or relying on general programming knowledge**. "We use `git diff` to compare commits" is not a Sub-Rule D claim (basic tool usage). "Vendor X's webhook fires on event Y with payload shape Z" is a Sub-Rule D claim (external-contract specifics). When in doubt, ask: "could a competent implementer answer this from project code + their own knowledge?" If no, Sub-Rule D applies.
+ 
++## Incremental Persistence (Direct-to-Artifact Drafting)
++
++Per Dialogue Conduct Rule 8 above, after each per-decision lock signal (the user says "approved" or equivalent for a goal block or a cross-goal decision), write the resulting block **directly to `design.md`** with `status: draft` in the frontmatter — no separate staging file, no end-of-phase synthesis-from-scratch transformation step. The draft `design.md` on disk is the durable record of locked decisions; the chat transcript is not.
++
++Per-goal blocks use the five-field template defined in `## Per-goal block template` above (Outcome, Solution, Why this approach, Dependencies + edge cases, Acceptance). Cross-goal decisions live in a dedicated **`## Cross-Goal Decisions`** section at the top of `design.md` (above the per-goal blocks). Goals SKILL has no equivalent cross-decision section — its template is purely per-goal.
++
++**Presence ≡ locked.** The draft `design.md` is a keyed map of locked decisions. A decision is locked if and only if its block appears in the file. Tentative bodies, placeholder bodies, `to be filled` markers, TODO markers, "placeholder for synthesis" markers, or any other not-yet-formed content NEVER enter the draft artifact. If a decision is not fully formed (per-goal block missing one of the five fields, cross-goal decision missing rationale or scope), it does not appear in the file. This is the Evergreen-Output Rule applied to incremental persistence — dialogue exhaust never enters the artifact.
++
++**Keyed in-place overwrite on re-lock.** Per-goal and cross-goal decision blocks are keyed by decision ID (`### G3 — ...`, `### CD-1 — ...`). If the user re-opens a previously-locked decision (e.g., revises G3 after walking G15), overwrite that decision's block in place — do NOT append a duplicate. The artifact is a keyed map persisted as ordered markdown, not an append-only log.
++
++**Resume after compaction.** If `/compact` fires mid-phase, on resume:
++
++1. Read the draft `design.md` from disk and enumerate the decisions already locked.
++2. Compute remaining work as `goals.md` goals minus per-goal blocks already locked in `design.md`. The upstream inventory is the approved `goals.md` goal list — every goal in `goals.md` requires one per-goal solution definition in `design.md`. Cross-Goal Decisions are additive (they emerge during walkthrough) and are not pre-enumerable from the upstream inventory; they do not contribute to `K remaining`.
++3. Surface the recovery diagnostic to the user, verbatim:
++
++   `"Resumed after compaction — last locked decision: GNN (M decisions locked, K remaining). Continuing from G(NN+1)."`
++
++4. Continue dialogue from the next unlocked decision.
++
++**Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
++
++**End-of-phase finalize pass.** After the per-goal walkthrough completes, run a lightweight finalize pass:
++
++- Validate that every goal in `goals.md` has a corresponding per-goal block in `design.md` with all five fields populated (Outcome, Solution, Why this approach, Dependencies + edge cases, Acceptance).
++- Validate the `## Cross-Goal Decisions` section is well-formed (each entry keyed by ID, each entry carries rationale + scope).
++- Optionally append a top-level summary if absent.
++- Flip frontmatter `status: draft` to `status: approved-pending-review`.
++
++Hand-edits that flip `status: draft` to `status: approved-pending-review` (or directly to `approved`) mid-phase, before the finalize pass, are forbidden — only the finalize pass writes the next-gate status.
++
+ ## Design OWNS / Design DEFERS
+ 
+ !cat skills/design/owns-defers.md
+@@ -297,6 +328,7 @@ Do NOT proceed to Structure without user approval of the design.
+ Once the discussion settles, launch a **subagent** to synthesize `design.md`.
+ 
+ **Subagent inputs:**
++- The existing incremental draft `design.md` on disk (REQUIRED — the draft is the source of truth for pre-compaction locked decisions; the subagent MUST merge this draft with new conversation content rather than re-synthesizing from conversation alone)
+ - `goals.md`
+ - `research/summary.md`
+ - A summary of the design discussion (key decisions, user preferences, chosen approach)
+diff --git a/skills/goals/SKILL.md b/skills/goals/SKILL.md
+index 56235a5..9d9bd82 100644
+--- a/skills/goals/SKILL.md
++++ b/skills/goals/SKILL.md
+@@ -101,6 +101,72 @@ Questions to cover (not necessarily in order — follow the conversation):
+ 
+ Do NOT ask the user for per-goal acceptance criteria, file maps, phasing, or "what's out of scope" at this step — those concerns are owned by downstream artifacts (see "Goals OWNS / Goals DEFERS").
+ 
++### Dialogue Conduct
++
++When working a goal with the user, follow these rules. The numbering mirrors the Design SKILL's Dialogue Conduct rules verbatim except: Rule 3 is adjusted to drop the research-summary tier (Goals runs before Research, so no research artifacts exist yet), and Rule 5 — Design's dialog-clarity directive — is intentionally absent from Goals per the current scope.
++
++1. **Open with questions.** Surface your list of open questions for the goal in chat. Work
++   through them with the user one decision at a time.
++
++2. **One question at a time, with a recommended answer.** Each question carries your proposed
++   answer; the user confirms, amends, or rejects.
++
++3. **Ground first, ask second.** Before asking the user any question — your own or one the
++   user has asked back — consult, in order: the codebase, then the web. When a question
++   touches industry best practice, conventions, or external patterns, search the web liberally
++   for cited evidence rather than speculating or punting the question back. Only escalate to
++   the user when no source surfaces a defensible answer.
++
++4. **When the user asks for your call, provide one.** When the user solicits your opinion,
++   asks which option is best, or asks what you would recommend, give a grounded recommendation
++   (sources per Rule 3) with named tradeoffs. Do not deflect with more questions or punt the
++   choice back. If grounding genuinely leaves the call indeterminate, say so explicitly and
++   name what additional evidence would resolve it.
++
++6. **Sharpen fuzzy language.** When the user uses imprecise vocabulary, propose the canonical
++   term and ask for confirmation before moving on.
++
++7. **Walk every branch of the decision tree, including flow gaps.** For each goal, resolve
++   dependencies between decisions one-by-one. Do not move to the next goal until every branch
++   surfaced for the current one is either decided, explicitly deferred with a written reason,
++   or split out as a separate goal. Branch completeness explicitly includes the end-to-end
++   flow between any multi-actor decisions — actors named, operations sequenced, per-step
++   inputs/outputs traced to producer and consumer, loud-failure paths named, context-cost
++   call-out present. A flow with implicit hand-offs is an open branch; close it before moving
++   on.
++
++8. **Lock decisions as they settle.** Write each decision into the goal block under
++   `status: draft` as it is confirmed. Do not accumulate decisions in chat across multiple
++   goals before persisting.
++
++### Incremental Persistence (Direct-to-Artifact Drafting)
++
++Per Rule 8 above, write each locked goal **directly to `goals.md`** with `status: draft` in the frontmatter as it is confirmed during dialogue — no separate staging file, no end-of-phase synthesis-from-scratch. The draft `goals.md` on disk is the durable record of locked decisions; the chat transcript is not.
++
++**Presence ≡ locked.** The draft `goals.md` is a keyed map of locked goals. A goal is locked if and only if its block appears in the file. Tentative bodies, placeholder bodies, `to be filled` markers, TODO markers, and any other not-yet-formed content NEVER enter the draft artifact. If a goal is not fully formed (Problem, Why we care, What we know so far all populated; concrete `type` value), it does not appear in the file. This is the Evergreen-Output Rule applied to incremental persistence — dialogue exhaust never enters the artifact.
++
++**Keyed in-place overwrite on re-lock.** Per-goal blocks are keyed by goal ID (`### G1 — ...`). If the user re-opens a previously-locked goal, overwrite that goal's block in place — do NOT append a duplicate. The artifact is a keyed map persisted as ordered markdown, not an append-only log.
++
++**Resume after compaction.** If `/compact` fires mid-phase, on resume:
++
++1. Read the draft `goals.md` from disk and enumerate the goals already locked.
++2. Compute remaining work by **asking the user** whether all desired goals have been articulated. Goals runs before Research and has no upstream inventory, so there is no file to diff against — the user is the only authority on what remains.
++3. Surface the recovery diagnostic to the user, verbatim:
++
++   `"Resumed after compaction — last locked decision: GNN (M decisions locked, K remaining). Continuing from G(NN+1)."`
++
++4. Continue dialogue from the next unlocked goal.
++
++**Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
++
++**End-of-phase finalize pass.** After the per-goal walkthrough completes, run a lightweight finalize pass:
++
++- Validate that every locked goal carries the three required subsections (Problem, Why we care, What we know so far) and a concrete `type` value.
++- Optionally append a Purpose section if absent.
++- Flip frontmatter `status: draft` to `status: approved`.
++
++Hand-edits that flip `status: draft` to `status: approved` mid-phase (before the finalize pass) are forbidden — only the finalize pass writes `approved`. When the user picks "Approve, skip review" at the human gate, the finalize pass still runs (it is mechanical validation, not synthesis) and the reviewer round is skipped.
++
+ ### Pipeline Mode Selection
+ 
+ After intent capture (the interactive dialogue above) but before synthesizing `goals.md`, determine the pipeline configuration. Ask these questions — one at a time, using numbered choices:
+@@ -151,6 +217,7 @@ After writing `config.md`, rewrite the Level 1 pipeline tasks to match the route
+ Once the conversation settles, launch a **subagent** to synthesize `goals.md`:
+ 
+ **Subagent inputs:**
++- The existing incremental draft `goals.md` on disk (REQUIRED — the draft is the source of truth for pre-compaction locked decisions; the subagent MUST merge this draft with new conversation content rather than re-synthesizing from conversation alone)
+ - The conversation content (user's answers to the dialogue questions)
+ - This skill's "Goals OWNS / Goals DEFERS" section (the locked scope contract)
+ 
+@@ -223,7 +290,7 @@ status: draft
+ 
+ **Iron Rule (template):** the goals.md output has NO top-level `Out of Scope` section and NO top-level `Success Criteria` / `Acceptance Criteria` section. What isn't a goal isn't in scope; acceptance is owned by Design's Test Strategy and Plan's per-task expectations. If the user volunteers exclusions during dialogue, capture them as constraints (when they shape the solution space) or simply omit them — do NOT reintroduce an `Out of Scope` heading.
+ 
+-**Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Emitting only some of them (e.g. omitting `Why we care` because the answer feels obvious) is a synthesis defect, not a permitted shortcut. If the user did not articulate one of the three during dialogue, write a one-sentence honest placeholder under that subsection (e.g. under `Why we care`: "Impact not yet articulated — Design should probe before committing solution work.") rather than dropping the heading. Likewise, do NOT add a fourth subsection under any goal — additional content belongs in `What we know so far` or in a Constraint, not a new heading.
++**Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Emitting only some of them (e.g. omitting `Why we care` because the answer feels obvious) is a synthesis defect, not a permitted shortcut. If the user did not articulate one of the three during dialogue, re-enter dialogue to obtain the missing content before persisting the goal block — do NOT write a placeholder, partial, or tentative body (presence ≡ locked; a goal block in the artifact asserts the goal is fully settled). Likewise, do NOT add a fourth subsection under any goal — additional content belongs in `What we know so far` or in a Constraint, not a new heading.
+ 
+ **Iron Rule (type field — concrete value).** Emit ONE concrete value for each goal's `type` field — either `known-fix` OR `exploratory`. NEVER emit the alternation literal `known-fix | exploratory` (that string appears in the template as a placeholder showing the allowed values; it is not a valid output). If uncertain which applies, default to `exploratory` and explain the uncertainty under that goal's `What we know so far` subsection.
+ 
+diff --git a/tests/unit/test-interactive-skill-prompts.bats b/tests/unit/test-interactive-skill-prompts.bats
+index 27fffc0..0b4201b 100644
+--- a/tests/unit/test-interactive-skill-prompts.bats
++++ b/tests/unit/test-interactive-skill-prompts.bats
+@@ -39,3 +39,208 @@ setup() {
+     "$REPO_ROOT/skills/goals/SKILL.md"
+   [ "$status" -eq 1 ]
+ }
++
++# ---------------------------------------------------------------------------
++# Goals dialogue-conduct subset — Rules 1, 2, 3 (codebase→web), 4, 6, 7, 8
++# mirror the Design wording verbatim. Rule 5 absence is pinned above.
++# ---------------------------------------------------------------------------
++
++@test "goals/SKILL.md carries Rule 1 — Open with questions" {
++  grep -F "Open with questions" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "goals/SKILL.md carries Rule 2 — One question at a time, with a recommended answer" {
++  grep -F "One question at a time, with a recommended answer" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "goals/SKILL.md carries Rule 3 — Ground first, ask second (codebase then web; no research-summary tier)" {
++  grep -F "Ground first, ask second" "$REPO_ROOT/skills/goals/SKILL.md"
++  grep -F "the codebase, then the web" "$REPO_ROOT/skills/goals/SKILL.md"
++  # Goals runs before Research; the research-summary grounding tier is Design-only.
++  run grep -F "research summary" "$REPO_ROOT/skills/goals/SKILL.md"
++  [ "$status" -eq 1 ]
++}
++
++@test "goals/SKILL.md carries Rule 4 — When the user asks for your call, provide one" {
++  grep -F "When the user asks for your call, provide one" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "goals/SKILL.md carries Rule 6 — Sharpen fuzzy language" {
++  grep -F "Sharpen fuzzy language" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "goals/SKILL.md carries Rule 7 — Walk every branch of the decision tree, including flow gaps" {
++  grep -F "Walk every branch of the decision tree, including flow gaps" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "goals/SKILL.md carries Rule 8 — Lock decisions as they settle" {
++  grep -F "Lock decisions as they settle" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++# ---------------------------------------------------------------------------
++# Incremental persistence: direct writes to the draft artifact with status: draft
++# ---------------------------------------------------------------------------
++
++@test "design/SKILL.md instructs direct incremental writes to design.md with status: draft" {
++  grep -F "directly to \`design.md\`" "$REPO_ROOT/skills/design/SKILL.md"
++  grep -F "status: draft" "$REPO_ROOT/skills/design/SKILL.md"
++}
++
++@test "goals/SKILL.md instructs direct incremental writes to goals.md with status: draft" {
++  grep -F "directly to \`goals.md\`" "$REPO_ROOT/skills/goals/SKILL.md"
++  grep -F "status: draft" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "design/SKILL.md authors Cross-Goal Decisions in a dedicated top-level section" {
++  grep -F "## Cross-Goal Decisions" "$REPO_ROOT/skills/design/SKILL.md"
++}
++
++# ---------------------------------------------------------------------------
++# Lock semantics — presence ≡ locked; placeholder/TODO/to-be-filled bodies forbidden;
++# re-locking overwrites the keyed block in place rather than appending a duplicate.
++# ---------------------------------------------------------------------------
++
++@test "design/SKILL.md documents presence-as-locked semantics" {
++  grep -iF "presence" "$REPO_ROOT/skills/design/SKILL.md" | grep -qiF "locked"
++}
++
++@test "goals/SKILL.md documents presence-as-locked semantics" {
++  grep -iF "presence" "$REPO_ROOT/skills/goals/SKILL.md" | grep -qiF "locked"
++}
++
++@test "design/SKILL.md prohibits placeholder/TODO/to-be-filled bodies in the draft artifact" {
++  grep -F "to be filled" "$REPO_ROOT/skills/design/SKILL.md"
++  grep -F "TODO" "$REPO_ROOT/skills/design/SKILL.md"
++  grep -F "placeholder" "$REPO_ROOT/skills/design/SKILL.md"
++}
++
++@test "goals/SKILL.md prohibits placeholder/TODO/to-be-filled bodies in the draft artifact" {
++  grep -F "to be filled" "$REPO_ROOT/skills/goals/SKILL.md"
++  grep -F "TODO" "$REPO_ROOT/skills/goals/SKILL.md"
++  grep -F "placeholder" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "design/SKILL.md documents keyed in-place overwrite on re-lock (no duplicate append)" {
++  grep -F "overwrite" "$REPO_ROOT/skills/design/SKILL.md" | grep -qF "in place"
++}
++
++@test "goals/SKILL.md documents keyed in-place overwrite on re-lock (no duplicate append)" {
++  grep -F "overwrite" "$REPO_ROOT/skills/goals/SKILL.md" | grep -qF "in place"
++}
++
++# ---------------------------------------------------------------------------
++# Resume-after-compaction diagnostic — anchor phrase MUST be exact in both skills.
++# ---------------------------------------------------------------------------
++
++@test "design/SKILL.md carries the exact resume-after-compaction diagnostic" {
++  grep -F "Resumed after compaction — last locked decision: GNN (M decisions locked, K remaining). Continuing from G(NN+1)." \
++    "$REPO_ROOT/skills/design/SKILL.md"
++}
++
++@test "goals/SKILL.md carries the exact resume-after-compaction diagnostic" {
++  grep -F "Resumed after compaction — last locked decision: GNN (M decisions locked, K remaining). Continuing from G(NN+1)." \
++    "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++# ---------------------------------------------------------------------------
++# Remaining-work computation differs by skill: Goals asks the user; Design diffs
++# `goals.md` goals against locked per-goal blocks in `design.md`.
++# ---------------------------------------------------------------------------
++
++@test "goals/SKILL.md remaining-work is asked of the user (no upstream inventory at Goals stage)" {
++  grep -F "remaining" "$REPO_ROOT/skills/goals/SKILL.md" | grep -qiF "user"
++}
++
++@test "design/SKILL.md remaining-work computed from goals.md goals minus locked design.md decisions" {
++  grep -F "remaining" "$REPO_ROOT/skills/design/SKILL.md" | grep -qF "goals.md"
++}
++
++# ---------------------------------------------------------------------------
++# End-of-phase finalize: Goals → approved; Design → approved-pending-review.
++# ---------------------------------------------------------------------------
++
++@test "goals/SKILL.md finalize pass flips status: draft to approved" {
++  grep -F "finalize" "$REPO_ROOT/skills/goals/SKILL.md"
++  # Pin a finalize-block-unique phrase so this test fails if the finalize block is deleted
++  # but the mid-phase prohibition line (which also contains "status: draft" and "approved") remains.
++  grep -F "Validate that every locked goal" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "design/SKILL.md finalize pass flips status: draft to approved-pending-review" {
++  grep -F "finalize" "$REPO_ROOT/skills/design/SKILL.md"
++  grep -F "approved-pending-review" "$REPO_ROOT/skills/design/SKILL.md"
++}
++
++# ---------------------------------------------------------------------------
++# Simulated-compaction durability contract — both skills MUST pin the
++# acceptance invariant that a mid-phase compaction (e.g., at G15) followed by
++# resume produces a final artifact identical to a no-compaction run.
++# ---------------------------------------------------------------------------
++
++@test "design/SKILL.md pins the simulated-compaction durability contract (G15 mid-phase)" {
++  grep -F "simulated compaction" "$REPO_ROOT/skills/design/SKILL.md"
++  grep -F "identical to a no-compaction run" "$REPO_ROOT/skills/design/SKILL.md"
++}
++
++@test "goals/SKILL.md pins the simulated-compaction durability contract (G15 mid-phase)" {
++  grep -F "simulated compaction" "$REPO_ROOT/skills/goals/SKILL.md"
++  grep -F "identical to a no-compaction run" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++# ---------------------------------------------------------------------------
++# spec-F01: five-field per-goal template fields in design/SKILL.md
++# ---------------------------------------------------------------------------
++
++@test "design/SKILL.md references the five-field per-goal template fields" {
++  grep -F "Outcome" "$REPO_ROOT/skills/design/SKILL.md"
++  grep -F "Solution" "$REPO_ROOT/skills/design/SKILL.md"
++  grep -F "Why this approach" "$REPO_ROOT/skills/design/SKILL.md"
++  grep -F "Dependencies + edge cases" "$REPO_ROOT/skills/design/SKILL.md"
++  grep -F "Acceptance" "$REPO_ROOT/skills/design/SKILL.md"
++}
++
++# ---------------------------------------------------------------------------
++# spec-F02: Goals preservation — question-topic checklist, Pipeline Mode
++# Selection step, and per-goal template fields
++# ---------------------------------------------------------------------------
++
++@test "goals/SKILL.md preserves the Interactive Dialogue question-topic checklist" {
++  grep -F "Questions to cover" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "goals/SKILL.md preserves the Pipeline Mode Selection step" {
++  grep -F "Pipeline Mode Selection" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "goals/SKILL.md preserves the existing per-goal template fields" {
++  grep -F "Problem" "$REPO_ROOT/skills/goals/SKILL.md"
++  grep -F "Why we care" "$REPO_ROOT/skills/goals/SKILL.md"
++  grep -F "What we know so far" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++# ---------------------------------------------------------------------------
++# sf-F01: Synthesis subagents must include on-disk incremental draft as input
++# and instruct merge-with-draft rather than re-synthesizing from conversation.
++# ---------------------------------------------------------------------------
++
++@test "goals/SKILL.md synthesis subagent lists on-disk incremental draft as a REQUIRED input" {
++  # The synthesis subagent inputs section must explicitly list the incremental draft
++  # so that pre-compaction locked decisions survive a /compact + resume cycle.
++  grep -F "MUST merge" "$REPO_ROOT/skills/goals/SKILL.md"
++}
++
++@test "design/SKILL.md synthesis subagent lists on-disk incremental draft as a REQUIRED input" {
++  # Same requirement for the Design synthesis subagent.
++  grep -F "MUST merge" "$REPO_ROOT/skills/design/SKILL.md"
++}
++
++# ---------------------------------------------------------------------------
++# sf-F02: Iron Rule must align with presence-as-locked — re-enter dialogue
++# for missing subsections, not write placeholders.
++# ---------------------------------------------------------------------------
++
++@test "goals/SKILL.md Iron Rule directs re-enter dialogue for missing subsections (not placeholder)" {
++  # The Iron Rule (three subsections) must instruct re-entering dialogue rather than
++  # emitting a placeholder, which would violate the presence-as-locked contract.
++  grep -F "re-enter dialogue" "$REPO_ROOT/skills/goals/SKILL.md"
++}

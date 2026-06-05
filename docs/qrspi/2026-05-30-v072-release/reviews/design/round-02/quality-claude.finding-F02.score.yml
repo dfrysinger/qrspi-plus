@@ -1,0 +1,2 @@
+score: 10
+reason: Cited Test Strategy section (T5 coverage boundary, G6 invariant at L726/L734) no longer exists in design.md — those sections were deleted per G35's boundary (per design.md L2924); the lines cited now contain G1 Dialogue Conduct, so the finding's premise is stale.

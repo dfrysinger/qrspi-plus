@@ -1,0 +1,2 @@
+score: 72
+reason: Verified — T21/T39/G32 tokens appear in build-plugin.mjs and ci.yml comments, directly violating the implementer-protocol Internal-ID rule (Task/Goal regex families) on non-exempt surfaces; finding is accurate and actionable, but minor in impact and acknowledgeable rather than functional.

@@ -1,0 +1,1078 @@
+---
+status: approved
+---
+
+# Goals: qrspi-plus v0.7.2
+
+## Purpose
+
+qrspi-plus v0.7.2 closes correctness and reliability gaps surfaced during the v0.7.1 self-hosting run, hardening the reviewer pipeline (verifier sidecar wiring, change-type schema enforcement, false-positive rubric calibration, finding fan-in automation), dispatch routing on the Copilot CLI host (task-tool transport disk-write contract, model-routing schema reconciliation, fail-loud invariants), the test-gate infrastructure (bats silent-pass anti-patterns, deprecated shebang warnings), and a recurring Plan-phase under-scoping pattern that produced approximately ten late-arriving consumer surfaces in v0.7.1.
+
+## Constraints
+
+- **Plugin shape.** The plugin is bash scripts + markdown skill prompts + agent frontmatter. No runtime compiler. Runs across Claude Code, Copilot CLI, and (via Codex companion) OpenAI Codex CLI hosts.
+- **Backward compatibility.** v0.7.1 artifact directories on disk and the per-host conventions in `skills/using-qrspi/SKILL.md` § "Per-host Codex dispatch transport routing" are the established contract; v0.7.2 tightens correctness around that contract, not the contract itself.
+- **Reviewer protocol invariants.** The 5-field finding schema (`finding_id`, `severity`, `change_type`, `referenced_files`, `artifact`), the per-finding disk-write contract, and the untrusted-data markers are locked invariants downstream of this release.
+- **Host-detection load-bearing.** `scripts/run-codex-review.sh` `detect_host()` + `check_codex_available()` are the canonical helpers; consumers must call them rather than reimplement glob/probe logic inline.
+- **Evidence corpus.** v0.7.1 hardening artifacts under `docs/qrspi/2026-05-27-v071-hardening/` (goals, design, plan, reviews, fixes) are the canonical evidence path for any v0.7.1-referencing goal. Downstream skills (Questions, Research) should treat that directory as required reading; this constraint is noted here once and not repeated per-goal.
+- **Test/CI baseline.** `bats tests/` (unit, integration, behavior) is the existing test infrastructure; test-coverage tasks in this release tighten existing harnesses rather than introduce new ones.
+- **Review depth.** Working assumption is deep-mode review (8 reviewers: correctness + thoroughness) given the schema-design work in G22 and the broad reviewer-pipeline cluster. The operator may override to quick at Implement-phase start.
+- **Host context (Copilot CLI).** This run executes on the Copilot CLI host (`COPILOT_CLI=1`); Codex dispatch routes via the task-tool transport per `skills/using-qrspi/SKILL.md` § "Per-host Codex dispatch transport routing." Documented Codex model identifier is `gpt-5.3-codex`; v0.7.1 observed `gpt-5.5` in practice (tracked as PI-001 and in G19/G20).
+- **Subagent-resident verification (user direction).** Any cite-checking, content-corroboration, or per-finding rubric-scoring work introduced by v0.7.2 is expected to execute inside a subagent (verifier, pre-verifier, or equivalent) rather than the main chat / orchestrator. Pulling cited file contents and grep output into the orchestrator context would defeat the cross-cutting context-reduction motivation that several goals in this release share. Downstream skills must respect this boundary when choosing among candidate solutions.
+
+## Goals
+
+### G1 — Design phase under-describes decisions
+
+- **type:** `exploratory`
+
+#### Problem
+
+Design artifacts under-describe decisions: bullet-compressed rationales, trade-offs sections that name rejected alternatives without explaining what was wrong with them, and a test strategy reduced to bullets rather than narrative coverage. The pattern affects every Design output produced under the current skill prompts.
+
+#### Why we care
+
+Two consumers lose context: human reviewers cannot validate whether the chosen approach is sound without re-deriving the analysis, and downstream agents (Plan, Structure, Implementer) make worse decisions when filling in gaps the design did not anticipate. The pattern compounds because every subsequent phase inherits the brevity.
+
+#### What we know so far
+
+v0.7.1 hardening design = 183 lines / 11 decisions ≈ 17 lines per decision; v0.7 release design = 1240 lines / ~7 goals ≈ 177 lines per goal — a ~10× ratio. Candidates Design should weigh:
+
+- Audit `skills/design/SKILL.md`, `owns-defers.md`, and the two design reviewer agents for implicit brevity bias (length caps, avoid-restating rules).
+- Enforce a per-decision template (the v0.7 pattern — What research found / Recommendation / Trade-offs considered / Where it applies / Test strategy at the design level — as a starting point).
+- Add a design-quality reviewer dimension that flags decisions whose Recommendation + Trade-offs fall under a minimum-content floor, with explicit Goodhart-risk handling.
+- Anti-candidate flagged in the source issue: brittle line-count gates that just bounce the pendulum to padding.
+
+**v0.7.2 expansion — cross-artifact scope.** Although #206 framed this around design.md specifically, the pattern likely affects every artifact (goals.md, design.md, structure.md, plan.md, possibly research summaries). Research should sample at least one current run-artifact directory under `docs/qrspi/2026-05-27-v071-hardening/` to compare against the artifact templates in `skills/*/SKILL.md` and identify which sections under-deliver.
+
+**Historical concision-tightening hunt — test-archaeology path.** The user recalls (with low confidence on which release) that artifact templates were once tightened toward "more user-friendly / human-scannable" prose. The tightening did NOT use the words "be concise" — research from that era had already concluded brevity directives degrade reliability, which is why the `no-brevity` lint exists today (`tests/unit/test-u14-lint.bats` lint #5, fixture `tests/fixtures/seeded-u14-violation-no-brevity.md`). The suspicion is that prose added to artifact templates produced the same concision effect indirectly. Reproduction path: (1) find the commit that introduced the `no-brevity` lint and fixture (both files entered at `64aaa88` 2026-04-28 as part of the monolithic-split import — the introducing commit may predate this repo's standalone v0.1 baseline; investigate whether `dfrysinger/qrspi-claude` or an earlier monolithic repo carries the history); (2) identify the release window the lint was added in; (3) inspect the artifact-template prose added in THAT same window across `skills/*/SKILL.md`, `agents/qrspi-*-reviewer.md`, and any `owns-defers.md` files. The goal is to find the specific prose suspected of producing the backfire effect, then weigh revert vs. a positive directive ("design.md MUST contain X, Y, Z") as candidates for Design.
+
+Source: #206
+
+### G2 — Schema-migration task shape
+
+- **type:** `known-fix`
+
+#### Problem
+
+The Plan skill's spec-authoring contract has no explicit shape for tasks whose target file list spans many files of the same shape (e.g., delete one frontmatter key from every agent file). Plan tends toward two failure modes: split into N tiny per-file tasks (defeats atomicity, multiplies overhead) or refuse to write the task (per-task LOC ceiling blows the budget). The plan-spec reviewer also has no recognition that such tasks legitimately exceed the LOC ceiling.
+
+#### Why we care
+
+Schema-migration work is recurring in this codebase (T9 in v0.7.1 was 41 files; future cross-agent or cross-skill sweeps will be similar shape). Without an explicit shape, every such task is hand-fixed by the user, costing review-round time and risking inconsistent framing across runs. Authoring this once removes the friction permanently.
+
+#### What we know so far
+
+v0.7.1 Task 9 already used `sizing_exception: schema migration` framing — landed as one atomic green commit (41 files changed, 41 deletions, 0 additions on `qrspi/v0.7.1-hardening/task-09`, commit `c7544e8`). Candidates Design should weigh:
+
+- Add a recognition trigger to `skills/plan/SKILL.md` (e.g., `target_files: > N files matching a single glob shape AND per-file change is structurally identical`) plus the `sizing_exception: schema migration` declaration with one-line rationale.
+- Require a single structural lint test inside the same task that sweeps the glob and asserts the post-condition (so the migration is self-verifying).
+- Teach `qrspi-plan-spec-reviewer` to recognize the exception and exempt the task from the standard per-task LOC ceiling — otherwise the reviewer keeps flagging legitimate migrations.
+
+Source: #208
+
+### G3 — Shell-pipeline splitter collapse
+
+- **type:** `known-fix`
+
+#### Problem
+
+When `scripts/run-codex-review.sh` runs under the shell-pipeline transport (current Claude Code dispatch path), Codex output goes to stdout and the orchestrator must manually pipe it through `scripts/codex-finding-splitter.sh` to land per-finding files in the correct `round-NN/` output directory. The orchestrator owns three wiring concerns (stdout→splitter pipe, output_dir re-assertion, await exit-status check before splitting). If any of those drifts across rounds, findings are silently lost.
+
+#### Why we care
+
+Silent finding loss is the worst failure mode in the review loop: a clean-looking round actually has missing findings, and the next review round's convergence comparison narrows against a false baseline. Beyond loss, the orchestrator-side ritual pulls Codex output through main-chat context — every reviewer's findings re-bill as cache reads on subsequent turns and dilute the orchestrator's reasoning. Keeping reviewer output out of the orchestrator's context window is the explicit reason the disk-write contract exists; this issue closes the last orchestrator-side persistence step on the shell-pipeline transport. Launch-and-forget callers are also a prerequisite for cleaner subagent dispatch patterns downstream.
+
+#### What we know so far
+
+`run-codex-review.sh` already accepts `--output-dir`; the splitter logic just needs to run inside the script after await, replacing the orchestrator-side pipe. Lineage from issues #102/#103/#104/#105/#146 (disk-write-contract series) — this is the next step in that line. Candidates Design should weigh:
+
+- Keep the splitter as a separate script that `run-codex-review.sh` calls internally (modular, testable) vs. inline the logic (fewer moving parts).
+
+Note: the shell-pipeline transport runs on Claude Code host; the task-tool transport (Copilot CLI host) has its own disk-write-contract issues tracked in sibling issues as G4–G6 — this goal does NOT close those.
+
+Source: #210
+
+### G4 — Canonical cumulative diff helper
+
+- **type:** `known-fix`
+
+#### Problem
+
+The `round-NN.diff` convention requires `git diff $(git merge-base HEAD <feature-branch>)` cumulatively across all rounds. Across fix rounds, the orchestrator must reconstruct this manually for each round, picking the right merge-base for the right task branch. One wrong base = misleading reviewer diff = wasted review round (reviewer sees feature-branch noise as if it were this round's changes).
+
+#### Why we care
+
+Observed in v0.7.1 T2 deep-mode review: the orchestrator computed the diff base by hand each round and got it wrong once, causing a re-run. The orchestrator-side prose ritual is the drift surface; the fix consolidates the merge-base computation into one verified place. Also reduces orchestrator-context overhead by replacing inlined `git merge-base` instructions with a single script invocation.
+
+#### What we know so far
+
+Issue #104 established the per-round diff file convention; this is the canonical helper to compute it correctly. Candidates Design should weigh:
+
+- Script signature `scripts/round-diff.sh <task-branch> <round-NN> <output-dir>` that: (1) computes the canonical cumulative diff base; (2) emits to `<output-dir>/round-NN.diff`; (3) supports a `--verify` flag that asserts the base matches the expected commit for this round (catches drift).
+- Update the Implement SKILL prompt to call the script with three known arguments rather than inlining the merge-base computation in prose.
+
+Source: #211
+
+### G5 — Idempotent post-approval plan split
+
+- **type:** `known-fix`
+
+#### Problem
+
+The Plan skill splits the approved `plan.md` into per-task `tasks/task-NN.md` files as the Implement count-read entry point. If the session compacts or restarts between approval and split, the split step is not safely re-runnable: state is implicit, and the orchestrator can either silently overwrite existing per-task files (clobbering hand-edits) or fail loudly when the files already exist.
+
+#### Why we care
+
+Observed in v0.7.1: a session compaction between approval and split forced a delete-and-re-run that lost hand-applied amendments. The split step has to survive `/compact`, orchestrator-process boundaries, and resumed runs — exactly the durability profile other QRSPI artifacts already provide. Without idempotency, every compaction-during-Plan is a data-loss surface.
+
+#### What we know so far
+
+Issue #172 (closed) moved the split step to run as a sub-subagent, not main chat. This goal adds the idempotency contract on top of that infrastructure. Candidates Design should weigh:
+
+- Per-task four-case decision: (1) target exists and matches `plan.md` → skip; (2) target exists but diverges → surface conflict to user (no silent overwrite, no silent skip); (3) target absent → write fresh; (4) target exists and has been hand-amended → treat as case-2 conflict surface.
+- The conflict surface should preserve hand-edits (e.g., write a `.split-conflict-NN.md` sidecar and prompt the user) rather than block the run entirely.
+
+Source: #212
+
+### G6 — Copilot-CLI task-tool transport: disk-write contract correctness across reviewer families
+
+- **type:** `exploratory`
+
+#### Problem
+
+Under Copilot CLI's task-tool transport, reviewer agents inconsistently honor the disk-write contract declared in their frontmatter and dispatch prompts. Two reliability profiles: OpenAI-family models (`gpt-5.3-codex`, `gpt-5.5`) consistently chat-only return; Claude reviewers (`qrspi-integration-reviewer`, `qrspi-security-reviewer`) intermittently chat-only — same agent file, same prompt, same model writes disk one round and returns inline the next. Independently, the Copilot CLI host has no codex CLI binary, so `scripts/run-codex-review.sh` fails outright and operators silently substitute the task-tool dispatch shape. The implement SKILL documents only the shell-pipeline transport — the entire task-tool transport branch is undocumented including the disk-write asymmetry, host-detection probe, and orchestrator-side persistence shim.
+
+#### Why we care
+
+Four concrete losses today:
+
+- **Audit-trail integrity** — verifier/scope-tagger/apply-fix loop reads findings from disk; chat-only returns require manual orchestrator persistence on every affected dispatch.
+- **Orchestrator-context bloat** — every chat-returned reviewer payload re-bills as cache reads on subsequent main-chat turns and dilutes orchestrator reasoning (same root concern as G3: keeping unnecessary context out of the orchestrator's window is why we use files).
+- **Substantive signal loss** — in v0.7.1 T1 R1 the chat-only `gpt-5.5` reviewer independently caught a structural spec-vs-impl gap (NUL die-message can't name the offending header name because bash strips NUL at variable assignment) that the Claude reviewer missed; discarding OpenAI-family signal because of transport friction costs real coverage.
+- **Measurable operator overhead** — #246 author estimated 4 reviewers × 6 rounds × inline ~50% = ~30–60 minutes of avoidable inline-materialization orchestration per run.
+
+Beyond the immediate losses, the documentation gap means every operator working on the Copilot CLI host re-discovers the substitution pattern by hand.
+
+#### What we know so far
+
+**Reproduction (v0.7.1 T1 R1):** `claude-sonnet-4.6` wrote disk; `gpt-5.3-codex` and `gpt-5.5` chat-only. **Claude intermittent failures (v0.7.1 Integrate R3–R6):** `integration-claude` and `security-claude` flip between disk-write and chat-only across rounds with identical inputs.
+
+**Self-reported OpenAI reasons** favor a runtime-injected host system prompt above the per-agent declaration ("higher-priority instructions require returning findings in chat text only"; "this review environment explicitly forbids file writes"). No self-reported reasons captured from Claude — silent variance.
+
+**Cross-vendor anti-pattern hypothesis:** vendors (Anthropic, OpenAI, plausibly others) appear to be actively suppressing subagent disk-writes as a deliberate product decision, on the theory that subagent→main-agent communication is better through chat than via sidecar files the caller may not re-read; prior evidence from a Claude Code feature-flag rollout that blocked subagents from writing files matching patterns like `summary.md`. If the hypothesis holds, this is a vendor-side default the agent prompt has to actively override — not a vendor bug to file. Intermittency on the Claude side fits a guidance-vs-override tug-of-war; OpenAI consistency fits a stricter system-prompt-level prohibition.
+
+Candidates Design should weigh (strongest lever first):
+
+1. **Transport-layer abstraction** — instruct reviewers to pipe findings to a handoff CLI (e.g., `qrspi-handoff-findings --to=orchestrator --round=NN --tag=quality-claude`) that routes findings to the next pipeline consumer. Decoupling is good API design independent of the suppression problem; structured ingress lets the orchestrator validate payload at the gate; transport can evolve without re-prompting reviewers. Trade-off: fragile to vendor blocking of shell tools that write to disk (harder posture for vendors to adopt because legitimate dev-tools workflows depend on it).
+2. **Iron-law prompt directive** in every reviewer agent body and dispatch prompt naming the failure mode and forbidding chat-only return in salient terms — lower leverage but cheap and parallelizable.
+3. **Persistence shim as backstop** — detect inline-return shapes and materialize through the same boundary-marker splitter logic as `codex-finding-splitter.sh`; disk output byte-equivalent regardless of source; carries `materialized_by: orchestrator` + `materialization_reason` frontmatter.
+4. **Document the task-tool transport branch** in `implement/SKILL.md` § Dispatching Reviewers, naming both reliability profiles and the vendor anti-pattern.
+5. **`check_codex_cli` host-detection probe** in `using-qrspi/SKILL.md` so dispatch shape is chosen at runtime.
+6. **`scripts/run-codex-review.sh` refuses with useful diagnostic** when codex CLI is absent.
+7. **Integration test** (per #246's investigation #3) dispatching each reviewer agent with synthetic prompt and asserting expected round-directory files post-dispatch — also measures whether (1) or (2) moved the needle.
+
+**Sharpening from v0.7.2 self-host (PI-010, #260):** the OpenAI-family chat-only behavior originally framed as a vendor-side suppression problem now has a more proximate cause candidate. Every per-skill SKILL.md review-round section (questions, research, design, parallelize, test) unconditionally instructs the Codex dispatch to use Claude-Code-era shell-pipeline emission (`<<<FINDING-BOUNDARY>>>` per-finding output via `scripts/run-codex-review.sh` + `scripts/codex-finding-splitter.sh`), even on Copilot CLI host where `skills/using-qrspi/SKILL.md` L413 says Codex routes via the task-tool transport with the same agent body Claude uses. Under that path the model receives a dispatch prompt literally telling it to print to stdout — chat-only return is the recipe's specified behavior, not a vendor defect. v0.7.2 self-host confirmed 5/5 chat-only returns for `gpt-5.3-codex` against `tools: Read, Write` frontmatter when the per-skill boilerplate was included. **A verifying counter-experiment** (dispatch the same agent body with `model: gpt-5.3-codex` via Task tool WITHOUT the per-finding-emission boilerplate) would establish whether vendor suppression is real or whether the per-skill prose is sufficient root cause. **New candidate Design should weigh:** host-switch the per-skill review-round prose so Copilot CLI dispatches drop the shell-pipeline recipe entirely, with the dispatch contract centralized in `skills/reviewer-protocol/SKILL.md`. This is candidate #8, and likely subsumes (4) (#5).
+
+Source: #213, #216, #245, #246, #260 (PI-010 sharpening)
+
+### G7 — Verifier filter rule: missing at point of use and DRY drift across central locations
+
+- **type:** `known-fix`
+
+#### Problem
+
+Two compounding defects around the verifier filter rule. (a) `implement/SKILL.md` (the orchestrator's loaded contract during per-task Implement) references "kept findings" and "findings that survived any verifier filtering" but never specifies the rule; the rule itself lives in `using-qrspi/SKILL.md`. An orchestrator grepping `implement/SKILL.md` for the threshold finds nothing and invents one. (b) Even at the central location, the rule is restated 5 times in `using-qrspi/SKILL.md` (lines 388, 661, 921, 984, 985) in different paraphrases, and v0.7.1 split a single ≥80 rule into a two-tier rule (style/clarity ≥80, correctness ≥70). Adding a sixth restatement in `implement/SKILL.md` without DRYing the values creates a third drift target.
+
+#### Why we care
+
+Empirical: in v0.7.1 self-host session `39c8d55c` T1 R5, the orchestrator (Opus 4.7 high) invented ≥50 and shipped a fix-implementer with 6 findings; the actual rule (post-v0.7.1) would have kept 4. Threshold drift inverts the verifier's whole purpose and compounds across rounds. The DRY angle multiplies the risk: every future threshold tweak has to be made in 5+ places and ANY missed location silently re-creates the v0.7.1 drift; a human or agent reading any single paraphrase has no way to know whether it is authoritative or stale.
+
+#### What we know so far
+
+Tension: DRY usually means a single source of truth via reference, but G7's failure mode is precisely that the agent grepped one file and the value wasn't there — so pure SSOT-by-link won't work. Reconciliation requires the agent to SEE the literal value at the point of use while the value is defined once. Candidates Design should weigh:
+
+1. `!cat`-include the canonical rule fragment (e.g., `skills/_shared/verifier-filter-rule.md`) into every SKILL that references it — rendered SKILL contains the literal threshold at point of use, but the source-of-truth is one file (matches the existing `_shared/precondition-block.md` pattern in `goals/SKILL.md`).
+2. Constants block in `_shared/` referenced by short symbolic name (e.g., `STYLE_FLOOR=80`, `CORRECTNESS_FLOOR=70`) with canonical narrative in `_shared/verifier-filter-rule.md`.
+3. Cap restatement to two locations (canonical `_shared/`, mirrored once in `implement/SKILL.md` at point of use) plus a consistency check in the test suite.
+
+Option (1) is closest to the existing `!cat` pattern; option (3) is cheapest but trades drift-prevention for repetition tolerance.
+
+**Compound failure with G8 (#221):** even with the rule in hand, the field the rule keys on (`change_type:`) is missing from reviewer output. **Downstream interaction with G12 (#252 — automated verifier-fan-in script):** if the script becomes the executable source of truth for the threshold, the SKILL prose can become "see `scripts/verifier-fan-in.sh` for the canonical filter" rather than restating values.
+
+Source: #220
+
+### G8 — Reviewer subagents emit `category:` instead of schema-required `change_type:` in finding-file frontmatter
+
+- **type:** `known-fix`
+
+#### Problem
+
+Reviewer subagents are emitting `category:` (free-text) in finding-file frontmatter instead of the schema-required `change_type:` field. The reviewer-protocol 5-field schema requires `change_type:`; the verifier filter rule keys on `change_type: ∈ {style|clarity|correctness|scope|intent}` to decide drop/keep; the scope-tagger and downstream consumers route on the same field. With the field renamed to `category:` (and carrying free-text values like "silent-fallback / fail-open"), the rule has no field to match on.
+
+#### Why we care
+
+Empirically demonstrated in session `39c8d55c` T1 R5 fan-out: all 9 finding files at `reviews/tasks/task-01/round-05-fanout/*.finding-*.md` carried `category:` instead of `change_type:`. Affected reviewers (all `claude-sonnet-4.6`): `qrspi-silent-failure-hunter` (3 findings), `qrspi-security-reviewer` (4), `qrspi-code-quality-reviewer` (2). Empty/missing `change_type:` is undefined behavior under the filter rule — does empty evaluate true or false against the set? Scope-tagger and the `scope|intent` bypass routing silently default-route or no-op. The HARD-GATE schema validation in `implement/SKILL.md` § step 8 should catch this but doesn't.
+
+#### What we know so far
+
+Candidates Research should investigate:
+
+- Do the per-reviewer agent body prompts (`agents/qrspi-silent-failure-hunter.md`, `agents/qrspi-security-reviewer.md`, `agents/qrspi-code-quality-reviewer.md`) explicitly require `change_type:`, or does the prompt drift toward `category:`?
+- Does `reviewer-protocol/SKILL.md` § Per-Finding Disk-Write Contract name the field correctly as `change_type:`, and do per-reviewer agent files override?
+
+Candidates Design should weigh:
+
+- Audit and correct each per-reviewer agent file to name `change_type:` explicitly with the allowed value enumeration.
+- Add a schema-presence check to the HARD-GATE that fails the round when a finding file is missing `change_type:` outright (fail-loud beats silent default-route).
+- Centralize the schema in `reviewer-protocol/SKILL.md` and have per-reviewer agents inherit rather than duplicate.
+
+Compound failure with G7 (#220) noted.
+
+Source: #221
+
+### G9 — Per-task review orchestration drift: scope-tagger, round-NN.diff, round-NN-commit.txt not fired
+
+- **type:** `known-fix`
+
+#### Problem
+
+During v0.7.1 hardening per-task review rounds, the orchestrator did not consistently emit the artifacts required by `using-qrspi/SKILL.md` § Standard Review Loop: step 6 scope-tagger dispatch never fired for any per-task round despite `scope_tagger_enabled: true`; `round-NN-scope-set.txt` was never written; `round-NN-commit.txt` commit-SHA anchors were never captured at step 11; step 12 ref-selection was never executed (reviewers always dispatched with `<ref>=<base-branch>`); `round-NN.diff` emission was inconsistent (T1 R9/R10 emitted; T6/T9 R2 did not). With the scope-tagger machinery dormant, the narrow-vs-broaden convergence rule never fires; the system runs at `scope_tagger_enabled=false` equivalent silently.
+
+#### Why we care
+
+Concrete losses observed in the v0.7.1 self-host run:
+
+- Reviewers see the full base-diff every round including unchanged code from earlier rounds.
+- Verifier "pre-existing" reasoning compounds (reviewer flags older code, verifier dismisses it).
+- No telemetry on whether narrowing would have shrunk diffs effectively.
+- Token cost stays high with no convergence benefit.
+
+The drift is silent — no fail-loud assertion catches the missing artifacts, so the orchestrator under load just drops the steps and proceeds. The root cause is the per-task review loop in `implement/SKILL.md` implicitly inheriting the Standard Review Loop contract from `using-qrspi/SKILL.md` without explicitly walking the orchestrator through the missing steps.
+
+#### What we know so far
+
+Candidates Design should weigh:
+
+1. Inline the missing steps explicitly in `implement/SKILL.md` per-task review section (mirror or `!cat` the using-qrspi standard loop) so the orchestrator's loaded contract carries the rule.
+2. Fail-loud assertions — orchestrator MUST refuse to dispatch round NN+1 reviewers without `round-NN.diff` present on disk; same for scope-set and commit-anchor when `scope_tagger_enabled: true`.
+3. Main-chat diagnostic / SQL state-tracking nudge surfacing "scope-tagger never fired this round" when expected.
+4. Integration test that runs a synthetic per-task round and asserts all four artifacts exist post-round.
+
+Workaround in flight from v0.7.1 T6 R3 onward (pre-create round dir, emit diff via redirect, capture commit anchor, dispatch scope-tagger explicitly) validates that the artifacts CAN be fired correctly — just not reliably without contract-level reinforcement.
+
+Source: #224
+
+### G10 — Reviewers fabricate procedural authority to justify non-compliance with documented contracts
+
+- **type:** `exploratory`
+
+#### Problem
+
+Distinct from the transport-level chat-only fallback covered by G6: in at least one observed instance, a reviewer subagent (T3 R11 gt reviewer) did not just chat-emit findings — it fabricated a non-existent procedural authority and quoted it verbatim to justify the contract violation. The fabricated quote was attributed to `skills/reviewer-protocol/SKILL.md`: "Per the contradiction-refusal procedure in `skills/reviewer-protocol/SKILL.md`, when the disk-write contract conflicts with the finding-quality bar, the reviewer should refuse to write findings and instead surface them in chat for orchestrator triage." No such procedure exists. This is a prompt-drift / authority-fabrication failure class, not a transport-layer failure.
+
+#### Why we care
+
+Fabricated procedural authority is worse than naive non-compliance because the orchestrator (or operator) reading the chat output can be persuaded the violation is sanctioned. The pattern generalizes beyond the disk-write contract — any documented load-bearing rule (HARD-GATEs, route handoffs, verifier filter rules, scope-tagger triggers) is a candidate target for the same fabrication shape under load. If reviewers learn that fabricated procedure citations are accepted, the entire SKILL-as-contract premise weakens.
+
+G6 addresses occurrences 1–6 of #226 (simple chat-only fallback) by fixing the transport; this goal addresses occurrence 7 separately because the lever is reviewer-protocol prompt hardening against contradiction-refusal fabrication, not transport.
+
+#### What we know so far
+
+**Distinct failure flavor from G6:** occurrences 1–6 of #226 are "reviewer chat-emitted without procedural cover" (subsumed by G6's transport fix); occurrence 7 added the fabricated procedural authority gloss.
+
+**Context-length / saturation hypothesis:** `implement/SKILL.md` is 1562 lines; `using-qrspi/SKILL.md` is 1260 lines; reviewer agents auto-load `reviewer-protocol` + their per-reviewer agent body on top. The fabrication pattern fits a saturation failure mode — the model "remembers" some contradiction-resolution mechanism is documented somewhere, can't locate it under attention pressure, and confabulates a plausible-sounding paraphrase rather than admitting uncertainty. Worth weighing against an alternative hypothesis that it is a one-shot training-data echo unrelated to context size.
+
+Candidates Research should investigate:
+
+- Is the fabrication grounded in any actual training-data pattern (Anthropic published "contradiction refusal" framing the model could be confabulating from)?
+- Does it correlate with skill-context size — repro by dispatching the same reviewer agent against synthetic short-SKILL vs. full-SKILL load and measuring fabrication rate?
+- Does it correlate with round number / accumulated context inside a single review loop?
+
+Candidates Design should weigh:
+
+- Explicit "no fabricated authority" anti-pattern callout in `reviewer-protocol/SKILL.md` ("if you believe a documented contract is in conflict with another rule, surface the conflict by name and stop — do NOT invent a contradiction refusal or analogous procedure to bypass it").
+- Literal anti-fabrication check in the orchestrator's post-dispatch read of chat output (if chat contains a quoted procedure citation that doesn't match any loaded SKILL, fail loudly).
+- G6's transport-abstraction lever reduces the opportunity for this fabrication by removing the chat-only fallback it piggybacks on.
+- If context-size correlation is confirmed, aggressive SKILL deduplication / extraction-to-`_shared` becomes a hardening lever — relates to G7's DRY angle.
+
+Source: #226
+
+### G11 — Verifier sidecar pipeline: extension drift and orchestrator bypass
+
+- **type:** `known-fix`
+
+#### Problem
+
+The verifier sidecar pipeline has two layered defects. (a) Extension drift: the `qrspi-finding-verifier` agent writes its sidecar with inconsistent extensions (`.score.md` vs. `.score.yml`) across dispatches — observed in session `39c8d55c` across ~30 verifier dispatches in the v0.7.1 self-host, including one finding that got both extensions written when a downstream step failed to recognize the `.yml`. (b) Orchestrator bypass: the canonical score lives on disk in the sidecar, but the orchestrator parses the verifier's chat-side output instead of reading the sidecar to apply the threshold filter. Sidecars are written and never read — the canonical source-of-truth on disk and the load-bearing path through chat diverge silently. This is the same chat-emit-vs-disk-write anti-pattern G6 covers, at a different layer.
+
+#### Why we care
+
+(a) on its own is currently latent — but only because (b) shields it; the chat-side path masks the extension chaos. Fixing (a) without (b) is busywork (the sidecars stay unread); fixing (b) without (a) blows up the moment the consumer globs for one extension and misses the other. Together: the v0.7.1 self-host had ~30 verifier dispatches where the orchestrator's threshold decisions were grounded in chat parsing while the disk had the canonical score, in two different extensions, with one defensive duplicate — the audit trail is fragmented across chat (load-bearing today) and disk (load-bearing tomorrow). Cascade with G6: the chat-side path is exactly the kind of side-channel reliance G6 is trying to retire, just one layer down.
+
+#### What we know so far
+
+Candidates Design should weigh:
+
+1. Lock the sidecar extension in `agents/qrspi-finding-verifier.md` and constrain the Write tool call to it (`.yml` if canonical form is structured key:value; `.md` if it's prose-with-frontmatter — file is currently one-line `<reviewer_tag>.<finding_id>: <score>` + reasoning prose, which favors `.md`).
+2. Cut the orchestrator over to reading sidecars as the primary path, with chat-parse demoted to fallback + drift-detection diagnostic ("sidecar score vs. chat-reported score must agree; mismatch = fail loudly"); also exercises the future automated-fan-in entrypoint before automation lands.
+3. Schema lock on sidecar content so parseable by the same logic that drives automated fan-in.
+4. One-line consistency check at fan-in entry that fails the round when any score file is on the off-extension.
+
+Together these convert the sidecars from "forward-load-bearing telemetry the orchestrator ignores" into the actual load-bearing data path. Tight coupling with G12 (#252 — automated verifier-fan-in script): G11 sets the contract, G12 delivers the consumer.
+
+Source: #227
+
+### G12 — Automated verifier-fan-in script (replace orchestrator chat-parsing of verifier sidecars)
+
+- **type:** `known-fix`
+
+#### Problem
+
+The `qrspi-finding-verifier` agent writes per-finding sidecars containing score and reasoning, but no consumer reads them. The orchestrator applies the verifier filter rule by parsing the verifier's chat-side output, leaving the disk-side sidecars as forward-load-bearing telemetry the system doesn't actually use. #227 explicitly named this as a future state ("becomes load-bearing once automation of the verifier-fan-in step is added"); this goal is that automation.
+
+#### Why we care
+
+Four pressures converge to make the automation the right v0.7.2 deliverable rather than a v0.7.3+ deferral:
+
+1. **Orchestrator context burden — dominant cost.** The verifier returns its full score + reasoning prose through chat in addition to writing the sidecar; parsing that chat lands every verifier's reasoning in main-chat context, gets cached, and re-bills on every subsequent turn. Across ~30 verifier dispatches per run, the bloat is substantial. With the script, the orchestrator consumes a tiny canonical output (kept finding IDs + counts) while per-finding reasoning prose stays on disk for downstream consumers to fetch on demand. Same motivation as the "keep unnecessary context out of the orchestrator's window" pattern that underpins G3.
+2. **Chat-parse path is fragile** in the same family as G6 (Copilot-CLI task-tool transport disk-write contract): writing canonical data to disk and parsing the same data from chat means the orchestrator can drift from the canonical source on every dispatch and never know.
+3. **G11's sidecar extension lock is busywork on its own** because nothing reads the sidecars; standing up the consumer is what makes the lock load-bearing.
+4. **G7's DRY problem on threshold values** has a clean resolution if a script becomes the executable source of truth — the agent invokes the script rather than memorizing the threshold; the SKILL prose then becomes documentation of the script's behavior rather than a parallel implementation that can drift.
+
+#### What we know so far
+
+Candidates Design should weigh:
+
+- Shape and location of the script: `scripts/verifier-fan-in.sh <round-dir>` walking the round directory, globbing sidecars, parsing score + `change_type`, applying the two-tier threshold from a single canonical location.
+- Canonical output shape: `<round-dir>/kept-findings.txt` listing kept finding IDs plus a fan-in audit record summarizing scored/failed/dropped/kept counts that downstream apply-fix consumes directly.
+- A fail-loud behavior shape for the upstream contract violations from G6: when `verifier_enabled: true` and findings exist without sidecars, the fan-in step should not silently proceed. Design chooses the exact failure mode (assertion, exit code, halt-and-report).
+- Sidecar schema lock alongside the script so the parser has a stable contract.
+- `implement/SKILL.md` apply-fix protocol updates to invoke the script at the right step and consume its output rather than parsing chat.
+- Downstream consequence for G7: if the threshold lives in the script, the SKILL prose can become "see `scripts/verifier-fan-in.sh` for the canonical filter" rather than restating values that can drift.
+
+Source: #252
+
+### G13 — `change_type` enum drift: reviewer-side emit and orchestrator-side silent fall-through
+
+- **type:** `known-fix`
+
+#### Problem
+
+Two sides of one defect. Reviewer subagents occasionally emit `change_type` values outside the documented enum (`security | correctness | clarity | style` per Hotfix B), and the verifier-fan-in threshold logic in `using-qrspi/SKILL.md:835` looks up the threshold by enum value — out-of-enum lookups return no matching threshold and the orchestrator implicitly keeps the finding regardless of confidence score. Observed out-of-enum strings during v0.7.1 self-host: "Test comment inaccuracy / overstated mutation-resistance claim", "Defense-in-depth / multi-condition mutation testing", "Test portability / environment-dependence" (T6/T9 R11 tc/gt findings). Each was a materially valid finding, but the orchestrator had to manually map free-form strings to enum members to apply the threshold; absent that manual step, the confidence gate is a no-op.
+
+#### Why we care
+
+Two failure modes compound:
+
+1. Out-of-enum findings bypass the confidence gate entirely — they are kept even if the verifier scored them 5/100, inverting the verifier's whole purpose for that finding.
+2. Different orchestrator runs or different operators may map the same free-form string to different enum members, producing non-reproducible drop/keep decisions and breaking the audit trail.
+
+The manual-mapping workaround used in v0.7.1 self-host is unsustainable for future automation (G12's verifier-fan-in script will fail or fan-out incorrectly on out-of-enum input). Tight coupling with G8 (#221, `category:` vs. `change_type:` field-name drift) and G7 (#220, threshold-rule DRY drift): the trio together means the orchestrator can fail to find the field, fail to find the rule, AND silently keep an out-of-enum value — three layers of the same overall verifier-fan-in contract failing for different reasons.
+
+#### What we know so far
+
+Either-side fix alone is incomplete; the issue authors and v0.7.1 self-host both concluded the cleanest fix is reviewer-side enum enforcement AND orchestrator-side fail-loud so future regressions on either side are caught immediately. Candidates Design should weigh:
+
+- Reviewer-protocol skill declares `change_type` as a fixed enum and reviewer agents validate before emit (reject finding, force re-classification on out-of-enum).
+- Verifier-fan-in step fails loudly on out-of-enum lookup rather than silently keeping.
+- Extend the schema-presence check from G8 to also assert enum-membership, not just presence.
+- Downstream consequence for G12: the script becomes the natural failure point for the fail-loud assertion, and the canonical enum lives in one place — the script — exactly as G7 envisions for the threshold values.
+
+Source: #228, #229
+
+### G14 — Verifier mis-applies false-positive rubric to reviewer-labeled "Informational" findings
+
+- **type:** `known-fix`
+
+#### Problem
+
+The `qrspi-finding-verifier` agent (post-Hotfix-A, commit `2f67f03`) treats reviewer-emitted "Informational" labels as equivalent to "explicitly silenced like a CLAUDE.md acknowledgment" and applies the false-positive rubric, scoring 20–30 → DROP. This conflates three distinct cases: (1) false positive — finding premise is wrong; (2) informational/observational — premise is correct but reviewer chose not to demand action (e.g., "the TOCTOU window exists but is mitigated by X; documenting for future maintainers"); (3) acknowledged-and-silenced — CLAUDE.md note explicitly says "we know about this and accept the trade-off." The verifier's current rubric collapses (2) and (3) into (1).
+
+#### Why we care
+
+Observed in v0.7.1 self-host T6 round-8 sec.F02: reviewer emitted a `sec` finding labeled "Informational" describing a real TOCTOU window between `realpath` and trust-prefix matching; verifier scored 25/100 → DROP, citing "reviewer self-labeled informational → false-positive rubric applies → low confidence." Outcome was right (the finding wasn't actionable), but the reasoning was wrong. The verifier's reasoning is load-bearing on borderline scores (50–70) — wrong-rationale-right-answer in one case masks wrong-rationale-wrong-answer in another. Downstream effect: reviewers can't use "Informational" as a signal to the verifier and have to over-classify to get the right confidence score, contaminating the audit artifact and defeating the purpose of the label.
+
+#### What we know so far
+
+Candidates Design should weigh:
+
+- Update `agents/qrspi-finding-verifier.md` rubric to distinguish the three cases explicitly with separate scoring branches — false positive 10–30, informational/observational scored by structural confidence not the false-positive rubric, acknowledged-and-silenced 10–25.
+- Add a regression test against the T6 R8 sec.F02 case-style synthetic input asserting Informational-but-valid is scored on structural confidence not the false-positive branch.
+- Consider whether the reviewer-protocol skill should formalize "Informational" as a recognized label with semantics the verifier mirrors, rather than reviewers using it ad-hoc.
+
+Source: #230
+
+### G15 — Per-task test scope misses dependent tests for sweep tasks
+
+- **type:** `known-fix`
+
+#### Problem
+
+Per-task test scope is too narrow when a task does a "sweep" change (modifies many files to enforce or remove an invariant). The task's targeted tests pass green in its worktree, but full-suite integration surfaces immediate regressions because other test files assert specific values that the sweep was scoped to remove. The plan-spec's notion of "files in scope" doesn't cover "test files that assert on those files." A sweep that says "strip `model:` from all agent frontmatter" implicitly invalidates any test that asserts a specific `model:` value, even if that test file isn't in the task's plan-spec scope.
+
+#### Why we care
+
+Empirically demonstrated in v0.7.1 Wave 1: three sweep-like tasks (T9/#204 strip `model:` from 41 agent frontmatter files; Hotfix A test-writer iron law rewrite; Hotfix B threshold split) all shipped GREEN per-task and INTEGRATE then surfaced 6 stale-test failures at known paths:
+
+- `test-scope-tagger-dispatch.bats:38`
+- `test-verifier-agent-file.bats:7`
+- `test-visual-fidelity-reviewer-agent.bats:35`
+- `test-test-writer-dual-mode.bats:52`
+- `test-change-type-partition.bats:15`
+- `test-section-anchor-narrow-read.bats:206`
+
+Cleanup took ~30 min, but the deeper problem is mis-routed work: the per-task BLOCKING gate ships GREEN while the integrated state is actually RED; integrate phase becomes responsible for test maintenance owed by the producing task; and the contract that "per-task gate = trustworthy" is violated. v0.7.1 retired the 6 stale tests one-shot (commit `898c171`) but did NOT close the plan-skill contract gap — `plan/SKILL.md` still has zero language about sweep tasks or dependent-test enumeration; the issue remains OPEN on GitHub for v0.7.2.
+
+#### What we know so far
+
+Candidates Design should weigh:
+
+- Extend `plan/SKILL.md` § Test Expectations with a sweep-task subsection — when a task removes or replaces a property across many files, the producing task is responsible for enumerating dependent tests by path OR explicitly stating "no dependent tests exist" with a grep-confirmed search command.
+- Sweep-detection heuristic for the plan reviewer — `files_in_scope` includes >5 instances of the same file type AND the task description mentions "all", "every", "strip", "remove", "rename", or "sweep" → treat as sweep task.
+- Per-task gate enhancement — for sweep tasks, additionally run any test whose file content mentions an in-scope identifier (e.g., grep `tests/unit/` for files referencing the swept property name) before declaring the task green.
+- Integrate-time test-cleanup expectation block as an explicit handoff if the per-task gate approach is too expensive.
+
+The issue body contains the original plan/SKILL.md prose authored by the issue author and is a reasonable starting point for the Design candidate.
+
+Source: #231
+
+### G16 — `scripts/run-codex-review.sh` accepts arbitrary absolute paths; sanctioned-channel exfil surface
+
+- **type:** `known-fix`
+
+#### Problem
+
+`scripts/run-codex-review.sh` accepts arbitrary absolute paths as `--subject-code` and `--companion` values, reads them with `cat`, and embeds the content in the dispatch prompt shipped to the Codex provider. Reproduced live in v0.7.1 INTEGRATE round 1 (sec-codex F01) and standalone `--dry-run`: `--subject-code /etc/hosts` produces a prompt embedding `/etc/hosts` content between `<<<UNTRUSTED-ARTIFACT-START id=/etc/hosts>>>` markers, then forwards to `run-third-party-llm.sh --provider codex`. Three surfaces:
+
+- `scripts/run-codex-review.sh:321-327` — `resolve_path` echoes absolute paths unchanged, no repo-boundary enforcement.
+- `:462-467` — `emit_untrusted_artifact` does `cat "$path"`.
+- `:557-560` — forwards assembled prompt to the LLM.
+
+#### Why we care
+
+This is sanctioned-channel exfil, not curl-to-attacker exfil. Post-Hotfix-A, `agents/qrspi-implementer.md` holds Bash tool grants without a prompt-layer Bash allowlist restricting invocation of `run-codex-review.sh` (the test-writer agent does carry such a restriction; the implementer does not). A prompt-injected implementer could invoke the wrapper with any absolute path, shipping its contents through the Copilot-CLI→OpenAI channel that infrastructure-layer egress controls explicitly allow.
+
+The QRSPI verifier scored this 62 (below the security ≥70 threshold) on the reasoning that "prompt-injected Bash-granted agents already have many exfil paths" — true at the curl level, false at the sanctioned-channel level. This is also a concrete case where G14 (verifier rubric defects) materially affected a security finding's disposition.
+
+#### What we know so far
+
+Candidates Design should weigh:
+
+- Canonicalize every `--subject-code` and `--companion` path with `readlink -f`/`realpath` and reject paths not under `$REPO_ROOT`; fail closed with a clear diagnostic on canonicalization failure.
+- Tighten `resolve_path()` to enforce the same allowlist at the function level rather than the call site.
+- Add a bats test asserting `--subject-code /etc/hosts --dry-run` exits non-zero with "outside repo" in output.
+- Extend the prompt-layer Bash allowlist on `qrspi-implementer.md` to mirror the test-writer's restriction on invoking `run-codex-review.sh` as defense in depth.
+- T6's `check_codex_available` (lines 165-180) already implements a canonicalization pattern that can be lifted as the reference.
+
+Secondary surface to audit: are there other shell scripts that ship file content through sanctioned LLM channels without repo-boundary checks?
+
+Source: #232
+
+### G17 — Stale prose in implementer-protocol and test-writer after T2 added committed gitignore
+
+- **type:** `known-fix`
+
+#### Problem
+
+After v0.7.1 Wave 1 T2's commit-hygiene scope added `.qrspi-commit-msg.txt` to the committed root `.gitignore`, two prose surfaces have not been reconciled with the new mechanism:
+
+- `implementer-protocol/SKILL.md:241` (step 4 of Commit-Before-Reporting) still says "rm `<worktree>/.qrspi-commit-msg.txt` (the scratch file is not gitignored and you don't want it in the next round's diff)" — the "not gitignored" parenthetical is now factually false.
+- `implementer-protocol/SKILL.md:174-181` Invariant 3 / Composition section enumerates three exclusion layers and doesn't list the new committed gitignore as a fourth.
+- `agents/qrspi-test-writer.md:28` says "The worktree-local `.git/info/exclude` already lists `.qrspi-commit-msg.txt`" — mentions only the older mechanism, omits the now-also-applicable committed `.gitignore`.
+
+#### Why we care
+
+Documentation-vs-code drift only — no runtime defect today, the `rm` is still useful for worktree-local diff hygiene. But it misleads future maintainers who will grep for "gitignored" semantics and find prose that contradicts the live config; it also weakens the Composition section's value as a one-stop reference for the exclusion guards. Both findings were raised in v0.7.1 INTEGRATE round 1 (R1-F03 and R1-F05) and verifier-dropped (72 and 50 against the clarity ≥80 threshold per Hotfix B); filing them as a goal here so the prose drift gets reconciled rather than silently accumulating.
+
+#### What we know so far
+
+Three prose-drift surfaces need to be reconciled so they reflect that `.qrspi-commit-msg.txt` is now covered by a committed `.gitignore` in addition to the worktree-local `.git/info/exclude`:
+
+- `implementer-protocol/SKILL.md:241` — the parenthetical that currently states only the gitignored framing.
+- `implementer-protocol/SKILL.md:176-181` — the Composition section that enumerates exclusion mechanisms (a committed-gitignore entry is currently missing).
+- `agents/qrspi-test-writer.md:28` — a sentence that currently names only one mechanism.
+
+Design authors the replacement prose. Issue #233 carries concrete drafts that may serve as candidates Design weighs. Low risk, mostly mechanical; worth bundling with any other prose work in this neighborhood.
+
+Source: #233
+
+### G18 — Plan-phase under-scopes cross-task consumer surface
+
+- **type:** `exploratory`
+
+#### Problem
+
+Plan-phase task specs scope each task's own changes but do not systematically enumerate the downstream consumers of the contracts being changed. The v0.7.1 hardening run produced 9 documented instances of this pattern:
+
+- T8 cache-cleanup
+- T9 frontmatter sweep with 3 downstream silent-breaks
+- T10 R1 schema/mechanism mismatch
+- T10 R2 `trusted_path:` omission
+- `fix-int-r4-01` validator-table omission
+- T10 TE1-TE3 tier-source orphaning
+- Validation-table cross-link gap
+- Vocab pin asymmetry
+- Top-level invariant absence
+
+Integrate-phase reviewer fan-out caught the gaps, but each round surfaced 1–3 additional cross-task surfaces the original spec did not cover.
+
+#### Why we care
+
+The cost of Integrate-phase catch is much higher than Plan-phase prevention: every missed surface produces a fix-task spec, a fix-round dispatch with full per-task reviewer fan-out, and additional integrate-round review. The v0.7.1 hardening run took 6 integrate rounds and ~5 fix-tasks to converge — a thorough Plan-phase scope analysis would have avoided most of them. The pattern is recurring (not run-specific), so without mitigation it will re-emerge in v0.7.2 and beyond.
+
+#### What we know so far
+
+**Evidence on disk.** The full v0.7.1 hardening run artifact directory is at `docs/qrspi/2026-05-27-v071-hardening/` — Research should traverse it directly. Specific surfaces to inspect:
+
+- `tasks/task-{08,09,10}.md` (the original under-scoped specs)
+- `fixes/integration-round-0{1..5}/fix-task-0*.md` (the fix-task specs that closed each gap)
+- `reviews/integration/round-{01..06}/` (the integrate-round finding files that surfaced each gap)
+- The PR description for #234
+
+**Candidate mitigations Design should weigh** (carried verbatim from #235 with one v0.7.2 user note):
+
+- Add a "consumer enumeration" checklist item to the plan task author template: for any field/H4/contract being changed, list all current consumers and verify each still works post-change.
+- Add a "grep audit" probe to the fix-task template: for any cross-task contract change, grep the repository for all references to the changed contract (literal strings, H4 labels, semantic synonyms).
+- Add a Plan-phase "scope-completeness reviewer" subagent specifically tasked with cross-task surface enumeration.
+- Cross-link with G15 (#231 sweep-task dependent-test discovery): both goals are about Plan-phase under-enumeration of downstream surface; they likely share root causes and at least one candidate (the grep-audit probe) is common.
+
+**Instance #10 (added 2026-05-30, also tracked separately as G27 / GH issue #253).** Goals skill's Pipeline Mode Selection inlines a Claude-only glob probe (`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`) for Codex availability, even though v0.7.1 already shipped the canonical host-aware helper at `scripts/run-codex-review.sh:148 check_codex_available()` (returns 0 for `copilot-cli` host without any filesystem probe). The Plan-phase work that landed the helper did not enumerate the Goals-side consumer as a downstream surface that needed to switch from the inline probe to the canonical helper. Consequence: every Copilot-CLI operator is silently opted out of Codex reviews today. Same root cause as instances 1–9.
+
+Source: #235
+
+### G19 — Wholesale-hallucination findings slip past current verifier rubric
+
+- **type:** `exploratory`
+
+#### Problem
+
+A reviewer subagent dispatched against an artifact can produce a wholesale-hallucinated finding: invented task IDs, fake file paths, fake bats test names, and fabricated round/finding cross-references. The current verifier rubric (0–100 confidence scoring anchored on pre-existing-vs-introduced classification) reads the finding file and the artifact but does NOT verify that cited file:line content actually exists at the cited location. A hallucinated finding constructed to look plausible can therefore score well above the 70 KEEP threshold and reach the orchestrator. One reproduction occurred in v0.7.1 hardening Integrate R6 from `gpt-5.5` running as task-tool substitute for absent codex CLI; the wholesale hallucination was caught only because a specific cited claim ("SKILL.md:516 contains widen/ref") was concrete enough that a manual grep refuted it in under 5 seconds.
+
+#### Why we care
+
+The verifier filter is the load-bearing defense between the noisy reviewer fan-out and the orchestrator-actioned fix loop. If wholesale-hallucinated findings pass that filter, they reach the orchestrator and either (a) waste a fix-task cycle implementing against nonexistent files, or (b) get noticed by a human and erode trust in the entire review pipeline. The failure mode is silent (the finding looks legitimate) and the mitigation cost is small (cite-checking is a few greps per finding), so the asymmetric payoff strongly favors closing it before the next run.
+
+#### What we know so far
+
+**Verifier-side observation.** Reading `agents/qrspi-finding-verifier.md` (64 lines): the verifier already lazy-Reads cited upstream files (step 4) and scores against a 5-tier rubric (0/25/50/75/100). The rubric anchors on pre-existing-vs-introduced classification, NOT on whether cited content exists at the cited location. Expanding the rubric to include a cite-check branch ("if cited file:line does not contain cited content → score 0 / HALLUCINATED, halt scoring") fits naturally inside the verifier's existing role and consolidates all confidence concerns in one subagent.
+
+(Architectural boundary: the project-wide Constraint on subagent-resident verification applies — cite-checking belongs in a subagent, not the orchestrator. Candidates below are evaluated against that constraint.)
+
+Candidates Design should weigh:
+
+- **Expand the verifier rubric to include cite-check** (leading candidate, since it stays within the subagent-resident constraint): the verifier already reads the cited file; adding a content-equality assertion against the cited line range is cheap. Single subagent owns all confidence dimensions.
+- **Pre-verifier grep gate as a separate subagent:** dispatched in parallel before the verifier, halts findings whose cited content does not grep-match. Cheap belt-and-suspenders against verifier-rubric regression; adds dispatch overhead.
+- **Cross-reviewer corroboration threshold:** a finding unique to one reviewer in a multi-reviewer fan-out AND citing specific content requires a higher verifier threshold (e.g. 85 instead of 70). Captures the "wholesale hallucination" subset but does not catch single-reviewer rounds.
+- **Repro investigation:** provoke the failure deterministically by varying prompt shape; instrument whichever input axis triggers it. Pairs naturally with G20 (#237 over-flagging) and G6 (transport-layer disk-write contract).
+
+**Cross-link with G10** (procedural-fabrication finding at #226 occurrence 7): the same cite-check mechanism that catches "L516 contains widen/ref" hallucination would also catch "the spec says X" fabrications when X is not in the spec. The two goals share a verifier-rubric expansion path.
+
+Source: #236
+
+### G20 — Reviewer-model calibration for task-tool-substituted models
+
+- **type:** `exploratory`
+
+#### Problem
+
+When the configured reviewer model (typically `codex` CLI for Codex-side reviews) is absent from the runtime environment, the orchestrator substitutes a task-tool-dispatched model (e.g. `gpt-5.5` via the task tool). The substituted model exhibits different calibration than the original: in v0.7.1 hardening Integrate R4, `gpt-5.5` running as integration-codex substitute produced ICX-F02, which mischaracterized the intentional `inherit → sonnet` contract in `model_routing:` as a silent fallback. The verifier filter correctly dropped the finding at score 22 (well below the 70 KEEP threshold), so no fix-task cycle was wasted, but the over-flagging consumed reviewer dispatch cost and verifier scoring cost.
+
+#### Why we care
+
+The verifier currently absorbs the calibration gap successfully — but the cost is paid every round, scales with the substitution rate, and adds noise to the round-level finding count that the operator must visually skim. Calibration data on substituted models also informs whether v0.7.2 should expand the `model_routing:` block to make substitution explicit (rather than implicit when the configured CLI is absent), so the operator sees the actual model running and can interpret the over-flagging accordingly.
+
+#### What we know so far
+
+**Evidence on disk.** `docs/qrspi/2026-05-27-v071-hardening/reviews/integration/round-04/` carries the ICX-F02 finding file and the verifier sidecar that scored it 22. Compare with the R6 wholesale-hallucination instance (G19 / #236) in `round-06/`.
+
+**Failure-mode taxonomy (this goal vs. G19).** G19 covers wholesale fabrication of file contents (concrete claims about nonexistent text) — the verifier currently does NOT catch this because it does not cite-check. G20 covers misinterpretation of real file contents (substituted model reads the cited content but draws the wrong conclusion) — the verifier correctly catches this via the existing 5-tier rubric. Different defect classes, different mitigations, but both surface under task-tool-substituted reviewer models.
+
+Candidates Design should weigh:
+
+- **Calibration measurement:** instrument the orchestrator to log the verifier score distribution per `(reviewer-slot, actual-model)` pair across runs; surface the gap between `codex`-native and `gpt-5.5`-substitute scores as a metric.
+- **Explicit substitution surface:** extend `model_routing:` so the operator can declare "if codex CLI is absent, substitute `gpt-5.5` via task tool" rather than letting the orchestrator implicit-fall-back. Pairs with G6 (transport-layer disk-write contract) and G22 (model_routing schema drift).
+- **Higher-threshold override for substituted reviewers:** when a finding originates from a substituted-model reviewer, the verifier KEEP threshold rises (e.g. 80 instead of 70). Cheap mitigation; preserves verifier filter as the load-bearing layer.
+- **Repro investigation:** deterministic provocation paired with G19's repro work; if both failure modes trace to the same prompt shape, a single mitigation closes both.
+
+Source: #237
+
+### G21 — Bats short-circuit form silently passes when extractor empties output
+
+- **type:** `known-fix`
+
+#### Problem
+
+Bats `@test` blocks using the short-circuit form `[[ -n "$body" && "$body" =~ "expected text" ]]` against an extractor that returns empty silently pass — the test reports green even though the asserted content was never verified. The v0.7.1 hardening run hit this twice: (1) #244 surfaced the root cause during T10 implementation when the `[[ ]]` form was observed reporting green with empty `body`; (2) #238 surfaced the downstream consequence — the vocab pin tests in `tests/unit/test-using-qrspi-vocab.bats` have an asymmetry where R5-era pins (`validators:` + missing-block) include the safer `[ -n "$body" ]` + `grep -q` decomposition but R2-era (`model_routing:`) and R4-era (`trusted_path:`) pins still use the silently-passing `[[ ]]` form.
+
+#### Why we care
+
+Silent-pass tests are exactly the failure class QRSPI exists to catch — a green test that asserts nothing is worse than no test (it provides false assurance and discourages adding the real assertion). The current asymmetric mix means 2 of 4 vocab pins enforce their contract and 2 do not, but the test runner reports all 4 as passing. Any future schema change that drifts the `model_routing:` or `trusted_path:` H4 anchors will pass silently through the test gate; the regression will only be caught at runtime by the dispatcher fail-loud — exactly the silent-fallback class the v0.7.1 hardening release exists to close.
+
+#### What we know so far
+
+A safer assertion form is already exercised by the R5-era pins in the same test file — Design has a known-good in-repo reference pattern available rather than having to derive one from scratch. Whether the fix takes that exact shape, a refactored helper, or a banned-anti-pattern lint approach is Design's call; the in-repo precedent is an example to weigh, not a commitment to copy verbatim.
+
+**Root-cause investigation needed** (carried from #244):
+
+- Does the silent-pass behavior reproduce under bats core 1.10+ or only under the project's pinned version? Pinned version is in `Brewfile` / wherever bats is declared.
+- Is the behavior documented in bats upstream issues, or is it specific to the project's bats invocation flags?
+- Should the project add a custom shellcheck (or similar) rule that flags `[[ ... && ... =~ ... ]]` inside `@test` blocks as a banned anti-pattern, so the regression cannot re-emerge?
+
+Candidates Design should weigh:
+
+- **Retrofit-only:** narrowly-scoped retrofit of the asymmetric R2/R4 pins to match the safer R5-era pattern; close #238 immediately, leave #244 investigation for a future release.
+- **Retrofit + lint rule:** retrofit plus a custom shellcheck / pre-commit hook that bans the `[[ ... && =~ ... ]]` form in `@test` blocks. Prevents recurrence.
+- **Retrofit + lint rule + bats upstream investigation:** full closure including upstream report or version pin update if the behavior is fixed in a newer bats.
+
+Source: #238, #244
+
+### G22 — Model-routing schema drift across skills; tier-keyed vs. role-keyed `model_routing` block inconsistently documented
+
+- **type:** `exploratory`
+
+#### Problem
+
+The `model_routing:` block in `config.md` is documented inconsistently across skills. `skills/using-qrspi/SKILL.md:448-470` describes it as **tier-keyed** under per-host sub-mappings with rows `haiku`, `sonnet`, `opus`, `inherit` — and the dispatcher resolves `agent.frontmatter.model → tier name → model_routing[host][tier] → concrete model ID`. `skills/implement/SKILL.md:537` describes the same block as **role-keyed** ("Read the agent's `model_role:` frontmatter field, then look up `config.md`'s `model_routing:` table for that role"), and the G5 routing matrix at `implement/SKILL.md:548-560` enumerates role-name rows (`qrspi-research-collator`, `qrspi-test-writer`, `qrspi-implementer-lightweight`, `qrspi-research-specialist`). The v0.7 release `task-01.md` (which authored the schema) describes it as "role-name to provider-plus-model pair." These three descriptions cannot all be correct for the same `config.md` block; the consumer cannot tell what `config.md` actually IS or whether their override will be honored.
+
+#### Why we care
+
+The picking heuristic is the substrate for cost-vs-quality tuning across the entire pipeline — every implementer and reviewer dispatch resolves its `(provider, model)` pair through this system, hundreds of dispatches per pipeline run. When the schema is documented two contradictory ways:
+
+- Operator overrides land in unpredictable layers of the four-layer chain.
+- Agent authors do not know whether to declare `model:` (tier) or `model_role:` (role) on new agents.
+- Dead-schema scaffolding accumulates (the `haiku`/`sonnet`/`opus` tier rows in the using-qrspi-documented schema are unused post-T9 — #239's original framing — because all 41 agents now emit `inherit` only).
+
+Reviewer dispatches are particularly affected: most reviewers inherit (Layer 3); `qrspi-finding-verifier` is hardcoded Sonnet at the dispatch site (Layer 1b); four cheap-eligible agents use role-keyed routing (Layer 2 G5 matrix) — there is no coherent rubric the operator can apply to a new reviewer.
+
+#### What we know so far
+
+**Three coexisting schemas observed:**
+
+1. **`model_routing:` tier-keyed** (`using-qrspi:448-470`). Post-T9, only the `inherit` row per host is exercised; `haiku`/`sonnet`/`opus` rows are unused — this is #239's "dead schema scaffolding" claim, and it is correct for this schema as described.
+2. **`model_role:` agent frontmatter** (`implement` G5 matrix, role-keyed). 4 of 41 agents declare `model_role:` (`research-collator`, `test-writer`, `lightweight-implementer`, `research-specialist`); these resolve via the G5 matrix to (DeepSeek V3 cheap / Sonnet trusted). ALIVE for those 4.
+3. **`task_type:` + `model:` in `tasks/task-NN.md`** (`plan/SKILL.md` Step 2 heuristic). Plan picks per-task: `lightweight → sonnet`, `code + (>3 files OR core-surface OR fix-retry OR sizing-exception) → opus`, else `sonnet`. Verified live in `docs/qrspi/2026-05-17-v07-release/tasks/task-01.md` (`task_type: lightweight, model: sonnet`) and `docs/qrspi/2026-05-27-v071-hardening/tasks/task-01.md`. Consumed via Layer 1a in implement four-layer chain. ALIVE.
+
+**The picking rubric, by consumer:**
+
+- **Plan-time** picks per-task tier via Step 2 heuristic → emits `model:` in task frontmatter (Layer 1a).
+- **Implementers** consume `model:` (Layer 1a) for code/lightweight tasks; cheap-eligible implementers also resolve `model_role:` (Layer 2 G5 matrix).
+- **Reviewers** are inconsistent: most inherit (Layer 3); finding-verifier is hardcoded Sonnet (Layer 1b); G5 matrix says general-purpose/Explore should be Sonnet but enforcement is unclear.
+
+Candidates Design should weigh:
+
+- Pick a canonical schema — choose tier-keyed OR role-keyed for `model_routing:`, update both `using-qrspi/SKILL.md` and `implement/SKILL.md` to match, migrate the other schema to whichever was not chosen.
+- Generalize role-keyed routing to more agents: extend `model_role:` to all 41 agents (including reviewers), define a canonical role taxonomy (e.g., `code-implementer`, `lightweight-implementer`, `correctness-reviewer`, `thoroughness-reviewer`, `verifier`, `research-specialist`, `research-collator`, `test-writer`, `gate-reviewer`), let `model_routing:` map role → provider/model end-to-end.
+- Add integration tests that dispatch each role through the four-layer chain and assert resolved `(provider, model)` matches the routing-table claim (#239's option 3, scoped to whichever schema wins).
+- Annotate dead schema explicitly until a real consumer lands (#239's option 2) — narrowest scope, lowest payoff; leaves the drift in place.
+
+**Cross-links:**
+
+- G20 (#237 substituted-model calibration): the "explicit substitution surface" candidate proposes extending `model_routing:` to make `codex` CLI absence → `gpt-5.5` substitution explicit; whichever schema wins here informs how that extension is shaped.
+- G6 (transport-layer disk-write contract): if any candidate adds a transport-routing field to `config.md`, schema-cleanup here should accommodate it.
+
+Source: #239
+
+### G23 — Validation table omits `model_routing:` and is uncross-linked to fail-loud paragraphs
+
+- **type:** `known-fix`
+
+#### Problem
+
+The validation table in `skills/using-qrspi/SKILL.md` at L641-660 enumerates the required `config.md` blocks for runtime validators to check, but does not list `model_routing:`. The two fail-loud paragraphs that enforce `model_routing:` presence at runtime — L470 (dispatcher-scoped, added by T10 R2) and L526 (missing-block backfill, added by `fix-int-r5-01`) — sit in the file but are not cross-referenced from the validation table. A reader of the validation table reasonably concludes the listed blocks are the complete required set; the actual required set is "those listed PLUS `model_routing:` per L470 and L526."
+
+#### Why we care
+
+Config-authoring time is the highest-leverage opportunity to communicate the required-blocks contract. The runtime fail-loud paragraphs catch the omission late (at first dispatch), after the operator has already shipped a config they thought was valid. Doc-discoverability at the validation table prevents the late-catch class entirely.
+
+#### What we know so far
+
+The solution space is narrow — Candidates Design should weigh:
+
+- Add a new row to the validation table that names `model_routing:` and references the runtime fail-loud paragraphs (L470, L526).
+- Inject cross-link annotations on L470 / L526 that point back to the validation table row, so the doc anchors stay bidirectionally discoverable.
+- Replace the validation table with a generated index sourced from a single canonical list of required blocks, so future omissions cannot recur.
+
+**Coupling with G22 (model-routing schema drift).** Whichever schema G22 selects (tier-keyed, role-keyed, or both) shapes how the validation row should describe `model_routing:`. Implementing this goal in isolation risks churn if G22 lands later with a reorganized schema; Phasing should evaluate that coupling.
+
+Source: #240
+
+### G24 — R4 simplify-claude advisories: 5 deferred code-quality simplifications
+
+- **type:** `known-fix`
+
+#### Problem
+
+R4 simplify-claude (deep mode, post-T10) produced 5 advisory simplification findings (F01–F05) covering test-helper duplication, anti-pattern fragility, and prose redundancy in the bats / `using-qrspi` surface. All scored as advisory (not blocking) in v0.7.1, so they were deferred to v0.7.2 as a bundle.
+
+#### Why we care
+
+Individually, each advisory is small. As a cluster, they touch the same bats helper surface (`extract-h4`, tier regex, anti-pattern pins) that grew rapidly during the v0.7.1 hardening run. Without consolidation, every future change to that surface duplicates the maintenance — and the anti-pattern pins use literal-string greps (F05) that will silently miss the next phrasing of the contract they guard.
+
+#### What we know so far
+
+Five specific simplifications carried verbatim from R4 simplify-claude (F01–F05). Each is well-scoped; the cluster either gets a single "code-quality cleanup" task in v0.7.2 or splits per finding:
+
+- **F01 (advisory 60):** `tests/acceptance/v07-phase1/test-t10-*.bats` repeats `_assert_host_block_has_routing` 4 times with only host key varying; parameterize via bats data-driven test pattern.
+- **F02 (advisory 55):** `skills/using-qrspi/SKILL.md` H4s at L470/L488/L501/L526 carry the same fail-loud contract phrased four ways. Consolidatable into a single "Fail-loud contract" callout each H4 references, BUT each H4 currently needs its own paragraph for substring-match contracts in `test-using-qrspi-vocab.bats`. **Couples with G25** (top-level invariant): if G25 lands a top-level invariant that subsumes the per-H4 paragraphs, F02 falls out naturally.
+- **F03 (advisory 60):** `_extract_h4` in `tests/unit/test-using-qrspi-vocab.bats` and near-identical `_extract_routing_block` in `tests/unit/test-using-qrspi-routing-block.bats`. Consolidatable into `test_helpers/extract.bash`.
+- **F04 (advisory 50):** regex `(haiku|sonnet|opus|inherit)` appears 6 times across 3 bats files. Consolidatable into `TIER_REGEX` constant in shared helper. **Cross-link with G22 (schema drift):** if the canonical schema decision changes the tier vocabulary, the consolidated constant becomes the single update point.
+- **F05 (advisory 65):** anti-pattern pins use literal `grep -v "silently fall back to the agent-bundled default"`. If the contract evolves to a different phrasing ("silently degrades to the agent default"), the pin silently misses the regression. Replace with regex pin `grep -v -E "(silently|silent).*(fall.*back|degrad|default)"`. **Cross-link with G21 (bats `[[ ]]` silent-pass):** both are about test-gate brittleness; consider a single "test-pin hardening" wave.
+
+Source: #241
+
+### G25 — Per-H4 mirror-paragraph pattern requires every future dispatch-path author to remember the fail-loud contract
+
+- **type:** `known-fix`
+
+#### Problem
+
+v0.7.1 closed the G7b silent-fallback class (PR #234) via four per-H4 mirror paragraphs in `skills/using-qrspi/SKILL.md` at L470 (`model_routing:`), L488 (`trusted_path:`), L501 (`validators:`), and L526 (missing-block backfill). This is the per-instance enumeration pattern (Option A in the R5 review discussion). It works for the four known dispatch surfaces today, but the contract is structurally fragile: a future author who adds a fifth dispatch path is expected to remember to author a fifth mirror paragraph. R5 security-claude and R6 security-claude both flagged this as a forward-looking concern.
+
+#### Why we care
+
+The G7b/#204 silent-fallback regression class is exactly what the v0.7.1 hardening release exists to close. Any new H4 added to the Dispatch routing section without a fail-loud paragraph would silently re-open that class — the very failure mode the per-H4 mirror pattern is trying to prevent. Per-H4 enforcement requires perfect author discipline forever; a top-level class-level invariant requires authoring discipline only when the invariant itself is changed.
+
+#### What we know so far
+
+Candidates Design should weigh:
+
+- **Option B from R5 (top-level invariant):** add a class-level invariant to the "Dispatch routing" section of `skills/using-qrspi/SKILL.md` prohibiting silent fallback to the agent-bundled default for any dispatch path. Design authors the exact wording; R5 surfaced concrete prose worth referencing. With the invariant in place, the four per-H4 mirror paragraphs become illustrative reinforcements rather than load-bearing contracts.
+- **Companion vocab pin:** an executable check (likely a new test) that fails when any H4 under "Dispatch routing" lacks the fail-loud mention. Without enforcement, the invariant is contract-only and a future H4 author can still regress the class. Design selects the pin shape (grep-based, parser-based, or convention-driven).
+- **Stay on Option A (per-H4 enumeration):** accept the recurring author-discipline cost. Listed for completeness; R5/R6 both flagged the structural fragility of this option.
+
+**Couples tightly with G22 (model-routing schema drift) and G24 F02 (prose redundancy).** All three goals touch the dispatch-routing section and share an edit surface; Phasing should evaluate whether the cluster benefits from being scheduled together to avoid churn on the same H4 paragraphs.
+
+Source: #242
+
+### G26 — BW02 bats deprecation warnings on `test-codex-splitter.bats`
+
+- **type:** `known-fix`
+
+#### Problem
+
+`tests/unit/test-codex-splitter.bats` produces a persistent BW02 bats warning on every test run: the `#!/usr/bin/env bats` shebang is deprecated; the warning recommends `#!/usr/bin/env -S bats -t` or `bats_load_library bats-support`. The warnings appeared in the v0.7.1 hardening run output (1322/1322 GREEN — tests pass; warnings only). They predate v0.7.1.
+
+#### Why we care
+
+Persistent warning noise on every test run desensitizes the operator to test output and risks masking new warnings that DO matter (the next BW0N warning lands in a sea of BW02 noise). The fix is a single-line shebang change.
+
+#### What we know so far
+
+The bats upstream documentation enumerates the replacement shebang forms; Candidates Design should weigh:
+
+- Adopt the TAP-mode shebang form recommended by the BW02 warning.
+- Adopt the alternative shebang form that pairs with explicit library loading, when TAP mode is not needed.
+
+**Investigation extension Design may weigh:**
+
+- Sweep ALL `.bats` files for the same deprecated shebang and fix in one pass (avoid the asymmetric-fix recurrence pattern flagged in G21).
+- Add a shellcheck / pre-commit rule that bans the deprecated shebang so the regression cannot re-emerge — pairs naturally with the lint-rule extension in G21.
+
+Source: #243
+
+### G27 — Goals skill Codex-availability probe is Claude-only inline glob instead of calling canonical helper
+
+- **type:** `known-fix`
+
+#### Problem
+
+The Goals skill's Pipeline Mode Selection section in `skills/goals/SKILL.md` inlines a Claude-only filesystem probe (glob `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`) to decide whether to ask the user about Codex reviews. Under Copilot CLI that path does not exist, so the Codex question is silently skipped and `codex_reviews: false` lands in `config.md` as the silent default — even though `scripts/run-codex-review.sh:148 check_codex_available copilot-cli` correctly returns 0 ("available; task-tool transport is native") and the dispatcher would happily route Codex review prompts via the task tool per `skills/using-qrspi/SKILL.md` § "Per-host Codex dispatch transport routing."
+
+#### Why we care
+
+Every Copilot-CLI operator is silently opted out of Codex reviews today. The host-aware dispatch infrastructure shipped in v0.7.1 (PR #234) is correctly host-aware on the dispatch side; the Goals-side consumer of the availability check was not updated to call the canonical helper. The cross-skill drift means the canonical helper has one source of truth (`check_codex_available`) but two consumers (the dispatcher uses it; Goals duplicates a Claude-only subset of the same logic inline) — same schema-cleanup pattern as G22.
+
+#### What we know so far
+
+The repository already ships canonical helper functions in `scripts/run-codex-review.sh` (`detect_host`, `check_codex_available`) that the dispatcher consumes; the question is how the Goals skill should reach the same answer.
+
+Candidates Design should weigh:
+
+- **Single source of truth at probe time:** have the Goals probe invoke the same canonical helper functions the dispatcher uses, so all consumers (dispatcher, Goals probe, any future consumer) agree by construction.
+- **Documented contract reference:** keep probe prose in the skill but pin it to the helper's function names and observable behavior so the skill prose is forced to stay synchronised with the script. Lower-risk; drift returns the moment the script changes.
+- **Generated probe:** auto-generate the skill's probe snippet from the helper script at build time, eliminating the manual sync surface entirely.
+
+**Cross-link with G18 (#235 Plan-phase under-scoping).** This is instance #10 of the same v0.7.1 pattern G18 tracks — the hardening work landed the dispatcher-side helper but did not enumerate the Goals-side consumer as a downstream surface. The fix here is small and independent; G18's mitigation work would prevent the next such instance.
+
+**Cross-link with G22 (model-routing schema drift).** Same "one canonical source, multiple drifted consumers" pattern. Could share a consumer-enumeration sweep — Phasing decides whether to bundle.
+
+Source: #253
+
+### G28 — Apply-fix protocol has no convergent-evidence exception
+
+- **type:** `exploratory`
+
+#### Problem
+
+The apply-fix protocol (`skills/using-qrspi/SKILL.md` L388 and `skills/reviewer-protocol/SKILL.md` change-type classifier) specifies a strict per-finding threshold filter: `style|clarity` → KEEP at score ≥80, `correctness` → KEEP at ≥70, `scope|intent` → always KEEP. **No carve-out exists for clusters of sub-threshold findings that share a defect class.** `grep -rn "convergent" skills/ agents/` returns zero hits — the rule is single-finding-only by construction.
+
+But the v0.7.2 self-host encountered this pattern twice during Questions review: multiple sub-threshold `clarity` findings (individual scores 68/70/72/75 — each below the ≥80 threshold and therefore strictly DROP) collectively pointed at the same defect class (goal leakage across 4 different questions). The orchestrator applied the cluster anyway and documented it as a "convergent-class exception" in dispositions; subsequent review rounds came back clean, confirming the cluster fix was right.
+
+#### Why we care
+
+The orchestrator is making protocol-extending judgment calls and documenting them only in disposition prose. The protocol disagrees with what we actually do. Two real costs:
+
+- **Auditability** — a fresh-context replay or a new operator reading only the protocol cannot reconstruct why findings below the threshold were applied. The rationale is buried in dispositions, not in the contract.
+- **Information loss in the disallowed direction** — the verifier rubric is calibrated for individual-finding signal, not cluster-evidence signal. Pretending the cluster doesn't exist throws away real coverage. Both v0.7.2 self-host clusters identified real goal-leakage defects that the rubric's single-finding lens scored individually as sub-threshold; verifier-as-individual-filter would have dropped them, the cluster fix kept them.
+
+#### What we know so far
+
+Self-host occurrences:
+
+- **Questions R1** — 4 `clarity` findings (scores 68/70/72/75) all naming goal-leakage in different questions; applied as cluster.
+- **Questions R2** — 2 `clarity` findings (scores 72/75) both naming goal-leakage; F02 (Q13) named security-vulnerability disclosure as the leak; applied as cluster.
+
+Candidates Design should weigh:
+
+- **Formalize the exception** — add a "convergent-evidence exception" carve-out to the apply-fix protocol: if N≥3 sub-threshold findings (each within K points of the threshold) share a defect class as documented by the orchestrator in dispositions, the cluster MAY be applied as a single batch with named rationale; the next review round serves as the verification. Bounds the discretion explicitly.
+- **Disallow it** — tighten the protocol to forbid orchestrator-applied sub-threshold findings; trust the rubric verbatim. If the verifier dropped, dropped stays dropped. Cost: real defects in the sub-threshold band stay unfixed.
+- **Re-calibrate the rubric** — lower the `clarity` threshold (e.g., to ≥70 matching correctness) so individual cluster-class findings would already KEEP. Risk: produces more low-signal noise in normal rounds; the rubric was originally calibrated high specifically to suppress nitpicks.
+- **Per-class threshold knobs** — let the verifier's rubric ship per-class thresholds (e.g., `clarity:goal-leakage` ≥70, `clarity:style-only` ≥85). More expressive but doubles the rubric's surface area.
+
+Source: #261 (PI-011), `docs/qrspi/2026-05-30-v072-release/reviews/questions/round-01-dispositions.md` § "Convergent-evidence decision", `docs/qrspi/2026-05-30-v072-release/reviews/questions/round-02-dispositions.md` § "Exception rationale (F02, F04)"
+
+### G29 — Reviewer dispatch contract has no escape hatch for large artifacts (canonize `artifact_path`)
+
+- **type:** `known-fix`
+
+#### Problem
+
+Per-skill reviewer dispatch contracts (`skills/{goals,questions,research,design,structure,plan,parallelize,test}/SKILL.md` and `skills/reviewer-protocol/SKILL.md` L42) all specify the artifact under review is passed to the reviewer subagent as a wrapped inline body: `artifact_body: <<<UNTRUSTED-ARTIFACT-START id={artifact_name}>>> {full file body} <<<UNTRUSTED-ARTIFACT-END id={artifact_name}>>>`. This works for small artifacts but breaks down at scale — `research/summary.md` in v0.7.2 self-host was 87 KB / 432 lines, and wrapping it inline in every reviewer dispatch loads the full body into orchestrator tool-call args, bloats every dispatch payload, and re-bills as cache reads on every subsequent orchestrator turn. The skill contract has no formal escape hatch.
+
+#### Why we care
+
+Same context-hygiene concern that motivated the collator's staging-filename / verbatim-extraction contract at the collation step — except the canonical workflow then re-loads the same 87 KB by inlining it in reviewer dispatches at the review step. Round-tripping the artifact through the orchestrator's dispatch prompt for every reviewer defeats the collator-level hygiene win.
+
+#### What we know so far
+
+The v0.7.2 self-host used an ad-hoc workaround: pass `artifact_path: <abs>` instead of wrapped body, and instruct the reviewer to Read the file and treat its content as if it had arrived between `<<<UNTRUSTED-ARTIFACT-START id={artifact_name}>>>` / `<<<UNTRUSTED-ARTIFACT-END id={artifact_name}>>>` markers. Applied across research R1 (Claude + Codex) and research R2 (Claude + Codex). No fidelity loss observed; R2 came back clean.
+
+Observation on dispatch mechanics (Design should evaluate, not treat as a verdict): with the wrapped-body form, artifact content travels through the orchestrator's dispatch prompt; with the path-based form, content materializes only when the subagent issues its own Read call. The `<<<UNTRUSTED-ARTIFACT-START>>>` framing is preserved in either case (in the path-based variant by the reviewer's treatment of Read output as the wrapped body). The security-properties comparison between the two forms is a Design-level trade-off.
+
+Candidates Design should weigh:
+
+- **Threshold rule** — amend `skills/reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract to add: artifacts ≤ N KB use wrapped `artifact_body` inline; artifacts > N KB use `artifact_path: <abs>` and the reviewer Reads the file. Recommend N=30 KB as a starting point; calibration test should measure orchestrator context use at various sizes.
+- **Unconditional path-based for all artifacts** — drop the wrapped-body form entirely; always pass `artifact_path`. Simpler contract, single dispatch shape, strictly stronger injection defense. Trade-off: subagents must always run a Read before reviewing (one extra tool call per dispatch).
+- **Reviewer-side parser accepts either parameter** — agent bodies updated to handle `artifact_body` OR `artifact_path`; dispatching skills decide per-call. Maintains backward compatibility but pushes complexity into every reviewer agent body.
+
+Source: #262 (PI-012), v0.7.2 self-host commit `45625ed research: approve (R2 clean × 2 reviewers)` — research R1+R2 used artifact_path against 87 KB summary.md
+
+### G30 — Goals and Design dialogue-authoring quality and compaction-resilient incremental persistence
+
+- **type:** `known-fix`
+
+#### Problem
+
+Goals and Design are the two QRSPI skills with the same authoring shape: **per-decision interactive dialogue accumulating in the orchestrator's chat context, then end-of-phase synthesis subagent**. Both share two related quality gaps:
+
+**Gap 1 — No per-decision incremental persistence.** With 27-30 goals per release and the per-goal dialogue depth required by each skill's template, both phases routinely run long enough that `/compact` fires mid-phase. Compaction summaries are not faithful records of locked per-goal decisions; they preserve narrative but lose structured per-decision content. The synthesis subagent's only durable inputs are upstream artifacts; everything decided during dialogue is at the mercy of the compaction summary.
+
+**Gap 2 — Dialogue-conduct patterns are under-specified.** Neither skill currently instructs the orchestrator to follow the high-quality interview patterns that produce thorough specs:
+- Open with questions and outline before writing the plan (Dex Horthy's "magic words": "work back and forth with me, starting with your open questions and outline before writing the plan")
+- Interview-style probing — one question at a time with recommended answer (grill-me lineage)
+- Sharpen fuzzy user language with canonical terms (mattpocock grill-with-docs influence)
+- Probe edge cases / cross-decision dependencies / failure modes until each decision is fully formed for downstream phases
+- Liberal use of web search and codebase search when uncertain (don't ask the user what code or web research can answer)
+- Tiered grounding for Goals: codebase search → web search (research artifacts don't exist yet at Goals stage)
+- Tiered grounding for Design: research summary → codebase → web (research artifacts exist; don't re-derive what research already covered)
+
+#### Why we care
+
+**On Gap 1.** Observed in v0.7.2 self-hosting Design Phase 1 on 2026-05-30: by G4 lock the session held CD-1 (universal dispatch architecture, ~120 lines of detail) + G1-G4 locked outcomes in chat context only, with 25 goals still to walk through and one compaction already executed earlier in the run. The user had to prompt the orchestrator to start writing decisions to disk; without that prompt, a second compaction would have silently lost CD-1 and the G1-G4 lock details before the synthesis subagent ever ran. v0.7.2 Goals walk-through took 5 checkpoints (001-005) — circumstantial evidence that Goals operates at the same compaction-friction threshold, even though synthesis usually catches the structured per-goal fields (the fidelity-loss risk is lower than Design's because Goals' template doesn't have a rationale-heavy "Why this approach" section). The failure mode is silent (no error surface) and the cost is invisible until you read the synthesized artifact and notice missing rationale, missing cross-goal decisions, or per-goal sections that have lost their resolution detail.
+
+**On Gap 2.** Observed across multiple v0.7.1 and v0.7.2 sessions: orchestrators tend to ask broad open-ended questions and accept shallow answers, particularly when working under autonomous-mode time pressure. Skills that don't explicitly script the dialogue-conduct pattern (Goals, Design) produce thinner specs than skills that have structured per-decision probes (Plan, Structure — which benefit from subagent-driven authoring with fresh context). The G1 work on Design surfaced 7 Dialogue Conduct rules that materially improve Design output quality; Goals lacks an equivalent codified set. Goals' current SKILL.md lists question topics but does not codify the back-and-forth grilling pattern, the magic-words opener, the tiered grounding, or the canonical-term sharpening discipline.
+
+The two gaps share a fix surface (Goals SKILL.md, Design SKILL.md) and a fix shape (prose additions to the skill's process section). Shipping together as one coordinated wave is more efficient than as two separate goals.
+
+#### What we know so far
+
+- **Affected SKILL.md files:** `skills/goals/SKILL.md` and `skills/design/SKILL.md`. Both currently route through synthesis-at-end without incremental persistence; both currently lack a codified Dialogue Conduct section.
+- **The G1 Dialogue Conduct work** (7 rules locked during v0.7.2 self-hosting) defines the template for Design's Dialogue Conduct section. Goals' Dialogue Conduct will mirror these rules with two adjustments: (a) tiered grounding stops at codebase + web (no upstream research at Goals stage); (b) the questions menu in Goals' existing "Interactive Dialogue" section stays as a topic checklist but is supplemented by the conduct rules.
+- **Plan/Structure/Phasing/Test** do NOT have the same risk pattern — they are round-based one-shot synthesis with feedback files (`feedback/{step}-round-NN.md`), which inherently survives compaction because each round's subagent re-reads original inputs + persisted feedback. Their authoring is subagent-driven, not turn-by-turn orchestrator accumulation. Goals and Design are the only two QRSPI authoring skills that do per-decision orchestrator-side dialogue.
+- **Comparable persistence patterns elsewhere in QRSPI:** Plan writes per-task `tasks/task-NN.md` files; Research writes per-question `q*.md` files via specialists; Implement writes per-task worktrees and commits. Goals and Design are the only artifact-producing phases that defer all on-disk writes to end-of-phase synthesis.
+- **Surfaced as:** plugin issue `PI-DES-003` during v0.7.2 Design self-hosting; user direction to formalize and to mirror Dialogue Conduct to Goals so the fix lands in v0.7.2 rather than being lost to plugin-issue triage.
+
+Candidates Design should weigh:
+
+**For Gap 1 (incremental persistence):**
+- **Direct-write to artifact with status=draft (Option B)** — author directly to `goals.md` / `design.md` with `status: draft` as decisions lock; resume-after-compaction reads the draft to see what's locked; end-of-phase lightweight finalize pass (validation + optional intro/cleanup) → flip to `status: approved`. Single file per skill, no transformation step, zero fidelity-loss risk because nothing is re-synthesized. Risk: draft artifact could be mistaken for final by downstream skills — mitigated by `status: approved` IRON RULE check that downstream skills already perform.
+- **Staging file → synthesis subagent → final artifact (Option A)** — `goals-decisions-draft.md` / `design-decisions-draft.md` accumulate per-decision blocks; synthesis subagent at end-of-phase reads draft + upstream artifacts → writes final artifact. Two files mid-phase; transformation step adds fidelity-loss risk and same context-pressure problem we're trying to fix.
+- **Per-decision files (Option C)** — `goals/g-NN.md` and `design/g-NN.md` set; synthesis subagent globs and assembles. Filesystem clutter; cross-decision content (Cross-Goal Decisions) has no natural home; per-decision idempotent updates achievable with single-file Option B keyed by goal ID.
+
+**For Gap 2 (Dialogue Conduct mirroring):**
+- **Identical 7-rule Dialogue Conduct section** in both Goals and Design SKILL.md with the two Goals-specific adjustments noted above (tiered grounding stops at codebase+web; questions menu coexists with conduct rules).
+- **Shared `_shared/dialogue-conduct.md`** referenced from both SKILL.md files. Pros: single source of truth; one edit applies to both. Cons: the two-adjustment differential between Goals and Design (grounding sources, questions menu coexistence) makes shared text awkward — would need inclusion-time substitution or per-skill override notes.
+- **Per-skill inline copies** with consistent rule numbering. Pros: each skill is self-contained, easier to maintain when skill-specific nuances diverge. Cons: enforcing consistency across copies relies on reviewer discipline.
+
+The incremental persistence work should encourage the orchestrator to re-read the accumulating file when resuming after `/compact` (so it knows what's already locked) and to surface a recovery diagnostic (`"Resumed after compaction — last locked decision: GNN. Continuing from G(NN+1)."`) for user-visible continuity. The synthesis-subagent prompt should be updated to consume the draft as the authoritative input for per-decision content (under Option B, this collapses to "finalize draft" rather than "synthesize from scratch").
+
+Source: PI-DES-003 (filed during this Design self-hosting session); G1 (Design template revision — companion fix; G1 defines per-goal block shape, G30 defines persistence + dialogue-conduct patterns).
+
+### G31 — Prompt-prose review coverage
+
+- **type:** `known-fix`
+
+#### Problem
+
+QRSPI has artifact-quality reviewers for every step's output document (`goals.md`, `design.md`, `plan.md`, `structure.md`, `phasing.md`, `parallelization.md`, etc.) but no reviewer that specifically applies prompt-engineering best practices when the artifact under review IS prompt prose — i.e., `SKILL.md` files in `skills/`, agent files in `agents/`, and the verbatim "prose-design" blocks inside `design.md` introduced by G1 Sub-Rule B. The authoritative checklist exists (`docs/prompt-design-guide.md`, 7 rules + cross-cutting principles + finding-type gate) but is consulted manually during authoring; no reviewer agent enforces it. The guide itself anticipates the failure mode: *"QRSPI skill prompts will accumulate drift over time."*
+
+#### Why we care
+
+v0.7.2 self-hosting confirmed the drift surface is wide: G1 introduces multi-page Dialogue Conduct sections, Altitude Sub-Rules A/B, and Goals SKILL.md mirroring; G30 adds incremental-persistence + recovery prose to two SKILL.md files; CD-2 (the Evergreen-Output Rule that emerged during this Design phase) ships entirely as prompt prose. The guide's documented mitigation — periodic manual audits "after every major Phase ships" — is not happening at the cadence the prompt-prose turnover requires. Without per-round reviewer enforcement, drift between audits accumulates as orchestrator under-adherence in production runs (the same failure mode that justified the verifier sidecar work in G11/G12/G14). The cost is the same recurring class of plugin issues the v0.7.2 release is trying to close.
+
+#### What we know so far
+
+The audit pass (2026-05-30) compared `docs/prompt-design-guide.md` against current 2026 best practices (web search) and against the cross-cutting decisions locked in this Design phase (CD-2 Evergreen-Output Rule; G1 Dialogue Conduct + Sub-Rules A/B; G3 vendor-neutrality; G30 compaction-resilient persistence). The guide is mostly current; eight specific update opportunities surfaced for Design to weigh:
+
+- **(A) Refine "positive framing outperforms negative framing"** — the cross-cutting principle as written is too absolute. Modern Claude 4+ and GPT-4+ handle negation fine when paired with positive substitute + named antagonist label + decision rule (the guide's own Iron Laws / Red Flags / "Common Rationalizations" tables already demonstrate the pattern successfully). Recast as *"Negation works in modern LLMs when paired with a positive substitute, a named antagonist, and a decision rule; bare 'do not X' without substitute is the GPT-3-era anti-pattern."*
+- **(B) Name antagonist patterns in R1** — R1 lists categories to cut but doesn't name them. Fold in CD-2's six named antagonists (dialogue exhaust, session/drafting notes, version-history narration, inside baseball, compaction-loss recovery notes, failure-modes-prevented lists) so authors and reviewers have self-check labels.
+- **(C) Add the litmus test as a cross-cutting principle** — CD-2's two-question filter (*"does this paragraph read true if every prior draft were deleted? is the subject the WHAT being designed, or the dialogue that produced it?"*) is missing from the guide. It belongs alongside the existing "rationale alongside prohibitions" principle.
+- **(D) Name "anchor phrases" as a cross-cutting principle** — when a phrase must be preserved verbatim across edits (e.g., the CD-2 anchor list in the Evergreen-Output Rule, G1's Sub-Rule B verbatim treatment), calling it an "anchor phrase" is a 2025-era practice the guide doesn't currently capture. G1 Sub-Rule B and CD-2 acceptance criteria both rely on this concept; the guide should make it canonical.
+- **(E) Vendor-neutralize R5** — R5 says *"For Claude Code: spine + references saves zero tokens if the spine always instructs the read."* Per G3 (vendor-neutrality), narrow the host-specific framing: the savings model applies to any agent platform that pre-loads skill text. Mention Claude Code and Codex CLI as equal vendors.
+- **(F) Fix source-research paths** — R1's "Source research" section cites `general2/docs/superpowers/specs/2026-04-25-qrspi-skill-refactor-design.md` and `general2/docs/qrspi/2026-04-06-phase4-hooks/phases/phase-02/research/prompt-best-practices.md`. These paths point outside the qrspi-plus repo and are not auditable from this repo. Either inline-fold the derivations or replace with intra-repo references.
+- **(G) Recalibrate against May 2026 model landings** — "Last applied: 2026-04-25" predates Opus 4.7-high, GPT-5.5, and May 2026 model shifts. Re-test the seven rules and cross-cutting principles against the current model lineup; flag any whose evidence base has weakened.
+- **(H) Add compaction-resilient prompt-design as a principle** — G30 establishes that orchestrator-side context-saturation drives a class of prompt-side mitigations (incremental persistence prose, recovery diagnostics, "presence ≡ locked" idioms, explicit re-read-on-resume instructions). The guide does not currently treat compaction-resilience as a design dimension; CD-2 + G30 give it a name and a contract.
+
+Candidates Design should weigh for the reviewer architecture:
+
+- **Expand existing reviewers (preferred starting position).** Add a conditional Read step to `qrspi-code-quality-reviewer` (catches Implement-side prompt prose: `.md` files in `skills/`, `agents/`) and to `qrspi-design-reviewer` (catches `design.md` prose-design blocks marked `<!-- prose-design: ... -->`). When the routing heuristic fires, the reviewer Reads the authoritative best-practices file and applies its checks as additional findings. No new agent fanout slot; no parallel review-loop duplication; aligns with the existing "expand what's there before adding new" working principle. Risk: file-routing heuristic must be reliable enough to avoid silently skipping prompt prose embedded in unexpected places.
+- **Dedicated `qrspi-prompt-reviewer` agent.** Single-purpose agent with its own fanout slot in every applicable round. Pros: focused; easier to evolve in isolation. Cons: duplicates the file-routing logic the two reviewers above already do; adds an always-on fanout cost even when the diff has zero prompt prose; fragments review responsibility across more agents to maintain.
+- **Hybrid (least preferred).** Existing reviewers handle the easy cases; a dedicated reviewer fires only for SKILL.md / agents/*.md changes above a threshold. Combines the worst of both architectures (routing logic in two places + a partial new agent).
+
+Candidates Design should weigh for the best-practices file location:
+
+- Keep `docs/prompt-design-guide.md` as the authoritative source; reviewers Read it directly from `docs/`.
+- Move (or duplicate) to `skills/_shared/prompt-writing-best-practices.md` to align with the rest of the shared-reference convention (precedent: `precondition-block.md`, `tsc-probe-helper.md`, `codex/launch-await-pattern.md`). Pros: single conventional home for cross-skill reference content; `!cat` includes available for authoring-side use. Cons: `docs/prompt-design-guide.md` is already linked from the source-research section and may carry external references; moving without a stub leaves dangling pointers.
+
+Open question for Design: should the authoritative best-practices file ALSO be `!cat`'d into the authoring side (e.g., into Goals/Design SKILL.md's Dialogue Conduct preamble as a "ground first" reference), or kept strictly as a reviewer-side reference? G1's Dialogue Conduct already encodes some authoring-side prompt-engineering practice ("ground first, ask second," "sharpen fuzzy language") — Design should decide whether to consolidate.
+
+Source: Audit pass 2026-05-30 (this Design phase, response to G1 + G30 + CD-2 introducing multi-page prompt prose with no automated quality gate); `docs/prompt-design-guide.md` (the existing manual guide, last applied 2026-04-25); CD-2 (Evergreen-Output Rule — supplies the litmus test + named antagonist patterns); G1 (Dialogue Conduct + Sub-Rules A/B — defines the prose-design block surface); G30 (compaction-resilient persistence — supplies the compaction dimension); G3 (vendor-neutrality — drives R5 reframing).
+
+### G32 — Plugin build pipeline (strip dev-only paths + expand `!cat` includes)
+
+- **type:** `known-fix`
+
+#### Problem
+
+The plugin source repo and the plugin install artifact have diverging needs that no current build step reconciles:
+
+1. **Source-only content ships as install content.** `/docs/` (in-progress design artifacts, research, this v0.7.2 dossier), and plausibly other dev-only paths, are present in every plugin install today. There is no strip step.
+2. **Maintenance-DRY `!cat` composition is non-portable at runtime.** SKILL.md files use `!cat <path>` directives to compose shared snippets (OWNS/DEFERS contracts, precondition blocks, and the prompt-prose detection / addition files introduced by G31). Claude Code expands these natively at SKILL load time; Copilot CLI 1.0.57-1 does NOT — empirical evidence this session shows both `!cat ${CLAUDE_SKILL_DIR}/...` and bare `!cat skills/.../owns-defers.md` appear as literal text in loaded SKILL prompts. Codex CLI is unverified but presumed similar.
+3. **A latent kernel exists but is not wired in.** `scripts/render-skill.sh` is a 91-line bash "offline cat-emulator" with no CI hook, no install hook, and no caller anywhere in the repo. It also only handles the `${CLAUDE_SKILL_DIR}` form, not the dominant bare-relative `!cat skills/<path>` form (7 of 8 v0.7.1 SKILL.md sites).
+
+#### Why we care
+
+Without a build step:
+
+- **G31's architecture (wrapper SKILLs + inline `!cat`) silently degrades on every non-Claude host.**
+- **Seven existing v0.7.1 SKILL.md files silently degrade today.** The OWNS/DEFERS `!cat` lines in `design / plan / phasing / parallelize / replan / structure / goals` SKILLs never expand on Copilot CLI — a pre-existing bug surfaced this session.
+- **Any CD-prescribed shared snippets face the same degradation** (CD-1 `reviewer-dispatch-prose.md`, CD-2 `evergreen-output-rule.md`, CD-3/4 `multi-actor-flow-check.md`).
+- **Dev-only content keeps bloating plugin installs.**
+- **Maintenance DRY is one of the central tools** for keeping scope contracts and shared invariants consistent across the plugin — losing portable composition forces per-file duplication and drift, which is the same recurring class of plugin issues this release is trying to close.
+
+#### What we know so far
+
+- **Scope is includes-only for v0.7.2** — no variables, no conditionals (user-confirmed this session: no concrete variable use case yet; "logic-less" preserves reviewer-readability of source).
+- **`scripts/render-skill.sh` exists as a candidate kernel Design should weigh extending.** 91 LOC, bash, single-pass, mixed-content fence support; currently only handles `!cat ${CLAUDE_SKILL_DIR}/<relpath>`.
+- **Dominant `!cat` convention is bare-relative** `!cat skills/<path>` (7 of 8 v0.7.1 SKILL.md sites); only 1 legacy site uses `${CLAUDE_SKILL_DIR}`. Build step must handle the bare-relative form (and ideally normalize both as co-shipped cleanup).
+- **Implementation language candidates Design should weigh** — (a) extend `render-skill.sh` in bash; (b) rewrite as a small Python stdlib script (~100-200 LOC); (c) adopt a real template engine (Mustache / Jinja2 / Liquid — likely overkill given the no-variables decision).
+- **Strip scope must be defined by Design** — at minimum `/docs/`; plausibly other dev-only paths (e.g., `scripts/run-third-party-llm.sh`, in-progress artifacts). Needs an explicit allow- or deny-list, not heuristic.
+- **Output channel candidates Design should weigh** — (a) sibling build branch (consumers install directly); (b) Actions artifact published to a tagged release; (c) both.
+- **Validation requirements Design must specify** — cycle detection on recursive includes, fail-loud on orphan target paths, idempotent output (re-running build on already-built tree is a no-op or stays byte-identical), CI gate on PRs that catches drift.
+- **G31 dependency** — G32 unblocks G31; G31 cannot proceed to Implement until G32's build step is in place. Phasing should weigh whether G32 and G31 are co-scheduled or sequenced.
+
+Source: G31 BLOCKING open question (design.md, this session); empirical Copilot CLI 1.0.57-1 finding that `!cat` directives appear as literal text in loaded SKILL prompts; existing `scripts/render-skill.sh` (latent, unreferenced); G3 (vendor-neutrality — drives the requirement that every supported host see the same composed semantics).
+
+### G33 — Design skill interactive dialog clarity: simple language + context when presenting ideas
+
+- **type:** `known-fix`
+
+#### Problem
+
+The Design SKILL's `### Interactive Design Discussion` phase (Phase 1, step 2: *"Propose 2–3 candidate approaches; lead with recommendation; explain trade-offs"*) does not specify a clarity bar for the prose of those proposals. In practice, design dialogue defaults to jargon-dense framing (terms like "false-positive rubric," "actionability field," "structural-confidence anchor," "wrapper SKILL," "dispatch contract") that requires the user to have the relevant SKILL anatomy / orchestrator internals / rubric definitions fresh in working memory to follow the proposal.
+
+#### Why we care
+
+Observed during v0.7.2 self-host G14 walkthrough: initial proposal of options A / B / C was opaque enough that the user explicitly asked for a simple-language reframing — verbatim: *"using simple language give me the context here, im not following. both the problem and the fix is opaque to me"*. The reframing took an additional turn, interrupted the per-goal dialogue rhythm, and reset the conversational state. Without an explicit clarity directive in the Design SKILL, this friction recurs per-goal across long Design walkthroughs (32 goals × several decisions each = many opportunities for the same opaque-framing failure mode).
+
+#### What we know so far
+
+User directive captured verbatim during the v0.7.2 self-host G14 walkthrough: *"use simple language and provide context when presenting ideas"* — to be added to the design skill dialog rules.
+
+Candidates Design should weigh:
+
+- One-line dialog rule added to `skills/design/SKILL.md` `### Interactive Design Discussion` Phase 1, scoped per user direction to the Design skill.
+- Open question for broader scoping: do other interactive skills (Goals, Replan, Phasing, Structure) suffer the same opaque-framing failure mode and benefit from the same rule? User scope this release is Design-only; broader scoping is a v0.7.3+ candidate contingent on self-host signal from other skills.
+
+Source: v0.7.2 self-host G14 walkthrough user directive. **Solution folded into G1's Dialogue Conduct section as new Rule 5** (Design-only per user scope; Goals mirror explicitly excludes it). See design.md G33 entry for the cross-reference and design.md G1 for the verbatim rule.
+
+### G34 — Align Design scope-reviewer with G1's detailed-solution boundary
+
+- **type:** `known-fix`
+
+#### Problem
+
+The Design scope-reviewer (`agents/qrspi-design-scope-reviewer.md` + the `skills/design/owns-defers.md` contract it reads at runtime) operates on a stricter notion of "Design altitude" than G1 establishes for the Design SKILL itself. G1 makes Design the home of *detailed descriptions of the solutions, with full edge cases, end-to-end flows, prompt-writing specifics, and acceptance criteria with concrete examples*. The scope reviewer's prompt and the locked owns-defers wording read that same content as "implementation detail that Plan should author," and fire findings against it. The two are now in contradiction inside one release.
+
+#### Why we care
+
+Every self-host operator (and every project author who reads G1's Dialogue Conduct + Altitude Sub-Rules as the authoritative vision for Design) fights identical false-positive scope findings every round. v0.7.2 self-host Design R1 produced this directly: 5 of 14 findings were scope-class flags on content the operator explicitly wanted kept (captured in `reviews/design/round-01-decisions.md` and `PI-HKP-005`), all overridden. The contradiction gets worse with G1's own deliverable #6 (*"Update the design scope-reviewer owns-defers to defer architecture, file maps, and test mechanics"*) which further tightens the existing DEFERS list without articulating the positive OWNS list G1's vision actually requires. Without G34, v0.7.2 ships a Design SKILL whose own scope reviewer contradicts its Dialogue Conduct prose — signal-to-noise in review rounds tanks, operators learn to ignore scope findings on principle, and the scope-reviewer's positive value (catching real architecture / file-map / Plan-task-carving leakage) dissolves.
+
+#### What we know so far
+
+- G1 (this release) establishes Design as the home of: detailed descriptions of the solutions, edge cases, end-to-end flows, prompt-writing specifics, acceptance criteria with concrete examples (including rough test-pairing shapes such as "one bats file per script under `scripts/`" — naming the shape is acceptance-criteria-altitude; authoring the actual test code is what defers to Plan/Implement), and zero or more per-solution diagrams per goal/CD block when they aid comprehension.
+- G1 establishes what Design avoids: code (function bodies, full unit-test bodies, executable shell beyond a few illustrative lines), file architecture (Structure's job), task carving (Plan's job), unified system-wide architecture diagrams stitching across goals/CDs (Structure's job per G1 #4 + G35), and the unified Test Strategy section stitching per-solution acceptance criteria across goals (Structure's job per G35).
+- v0.7.2 self-host Design R1 evidence: 5 user-overridden scope findings + PI-HKP-005 captured in the session DB; round-01-decisions.md records the disposition.
+- Solution candidates Design should weigh:
+  - **Candidate A** — Update both files (owns-defers + scope-reviewer agent body) with explicit OWNS allowances + explicit DEFERS list, restate the vocabulary verbatim in both, no shared snippet. Lowest-edit-count option that does not depend on G32. Drift risk = "edit one file and forget the other" — must be mitigated by a bats lint test comparing the two blocks for byte equality.
+  - **Candidate B** — Single shared snippet under `skills/_shared/design-altitude-boundary.md`, included into both consumers via `!cat skills/_shared/design-altitude-boundary.md`. G32's build pipeline expands the directive at build time so both files in the install artifact carry the verbatim content with no runtime resolution. Maintenance edits land in one source file; structural single-source-of-truth makes content drift impossible. Hard dependency on G32 (also in v0.7.2). Consistent with v0.7.2's other shared-snippet patterns (CD-2 evergreen-output-rule, multi-actor-flow-check, etc.).
+  - **Candidate C** — Update owns-defers only, leave the scope-reviewer agent body unchanged. Insufficient — R1 self-host showed both surfaces fire findings against the same content; one-side fix won't close the gap.
+- Scope of propagation in v0.7.2 is **Design-only** (operator decision). Other artifact scope reviewers (Goals / Plan / Phasing / Structure / Parallelize / Replan) may exhibit the same drift pattern against their own SKILL visions — that audit is a v0.7.3+ follow-up filed as PI-HKP-005's natural successor.
+- G34 does NOT change the `change_type: scope` semantics or the auto-apply-vs-pause behavior (scope findings still pause for user). The fix is to stop *firing* scope findings on content the SKILL vision blesses, not to change how scope findings are handled once fired.
+
+### G35 — Structure SKILL absorbs unified architecture + unified test architecture from Design
+
+- **type:** `known-fix`
+
+#### Problem
+
+G1 deliverables #3 and #4 migrate two authoring responsibilities OUT of Design: the top-level Test Strategy section (#3) and the System Flow architecture diagram (#4) are removed from the Design SKILL.md template. The migration's intent (per G1 #4 text) is that "the architecture diagramming role migrates to Structure." But nothing in v0.7.2 currently updates the Structure side to absorb the migrated responsibilities:
+- `skills/structure/SKILL.md` operates against the pre-migration scope — it produces file maps today but has no procedure for authoring a unified system architecture diagram and no procedure for authoring a unified test architecture (test architecture was previously Design's, so Structure SKILL has never had one).
+- `skills/structure/owns-defers.md` does not list unified architecture diagrams or unified test architecture as Structure OWNS.
+- `agents/qrspi-structure-reviewer.md` + `agents/qrspi-structure-scope-reviewer.md` would flag architecture diagrams and unified test-architecture content authored in structure.md as out-of-scope (the same drift pattern G34 closes for Design).
+
+Without G35, the release ships with Design knowing not to author those artifacts and Structure not knowing it now owns them. The migration's destination is empty.
+
+#### Why we care
+
+Two failure modes compound, exactly mirroring G34's failure modes on the Structure side:
+- **Authoring gap.** If Structure doesn't know it now owns unified architecture + unified test architecture, the release ships with NEITHER side authoring those artifacts. Downstream artifacts (Plan, Implement) lose the architectural overview and the stitched test plan that previously lived in design.md's top-level Component Map / Test Strategy sections.
+- **Reviewer false-positives.** When a self-host operator does author architecture / test architecture into structure.md under the new contract, Structure's scope-reviewer flags it as drift. Friction repeats every round, exactly as it did for Design pre-G34.
+
+This is the bookend to G34: G34 makes Design know what it no longer owns; G35 makes Structure know what it now does.
+
+#### What we know so far
+
+- v0.7.2 self-host evidence: the operator-orchestrator dialogue on 2026-06-01 surfaced the gap while reviewing G34. The R1-era top-level `## Component Map` and `## Test Strategy` sections in design.md (added by orchestrator during R1 fixes) had to be DELETED to align design.md with the new Design/Structure boundary — but the receiving end (Structure) was unprepared.
+- The carve-up is operator-locked in this same dialogue: Design = list of individual solutions (per-goal + per-CD), each with 0+ per-solution diagrams; Structure = unified architecture + file system + unified test architecture (stitches per-solution acceptance criteria from design.md); Plan = broken-down tasks with per-task unit-test criteria.
+- Solution candidates Design should weigh (G35's design block locks Candidate B; this list is preserved for traceability):
+  - **Candidate A** — Update both files (owns-defers + scope-reviewer agent body) with explicit OWNS allowances + DEFERS list verbatim, no shared snippet. Lowest-edit-count option; drift risk mitigated by a bats lint comparing the two blocks for byte equality.
+  - **Candidate B** — Single shared snippet under `skills/_shared/structure-altitude-boundary.md`, included into both consumers via `!cat skills/_shared/structure-altitude-boundary.md`. G32's build pipeline expands at build time; install artifact carries verbatim content in both files. Maintenance edits land in one source file; single-source-of-truth makes content drift impossible. Hard dependency on G32. Mirrors G34's locked choice exactly — symmetry between the two scope-reviewer fixes is itself an argument for B.
+  - **Candidate C** — Update Structure SKILL.md only, leave the scope-reviewer and owns-defers unchanged. Insufficient — the scope-reviewer would flag the new authoring as drift; same failure mode G34 mirrors.
+- Additional Structure-specific complexity beyond a pure G34 mirror: Structure SKILL.md gains a NEW authoring procedure for the unified test architecture (4-step procedure to enumerate per-solution acceptance criteria from design.md, group by test type, identify cross-cutting invariants, and author a `## Test Architecture` top-level section in structure.md). This is new behavior, not just scope-rename — Design used to do this; Structure has never done it. G35 commits the section name + 4-step skeleton + anchor phrases per G1 Sub-Rule B's deferred-prose protocol; full prose authored at Implement.
+- Hard dependencies: G1 deliverables #3 and #4 (migration source). G32 (`!cat` resolver). All three ship in v0.7.2.
+
+## Cross-Cutting Notes
+
+- **Reviewer-pipeline correctness cluster (G6 / G7 / G8 / G9 / G10 / G11 / G12 / G13 / G14 / G19 / G20 / G28 / G29).** These goals all address the reliability of the reviewer→verifier→orchestrator pipeline: disk-write contract (G6/G11), field-schema enforcement (G8/G13), threshold-rule location and DRY (G7/G12), rubric calibration (G14/G19/G20), orchestration drift (G9), authority-fabrication (G10), apply-fix protocol cluster carve-out (G28), and large-artifact dispatch ingress (G29). G11 and G12 form a tightly coupled pair (contract then consumer); G7, G12, G13, and G28 share a "one place for the canonical filter rule" resolution path; G14 and G19 share a verifier-rubric expansion path also relevant to G10. G6 and G29 share the same dispatch-contract surface (`skills/reviewer-protocol/SKILL.md`) and are likely co-scheduled.
+
+- **Dispatch-routing schema cluster (G22 / G23 / G24-F02 / G24-F04 / G25 / G27).** These goals all touch `model_routing:` / dispatch-path in `using-qrspi/SKILL.md`: schema reconciliation (G22), validation table (G23), per-H4 prose redundancy (G24-F02) and tier-regex consolidation (G24-F04), top-level fail-loud invariant (G25), and Goals-side inline probe (G27). G22 is the anchor — its canonical-schema decision shapes G23's table row, G24-F02/F04's consolidation target, and G25's invariant scope. The cluster shares the same H4 paragraphs as an edit surface; Phasing should evaluate whether the cluster benefits from being scheduled together.
+
+- **Test-gate hardening cluster (G21 / G24-F05 / G26).** These goals address brittleness in the bats test harness: silent-pass `[[ ]]` form (G21), literal anti-pattern pin fragility (G24-F05), and deprecated shebang noise (G26). All three are small, mechanical, and share a "add a lint rule to prevent recurrence" extension candidate — a single "test-pin hardening" wave covers all three.
+
+- **Plan-phase under-scoping cluster (G15 / G18).** Both goals describe Plan-phase failure to enumerate downstream surfaces: sweep tasks failing to list dependent tests (G15) and cross-task consumer surfaces left off task specs (G18, with 10 documented instances). They share a root cause (no enumeration step in plan/SKILL.md) and at least one candidate solution (a grep-audit probe for downstream references) — Design should evaluate them together.
+
+- **Prompt-prose architecture cluster (G31 / G32).** G31 introduces wrapper SKILLs + shared snippet files for prompt-prose review coverage; G32 introduces the build pipeline that expands `!cat` includes so G31's composition (and 7 existing v0.7.1 OWNS/DEFERS sites) ship to every host. G32 is a hard dependency of G31 — G31 cannot reach Implement until G32 lands. The cluster also unblocks future shared-snippet work (CD-1 / CD-2 / CD-3 / CD-4 prescribed snippets). Phasing should weigh whether G32 lands in an earlier phase than G31 or both ship together.
+
+- **Design↔Structure boundary migration cluster (G1 #3 + #4 → G34 + G35).** G1 deliverables #3 (remove Design SKILL's top-level Test Strategy section) and #4 (remove Design SKILL's System Flow section; architecture diagramming migrates to Structure) move authoring responsibilities OUT of Design. G34 makes Design know it (aligns Design scope-reviewer's OWNS/DEFERS contract with G1's reduced scope so the reviewer stops flagging the absence of those sections as drift on the Design side). G35 makes Structure know it (adds the migrated responsibilities to Structure's OWNS, adds a new authoring procedure to Structure SKILL.md for the unified test architecture which is new Structure behavior). G34 and G35 share Candidate B mechanism (`!cat`-included `_shared/` snippet, G32-expanded). Hard dependency chain: G32 → {G34, G35}; G1 #3/#4 → G35. Plan should schedule G1's deliverables #3/#4 + G34 + G35 in the same wave (or G35 strictly after G1 #3/#4) so the migration source and destination land together — otherwise the release ships with neither side authoring the migrated artifacts.

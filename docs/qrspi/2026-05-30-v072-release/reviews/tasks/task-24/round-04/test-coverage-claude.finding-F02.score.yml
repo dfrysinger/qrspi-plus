@@ -1,0 +1,2 @@
+score: 70
+reason: Coverage gap is real and verifiable — every other branch (Copilot CLI L462, unknown L475, override L272) has a KEY=VALUE shape-loop test but Claude Code does not, and task-24.md line 61 explicitly requires this shape assertion; risk is bounded today since the INSTRUCTION is a hardcoded single-line printf with no variable interpolation.

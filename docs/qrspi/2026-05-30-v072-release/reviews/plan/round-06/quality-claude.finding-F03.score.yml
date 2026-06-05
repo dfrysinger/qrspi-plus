@@ -1,0 +1,2 @@
+score: 45
+reason: Real but minor clarity gap — T16 In line says "host/vendor routing lookup" which collides with T19's "host × vendor matrix... lookup helpers" surface, and neither task's Out carves out the other's slice of _resolve-lib.sh; DoD bullets disambiguate on careful reading, so it's a legitimate low-severity clarity nit rather than a load-bearing defect.

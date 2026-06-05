@@ -1,0 +1,2 @@
+score: 45
+reason: T20 owns the splitter that consumes untrusted third-party LLM output and Phase 1 acceptance already lists "splitter on adversarial Codex stdout" as a fail-loud invariant, yet T20's DoD/Test Expectations only cover structural failure modes (missing flags/raw/boundaries/write errors), not content-injection fixtures (path-traversal IDs, embedded boundary tokens, forged NO_FINDINGS, control bytes) — a real but partially speculative gap that some reviewers would treat as implementation-altitude detail rather than plan-altitude pin.

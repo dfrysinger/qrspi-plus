@@ -1,0 +1,2 @@
+score: 92
+reason: Confirmed contradiction — SKILL.md lines 510-522 still document missing model_routing: as a one-time in-memory warning + backfill-defaults (never a hard failure), while config-validation-procedure.md lines 11-14 (created by this same T16 work-unit) explicitly declares it "a hard validation failure, not a silent fallback" with repair-or-abort as the only sanctioned outcome; T16's task spec required updating both surfaces together and the SKILL.md section was not updated.

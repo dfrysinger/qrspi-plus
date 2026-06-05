@@ -1,0 +1,2 @@
+score: 100
+reason: Task spec test expectation (line 57) requires auditing with both captured reviewer payload AND prompt-body fixtures to verify no leakage. Test-await-round.bats (line 103-132) covers payload leakage (SECRET-PAYLOAD-XYZZY sentinel) but contains zero prompt-body fixture; incomplete output-bound coverage.

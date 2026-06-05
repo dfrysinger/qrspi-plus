@@ -1,0 +1,2 @@
+score: 75
+reason: Design document explicitly includes phase/release assignment decisions (e.g., "co-ships with G1, G30, CD-1, CD-2 in v0.7.2" at L2581, open questions for v0.7.3+ at L2024-L2039, L2782-L2786) which OWNS/DEFERS assigns to `qrspi:phasing` rather than design; this violates the locked boundary contract.

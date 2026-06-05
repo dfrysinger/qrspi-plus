@@ -1,0 +1,2 @@
+score: 90
+reason: Confirmed by code trace — `second-reviewer-available.sh openai-codex` with no host signals sets _host=unknown, takes the override branch skipping lookup_default_second_reviewer, then passes the L51 guard (openai-codex is known and not none), and exits 0, directly violating DoD L42's "Unknown host … exit non-zero" requirement with no override carve-out.

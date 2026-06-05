@@ -1,0 +1,2 @@
+score: 62
+reason: Real internal inconsistency — phase criterion #2 uses universal-quantified language but enumerates only 6 invariants; verified T02/T19/T34 each define unenumerated release-introduced fail-loud halts, though per-task tests partially mitigate the practical regression risk.

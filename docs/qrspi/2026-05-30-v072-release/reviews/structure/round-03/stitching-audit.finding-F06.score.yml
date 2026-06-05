@@ -1,0 +1,2 @@
+score: 78
+reason: Structure file map's 4 explicitly-"representative" agent rows omit ~37 other agents required by design.md CD-1's "every agent has tier:" and "every reviewer body carries DISPATCH_FILE first-action" acceptance criteria; no sweep row exists, so Plan would under-generate tasks.

@@ -1,0 +1,8 @@
+---
+finding_id: R4-F01
+reviewer_tag: scope-codex
+score: 25
+change_type: scope
+reason: "Plain-language problem" sections in per-goal blocks were operator-blessed in R1 per PI-HKP-005 — they aid human review and the G1 per-goal template explicitly carries this shape. Recurring false-positive across review rounds. scope/intent findings bypass score filter per protocol step 8 — flows to pause gate as user-override.
+defect_class: pi-hkp-005-recurring-pattern
+---

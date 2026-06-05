@@ -1,0 +1,2 @@
+score: 60
+reason: Finding correctly identifies that design.md lacks a consolidated design-level test strategy section that the current OWNS/DEFERS contract requires. However, the artifact itself (G1) documents this is an intentional scope revision, moving test strategy downstream to Plan.

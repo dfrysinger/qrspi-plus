@@ -1,0 +1,8 @@
+# scope-set for round 5
+# generated_by: orchestrator-manual (matches kept-finding edit surfaces)
+# total_findings_kept: 3
+## Phase 1 Acceptance Criteria
+## Task 16: G22 `model_routing` config schema and agent-sweep migration
+## Task 19: G27 `second-reviewer-available.sh` helper, `_host-detect.sh` primitive, and Goals consumer migration
+## Task 39: G32 plugin build pipeline (`tools/build-plugin.mjs` + `render-skill.sh` + `g4-section-anchor-refresh.sh` + marketplace.json + CI workflow + CONTRIBUTING)
+## Task List by Slice

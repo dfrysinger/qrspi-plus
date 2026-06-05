@@ -1,0 +1,2 @@
+score: 48
+reason: Verified real — the guard's `2>/dev/null || true` does mask grep exit-2 yielding a false pass if scripts/ is absent, but practical likelihood is low (scripts/ exists and sibling tests would fail loudly) and the finding self-rates Low.

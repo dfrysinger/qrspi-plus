@@ -1,0 +1,28 @@
+diff --git a/tests/unit/test-change-type-partition.bats b/tests/unit/test-change-type-partition.bats
+index b403f89..39e9e3b 100644
+--- a/tests/unit/test-change-type-partition.bats
++++ b/tests/unit/test-change-type-partition.bats
+@@ -283,7 +283,6 @@ _run_fan_in_on_fixture() {
+   # and `awk "$p"` would follow it OUT of the sandbox to read the target.
+   # Switching to `cp -RL` dereferences symlinks at copy time, so nothing
+   # under $FIXTURE_DEST can point outside the sandbox.
+-  command -v jq >/dev/null 2>&1 || skip "jq required (helper precondition)"
+   local outside="$BATS_TEST_TMPDIR/outside-target.txt"
+   printf 'change_type: malicious\n' >"$outside"
+   local src="$BATS_TEST_TMPDIR/symlink-fixture-round"
+@@ -292,9 +291,12 @@ _run_fan_in_on_fixture() {
+   # finding-shaped pattern the fan-in script picks up.
+   printf -- '---\nchange_type: style\n---\n' >"$src/regular-claude.finding-F01.md"
+   ln -s "$outside" "$src/symlinked-claude.finding-F01.md"
+-  _run_fan_in_on_fixture "$src" \
+-    || true  # the helper may exit non-zero on this synthetic fixture; we
+-             # care about the post-copy state, not the script's verdict.
++  # No `|| true`: the helper's contract reserves rc 95-99 for setup
++  # failures (missing fixture, bad basename, mktemp/cp/pwd) — those
++  # MUST surface. The fan-in script's pass/fail verdict on the synthetic
++  # fixture is captured internally in $RC and is not what we assert here;
++  # we assert the post-copy filesystem state under $FIXTURE_DEST.
++  _run_fan_in_on_fixture "$src"
+   [[ -n "$FIXTURE_DEST" ]] || { echo "FIXTURE_DEST empty"; return 1; }
+   [[ -e "$FIXTURE_DEST/symlinked-claude.finding-F01.md" ]] \
+     || { echo "expected the symlink-named entry to land in the sandbox copy"; return 1; }

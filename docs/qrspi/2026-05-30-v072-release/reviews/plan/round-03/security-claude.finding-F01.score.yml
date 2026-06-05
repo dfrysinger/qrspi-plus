@@ -1,0 +1,2 @@
+score: 22
+reason: Spoofing premise contradicted by design.md CD-1 (dispatch-agent.sh takes only --agents tag=agent-name; host/vendor/model come from _resolve-lib.sh + _host-detect.sh, never caller flags); fail-loud on misrouted model_routing is already a Phase 1 Acceptance Criterion (line 22) plus CD-1 has a locked smoke-test for the none-tier halt; JSON-escape concern is subsumed by the "well-formed JSON" expectation (line 717); prompt_file canonicalization is explicitly T21's deliverable per the cited dependency chain so requiring it in T11 is dependency-inverted.

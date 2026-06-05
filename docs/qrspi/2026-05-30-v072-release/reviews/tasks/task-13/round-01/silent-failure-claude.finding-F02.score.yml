@@ -1,0 +1,2 @@
+score: 38
+reason: Real asymmetry in the new checklist step 1, but await-round.sh's drain-before-finalize contract makes a pending-entry failure a should-never-happen case; minor defensive gap, not in the task DoD.

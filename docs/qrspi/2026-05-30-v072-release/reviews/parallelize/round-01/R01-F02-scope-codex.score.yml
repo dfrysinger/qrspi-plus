@@ -1,0 +1,2 @@
+score: 78
+reason: The "Stage commit hygiene" bullet at L383 violates Parallelize's owns-defers boundary by prescribing Implement/Integrate runtime procedures ("created by Implement immediately before worktrees are forked", "Integrate handles dedup/cleanup") rather than describing only the symbolic Stage Commits planning artifact; owns-defers.md clearly reserves concrete worktree/branch creation and cleanup to downstream phases while Parallelize owns only symbolic bases and the Stage Commits table.

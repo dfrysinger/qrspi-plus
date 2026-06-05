@@ -1,0 +1,2 @@
+score: 33
+reason: Factually grounded—trusted_path is documented as a dispatch-site short-circuit (SKILL.md:537) outside the resolver—but the header already follows its "single source of truth" claim with a specific enumerated list that excludes trusted_path, making this a minor low-severity clarity nitpick.

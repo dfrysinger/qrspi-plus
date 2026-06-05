@@ -1,0 +1,2 @@
+score: 45
+reason: Verified real and accurate — the test bypasses the established _exec_resolve_tier+--separate-stderr idiom via manual bash -c interpolation, but it is self-described non-blocking consistency cleanup with only hypothetical fragility (BATS_TEST_TMPDIR has no spaces).

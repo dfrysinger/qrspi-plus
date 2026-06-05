@@ -89,7 +89,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
    - **Stop:** Halt pipeline.
 2. **Write tests** — dispatch the test-writer subagent.
 
-   Read `test_writer_model` from `plan.md` frontmatter (default `sonnet` if missing). Dispatch `Agent({ subagent_type: "qrspi-test-writer", model: "<plan.test_writer_model || 'sonnet'>" })` with a prompt containing only:
+   The test-writer dispatch resolves its tier through `scripts/_resolve-lib.sh` — the Test-phase acceptance dispatch uses the qrspi-test-writer agent's `tier: medium` default unless the plan pins `test_writer_tier:`. Dispatch `Agent({ subagent_type: "qrspi-test-writer" })` (the dispatcher resolves vendor+model from the resolved tier) with a prompt containing only:
    - `companion_plan`: `plan.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=plan.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=plan.md>>>` markers (canonical acceptance-criteria source per the strip-from-goals contract)
    - `companion_goals`: `goals.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=goals.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=goals.md>>>` markers (upstream traceability anchor only — NOT the criterion source)
    - `companion_design_or_research`: SINGLE key, dispatcher-selected by route — full pipeline passes wrapped `design.md` (phase definitions, test strategy); quick fix passes wrapped `research/summary.md` (context). The dispatcher reads `config.md.route` and chooses one.
@@ -123,91 +123,17 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
 
    **Phase-routing fail-loud.** Per the canonical contract in `reviewer-protocol/SKILL.md` § Phase Routing, each per-task reviewer agent (spec, code-quality, goal-traceability) carries an agent-side Pre-Flight check that refuses the dispatch when `task_definition` is supplied AND the `output`/`round_subdir` parameter contains `/reviews/test/`. The agent returns a single-line text response prefixed `PHASE-ROUTING-VIOLATION:` instead of writing findings. **Orchestrator handling:** when any of the three reviewer dispatches returns text instead of writing the expected findings file, scan the first line for `PHASE-ROUTING-VIOLATION:`. On a hit, STOP — do not silently retry with the same prompt (would loop). The repair is to strip `task_definition` from the dispatch (the test-step dispatch must never carry it; `--task-def` was mistakenly added). Re-dispatch only after repair. The agent-side check is defense-in-depth; the primary regression guard is the bats test pinning the absence at CI time (`tests/unit/test-task-definition-absence-fail-loud.bats`).
 
-   - **Claude spec-reviewer** — dispatch `Agent({ subagent_type: "qrspi-spec-reviewer", model: "sonnet" })` with a prompt containing only:
-     - `subject_code`, `companion_plan`, `companion_goals` (constructed above)
-     - `output`: `<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`
-     - `round`: NN
-     - `reviewer_tag`: `spec-claude`
+The round's per-task reviewers (Claude spec/code-quality/goal-traceability, plus their Codex peers when `codex_reviews: true`) all dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh --agents` → Task fan-out → `scripts/await-round.sh`). `*-claude` tags route to the first-party Task path; `*-codex` tags route to the third-party companion path (include them only when `codex_reviews: true`). The test-step dispatch NEVER carries `task_definition` — its absence is the load-bearing signal that selects each reviewer agent's Test-phase reuse branch (see the Test-phase reuse contract above); `dispatch-agent.sh` is invoked without `--task-def` on this path. Set the per-skill dispatch parameters, then include the shared reviewer-dispatch prose:
 
-     The reviewer protocol arrives via the agent file's `skills: [reviewer-protocol]` preload — do NOT embed reviewer-protocol content in the dispatch prompt. The Test-phase branch of the agent body checks: do the assertions verify what they claim? Are they meaningful, not vacuous?
+```sh
+REVIEW_STEP="test"
+REVIEW_ROUND="${ROUND}"                                  # current review round (NN)
+REVIEW_OUTPUT_DIR="<ABS_ARTIFACT_DIR>/reviews/test/round-${ROUND}/"
+REVIEW_ARTIFACT="<test-file paths — repo-relative, space-joined>"
+REVIEW_AGENTS="spec-claude=qrspi-spec-reviewer,code-quality-claude=qrspi-code-quality-reviewer,goal-traceability-claude=qrspi-goal-traceability-reviewer,spec-codex=qrspi-spec-reviewer,code-quality-codex=qrspi-code-quality-reviewer,goal-traceability-codex=qrspi-goal-traceability-reviewer"
+```
 
-   - **Claude code-quality-reviewer** — dispatch `Agent({ subagent_type: "qrspi-code-quality-reviewer", model: "sonnet" })` with the same shape:
-     - `subject_code`, `companion_plan`, `companion_goals`
-     - `output`: `<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`
-     - `round`: NN
-     - `reviewer_tag`: `code-quality-claude`
-
-     Test-phase branch checks: is the test reliable? Flaky setup? Race conditions? Proper cleanup?
-
-   - **Claude goal-traceability-reviewer** — dispatch `Agent({ subagent_type: "qrspi-goal-traceability-reviewer", model: "sonnet" })` with the same shape:
-     - `subject_code`, `companion_plan`, `companion_goals`
-     - `output`: `<ABS_ARTIFACT_DIR>/reviews/test/round-NN/`
-     - `round`: NN
-     - `reviewer_tag`: `goal-traceability-claude`
-
-     Test-phase branch checks: does each test map to a `plan.md` criterion? Does each plan-level criterion trace upstream to a goal? Any untested criteria?
-
-   All three Claude dispatches run in parallel.
-
-   - **Codex reviews** (if `codex_reviews: true`) — dispatch THREE non-blocking Codex reviews in parallel (spec + code-quality + goal-traceability) via the wrapper. None of the three passes `--task-def` — the absence selects Test-phase reuse on the agent body, matching the Claude dispatches above:
-
-     ```sh
-     # Spec reviewer (Codex) — Test-phase reuse, no --task-def
-     scripts/run-codex-review.sh \
-       --agent-file agents/qrspi-spec-reviewer.md \
-       --reviewer-tag spec-codex \
-       --output-dir "<ABS_ARTIFACT_DIR>/reviews/test/round-${ROUND}/" \
-       --round "$ROUND" \
-       --subject-code "<test-file path 1>" \
-       [--subject-code "<test-file path 2>" ...] \
-       --companion companion_plan=plan.md \
-       --companion companion_goals=goals.md
-
-     # Code quality reviewer (Codex) — Test-phase reuse, no --task-def
-     scripts/run-codex-review.sh \
-       --agent-file agents/qrspi-code-quality-reviewer.md \
-       --reviewer-tag code-quality-codex \
-       --output-dir "<ABS_ARTIFACT_DIR>/reviews/test/round-${ROUND}/" \
-       --round "$ROUND" \
-       --subject-code "<test-file path 1>" \
-       [--subject-code "<test-file path 2>" ...] \
-       --companion companion_plan=plan.md \
-       --companion companion_goals=goals.md
-
-     # Goal traceability reviewer (Codex) — Test-phase reuse, no --task-def
-     scripts/run-codex-review.sh \
-       --agent-file agents/qrspi-goal-traceability-reviewer.md \
-       --reviewer-tag goal-traceability-codex \
-       --output-dir "<ABS_ARTIFACT_DIR>/reviews/test/round-${ROUND}/" \
-       --round "$ROUND" \
-       --subject-code "<test-file path 1>" \
-       [--subject-code "<test-file path 2>" ...] \
-       --companion companion_plan=plan.md \
-       --companion companion_goals=goals.md
-     ```
-
-     Main chat sees only the jobIds Codex prints. None of the three Codex dispatches passes `--task-def` — the absence selects Test-phase reuse on the agent body, matching the Claude dispatches above.
-
-     After `await` returns for each dispatched jobId, on exit 0 run the splitter to split Codex output into per-finding files:
-
-     ```sh
-     scripts/codex-companion-bg.sh await <specJobId> > /tmp/codex-stdout-<specJobId>.txt
-     if [[ $? -eq 0 ]]; then
-       scripts/codex-finding-splitter.sh /tmp/codex-stdout-<specJobId>.txt reviews/test/round-NN/ spec-codex
-     fi
-     # On either failure path (await non-zero OR splitter non-zero), the round
-     # directory has zero output for the tag — step 2's schema guard catches it.
-
-     scripts/codex-companion-bg.sh await <codeQualityJobId> > /tmp/codex-stdout-<codeQualityJobId>.txt
-     if [[ $? -eq 0 ]]; then
-       scripts/codex-finding-splitter.sh /tmp/codex-stdout-<codeQualityJobId>.txt reviews/test/round-NN/ code-quality-codex
-     fi
-
-     scripts/codex-companion-bg.sh await <goalTraceabilityJobId> > /tmp/codex-stdout-<goalTraceabilityJobId>.txt
-     if [[ $? -eq 0 ]]; then
-       scripts/codex-finding-splitter.sh /tmp/codex-stdout-<goalTraceabilityJobId>.txt reviews/test/round-NN/ goal-traceability-codex
-     fi
-     ```
+!cat skills/_shared/reviewer-dispatch-prose.md
 
    - First pass clean (across both Claude and Codex if enabled) → proceed to coverage gate. Issues found → converge, fix all, re-converge. Up to 3 fix cycles — if unresolved, present to user at coverage gate. Test code fixes stay inside the Test skill — not production code, so the HARD GATE doesn't apply.
 4. **Coverage approval gate** — present to user:
@@ -352,12 +278,14 @@ The gate MUST render only the two choices above. There is no third option in qui
 
 ## Model Selection Guidance
 
-| Task complexity | Recommended model |
+Task complexity maps to a routing **tier**, not a literal model name; the dispatcher resolves the tier to a concrete `(vendor, model)` pair via `config.md`'s `model_routing:` block. For the per-task tier-assignment rationale, see `skills/plan/SKILL.md` § Per-Task Classification (Step 2 — `tier`).
+
+| Task complexity | Recommended tier |
 |-----------------|-------------------|
-| Test-writer subagent | Standard (sonnet) — test writing from specs |
-| Test code reviewers | Standard (sonnet) — reusing Implement's templates |
-| Fix task writing | Standard (sonnet) — translating failures to task specs |
-| Phase routing / PR creation | Fast (haiku) — mechanical |
+| Test-writer subagent | `medium` — test writing from specs |
+| Test code reviewers | `medium` — reusing Implement's templates |
+| Fix task writing | `medium` — translating failures to task specs |
+| Phase routing / PR creation | `low` — mechanical |
 
 ## Task Tracking (TodoWrite)
 

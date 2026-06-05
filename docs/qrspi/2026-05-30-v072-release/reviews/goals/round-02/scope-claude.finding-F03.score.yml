@@ -1,0 +1,2 @@
+score: 75
+reason: Real scope violation documented in owns-defers.md — binding "MUST/MUST NOT" architectural commitments on system component placement belong in Design, not Goals. Finding correctly cites the violation and referenced rule, though impact is moderate (framing/phrasing in already-correct section).

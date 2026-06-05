@@ -1,0 +1,2 @@
+score: 35
+reason: Real gap — T14/T15 do specify rerunning author-supplied grep/none commands without restriction or argv-mode execution — but the reviewer itself notes the threat model already requires artifact-write access, no upstream SKILL/CLAUDE.md mandates command-shape sanitization, and the recommended allowlist meaningfully constrains legitimate author flexibility, so this reads as iterative hardening rather than a load-bearing Plan defect.

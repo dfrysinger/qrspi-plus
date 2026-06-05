@@ -1,0 +1,105 @@
+diff --git a/agents/qrspi-plan-reviewer.md b/agents/qrspi-plan-reviewer.md
+index e762da9..65303e6 100644
+--- a/agents/qrspi-plan-reviewer.md
++++ b/agents/qrspi-plan-reviewer.md
+@@ -52,7 +52,7 @@ Treat a task as a **sweep** when BOTH conditions hold:
+ On detection, verify the task's Test Expectations block contains a `dependent_tests:` field per `skills/plan/SKILL.md` § Sweep Task Contract. The field is well-formed when its value is either:
+ 
+ 1. A list of test file paths (each a file, not a directory glob), each of which exists in the repository at review time, with a one-sentence per-file disposition.
+-2. The literal string `none` followed on the next line by a `grep -rn '<pattern>' tests/` command — before re-running, validate the command: it must match the exact shape `grep -rn '<quoted-pattern>' tests/` with no shell metacharacters (`;`, `|`, `&`, backtick, `$`, `(`, `)`, `<`, `>`) in the pattern argument and no additional tokens after `tests/`; if validation fails, emit a high-severity correctness finding for malformed grep proof rather than executing. Execute the validated command from the repository root; well-formed iff it returns zero matches.
++2. The literal string `none` followed on the next line by a `grep -rn -- '<pattern>' tests/` command — before re-running, validate the command: it must match the exact shape `grep -rn -- '<quoted-pattern>' tests/` with the `--` argument separator between `-rn` and the quoted pattern; no shell metacharacters (`;`, `|`, `&`, backtick, `$`, `(`, `)`, `<`, `>`, single-quote) in the pattern argument; the pattern itself must NOT start with `-` (a dash-prefixed pattern would be interpreted as a grep flag, not a search term); and no additional tokens after `tests/`; if validation fails, emit a high-severity correctness finding for malformed grep proof rather than executing. Execute the validated command from the repository root; well-formed iff it returns zero matches.
+ 
+ Emit a `severity: high, change_type: correctness` finding referencing the contract when ANY of the following holds:
+ 
+diff --git a/skills/plan/SKILL.md b/skills/plan/SKILL.md
+index 95760e1..579d602 100644
+--- a/skills/plan/SKILL.md
++++ b/skills/plan/SKILL.md
+@@ -624,7 +624,7 @@ A **sweep task** removes, replaces, or enforces an invariant across many files a
+ A sweep-task plan-spec MUST include, in its Test Expectations block, a `dependent_tests:` field with one of two values:
+ 
+ - A **list of test file paths** the per-task gate must additionally run. Each path must be a file (not a directory glob) and must exist at plan-authoring time. Each listed test SHOULD be expected to either (a) pass unchanged once the sweep is applied or (b) require a specific predicted update — describe which in one sentence per file.
+-- The literal string `none` followed on the next line by a grep-confirmable search command of shape `grep -rn '<pattern>' tests/` that demonstrably returns zero matches. The pattern is the swept identifier (e.g., `'^model:'`) — the plan-reviewer will re-run the grep and surface a finding if it returns one or more hits.
++- The literal string `none` followed on the next line by a grep-confirmable search command of shape `grep -rn -- '<pattern>' tests/` that demonstrably returns zero matches. The pattern is the swept identifier (e.g., `'^model:'`) — the plan-reviewer will re-run the grep and surface a finding if it returns one or more hits.
+ 
+ Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defect, not a deferred-to-implementer concern. The Plan reviewer (`agents/qrspi-plan-reviewer.md` § Sweep-task detection) detects sweep-shaped tasks by heuristic (>5 same-extension files in `files_in_scope` plus one of eight sweep keywords in the title or description, case-insensitive word-boundary match) and emits a `severity: high, change_type: correctness` finding when the field is missing or malformed.
+ 
+@@ -648,7 +648,7 @@ Skipping the `dependent_tests:` field on a sweep-shaped task is a plan-spec defe
+ - **Test expectations:**
+   - All 17 CD files have `${VAR}` references replaced with their resolved literals; behavior unchanged.
+   - `dependent_tests: none`
+-    - `grep -rn '^model:' tests/` returns zero matches as of plan-authoring time; if a future test introduces an assertion on `model:` before this task lands, the reviewer's re-run will surface the new hit and demand the field be re-shaped to a path list.
++    - `grep -rn -- '^model:' tests/` returns zero matches as of plan-authoring time; if a future test introduces an assertion on `model:` before this task lands, the reviewer's re-run will surface the new hit and demand the field be re-shaped to a path list.
+ ```
+ 
+ ## Red Flags — STOP
+diff --git a/tests/integration/test-reference-gate-pause.bats b/tests/integration/test-reference-gate-pause.bats
+index c58d994..5398a43 100644
+--- a/tests/integration/test-reference-gate-pause.bats
++++ b/tests/integration/test-reference-gate-pause.bats
+@@ -261,7 +261,7 @@ EOF
+   extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+     "dependent_tests: none"
+   extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+-    "grep -rn '.+' tests/"
++    "grep -rn -- '.+' tests/"
+ }
+ 
+ @test "[G15-sweep] Plan SKILL Sweep Task Contract carries worked example with explicit path list" {
+@@ -272,8 +272,9 @@ EOF
+ @test "[G15-sweep] Plan SKILL Sweep Task Contract carries worked example with none + grep" {
+   # The grep example must use the literal `tests/` directory argument so the
+   # reviewer can re-run the exact command shape the contract specifies.
++  # Updated in R4: canonical shape now includes the -- argument separator.
+   extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+-    "grep -rn '\\^model:' tests/"
++    "grep -rn -- '\\^model:' tests/"
+ }
+ 
+ @test "[G15-sweep] Plan reviewer agent body declares sweep-task detection rubric" {
+@@ -347,13 +348,43 @@ EOF
+ @test "[G15-sweep] Plan reviewer agent grep-proof rubric names the rejected shell metacharacters" {
+   # Threat model must be visible: the rubric must name the metacharacters that
+   # are forbidden in the grep pattern argument so future reviewers can enforce it.
++  # Tightened in R4: assert the three highest-risk characters are explicitly named,
++  # not just that the word "metachar" appears.
++  local section
++  section="$(extract_section "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection")"
++  for char in ';' '|' '&'; do
++    echo "$section" | grep -qF "$char" \
++      || { echo "Missing rejected metachar '$char' in Sweep-task detection section" >&2; return 1; }
++  done
++}
++
++@test "[G15-sweep] Plan reviewer agent grep-proof rubric explicitly names single-quote as rejected" {
++  # Defense-in-depth: single-quote enables extra-path injection (F01 sec-claude).
++  # The rubric must explicitly name single-quote in its forbidden-character list
++  # (not just use it as a shell delimiter in examples).
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
++    "single.quote"
++}
++
++@test "[G15-sweep] Plan reviewer agent grep-proof rubric requires -- argument separator" {
++  # Flag-injection hardening (F01 sec-codex): the rubric must require the --
++  # argument separator between -rn and the quoted pattern so flag-shaped
++  # patterns cannot be passed to grep as options.
++  extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
++    "-- '"
++}
++
++@test "[G15-sweep] Plan reviewer agent grep-proof rubric rejects patterns starting with -" {
++  # Defense-in-depth: even with --, a pattern starting with - is almost certainly
++  # malformed (not a real test-reference pattern); the rubric must say to reject it.
+   extract_and_grep "$PLAN_REVIEWER_AGENT" H3 "Sweep-task detection" \
+-    "metachar"
++    "start"
+ }
+ 
+ @test "[G15-sweep] Plan SKILL Sweep Task Contract prose names tests/ root with <pattern> placeholder" {
+   # Pins the literal shape of the zero-match proof command as written in the
+   # prose contract — independent of the worked example grep arguments.
++  # Updated in R4: canonical shape now includes the -- argument separator.
+   extract_and_grep "$PLAN_SKILL" H3 "Sweep Task Contract" \
+-    "grep -rn '<pattern>' tests/"
++    "grep -rn -- '<pattern>' tests/"
+ }

@@ -1,0 +1,8 @@
+---
+finding_id: R4-F01
+reviewer_tag: quality-codex
+score: 72
+change_type: correctness
+reason: Convergent with quality-claude R4-F01 (cross-family agreement on the I.7 writer-ownership contradiction). Same root cause, slightly different framing. Above the 70 correctness threshold; kept (same fix as quality-claude.R4-F01).
+defect_class: writer-ownership-contradiction
+---

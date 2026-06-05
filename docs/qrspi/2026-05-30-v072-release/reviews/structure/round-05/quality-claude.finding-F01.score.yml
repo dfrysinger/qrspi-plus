@@ -1,0 +1,2 @@
+score: 68
+reason: Verified gap — Slice 1.2 puts CD-4 §I.3 halt-response on using-qrspi only and §17 names only using-qrspi as consumer, but design CD-4 §F mandates implement/SKILL.md also runs the fan-in pipeline (which can halt per-task) and the verifier-dispatch-prose snippet is scoped narrowly to dispatch+await, so a planner has no row directing rescue/disposition prose into implement/SKILL.md.

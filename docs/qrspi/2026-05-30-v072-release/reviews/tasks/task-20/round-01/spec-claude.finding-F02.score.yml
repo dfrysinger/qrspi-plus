@@ -1,0 +1,4 @@
+---
+score: 85
+rationale: The finding correctly identifies a test coverage gap that violates the explicit task specification. The spec requires tests that verify both (1) raw capture under `.dispatch/<tag>.raw` in the await subcommand and (2) positive assertion that `JOB_ID=<id>` appears in launch output. The current test at lines 313-321 only validates negative assertions (no "unrecognised subcommand" and non-127 exit), while the actual await implementation is a stub that fails with code 13 and prints an error. These are load-bearing test expectations explicitly called out in task-20.md Test expectations (line 55), making this a substantive coverage miss that will prevent detection of future regressions in the dispatch-companion.sh contract.
+---

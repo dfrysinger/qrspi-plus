@@ -1,0 +1,67 @@
+diff --git a/tests/unit/test-dispatch-agent.bats b/tests/unit/test-dispatch-agent.bats
+index bd8c815..08fff9f 100644
+--- a/tests/unit/test-dispatch-agent.bats
++++ b/tests/unit/test-dispatch-agent.bats
+@@ -1655,6 +1655,29 @@ _path_guard_teardown_fixtures() {
+   [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
+ }
+ 
++# --- Sibling-directory masquerade: trailing-slash anchor regression --------
++
++@test "sibling-directory masquerade: path starting with REPO_ROOT-as-string-prefix is rejected" {
++  # Pins the trailing-slash anchor in path-guard.sh:142
++  # ($canon/ vs $canon_root/*). A future simplification that drops the
++  # trailing-slash anchor would let /repo-evil/foo masquerade as under
++  # /repo/. None of the other 14 path-filter tests exercise this case
++  # because their out-of-repo fixtures live under $TMPDIR (textually
++  # disjoint from $REPO_ROOT).
++  local sibling
++  sibling="$(mktemp -d "${REPO_ROOT}-evil-XXXXXX")"
++  echo "secret-sibling" > "$sibling/oor-subject.ts"
++  run "$WRAPPER" \
++    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
++    --reviewer-tag spec-codex \
++    --output-dir /tmp/out --round 1 \
++    --subject-code "$sibling/oor-subject.ts" \
++    --dry-run
++  rm -rf "$sibling"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
+ # --- Canonicalization-failure case (fail-closed) ---------------------------
+ 
+ @test "unresolvable \$REPO_ROOT fails closed before any path is read" {
+@@ -2055,6 +2078,32 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
+   rm -rf "$oor_root"
+ }
+ 
++@test "companion launch: out-of-repo --prompt-file rejected with 'resolves outside repository'" {
++  # Pins behavioral enforcement of the --prompt-file boundary check
++  # in dispatch-companion.sh launch mode (mirror of the --round-dir
++  # rejection test). The audit test above is structural; this is the
++  # behavioral counterpart so a regression in prompt-file boundary
++  # enforcement cannot land green.
++  local oor_root prompt_file
++  oor_root="$(mktemp -d "${TMPDIR:-/tmp}/bats-companion-pf-oor.XXXXXX")"
++  prompt_file="$oor_root/prompt.txt"
++  echo "test prompt" > "$prompt_file"
++  # --round-dir must be inside the repo so that check passes — the
++  # prompt-file check fires independently.
++  local in_repo_round="$TMP_DIR/round"
++  mkdir -p "$in_repo_round"
++
++  run "$COMPANION" \
++    --vendor codex \
++    --model gpt-4 \
++    --prompt-file "$prompt_file" \
++    --round-dir "$in_repo_round" \
++    --tag mytest
++  rm -rf "$oor_root"
++  [ "$status" -ne 0 ]
++  [[ "$output" =~ "resolves outside repository" ]]
++}
++
+ @test "companion launch: --vendor with embedded newline rejected before job-record write" {
+   # Job-record line-injection regression: launch writes one key=value line
+   # per arg into the job record. A newline-bearing --vendor (or --model /

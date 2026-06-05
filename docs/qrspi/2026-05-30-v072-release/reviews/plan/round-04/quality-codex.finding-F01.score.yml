@@ -1,0 +1,2 @@
+score: 45
+reason: Gate text "closes when its backing commits land" is genuinely loose vs. design.md's explicit "close #242/#243/#262 on design lock (not on ship)" for G25/G26/G29, but in practice those issues are already closed before Test-phase gating runs and criterion #7 ("release notes name each goal-backing issue's disposition") covers reporting, so the high-severity correctness framing overstates the actual gating risk.

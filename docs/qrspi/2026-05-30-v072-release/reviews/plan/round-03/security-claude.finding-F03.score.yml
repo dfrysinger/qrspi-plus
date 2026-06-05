@@ -1,0 +1,2 @@
+score: 58
+reason: Real invariant-pinning gap — T39 strips build/tests, build/tools, build/docs at file-tree level but resolver guards (within-repo + symlink-escape + grammar) don't prevent a shipped file from `!cat`-inlining dev-only content; defense-in-depth/consistency fix is small but practical occurrence rate from authoring oversight is modest.

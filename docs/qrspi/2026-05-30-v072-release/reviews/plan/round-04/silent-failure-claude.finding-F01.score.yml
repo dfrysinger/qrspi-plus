@@ -1,0 +1,2 @@
+score: 68
+reason: Design D4/D5 explicitly assign primary-vs-second vendor distinctness halt to dispatch-agent.sh; T19 defers to "dispatch-time code" but neither T20 (dispatch-agent.sh) nor T16 (_resolve-lib.sh) DoD/test-expectations pick up the invariant, and Phase 1 AC #2 omits it — a real Plan-altitude allocation gap, though triggered only by operator overrides under default matrix.

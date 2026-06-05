@@ -1,0 +1,192 @@
+---
+status: approved
+release: qrspi-plus v0.7.2
+phase_count: 1
+total_goals: 35
+deferred_to_future: 0
+---
+
+# v0.7.2 Phasing
+
+Single-phase hardening release. All 35 approved goals ship together as v0.7.2.
+
+## Why single phase
+
+v0.7.2 is a hardening release against an already-deployed qrspi-plus pipeline (v0.7.1).
+The release is a tight, coherent drop of cross-cutting fixes + instrumentation +
+release-tooling improvements. Users install whole versions; there is no meaningful
+intra-release boundary that would surface a user-visible PoC vs. follow-on shape.
+
+Iron Law 1 (vertical slices, not horizontal layers) and the Phase 1 PoC guideline
+("prove the full stack works end-to-end whenever possible") map directly here without
+splitting the release:
+
+- The "full stack" being hardened is the qrspi-plus pipeline itself. Every run of the
+  pipeline exercises every cluster of changes simultaneously — the apply-fix protocol,
+  the per-task review pipeline, the dispatch infrastructure, the skill prose surface,
+  and the build/release tooling are all touched in any complete `Goals → Test` run.
+- There is no "DB layer first, API layer second" risk because that whole class of
+  failure mode does not apply to hardening an existing orchestration tool. The
+  hardening goals are largely orthogonal at the user-visible-value level.
+- The natural Phase 1 PoC IS the v0.7.2 release: run the new pipeline against a small
+  real project end-to-end, confirm every instrumentation surface fires, confirm every
+  fail-loud path actually fails loud, and confirm the build pipeline produces a clean
+  release artifact. That same run is the v0.7.2 acceptance gate.
+
+Implementation-order dependencies between goals (e.g., G22 model-routing schema before
+G23 validation table; G12 verifier-fan-in script before G14 rubric calibration) exist
+and are real — but those are Plan / Parallelize concerns, not phase boundaries.
+
+## Slices
+
+Slices group goals by coherent surface area of the qrspi-plus codebase. Each slice
+is end-to-end demonstrable in the hardening sense: a slice ships a coherent group of
+changes that can be exercised in a test run (a real pipeline invocation that exposes
+the slice's surface, or a unit/integration test that exercises the changed paths).
+
+### Slice 1.1 — Apply-fix / verifier backbone
+
+**Goals:** G6, G7, G8, G11, G12, G13, G14
+**Surface:** the verifier sidecar pipeline + finding-categorization discipline + reviewer
+disk-write reliability across model families. The apply-fix protocol's core data
+shape.
+**Demonstrable by:** running any artifact-level review round with `verifier_enabled:
+true` and confirming sidecars land per-finding with valid finding-categorization values, the
+verifier-fan-in script produces the expected aggregate, and Codex + Claude reviewer
+outputs are both reliably persisted.
+
+### Slice 1.2 — Verifier rubric calibration + instrumentation
+
+**Goals:** G19, G20, G28, G29
+**Surface:** verifier scoring rubric (hallucination class detection, model
+calibration), and the dispositions + sub-threshold-observations instrumentation
+formalized in G28.
+**Demonstrable by:** a review round that produces both above-threshold and
+sub-threshold findings; confirming the dispositions document fires the
+Sub-Threshold Observations block correctly and the verifier rejects fabricated
+or hallucinated findings.
+
+### Slice 1.3 — Per-task review pipeline corrections
+
+**Goals:** G9, G15, G18
+**Surface:** Implement-phase per-task review orchestration (scope-tagger firing,
+per-round diff and commit-anchor artifacts, dependent-test scope for sweep
+tasks, cross-task consumer surface into Plan).
+**Demonstrable by:** running an Implement-phase per-task review against a sweep
+task and confirming all expected artifacts land + dependent tests run.
+
+### Slice 1.4 — Dispatch infrastructure
+
+**Goals:** G3, G4, G16, G22, G23, G24 (F02, F04), G25, G27
+**Surface:** shell-pipeline splitter, canonical cumulative diff helper, path-filter
+exfil surface in the Codex review dispatch wrapper, unified dispatch-routing
+config schema, validation table cross-linking, top-level fail-loud invariant for
+the dispatch-routing section (G25), per-H4 prose redundancy consolidation
+(G24-F02), tier-regex consolidation (G24-F04), and the Goals skill's
+Codex-availability helper. The whole cluster shares the same H4-paragraph edit
+surface in the pipeline-orchestration skill prose, so grouping them in one slice
+prevents Plan from carving overlapping tasks that churn the same paragraphs.
+**Demonstrable by:** dispatching reviewers across all routed paths (Claude + Codex,
+quality + scope, host-aware tier resolution) and confirming the unified config
+schema validates, dispatch fails loud on misroutes, and the splitter handles
+expected + adversarial Codex stdout shapes.
+
+### Slice 1.5 — Skill prose & interactive dialog quality
+
+**Goals:** G1, G2, G5, G10, G17, G30, G31, G33, G34
+**Surface:** SKILL.md prose hardening across Goals, Design, Structure, Plan;
+Goals + Design interactive dialog quality + compaction-resilient incremental
+persistence; reviewer-authority discipline; scope-reviewer alignment with the
+detailed-solution boundary.
+**Demonstrable by:** running Goals + Design end-to-end on a sample project and
+confirming the dialog produces durable on-disk state that survives `/compact`,
+the Design scope-reviewer doesn't trip on detailed-solution content, and SKILL
+prose itself passes prose-review (G31).
+
+### Slice 1.6 — Structure SKILL absorbs unified architecture
+
+**Goal:** G35
+**Surface:** Structure SKILL re-scoped to absorb unified architecture + unified
+test architecture content from Design.
+**Demonstrable by:** running Design + Structure end-to-end and confirming
+architecture content lands in structure.md (not design.md) and the scope-reviewer
+flags architecture leaks back into design.md.
+
+### Slice 1.7 — Build & release tooling + test-infrastructure hardening
+
+**Goals:** G21, G24 (F01, F03, F05), G26, G32
+**Surface:** bats short-circuit hardening (G21), test parameterization across the
+dispatch-routing assertion callers (G24-F01), shared bats helper deduplication
+for the H4 extraction routines (G24-F03), anti-pattern pin regex hardening
+(G24-F05), bats deprecation cleanup (G26), and the plugin build pipeline
+(strip dev-only paths + expand inline-include directives, G32). G21 + G24-F05 +
+G26 form the test-gate-hardening cluster goals.md called out; F01/F03 share the
+test-helper-infrastructure edit surface.
+**Demonstrable by:** running the plugin build pipeline against the
+qrspi-plus repo at v0.7.2 HEAD and confirming the produced release artifact
+omits dev-only paths and expands all inline-include directives, AND running
+the full bats suite against the deduplicated helpers + parameterized callers
+and confirming the hardened anti-pattern pins fire on the seeded regression
+cases.
+
+## Phases
+
+### Phase 1 — v0.7.2 release (all 35 goals)
+
+**Slices in this phase:** 1.1 through 1.7 (all seven).
+
+**Phase 1 PoC justification (per Phase 1 PoC guideline):** the full qrspi-plus
+pipeline IS the stack being hardened. Phase 1 exercises every layer the project
+touches because every layer is touched by the cross-cutting hardening set.
+
+**Acceptance gate (Phase 1 = v0.7.2 release gate):**
+
+Phasing's job at this altitude is scope and release management — what's in this
+phase vs deferred, and what release-level criteria must hold for the phase to
+ship. Per-goal behavioral acceptance criteria belong in design.md (single
+source of truth for "what does this goal mean to be done"); architectural-level
+test plans belong in structure.md (single source of truth for "how do we test
+the resulting architecture"). Phasing does NOT restate either here.
+
+1. **Behavioral correctness.** Every goal in this phase's slices (all 35, per
+   the "Slices in this phase" line above) meets its acceptance criteria as
+   defined in design.md, and the architectural-level test plan in structure.md
+   passes against the implementation.
+
+2. **GitHub-issue closure.** Every v0.7.2-scoped GitHub issue closes when its
+   backing commits land in this release. Two cohorts:
+   - **Goal-backing parent issues.** The upstream issues each of the 35 goals
+     traces to (Source: lines in goals.md). Closed by the implementation
+     commits that satisfy each goal's acceptance criteria.
+   - **Self-host-monitoring issues.** Plugin-friction issues filed during the
+     v0.7.2 self-host run itself (currently #280–#288, more expected as the
+     run progresses through Structure, Plan, Implement, and Test). Each either
+     closes by commits landing in v0.7.2 OR is explicitly deferred to v0.7.3+
+     with a one-line rationale in the release notes.
+
+3. **Release artifact ships.** A release PR opens against `main` containing
+   the v0.7.2 commit set; CI is green; the canary smoke test passes against
+   the built plugin; the release notes name each goal-backing issue's
+   disposition.
+
+4. **Replan gate (skipped — final phase):** Phase 1 IS the only phase, so no
+   between-phase Replan fires. Test phase routes directly to release-PR
+   creation per the Test skill's final-phase behavior.
+
+## Replan checkpoints
+
+None. Single-phase release. Replan is not invoked between phases (there is
+only one phase). Replan may still fire mid-phase if Test surfaces issues
+that warrant backward-loop work — that uses Replan's mid-phase backward-loop
+mechanism, not the between-phase form.
+
+## Amendment items
+
+None introduced during the Phasing discussion. The slice decomposition above
+maps the existing 35 goal IDs into seven slices without introducing new goals.
+
+## Future-phase content
+
+None. All 35 goals belong to Phase 1. The four `future-*.md` artifacts are
+empty placeholders carrying only the no-deferred-content header documented
+in the synthesis subagent contract.

@@ -1,0 +1,2 @@
+score: 10
+reason: The override path skipping host-compatibility is intentional per spec (task-19.md line 53 explicitly says the override "does not read model_routing: or enforce distinctness") and the script's own boundary comment; the v0.7.2 matrix has no known-but-host-unavailable vendor state, so vendor_known is sufficient for the diagnostic use case.

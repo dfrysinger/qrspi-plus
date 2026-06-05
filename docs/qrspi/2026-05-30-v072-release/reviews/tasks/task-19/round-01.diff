@@ -1,0 +1,1172 @@
+diff --git a/scripts/_host-detect.sh b/scripts/_host-detect.sh
+new file mode 100644
+index 0000000..18a9ed4
+--- /dev/null
++++ b/scripts/_host-detect.sh
+@@ -0,0 +1,46 @@
++#!/usr/bin/env bash
++# _host-detect.sh — source-safe canonical host-detection primitive.
++#
++# Provides a single `detect_host` function that maps the active execution
++# environment to a canonical host identifier using ENVIRONMENT SIGNALS ONLY.
++# It performs NO filesystem probes (no HOME-based globs, no path existence
++# checks) and has NO wrapper side effects: sourcing it is always safe, even
++# under QRSPI_SOURCE_ONLY=1.
++#
++# Canonical host identifiers:
++#   copilot-cli   — COPILOT_CLI=1 in the environment.
++#   claude-code   — CLAUDE_PROJECT_DIR set to a non-empty value.
++#   unknown       — no recognised host signal.
++#
++# Precedence: COPILOT_CLI is checked before CLAUDE_PROJECT_DIR so a host that
++# exports both signals resolves deterministically to copilot-cli.
++#
++# Note on codex-cli: the codex-cli identifier is enumerated in the documented
++# host set, but no detection branch ships this release — a Codex env signal
++# with no copilot/claude signal falls through to `unknown`. The codex-cli
++# detection branch is intentionally deferred (see design.md: Codex CLI host
++# support is out of scope for v0.7.2).
++#
++# Bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++# detect_host
++# Echoes exactly one canonical host identifier and returns 0.
++detect_host() {
++  if [ "${COPILOT_CLI:-}" = "1" ]; then
++    printf 'copilot-cli\n'
++    return 0
++  fi
++  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
++    printf 'claude-code\n'
++    return 0
++  fi
++  printf 'unknown\n'
++  return 0
++}
++
++# Allow `QRSPI_SOURCE_ONLY=1 source _host-detect.sh` without side effects.
++# Sourcing this file never runs detect_host; the guard simply documents the
++# source-only contract and short-circuits any future trailing main logic.
++if [ "${QRSPI_SOURCE_ONLY:-}" = "1" ]; then
++  return 0 2>/dev/null || true
++fi
+diff --git a/scripts/_resolve-lib.sh b/scripts/_resolve-lib.sh
+index 8e7a21d..edb04fc 100755
+--- a/scripts/_resolve-lib.sh
++++ b/scripts/_resolve-lib.sh
+@@ -208,6 +208,54 @@ lookup_default_second_reviewer() {
+   esac
+ }
+ 
++# second_reviewer_vendor_known <vendor>
++# Returns 0 if <vendor> is a recognised second-reviewer vendor id in the host x
++# vendor matrix, 1 otherwise. This is a flat vendor allowlist (NOT a host x
++# vendor table) so the availability probe can validate an override vendor
++# against the single source of truth without duplicating the matrix.
++second_reviewer_vendor_known() {
++  case "$1" in
++    openai-codex|anthropic-claude) return 0 ;;
++    *) return 1 ;;
++  esac
++}
++
++# resolve_second_reviewer_vendor <host> <primary-vendor>
++# Resolves the second-reviewer vendor for a second_reviewer: true dispatch on
++# <host> whose primary slot resolved to <primary-vendor>. On success echoes the
++# resolved second-reviewer vendor on stdout (exactly one line) and returns 0.
++#
++# This is the single enforcement point for the primary-not-equal-second-reviewer
++# invariant (the availability probe checks reachability only). It halts loudly,
++# emitting ZERO stdout dispatch-spec lines, in two cases:
++#   1. The host names no default second-reviewer vendor (lookup returns `none`):
++#      emits a [second-reviewer-unavailable] diagnostic naming host and vendor.
++#   2. The default second-reviewer vendor equals the primary slot vendor: emits a
++#      [second-reviewer-same-vendor] diagnostic naming both vendors so the round
++#      never produces two dispatch lines that resolve to the same vendor under
++#      distinct reviewer tags.
++resolve_second_reviewer_vendor() {
++  local host="$1" primary_vendor="$2"
++  local second_vendor
++  second_vendor="$(lookup_default_second_reviewer "$host")"
++
++  if [ "$second_vendor" = "none" ]; then
++    printf '[second-reviewer-unavailable] host=%s vendor=%s — ' "$host" "$second_vendor" >&2
++    printf 'no default second-reviewer vendor is configured for this host.\n' >&2
++    return 1
++  fi
++
++  if [ "$second_vendor" = "$primary_vendor" ]; then
++    printf '[second-reviewer-same-vendor] host=%s primary-vendor=%s second-vendor=%s — ' \
++      "$host" "$primary_vendor" "$second_vendor" >&2
++    printf 'primary and second-reviewer slots resolved to the same vendor; refusing to emit a duplicate dispatch.\n' >&2
++    return 1
++  fi
++
++  printf '%s\n' "$second_vendor"
++  return 0
++}
++
+ # Allow `QRSPI_SOURCE_ONLY=1 source _resolve-lib.sh` without side effects.
+ if [ "${QRSPI_SOURCE_ONLY:-}" = "1" ]; then
+   return 0 2>/dev/null || true
+diff --git a/scripts/second-reviewer-available.sh b/scripts/second-reviewer-available.sh
+new file mode 100755
+index 0000000..1062ba3
+--- /dev/null
++++ b/scripts/second-reviewer-available.sh
+@@ -0,0 +1,59 @@
++#!/usr/bin/env bash
++# second-reviewer-available.sh — host-aware second-reviewer availability probe.
++#
++# Detects the active host (via _host-detect.sh), looks up the host's default
++# second-reviewer vendor (via _resolve-lib.sh's host x vendor matrix), and exits
++# 0 when that vendor is potentially reachable on this host. An optional positional
++# <vendor> argument overrides the default lookup for operator/diagnostic runs.
++#
++# Usage:
++#   second-reviewer-available.sh [<vendor>]
++#
++# Exit 0: the requested/default second-reviewer vendor is potentially available
++#         for the detected host.
++# Exit 1: the detected host names no default second-reviewer vendor, the vendor
++#         is absent from the host x vendor matrix, or the vendor is unreachable.
++#
++# Stdout: on success, the resolved vendor id (diagnostic only; not consumed by
++#         SKILL prose).
++# Stderr: on failure, exactly one line beginning `[second-reviewer-unavailable]`
++#         naming the detected host and the requested/default vendor.
++#
++# Boundary: this probe checks REACHABILITY only. It does NOT read `model_routing:`
++# and does NOT enforce primary/second vendor distinctness — that invariant is
++# enforced at matrix-lookup time by _resolve-lib.sh's resolve_second_reviewer_vendor.
++# Single source of truth: the host x vendor matrix lives in _resolve-lib.sh; this
++# probe carries no parallel host table.
++#
++# Bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++set -u
++
++_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
++
++# Source the shared host-detection primitive and routing-resolution library
++# under their source-only guards so no wrapper main logic runs.
++QRSPI_SOURCE_ONLY=1 . "$_SCRIPT_DIR/_host-detect.sh"
++QRSPI_SOURCE_ONLY=1 . "$_SCRIPT_DIR/_resolve-lib.sh"
++
++_host="$(detect_host)"
++
++# Argument handling: optional <vendor> override; otherwise the host's default
++# second-reviewer vendor from the shared matrix.
++if [ "$#" -ge 1 ] && [ -n "$1" ]; then
++  _vendor="$1"
++else
++  _vendor="$(lookup_default_second_reviewer "$_host")"
++fi
++
++# Unavailable when the host names no default vendor (`none`) or the requested
++# vendor is not a recognised matrix vendor (unreachable / unknown).
++if [ "$_vendor" = "none" ] || ! second_reviewer_vendor_known "$_vendor"; then
++  printf '[second-reviewer-unavailable] host=%s vendor=%s — no reachable second reviewer for this host\n' \
++    "$_host" "$_vendor" >&2
++  exit 1
++fi
++
++# Reachable: emit the resolved vendor for diagnostic/verbose runs and exit 0.
++printf '%s\n' "$_vendor"
++exit 0
+diff --git a/skills/goals/SKILL.md b/skills/goals/SKILL.md
+index 4ba903d..9dde62f 100644
+--- a/skills/goals/SKILL.md
++++ b/skills/goals/SKILL.md
+@@ -79,7 +79,7 @@ The user must explicitly choose quick fix or full pipeline before synthesis begi
+ 
+ ### Config Validation (when config.md exists)
+ 
+-If `config.md` already exists (resuming a run), apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Goals validates `route`, `pipeline`, `codex_reviews`, `verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`, and (when `pipeline: quick`) `question_budget`.
++If `config.md` already exists (resuming a run), apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Goals validates `route`, `pipeline`, `second_reviewer`, `verifier_enabled`, `scope_tagger_enabled`, `visual_fidelity_required`, and (when `pipeline: quick`) `question_budget`.
+ 
+ ## Process
+ 
+@@ -117,9 +117,9 @@ After intent capture (the interactive dialogue above) but before synthesizing `g
+ 1. Quick (4 correctness reviewers)
+ 2. Deep (correctness + thoroughness, all 8 reviewers)
+ 
+-**Codex reviews** (only ask if the Codex companion is available — glob for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs` — skip silently if not found):
+-1. No Codex reviews
+-2. Use Codex for second reviews this run
++**Second-model review** (only ask if a second-reviewer vendor is available — run `bash scripts/second-reviewer-available.sh` and check its exit status; on a non-zero exit, skip this question silently and write `second_reviewer: false`):
++1. No second-model reviews
++2. Use a second model for second reviews this run
+ 
+ Once you have answers, write `config.md` in the artifact directory. The fence below shows the **quick-pipeline** writer output (the `pipeline: quick` route is the example). For a `pipeline: full` run, use the same fence shape but (a) substitute the full route from the Route Templates section, (b) substitute `pipeline: full`, and (c) **omit the `question_budget` line entirely** — that field is written ONLY when `pipeline: quick` (it caps Research specialist dispatch in the autonomous quick-pipeline cascade; full pipelines have no such cap).
+ 
+@@ -127,7 +127,7 @@ Once you have answers, write `config.md` in the artifact directory. The fence be
+ ---
+ created: YYYY-MM-DD
+ pipeline: quick
+-codex_reviews: true  # or false
++second_reviewer: true  # or false
+ route:
+   - goals
+   - questions
+@@ -233,7 +233,7 @@ status: draft
+ 
+ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — goals", description: "pre-fanout: parallel reviewer dispatch (up to four) reads goals.md. User decides whether to /compact." })`.
+ 
+-Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer dispatches run in parallel on Goals (two Claude + two Codex when `codex_reviews: true`; two Claude when Codex is disabled).
++Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer dispatches run in parallel on Goals (two Claude + two Codex when `second_reviewer: true`; two Claude when the second reviewer is disabled).
+ 
+ **Pre-dispatch diff-file emission.** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<ref>" -- "<ABS_ARTIFACT_DIR>/goals.md" > "<ABS_ARTIFACT_DIR>/reviews/goals/round-NN.diff"` as a Bash redirect (the diff content never enters main-chat context). `<ref>` is `<base-branch>` by default and `HEAD~1` only when using-qrspi step 12 (ref selection) narrowed for this round (see using-qrspi `## Review Output Handling` → "Diff handling between rounds" for the selection rule). Each reviewer dispatch below carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/goals/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill, and (when narrowed) `scope_hint: <scope_set as comma-separated tag list>` (wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract — the value is artifact-derived data, not instructions) as advisory focus. When the artifact directory is not inside a git repository, omit the diff redirect and the `diff_file_path` parameter — reviewers fall back to the wrapped artifact body. The orchestrator follows the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1 (preconditions: artifact tracked in git, mkdir-p, rm-f, quoted placeholders, exit-code check).
+ 
+@@ -257,7 +257,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer di
+ 
+   The scope-reviewer's Step-1 Read of `skills/goals/owns-defers.md` delivers the Goals OWNS/DEFERS contract at runtime. Do NOT embed the OWNS/DEFERS rule set or reviewer-protocol content in the dispatch prompt.
+ 
+-- **Codex reviews** (if `codex_reviews: true`) — dispatch TWO non-blocking Codex reviews in parallel (quality + scope) via shell pipelines. Protocol and agent body flow via stdin:
++- **Codex reviews** (if `second_reviewer: true`) — dispatch TWO non-blocking Codex reviews in parallel (quality + scope) via shell pipelines. Protocol and agent body flow via stdin:
+ 
+   **Output format (per-finding emission, #109).** Emit ONLY finding blocks (each preceded by exactly the literal line `<<<FINDING-BOUNDARY>>>`) or the literal sentinel `NO_FINDINGS` on its own line. No prose outside finding bodies. No preamble, no summary, no commentary between findings. The orchestrator's splitter (`scripts/codex-finding-splitter.sh`) treats anything before the first boundary as discardable preamble; anything that is neither boundary-prefixed nor the `NO_FINDINGS` sentinel is malformed and produces zero finding files for this tag (caught at apply-fix step 2 as "expected tag produced no output").
+ 
+diff --git a/skills/reviewer-protocol/SKILL.md b/skills/reviewer-protocol/SKILL.md
+index e3dca15..f2d5942 100644
+--- a/skills/reviewer-protocol/SKILL.md
++++ b/skills/reviewer-protocol/SKILL.md
+@@ -20,7 +20,7 @@ The current set of sections — `## Finding Schema`, `## Change-Type Classifier`
+ 
+ For each artifact step, the apply-fix step-2 schema-violation guard asserts the round directory contains at least one of `<tag>.finding-*.md` or `<tag>.clean.md` for every expected tag in the row below — based on the run's `config.md`.
+ 
+-| Step | `codex_reviews: true` | `codex_reviews: false` |
++| Step | `second_reviewer: true` | `second_reviewer: false` |
+ |---|---|---|
+ | `goals` | `quality-claude`, `scope-claude`, `quality-codex`, `scope-codex` | `quality-claude`, `scope-claude` |
+ | `questions` | `quality-claude`, `quality-codex` | `quality-claude` |
+diff --git a/skills/using-qrspi/SKILL.md b/skills/using-qrspi/SKILL.md
+index 7ad1e58..aaa4e55 100644
+--- a/skills/using-qrspi/SKILL.md
++++ b/skills/using-qrspi/SKILL.md
+@@ -356,7 +356,7 @@ Every skill uses this standard pattern to verify its prerequisites:
+ ---
+ created: YYYY-MM-DD
+ pipeline: full  # or: quick
+-codex_reviews: true  # or false
++second_reviewer: true  # or false
+ route:
+   - goals
+   - questions
+@@ -381,7 +381,8 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research
+ **Field definitions:**
+ - `created`: ISO date the run was created (set once, never updated)
+ - `pipeline`: human-readable label (`full` or `quick`) — informational only; `route` is authoritative
+-- `codex_reviews`: whether to include Codex in review rounds
++- `second_reviewer`: whether to include a second-model reviewer in review rounds (canonical field)
++- `codex_reviews`: **removed** — this is the legacy name for `second_reviewer`; it was renamed during the second-reviewer migration. A stray `codex_reviews:` field in `config.md` is a hard validation error, never silently aliased to `second_reviewer:`.
+ - `route`: ordered list of skill names this run will execute (see Route Templates above)
+ - `review_depth`: `quick` (4 correctness reviewers) or `deep` (all 8 reviewers) — written by Implement at phase start
+ - `review_mode`: `single` or `loop` — written alongside `review_depth`
+@@ -390,11 +391,11 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research
+ - `visual_fidelity_required`: boolean, default `false`. When `true`, the run opts into the visual-fidelity binding chain (Design must include a wireframe binding subsection, Phasing must cite wireframe artifacts per UI phase, Plan must populate `visual_fidelity_check` on UI-producing tasks, and Implement dispatches the visual-fidelity reviewer). When `false`, the chain is silent — no dispatch, no extra gates.
+ - `question_budget`: integer, default `5`, valid range 1–50 inclusive. Used by the Research skill to cap the number of research specialists dispatched in parallel when `pipeline: quick`. Written to `config.md` ONLY when the run is `pipeline: quick`; on full-pipeline runs the field is omitted from `config.md` entirely (no cap applies — Research dispatches per its own scaling rules). The lower cap exists because quick-fix mode trades research breadth for throughput; a small fixed budget keeps the autonomous Research step bounded so the cascade gate documented under the pipeline-mode behavioral semantics below stays cheap. The upper cap of 50 exists because Research specialist dispatch fan-out wider than 50 exhausts orchestrator subagent slots and produces diminishing-returns coverage; the validator fixture (`tests/fixtures/validate-config-field.sh`) enforces both bounds.
+ 
+-**Writing `config.md`:** After the user selects a pipeline mode and answers the Codex question, write `created`, `pipeline`, `codex_reviews`, and `route` to `config.md` atomically. Goals also writes `verifier_enabled: true`, `scope_tagger_enabled: true`, and `visual_fidelity_required: false` (or `true` if the user opted into the visual-fidelity binding chain) at run creation — these fields are present on disk from the start of every fresh run. When the user selects `pipeline: quick`, Goals additionally writes `question_budget: 5` (the Research specialist dispatch cap); on `pipeline: full` the field is omitted entirely. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
++**Writing `config.md`:** After the user selects a pipeline mode and answers the second-reviewer question, write `created`, `pipeline`, `second_reviewer`, and `route` to `config.md` atomically. Goals also writes `verifier_enabled: true`, `scope_tagger_enabled: true`, and `visual_fidelity_required: false` (or `true` if the user opted into the visual-fidelity binding chain) at run creation — these fields are present on disk from the start of every fresh run. When the user selects `pipeline: quick`, Goals additionally writes `question_budget: 5` (the Research specialist dispatch cap); on `pipeline: full` the field is omitted entirely. The `review_depth` and `review_mode` fields are added later by Implement. Use the appropriate route template from the Route Templates section.
+ 
+ **Behavioral semantics — `pipeline: quick` (auto-approve cascade and surviving human gates):** The `pipeline: quick` mode is more than a route shortener — it changes how human approval is sequenced across the run. Three things hold under quick-fix mode:
+ 
+-1. **Auto-approve cascade for Questions, Research, and Plan.** These three autonomous steps still run their full review loops (Claude reviewers, Codex reviewers when `codex_reviews: true`, the verifier when `verifier_enabled: true`), and findings still write to disk under `reviews/{step}/round-NN/`. What changes is the human gate after the loop. When a review round produces zero kept findings AFTER verifier filtering — either the initial round emerged clean, or the first fix round closed every kept finding from the prior round — the step writes `status: approved` automatically without prompting the user. The "zero kept findings" trigger is the post-verifier-filter count (the count after the artifact-level Apply-fix protocol applies the verifier's by-change_type threshold — ≥80 for style/clarity, ≥70 for correctness), NOT the pre-filter raw findings count emitted by reviewer subagents; this disambiguates the trigger so downstream cascade-branch implementations cannot diverge on whether a verifier-suppressed finding still counts toward the cascade gate. The cascade is a single hop per step (initial-clean OR first-fix-clean), not an unbounded loop; if the fix round still carries kept findings the step pauses for human input via the standard Review-Loop Pause Gate. The `question_budget` field (default `5`) caps Research specialist dispatch under this cascade so the autonomous Research step stays bounded. The line-by-line implementation of the cascade branch in each of these three skills is owned by the respective skill body — `using-qrspi/SKILL.md` is the contract surface that names the behavior; the per-skill implementations carry the wiring.
++1. **Auto-approve cascade for Questions, Research, and Plan.** These three autonomous steps still run their full review loops (Claude reviewers, second-model reviewers when `second_reviewer: true`, the verifier when `verifier_enabled: true`), and findings still write to disk under `reviews/{step}/round-NN/`. What changes is the human gate after the loop. When a review round produces zero kept findings AFTER verifier filtering — either the initial round emerged clean, or the first fix round closed every kept finding from the prior round — the step writes `status: approved` automatically without prompting the user. The "zero kept findings" trigger is the post-verifier-filter count (the count after the artifact-level Apply-fix protocol applies the verifier's by-change_type threshold — ≥80 for style/clarity, ≥70 for correctness), NOT the pre-filter raw findings count emitted by reviewer subagents; this disambiguates the trigger so downstream cascade-branch implementations cannot diverge on whether a verifier-suppressed finding still counts toward the cascade gate. The cascade is a single hop per step (initial-clean OR first-fix-clean), not an unbounded loop; if the fix round still carries kept findings the step pauses for human input via the standard Review-Loop Pause Gate. The `question_budget` field (default `5`) caps Research specialist dispatch under this cascade so the autonomous Research step stays bounded. The line-by-line implementation of the cascade branch in each of these three skills is owned by the respective skill body — `using-qrspi/SKILL.md` is the contract surface that names the behavior; the per-skill implementations carry the wiring.
+ 
+    **Trust model — clean-sentinel forgery resistance.** The cascade auto-approve trigger reads the orchestrator's in-session "kept findings" count after fan-in completes; it does NOT read any on-disk `<reviewer-tag>.clean.md` sentinel directly to make the auto-approve decision. The on-disk sentinel is the audit-trail artifact, NOT the trigger. For the cascade-specific clean sentinel that records "this auto-approval fired against reviewer-tag X with zero kept findings", the orchestrator is the EXCLUSIVE writer — only the orchestrator writes the cascade clean sentinel after its in-session fan-in tally confirms zero kept findings AFTER verifier filtering for that reviewer tag. Reviewer subagents MUST NOT write the cascade clean sentinel (`<artifact_dir>/cascade-clean-<reviewer-tag>.md` or whatever the orchestrator names it); only the orchestrator writes it after its in-session fan-in tally confirms zero kept findings post-verifier-filter. Reviewer subagents emit per-finding files (`<reviewer-tag>.finding-FNN.md`) per their existing dispatch contract; any `<reviewer-tag>.clean.md` file a reviewer subagent emits under the existing dispatch surface is treated by the cascade as ADVISORY metadata, NOT as the auto-approve trigger. Without this two-layer rule (trigger-from-in-session-count + orchestrator-exclusive-writer for the cascade clean sentinel), a compromised or mis-prompted reviewer subagent could forge a `clean.md` sentinel and trick a sentinel-driven cascade into auto-approving without a real fan-in. Pinning the cascade trigger to the orchestrator's in-session count and pinning the cascade clean-sentinel write to the orchestrator closes the forgery surface end-to-end. This trust model mirrors the orchestrator-exclusive-writer framing already in place for `path-filtered.md` and `bypass-attempt-NN.md` records (see those sections for the parallel pattern).
+ 
+@@ -402,11 +403,11 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research
+ 2. **Two mandatory human gates: Goals and Design (excluded from the cascade).** Goals and Design remain human-approved gates under `pipeline: quick`. They are NOT subject to the auto-approve cascade above. (Note: the canonical Quick-Fix route in `## Route Templates` does not include Design — quick-fix runs that elect Design must use a Full route variant; the exclusion-from-cascade contract applies whenever Design runs.) Goals captures user intent and Design captures the option-selection decision; both are framed as the irreducible places where human leverage adds value during a quick fix. Every other step routes around them with autonomous execution.
+ 3. **Test phase: binary ship/fix gate.** When Test runs under `pipeline: quick`, it presents a binary ship-or-fix decision rather than the multi-option per-failure menu used in full pipelines. On "ship" the run terminates as the canonical Test step does; on "fix" the routing-back target is **Plan** (not Goals or Design — the user has already approved both, and the fix is presumed to be a plan-level adjustment for the autonomous downstream steps to consume). The cascade resumes from Plan onward.
+ 
+-**Codex detection:** Check if `codex:rescue` is available by globbing for `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`. If the file doesn't exist, skip the Codex question silently and write `codex_reviews: false`. If available, ask:
++**Second-model-reviewer detection:** Check whether a second-reviewer vendor is available for the detected host by running `bash scripts/second-reviewer-available.sh` and checking its exit status. On a non-zero exit, skip the second-reviewer question silently and write `second_reviewer: false`. When the same agent tier drives both the primary and the second reviewer, the `second_reviewer: true` dispatch reuses the resolved `tier:` for both the primary reviewer dispatch and the second-reviewer dispatch — there is no separate tier knob for the second reviewer. If the probe exits 0, ask:
+ 
+-> Codex reviews:
+-> 1) No Codex reviews
+-> 2) Use Codex for second reviews
++> Second-model reviews:
++> 1) No second-model reviews
++> 2) Use a second model for second reviews
+ 
+ **Per-host Codex dispatch transport routing.** The Codex review dispatch surface routes per detected host. Two transports are supported, selected by `detect_host` at dispatch time:
+ 
+@@ -539,8 +540,12 @@ Stop and present the field-specific menu below. For an invalid value, also name
+ 1. Edit config.md and set `pipeline: full` or `pipeline: quick`
+ 2. Abort
+ 
+-**If `codex_reviews` is missing or invalid (expected `true` or `false`):**
+-1. Edit config.md and set `codex_reviews: true` or `codex_reviews: false`
++**If `second_reviewer` is missing or invalid (expected `true` or `false`):**
++1. Edit config.md and set `second_reviewer: true` or `second_reviewer: false`
++2. Abort
++
++**If a legacy `codex_reviews:` field is present (renamed to `second_reviewer:`):**
++1. `codex_reviews:` is no longer a valid field — it was renamed to `second_reviewer:`. Reject it loudly with a rename-naming diagnostic; do NOT silently alias `codex_reviews:` to `second_reviewer:`. Edit config.md: remove the `codex_reviews:` line and set `second_reviewer: true` or `second_reviewer: false`.
+ 2. Abort
+ 
+ **If `visual_fidelity_required` is missing or invalid (expected `true` or `false`):**
+@@ -584,7 +589,7 @@ Stop and present the field-specific menu below. For an invalid value, also name
+ 
+ Skills must not:
+ - Assume `pipeline: full` when `pipeline` is missing
+-- Assume `codex_reviews: false` when `codex_reviews` is missing
++- Assume `second_reviewer: false` when `second_reviewer` is missing
+ - Attempt to derive `route` from `pipeline` when `route` is missing
+ - Proceed with a guessed or inferred field value
+ 
+@@ -614,7 +619,7 @@ Skills must not:
+ | `route` | Goals, Plan, Parallelize, Implement, Integrate, using-qrspi | ordered list of skill names (see Route Templates) |
+ | `model_routing:` | using-qrspi, Goals, Plan, Parallelize, Implement, Integrate | required top-level block — a per-vendor five-tier map (one `{ vendor:, model: }` per tier, per CD-1); see the schema heading `model_routing:` block for the definition and the fail-loud heading Missing `model_routing:` block in `config.md` for the enforcement when the block is absent |
+ | `pipeline` | Goals, Plan, Parallelize | `full` or `quick` |
+-| `codex_reviews` | Goals, Plan, Design, Phasing, Structure, Replan, Implement, Integrate, Test | `true` or `false` |
++| `second_reviewer` | Goals, Plan, Design, Phasing, Structure, Replan, Implement, Integrate, Test | `true` or `false` |
+ | `review_depth` | Implement | `quick` or `deep` — set by Implement at phase start |
+ | `review_mode` | Implement | `single` or `loop` — set by Implement at phase start |
+ | `verifier_enabled` | Goals, Implement | `true` or `false` — set at run creation; gates per-finding verifier dispatch in the Apply-fix protocol |
+diff --git a/tests/unit/test-dispatch-companion-availability.bats b/tests/unit/test-dispatch-companion-availability.bats
+new file mode 100644
+index 0000000..329e39b
+--- /dev/null
++++ b/tests/unit/test-dispatch-companion-availability.bats
+@@ -0,0 +1,224 @@
++#!/usr/bin/env bats
++bats_require_minimum_version 1.5.0
++#
++# tests/unit/test-dispatch-companion-availability.bats
++#
++# Migrated and updated availability tests for host-aware second-reviewer probing.
++# Renamed from test-codex-review-codex-availability.bats, which tested
++# check_codex_available in scripts/run-codex-review.sh.  This file pins the
++# second-reviewer-available.sh availability contract introduced by the
++# vendor-neutral probe migration.
++#
++# Preserved intent from the original file:
++#   - Availability probe exits 0 on supported hosts (Copilot CLI, Claude Code)
++#   - Availability probe exits non-zero with the named diagnostic on unsupported paths
++#   - Single-source-of-truth invariant: probe reads the CD-1 host×vendor matrix
++#     from _resolve-lib.sh, not a parallel hardcoded table
++#
++# RED state (before Task 19 implementation):
++#   scripts/second-reviewer-available.sh does not exist → all invocation-based
++#     tests fail; the skills grep audits fail because the old Codex glob is still
++#     present and second_reviewer: is not yet the canonical field.
++#
++# GREEN state (after implementation):
++#   scripts/second-reviewer-available.sh exists, exits 0 for Copilot CLI / Claude
++#   Code, exits non-zero with [second-reviewer-unavailable] for unknown host, and
++#   the skills prose no longer contains the Claude-only Codex glob.
++#
++# Bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++load '../helpers/skill-markdown'
++
++# ---------------------------------------------------------------------------
++# Suite setup
++# ---------------------------------------------------------------------------
++
++setup_file() {
++  require_repo_root
++  SECOND_REVIEWER="$REPO_ROOT/scripts/second-reviewer-available.sh"
++  GOALS_SKILL="$REPO_ROOT/skills/goals/SKILL.md"
++  USING_SKILL="$REPO_ROOT/skills/using-qrspi/SKILL.md"
++  REVIEWER_PROTOCOL="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
++  export SECOND_REVIEWER GOALS_SKILL USING_SKILL REVIEWER_PROTOCOL
++}
++
++setup() {
++  TMP_DIR="$(mktemp -d)"
++  export TMP_DIR
++}
++
++teardown() {
++  cd /
++  rm -rf "$TMP_DIR"
++}
++
++# ===========================================================================
++# Host-aware availability: Copilot CLI exits 0 (D5 default = openai-codex)
++# ===========================================================================
++
++# Test expectation: COPILOT_CLI=1 bash scripts/second-reviewer-available.sh returns 0
++# because D5 names openai-codex as the default second-reviewer vendor for copilot-cli.
++@test "availability: Copilot CLI (COPILOT_CLI=1) exits 0 for default second-reviewer vendor" {
++  # Test expectation: on Copilot CLI both Claude and Codex are first-party; D5 maps
++  # copilot-cli → openai-codex as the default second-reviewer vendor → probe exits 0.
++  run bash -c "
++    unset CLAUDE_PROJECT_DIR CODEX_CLI
++    export COPILOT_CLI=1
++    \"$SECOND_REVIEWER\"
++  "
++  [ "$status" -eq 0 ]
++}
++
++# ===========================================================================
++# Host-aware availability: Claude Code exits 0 (D5 default = openai-codex)
++# ===========================================================================
++
++# Test expectation: CLAUDE_PROJECT_DIR set → bash scripts/second-reviewer-available.sh
++# returns 0 because D5 names openai-codex as the default for claude-code.
++@test "availability: Claude Code (CLAUDE_PROJECT_DIR set) exits 0 for default second-reviewer vendor" {
++  # Test expectation: on Claude Code, Codex is third-party but reachable via
++  # dispatch-companion.sh; D5 maps claude-code → openai-codex → probe exits 0.
++  run bash -c "
++    unset COPILOT_CLI CODEX_CLI
++    export CLAUDE_PROJECT_DIR=\"$TMP_DIR\"
++    \"$SECOND_REVIEWER\"
++  "
++  [ "$status" -eq 0 ]
++}
++
++# ===========================================================================
++# Unknown-host fixture: exits non-zero with [second-reviewer-unavailable]
++# ===========================================================================
++
++# Test expectation: no host signal → probe exits non-zero and emits
++# [second-reviewer-unavailable] diagnostic to stderr.
++@test "availability: unknown host exits non-zero with [second-reviewer-unavailable] on stderr" {
++  # Test expectation: when no environment host signal is present, detect_host returns
++  # 'unknown', lookup_default_second_reviewer('unknown') returns 'none', and the probe
++  # emits exactly one [second-reviewer-unavailable] stderr line and exits non-zero.
++  local _stderr_file="$TMP_DIR/unknown-host-stderr.txt"
++  local _status=0
++  bash -c "
++    unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
++    \"$SECOND_REVIEWER\"
++  " >/dev/null 2>"$_stderr_file" || _status=$?
++  # Exit must be non-zero
++  [ "$_status" -ne 0 ]
++  # Stderr must carry the [second-reviewer-unavailable] tag
++  grep -q '^\[second-reviewer-unavailable\]' "$_stderr_file"
++}
++
++# ===========================================================================
++# Single-source-of-truth invariant: probe reads _resolve-lib.sh matrix
++# ===========================================================================
++
++# Test expectation: probe reads the CD-1 host×vendor matrix from _resolve-lib.sh
++# rather than maintaining a parallel hardcoded table.  This invariant prevents
++# the matrix from drifting between the probe and the dispatcher.
++@test "availability: probe references _resolve-lib.sh (single-source-of-truth invariant)" {
++  # Test expectation: second-reviewer-available.sh must call helpers from _resolve-lib.sh
++  # (or source it) so there is no parallel host×vendor table in the probe.
++  run grep -E '_resolve-lib\.sh|lookup_default_second_reviewer|lookup_host_vendor_path' \
++    "$SECOND_REVIEWER"
++  [ "$status" -eq 0 ]
++}
++
++# ===========================================================================
++# Grep audit — skills/goals/SKILL.md no longer contains the Claude-only glob
++# ===========================================================================
++
++# Test expectation: skills/goals/SKILL.md must not contain the Claude-only inline
++# Codex availability glob after the D3 migration.
++@test "grep-audit: skills/goals/SKILL.md does not contain Claude-only Codex availability glob" {
++  # Test expectation: the legacy glob
++  # ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs
++  # must be absent from skills/goals/SKILL.md after the D3 migration.
++  # RED: the glob is still present in the file today.
++  local match_count
++  match_count="$(grep -c 'codex-companion\.mjs' "$GOALS_SKILL" 2>/dev/null || true)"
++  [ "$match_count" -eq 0 ]
++}
++
++# Test expectation: skills/goals/SKILL.md must reference scripts/second-reviewer-available.sh
++# after the D3 migration (vendor-neutral probe replaces the inline glob).
++@test "grep-audit: skills/goals/SKILL.md references scripts/second-reviewer-available.sh" {
++  # Test expectation: the D3 migration replaces the inline glob with a call to
++  # bash scripts/second-reviewer-available.sh; confirm the reference is present.
++  run grep -q 'second-reviewer-available\.sh' "$GOALS_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++# ===========================================================================
++# Grep audit — skills/using-qrspi/SKILL.md no longer contains the Claude-only glob
++# ===========================================================================
++
++# Test expectation: skills/using-qrspi/SKILL.md must not contain the Claude-only inline
++# Codex availability glob after the D3 migration.
++@test "grep-audit: skills/using-qrspi/SKILL.md does not contain Claude-only Codex availability glob" {
++  # Test expectation: the legacy glob is absent from skills/using-qrspi/SKILL.md
++  # at L405 (the second drift site identified in the design references).
++  # RED: the glob is still present in the file today.
++  local match_count
++  match_count="$(grep -c 'codex-companion\.mjs' "$USING_SKILL" 2>/dev/null || true)"
++  [ "$match_count" -eq 0 ]
++}
++
++# Test expectation: skills/using-qrspi/SKILL.md references scripts/second-reviewer-available.sh
++@test "grep-audit: skills/using-qrspi/SKILL.md references scripts/second-reviewer-available.sh" {
++  # Test expectation: the D3 migration adds a bash scripts/second-reviewer-available.sh
++  # invocation at the Codex-detection paragraph site.
++  run grep -q 'second-reviewer-available\.sh' "$USING_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++# ===========================================================================
++# Grep audit — skills/reviewer-protocol/SKILL.md no longer contains codex_reviews
++# ===========================================================================
++
++# Test expectation: grep -nE 'codex_reviews' skills/reviewer-protocol/SKILL.md returns
++# no matches after the D6 Expected-Reviewer Matrix column-header sweep.
++@test "grep-audit: skills/reviewer-protocol/SKILL.md contains no codex_reviews field references" {
++  # Test expectation: the D6 sweep renames all 'codex_reviews: true | false' column
++  # headers in the Expected-Reviewer Matrix to 'second_reviewer: true | false'.
++  # Any remaining codex_reviews occurrence is a D6 miss.
++  # RED: one match still present today at line 23.
++  local match_count
++  match_count="$(grep -cE 'codex_reviews' "$REVIEWER_PROTOCOL" 2>/dev/null || true)"
++  [ "$match_count" -eq 0 ]
++}
++
++# Test expectation: skills/reviewer-protocol/SKILL.md Expected-Reviewer Matrix now uses
++# second_reviewer: true | false as the column headers.
++@test "grep-audit: skills/reviewer-protocol/SKILL.md Expected-Reviewer Matrix uses second_reviewer column headers" {
++  # Test expectation: after the D6 migration, the matrix column headers name
++  # 'second_reviewer: true' and 'second_reviewer: false' (vendor-neutral).
++  run grep -qE 'second_reviewer:[[:space:]]*(true|false)' "$REVIEWER_PROTOCOL"
++  [ "$status" -eq 0 ]
++}
++
++# ===========================================================================
++# Config-validation prose: stray codex_reviews: rejected, not aliased
++# ===========================================================================
++
++# Test expectation: skills/using-qrspi/SKILL.md documents second_reviewer: as the
++# canonical config field (not codex_reviews:).
++@test "config-field-naming: skills/using-qrspi/SKILL.md documents second_reviewer: as the canonical field" {
++  # Test expectation: the config schema documentation in using-qrspi shows
++  # 'second_reviewer:' as the field name (vendor-neutral).
++  run grep -qE '^second_reviewer:' "$USING_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++# Test expectation: skills/using-qrspi/SKILL.md Config Validation Procedure rejects
++# a stray codex_reviews: field loudly with a rename-naming diagnostic.  It must NOT
++# silently alias codex_reviews: to second_reviewer:.
++@test "config-field-naming: using-qrspi config-validation prose rejects legacy codex_reviews: with rename-naming error" {
++  # Test expectation: the Config Validation Procedure (inside using-qrspi) documents
++  # that an unknown 'codex_reviews:' field is a hard validation error with a message
++  # that names the rename — e.g., 'renamed to second_reviewer:' or 'use second_reviewer:'.
++  # A silent alias would violate CD-1's no-silent-fallback rule and D1's clean-break design.
++  # RED: using-qrspi still treats codex_reviews: as a known valid field today.
++  run grep -qE "renamed.*second_reviewer|second_reviewer.*renamed|rename.*codex_reviews|codex_reviews.*rename" \
++    "$USING_SKILL"
++  [ "$status" -eq 0 ]
++}
+diff --git a/tests/unit/test-routing-matrix-application.bats b/tests/unit/test-routing-matrix-application.bats
+index 5d6f83f..2d46701 100644
+--- a/tests/unit/test-routing-matrix-application.bats
++++ b/tests/unit/test-routing-matrix-application.bats
+@@ -472,3 +472,199 @@ setup_file() {
+   c=$(grep -ciE 'four[- ]layer' "$IMPLEMENT" || true)
+   [ "$c" -eq 0 ]
+ }
++
++# ===========================================================================
++# second-reviewer D5 matrix and routing coverage (Task 19)
++# Covers Test Expectations:
++#   - _resolve-lib.sh D5 default-second-reviewer column is present and correct
++#   - [second-reviewer-unavailable] halt documented and behaviorally enforced
++#   - [second-reviewer-same-vendor] halt documented and behaviorally enforced
++#   - same-tier primary + second-reviewer dispatch documented in using-qrspi
++# ===========================================================================
++
++# ---------------------------------------------------------------------------
++# D5 matrix column: lookup_default_second_reviewer values (behavioral)
++# ---------------------------------------------------------------------------
++
++# Source helper: run lookup_default_second_reviewer <host> against the live
++# _resolve-lib.sh.  Usage: _exec_lookup_default_second_reviewer <host>
++_exec_lookup_default_second_reviewer() {
++  local host="$1"
++  QRSPI_SOURCE_ONLY=1 source "$REPO_ROOT/scripts/_resolve-lib.sh"
++  lookup_default_second_reviewer "$host"
++}
++
++@test "_resolve-lib.sh D5 matrix: claude-code default second-reviewer vendor is openai-codex" {
++  # Test expectation: lookup_default_second_reviewer('claude-code') returns 'openai-codex'
++  # per D5 — Codex is the default second reviewer for Claude Code hosts.
++  run _exec_lookup_default_second_reviewer "claude-code"
++  [ "$status" -eq 0 ]
++  [ "$output" = "openai-codex" ]
++}
++
++@test "_resolve-lib.sh D5 matrix: copilot-cli default second-reviewer vendor is openai-codex" {
++  # Test expectation: lookup_default_second_reviewer('copilot-cli') returns 'openai-codex'
++  # per D5 — Codex is also the default second reviewer for Copilot CLI hosts.
++  run _exec_lookup_default_second_reviewer "copilot-cli"
++  [ "$status" -eq 0 ]
++  [ "$output" = "openai-codex" ]
++}
++
++@test "_resolve-lib.sh D5 matrix: unknown host default second-reviewer vendor is none" {
++  # Test expectation: lookup_default_second_reviewer('unknown') returns 'none' because
++  # there is no second-reviewer vendor entry for an unrecognised host — this is the
++  # signal that causes [second-reviewer-unavailable] to fire at dispatch time.
++  run _exec_lookup_default_second_reviewer "unknown"
++  [ "$status" -eq 0 ]
++  [ "$output" = "none" ]
++}
++
++# ---------------------------------------------------------------------------
++# [second-reviewer-unavailable] halt behavior in _resolve-lib.sh
++# ---------------------------------------------------------------------------
++
++# Test expectation: _resolve-lib.sh contains a [second-reviewer-unavailable] diagnostic
++# string — the halt diagnostic must live in the shared library, not only in the probe
++# script, so the dispatcher-side check uses the same diagnostic tag.
++@test "_resolve-lib.sh: contains [second-reviewer-unavailable] halt diagnostic" {
++  # Test expectation: the [second-reviewer-unavailable] tag is defined in _resolve-lib.sh
++  # so there is a single source for the diagnostic format consumed by dispatch-agent.sh
++  # and by tests/unit/ pin files alike.
++  # RED: _resolve-lib.sh does not yet contain this diagnostic.
++  run grep -q 'second-reviewer-unavailable' "$REPO_ROOT/scripts/_resolve-lib.sh"
++  [ "$status" -eq 0 ]
++}
++
++# Test expectation: when a second_reviewer: true dispatch resolves to a 'none' default
++# vendor (e.g. unknown host), _resolve-lib.sh halts loudly — the halt function is
++# callable from a sourced context.
++@test "_resolve-lib.sh [exec]: [second-reviewer-unavailable] halt fires when default vendor is none (unknown host)" {
++  # Test expectation: source _resolve-lib.sh and call resolve_second_reviewer_vendor
++  # (or equivalent halt function) with host='unknown'; expect exit non-zero with
++  # [second-reviewer-unavailable] on stderr.
++  # RED: resolve_second_reviewer_vendor does not exist in _resolve-lib.sh yet.
++  local _stderr_file="$BATS_TEST_TMPDIR/unavail-halt-stderr.txt"
++  local _status=0
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
++    resolve_second_reviewer_vendor 'unknown' 'anthropic-claude'
++  " >/dev/null 2>"$_stderr_file" || _status=$?
++  [ "$_status" -ne 0 ]
++  grep -q '\[second-reviewer-unavailable\]' "$_stderr_file"
++}
++
++@test "_resolve-lib.sh [exec]: [second-reviewer-unavailable] halt diagnostic names host and vendor" {
++  # Test expectation: the halt diagnostic emitted by resolve_second_reviewer_vendor
++  # names both host= and vendor= so operators can identify the cause.
++  # RED: resolve_second_reviewer_vendor does not exist in _resolve-lib.sh yet.
++  local _stderr_file="$BATS_TEST_TMPDIR/unavail-halt-named-stderr.txt"
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
++    resolve_second_reviewer_vendor 'unknown' 'anthropic-claude'
++  " >/dev/null 2>"$_stderr_file" || true
++  grep -qE 'host=|vendor=' "$_stderr_file"
++}
++
++# ---------------------------------------------------------------------------
++# [second-reviewer-same-vendor] halt behavior in _resolve-lib.sh
++# ---------------------------------------------------------------------------
++
++# Test expectation: _resolve-lib.sh contains a [second-reviewer-same-vendor] diagnostic
++# string — the slot-distinctness check lives here as the single enforcement point.
++@test "_resolve-lib.sh: contains [second-reviewer-same-vendor] halt diagnostic" {
++  # Test expectation: the [second-reviewer-same-vendor] tag is defined in _resolve-lib.sh
++  # so there is one enforcement point for the primary≠second-reviewer invariant.
++  # RED: _resolve-lib.sh does not yet contain this diagnostic.
++  run grep -q 'second-reviewer-same-vendor' "$REPO_ROOT/scripts/_resolve-lib.sh"
++  [ "$status" -eq 0 ]
++}
++
++# Test expectation: when a second_reviewer: true dispatch resolves both the primary
++# and the second-reviewer slots to the same vendor, _resolve-lib.sh halts loudly
++# with [second-reviewer-same-vendor] and emits no dispatch spec lines.
++@test "_resolve-lib.sh [exec]: [second-reviewer-same-vendor] halt fires when primary and second vendor are equal" {
++  # Test expectation: call resolve_second_reviewer_vendor <host> <primary_vendor>
++  # where the default second-reviewer vendor for that host equals primary_vendor.
++  # In this test, primary_vendor = 'openai-codex' on copilot-cli where the default
++  # second-reviewer is ALSO openai-codex — same vendor → halt.
++  # RED: resolve_second_reviewer_vendor does not exist in _resolve-lib.sh yet.
++  local _stderr_file="$BATS_TEST_TMPDIR/same-vendor-halt-stderr.txt"
++  local _status=0
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
++    resolve_second_reviewer_vendor 'copilot-cli' 'openai-codex'
++  " >/dev/null 2>"$_stderr_file" || _status=$?
++  [ "$_status" -ne 0 ]
++  grep -q '\[second-reviewer-same-vendor\]' "$_stderr_file"
++}
++
++# Test expectation: [second-reviewer-same-vendor] halt emits zero dispatch-spec lines.
++# The function must not output any dispatch spec lines when it halts.
++@test "_resolve-lib.sh [exec]: [second-reviewer-same-vendor] halt emits no stdout dispatch spec lines" {
++  # Test expectation: when the same-vendor halt fires, stdout carries zero lines
++  # (no partial dispatch spec line is emitted before the halt).
++  # RED: resolve_second_reviewer_vendor does not exist in _resolve-lib.sh yet.
++  local _stdout_file="$BATS_TEST_TMPDIR/same-vendor-halt-stdout.txt"
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
++    resolve_second_reviewer_vendor 'copilot-cli' 'openai-codex'
++  " >"$_stdout_file" 2>/dev/null || true
++  local line_count
++  line_count="$(wc -l < "$_stdout_file" | tr -d ' ')"
++  [ "$line_count" -eq 0 ]
++}
++
++# Test expectation: [second-reviewer-same-vendor] halt diagnostic names both vendors
++# so operators can identify the collision.
++@test "_resolve-lib.sh [exec]: [second-reviewer-same-vendor] halt diagnostic names primary and second vendor" {
++  # Test expectation: the diagnostic names the conflicting vendor(s) so operators
++  # can edit config.md or second_reviewer_vendor: to resolve the collision.
++  # RED: resolve_second_reviewer_vendor does not exist in _resolve-lib.sh yet.
++  local _stderr_file="$BATS_TEST_TMPDIR/same-vendor-halt-named-stderr.txt"
++  bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    . \"$REPO_ROOT/scripts/_resolve-lib.sh\"
++    resolve_second_reviewer_vendor 'copilot-cli' 'openai-codex'
++  " >/dev/null 2>"$_stderr_file" || true
++  grep -q 'openai-codex' "$_stderr_file"
++}
++
++# ---------------------------------------------------------------------------
++# Same-tier primary + second-reviewer dispatch: skill prose coverage
++# ---------------------------------------------------------------------------
++
++# Test expectation: skills/using-qrspi/SKILL.md documents that when second_reviewer: true
++# is set, both the primary and second-reviewer dispatches use the same agent tier:
++# (per the established routing rubric) — no separate tier knob for the second reviewer.
++@test "using-qrspi: second_reviewer: true dispatch uses same tier for primary and second reviewer" {
++  # Test expectation: the dispatch prose documents that the same tier: applies to both
++  # the primary reviewer dispatch and the second-reviewer dispatch when second_reviewer: true.
++  # RED: using-qrspi does not yet mention second_reviewer: at all.
++  run grep -qE 'second_reviewer.*tier|tier.*second_reviewer' "$USING_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++# Test expectation: skills/using-qrspi/SKILL.md documents second_reviewer: true as the
++# field that enables same-tier secondary dispatch (vendor-neutral canonical field from D1).
++@test "using-qrspi: second_reviewer: true documented as the canonical field for enabling second-reviewer dispatch" {
++  # Test expectation: using-qrspi/SKILL.md carries the canonical second_reviewer: field
++  # documentation (not the legacy codex_reviews: field).
++  # RED: using-qrspi still uses codex_reviews: today.
++  run grep -qE 'second_reviewer:[[:space:]]*(true|false)' "$USING_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++# Test expectation: using-qrspi/SKILL.md no longer references codex_reviews: as a
++# valid config field — D1's clean-break rename means only second_reviewer: is valid.
++@test "using-qrspi: no live codex_reviews: field documentation remains after D1 rename" {
++  # Test expectation: after the D1 migration, using-qrspi treats codex_reviews: as an
++  # unknown field (error) and does NOT document it as a valid schema key.
++  # We check that the template/schema section no longer uses it as a valid field name.
++  # RED: using-qrspi still documents codex_reviews: as a valid field today.
++  c=$(grep -cE '^codex_reviews:' "$USING_SKILL" || true)
++  [ "$c" -eq 0 ]
++}
+diff --git a/tests/unit/test-second-reviewer-available.bats b/tests/unit/test-second-reviewer-available.bats
+new file mode 100644
+index 0000000..15bfa62
+--- /dev/null
++++ b/tests/unit/test-second-reviewer-available.bats
+@@ -0,0 +1,404 @@
++#!/usr/bin/env bats
++bats_require_minimum_version 1.5.0
++#
++# tests/unit/test-second-reviewer-available.bats
++#
++# Covers:
++#   - Source-safety and host-signal tests for scripts/_host-detect.sh
++#   - Executability and behavior tests for scripts/second-reviewer-available.sh
++#   - Override-boundary tests (vendor override; no model_routing: read; no
++#     primary/second distinctness enforcement at probe time)
++#   - Shared-source guard: probe must consume _resolve-lib.sh helpers; no
++#     parallel hardcoded host×vendor table allowed in the probe itself
++#
++# RED state (before Task 19 implementation):
++#   scripts/_host-detect.sh does not exist  → all source-safety / host-signal
++#     tests fail at `[ -f ... ]` or at the `bash -c ". $HOST_DETECT ..."` step.
++#   scripts/second-reviewer-available.sh does not exist → executability and
++#     behavior tests fail at `[ -f ... ]` / `[ -x ... ]` / invocation step.
++#
++# GREEN state (after implementation):
++#   All assertions hold against the implemented scripts.
++#
++# Bash 3.2 portable: no mapfile, no declare -A, no ${var,,}, no coproc.
++
++load '../helpers/skill-markdown'
++
++# ---------------------------------------------------------------------------
++# Suite setup
++# ---------------------------------------------------------------------------
++
++setup_file() {
++  require_repo_root
++  HOST_DETECT="$REPO_ROOT/scripts/_host-detect.sh"
++  SECOND_REVIEWER="$REPO_ROOT/scripts/second-reviewer-available.sh"
++  RESOLVE_LIB="$REPO_ROOT/scripts/_resolve-lib.sh"
++  export HOST_DETECT SECOND_REVIEWER RESOLVE_LIB
++}
++
++setup() {
++  TMP_DIR="$(mktemp -d)"
++  export TMP_DIR
++}
++
++teardown() {
++  cd /
++  rm -rf "$TMP_DIR"
++}
++
++# ===========================================================================
++# _host-detect.sh — file presence and source-safety
++# ===========================================================================
++
++# Test expectation: _host-detect.sh exists and is readable
++@test "_host-detect: file exists at scripts/_host-detect.sh" {
++  [ -f "$HOST_DETECT" ]
++  [ -r "$HOST_DETECT" ]
++}
++
++# Test expectation: _host-detect.sh is safe to source under QRSPI_SOURCE_ONLY=1
++# with no filesystem probe or wrapper side effects — exits 0, produces no output.
++@test "_host-detect: safe to source under QRSPI_SOURCE_ONLY=1 (no output, exit 0)" {
++  # Test expectation: sourcing _host-detect.sh with QRSPI_SOURCE_ONLY=1 must not
++  # print anything to stdout and must exit 0.  The guard prevents any side effects.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    . \"$HOST_DETECT\"
++    exit 0
++  "
++  [ "$status" -eq 0 ]
++  [ -z "$output" ]
++}
++
++# Test expectation: sourcing twice is idempotent (no duplicate-function errors);
++# exits 0 with no output.
++@test "_host-detect: sourcing twice is idempotent (exit 0, no output)" {
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    . \"$HOST_DETECT\"
++    . \"$HOST_DETECT\"
++    exit 0
++  "
++  [ "$status" -eq 0 ]
++  [ -z "$output" ]
++}
++
++# ===========================================================================
++# _host-detect.sh — host-signal tests
++# ===========================================================================
++
++# Test expectation: COPILOT_CLI=1 → detect_host returns 'copilot-cli'
++@test "_host-detect: COPILOT_CLI=1 returns copilot-cli" {
++  # Test expectation: when COPILOT_CLI=1 is set and CLAUDE_PROJECT_DIR is absent,
++  # detect_host outputs exactly 'copilot-cli' and exits 0.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    unset CLAUDE_PROJECT_DIR
++    export COPILOT_CLI=1
++    . \"$HOST_DETECT\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "copilot-cli" ]
++}
++
++# Test expectation: CLAUDE_PROJECT_DIR set → detect_host returns 'claude-code'
++@test "_host-detect: CLAUDE_PROJECT_DIR set returns claude-code" {
++  # Test expectation: when CLAUDE_PROJECT_DIR is non-empty and COPILOT_CLI is absent,
++  # detect_host outputs exactly 'claude-code' and exits 0.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    unset COPILOT_CLI
++    export CLAUDE_PROJECT_DIR=\"$TMP_DIR\"
++    . \"$HOST_DETECT\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "claude-code" ]
++}
++
++# Test expectation: no known signal → detect_host returns 'unknown'
++@test "_host-detect: no known signal returns unknown" {
++  # Test expectation: when no host signals are set, detect_host returns 'unknown'.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
++    . \"$HOST_DETECT\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "unknown" ]
++}
++
++# Test expectation: future Codex CLI signal → detect_host returns 'codex-cli'
++# (v0.7.3+ deferred per design.md; codex-cli host support is not shipped in v0.7.2)
++@test "_host-detect: future Codex CLI signal (CODEX_CLI=1) returns codex-cli [v0.7.3+ deferred]" {
++  skip "codex-cli host detection deferred to v0.7.3+ (design.md: Codex CLI support out of scope for v0.7.2); identifier is enumerated but no detection branch ships this release"
++  # Test expectation (v0.7.3+): when the Codex CLI env signal is present, detect_host
++  # returns 'codex-cli'.  This documents the future signal contract.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    unset COPILOT_CLI CLAUDE_PROJECT_DIR
++    export CODEX_CLI=1
++    . \"$HOST_DETECT\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "codex-cli" ]
++}
++
++# Test expectation: CODEX_CLI=1 with no copilot/claude signal → detect_host returns 'unknown'
++# This pins the actual v0.7.2 shipped behavior: an unrecognised env signal falls through
++# to the 'unknown' default because no codex-cli detection branch exists this release.
++@test "_host-detect: CODEX_CLI=1 with no copilot/claude signal returns unknown (v0.7.2 shipped behavior)" {
++  # Test expectation: when CODEX_CLI=1 is set but COPILOT_CLI and CLAUDE_PROJECT_DIR are
++  # absent, detect_host outputs exactly 'unknown' and exits 0.  The v0.7.2 implementation
++  # carries no CODEX_CLI branch; the signal is silently unrecognised and falls through to
++  # the default 'unknown' return value.
++  # RED: _host-detect.sh does not yet exist; this assertion will go GREEN once the script
++  # ships and returns 'unknown' for unrecognised signals.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    unset COPILOT_CLI CLAUDE_PROJECT_DIR
++    export CODEX_CLI=1
++    . \"$HOST_DETECT\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "unknown" ]
++}
++
++# Test expectation: _host-detect.sh performs no filesystem probes
++# (env-var only signal per design.md CD-1 — no HOME-based glob or path check)
++@test "_host-detect: performs no filesystem probes (env-var-only signal)" {
++  # Test expectation: detect_host must not read from HOME or probe any filesystem path.
++  # Setting HOME to a nonexistent path with COPILOT_CLI=1 must still return 'copilot-cli'.
++  run bash -c "
++    export QRSPI_SOURCE_ONLY=1
++    export COPILOT_CLI=1
++    export HOME='/nonexistent/probe-guard'
++    . \"$HOST_DETECT\"
++    detect_host
++  "
++  [ "$status" -eq 0 ]
++  [ "$output" = "copilot-cli" ]
++}
++
++# ===========================================================================
++# second-reviewer-available.sh — file presence and executability
++# ===========================================================================
++
++# Test expectation: scripts/second-reviewer-available.sh exists and is executable
++@test "second-reviewer-available: file exists at scripts/second-reviewer-available.sh" {
++  [ -f "$SECOND_REVIEWER" ]
++}
++
++@test "second-reviewer-available: file is executable (chmod +x)" {
++  [ -x "$SECOND_REVIEWER" ]
++}
++
++# ===========================================================================
++# second-reviewer-available.sh — default-path behavior (exit 0 paths)
++# ===========================================================================
++
++# Test expectation: Copilot CLI default path exits 0 — D5 names openai-codex
++# as the default second-reviewer vendor for copilot-cli (both Claude and Codex
++# are first-party on Copilot CLI).
++@test "second-reviewer-available: Copilot CLI default path exits 0" {
++  # Test expectation: COPILOT_CLI=1, no vendor override → exits 0 because
++  # lookup_default_second_reviewer('copilot-cli') = 'openai-codex' (reachable).
++  run bash -c "
++    unset CLAUDE_PROJECT_DIR CODEX_CLI
++    export COPILOT_CLI=1
++    \"$SECOND_REVIEWER\"
++  "
++  [ "$status" -eq 0 ]
++}
++
++# Test expectation: Claude Code default path exits 0 — D5 names openai-codex
++# as the default second-reviewer vendor for claude-code (Codex is third-party
++# on Claude Code but still potentially reachable via dispatch-companion.sh).
++@test "second-reviewer-available: Claude Code default path exits 0" {
++  # Test expectation: CLAUDE_PROJECT_DIR set, no vendor override → exits 0 because
++  # lookup_default_second_reviewer('claude-code') = 'openai-codex' (reachable).
++  run bash -c "
++    unset COPILOT_CLI CODEX_CLI
++    export CLAUDE_PROJECT_DIR=\"$TMP_DIR\"
++    \"$SECOND_REVIEWER\"
++  "
++  [ "$status" -eq 0 ]
++}
++
++# ===========================================================================
++# second-reviewer-available.sh — unavailable paths (exit non-zero + diagnostic)
++# ===========================================================================
++
++# Test expectation: unknown host exits non-zero
++@test "second-reviewer-available: unknown host exits non-zero" {
++  # Test expectation: no host signal set → detect_host returns 'unknown' →
++  # lookup_default_second_reviewer('unknown') = 'none' → exits non-zero.
++  run bash -c "
++    unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
++    \"$SECOND_REVIEWER\"
++  "
++  [ "$status" -ne 0 ]
++}
++
++# Test expectation: unknown host emits exactly one stderr line beginning [second-reviewer-unavailable]
++@test "second-reviewer-available: unknown host emits exactly one [second-reviewer-unavailable] stderr line" {
++  # Test expectation: the diagnostic must be exactly ONE line on stderr, beginning
++  # with the [second-reviewer-unavailable] tag.  Multiple lines, stdout emission,
++  # or a missing tag are all failures.
++  local _stderr_file="$TMP_DIR/unavail-stderr.txt"
++  bash -c "
++    unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
++    \"$SECOND_REVIEWER\"
++  " >/dev/null 2>"$_stderr_file" || true
++  local line_count
++  line_count="$(wc -l < "$_stderr_file" | tr -d ' ')"
++  [ "$line_count" -eq 1 ]
++  grep -q '^\[second-reviewer-unavailable\]' "$_stderr_file"
++}
++
++# Test expectation: [second-reviewer-unavailable] diagnostic names the detected host
++@test "second-reviewer-available: [second-reviewer-unavailable] diagnostic names detected host" {
++  # Test expectation: the diagnostic line names host=<detected_host> so operators
++  # can identify which environment signal was (or was not) found.
++  local _stderr_file="$TMP_DIR/unavail-host-stderr.txt"
++  bash -c "
++    unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
++    \"$SECOND_REVIEWER\"
++  " >/dev/null 2>"$_stderr_file" || true
++  grep -qE 'host=' "$_stderr_file"
++}
++
++# Test expectation: [second-reviewer-unavailable] diagnostic names the requested/default vendor
++@test "second-reviewer-available: [second-reviewer-unavailable] diagnostic names requested vendor" {
++  # Test expectation: the diagnostic line names vendor=<vendor> (the default or override
++  # vendor that was unavailable) so operators know which vendor to investigate.
++  local _stderr_file="$TMP_DIR/unavail-vendor-stderr.txt"
++  bash -c "
++    unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
++    \"$SECOND_REVIEWER\"
++  " >/dev/null 2>"$_stderr_file" || true
++  grep -qE 'vendor=' "$_stderr_file"
++}
++
++# Test expectation: unknown vendor override exits non-zero with [second-reviewer-unavailable]
++@test "second-reviewer-available: unknown vendor override exits non-zero with [second-reviewer-unavailable]" {
++  # Test expectation: passing a vendor name that is not in the host×vendor matrix
++  # causes the probe to exit non-zero with a [second-reviewer-unavailable] diagnostic.
++  local _stderr_file="$TMP_DIR/unknown-vendor-stderr.txt"
++  local _status=0
++  bash -c "
++    export COPILOT_CLI=1
++    \"$SECOND_REVIEWER\" nonexistent-vendor-xyz
++  " >/dev/null 2>"$_stderr_file" || _status=$?
++  [ "$_status" -ne 0 ]
++  grep -q '^\[second-reviewer-unavailable\]' "$_stderr_file"
++}
++
++# Test expectation: unavailable vendor diagnostic names the vendor (override case)
++@test "second-reviewer-available: unavailable vendor override diagnostic names the vendor argument" {
++  # Test expectation: when a vendor override is passed and rejected, the diagnostic
++  # names the passed vendor so operators can identify the misconfiguration.
++  local _stderr_file="$TMP_DIR/unavail-override-vendor.txt"
++  bash -c "
++    export COPILOT_CLI=1
++    \"$SECOND_REVIEWER\" nonexistent-vendor-xyz
++  " >/dev/null 2>"$_stderr_file" || true
++  grep -qE 'nonexistent-vendor-xyz|vendor=' "$_stderr_file"
++}
++
++# ===========================================================================
++# Override-boundary tests
++# ===========================================================================
++
++# Test expectation: second-reviewer-available.sh <vendor> supports diagnostic
++# vendor override — caller passes a vendor to check, probe uses it instead of
++# the default.
++@test "override-boundary: explicit vendor override accepted on Copilot CLI (openai-codex exits 0)" {
++  # Test expectation: COPILOT_CLI=1 with explicit 'openai-codex' override exits 0.
++  run bash -c "
++    export COPILOT_CLI=1
++    \"$SECOND_REVIEWER\" openai-codex
++  "
++  [ "$status" -eq 0 ]
++}
++
++@test "override-boundary: explicit anthropic-claude override accepted on Copilot CLI (exits 0)" {
++  # Test expectation: COPILOT_CLI=1 with 'anthropic-claude' override exits 0 because
++  # anthropic-claude is first-party on Copilot CLI (reachable).
++  # Validates that the probe only checks reachability, not whether the vendor would
++  # equal the primary — that distinctness check lives at dispatch time, not here.
++  run bash -c "
++    export COPILOT_CLI=1
++    \"$SECOND_REVIEWER\" anthropic-claude
++  "
++  [ "$status" -eq 0 ]
++}
++
++# Test expectation: probe works without CONFIG_MD set — it does NOT read model_routing:
++@test "override-boundary: probe works without CONFIG_MD (does not read model_routing:)" {
++  # Test expectation: unsetting CONFIG_MD entirely does not affect probe exit status.
++  # model_routing: is a dispatch-time concern; the probe must not depend on it.
++  run bash -c "
++    unset CONFIG_MD
++    export COPILOT_CLI=1
++    \"$SECOND_REVIEWER\"
++  "
++  [ "$status" -eq 0 ]
++}
++
++# Test expectation: probe does NOT enforce primary/second vendor distinctness
++# (that invariant is checked at dispatch time by dispatch-agent.sh, not at probe time).
++@test "override-boundary: probe does not enforce primary/second vendor distinctness" {
++  # Test expectation: if the caller passes a vendor that happens to equal what
++  # would be the primary vendor, the probe still exits based on reachability only.
++  # On Copilot CLI, both anthropic-claude and openai-codex are first-party → reachable.
++  # This test passes anthropic-claude even though the primary Claude reviewer IS
++  # anthropic-claude — the probe should not care and should exit 0.
++  run bash -c "
++    export COPILOT_CLI=1
++    \"$SECOND_REVIEWER\" anthropic-claude
++  "
++  [ "$status" -eq 0 ]
++}
++
++# ===========================================================================
++# Shared-source guard: probe must consume _resolve-lib.sh, no parallel table
++# ===========================================================================
++
++# Test expectation: second-reviewer-available.sh references _resolve-lib.sh
++# (sources it or uses its helpers) rather than carrying a duplicate host×vendor table.
++@test "shared-source-guard: second-reviewer-available.sh sources or references _resolve-lib.sh" {
++  # Test expectation: the probe must call the shared matrix helpers from _resolve-lib.sh.
++  # A match on '_resolve-lib.sh' or on its exported function names confirms the probe
++  # delegates to the single source of truth.
++  run grep -E '_resolve-lib\.sh|lookup_default_second_reviewer|lookup_host_vendor_path' \
++    "$SECOND_REVIEWER"
++  [ "$status" -eq 0 ]
++}
++
++# Test expectation: second-reviewer-available.sh has no inline host×vendor case
++# statement (would indicate a parallel hardcoded table, violating single-source rule).
++@test "shared-source-guard: second-reviewer-available.sh has no inline host×vendor case for claude-code or copilot-cli" {
++  # Test expectation: the probe must not duplicate the matrix.  If the file contains
++  # its own case statement branching on 'claude-code' or 'copilot-cli' host names
++  # to look up vendors, that is a parallel table — a drift risk and a spec violation.
++  # A match here = FAIL (parallel table found).
++  local match_count
++  match_count="$(grep -cE \
++    'claude-code[[:space:]]*\)[[:space:]]*(openai-codex|anthropic-claude)|copilot-cli[[:space:]]*\)[[:space:]]*(openai-codex|anthropic-claude)' \
++    "$SECOND_REVIEWER" 2>/dev/null || true)"
++  [ "$match_count" -eq 0 ]
++}
++
++# Test expectation: second-reviewer-available.sh sources _host-detect.sh rather than
++# duplicating env-var detection logic locally.
++@test "shared-source-guard: second-reviewer-available.sh references _host-detect.sh" {
++  # Test expectation: the probe calls detect_host from _host-detect.sh rather than
++  # re-implementing the env-var detection logic inline.
++  run grep -E '_host-detect\.sh|detect_host' "$SECOND_REVIEWER"
++  [ "$status" -eq 0 ]
++}

@@ -1,0 +1,2 @@
+score: 85
+reason: Verified ../traversal escape. Path "../../../../tmp/attack.sh" contains / so bypasses allowlist. subprocess.run with shell=False and cwd=.dispatch/ resolves traversal to /tmp. Real vulnerability; requires two prerequisites but both readily satisfied in CI.

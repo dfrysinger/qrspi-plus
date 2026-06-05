@@ -1,0 +1,2 @@
+score: 75
+reason: Questions do explicitly reveal the intended build agenda by targeting specific known issues from goals (sidecar wiring in Q1→G11, task-tool transport in Q4→G6, bats deprecation in Q9, contradiction-refusal in Q18→G10); verified by direct mapping. This violates the principle that research questions should not be discernible as solution-adjacent to documented goals, compromising research integrity. The finding is well-evidenced, and the fix is actionable, though this is a methodology issue rather than a functional defect.

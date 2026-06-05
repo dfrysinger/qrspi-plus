@@ -1,0 +1,2 @@
+score: 78
+reason: Finding correctly identifies bash line-by-line logic (lines 976–1001) that violates Design's documented DEFERS rule ("Line-by-line logic" → Plan/Implement); new content in this task; clear altitude violation with actionable remediation.

@@ -1,0 +1,2 @@
+score: 55
+reason: Real gap — T34 test expectations document the trailing-whitespace normalization rule but no fixture exercises the invariance (whitespace-only edit safe-skip vs blank-line mismatch halt); finding is well-formed and falsifiable, though somewhat overlaps with the existing hash-calculation pin so it's medium importance rather than load-bearing.

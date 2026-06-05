@@ -134,16 +134,19 @@ setup() {
 }
 
 @test "goals SKILL Review Round directs both reviewers to the same per-round subdir" {
-  # Post-#125 cutover: the legacy single-file `reviews/goals-review.md`
-  # log was replaced by the per-round subdir `reviews/goals/round-NN/`
-  # surface — each reviewer writes its findings as separate files under
-  # the same `round_subdir`, which is the merger surface.
-  grep -qi "reviews/goals/round-NN/" "$GOALS_FILE"
-  # The shared round_subdir parameter MUST be named at least twice
-  # (once per reviewer dispatch block) so the merger surface is unified.
-  local subdir_count
-  subdir_count=$(grep -c "reviews/goals/round-NN/" "$GOALS_FILE")
-  [ "$subdir_count" -ge 2 ]
+  # CD-1 (Task 20): the per-reviewer dispatch blocks (which each named
+  # `reviews/goals/round-NN/`) collapsed into a single REVIEW_OUTPUT_DIR
+  # preamble var that the shared reviewer-dispatch include passes to
+  # await-round.sh. The unified round subdir is now the single merger surface —
+  # named once in the preamble rather than repeated per reviewer dispatch.
+  grep -qE 'REVIEW_OUTPUT_DIR=.*reviews/goals/round-' "$GOALS_FILE" \
+    || { echo "goals preamble must set REVIEW_OUTPUT_DIR to the per-round goals subdir"; return 1; }
+  grep -qF '!cat skills/_shared/reviewer-dispatch-prose.md' "$GOALS_FILE" \
+    || { echo "goals Review Round must route through the shared reviewer-dispatch include"; return 1; }
+  # The shared include routes the unified subdir to await-round.sh so both
+  # reviewers' findings land under the same merger surface.
+  grep -qE 'await-round\.sh.*--round-dir.*REVIEW_OUTPUT_DIR' "$ROOT/skills/_shared/reviewer-dispatch-prose.md" \
+    || { echo "shared include must pass REVIEW_OUTPUT_DIR to await-round.sh --round-dir"; return 1; }
 }
 
 # ── M48 pause gate: both reviewers' findings flow through the gate ──────────

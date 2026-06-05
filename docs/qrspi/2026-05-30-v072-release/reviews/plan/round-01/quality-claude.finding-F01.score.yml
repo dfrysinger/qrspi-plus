@@ -1,0 +1,2 @@
+score: 72
+reason: Verified — T25's Blocks field (line 1542) cites T27 as "reviewer-protocol consumer" and T28-T31 as "G31 consumers", but the canonical Task List by Slice and Dependency Graph (lines 75-114) clearly show T27=CD-2, T28=CD-3, T29=G34, T30=G1, T31=G33 (none are G31 consumers); only T26 and T39 are real downstream consumers of T25.

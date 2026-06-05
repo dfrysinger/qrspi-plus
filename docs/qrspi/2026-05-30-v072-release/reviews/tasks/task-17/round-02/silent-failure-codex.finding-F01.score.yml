@@ -1,0 +1,2 @@
+score: 35
+reason: Real test-robustness gap on task-introduced code (bare grep vs. table-row-anchored grep), but the sibling Claude reviewer confirmed no current vacuous pass and the risk requires a contrived two-step future reformatting, making this a low-probability future-hardening concern rather than an active defect.

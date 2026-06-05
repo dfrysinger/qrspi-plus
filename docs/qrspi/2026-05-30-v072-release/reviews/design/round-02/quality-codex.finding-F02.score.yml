@@ -1,0 +1,2 @@
+score: 15
+reason: Misreads D2 — design explicitly defines D2 as host-default-only and explicitly disclaims "distinct from primary," delegating that invariant to D4; acceptance L2203 reinforces this, so the alleged under-specification and inconsistency do not stand.

@@ -1,0 +1,73 @@
+diff --git a/docs/qrspi/2026-05-30-v072-release/structure.md b/docs/qrspi/2026-05-30-v072-release/structure.md
+index b8bee4c..ec8d28c 100644
+--- a/docs/qrspi/2026-05-30-v072-release/structure.md
++++ b/docs/qrspi/2026-05-30-v072-release/structure.md
+@@ -20,7 +20,7 @@ This slice centralizes finding shape, sidecar handling, and keep-or-drop decisio
+ | `skills/_shared/verifier-dispatch-prose.md` | Create | Hold the shared verifier dispatch prose snippet (`dispatch-agent.sh --verifier-fanout` invocation + spec-line contract + `await-round.sh` follow-up) consumed by `using-qrspi/SKILL.md` and `implement/SKILL.md`. | G12 |
+ | `skills/reviewer-protocol/SKILL.md` | Modify | Lock the canonical finding schema, `change_type` field name, enum, and informational-finding framing independent of transport. | G6, G8, G13, G14 |
+ | `skills/reviewer-protocol/first-party-emission.md` | Create | Define the Write-tool-only reviewer emission contract for first-party dispatches. | G6 |
+-| `skills/reviewer-protocol/third-party-emission.md` | Rename → `skills/reviewer-protocol/third-party-emission.md` (from `skills/reviewer-protocol/codex-emission-override.md`) | Define the stdout-boundary emission contract for third-party dispatches. | G6 |
++| `skills/reviewer-protocol/codex-emission-override.md` | Rename → `skills/reviewer-protocol/third-party-emission.md` | Define the stdout-boundary emission contract for third-party dispatches. | G6 |
+ | `agents/qrspi-finding-verifier.md` | Modify | Constrain verifier sidecar output path/extension and extend the rubric for informational + false-positive handling. | G11, G14 |
+ | `tests/unit/test-per-finding-file-emission.bats` | Modify | Pin reviewer disk-write behavior and clean-sentinel behavior at the file-contract layer. | G6 |
+ | `tests/unit/test-change-type-partition.bats` | Modify | Guard `change_type` routing, filter partitioning, and enum-based apply-fix behavior. | G8, G13 |
+@@ -57,9 +57,9 @@ This slice collapses per-skill reviewer dispatch into one routed script chain an
+ 
+ | File | Action | Responsibility | Goal IDs |
+ |---|---|---|---|
+-| `scripts/dispatch-agent.sh` | Rename → `scripts/dispatch-agent.sh` (from `scripts/run-codex-review.sh`) | Universal batched dispatch entrypoint: resolve tier/model, prepare rounds, write manifests, and emit first-party task specs; includes `--verifier-fanout` mode that globs findings and dispatches one verifier per finding. | G3, G4, G16, G22, G23, G25, G27 |
+-| `scripts/dispatch-companion.sh` | Rename → `scripts/dispatch-companion.sh` (from `scripts/run-third-party-llm.sh`) | Launch vendor-specific third-party review jobs beneath the universal dispatcher. | G3, G27 |
+-| `scripts/third-party-finding-splitter.sh` | Rename → `scripts/third-party-finding-splitter.sh` (from `scripts/codex-finding-splitter.sh`) | Split third-party stdout boundaries into per-finding files. | G3 |
++| `scripts/run-codex-review.sh` | Rename → `scripts/dispatch-agent.sh` | Universal batched dispatch entrypoint: resolve tier/model, prepare rounds, write manifests, and emit first-party task specs; includes `--verifier-fanout` mode that globs findings and dispatches one verifier per finding. | G3, G4, G16, G22, G23, G25, G27 |
++| `scripts/run-third-party-llm.sh` | Rename → `scripts/dispatch-companion.sh` | Launch vendor-specific third-party review jobs beneath the universal dispatcher. | G3, G27 |
++| `scripts/codex-finding-splitter.sh` | Rename → `scripts/third-party-finding-splitter.sh` | Split third-party stdout boundaries into per-finding files. | G3 |
+ | `scripts/round-prepare.sh` | Create | Canonicalize cumulative diff/ref selection and next-round narrowing inputs. | G4 |
+ | `scripts/await-round.sh` | Create | Drain background reviewer jobs, finalize manifest state, and write round completion summaries. | G3, G4 |
+ | `scripts/_resolve-lib.sh` | Create | Own host×vendor routing, tier resolution, default-tier fallback, and fail-loud routing lookups. | G22, G23, G25, G27 |
+@@ -94,8 +94,8 @@ This slice collapses per-skill reviewer dispatch into one routed script chain an
+ | `tests/unit/test-dispatch-sites.bats` | Modify | Assert all reviewer-producing skills route through `dispatch-agent.sh`. | G3, G4 |
+ | `tests/unit/test-config-model-routing.bats` | Modify | Pin schema shape, validation rows, and fail-loud routing behavior. | G22, G23, G25 |
+ | `tests/unit/test-routing-matrix-application.bats` | Modify | Assert host-aware vendor routing and `--tier-override` behavior. | G22, G27 |
+-| `tests/unit/test-run-codex-review.bats` | Modify | Guard sanctioned-path filtering on review-wrapper inputs. | G16 |
+-| `tests/unit/test-codex-review-codex-availability.bats` | Modify | Guard host-aware second-reviewer availability probing. | G27 |
++| `tests/unit/test-run-codex-review.bats` | Rename → `tests/unit/test-dispatch-agent.bats` | Guard sanctioned-path filtering on dispatch-agent inputs. | G16 |
++| `tests/unit/test-codex-review-codex-availability.bats` | Rename → `tests/unit/test-dispatch-companion-availability.bats` | Guard host-aware second-reviewer availability probing in dispatch-companion. | G27 |
+ 
+ ### Slice 1.5 — Skill prose & interactive dialog quality
+ 
+@@ -131,6 +131,7 @@ This slice raises artifact-authoring quality at the prompt/prose boundary and ma
+ | `tests/acceptance/test-review-pause.bats` | Modify | Ensure pause/review flow respects operator authority rather than fabricated reviewer mandates. | G10 |
+ | `agents/qrspi-implementer-lightweight.md` | Modify | Add `prompt-prose-writer` to `skills:` frontmatter preload. | G31 |
+ | `agents/qrspi-plan-spec-reviewer.md` | Modify | Add `prompt-prose-reviewer` to `skills:` frontmatter preload. | G31 |
++| `agents/qrspi-plan-test-coverage-reviewer.md` | Modify | Add Addition C inline at the TOP of the review-procedure section (standalone — does NOT preload `prompt-prose-reviewer` per design rationale that the full reviewer block would compromise judgment on `task_type: code` tasks where RED IS required). | G31 |
+ 
+ ### Slice 1.6 — Structure SKILL absorbs unified architecture
+ 
+@@ -764,14 +765,21 @@ Cross-cutting insertion sites locked by this release. Locations only — text co
+ | `skills/structure/owns-defers.md` | replaces inline contract body |
+ | `agents/qrspi-structure-scope-reviewer.md` | procedure section, immediately after Step 1 Read citation (introducer prose precedes the include) |
+ 
+-### G31 prompt-prose-writer `!cat` include sites
++### G31 prompt-prose `!cat` include sites
+ 
+-`skills/_shared/prompt-prose-detection.md` + `skills/_shared/prompt-prose-writer-addition.md`
+-are `!cat`-included directly into SKILL.md consumer files (per design.md G31 Consumers #2–#3).
+-This is distinct from the `skills:` frontmatter preload used in agent files.
++`skills/_shared/prompt-prose-detection.md`, `skills/_shared/prompt-prose-writer-addition.md`,
++and `skills/_shared/prompt-prose-reviewer-addition.md` are `!cat`-included into SKILL.md
++files and wrapper SKILLs; Additions A, C, and D are inline-permanent text in their consumer
++files. This is distinct from the `skills:` frontmatter preload used by agent files
++(Consumers #4-#8 per design.md G31 Distribution Table).
+ 
+ | Consumer file | Section / location |
+ |---|---|
+-| `skills/plan/SKILL.md` | writer-subagent dispatch payloads (2 sites): each site carries `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md` + Addition B verbatim (per design.md G31 Consumer #2) |
+-| `skills/design/SKILL.md` | authoring step: `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md` (per design.md G31 Consumer #3) |
++| `skills/plan/SKILL.md` | § Per-Task Classification (Consumer #1): Addition A inline + `!cat skills/_shared/prompt-prose-detection.md` (per design.md G31 Consumer #1) |
++| `skills/plan/SKILL.md` | writer-subagent dispatch payloads (2 sites — Consumer #2): each site carries `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md` + Addition B verbatim (per design.md G31 Consumer #2) |
++| `skills/design/SKILL.md` | authoring step (Consumer #3): `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md` (per design.md G31 Consumer #3) |
++| `skills/prompt-prose-writer/SKILL.md` | wrapper SKILL body (per design.md G31 File 4): `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-writer-addition.md` |
++| `skills/prompt-prose-reviewer/SKILL.md` | wrapper SKILL body (per design.md G31 File 5): `!cat skills/_shared/prompt-prose-detection.md` + `!cat skills/_shared/prompt-prose-reviewer-addition.md` |
++| `agents/qrspi-plan-test-coverage-reviewer.md` | review-procedure section TOP (Consumer #9): Addition C inline (standalone — no `!cat`, no wrapper preload) |
++| `agents/qrspi-design-reviewer.md` | review-procedure body AFTER `skills:` preload triggers (Consumer #6): Addition D inline as refinement layered atop the shared reviewer-addition |
+ 

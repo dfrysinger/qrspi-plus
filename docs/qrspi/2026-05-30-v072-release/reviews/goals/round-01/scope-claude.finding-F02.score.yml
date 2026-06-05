@@ -1,0 +1,2 @@
+score: 75
+reason: Finding correctly identifies a violation of the documented Goals DEFERS rule (assertion text → Structure/Plan/Implement per owns-defers.md:22). The "Known-good replacement" framing violates the owned scope boundary by presenting verbatim bash test code as an already-decided solution rather than a candidate for Design to weigh, which violates the explicit contract at owns-defers.md:12.

@@ -1,0 +1,2 @@
+score: 35
+reason: Real but trivial nitpick — the -n guards are indeed redundant after the count==4 and uniqueness checks, but harmless defensive belt-and-suspenders.

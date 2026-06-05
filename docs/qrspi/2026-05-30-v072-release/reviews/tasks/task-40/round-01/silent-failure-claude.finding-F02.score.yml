@@ -1,0 +1,2 @@
+score: 45
+reason: Real inconsistency between header docstring "every violation" and the per-file `flagged` latch; low blast radius and intentional per code comment, so a minor doc-vs-impl mismatch rather than a functional bug.

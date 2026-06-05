@@ -1,0 +1,2 @@
+score: 55
+reason: Real algorithmic observation — no memoization/depth cap means diamond includes are exponential — but the "attack" requires PR write access to add fixtures and the worst case is a failed CI build on an internal docs/skills builder; "High" severity is overstated though the hardening (depth cap) is a reasonable, cheap fix.

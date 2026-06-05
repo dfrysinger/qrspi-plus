@@ -1,0 +1,2 @@
+score: 90
+reason: Factual enum mismatch verified across three sources (design.md line 636 vs. SKILL.md line 232 vs. research Q2 line 32); `security` not in canonical enum but prescribed in hardening prose; internal contradiction with Iron Law in same section creates load-bearing correctness issue for reviewer dispatch.

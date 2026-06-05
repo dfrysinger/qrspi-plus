@@ -1,0 +1,2 @@
+score: 33
+reason: Real and accurately-described duplication of git-repo setup across the 8 [T13] tests, but it is a low-severity stylistic DRY nitpick in test code with no correctness impact and no CLAUDE.md/upstream rule requiring helper extraction.

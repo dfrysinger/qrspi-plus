@@ -1,0 +1,2 @@
+score: 65
+reason: Verified — acceptance tests at lines 3106–3129 only assert fixture existence and content tokens; they never invoke the resolver or check diagnostics, so the task's "with the required diagnostics" expectation (line 70) is unverified at the acceptance gate, even though unit tests cover the resolver against inline-staged fixtures.

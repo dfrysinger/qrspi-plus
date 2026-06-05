@@ -1,0 +1,3 @@
+score: 15
+change_type: correctness
+verdict: drop (re-raise of r7-sf-codex.F01 already dropped; CD-1 contract permits medium fallback)

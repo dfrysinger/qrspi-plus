@@ -1,0 +1,2 @@
+score: 25
+reason: Dead code (never referenced after assignment) but low-impact cleanup issue; existing content-comparison approach is sufficient, making mtime variable stylistic clutter.

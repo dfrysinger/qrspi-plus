@@ -1,0 +1,2 @@
+score: 8
+reason: The finding describes a "known-but-host-unavailable" vendor state that does not exist in the v0.7.2 matrix (every known vendor is reachable via first- or third-party path on every supported host), and the override is explicitly scoped as diagnostic-only by the task spec — host×vendor availability gating is deferred to v0.7.3+.

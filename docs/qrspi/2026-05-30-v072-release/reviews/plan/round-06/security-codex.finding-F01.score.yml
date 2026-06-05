@@ -1,0 +1,2 @@
+score: 50
+reason: Verified — AC #2 enumerates only the G5 hash-mismatch halt while T34 (plan.md:1951-1952, test pins 1965-1966) defines two additional fail-loud halts (missing-header, malformed-header); the AC's verifier-fan-in entry sets a precedent for enumerating each materially-distinct halt subtype, so omitting two of the three G5 halts is a real under-specification of the phase-level fail-loud gate, though per-task ACs in T34 still cover them.

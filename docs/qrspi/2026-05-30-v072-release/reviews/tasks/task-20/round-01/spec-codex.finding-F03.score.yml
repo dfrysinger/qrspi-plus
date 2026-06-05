@@ -1,0 +1,4 @@
+---
+score: 25
+rationale: Real finding (collateral test-file modifications exist outside target list), but already addressed at higher level—spec-claude explicitly cleared the equivalent question calling these "legitimate live-call-site migrations required by the rename"; spec-codex F03 explicitly advisory-only with two process options; task spec's scope wording (line 30) implicitly acknowledges test updates needed; modifications are necessary for hard-rename functionality.
+---

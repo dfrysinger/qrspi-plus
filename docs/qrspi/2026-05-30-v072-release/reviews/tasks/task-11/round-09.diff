@@ -1,0 +1,214 @@
+diff --git a/scripts/run-codex-review.sh b/scripts/run-codex-review.sh
+index c5d923e..8f77ae4 100755
+--- a/scripts/run-codex-review.sh
++++ b/scripts/run-codex-review.sh
+@@ -297,7 +297,7 @@ _append_manifest_entry() {
+     if [[ -d "$_lock_dir" ]]; then
+       local _now; _now=$(date +%s)
+       local _mtime; _mtime=$(stat -f %m "$_lock_dir" 2>/dev/null || stat -c %Y "$_lock_dir" 2>/dev/null || echo "$_now")
+-      _lock_age=$(( _now - _mtime ))
++      local _lock_age=$(( _now - _mtime ))
+       if (( _lock_age > 30 )); then
+         rmdir "$_lock_dir" 2>/dev/null || true
+         # Retry mkdir on next loop iteration.
+@@ -573,13 +573,6 @@ if [[ "$DRY_RUN" != "true" ]]; then
+   require_flag "artifact-dir" "$ARTIFACT_DIR"
+ fi
+ 
+-# --output-dir must be absolute (load-bearing for agent-side Phase Routing
+-# fail-loud substring check on /reviews/test/).
+-if [[ "$OUTPUT_DIR" != /* ]]; then
+-  echo "error: --output-dir must be absolute (got: $OUTPUT_DIR)" >&2
+-  exit 1
+-fi
+-
+ if [[ ${#SUBJECT_CODE_PATHS[@]} -eq 0 && ${#ARTIFACT_BODY_PATHS[@]} -eq 0 ]]; then
+   echo "error: at least one --subject-code or --artifact-body required" >&2
+   exit 1
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index 05859dc..d9fb00e 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -1728,6 +1728,153 @@ MOCK_EOF
+   rm -rf "$TMP_DIR"
+ }
+ 
++# ---------------------------------------------------------------------------
++# dispatch-manifest AC12: --output-dir injection-laden value is rejected
++# with named diagnostic and no manifest written.
++# _validate_output_dir allowlist is ^/[A-Za-z0-9_./:@-]+$; a space in the
++# value is not in the allowlist and must be rejected at argument-parse time.
++# ---------------------------------------------------------------------------
++@test "[dispatch-manifest AC12] --output-dir injection-laden value is rejected with named diagnostic and no manifest written" {
++  local TMP_DIR
++  TMP_DIR="$(mktemp -d)"
++  _t7_make_mock_repo "$TMP_DIR"
++
++  # Value with a space — not in _validate_output_dir's allowlist.
++  local crafted_outdir='/tmp/foo bar/round-01'
++
++  local exit_code=0
++  local err
++  err="$(QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$crafted_outdir" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model "gpt-5-codex-canary" \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++      2>&1 1>/dev/null)" || exit_code=$?
++
++  [ "$exit_code" -ne 0 ] \
++    || { echo "expected non-zero exit for injection-laden --output-dir, got 0; stderr: $err"; return 1; }
++
++  echo "$err" | grep -qiE 'output-dir|output_dir' \
++    || { echo "stderr does not name --output-dir in rejection diagnostic; got: $err"; return 1; }
++
++  [ ! -f "$crafted_outdir/.dispatch-manifest.json" ] \
++    || { echo "manifest file was written despite rejected --output-dir"; return 1; }
++
++  rm -rf "$TMP_DIR"
++}
++
++# ---------------------------------------------------------------------------
++# dispatch-manifest AC13: dispatcher emits malformed JOB_ID containing a
++# JSON-structural character → _validate_job_id rejects → non-zero exit +
++# no manifest (or manifest contains only a "failed" entry).
++# The double-quote is not in the JOB_ID allowlist ^[A-Za-z0-9_:@.-]+$,
++# so _validate_job_id must reject it before emit_dispatch_manifest_entry.
++# ---------------------------------------------------------------------------
++@test "[dispatch-manifest AC13] dispatcher emits malformed JOB_ID containing a JSON-structural character → _validate_job_id rejects → non-zero exit + no manifest" {
++  local TMP_DIR
++  TMP_DIR="$(mktemp -d)"
++  _t7_make_mock_repo "$TMP_DIR"
++
++  # codex_reviews: false so the third-party dispatcher runs (check_codex_available
++  # would abort early when codex_reviews=true but codex is unavailable in test env).
++  # The default _t7_make_mock_repo config already sets codex_reviews: false.
++
++  # Override the mock dispatcher to emit a JOB_ID with a double-quote.
++  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
++#!/usr/bin/env bash
++cat > /dev/null
++printf 'JOB_ID=evil"injected\n'
++exit 0
++MOCK_EOF
++  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
++
++  local OUTDIR="$TMP_DIR/out"
++  mkdir -p "$OUTDIR"
++
++  local exit_code=0
++  local err
++  err="$(QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$OUTDIR" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model "gpt-5-codex-canary" \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++      2>&1 1>/dev/null)" || exit_code=$?
++
++  [ "$exit_code" -ne 0 ] \
++    || { echo "expected non-zero exit for malformed JOB_ID, got 0; stderr: $err"; return 1; }
++
++  echo "$err" | grep -qiE 'job.?id|job_id' \
++    || { echo "stderr does not name job_id in rejection diagnostic; got: $err"; return 1; }
++
++  # Manifest must either be absent or contain only a "failed" entry —
++  # in no case should it contain a pending entry with the malformed job_id.
++  if [ -f "$OUTDIR/.dispatch-manifest.json" ]; then
++    jq -e 'all(.[]; .status != "pending")' "$OUTDIR/.dispatch-manifest.json" >/dev/null \
++      || { echo "manifest contains a pending entry with malformed JOB_ID"; cat "$OUTDIR/.dispatch-manifest.json"; return 1; }
++  fi
++
++  rm -rf "$TMP_DIR"
++}
++
++# ---------------------------------------------------------------------------
++# dispatch-manifest AC14: dispatcher exits 0 but emits no JOB_ID line →
++# guard fires → non-zero exit + diagnostic.
++# The guard at scripts/run-codex-review.sh lines 1019-1022 must detect
++# a missing JOB_ID= line and exit 1 with a "no JOB_ID" message.
++# ---------------------------------------------------------------------------
++@test "[dispatch-manifest AC14] dispatcher exits 0 but emits no JOB_ID line → guard fires → non-zero exit + diagnostic" {
++  local TMP_DIR
++  TMP_DIR="$(mktemp -d)"
++  _t7_make_mock_repo "$TMP_DIR"
++
++  # Mock dispatcher exits 0 writing only a status message — no JOB_ID= line.
++  cat > "$TMP_DIR/scripts/run-third-party-llm.sh" <<'MOCK_EOF'
++#!/usr/bin/env bash
++cat > /dev/null
++echo "dispatch: status=submitted"
++exit 0
++MOCK_EOF
++  chmod +x "$TMP_DIR/scripts/run-third-party-llm.sh"
++
++  local OUTDIR="$TMP_DIR/out"
++  mkdir -p "$OUTDIR"
++
++  local exit_code=0
++  local err
++  err="$(QRSPI_REPO_ROOT="$TMP_DIR" \
++    COPILOT_CLI="" \
++    bash "$REPO_ROOT/scripts/run-codex-review.sh" \
++      --agent-file agents/qrspi-spec-reviewer.md \
++      --reviewer-tag spec-codex \
++      --output-dir "$OUTDIR" \
++      --round 1 \
++      --subject-code "$TMP_DIR/src/subject.ts" \
++      --model "gpt-5-codex-canary" \
++      --output-file "$TMP_DIR/result.md" \
++      --artifact-dir "$TMP_DIR/artifact-dir" \
++      2>&1 1>/dev/null)" || exit_code=$?
++
++  [ "$exit_code" -ne 0 ] \
++    || { echo "expected non-zero exit when dispatcher emits no JOB_ID, got 0; stderr: $err"; return 1; }
++
++  echo "$err" | grep -qiE 'no JOB_ID|no.job.?id' \
++    || { echo "stderr does not contain 'no JOB_ID' diagnostic; got: $err"; return 1; }
++
++  rm -rf "$TMP_DIR"
++}
++
+ # ---------------------------------------------------------------------------
+ # AC12: emit_dispatch_manifest_entry must fail loudly if jq fails or is
+ # absent — silent jq failure under `set +e` would leave $entry="" and
+@@ -2368,6 +2515,12 @@ MOCK_EOF
+     || { echo "dispatch_spec.vendor != claude"; cat "$manifest"; return 1; }
+   jq -e '.[0].dispatch_spec.model == "claude-sonnet-4-5"' "$manifest" >/dev/null \
+     || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
++  # First-party manifest entry exactly 5 top-level keys (defense-in-depth parity with AC9).
++  jq -e '.[0] | keys | length == 5' "$manifest" >/dev/null \
++    || { echo "first-party manifest entry has unexpected top-level key count (expected exactly 5)"; cat "$manifest"; return 1; }
++  # First-party dispatch_spec exactly 5 keys.
++  jq -e '.[0].dispatch_spec | keys | length == 5' "$manifest" >/dev/null \
++    || { echo "first-party dispatch_spec has unexpected key count (expected exactly 5: subagent_type/host/vendor/model/prompt_file)"; cat "$manifest"; return 1; }
+ 
+   rm -rf "$TMP_DIR"
+ }
+@@ -2628,6 +2781,15 @@ MOCK_EOF
+     || { echo "dispatch_spec.vendor != claude"; cat "$manifest"; return 1; }
+   jq -e '.[0].dispatch_spec.model == "claude-sonnet-4-5"' "$manifest" >/dev/null \
+     || { echo "dispatch_spec.model != claude-sonnet-4-5"; cat "$manifest"; return 1; }
++  # AC5: dispatch_spec.subagent_type asserted on the real end-to-end first-party dispatch path
++  # (T11 spec requires this field; AC2 covers the helper-function path).
++  jq -e '.[0].dispatch_spec.subagent_type | type == "string" and length > 0' "$manifest" >/dev/null \
++    || { echo "dispatch_spec missing subagent_type"; cat "$manifest"; return 1; }
++  # AC5: first-party entry strict-shape parity with AC9's third-party pin (defense-in-depth).
++  jq -e '.[0] | keys | length == 5' "$manifest" >/dev/null \
++    || { echo "first-party manifest entry has unexpected top-level key count (expected exactly 5)"; cat "$manifest"; return 1; }
++  jq -e '.[0].dispatch_spec | keys | length == 5' "$manifest" >/dev/null \
++    || { echo "first-party dispatch_spec has unexpected key count (expected exactly 5)"; cat "$manifest"; return 1; }
+ 
+   rm -rf "$tmp"
+ }

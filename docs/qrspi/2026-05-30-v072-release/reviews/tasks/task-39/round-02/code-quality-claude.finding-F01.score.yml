@@ -1,0 +1,2 @@
+score: 55
+reason: Verified — lines 504–515 compute outRelFromRoot, never read it, and the author's own comment flags it as a speculative hook; clear YAGNI but minor maintenance-only impact.

@@ -1,0 +1,3 @@
+finding_tag: silent-failure-codex.R1-F01
+score: 75
+reason: `|| true` on extract_frontmatter_field collapses operational read errors into missing-data. Distinguish read-failure from field-absent; route former through halt path. KEEP.

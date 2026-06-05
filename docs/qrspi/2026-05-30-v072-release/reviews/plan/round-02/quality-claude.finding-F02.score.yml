@@ -1,0 +1,2 @@
+score: 78
+reason: Verified all three sub-claims in plan.md — Target list at line 1797 names four files while Out (1819) and DoD (1838) still say "three target files", and no In/Test bullet authors or validates the new lint .bats file; this is a concrete correctness inconsistency the implementer/reviewer will hit.

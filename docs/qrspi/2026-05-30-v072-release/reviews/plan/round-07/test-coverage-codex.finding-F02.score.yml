@@ -1,0 +1,2 @@
+score: 72
+reason: DoD L1400 mandates a grep-zero check for stale docs/prompt-design-guide.md references, but Test Expectations L1407–L1413 only cover deletion existence and unrelated refresh-edit anchors — a real DoD↔tests coverage gap.

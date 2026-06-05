@@ -1,0 +1,2 @@
+score: 42
+reason: Real but marginal gap — T20's "manifest entries" phrasing is generic and doesn't explicitly pin dispatch_spec field survival, but the T11 dep, the unit test rename inheriting T11 assertions, and a competent Test author following the dep chain together provide reasonable coverage; the finding's fix is a small clarity improvement, not a load-bearing correctness issue.

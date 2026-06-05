@@ -1,0 +1,2 @@
+score: 81
+reason: Confirmed—line 109 (rev-parse "$BASE_REF") and line 331 (git diff "$REF") both lack -- separator; attacker can inject git flags like --show-toplevel or --output=<path> to disclose repo root or write arbitrary files.

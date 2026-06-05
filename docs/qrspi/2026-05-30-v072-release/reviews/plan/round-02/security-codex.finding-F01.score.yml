@@ -1,0 +1,2 @@
+score: 15
+reason: Re-litigates a locked Design decision (CD-1 precedence chain ends with `medium` + loud warning as a migration-window layer-4 fallback); the spec separately fails loud on invalid/missing `model_routing:` via `config-validation-procedure.md` and on a `none` tier, so the framing as silent-fallback-on-invalid-config misreads the precedence chain.

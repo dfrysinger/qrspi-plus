@@ -1,0 +1,2 @@
+score: 72
+reason: Two valid gaps: (1) test stubs await_cmd as exit-0 so files outside .dispatch/ aren't tested; (2) SUM_LINE in bash (line 222-234) is printed unbounded, unlike ERR_TEXT which is capped at 1KiB (line 206-207 Python, line 229 bash).

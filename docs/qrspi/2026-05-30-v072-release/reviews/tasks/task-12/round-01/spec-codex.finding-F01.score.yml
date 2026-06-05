@@ -1,0 +1,2 @@
+score: 100
+reason: Task spec target-files block lists four anchor/manifest JSON files as "modify". Round-01.diff contains zero changes to these files; completeness failure confirmed against explicit spec deliverables.

@@ -1,0 +1,15 @@
+score: 88
+reason: |
+  G27 contains real internal contradiction across three sites: CD-1 matrix L115-119 marks
+  Copilot CLI / Codex as first-party (zero third-party vendors in v0.7.2); D2 probe L2102
+  says "exits 0 if any third-party vendor exists"; acceptance L2128 mandates probe exits 0
+  on Copilot CLI. D5 extended matrix L2114-2118 further lists openai-codex as the default
+  second-reviewer vendor for Copilot CLI despite Codex being first-party. Non-implementable
+  contract — D2 probe definition must broaden ("any vendor distinct from the primary") OR
+  the first/third-party labels must be replaced with a "second-reviewer-eligible" concept.
+finding_id: R1-F02
+reviewer_tag: quality-codex
+verifier_notes: |
+  Sidecar persisted by orchestrator after verifier returned chat-only with
+  `quality-codex.R1-F02: 88` (PI-006 recurrence — verifier non-deterministic
+  chat-only fallback on haiku-4.5).

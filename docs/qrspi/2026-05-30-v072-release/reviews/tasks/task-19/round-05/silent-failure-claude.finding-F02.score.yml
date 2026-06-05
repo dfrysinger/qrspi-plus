@@ -1,0 +1,2 @@
+score: 72
+reason: Confirmed real gap — L307 test pins only host= while DoD L52 requires both host and vendor in the diagnostic, and the adjacent L319 test uses OR semantics (value|field-name) that lets a vendor= field-name rename go undetected.

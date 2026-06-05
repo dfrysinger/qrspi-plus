@@ -1,0 +1,2 @@
+score: 10
+reason: The CONTRIBUTING.md ID-hygiene rule targets design-doc anchors (G/CD labels) in *skills prose* (runtime-loaded SKILL.md content) where agents can't dereference them — the pre-push lint explicitly checks only `skills/*/SKILL.md skills/_shared/*.md`; it says nothing about test files, and D-labels/task-provenance tokens in test comments are not in scope of that rule, making this a false positive despite the tokens genuinely being present.

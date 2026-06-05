@@ -1,0 +1,2 @@
+score: 100
+reason: Four target anchor/manifest JSON files explicitly listed in task spec as "modify" are completely absent from round-01.diff; verified byte-for-byte identical to base branch and never touched by this work-unit.

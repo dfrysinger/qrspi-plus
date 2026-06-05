@@ -1,0 +1,2 @@
+score: 50
+reason: Verified line 293 || echo 0 fallback. Acknowledged race window is extremely narrow (cat fails after Python successfully wrote RC_FILE). Real issue but minor in practice; probability of hitting this is low.

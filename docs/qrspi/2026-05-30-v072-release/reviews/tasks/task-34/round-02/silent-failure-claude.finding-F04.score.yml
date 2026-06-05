@@ -1,0 +1,2 @@
+score: 85
+reason: Verified - critical safety property (single mismatch halts entire N-task fan-out) untested; all mismatch tests use single-task plan, allowing buggy eager-fan-out dispatch to pass all tests.

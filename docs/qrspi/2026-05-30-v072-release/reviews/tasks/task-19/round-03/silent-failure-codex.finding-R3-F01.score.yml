@@ -1,0 +1,2 @@
+score: 10
+reason: False positive — the claimed silent-exit-0 path is unreachable because an unsourced _resolve-lib.sh leaves second_reviewer_vendor_known undefined, so `! second_reviewer_vendor_known "$_vendor"` evaluates to `! exit-127` = exit-0 (TRUE), making the L54 guard fire and exit 1 with the required [second-reviewer-unavailable] diagnostic rather than silently succeeding.

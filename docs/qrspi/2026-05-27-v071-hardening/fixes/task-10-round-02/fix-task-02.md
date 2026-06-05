@@ -114,7 +114,7 @@ The orchestrator validates these invariants at config-load time and on every dis
 
 ## Slice 4 — Anchor regen
 
-**Run:** `bash scripts/g4-section-anchor-refresh.sh`
+**Run:** `bash tools/g4-section-anchor-refresh.sh`
 
 **Rationale:** Slice 1 adds ~3 lines inside the `#### \`model_routing:\` block` section. The `Config File (config.md)` parent anchor's `line_end` shifts; downstream sections shift by the same delta. Required to keep `tests/unit/test-section-anchor-narrow-read.bats` green.
 

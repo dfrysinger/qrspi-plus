@@ -1,0 +1,2 @@
+score: 85
+reason: Verified — design.md L2625 lists Consumer #9 (`qrspi-plan-test-coverage-reviewer.md`) as receiving Addition C (a behavioral rubric insertion, not a frontmatter preload); structure.md File Map has no row for that file and the Slice 1.4 sweep row at L93 is explicitly limited to `tier:`/DISPATCH_FILE with "no behavioral logic," so Addition C is genuinely unmapped — a real correctness gap exactly parallel to the R6 fix for Consumers #4 and #8.

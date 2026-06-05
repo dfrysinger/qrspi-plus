@@ -1,0 +1,2 @@
+score: 35
+reason: Real gap between scope's order-preservation clause and Test Expectations, but T16 is a routing-schema migration that does not touch dispatch sequencing (governed by Implement/Test skills with existing tests); co-escalation (the routing-relevant half of the contract) is already covered at line 1022, so an explicit ordering test is a nice-to-have non-regression net rather than a load-bearing omission.

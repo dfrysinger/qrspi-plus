@@ -1,0 +1,2 @@
+score: 78
+reason: Legitimate correctness issue—line 169 contains /tmp/ reference that becomes LLM-accessible after migration and violates R1 of the same document; will be encountered in practice and poses real security concern (info disclosure + path injection), though mitigation is straightforward.

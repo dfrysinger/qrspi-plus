@@ -1,0 +1,2 @@
+score: 55
+reason: Target files row genuinely uses "or" + glob (placeholder-like, violates plan overview's "exact file paths" promise), though the Scope "In" bullet does provide a deterministic resolution rule (start with the unit file, only fall back if historical file still exists), partially mitigating implementer ambiguity.

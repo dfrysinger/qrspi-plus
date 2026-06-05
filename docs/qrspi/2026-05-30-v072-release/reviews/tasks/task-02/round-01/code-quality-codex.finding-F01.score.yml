@@ -1,0 +1,3 @@
+finding_tag: code-quality-codex.R1-F01
+score: 10
+reason: Aggregates one real bug (G12) with multiple false positives (CD-4 not in [GRDFTQ] charset, R1-F0N test-fixture finding_id values are documented carve-out per implementer-protocol). Claude F01 already covers the real G12. DROP this aggregate; rely on claude F01.

@@ -1,0 +1,133 @@
+diff --git a/skills/_shared/prompt-prose-reviewer-addition.md b/skills/_shared/prompt-prose-reviewer-addition.md
+index 395bf91..38ec089 100644
+--- a/skills/_shared/prompt-prose-reviewer-addition.md
++++ b/skills/_shared/prompt-prose-reviewer-addition.md
+@@ -1,6 +1,6 @@
+ **Reviewer-side application.** For each file (or sub-block, for blocks within larger documents like `design.md`) in the diff, apply the detection above. Apply liberally — when content semantics indicate prompt prose, treat as in-scope regardless of file path or extension.
+ 
+-For each file or block determined to be prompt prose: Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles + finding-type gate. If the Read fails, do NOT emit findings. Surface the error and stop. Emit findings using the standard reviewer schema, tagged:
++For each file or block determined to be prompt prose: Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles + finding-type gate. If the Read fails, do NOT emit findings. Surface the error and stop the review entirely — do not proceed with any further files. Emit findings using the standard reviewer schema, tagged:
+ 
+ - `change_type: clarity` for verbosity / anchor-phrase / structure-quality findings.
+ - `change_type: correctness` for finding-type-gate violations (e.g., load-bearing rule placed at start instead of end, examples exceeding the 2-cap, missing Iron-Law markers on override-critical content).
+diff --git a/skills/prompt-prose-reviewer/SKILL.md b/skills/prompt-prose-reviewer/SKILL.md
+index d9fcce0..a7ba0ce 100644
+--- a/skills/prompt-prose-reviewer/SKILL.md
++++ b/skills/prompt-prose-reviewer/SKILL.md
+@@ -7,3 +7,5 @@ description: Apply prompt-design rules when reviewing prompt-prose subjects in a
+ !cat skills/_shared/prompt-prose-detection.md
+ 
+ !cat skills/_shared/prompt-prose-reviewer-addition.md
++
++<!-- Guard: if either include above is unavailable, do NOT apply this skill. Surface a load error and stop — partial context is worse than no skill. -->
+diff --git a/skills/prompt-prose-writer/SKILL.md b/skills/prompt-prose-writer/SKILL.md
+index 30e7b92..edef8ab 100644
+--- a/skills/prompt-prose-writer/SKILL.md
++++ b/skills/prompt-prose-writer/SKILL.md
+@@ -7,3 +7,5 @@ description: Apply prompt-design rules when authoring or planning prompt-prose d
+ !cat skills/_shared/prompt-prose-detection.md
+ 
+ !cat skills/_shared/prompt-prose-writer-addition.md
++
++<!-- Guard: if either include above is unavailable, do NOT apply this skill. Surface a load error and stop — partial context is worse than no skill. -->
+diff --git a/tests/unit/test-task-25-round01-fixes.bats b/tests/unit/test-task-25-round01-fixes.bats
+index 3e5a290..b94a849 100644
+--- a/tests/unit/test-task-25-round01-fixes.bats
++++ b/tests/unit/test-task-25-round01-fixes.bats
+@@ -4,7 +4,7 @@
+ #   security-claude F02 + silent-failure-claude F01: /tmp/ reference in prompt-design-rules.md
+ #   silent-failure-claude F02: no fail-loud guard in writer/reviewer addition Read
+ #   silent-failure-claude F03: writer addition lacks sub-block detection guidance
+-#   code-quality-claude F01: goal IDs (G31, G1, G30) in runtime strings
++#   code-quality-claude F01: internal goal IDs in runtime strings
+ 
+ setup_file() {
+   REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd -P)"
+@@ -58,13 +58,13 @@ setup_file() {
+ # ── code-quality-claude F01 — no goal IDs in runtime strings ─────────────────
+ 
+ @test "prompt-design-rules.md Last-applied line has no internal goal ID" {
+-  # The Last applied: header must not reference G31 or similar IDs.
++  # The Last applied: header must not reference internal goal IDs.
+   run grep -E 'Last applied:.*\bG[0-9]+\b' "$RULES"
+   [ "$status" -ne 0 ]
+ }
+ 
+ @test "prompt-design-rules.md cross-cutting section has no inline (Sources: ...) parentheticals" {
+-  # The Sources: G1 and Sources: G30 parentheticals must be removed (inside baseball, R1-cuttable).
++  # The inline (Sources: ...) parentheticals must be removed (inside baseball, R1-cuttable).
+   run grep -E '\(Sources:' "$RULES"
+   [ "$status" -ne 0 ]
+ }
+diff --git a/tests/unit/test-task-25-round02-fixes.bats b/tests/unit/test-task-25-round02-fixes.bats
+new file mode 100644
+index 0000000..3a00ec2
+--- /dev/null
++++ b/tests/unit/test-task-25-round02-fixes.bats
+@@ -0,0 +1,66 @@
++#!/usr/bin/env bats
++# Tests for Task 25 round-02 review findings (fix pass).
++# Findings addressed:
++#   code-quality: internal IDs in test-file comments re-introduced during R1 fix
++#   silent-failure (assembly guard): no assembly-layer guard in wrapper SKILL.md files
++#   silent-failure (ambiguous stop): ambiguous "stop" in per-file loop in reviewer-addition
++
++setup_file() {
++  REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd -P)"
++  export REPO_ROOT
++  R1_TEST="$REPO_ROOT/tests/unit/test-task-25-round01-fixes.bats"
++  REVIEWER_SKILL="$REPO_ROOT/skills/prompt-prose-reviewer/SKILL.md"
++  WRITER_SKILL="$REPO_ROOT/skills/prompt-prose-writer/SKILL.md"
++  REVIEWER_ADD="$REPO_ROOT/skills/_shared/prompt-prose-reviewer-addition.md"
++  export R1_TEST REVIEWER_SKILL WRITER_SKILL REVIEWER_ADD
++}
++
++# ── code-quality round-02 — no internal IDs in R1-fix test comments ──────────
++
++@test "R1-fix test file comment has no parenthetical internal-ID list on finding-description line" {
++  # The finding-description comment line must not enumerate internal IDs like
++  # the parenthetical that was re-introduced in the R1 fix pass.
++  run grep -E 'goal IDs \(' "$R1_TEST"
++  [ "$status" -ne 0 ]
++}
++
++@test "R1-fix test file body comment has no bare internal goal-ID token" {
++  # The inline comment in the Last-applied test must use a generic description,
++  # not a bare internal goal-ID reference.
++  run grep -E '# The Last applied:.*\bG[0-9]+\b' "$R1_TEST"
++  [ "$status" -ne 0 ]
++}
++
++# ── silent-failure round-02: assembly guard — both SKILL.md files ────────────
++
++@test "prompt-prose-reviewer SKILL.md has load guard for partial-include failure" {
++  # After the !cat chain, the SKILL must instruct the agent not to apply the
++  # skill if any include is unavailable — partial context is worse than none.
++  run grep -iE 'if.*(include|cat|unavailable|fails)' "$REVIEWER_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++@test "prompt-prose-writer SKILL.md has load guard for partial-include failure" {
++  run grep -iE 'if.*(include|cat|unavailable|fails)' "$WRITER_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++@test "prompt-prose-reviewer SKILL.md guard says do NOT apply skill on partial load" {
++  # Must explicitly prohibit applying the skill when includes are missing.
++  run grep -iE '(do not|do NOT|NOT).*(apply|proceed|use)' "$REVIEWER_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++@test "prompt-prose-writer SKILL.md guard says do NOT apply skill on partial load" {
++  run grep -iE '(do not|do NOT|NOT).*(apply|proceed|use)' "$WRITER_SKILL"
++  [ "$status" -eq 0 ]
++}
++
++# ── silent-failure round-02: ambiguous stop — reviewer-addition ───────────────
++
++@test "prompt-prose-reviewer-addition.md stop-guard says stop the review entirely" {
++  # Ambiguous per-iteration "stop" must be clarified to entire-review stop so
++  # a transient Read failure on one file cannot produce silent partial enforcement.
++  run grep -iE 'stop the review entirely|do not proceed with any further files' "$REVIEWER_ADD"
++  [ "$status" -eq 0 ]
++}

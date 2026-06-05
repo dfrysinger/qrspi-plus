@@ -1,0 +1,2 @@
+score: 30
+reason: Real but acknowledged limitation of regex-based content matching; low severity and unlikely to occur in practice given the canonical names used throughout the design.

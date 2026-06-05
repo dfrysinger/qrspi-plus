@@ -1,0 +1,2 @@
+score: 45
+reason: Factually accurate and verified (tests use -ne 0 while branches exit 1, distinct from 10/11/12), but a low-severity test-hardening nitpick already partially mitigated by the unique diagnostic-substring assertions.

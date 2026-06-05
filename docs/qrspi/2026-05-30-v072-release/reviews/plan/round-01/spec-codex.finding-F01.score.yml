@@ -1,0 +1,2 @@
+score: 60
+reason: Verified — T42 Target files carries an "or … successor" alternative plus a "Locate the current owner…" discovery instruction in Scope, which conflicts with Plan SKILL's exact-path / self-contained-task requirement and makes the Definition of done non-deterministic; design.md G24 anticipated tree-audit uncertainty so it isn't a hard policy violation, but the planner could (and per HARD-GATE arguably should) have resolved it against structure.md now or split T42 into discover-then-fix.

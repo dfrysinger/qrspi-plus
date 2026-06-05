@@ -1,0 +1,4 @@
+# scope-set for round 01
+# generated_by: qrspi-scope-tagger
+# total_findings_kept: 4
+## Operational Notes

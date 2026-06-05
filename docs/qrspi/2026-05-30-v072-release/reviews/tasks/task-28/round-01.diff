@@ -1,0 +1,90 @@
+diff --git a/skills/_shared/multi-actor-flow-check.md b/skills/_shared/multi-actor-flow-check.md
+new file mode 100644
+index 0000000..2d48c31
+--- /dev/null
++++ b/skills/_shared/multi-actor-flow-check.md
+@@ -0,0 +1,24 @@
++## Multi-Actor Flow Check
++
++Before authoring any deliverable that operationalizes a design decision involving two or more actors — where "actor" means anything that performs an operation and hands off to another: scripts, subagents, orchestrators, tools, services, protocol participants, object-call participants, workflow steps, queue producers/consumers, function callers/callees — verify that the design specifies all six choreography elements:
++
++1. **Actor inventory** — every participant named, with its role.
++2. **Sequence of operations** — ordered list of who-does-what; parallelism boundaries explicit.
++3. **Per-step inputs and outputs** — what each actor receives and produces at each step; where outputs are written (stdout, file path, return value, manifest entry, message).
++4. **Consumer identification** — for every output, who reads it next. Outputs with no named consumer must be removed or the consumer surfaced.
++5. **Loud-failure paths** — what happens when each step fails; where the failure surfaces; which actor catches it. Silent fallback is never the answer.
++6. **Context-cost call-out** — for any flow that crosses a context boundary (orchestrator/subagent, process, network), explicitly state what crosses vs. what stays on disk or in the other context.
++
++If any element is missing for an in-scope decision, **STOP** authoring against this decision and surface a concrete diagnostic to the user. Do NOT guess the missing hand-off and continue.
++
++Diagnostic template:
++
++> Design decision **X** enumerates actors **A, B, C** but does not specify **[missing element — e.g., "what happens if B produces no output", "how A invokes B", "who reads C's output"]**.
++>
++> Stopping before guessing.
++>
++> Recommended path: trigger the **Backward Loops** procedure (see `using-qrspi/SKILL.md` § Backward Loops) to re-open Design via its per-decision dialogue, lock the missing element, re-review + re-approve `design.md`, then cascade forward — every dependent artifact from Design onward (Phasing if phase boundaries are affected, Structure, Plan, Parallelize if task dependencies are affected) re-runs against the updated design.
++>
++> Alternative: provide explicit guidance to accept the gap with a documented assumption recorded against this decision in the deliverable. The assumption becomes the de-facto contract — name what you are choosing for the missing element.
++
++**Iron law:** silently inventing a missing hand-off is a contract violation that ships half-finished features which only surface at Test or in production. Guessing-instead-of-stopping is a process failure and must be reported even if the deliverable otherwise looks complete.
+diff --git a/skills/implement/SKILL.md b/skills/implement/SKILL.md
+index 36fc9a7..f9d26a3 100644
+--- a/skills/implement/SKILL.md
++++ b/skills/implement/SKILL.md
+@@ -410,6 +410,10 @@ If tests fail, present failure summary with 3 options:
+ - **(b) Proceed anyway:** delete `.worktrees/{slug}/baseline/` immediately after writing `reviews/baseline-failures.md`, before entering Step 6.
+ - **(c) Stop:** no deletion required — the pipeline halts. The user can clean up `.worktrees/{slug}/baseline/` manually if they want.
+ 
++## Multi-Actor Flow Check
++
++!cat skills/_shared/multi-actor-flow-check.md
++
+ ## Wave Dispatch (Full Pipeline)
+ 
+ **Compaction checkpoint: pre-fanout.** Per-task wave fan-out dispatches an implementer subagent (>10K tokens of TDD transcript) plus reviewer subagents whose findings drive the fix loop; saturated context here silently swallows critical reviewer signal. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+diff --git a/skills/parallelize/SKILL.md b/skills/parallelize/SKILL.md
+index 14a526a..6cc7917 100644
+--- a/skills/parallelize/SKILL.md
++++ b/skills/parallelize/SKILL.md
+@@ -90,6 +90,10 @@ This applies regardless of how simple the phase appears.
+ 
+ > **Why the base-naming rule matters.** A common misread is *"all task branches always fork from the feature branch."* That works for parallel-only phases but breaks sequential dependencies — task-N's worktree would start without task-(N-1)'s code. The correct rule is base-from-feature-tip for Wave 1 parallel members, base-from-previous-tip for sequential-chain members, base-from-stage-commit when a Wave has multi-parent dependencies, base-from-task-NN-tip when a downstream task has a single prior-Wave parent, and base-from-task-00-tip after a baseline fix is injected. Parallelize records the symbolic name; Implement resolves it to a concrete commit and creates stage commits as needed.
+ 
++## Multi-Actor Flow Check
++
++!cat skills/_shared/multi-actor-flow-check.md
++
+ ## Process Steps
+ 
+ **Compaction checkpoint: pre-fanout.** Steps 2–8 below read every current-phase task spec, synthesize the dependency graph + Waves + Branch Map, and render the Mermaid diagram into `parallelization.md`. The synthesis subagent (or inline synthesis) reads many tasks and produces large output. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+diff --git a/skills/plan/SKILL.md b/skills/plan/SKILL.md
+index 5d9bd39..7f1d859 100644
+--- a/skills/plan/SKILL.md
++++ b/skills/plan/SKILL.md
+@@ -78,6 +78,10 @@ Each task implements **exactly one observable behavior** — one request handler
+ 
+ A task that fails any floor check merges into the parent task that gives it observable behavior; do not ship sub-atomic tasks.
+ 
++## Multi-Actor Flow Check
++
++!cat skills/_shared/multi-actor-flow-check.md
++
+ ## Process
+ 
+ ### Plan Overview Subagent
+diff --git a/skills/structure/SKILL.md b/skills/structure/SKILL.md
+index 34d9911..899b659 100644
+--- a/skills/structure/SKILL.md
++++ b/skills/structure/SKILL.md
+@@ -50,6 +50,10 @@ Do NOT proceed to Plan without user approval of the structure.
+ 
+ When generating `structure.md`, Structure honors the phase scope set by Phasing: structure.md reflects ONLY current-phase file maps and interfaces (per `phasing.md` + the pruned `design.md`). Entries are tagged with goal IDs. File maps for goals not in the current phase (per `roadmap.md`, which Phasing authors) do not appear in `structure.md`. Structure verifies every goal ID in the file map exists in the current-phase `goals.md`; cross-phase scoping decisions and any change to the phase boundary itself are Phasing's responsibility — Structure refers the user back to Phasing if a scope shift is needed rather than re-authoring the phase split.
+ 
++## Multi-Actor Flow Check
++
++!cat skills/_shared/multi-actor-flow-check.md
++
+ ## Process
+ 
+ ### Structure Subagent

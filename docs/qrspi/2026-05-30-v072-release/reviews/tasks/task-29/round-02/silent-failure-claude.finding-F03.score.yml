@@ -1,0 +1,2 @@
+score: 30
+reason: Plausible robustness concern about head -n1 masking duplicates, but task spec doesn't mandate test internals at this granularity; minor nitpick at LOW severity unlikely to fire in practice given canonical insertion points.

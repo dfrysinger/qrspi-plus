@@ -1,0 +1,2 @@
+score: 60
+reason: Real correctness gap — "exit code only" conflates infrastructure failures (missing/unreadable script, exit 127) with genuine non-structural-content defects, producing misleading diagnostics; recommendation is reasonable but the impact is moderate (defect surfaces only when a spec names a script that isn't checked in).

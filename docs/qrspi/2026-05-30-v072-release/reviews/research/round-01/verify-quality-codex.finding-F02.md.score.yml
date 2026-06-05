@@ -1,0 +1,2 @@
+score: 5
+reason: False positive—the q01/q02 summary blocks DO contain file:line citations (embedded in prose, not as separate metadata), contradicting the finding's premise that they are "uncited" or "without per-claim file:line citations."

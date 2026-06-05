@@ -251,3 +251,145 @@ setup_file() {
   [ -n "$REPO_ROOT" ]
   [ -d "$REPO_ROOT" ]
 }
+
+# ===========================================================================
+# T39 / G32 — CI workflow build-sync gate + recursive BATS/lint coverage.
+#
+# Per docs/qrspi/2026-05-30-v072-release/structure.md §`tests/unit/test-ci-workflow-shape.bats`
+# (Slice 1.7) and tasks/task-39.md §"Test expectations":
+#
+#   - PR CI runs `node tools/build-plugin.mjs` followed by
+#     `git diff --exit-code build/ .claude-plugin/marketplace.json`.
+#   - bash-3.2 / BATS job runs tests/ recursively (not just tests/unit/ +
+#     tests/acceptance/).
+#   - lint job retains shellcheck + bash-3.2 ban-list AND adds recursive lint
+#     coverage so tests/lint/*.bats run on the same blocking path.
+#   - Single workflow file (no sibling workflow added).
+#   - No Actions auto-commit step in v0.7.2.
+# ===========================================================================
+
+@test "[T39/G32] CI runs node tools/build-plugin.mjs as the build-sync gate step" {
+  require_repo_root
+  [ -f "$CI_YML" ]
+  run grep -F 'node tools/build-plugin.mjs' "$CI_YML"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32] CI runs git diff --exit-code build/ .claude-plugin/marketplace.json after build" {
+  require_repo_root
+  [ -f "$CI_YML" ]
+  # marketplace.json must be included in the diff gate (per design.md G32 §D5).
+  run grep -E 'git diff --exit-code .*build/.*\.claude-plugin/marketplace\.json' "$CI_YML"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32] build-sync gate ordering: node tools/build-plugin.mjs precedes git diff --exit-code in ci.yml" {
+  require_repo_root
+  [ -f "$CI_YML" ]
+  local build_line diff_line
+  build_line="$(grep -n 'node tools/build-plugin.mjs' "$CI_YML" | head -1 | cut -d: -f1)"
+  diff_line="$(grep -nF 'git diff --exit-code build/' "$CI_YML" | head -1 | cut -d: -f1)"
+  [ -n "$build_line" ]
+  [ -n "$diff_line" ]
+  [ "$build_line" -lt "$diff_line" ]
+}
+
+@test "[T39/G32] BATS test job runs tests/ recursively (not just unit/ + acceptance/)" {
+  require_repo_root
+  [ -f "$CI_YML" ]
+  # Recursive coverage: either `bats -r tests` (or `tests/`) or an equivalent
+  # `find tests -name '*.bats'` invocation. Literal `tests/unit` + `tests/acceptance`
+  # alone is insufficient — new tests/lint/ and other top-level test subtrees
+  # must run on the same blocking path.
+  run grep -E '(bats[[:space:]]+-r[[:space:]]+tests|bats[[:space:]]+--recursive[[:space:]]+tests|find[[:space:]]+tests.*-name.*\*\.bats)' "$CI_YML"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32] lint job has recursive lint coverage that picks up tests-lint subtree" {
+  require_repo_root
+  [ -f "$CI_YML" ]
+  # The lint job must reference tests/lint OR run tests/ recursively in a
+  # way that includes tests/lint/. A literal `tests/lint` mention OR a
+  # recursive `tests` traversal in the lint job both satisfy this.
+  run grep -E 'tests/lint|bats[[:space:]]+-r[[:space:]]+tests' "$CI_YML"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T39/G32] CI keeps a single workflow file (no sibling workflow added by G32)" {
+  require_repo_root
+  # Exactly one .yml/.yaml workflow file under .github/workflows/.
+  local count
+  count="$(find "$REPO_ROOT/.github/workflows" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | wc -l | tr -d ' ')"
+  [ "$count" = "1" ]
+}
+
+@test "[T39/G32] CI has NO Actions auto-commit step (no git commit from a workflow run step)" {
+  require_repo_root
+  [ -f "$CI_YML" ]
+  # Auto-commit-from-Actions is explicitly out of scope for v0.7.2 (design.md
+  # G32 §D5 "No auto-commit by Actions in v0.7.2"). Any `git commit`,
+  # `git push`, or `add-and-commit`-style action use indicates the prohibited
+  # auto-commit step.
+  run grep -E '(^|[^#])[[:space:]]*git[[:space:]]+(commit|push)[[:space:]]' "$CI_YML"
+  [ "$status" -ne 0 ]
+  run grep -E 'add-and-commit|git-auto-commit|stefanzweifel/git-auto-commit-action' "$CI_YML"
+  [ "$status" -ne 0 ]
+}
+
+@test "[T39/G32] CI marketplace.json is part of the build-sync diff gate (not just build/)" {
+  require_repo_root
+  [ -f "$CI_YML" ]
+  # The diff gate must include .claude-plugin/marketplace.json explicitly so
+  # that a source change requiring a rebuild without a matching marketplace/
+  # version edit fails CI loudly. (design.md G32 §D5 line 2815 / acceptance
+  # bullet 5 line 2843.)
+  run grep -F '.claude-plugin/marketplace.json' "$CI_YML"
+  [ "$status" -eq 0 ]
+}
+
+# ===========================================================================
+# T40 / G21 — BATS body-guard lint + G26 BW02 guard lint on blocking path.
+#
+# Per docs/qrspi/2026-05-30-v072-release/structure.md
+# §`tests/unit/test-ci-workflow-shape.bats` (Slice 1.7) and
+# tasks/task-40.md §"Definition of done":
+#
+#   - tests/lint/test-bats-body-assertion-guard.bats exists and is covered by
+#     the recursive `bats -r tests` invocation in the bash32 job.
+#   - No pre-commit hook or shellcheck rule is added for G21/G26.
+# ===========================================================================
+
+@test "[T40/G21] tests/lint/test-bats-body-assertion-guard.bats exists" {
+  require_repo_root
+  # The G21 lint file must be present so the recursive bats run picks it up.
+  # This pin is RED until the lint file is created.
+  [ -f "$REPO_ROOT/tests/lint/test-bats-body-assertion-guard.bats" ]
+}
+
+@test "[T40/G21] bash32 BATS job covers tests/lint/ via recursive tests/ run (G21 + G26 BW02 lint on blocking path)" {
+  require_repo_root
+  [ -f "$CI_YML" ]
+  # tests/lint/test-bats-body-assertion-guard.bats reaches the blocking CI path
+  # through the `bats -r tests` recursive invocation already present in the
+  # bash32 job (T39/G32 pin). This T40/G21 pin explicitly anchors the
+  # dependency from the G21 lint file to that run step.
+  run grep -E 'bats[[:space:]]+-r[[:space:]]+tests' "$CI_YML"
+  [ "$status" -eq 0 ]
+}
+
+@test "[T40/G21] no tracked hook script wires body-guard or bats-body-assertion (C1 enforcement)" {
+  require_repo_root
+  # G21 sub-decision C1: CI gate only; no pre-commit hook.
+  # Assert no tracked file under scripts/, .husky/, .githooks/, lefthook.*, .pre-commit-config.*, or .pre-commit-hooks.*
+  # references body-guard or bats-body-assertion. Load-bearing in CI: fails
+  # loudly if a C1 violation is merged. Uses git ls-files (index-tracked) so
+  # this fires on a clean CI checkout, not only on a developer workstation.
+  local violations
+  violations=""
+  while IFS= read -r f; do
+    if grep -qE 'body-guard|bats-body-assertion' "$REPO_ROOT/$f"; then
+      violations="$violations $f"
+    fi
+  done < <(git -C "$REPO_ROOT" ls-files | grep -E '^(scripts|\.husky|\.githooks|lefthook|\.pre-commit-config|\.pre-commit-hooks)')
+  [ -z "$violations" ]
+}

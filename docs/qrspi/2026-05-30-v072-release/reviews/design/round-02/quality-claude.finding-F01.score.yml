@@ -1,0 +1,2 @@
+score: 55
+reason: Verified taxonomy mismatch — T2's stated coverage boundary is "one bats file per script under scripts/", but CD-2 invariant assigns T2 to lint SKILL.md (markdown) consumers; real but moderate, since the design already stretches T2 similarly for G21 BW02 and Plan can resolve via re-bucketing.

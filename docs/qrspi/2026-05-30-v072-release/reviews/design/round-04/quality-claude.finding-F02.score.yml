@@ -1,0 +1,8 @@
+---
+finding_id: R4-F02
+reviewer_tag: quality-claude
+score: 75
+change_type: correctness
+reason: G28 cross-references in 3 sites point at wrong line numbers post-R3 letter rename. The letter-token substitution was done; the line-number refresh was not. Real but low-leverage — references still navigable via grep, but the artifact's stated invariants drift over time without surface fixes like this. Above the 70 correctness threshold; kept.
+defect_class: stale-line-references
+---

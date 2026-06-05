@@ -1,0 +1,2 @@
+score: 60
+reason: Verified — C-3's local REGEX_ADVERB includes `substitut` while the deployed unit pin's regex does not, so C-3 demonstrates a hypothetical broader regex rather than tripping the actually-deployed pin; the in-code comment acknowledges this gap deliberately, but the spec's "trip the pin" requirement is not literally satisfied for the substitut case and C-3 cannot detect future drift in the deployed regex.

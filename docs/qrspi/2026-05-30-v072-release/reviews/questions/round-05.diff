@@ -1,0 +1,12 @@
+diff --git a/docs/qrspi/2026-05-30-v072-release/questions.md b/docs/qrspi/2026-05-30-v072-release/questions.md
+index 9647b3c..3167135 100644
+--- a/docs/qrspi/2026-05-30-v072-release/questions.md
++++ b/docs/qrspi/2026-05-30-v072-release/questions.md
+@@ -54,6 +54,6 @@ status: draft
+ 
+ 25. [codebase] What does `skills/using-qrspi/SKILL.md` (and any other skill or agent file) literally say about applying sub-threshold findings as a cluster? Search for terms such as "convergent", "cluster", "batch apply", and "sub-threshold" across `skills/`, `agents/`, and `scripts/`. Also catalogue any prior dispositions-file precedent in `docs/qrspi/*/reviews/*/round-*-dispositions.md` where orchestrators recorded cluster-application reasoning, and characterize how the dispositions documented their reasoning and what defect-class evidence they cited.
+ 
+-26. [codebase] What does `skills/reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract and each per-skill review section (the same set as Q24) prescribe for how artifact content is passed to reviewer subagents? Inventory every place where `artifact_body:` (wrapped-inline form) appears in the prescribed dispatch shape, and every place where `artifact_path:` (path-based form) appears or is mentioned as an alternative or escape hatch. Are there any prescribed size thresholds, escape rules, or selection guidance between the two forms?
++26. [codebase] What does `skills/reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract and each per-skill review section (the same set as Q24) prescribe for how artifact content is passed to reviewer subagents? Inventory every place where `artifact_body:` (wrapped-inline form) appears in the prescribed dispatch shape, and every place where `artifact_path:` (path-based form) appears or is mentioned. Does the dispatch contract currently describe any conditions or criteria for choosing between the two forms, or is one form specified unconditionally?
+ 
+ 27. [codebase] What artifact sizes have historical QRSPI runs actually emitted and dispatched to reviewers? Sample `goals.md`, `questions.md`, `research/summary.md`, `design.md`, `structure.md`, `plan.md`, and `parallelization.md` across the `docs/qrspi/*` runs (e.g., `2026-05-27-v071-hardening/`, `2026-05-30-v072-release/`) and report each file's byte size. Also check whether any reviewer dispatch logs or commit messages in those runs reference adjustments or ad-hoc handling for large artifacts.

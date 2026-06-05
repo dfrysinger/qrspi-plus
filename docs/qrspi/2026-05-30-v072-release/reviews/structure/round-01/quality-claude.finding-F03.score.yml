@@ -1,0 +1,2 @@
+score: 85
+reason: Verified — design.md CD-4 component H (line 494) and G12 acceptance (line 708) explicitly require `skills/_shared/verifier-dispatch-prose.md`, but structure.md's file map contains no Create entry for it (while the symmetric `reviewer-dispatch-prose.md` is present in Slice 1.4), so G12 acceptance will fail.

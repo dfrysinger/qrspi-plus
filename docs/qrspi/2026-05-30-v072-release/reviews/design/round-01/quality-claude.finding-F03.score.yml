@@ -1,0 +1,2 @@
+score: 75
+reason: Finding correctly identifies that design.md violates a documented requirement from qrspi-design-reviewer.md (line 32: "Test strategy appropriate at design level — the design includes a testing approach; it names the test types (unit, integration, contract, e2e) and explains what's being tested at each level"), and the required unified test strategy section is genuinely missing from the newly-created artifact introduced by this work-unit.

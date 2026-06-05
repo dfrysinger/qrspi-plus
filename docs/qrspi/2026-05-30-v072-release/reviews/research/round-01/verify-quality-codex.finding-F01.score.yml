@@ -1,0 +1,12 @@
+score: 0
+verdict: DROP
+rationale: |
+  The finding's premise is factually wrong. The research SKILL.md § Collation Subagent
+  explicitly permits the Cross-References section: "the assembled output is just those
+  blocks stitched together in question order, plus a short Cross-References section."
+  Per the verifier rubric's factually-wrong-premise path, score 0.
+finding_id: R1-F01
+reviewer_tag: quality-codex
+verifier_notes: |
+  Sidecar persisted by orchestrator after verifier returned chat-only with `quality-codex.F01: 0`.
+  PI-006 recurrence — verifier non-deterministic chat-only fallback (haiku-4.5).

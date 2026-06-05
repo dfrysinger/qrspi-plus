@@ -8,8 +8,8 @@
     {
       "name": "qrspi",
       "description": "QRSPI workflow plugin for agentic software development",
-      "version": "0.7.1",
-      "source": "./",
+      "version": "0.7.2",
+      "source": "./build",
       "author": {
         "name": "Daniel Frysinger"
       }

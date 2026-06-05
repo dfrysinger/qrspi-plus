@@ -1,0 +1,2 @@
+score: 90
+reason: All four grep-regression tests (lines 434–451) literally assert `[ "$status" -ne 0 ]`, which is satisfied by both grep exit 1 (no match, intended) and exit 2 (error/missing dir), allowing vacuous pass when the target directories are absent.

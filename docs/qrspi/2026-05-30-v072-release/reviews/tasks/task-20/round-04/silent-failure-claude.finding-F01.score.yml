@@ -1,0 +1,2 @@
+score: 72
+reason: Real diagnostic-loss issue introduced by this task; stderr silencing in falsifying test eliminates actionable error context when await-round.sh fails, directly impacting CI debugging experience—matches medium severity with high confidence.

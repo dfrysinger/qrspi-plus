@@ -1,0 +1,2 @@
+score: 30
+reason: Real but speculative hardening for a test-only extraction; today's one-clause-per-line invariant makes greedy `.*` safe, so the issue is a low-severity future-proofing nitpick.

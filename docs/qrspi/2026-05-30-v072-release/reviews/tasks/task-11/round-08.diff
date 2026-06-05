@@ -1,0 +1,89 @@
+diff --git a/scripts/run-codex-review.sh b/scripts/run-codex-review.sh
+index 4c99f35..c5d923e 100755
+--- a/scripts/run-codex-review.sh
++++ b/scripts/run-codex-review.sh
+@@ -920,14 +920,19 @@ if [[ "$_detected_host" == "copilot-cli" ]]; then
+   # (symlink-safe); rename(2) replaces the destination atomically without
+   # following symlinks.
+   _fp_tmp=""
++  # Install signal-cleanup trap BEFORE mktemp so any signal between mktemp
++  # success and the if-check fires with relay still "" (rm -f "" is a no-op).
++  # Mirror of the _manifest_tmp relay+trap pattern (lines 288-290): three
++  # separate traps so INT/TERM exit with their canonical codes (130/143)
++  # instead of being swallowed by a bare cleanup.
++  trap 'rm -f "$_fp_tmp" 2>/dev/null || true' EXIT
++  trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 130' INT
++  trap 'rm -f "$_fp_tmp" 2>/dev/null || true; exit 143' TERM
+   if ! _fp_tmp="$(mktemp "${_fp_prompt_file}.tmp.XXXXXX")"; then
++    trap - EXIT INT TERM
+     echo "error: mktemp failed for first-party prompt tmpfile" >&2
+     exit 1
+   fi
+-  # Install signal-cleanup trap for _fp_tmp so the assembled prompt (which
+-  # contains subject code) is removed if SIGINT/SIGTERM fires before mv-promotion
+-  # completes.  Mirror of the _manifest_tmp relay+trap pattern.
+-  trap 'rm -f "$_fp_tmp" 2>/dev/null || true' EXIT INT TERM
+   if ! compose_prompt > "$_fp_tmp"; then
+     rm -f "$_fp_tmp"; _fp_tmp=""
+     trap - EXIT INT TERM
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index d7310d8..05859dc 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -2818,15 +2818,16 @@ JQ_EOF
+   # Guard: the first-party dispatch block must install a trap referencing _fp_tmp.
+   grep -q '_fp_tmp' "$script" \
+     || { echo "ERROR: _fp_tmp not found in script" >&2; return 1; }
+-  # The trap install line must reference _fp_tmp and cover EXIT.
+-  grep -qE "trap '.*rm -f.*\\\$_fp_tmp.*EXIT|trap '.*\\\$_fp_tmp.*EXIT" "$script" \
+-    || { echo "EXIT trap does not clean up _fp_tmp relay variable"; return 1; }
+-  # INT trap must reference _fp_tmp.
+-  grep -qE "trap '.*rm -f.*\\\$_fp_tmp.*INT" "$script" \
+-    || { echo "INT trap does not clean up _fp_tmp relay variable"; return 1; }
+-  # TERM trap must reference _fp_tmp.
+-  grep -qE "trap '.*rm -f.*\\\$_fp_tmp.*TERM" "$script" \
+-    || { echo "TERM trap does not clean up _fp_tmp relay variable"; return 1; }
++  # FIX-P: three SEPARATE trap lines required (mirroring the _manifest_tmp split).
++  # EXIT trap must be pure cleanup — no exit code (fires on normal exit too).
++  grep -q "trap 'rm -f \"\$_fp_tmp\" 2>/dev/null || true' EXIT" "$script" \
++    || { echo "EXIT trap must be pure cleanup ending with ' EXIT (not combined EXIT INT TERM)"; return 1; }
++  # INT trap must carry the canonical interrupt exit code (130).
++  grep -q "trap 'rm -f \"\$_fp_tmp\" 2>/dev/null || true; exit 130' INT" "$script" \
++    || { echo "INT trap must include 'exit 130' for canonical interrupt exit code"; return 1; }
++  # TERM trap must carry the canonical termination exit code (143).
++  grep -q "trap 'rm -f \"\$_fp_tmp\" 2>/dev/null || true; exit 143' TERM" "$script" \
++    || { echo "TERM trap must include 'exit 143' for canonical termination exit code"; return 1; }
+ }
+ 
+ # The _manifest_tmp relay must be explicitly reset to "" at lock-acquisition
+@@ -2842,7 +2843,7 @@ JQ_EOF
+   # trap install to verify ordering: mkdir_line < reset_line < trap_line.
+   local mkdir_line reset_line trap_line
+   mkdir_line="$(grep -n 'mkdir "\$_lock_dir"' "$script" | head -1 | cut -d: -f1)"
+-  reset_line="$(grep -n '_manifest_tmp=""' "$script" | grep -v '^\s*#' | awk -F: -v lo="${mkdir_line:-0}" '$1 > lo {print $1; exit}')"
++  reset_line="$(grep -n '_manifest_tmp=""' "$script" | grep -vE '^[0-9]+:[[:space:]]*#' | awk -F: -v lo="${mkdir_line:-0}" '$1 > lo {print $1; exit}')"
+   trap_line="$(grep -n "trap '.*rm -f.*_manifest_tmp" "$script" | head -1 | cut -d: -f1)"
+   [ -n "$mkdir_line" ] \
+     || { echo "ERROR: lock-acquire mkdir line not found" >&2; return 1; }
+@@ -2853,3 +2854,21 @@ JQ_EOF
+   (( reset_line < trap_line )) \
+     || { echo "ERROR: _manifest_tmp reset (line ${reset_line}) must come before trap install (line ${trap_line})"; return 1; }
+ }
++
++# FIX-P: _fp_tmp trap must be installed BEFORE the mktemp call so no race
++# window exists between mktemp success and trap install.  Mirror of the
++# _manifest_tmp relay+trap ordering assertion above.
++@test "_fp_tmp trap is installed before mktemp" {
++  local script="$REPO_ROOT/scripts/run-codex-review.sh"
++  local trap_line mktemp_line
++  # Find the first trap line that references _fp_tmp cleanup.
++  trap_line=$(grep -n "trap '.*rm -f.*\$_fp_tmp" "$script" | head -1 | cut -d: -f1)
++  # Find the mktemp call that creates _fp_tmp (by matching the tmpfile template).
++  mktemp_line=$(grep -n 'mktemp "${_fp_prompt_file}.tmp' "$script" | head -1 | cut -d: -f1)
++  [ -n "$trap_line" ] \
++    || { echo "ERROR: _fp_tmp trap line not found in script"; return 1; }
++  [ -n "$mktemp_line" ] \
++    || { echo "ERROR: _fp_tmp mktemp line not found in script"; return 1; }
++  [ "$trap_line" -lt "$mktemp_line" ] \
++    || { echo "ERROR: _fp_tmp trap (line $trap_line) must precede mktemp (line $mktemp_line)"; return 1; }
++}

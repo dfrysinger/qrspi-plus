@@ -1,0 +1,2 @@
+score: 25
+reason: Plan content is authored and human-reviewed in-loop on the developer's own machine; the "untrusted plan = command injection" threat model is weak for this dev-tool workflow, and an allowlist would significantly constrain the legitimate use of grep/structural_lint commands without a recorded upstream constraint demanding it.

@@ -1,0 +1,2 @@
+score: 26
+reason: Real but very minor style/clarity issue in test code; grep -i with redundant case variants is semantically redundant and slightly misleading, but tests work correctly and it's a nitpick.

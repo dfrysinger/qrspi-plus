@@ -1,0 +1,2 @@
+score: 88
+reason: Confirmed — implement/SKILL.md line 541 (introduced by this task) correctly opens with "validation fails loudly" but its second clause cross-references "the warning text and the runtime-backfill recovery contract" in using-qrspi, language that was explicitly deleted by this same task; using-qrspi lines 510–516 now document fail-loud repair-or-abort with no warning text and no backfill, making the cross-reference dangling and contradictory.

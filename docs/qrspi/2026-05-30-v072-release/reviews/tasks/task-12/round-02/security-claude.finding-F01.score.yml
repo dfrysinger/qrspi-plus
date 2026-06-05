@@ -1,0 +1,2 @@
+score: 92
+reason: Confirmed—await_cmd and split_cmd are read from untrusted JSON manifest and passed to shell=True with no validation; attacker controlling manifest can execute arbitrary code with DEVNULL suppression hiding all evidence.

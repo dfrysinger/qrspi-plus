@@ -1,0 +1,2 @@
+score: 100
+reason: CRITICAL: Verified absolute-path shell bypass. Line 130 check "/" not in exe" completely misses /bin/sh -c payloads. subprocess.run(["/bin/sh", "-c", "malicious"], shell=False) DOES execute shell with arguments. Full RCE from manifest-write alone. Definite vulnerability.

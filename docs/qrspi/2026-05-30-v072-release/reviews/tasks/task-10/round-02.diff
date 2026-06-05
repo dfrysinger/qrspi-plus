@@ -1,0 +1,264 @@
+diff --git a/agents/qrspi-finding-verifier.md b/agents/qrspi-finding-verifier.md
+index 40791d6..6485a87 100644
+--- a/agents/qrspi-finding-verifier.md
++++ b/agents/qrspi-finding-verifier.md
+@@ -93,7 +93,7 @@ The verifier receives five prompt parameters:
+ 
+    **Examples of well-formed tags:** `goal-leakage` (a question or design reveals goals-content it should not), `unanchored-claim` (a statement makes an assertion without a citation), `imprecise-quantifier` (a constraint uses vague words like "many" or "often"), `redundant-restatement` (the same content appears in multiple places), `dangling-reference` (a citation points at content that no longer exists), `swallowed-error` (an exception is caught and silently discarded), `silent-fallback` (a degraded path is taken without surfacing the degradation), `dry-violation` (the same logic is duplicated across surfaces), `injection` (untrusted input flows into a structural sink), `fabricated-citation` (the cited resource does not exist — pairs with `score: 0` HALLUCINATED).
+ 
+-   **Required when score is sub-threshold** (`clarity` < 80 or `correctness` < 70) so the data is usable for future cluster analysis. **Optional but permitted when score is at-or-above threshold** (informational only). When the finding does not fit any meaningful defect category — e.g., pure-advisory style suggestions ("consider naming this more clearly") — emit literal `defect_class: unspecified` rather than omitting the field. A missing field is a schema violation; an `unspecified` value is honest absence of signal.
++   **Required on every sidecar.** The field is REQUIRED on every sidecar the verifier emits — both `verifier_status: passed` (success) and `verifier_status: failed` (unable-to-evaluate) sidecars. When the finding does not fit any meaningful defect category — including at-or-above-threshold findings whose only signal is style polish, pure-advisory style suggestions ("consider naming this more clearly"), or failure sidecars whose evaluation never produced a defect signal — emit literal `defect_class: unspecified` rather than omitting the field. A missing field is a schema violation; an `unspecified` value is honest absence of signal.
+ 
+    `defect_class:` is informational instrumentation only. It does NOT gate keep/drop, does NOT extend `scripts/verifier-fan-in.sh`'s audit-JSON shape, and is consumed by no current surface; future cluster-analysis tooling may read it from sidecars.
+ 
+@@ -116,6 +116,7 @@ The verifier receives five prompt parameters:
+    ---
+    verifier_status: failed
+    actual_model: <copied verbatim from finding frontmatter, or the literal `unknown` when the finding omitted the field>
++   defect_class: <kebab-case tag matching ^[a-z0-9][a-z0-9-]*$, ≤30 chars; e.g. `verifier-crash`, `infrastructure-failure`; literal `unspecified` is also valid when failure produced no defect signal>
+    failure_reason: <one-sentence diagnosis>
+    ---
+    ```
+diff --git a/skills/using-qrspi/SKILL.md b/skills/using-qrspi/SKILL.md
+index 574b9a9..6d71a42 100644
+--- a/skills/using-qrspi/SKILL.md
++++ b/skills/using-qrspi/SKILL.md
+@@ -992,30 +992,19 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
+ 
+    **Optional `## Sub-Threshold Observations` section (informational only).** When the orchestrator notices a pattern in dropped findings worth recording — e.g., multiple sub-threshold findings sharing a `defect_class` tag and clustering just below the floor — it MAY append a `## Sub-Threshold Observations` H2 section to `round-NN-dispositions.md` as evidence-collection signal for future calibration. The section is purely informational: it does NOT claim an override, it does NOT trigger any reapply behavior, and it is consumed by no current script. Zero observations on a clean round is the common case.
+ 
+-   The section's body is a YAML-fenced block listing one entry per observation with: an `observation_summary` one-liner, the contributing `finding_paths` (relative to the round-NN directory under `reviews/{step}/`), each finding's `defect_class` tag, each finding's `score`, and the `threshold` that dropped them (80 for `style`/`clarity`, 70 for `correctness`). Canonical example:
++   The section's body is a YAML-fenced block listing one entry per observation with: a `summary` one-liner, the contributing `finding_paths` (relative to the round-NN directory under `reviews/{step}/`), each finding's `defect_class` tag, each finding's `score`, and the `threshold` that dropped them (80 for `style`/`clarity`, 70 for `correctness`). Canonical example:
+ 
+    ```yaml
+    observations:
+-     - observation_summary: "4 clarity findings naming goal-leakage in different questions, all dropped just below the floor"
++     - summary: "4 clarity findings naming goal-leakage in different questions, all dropped just below the floor"
++       defect_class: goal-leakage
++       score: 70
+        threshold: 80
+        finding_paths:
+          - round-01/quality-claude.finding-F02.md
+          - round-01/quality-claude.finding-F04.md
+          - round-01/quality-codex.finding-F01.md
+          - round-01/quality-codex.finding-F03.md
+-       contributing_findings:
+-         - path: round-01/quality-claude.finding-F02.md
+-           defect_class: goal-leakage
+-           score: 68
+-         - path: round-01/quality-claude.finding-F04.md
+-           defect_class: goal-leakage
+-           score: 70
+-         - path: round-01/quality-codex.finding-F01.md
+-           defect_class: goal-leakage
+-           score: 72
+-         - path: round-01/quality-codex.finding-F03.md
+-           defect_class: goal-leakage
+-           score: 75
+    ```
+ 
+    This shape is informational-only and not consumed by any current script; downstream tooling may parse it in a future release once enough cluster occurrences accumulate to calibrate a programmatic rule.
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index 27eea95..5961af9 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -1957,74 +1957,55 @@ _t9_simulate_verifier_sidecar_write() {
+ # G28 — Convergent-evidence exception: verifier instrumentation + dispositions
+ # observations section (apply-fix override forbidden).
+ #
+-# Coverage:
+-#   AC1   Verifier agent body documents the `defect_class:` token (regression
+-#         guard: defect-class rubric step is present and reachable).
+-#   AC2   skills/using-qrspi/SKILL.md dispositions writer prose forbids
+-#         keeping sub-threshold findings via orchestrator override (CD-4
+-#         iron-rule consistency: kept-findings.txt has one path — the script).
+-#   AC3   skills/using-qrspi/SKILL.md documents the optional
+-#         `## Sub-Threshold Observations` H2 section as informational-only,
+-#         with a YAML-fenced template carrying summary, contributing finding
+-#         paths, defect_class tags, scores, and the threshold that dropped.
++# Coverage (labels mirror spec ACs 1-5 verbatim):
++#   AC1   Verifier agent body documents `defect_class:` field + the regex
++#         `^[a-z0-9][a-z0-9-]*$` shape constraint.
++#   AC2   Verifier agent body documents the ≤30-character cap on
++#         `defect_class:` tokens.
++#   AC3   Verifier agent body documents the literal `defect_class: unspecified`
++#         fallback for absence-of-signal findings.
+ #   AC4   Sub-threshold findings DO NOT reach `kept-findings.txt` through any
+-#         path: a clarity-60 + correctness-65 fixture round produces a
+-#         kept-findings.txt with neither finding present (script behavior is
+-#         unchanged; no override surface exists in the documented protocol).
+-#   AC5   A well-formed `## Sub-Threshold Observations` section parses as
+-#         valid YAML inside the fenced block (informational fixture: lint
+-#         the documented template against `python -c yaml.safe_load`).
++#         path (behavior pin) AND `skills/using-qrspi/SKILL.md` prose forbids
++#         keeping sub-threshold findings via orchestrator override (prose pin).
++#   AC5   `skills/using-qrspi/SKILL.md` documents the optional
++#         `## Sub-Threshold Observations` H2 section (template + informational
++#         language) AND the YAML template parses as valid YAML carrying
++#         exactly the spec-pinned fields (summary, finding_paths,
++#         defect_class, score, threshold).
+ # ===========================================================================
+ 
+-@test "[G28 AC1] verifier agent body carries defect_class: token (rubric-step regression guard)" {
+-  grep -qF 'defect_class:' "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
++@test "[G28 AC1] verifier agent body documents defect_class field + regex ^[a-z0-9][a-z0-9-]*$" {
++  local agent="$REPO_ROOT/agents/qrspi-finding-verifier.md"
++  grep -qF 'defect_class:' "$agent" \
+     || { echo "defect_class: token absent from verifier agent body"; return 1; }
++  # Spec AC1 requires the kebab-case regex shape be documented (not just
++  # mentioned in prose). The regex is the contract downstream tools will
++  # validate against.
++  grep -qF '^[a-z0-9][a-z0-9-]*$' "$agent" \
++    || { echo "defect_class regex ^[a-z0-9][a-z0-9-]*\$ not documented in verifier agent"; return 1; }
+ }
+ 
+-@test "[G28 AC2] using-qrspi/SKILL.md forbids keeping sub-threshold findings via orchestrator override" {
+-  # The dispositions writer prose MUST contain a prohibition against keeping
+-  # dropped findings via override. We assert that prose like "MUST NOT" /
+-  # "must not" appears in the same paragraph that names sub-threshold findings
+-  # and either "override" or "kept-findings".
+-  local skill="$SKILLS/using-qrspi/SKILL.md"
+-  grep -qiE 'sub-threshold' "$skill" \
+-    || { echo "sub-threshold prose missing from using-qrspi/SKILL.md"; return 1; }
+-  # MUST NOT … override (kept-findings.txt is the script's exclusive output)
+-  grep -qE 'MUST NOT.*(override|keep)' "$skill" \
+-    || { echo "prohibition (MUST NOT … override) not documented"; return 1; }
+-}
+-
+-@test "[G28 AC3] using-qrspi/SKILL.md documents the optional ## Sub-Threshold Observations H2 with YAML template" {
+-  local skill="$SKILLS/using-qrspi/SKILL.md"
+-  # H2 heading literal token.
+-  grep -qF '## Sub-Threshold Observations' "$skill" \
+-    || { echo "## Sub-Threshold Observations H2 heading missing from SKILL.md"; return 1; }
+-  # Documented as informational-only / not consumed by scripts in v0.7.2.
+-  grep -qiE 'informational[- ]only|purely informational|consumed by no script|not consumed' "$skill" \
+-    || { echo "informational-only language for observations section missing"; return 1; }
+-  # Carve out the section that documents the observations template and assert
+-  # it names the required fields. Bound the slice so we don't accidentally
+-  # match the same tokens elsewhere in the SKILL.
++@test "[G28 AC2] verifier agent body documents the ≤30-character cap on defect_class tokens" {
++  local agent="$REPO_ROOT/agents/qrspi-finding-verifier.md"
++  # The cap MUST appear (≤30, <=30, or '30 char' phrasing) AND it must be
++  # near the defect_class documentation — not a stray match elsewhere.
+   local slice
+   slice="$(awk '
+-    /## Sub-Threshold Observations/ { flag=1 }
+-    flag && /^[^#]*\*\*[A-Z]/ && !/Sub-Threshold Observations/ && got_fence==1 { exit }
++    /^5\. \*\*Score\*\*/ { flag=1 }
++    flag && /^6\. \*\*Write `<sidecar_path>`\*\*/ { exit }
+     flag { print }
+-  ' "$skill")"
+-  # The template MUST mention every field the design pins.
+-  echo "$slice" | grep -qiE 'observation[_ ]?summary|summary' \
+-    || { echo "observations template missing 'summary' field"; return 1; }
+-  echo "$slice" | grep -qiE 'finding[_ ]?path|contributing.*finding' \
+-    || { echo "observations template missing contributing finding paths field"; return 1; }
+-  echo "$slice" | grep -qF 'defect_class' \
+-    || { echo "observations template missing defect_class field"; return 1; }
+-  echo "$slice" | grep -qiE 'score' \
+-    || { echo "observations template missing score field"; return 1; }
+-  echo "$slice" | grep -qiE 'threshold' \
+-    || { echo "observations template missing threshold field"; return 1; }
+-}
+-
+-@test "[G28 AC4] sub-threshold findings cannot reach kept-findings.txt: clarity-60 + correctness-65 are dropped end-to-end" {
++  ' "$agent")"
++  echo "$slice" | grep -qE '(≤|<=) ?30|30[- ]char' \
++    || { echo "≤30-character cap on defect_class not documented near the rubric step"; return 1; }
++}
++
++@test "[G28 AC3] verifier agent body documents 'defect_class: unspecified' fallback" {
++  grep -qE 'defect_class: *unspecified' "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
++    || { echo "literal 'defect_class: unspecified' fallback not documented"; return 1; }
++}
++
++@test "[G28 AC4] sub-threshold findings cannot reach kept-findings.txt + SKILL.md forbids override" {
++  # Behavior half: clarity-60 + correctness-65 are dropped end-to-end.
+   local tmp
+   tmp="$(mktemp -d)"
+ 
+@@ -2049,10 +2030,25 @@ _t9_simulate_verifier_sidecar_write() {
+   fi
+ 
+   rm -rf "$tmp"
++
++  # Prose half: SKILL.md dispositions writer prose forbids keeping
++  # sub-threshold findings via orchestrator override.
++  local skill="$SKILLS/using-qrspi/SKILL.md"
++  grep -qiE 'sub-threshold' "$skill" \
++    || { echo "sub-threshold prose missing from using-qrspi/SKILL.md"; return 1; }
++  grep -qE 'MUST NOT.*(override|keep)' "$skill" \
++    || { echo "prohibition (MUST NOT … override) not documented"; return 1; }
+ }
+ 
+-@test "[G28 AC5] documented Sub-Threshold Observations YAML template parses as valid YAML" {
+-  local skill="$REPO_ROOT/skills/using-qrspi/SKILL.md"
++@test "[G28 AC5] SKILL.md documents optional ## Sub-Threshold Observations H2 with spec-pinned YAML template" {
++  local skill="$SKILLS/using-qrspi/SKILL.md"
++  # H2 heading literal token.
++  grep -qF '## Sub-Threshold Observations' "$skill" \
++    || { echo "## Sub-Threshold Observations H2 heading missing from SKILL.md"; return 1; }
++  # Documented as informational-only / not consumed by scripts in v0.7.2.
++  grep -qiE 'informational[- ]only|purely informational|consumed by no script|not consumed' "$skill" \
++    || { echo "informational-only language for observations section missing"; return 1; }
++
+   # Extract the first ```yaml ... ``` fenced block that follows the
+   # `## Sub-Threshold Observations` heading.
+   local yaml
+@@ -2069,4 +2065,34 @@ _t9_simulate_verifier_sidecar_write() {
+   # Validate via python yaml (available in CI/test env).
+   python3 -c "import sys, yaml; yaml.safe_load(sys.stdin.read())" <<<"$yaml" \
+     || { echo "Sub-Threshold Observations YAML template did not parse cleanly"; printf '%s\n' "$yaml"; return 1; }
++
++  # Spec DoD pins the template's field shape. Assert each spec-pinned field
++  # appears in the YAML template (exact spec spelling — no permissive
++  # observation_summary alias). Asserting on the YAML slice (not the whole
++  # SKILL) prevents incidental matches elsewhere in the doc.
++  printf '%s\n' "$yaml" | grep -qE '^\s*-?\s*summary:' \
++    || { echo "observations template missing 'summary:' field (spec spelling — not 'observation_summary:')"; printf '%s\n' "$yaml"; return 1; }
++  printf '%s\n' "$yaml" | grep -qE '^\s*finding_paths:' \
++    || { echo "observations template missing 'finding_paths:' list field"; printf '%s\n' "$yaml"; return 1; }
++  printf '%s\n' "$yaml" | grep -qE 'defect_class:' \
++    || { echo "observations template missing 'defect_class:' field"; printf '%s\n' "$yaml"; return 1; }
++  printf '%s\n' "$yaml" | grep -qE 'score:' \
++    || { echo "observations template missing 'score:' field"; printf '%s\n' "$yaml"; return 1; }
++  printf '%s\n' "$yaml" | grep -qE 'threshold:' \
++    || { echo "observations template missing 'threshold:' field"; printf '%s\n' "$yaml"; return 1; }
++
++  # Strict spec-shape pin: the spec defines a flat field list. The
++  # `contributing_findings:` substructure was implementation drift in R1
++  # and MUST NOT appear — per-finding detail belongs in `finding_paths[]`.
++  if printf '%s\n' "$yaml" | grep -qE '^\s*contributing_findings:'; then
++    echo "observations template carries undocumented 'contributing_findings:' substructure (spec defines a flat shape — remove)"
++    printf '%s\n' "$yaml"
++    return 1
++  fi
++  # And no permissive observation_summary alias.
++  if printf '%s\n' "$yaml" | grep -qE 'observation_summary:'; then
++    echo "observations template uses 'observation_summary:' (spec spelling is 'summary:')"
++    printf '%s\n' "$yaml"
++    return 1
++  fi
+ }
+diff --git a/tests/unit/test-verified-file-shape.bats b/tests/unit/test-verified-file-shape.bats
+index 6108ee1..55aa824 100644
+--- a/tests/unit/test-verified-file-shape.bats
++++ b/tests/unit/test-verified-file-shape.bats
+@@ -191,6 +191,17 @@ source_assembly() {
+     || { echo "defect_class: not present in success-case sidecar example"; return 1; }
+ }
+ 
++@test "verifier sidecar failure-case example carries defect_class: in frontmatter (REQUIRED on every sidecar)" {
++  # Spec DoD: defect_class: is REQUIRED on every sidecar. The failure-sidecar
++  # path (verifier_status: failed) is a sidecar too, so the documented
++  # template MUST also carry the field — otherwise the documentation
++  # contradicts the DoD's "missing field is a schema violation" rule.
++  local body
++  body="$(awk '/On failure/{flag=1} /^7\. /{flag=0} flag' agents/qrspi-finding-verifier.md)"
++  echo "$body" | grep -qF 'defect_class:' \
++    || { echo "defect_class: not present in failure-case sidecar example (REQUIRED on every sidecar per spec DoD)"; return 1; }
++}
++
+ @test "skills/using-qrspi/SKILL.md still contains the structural markers this mirror depends on" {
+   # Drift guard: if any of these markers disappears from the documented
+   # snippet, the in-test mirror above is no longer testing the documented

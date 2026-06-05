@@ -1,0 +1,2 @@
+score: 70
+reason: Real ambiguity introduced by this task — SKILL.md permits both exit-code and count-output lint styles, but reviewer Step 3's "output indicating non-structural diff content" gives no rule for distinguishing them, so a count-style failing lint with exit 0 silently grants the exemption.

@@ -1,0 +1,2 @@
+score: 80
+reason: Verified — structure.md line 651 cites "design.md CD-4 §D1" but the design-altitude-boundary `!cat` pattern is established in design.md G34 §D1 (line 2895); CD-4 is the universal dispatch decision and unrelated, and the sibling G35 entry on line 660 correctly uses the matching pattern, confirming the inconsistency.

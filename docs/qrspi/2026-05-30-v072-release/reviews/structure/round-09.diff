@@ -1,0 +1,38 @@
+diff --git a/docs/qrspi/2026-05-30-v072-release/structure.md b/docs/qrspi/2026-05-30-v072-release/structure.md
+index ec8d28c..8b22064 100644
+--- a/docs/qrspi/2026-05-30-v072-release/structure.md
++++ b/docs/qrspi/2026-05-30-v072-release/structure.md
+@@ -34,7 +34,7 @@ This slice makes verifier scoring observable and review-round instrumentation du
+ |---|---|---|---|
+ | `agents/qrspi-finding-verifier.md` | Modify | Add hallucination screening, actual-model-aware scoring cues, and convergent-evidence exception handling. | G19, G20, G28 |
+ | `skills/using-qrspi/SKILL.md` | Modify | Define round instrumentation, sub-threshold observation logging, verifier-visible audit surfaces, and orchestrator-side halt-response protocol (CD-4 §I.3): read `orchestrator_rescue` and `max_drift_per_round` from config.md to gate rescue-layer behavior and drift-count enforcement. | G20, G28, G29, CD-4 |
+-| `scripts/dispatch-agent.sh` | Modify | Add host/vendor/model metadata persistence into the dispatch manifest for later observability. | G20, G29 |
++| `scripts/run-codex-review.sh` | Modify | Add host/vendor/model metadata persistence into the dispatch manifest for later observability. **Note:** this file is renamed to `scripts/dispatch-agent.sh` in Slice 1.4 (rename row). Either slice can land first; whichever lands second works against the post-rename path. | G20, G29 |
+ | `tests/unit/test-verified-file-shape.bats` | Modify | Pin verified-file headers, kept/dropped counts, and instrumentation fields. | G20, G28 |
+ | `tests/acceptance/v07-phase1/test-phase1-acceptance.bats` | Modify | Exercise verifier calibration and round instrumentation in the release-level path. | G19, G20, G28, G29 |
+ 
+@@ -126,7 +126,7 @@ This slice raises artifact-authoring quality at the prompt/prose boundary and ma
+ | `docs/prompt-design-guide.md` | Modify | Hand off the old guide surface to the new shared runtime rules location. | G31 |
+ | `tests/unit/test-plan-post-approval-split.bats` | Modify | Guard block-hash emission, safe re-run, and loud conflict behavior. | G5 |
+ | `tests/unit/test-interactive-skill-prompts.bats` | Modify | Pin dialog-conduct wording, simple-language framing, and compaction-resume diagnostics. | G1, G30, G33 |
+-| `tests/unit/test-author-skill-uses-cat.bats` | Modify | Guard shared include usage for prompt-prose and design-boundary snippets. | G31, G34 |
++| `tests/unit/test-author-skill-uses-cat.bats` | Modify | Guard shared include usage for prompt-prose and design-boundary snippets; additionally pin the standalone Addition C anchor phrase (`"Scope: only `task_type: code` tasks."`) at the TOP of `agents/qrspi-plan-test-coverage-reviewer.md` so silent drift or misplacement of the scope guard is caught. | G31, G34 |
+ | `tests/lint/test-design-altitude-boundary-include.bats` | Create | Guard the two required `!cat` inclusions for `design-altitude-boundary.md` so the Design boundary cannot drift by subtraction. | G34 |
+ | `tests/acceptance/test-review-pause.bats` | Modify | Ensure pause/review flow respects operator authority rather than fabricated reviewer mandates. | G10 |
+ | `agents/qrspi-implementer-lightweight.md` | Modify | Add `prompt-prose-writer` to `skills:` frontmatter preload. | G31 |
+@@ -769,9 +769,12 @@ Cross-cutting insertion sites locked by this release. Locations only — text co
+ 
+ `skills/_shared/prompt-prose-detection.md`, `skills/_shared/prompt-prose-writer-addition.md`,
+ and `skills/_shared/prompt-prose-reviewer-addition.md` are `!cat`-included into SKILL.md
+-files and wrapper SKILLs; Additions A, C, and D are inline-permanent text in their consumer
+-files. This is distinct from the `skills:` frontmatter preload used by agent files
+-(Consumers #4-#8 per design.md G31 Distribution Table).
++files and wrapper SKILLs; Additions A, B, C, and D are inline-permanent text in their
++consumer files. This is distinct from the `skills:` frontmatter preload used by agent files
++(Consumers #4–#8 per design.md G31 Distribution Table). Consumer #6
++(`qrspi-design-reviewer`) appears in BOTH groups: it preloads `prompt-prose-reviewer` via
++`skills:` frontmatter AND carries Addition D inline as a per-block refinement, so its row
++appears in the table below.
+ 
+ | Consumer file | Section / location |
+ |---|---|

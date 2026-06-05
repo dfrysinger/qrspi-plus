@@ -1,0 +1,8 @@
+finding_id: test-coverage-claude.F03
+score: 28
+change_type: correctness
+verifier_note: |
+  Haiku 0-turn empty-response flake (per PI-V073-001 / issue #293). Score
+  captured from agent's brief-return chat output: "test-coverage-claude.F03: 28"
+  (vfy-tc-claude-03, elapsed 135s, total_turns 0). Sidecar written manually
+  by orchestrator since the verifier subagent did not Write to disk.

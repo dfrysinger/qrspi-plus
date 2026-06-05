@@ -1,0 +1,2 @@
+score: 75
+reason: Real semantic mismatch in audit JSON halt cause; unreadable finding file recorded as `missing_change_type` when it should be an I/O error code. Code is in PR, test suite doesn't verify JSON cause field.

@@ -1,0 +1,2 @@
+score: 55
+reason: Verified real — when CONFIG_MD is unset/absent resolve_model still fails loud but emits a "resolves to none" message that misnames the missing-config root cause, and resolve_tier's Layer-4 warning doesn't distinguish config-absent; both are genuine but moderate diagnostic-clarity issues (the code still halts/warns loudly), corroborated by convergent reviewers.

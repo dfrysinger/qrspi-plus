@@ -1,0 +1,2 @@
+score: 46
+reason: Control-flow claim is verified true (anchor written at Step 1 before Step 10 exit-1 gates), but the partial-state window is narrow—exit-1 only fires when the prior anchor is already missing (a halt state), the orchestrator won't advance to NN+1, retries overwrite, and SKILL.md's "no anchor" wording is scoped to exit 11/12.

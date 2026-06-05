@@ -1,0 +1,2 @@
+score: 80
+reason: Verified — `--out .` resolves outDirAbs to rootReal, then `fs.rmSync(rootReal, {recursive:true, force:true})` wipes the working tree including .git; no guard exists, and force:true silences errors. Real catastrophic data-loss path for a contributor-facing tool.

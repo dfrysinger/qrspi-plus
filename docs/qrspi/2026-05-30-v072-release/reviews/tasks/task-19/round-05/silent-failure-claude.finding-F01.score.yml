@@ -1,0 +1,2 @@
+score: 30
+reason: Factually correct (test discards stderr with 2>/dev/null and makes no emptiness assertion), but the concern is a hypothetical future emit-and-continue regression — the current production success path has no code between the two return-1 guards that could emit stderr while returning 0, and the task DoD does not mandate empty-stderr assertions on success paths, making this a test-robustness nitpick rather than a functional gap.

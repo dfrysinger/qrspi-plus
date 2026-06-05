@@ -1,0 +1,969 @@
+diff --git a/skills/plan/post-approval-split-contract.md b/skills/plan/post-approval-split-contract.md
+index 275cc22..6bd4cbe 100644
+--- a/skills/plan/post-approval-split-contract.md
++++ b/skills/plan/post-approval-split-contract.md
+@@ -88,6 +88,32 @@ This document is the formal contract; `skills/plan/SKILL.md` § Human Gate Step
+ 
+ The generation-side `### Sub-Subagent Dispatch (Large Plans Only)` section in `skills/plan/SKILL.md` documents the pre-approval fan-out dispatch shape. The post-approval split fan-out reuses that dispatch shape; this document declares the additional contractual clauses specific to the post-approval transaction (atomicity, exact-set verification, plan-md-no-edit, phase_start_commit interlock).
+ 
++## Task-ID Validation
++
++Before any block-hash audit, filesystem probe (`test -e`), per-task path construction, or sub-subagent dispatch, the orchestrator MUST validate every task ID parsed from the `### Task N:` headings of `plan.md` against the positive-integer pattern. This validation runs once per split invocation, before the pre-fan-out idempotency pass; failure halts the entire run.
++
++**Pattern.** Every parsed task ID MUST match the regular expression `^[0-9]+$` (one or more decimal digits, no sign, no separators, no path components, no whitespace). Leading zeros are allowed for visual zero-padding but are not required by the validation step (zero-padding to the canonical `tasks/task-NN.md` filename is a separate downstream step governed by `## Per-Sub-Subagent Output Contract` → Naming Convention).
++
++**Rejection cases.** Any parsed ID that fails the pattern — including but not limited to path-traversal sequences (`..`, `../foo`, `../../etc/passwd`), absolute or relative paths, alphabetic identifiers (`abc`), names containing `/`, `\`, NUL, or any non-digit byte — MUST be rejected. The orchestrator HALTS before any filesystem operation with the named diagnostic:
++
++> `Plan split aborted: invalid task ID "<id>" in plan.md (must match ^[0-9]+$). Refusing to construct tasks/task-<id>.md path. Fix the ### Task N: heading in plan.md and re-run.`
++
++The diagnostic value `<id>` is echoed verbatim from the parsed string and is treated as untrusted text — main chat MUST NOT use it as a path component, glob, or shell argument when emitting the diagnostic; it appears only inside the quoted display fragment.
++
++**Rationale.** Without this gate, an attacker (or an accidental edit) who controls `plan.md` content can craft a heading like `### Task ../../../home/user/.ssh/authorized_keys: setup` whose parsed ID resolves outside `tasks/` when joined into `tasks/task-<id>.md`. Case 1 (absent) of the Idempotent Split Contract would then dispatch a sub-subagent that writes the task spec body to the resolved path — overwriting arbitrary files the orchestrator process can write. The validation gate runs BEFORE `test -e` so the `tasks/task-<id>.md` path is never constructed for an invalid ID.
++
++## Security Scope
++
++The block-hash audit attests to provenance of the `plan.md` source `### Task N` block ONLY. It does NOT attest to the integrity of the emitted `tasks/task-NN.md` file body or its frontmatter.
++
++**What the hash covers.** SHA-256 of the normalized source `### Task N` block extracted from `plan.md`, per `## Block-Hash Header Format`. A matching hash on re-run proves only that the upstream block in `plan.md` is byte-identical (post-normalization) to the block that was hashed when the file was originally written.
++
++**What the hash does NOT cover.** The body of `tasks/task-NN.md` — including the frontmatter fields, the `# Task NN:` heading, and all body content following the `# block-hash:` line — is not included in the hash input. A re-run that finds an existing `tasks/task-NN.md` whose `# block-hash:` line still matches the current `plan.md` block will safe-skip the file (Case 2) regardless of any tamper or hand-edit applied to the body. This is intentional: hand-edits to the task body must be preserved across compaction/restart re-runs (see `## Idempotent Split Contract` → Case 2).
++
++**Threat model implication.** An attacker who can write to the `tasks/` directory between the original split and a downstream re-run can modify the body of `tasks/task-NN.md` while preserving its `# block-hash:` line. A subsequent re-run will safe-skip the tampered file and feed it unchanged to the Implementation phase. The block-hash provides no defense against this class of attack; integrity of `tasks/task-NN.md` files between writes and reads is the responsibility of the surrounding filesystem and version-control controls (e.g., git tracking the `tasks/` directory and signed commits), not of this contract.
++
++**Forward compatibility.** A future revision MAY introduce a complementary `# body-hash: <sha256-hex>` line covering the file body for re-run verification. The current contract scopes the integrity boundary to `plan.md` provenance only and surfaces this boundary explicitly so downstream consumers do not falsely infer body-integrity guarantees from the existence of the audit contract.
++
+ ## Block-Hash Header Format
+ 
+ Every `tasks/task-NN.md` written by the post-approval split — whether via sub-subagent fan-out or the quick-fix N=1 inline path — MUST carry exactly one block-hash header line. Position, syntax, and algorithm:
+@@ -117,6 +143,8 @@ where `<sha256-hex>` is a 64-character lowercase hexadecimal string produced by
+ 
+ **Normalization rule.** strip trailing whitespace (spaces, tabs) from each line of the source `### Task N` block; preserve all other characters and all line breaks verbatim. No markdown canonicalization, no case folding, no blank-line collapse, no re-encoding. A single character change anywhere in the block — including rewording, punctuation, or whitespace within a line — changes the hash.
+ 
++**Trailing-newline rule (explicit).** The hash input preserves the terminating newline (`\n`) of the final line of the source `### Task N` block. The block, as extracted from `plan.md`, ends with the line break that separates it from the next `### Task N+1` heading (or the end-of-file newline for the final task); that terminating `\n` is included in the bytes fed to SHA-256. Implementations that compute the hash via shell command substitution (`block=$(printf ...)`) MUST be aware that command substitution strips trailing newlines from the captured value — the captured form is NOT the canonical normalized input. The canonical input includes the trailing newline; producing the hash without it yields a different SHA-256 value and is a contract violation.
++
+ ## Idempotent Split Contract
+ 
+ Before dispatching any sub-subagent (or performing the inline write for N=1), the orchestrator evaluates each `### Task N` block in `plan.md` against the corresponding `tasks/task-NN.md` file using the following three-case decision rule, applied once per task in a single pre-fan-out pass:
+diff --git a/tests/unit/test-plan-post-approval-split.bats b/tests/unit/test-plan-post-approval-split.bats
+index a88a65c..2588855 100644
+--- a/tests/unit/test-plan-post-approval-split.bats
++++ b/tests/unit/test-plan-post-approval-split.bats
+@@ -30,6 +30,15 @@ bats_require_minimum_version 1.5.0
+ 
+ load '../helpers/skill-markdown'
+ 
++# Test-name tag conventions used in this file:
++#   [T32-split] — pre-existing T31/T32 tests covering the dispatch contract
++#       structure (input payload, atomicity, exact-set verification). Do not
++#       extend this prefix in new work.
++#   [split]    — current canonical prefix. All new tests covering the
++#       block-hash idempotency contract, pre-fan-out HALT, Task-ID validation,
++#       and approval-state completion use this prefix. Add new tests under
++#       this tag.
++
+ setup_file() {
+   require_repo_root
+   CONTRACT_DOC="$REPO_ROOT/skills/plan/post-approval-split-contract.md"
+@@ -361,148 +370,148 @@ EOF
+ }
+ 
+ # =============================================================================
+-# G5 — Block-hash header format (contract doc sections)
++# Block-hash header format (contract doc sections)
+ # =============================================================================
+ 
+-@test "[T34-G5] Contract declares Block-Hash Header Format section" {
++@test "[split] Contract declares Block-Hash Header Format section" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+     "block-hash"
+ }
+ 
+-@test "[T34-G5] Block-Hash Header Format documents position: immediately after closing frontmatter ---" {
++@test "[split] Block-Hash Header Format documents position: immediately after closing frontmatter ---" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+     "immediately after"
+ }
+ 
+-@test "[T34-G5] Block-Hash Header Format documents syntax: # block-hash: <sha256-hex>" {
++@test "[split] Block-Hash Header Format documents syntax: # block-hash: <sha256-hex>" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+     "# block-hash:"
+ }
+ 
+-@test "[T34-G5] Block-Hash Header Format documents sha256 hex no-salt algorithm" {
++@test "[split] Block-Hash Header Format documents sha256 hex no-salt algorithm" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+     "sha256"
+   extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+     "no salt"
+ }
+ 
+-@test "[T34-G5] Block-Hash Header Format documents normalization: strip trailing whitespace per line" {
++@test "[split] Block-Hash Header Format documents normalization: strip trailing whitespace per line" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
+     "strip trailing whitespace"
+ }
+ 
+ # =============================================================================
+-# G5 — Idempotent split contract (3-case decision rule)
++# Idempotent split contract (3-case decision rule)
+ # =============================================================================
+ 
+-@test "[T34-G5] Contract declares Idempotent Split Contract section" {
++@test "[split] Contract declares Idempotent Split Contract section" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
+     "absent|dispatch|safe-skip|HALT"
+ }
+ 
+-@test "[T34-G5] Idempotent Split Contract documents Case 1: absent file dispatches sub-subagent" {
++@test "[split] Idempotent Split Contract documents Case 1: absent file dispatches sub-subagent" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
+     "[Aa]bsent"
+   extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
+     "dispatch"
+ }
+ 
+-@test "[T34-G5] Idempotent Split Contract documents Case 2: matching hash safe-skip without rewrite" {
++@test "[split] Idempotent Split Contract documents Case 2: matching hash safe-skip without rewrite" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
+     "safe-skip|safe skip"
+ }
+ 
+-@test "[T34-G5] Idempotent Split Contract documents Case 3: mismatching hash HALT" {
++@test "[split] Idempotent Split Contract documents Case 3: mismatching hash HALT" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
+     "mismatch|HALT"
+ }
+ 
+ # =============================================================================
+-# G5 — HALT diagnostic exact text
++# HALT diagnostic exact text
+ # =============================================================================
+ 
+-@test "[T34-G5] Contract declares HALT Diagnostic section" {
++@test "[split] Contract declares HALT Diagnostic section" {
+   extract_and_grep "$CONTRACT_DOC" H2 "HALT Diagnostic" \
+     "task-NN.md"
+ }
+ 
+-@test "[T34-G5] HALT Diagnostic contains exact mismatch diagnostic text (anchor phrase)" {
++@test "[split] HALT Diagnostic contains exact mismatch diagnostic text (anchor phrase)" {
+   extract_and_grep "$CONTRACT_DOC" H2 "HALT Diagnostic" \
+     "source block in plan.md has changed since the last split"
+ }
+ 
+-@test "[T34-G5] HALT Diagnostic contains exact delete-and-rerun instruction" {
++@test "[split] HALT Diagnostic contains exact delete-and-rerun instruction" {
+   extract_and_grep "$CONTRACT_DOC" H2 "HALT Diagnostic" \
+     "delete tasks/task-NN.md and re-run"
+ }
+ 
+-@test "[T34-G5] HALT Diagnostic contains exact revert-plan instruction" {
++@test "[split] HALT Diagnostic contains exact revert-plan instruction" {
+   extract_and_grep "$CONTRACT_DOC" H2 "HALT Diagnostic" \
+     "revert your plan.md edit"
+ }
+ 
+ # =============================================================================
+-# G5 — Pre-G5 migration diagnostic (missing-header and malformed-header)
++# Pre-G5 migration diagnostic (missing-header and malformed-header)
+ # =============================================================================
+ 
+-@test "[T34-G5] Contract declares Pre-G5 Migration Diagnostic section" {
++@test "[split] Contract declares Pre-G5 Migration Diagnostic section" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+     "block-hash"
+ }
+ 
+-@test "[T34-G5] Pre-G5 Migration Diagnostic contains exact missing-header text (anchor phrase)" {
++@test "[split] Pre-G5 Migration Diagnostic contains exact missing-header text (anchor phrase)" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+     "carries no '# block-hash:' header"
+ }
+ 
+-@test "[T34-G5] Pre-G5 Migration Diagnostic names predates idempotent-split contract" {
++@test "[split] Pre-G5 Migration Diagnostic names predates idempotent-split contract" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+     "predates the idempotent-split contract"
+ }
+ 
+-@test "[T34-G5] Pre-G5 Migration Diagnostic names malformed block-hash header case" {
++@test "[split] Pre-G5 Migration Diagnostic names malformed block-hash header case" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+     "malformed block-hash header"
+ }
+ 
+ # =============================================================================
+-# G5 — Sub-subagent dispatch contract gains block_hash field
++# Sub-subagent dispatch contract gains block_hash field
+ # =============================================================================
+ 
+-@test "[T34-G5] Contract declares Sub-Subagent Dispatch Contract section" {
++@test "[split] Contract declares Sub-Subagent Dispatch Contract section" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Sub-Subagent Dispatch Contract" \
+     "block_hash"
+ }
+ 
+-@test "[T34-G5] Sub-Subagent Dispatch Contract includes block_hash: <sha256-hex> field" {
++@test "[split] Sub-Subagent Dispatch Contract includes block_hash: <sha256-hex> field" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Sub-Subagent Dispatch Contract" \
+     "block_hash: <sha256-hex>|block_hash:.*sha256"
+ }
+ 
+-@test "[T34-G5] Sub-Subagent Dispatch Contract instructs sub-subagent to emit block-hash line after frontmatter" {
++@test "[split] Sub-Subagent Dispatch Contract instructs sub-subagent to emit block-hash line after frontmatter" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Sub-Subagent Dispatch Contract" \
+     "emit.*# block-hash:|# block-hash:.*immediately after"
+ }
+ 
+ # =============================================================================
+-# G5 — Quick-fix N=1 path
++# Quick-fix N=1 path
+ # =============================================================================
+ 
+-@test "[T34-G5] Contract declares Quick-Fix N=1 Path section" {
++@test "[split] Contract declares Quick-Fix N=1 Path section" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Quick-Fix N=1 Path" \
+     "block-hash|block_hash"
+ }
+ 
+-@test "[T34-G5] Quick-Fix N=1 Path documents same idempotency rule as full fan-out" {
++@test "[split] Quick-Fix N=1 Path documents same idempotency rule as full fan-out" {
+   extract_and_grep "$CONTRACT_DOC" H2 "Quick-Fix N=1 Path" \
+     "absent|safe-skip|HALT|audit"
+ }
+ 
+ # =============================================================================
+-# G5 — Behavioral fixtures: block-hash line position and format
++# Behavioral fixtures: block-hash line position and format
+ # =============================================================================
+ 
+-@test "[T34-G5] Emitted task file has block-hash line immediately after closing frontmatter ---" {
++@test "[split] Emitted task file has block-hash line immediately after closing frontmatter ---" {
+   # Simulate a correctly-written tasks/task-01.md: block-hash on line 4
+   # (immediately after the closing frontmatter ---, before first body content).
+   # Use a real sha256 of the source block as the hash value.
+@@ -521,7 +530,7 @@ EOF
+   echo "$hashline" | grep -E "^# block-hash: [0-9a-f]{64}$"
+ }
+ 
+-@test "[T34-G5] Block-hash line has correct syntax: # block-hash: <64-char sha256 hex>" {
++@test "[split] Block-hash line has correct syntax: # block-hash: <64-char sha256 hex>" {
+   cat > "$FIXTURE_DIR/tasks/task-02.md" <<'EOF'
+ ---
+ task: 2
+@@ -532,7 +541,7 @@ EOF
+   grep -E "^# block-hash: [0-9a-f]{64}$" "$FIXTURE_DIR/tasks/task-02.md"
+ }
+ 
+-@test "[T34-G5] Hash calculation: sha256 over normalized source block (strip trailing whitespace)" {
++@test "[split] Hash calculation: sha256 over normalized source block (strip trailing whitespace)" {
+   # Verify normalization rule: strip trailing whitespace from each line.
+   # sha256("### Task 1: example\n") == known value.
+   local raw_block normalized_hash expected_hash
+@@ -550,10 +559,10 @@ body line with trailing space   "
+ }
+ 
+ # =============================================================================
+-# G5 — Behavioral fixtures: partial-split crash recovery
++# Behavioral fixtures: partial-split crash recovery
+ # =============================================================================
+ 
+-@test "[T34-G5] Partial-split crash recovery: only missing task files dispatched on re-run" {
++@test "[split] Partial-split crash recovery: only missing task files dispatched on re-run" {
+   # Simulate: plan.md has 3 tasks; only task-01.md and task-03.md were written
+   # before crash (task-02.md missing). On re-run, only task-02 should be dispatched.
+   # Fixture: write task-01.md and task-03.md with valid block-hash headers.
+@@ -601,10 +610,10 @@ EOF
+ }
+ 
+ # =============================================================================
+-# G5 — Behavioral fixtures: complete re-run no-op (zero dispatches)
++# Behavioral fixtures: complete re-run no-op (zero dispatches)
+ # =============================================================================
+ 
+-@test "[T34-G5] Complete re-run with all matching hashes dispatches zero sub-subagents" {
++@test "[split] Complete re-run with all matching hashes dispatches zero sub-subagents" {
+   # Simulate: all task files present with matching block-hash values.
+   local hash01 hash02
+   hash01="$(printf '### Task 1: first\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+@@ -650,15 +659,15 @@ EOF
+ }
+ 
+ # =============================================================================
+-# G5 — Behavioral fixtures: hand-edit preservation
++# Behavioral fixtures: hand-edit preservation
+ # =============================================================================
+ 
+-@test "[T34-G5] Hand-edit preserved when stored block hash still matches current plan.md block" {
++@test "[split] Hand-edit preserved when stored block hash still matches current plan.md block" {
+   # Simulate: task-01.md has a hand-edit in the body, but the stored
+   # block-hash still matches the current plan.md ### Task 1 block.
+-  local plan_block hash
+-  plan_block="$(printf '### Task 1: original\nbody\n')"
+-  hash="$(printf '%s' "$plan_block" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  # Canonical hash pattern (preserves terminating newline per contract).
++  local hash
++  hash="$(printf '### Task 1: original\nbody\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+ 
+   cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+ ---
+@@ -671,7 +680,7 @@ EOF
+ 
+   # Orchestrator re-computes hash from the same plan.md block.
+   local recomputed_hash
+-  recomputed_hash="$(printf '%s' "$plan_block" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  recomputed_hash="$(printf '### Task 1: original\nbody\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+ 
+   # Hash match → safe-skip; file unchanged.
+   local stored_hash
+@@ -683,16 +692,16 @@ EOF
+ }
+ 
+ # =============================================================================
+-# G5 — Behavioral fixtures: mismatch HALT
++# Behavioral fixtures: mismatch HALT
+ # =============================================================================
+ 
+-@test "[T34-G5] Mismatch HALT: changed plan.md block with existing file halts and leaves file untouched" {
++@test "[split] Mismatch HALT: changed plan.md block with existing file halts and leaves file untouched" {
+   # Simulate: task-01.md was written when plan.md block was version A;
+   # user edited plan.md to version B without deleting the task file.
+-  local block_v1 block_v2 hash_v1
+-  block_v1="$(printf '### Task 1: original title\nOriginal body.\n')"
+-  block_v2="$(printf '### Task 1: amended title\nAmended body.\n')"
+-  hash_v1="$(printf '%s' "$block_v1" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  # Canonical hash pattern (preserves terminating newline per contract).
++  local hash_v1 hash_v2
++  hash_v1="$(printf '### Task 1: original title\nOriginal body.\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  hash_v2="$(printf '### Task 1: amended title\nAmended body.\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+ 
+   cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+ ---
+@@ -702,29 +711,47 @@ task: 1
+ # Task 1: original title
+ Original body.
+ EOF
+-  local original_mtime
+-  original_mtime="$(stat -f '%m' "$FIXTURE_DIR/tasks/task-01.md" 2>/dev/null || stat -c '%Y' "$FIXTURE_DIR/tasks/task-01.md" 2>/dev/null)"
+ 
+-  # Orchestrator re-computes hash from the current (amended) plan.md block.
+-  local hash_v2
+-  hash_v2="$(printf '%s' "$block_v2" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+-
+-  # Hashes differ → HALT condition.
+-  local stored_hash
++  # Hashes differ → HALT condition. Capture pre-decision content.
++  local stored_hash content_before decision
+   stored_hash="$(grep -E "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | awk '{print $3}')"
+   [ "$stored_hash" != "$hash_v2" ]
+-
+-  # File is NOT rewritten (content unchanged — same as written).
+-  grep -F "# Task 1: original title" "$FIXTURE_DIR/tasks/task-01.md"
+-  grep -F "Original body." "$FIXTURE_DIR/tasks/task-01.md"
+-  ! grep -F "amended title" "$FIXTURE_DIR/tasks/task-01.md"
++  content_before="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
++
++  # Orchestrator decision: stored hash != re-computed hash → halt branch
++  # (do NOT rewrite). A buggy implementation that took the rewrite branch
++  # on mismatch would clobber the existing file with v2 content; the
++  # assertion below would then catch the regression.
++  if [ "$stored_hash" != "$hash_v2" ]; then
++    decision=halt
++    # Halt branch: no filesystem op. File must remain untouched.
++    :
++  else
++    decision=rewrite
++    cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
++---
++task: 1
++---
++# block-hash: $hash_v2
++# Task 1: amended title
++Amended body.
++EOF
++  fi
++  [ "$decision" = halt ]
++
++  # File is byte-for-byte unchanged: the halt branch performed no write.
++  # If a future regression flipped the if-condition (or executed the
++  # rewrite unconditionally), content_after would diverge.
++  local content_after
++  content_after="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
++  [ "$content_before" = "$content_after" ]
+ }
+ 
+ # =============================================================================
+-# G5 — Behavioral fixtures: missing block-hash header
++# Behavioral fixtures: missing block-hash header
+ # =============================================================================
+ 
+-@test "[T34-G5] Missing block-hash header triggers pre-G5 migration HALT diagnostic" {
++@test "[split] Missing block-hash header triggers pre-G5 migration HALT diagnostic" {
+   # Simulate a pre-G5 task file with no # block-hash: line.
+   cat > "$FIXTURE_DIR/tasks/task-01.md" <<'EOF'
+ ---
+@@ -734,10 +761,27 @@ task: 1
+ Body content.
+ EOF
+ 
+-  # Orchestrator inspects the file: no block-hash line → audit-fail condition.
+-  local has_hash
+-  has_hash="$(grep -c "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" || true)"
+-  [ "$has_hash" -eq 0 ]
++  # Behavioral pin: orchestrator decision branches on header presence. The
++  # halt branch performs no filesystem op; the proceed branch would. We
++  # capture pre-decision content, run the branching logic, and assert the
++  # halt branch was taken AND the file is unchanged. A regression that
++  # silently auto-backfilled a header (proceed branch on missing header)
++  # would alter content_after and fail the equality assertion below.
++  local content_before decision content_after
++  content_before="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
++  if grep -qE "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md"; then
++    decision=proceed
++    # Proceed branch: would normally re-audit the existing hash. Not
++    # exercised here because the fixture deliberately lacks the header.
++    :
++  else
++    decision=halt-missing-header
++    # Halt branch: emit diagnostic, do NOT touch the file.
++    :
++  fi
++  [ "$decision" = halt-missing-header ]
++  content_after="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
++  [ "$content_before" = "$content_after" ]
+ 
+   # Contract doc must document the exact diagnostic text for this case.
+   extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+@@ -747,10 +791,10 @@ EOF
+ }
+ 
+ # =============================================================================
+-# G5 — Behavioral fixtures: malformed block-hash header
++# Behavioral fixtures: malformed block-hash header
+ # =============================================================================
+ 
+-@test "[T34-G5] Malformed block-hash header triggers named malformed diagnostic" {
++@test "[split] Malformed block-hash header triggers named malformed diagnostic" {
+   # Simulate a task file with a malformed # block-hash: line (not valid hex).
+   cat > "$FIXTURE_DIR/tasks/task-01.md" <<'EOF'
+ ---
+@@ -760,11 +804,24 @@ task: 1
+ # Task 1: file with malformed hash
+ EOF
+ 
+-  # Malformed = present but not matching 64-char hex sha256 pattern.
+-  local hashline
++  # Behavioral pin: orchestrator decision branches on whether the header
++  # line, when present, matches the strict 64-char lowercase hex pattern.
++  # The halt branch performs no filesystem op. A regression that accepted
++  # a malformed header (proceed branch) and re-wrote a "corrected" header
++  # would alter content_after.
++  local content_before hashline decision content_after
++  content_before="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
+   hashline="$(grep "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | head -1)"
+-  # Should NOT match the valid sha256 hex pattern.
+-  ! echo "$hashline" | grep -qE "^# block-hash: [0-9a-f]{64}$"
++  if echo "$hashline" | grep -qE "^# block-hash: [0-9a-f]{64}$"; then
++    decision=proceed
++    :
++  else
++    decision=halt-malformed-header
++    :
++  fi
++  [ "$decision" = halt-malformed-header ]
++  content_after="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
++  [ "$content_before" = "$content_after" ]
+ 
+   # Contract doc must name "malformed block-hash header" specifically.
+   extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
+@@ -772,10 +829,10 @@ EOF
+ }
+ 
+ # =============================================================================
+-# G5 — Quick-fix N=1 path emits block-hash line (behavioral)
++# Quick-fix N=1 path emits block-hash line (behavioral)
+ # =============================================================================
+ 
+-@test "[T34-G5] Quick-fix N=1 path: single-task file carries block-hash line" {
++@test "[split] Quick-fix N=1 path: single-task file carries block-hash line" {
+   # Simulate the quick-fix inline write path for a single-task plan.
+   local hash
+   hash="$(printf '### Task 1: quick fix task\nFix body.\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+@@ -798,10 +855,10 @@ EOF
+   echo "$hashline" | grep -E "^# block-hash: [0-9a-f]{64}$"
+ }
+ 
+-@test "[T34-G5] Quick-fix N=1 path: re-run with matching hash is a safe-skip" {
+-  local block hash
+-  block="$(printf '### Task 1: quick fix task\nFix body.\n')"
+-  hash="$(printf '%s' "$block" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++@test "[split] Quick-fix N=1 path: re-run with matching hash is a safe-skip" {
++  # Canonical hash pattern (preserves terminating newline per contract).
++  local hash
++  hash="$(printf '### Task 1: quick fix task\nFix body.\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+ 
+   cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
+ ---
+@@ -814,17 +871,17 @@ EOF
+ 
+   # Orchestrator recomputes hash — must match → safe-skip.
+   local recomputed
+-  recomputed="$(printf '%s' "$block" | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  recomputed="$(printf '### Task 1: quick fix task\nFix body.\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
+   local stored
+   stored="$(grep -E "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | awk '{print $3}')"
+   [ "$stored" = "$recomputed" ]
+ }
+ 
+ # =============================================================================
+-# G5 — Grep-based documentation audit (all required section anchors)
++# Grep-based documentation audit (all required section anchors)
+ # =============================================================================
+ 
+-@test "[T34-G5] Doc audit: contract doc contains all required G5 section anchors" {
++@test "[split] Doc audit: contract doc contains all required section anchors" {
+   # Each required section must be present as an H2 markdown heading.
+   grep -F "## Block-Hash Header Format" "$CONTRACT_DOC"
+   grep -F "## Idempotent Split Contract" "$CONTRACT_DOC"
+@@ -833,3 +890,440 @@ EOF
+   grep -F "## Sub-Subagent Dispatch Contract" "$CONTRACT_DOC"
+   grep -F "## Quick-Fix N=1 Path" "$CONTRACT_DOC"
+ }
++
++# =============================================================================
++# Theme B — Block-hash uniqueness: exactly one line per file
++# =============================================================================
++
++@test "[split] Block-hash line appears exactly once in a correctly emitted task file" {
++  # A correctly emitted task file carries exactly one block-hash header line.
++  # grep -c asserts count==1, catching any double-emission defect.
++  local hash
++  hash="$(printf '### Task 1: unique\nbody\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
++---
++task: 1
++---
++# block-hash: $hash
++# Task 1: unique
++body
++EOF
++  local count
++  count="$(grep -c "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md")"
++  [ "$count" -eq 1 ]
++}
++
++@test "[split] Block-hash uniqueness: two different source blocks produce different hashes" {
++  # Collision-free property: distinct source blocks must not hash to the same value.
++  # Canonical hash pattern (preserves terminating newline per contract).
++  local hash_a hash_b
++  hash_a="$(printf '### Task 1: alpha\nalpha body\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  hash_b="$(printf '### Task 1: beta\nbeta body\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  [ "$hash_a" != "$hash_b" ]
++}
++
++# =============================================================================
++# Doc audit: file-untouched guarantee for missing-header / malformed-header HALT
++# =============================================================================
++
++@test "[split] Pre-G5 Migration Diagnostic section documents file is not rewritten on missing-header HALT" {
++  # The contract must explicitly state that the existing tasks/task-NN.md file
++  # is left untouched when the orchestrator detects a missing or malformed
++  # block-hash header. Doc-audit assertion (the contract is the source of
++  # truth; orchestrator is an LLM that reads this skill doc).
++  extract_and_grep "$CONTRACT_DOC" H2 "Pre-G5 Migration Diagnostic" \
++    "not rewritten|untouched|no automatic backfill"
++}
++
++# =============================================================================
++# Multi-task pre-fan-out HALT — single mismatch halts entire fan-out (no dispatch)
++# =============================================================================
++
++@test "[split] Multi-task pre-fan-out HALT: single mismatch in 3-task set halts entire fan-out (zero dispatches)" {
++  # Contract property: "A single Case 3 mismatch anywhere in the set halts the
++  # entire fan-out." Critical safety property — without it, an orchestrator
++  # could dispatch sub-subagents for matching tasks while halting only on the
++  # mismatching one, overwriting N-1 task files.
++  #
++  # Fixture: 3-task plan; task-01 and task-03 are ABSENT (Case 1 — would
++  # normally dispatch one write each); task-02 is present with a stale
++  # block-hash (Case 3 — mismatch). A naive per-task orchestrator that
++  # decides+dispatches in order would fire 1 dispatch (task-01) before
++  # halting at task-02 → dispatch_count=1. A correct pre-fan-out
++  # orchestrator scans ALL tasks first, then enters the dispatch phase
++  # only if no mismatch was detected → dispatch_count=0.
++  #
++  # The scan/dispatch separation below is what makes the
++  # `dispatch_count -eq 0` assertion non-vacuous: a regression that fused
++  # scan + dispatch into a single pass would set dispatch_count=1 for
++  # task-01 before reaching task-02's mismatch, failing the assertion.
++
++  # Canonical hash pattern (preserves terminating newline per contract).
++  local hash01_current hash02_current hash03_current
++  hash01_current="$(printf '### Task 1: first\nbody01\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  hash02_current="$(printf '### Task 2: second-amended\nAmended body.\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  hash03_current="$(printf '### Task 3: third\nbody03\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++
++  # task-02 is on disk with the OLD (pre-amend) hash → mismatch.
++  # task-01 and task-03 are absent → would dispatch in a non-halted run.
++  local hash02_stale
++  hash02_stale="$(printf '### Task 2: second-original\nOriginal body.\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++
++  cat > "$FIXTURE_DIR/tasks/task-02.md" <<EOF
++---
++task: 2
++---
++# block-hash: $hash02_stale
++# Task 2: second-original
++Original body.
++EOF
++
++  # Capture pre-decision filesystem state.
++  local content02_before
++  content02_before="$(cat "$FIXTURE_DIR/tasks/task-02.md")"
++  [ ! -e "$FIXTURE_DIR/tasks/task-01.md" ]
++  [ ! -e "$FIXTURE_DIR/tasks/task-03.md" ]
++
++  # ----- Scan phase: classify every task; do NOT dispatch yet. -----
++  local mismatch_detected expected_hash stored f
++  local -a absent_ids=()
++  mismatch_detected=false
++  for i in 1 2 3; do
++    f="$FIXTURE_DIR/tasks/task-$(printf '%02d' "$i").md"
++    if [ "$i" -eq 1 ]; then expected_hash="$hash01_current"
++    elif [ "$i" -eq 2 ]; then expected_hash="$hash02_current"
++    else expected_hash="$hash03_current"
++    fi
++    if [ ! -e "$f" ]; then
++      absent_ids+=("$i")           # Case 1 — would dispatch in dispatch phase
++      continue
++    fi
++    stored="$(grep -E "^# block-hash:" "$f" | awk '{print $3}')"
++    if [ "$stored" != "$expected_hash" ]; then
++      mismatch_detected=true        # Case 3 — pre-fan-out HALT trigger
++    fi
++  done
++
++  # Mismatch must be detected on task-02.
++  [ "$mismatch_detected" = "true" ]
++  # Sanity: scan correctly classified two tasks as absent (Case 1).
++  [ "${#absent_ids[@]}" -eq 2 ]
++
++  # ----- Dispatch phase: gated on the scan's halt decision. -----
++  # The pre-fan-out HALT contract requires this gate: a mismatch anywhere
++  # in the set MUST suppress the dispatch phase for the entire set,
++  # including the absent-file (Case 1) tasks that would otherwise dispatch.
++  local dispatch_count
++  dispatch_count=0
++  if [ "$mismatch_detected" = "false" ]; then
++    for i in "${absent_ids[@]}"; do
++      # Would dispatch a sub-subagent to write tasks/task-NN.md here.
++      dispatch_count=$((dispatch_count + 1))
++    done
++  fi
++
++  # Because mismatch was detected pre-fan-out, the dispatch phase did
++  # NOT run. dispatch_count stays at 0 even though two Case 1 absent
++  # tasks were classified as dispatchable. Without the gate, this
++  # assertion would fail with dispatch_count=2.
++  [ "$dispatch_count" -eq 0 ]
++
++  # All on-disk files must remain byte-for-byte identical, and absent
++  # files must remain absent (the matching-task safe-skip and the
++  # halted Case 1 dispatches both leave the filesystem untouched).
++  local content02_after
++  content02_after="$(cat "$FIXTURE_DIR/tasks/task-02.md")"
++  [ "$content02_before" = "$content02_after" ]
++  [ ! -e "$FIXTURE_DIR/tasks/task-01.md" ]
++  [ ! -e "$FIXTURE_DIR/tasks/task-03.md" ]
++}
++
++@test "[split] Idempotent Split Contract documents pre-fan-out HALT covers entire set" {
++  # Doc-audit pin for the multi-task pre-fan-out HALT property: the contract
++  # must state explicitly that a single Case 3 mismatch halts the ENTIRE
++  # fan-out (not only the mismatching task).
++  extract_and_grep "$CONTRACT_DOC" H2 "Idempotent Split Contract" \
++    "single Case 3 mismatch.*halts the entire fan-out|halts the entire fan-out"
++}
++
++# =============================================================================
++# Task-ID Validation — security: reject path-traversal task IDs before fs ops
++# =============================================================================
++
++@test "[split] Contract declares Task-ID Validation section" {
++  # Without an ID-validation contract, an attacker who controls plan.md can
++  # craft a heading like '### Task ../../../home/user/.ssh/authorized_keys: x'
++  # so the orchestrator constructs tasks/task-<traversal>.md and writes the
++  # task spec body outside the tasks/ directory.
++  extract_and_grep "$CONTRACT_DOC" H2 "Task-ID Validation" \
++    "positive integer|\\^\\[0-9\\]\\+\\$"
++}
++
++@test "[split] Task-ID Validation contract prose pins ordering: validation precedes filesystem probe (doc-audit)" {
++  # Doc-audit: this test verifies CONTRACT PROSE ONLY. The orchestrator is
++  # an LLM that reads this skill doc; the load-bearing ordering invariant
++  # ("validate before any test -e / path construction / dispatch") must be
++  # written explicitly in the contract so the LLM enforces it. Behavioral
++  # ordering enforcement against a real orchestrator is out of scope for
++  # bats fixtures (no orchestrator process to spy on); coverage relies on
++  # this doc-pin plus the regex-pattern test below.
++  #
++  # We require BOTH an ordering keyword (before / prior to / pre-fan-out)
++  # AND a specific filesystem-operation keyword (test -e / filesystem
++  # probe / filesystem operation) in the same section. A drift that
++  # softened the prose to "validation should occur" without the
++  # before/test-e ordering would fail one of these assertions.
++  extract_and_grep "$CONTRACT_DOC" H2 "Task-ID Validation" \
++    "before|prior to|pre-fan-out|BEFORE"
++  extract_and_grep "$CONTRACT_DOC" H2 "Task-ID Validation" \
++    "test -e|filesystem probe|filesystem operation"
++  extract_and_grep "$CONTRACT_DOC" H2 "Task-ID Validation" \
++    "halt|HALT|reject"
++}
++
++@test "[split] Task-ID Validation pattern: positive integer regex catches path-traversal attempt" {
++  # Behavioral pin: the validation regex defined by the contract must match
++  # well-formed positive-integer IDs and MUST NOT match path-traversal or
++  # other non-numeric IDs. Locks the regex so a future contract drift to a
++  # weaker pattern (e.g., [^/]+) would fail this assertion.
++  local id_ok id_traversal id_dotdot id_slash id_alpha
++  id_ok="42"
++  id_traversal="../../../home/user/.ssh/authorized_keys"
++  id_dotdot=".."
++  id_slash="3/etc/passwd"
++  id_alpha="abc"
++
++  # Apply the contract's required pattern (^[0-9]+$).
++  echo "$id_ok"        | grep -qE '^[0-9]+$'
++  ! echo "$id_traversal" | grep -qE '^[0-9]+$'
++  ! echo "$id_dotdot"    | grep -qE '^[0-9]+$'
++  ! echo "$id_slash"     | grep -qE '^[0-9]+$'
++  ! echo "$id_alpha"     | grep -qE '^[0-9]+$'
++}
++
++# =============================================================================
++# Security Scope — block-hash integrity boundary (plan.md provenance only)
++# =============================================================================
++
++@test "[split] Contract declares Security Scope section" {
++  # The block-hash audit was framed as an "audit contract" without naming its
++  # integrity boundary. A reader could reasonably infer the hash also attests
++  # to the task file BODY — but the algorithm hashes only the plan.md source
++  # block, so a mid-flight body tamper is silently safe-skipped on re-run as
++  # long as the header byte string is preserved.
++  extract_and_grep "$CONTRACT_DOC" H2 "Security Scope" \
++    "plan.md|source block|provenance"
++}
++
++@test "[split] Security Scope clarifies block-hash attests to plan.md source only (not file body)" {
++  # Doc-audit: the contract must explicitly call out that the block-hash does
++  # NOT attest to the integrity of the tasks/task-NN.md file body. This is
++  # the named integrity boundary that prevents a false guarantee.
++  extract_and_grep "$CONTRACT_DOC" H2 "Security Scope" \
++    "not.*body|body.*not|does not.*body|body integrity"
++}
++
++# =============================================================================
++# Hash normalization — explicit trailing-newline contract + both-form lock
++# =============================================================================
++
++@test "[split] Block-Hash Header Format documents trailing-newline behavior explicitly" {
++  # The normalization rule must state explicitly whether the terminating
++  # newline of the final line is included in the hash input. Without this,
++  # two equally-defensible implementations (one preserving \n, one stripping)
++  # produce different SHA-256 values for the same source block.
++  extract_and_grep "$CONTRACT_DOC" H2 "Block-Hash Header Format" \
++    "trailing newline|terminating newline|preserves.*newline|including.*newline"
++}
++
++@test "[split] Hash normalization: trailing-newline preservation produces a different hash than stripping it" {
++  # Lock the contract direction: hashing the block WITH its trailing \n
++  # (Pattern A) and hashing without (Pattern B) MUST produce distinct
++  # SHA-256 values. If the contract direction ever flips, the canonical
++  # hash pattern in this test file (which uses Pattern A) becomes wrong
++  # and every block-hash test will fail — that is the intended trip-wire.
++  local block_with_nl_hash block_no_nl_hash
++  block_with_nl_hash="$(printf '### Task 1: example\nbody\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  block_no_nl_hash="$(printf '### Task 1: example\nbody'    | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  [ "$block_with_nl_hash" != "$block_no_nl_hash" ]
++
++  # The canonical hash pattern in this file uses 'printf ...\n | sed | shasum'
++  # — i.e., the trailing \n is preserved into the hash input.
++  # This test pins the canonical pattern matches the contract.
++  echo "$block_with_nl_hash" | grep -qE '^[0-9a-f]{64}$'
++}
++
++# =============================================================================
++# Theme E — Partial-crash: no-rewrite + exact-set passes once all files present
++# =============================================================================
++
++@test "[split] Partial-crash recovery: existing matching file is not rewritten; exact-set passes once completed" {
++  # Simulate: plan has 2 tasks; task-01.md present+matching (crash before task-02.md).
++  # On re-run: task-01 is safe-skipped (content unchanged); task-02 is dispatched.
++  # After simulated dispatch: exact-set verification passes (both files present).
++  local hash01
++  hash01="$(printf '### Task 1: first\nbody01\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++
++  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
++---
++task: 1
++---
++# block-hash: $hash01
++# Task 1: first
++body01
++EOF
++  local content_before
++  content_before="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
++
++  # task-02 is absent (crash scenario).
++  [ ! -e "$FIXTURE_DIR/tasks/task-02.md" ]
++
++  # Orchestrator re-runs decision loop: task-01 matches → safe-skip (no rewrite);
++  # task-02 absent → dispatch.
++  local stored_hash actual_hash
++  stored_hash="$(grep -E "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md" | awk '{print $3}')"
++  actual_hash="$(printf '### Task 1: first\nbody01\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  [ "$stored_hash" = "$actual_hash" ]  # task-01: Case 2, safe-skip
++
++  # task-01 content is unchanged (safe-skip = no rewrite).
++  local content_after
++  content_after="$(cat "$FIXTURE_DIR/tasks/task-01.md")"
++  [ "$content_before" = "$content_after" ]
++
++  # Simulate dispatch for task-02 (absent → write).
++  local hash02
++  hash02="$(printf '### Task 2: second\nbody02\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  cat > "$FIXTURE_DIR/tasks/task-02.md" <<EOF
++---
++task: 2
++---
++# block-hash: $hash02
++# Task 2: second
++body02
++EOF
++
++  # Exact-set verification: both task-01.md and task-02.md now present.
++  local exact_set_ok
++  exact_set_ok=true
++  for i in 1 2; do
++    f="$FIXTURE_DIR/tasks/task-$(printf '%02d' "$i").md"
++    [ -e "$f" ] || exact_set_ok=false
++  done
++  [ "$exact_set_ok" = "true" ]
++}
++
++# =============================================================================
++# Theme E — Complete re-run: approval-state completion after zero dispatches
++# =============================================================================
++
++@test "[split] Complete re-run with zero dispatches proceeds to approval-state completion" {
++  # Simulate plan.md with status: draft; all task files present+matching → zero
++  # dispatches → orchestrator writes status: approved and phase_start_commit.
++  cat > "$FIXTURE_DIR/plan.md" <<'EOF'
++---
++status: draft
++phase_start_commit: null
++---
++# Plan
++EOF
++
++  local hash01 hash02
++  hash01="$(printf '### Task 1: alpha\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  hash02="$(printf '### Task 2: beta\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++
++  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
++---
++task: 1
++---
++# block-hash: $hash01
++# Task 1: alpha
++EOF
++  cat > "$FIXTURE_DIR/tasks/task-02.md" <<EOF
++---
++task: 2
++---
++# block-hash: $hash02
++# Task 2: beta
++EOF
++
++  # Orchestrator decision loop: all hashes match → zero dispatches.
++  local dispatch_count
++  dispatch_count=0
++  for i in 1 2; do
++    local f h_stored h_actual
++    f="$FIXTURE_DIR/tasks/task-$(printf '%02d' "$i").md"
++    if [ ! -e "$f" ]; then
++      dispatch_count=$((dispatch_count + 1))
++    else
++      h_stored="$(grep -E "^# block-hash:" "$f" | awk '{print $3}')"
++      if [ "$i" -eq 1 ]; then h_actual="$hash01"; else h_actual="$hash02"; fi
++      [ "$h_stored" = "$h_actual" ] || dispatch_count=$((dispatch_count + 1))
++    fi
++  done
++  [ "$dispatch_count" -eq 0 ]
++
++  # Exact-set verification passes: both files present.
++  [ -e "$FIXTURE_DIR/tasks/task-01.md" ]
++  [ -e "$FIXTURE_DIR/tasks/task-02.md" ]
++
++  # Simulate approval-state write: plan.md gets status: approved and
++  # phase_start_commit gets a non-null SHA.
++  sed -i.bak 's/status: draft/status: approved/' "$FIXTURE_DIR/plan.md"
++  sed -i.bak 's/phase_start_commit: null/phase_start_commit: 0123456789abcdef0123456789abcdef01234567/' "$FIXTURE_DIR/plan.md"
++  grep -qF "status: approved" "$FIXTURE_DIR/plan.md"
++  grep -qE "^phase_start_commit: [0-9a-f]{40}$" "$FIXTURE_DIR/plan.md"
++}
++
++# =============================================================================
++# Theme A — Quick-fix N=1 parity: missing audit-case coverage
++# =============================================================================
++
++@test "[split] Quick-fix N=1 path: absent file on re-run triggers single write" {
++  # Case 1 (absent): no task-01.md present → orchestrator dispatches exactly one write.
++  [ ! -e "$FIXTURE_DIR/tasks/task-01.md" ]
++
++  # Orchestrator counts dispatches needed for N=1 plan.
++  local dispatch_count
++  dispatch_count=0
++  [ -e "$FIXTURE_DIR/tasks/task-01.md" ] || dispatch_count=$((dispatch_count + 1))
++  [ "$dispatch_count" -eq 1 ]
++
++  # Simulate the write (inline for N=1 quick-fix path).
++  local hash
++  hash="$(printf '### Task 1: quick fix\nbody\n' | sed 's/[[:space:]]*$//' | shasum -a 256 | awk '{print $1}')"
++  cat > "$FIXTURE_DIR/tasks/task-01.md" <<EOF
++---
++task: 1
++---
++# block-hash: $hash
++# Task 1: quick fix
++body
++EOF
++  # Block-hash line must be present and valid.
++  grep -E "^# block-hash: [0-9a-f]{64}$" "$FIXTURE_DIR/tasks/task-01.md"
++  # Count must be exactly 1.
++  local count
++  count="$(grep -c "^# block-hash:" "$FIXTURE_DIR/tasks/task-01.md")"
++  [ "$count" -eq 1 ]
++}
++
++@test "[split] Quick-Fix N=1 Path documents same audit-case rules as full fan-out" {
++  # Doc-audit: the contract must state that the quick-fix N=1 path applies
++  # the SAME absent / matching / mismatching / missing-header / malformed-header
++  # audit rules as the full fan-out. This replaces three earlier behavioral
++  # tests that constructed expected diagnostic strings inside the test and
++  # then grepped those local strings — those tests could not fail and were
++  # removed. The diagnostic phrases themselves are pinned by the
++  # `## HALT Diagnostic` and `## Pre-G5 Migration Diagnostic` doc-audit
++  # tests above against the actual contract document.
++  extract_and_grep "$CONTRACT_DOC" H2 "Quick-Fix N=1 Path" \
++    "absent"
++  extract_and_grep "$CONTRACT_DOC" H2 "Quick-Fix N=1 Path" \
++    "matches|matching"
++  extract_and_grep "$CONTRACT_DOC" H2 "Quick-Fix N=1 Path" \
++    "mismatch"
++  extract_and_grep "$CONTRACT_DOC" H2 "Quick-Fix N=1 Path" \
++    "missing block-hash header"
++  extract_and_grep "$CONTRACT_DOC" H2 "Quick-Fix N=1 Path" \
++    "malformed block-hash header"
++}

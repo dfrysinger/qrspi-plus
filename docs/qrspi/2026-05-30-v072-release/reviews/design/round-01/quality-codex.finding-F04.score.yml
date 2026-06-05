@@ -1,0 +1,2 @@
+score: 75
+reason: G20's deliverables #3 and #4 at L1795-1797 reference old file names (`codex-emission-override.md`, `run-codex-review.sh`, `codex-finding-splitter.sh`) that CD-1 and G6 rename; this internal architecture conflict will misdirect implementation work to files under superseded names.

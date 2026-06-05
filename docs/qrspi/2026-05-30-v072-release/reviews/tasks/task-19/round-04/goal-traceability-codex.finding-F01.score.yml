@@ -1,0 +1,2 @@
+score: 80
+reason: Confirmed — all five exec tests of resolve_second_reviewer_vendor (lines 541–634) use argument pairs that trigger halt branches (unknown-host → unavailable, copilot-cli/openai-codex → same-vendor); no test supplies a distinct primary vendor (e.g., 'claude-code'/'anthropic-claude') to exercise the success path (stdout vendor + exit 0), and the same-tier dispatch tests at lines 643–659 are grep-only prose checks, so DoD line 58's "proves same-tier primary + second-reviewer dispatch coverage" is unmet by execution.

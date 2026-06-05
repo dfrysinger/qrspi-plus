@@ -1,0 +1,2 @@
+score: 15
+reason: T38 spec requires mirroring qrspi-design-scope-reviewer.md, which uses the identical `!cat` include pattern; flagging this is a pre-existing pattern concern out-of-scope for T38.

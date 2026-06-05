@@ -1,0 +1,2 @@
+score: 60
+reason: Verified against goals.md — none of slice 1.5's nine goals (G1/G2/G5/G10/G17/G30/G31/G33/G34) edit Structure SKILL.md (G35 in slice 1.6 owns that), and the Surface line also omits implementer-protocol (G17) and reviewer-protocol (G10); real but low-severity clarity drift between Surface enumeration and goal contents.

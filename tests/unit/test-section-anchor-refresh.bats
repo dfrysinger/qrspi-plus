@@ -6,7 +6,7 @@
 #   - one source has a new heading added
 #   - one source has a heading removed
 #   - one source has a heading renamed
-# runs scripts/g4-section-anchor-refresh.sh and asserts each regenerated
+# runs tools/g4-section-anchor-refresh.sh and asserts each regenerated
 # index reflects the corresponding change (new key present, removed key
 # absent, renamed key replacing the prior key with the same {line_start,
 # line_end} shape).
@@ -22,7 +22,7 @@ load '../helpers/skill-markdown'
 
 setup_file() {
   require_repo_root
-  REFRESH_SCRIPT="$REPO_ROOT/scripts/g4-section-anchor-refresh.sh"
+  REFRESH_SCRIPT="$REPO_ROOT/tools/g4-section-anchor-refresh.sh"
   [ -f "$REFRESH_SCRIPT" ] || { echo "refresh script missing" >&2; return 1; }
   export REFRESH_SCRIPT
 }
@@ -32,9 +32,9 @@ setup() {
   export FIXTURE_DIR
   # Build an isolated mini-repo so the script's REPO_ROOT resolution (cd .. from
   # scripts/) lands here. Copy the refresh script + a custom manifest in.
-  mkdir -p "$FIXTURE_DIR/scripts" "$FIXTURE_DIR/srcs"
-  cp "$REFRESH_SCRIPT" "$FIXTURE_DIR/scripts/g4-section-anchor-refresh.sh"
-  chmod +x "$FIXTURE_DIR/scripts/g4-section-anchor-refresh.sh"
+  mkdir -p "$FIXTURE_DIR/tools" "$FIXTURE_DIR/srcs"
+  cp "$REFRESH_SCRIPT" "$FIXTURE_DIR/tools/g4-section-anchor-refresh.sh"
+  chmod +x "$FIXTURE_DIR/tools/g4-section-anchor-refresh.sh"
 }
 
 teardown() {
@@ -43,7 +43,7 @@ teardown() {
 
 # ---------------------------------------------------------------------------
 # _write_manifest <entries-as-tsv>
-# Builds scripts/g4-section-anchor-manifest.json with the given (source,index)
+# Builds tools/g4-section-anchor-manifest.json with the given (source,index)
 # pairs supplied as tab-separated lines.
 # ---------------------------------------------------------------------------
 _write_manifest() {
@@ -56,7 +56,7 @@ const pairs = process.argv[2].split("\n").filter(l => l.length).map(line => {
   return { source: s, index: i };
 });
 fs.writeFileSync(out, JSON.stringify({ version: 1, entries: pairs }, null, 2) + "\n");
-' "$FIXTURE_DIR/scripts/g4-section-anchor-manifest.json" "$pairs_tsv"
+' "$FIXTURE_DIR/tools/g4-section-anchor-manifest.json" "$pairs_tsv"
 }
 
 # ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ new body
 EOF
   _write_manifest "$(printf 'srcs/add.md\tsrcs/add.anchors.json\n')"
 
-  run bash "$FIXTURE_DIR/scripts/g4-section-anchor-refresh.sh"
+  run bash "$FIXTURE_DIR/tools/g4-section-anchor-refresh.sh"
   [ "$status" -eq 0 ]
   [ -f "$FIXTURE_DIR/srcs/add.anchors.json" ]
   run grep -F '"Newly-Added"' "$FIXTURE_DIR/srcs/add.anchors.json"
@@ -98,7 +98,7 @@ EOF
 EOF
   _write_manifest "$(printf 'srcs/rm.md\tsrcs/rm.anchors.json\n')"
 
-  run bash "$FIXTURE_DIR/scripts/g4-section-anchor-refresh.sh"
+  run bash "$FIXTURE_DIR/tools/g4-section-anchor-refresh.sh"
   [ "$status" -eq 0 ]
   run grep -F '"Removed"' "$FIXTURE_DIR/srcs/rm.anchors.json"
   [ "$status" -ne 0 ]
@@ -119,7 +119,7 @@ EOF
 EOF
   _write_manifest "$(printf 'srcs/rn.md\tsrcs/rn.anchors.json\n')"
 
-  run bash "$FIXTURE_DIR/scripts/g4-section-anchor-refresh.sh"
+  run bash "$FIXTURE_DIR/tools/g4-section-anchor-refresh.sh"
   [ "$status" -eq 0 ]
   # Renamed key present
   run grep -F '"Renamed-Heading"' "$FIXTURE_DIR/srcs/rn.anchors.json"
@@ -151,7 +151,7 @@ body 2
 EOF
   _write_manifest "$(printf 'srcs/dup.md\tsrcs/dup.anchors.json\n')"
 
-  run bash "$FIXTURE_DIR/scripts/g4-section-anchor-refresh.sh"
+  run bash "$FIXTURE_DIR/tools/g4-section-anchor-refresh.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"duplicate-heading"* ]]
   [[ "$output" == *"SameName"* ]]

@@ -1,0 +1,2 @@
+score: 72
+reason: Verified — task-32 Test Expectations line 57 explicitly names two Design finalize validations, but the test only greps "finalize" and "approved-pending-review" (both appear elsewhere in the SKILL), while the parallel Goals test deliberately pins a finalize-unique phrase with a comment calling out exactly this risk; the unpinned bullets ("all five fields populated", "Cross-Goal Decisions ... well-formed") are present in the artifact and would silently regress.

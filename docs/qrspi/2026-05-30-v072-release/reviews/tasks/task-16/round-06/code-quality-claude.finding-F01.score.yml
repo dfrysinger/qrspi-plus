@@ -1,0 +1,2 @@
+score: 42
+reason: Accurate that the comment says "surrounding" while tr deletes all whitespace, but it is a verified yet minor comment-only clarity nitpick the finding itself calls non-blocking.

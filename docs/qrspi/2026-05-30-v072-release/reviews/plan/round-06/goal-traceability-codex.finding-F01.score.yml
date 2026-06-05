@@ -1,0 +1,2 @@
+score: 20
+reason: G25 and G29 absorbed-by-CD-1 dispositions are explicitly documented in the Plan Overview, in T11's spec prose, and in T11's References (design.md ## G29); the SKILL.md template does not mandate matrix-form traceability for absorbed goals, so this is a stylistic preference rather than a correctness gap.

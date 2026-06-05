@@ -1,0 +1,2 @@
+score: 60
+reason: Verified constraint violation - QRSPI-internal tokens [T34-G5] and G5 embedded in all 30 test names and 18 section comments violates documented ID-hygiene contract outside docs/qrspi/.

@@ -1,0 +1,2 @@
+score: 25
+reason: Test Expectations describe behaviors in plain language and only quote public-contract identifiers (file paths, halt-cause names, enum values, sentinel strings) — none of the documented lexical-leakage signals (`expect(`, `assert.`, `toBe(`, etc.) appear, the finding cites no specific offending task, is self-rated low, and its own counter-argument concedes most quoted strings are intentional public contract.

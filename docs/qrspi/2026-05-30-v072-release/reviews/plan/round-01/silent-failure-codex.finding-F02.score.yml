@@ -1,0 +1,2 @@
+score: 35
+reason: Real concern about sticky consume-once flag, but plan already requires a diagnostic on delete failure (not silent), the design.md G4 spec only says "read-and-delete" without mandating fatal handling, and the sticky-flag failure mode broadens (the conservative direction) rather than silently dropping safety; reviewer's preferred fatal/Pause-Gate fix is a defensible design choice, not a documented invariant violation.

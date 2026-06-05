@@ -1,0 +1,2 @@
+score: 72
+reason: Test file re-introduces the exact goal IDs (G31, G1, G30) it verifies were removed from production prose, violating self-consistent hygiene; fix is concrete and simple (lines 7, 61).

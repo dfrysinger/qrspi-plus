@@ -1,0 +1,2 @@
+score: 82
+reason: Verified — config.md producer row adds orchestrator_rescue/max_drift_per_round per CD-4 §I.4, but no File Map row assigns the §I.3 orchestrator-side halt-response/rescue consumer to using-qrspi or implement SKILL.md (their existing rows scope to instrumentation and model_routing only); the lone CD-4-tagged row covers detect-interaction-mode.sh (§I.7) not the rescue branching, so this is a real dead-end-output gap blocking the structure→plan handoff.

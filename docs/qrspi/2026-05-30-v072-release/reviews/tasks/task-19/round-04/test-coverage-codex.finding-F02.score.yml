@@ -1,0 +1,2 @@
+score: 75
+reason: Confirmed — test line 288 captures stderr and greps for the tag but has no `wc -l` assertion, while test line 248 explicitly checks `line_count -eq 1`; DoD L42 (task-19.md line 42) and test-expectations line 52 both require exactly one stderr line for all four fail cases including unknown-vendor, making this a real, directly verifiable gap against an explicit DoD requirement.

@@ -1,0 +1,3 @@
+finding_tag: spec-claude.R1-F01
+score: 78
+reason: Quick-fix N=1 path tests cover only 2 of 5 audit cases. Spec DoD requires all five quick-fix audit rules behaviorally validated; missing mismatch/missing-header/malformed-header/absent-file behavioral coverage at quick-fix labeled scenarios.

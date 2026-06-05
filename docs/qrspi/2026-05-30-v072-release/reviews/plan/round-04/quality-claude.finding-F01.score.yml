@@ -1,0 +1,2 @@
+score: 70
+reason: Verified — plan.md L28 "against an unknown vendor" qualifier is absent from design.md G25 (L2090/L2096) and T16's DoD/Test Expectations (L1001/L1014), creating a real Plan-altitude traceability gap between the phase acceptance bullet and the only task delivering the halt; fix is surgical and well-scoped.

@@ -1,0 +1,2 @@
+score: 78
+reason: Real correctness issue—`/tmp/` references are ephemeral and create a silent-failure surface when LLM agents attempt to follow the "canonical templates" instruction; violates R1 explicitly and will impact reviewer-prompt construction in downstream tasks.

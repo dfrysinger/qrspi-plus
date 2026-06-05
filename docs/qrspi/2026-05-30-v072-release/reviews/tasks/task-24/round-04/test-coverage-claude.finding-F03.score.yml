@@ -1,0 +1,2 @@
+score: 62
+reason: Finding is confirmed — the no-file-write @test pattern exists for the Copilot CLI branch (L357) and unknown-host branch (L373) but there is no analogous test for the Claude Code branch (CLAUDE_PROJECT_DIR set), making this a genuine symmetry gap in a newly-introduced test file; however the risk is low given the branch is only three printf + exit 0 and the script header explicitly documents the never-writes-files contract.

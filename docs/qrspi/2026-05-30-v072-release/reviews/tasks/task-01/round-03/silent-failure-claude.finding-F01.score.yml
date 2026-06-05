@@ -1,0 +1,3 @@
+finding_tag: silent-failure-claude.R3-F01
+score: 18
+reason: Scope-expansion finding. Real system issue (exit-code validation for present-but-wrong cases), but task-01 charter is explicitly absent-vs-empty distinction only; exit-code handling, script implementation, downstream consumer prose all out-of-scope per spec. Altitude/responsibility mismatch, not task-01 failure.

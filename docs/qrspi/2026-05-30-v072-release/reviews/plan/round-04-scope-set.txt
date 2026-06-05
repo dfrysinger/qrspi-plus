@@ -1,0 +1,6 @@
+# scope-set for round 04
+# generated_by: orchestrator (manual; tagger dispatch deferred per round-03 pattern)
+# total_findings_kept: 3
+## Phase 1 Acceptance Criteria
+### Task 16: G22 five-tier model_routing migration, _resolve-lib.sh routing matrix, and per-task tier emission
+### Task 19: G27 `second-reviewer-available.sh` helper, `_host-detect.sh` primitive, and Goals consumer migration

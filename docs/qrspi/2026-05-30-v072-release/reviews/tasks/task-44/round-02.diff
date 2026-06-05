@@ -1,0 +1,134 @@
+diff --git a/skills/using-qrspi/SKILL.md b/skills/using-qrspi/SKILL.md
+index aaa4e55..e865273 100644
+--- a/skills/using-qrspi/SKILL.md
++++ b/skills/using-qrspi/SKILL.md
+@@ -510,7 +510,7 @@ The resolved tier is then looked up in the `model_routing:` block to obtain the
+ 
+ #### Missing `model_routing:` block in `config.md`
+ 
+-When `config.md` does not contain a `model_routing:` block, validation **fails loudly** through the shared config-validation procedure (`skills/_shared/config-validation-procedure.md`) — a missing block and a malformed block fail the same way. The dispatcher does not fire a transient warning and does not silently substitute defaults: an absent routing table has no tier→`(vendor, model)` mapping to resolve against, so the run halts and reports repair-or-abort guidance. This required block is enumerated in the validation table at `### Fields that affect pipeline behavior (must be validated)`.
++When `config.md` does not contain a `model_routing:` block, validation **fails loudly** through the shared config-validation procedure (`skills/_shared/config-validation-procedure.md`) — a missing block and a malformed block fail the same way. The dispatcher does not fire a transient warning and uses no implicit default substitution: an absent routing table has no tier→`(vendor, model)` mapping to resolve against, so the run halts and reports repair-or-abort guidance. This required block is enumerated in the validation table at `### Fields that affect pipeline behavior (must be validated)`.
+ 
+ - **Repair:** add the five-tier `model_routing:` block (with `default_tier: medium`) to `config.md` per the schema in `#### \`model_routing:\` block`.
+ - **Abort:** if the operator cannot supply the block, abort the run. The dispatcher never falls back silently to an agent-bundled default, never substitutes an unannounced model, and never passes the dispatch through to the host CLI's silent re-routing — any such fallback would reproduce the G7b/#204 silent-fallback class this hardening release exists to close.
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index f1cffa5..f13d410 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -291,27 +291,28 @@ run_pin() {
+ 
+ @test "[Phase1 G24 negative-case C-3] anti-pattern regex trips on semantic equivalent phrasings" {
+   # Demonstrates the intent-based regex family is genuinely broader than the
+-  # original literal pin it replaces.  Applies the regex directly to synthetic
+-  # anti-pattern strings; each must match (=~ returns 0 on match).
++  # original literal pin it replaces.  Extracts the DEPLOYED regex patterns
++  # directly from test-using-qrspi-vocab.bats so future drift in the unit-pin
++  # pattern is immediately visible here rather than silently diverging.
+   #
+-  # Two complementary patterns mirror those used in test-using-qrspi-vocab.bats:
+-  #   REGEX_ADVERB — catches "silently" as an adverb before a problematic verb
+-  #                  (fall/degrade/substitute); extended here with "substitut" to
+-  #                  cover the "silently substitutes the bundled default" variant
+-  #                  whose negated form ("does not silently substitute") prevents
+-  #                  its inclusion in the unit-test regex without false-positives.
+-  #   REGEX_NOUN   — catches "silent fallback" as a noun phrase (space-separated,
+-  #                  not hyphenated) to cover "no silent fallback to a neighboring
+-  #                  tier" phrasings.
+-  local REGEX_ADVERB='silently[[:space:]]+(fall|degrad|substitut)'
+-  local REGEX_NOUN='(^|[[:space:]])silent[[:space:]]+fallback'
+-
+-  # "silently degrades to the agent default" trips REGEX_ADVERB.
+-  [[ "silently degrades to the agent default"  =~ $REGEX_ADVERB ]]
+-  # "silently substitutes the bundled default" trips REGEX_ADVERB (extended).
+-  [[ "silently substitutes the bundled default" =~ $REGEX_ADVERB ]]
+-  # "no silent fallback to a neighboring tier" trips REGEX_NOUN.
+-  [[ "no silent fallback to a neighboring tier" =~ $REGEX_NOUN  ]]
++  # Assertions use `printf | grep -qE` (simple command, enforced by set -e on
++  # bash 3.2+) rather than bare `[[ =~ ]]` (compound command, exempt from set -e
++  # on bash 3.2 / macOS default bash).
++  local pin_file="$PINS/test-using-qrspi-vocab.bats"
++  [ -f "$pin_file" ]
++  # Extract the deployed regex literals from the unit-pin assertions.
++  local REGEX_ADVERB REGEX_NOUN
++  REGEX_ADVERB=$(grep -oE 'silently\[.*\]\+\(.*\)' "$pin_file" | head -1)
++  REGEX_NOUN=$(grep -oE '\(.*\)silent\[.*\]\+fallback' "$pin_file" | head -1)
++  [ -n "$REGEX_ADVERB" ]
++  [ -n "$REGEX_NOUN" ]
++
++  # "silently degrades to the agent default" must trip REGEX_ADVERB.
++  printf '%s' "silently degrades to the agent default" | grep -qE "$REGEX_ADVERB"
++  # "silently substitutes the bundled default" must trip REGEX_ADVERB (semantic equivalent).
++  printf '%s' "silently substitutes the bundled default" | grep -qE "$REGEX_ADVERB"
++  # "no silent fallback to a neighboring tier" must trip REGEX_NOUN.
++  printf '%s' "no silent fallback to a neighboring tier" | grep -qE "$REGEX_NOUN"
+ }
+ 
+ # --------------------------------------------------------------------------
+diff --git a/tests/unit/test-using-qrspi-vocab.bats b/tests/unit/test-using-qrspi-vocab.bats
+index 309ef46..716e186 100644
+--- a/tests/unit/test-using-qrspi-vocab.bats
++++ b/tests/unit/test-using-qrspi-vocab.bats
+@@ -139,9 +139,10 @@ setup() {
+   # G21 body-guard: assert non-empty before testing content.
+   [ -n "$body" ]
+   # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+-  # not the literal historic phrase.  Catches "silently fall/falls back" and
+-  # "silently degrade/degrades" regardless of exact phrasing after the verb.
+-  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
++  # not the literal historic phrase.  Catches "silently fall/falls back",
++  # "silently degrade/degrades", and "silently substitute/substitutes"
++  # regardless of exact phrasing after the verb.
++  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
+   # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+   # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+   [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
+@@ -173,9 +174,10 @@ setup() {
+   # G21 body-guard: assert non-empty before testing content.
+   [ -n "$body" ]
+   # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+-  # not the literal historic phrase.  Catches "silently fall/falls back" and
+-  # "silently degrade/degrades" regardless of exact phrasing after the verb.
+-  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
++  # not the literal historic phrase.  Catches "silently fall/falls back",
++  # "silently degrade/degrades", and "silently substitute/substitutes"
++  # regardless of exact phrasing after the verb.
++  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
+   # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+   # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+   [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
+@@ -205,9 +207,10 @@ setup() {
+   # G21 body-guard: assert non-empty before testing content.
+   [ -n "$body" ]
+   # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+-  # not the literal historic phrase.  Catches "silently fall/falls back" and
+-  # "silently degrade/degrades" regardless of exact phrasing after the verb.
+-  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
++  # not the literal historic phrase.  Catches "silently fall/falls back",
++  # "silently degrade/degrades", and "silently substitute/substitutes"
++  # regardless of exact phrasing after the verb.
++  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
+   # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+   # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+   [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
+@@ -241,15 +244,12 @@ setup() {
+   # G21 body-guard: assert non-empty before testing content.
+   [ -n "$body" ]
+   # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+-  # not the literal historic phrase.  Catches "silently fall/falls back" and
+-  # "silently degrade/degrades" regardless of exact phrasing after the verb.
+-  # Note: this H4 body contains "does not silently substitute defaults" (the
+-  # negated, non-anti-pattern form); the regex intentionally uses (fall|degrad)
+-  # rather than adding "substitut" to avoid false-positives on that negated phrase.
+-  # The acceptance test (test-phase1-acceptance.bats G24 C-3) demonstrates the
+-  # extended regex including "substitut" catches "silently substitutes the bundled
+-  # default" when the negation is absent.
+-  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad) ]]
++  # not the literal historic phrase.  Catches "silently fall/falls back",
++  # "silently degrade/degrades", and "silently substitute/substitutes"
++  # regardless of exact phrasing after the verb.  The false-positive risk
++  # ("does not silently substitute defaults") was removed from this H4 body
++  # by replacing that phrase with "uses no implicit default substitution".
++  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
+   # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+   # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+   [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]

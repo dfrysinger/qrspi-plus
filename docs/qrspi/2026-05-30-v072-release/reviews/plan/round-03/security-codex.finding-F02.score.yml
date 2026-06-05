@@ -1,0 +1,2 @@
+score: 30
+reason: Real but minor gap — Plan relies on reviewer inspection rather than an executable positive-fixture for BW02 trigger detection, but the cited bypass examples (commented/malformed guards) describe G21 $body-guard concerns, not the BW02 minimum-version rule (which simply pattern-matches one trigger string), and adversarial-fixture rigor at this altitude is more an implementation choice than a Plan defect.

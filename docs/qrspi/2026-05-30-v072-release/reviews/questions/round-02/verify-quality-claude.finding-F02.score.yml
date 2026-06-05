@@ -1,0 +1,2 @@
+score: 75
+reason: Finding accurately identifies that Q13 verbatim discloses G16's security vulnerability (repository-boundary check and out-of-repo path attack surface), which creates goal leakage and biases researcher toward confirming rather than empirically discovering the gap.

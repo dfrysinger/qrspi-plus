@@ -1,0 +1,88 @@
+diff --git a/docs/qrspi/2026-05-30-v072-release/research/summary.md b/docs/qrspi/2026-05-30-v072-release/research/summary.md
+index 916df19..4ae083c 100644
+--- a/docs/qrspi/2026-05-30-v072-release/research/summary.md
++++ b/docs/qrspi/2026-05-30-v072-release/research/summary.md
+@@ -1,5 +1,5 @@
+ ---
+-status: approved
++status: draft
+ ---
+ 
+ # Research Summary
+@@ -419,6 +419,76 @@ status: approved
+ - Only one round of code-simplifier output exists under `docs/qrspi/2026-05-27-v071-hardening/reviews/` (task-02, round-03) — two Codex findings and one Claude clean sentinel. This is a small sample. Other rounds/tasks may show different patterns.
+ - The `using-qrspi/SKILL.md` was not fully read; references are from `skills/implement/SKILL.md` and `agents/qrspi-code-simplifier.md`.
+ 
++## Q24: Reviewer dispatch contracts across all per-skill SKILL.md files
++
++**TL;DR:** All eleven in-scope `skills/*/SKILL.md` files use the same two-transport model for reviewer dispatch: the **Claude task tool** (`Agent({ subagent_type: "…" })`) for Claude reviewers and a **shell pipeline** via `scripts/run-codex-review.sh` + `scripts/codex-companion-bg.sh await` + `scripts/codex-finding-splitter.sh` for Codex reviewers. The per-finding-emission boilerplate (the "Output format (per-finding emission, #109)" paragraph + worked one-finding example + `NO_FINDINGS` sentinel + constraint reminder) appears **verbatim and identically** in the first seven skills (goals, questions, research, design, phasing, structure, parallelize) but is **entirely absent** from the last four (plan, implement, integrate, test), which instead rely on the `run-codex-review.sh` wrapper to inject the format. Two additional, smaller divergences exist: Goals alone appends "Protocol and agent body flow via stdin" to its Codex dispatch header, and Integrate/Test describe their transport as "via the wrapper" rather than "via shell pipelines."
++
++**Key findings:**
++- **Claude dispatch** — identical mechanism across all 11 skills: `Agent({ subagent_type: "qrspi-{skill}-reviewer", model: "sonnet" })` task tool call with a structured prompt body; reviewer-protocol rules arrive via the agent's `skills: [reviewer-protocol]` preload, not inline in the dispatch prompt.
++- **Codex dispatch** — all 11 skills use the same `scripts/run-codex-review.sh` wrapper (prints a jobId), then `scripts/codex-companion-bg.sh await <jobId> > /tmp/codex-stdout-<jobId>.txt`, then `scripts/codex-finding-splitter.sh <stdout-file> <review-dir> <reviewer-tag>` to materialize per-finding files.
++- **Per-finding boilerplate present** in goals, questions, research, design, phasing, structure, parallelize (7 of 11): word-for-word identical text covering `<<<FINDING-BOUNDARY>>>` literal, `NO_FINDINGS` sentinel, splitter behavior on malformed output, worked one-finding YAML example, worked zero-findings example, and constraint reminder.
++- **Per-finding boilerplate absent** in plan, implement, integrate, test (4 of 11): implement's SKILL.md (line 1060) explicitly states the wrapper "assembles the reviewer-protocol body, the named agent body (frontmatter stripped), the emission-override, and the Dispatch parameters block" — the format lives in the wrapper, not the SKILL.md prose.
++- **Scope-reviewer topology**: goals/design/phasing/structure/parallelize/plan dispatch a scope-reviewer; questions/research/integrate/test/implement do NOT.
++- **Minor transport-description divergences**: Goals line 260 uniquely adds "Protocol and agent body flow via stdin"; integrate line 122 and test line 152 say "via the wrapper" rather than "via shell pipelines."
++
++**Surprises:** Plan (line 316) says "via shell pipelines" — consistent with goals–parallelize — yet omits the inline per-finding boilerplate entirely, making it the transitional skill between the two groups. Implement explicitly delegates format injection to the wrapper and documents that delegation at line 1060, making the omission intentional and self-documenting.
++
++**Caveats:** The `skills/replan/SKILL.md` file was discovered to also contain a Codex dispatch block (line 142: "Protocol and agent body flow via stdin") but is **not** in the enumerated scope of Q24. The `scripts/run-codex-review.sh` wrapper source was not read — its exact emission-override content is not verified here. Findings are based on the SKILL.md prose and shell-pipeline code blocks; no runtime execution was performed.
++
++---
++
++## Q25: What does `skills/using-qrspi/SKILL.md` (and any other skill or agent file) literally say about applying sub-threshold findings as a cluster?
++
++**TL;DR:** `skills/using-qrspi/SKILL.md` and all other skill/agent/script files contain zero protocol text about sub-threshold cluster application, "convergent-evidence exceptions," or batch-apply of findings below the verifier threshold. The apply-fix protocol is strictly per-finding: `style|clarity` KEEP at ≥80, `correctness` KEEP at ≥70, `scope|intent` always KEEP. No carve-out for clusters exists in any protocol file. The only prior dispositions-file precedent for cluster application is confined to the v0.7.2 run's `reviews/questions/` rounds, where the orchestrator invented and self-documented a "convergent-evidence decision" directly in dispositions.
++
++**Key findings:**
++- `skills/using-qrspi/SKILL.md` L388 and L984–985 state the verifier threshold rule (`style|clarity` ≥80, `correctness` ≥70) with no exception for clusters of sub-threshold findings.
++- The Apply-fix step 8 (L982–987) partitions findings purely by `change_type` and score; the word "cluster," "convergent," "batch apply," and "sub-threshold" do not appear anywhere in `skills/`, `agents/`, or `scripts/`.
++- The only dispositions files that record cluster-application reasoning are three files under `docs/qrspi/2026-05-30-v072-release/reviews/questions/`: `round-01-dispositions.md` ("Convergent-evidence decision"), `round-02-dispositions.md` ("Exception rationale (F02, F04)"), and `round-04-dispositions.md` (referencing the accumulated 7-instance pattern).
++- In prior runs (v0.7 and v0.71-hardening), dispositions used "cluster" and "convergent" strictly as descriptive vocabulary for groups of above-threshold findings addressing the same code defect, not as a justification for overriding the per-finding threshold filter.
++
++**Surprises:** The term "convergent" returns zero hits in `skills/`, `agents/`, and `scripts/` — it is entirely absent from protocol source. All occurrences in the repository are in dispositions files and review artifacts, not in normative skill text.
++
++**Caveats:** The `skills/using-qrspi/SKILL.md` file is 123.7 KB; sections were read by line-range and keyword search rather than full sequential read. Searches were comprehensive for the four specified terms plus synonyms. `scripts/` files were listed (14 files) and spot-checked; none contain finding-level logic.
++
++---
++
++## Q26: Artifact-content delivery to reviewer subagents — `artifact_body:` vs `artifact_path:` inventory
++
++**TL;DR:** The `reviewer-protocol/SKILL.md` § Reviewer Dispatch Contract specifies `artifact_body` (wrapped-inline form) as the single, unconditional mechanism for passing artifact content to reviewer subagents. The parameter `artifact_path` never appears in any reviewer dispatch shape in any per-skill SKILL.md; it appears only in scope-tagger dispatches (set to literal `null` for multi-file artifacts) and in git-diff shell commands (not dispatch parameters). No conditions or criteria for choosing between forms are defined anywhere in the current contract.
++
++**Key findings:**
++- `artifact_body` appears in all 10 per-skill reviewer dispatch shapes (goals, questions, research, design, phasing, structure, plan, parallelize, implement, integrate/test) and is specified unconditionally.
++- For implement/integrate/test, the code-under-review is passed via `subject_code` (same wrapped-inline pattern, different parameter name) rather than `artifact_body`, per the note at `reviewer-protocol/SKILL.md:42` which says "`artifact_body` (or `subject_code`, per-step)".
++- The research step is the one partial exception: the primary artifact (`research/summary.md`) uses `artifact_body`, but the companion `q*.md` files are passed via `companion_qfile_paths` — a list of absolute paths the reviewer agent Reads directly (explicitly labelled "path-based, not inline-concatenated" at `research/SKILL.md:151`).
++- `artifact_path` appears in reviewer-adjacent contexts only: (1) scope-tagger dispatch parameters (set to `null` for multi-file steps), (2) the shell command argument `git diff <ref> -- <artifact_path>` for diff-file generation, and (3) `docs/qrspi/2026-05-30-v072-release/goals.md:849` documenting an ad-hoc v0.7.2 self-host workaround where `artifact_path` was passed instead of the wrapped body — explicitly described as outside the contract.
++- The dispatch contract currently provides no conditions, thresholds, or criteria for choosing between wrapped-body inline and path-based forms.
++
++**Surprises:** The research step's `companion_qfile_paths` (path-based) pattern is the only currently-prescribed path-based delivery mechanism in any reviewer dispatch — but it applies only to companion files, not to the primary artifact (`research/summary.md` still uses `artifact_body`). The `goals.md:849` entry explicitly documents that a path-based workaround (`artifact_path: <abs>`) was used ad hoc during the v0.7.2 self-host without any contract backing.
++
++**Caveats:** The replan SKILL.md was not individually verified (it is listed in the Expected-Reviewer Matrix at `reviewer-protocol/SKILL.md:32` but was not a named target in this question). The scripts directory contains no `artifact_path` or `artifact_body` references — confirmed by `grep` returning no matches.
++
++---
++
++## Q27: Artifact Sizes Emitted and Dispatched Across Historical QRSPI Runs
++
++**TL;DR:** Four QRSPI runs reside under `docs/qrspi/`. The largest single artifact in any run is `2026-05-17-v07-release/plan.md` at 233,758 bytes (1,320 lines), followed by the same run's `design.md` at 130,786 bytes and `research/summary.md` at 75,094 bytes. The `2026-05-30-v072-release` run carries the heaviest `goals.md` (91,131 bytes) and `research/summary.md` (87,113 bytes). The only documented ad-hoc size-adjustment found in commit messages and review artifacts is in the v072 run: reviewer dispatch for `research/summary.md` used `artifact_path` (path-based) rather than the standard inline `artifact_body` wrapping, explicitly because the file was 87 KB — this usage seeded G29 in v072 goals.md.
++
++**Key findings:**
++- `2026-04-29-v0.4-bundle` produced only `goals.md` (35,436 B), `questions.md` (6,628 B), and individual `research/q*.md` files (5,930–24,895 B each); no `research/summary.md`, `design.md`, `structure.md`, `plan.md`, or `parallelization.md` exist in that run.
++- `2026-05-17-v07-release` holds the largest overall artifacts: `plan.md` 233,758 B / 1,320 lines, `design.md` 130,786 B / 1,240 lines, `structure.md` 43,665 B, `research/summary.md` 75,094 B, `parallelization.md` 21,756 B, `goals.md` 37,318 B.
++- `2026-05-27-v071-hardening` is the most compact full-pipeline run: `plan.md` 41,540 B / 288 lines, `design.md` 17,424 B / 183 lines, `structure.md` 17,541 B, `research/summary.md` 37,485 B, `parallelization.md` 7,924 B.
++- `2026-05-30-v072-release` (in-progress at measurement time): `goals.md` 91,131 B, `questions.md` 12,701 B, `research/summary.md` 87,113 B / 432 lines; `design.md`, `structure.md`, `plan.md`, and `parallelization.md` are absent (not yet produced).
++- In v072, the research reviewer was dispatched via `artifact_path` instead of inline `artifact_body` for the 87 KB `summary.md` — explicitly documented in commit `45625ed` and goals.md G29 / issue #262 (PI-012). This is the only ad-hoc large-artifact handling found in commit messages or review artifacts across all four runs.
++- No commit messages or reviewer dispatch notes for the v07 233 KB `plan.md` or 130 KB `design.md` reference size-driven ad-hoc handling; those artifacts went through 18-round (design) and 6-round (plan, plus supplement) review cycles without documented size-specific dispatch adjustments.
++- `quality-codex.R2-F01` in v072 goals review flagged "27 goals too large for one run" (advisory intent finding) but this was OVERRULED — it referred to goal count/scope, not file byte size.
++
++**Surprises:** The v07-release `plan.md` at 233 KB is more than 5× the size of the same artifact in the v071-hardening run (41 KB), reflecting the dramatically different task scope (43 tasks vs. 10 tasks). The v072 `goals.md` at 91 KB is nearly 2.5× the largest goals.md from any other run, making it the heaviest goals artifact in the dataset. Despite the v07 plan.md being by far the largest artifact, no ad-hoc dispatcher adjustments for it appear in any commit message — only the much smaller 87 KB v072 `summary.md` triggered a documented path-based dispatch switch.
++
++**Caveats:** The `2026-04-29-v0.4-bundle` and `2026-05-30-v072-release` are incomplete pipelines (v0.4-bundle stopped after research/reviews; v072 is mid-run at time of measurement). The v072 Q27 research file itself is absent from the repository at measurement time (this report is being written now). Byte sizes were measured with `wc -c` from on-disk files; any in-flight edits between measurement and commit may shift values by a few bytes. Git log searches used `--grep` with targeted patterns; commits using workaround prose that doesn't match those patterns would be missed.
++
++---
++
+ ## Cross-References
+ 
+ - **Q1 × Q3 × Q16 — Sidecar pipeline / filter rule / scoring rubric**: The verifier writes scores (Q16 rubric: 0–100 integer with five anchor tiers) to `.score.yml` sidecars (Q1 landing path and assembly step), which the step 5 bash loop reads to apply the tiered filter thresholds (Q3: ≥80 for style/clarity, ≥70 for correctness). These three questions together cover the complete scoring-and-filtering data path.

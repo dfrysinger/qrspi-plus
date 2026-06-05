@@ -1,0 +1,2 @@
+score: 35
+reason: Real gap — DoD claims "atomic" but tests only exercise sequential repeated invocations, not concurrent writers or interruption; however, dispatch is typically invoked sequentially per round so practical risk is modest and the proposed concurrency/interruption fixtures may exceed Plan-altitude testing expectations.

@@ -1,0 +1,2 @@
+score: 85
+reason: Verified — CD-3 in approved design.md mandates creation of `skills/_shared/multi-actor-flow-check.md` with a grep-lint expecting the source file plus 4 consumers, but structure.md's file map (all 7 slices) contains no Create entry for it while listing the four consumer SKILL.md Modify entries, mirroring exactly how peer CD shared snippets (verifier-filter-rule.md, design-altitude-boundary.md, structure-altitude-boundary.md) ARE listed; high-severity correctness gap in the file map.

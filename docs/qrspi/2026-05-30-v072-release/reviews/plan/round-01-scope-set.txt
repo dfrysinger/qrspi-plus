@@ -1,0 +1,6 @@
+# scope-set for round 01
+# generated_by: qrspi-scope-tagger
+# step: plan
+# total_findings_kept: 11
+# note: multi-file step; all 11 kept findings resolve to plan.md after dedup
+docs/qrspi/2026-05-30-v072-release/plan.md

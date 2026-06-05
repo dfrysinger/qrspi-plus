@@ -92,20 +92,25 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-@test "[using-qrspi-vocab] schema doc carries the claude-code: host key" {
-  run grep -F -- 'claude-code:' "$USING_QRSPI_SKILL"
+@test "[using-qrspi-vocab] schema doc carries the medium tier row (vendor-neutral five-tier shape)" {
+  # G22 / T16 migration: the host-keyed claude-code:/copilot-cli: schema was
+  # retired in favor of the five-tier vendor-neutral model_routing: shape.
+  # The schema doc must carry the medium tier as a { vendor:, model: } object.
+  run grep -E 'medium:[[:space:]]+\{[[:space:]]*vendor:' "$USING_QRSPI_SKILL"
   [ "$status" -eq 0 ]
 }
 
-@test "[using-qrspi-vocab] schema doc carries the copilot-cli: host key" {
-  run grep -F -- 'copilot-cli:' "$USING_QRSPI_SKILL"
+@test "[using-qrspi-vocab] schema doc carries the default_tier: medium row" {
+  # G22 / T16 migration: default_tier replaces the per-host inherit row.
+  run grep -E 'default_tier:[[:space:]]+medium' "$USING_QRSPI_SKILL"
   [ "$status" -eq 0 ]
 }
 
-@test "[using-qrspi-vocab] schema doc carries a versioned tier row (haiku: claude-haiku-4.5)" {
+@test "[using-qrspi-vocab] schema doc carries a versioned tier model (claude-haiku-4.5)" {
   # Versioned-ID requirement: the doc must show the full versioned ID, not
-  # the bare tier short-form (Copilot CLI's proxy rejects bare names).
-  run grep -F -- 'haiku: claude-haiku-4.5' "$USING_QRSPI_SKILL"
+  # the bare tier short-form (Copilot CLI's proxy rejects bare names). After
+  # G22 the versioned ID lives inside the low tier's { vendor:, model: } object.
+  run grep -F -- 'claude-haiku-4.5' "$USING_QRSPI_SKILL"
   [ "$status" -eq 0 ]
 }
 
@@ -118,6 +123,8 @@ setup() {
   # fully versioned IDs). The schema doc MUST carry a fail-loud rule
   # naming what the dispatcher does on partial corruption, or the
   # G7b/#204 silent-fallback class reopens one layer deeper.
+  # G21 body-guard: assert non-empty before testing content.
+  [ -n "$body" ]
   [[ "$body" == *"halts and reports"* ]]
   [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
 }
@@ -129,8 +136,16 @@ setup() {
   # Pin the absence of anti-pattern wording G7b/#204 was filed
   # against. If a future edit "softens" the fail-loud rule into a
   # silent-fallback, this pin RED-fails.
-  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
-  [[ "$body" != *"silently degrade"* ]]
+  # G21 body-guard: assert non-empty before testing content.
+  [ -n "$body" ]
+  # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+  # not the literal historic phrase.  Catches "silently fall/falls back",
+  # "silently degrade/degrades", and "silently substitute/substitutes"
+  # regardless of exact phrasing after the verb.
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
+  # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+  # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+  [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
 }
 
 @test "trusted_path block: fail-loud contract pinned for empty step 4" {
@@ -142,6 +157,8 @@ setup() {
   # step 4. Without a fail-loud rule pinned here, two of three plausible
   # dispatcher implementations reproduce the G7b/#204 silent-fallback
   # class one layer deeper than the model_routing: path.
+  # G21 body-guard: assert non-empty before testing content.
+  [ -n "$body" ]
   [[ "$body" == *"halts and reports"* ]]
   [[ "$body" == *"never falls back silently"* ]] || [[ "$body" == *"never fall back silently"* ]]
 }
@@ -154,8 +171,16 @@ setup() {
   # scoped to the trusted_path: H4 body specifically. If a future edit
   # softens the trusted_path: fail-loud rule into a silent-fallback,
   # this pin RED-fails.
-  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
-  [[ "$body" != *"silently degrade"* ]]
+  # G21 body-guard: assert non-empty before testing content.
+  [ -n "$body" ]
+  # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+  # not the literal historic phrase.  Catches "silently fall/falls back",
+  # "silently degrade/degrades", and "silently substitute/substitutes"
+  # regardless of exact phrasing after the verb.
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
+  # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+  # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+  [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
 }
 
 @test "validators block: fail-loud contract pinned for empty step 4" {
@@ -179,9 +204,16 @@ setup() {
   body="$(_extract_h4 "$USING" '`validators:` block')"
   # R5-F01 fix: pin absence of the anti-pattern wording G7b/#204 was
   # filed against, scoped to the validators: H4 body specifically.
+  # G21 body-guard: assert non-empty before testing content.
   [ -n "$body" ]
-  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
-  [[ "$body" != *"silently degrade"* ]]
+  # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+  # not the literal historic phrase.  Catches "silently fall/falls back",
+  # "silently degrade/degrades", and "silently substitute/substitutes"
+  # regardless of exact phrasing after the verb.
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
+  # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+  # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+  [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
 }
 
 @test "missing model_routing block: fail-loud contract pinned for empty step 4" {
@@ -209,7 +241,16 @@ setup() {
   body="$(_extract_h4 "$USING" 'Missing `model_routing:` block in `config.md`')"
   # R5-F01 fix: pin absence of the anti-pattern wording scoped to the
   # missing-block H4 body specifically.
+  # G21 body-guard: assert non-empty before testing content.
   [ -n "$body" ]
-  [[ "$body" != *"silently fall back to the agent-bundled default"* ]]
-  [[ "$body" != *"silently degrade"* ]]
+  # G24-F05: regex pin — matches silent-fallback semantic family (intent-match),
+  # not the literal historic phrase.  Catches "silently fall/falls back",
+  # "silently degrade/degrades", and "silently substitute/substitutes"
+  # regardless of exact phrasing after the verb.  The false-positive risk
+  # ("does not silently substitute defaults") was removed from this H4 body
+  # by replacing that phrase with "uses no implicit default substitution".
+  [[ ! "$body" =~ silently[[:space:]]+(fall|degrad|substitut) ]]
+  # Catches "silent fallback" as a noun phrase (space-separated, not hyphenated);
+  # covers "no silent fallback to a neighboring tier" anti-pattern variants.
+  [[ ! "$body" =~ (^|[[:space:]])silent[[:space:]]+fallback ]]
 }

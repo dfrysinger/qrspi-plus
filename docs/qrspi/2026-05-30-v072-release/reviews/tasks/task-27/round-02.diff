@@ -1,0 +1,649 @@
+diff --git a/skills/_shared/evergreen-output-rule.md b/skills/_shared/evergreen-output-rule.md
+new file mode 100644
+index 0000000..7bdc2d3
+--- /dev/null
++++ b/skills/_shared/evergreen-output-rule.md
+@@ -0,0 +1,30 @@
++## Evergreen-Output Rule
++
++Any artifact in the QRSPI run directory governed by `status: draft → approved` frontmatter promotion (goals, design, structure, phasing, plan, parallelization, roadmap, future-goals, and any future artifact adopting this lifecycle) describes the **current state** of decisions. The reader is a downstream agent or future maintainer.
++
++*(Excludes by design: `SKILL.md` files — skills carry rule rationale legitimately; `feedback/*.md` — the designated home for dialogue exhaust; `reviews/**/*.md` — finding rationale; `config.md` — non-narrative.)*
++
++**Litmus test (apply to every paragraph before write).** Two filters, in order:
++
++1. Is the subject the **decision** (the thing being designed / planned / scoped)? → keep.
++2. Is the subject the **document itself** — its drafts, its history, the dialogue that produced it, "us"? → cut.
++
++A sentence that only makes sense as a delta from a prior state is **dialogue exhaust** — strip it.
++
++**Permitted substantive content** (do NOT confuse with dialogue exhaust):
++
++- Chosen approach and its rationale (inline)
++- Rejected alternatives and tradeoffs, where the artifact template asks for them (e.g., design.md's `## Trade-offs Considered` — substantive content about the decision space, not about the document's history)
++- Rationale embedded inline as one parenthetical when a downstream reader needs it
++
++**Named antagonist patterns — strip on sight, substitute as shown:**
++
++| Antagonist pattern | Recognize by | Replace with |
++|---|---|---|
++| Session / drafting notes | "Rule X drafting note," "this collapsed from 3 to 1 because…" | Nothing — delete. If a fact matters, embed inline in the decision. |
++| Version-history narration | "earlier draft said X," "previously," "originally," "pre-cleanup" | Nothing — git history holds versions. |
++| Inside baseball | text addressed to "us" / "the author," meta-explanation of the document's own structure ("this section is split into A and B because…") | The decision the structure expresses — without the structural explanation. |
++| Compaction-loss recovery notes | "this nuance was almost lost during…" | Nothing — if the nuance is needed, the rule itself carries it. |
++| Failure-modes-prevented lists | bullets that justify why a rule exists rather than state what to do | Strengthen the rule's wording; delete the justification list. |
++
++Decision-process history (drafts, review rounds, feedback applied, compaction recovery) lives in feedback files, review findings, PR descriptions, and git history — never in the artifact.
+diff --git a/skills/design/SKILL.md b/skills/design/SKILL.md
+index 7658241..edd8b17 100644
+--- a/skills/design/SKILL.md
++++ b/skills/design/SKILL.md
+@@ -84,6 +84,8 @@ Once the discussion settles, launch a **subagent** to synthesize `design.md`.
+ 
+ **Output format for `design.md`:**
+ 
++!cat skills/_shared/evergreen-output-rule.md
++
+ > **Per-section template guidance is embedded inline as HTML comments below.** Each section block carries a one-line guidance comment and a conformance reminder so future design.md content can be linted for boundary-drift signals (the scope-reviewer's boundary-drift sub-check looks for downstream-stage jargon — DDL keywords, full TypeScript signatures, literal `expect(...)` assertions, phase-split language — leaking into design.md; design.md owns approach/rationale/trade-offs/test-strategy/system-diagram, not Plan/Implement-layer surfaces or Phasing-layer slice authoring).
+ >
+ > **Conformance applies to every section of design.md.** Claim-before-evidence (lead each subsection with its decision sentence; supporting detail follows). Paragraph density: ≤150 words / ≤8 lines per paragraph; if longer, split. Scannability: bullets in any section longer than ~12 lines. Required-section heading match: the headings below (`## Approach`, `## Key Decisions`, `## Trade-offs Considered`, `## Test Strategy`, `## System Diagram`) are the canonical set; do not silently rename. No-brevity prohibition: do NOT add "be concise", "brief summary", "≤ N lines" framing; the soft length target lives in this SKILL.md, not in the artifact.
+diff --git a/skills/goals/SKILL.md b/skills/goals/SKILL.md
+index 02077ab..56235a5 100644
+--- a/skills/goals/SKILL.md
++++ b/skills/goals/SKILL.md
+@@ -157,6 +157,8 @@ Once the conversation settles, launch a **subagent** to synthesize `goals.md`:
+ **Subagent task:**
+ Produce `goals.md` with this structure. The template is the **conformance contract** for goals.md: required sections and per-goal subsections are enumerated here, claim-before-evidence ordering is mandated, scannable bullets are required, and "be concise" instructions are forbidden (synthesize the substance, do not truncate it).
+ 
++!cat skills/_shared/evergreen-output-rule.md
++
+ ```markdown
+ ---
+ status: draft
+diff --git a/skills/parallelize/SKILL.md b/skills/parallelize/SKILL.md
+index 1a92680..14a526a 100644
+--- a/skills/parallelize/SKILL.md
++++ b/skills/parallelize/SKILL.md
+@@ -125,6 +125,8 @@ The implementer running parallelize does NOT auto-apply patches. Patches are adv
+ 
+ ## Artifact
+ 
++!cat skills/_shared/evergreen-output-rule.md
++
+ `parallelization.md` — written with `status: draft` in YAML frontmatter. Required sections:
+ 
+ - **Execution Mode** — sequential / parallel / hybrid with one-sentence rationale
+diff --git a/skills/phasing/SKILL.md b/skills/phasing/SKILL.md
+index 5a984e7..824bedf 100644
+--- a/skills/phasing/SKILL.md
++++ b/skills/phasing/SKILL.md
+@@ -185,6 +185,8 @@ The synthesis subagent MUST emit all 8 pruning files (4 pruned + 4 future-*) ato
+ 
+ The synthesis subagent writes `phasing.md` in the following shape. **Each section's first sentence is the load-bearing claim** (claim-before-evidence; Nielsen inverted pyramid). Paragraphs stay ≤150 words; sections >300 words use bullets or numbered lists. No "be concise"-style instructions appear in the output.
+ 
++!cat skills/_shared/evergreen-output-rule.md
++
+ ```markdown
+ ---
+ status: draft
+diff --git a/skills/plan/SKILL.anchors.json b/skills/plan/SKILL.anchors.json
+index 6e63e60..8cbcfc5 100644
+--- a/skills/plan/SKILL.anchors.json
++++ b/skills/plan/SKILL.anchors.json
+@@ -29,7 +29,7 @@
+   },
+   "Process": {
+     "line_start": 81,
+-    "line_end": 504
++    "line_end": 506
+   },
+   "Plan Overview Subagent": {
+     "line_start": 83,
+@@ -49,86 +49,86 @@
+   },
+   "Plan Document Structure (During Review)": {
+     "line_start": 193,
+-    "line_end": 254
++    "line_end": 256
+   },
+   "Project Environment Fields": {
+-    "line_start": 255,
+-    "line_end": 263
++    "line_start": 257,
++    "line_end": 265
+   },
+   "Plan Reviewer Agents": {
+-    "line_start": 264,
+-    "line_end": 279
++    "line_start": 266,
++    "line_end": 281
+   },
+   "Review Round": {
+-    "line_start": 280,
+-    "line_end": 313
++    "line_start": 282,
++    "line_end": 315
+   },
+   "Human Gate": {
+-    "line_start": 314,
+-    "line_end": 348
++    "line_start": 316,
++    "line_end": 350
+   },
+   "Quick-Fix Auto-Approve Branch": {
+-    "line_start": 349,
+-    "line_end": 366
++    "line_start": 351,
++    "line_end": 368
+   },
+   "Merge/Split Mechanics": {
+-    "line_start": 367,
+-    "line_end": 430
++    "line_start": 369,
++    "line_end": 432
+   },
+   "SPEC OVERRIDES SOURCE authority": {
+-    "line_start": 431,
+-    "line_end": 436
++    "line_start": 433,
++    "line_end": 438
+   },
+   "Refuse-to-Write Contract": {
+-    "line_start": 437,
+-    "line_end": 451
++    "line_start": 439,
++    "line_end": 453
+   },
+   "Migration: `visual_fidelity_check.ui_producing` → top-level `ui:`": {
+-    "line_start": 452,
+-    "line_end": 479
++    "line_start": 454,
++    "line_end": 481
+   },
+   "Artifacts": {
+-    "line_start": 480,
+-    "line_end": 484
++    "line_start": 482,
++    "line_end": 486
+   },
+   "`phase_start_commit` capture at approval time": {
+-    "line_start": 485,
+-    "line_end": 492
++    "line_start": 487,
++    "line_end": 494
+   },
+   "Terminal State": {
+-    "line_start": 493,
+-    "line_end": 504
++    "line_start": 495,
++    "line_end": 506
+   },
+   "Test Expectations": {
+-    "line_start": 505,
+-    "line_end": 584
++    "line_start": 507,
++    "line_end": 586
+   },
+   "Sweep Task Contract": {
+-    "line_start": 511,
+-    "line_end": 544
++    "line_start": 513,
++    "line_end": 546
+   },
+   "Cross-Task Consumer Surface": {
+-    "line_start": 545,
+-    "line_end": 584
++    "line_start": 547,
++    "line_end": 586
+   },
+   "Red Flags — STOP": {
+-    "line_start": 585,
+-    "line_end": 613
++    "line_start": 587,
++    "line_end": 615
+   },
+   "Visual-fidelity hard-gate (pre-fanout refusal condition)": {
+-    "line_start": 604,
+-    "line_end": 613
++    "line_start": 606,
++    "line_end": 615
+   },
+   "Common Rationalizations — STOP": {
+-    "line_start": 614,
+-    "line_end": 627
++    "line_start": 616,
++    "line_end": 629
+   },
+   "Worked Example": {
+-    "line_start": 628,
+-    "line_end": 665
++    "line_start": 630,
++    "line_end": 667
+   },
+   "Iron Laws — Final Reminder": {
+-    "line_start": 666,
+-    "line_end": 676
++    "line_start": 668,
++    "line_end": 678
+   }
+ }
+diff --git a/skills/plan/SKILL.md b/skills/plan/SKILL.md
+index 134c4a1..5d9bd39 100644
+--- a/skills/plan/SKILL.md
++++ b/skills/plan/SKILL.md
+@@ -194,6 +194,8 @@ The classification gates downstream behavior: lightweight tasks dispatch to `qrs
+ 
+ The output template below embeds **information-mapping patterns** directly: claim-before-evidence (the task title and Description's first sentence carry the load-bearing claim — what observable behavior the task delivers); one-paragraph-per-claim density (each bullet carries one claim, no compound bullets); scannable bullets and required headings (Phase / Target files / Dependencies / LOC estimate / Description / Test expectations are required structural slots, not optional prose); no "be concise" instructions (research-backed: brevity directives degrade factual reliability per the Phare benchmark and Hakim). Per-task specs are short by structural design (terse bullets, no narrative), not by an explicit brevity instruction.
+ 
++!cat skills/_shared/evergreen-output-rule.md
++
+ ```markdown
+ ---
+ status: draft
+diff --git a/skills/questions/SKILL.md b/skills/questions/SKILL.md
+index c80f087..003ccaa 100644
+--- a/skills/questions/SKILL.md
++++ b/skills/questions/SKILL.md
+@@ -56,6 +56,8 @@ Do NOT pass goals.md to any research subagent — research isolation is structur
+ 
+ **Output format for `questions.md`:**
+ 
++!cat skills/_shared/evergreen-output-rule.md
++
+ ```markdown
+ ---
+ status: draft
+diff --git a/skills/replan/SKILL.md b/skills/replan/SKILL.md
+index 274bed4..cf9b2c3 100644
+--- a/skills/replan/SKILL.md
++++ b/skills/replan/SKILL.md
+@@ -188,6 +188,8 @@ Recommend compaction before invoking target skill.
+ 
+ ## Artifacts
+ 
++!cat skills/_shared/evergreen-output-rule.md
++
+ - `reviews/replan/round-NN/<reviewer_tag>.finding-F<NN>.md` — per-finding files (one per reviewer-emitted finding); `<reviewer_tag>` is `quality-claude`, `scope-claude`, `quality-codex`, or `scope-codex`; reviewer-authored per the disk-write contract from the reviewer-protocol skill
+ - `feedback/replan-phase-NN-round-MM.md` — replan proposals for backward loops (major changes)
+ - `feedback/replan-minor-phase-NN-round-MM.md` — rejection feedback for minor change revisions
+diff --git a/skills/research/SKILL.md b/skills/research/SKILL.md
+index c4fe46c..c1e224f 100644
+--- a/skills/research/SKILL.md
++++ b/skills/research/SKILL.md
+@@ -53,6 +53,8 @@ If a subagent prompt contains goals.md content, the isolation invariant is broke
+ 
+ ### Per-Researcher Subagent
+ 
++!cat skills/_shared/evergreen-output-rule.md
++
+ **Inputs:** Only the assigned question(s) from `questions.md`. NO `goals.md`. NO raw `feedback/research-round-*.md` files (raw feedback may carry user goals/intent — forwarding it to a research subagent breaks the research-isolation invariant). The orchestrator also passes the absolute output path (`{ABS_RESEARCH_DIR}/q{NN}-{type}.md`) and, for grouped questions, the full set of question IDs the report should cover. On re-dispatch via Rejection path 2, the orchestrator passes a **sanitized defect summary** it authors itself from the user's feedback — defect-only bullet points (e.g., "missed the auth module", "TL;DR is missing", "broken file:line citation"). Goal-bearing or intent-bearing language is stripped before the summary reaches the subagent.
+ 
+ **Dispatch** — for each question (or grouped set of related questions), dispatch `Agent({ subagent_type: "qrspi-research-specialist", model: "sonnet" })` in parallel via concurrent Agent tool calls. The agent body (loaded by the runtime) carries the full research-agent rules, output-format template, and contract; the dispatch prompt carries only the parameters below.
+diff --git a/skills/reviewer-protocol/SKILL.anchors.json b/skills/reviewer-protocol/SKILL.anchors.json
+index 7949d17..bcda506 100644
+--- a/skills/reviewer-protocol/SKILL.anchors.json
++++ b/skills/reviewer-protocol/SKILL.anchors.json
+@@ -9,7 +9,7 @@
+   },
+   "Finding Schema": {
+     "line_start": 53,
+-    "line_end": 82
++    "line_end": 88
+   },
+   "`finding_id` Uniqueness Rule": {
+     "line_start": 69,
+@@ -19,68 +19,72 @@
+     "line_start": 75,
+     "line_end": 82
+   },
+-  "Change-Type Classifier": {
++  "Evergreen-Output Rule Enforcement": {
+     "line_start": 83,
+-    "line_end": 134
++    "line_end": 88
++  },
++  "Change-Type Classifier": {
++    "line_start": 89,
++    "line_end": 140
+   },
+   "style": {
+-    "line_start": 100,
+-    "line_end": 106
++    "line_start": 106,
++    "line_end": 112
+   },
+   "clarity": {
+-    "line_start": 107,
+-    "line_end": 113
++    "line_start": 113,
++    "line_end": 119
+   },
+   "correctness": {
+-    "line_start": 114,
+-    "line_end": 120
++    "line_start": 120,
++    "line_end": 126
+   },
+   "scope": {
+-    "line_start": 121,
+-    "line_end": 127
++    "line_start": 127,
++    "line_end": 133
+   },
+   "intent": {
+-    "line_start": 128,
+-    "line_end": 134
++    "line_start": 134,
++    "line_end": 140
+   },
+   "Disagreement-Valid Framing": {
+-    "line_start": 135,
+-    "line_end": 144
++    "line_start": 141,
++    "line_end": 150
+   },
+   "Informational Findings": {
+-    "line_start": 145,
+-    "line_end": 158
++    "line_start": 151,
++    "line_end": 164
+   },
+   "Untrusted Data Handling": {
+-    "line_start": 159,
+-    "line_end": 198
++    "line_start": 165,
++    "line_end": 204
+   },
+   "Path A — content read from disk": {
+-    "line_start": 165,
+-    "line_end": 175
++    "line_start": 171,
++    "line_end": 181
+   },
+   "Path B — content embedded in the dispatch prompt": {
+-    "line_start": 176,
+-    "line_end": 198
++    "line_start": 182,
++    "line_end": 204
+   },
+   "Phase Routing": {
+-    "line_start": 199,
+-    "line_end": 241
++    "line_start": 205,
++    "line_end": 247
+   },
+   "Phase Signal — `task_definition`": {
+-    "line_start": 208,
+-    "line_end": 216
++    "line_start": 214,
++    "line_end": 222
+   },
+   "Contradiction Refusal (FAIL-LOUD)": {
+-    "line_start": 217,
+-    "line_end": 226
++    "line_start": 223,
++    "line_end": 232
+   },
+   "Refusal Procedure": {
+-    "line_start": 227,
+-    "line_end": 241
++    "line_start": 233,
++    "line_end": 247
+   },
+   "Quick-Tier Finding Disposition": {
+-    "line_start": 242,
+-    "line_end": 254
++    "line_start": 248,
++    "line_end": 260
+   }
+ }
+diff --git a/skills/reviewer-protocol/SKILL.md b/skills/reviewer-protocol/SKILL.md
+index f2d5942..da25111 100644
+--- a/skills/reviewer-protocol/SKILL.md
++++ b/skills/reviewer-protocol/SKILL.md
+@@ -80,6 +80,12 @@ In addition to the five schema fields above, every emitted finding carries three
+ - **`round`** — integer. The review-round number this finding was emitted in. MUST equal the round prefix embedded in `finding_id` (the `{NN}` after `R`); a mismatch is malformed.
+ - **`reviewer`** — string. The reviewer tag that produced the finding. The `reviewer` audit-field value MUST equal the dispatcher-supplied `<reviewer_tag>` for the current dispatch (and equivalently the filename prefix used by the emission contract). This pin closes a confused-deputy surface: a reviewer cannot impersonate another reviewer's tag in its own emitted findings, because the orchestrator validates `reviewer == <reviewer_tag>` before threading.
+ 
++### Evergreen-Output Rule Enforcement
++
++The rule applies to every QRSPI artifact whose producing `SKILL.md` `!cat`-includes `skills/_shared/evergreen-output-rule.md` — scope authority is delegated to the include topology, not to any hardcoded artifact list. When reviewing such an artifact, reviewer subagents MUST surface a finding when it carries any of the named antagonist patterns enumerated in that snippet. The canonical antagonist-pattern vocabulary lives there — cite the snippet by reference; do NOT duplicate the antagonist-pattern list here.
++
++This clause is **additional** to (NOT a replacement for) the finding-schema and `change_type` requirements above. The finding still carries the canonical 5-field schema (`finding_id`, `severity`, `change_type`, `message`, `referenced_files`) plus the audit fields. Tag the `change_type` per the snippet's filter taxonomy: dialogue-exhaust phrasing whose excision affects only artifact tone or paragraph density (without changing the decisions the artifact records) is `change_type: style`; dialogue-exhaust phrasing whose excision sharpens claim-before-evidence ordering, removes load-bearing structural meta-explanation, or otherwise unburies the decision the artifact is meant to express is `change_type: clarity`. Do NOT invent a sixth bucket or coerce the value to a non-canonical alias — out-of-enum values are a contract violation per the loud-failure rule above.
++
+ ## Change-Type Classifier
+ 
+ Five categories. Each entry below names the category, gives the rule of thumb, and shows a positive example (a finding that fits the category) and a negative example (a finding that looks similar at a glance but belongs to a different category — to prevent miscategorization).
+diff --git a/skills/structure/SKILL.md b/skills/structure/SKILL.md
+index acea07d..34d9911 100644
+--- a/skills/structure/SKILL.md
++++ b/skills/structure/SKILL.md
+@@ -72,6 +72,8 @@ When generating `structure.md`, Structure honors the phase scope set by Phasing:
+ 
+ **Output format for `structure.md`:**
+ 
++!cat skills/_shared/evergreen-output-rule.md
++
+ > **Per-section template guidance is embedded inline as HTML comments below.** Each section block carries a one-line guidance comment and a conformance reminder so future structure.md content can be linted for boundary-drift signals (the scope-reviewer's boundary-drift sub-check looks for skill-implementation jargon — specific tool names, hook syntax, subagent dispatch verbs — leaking into earlier-stage artifacts; structure.md owns file paths and interfaces, not Plan/Implement-layer language).
+ >
+ > **Conformance applies to every section of structure.md.** Claim-before-evidence (lead each subsection with its decision sentence; supporting detail follows). Paragraph density: ≤150 words / ≤8 lines per paragraph; if longer, split. Scannability: bullets in any section longer than ~12 lines. Required-section heading match: the headings below (`## File Map`, `## Interfaces`, `## Architectural Diagram`, `## CI Pipeline`) are the canonical set; do not silently rename. No-brevity prohibition: do NOT add "be concise", "brief summary", "≤ N lines" framing; the soft length target is set in this SKILL.md, not in the artifact.
+diff --git a/skills/using-qrspi/SKILL.anchors.json b/skills/using-qrspi/SKILL.anchors.json
+index 7af1d91..6f6c150 100644
+--- a/skills/using-qrspi/SKILL.anchors.json
++++ b/skills/using-qrspi/SKILL.anchors.json
+@@ -31,132 +31,136 @@
+     "line_start": 210,
+     "line_end": 227
+   },
+-  "Approval Markers": {
++  "Artifact Quality": {
+     "line_start": 228,
+-    "line_end": 247
++    "line_end": 231
++  },
++  "Approval Markers": {
++    "line_start": 232,
++    "line_end": 251
+   },
+   "State and Pipeline Ordering": {
+-    "line_start": 248,
+-    "line_end": 257
++    "line_start": 252,
++    "line_end": 261
+   },
+   "Rejection Behavior": {
+-    "line_start": 258,
+-    "line_end": 261
++    "line_start": 262,
++    "line_end": 265
+   },
+   "Backward Loops (New Learnings)": {
+-    "line_start": 262,
+-    "line_end": 281
++    "line_start": 266,
++    "line_end": 285
+   },
+   "Mid-Pipeline Entry": {
+-    "line_start": 282,
+-    "line_end": 305
++    "line_start": 286,
++    "line_end": 309
+   },
+   "Validation and Repair": {
+-    "line_start": 286,
+-    "line_end": 305
++    "line_start": 290,
++    "line_end": 309
+   },
+   "Pipeline Progress": {
+-    "line_start": 306,
+-    "line_end": 338
++    "line_start": 310,
++    "line_end": 342
+   },
+   "Artifact Gating Check (Standard Pattern)": {
+-    "line_start": 339,
+-    "line_end": 348
++    "line_start": 343,
++    "line_end": 352
+   },
+   "Config File (`config.md`)": {
+-    "line_start": 349,
+-    "line_end": 517
++    "line_start": 353,
++    "line_end": 521
+   },
+   "Dispatch routing blocks": {
+-    "line_start": 421,
+-    "line_end": 517
++    "line_start": 425,
++    "line_end": 521
+   },
+   "Config Validation Procedure": {
+-    "line_start": 518,
+-    "line_end": 641
++    "line_start": 522,
++    "line_end": 645
+   },
+   "When config.md is missing entirely": {
+-    "line_start": 522,
+-    "line_end": 530
++    "line_start": 526,
++    "line_end": 534
+   },
+   "When a required field is missing or has an invalid value": {
+-    "line_start": 531,
+-    "line_end": 587
++    "line_start": 535,
++    "line_end": 591
+   },
+   "No silent defaults": {
+-    "line_start": 588,
+-    "line_end": 595
++    "line_start": 592,
++    "line_end": 599
+   },
+   "Exceptions to the no-silent-defaults rule": {
+-    "line_start": 596,
+-    "line_end": 614
++    "line_start": 600,
++    "line_end": 618
+   },
+   "Fields that affect pipeline behavior (must be validated)": {
+-    "line_start": 615,
+-    "line_end": 635
++    "line_start": 619,
++    "line_end": 639
+   },
+   "Fields that do NOT require validation (informational only)": {
+-    "line_start": 636,
+-    "line_end": 641
++    "line_start": 640,
++    "line_end": 645
+   },
+   "Standard Review Loop": {
+-    "line_start": 642,
+-    "line_end": 689
++    "line_start": 646,
++    "line_end": 693
+   },
+   "Fix-altitude rule (F-5)": {
+-    "line_start": 678,
+-    "line_end": 685
++    "line_start": 682,
++    "line_end": 689
+   },
+   "Sweep-task findings — backstop": {
+-    "line_start": 686,
+-    "line_end": 689
++    "line_start": 690,
++    "line_end": 693
+   },
+   "Review Output Handling": {
+-    "line_start": 690,
+-    "line_end": 1106
++    "line_start": 694,
++    "line_end": 1110
+   },
+   "Review-Loop Pause Gate": {
+-    "line_start": 1107,
+-    "line_end": 1154
++    "line_start": 1111,
++    "line_end": 1158
+   },
+   "BATCH-WITH-OVERRIDES UI contract": {
+-    "line_start": 1111,
+-    "line_end": 1118
++    "line_start": 1115,
++    "line_end": 1122
+   },
+   "3-option menu (per paused finding)": {
+-    "line_start": 1119,
+-    "line_end": 1136
++    "line_start": 1123,
++    "line_end": 1140
+   },
+   "Paused rounds do not decrement the cap": {
+-    "line_start": 1137,
+-    "line_end": 1142
++    "line_start": 1141,
++    "line_end": 1146
+   },
+   "Pending-findings file": {
+-    "line_start": 1143,
+-    "line_end": 1154
++    "line_start": 1147,
++    "line_end": 1158
+   },
+   "Review Time Allocation": {
+-    "line_start": 1155,
+-    "line_end": 1162
++    "line_start": 1159,
++    "line_end": 1166
+   },
+   "Compaction Checkpoints": {
+-    "line_start": 1163,
+-    "line_end": 1194
++    "line_start": 1167,
++    "line_end": 1198
+   },
+   "Feedback File Format": {
+-    "line_start": 1195,
+-    "line_end": 1214
++    "line_start": 1199,
++    "line_end": 1218
+   },
+   "Common Rationalizations — STOP": {
+-    "line_start": 1215,
+-    "line_end": 1229
++    "line_start": 1219,
++    "line_end": 1233
+   },
+   "Skill Invocation": {
+-    "line_start": 1230,
+-    "line_end": 1235
++    "line_start": 1234,
++    "line_end": 1239
+   },
+   "Pipeline Iron Laws — Final Reminder": {
+-    "line_start": 1236,
+-    "line_end": 1258
++    "line_start": 1240,
++    "line_end": 1262
+   }
+ }
+diff --git a/skills/using-qrspi/SKILL.md b/skills/using-qrspi/SKILL.md
+index aaa4e55..96c2343 100644
+--- a/skills/using-qrspi/SKILL.md
++++ b/skills/using-qrspi/SKILL.md
+@@ -225,6 +225,10 @@ Each skill checks that its required input artifacts exist on disk before proceed
+ 
+ If a required artifact is missing, the skill refuses to run and tells the user which artifact is needed.
+ 
++## Artifact Quality
++
++Every artifact-producing skill in this pipeline applies the cross-cutting Evergreen-Output Rule to the artifact it emits. See `skills/_shared/evergreen-output-rule.md` for the canonical rule (litmus test, named antagonist patterns, permitted substantive content); the rule is `!cat`-included by every artifact-producing SKILL.md at its artifact-output contract section, and reviewer subagents enforce it via the antagonist-pattern clause in `skills/reviewer-protocol/SKILL.md`.
++
+ ## Approval Markers
+ 
+ When the user approves an artifact, the skill writes `status: approved` in the artifact's YAML frontmatter:

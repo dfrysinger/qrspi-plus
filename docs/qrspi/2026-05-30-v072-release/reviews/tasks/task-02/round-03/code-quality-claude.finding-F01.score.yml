@@ -1,0 +1,2 @@
+score: 35
+reason: Real naming convention drift (R2 tests use "R2 fix N:" while R1 uses "fix FNN:"), but it is a low-impact stylistic nitpick that does not affect test functionality or correctness; no lint tool would catch this.

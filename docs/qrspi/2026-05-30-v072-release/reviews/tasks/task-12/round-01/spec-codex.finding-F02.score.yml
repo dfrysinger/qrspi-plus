@@ -1,0 +1,2 @@
+score: 50
+reason: Spec (line 40) names "full-artifact" as a broaden trigger case. The decide_narrow() function lacks an explicit sentinel check for full-artifact scope-sets. However, the semantic definition of "full-artifact" (equivalent to no narrowing) is ambiguous and may not require a separate code path if such scope-sets naturally fall through to broaden via other logic.

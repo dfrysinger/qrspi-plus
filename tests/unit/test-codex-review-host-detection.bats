@@ -2,7 +2,7 @@
 #
 # tests/unit/test-codex-review-host-detection.bats
 # Task 6 — R5/R7 security fixes: sec.F01 — gh path prefix validation in detect_host
-# Target: scripts/run-codex-review.sh
+# Target: scripts/dispatch-agent.sh
 #
 # RED test for sec.F01: detect_host must reject copilot-cli marker when the
 # `gh` binary resolves to a path outside the trusted prefixes /usr/*, /opt/*,
@@ -28,7 +28,7 @@ bats_require_minimum_version 1.5.0
 setup_file() {
   REAL_REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
   export REAL_REPO_ROOT
-  WRAPPER="$REAL_REPO_ROOT/scripts/run-codex-review.sh"
+  WRAPPER="$REAL_REPO_ROOT/scripts/dispatch-agent.sh"
   export WRAPPER
 }
 

@@ -1,0 +1,2 @@
+score: 75
+reason: Same vacuous-test issue as code-quality F01 but framed as silent-failure; silent-failure framing less precise (vacuous is more direct root cause); code-quality framing higher.

@@ -1,0 +1,2 @@
+score: 30
+reason: Real but minor gap between test comment and pattern coverage; paraphrased re-inlining is an edge case and the finding offers a reasonable comment-tightening fix, not a functional defect.

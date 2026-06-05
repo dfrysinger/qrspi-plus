@@ -1,0 +1,2 @@
+score: 70
+reason: Real plan-level asymmetry — Task 21 explicitly requires realpath canonicalization and a symlink regression while Task 39's "outside-root includes" / "path-traversal attempts" is not bound to symlink-following, leaving a plausible build-time exfil path (in-repo symlink → outside-root target inlined into shipped build/) that the ${CLAUDE_SKILL_DIR} grep gate does not catch; fix is concrete, plan-altitude, and security-relevant.

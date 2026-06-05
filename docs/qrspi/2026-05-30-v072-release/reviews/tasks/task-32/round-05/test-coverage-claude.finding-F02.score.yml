@@ -1,0 +1,2 @@
+score: 50
+reason: Real gap — the goals finalize test name promises a draft→approved flip assertion but only greps "finalize" and a validate sentence; a drift to "approved-pending-review" would not be caught. Low severity, easy fix, but legitimate.

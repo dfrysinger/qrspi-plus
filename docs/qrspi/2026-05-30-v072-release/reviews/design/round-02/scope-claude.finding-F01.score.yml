@@ -1,0 +1,2 @@
+score: 62
+reason: T2's "one bats file per script under scripts/" is a clean match for the explicit "per-test-file layout deferred" bullet in design OWNS; T3 fixture-counts and T5 (a)(b)(c) assertion conditions are softer drift cases (not literal assertion text but specific test-case spec), so the finding is real but partly nitpicky on T3/T5.

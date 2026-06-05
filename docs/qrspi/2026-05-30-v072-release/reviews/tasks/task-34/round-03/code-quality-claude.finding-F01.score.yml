@@ -1,0 +1,2 @@
+score: 75
+reason: Dangling section header is real and was introduced by task-34 in R2; it adds visual noise and violates test structure discipline documented in the file header.

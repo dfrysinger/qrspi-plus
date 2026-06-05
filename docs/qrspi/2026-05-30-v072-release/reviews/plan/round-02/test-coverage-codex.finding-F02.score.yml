@@ -1,0 +1,2 @@
+score: 70
+reason: Verified in plan.md — T29 test expectations omit the lint bats file in its Target files, and T37 test expectations explicitly contradict its own Target files ("only modified existing target file" and "no test-code additions" vs Target listing owns-defers.md modify + lint bats create); convergent with quality-claude F01/F02 and test-coverage-claude F03.

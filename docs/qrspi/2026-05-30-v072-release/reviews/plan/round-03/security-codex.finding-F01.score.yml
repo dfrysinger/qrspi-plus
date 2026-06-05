@@ -1,0 +1,2 @@
+score: 20
+reason: Altitude mismatch and weak threat model — the manifest is a script-chain-local file inside the repo (an attacker with write access there already has code execution), no upstream goal/design calls for manifest schema validation, and the finding asks Plan to invent new hardening requirements rather than refine task decomposition; G16 already covers the realistic sanctioned-channel exfil surface.

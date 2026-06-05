@@ -1,0 +1,2 @@
+score: 25
+reason: Real but minor stylistic nit; the helper-as-stub tautology is acknowledged in the file header and is consistent with the other stand-in helpers' pattern.

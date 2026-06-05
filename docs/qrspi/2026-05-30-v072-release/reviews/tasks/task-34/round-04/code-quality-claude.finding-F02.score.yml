@@ -1,0 +1,2 @@
+score: 75
+reason: The finding correctly identifies QRSPI-internal IDs (T31/T32) embedded in a newly-added code comment (lines 34-35) in a .bats file outside docs/qrspi/, which violates the documented ID Hygiene rule forbidding T-prefixed identifiers in production code comments. The comment was introduced in R4 diff and contains the prohibited references.

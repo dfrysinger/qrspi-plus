@@ -1,0 +1,3 @@
+finding_tag: code-quality-claude.R1-F01
+score: 72
+reason: Goal IDs (G12, CD-4, R1-F0N) embedded in runtime prose strings inside scripts/verifier-fan-in.sh — re-introduces the pi-shared-file-self-ref-leak class CONTRIBUTING.md prohibits. KEEP.

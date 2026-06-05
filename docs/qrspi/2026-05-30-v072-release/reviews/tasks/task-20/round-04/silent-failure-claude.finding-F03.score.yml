@@ -1,0 +1,2 @@
+score: 50
+reason: Real issue (jq stderr masked by 2>/dev/null), but explicitly marked low-severity diagnosability concern; unlikely to occur in practice; test would still catch malformed JSON via assertion failure, just with worse error message.

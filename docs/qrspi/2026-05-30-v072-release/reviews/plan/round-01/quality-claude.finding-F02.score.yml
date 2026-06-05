@@ -1,0 +1,2 @@
+score: 75
+reason: Confirmed in plan.md — T02 (line 182) and T05 (line 347) both mark scripts/verifier-fan-in.sh as (create) despite T05 depending on T02 and its scope clearly describing modifications; the (create)/(modify) marker is a load-bearing schema field consumed by implementers and reviewers.

@@ -1,0 +1,220 @@
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/fixes/integration-round-05/fix-task-01.md b/docs/qrspi/2026-05-27-v071-hardening/fixes/integration-round-05/fix-task-01.md
+index ca756b6..40fba98 100644
+--- a/docs/qrspi/2026-05-27-v071-hardening/fixes/integration-round-05/fix-task-01.md
++++ b/docs/qrspi/2026-05-27-v071-hardening/fixes/integration-round-05/fix-task-01.md
+@@ -128,7 +128,7 @@ The 2 new paragraphs shift line numbers in SKILL.md. Regenerate the
+ anchors index:
+ 
+ ```bash
+-bash scripts/g4-section-anchor-refresh.sh
++bash tools/g4-section-anchor-refresh.sh
+ ```
+ 
+ Verify the regeneration is mechanical (line-count bookkeeping only) by
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/fixes/task-10-round-01/fix-task-01.md b/docs/qrspi/2026-05-27-v071-hardening/fixes/task-10-round-01/fix-task-01.md
+index 613208b..28c834d 100644
+--- a/docs/qrspi/2026-05-27-v071-hardening/fixes/task-10-round-01/fix-task-01.md
++++ b/docs/qrspi/2026-05-27-v071-hardening/fixes/task-10-round-01/fix-task-01.md
+@@ -84,7 +84,7 @@ with:
+ 
+ ### Slice 3: Anchor regeneration
+ 
+-The above edits will shift downstream line offsets. Run `bash scripts/g4-section-anchor-refresh.sh` to regenerate `skills/using-qrspi/SKILL.anchors.json`. Re-run the unit suite and confirm `test-section-anchor-narrow-read.bats` passes.
++The above edits will shift downstream line offsets. Run `bash tools/g4-section-anchor-refresh.sh` to regenerate `skills/using-qrspi/SKILL.anchors.json`. Re-run the unit suite and confirm `test-section-anchor-narrow-read.bats` passes.
+ 
+ ### Slice 4: Pinning test (optional but recommended)
+ 
+diff --git a/docs/qrspi/2026-05-27-v071-hardening/fixes/task-10-round-02/fix-task-02.md b/docs/qrspi/2026-05-27-v071-hardening/fixes/task-10-round-02/fix-task-02.md
+index 9ce7933..b1efc3e 100644
+--- a/docs/qrspi/2026-05-27-v071-hardening/fixes/task-10-round-02/fix-task-02.md
++++ b/docs/qrspi/2026-05-27-v071-hardening/fixes/task-10-round-02/fix-task-02.md
+@@ -114,7 +114,7 @@ The orchestrator validates these invariants at config-load time and on every dis
+ 
+ ## Slice 4 — Anchor regen
+ 
+-**Run:** `bash scripts/g4-section-anchor-refresh.sh`
++**Run:** `bash tools/g4-section-anchor-refresh.sh`
+ 
+ **Rationale:** Slice 1 adds ~3 lines inside the `#### \`model_routing:\` block` section. The `Config File (config.md)` parent anchor's `line_end` shifts; downstream sections shift by the same delta. Required to keep `tests/unit/test-section-anchor-narrow-read.bats` green.
+ 
+diff --git a/tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats b/tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats
+index 2bfd366..630361f 100644
+--- a/tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats
++++ b/tests/acceptance/v07-phase1/test-cache-retirement-invariants.bats
+@@ -307,15 +307,21 @@ setup_file() {
+ }
+ 
+ @test "[T39/G32] no remaining caller references to scripts/render-skill.sh in source tree" {
+-  # Search the source tree (excluding build/, docs/, reviews/, .git, fixtures,
+-  # and the tests/ subtree which carries this assertion's own bytes plus
+-  # neighbor RED-test fixtures that legitimately reference the legacy path
+-  # in @test-name strings).
+-  run bash -c "grep -RF --exclude-dir=build --exclude-dir=docs --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests 'scripts/render-skill.sh' '$REPO_ROOT' || true"
++  # Tightened pattern (R3 fix tc-F02): match invocation forms only — `bash
++  # scripts/render-skill.sh` or `./scripts/render-skill.sh`. Bare path
++  # strings in historical narrative no longer false-positive, but actual
++  # stale callers do. `--exclude-dir=docs` is intentionally dropped so docs
++  # that document today's workflow are gated against pointing at the
++  # retired path. `--exclude-dir=fixtures` and `--exclude-dir=tests` remain
++  # because the tests subtree carries this assertion's own bytes plus
++  # neighbor RED-test name strings that legitimately reference the legacy
++  # path.
++  run bash -c "grep -RnE --exclude-dir=build --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests '(bash[[:space:]]+|\\./)scripts/render-skill\\.sh' '$REPO_ROOT' || true"
+   [ -z "$output" ]
+ }
+ 
+ @test "[T39/G32] no remaining caller references to scripts/g4-section-anchor-refresh.sh in source tree" {
+-  run bash -c "grep -RF --exclude-dir=build --exclude-dir=docs --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests 'scripts/g4-section-anchor-refresh.sh' '$REPO_ROOT' || true"
++  # Tightened pattern (R3 fix tc-F02): see neighbor render-skill.sh test.
++  run bash -c "grep -RnE --exclude-dir=build --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests '(bash[[:space:]]+|\\./)scripts/g4-section-anchor-refresh\\.sh' '$REPO_ROOT' || true"
+   [ -z "$output" ]
+ }
+diff --git a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+index 2ffbb06..ab4c00d 100644
+--- a/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
++++ b/tests/acceptance/v07-phase1/test-phase1-acceptance.bats
+@@ -3127,3 +3127,72 @@ JQ_EOF
+   [ "$status" -eq 0 ]
+   [ "$output" -ge 2 ]
+ }
++
++# ---------------------------------------------------------------------------
++# Round-3 hardening (tc-F01): the two existence tests above only assert that
++# the fixtures sit on disk — they never invoke the resolver against them and
++# never verify the spec-required diagnostic phrasing (task-39 line 70: "with
++# the required diagnostics"). The two tests below close that gap by staging
++# each fixture's content into a minimal source root and actually running
++# `node tools/build-plugin.mjs` against it, asserting non-zero exit + the
++# load-bearing diagnostic phrase.
++#
++# Why stage rather than `--root tests/fixtures/...` directly: the resolver
++# requires a manifest-shaped source root (skills/ + .claude-plugin/ + LICENSE
++# + README.md) that the bare fixture dirs intentionally do not provide.
++# Staging keeps the fixture dirs minimal (their canonical purpose is to hold
++# the offending content) while still exercising the documented `--root` CLI
++# surface against fixture-sourced bytes.
++# ---------------------------------------------------------------------------
++
++@test "[T39/G32 acceptance] resolver fails non-zero with \${CLAUDE_SKILL_DIR} diagnostic when invoked against legacy-claude-skill-dir fixture content" {
++  local fixture="$REPO_ROOT/tests/fixtures/build-resolver/legacy-claude-skill-dir/README.md"
++  [ -f "$fixture" ]
++  local root="$BATS_TEST_TMPDIR/legacy-fixture-root"
++  mkdir -p "$root/.claude-plugin" "$root/skills/legacy-fixture"
++  cat >"$root/.claude-plugin/plugin.json" <<JSON
++{ "name": "qrspi-fixture", "version": "0.0.0", "skills": ["./skills"] }
++JSON
++  : >"$root/LICENSE"
++  : >"$root/README.md"
++  # Stage the fixture content as a shipped skill body; the legacy
++  # \${CLAUDE_SKILL_DIR} token in the fixture must trip the build's
++  # legacy-token gate during expansion.
++  cp "$fixture" "$root/skills/legacy-fixture/SKILL.md"
++  run bash -c "node '$REPO_ROOT/tools/build-plugin.mjs' --root '$root' --out '$root/build' 2>&1"
++  [ "$status" -ne 0 ]
++  # Required diagnostic: must name the legacy token.
++  echo "$output" | grep -F 'CLAUDE_SKILL_DIR'
++  # Diagnostic must include file:line so the author can locate the offense.
++  echo "$output" | grep -E 'SKILL\.md:[0-9]+'
++  # And must phrase the rejection (legacy form / shipped file).
++  echo "$output" | grep -E -i 'legacy|shipped|forbidden|occurrence'
++}
++
++@test "[T39/G32 acceptance] resolver fails non-zero with cycle diagnostic (full chain) when invoked against include-cycle fixture content" {
++  local fa="$REPO_ROOT/tests/fixtures/build-resolver/include-cycle/a.md"
++  local fb="$REPO_ROOT/tests/fixtures/build-resolver/include-cycle/b.md"
++  [ -f "$fa" ]
++  [ -f "$fb" ]
++  local root="$BATS_TEST_TMPDIR/cycle-fixture-root"
++  mkdir -p "$root/.claude-plugin" "$root/skills/cycle-fixture"
++  # Replicate the fixture pair at paths the fixture's bare-relative !cat
++  # directives expect (`tests/fixtures/build-resolver/include-cycle/{a,b}.md`).
++  mkdir -p "$root/tests/fixtures/build-resolver/include-cycle"
++  cp "$fa" "$root/tests/fixtures/build-resolver/include-cycle/a.md"
++  cp "$fb" "$root/tests/fixtures/build-resolver/include-cycle/b.md"
++  cat >"$root/.claude-plugin/plugin.json" <<JSON
++{ "name": "qrspi-fixture", "version": "0.0.0", "skills": ["./skills"] }
++JSON
++  : >"$root/LICENSE"
++  : >"$root/README.md"
++  # Shipped skill that enters the cycle via the fixture's first hop.
++  printf '# Entry\n!cat tests/fixtures/build-resolver/include-cycle/a.md\n' \
++    >"$root/skills/cycle-fixture/SKILL.md"
++  run bash -c "node '$REPO_ROOT/tools/build-plugin.mjs' --root '$root' --out '$root/build' 2>&1"
++  [ "$status" -ne 0 ]
++  # Required diagnostic: cycle / circular keyword + FULL chain (both files).
++  echo "$output" | grep -E -i 'cycle|circular'
++  echo "$output" | grep -F 'tests/fixtures/build-resolver/include-cycle/a.md'
++  echo "$output" | grep -F 'tests/fixtures/build-resolver/include-cycle/b.md'
++}
+diff --git a/tests/unit/test-build-gate.bats b/tests/unit/test-build-gate.bats
+index 135b7c9..849156d 100644
+--- a/tests/unit/test-build-gate.bats
++++ b/tests/unit/test-build-gate.bats
+@@ -162,9 +162,15 @@ JSON
+   printf 'CRLF_LINE\r\nNEXT\r\n' >"$root/skills/sample/crlf.md"
+   run _t39_run_build "$root"
+   [ "$status" -eq 0 ]
+-  # No CR bytes should appear in the built file.
+-  run grep -U $'\r' "$root/build/skills/sample/SKILL.md"
+-  [ "$status" -ne 0 ]
++  # No CR bytes should appear in the built file. R3 fix tc-F05: replaced
++  # `grep -U $'\r'` (GNU-only `-U` makes the assertion vacuously pass on
++  # BSD/BusyBox grep) with a size-diff check using `tr -d '\r'`, which is
++  # portable across bash 3.2 + BSD/GNU/BusyBox.
++  local _bg_built="$root/build/skills/sample/SKILL.md"
++  local _bg_sz_with _bg_sz_without
++  _bg_sz_with=$(wc -c <"$_bg_built")
++  _bg_sz_without=$(tr -d '\r' <"$_bg_built" | wc -c)
++  [ "$_bg_sz_with" -eq "$_bg_sz_without" ]
+ }
+ 
+ @test "[T39/G32] resolver: directive line is replaced 1:1 with include content (no extra blank lines)" {
+@@ -414,3 +420,48 @@ L3" ]
+   run grep -F 'git diff --exit-code build/' "$REPO_ROOT/.github/workflows/ci.yml"
+   [ "$status" -eq 0 ]
+ }
++
++# ---------------------------------------------------------------------------
++# Round-3 hardening (tc-F03): SECRET_BASENAME_PATTERNS denylist coverage.
++# Plant secret/credential basenames inside fixture source roots and assert
++# the build fails non-zero with a diagnostic naming the offending file.
++# Covers both call paths through which the denylist fires:
++#   - recurseDir (nested under a manifest dir like skills/ or scripts/)
++#   - recurseDir at a manifest-dir top level (.claude-plugin/)
++# Both paths flow through `isSecretBasename(entry.name)` in recurseDir.
++# ---------------------------------------------------------------------------
++@test "[T39/G32] denylist: .env in skills/ subtree is rejected with file path in diagnostic" {
++  local root="$BATS_TEST_TMPDIR/denylist-env"
++  _t39_stage_root "$root" "# clean"$'\n'
++  printf 'SECRET=value\n' >"$root/skills/sample/.env"
++  run _t39_run_build "$root"
++  [ "$status" -ne 0 ]
++  # Diagnostic must name the offending file path so the contributor can
++  # locate and remove it (or git rm + rebuild).
++  echo "$output" | grep -F 'skills/sample/.env'
++  echo "$output" | grep -E -i 'denylist|secret|refused'
++  # No build/ output should have been created for the offending path.
++  [ ! -e "$root/build/skills/sample/.env" ]
++}
++
++@test "[T39/G32] denylist: id_rsa in scripts/ subtree is rejected with file path in diagnostic" {
++  local root="$BATS_TEST_TMPDIR/denylist-id-rsa"
++  _t39_stage_root "$root" "# clean"$'\n'
++  printf 'BEGIN OPENSSH PRIVATE KEY\n' >"$root/scripts/id_rsa"
++  run _t39_run_build "$root"
++  [ "$status" -ne 0 ]
++  echo "$output" | grep -F 'scripts/id_rsa'
++  echo "$output" | grep -E -i 'denylist|secret|refused'
++  [ ! -e "$root/build/scripts/id_rsa" ]
++}
++
++@test "[T39/G32] denylist: *.pem in .claude-plugin/ is rejected with file path in diagnostic" {
++  local root="$BATS_TEST_TMPDIR/denylist-pem"
++  _t39_stage_root "$root" "# clean"$'\n'
++  printf -- '-----BEGIN CERTIFICATE-----\n' >"$root/.claude-plugin/server.pem"
++  run _t39_run_build "$root"
++  [ "$status" -ne 0 ]
++  echo "$output" | grep -F '.claude-plugin/server.pem'
++  echo "$output" | grep -E -i 'denylist|secret|refused'
++  [ ! -e "$root/build/.claude-plugin/server.pem" ]
++}

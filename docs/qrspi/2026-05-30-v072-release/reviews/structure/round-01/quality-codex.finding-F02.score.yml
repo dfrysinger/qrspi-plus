@@ -1,0 +1,2 @@
+score: 78
+reason: Verified — design.md G34 D5 + acceptance criteria (lines 2925, 2934) explicitly require `tests/lint/test-design-altitude-boundary-include.bats`; structure.md Slice 1.5 omits it while the parallel G35 file is present in Slice 1.6, a real file-map gap.

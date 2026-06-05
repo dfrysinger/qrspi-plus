@@ -1,0 +1,3 @@
+score: 40
+change_type: correctness
+verdict: drop (correctness threshold >=70; tasks/ split is downstream of plan approval)

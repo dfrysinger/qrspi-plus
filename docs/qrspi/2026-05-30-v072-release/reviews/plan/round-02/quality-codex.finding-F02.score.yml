@@ -1,0 +1,2 @@
+score: 18
+reason: Finding's core factual claims are wrong — Dependencies pins T42 as a hard dep, and the conditional is explicitly reflected in DoD, Test expectations, and Out-scope; spec IS implementable as written.

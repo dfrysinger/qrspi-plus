@@ -1,0 +1,2 @@
+score: 72
+reason: Verified internal contradiction — Overview's "only cross-slice prerequisite is G4→G9" is directly contradicted by Dependency Graph cluster #4 (T09/T11/T13→T20) and by several other task-level cross-slice deps (T24→T02, T35→T03, T37→T29, T39→T25, T44→T17).

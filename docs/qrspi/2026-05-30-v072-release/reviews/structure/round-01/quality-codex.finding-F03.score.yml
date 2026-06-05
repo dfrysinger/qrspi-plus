@@ -1,0 +1,2 @@
+score: 80
+reason: Confirmed — design.md CD-4 § I.7 locks `scripts/detect-interaction-mode.sh` (full contract + acceptance criteria, lines 600–693) and `<round-dir>/.interaction-mode-audit.json` (orchestrator-written audit-log shape, lines 671–677), but structure.md's File Map and Interfaces sections contain no entry for either, so a Design-locked component surface has no Structure representation.

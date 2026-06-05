@@ -1,0 +1,2 @@
+score: 28
+reason: Gap B largely over-reaches — Additions A and B are co-located with `!cat` includes (already pinned by the same test) and Addition D is co-located with a `skills:` frontmatter preload, so only C truly lacks an indirect anchor (which is exactly why R8 added an explicit pin); Gap A's filename-mismatch is a real but minor naming nit at Structure altitude that the responsibility-cell text already discloses, and widening the literal-anchor-phrase pattern would amplify the scope drift two other reviewers already flagged.

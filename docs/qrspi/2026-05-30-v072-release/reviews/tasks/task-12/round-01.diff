@@ -1,0 +1,1161 @@
+diff --git a/scripts/await-round.sh b/scripts/await-round.sh
+new file mode 100755
+index 0000000..2782fbb
+--- /dev/null
++++ b/scripts/await-round.sh
+@@ -0,0 +1,242 @@
++#!/usr/bin/env bash
++# scripts/await-round.sh — manifest-driven async drain for reviewer/verifier
++# fan-out rounds (G3 + G4).
++#
++# Usage:
++#   await-round.sh --round-dir <abs-round-dir>
++#
++# Reads <round-dir>/.dispatch-manifest.json. For every entry with
++# `mode=background` and `status=pending`:
++#   1. Run the entry's `await_cmd` to capture the third-party stdout into
++#      <round-dir>/.dispatch/<tag>.raw.
++#   2. Run the entry's `split_cmd` (typically `third-party-finding-splitter.sh`)
++#      to materialise per-finding files under <round-dir>/<tag>.finding-F<NN>.md.
++#   3. Update the manifest entry's `status` field on disk.
++#
++# Then write <round-dir>/.round-complete.json with per-tag status + summary
++# counts, and remove the round-scoped <round-dir>/.dispatch/ subdir.
++#
++# Output-bound contract (CD-1 #4): MUST NOT echo captured third-party stdout
++# (or any substring) to stdout or stderr. Terminal output is bounded to a
++# short status summary (one line) plus diagnostics on failure. Captured raw
++# payloads stay in tempfiles consumed only by `split_cmd`.
++#
++# Exit codes:
++#   0  round drained successfully (.round-complete.json written)
++#   1  unrecoverable transport failure on a background entry, or invalid args
++#
++# Bash 3.2 compatible (macOS system /bin/bash).
++
++set -u
++
++ROUND_DIR=""
++while [ "$#" -gt 0 ]; do
++  case "$1" in
++    --round-dir) ROUND_DIR="${2:-}"; shift 2 ;;
++    *) echo "await-round: unknown flag: $1" >&2; exit 1 ;;
++  esac
++done
++
++if [ -z "$ROUND_DIR" ]; then
++  echo "await-round: required flag missing: --round-dir <abs-round-dir>" >&2
++  exit 1
++fi
++
++if [ ! -d "$ROUND_DIR" ]; then
++  echo "await-round: --round-dir does not exist: $ROUND_DIR" >&2
++  exit 1
++fi
++
++MANIFEST="$ROUND_DIR/.dispatch-manifest.json"
++COMPLETE="$ROUND_DIR/.round-complete.json"
++
++# Treat a missing manifest as "no dispatches were registered this round" —
++# emit an empty round-complete summary and exit cleanly. This keeps await-
++# round no-op-safe under any orchestrator path that calls it unconditionally.
++if [ ! -f "$MANIFEST" ]; then
++  printf '%s\n' '{"awaited":0,"with_findings":0,"clean":0,"entries":[]}' > "$COMPLETE"
++  rm -rf "$ROUND_DIR/.dispatch"
++  echo "await-round: no manifest; round complete (0 dispatches)." >&2
++  exit 0
++fi
++
++# Drain pending background entries via python (manifest mutation + per-entry
++# execution sequencing). Captured payloads are NEVER printed — only summary
++# counts and per-entry status lines are emitted, and only to a temp file we
++# then size-cap before forwarding any non-fatal errors to stderr.
++RC_FILE="$(mktemp)"
++SUM_FILE="$(mktemp)"
++ERR_FILE="$(mktemp)"
++
++ROUND_DIR_E="$ROUND_DIR" \
++MANIFEST_E="$MANIFEST" \
++COMPLETE_E="$COMPLETE" \
++RC_FILE_E="$RC_FILE" \
++SUM_FILE_E="$SUM_FILE" \
++ERR_FILE_E="$ERR_FILE" \
++python3 - <<'PYEOF'
++import json, os, subprocess, sys
++
++round_dir = os.environ["ROUND_DIR_E"]
++manifest_path = os.environ["MANIFEST_E"]
++complete_path = os.environ["COMPLETE_E"]
++rc_file = os.environ["RC_FILE_E"]
++sum_file = os.environ["SUM_FILE_E"]
++err_file = os.environ["ERR_FILE_E"]
++
++errs = []
++with open(manifest_path) as f:
++    manifest = json.load(f)
++
++awaited = 0
++with_findings = 0
++clean = 0
++final_rc = 0
++
++if not isinstance(manifest, list):
++    errs.append("await-round: manifest must be a JSON array")
++    final_rc = 1
++    manifest = []
++
++for entry in manifest:
++    if not isinstance(entry, dict):
++        continue
++    mode = entry.get("mode")
++    status = entry.get("status")
++    tag = entry.get("tag", "<no-tag>")
++    if mode != "background":
++        # First-party entries are already drained at dispatch time; nothing
++        # to do here. We still count them in the summary as "clean" if their
++        # status is not "pending".
++        continue
++    if status != "pending":
++        continue
++
++    awaited += 1
++    await_cmd = entry.get("await_cmd")
++    split_cmd = entry.get("split_cmd")
++    if not await_cmd:
++        errs.append("await-round: entry %r missing await_cmd" % tag)
++        entry["status"] = "failed"
++        final_rc = 1
++        continue
++
++    # Execute await_cmd. Capture & DISCARD stdout/stderr — they may contain
++    # raw third-party payload fragments that must not surface (CD-1 #4).
++    try:
++        r = subprocess.run(
++            await_cmd, shell=True,
++            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
++        )
++    except Exception as e:
++        errs.append("await-round: await_cmd execution error for %r: %s" % (tag, type(e).__name__))
++        entry["status"] = "failed"
++        final_rc = 1
++        continue
++    if r.returncode != 0:
++        errs.append("await-round: await_cmd failed for %r (rc=%d)" % (tag, r.returncode))
++        entry["status"] = "failed"
++        final_rc = 1
++        continue
++
++    # Execute split_cmd if present.
++    if split_cmd:
++        try:
++            rs = subprocess.run(
++                split_cmd, shell=True,
++                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
++            )
++        except Exception as e:
++            errs.append("await-round: split_cmd execution error for %r: %s" % (tag, type(e).__name__))
++            entry["status"] = "failed"
++            final_rc = 1
++            continue
++        if rs.returncode != 0:
++            errs.append("await-round: split_cmd failed for %r (rc=%d)" % (tag, rs.returncode))
++            entry["status"] = "failed"
++            final_rc = 1
++            continue
++
++    # Detect findings: any <round-dir>/<tag>.finding-F*.md file (and not a
++    # NO_FINDINGS sentinel). The splitter is the authority here; we just
++    # count files for the summary.
++    import glob
++    findings = glob.glob(os.path.join(round_dir, "%s.finding-F*.md" % tag))
++    sentinel = os.path.exists(os.path.join(round_dir, "%s.NO_FINDINGS" % tag))
++    if findings:
++        with_findings += 1
++        entry["status"] = "complete-with-findings"
++    else:
++        clean += 1
++        entry["status"] = "complete-clean" if sentinel else "complete"
++
++# Atomic-mv manifest update.
++mtmp = manifest_path + ".tmp"
++with open(mtmp, "w") as f:
++    json.dump(manifest, f, indent=2, sort_keys=True)
++    f.write("\n")
++os.replace(mtmp, manifest_path)
++
++# Round-complete summary.
++summary = {
++    "awaited": awaited,
++    "with_findings": with_findings,
++    "clean": clean,
++    "entries": [
++        {"tag": e.get("tag"), "status": e.get("status")}
++        for e in manifest if isinstance(e, dict)
++    ],
++}
++ctmp = complete_path + ".tmp"
++with open(ctmp, "w") as f:
++    json.dump(summary, f, indent=2, sort_keys=True)
++    f.write("\n")
++os.replace(ctmp, complete_path)
++
++# Persist control surfaces for the bash wrapper.
++with open(rc_file, "w") as f:
++    f.write(str(final_rc))
++with open(sum_file, "w") as f:
++    f.write("await-round: drained %d background dispatch(es); %d with findings, %d clean.\n"
++            % (awaited, with_findings, clean))
++# Bound err_file to a small size cap to honor the output-bound contract even
++# in pathological subprocess error storms.
++with open(err_file, "w") as f:
++    text = "\n".join(errs)
++    if len(text) > 1024:
++        text = text[:1024] + "\n[await-round: diagnostics truncated to 1KiB]"
++    f.write(text)
++PYEOF
++
++py_rc=$?
++if [ "$py_rc" -ne 0 ]; then
++  echo "await-round: internal drain failure (python rc=$py_rc)" >&2
++  rm -f "$RC_FILE" "$SUM_FILE" "$ERR_FILE"
++  exit 1
++fi
++
++# Forward bounded summary to stderr (so stdout stays empty for output-bound
++# parity with dispatch-companion `await`). Per structure.md §14: stdout is
++# the short status line.
++RC_VALUE="$(cat "$RC_FILE" 2>/dev/null || echo 0)"
++SUM_LINE="$(cat "$SUM_FILE" 2>/dev/null || true)"
++ERR_TEXT="$(cat "$ERR_FILE" 2>/dev/null || true)"
++
++# Strip any errant payload-shaped material that might somehow have leaked
++# into the diagnostic file. We only allow short ASCII diagnostics; if the
++# err file exceeds 1 KiB we truncate again as a defense in depth.
++if [ -n "$ERR_TEXT" ]; then
++  printf '%s\n' "$ERR_TEXT" | head -c 1024 >&2
++  printf '\n' >&2
++fi
++
++# Short status line on stdout.
++printf '%s' "$SUM_LINE"
++
++# Always remove the round-scoped dispatch subdir AFTER the summary is on
++# disk. Per structure.md L1023 + §14.
++rm -rf "$ROUND_DIR/.dispatch"
++
++rm -f "$RC_FILE" "$SUM_FILE" "$ERR_FILE"
++
++exit "$RC_VALUE"
+diff --git a/scripts/round-prepare.sh b/scripts/round-prepare.sh
+new file mode 100755
+index 0000000..e720225
+--- /dev/null
++++ b/scripts/round-prepare.sh
+@@ -0,0 +1,376 @@
++#!/usr/bin/env bash
++# scripts/round-prepare.sh — G4 canonical round-preparation primitive.
++#
++# Single deterministic owner of:
++#   - per-task SHA-correctness checks (exits 10/11/12) + commit-anchor write
++#   - prior-round bookkeeping validation (round-(NN-1)-commit.txt + scope-set)
++#   - backward-loop flag consume-once
++#   - convergence narrow/broaden decision (deterministic set comparison)
++#   - HEAD~1 SHA safety check on narrow decisions
++#   - cumulative diff emission to <output-dir>/round-NN.diff
++#   - .round-prepare.json sidecar emission (atomic mv pattern)
++#
++# Usage:
++#   round-prepare.sh <round-NN> <output-dir>
++#       [--task-branch <branch> --implementer-commit <SHA>]
++#       [--worktree <path>] [--base-ref <ref>]
++#       [--artifact <path>]
++#
++# Exit codes:
++#   0   round prepared; sidecar + diff (+ commit-anchor on per-task) written.
++#   2   non-git workspace; no diff_file or scope_hint fabricated.
++#   10  --task-branch / --implementer-commit partial use (orchestrator bug).
++#   11  passed SHA != git rev-parse HEAD (worktree integrity break — HALT).
++#   12  passed SHA == prior round's anchor / task base (re-dispatch implementer).
++#   1   prior-round bookkeeping / generic failure (named diagnostic on stderr).
++#
++# Output-bound: stdout is the sidecar JSON or empty; stderr carries diagnostics.
++#
++# Authority: design.md §G4 (L1050-L1148) + structure.md §`scripts/round-prepare.sh`
++# (Slice 1.4 creation block + Slice 1.3 Modify rows).
++#
++# Bash 3.2 compatible (macOS system /bin/bash). No `mapfile`, no `declare -A`,
++# no `${var,,}`.
++
++set -u
++
++# ---------------------------------------------------------------------------
++# Argument parsing.
++# ---------------------------------------------------------------------------
++
++if [ "$#" -lt 2 ]; then
++  echo "round-prepare: usage: $0 <round-NN> <output-dir> [--task-branch <b> --implementer-commit <SHA>] [--worktree <path>] [--base-ref <ref>] [--artifact <path>]" >&2
++  exit 1
++fi
++
++ROUND="$1"; shift
++OUTPUT_DIR="$1"; shift
++
++TASK_BRANCH=""
++IMPLEMENTER_COMMIT=""
++WORKTREE=""
++BASE_REF=""
++ARTIFACT=""
++
++while [ "$#" -gt 0 ]; do
++  case "$1" in
++    --task-branch)        TASK_BRANCH="${2:-}"; shift 2 ;;
++    --implementer-commit) IMPLEMENTER_COMMIT="${2:-}"; shift 2 ;;
++    --worktree)           WORKTREE="${2:-}"; shift 2 ;;
++    --base-ref)           BASE_REF="${2:-}"; shift 2 ;;
++    --artifact)           ARTIFACT="${2:-}"; shift 2 ;;
++    --verify)             shift ;;
++    *) echo "round-prepare: unknown flag: $1" >&2; exit 1 ;;
++  esac
++done
++
++# Normalize round number to integer-safe NN string + value.
++case "$ROUND" in
++  ''|*[!0-9]*)
++    echo "round-prepare: round-NN must be a positive integer, got: $ROUND" >&2
++    exit 1 ;;
++esac
++ROUND_NUM=$((10#$ROUND))
++if [ "$ROUND_NUM" -lt 1 ]; then
++  echo "round-prepare: round-NN must be >= 1, got: $ROUND" >&2
++  exit 1
++fi
++ROUND_NN=$(printf '%02d' "$ROUND_NUM")
++
++mkdir -p "$OUTPUT_DIR"
++
++# Bookkeeping artifacts live in the parent of <output-dir> (which is the
++# per-task or per-artifact directory). Per design.md §G9, the round commit
++# anchor is written to <output-dir>/../round-NN-commit.txt.
++TASK_DIR="$(cd "$OUTPUT_DIR/.." && pwd -P)"
++
++# Per-task and artifact-level invocations are distinguished by --task-branch.
++PER_TASK=0
++if [ -n "$TASK_BRANCH" ] || [ -n "$IMPLEMENTER_COMMIT" ]; then
++  PER_TASK=1
++fi
++
++# ---------------------------------------------------------------------------
++# Step 1 — HEAD-correctness checks (per-task only).
++# Per design.md §G4 step 1 (L1056-L1097) + structure.md L968-995.
++# ---------------------------------------------------------------------------
++
++if [ "$PER_TASK" -eq 1 ]; then
++  # Check 1: required-flag pair (exit 10 — orchestrator bug).
++  if [ -z "$TASK_BRANCH" ] || [ -z "$IMPLEMENTER_COMMIT" ]; then
++    echo "round-prepare: --task-branch requires --implementer-commit (and vice-versa). Recovery: orchestrator bug — main chat must read commit_sha from the implementer Task return and pass both --task-branch and --implementer-commit. Halt and surface to user." >&2
++    exit 10
++  fi
++
++  # Resolve task-base SHA for the round-1 across-rounds variant + the diff
++  # base on per-task invocations.
++  TASK_BASE_SHA=""
++  if [ -n "$BASE_REF" ]; then
++    TASK_BASE_SHA="$(git -C "${WORKTREE:-.}" rev-parse "$BASE_REF" 2>/dev/null || true)"
++  fi
++
++  # Check 2: across-rounds advance check (exit 12 — re-dispatch implementer).
++  PRIOR=""
++  PRIOR_LABEL=""
++  if [ "$ROUND_NUM" -ge 2 ]; then
++    PRIOR_FILE="$TASK_DIR/round-$(printf '%02d' $((ROUND_NUM - 1)))-commit.txt"
++    if [ -f "$PRIOR_FILE" ]; then
++      PRIOR="$(tr -d '[:space:]' < "$PRIOR_FILE")"
++      PRIOR_LABEL="prior round anchor (round $((ROUND_NUM - 1)))"
++    fi
++  else
++    PRIOR="$TASK_BASE_SHA"
++    PRIOR_LABEL="task base commit"
++  fi
++  if [ -n "$PRIOR" ] && [ "$IMPLEMENTER_COMMIT" = "$PRIOR" ]; then
++    echo "round-prepare: implementer did not advance HEAD — passed SHA $IMPLEMENTER_COMMIT equals $PRIOR_LABEL. Recovery: re-dispatch the implementer subagent via SendMessage or a fresh Task tool invocation; the implementer must produce a new commit before reviewers can run." >&2
++    exit 12
++  fi
++
++  # Check 3: within-round equality check (exit 11 — HALT).
++  ACTUAL_HEAD="$(git -C "${WORKTREE:-.}" rev-parse HEAD 2>/dev/null || true)"
++  if [ -z "$ACTUAL_HEAD" ]; then
++    echo "round-prepare: failed to git rev-parse HEAD in worktree '${WORKTREE:-.}'. Recovery: check worktree path; this is normally an orchestrator path-resolution bug." >&2
++    exit 1
++  fi
++  if [ "$ACTUAL_HEAD" != "$IMPLEMENTER_COMMIT" ]; then
++    echo "round-prepare: implementer-commit / HEAD mismatch — main chat passed $IMPLEMENTER_COMMIT, worktree HEAD is $ACTUAL_HEAD. Recovery: HALT — likely worktree corruption, wrong worktree path, concurrent commit by another process, or implementer self-report drift. Surface to user; do not auto-retry." >&2
++    exit 11
++  fi
++
++  # All three checks passed — write the round commit anchor (40-char SHA + LF).
++  ANCHOR_PATH="$TASK_DIR/round-${ROUND_NN}-commit.txt"
++  ANCHOR_TMP="${ANCHOR_PATH}.tmp.$$"
++  printf '%s\n' "$IMPLEMENTER_COMMIT" > "$ANCHOR_TMP"
++  if ! mv "$ANCHOR_TMP" "$ANCHOR_PATH"; then
++    rm -f "$ANCHOR_TMP"
++    echo "round-prepare: failed to write round-${ROUND_NN}-commit.txt at $ANCHOR_PATH (disk full / parent missing / permissions)." >&2
++    exit 1
++  fi
++fi
++
++# ---------------------------------------------------------------------------
++# Step 10 — Pre-dispatch presence assertion (per design.md §G4 step 10,
++# L1113-1123). On round NN >= 2: prior-round commit anchor must exist and be
++# well-formed. On round NN >= 3 (and scope_tagger_enabled): prior scope-set
++# must exist and be non-empty.
++# ---------------------------------------------------------------------------
++
++if [ "$ROUND_NUM" -ge 2 ]; then
++  PRIOR_ANCHOR_PATH="$TASK_DIR/round-$(printf '%02d' $((ROUND_NUM - 1)))-commit.txt"
++  if [ ! -f "$PRIOR_ANCHOR_PATH" ]; then
++    echo "round-prepare: missing prior-round commit anchor at $PRIOR_ANCHOR_PATH — implementer commit-anchor capture failed or skipped in round $((ROUND_NUM - 1))" >&2
++    exit 1
++  fi
++  ANCHOR_CONTENT="$(cat "$PRIOR_ANCHOR_PATH" 2>/dev/null || true)"
++  # Required shape: ^[0-9a-f]{40}\n$ (40-char SHA + single trailing newline).
++  if ! printf '%s' "$ANCHOR_CONTENT" | python3 -c '
++import sys
++data = sys.stdin.buffer.read()
++import re
++sys.exit(0 if re.match(rb"^[0-9a-f]{40}\n$", data) else 1)
++' < "$PRIOR_ANCHOR_PATH"; then
++    SAMPLE="$(head -c 80 "$PRIOR_ANCHOR_PATH" | python3 -c "import sys; print(repr(sys.stdin.read()))")"
++    echo "round-prepare: malformed prior-round commit anchor at $PRIOR_ANCHOR_PATH — expected 40-char SHA + newline, got $SAMPLE" >&2
++    exit 1
++  fi
++fi
++
++# Scope-tagger gate: only check the scope-set on round NN >= 3 when scope
++# tagger is enabled (per design.md §G4 step 10 narrowing-eligibility note).
++SCOPE_TAGGER_ENABLED="${QRSPI_SCOPE_TAGGER_ENABLED:-false}"
++if [ "$ROUND_NUM" -ge 3 ] && [ "$SCOPE_TAGGER_ENABLED" = "true" ]; then
++  PRIOR_SCOPE_PATH="$TASK_DIR/round-$(printf '%02d' $((ROUND_NUM - 1)))-scope-set.txt"
++  if [ ! -f "$PRIOR_SCOPE_PATH" ]; then
++    echo "round-prepare: missing prior-round scope-set at $PRIOR_SCOPE_PATH — scope-tagger dispatch was skipped or failed in round $((ROUND_NUM - 1))" >&2
++    exit 1
++  fi
++  if [ ! -s "$PRIOR_SCOPE_PATH" ]; then
++    echo "round-prepare: empty prior-round scope-set at $PRIOR_SCOPE_PATH — scope-tagger emitted zero tags in round $((ROUND_NUM - 1)), broaden manually or re-run tagger" >&2
++    exit 1
++  fi
++fi
++
++# ---------------------------------------------------------------------------
++# Step 2 — Backward-loop flag (read-and-delete). A present flag for the round
++# being prepared forces broaden and the flag is consumed once.
++# ---------------------------------------------------------------------------
++
++BACKWARD_FLAG_PATH="$TASK_DIR/round-${ROUND_NN}-backward-loop.flag"
++BACKWARD_FORCED=0
++if [ -e "$BACKWARD_FLAG_PATH" ]; then
++  BACKWARD_FORCED=1
++  if ! rm -f "$BACKWARD_FLAG_PATH" 2>/dev/null; then
++    echo "round-prepare: failed to delete backward-loop flag at $BACKWARD_FLAG_PATH (deletion failed; manual cleanup required)" >&2
++  fi
++fi
++
++# ---------------------------------------------------------------------------
++# Steps 3 + 4 — Convergence decision (deterministic set comparison).
++# Per design.md §G4 step 4 + step 12 narrow/broaden table.
++#
++# Eligibility for narrow: round NN >= 3 AND both round-(NN-1)-scope-set.txt
++# and round-(NN-2)-scope-set.txt are present, non-empty, and equal-or-proper-
++# subset (with safety margin via HEAD~1 anchor match).
++# All other cases (missing, empty, full-artifact, superset, partial-overlap,
++# disjoint, HEAD~1 mismatch) → broaden.
++# ---------------------------------------------------------------------------
++
++NARROWED="false"
++REASON=""
++SCOPE_HINT=""
++
++decide_narrow() {
++  if [ "$BACKWARD_FORCED" -eq 1 ]; then
++    REASON="backward-loop flag forced base-branch preparation"
++    return 1
++  fi
++  if [ "$ROUND_NUM" -lt 3 ]; then
++    REASON="round $ROUND_NUM uses base-branch broaden (narrowing requires NN>=3)"
++    return 1
++  fi
++  local prev1="$TASK_DIR/round-$(printf '%02d' $((ROUND_NUM - 1)))-scope-set.txt"
++  local prev2="$TASK_DIR/round-$(printf '%02d' $((ROUND_NUM - 2)))-scope-set.txt"
++  if [ ! -s "$prev1" ] || [ ! -s "$prev2" ]; then
++    REASON="prior-round scope-set missing or empty — broaden"
++    return 1
++  fi
++  # Compare sorted unique non-blank lines.
++  local s1 s2
++  s1="$(sort -u "$prev1" | sed '/^[[:space:]]*$/d')"
++  s2="$(sort -u "$prev2" | sed '/^[[:space:]]*$/d')"
++  if [ "$s1" = "$s2" ]; then
++    : # equal — narrow-eligible (subject to SHA safety check)
++  else
++    # Proper-subset case: every element of s1 is in s2 AND s2 has extra
++    # elements (i.e., scope shrank from NN-2 to NN-1).
++    local s1_minus_s2
++    s1_minus_s2="$(comm -23 <(printf '%s\n' "$s1") <(printf '%s\n' "$s2"))"
++    if [ -z "$s1_minus_s2" ]; then
++      : # proper-subset — narrow-eligible
++    else
++      REASON="scope-sets diverge (superset / partial-overlap / disjoint) — broaden"
++      return 1
++    fi
++  fi
++  # SHA safety: HEAD~1 must equal the prior commit anchor for narrow to be
++  # safe.
++  local prior_anchor="$TASK_DIR/round-$(printf '%02d' $((ROUND_NUM - 1)))-commit.txt"
++  if [ -f "$prior_anchor" ]; then
++    local prior_sha head1
++    prior_sha="$(tr -d '[:space:]' < "$prior_anchor")"
++    head1="$(git -C "${WORKTREE:-.}" rev-parse HEAD~1 2>/dev/null || true)"
++    if [ -z "$head1" ] || [ "$head1" != "$prior_sha" ]; then
++      REASON="HEAD~1 ($head1) does not match prior round anchor ($prior_sha) — fall back to broaden"
++      return 1
++    fi
++  fi
++  SCOPE_HINT="$(cat "$prev1")"
++  REASON="scope-sets converged (equal or proper-subset) — narrow"
++  return 0
++}
++
++if decide_narrow; then
++  NARROWED="true"
++fi
++
++# ---------------------------------------------------------------------------
++# Step 6 — Resolve base ref. On per-task invocations this is the task-base
++# commit (passed via --base-ref); on artifact-level it is the configured base
++# branch.
++# ---------------------------------------------------------------------------
++
++REF=""
++if [ -n "$BASE_REF" ]; then
++  REF="$BASE_REF"
++else
++  # Artifact-level fallback: try main, then trunk, then HEAD~1.
++  for candidate in main trunk HEAD~1; do
++    if git rev-parse --verify "$candidate" >/dev/null 2>&1; then
++      REF="$candidate"
++      break
++    fi
++  done
++fi
++
++# ---------------------------------------------------------------------------
++# Step 9 — Non-git workspace check. Exit 2 with no fabricated diff/scope.
++# ---------------------------------------------------------------------------
++
++if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
++  # Emit a minimal sidecar with no diff_file / scope_hint.
++  SIDECAR="$OUTPUT_DIR/.round-prepare.json"
++  SIDECAR_TMP="${SIDECAR}.tmp.$$"
++  python3 - "$SIDECAR_TMP" <<'PYEOF'
++import json, sys
++sys.argv[1]
++out = {
++  "ref": None,
++  "narrowed": False,
++  "scope_hint": None,
++  "diff_file": None,
++  "reason": "non-git workspace — no diff or scope_hint fabricated"
++}
++open(sys.argv[1], "w").write(json.dumps(out, indent=2, sort_keys=True) + "\n")
++PYEOF
++  mv "$SIDECAR_TMP" "$SIDECAR"
++  echo "round-prepare: non-git workspace; no diff produced." >&2
++  exit 2
++fi
++
++# ---------------------------------------------------------------------------
++# Step 7 — Emit cumulative diff to <output-dir>/round-NN.diff.
++# Atomic via temp file + mv.
++# ---------------------------------------------------------------------------
++
++DIFF_PATH="$OUTPUT_DIR/round-${ROUND_NN}.diff"
++DIFF_TMP="${DIFF_PATH}.tmp.$$"
++if [ -n "$ARTIFACT" ]; then
++  git diff "$REF" -- "$ARTIFACT" > "$DIFF_TMP" 2>/dev/null || true
++else
++  git diff "$REF" > "$DIFF_TMP" 2>/dev/null || true
++fi
++if ! mv "$DIFF_TMP" "$DIFF_PATH"; then
++  rm -f "$DIFF_TMP"
++  echo "round-prepare: failed to write $DIFF_PATH" >&2
++  exit 1
++fi
++
++# ---------------------------------------------------------------------------
++# Step 8 — Write .round-prepare.json sidecar (atomic mv pattern).
++# Schema fields per design.md §G4 step 8: ref, narrowed, scope_hint,
++# diff_file, reason.
++# ---------------------------------------------------------------------------
++
++SIDECAR="$OUTPUT_DIR/.round-prepare.json"
++SIDECAR_TMP="${SIDECAR}.tmp.$$"
++
++# Resolve diff_file to an absolute path so consumers don't depend on $PWD.
++DIFF_ABS="$(cd "$OUTPUT_DIR" && pwd -P)/round-${ROUND_NN}.diff"
++
++REF_FOR_JSON="$REF"
++NARROWED_FOR_JSON="$NARROWED"
++SCOPE_HINT_FOR_JSON="$SCOPE_HINT"
++REASON_FOR_JSON="$REASON"
++
++export REF_FOR_JSON NARROWED_FOR_JSON SCOPE_HINT_FOR_JSON REASON_FOR_JSON DIFF_ABS
++
++python3 - "$SIDECAR_TMP" <<'PYEOF'
++import json, os, sys
++out = {
++  "ref":        os.environ.get("REF_FOR_JSON") or None,
++  "narrowed":   os.environ.get("NARROWED_FOR_JSON") == "true",
++  "scope_hint": os.environ.get("SCOPE_HINT_FOR_JSON") or None,
++  "diff_file":  os.environ.get("DIFF_ABS") or None,
++  "reason":     os.environ.get("REASON_FOR_JSON") or None,
++}
++open(sys.argv[1], "w").write(json.dumps(out, indent=2, sort_keys=True) + "\n")
++PYEOF
++
++if ! mv "$SIDECAR_TMP" "$SIDECAR"; then
++  rm -f "$SIDECAR_TMP"
++  echo "round-prepare: failed to write $SIDECAR" >&2
++  exit 1
++fi
++
++exit 0
+diff --git a/tests/unit/test-await-round.bats b/tests/unit/test-await-round.bats
+new file mode 100644
+index 0000000..8807da4
+--- /dev/null
++++ b/tests/unit/test-await-round.bats
+@@ -0,0 +1,140 @@
++#!/usr/bin/env bats
++# ============================================================================
++# Unit tests for scripts/await-round.sh — G3/G4.
++#
++# Pins behaviors enumerated in task-12.md "Test expectations":
++#   - Manifest-driven async drain: pending background entries are awaited via
++#     await_cmd, split via split_cmd, and have status updated.
++#   - <round-dir>/.round-complete.json is written.
++#   - Round-scoped <round-dir>/.dispatch/ subdir is removed after completion.
++#   - Zero-background-entry rounds succeed (no-op-safe).
++#   - Output-bound contract: combined stdout+stderr stays bounded (≤ 2 KiB)
++#     even when the underlying captured payload is large; no captured payload
++#     fragment is echoed.
++# ============================================================================
++
++setup() {
++  TEST_ROOT=$(mktemp -d)
++  export TEST_ROOT
++  REPO_ROOT=$(cd "$BATS_TEST_DIRNAME/../.." && pwd)
++  export REPO_ROOT
++  AWAIT="$REPO_ROOT/scripts/await-round.sh"
++  export AWAIT
++
++  ROUND_DIR="$TEST_ROOT/round-01"
++  mkdir -p "$ROUND_DIR/.dispatch"
++  export ROUND_DIR
++}
++
++teardown() {
++  rm -rf "$TEST_ROOT"
++}
++
++# ── Existence ───────────────────────────────────────────────────────────────
++
++@test "await-round.sh exists and is executable" {
++  [ -f "$AWAIT" ]
++  [ -x "$AWAIT" ]
++}
++
++# ── Zero-background no-op-safe ──────────────────────────────────────────────
++
++@test "zero background entries: succeeds and writes .round-complete.json" {
++  printf '[]' > "$ROUND_DIR/.dispatch-manifest.json"
++  run "$AWAIT" --round-dir "$ROUND_DIR"
++  [ "$status" -eq 0 ]
++  [ -f "$ROUND_DIR/.round-complete.json" ]
++}
++
++@test "zero background entries: removes .dispatch/ subdir after summary" {
++  printf '[]' > "$ROUND_DIR/.dispatch-manifest.json"
++  run "$AWAIT" --round-dir "$ROUND_DIR"
++  [ "$status" -eq 0 ]
++  [ ! -d "$ROUND_DIR/.dispatch" ]
++}
++
++# ── Pending background entries: drain + split + status update ───────────────
++
++@test "pending background entry: invokes await_cmd, split_cmd, marks done" {
++  # Stub await_cmd captures into the raw file; stub split_cmd writes a finding.
++  STUB_AWAIT="$TEST_ROOT/stub-await.sh"
++  STUB_SPLIT="$TEST_ROOT/stub-split.sh"
++  cat > "$STUB_AWAIT" <<EOF
++#!/usr/bin/env bash
++echo "raw payload" > "$ROUND_DIR/.dispatch/codex-quality.raw"
++exit 0
++EOF
++  cat > "$STUB_SPLIT" <<EOF
++#!/usr/bin/env bash
++printf 'finding body\n' > "$ROUND_DIR/codex-quality.finding-F01.md"
++exit 0
++EOF
++  chmod +x "$STUB_AWAIT" "$STUB_SPLIT"
++
++  python3 - <<EOF
++import json
++m = [{
++  "tag": "codex-quality",
++  "agent": "qrspi-x",
++  "mode": "background",
++  "status": "pending",
++  "job_id": "j-1",
++  "await_cmd": "$STUB_AWAIT",
++  "split_cmd": "$STUB_SPLIT"
++}]
++open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
++EOF
++
++  run "$AWAIT" --round-dir "$ROUND_DIR"
++  [ "$status" -eq 0 ]
++  [ -f "$ROUND_DIR/codex-quality.finding-F01.md" ]
++  [ -f "$ROUND_DIR/.round-complete.json" ]
++  # Manifest entry status should have advanced past "pending".
++  python3 -c "
++import json
++m=json.load(open('$ROUND_DIR/.dispatch-manifest.json'))
++assert m[0]['status'] != 'pending', m
++"
++  [ ! -d "$ROUND_DIR/.dispatch" ]
++}
++
++# ── Output-bound contract ───────────────────────────────────────────────────
++
++@test "output-bound: large captured payload is NOT echoed; combined output ≤ 2KiB" {
++  # Stub await writes a 50KB payload containing a recognisable sentinel.
++  STUB_AWAIT="$TEST_ROOT/stub-await.sh"
++  cat > "$STUB_AWAIT" <<EOF
++#!/usr/bin/env bash
++python3 -c "open('$ROUND_DIR/.dispatch/big.raw','w').write('SECRET-PAYLOAD-XYZZY '*2500)"
++exit 0
++EOF
++  STUB_SPLIT="$TEST_ROOT/stub-split.sh"
++  cat > "$STUB_SPLIT" <<EOF
++#!/usr/bin/env bash
++exit 0
++EOF
++  chmod +x "$STUB_AWAIT" "$STUB_SPLIT"
++
++  python3 - <<EOF
++import json
++m = [{"tag":"big","agent":"x","mode":"background","status":"pending","job_id":"j",
++      "await_cmd":"$STUB_AWAIT","split_cmd":"$STUB_SPLIT"}]
++open("$ROUND_DIR/.dispatch-manifest.json","w").write(json.dumps(m))
++EOF
++
++  out_file="$TEST_ROOT/combined.out"
++  "$AWAIT" --round-dir "$ROUND_DIR" >"$out_file" 2>&1
++  status=$?
++  [ "$status" -eq 0 ]
++  byte_count=$(wc -c < "$out_file")
++  [ "$byte_count" -le 2048 ]
++  ! grep -q 'SECRET-PAYLOAD-XYZZY' "$out_file"
++}
++
++# ── Failure path ────────────────────────────────────────────────────────────
++
++@test "missing --round-dir argument: fails loud with diagnostic" {
++  run "$AWAIT"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"--round-dir"* ]]
++}
+diff --git a/tests/unit/test-round-prepare.bats b/tests/unit/test-round-prepare.bats
+new file mode 100644
+index 0000000..c1c1865
+--- /dev/null
++++ b/tests/unit/test-round-prepare.bats
+@@ -0,0 +1,379 @@
++#!/usr/bin/env bats
++# ============================================================================
++# Unit tests for scripts/round-prepare.sh — G4.
++#
++# Pins behaviors enumerated in task-12.md "Test expectations":
++#   - File existence + JSON validity for the section-anchor manifest and the
++#     three per-skill anchor JSON files.
++#   - Happy-path artifact-level + per-task invocations write the expected
++#     diff, sidecar, and (per-task) commit-anchor; reruns are byte-identical.
++#   - Per-task SHA-correctness exits: 10 (missing-flag), 11 (HEAD mismatch),
++#     12 (unadvanced commit), each with a recovery-path diagnostic.
++#   - Prior-round bookkeeping validation: missing/malformed commit anchor and
++#     missing/empty scope-set fail loud and block reviewer dispatch.
++#   - Convergence narrow/broaden table: missing/empty/superset/partial/disjoint
++#     scope-sets broaden; equal scope-sets narrow; HEAD~1 mismatch falls back
++#     to broaden with reason recorded.
++#   - Backward-loop flag handling: present flag forces broaden, flag is
++#     consumed once, deletion failure is diagnosed.
++#   - Non-git workspace: documented no-diff status (exit 2), no fabricated
++#     diff path or scope hint.
++# ============================================================================
++
++setup() {
++  TEST_ROOT=$(mktemp -d)
++  export TEST_ROOT
++  cd "$TEST_ROOT"
++
++  REPO_ROOT=$(cd "$BATS_TEST_DIRNAME/../.." && pwd)
++  export REPO_ROOT
++  PREP="$REPO_ROOT/scripts/round-prepare.sh"
++  export PREP
++
++  # Initialise a git repo with two commits (so HEAD~1 is valid).
++  git init -q -b main "$TEST_ROOT/repo"
++  cd "$TEST_ROOT/repo"
++  git config user.email "t@example.test"
++  git config user.name "Tester"
++  echo "v1" > file.txt
++  git add file.txt
++  git commit -q -m "initial"
++  BASE_SHA=$(git rev-parse HEAD)
++  echo "v2" > file.txt
++  git commit -q -am "second"
++  HEAD_SHA=$(git rev-parse HEAD)
++  export BASE_SHA HEAD_SHA
++
++  # Round directory layout: <task-dir>/round-NN/ with bookkeeping artifacts in
++  # <task-dir>/.
++  TASK_DIR="$TEST_ROOT/task"
++  mkdir -p "$TASK_DIR/round-01"
++  mkdir -p "$TASK_DIR/round-02"
++  mkdir -p "$TASK_DIR/round-03"
++  export TASK_DIR
++}
++
++teardown() {
++  rm -rf "$TEST_ROOT"
++}
++
++# ── File / JSON existence checks ────────────────────────────────────────────
++
++@test "round-prepare.sh exists and is executable" {
++  [ -f "$PREP" ]
++  [ -x "$PREP" ]
++}
++
++@test "await-round.sh exists and is executable" {
++  [ -f "$REPO_ROOT/scripts/await-round.sh" ]
++  [ -x "$REPO_ROOT/scripts/await-round.sh" ]
++}
++
++@test "g4-section-anchor-manifest.json is valid JSON with entries[]" {
++  python3 -c "
++import json,sys
++d=json.load(open('$REPO_ROOT/scripts/g4-section-anchor-manifest.json'))
++assert isinstance(d.get('entries'), list) and len(d['entries']) >= 1
++for e in d['entries']:
++    assert isinstance(e['source'], str) and isinstance(e['index'], str)
++"
++}
++
++@test "skills/using-qrspi/SKILL.anchors.json is valid JSON" {
++  python3 -m json.tool "$REPO_ROOT/skills/using-qrspi/SKILL.anchors.json" >/dev/null
++}
++
++@test "skills/reviewer-protocol/SKILL.anchors.json is valid JSON" {
++  python3 -m json.tool "$REPO_ROOT/skills/reviewer-protocol/SKILL.anchors.json" >/dev/null
++}
++
++@test "skills/plan/SKILL.anchors.json is valid JSON" {
++  python3 -m json.tool "$REPO_ROOT/skills/plan/SKILL.anchors.json" >/dev/null
++}
++
++@test "anchor refresh is idempotent: rerun produces no diff against tracked indexes" {
++  # Round-trip the refresh script in a clean copy of the repo's relevant files.
++  cd "$REPO_ROOT"
++  bash scripts/g4-section-anchor-refresh.sh
++  # If indexes drift, git would detect it inside the worktree.
++  run git -C "$REPO_ROOT" diff --exit-code -- \
++      skills/using-qrspi/SKILL.anchors.json \
++      skills/reviewer-protocol/SKILL.anchors.json \
++      skills/plan/SKILL.anchors.json
++  [ "$status" -eq 0 ]
++}
++
++# ── Artifact-level happy path (no --task-branch) ────────────────────────────
++
++@test "artifact-level: writes round-NN.diff and .round-prepare.json sidecar" {
++  cd "$TEST_ROOT/repo"
++  run "$PREP" 1 "$TASK_DIR/round-01" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  [ -f "$TASK_DIR/round-01/round-01.diff" ]
++  [ -f "$TASK_DIR/round-01/.round-prepare.json" ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-01/.round-prepare.json'))
++assert 'ref' in d and 'narrowed' in d and 'diff_file' in d
++assert d['narrowed'] is False  # round-1 broadens by default
++"
++}
++
++@test "artifact-level: rerun produces byte-identical sidecar (deterministic)" {
++  cd "$TEST_ROOT/repo"
++  "$PREP" 1 "$TASK_DIR/round-01" --base-ref "$BASE_SHA"
++  cp "$TASK_DIR/round-01/.round-prepare.json" "$TEST_ROOT/first.json"
++  cp "$TASK_DIR/round-01/round-01.diff" "$TEST_ROOT/first.diff"
++  "$PREP" 1 "$TASK_DIR/round-01" --base-ref "$BASE_SHA"
++  cmp "$TEST_ROOT/first.json" "$TASK_DIR/round-01/.round-prepare.json"
++  cmp "$TEST_ROOT/first.diff" "$TASK_DIR/round-01/round-01.diff"
++}
++
++# ── Per-task SHA-correctness exit codes ─────────────────────────────────────
++
++@test "per-task: --task-branch without --implementer-commit exits 10 (orchestrator bug)" {
++  cd "$TEST_ROOT/repo"
++  run "$PREP" 1 "$TASK_DIR/round-01" --task-branch foo --base-ref "$BASE_SHA"
++  [ "$status" -eq 10 ]
++  [[ "$output" == *"orchestrator bug"* ]]
++  [[ "$output" == *"--implementer-commit"* ]]
++}
++
++@test "per-task: --implementer-commit without --task-branch exits 10 (orchestrator bug)" {
++  cd "$TEST_ROOT/repo"
++  run "$PREP" 1 "$TASK_DIR/round-01" --implementer-commit "$HEAD_SHA" --base-ref "$BASE_SHA"
++  [ "$status" -eq 10 ]
++  [[ "$output" == *"orchestrator bug"* ]]
++}
++
++@test "per-task: SHA != HEAD exits 11 (worktree integrity break)" {
++  cd "$TEST_ROOT/repo"
++  bogus="0000000000000000000000000000000000000001"
++  run "$PREP" 1 "$TASK_DIR/round-01" \
++      --task-branch main \
++      --implementer-commit "$bogus" \
++      --worktree "$TEST_ROOT/repo" \
++      --base-ref "$BASE_SHA"
++  [ "$status" -eq 11 ]
++  [[ "$output" == *"HALT"* ]]
++  [[ "$output" == *"$bogus"* ]]
++}
++
++@test "per-task: round 1 SHA == task base exits 12 (unadvanced — re-dispatch implementer)" {
++  cd "$TEST_ROOT/repo"
++  # Set worktree HEAD to BASE_SHA so within-round equality passes; then the
++  # across-rounds check fires (passed SHA == task base on round 1).
++  git reset --hard "$BASE_SHA" >/dev/null 2>&1
++  run "$PREP" 1 "$TASK_DIR/round-01" \
++      --task-branch main \
++      --implementer-commit "$BASE_SHA" \
++      --worktree "$TEST_ROOT/repo" \
++      --base-ref "$BASE_SHA"
++  [ "$status" -eq 12 ]
++  [[ "$output" == *"re-dispatch the implementer"* ]]
++  [[ "$output" == *"task base commit"* ]]
++}
++
++@test "per-task: round 2 SHA == round-1 anchor exits 12 with prior-round diagnostic" {
++  cd "$TEST_ROOT/repo"
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-01-commit.txt"
++  printf '' > "$TASK_DIR/round-01-scope-set.txt"
++  run "$PREP" 2 "$TASK_DIR/round-02" \
++      --task-branch main \
++      --implementer-commit "$HEAD_SHA" \
++      --worktree "$TEST_ROOT/repo" \
++      --base-ref "$BASE_SHA"
++  [ "$status" -eq 12 ]
++  [[ "$output" == *"prior round anchor"* ]]
++}
++
++@test "per-task: happy path writes round-NN-commit.txt with passed SHA + newline" {
++  cd "$TEST_ROOT/repo"
++  run "$PREP" 1 "$TASK_DIR/round-01" \
++      --task-branch main \
++      --implementer-commit "$HEAD_SHA" \
++      --worktree "$TEST_ROOT/repo" \
++      --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  [ -f "$TASK_DIR/round-01-commit.txt" ]
++  # Anchor content must be 40 hex chars + single newline.
++  python3 -c "
++import re
++data=open('$TASK_DIR/round-01-commit.txt').read()
++assert re.match(r'^[0-9a-f]{40}\n\$', data), repr(data)
++assert data.strip() == '$HEAD_SHA'
++"
++}
++
++# ── Prior-round bookkeeping validation ──────────────────────────────────────
++
++@test "prior-round: missing round-(NN-1)-commit.txt blocks dispatch with named diagnostic" {
++  cd "$TEST_ROOT/repo"
++  # Round 2 with no round-01-commit.txt present.
++  run "$PREP" 2 "$TASK_DIR/round-02" \
++      --task-branch main \
++      --implementer-commit "$HEAD_SHA" \
++      --worktree "$TEST_ROOT/repo" \
++      --base-ref "$BASE_SHA"
++  [ "$status" -ne 0 ]
++  [ "$status" -ne 12 ]
++  [[ "$output" == *"missing prior-round commit anchor"* ]]
++}
++
++@test "prior-round: malformed round-(NN-1)-commit.txt blocks dispatch with named diagnostic" {
++  cd "$TEST_ROOT/repo"
++  echo "not-a-sha" > "$TASK_DIR/round-01-commit.txt"
++  run "$PREP" 2 "$TASK_DIR/round-02" \
++      --task-branch main \
++      --implementer-commit "$HEAD_SHA" \
++      --worktree "$TEST_ROOT/repo" \
++      --base-ref "$BASE_SHA"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"malformed prior-round commit anchor"* ]]
++}
++
++@test "prior-round: missing scope-set on round 3 blocks dispatch (when narrowing-eligible)" {
++  cd "$TEST_ROOT/repo"
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-01-commit.txt"
++  PREV_SHA=$(git rev-parse HEAD~1)
++  printf '%s\n' "$PREV_SHA" > "$TASK_DIR/round-02-commit.txt"
++  # round-02-scope-set.txt deliberately absent.
++  QRSPI_SCOPE_TAGGER_ENABLED=true \
++  run "$PREP" 3 "$TASK_DIR/round-03" \
++      --task-branch main \
++      --implementer-commit "$HEAD_SHA" \
++      --worktree "$TEST_ROOT/repo" \
++      --base-ref "$BASE_SHA"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"missing prior-round scope-set"* ]]
++}
++
++@test "prior-round: empty scope-set on round 3 blocks dispatch (when narrowing-eligible)" {
++  cd "$TEST_ROOT/repo"
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-01-commit.txt"
++  PREV_SHA=$(git rev-parse HEAD~1)
++  printf '%s\n' "$PREV_SHA" > "$TASK_DIR/round-02-commit.txt"
++  : > "$TASK_DIR/round-02-scope-set.txt"  # empty
++  QRSPI_SCOPE_TAGGER_ENABLED=true \
++  run "$PREP" 3 "$TASK_DIR/round-03" \
++      --task-branch main \
++      --implementer-commit "$HEAD_SHA" \
++      --worktree "$TEST_ROOT/repo" \
++      --base-ref "$BASE_SHA"
++  [ "$status" -ne 0 ]
++  [[ "$output" == *"empty prior-round scope-set"* ]]
++}
++
++# ── Convergence narrow/broaden table ────────────────────────────────────────
++
++@test "convergence: equal scope-sets narrow (proper-subset rule satisfied via equality)" {
++  cd "$TEST_ROOT/repo"
++  # Add a third commit so HEAD~1 matches the round-02 anchor (SHA safety
++  # check requires HEAD~1 == round-(NN-1)-commit.txt content).
++  echo "v3" > file.txt
++  git commit -q -am "third"
++  # After the third commit: HEAD points to R3; HEAD~1 == HEAD_SHA.
++  # round-(NN-1) for NN=3 is round-02 → anchor must equal HEAD_SHA.
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  printf '%s\n' "$BASE_SHA" > "$TASK_DIR/round-01-commit.txt"
++  printf 'a\nb\nc\n' > "$TASK_DIR/round-01-scope-set.txt"
++  printf 'a\nb\nc\n' > "$TASK_DIR/round-02-scope-set.txt"
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++assert d['narrowed'] is True, d
++"
++}
++
++@test "convergence: superset (round NN-1 ⊃ NN-2) broadens" {
++  cd "$TEST_ROOT/repo"
++  PREV=$(git rev-parse HEAD~1)
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
++  printf 'a\nb\n'       > "$TASK_DIR/round-01-scope-set.txt"
++  printf 'a\nb\nc\nd\n' > "$TASK_DIR/round-02-scope-set.txt"
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++assert d['narrowed'] is False, d
++"
++}
++
++@test "convergence: disjoint scope-sets broaden" {
++  cd "$TEST_ROOT/repo"
++  PREV=$(git rev-parse HEAD~1)
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
++  printf 'a\nb\n' > "$TASK_DIR/round-01-scope-set.txt"
++  printf 'x\ny\n' > "$TASK_DIR/round-02-scope-set.txt"
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++assert d['narrowed'] is False
++"
++}
++
++@test "convergence: HEAD~1 mismatch falls back to broaden + reason recorded" {
++  cd "$TEST_ROOT/repo"
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  # Anchor for round-1 deliberately set to a SHA that does NOT match HEAD~1.
++  printf '%s\n' "0000000000000000000000000000000000000002" > "$TASK_DIR/round-01-commit.txt"
++  printf 'a\n' > "$TASK_DIR/round-01-scope-set.txt"
++  printf 'a\n' > "$TASK_DIR/round-02-scope-set.txt"
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++assert d['narrowed'] is False
++assert d.get('reason') and 'HEAD~1' in d['reason']
++"
++}
++
++# ── Backward-loop flag ──────────────────────────────────────────────────────
++
++@test "backward-loop: present flag forces broaden + flag is consumed (deleted)" {
++  cd "$TEST_ROOT/repo"
++  PREV=$(git rev-parse HEAD~1)
++  printf '%s\n' "$HEAD_SHA" > "$TASK_DIR/round-02-commit.txt"
++  printf '%s\n' "$PREV"     > "$TASK_DIR/round-01-commit.txt"
++  # Equal scope-sets would otherwise narrow.
++  printf 'a\n' > "$TASK_DIR/round-01-scope-set.txt"
++  printf 'a\n' > "$TASK_DIR/round-02-scope-set.txt"
++  : > "$TASK_DIR/round-03-backward-loop.flag"
++  run "$PREP" 3 "$TASK_DIR/round-03" --base-ref "$BASE_SHA"
++  [ "$status" -eq 0 ]
++  [ ! -f "$TASK_DIR/round-03-backward-loop.flag" ]
++  python3 -c "
++import json
++d=json.load(open('$TASK_DIR/round-03/.round-prepare.json'))
++assert d['narrowed'] is False
++"
++}
++
++# ── Non-git workspace ───────────────────────────────────────────────────────
++
++@test "non-git workspace: exits 2 with no fabricated diff_file or scope_hint" {
++  NONGIT="$TEST_ROOT/nongit"
++  mkdir -p "$NONGIT"
++  cd "$NONGIT"
++  mkdir -p "$NONGIT/round-01"
++  run "$PREP" 1 "$NONGIT/round-01" --base-ref HEAD
++  [ "$status" -eq 2 ]
++  # No diff or sidecar with diff_file/scope_hint should be fabricated.
++  [ ! -f "$NONGIT/round-01/round-01.diff" ]
++  if [ -f "$NONGIT/round-01/.round-prepare.json" ]; then
++    python3 -c "
++import json
++d=json.load(open('$NONGIT/round-01/.round-prepare.json'))
++assert not d.get('diff_file')
++assert not d.get('scope_hint')
++"
++  fi
++}

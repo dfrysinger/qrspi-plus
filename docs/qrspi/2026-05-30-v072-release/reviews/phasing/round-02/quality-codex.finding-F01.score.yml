@@ -1,0 +1,2 @@
+score: 20
+reason: Conflates "future PHASE" (intra-release, what phasing.md's `deferred_to_future` tracks per goal-ID-based pruning) with "future RELEASE" (v0.7.3+ follow-up notes attached to current-phase goals G10/G13/G14 in design.md); phasing SKILL's pruning rule is goal-ID-based and all 35 goals are correctly current-phase, so future-design.md is legitimately empty and the claim is consistent.

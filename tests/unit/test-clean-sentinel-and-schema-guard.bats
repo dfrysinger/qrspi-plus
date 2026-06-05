@@ -1,13 +1,25 @@
 #!/usr/bin/env bats
 
 @test "reviewer-protocol defines <reviewer_tag>.clean.md sentinel format" {
-  grep -qE '<reviewer_tag>\.clean\.md' skills/reviewer-protocol/SKILL.md
-  awk '
-    /^## Per-Finding Disk-Write Contract/ { in_block=1 }
-    in_block && /^## / && !/Per-Finding Disk-Write Contract/ { exit }
-    in_block { print }
-  ' skills/reviewer-protocol/SKILL.md \
-    | grep -qE 'frontmatter-only|reviewer:.*round:.*findings: 0|findings: 0'
+  # Post-split: the clean-round sentinel format moved out of SKILL.md and into
+  # first-party-emission.md (Codex parallel: third-party-emission.md). Either
+  # file may carry the canonical definition, so accept a hit in either path.
+  local hits=0
+  if grep -qE '<reviewer_tag>\.clean\.md' skills/reviewer-protocol/first-party-emission.md \
+     && grep -qE 'frontmatter-only|reviewer:.*round:.*findings: 0|findings: 0' \
+          skills/reviewer-protocol/first-party-emission.md; then
+    hits=$((hits+1))
+  fi
+  if grep -qE '<reviewer_tag>\.clean\.md' skills/reviewer-protocol/SKILL.md \
+     && awk '
+          /^## Per-Finding Disk-Write Contract/ { in_block=1 }
+          in_block && /^## / && !/Per-Finding Disk-Write Contract/ { exit }
+          in_block { print }
+        ' skills/reviewer-protocol/SKILL.md \
+       | grep -qE 'frontmatter-only|reviewer:.*round:.*findings: 0|findings: 0'; then
+    hits=$((hits+1))
+  fi
+  [ "$hits" -ge 1 ]
 }
 
 @test "schema-violation guard fails loud on expected tag with zero finding/clean files" {

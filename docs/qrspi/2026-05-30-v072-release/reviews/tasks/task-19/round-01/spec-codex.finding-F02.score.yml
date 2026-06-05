@@ -1,0 +1,2 @@
+score: 20
+reason: T19's using-qrspi DoD bullets are both satisfied (line 384 documents `second_reviewer:` as canonical; lines 547-549 reject legacy `codex_reviews:` with a rename diagnostic), and the residual mismatch-policy + transport-routing prose at lines 412-417 is dispatch-surface content explicitly assigned to Task 20 by the Scope Out ("dispatch script renames, the shared reviewer-dispatch prose include") — no T19 grep test or DoD bullet requires removing that dispatch prose from using-qrspi.

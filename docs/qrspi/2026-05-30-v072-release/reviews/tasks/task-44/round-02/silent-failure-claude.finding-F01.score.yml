@@ -1,0 +1,2 @@
+score: 72
+reason: Verified — the unit-pin file has 4 copies of each regex (lines 145/180/213/252 and 148/183/216/255) and `head -1` reduces the C-3 acceptance check to a single sample, directly contradicting the test's stated "rather than silently diverging" intent and matching the task's per-site-drift threat model.

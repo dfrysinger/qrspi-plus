@@ -1,0 +1,2 @@
+score: 18
+reason: Self-acknowledged low-severity speculative hardening for an operator-invoked probe with no real adversarial surface; concerns are conditional on unimplemented `_resolve-lib.sh` behaviors and not required by any upstream artifact.

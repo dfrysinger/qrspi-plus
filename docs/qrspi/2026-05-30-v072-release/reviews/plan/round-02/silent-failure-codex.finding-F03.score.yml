@@ -1,0 +1,2 @@
+score: 12
+reason: Plan faithfully encodes the explicit locked design.md G20 decision (line 1871) that `actual_model: unknown` fallback is intentional observability behavior, not a correctness gate — finding relitigates an upstream Design lock at Plan altitude.

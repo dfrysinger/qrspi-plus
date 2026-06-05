@@ -1,0 +1,2 @@
+score: 80
+reason: Verified internal inconsistency — structure.md line 37 promises host/vendor/model persistence in the dispatch manifest, but §10's dispatch_spec schema (lines 336-340) shows only subagent_type/model/prompt_file with no host or vendor fields, and the background entry omits them too; implementers consuming §10 will produce manifests that fail the observability surface the Slice 1.2 row pins, and the line-96 host-aware-routing test has no manifest field to assert against.

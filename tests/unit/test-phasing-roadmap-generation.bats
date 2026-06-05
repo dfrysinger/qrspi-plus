@@ -194,26 +194,24 @@ extract_h3_direct() {
 # =============================================================================
 
 @test "scope-reviewer dispatch declares fail-closed on malformed OWNS/DEFERS" {
-  # The scope-reviewer dispatch block lives under the review round; it must
-  # explicitly state that a malformed/missing OWNS/DEFERS section triggers a
-  # high-severity finding and a refusal to proceed (per scope-reviewer template's
-  # malformed-case fail-closed clause). Severity must conform to the M48 schema
-  # which only permits low|medium|high.
-  # Commit 12/22 migration: "scope-reviewer subagent dispatch" pattern is
-  # replaced by "Claude scope-reviewer subagent" Agent({subagent_type:...}) form.
-  # Locate the scope-reviewer dispatch bullet (line containing
-  # "scope-reviewer subagent") and capture its block.
+  # CD-1 (Task 20): the per-skill scope-reviewer dispatch block collapsed into
+  # the shared reviewer-dispatch include; the fail-closed-on-malformed-OWNS/DEFERS
+  # contract now lives in the reviewer agent body
+  # (agents/qrspi-phasing-scope-reviewer.md). Severity must conform to the M48
+  # schema which only permits low|medium|high.
+  local agent="$BATS_TEST_DIRNAME/../../agents/qrspi-phasing-scope-reviewer.md"
+  [ -f "$agent" ]
   local block
   block="$(awk '
-    /Claude scope-reviewer subagent/ { in_block = 1 }
-    in_block && /^- \*\*Codex reviews/ { exit }
+    /Fail-closed on malformed rules/ { in_block = 1 }
+    in_block && /^## / { exit }
     in_block { print }
-  ' "$SKILL_FILE")"
+  ' "$agent")"
   [ -n "$block" ]
 
   echo "$block" | grep -qiE "malformed|missing"
   echo "$block" | grep -qiE "fail-closed|severity: high|high-severity"
-  echo "$block" | grep -qiE "refuse to proceed|MUST emit"
+  echo "$block" | grep -qiE "refuse to (proceed|perform)|MUST emit|Emit a single finding"
 }
 
 # =============================================================================

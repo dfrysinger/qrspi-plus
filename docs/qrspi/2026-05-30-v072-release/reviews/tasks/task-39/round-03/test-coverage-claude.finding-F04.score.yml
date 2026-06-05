@@ -1,0 +1,2 @@
+score: 45
+reason: Real but low-severity test gaps; marketplace.json exclusion and required-missing branches are genuine semantic guards lacking direct coverage, though regressions would likely surface via other manifest checks.

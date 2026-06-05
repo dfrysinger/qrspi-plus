@@ -1,0 +1,2 @@
+score: 40
+reason: The redundancy pattern is real at 3 of 4 cited locations (lines 62-63, 92-94, 122-123 clearly restate the test name/assertions verbatim), but lines 154-159 add genuine orientation context about v0.7.2 implementation rationale and RED-state notes, making the finding slightly over-broad; overall it is a valid low-severity nitpick.

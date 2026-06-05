@@ -1,0 +1,2 @@
+score: 90
+reason: The test file demonstrably has four grep regressions for Copilot-CLI literals (skills/ + agents/) but zero for the Claude Code `## Auto Mode Active` signal, directly violating the explicit acceptance criterion at task-24.md:60 which requires both host-specific signals be rejected in consumer skill prose and agent bodies.

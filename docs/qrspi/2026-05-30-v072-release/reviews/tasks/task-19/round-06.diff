@@ -1,0 +1,61 @@
+diff --git a/tests/unit/test-second-reviewer-available.bats b/tests/unit/test-second-reviewer-available.bats
+index e174eda..b1669c4 100644
+--- a/tests/unit/test-second-reviewer-available.bats
++++ b/tests/unit/test-second-reviewer-available.bats
+@@ -284,6 +284,38 @@ teardown() {
+   grep -qE 'vendor=' "$_stderr_file"
+ }
+ 
++# Test expectation: unknown host default path — single execution jointly asserts
++# non-zero exit, exactly one [second-reviewer-unavailable] line, host=unknown, vendor=none.
++@test "second-reviewer-available: unknown host default path jointly asserts single-line host=unknown vendor=none" {
++  # Test expectation: when no host-detection env var is set, detect_host returns
++  # 'unknown', lookup_default_second_reviewer returns 'none', and the probe emits
++  # exactly ONE [second-reviewer-unavailable] line naming host=unknown AND vendor=none
++  # in the same execution — asserting the joint single-line contract on the default path.
++  local _stderr_file="$TMP_DIR/unknown-host-default-joint-stderr.txt"
++  local _status=0
++  bash -c "
++    unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
++    \"$SECOND_REVIEWER\"
++  " >/dev/null 2>"$_stderr_file" || _status=$?
++
++  # Must exit non-zero — unknown host has no reachable second reviewer
++  [ "$_status" -ne 0 ]
++
++  # Exactly one stderr line (single-line diagnostic contract)
++  local line_count
++  line_count="$(wc -l < "$_stderr_file" | tr -d ' ')"
++  [ "$line_count" -eq 1 ]
++
++  # Line must begin with the unavailability tag
++  grep -q '^\[second-reviewer-unavailable\]' "$_stderr_file"
++
++  # Line must name host=unknown (the value detect_host returns when no host signal is set)
++  grep -q 'host=unknown' "$_stderr_file"
++
++  # Line must name vendor=none (the default lookup result for an unknown host)
++  grep -q 'vendor=none' "$_stderr_file"
++}
++
+ # Test expectation: unknown vendor override exits non-zero with [second-reviewer-unavailable],
+ # emits exactly one stderr line, and names both host= and vendor= in that line.
+ @test "second-reviewer-available: unknown vendor override exits non-zero with [second-reviewer-unavailable]" {
+@@ -305,6 +337,8 @@ teardown() {
+   [ "$line_count" -eq 1 ]
+   # Diagnostic must name the detected host
+   grep -q 'host=' "$_stderr_file"
++  # Diagnostic must name the passed vendor (jointly asserts host= AND vendor= in one execution)
++  grep -q 'vendor=nonexistent-vendor-xyz' "$_stderr_file"
+ }
+ 
+ # Test expectation: unavailable vendor diagnostic names the vendor (override case)
+@@ -316,7 +350,7 @@ teardown() {
+     export COPILOT_CLI=1
+     \"$SECOND_REVIEWER\" nonexistent-vendor-xyz
+   " >/dev/null 2>"$_stderr_file" || true
+-  grep -qE 'nonexistent-vendor-xyz|vendor=' "$_stderr_file"
++  grep -q 'vendor=nonexistent-vendor-xyz' "$_stderr_file"
+ }
+ 
+ # Test expectation: explicit 'none' vendor argument exits non-zero with exactly one

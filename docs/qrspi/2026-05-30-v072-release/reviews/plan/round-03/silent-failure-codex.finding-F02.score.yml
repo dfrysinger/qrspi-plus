@@ -1,0 +1,2 @@
+score: 30
+reason: Task 11 is a write-side schema/provenance task where the script controls manifest content; the requested fail-loud-on-malformed-read contract belongs to consumers (e.g., await-round.sh in T12) and the phase-1 fail-loud acceptance list does not enumerate dispatch-manifest parsing, making this a speculative planning nit rather than a clear gap.

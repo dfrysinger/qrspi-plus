@@ -1,0 +1,2 @@
+score: 75
+reason: Real security gap verified - block-hash audits only plan.md source, not task file body; body silently tamperable after split with hash still matching on re-run.

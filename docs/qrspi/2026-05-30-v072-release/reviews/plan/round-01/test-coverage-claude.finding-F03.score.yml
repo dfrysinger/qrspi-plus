@@ -1,0 +1,2 @@
+score: 45
+reason: Real gap — T06 DoD names `score:` as integer 0–100 but neither T06 nor T02 test expectations pin the integer-bounds (T02's `unparseable score` covers parser-failure only, not out-of-range integers); however the impact is bounded (out-of-range scores would still gate correctly by threshold comparison and the finding is medium-severity test-coverage rather than a functional defect).
