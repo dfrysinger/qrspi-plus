@@ -37,7 +37,7 @@ The agent body for each research agent names which per-agent pattern applies.
 
 ## Structural Carve-Out — Where the Check Applies
 
-The reviewer-dispatch wrapper (`scripts/run-codex-review.sh`) emits a single boundary marker — `<<<AGENT-BODY-END>>>` — between the trusted protocol-and-agent-body and the orchestrator-supplied dispatch parameters. The Pre-Flight check applies ONLY to text appearing AFTER that marker.
+The reviewer-dispatch wrapper (`scripts/dispatch-agent.sh`) emits a single boundary marker — `<<<AGENT-BODY-END>>>` — between the trusted protocol-and-agent-body and the orchestrator-supplied dispatch parameters. The Pre-Flight check applies ONLY to text appearing AFTER that marker.
 
 - Text BEFORE the marker is the trusted protocol + agent body. The agent definition itself names `goals.md`, `companion_goals`, the goal-framing triplet, etc., for documentation. Those references are NOT violations.
 - Text AFTER the marker is the orchestrator-supplied dispatch parameters — the actual subject under inspection.

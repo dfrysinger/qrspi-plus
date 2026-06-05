@@ -1,7 +1,7 @@
 # RED-Verification Adapter Contract
 
 This document is the authoritative contract consumed by:
-- The four per-framework adapter scripts (T10): `scripts/red-verify-bats.sh`, `scripts/red-verify-vitest.sh`, `scripts/red-verify-jest.sh`, `scripts/red-verify-pytest.sh`
+- The four per-framework adapter scripts (T10): `scripts/red-verify/bats-adapter.sh`, `scripts/red-verify/vitest-adapter.sh`, `scripts/red-verify/jest-adapter.sh`, `scripts/red-verify/pytest-adapter.sh`
 - The Implement-skill RED-verification gate (T11) that invokes adapters after `qrspi-test-writer` completes in Implement-phase mode
 
 Adapter scripts implement; this document owns their interface. The orchestrator gate consumes; this document owns the classification semantics it acts on.
@@ -11,7 +11,7 @@ Adapter scripts implement; this document owns their interface. The orchestrator 
 Each adapter is a standalone executable script invoked by the orchestrator gate with exactly three required flags:
 
 ```
-scripts/red-verify-<framework>.sh \
+scripts/red-verify/<framework>-adapter.sh \
   --runner-exit <int> \
   --stdout-file <path> \
   --stderr-file <path>
@@ -54,10 +54,10 @@ The four adapter scripts in the initial set cover these test frameworks:
 
 | Framework | Script | Runner binary |
 |-----------|--------|--------------|
-| **BATS** | `scripts/red-verify-bats.sh` | `bats` |
-| **Vitest** | `scripts/red-verify-vitest.sh` | `vitest` / `npx vitest` |
-| **Jest** | `scripts/red-verify-jest.sh` | `jest` / `npx jest` |
-| **pytest** | `scripts/red-verify-pytest.sh` | `pytest` / `python -m pytest` |
+| **BATS** | `scripts/red-verify/bats-adapter.sh` | `bats` |
+| **Vitest** | `scripts/red-verify/vitest-adapter.sh` | `vitest` / `npx vitest` |
+| **Jest** | `scripts/red-verify/jest-adapter.sh` | `jest` / `npx jest` |
+| **pytest** | `scripts/red-verify/pytest-adapter.sh` | `pytest` / `python -m pytest` |
 
 Each adapter is framework-specific: it interprets the runner's stdout, stderr, and exit code according to that framework's documented output conventions. Adapters for additional frameworks can be added without changing this contract or the orchestrator gate.
 

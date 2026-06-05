@@ -9,7 +9,7 @@ Instead, emit your findings to **stdout only**, in this format:
 
 No prose outside finding bodies. No preamble. No summary. No closing notes. Anything that is neither boundary-prefixed nor the `NO_FINDINGS` sentinel is malformed and produces zero finding files for your tag.
 
-The orchestrator pipes your stdout through `scripts/codex-finding-splitter.sh`, which materializes the per-finding files (`<reviewer_tag>.finding-F<NN>.md`) or the clean sentinel (`<reviewer_tag>.clean.md`) under `reviews/{step}/round-NN/` on your behalf. The on-disk schema is identical to what a Claude reviewer would have written; the only difference is who performs the Write.
+The orchestrator pipes your stdout through `scripts/third-party-finding-splitter.sh`, which materializes the per-finding files (`<reviewer_tag>.finding-F<NN>.md`) or the clean sentinel (`<reviewer_tag>.clean.md`) under `reviews/{step}/round-NN/` on your behalf. The on-disk schema is identical to what a Claude reviewer would have written; the only difference is who performs the Write.
 
 Once you have emitted the last finding (or the `NO_FINDINGS` sentinel), terminate. Your job ends at stdout emission.
 
