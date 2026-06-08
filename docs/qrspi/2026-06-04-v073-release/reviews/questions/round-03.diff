@@ -1,0 +1,29 @@
+diff --git a/docs/qrspi/2026-06-04-v073-release/questions.md b/docs/qrspi/2026-06-04-v073-release/questions.md
+new file mode 100644
+index 0000000..ad9cc8a
+--- /dev/null
++++ b/docs/qrspi/2026-06-04-v073-release/questions.md
+@@ -0,0 +1,23 @@
++---
++status: draft
++---
++
++# Research Questions
++
++1. [codebase] What documents does the finding-verifier agent consult when evaluating a finding's change_type, and how are those document paths specified in the agent prompt body?
++2. [codebase] What documents in the codebase currently carry identifier-naming rule tables or constraint sets for non-test contexts (implementer output, commit messages, SKILL.md prose, agent body text), and how do implementer and reviewer agents reference those documents?
++3. [codebase] What naming conventions currently govern bats test identifiers, and where are the formal rules for those conventions defined?
++4. [web] What are established practices for enforcing bats test-name conventions via automated lint or CI checks?
++5. [codebase] What marker language does `design.md` use to indicate that a goal has been absorbed, deferred, or declared a non-goal, and how does the plan-author skill's authoring loop interact with those markers when drafting tasks?
++6. [web] What patterns exist for encoding absorbed or superseded scope items in structured planning documents, and how do those patterns interact with downstream authoring tools or automated document processors?
++7. [codebase] How is the per-step upstream-artifact list organized in the apply-fix protocol documentation, and which pipeline steps currently have canonical entries in that list?
++8. [codebase] What artifact gating differences exist between full-pipeline and quick-fix pipeline modes, and where is each mode's prerequisite set documented?
++9. [codebase] How is the Orchestration Boundary HARD-RULE currently distributed across skill files — what is the scope and verbosity of its appearance in each SKILL.md that references it?
++10. [web] What techniques exist in multi-agent orchestration systems for making discipline constraints observable at runtime?
++11. [codebase] How are stage commits constructed during a multi-task wave merge, and what verification (if any) runs on the parent commit set at creation time?
++12. [codebase] How does the branch model in the implement skill specify the relationship between named task-tip SHAs and stage-commit parents?
++13. [codebase] What is the per-round commit structure produced by the apply-fix protocol, and how does the anchor-capture step affect the total number of commits produced per round?
++14. [codebase] How does the apply-fix protocol specify the reference used to narrow diffs between consecutive rounds, and which artifact or file anchors that reference?
++15. [web] What are established patterns for resolving stable git references in automated fix-cycle workflows where multiple commits may land per iteration?
++16. [codebase] What is the on-disk architecture of the universal dispatch chain, and which orchestration behaviors are enforced by scripts versus documented in SKILL.md bodies?
++17. [web] What patterns exist in LLM agent system designs for organizing and structuring long-running prompt libraries while preserving behavioral correctness?

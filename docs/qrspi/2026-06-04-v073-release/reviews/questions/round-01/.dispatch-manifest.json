@@ -1,0 +1,28 @@
+[
+  {
+    "tag": "quality-claude",
+    "agent": "qrspi-questions-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-questions-reviewer",
+      "host": "copilot-cli",
+      "vendor": "claude",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/questions/round-01//.dispatch/quality-claude.prompt"
+    }
+  },
+  {
+    "tag": "quality-codex",
+    "agent": "qrspi-questions-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-questions-reviewer",
+      "host": "copilot-cli",
+      "vendor": "codex",
+      "model": "gpt-5-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/questions/round-01//.dispatch/quality-codex.prompt"
+    }
+  }
+]
