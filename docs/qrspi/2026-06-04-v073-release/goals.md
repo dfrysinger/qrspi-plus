@@ -181,8 +181,31 @@ Every token spent on dispatch boilerplate is a token the orchestrator does not h
 - Per-skill targets and trim depth are Design's call. Candidate strategies Design should weigh: (a) move dispatch templates out to supporting `.md` files referenced via `!cat`; (b) extract repeated wiring into shared snippets; (c) trim restated HARD-GATE prose where the script enforces the gate; (d) consolidate near-duplicate sections.
 - Candidate acceptance approach Design should weigh: measure post-trim active footprint and confirm no regression on the v0.7.2 phase-1 acceptance suite (regression guard already captured under `## Constraints`).
 
+### G9 — Centralized version source for the plugin manifest set
+
+- **type:** `known-fix`
+
+#### Problem
+
+The plugin version string lives in five hand-edited sites with no canonical source: `.claude-plugin/marketplace.json`, `.claude-plugin/plugin.json`, `.github/plugin/marketplace.json`, `.github/plugin/plugin.json`, and `build/.claude-plugin/plugin.json`. Every release requires five matching `sed`/manual edits; drift is silent until a downstream consumer reports a mismatch. The v0.7.2.3 hotfix self-host run made this concrete — the marketplace `source` regression (`./` vs `./build`) was packaging-shaped, but the same five-site bump pattern is the surrounding scaffolding for any future packaging mistake.
+
+#### Why we care
+
+Hand-bumped version strings are a class of build-artifact divergence that no reviewer catches and no test exercises. The same shape that produced the marketplace `source` regression — silent multi-site edits with no canonical anchor — applies to version-bumping. Fixing this removes one ongoing release-time footgun and one whole class of "did I update all the places?" failure mode.
+
+#### What we know so far
+
+- Five version-bearing files identified by `git ls-files | xargs grep -l '"version".*0\.7\.2\.2"'` (run on v0.7.2.3 hotfix branch): `.claude-plugin/marketplace.json`, `.claude-plugin/plugin.json`, `.github/plugin/marketplace.json`, `.github/plugin/plugin.json`, `build/.claude-plugin/plugin.json`.
+- No `package.json`, no `VERSION` file at repo root, no version-related logic in `tools/build-plugin.mjs`. Version-stamping is purely manual today.
+- Candidate canonical-source patterns Design should weigh: (a) repo-root `VERSION` file (bare version string, build script reads + stamps); (b) `package.json` with `"version"` field as canonical (build script reads); (c) one of the existing manifests designated canonical (e.g. `.claude-plugin/plugin.json`) with build script propagating to the rest.
+- Candidate enforcement approach Design should weigh: build script writes version into all consumers on every build, plus a CI check that fails if any version string diverges from the canonical source.
+- Tradeoff Design should weigh: `build/.claude-plugin/plugin.json` is currently committed and hand-edited. If build is the authoritative writer, `build/` should either be `.gitignore`d or regenerated-on-build with no manual edits permitted — which conflicts with the current "commit build/ so `git clone` install works" pattern.
+- Candidate acceptance approach Design should weigh: a single-file edit followed by `node tools/build-plugin.mjs` propagates consistent version strings across all consumer files, verifiable by a script-driven check (CI gate vs pre-commit hook is Design's call).
+- G9 is research-deferred: general build/manifest knowledge applies, no new research questions required.
+
 ## Cross-Cutting Notes
 
 - **G1 → G2 prerequisite chain.** G2's sweep cannot be enforced until G1's verifier rubric is correct; otherwise reviewers re-flag and the verifier re-suppresses indefinitely.
 - **G6 / G7 share round-mechanics surface.** Both touch stage-commit creation and round-anchor mechanics; G7's "single commit per round" candidate would simplify G6's parent-validation diff. Design should weigh them coherently.
 - **G8 lands last.** Trimming skill bodies while G1-G7 are editing them creates merge churn; phasing should sequence G8 after the correctness goals settle.
+- **G9 is independent.** Version-source centralization touches `tools/build-plugin.mjs` and `.claude-plugin/`/`.github/plugin/` manifests only — no overlap with the SKILL.md-edit surface that G1-G8 work on. Can land in any phase without sequencing constraints from the other goals.

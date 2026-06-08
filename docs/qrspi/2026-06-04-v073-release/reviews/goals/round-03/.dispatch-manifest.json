@@ -1,0 +1,54 @@
+[
+  {
+    "tag": "scope-claude",
+    "agent": "qrspi-goals-scope-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-goals-scope-reviewer",
+      "host": "copilot-cli",
+      "vendor": "claude",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/goals/round-03//.dispatch/scope-claude.prompt"
+    }
+  },
+  {
+    "tag": "scope-codex",
+    "agent": "qrspi-goals-scope-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-goals-scope-reviewer",
+      "host": "copilot-cli",
+      "vendor": "codex",
+      "model": "gpt-5-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/goals/round-03//.dispatch/scope-codex.prompt"
+    }
+  },
+  {
+    "tag": "quality-claude",
+    "agent": "qrspi-goals-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-goals-reviewer",
+      "host": "copilot-cli",
+      "vendor": "claude",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/goals/round-03//.dispatch/quality-claude.prompt"
+    }
+  },
+  {
+    "tag": "quality-codex",
+    "agent": "qrspi-goals-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-goals-reviewer",
+      "host": "copilot-cli",
+      "vendor": "codex",
+      "model": "gpt-5-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/goals/round-03//.dispatch/quality-codex.prompt"
+    }
+  }
+]
