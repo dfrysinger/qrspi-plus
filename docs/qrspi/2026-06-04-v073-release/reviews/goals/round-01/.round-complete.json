@@ -1,0 +1,23 @@
+{
+  "awaited": 0,
+  "clean": 0,
+  "entries": [
+    {
+      "status": "dispatched",
+      "tag": "quality-claude"
+    },
+    {
+      "status": "dispatched",
+      "tag": "scope-claude"
+    },
+    {
+      "status": "dispatched",
+      "tag": "quality-codex"
+    },
+    {
+      "status": "dispatched",
+      "tag": "scope-codex"
+    }
+  ],
+  "with_findings": 0
+}

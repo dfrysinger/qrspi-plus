@@ -1,7 +1,7 @@
 {
   "name": "qrspi",
   "description": "QRSPI workflow plugin for agentic software development — Goals, Questions, Research, Design, Phasing, Structure, Plan, Parallelize, Implement, Integrate, Test, Replan",
-  "version": "0.7.2.2",
+  "version": "0.7.2.3",
   "author": {
     "name": "Daniel Frysinger"
   },
