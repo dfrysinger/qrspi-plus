@@ -609,3 +609,29 @@ for s in ('skills/using-qrspi/SKILL.md','skills/reviewer-protocol/SKILL.md','ski
     assert s in sources, 'missing manifest source: '+s
 "
 }
+
+# ============================================================================
+# Argument hardening (v0.7.2.4 hotfix) — reject silent flag-typo consumption
+# ============================================================================
+
+# Test expectation: a `--`-prefixed positional in slot 1 (would be <round-NN>)
+# is rejected — not silently consumed and passed along as the round identifier
+# (which would later surface as a baffling git or sidecar error). Closes the
+# class-of-bug v0.7.2.4 fixes across the script suite.
+@test "argument hardening: --flag-shaped positional <round-NN> is rejected (exit 1)" {
+  cd "$TEST_ROOT/repo"
+  run "$PREP" --task-branch foo bar
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"must not begin with '-'"* ]]
+  [[ "$output" == *"<round-NN>"* ]]
+}
+
+# Test expectation: a `--`-prefixed positional in slot 2 (would be <output-dir>)
+# is rejected — not silently consumed and used as the output directory path.
+@test "argument hardening: --flag-shaped positional <output-dir> is rejected (exit 1)" {
+  cd "$TEST_ROOT/repo"
+  run "$PREP" 1 --output-dir foo
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"must not begin with '-'"* ]]
+  [[ "$output" == *"<output-dir>"* ]]
+}
