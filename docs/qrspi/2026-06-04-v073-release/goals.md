@@ -161,27 +161,7 @@ Silent empty-diff termination is the same shape of failure as G6 — a gate repo
 - G6 (parent-SHA validation) and G7 share the round-mechanics surface; Design should weigh them together for coherence.
 - Source: `skills/using-qrspi/SKILL.md` § Apply-fix protocol step 12; v0.7.2-release branch commits d32fc50, 48da62c, c2acbae.
 
-### G8 — Active-skill-prompt footprint reduction across all 14 skills
-
-- **type:** `exploratory`
-
-#### Problem
-
-Active SKILL.md bodies are re-injected verbatim into the system prompt every turn. Current footprint: implement/SKILL.md ~45-50K tokens (1,451 lines), using-qrspi/SKILL.md ~33K (1,262), plan/SKILL.md ~18K (726), all 14 skills together ~190K tokens. Active implement skill alone eats ~25% of the context budget before the orchestrator does anything; after `/compact` at v0.7.2 close, context was still at 41% with implement pinned active. Skills carry duplicated dispatch templates, restated HARD-GATE blocks, repeated verifier wiring sections (4× in implement alone), near-duplicate visual-fidelity dispatch sections (2× in implement), and prose that restates script exit codes the scripts themselves enforce.
-
-#### Why we care
-
-Every token spent on dispatch boilerplate is a token the orchestrator does not have for the actual task. Context saturation at 41% post-compact directly causes the orchestration drift G5 surfaces, the rationalization patterns G3 surfaces, and the silent-failure modes G6/G7 surface — context-starved orchestrators take shortcuts. Trimming the active footprint is an enabling fix for the rest of the v0.7.3 work.
-
-#### What we know so far
-
-- The v0.7.2 universal-dispatcher refactor extracted the actual orchestration logic into scripts: `dispatch-agent.sh`, `dispatch-companion.sh`, `round-prepare.sh`, `await-round.sh`, `third-party-finding-splitter.sh`, `verifier-fan-in.sh`. The orchestrator's residual job is small: prepare → dispatch (one Agent call per spec line) → await → fan-in → decide → loop or gate. Most of the prose in implement/SKILL.md restates what the scripts already enforce.
-- Candidate inclusion list (what skills SHOULD carry, per #310): Iron Law + scope (OWNS / DEFERS); required artifact inputs + gating; the loop shape (read → prepare → dispatch → await → fan-in → decide → loop or gate); terminal state + handoff to next route step; mode branching at the orchestration level; Red Flags (human-readable STOP list).
-- Candidate exclusion list (what skills SHOULD NOT carry): Codex/third-party dispatch shell pipelines; jobId await + tmpfile + redirect patterns; convergence narrow/broaden rule tables; HEAD~1 safety check prose (script exit code 12 is the gate); verifier sidecar schema, bypass marker schema, path validation rubrics (lives in scripts + agent bodies).
-- Per-skill targets and trim depth are Design's call. Candidate strategies Design should weigh: (a) move dispatch templates out to supporting `.md` files referenced via `!cat`; (b) extract repeated wiring into shared snippets; (c) trim restated HARD-GATE prose where the script enforces the gate; (d) consolidate near-duplicate sections.
-- Candidate acceptance approach Design should weigh: measure post-trim active footprint and confirm no regression on the v0.7.2 phase-1 acceptance suite (regression guard already captured under `## Constraints`).
-
-### G9 — Centralized version source for the plugin manifest set
+### G8 — Centralized version source for the plugin manifest set
 
 - **type:** `known-fix`
 
@@ -201,11 +181,31 @@ Hand-bumped version strings are a class of build-artifact divergence that no rev
 - Candidate enforcement approach Design should weigh: build script writes version into all consumers on every build, plus a CI check that fails if any version string diverges from the canonical source.
 - Tradeoff Design should weigh: `build/.claude-plugin/plugin.json` is currently committed and hand-edited. If build is the authoritative writer, `build/` should either be `.gitignore`d or regenerated-on-build with no manual edits permitted — which conflicts with the current "commit build/ so `git clone` install works" pattern.
 - Candidate acceptance approach Design should weigh: a single-file edit followed by `node tools/build-plugin.mjs` propagates consistent version strings across all consumer files, verifiable by a script-driven check (CI gate vs pre-commit hook is Design's call).
-- G9 is research-deferred: general build/manifest knowledge applies, no new research questions required.
+- G8 is research-deferred: general build/manifest knowledge applies, no new research questions required.
+
+### G9 — Active-skill-prompt footprint reduction across all 14 skills
+
+- **type:** `exploratory`
+
+#### Problem
+
+Active SKILL.md bodies are re-injected verbatim into the system prompt every turn. Current footprint: implement/SKILL.md ~45-50K tokens (1,451 lines), using-qrspi/SKILL.md ~33K (1,262), plan/SKILL.md ~18K (726), all 14 skills together ~190K tokens. Active implement skill alone eats ~25% of the context budget before the orchestrator does anything; after `/compact` at v0.7.2 close, context was still at 41% with implement pinned active. Skills carry duplicated dispatch templates, restated HARD-GATE blocks, repeated verifier wiring sections (4× in implement alone), near-duplicate visual-fidelity dispatch sections (2× in implement), and prose that restates script exit codes the scripts themselves enforce.
+
+#### Why we care
+
+Every token spent on dispatch boilerplate is a token the orchestrator does not have for the actual task. Context saturation at 41% post-compact directly causes the orchestration drift G5 surfaces, the rationalization patterns G3 surfaces, and the silent-failure modes G6/G7 surface — context-starved orchestrators take shortcuts. Trimming the active footprint is an enabling fix for the rest of the v0.7.3 work.
+
+#### What we know so far
+
+- The v0.7.2 universal-dispatcher refactor extracted the actual orchestration logic into scripts: `dispatch-agent.sh`, `dispatch-companion.sh`, `round-prepare.sh`, `await-round.sh`, `third-party-finding-splitter.sh`, `verifier-fan-in.sh`. The orchestrator's residual job is small: prepare → dispatch (one Agent call per spec line) → await → fan-in → decide → loop or gate. Most of the prose in implement/SKILL.md restates what the scripts already enforce.
+- Candidate inclusion list (what skills SHOULD carry, per #310): Iron Law + scope (OWNS / DEFERS); required artifact inputs + gating; the loop shape (read → prepare → dispatch → await → fan-in → decide → loop or gate); terminal state + handoff to next route step; mode branching at the orchestration level; Red Flags (human-readable STOP list).
+- Candidate exclusion list (what skills SHOULD NOT carry): Codex/third-party dispatch shell pipelines; jobId await + tmpfile + redirect patterns; convergence narrow/broaden rule tables; HEAD~1 safety check prose (script exit code 12 is the gate); verifier sidecar schema, bypass marker schema, path validation rubrics (lives in scripts + agent bodies).
+- Per-skill targets and trim depth are Design's call. Candidate strategies Design should weigh: (a) move dispatch templates out to supporting `.md` files referenced via `!cat`; (b) extract repeated wiring into shared snippets; (c) trim restated HARD-GATE prose where the script enforces the gate; (d) consolidate near-duplicate sections.
+- Candidate acceptance approach Design should weigh: measure post-trim active footprint and confirm no regression on the v0.7.2 phase-1 acceptance suite (regression guard already captured under `## Constraints`).
 
 ## Cross-Cutting Notes
 
 - **G1 → G2 prerequisite chain.** G2's sweep cannot be enforced until G1's verifier rubric is correct; otherwise reviewers re-flag and the verifier re-suppresses indefinitely.
 - **G6 / G7 share round-mechanics surface.** Both touch stage-commit creation and round-anchor mechanics; G7's "single commit per round" candidate would simplify G6's parent-validation diff. Design should weigh them coherently.
-- **G8 lands last.** Trimming skill bodies while G1-G7 are editing them creates merge churn; phasing should sequence G8 after the correctness goals settle.
-- **G9 is independent.** Version-source centralization touches `tools/build-plugin.mjs` and `.claude-plugin/`/`.github/plugin/` manifests only — no overlap with the SKILL.md-edit surface that G1-G8 work on. Can land in any phase without sequencing constraints from the other goals.
+- **G9 lands last.** Trimming skill bodies while G1-G7 are editing them creates merge churn; phasing should sequence G9 after the correctness goals settle.
+- **G8 is independent.** Version-source centralization touches `tools/build-plugin.mjs` and `.claude-plugin/`/`.github/plugin/` manifests only — no overlap with the SKILL.md-edit surface that G1-G9 work on. Can land in any phase without sequencing constraints from the other goals.
