@@ -2,6 +2,7 @@
 tier: low
 name: qrspi-finding-verifier
 tools: [Read, Write]
+allowed-tools: read, write, edit, create
 description: "Score a single reviewer finding 0–100 against the /code-review confidence rubric. Read the per-finding file + artifact + lazy-Read upstreams; Write a sidecar score file; return a brief <reviewer_tag>.<finding_id>: <score> line."
 ---
 

@@ -153,7 +153,7 @@ _test_mirror_partition_finding() {
     skills/reviewer-protocol/SKILL.md
     skills/reviewer-protocol/first-party-emission.md
     skills/reviewer-protocol/third-party-emission.md
-    skills/reviewer-protocol/codex-emission-override.md
+    skills/reviewer-protocol/stdout-fallback-emission.md
     tests/unit/test-change-type-partition.bats
     tests/fixtures/change-type-required/round-01/well-formed-claude.finding-F02.md
   )

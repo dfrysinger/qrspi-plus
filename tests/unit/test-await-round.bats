@@ -114,9 +114,15 @@ assert m[0]['status'] != 'pending', m
 python3 -c "open('$ROUND_DIR/.dispatch/big.raw','w').write('SECRET-PAYLOAD-XYZZY '*2500)"
 exit 0
 EOF
+  # Stub split materializes a per-finding file so the universal stdout-
+  # fallback (Bug 3, v0.7.2.5) sees finding artifacts on disk for the tag
+  # and short-circuits — the focus of THIS test is the output-bound
+  # contract, not the fallback path (covered by
+  # test-await-round-stdout-fallback.bats).
   STUB_SPLIT="$TEST_ROOT/stub-split.sh"
   cat > "$STUB_SPLIT" <<EOF
 #!/usr/bin/env bash
+echo "finding body" > "$ROUND_DIR/big.finding-F01.md"
 exit 0
 EOF
   chmod +x "$STUB_AWAIT" "$STUB_SPLIT"

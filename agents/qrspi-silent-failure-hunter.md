@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-silent-failure-hunter
 description: Identifies silent failures, inadequate error handling, and inappropriate fallback behavior. Runs after spec-reviewer passes, in parallel with other thoroughness reviewers.
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 

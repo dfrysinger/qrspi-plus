@@ -14,7 +14,7 @@
 # Per-task implementer dispatch shim: this script no longer drives the Codex broker
 # directly. It preserves its existing caller-facing flag surface (assembling
 # the reviewer prompt from the reviewer-protocol body, the named agent body
-# with frontmatter stripped, the codex-emission override, and a Dispatch
+# with frontmatter stripped, the stdout-fallback emission override, and a Dispatch
 # parameters block), and then forwards the assembled prompt over stdin to
 # `scripts/dispatch-companion.sh` with `--provider codex --model <id>
 # --output-file <path> --artifact-dir <dir>`. Transport selection
@@ -682,7 +682,7 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   fi
 
   REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
-  EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md"
+  EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/stdout-fallback-emission.md"
 
   # Per-vendor fallback model — used only when config.md model_routing cannot be
   # consulted (e.g., ad-hoc invocation without a run config). A loud warning is
@@ -1022,8 +1022,8 @@ assert_path_under_repo_root "agent-file" "$AGENT_FILE_ABS"
 REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
 assert_file_exists "reviewer-protocol/SKILL.md" "$REVIEWER_PROTOCOL_ABS"
 
-EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md"
-assert_file_exists "codex-emission-override.md" "$EMISSION_OVERRIDE_ABS"
+EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/stdout-fallback-emission.md"
+assert_file_exists "stdout-fallback-emission.md" "$EMISSION_OVERRIDE_ABS"
 
 # Parse the agent's `skills:` frontmatter field to discover additional
 # shared skills the agent depends on (load chain unchanged from earlier shim refactor).

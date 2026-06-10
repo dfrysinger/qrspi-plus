@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-implement-gate-reviewer
 description: Cross-task batch-gate reviewer dispatched when the user selects "Re-run all reviews" at the Implement batch gate. Reviews the combined wave of task code, specs, and test results for cross-task patterns and gate-level issues.
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 
