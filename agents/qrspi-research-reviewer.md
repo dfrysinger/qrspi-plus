@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-research-reviewer
 description: Reviews research/summary.md for artifact quality only — no scope review (Research has no scope-reviewer per canonical topology).
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol, research-isolation]
 ---
 

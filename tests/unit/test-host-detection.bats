@@ -45,7 +45,7 @@
 #     Invoke dispatch-agent.sh in full dispatch mode (no --dry-run) with
 #     QRSPI_REPO_ROOT pointing at a per-test mock directory containing:
 #       scripts/dispatch-companion.sh  (mock dispatcher, exits MOCK_TRANSPORT_EXIT)
-#       skills/reviewer-protocol/SKILL.md + codex-emission-override.md  (stubs)
+#       skills/reviewer-protocol/SKILL.md + stdout-fallback-emission.md  (stubs)
 #       agents/qrspi-spec-reviewer.md  (minimal, no extra skill deps)
 #       artifact-dir/config.md  (codex_reviews: value per test)
 #     Stderr from the full invocation is captured to a temp file so transport-marker
@@ -91,7 +91,7 @@ setup() {
   printf '## Reviewer Dispatch Contract\nReviewer protocol stub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nCodex emission override stub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/codex-emission-override.md"
+    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
 
   # Minimal agent file with no extra skill: dependencies so the skill-load
   # chain stays trivially short and the test fixture stays self-contained.

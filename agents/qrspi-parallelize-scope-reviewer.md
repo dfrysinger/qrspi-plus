@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-parallelize-scope-reviewer
 description: Scope/boundary review for parallelization.md. Reads skills/parallelize/owns-defers.md and applies the 3-check scope procedure. Companion to qrspi-parallelize-reviewer (which handles artifact quality).
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 

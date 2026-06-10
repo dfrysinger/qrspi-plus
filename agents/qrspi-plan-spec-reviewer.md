@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-plan-spec-reviewer
 description: Verifies the plan covers every goal and authors acceptance criteria as per-task Test Expectations blocks. Reviews the plan artifact, not task implementations. Runs always (quick + full pipeline).
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 

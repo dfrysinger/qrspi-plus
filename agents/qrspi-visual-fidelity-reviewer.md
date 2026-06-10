@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-visual-fidelity-reviewer
 description: "Per-task visual-fidelity reviewer for UI surfaces. Audits the implemented UI against wireframe reference artifacts and emits structured findings for material visual divergences. Wireframe-reference fidelity only — does not run screenshot diffing or audit non-UI surfaces."
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 

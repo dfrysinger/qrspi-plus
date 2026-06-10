@@ -2,6 +2,7 @@
 tier: low
 name: qrspi-scope-tagger
 tools: [Read, Write]
+allowed-tools: read, write, edit, create
 description: "Derive one scope_tag per kept finding (post-verifier-fan-in) and emit reviews/{step}/round-NN-scope-set.txt. Multi-file artifacts: tag = referenced_files path. Single-file artifacts: tag = enclosing H2 heading text. Write-only — never mutates finding files or sidecars."
 ---
 

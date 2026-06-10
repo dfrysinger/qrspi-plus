@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-design-scope-reviewer
 description: Scope/boundary review for design.md. Reads skills/design/owns-defers.md and applies the 3-check scope procedure. Companion to qrspi-design-reviewer (which handles artifact quality).
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 

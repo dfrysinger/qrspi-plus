@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-integration-reviewer
 description: Reviews merged code from multiple implementation tasks for cross-task integration issues. Dispatched from the Integrate phase after all tasks are merged.
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 

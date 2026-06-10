@@ -248,6 +248,6 @@ setup_file() {
   count=$(grep -lF "reviewer-dispatch-prose.md" "$REPO_ROOT/skills/"*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
   # Expect at least 4 step skills routing through the shared reviewer-dispatch include.
   [ "$count" -ge 4 ]
-  # The reviewer-protocol codex-emission-override is the canonical contract owner.
-  [ -f "$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md" ]
+  # The reviewer-protocol stdout-fallback-emission is the canonical contract owner.
+  [ -f "$REPO_ROOT/skills/reviewer-protocol/stdout-fallback-emission.md" ]
 }

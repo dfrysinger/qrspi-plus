@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-code-simplifier
 description: Identifies opportunities to simplify code while preserving all functionality. Deep mode only. Runs after all correctness reviewers pass. Simplifications are suggestions, not blocking.
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 
