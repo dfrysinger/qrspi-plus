@@ -76,6 +76,18 @@ if [[ $# -lt 1 ]]; then
   exit 2
 fi
 
+# Reject any positional that starts with '-' — these are always a misuse
+# (typo'd flag silently consumed as <round-dir>). Closes the class-of-bug
+# v0.7.2.4 hotfix fixes elsewhere; see tests/unit/test-verifier-fan-in-script.bats
+# § "argument hardening".
+case "$1" in
+  -*)
+    echo "verifier-fan-in: positional <round-dir> must not begin with '-' (got: $1)" >&2
+    usage
+    exit 2
+    ;;
+esac
+
 ROUND_DIR="$1"
 
 if [[ ! -d "$ROUND_DIR" ]]; then

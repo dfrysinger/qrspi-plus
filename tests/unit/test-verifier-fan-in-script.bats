@@ -520,3 +520,25 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"awk"* || "$stderr" == *"awk"* ]]
 }
+
+# ===========================================================================
+# Argument hardening (v0.7.2.4 hotfix) — reject silent flag-typo consumption
+# ===========================================================================
+
+# Test expectation: a `--`-prefixed positional must be rejected with exit 2 and
+# a clear "must not begin with '-'" diagnostic — not silently consumed as
+# <round-dir> (which would then surface as a confusing "does not exist" or
+# downstream JSON error). Closes the class-of-bug v0.7.2.4 fixes across the
+# script suite.
+@test "argument hardening: --flag-shaped positional <round-dir> is rejected (exit 2)" {
+  run bash "$SCRIPT" --output foo
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"must not begin with '-'"* ]]
+  [[ "$output" == *"--output"* ]]
+}
+
+@test "argument hardening: legit positional <round-dir> still works after guard (non-existent dir → exit 2 with 'does not exist')" {
+  run bash "$SCRIPT" /nonexistent-round-dir-for-guard-test
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"does not exist"* ]]
+}

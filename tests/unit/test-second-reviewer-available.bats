@@ -327,7 +327,7 @@ teardown() {
   local _status=0
   bash -c "
     export COPILOT_CLI=1
-    \"$SECOND_REVIEWER\" nonexistent-vendor-xyz
+    \"$SECOND_REVIEWER\" --vendor nonexistent-vendor-xyz
   " >/dev/null 2>"$_stderr_file" || _status=$?
   [ "$_status" -ne 0 ]
   grep -q '^\[second-reviewer-unavailable\]' "$_stderr_file"
@@ -348,7 +348,7 @@ teardown() {
   local _stderr_file="$TMP_DIR/unavail-override-vendor.txt"
   bash -c "
     export COPILOT_CLI=1
-    \"$SECOND_REVIEWER\" nonexistent-vendor-xyz
+    \"$SECOND_REVIEWER\" --vendor nonexistent-vendor-xyz
   " >/dev/null 2>"$_stderr_file" || true
   grep -q 'vendor=nonexistent-vendor-xyz' "$_stderr_file"
 }
@@ -364,7 +364,7 @@ teardown() {
   local _status=0
   bash -c "
     export COPILOT_CLI=1
-    \"$SECOND_REVIEWER\" none
+    \"$SECOND_REVIEWER\" --vendor none
   " >/dev/null 2>"$_stderr_file" || _status=$?
 
   # Must exit non-zero — 'none' is explicitly unavailable
@@ -392,7 +392,7 @@ teardown() {
   # Test expectation: COPILOT_CLI=1 with explicit 'openai-codex' override exits 0.
   run bash -c "
     export COPILOT_CLI=1
-    \"$SECOND_REVIEWER\" openai-codex
+    \"$SECOND_REVIEWER\" --vendor openai-codex
   "
   [ "$status" -eq 0 ]
 }
@@ -404,7 +404,7 @@ teardown() {
   # equal the primary — that distinctness check lives at dispatch time, not here.
   run bash -c "
     export COPILOT_CLI=1
-    \"$SECOND_REVIEWER\" anthropic-claude
+    \"$SECOND_REVIEWER\" --vendor anthropic-claude
   "
   [ "$status" -eq 0 ]
 }
@@ -431,7 +431,7 @@ teardown() {
   # anthropic-claude — the probe should not care and should exit 0.
   run bash -c "
     export COPILOT_CLI=1
-    \"$SECOND_REVIEWER\" anthropic-claude
+    \"$SECOND_REVIEWER\" --vendor anthropic-claude
   "
   [ "$status" -eq 0 ]
 }
@@ -491,7 +491,7 @@ teardown() {
   local _status=0
   bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
-    \"$SECOND_REVIEWER\" openai-codex
+    \"$SECOND_REVIEWER\" --vendor openai-codex
   " >/dev/null 2>"$_stderr_file" || _status=$?
 
   # Must exit non-zero — an unknown host is never available
@@ -554,7 +554,7 @@ EOF
   local _status=0
   bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR CODEX_CLI
-    \"$_work_dir/second-reviewer-available.sh\" openai-codex
+    \"$_work_dir/second-reviewer-available.sh\" --vendor openai-codex
   " >/dev/null 2>"$_stderr_file" || _status=$?
 
   # Must exit non-zero — an empty default vendor means no configured second reviewer
@@ -569,4 +569,113 @@ EOF
   # Diagnostic must name the detected host and the requested vendor (naming contract)
   grep -q 'host=' "$_stderr_file"
   grep -q 'vendor=' "$_stderr_file"
+}
+
+# ===========================================================================
+# Argument hardening (v0.7.2.4 hotfix) — reject silent flag-typo consumption
+# ===========================================================================
+
+# Test expectation: a `--`-prefixed positional (e.g. `--artifact-dir foo`) must
+# be rejected with exit 2 and a clear "unknown flag" diagnostic — not silently
+# consumed as a vendor name. This is the regression test for the v0.7.2.4
+# class-of-bug where a typo'd flag flowed into vendor lookup and produced the
+# misleading "no reachable second reviewer" verdict.
+@test "argument hardening: --flag-shaped positional is rejected (unknown flag, exit 2)" {
+  run bash -c "
+    export COPILOT_CLI=1
+    \"$SECOND_REVIEWER\" --artifact-dir foo
+  "
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"unknown flag"* ]]
+  [[ "$output" == *"--artifact-dir"* ]]
+}
+
+# Test expectation: a bare positional vendor argument is rejected (the legacy
+# back-compat form was deliberately dropped — --vendor is the only accepted form).
+@test "argument hardening: bare positional vendor is rejected (positional not accepted, exit 2)" {
+  run bash -c "
+    export COPILOT_CLI=1
+    \"$SECOND_REVIEWER\" openai-codex
+  "
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"positional arguments not accepted"* ]]
+}
+
+# Test expectation: --vendor with no value is rejected with exit 2.
+@test "argument hardening: --vendor with no value is rejected (exit 2)" {
+  run bash -c "
+    export COPILOT_CLI=1
+    \"$SECOND_REVIEWER\" --vendor
+  "
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--vendor requires a value"* ]]
+}
+
+# Test expectation: --vendor=<value> equals form is accepted.
+@test "argument hardening: --vendor=<value> equals-form is accepted (exit 0)" {
+  run bash -c "
+    export COPILOT_CLI=1
+    \"$SECOND_REVIEWER\" --vendor=openai-codex
+  "
+  [ "$status" -eq 0 ]
+  [ "$output" = "openai-codex" ]
+}
+
+# Test expectation: unknown flag (any --xxx other than --vendor) exits 2.
+@test "argument hardening: unknown --flag is rejected (exit 2)" {
+  run bash -c "
+    export COPILOT_CLI=1
+    \"$SECOND_REVIEWER\" --bogus-flag
+  "
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"unknown flag"* ]]
+}
+
+# Test expectation: --vendor= (equals form with empty value) is rejected.
+# Codex review r1 finding: empty equals-form was silently falling back to
+# default, masking typos of the form `--vendor=$UNSET_VAR`.
+@test "argument hardening: --vendor= (empty equals-form) is rejected (exit 2)" {
+  run bash -c "
+    export COPILOT_CLI=1
+    \"$SECOND_REVIEWER\" --vendor=
+  "
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--vendor requires a non-empty value"* ]]
+}
+
+# Test expectation: --vendor "" (empty space-form value) is rejected.
+@test "argument hardening: --vendor \"\" (empty space-form) is rejected (exit 2)" {
+  run bash -c "
+    export COPILOT_CLI=1
+    \"$SECOND_REVIEWER\" --vendor ''
+  "
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--vendor requires a non-empty value"* ]]
+}
+
+# Test expectation: --vendor --bogus (flag-shaped vendor value) is rejected
+# with exit 2 — not exit 1 (substantive unavailability), which would
+# reintroduce the misleading-error class the v0.7.2.4 hotfix exists to fix.
+# Codex review r1 finding: parser was accepting --bogus as a vendor value,
+# then reporting "unrecognized vendor" via exit 1 (substantive) instead of
+# rejecting at the invocation boundary via exit 2.
+@test "argument hardening: --vendor --bogus (flag-shaped value) is rejected (exit 2)" {
+  run bash -c "
+    export COPILOT_CLI=1
+    \"$SECOND_REVIEWER\" --vendor --bogus
+  "
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--vendor value must not begin with '-'"* ]]
+  [[ "$output" == *"--bogus"* ]]
+}
+
+# Test expectation: --vendor=--bogus (flag-shaped value via equals form) is
+# rejected with exit 2 — same class as above via the equals-form parse path.
+@test "argument hardening: --vendor=--bogus (flag-shaped equals-form) is rejected (exit 2)" {
+  run bash -c "
+    export COPILOT_CLI=1
+    \"$SECOND_REVIEWER\" --vendor=--bogus
+  "
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--vendor value must not begin with '-'"* ]]
 }
