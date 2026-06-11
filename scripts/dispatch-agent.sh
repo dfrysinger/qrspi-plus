@@ -689,7 +689,7 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   # emitted so the operator knows resolution degraded to a default.
   _fallback_model_for_vendor() {
     case "$1" in
-      codex) printf 'gpt-5-codex\n' ;;
+      codex) printf 'gpt-5.3-codex\n' ;;
       *)     printf 'claude-sonnet-4.6\n' ;;
     esac
   }
