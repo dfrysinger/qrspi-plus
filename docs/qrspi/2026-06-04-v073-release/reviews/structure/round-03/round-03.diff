@@ -1,0 +1,51 @@
+diff --git a/docs/qrspi/2026-06-04-v073-release/structure.md b/docs/qrspi/2026-06-04-v073-release/structure.md
+index 0d6143b..9e92c1f 100644
+--- a/docs/qrspi/2026-06-04-v073-release/structure.md
++++ b/docs/qrspi/2026-06-04-v073-release/structure.md
+@@ -85,7 +85,7 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ 
+ | File | Action | Responsibility | Goal IDs |
+ |------|--------|---------------|----------|
+-| `scripts/orchestration-boundary-check.sh` | Create | Accept `--phase <directory-name> --artifact-dir <path>`. Run `git status --porcelain` against the workspace (excluding the `reviews/` path tree). Run `git log <phase-base>..HEAD --format='%H %an' \| awk '$2 !~ /^qrspi-/ {print $1}'` against the integration branch's phase range to list non-subagent commits. Write findings to `<artifact-dir>/reviews/<phase>/orchestration-boundary.md`. Exit 0 on both clean and dirty (fail-soft; populated file is the signal). Read the phase-base SHA from the G6 wave-state sidecar tree at `<artifact-dir>/reviews/implement/wave-state/wave-W1-expected-parents.txt` (`integration_base_sha=` field). Plan picks the concrete read site within the script; structural contract is the named path under `reviews/implement/wave-state/`. | G5 |
++| `scripts/orchestration-boundary-check.sh` | Create | Accept `--phase <directory-name> --artifact-dir <path>`. Run `git status --porcelain` against the workspace (excluding the `reviews/` path tree). Run `git log <phase-base>..HEAD --format='%H %an' \| awk '$2 !~ /^qrspi-/ {print $1}'` against the integration branch's phase range to list non-subagent commits. Write findings to `<artifact-dir>/reviews/<phase>/orchestration-boundary.md`. Exit 0 on both clean and dirty (fail-soft; populated file is the signal). Phase-base SHA source is per phase and resolved by Plan (design.md G5): for `--phase implement` the wave-1 G6 sidecar's `integration_base_sha=` field IS the phase base by construction; for `--phase integration` and `--phase test` the phase-base anchor is recorded at phase start by the phase's own SKILL (Plan task-carving's call) on the stage-commit chain. Structure commits to the per-phase shape (one recoverable anchor per phase, readable from a known path the phase owns); per-phase concrete read paths and capture sites are Plan's call. | G5 |
+ | `scripts/dispatch-agent.sh` | Modify | (Listed under CD-2.) Wrap dispatched subagent git commands with the `GIT_AUTHOR_NAME=qrspi-<agent>` / `GIT_AUTHOR_EMAIL=bot@qrspi.local` env so subagent commits carry the marker the boundary check filters on. | G5 |
+ | `skills/implement/SKILL.md` | Modify | Insert verbatim `### Step N — Orchestration boundary observability check` before the batch-gate step. Insert the verbatim Batch Gate menu addition (interactive) and autopilot-branched-default block. | G5 |
+ | `skills/integrate/SKILL.md` | Modify | Insert the verbatim § Orchestration Boundary section (HARD-RULE + Integrate-specific responsibility list + does-NOT list + rationale). Insert the verbatim Step-N observability-check block + Batch Gate additions (same as Implement). | G5 |
+@@ -323,15 +323,19 @@ These blocks specify the module-boundary contracts (CLI surface, stdout shape, e
+ #      branch, piped through `awk '$2 !~ /^qrspi-/ {print $1}'` to list
+ #      non-subagent-authored commits. (git's --author has no negation operator;
+ #      the post-filter awk does the negation.)
+-#   3. <phase-base> SHA read from the G6 wave-state sidecar tree:
+-#      <artifact-dir>/reviews/implement/wave-state/wave-W<N>-expected-parents.txt
+-#      The `integration_base_sha=` field of the wave-1 sidecar IS the
+-#      phase-base SHA (written by G6's --capture step at the first wave's
+-#      pre-merge moment, persistent across the phase, recoverable by
+-#      re-running --capture). The structural contract is the named path
+-#      under `reviews/implement/wave-state/`; the concrete call site
+-#      (which line of the script reads it, in which step) is Plan's
+-#      task-carving call.
++#   3. <phase-base> SHA source is per phase and resolved by Plan (design.md G5):
++#      - `--phase implement`: read `integration_base_sha=` from the wave-1 G6
++#        sidecar at `<artifact-dir>/reviews/implement/wave-state/wave-W1-expected-parents.txt`.
++#        By construction, G6's --capture step records the integration base at
++#        the first wave's pre-merge moment; the wave-1 sidecar IS the Implement
++#        phase base, persistent across the phase, recoverable by re-running
++#        --capture.
++#      - `--phase integration`, `--phase test`: phase-base anchor is recorded
++#        at phase start by the phase's own SKILL on the stage-commit chain.
++#        Concrete read path is per-phase and Plan's task-carving call (design.md
++#        G5: "recoverable phase/start anchor"). Structure commits to the shape:
++#        one recoverable anchor per phase, readable from a known path the phase
++#        owns; per-phase concrete read paths and capture sites are Plan's call.
+ #
+ # Output: <artifact-dir>/reviews/<phase>/orchestration-boundary.md
+ #   Empty file ≡ clean discipline.
+@@ -567,7 +571,7 @@ flowchart TB
+ 
+   PHASES --> OBC
+   OBC --> OBR
+-  OBC -. reads phase-base SHA .-> SIDECAR
++  OBC -. reads phase-base SHA (per-phase source) .-> SIDECAR
+   OBR -. surfaces in batch gate .-> OC
+   DA -. GIT_AUTHOR_NAME=qrspi-&lt;agent&gt; .-> OBC
+ 

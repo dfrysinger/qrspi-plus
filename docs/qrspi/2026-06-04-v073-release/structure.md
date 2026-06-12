@@ -85,11 +85,11 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
 
 | File | Action | Responsibility | Goal IDs |
 |------|--------|---------------|----------|
-| `scripts/orchestration-boundary-check.sh` | Create | Accept `--phase <directory-name> --artifact-dir <path>`. Run `git status --porcelain` against the workspace (excluding the `reviews/` path tree). Run `git log <phase-base>..HEAD --format='%H %an' \| awk '$2 !~ /^qrspi-/ {print $1}'` against the integration branch's phase range to list non-subagent commits. Write findings to `<artifact-dir>/reviews/<phase>/orchestration-boundary.md`. Exit 0 on both clean and dirty (fail-soft; populated file is the signal). Phase-base SHA source is per phase and resolved by Plan (design.md G5): for `--phase implement` the wave-1 G6 sidecar's `integration_base_sha=` field IS the phase base by construction; for `--phase integration` and `--phase test` the phase-base anchor is recorded at phase start by the phase's own SKILL (Plan task-carving's call) on the stage-commit chain. Structure commits to the per-phase shape (one recoverable anchor per phase, readable from a known path the phase owns); per-phase concrete read paths and capture sites are Plan's call. | G5 |
+| `scripts/orchestration-boundary-check.sh` | Create | Accept `--phase <directory-name> --artifact-dir <path>`. Run `git status --porcelain` against the workspace (excluding the `reviews/` path tree). Run `git log <phase-base>..HEAD --format='%H %an' \| awk '$2 !~ /^qrspi-/ {print $1}'` against the integration branch's phase range to list non-subagent commits. Write findings to `<artifact-dir>/reviews/<phase>/orchestration-boundary.md`. Exit 0 on both clean and dirty (fail-soft; populated file is the signal). Phase-base SHA source by phase (Structure-owned path map): `--phase implement` reads `integration_base_sha=` from `<artifact-dir>/reviews/implement/wave-state/wave-W1-expected-parents.txt` (G6 sidecar, written by --capture at first wave's pre-merge moment); `--phase integration` reads `integration_base_sha=` from `<artifact-dir>/reviews/integration/phase-base.txt` (single-line file `integration_base_sha=<SHA>`); `--phase test` reads from `<artifact-dir>/reviews/test/phase-base.txt` (same format). Each phase's SKILL writes its own phase-base.txt at phase start (capture step); concrete call site within each SKILL is Plan's task-carving call. | G5 |
 | `scripts/dispatch-agent.sh` | Modify | (Listed under CD-2.) Wrap dispatched subagent git commands with the `GIT_AUTHOR_NAME=qrspi-<agent>` / `GIT_AUTHOR_EMAIL=bot@qrspi.local` env so subagent commits carry the marker the boundary check filters on. | G5 |
 | `skills/implement/SKILL.md` | Modify | Insert verbatim `### Step N — Orchestration boundary observability check` before the batch-gate step. Insert the verbatim Batch Gate menu addition (interactive) and autopilot-branched-default block. | G5 |
-| `skills/integrate/SKILL.md` | Modify | Insert the verbatim § Orchestration Boundary section (HARD-RULE + Integrate-specific responsibility list + does-NOT list + rationale). Insert the verbatim Step-N observability-check block + Batch Gate additions (same as Implement). | G5 |
-| `skills/test/SKILL.md` | Modify | Insert the verbatim § Orchestration Boundary section (HARD-RULE + Test-specific responsibility list, including the `reviews/test/round-NN-results.md` allowlisted-write exception + rationale). Insert the verbatim Step-N observability-check block + Batch Gate additions. | G5 |
+| `skills/integrate/SKILL.md` | Modify | Insert the verbatim § Orchestration Boundary section (HARD-RULE + Integrate-specific responsibility list + does-NOT list + rationale). Insert the verbatim Step-N observability-check block + Batch Gate additions (same as Implement). At phase start, write `reviews/integration/phase-base.txt` with `integration_base_sha=<HEAD-SHA-at-phase-entry>` (G5 phase-base anchor; consumed by `orchestration-boundary-check.sh --phase integration`). | G5 |
+| `skills/test/SKILL.md` | Modify | Insert the verbatim § Orchestration Boundary section (HARD-RULE + Test-specific responsibility list, including the `reviews/test/round-NN-results.md` allowlisted-write exception + rationale). Insert the verbatim Step-N observability-check block + Batch Gate additions. At phase start, write `reviews/test/phase-base.txt` with `integration_base_sha=<HEAD-SHA-at-phase-entry>` (G5 phase-base anchor; consumed by `orchestration-boundary-check.sh --phase test`). | G5 |
 | `skills/using-qrspi/SKILL.md` | Modify | Insert the verbatim `### Orchestration Boundary applies to every phase` cross-cutting note. | G5 |
 | `skills/implementer-protocol/SKILL.md` | Modify | Add the new fix-task mode `revert-orchestration-drift` to the existing fix-task spec: read the violation report, `git revert --no-edit <SHA>` for each non-subagent commit in reverse chronological order, commit under the subagent's marker, write `reviews/<phase>/orchestration-boundary-revert.md`. | G5 |
 | `tests/unit/test-orchestration-boundary-check.bats` | Create | Bats fixtures: clean integration branch (empty report), one non-subagent commit (one entry), uncommitted workspace edits (entry, with `reviews/` path tree excluded), `--phase` accepts directory-name verbatim (no `integrate`→`integration` normalization). | G5 |
@@ -323,19 +323,25 @@ These blocks specify the module-boundary contracts (CLI surface, stdout shape, e
 #      branch, piped through `awk '$2 !~ /^qrspi-/ {print $1}'` to list
 #      non-subagent-authored commits. (git's --author has no negation operator;
 #      the post-filter awk does the negation.)
-#   3. <phase-base> SHA source is per phase and resolved by Plan (design.md G5):
-#      - `--phase implement`: read `integration_base_sha=` from the wave-1 G6
+#   3. <phase-base> SHA source by phase (Structure-owned path map):
+#      - `--phase implement`: read `integration_base_sha=` from the G6 wave-1
 #        sidecar at `<artifact-dir>/reviews/implement/wave-state/wave-W1-expected-parents.txt`.
 #        By construction, G6's --capture step records the integration base at
 #        the first wave's pre-merge moment; the wave-1 sidecar IS the Implement
 #        phase base, persistent across the phase, recoverable by re-running
 #        --capture.
-#      - `--phase integration`, `--phase test`: phase-base anchor is recorded
-#        at phase start by the phase's own SKILL on the stage-commit chain.
-#        Concrete read path is per-phase and Plan's task-carving call (design.md
-#        G5: "recoverable phase/start anchor"). Structure commits to the shape:
-#        one recoverable anchor per phase, readable from a known path the phase
-#        owns; per-phase concrete read paths and capture sites are Plan's call.
+#      - `--phase integration`: read `integration_base_sha=` from
+#        `<artifact-dir>/reviews/integration/phase-base.txt`.
+#      - `--phase test`: read `integration_base_sha=` from
+#        `<artifact-dir>/reviews/test/phase-base.txt`.
+#
+#   phase-base.txt format (single-line, key=value):
+#      integration_base_sha=<40-char SHA>
+#
+#   Each phase's SKILL (Integrate, Test) writes its own phase-base.txt at the
+#   phase-start capture step (analog of G6's --capture for Implement). The
+#   concrete call site (which line of the SKILL writes the file, in which
+#   step) is Plan's task-carving call.
 #
 # Output: <artifact-dir>/reviews/<phase>/orchestration-boundary.md
 #   Empty file ≡ clean discipline.
@@ -540,7 +546,9 @@ flowchart TB
   subgraph G5Boundary["G5 orchestration-boundary observability"]
     OBC["scripts/orchestration-boundary-check.sh<br/><b>NEW (G5)</b>"]
     OBR["reviews/&lt;phase&gt;/orchestration-boundary.md"]
-    PHASES["skills/{implement,integrate,test}/SKILL.md<br/>(Step N + Batch Gate additions)"]
+    PHASES["skills/{implement,integrate,test}/SKILL.md<br/>(Step N + Batch Gate additions;<br/>integrate/test also write phase-base.txt)"]
+    PB_INT["reviews/integration/phase-base.txt<br/><b>NEW (G5)</b><br/>integration_base_sha=&lt;SHA&gt;"]
+    PB_TEST["reviews/test/phase-base.txt<br/><b>NEW (G5)</b><br/>integration_base_sha=&lt;SHA&gt;"]
   end
 
   subgraph G6Validation["G6 stage-commit parent fence"]
@@ -570,13 +578,17 @@ flowchart TB
   WAVE -. halt on non-zero .-> OC
 
   PHASES --> OBC
+  PHASES -. writes (integrate at phase start) .-> PB_INT
+  PHASES -. writes (test at phase start) .-> PB_TEST
   OBC --> OBR
-  OBC -. reads phase-base SHA (per-phase source) .-> SIDECAR
+  OBC -. reads phase-base (--phase implement) .-> SIDECAR
+  OBC -. reads phase-base (--phase integration) .-> PB_INT
+  OBC -. reads phase-base (--phase test) .-> PB_TEST
   OBR -. surfaces in batch gate .-> OC
   DA -. GIT_AUTHOR_NAME=qrspi-&lt;agent&gt; .-> OBC
 
   classDef new fill:#d6f5d6,stroke:#3a8b3a,stroke-width:2px;
-  class UP,RP,DAM,OBC,VSCP new;
+  class UP,RP,DAM,OBC,VSCP,PB_INT,PB_TEST new;
 ```
 
 Static-analysis / build-time surface (G2 ID-hygiene, CD-3 R8 rule, G8 version-source, G9 footprint):
