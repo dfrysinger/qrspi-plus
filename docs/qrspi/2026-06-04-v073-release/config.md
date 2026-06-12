@@ -17,4 +17,5 @@ route:
 verifier_enabled: true
 scope_tagger_enabled: true
 visual_fidelity_required: false
+codex_reviews: true
 ---

@@ -1,5 +1,5 @@
 ---
-status: approved-pending-review
+status: approved
 ---
 
 # Design: qrspi-plus v0.7.3 — pipeline correctness + prompt-footprint reduction
