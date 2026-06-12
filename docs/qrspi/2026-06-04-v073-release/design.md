@@ -502,7 +502,7 @@ The fix is also tiny — one ref expression per step-12 invocation across the af
 
 **Solution.** Four coordinated passes, applied in order across all 14 active skills:
 
-**Pass 1 — Three-tier content placement.** Apply the placement rule uniformly:
+**Pass 1 — Three-tier content placement.** Apply the placement rule uniformly. The architectural decision is the four reuse tiers below (universal / multi-skill-shared / skill-specific / on-demand-optional) and which kind of content belongs to each tier; the specific file paths in the "Lives where" column are the established conventional locations and may be refined by Structure if needed (the tier identity is what Design fixes, not the literal path string).
 
 | Content type | Lives where | Why |
 |---|---|---|

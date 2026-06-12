@@ -1,0 +1,54 @@
+[
+  {
+    "agent": "qrspi-design-reviewer",
+    "dispatch_spec": {
+      "host": "copilot-cli",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/design/round-06//.dispatch/quality-claude.prompt",
+      "subagent_type": "qrspi-design-reviewer",
+      "vendor": "claude"
+    },
+    "mode": "first_party",
+    "status": "complete-with-findings",
+    "tag": "quality-claude"
+  },
+  {
+    "agent": "qrspi-design-scope-reviewer",
+    "dispatch_spec": {
+      "host": "copilot-cli",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/design/round-06//.dispatch/scope-claude.prompt",
+      "subagent_type": "qrspi-design-scope-reviewer",
+      "vendor": "claude"
+    },
+    "mode": "first_party",
+    "status": "complete",
+    "tag": "scope-claude"
+  },
+  {
+    "agent": "qrspi-design-reviewer",
+    "dispatch_spec": {
+      "host": "copilot-cli",
+      "model": "gpt-5.3-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/design/round-06//.dispatch/quality-codex.prompt",
+      "subagent_type": "qrspi-design-reviewer",
+      "vendor": "codex"
+    },
+    "mode": "first_party",
+    "status": "complete-with-findings",
+    "tag": "quality-codex"
+  },
+  {
+    "agent": "qrspi-design-scope-reviewer",
+    "dispatch_spec": {
+      "host": "copilot-cli",
+      "model": "gpt-5.3-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/design/round-06//.dispatch/scope-codex.prompt",
+      "subagent_type": "qrspi-design-scope-reviewer",
+      "vendor": "codex"
+    },
+    "mode": "first_party",
+    "status": "complete-with-findings",
+    "tag": "scope-codex"
+  }
+]
