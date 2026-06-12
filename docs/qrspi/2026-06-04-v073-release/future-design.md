@@ -1,5 +1,5 @@
 ---
-status: empty
+status: approved
 ---
 
 # Future Design: qrspi-plus v0.7.3

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Roadmap: qrspi-plus v0.7.3

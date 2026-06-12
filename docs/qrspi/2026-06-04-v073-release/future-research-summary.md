@@ -1,5 +1,5 @@
 ---
-status: empty
+status: approved
 ---
 
 # Future Research Summary: qrspi-plus v0.7.3
