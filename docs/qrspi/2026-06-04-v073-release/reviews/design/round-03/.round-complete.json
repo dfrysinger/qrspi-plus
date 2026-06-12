@@ -1,0 +1,23 @@
+{
+  "awaited": 0,
+  "clean": 1,
+  "entries": [
+    {
+      "status": "complete-with-findings",
+      "tag": "quality-claude"
+    },
+    {
+      "status": "complete",
+      "tag": "scope-claude"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "quality-codex"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "scope-codex"
+    }
+  ],
+  "with_findings": 3
+}
