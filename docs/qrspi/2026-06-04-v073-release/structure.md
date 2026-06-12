@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Structure: qrspi-plus v0.7.3 — pipeline correctness + prompt-footprint reduction
