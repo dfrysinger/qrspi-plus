@@ -705,7 +705,7 @@ Sweep-task findings (`agents/qrspi-plan-reviewer.md` § Sweep-task detection, pe
 
 `{step}` is the canonical step name (e.g. `goals`, `design`, `plan`, `replan`). `NN` is the zero-padded round number. Per-reviewer parallelism is preserved: each reviewer writes its own files into the shared round directory, and per-finding filenames are unique by reviewer tag + finding number so concurrent reviewers never race on the same file.
 
-**Per-finding file format.** Each finding file conforms to the 5-field schema defined in the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill. The finding-file format, clean-file format, and sidecar (`.score.yml`) format are specified there; this skill defers to that contract rather than re-enumerating.
+**Per-finding file format.** Each finding file conforms to the 5-field schema defined in the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill. The finding-file format, clean-file format, and sidecar (`.score.md`) format are specified there; this skill defers to that contract rather than re-enumerating.
 
 **Subagent return value (brief).** After writing per-finding files, the reviewer subagent returns a single brief summary string to main chat. The summary MUST NOT include the finding text — main chat reads the files when it needs the details. Required summary form:
 
@@ -724,14 +724,18 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
 **Apply-fix protocol.** When main chat applies fixes after a round:
 
-1. **List per-reviewer outputs** for the round (nullglob-safe, fully path-qualified):
+1. **List per-reviewer outputs** for the round (nullglob-safe, fully path-qualified). The glob `*.finding-*.md` also captures `<tag>.finding-FNN.score.md` sidecars (they end in `.md`), so filter them out — sidecars are paired to findings by stem in step 5, not enumerated as findings here. This mirrors the production filter in `scripts/verifier-fan-in.sh` ("Exclude verifier sidecars"):
    ```bash
    shopt -s nullglob
    D="reviews/{step}/round-NN"
-   findings=( "$D"/*.finding-*.md )
+   findings=()
+   for f in "$D"/*.finding-*.md; do
+     [[ "$f" == *.score.md ]] && continue
+     findings+=("$f")
+   done
    cleans=( "$D"/*.clean.md )
    ```
-   Sidecars (`*.score.yml`) are intentionally not enumerated here; they're discovered per-finding at step 5 (round assembly).
+   Sidecars (`*.score.md`) are intentionally not enumerated here; they're discovered per-finding at step 5 (round assembly).
 
 2. **Per-expected-tag schema-violation guard.** Evaluate the Expected-Reviewer Matrix for the current step against `config.md.codex_reviews`. For each expected tag, assert step 1 (per-reviewer output enumeration) produced at least one of (`<tag>.finding-*.md`, `<tag>.clean.md`). Any expected tag with zero matches → present the §3 failure menu. Step 2 also fails loud on: malformed YAML, missing required fields, malformed `change_type` enum values that are out-of-enum (not one of style/clarity/correctness/scope/intent), unrouted `(step, tag)` route (no route entry in the Expected-Reviewer Matrix for this combination). Trailing-newline malformations are normalized (deterministic strip+append-`\n`) with a one-line audit warning, NOT a hard fail.
 
@@ -799,7 +803,7 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
      description:   verify <reviewer_tag>.<finding_id>
      prompt: |
        finding_file_path: <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md
-       sidecar_path:      <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.score.yml
+       sidecar_path:      <abs_path>/reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.score.md
        artifact_path:     <abs_path>/<step>.md
        diff_file_path:    <abs_path>/reviews/{step}/round-NN.diff
        upstream_paths: |
@@ -811,7 +815,7 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
 
    Parameter derivation (per spec §1 `## Input contract`, verbatim):
      - finding_file_path: enumerated by Step 1's nullglob loop (absolute path).
-     - sidecar_path:      finding_file_path with `.md` → `.score.yml`.
+     - sidecar_path:      finding_file_path with `.md` → `.score.md`.
      - artifact_path:     `<run_dir>/<step>.md` where <step> ∈
                           {goals, questions, research, design, phasing,
                            structure, parallelize, replan}.
@@ -846,7 +850,7 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
    scored=0; failed=0; dropped=0
    clean_count=${#cleans[@]}
    for f in "${findings[@]}"; do
-     sc="${f%.md}.score.yml"
+     sc="${f%.md}.score.md"
      [[ -f $sc ]] || continue
      if grep -q '^score: VERIFY_FAILED' "$sc"; then
        failed=$((failed + 1))
@@ -883,9 +887,9 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
      for f in "${findings[@]}"; do
        echo "<!-- @@FINDING: $(basename "$f" .md) @@ -->"
        cat "$f"
-       sc="${f%.md}.score.yml"
+       sc="${f%.md}.score.md"
        if [[ -f $sc ]]; then
-         echo "<!-- @@SCORE: $(basename "$sc" .yml) @@ -->"
+         echo "<!-- @@SCORE: $(basename "$sc" .md) @@ -->"
          cat "$sc"
        fi
      done
@@ -1069,7 +1073,7 @@ What would you like to do?
   2. retry  — re-run the failed step. For "VERIFY_FAILED" / "missing
               sidecar": re-dispatch only the failing verifiers. For
               "reviewer produced no output": delete the tag's
-              `*.finding-*.md`, `*.score.yml`, and `*.clean.md` for
+              `*.finding-*.md`, `*.score.md`, and `*.clean.md` for
               the round (if any), then re-prompt the reviewer.
   3. stop   — abort the protocol with no commit. The round directory
               remains on disk for inspection.

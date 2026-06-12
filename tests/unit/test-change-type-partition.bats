@@ -32,7 +32,8 @@ setup() {
   shopt -s nullglob
   local kept=0 dropped=0
   for f in "$D"/*.finding-*.md; do
-    local sc="${f%.md}.score.yml"
+    [[ "$f" == *.score.md ]] && continue
+    local sc="${f%.md}.score.md"
     local ct score
     ct=$(awk -F': *' '/^change_type:/ {print $2; exit}' "$f")
     score=$(awk -F': *' '/^score:/ {print $2; exit}' "$sc")
