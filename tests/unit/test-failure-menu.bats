@@ -36,7 +36,7 @@ setup() {
 }
 
 @test "retry for reviewer-no-output deletes stale tag files before re-dispatch" {
-  echo "$MENU" | grep -qE '\*\.finding-\*\.md.*\*\.score\.yml.*\*\.clean\.md|delete.*tag.*finding.*score.*clean|retry.*clean.*stale'
+  echo "$MENU" | grep -qE '\*\.finding-\*\.md.*\*\.score\.md.*\*\.clean\.md|delete.*tag.*finding.*score.*clean|retry.*clean.*stale'
 }
 
 @test "always-on footer is present" {

@@ -38,5 +38,5 @@
 }
 
 @test "disabled-from-start fixture has NO sidecars on disk" {
-  ! ls tests/fixtures/issue-109/round-disabled-from-start/round-01/*.score.yml 2>/dev/null
+  ! ls tests/fixtures/issue-109/round-disabled-from-start/round-01/*.score.md 2>/dev/null
 }

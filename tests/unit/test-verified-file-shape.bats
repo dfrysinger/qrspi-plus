@@ -17,13 +17,17 @@ source_assembly() {
   local cfg=$3
   local D=$round_dir
   shopt -s nullglob
-  findings=( "$D"/*.finding-*.md )
+  findings=()
+  for f in "$D"/*.finding-*.md; do
+    [[ "$f" == *.score.md ]] && continue
+    findings+=("$f")
+  done
   cleans=( "$D"/*.clean.md )
 
   scored=0; failed=0; dropped=0
   clean_count=${#cleans[@]}
   for f in "${findings[@]}"; do
-    sc="${f%.md}.score.yml"
+    sc="${f%.md}.score.md"
     [[ -f $sc ]] || continue
     if grep -q '^score: VERIFY_FAILED' "$sc"; then
       failed=$((failed + 1)); continue
@@ -52,9 +56,9 @@ source_assembly() {
     for f in "${findings[@]}"; do
       echo "<!-- @@FINDING: $(basename "$f" .md) @@ -->"
       cat "$f"
-      sc="${f%.md}.score.yml"
+      sc="${f%.md}.score.md"
       if [[ -f $sc ]]; then
-        echo "<!-- @@SCORE: $(basename "$sc" .yml) @@ -->"
+        echo "<!-- @@SCORE: $(basename "$sc" .md) @@ -->"
         cat "$sc"
       fi
     done
@@ -246,6 +250,10 @@ source_assembly() {
     || { echo "YAML totals header markers missing"; return 1; }
   echo "$protocol" | grep -qE 'score *< *80|< *80.*style.*clarity.*correctness' \
     || { echo "score-<-80 + change_type partition logic missing"; return 1; }
+  echo "$protocol" | grep -qF '.score.md' \
+    || { echo "sidecar extension marker '.score.md' missing — mirror would drift silently"; return 1; }
+  echo "$protocol" | grep -qF '.score.yml' \
+    && { echo "sidecar extension '.score.yml' is locked-out (replaced by .score.md); snippet still references it"; return 1; } || true
 }
 
 # ── Sidecar field-ordering invariant (load-bearing security pin) ─────────

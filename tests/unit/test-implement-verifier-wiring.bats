@@ -42,7 +42,7 @@ setup() {
 #
 # Asserts the per-task fix-loop verifier-dispatch language is present:
 # a) the agent name qrspi-finding-verifier is documented
-# b) the sidecar write path reviews/tasks/ with .score.yml suffix is documented
+# b) the sidecar write path reviews/tasks/ with .score.md suffix is documented
 #
 # Greps are scoped to the "Review Fix Loop" section to prevent false-positive
 # matches from the HARD-GATE or smoke-check sections that also mention these tokens.
@@ -68,21 +68,21 @@ setup() {
   grep -qF 'reviews/tasks/' "${BATS_TEST_TMPDIR}/fix_loop_section.txt" \
     || { echo "MISSING: sidecar write path 'reviews/tasks/' not documented in fix-loop verifier dispatch section of skills/implement/SKILL.md"; return 1; }
 
-  grep -qF '.score.yml' "${BATS_TEST_TMPDIR}/fix_loop_section.txt" \
-    || { echo "MISSING: sidecar suffix '.score.yml' not found in Review Fix Loop section of skills/implement/SKILL.md"; return 1; }
+  grep -qF '.score.md' "${BATS_TEST_TMPDIR}/fix_loop_section.txt" \
+    || { echo "MISSING: sidecar suffix '.score.md' not found in Review Fix Loop section of skills/implement/SKILL.md"; return 1; }
 }
 
 # Test case 2 — Sidecar-presence HARD-GATE
 #
 # Asserts the sidecar-presence HARD-GATE language is present:
-# a) the literal token HARD-GATE is present in a context that also mentions .score.yml sidecar
+# a) the literal token HARD-GATE is present in a context that also mentions .score.md sidecar
 # b) at least one of the two accepted escape-hatch phrasings is documented:
 #    - verifier-disabled.md marker (round-NN-verifier-disabled.md)
 #    - verifier_enabled: false in config
 #
 # Greps are scoped to the "Review Fix Loop" section (which contains step 5, the sidecar-presence
 # HARD-GATE) to prevent matches on the unrelated Implement-Entry HARD-GATE block (step 3 of the
-# smoke check) or the general input-gating HARD-GATE, neither of which mention .score.yml.
+# smoke check) or the general input-gating HARD-GATE, neither of which mention .score.md.
 @test "sidecar-presence HARD-GATE language with escape hatches is documented" {
   # Extract the "Review Fix Loop (Inner Loop, Per-Task)" section — step 5 lives here.
   # Same structural extraction pattern as test 1 (exit-before-print on `### ` or `## `).
@@ -99,9 +99,9 @@ setup() {
   grep -qF 'HARD-GATE' "${BATS_TEST_TMPDIR}/fix_loop_section.txt" \
     || { echo "MISSING: literal token 'HARD-GATE' not found in Review Fix Loop section of skills/implement/SKILL.md"; return 1; }
 
-  # The HARD-GATE section must reference the .score.yml sidecar mechanism
-  grep -qF '.score.yml' "${BATS_TEST_TMPDIR}/fix_loop_section.txt" \
-    || { echo "MISSING: '.score.yml' sidecar reference not found in Review Fix Loop section of skills/implement/SKILL.md"; return 1; }
+  # The HARD-GATE section must reference the .score.md sidecar mechanism
+  grep -qF '.score.md' "${BATS_TEST_TMPDIR}/fix_loop_section.txt" \
+    || { echo "MISSING: '.score.md' sidecar reference not found in Review Fix Loop section of skills/implement/SKILL.md"; return 1; }
 
   # At least one of the two accepted escape-hatch phrasings must be documented in the HARD-GATE section
   grep -qE 'verifier-disabled\.md|verifier_enabled:[[:space:]]*false' "${BATS_TEST_TMPDIR}/fix_loop_section.txt" \
