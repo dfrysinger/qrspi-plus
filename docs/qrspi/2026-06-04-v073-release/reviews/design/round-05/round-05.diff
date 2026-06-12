@@ -1,0 +1,35 @@
+diff --git a/docs/qrspi/2026-06-04-v073-release/design.md b/docs/qrspi/2026-06-04-v073-release/design.md
+index 8640f5f..a17741e 100644
+--- a/docs/qrspi/2026-06-04-v073-release/design.md
++++ b/docs/qrspi/2026-06-04-v073-release/design.md
+@@ -278,7 +278,7 @@ Three coordinated changes:
+ **(a) Inline HARD-RULE prose into `integrate/SKILL.md` and `test/SKILL.md`, plus a cross-cutting note in `using-qrspi/SKILL.md`.** Each per-phase block carries the HARD-RULE verbatim, a self-contained "responsibilities" list, a self-contained "does NOT" list, and a self-contained rationale (no cross-skill references — siblings are not loaded by the orchestrator at phase time).
+ 
+ <!-- prose-design: skills/integrate/SKILL.md § Orchestration Boundary (new section after Iron Law) -->
+-```
++````
+ ### Orchestration Boundary
+ 
+ ```
+@@ -291,10 +291,10 @@ Main chat's responsibilities in Integrate are: dispatch the integration reviewer
+ Main chat does NOT: edit target-project source files (`scripts/`, `tests/`, `skills/`, `agents/`, `docs/`, etc.), run tests / typecheck / lint, run `git add` / `git commit` / `git merge` / `git rebase`, invoke language toolchains, or perform "quick verification" between review rounds. Any of those activities are delegated to a fresh subagent (a fix-task dispatch for fix work; a re-run of the integration reviewer fan-out for re-verification). Integration-branch git operations (the merge itself, the integration commits) are executed by the dispatched subagents, not by main chat.
+ 
+ **Why this rule matters in Integrate.** Integrate works on the merged integration branch without per-task worktree isolation, so there is no structural CWD separation between main chat and dispatched subagents — the discipline is the only thing keeping the boundary intact. Subagents fork into clean per-dispatch contexts and preserve the per-task quality gate (TDD discipline, per-task reviewer fan-out, finding-verifier scoring) that direct main-chat edits skip. Cumulative drift accumulates silently across the phase when the boundary is crossed. The v0.7.2 self-host Integrate R1 incident — main chat editing test files and skill prose directly to fix reviewer findings — is the failure mode this rule exists to prevent.
+-```
++````
+ 
+ <!-- prose-design: skills/test/SKILL.md § Orchestration Boundary (new section after Iron Law) -->
+-```
++````
+ ### Orchestration Boundary
+ 
+ ```
+@@ -307,7 +307,7 @@ Main chat's responsibilities in Test are: dispatch the test-writer subagents, te
+ Main chat does NOT: write or edit test files or target-project source files (`reviews/test/round-NN-results.md` is the sole exception), run the tests themselves, run `git add` / `git commit`, invoke language toolchains, or perform "quick verification" between review rounds. Any of those activities are delegated to a fresh subagent.
+ 
+ **Why this rule matters in Test.** Test works on the merged integration branch without per-task worktree isolation, so there is no structural CWD separation between main chat and dispatched subagents — the discipline is the only thing keeping the boundary intact. Subagents fork into clean per-dispatch contexts and preserve the per-task quality gate (test-writer Iron Law constraint, reviewer fan-out, finding-verifier scoring); direct main-chat edits skip that gate entirely and accumulate drift no review surface catches. Test-writer subagents are particularly load-bearing because their Iron Law constrains them ("writes tests, does NOT fix code or run tests"); main chat editing test files directly bypasses that constraint at the source.
+-```
++````
+ 
+ <!-- prose-design: skills/using-qrspi/SKILL.md § Orchestration Boundary applies to every phase (new cross-cutting note) -->
+ ```
