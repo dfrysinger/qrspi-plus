@@ -1,0 +1,332 @@
+diff --git a/docs/qrspi/2026-06-04-v073-release/structure.md b/docs/qrspi/2026-06-04-v073-release/structure.md
+index 4976ba7..0d6143b 100644
+--- a/docs/qrspi/2026-06-04-v073-release/structure.md
++++ b/docs/qrspi/2026-06-04-v073-release/structure.md
+@@ -85,7 +85,7 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ 
+ | File | Action | Responsibility | Goal IDs |
+ |------|--------|---------------|----------|
+-| `scripts/orchestration-boundary-check.sh` | Create | Accept `--phase <directory-name> --artifact-dir <path>`. Run `git status --porcelain` against the workspace (excluding the `reviews/` path tree). Run `git log <phase-base>..HEAD --format='%H %an' \| awk '$2 !~ /^qrspi-/ {print $1}'` against the integration branch's phase range to list non-subagent commits. Write findings to `<artifact-dir>/reviews/<phase>/orchestration-boundary.md`. Exit 0 on both clean and dirty (fail-soft; populated file is the signal). Read the phase-base SHA from a recoverable anchor on the integration branch's stage-commit chain (Plan picks the concrete read site; G6 produces a recoverable anchor by construction). | G5 |
++| `scripts/orchestration-boundary-check.sh` | Create | Accept `--phase <directory-name> --artifact-dir <path>`. Run `git status --porcelain` against the workspace (excluding the `reviews/` path tree). Run `git log <phase-base>..HEAD --format='%H %an' \| awk '$2 !~ /^qrspi-/ {print $1}'` against the integration branch's phase range to list non-subagent commits. Write findings to `<artifact-dir>/reviews/<phase>/orchestration-boundary.md`. Exit 0 on both clean and dirty (fail-soft; populated file is the signal). Read the phase-base SHA from the G6 wave-state sidecar tree at `<artifact-dir>/reviews/implement/wave-state/wave-W1-expected-parents.txt` (`integration_base_sha=` field). Plan picks the concrete read site within the script; structural contract is the named path under `reviews/implement/wave-state/`. | G5 |
+ | `scripts/dispatch-agent.sh` | Modify | (Listed under CD-2.) Wrap dispatched subagent git commands with the `GIT_AUTHOR_NAME=qrspi-<agent>` / `GIT_AUTHOR_EMAIL=bot@qrspi.local` env so subagent commits carry the marker the boundary check filters on. | G5 |
+ | `skills/implement/SKILL.md` | Modify | Insert verbatim `### Step N — Orchestration boundary observability check` before the batch-gate step. Insert the verbatim Batch Gate menu addition (interactive) and autopilot-branched-default block. | G5 |
+ | `skills/integrate/SKILL.md` | Modify | Insert the verbatim § Orchestration Boundary section (HARD-RULE + Integrate-specific responsibility list + does-NOT list + rationale). Insert the verbatim Step-N observability-check block + Batch Gate additions (same as Implement). | G5 |
+@@ -99,7 +99,7 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ 
+ | File | Action | Responsibility | Goal IDs |
+ |------|--------|---------------|----------|
+-| `scripts/validate-stage-commit-parents.sh` | Create | Two entrypoints: `--capture --artifact-dir <path> --wave <N> --task-branches <name>...` writes the pre-merge integration-base SHA + each task-tip SHA to a runtime sidecar (see § Interfaces — chosen path `<artifact-dir>/review-state/waves/wave-WN-expected-parents.txt`); `--validate --artifact-dir <path> --wave <N> --stage-commit <SHA>` reads the sidecar, reads `git log --format='%P' -n 1 <SHA>`, checks first-parent equality + task-tip set equality, halts non-zero with the `stage-commit-parent-mismatch:` diagnostic on failure. | G6 |
++| `scripts/validate-stage-commit-parents.sh` | Create | Two entrypoints: `--capture --artifact-dir <path> --wave <N> --task-branches <name>...` writes the pre-merge integration-base SHA + each task-tip SHA to a runtime sidecar (see § Interfaces — chosen path `<artifact-dir>/reviews/implement/wave-state/wave-WN-expected-parents.txt`, under the `reviews/` tree G5's orchestration-boundary check already excludes); `--validate --artifact-dir <path> --wave <N> --stage-commit <SHA>` reads the sidecar, reads `git log --format='%P' -n 1 <SHA>`, checks first-parent equality + task-tip set equality, halts non-zero with the `stage-commit-parent-mismatch:` diagnostic on failure. | G6 |
+ | `skills/implement/SKILL.md` | Modify | In § Wave Dispatch step 6 (stage-commit creation), insert two new sub-steps wrapping the existing `git merge --no-ff` call: pre-merge `validate-stage-commit-parents.sh --capture`, post-merge `validate-stage-commit-parents.sh --validate`. Halt the wave on validate non-zero; do not advance, do not record the wave complete. | G6 |
+ | `tests/unit/test-validate-stage-commit-parents.bats` | Create | Fixtures: correct parents → pass silently; correct task-tip set but wrong first-parent → halt naming the wrong first-parent SHA; missing task tip → halt naming missing tip; unexpected extra parent → halt naming extra parent; single-task wave → integration-base parent correctly counted, passes when present halts when absent. Sidecar-write coverage: capture step writes both fields; `parallelization.md` is unchanged after the wave (symbolic-only invariant per research Q11/Q12). | G6 |
+ 
+@@ -120,6 +120,11 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ | `tools/build-plugin.mjs` | Modify | Read `VERSION` and write the value into the `"version"` field of all five consumer files on every build: `.claude-plugin/marketplace.json`, `.claude-plugin/plugin.json`, `.github/plugin/marketplace.json`, `.github/plugin/plugin.json`, `build/.claude-plugin/plugin.json`. Halt with `version-source-missing-or-malformed:` diagnostic on missing or non-single-line `VERSION`. | G8 |
+ | `.github/workflows/build-then-diff.yml` | Create | CI step: `node tools/build-plugin.mjs && git diff --exit-code`. Fails on any divergence between freshly-built tree and committed tree (catches version drift, build-artifact drift, marketplace `source` field drift — generalizes beyond version-stamping). | G8 |
+ | `docs/release-runbook.md` | Modify (or Create if absent) | Document the new release flow: edit `VERSION`, run `node tools/build-plugin.mjs`, commit `VERSION` + propagated stamps + any regenerated `build/` content in one commit. | G8 |
++| `.claude-plugin/marketplace.json` | Modify (regenerated by build-plugin.mjs) | `"version"` field stamped by `tools/build-plugin.mjs` from `VERSION`. No hand edits to this field; CI build-then-diff gate enforces. | G8 |
++| `.claude-plugin/plugin.json` | Modify (regenerated by build-plugin.mjs) | `"version"` field stamped by `tools/build-plugin.mjs` from `VERSION`. No hand edits to this field; CI build-then-diff gate enforces. | G8 |
++| `.github/plugin/marketplace.json` | Modify (regenerated by build-plugin.mjs) | `"version"` field stamped by `tools/build-plugin.mjs` from `VERSION`. No hand edits to this field; CI build-then-diff gate enforces. Kept in lockstep with `.claude-plugin/marketplace.json` per goals.md § Constraints. | G8 |
++| `.github/plugin/plugin.json` | Modify (regenerated by build-plugin.mjs) | `"version"` field stamped by `tools/build-plugin.mjs` from `VERSION`. No hand edits to this field; CI build-then-diff gate enforces. Kept in lockstep with `.claude-plugin/plugin.json` per goals.md § Constraints. | G8 |
++| `build/.claude-plugin/plugin.json` | Modify (regenerated by build-plugin.mjs) | `"version"` field stamped by `tools/build-plugin.mjs` from `VERSION`. Build script is the sole writer under `build/`; no manual edits; CI build-then-diff gate enforces. | G8 |
+ | `tests/unit/test-version-stamping.bats` | Create | `echo "9.9.9" > VERSION && node tools/build-plugin.mjs && grep '"version": "9.9.9"'` matches in all five consumer files. Empty-file and missing-file cases halt with the named diagnostic. Hand-edit of one consumer file's `"version"` (without bumping `VERSION`) causes the build-then-diff CI step to fail (replayable in bats by invoking the same command sequence). | G8 |
+ 
+ #### G9 — Active-skill-prompt footprint reduction
+@@ -136,14 +141,16 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ | `skills/_shared/compaction-checkpoint.md` | Create | The Compaction Checkpoint template. `!cat`-ed in each consuming skill. | G9 |
+ | `skills/_shared/pause-gate.md` | Create | The Pause Gate UI. `!cat`-ed in each consuming skill. | G9 |
+ | `skills/_shared/feedback-format.md` | Create | The Feedback File Format. `!cat`-ed in each consuming skill. | G9 |
+-| `skills/<name>/references/<topic>.md` | Create (per-skill, as identified by the trim pass) | Optional examples, worked examples, pedagogical content, rare-error-path recovery procedures. Read on-demand. Plan owns per-skill enumeration based on what the trim pass extracts. | G9 |
+-| `scripts/measure-active-footprint.sh` | Create | Use a deterministic tokenizer (tiktoken or host tokenizer) to compute per-turn footprint = `using-qrspi/SKILL.md` + heaviest active skill + `!cat`-ed shared snippets; print the count and exit 0. | G9 |
++| `skills/<name>/references/<topic>.md` | Create (per-skill, as identified by the trim pass) | Optional examples, worked examples, pedagogical content, rare-error-path recovery procedures. Read on-demand. Structure commits to the directory convention `skills/<name>/references/<topic>.md` for on-demand content; specific topic-file names emerge per task during each implementer's trim of their owned skill body (each Pass-1 placement task identifies the rare/optional content within its assigned skill and chooses topic filenames at extract time). Not a pre-enumerated Structure manifest, because the set is data-dependent on what the trim discovers; the directory shape and lifecycle ARE Structure's commitment. | G9 |
++| `scripts/measure-active-footprint.sh` | Create | Compute per-turn footprint = `using-qrspi/SKILL.md` + heaviest active skill + `!cat`-resolved shared snippets, using a pinned deterministic tokenizer. CLI surface (flags, `!cat` resolution semantics, stdout shape, exit codes) specified in § Interfaces. | G9 |
+ | `docs/qrspi/2026-06-04-v073-release/g9-footprint-report.md` | Create | Captured output of `scripts/measure-active-footprint.sh` against the trimmed tree. Final acceptance gate evidence. | G9 |
+ | `tests/lint/test-skill-trim-audit.bats` | Create | Grep audit: zero matches across all active SKILL.md files for `jobId`, `tmpfile`, `HEAD~1`, `narrow.broaden`, `sidecar.*schema`, `change_type:.*enum`, `verifier.*threshold`, `third-party.*splitter` (narrative restatements; concrete script names in process-step calls are fine). | G9 |
+ | `tests/acceptance/v07-phase1/` (re-run) | Modify (re-execute) | The v0.7.2 phase-1 acceptance suite is the regression backstop. Run it against the trimmed skill set; zero regressions is the gate. No edits to the suite itself — re-execution evidence is the artifact. | G9 |
+ 
+ ## Interfaces
+ 
++These blocks specify the module-boundary contracts (CLI surface, stdout shape, exit codes, data formats Plan tasks against). Implementation bodies — control flow, error messages other than named diagnostics, internal helpers — are Implement's call.
++
+ ### `scripts/upstream-paths.sh` — per-step upstream-artifact path lookup (CD-1 + G1 + G4)
+ 
+ ```bash
+@@ -155,7 +162,13 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ # Flags:
+ #   --step <step>              Required. One of: goals | questions | research |
+ #                              design | phasing | structure | plan | parallelize |
+-#                              implement | integrate | test | replan
++#                              replan
++#                              These are the artifact-bearing steps with verifier-
++#                              dispatched review rounds (per design.md CD-1 and
++#                              the artifact-step skill set in CD-2). Any other
++#                              step value (including `implement`, `integrate`,
++#                              `test`, or anything unrecognized) is treated as
++#                              unknown-step fallthrough — see exit code 0 below.
+ #   --artifact-dir <path>      Required only for steps whose upstream set is
+ #                              pipeline-mode-aware (plan today). Used to read
+ #                              <artifact-dir>/config.md for the pipeline: field.
+@@ -177,7 +190,10 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ #   pipeline: quick → goals.md, research/summary.md
+ #
+ # Exit codes:
+-#   0   success — path list emitted (including unknown-step → always-appended only)
++#   0   success — path list emitted. Includes unknown-step / unrecognized-step
++#       fallthrough → always-appended SKILL paths only (per design.md CD-1
++#       edge-case rule: "orchestrator failure on an absent step would be a
++#       regression vs. today's prose behavior").
+ #   2   --artifact-dir required for this step but missing
+ #   3   config.md missing, unreadable, or pipeline: field missing/malformed
+ #       (named diagnostic on stderr; no silent fallback)
+@@ -307,9 +323,15 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ #      branch, piped through `awk '$2 !~ /^qrspi-/ {print $1}'` to list
+ #      non-subagent-authored commits. (git's --author has no negation operator;
+ #      the post-filter awk does the negation.)
+-#   3. <phase-base> SHA read from a recoverable anchor on the integration
+-#      branch's stage-commit chain. Concrete read site is Plan's call; G6
+-#      produces a recoverable anchor by construction.
++#   3. <phase-base> SHA read from the G6 wave-state sidecar tree:
++#      <artifact-dir>/reviews/implement/wave-state/wave-W<N>-expected-parents.txt
++#      The `integration_base_sha=` field of the wave-1 sidecar IS the
++#      phase-base SHA (written by G6's --capture step at the first wave's
++#      pre-merge moment, persistent across the phase, recoverable by
++#      re-running --capture). The structural contract is the named path
++#      under `reviews/implement/wave-state/`; the concrete call site
++#      (which line of the script reads it, in which step) is Plan's
++#      task-carving call.
+ #
+ # Output: <artifact-dir>/reviews/<phase>/orchestration-boundary.md
+ #   Empty file ≡ clean discipline.
+@@ -355,20 +377,26 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ #     first-parent expected <integration-base-sha>, actual <actual-parent-0>;
+ #     task tips missing: <missing>; unexpected parents present: <extra>
+ #
+-# Runtime sidecar path (Structure's choice — `review-state/` tree per design.md):
+-#   <artifact-dir>/review-state/waves/wave-W<N>-expected-parents.txt
++# Runtime sidecar path:
++#   <artifact-dir>/reviews/implement/wave-state/wave-W<N>-expected-parents.txt
+ #
+ # Sidecar format (separable fields, line-oriented for shell parsing):
+ #   integration_base_sha=<40-char SHA>
+ #   task_tip_shas=<sha1> <sha2> <sha3>
+ #
+-# Rationale for path: `review-state/` is out-of-band of both `reviews/` (which
+-# is the per-round review-output tree) and `parallelization.md` (which
+-# preserves the symbolic-only branch-map invariant per research Q11/Q12). The
+-# `waves/wave-W<N>-…` subpath scopes one file per wave so concurrent waves
+-# never collide and so post-hoc audit can replay validation per wave.
+-# Runtime sidecars are NOT committed (.gitignore-equivalent semantics — the
+-# file is recoverable by re-running --capture against the live git state).
++# Rationale for path: under `reviews/implement/wave-state/`, inside the path
++# tree that G5's orchestration-boundary-check.sh already excludes from its
++# `git status --porcelain` discipline scan — eliminates the false-positive
++# cascade a sibling `review-state/` location would produce (every
++# uncommitted wave sidecar would otherwise surface as an orchestration-
++# boundary violation, because G5 only excludes `reviews/`). The
++# `wave-state/wave-W<N>-…` subpath scopes one file per wave so concurrent
++# waves never collide and so post-hoc audit can replay validation per wave.
++# `parallelization.md` remains unchanged across the wave (symbolic-only
++# branch-map invariant per research Q11/Q12); the resolved SHAs live only
++# in this sidecar. Runtime sidecars are NOT committed; the file is
++# recoverable by re-running --capture against the live git state, and the
++# G5 `reviews/`-tree exclusion makes the uncommitted state safe.
+ #
+ # Exit codes:
+ #   0   --capture wrote sidecar; --validate passed.
+@@ -377,6 +405,73 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ #   4   --validate parent mismatch (named diagnostic on stderr).
+ ```
+ 
++### `scripts/measure-active-footprint.sh` — G9 footprint measurement (G9)
++
++```bash
++# scripts/measure-active-footprint.sh
++#
++# Usage:
++#   scripts/measure-active-footprint.sh [--skill <name>] [--all]
++#                                       [--tokenizer <name>]
++#
++# Flags:
++#   --skill <name>        Optional. Measure footprint with <name> as the active
++#                         skill (e.g., `implement`, `plan`). Default: iterate
++#                         every skill under `skills/*/SKILL.md` and report the
++#                         heaviest as the per-turn measurement (the load-bearing
++#                         number for G9's < 30K token gate).
++#   --all                 Optional. Emit a per-skill breakdown table in addition
++#                         to the single load-bearing count.
++#   --tokenizer <name>    Optional. Tokenizer to use. Default: `tiktoken:cl100k_base`
++#                         (pinned for determinism — G9's "< 30K tokens" gate is
++#                         tokenizer-relative, so the chosen tokenizer is recorded
++#                         in the stdout output AND in g9-footprint-report.md for
++#                         replay). Accepted values: tiktoken:cl100k_base,
++#                         tiktoken:o200k_base. Other host tokenizers may be
++#                         added later; only the pinned set is supported in v0.7.3.
++#
++# Env: none (script is context-free).
++#
++# Footprint formula (per skill):
++#   tokens(skills/using-qrspi/SKILL.md)
++#   + tokens(skills/<active-skill>/SKILL.md  with `!cat skills/_shared/<topic>.md`
++#                                            references resolved inline,
++#                                            transitively, before tokenization)
++#
++# `!cat` resolution semantics:
++#   - Lines matching `^!cat\s+(skills/_shared/[^\s]+\.md)\s*$` in any SKILL.md
++#     body are resolved by substituting the referenced file's contents in-place
++#     before tokenization. Resolution is transitive (a `_shared/` snippet that
++#     `!cat`s another snippet resolves recursively) with cycle detection.
++#   - A `!cat` reference whose target file does not exist halts with the
++#     `footprint-snippet-unresolvable:` diagnostic naming the consuming skill,
++#     the broken reference line, and the missing path. No silent skip.
++#   - A `!cat` cycle halts with `footprint-snippet-cycle:` naming the cycle path.
++#
++# Stdout shape:
++#   Single-skill mode (--skill <name>) or default heaviest-skill mode:
++#     active_skill=<name>
++#     tokenizer=<name>
++#     total_tokens=<integer>
++#
++#   --all mode appends a TSV breakdown:
++#     skill<TAB>tokens
++#     using-qrspi<TAB>1234
++#     implement<TAB>5678
++#     ...
++#
++# Output is the captured body of docs/qrspi/2026-06-04-v073-release/g9-footprint-report.md
++# (the report file is the script's stdout, redirected).
++#
++# Exit codes:
++#   0   success — count emitted.
++#   2   argument failure (unknown --tokenizer, --skill not found).
++#   3   `footprint-tokenizer-missing:` tokenizer binary/module not installed.
++#   4   `footprint-snippet-unresolvable:` `!cat` target missing (named above).
++#   5   `footprint-snippet-cycle:` `!cat` cycle detected (named above).
++#   6   `footprint-skill-not-found:` `skills/<name>/SKILL.md` absent.
++```
++
+ ### `VERSION` — repo-root canonical version source (G8)
+ 
+ ```
+@@ -411,7 +506,7 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
+ 
+ ## Architectural Diagram
+ 
+-Diagram organizing axis: existing v0.7.2 universal dispatch chain (top band, unchanged shape) extended by the four new scripts CD-1 / CD-2 / G5 / G6 introduce (shaded as new), with G1's grounding path, G3's absorption-map flow, G7's anchor-file lookup, and G8's version-source fan-out shown as data-flow arrows into the consumers each goal touches. Boxes are scripts/files; solid arrows are runtime data flow (reads/writes); dashed arrows are skill prose pointing at script invocations.
++Diagram organizing axis: two surfaces, separated because mixing them muddies the runtime data flow with build-time static-analysis. **(A) Runtime dispatch + observability surface** (first diagram): existing v0.7.2 universal dispatch chain extended by the four new scripts CD-1 / CD-2 / G5 / G6 introduce (shaded as new), with G1's grounding path, G3's absorption-map flow, G7's anchor-file lookup shown as data-flow arrows. **(B) Static-analysis / build-time surface** (second diagram): G2 ID-hygiene sweep + lint + blocking self-check, CD-3 R8 prose-density rule reach into `prompt-design-rules.md` and the skills that consume it, G8 version-source fan-out, and G9 shared-snippet `_shared/` + `!cat` resolution + `measure-active-footprint.sh` + footprint floor data. Boxes are scripts/files; solid arrows are data flow (reads/writes); dashed arrows are skill/agent prose pointing at script invocations or anchor citations.
+ 
+ ```mermaid
+ flowchart TB
+@@ -446,7 +541,7 @@ flowchart TB
+ 
+   subgraph G6Validation["G6 stage-commit parent fence"]
+     VSCP["scripts/validate-stage-commit-parents.sh<br/><b>NEW (G6)</b>"]
+-    SIDECAR["&lt;artifact-dir&gt;/review-state/waves/<br/>wave-WN-expected-parents.txt<br/>(runtime sidecar)"]
++    SIDECAR["&lt;artifact-dir&gt;/reviews/implement/<br/>wave-state/wave-WN-expected-parents.txt<br/>(runtime sidecar; under reviews/ tree<br/>G5 already excludes)"]
+     WAVE["skills/implement/SKILL.md<br/>§ Wave Dispatch step 6<br/>(MODIFIED: capture → merge → validate)"]
+   end
+ 
+@@ -454,17 +549,6 @@ flowchart TB
+     ANCHOR["reviews/&lt;step&gt;/round-NN-commit.txt<br/>(existing per-round SHA anchor)"]
+   end
+ 
+-  subgraph G8Version["G8 version source"]
+-    VERSION["VERSION<br/><b>NEW (G8)</b>"]
+-    BUILD["tools/build-plugin.mjs<br/>(MODIFIED: read VERSION, stamp consumers)"]
+-    M1[".claude-plugin/marketplace.json"]
+-    M2[".claude-plugin/plugin.json"]
+-    M3[".github/plugin/marketplace.json"]
+-    M4[".github/plugin/plugin.json"]
+-    M5["build/.claude-plugin/plugin.json"]
+-    CI[".github/workflows/build-then-diff.yml<br/><b>NEW (G8)</b><br/>build + git diff --exit-code"]
+-  end
+-
+   OC -. invokes .-> DA
+   DA --> RP
+   DA --> UP
+@@ -483,19 +567,84 @@ flowchart TB
+ 
+   PHASES --> OBC
+   OBC --> OBR
++  OBC -. reads phase-base SHA .-> SIDECAR
+   OBR -. surfaces in batch gate .-> OC
+   DA -. GIT_AUTHOR_NAME=qrspi-&lt;agent&gt; .-> OBC
+ 
++  classDef new fill:#d6f5d6,stroke:#3a8b3a,stroke-width:2px;
++  class UP,RP,DAM,OBC,VSCP new;
++```
++
++Static-analysis / build-time surface (G2 ID-hygiene, CD-3 R8 rule, G8 version-source, G9 footprint):
++
++```mermaid
++flowchart TB
++  subgraph G2Hygiene["G2 ID-hygiene surface"]
++    BATSALL["tests/**/*.bats<br/>(release-wide sweep MODIFIED:<br/>strip [Tnn] and Rn-Fn tokens<br/>from @test descriptions)"]
++    BATSLINT["tests/lint/test-bats-test-name-id-hygiene.bats<br/><b>NEW (G2)</b><br/>permanent CI lint"]
++    IPSC["skills/implementer-protocol/SKILL.md<br/>§ Pre-DONE self-check<br/>(MODIFIED: advisory → BLOCKING)"]
++    FIXTURE["tests/unit/test-id-hygiene-lint-fail-direction.bats<br/><b>NEW (G2)</b><br/>fail-direction fixture<br/>(carries # bats lint:no-id-hygiene carve-out)"]
++    CI_G2["CI (every PR)"]
++  end
++
++  subgraph CD3Rules["CD-3 R8 prose-density rule reach"]
++    RULES["skills/_shared/prompt-design-rules.md<br/>(MODIFIED: insert R8 between R7 and ---;<br/>finding-type gate row updated to R1-R8)"]
++    PPW["skills/prompt-prose-writer/SKILL.md<br/>(consumes R8 via existing reference)"]
++    PPR["skills/prompt-prose-reviewer/SKILL.md<br/>(consumes R8 via existing reference)"]
++    G9TRIM["G9 Pass-3 tightening across all 14 SKILLs<br/>(cites R8 as authority in task spec)"]
++    R8LINT["tests/lint/test-prompt-design-rules-r8.bats<br/><b>NEW (CD-3)</b><br/>anchor-phrase + gate-citation + no-dup checks"]
++  end
++
++  subgraph G8Version["G8 version source"]
++    VERSION["VERSION<br/><b>NEW (G8)</b>"]
++    BUILD["tools/build-plugin.mjs<br/>(MODIFIED: read VERSION, stamp consumers)"]
++    M1[".claude-plugin/marketplace.json<br/>(MODIFIED: regenerated)"]
++    M2[".claude-plugin/plugin.json<br/>(MODIFIED: regenerated)"]
++    M3[".github/plugin/marketplace.json<br/>(MODIFIED: regenerated)"]
++    M4[".github/plugin/plugin.json<br/>(MODIFIED: regenerated)"]
++    M5["build/.claude-plugin/plugin.json<br/>(MODIFIED: regenerated)"]
++    CI_BD[".github/workflows/build-then-diff.yml<br/><b>NEW (G8)</b><br/>build + git diff --exit-code"]
++  end
++
++  subgraph G9Footprint["G9 active-skill-prompt footprint reduction"]
++    SHARED["skills/_shared/<br/>reviewer-dispatch.md, review-loop.md,<br/>config-validation.md, compaction-checkpoint.md,<br/>pause-gate.md, feedback-format.md<br/><b>NEW (G9)</b>"]
++    SKILLS["skills/*/SKILL.md<br/>(MODIFIED: 4-pass trim;<br/>!cat references to _shared/)"]
++    REFS["skills/&lt;name&gt;/references/&lt;topic&gt;.md<br/><b>NEW (G9, per-skill)</b><br/>on-demand optional content"]
++    MEAS["scripts/measure-active-footprint.sh<br/><b>NEW (G9)</b><br/>tiktoken:cl100k_base default<br/>resolves !cat transitively"]
++    REPORT["docs/qrspi/2026-06-04-v073-release/<br/>g9-footprint-report.md<br/><b>NEW (G9)</b><br/>floor: < 30K tokens<br/>(acceptance-gate evidence)"]
++    REGRESS["tests/acceptance/v07-phase1/<br/>(re-run: regression backstop)"]
++    TRIMLINT["tests/lint/test-skill-trim-audit.bats<br/><b>NEW (G9)</b><br/>grep audit zero matches for<br/>script-mechanic narrative restatements"]
++  end
++
++  BATSALL --> BATSLINT
++  FIXTURE --> BATSLINT
++  BATSLINT --> CI_G2
++  IPSC -. blocking self-check .-> BATSALL
++
++  RULES -. R8 cited as authority .-> G9TRIM
++  RULES --> PPW
++  RULES --> PPR
++  RULES --> R8LINT
++
+   VERSION --> BUILD
+   BUILD --> M1
+   BUILD --> M2
+   BUILD --> M3
+   BUILD --> M4
+   BUILD --> M5
+-  CI --> BUILD
++  CI_BD --> BUILD
++
++  SKILLS -. !cat resolves .-> SHARED
++  SKILLS -. one-line pointers .-> REFS
++  SKILLS --> MEAS
++  SHARED --> MEAS
++  MEAS --> REPORT
++  SKILLS --> REGRESS
++  SHARED --> REGRESS
++  SKILLS --> TRIMLINT
+ 
+   classDef new fill:#d6f5d6,stroke:#3a8b3a,stroke-width:2px;
+-  class UP,RP,DAM,OBC,VSCP,VERSION,CI new;
++  class BATSLINT,FIXTURE,RULES,R8LINT,VERSION,CI_BD,SHARED,REFS,MEAS,REPORT,TRIMLINT new;
+ ```
+ 
+ ## Test Architecture
