@@ -159,7 +159,7 @@ The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception
 
 **For small plans (<6 tasks):** The overview subagent writes the full merged `plan.md` directly (overview + task specs in one document).
 
-**For large plans (6+ tasks):** The overview subagent writes `plan.md` with only the overview section (phase structure, task ordering, dependency graph). Individual task specs are dispatched to sub-subagents.
+**For large plans (6+ tasks):** The overview subagent writes `plan.md` with only the overview section (phase structure, task ordering, dependency graph). Individual task specs are dispatched to sub-subagents — **one per task**. The fan-out shape is load-bearing for per-spec focus: a single merged-author subagent will optimize for cross-spec consistency over per-spec depth, dropping edge cases and Test Expectations specificity.
 
 ### Quick-Fix Plan Behavior
 
@@ -175,7 +175,7 @@ The review round, human gate, and approval process are identical to full pipelin
 
 ### Sub-Subagent Dispatch (Large Plans Only)
 
-**Compaction checkpoint: pre-fanout.** Per-task spec-generation sub-subagent fan-out: one subagent per task; aggregate output is large and the orchestrator must hold all returned task files plus the merged plan.md for the upcoming review round. Saturated context at this site corrupts the single-source-of-truth invariant on merge. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+**Compaction checkpoint: pre-fanout.** Per-task spec-generation sub-subagent fan-out: one subagent per task. The fan-out shape is load-bearing for **per-spec focus** — a single merged-author subagent optimizes for cross-spec consistency over per-spec depth and drops edge cases. The orchestrator's post-fanout merge step re-aggregates the output into `plan.md` for the upcoming review round; that re-aggregation is where context saturation bites, hence the compaction checkpoint here rather than after merge. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
 Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — plan", description: "pre-fanout: per-task spec-generation fan-out; orchestrator merges all returned task files. User decides whether to /compact." })`.
 
@@ -650,6 +650,7 @@ Skipping the `cross_task_consumers:` field on a consumer-surface-touching task i
 - `config.md` carries `visual_fidelity_required: true` and a task with `visual_fidelity_check.ui_producing: true` lacks a non-empty `visual_fidelity_check.wireframe_refs` list (refuses plan-review fan-out — see "Visual-fidelity hard-gate" below)
 - A task spec carries `reference_gate: true` without a matching `reference_artifact:` field, or carries `reference_artifact:` without `reference_gate: true` (paired-field violation — Plan refuses to write the task spec; see Refuse-to-Write Contract above)
 - A task spec carries both `ui: true` and `lift_source: <path>` without a `SPEC OVERRIDES SOURCE` body section (paired-field violation — Plan refuses to write the task spec; see Refuse-to-Write Contract above)
+- Dispatching a single merged-author subagent to write all N per-task specs (regardless of N≥6). The fan-out is one-subagent-per-task by design — the merged shortcut trades per-spec depth for cross-spec consistency. If you find yourself reasoning "I have all the context loaded, one subagent is more efficient," that's the rationalization the rule exists to block.
 
 ### Visual-fidelity hard-gate (pre-fanout refusal condition)
 
