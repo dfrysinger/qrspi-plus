@@ -185,6 +185,7 @@ For large plans, farm task spec writing to sub-subagents:
 - `plan.md` overview
 - Relevant sections of `structure.md`
 - `design.md` (for test strategy and vertical slice context)
+- `skills/plan/owns-defers.md` — the layer-depth clamp. Without this, sub-subagents drift into Implement/Structure scope: algorithm pseudocode, regex grammar, literal-value hard-coding, line-numbered citations, exact `@test` counts, shebang/file-mode specifics. The Plan DEFERS list names the off-limits surfaces explicitly.
 
 **PRECONDITION:** `skills/_shared/prompt-prose-detection.md`, `skills/_shared/prompt-prose-writer-addition.md`, and `skills/_shared/prompt-prose-test-expectations-clause.md` MUST exist on disk; halt the subagent with a named diagnostic if any required shared file is missing rather than proceeding with empty include content.
 
@@ -652,6 +653,8 @@ Skipping the `cross_task_consumers:` field on a consumer-surface-touching task i
 - A task spec carries both `ui: true` and `lift_source: <path>` without a `SPEC OVERRIDES SOURCE` body section (paired-field violation — Plan refuses to write the task spec; see Refuse-to-Write Contract above)
 - Dispatching a single merged-author subagent to write all N per-task specs (regardless of N≥6). The fan-out is one-subagent-per-task by design — the merged shortcut trades per-spec depth for cross-spec consistency. If you find yourself reasoning "I have all the context loaded, one subagent is more efficient," that's the rationalization the rule exists to block.
 - A per-task spec sub-subagent writes any file other than `tasks/task-NN.md` — pre-creating the script, the test file, the SKILL.md edit, or the agent body that the task describes. Implementation files are written in the Implement phase by the implementer dispatch, never at Plan time. Plan-time pre-creation short-circuits the TDD cycle and the per-task review loop.
+- The overview-pass `plan.md` contains a `## Task Specs` H2 heading. The overview owns Overview + Phase + dependency graph + acceptance criteria only; `## Task Specs` is the heading the post-fanout merge step creates when it appends the sub-subagent `tasks/task-NN.md` files. An overview that already carries `## Task Specs` collides with the merge and produces two same-named H2 sections — every plan reviewer flags this as a load-bearing duplicate.
+- A per-task sub-subagent emits algorithm pseudocode, regex grammar, hard-coded literal values (e.g. an email address), line-numbered citations, or exact `@test` block counts. These are Implement/Structure surfaces — Plan owns the behavioral claim. The fix is upstream: sub-subagent inputs must include `skills/plan/owns-defers.md` (see Sub-Subagent Dispatch above); without it the depth clamp is absent and every per-task spec drifts.
 
 ### Visual-fidelity hard-gate (pre-fanout refusal condition)
 
