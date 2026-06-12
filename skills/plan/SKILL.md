@@ -194,7 +194,7 @@ For large plans, farm task spec writing to sub-subagents:
 
 !cat skills/_shared/prompt-prose-test-expectations-clause.md
 
-Each sub-subagent writes `tasks/task-NN.md`. After all complete, the Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files — creating a single document as the only source of truth during review.
+Each sub-subagent writes `tasks/task-NN.md` — **and ONLY that file**. Sub-subagents MUST NOT create or modify any implementation file (the script, the test file, the SKILL.md, the agent body, etc. that the task describes); those are written in the Implement phase by the implementer dispatch. A sub-subagent that pre-writes implementation artifacts at Plan time short-circuits the Implement-phase TDD cycle and the per-task review loop. After all complete, the Plan skill reads all task files, appends them as sections to `plan.md`, then deletes the individual `tasks/task-NN.md` files — creating a single document as the only source of truth during review.
 
 ### Per-Task Classification (`task_type` and `tier`)
 
@@ -651,6 +651,7 @@ Skipping the `cross_task_consumers:` field on a consumer-surface-touching task i
 - A task spec carries `reference_gate: true` without a matching `reference_artifact:` field, or carries `reference_artifact:` without `reference_gate: true` (paired-field violation — Plan refuses to write the task spec; see Refuse-to-Write Contract above)
 - A task spec carries both `ui: true` and `lift_source: <path>` without a `SPEC OVERRIDES SOURCE` body section (paired-field violation — Plan refuses to write the task spec; see Refuse-to-Write Contract above)
 - Dispatching a single merged-author subagent to write all N per-task specs (regardless of N≥6). The fan-out is one-subagent-per-task by design — the merged shortcut trades per-spec depth for cross-spec consistency. If you find yourself reasoning "I have all the context loaded, one subagent is more efficient," that's the rationalization the rule exists to block.
+- A per-task spec sub-subagent writes any file other than `tasks/task-NN.md` — pre-creating the script, the test file, the SKILL.md edit, or the agent body that the task describes. Implementation files are written in the Implement phase by the implementer dispatch, never at Plan time. Plan-time pre-creation short-circuits the TDD cycle and the per-task review loop.
 
 ### Visual-fidelity hard-gate (pre-fanout refusal condition)
 
