@@ -1,0 +1,11 @@
+{
+  "scored": 3,
+  "kept": 2,
+  "dropped": 1,
+  "halts": [],
+  "thresholds": {
+    "style": 80,
+    "clarity": 80,
+    "correctness": 70
+  }
+}
