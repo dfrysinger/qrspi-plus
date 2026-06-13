@@ -159,6 +159,8 @@ Before reporting DONE or DONE_WITH_CONCERNS, run one combined scan over the comm
 - **Reviewer visibility is structurally enforced via two channels:** (a) the DONE-report file is passed as a companion parameter on every per-task reviewer dispatch, so the reviewer's pre-flight reads the DONE-report alongside the artifact under review; (b) the per-task reviewer dispatch site explicitly lists the DONE-report file path so reviewers can re-Read it directly. Both channels carry the unacknowledged-hit data, ensuring reviewer visibility is not nominal.
 - A reviewer that finds an unacknowledged hit in the artifact is expected to raise it as a finding. An acknowledged hit with stated rationale is resolved at the implementer's discretion.
 
+**Halt-DONE exception for `@test "..."` description strings:** any internal-ID-rule hit inside an added or modified `@test "..."` description string halts the DONE signal — the implementer MUST fix the violation before reporting DONE or DONE_WITH_CONCERNS, and the acknowledgement-with-rationale escape route does not apply to this scope.
+
 ## Commit hygiene invariants
 
 The three invariants below are architectural properties the implementer commit cycle MUST satisfy across every commit it produces. They compose — any one alone is fragile against the others being absent. They exist to eliminate the recurring regression where implementers accidentally committed `.qrspi-commit-msg.txt` (the commit-message scratch file) by staging it alongside the task's actual changes.
