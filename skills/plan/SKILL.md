@@ -139,7 +139,8 @@ The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception
 
 **Task:** Break the structure into ordered tasks following vertical slices and phases.
 
-1. Break structure into ordered tasks following vertical slices and phases from `design.md`
+1. **Pre-fanout absorption-map gate.** Before drafting any per-task spec, run `scripts/design-absorption-markers.sh <design-path>` and ingest the absorbed-goal redirect map (`<absorbed-ID> → <absorbing-ID|"no-task">`). For any goal ID present in the map, DO NOT draft a standalone task; if the original intent surfaces residual work that genuinely needs implementation, attach it to the absorbing CD's task scope, NOT to a new "post-<absorbing-ID> cleanup" wrapper task. If residual work genuinely fits nowhere in the surviving goal/CD set, halt with BLOCKED and surface the case to the user instead of manufacturing a task home.
+2. Break structure into ordered tasks following vertical slices and phases from `design.md`
 
 **PRECONDITION:** `skills/_shared/prompt-prose-detection.md`, `skills/_shared/prompt-prose-writer-addition.md`, and `skills/_shared/prompt-prose-test-expectations-clause.md` MUST exist on disk; halt the subagent with a named diagnostic if any required shared file is missing rather than proceeding with empty include content.
 
@@ -149,13 +150,13 @@ The plan reviewer (`agents/qrspi-plan-reviewer.md` § Schema-migration exception
 
 !cat skills/_shared/prompt-prose-test-expectations-clause.md
 
-2. Each task spec includes:
+3. Each task spec includes:
    - Exact file paths to create/modify
    - Description of what the task accomplishes
    - Test expectations in plain language (behaviors, inputs/outputs, edge cases, error conditions)
    - Dependencies on other tasks
    - LOC estimate
-3. No placeholders, no TBDs, no "similar to Task N" — each spec is self-contained
+4. No placeholders, no TBDs, no "similar to Task N" — each spec is self-contained
 
 **For small plans (<6 tasks):** The overview subagent writes the full merged `plan.md` directly (overview + task specs in one document).
 
