@@ -62,12 +62,23 @@ setup_file() {
 _t39_stage_root() {
   local root="$1"; shift
   local skill_body="$1"; shift
-  mkdir -p "$root/.claude-plugin" "$root/skills/sample" "$root/scripts" "$root/templates"
+  mkdir -p "$root/.claude-plugin" "$root/skills/sample" "$root/scripts" "$root/templates" "$root/.github/plugin"
+  # T28 / G8: build script reads VERSION at repo root before any walk and
+  # stamps the four source consumer manifests. Fixture provides all five
+  # so the resolver/D3 paths under exercise here run to their failure mode
+  # instead of being short-circuited by VERSION/consumer pre-flight checks.
+  printf '0.0.0\n' >"$root/VERSION"
   cat >"$root/.claude-plugin/plugin.json" <<JSON
 { "name": "qrspi-fixture", "version": "0.0.0", "skills": ["./skills"] }
 JSON
   cat >"$root/.claude-plugin/marketplace.json" <<JSON
 { "name": "fixture-local", "plugins": [ { "name": "qrspi-fixture", "version": "0.0.0", "source": "./build" } ] }
+JSON
+  cat >"$root/.github/plugin/plugin.json" <<JSON
+{ "name": "qrspi-fixture", "version": "0.0.0" }
+JSON
+  cat >"$root/.github/plugin/marketplace.json" <<JSON
+{ "name": "qrspi-fixture", "metadata": { "version": "0.0.0" }, "plugins": [ { "name": "qrspi-fixture", "version": "0.0.0" } ] }
 JSON
   printf '%s' "$skill_body" >"$root/skills/sample/SKILL.md"
   : >"$root/LICENSE"
@@ -144,12 +155,8 @@ _t39_run_build() {
   # root: must produce a byte-identical file (no `!cat` directives remain
   # to expand; second run is a no-op on resolver output).
   local root2="$BATS_TEST_TMPDIR/idem2"
-  mkdir -p "$root2/skills/sample" "$root2/.claude-plugin"
+  _t39_stage_root "$root2" ""
   cp "$root/build/skills/sample/SKILL.md" "$root2/skills/sample/SKILL.md"
-  cat >"$root2/.claude-plugin/plugin.json" <<JSON
-{ "name": "qrspi-fixture", "version": "0.0.0", "skills": ["./skills"] }
-JSON
-  : >"$root2/LICENSE"; : >"$root2/README.md"
   run _t39_run_build "$root2"
   [ "$status" -eq 0 ]
   run diff -q "$BATS_TEST_TMPDIR/first.md" "$root2/build/skills/sample/SKILL.md"
