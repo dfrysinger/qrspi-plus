@@ -327,6 +327,41 @@ STUB
   echo "$defects_section" | grep -q 'obc-author-name-malformed:'
 }
 
+@test "author name with embedded control byte triggers obc-author-name-malformed under Dispatch defects" {
+  # Real `git` rejects control bytes in author names at commit time, so we
+  # shadow `git` with a stub that emits a NUL-separated record whose author
+  # field contains a control byte (\x01). The script's control-byte arm of
+  # author_name_is_malformed must surface obc-author-name-malformed: under
+  # ## Dispatch defects rather than silently passing the record.
+  valid_phases_helper
+  STUB_DIR="$TMP_DIR/stub-bin"
+  mkdir -p "$STUB_DIR"
+  cat > "$STUB_DIR/git" <<'STUB'
+#!/usr/bin/env bash
+real_git="$(command -v -- /usr/bin/git || command -v -- /opt/homebrew/bin/git)"
+[ -x "$real_git" ] || real_git="$(/usr/bin/which -a git | grep -v "$(dirname "$0")" | head -1)"
+if [ "${1:-}" = "log" ] && [ "${2:-}" != "-n" ]; then
+  for arg in "$@"; do
+    case "$arg" in
+      *..HEAD)
+        # Emit one NUL-terminated record with an embedded \x01 control byte
+        # in the author-name field.
+        printf 'deadbeef1234567 foo\x01bar\0'
+        exit 0
+        ;;
+    esac
+  done
+fi
+exec "$real_git" "$@"
+STUB
+  chmod +x "$STUB_DIR/git"
+  PATH="$STUB_DIR:$PATH" run "$SCRIPT" --phase integration --artifact-dir "$TMP_DIR"
+  [ "$status" -ne 0 ]
+  report="$(cat "$TMP_DIR/reviews/integration/orchestration-boundary.md")"
+  defects_section="$(echo "$report" | awk '/^## Dispatch defects/{flag=1;next} /^## /{flag=0} flag')"
+  echo "$defects_section" | grep -q 'obc-author-name-malformed:'
+}
+
 # -----------------------------------------------------------------------------
 # Atomic write — failed rename surfaces report-write-failed
 # -----------------------------------------------------------------------------

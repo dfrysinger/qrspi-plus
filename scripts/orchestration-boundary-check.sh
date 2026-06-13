@@ -215,8 +215,11 @@ author_name_is_malformed() {
   if printf '%s' "$name" | LC_ALL=C grep -Eq '[[:space:]]{2,}'; then
     return 0
   fi
-  # Control bytes \x00-\x1F excluding TAB (\x09) and LF (\x0A).
-  if printf '%s' "$name" | LC_ALL=C grep -q $'[\x00-\x08\x0b-\x1f]'; then
+  # Control bytes \x01-\x1F excluding TAB (\x09) and LF (\x0A). NUL (\x00)
+  # is the record separator, so it cannot appear inside an author field.
+  # Omitting \x00 also avoids the bash-3.2 issue where a literal NUL in the
+  # pattern truncates the C-string argument passed to grep.
+  if printf '%s' "$name" | LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f]'; then
     return 0
   fi
   return 1
