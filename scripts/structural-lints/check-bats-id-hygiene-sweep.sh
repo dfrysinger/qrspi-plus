@@ -27,7 +27,9 @@ else
   diff_input="$(cat)"
 fi
 
-if [ -z "${diff_input//[[:space:]]/}" ]; then
+# Emptiness probe — avoid bash global parameter substitution on large diffs
+# (O(N^2) in bash 3.2/macOS); use tr instead, which is linear.
+if [ -z "$(printf '%s' "$diff_input" | tr -d '[:space:]' | head -c 1)" ]; then
   emit "diff is empty — vacuous pass forbidden; the structural lint requires a non-empty diff to prove mechanical-only nature."
   exit 1
 fi
@@ -56,8 +58,12 @@ violations="$(printf '%s\n' "$diff_input" | awk '
     if (is_new) {
       if (file ~ /^tests\/fixtures\//) {
         class="new-fixture";
+      } else if (file ~ /^tests\/.*\.bats$/) {
+        # New .bats files under tests/ are allowed: the T11 sweep ships its
+        # own acceptance test file alongside the mechanical strips.
+        class="new-bats";
       } else {
-        printf "VIOLATION\t%s\t0\tnew file outside tests/fixtures/ — only fixture additions are mechanical\n", file;
+        printf "VIOLATION\t%s\t0\tnew file outside tests/fixtures/ or tests/**/*.bats — only fixture additions and new bats test files are mechanical\n", file;
         class="reject";
       }
     } else {
@@ -99,10 +105,10 @@ violations="$(printf '%s\n' "$diff_input" | awk '
     }
     next;
   }
-  in_hunk && class=="new-fixture" {
+  in_hunk && (class=="new-fixture" || class=="new-bats") {
     # All-add hunks expected; reject any "-" line (impossible for new file, but defensive).
     if (substr($0,1,1)=="-") {
-      printf "VIOLATION\t%s\t%d\tunexpected deletion in new fixture file\n", file, old_ln;
+      printf "VIOLATION\t%s\t%d\tunexpected deletion in new file\n", file, old_ln;
     }
     if (substr($0,1,1)=="+" || substr($0,1,1)==" ") new_ln++;
     if (substr($0,1,1)=="-" || substr($0,1,1)==" ") old_ln++;
