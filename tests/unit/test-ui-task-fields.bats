@@ -34,32 +34,32 @@ setup_file() {
 # T24 UI-field contract (Plan skill)
 # =============================================================================
 
-@test "[T30-ui-fields] Plan SPEC OVERRIDES SOURCE authority section names the contract" {
+@test "Plan SPEC OVERRIDES SOURCE authority section names the contract" {
   extract_and_grep "$PLAN_SKILL" H3 "SPEC OVERRIDES SOURCE authority" \
     "spec wins"
 }
 
-@test "[T30-ui-fields] Plan Refuse-to-Write contract names the UI+lift_source pair" {
+@test "Plan Refuse-to-Write contract names the UI+lift_source pair" {
   extract_and_grep "$PLAN_SKILL" H3 "Refuse-to-Write Contract" \
     "ui: true.*lift_source"
 }
 
-@test "[T30-ui-fields] Plan refuses ui+lift_source without SPEC OVERRIDES SOURCE body section" {
+@test "Plan refuses ui+lift_source without SPEC OVERRIDES SOURCE body section" {
   extract_and_grep "$PLAN_SKILL" H3 "Refuse-to-Write Contract" \
     "SPEC OVERRIDES SOURCE body section"
 }
 
-@test "[T30-ui-fields] Plan Red Flags lists missing SPEC OVERRIDES SOURCE section as STOP entry" {
+@test "Plan Red Flags lists missing SPEC OVERRIDES SOURCE section as STOP entry" {
   extract_and_grep "$PLAN_SKILL" H2 "Red Flags — STOP" \
     "ui: true.*lift_source.*SPEC OVERRIDES SOURCE"
 }
 
-@test "[T30-ui-fields] Plan Migration step promotes visual_fidelity_check.ui_producing to top-level ui" {
+@test "Plan Migration step promotes visual_fidelity_check.ui_producing to top-level ui" {
   extract_and_grep "$PLAN_SKILL" H3 "Migration: \`visual_fidelity_check.ui_producing\` → top-level \`ui:\`" \
     "ui: true"
 }
 
-@test "[T30-ui-fields] Plan Migration step drops the nested ui_producing field" {
+@test "Plan Migration step drops the nested ui_producing field" {
   # Canonical step 2: "Remove the `ui_producing` field from inside the
   # `visual_fidelity_check:` block."
   extract_and_grep "$PLAN_SKILL" H3 "Migration: \`visual_fidelity_check.ui_producing\` → top-level \`ui:\`" \
@@ -70,22 +70,22 @@ setup_file() {
 # T27 visual-fidelity reviewer dispatch contract (Implement skill)
 # =============================================================================
 
-@test "[T30-ui-fields] Implement dispatches qrspi-visual-fidelity-reviewer on ui:true" {
+@test "Implement dispatches qrspi-visual-fidelity-reviewer on ui:true" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "qrspi-visual-fidelity-reviewer"
 }
 
-@test "[T30-ui-fields] Implement dispatch uses reviewer_tag visual-fidelity-claude" {
+@test "Implement dispatch uses reviewer_tag visual-fidelity-claude" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "visual-fidelity-claude"
 }
 
-@test "[T30-ui-fields] Implement dispatch parallel with per-task reviewers" {
+@test "Implement dispatch parallel with per-task reviewers" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "parallel"
 }
 
-@test "[T30-ui-fields] Implement activation condition is ui:true alone (no visual_fidelity_required)" {
+@test "Implement activation condition is ui:true alone (no visual_fidelity_required)" {
   # Pin asserts the activation contract: ui:true is the sole signal on this
   # second activation path, distinct from the visual_fidelity_check gate.
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \

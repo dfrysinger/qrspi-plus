@@ -28,12 +28,12 @@ setup_file() {
 # High-severity inline-patch requirement
 # =============================================================================
 
-@test "[T30-qt-wording] High-severity findings require inline patch in quick tier" {
+@test "High-severity findings require inline patch in quick tier" {
   extract_and_grep "$REVIEWER_PROTOCOL" H2 "Quick-Tier Finding Disposition" \
     "[Hh]igh-severity.*inline-patch"
 }
 
-@test "[T30-qt-wording] Unpatched high finding triggers named quick-tier-close diagnostic" {
+@test "Unpatched high finding triggers named quick-tier-close diagnostic" {
   extract_and_grep "$REVIEWER_PROTOCOL" H2 "Quick-Tier Finding Disposition" \
     "quick-tier close blocked"
 }
@@ -42,12 +42,12 @@ setup_file() {
 # Correctness-medium inline-patch requirement
 # =============================================================================
 
-@test "[T30-qt-wording] Correctness-medium findings require inline patch in quick tier" {
+@test "Correctness-medium findings require inline patch in quick tier" {
   extract_and_grep "$REVIEWER_PROTOCOL" H2 "Quick-Tier Finding Disposition" \
     "[Cc]orrectness-medium.*inline-patch"
 }
 
-@test "[T30-qt-wording] Correctness-medium rule names change_type: correctness" {
+@test "Correctness-medium rule names change_type: correctness" {
   extract_and_grep "$REVIEWER_PROTOCOL" H2 "Quick-Tier Finding Disposition" \
     "change_type: correctness"
 }
@@ -56,12 +56,12 @@ setup_file() {
 # Low-severity acceptance carve-out
 # =============================================================================
 
-@test "[T30-qt-wording] Low-severity findings may be accepted without inline patch" {
+@test "Low-severity findings may be accepted without inline patch" {
   extract_and_grep "$REVIEWER_PROTOCOL" H2 "Quick-Tier Finding Disposition" \
     "[Ll]ow-severity.*acceptance"
 }
 
-@test "[T30-qt-wording] Accepted-without-patch dispositions logged in round dispositions" {
+@test "Accepted-without-patch dispositions logged in round dispositions" {
   extract_and_grep "$REVIEWER_PROTOCOL" H2 "Quick-Tier Finding Disposition" \
     "accepted-without-patch"
 }
@@ -70,12 +70,12 @@ setup_file() {
 # Blanket-merge prohibition
 # =============================================================================
 
-@test "[T30-qt-wording] Blanket quick-tier merge is prohibited (process violation)" {
+@test "Blanket quick-tier merge is prohibited (process violation)" {
   extract_and_grep "$REVIEWER_PROTOCOL" H2 "Quick-Tier Finding Disposition" \
     "[Bb]lanket.*prohibition"
 }
 
-@test "[T30-qt-wording] Blanket-merge prohibition names process violation" {
+@test "Blanket-merge prohibition names process violation" {
   extract_and_grep "$REVIEWER_PROTOCOL" H2 "Quick-Tier Finding Disposition" \
     "process violation"
 }
@@ -84,7 +84,7 @@ setup_file() {
 # Section-anchor reachability (shared markdown helper convention)
 # =============================================================================
 
-@test "[T30-qt-wording] Section anchor reachable via standard section-anchor convention" {
+@test "Section anchor reachable via standard section-anchor convention" {
   # The section body explicitly documents the anchor convention so shared
   # markdown helpers (T13's skill-markdown.bash) can extract it. This pin
   # also implicitly verifies extract_section finds the section by H2 anchor —

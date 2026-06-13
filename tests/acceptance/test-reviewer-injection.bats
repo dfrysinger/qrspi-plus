@@ -37,12 +37,12 @@ setup() {
 
 # ── Adversarial fixture exists with prompt-injection payload ────────────────
 
-@test "[T32-adversarial] adversarial fixture exists at tests/acceptance/fixtures/reviewer-injection/" {
+@test "adversarial fixture exists at tests/acceptance/fixtures/reviewer-injection/" {
   [ -d "$FIXTURE_DIR" ]
   [ -f "$FIXTURE_DIR/adversarial-feedback.md" ]
 }
 
-@test "[T32-adversarial] adversarial fixture contains a recognizable injection payload" {
+@test "adversarial fixture contains a recognizable injection payload" {
   # Recognizable injection patterns: instruction-override phrasing that a
   # naive (un-wrapped) reviewer might obey. The fixture must contain at
   # least one such payload so the wrapper test below has something to
@@ -55,7 +55,7 @@ setup() {
 
 # ── Wrapper neutralization: boilerplate + delimited fixture is well-formed ──
 
-@test "[T32-adversarial] applying the UNTRUSTED-ARTIFACT wrapper to the fixture yields paired START/END tokens" {
+@test "applying the UNTRUSTED-ARTIFACT wrapper to the fixture yields paired START/END tokens" {
   # Simulate the dispatch: concatenate START token + fixture body + END token
   # in the same shape an embed-site SKILL would render. Assert the result
   # has matched, paired tokens with the same id and the fixture body lives
@@ -68,7 +68,7 @@ setup() {
   [ "$end_count" -eq 1 ]
 }
 
-@test "[T32-adversarial] wrapped fixture preserves the injection payload verbatim INSIDE the data fence" {
+@test "wrapped fixture preserves the injection payload verbatim INSIDE the data fence" {
   # The injection text must appear AFTER the START line and BEFORE the END
   # line. This is the structural property that lets a reviewer following
   # the boilerplate's rules treat the payload as data.
@@ -84,7 +84,7 @@ setup() {
   [ "$injection_line" -lt "$end_line" ]
 }
 
-@test "[T32-adversarial] boilerplate Untrusted Data Handling rules live OUTSIDE the data fence (cannot be overridden by injection)" {
+@test "boilerplate Untrusted Data Handling rules live OUTSIDE the data fence (cannot be overridden by injection)" {
   # The boilerplate file itself contains the rules a reviewer follows when
   # it sees a fence. The boilerplate is, by construction, part of the
   # TRUSTED prompt region — it is the file that defines the wrapper
@@ -133,7 +133,7 @@ setup() {
 # ── Embed-site sweep: a representative SKILL.md instructs the wrapper for ──
 # ── attacker-reachable embed sites (feedback, code-under-review) ─────────────
 
-@test "[T32-adversarial] implement SKILL.md instructs the wrapper for code-under-review / task-spec embeds" {
+@test "implement SKILL.md instructs the wrapper for code-under-review / task-spec embeds" {
   # Post-migration (commit 19/22): the per-task-orchestrator template no
   # longer exists. The cited dispatch logic — wrapping raw code, task spec,
   # and test results into reviewer prompts via the UNTRUSTED-ARTIFACT
@@ -144,7 +144,7 @@ setup() {
   grep -q "UNTRUSTED-ARTIFACT-START" "$file"
 }
 
-@test "[T32-adversarial] test/SKILL.md instructs the wrapper for plan / goals / acceptance-criteria embeds" {
+@test "test/SKILL.md instructs the wrapper for plan / goals / acceptance-criteria embeds" {
   # Test skill embeds plan.md (acceptance-criteria source) + goals.md +
   # test code into reviewer prompts. Same threat model as above.
   local file

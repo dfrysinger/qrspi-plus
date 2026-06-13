@@ -75,7 +75,7 @@ _assert_construct_fails_under_bash32() {
 # ---------------------------------------------------------------------------
 # ci.yml exists and has a ban-list step
 # ---------------------------------------------------------------------------
-@test "[T19-ban] ci.yml ban-list step is present and parseable" {
+@test "ci.yml ban-list step is present and parseable" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -c "Option B ban-list" "$CI_YML"
@@ -86,7 +86,7 @@ _assert_construct_fails_under_bash32() {
 # ---------------------------------------------------------------------------
 # Ban-list parses to at least 4 constructs (mapfile, declare -A, ,,, coproc)
 # ---------------------------------------------------------------------------
-@test "[T19-ban] ban-list step enumerates at least 4 banned constructs" {
+@test "ban-list step enumerates at least 4 banned constructs" {
   require_repo_root
   [ -f "$CI_YML" ]
   local count
@@ -100,14 +100,14 @@ _assert_construct_fails_under_bash32() {
 # ---------------------------------------------------------------------------
 # mapfile fails under bash:3.2
 # ---------------------------------------------------------------------------
-@test "[T19-ban] mapfile fails under bash:3.2" {
+@test "mapfile fails under bash:3.2" {
   _assert_construct_fails_under_bash32 "mapfile" 'mapfile arr < /dev/null'
 }
 
 # ---------------------------------------------------------------------------
 # declare -A fails under bash:3.2
 # ---------------------------------------------------------------------------
-@test "[T19-ban] declare -A (associative array) fails under bash:3.2" {
+@test "declare -A (associative array) fails under bash:3.2" {
   # Use && so the overall command fails when declare -A fails (exit 0 after ; would mask it)
   _assert_construct_fails_under_bash32 "declare -A" 'declare -A mymap && mymap[key]=val'
 }
@@ -115,28 +115,28 @@ _assert_construct_fails_under_bash32() {
 # ---------------------------------------------------------------------------
 # ${var,,} (lowercase substitution) fails under bash:3.2
 # ---------------------------------------------------------------------------
-@test "[T19-ban] \${var,,} lowercase substitution fails under bash:3.2" {
+@test "\${var,,} lowercase substitution fails under bash:3.2" {
   _assert_construct_fails_under_bash32 '${var,,}' 'v=HELLO; echo "${v,,}"'
 }
 
 # ---------------------------------------------------------------------------
 # ${var^^} (uppercase substitution) fails under bash:3.2
 # ---------------------------------------------------------------------------
-@test "[T19-ban] \${var^^} uppercase substitution fails under bash:3.2" {
+@test "\${var^^} uppercase substitution fails under bash:3.2" {
   _assert_construct_fails_under_bash32 '${var^^}' 'v=hello; echo "${v^^}"'
 }
 
 # ---------------------------------------------------------------------------
 # coproc fails under bash:3.2
 # ---------------------------------------------------------------------------
-@test "[T19-ban] coproc fails under bash:3.2" {
+@test "coproc fails under bash:3.2" {
   _assert_construct_fails_under_bash32 "coproc" 'coproc cat'
 }
 
 # ---------------------------------------------------------------------------
 # wait -n fails under bash:3.2
 # ---------------------------------------------------------------------------
-@test "[T19-ban] wait -n fails under bash:3.2" {
+@test "wait -n fails under bash:3.2" {
   _assert_construct_fails_under_bash32 "wait -n" 'sleep 0 & wait -n'
 }
 
@@ -147,7 +147,7 @@ _assert_construct_fails_under_bash32() {
 # This surfaces any new ban-list entry added to the workflow that lacks a
 # corresponding runtime check in this file — a loud diagnostic, not silent.
 # ---------------------------------------------------------------------------
-@test "[T19-ban] every ban-list pattern parsed from workflow has a known snippet" {
+@test "every ban-list pattern parsed from workflow has a known snippet" {
   require_repo_root
   [ -f "$CI_YML" ]
   local constructs_file
@@ -187,7 +187,7 @@ _assert_construct_fails_under_bash32() {
 # ---------------------------------------------------------------------------
 # Shared helper loads and REPO_ROOT resolves.
 # ---------------------------------------------------------------------------
-@test "[T19-ban] shared helper loads and require_repo_root resolves REPO_ROOT" {
+@test "shared helper loads and require_repo_root resolves REPO_ROOT" {
   require_repo_root
   [ -n "$REPO_ROOT" ]
   [ -d "$REPO_ROOT" ]

@@ -97,11 +97,11 @@ _t39_run_build() {
 # and creates a reproducible `build/` tree from the manifest plus fixed
 # include list."
 # ---------------------------------------------------------------------------
-@test "[T39/G32] tools/build-plugin.mjs exists and is a Node ES module" {
+@test "tools/build-plugin.mjs exists and is a Node ES module" {
   [ -f "$REPO_ROOT/tools/build-plugin.mjs" ]
 }
 
-@test "[T39/G32] node tools/build-plugin.mjs on a minimal fixture exits 0 and produces build/" {
+@test "node tools/build-plugin.mjs on a minimal fixture exits 0 and produces build/" {
   local root="$BATS_TEST_TMPDIR/happy"
   _t39_stage_root "$root" "# sample"$'\n'
   run _t39_run_build "$root"
@@ -119,7 +119,7 @@ _t39_run_build() {
 #      repo-root resolution, transitive nested expansion, CR stripping, no
 #      extra blank lines, and idempotent byte-identical re-run behavior."
 # ---------------------------------------------------------------------------
-@test "[T39/G32] resolver: bare-relative !cat directive is expanded from repo root" {
+@test "resolver: bare-relative !cat directive is expanded from repo root" {
   local root="$BATS_TEST_TMPDIR/grammar"
   _t39_stage_root "$root" "# Header"$'\n'"!cat skills/sample/included.md"$'\n'"# Trailer"$'\n'
   printf 'INCLUDED_BODY\n' >"$root/skills/sample/included.md"
@@ -131,7 +131,7 @@ _t39_run_build() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T39/G32] resolver: nested transitive expansion (A includes B includes C) in single pass" {
+@test "resolver: nested transitive expansion (A includes B includes C) in single pass" {
   local root="$BATS_TEST_TMPDIR/nested"
   _t39_stage_root "$root" "TOP"$'\n'"!cat skills/sample/b.md"$'\n'"END"$'\n'
   printf 'B_PRE\n!cat skills/sample/c.md\nB_POST\n' >"$root/skills/sample/b.md"
@@ -144,7 +144,7 @@ _t39_run_build() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T39/G32] resolver: idempotent — running on already-expanded build/ output is byte-identical" {
+@test "resolver: idempotent — running on already-expanded build/ output is byte-identical" {
   local root="$BATS_TEST_TMPDIR/idem"
   _t39_stage_root "$root" "X"$'\n'"!cat skills/sample/included.md"$'\n'
   printf 'INCLUDED\n' >"$root/skills/sample/included.md"
@@ -163,7 +163,7 @@ _t39_run_build() {
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32] resolver: strips CR (\\r) characters from included content" {
+@test "resolver: strips CR (\\r) characters from included content" {
   local root="$BATS_TEST_TMPDIR/cr"
   _t39_stage_root "$root" "TOP"$'\n'"!cat skills/sample/crlf.md"$'\n'
   printf 'CRLF_LINE\r\nNEXT\r\n' >"$root/skills/sample/crlf.md"
@@ -180,7 +180,7 @@ _t39_run_build() {
   [ "$_bg_sz_with" -eq "$_bg_sz_without" ]
 }
 
-@test "[T39/G32] resolver: directive line is replaced 1:1 with include content (no extra blank lines)" {
+@test "resolver: directive line is replaced 1:1 with include content (no extra blank lines)" {
   local root="$BATS_TEST_TMPDIR/blank"
   _t39_stage_root "$root" "L1"$'\n'"!cat skills/sample/inc.md"$'\n'"L3"$'\n'
   printf 'L2\n' >"$root/skills/sample/inc.md"
@@ -203,7 +203,7 @@ L3" ]
 # paths, path traversal/escaping attempts, outside-root includes, and
 # `${CLAUDE_SKILL_DIR}` in shipped files."
 # ---------------------------------------------------------------------------
-@test "[T39/G32] fail-loud: malformed !cat line (extra arg) exits non-zero with file:line diagnostic" {
+@test "fail-loud: malformed !cat line (extra arg) exits non-zero with file:line diagnostic" {
   local root="$BATS_TEST_TMPDIR/malformed"
   _t39_stage_root "$root" "X"$'\n'"!cat skills/sample/inc.md extraneous-arg"$'\n'
   printf 'BODY\n' >"$root/skills/sample/inc.md"
@@ -213,7 +213,7 @@ L3" ]
   echo "$output" | grep -E 'SKILL\.md:2'
 }
 
-@test "[T39/G32] fail-loud: missing target file exits non-zero with file:line diagnostic" {
+@test "fail-loud: missing target file exits non-zero with file:line diagnostic" {
   local root="$BATS_TEST_TMPDIR/missing"
   _t39_stage_root "$root" "X"$'\n'"!cat skills/sample/does-not-exist.md"$'\n'
   run _t39_run_build "$root"
@@ -222,7 +222,7 @@ L3" ]
   echo "$output" | grep -E -i 'not found|does not exist|missing'
 }
 
-@test "[T39/G32] fail-loud: include cycle exits non-zero with the FULL cycle printed" {
+@test "fail-loud: include cycle exits non-zero with the FULL cycle printed" {
   local root="$BATS_TEST_TMPDIR/cycle"
   _t39_stage_root "$root" "TOP"$'\n'"!cat skills/sample/a.md"$'\n'
   printf 'A\n!cat skills/sample/b.md\n' >"$root/skills/sample/a.md"
@@ -235,7 +235,7 @@ L3" ]
   echo "$output" | grep -E -i 'cycle|circular'
 }
 
-@test "[T39/G32] fail-loud: absolute-path include rejected" {
+@test "fail-loud: absolute-path include rejected" {
   local root="$BATS_TEST_TMPDIR/abs"
   _t39_stage_root "$root" "X"$'\n'"!cat /etc/passwd"$'\n'
   run _t39_run_build "$root"
@@ -245,7 +245,7 @@ L3" ]
   echo "$output" | grep -E 'SKILL\.md:2'
 }
 
-@test "[T39/G32] fail-loud: '..' path traversal rejected" {
+@test "fail-loud: '..' path traversal rejected" {
   local root="$BATS_TEST_TMPDIR/traverse"
   _t39_stage_root "$root" "X"$'\n'"!cat ../escape.md"$'\n'
   printf 'OUTSIDE\n' >"$BATS_TEST_TMPDIR/escape.md"
@@ -254,7 +254,7 @@ L3" ]
   echo "$output" | grep -E -i 'outside|traversal|invalid'
 }
 
-@test "[T39/G32] fail-loud: \${CLAUDE_SKILL_DIR} occurrence in shipped file rejected" {
+@test "fail-loud: \${CLAUDE_SKILL_DIR} occurrence in shipped file rejected" {
   local root="$BATS_TEST_TMPDIR/legacy"
   _t39_stage_root "$root" 'embedded ${CLAUDE_SKILL_DIR}/x in body'$'\n'
   run _t39_run_build "$root"
@@ -272,7 +272,7 @@ L3" ]
 #   `resolves outside repository`."
 # Mirrors T21's symlink-out-of-repo regression in test-dispatch-agent.bats.
 # ---------------------------------------------------------------------------
-@test "[T39/G32] symlink-escape: !cat target whose canonical path is outside repo root fails with 'resolves outside repository'" {
+@test "symlink-escape: !cat target whose canonical path is outside repo root fails with 'resolves outside repository'" {
   local root="$BATS_TEST_TMPDIR/symlink-escape"
   _t39_stage_root "$root" "X"$'\n'"!cat skills/sample/secret.md"$'\n'
   # Place the actual file outside the source root, then symlink into source.
@@ -305,7 +305,7 @@ L3" ]
 # erase the working tree (including .git) silently — `force:true` swallows
 # errors. Guard must fire BEFORE any rmSync call.
 # ---------------------------------------------------------------------------
-@test "[T39/G32] fail-loud: --out resolving to repo root rejected before any rmSync" {
+@test "fail-loud: --out resolving to repo root rejected before any rmSync" {
   local root="$BATS_TEST_TMPDIR/out-is-root"
   _t39_stage_root "$root" "# sample"$'\n'
   # Sentinel file at the source root — must remain after the failed run.
@@ -319,7 +319,7 @@ L3" ]
   [ -f "$root/skills/sample/SKILL.md" ]
 }
 
-@test "[T39/G32] fail-loud: --out resolving to an ancestor of repo root rejected" {
+@test "fail-loud: --out resolving to an ancestor of repo root rejected" {
   local parent="$BATS_TEST_TMPDIR/anc-parent"
   local root="$parent/repo"
   mkdir -p "$parent"
@@ -338,7 +338,7 @@ L3" ]
 # Original implementation only scanned expanded .md files; non-.md content
 # bypassed the guard.
 # ---------------------------------------------------------------------------
-@test "[T39/G32] fail-loud: \${CLAUDE_SKILL_DIR} in shipped non-.md file rejected" {
+@test "fail-loud: \${CLAUDE_SKILL_DIR} in shipped non-.md file rejected" {
   local root="$BATS_TEST_TMPDIR/legacy-non-md"
   _t39_stage_root "$root" "# clean"$'\n'
   # Place legacy token in a shipped shell script.
@@ -356,7 +356,7 @@ L3" ]
 # diamond-expansion DoS. Cycle-stack alone catches direct ancestor cycles
 # but does not bound non-cyclic deep nesting.
 # ---------------------------------------------------------------------------
-@test "[T39/G32] fail-loud: include depth cap rejects pathologically deep nesting" {
+@test "fail-loud: include depth cap rejects pathologically deep nesting" {
   local root="$BATS_TEST_TMPDIR/deep"
   _t39_stage_root "$root" "TOP"$'\n'"!cat skills/sample/n00.md"$'\n'
   # Build a 24-level linear chain: n00 -> n01 -> ... -> n23 -> leaf.
@@ -386,7 +386,7 @@ L3" ]
 # which exceeds the 4 MB per-entry cap. Build must fail-loud with the full
 # include chain printed.
 # ---------------------------------------------------------------------------
-@test "[T39/G32] fail-loud: per-cache-entry byte-size cap rejects intra-file fan-out blow-up" {
+@test "fail-loud: per-cache-entry byte-size cap rejects intra-file fan-out blow-up" {
   local root="$BATS_TEST_TMPDIR/fanout"
   _t39_stage_root "$root" "TOP"$'\n'"!cat skills/sample/lvl0.md"$'\n'
   # Leaf: ~500 bytes so 10^4 × leaf > 4 MB.
@@ -420,7 +420,7 @@ L3" ]
   fi
 }
 
-@test "[T39/G32] CI workflow text references node tools/build-plugin.mjs in the build-sync gate failure path" {
+@test "CI workflow text references node tools/build-plugin.mjs in the build-sync gate failure path" {
   [ -f "$REPO_ROOT/.github/workflows/ci.yml" ]
   run grep -F 'node tools/build-plugin.mjs' "$REPO_ROOT/.github/workflows/ci.yml"
   [ "$status" -eq 0 ]
@@ -437,7 +437,7 @@ L3" ]
 #   - recurseDir at a manifest-dir top level (.claude-plugin/)
 # Both paths flow through `isSecretBasename(entry.name)` in recurseDir.
 # ---------------------------------------------------------------------------
-@test "[T39/G32] denylist: .env in skills/ subtree is rejected with file path in diagnostic" {
+@test "denylist: .env in skills/ subtree is rejected with file path in diagnostic" {
   local root="$BATS_TEST_TMPDIR/denylist-env"
   _t39_stage_root "$root" "# clean"$'\n'
   printf 'SECRET=value\n' >"$root/skills/sample/.env"
@@ -451,7 +451,7 @@ L3" ]
   [ ! -e "$root/build/skills/sample/.env" ]
 }
 
-@test "[T39/G32] denylist: id_rsa in scripts/ subtree is rejected with file path in diagnostic" {
+@test "denylist: id_rsa in scripts/ subtree is rejected with file path in diagnostic" {
   local root="$BATS_TEST_TMPDIR/denylist-id-rsa"
   _t39_stage_root "$root" "# clean"$'\n'
   printf 'BEGIN OPENSSH PRIVATE KEY\n' >"$root/scripts/id_rsa"
@@ -462,7 +462,7 @@ L3" ]
   [ ! -e "$root/build/scripts/id_rsa" ]
 }
 
-@test "[T39/G32] denylist: *.pem in .claude-plugin/ is rejected with file path in diagnostic" {
+@test "denylist: *.pem in .claude-plugin/ is rejected with file path in diagnostic" {
   local root="$BATS_TEST_TMPDIR/denylist-pem"
   _t39_stage_root "$root" "# clean"$'\n'
   printf -- '-----BEGIN CERTIFICATE-----\n' >"$root/.claude-plugin/server.pem"

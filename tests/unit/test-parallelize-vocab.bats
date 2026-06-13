@@ -26,14 +26,14 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Branch Model section exists in SKILL.md
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] Branch Model section exists in parallelize SKILL.md" {
+@test "Branch Model section exists in parallelize SKILL.md" {
   extract_section "$SKILL_MD" H2 "Branch Model (Symbolic — Resolved by Implement)"
 }
 
 # ---------------------------------------------------------------------------
 # Canonical token: "feature branch tip" in Branch Model section
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] Branch Model contains canonical token 'feature branch tip'" {
+@test "Branch Model contains canonical token 'feature branch tip'" {
   extract_and_grep "$SKILL_MD" H2 "Branch Model (Symbolic — Resolved by Implement)" \
     "feature branch tip"
 }
@@ -41,7 +41,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Canonical token: "task-NN tip" in Branch Model section
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] Branch Model contains canonical token 'task-NN tip'" {
+@test "Branch Model contains canonical token 'task-NN tip'" {
   extract_and_grep "$SKILL_MD" H2 "Branch Model (Symbolic — Resolved by Implement)" \
     "task-NN tip"
 }
@@ -49,7 +49,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Canonical token: "task-00 tip" in Branch Model section
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] Branch Model contains canonical token 'task-00 tip'" {
+@test "Branch Model contains canonical token 'task-00 tip'" {
   extract_and_grep "$SKILL_MD" H2 "Branch Model (Symbolic — Resolved by Implement)" \
     "task-00 tip"
 }
@@ -57,7 +57,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Canonical token: "stage-after-W{N}" in Branch Model section
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] Branch Model contains canonical token 'stage-after-W{N}'" {
+@test "Branch Model contains canonical token 'stage-after-W{N}'" {
   extract_and_grep "$SKILL_MD" H2 "Branch Model (Symbolic — Resolved by Implement)" \
     "stage-after-W"
 }
@@ -65,7 +65,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Canonical token: suffixed "stage-after-W{N}{suffix}" form in Branch Model
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] Branch Model contains suffixed 'stage-after-W{N}{suffix}' form" {
+@test "Branch Model contains suffixed 'stage-after-W{N}{suffix}' form" {
   extract_and_grep "$SKILL_MD" H2 "Branch Model (Symbolic — Resolved by Implement)" \
     "stage-after-W[0-9][a-z]"
 }
@@ -73,34 +73,34 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Reviewer file: Parallelize-specific quality checks section exists
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] Parallelize-specific quality checks section exists in reviewer" {
+@test "Parallelize-specific quality checks section exists in reviewer" {
   extract_section "$REVIEWER_MD" H3 "Parallelize-specific quality checks"
 }
 
 # ---------------------------------------------------------------------------
 # Canonical tokens present in reviewer's vocabulary check
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] reviewer quality checks contain canonical token 'feature branch tip'" {
+@test "reviewer quality checks contain canonical token 'feature branch tip'" {
   extract_and_grep "$REVIEWER_MD" H3 "Parallelize-specific quality checks" \
     "feature branch tip"
 }
 
-@test "[T23-vocab] reviewer quality checks contain canonical token 'task-NN tip'" {
+@test "reviewer quality checks contain canonical token 'task-NN tip'" {
   extract_and_grep "$REVIEWER_MD" H3 "Parallelize-specific quality checks" \
     "task-NN tip"
 }
 
-@test "[T23-vocab] reviewer quality checks contain canonical token 'task-00 tip'" {
+@test "reviewer quality checks contain canonical token 'task-00 tip'" {
   extract_and_grep "$REVIEWER_MD" H3 "Parallelize-specific quality checks" \
     "task-00 tip"
 }
 
-@test "[T23-vocab] reviewer quality checks contain canonical token 'stage-after-W'" {
+@test "reviewer quality checks contain canonical token 'stage-after-W'" {
   extract_and_grep "$REVIEWER_MD" H3 "Parallelize-specific quality checks" \
     "stage-after-W"
 }
 
-@test "[T23-vocab] reviewer quality checks reference suffixed stage-after form" {
+@test "reviewer quality checks reference suffixed stage-after form" {
   extract_and_grep "$REVIEWER_MD" H3 "Parallelize-specific quality checks" \
     "stage-after-W[0-9][a-z]"
 }
@@ -109,7 +109,7 @@ setup_file() {
 # No drift: SKILL.md Branch Model and reviewer both declare all 4 core tokens.
 # (Drift check: both sections contain the same 4 required tokens.)
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] no drift — SKILL.md and reviewer both carry all 4 canonical base tokens" {
+@test "no drift — SKILL.md and reviewer both carry all 4 canonical base tokens" {
   # Verify each of the 4 core canonical tokens is present in BOTH files.
   # extract_and_grep returns 1 if any token is missing, causing test failure.
   local tokens="feature branch tip task-NN tip task-00 tip stage-after-W"
@@ -134,7 +134,7 @@ setup_file() {
 # The reviewer section explicitly names hyphenated and camelCase variants as
 # NOT canonical. We verify the reviewer text flags this pattern.
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] reviewer flags unconventional 'stageAfterWave4' as style violation" {
+@test "reviewer flags unconventional 'stageAfterWave4' as style violation" {
   # The reviewer's quality checks must explicitly name non-canonical forms
   # (hyphenated variants, camelCase variants) as style violations.
   # Canonical check: the reviewer prose mentions at least one of the
@@ -166,7 +166,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Missing-anchor loud-failure: helper emits named diagnostic on bad heading
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] missing-anchor emits skill-markdown loud diagnostic" {
+@test "missing-anchor emits skill-markdown loud diagnostic" {
   run extract_and_grep "$SKILL_MD" H2 "Nonexistent Heading XXXX" "anything"
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep -q "skill-markdown:"
@@ -175,7 +175,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Shared helper loads and REPO_ROOT resolves.
 # ---------------------------------------------------------------------------
-@test "[T23-vocab] shared helper loads and require_repo_root resolves REPO_ROOT" {
+@test "shared helper loads and require_repo_root resolves REPO_ROOT" {
   require_repo_root
   [ -n "$REPO_ROOT" ]
   [ -d "$REPO_ROOT" ]
@@ -198,7 +198,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # TE-1: SKILL.md uses `### Wave N` sub-section headings to organize Branch Map
 # ---------------------------------------------------------------------------
-@test "[T4-shape] SKILL.md contains ### Wave N sub-section headings as Branch Map organizing structure" {
+@test "SKILL.md contains ### Wave N sub-section headings as Branch Map organizing structure" {
   # Test expectation: skills/parallelize/SKILL.md contains `### Wave N`
   # sub-section headings (e.g. `### Wave 1`, `### Wave 2`) as the organizing
   # structure for its Branch Map.
@@ -213,7 +213,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # TE-1 (companion): no flat Task/Branch/Base Branch Map table outside any Wave
 # ---------------------------------------------------------------------------
-@test "[T4-shape] every Task/Branch/Base table header in SKILL.md is grouped under a ### Wave N sub-section" {
+@test "every Task/Branch/Base table header in SKILL.md is grouped under a ### Wave N sub-section" {
   # Test expectation: no flat three-column Branch Map table appearing outside
   # a Wave sub-section. A `| Task | Branch | Base |` header line that is not
   # preceded by a `### Wave N` heading (within the current sub-section scope)
@@ -241,7 +241,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # TE-2: each ### Wave N sub-section contains a Task/Branch/Base table
 # ---------------------------------------------------------------------------
-@test "[T4-shape] each ### Wave N sub-section in SKILL.md is followed by a Task/Branch/Base table header" {
+@test "each ### Wave N sub-section in SKILL.md is followed by a Task/Branch/Base table header" {
   # Test expectation: Each `### Wave N` sub-section contains a Markdown table
   # with exactly three columns: Task, Branch, and Base.
   #
@@ -285,7 +285,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # TE-3: no `## Execution Order` H2 anywhere in the artifact spec or examples
 # ---------------------------------------------------------------------------
-@test "[T4-shape] SKILL.md no longer contains '## Execution Order' H2 heading anywhere" {
+@test "SKILL.md no longer contains '## Execution Order' H2 heading anywhere" {
   # Test expectation: No `## Execution Order` heading or equivalent standalone
   # wave-order prose block exists anywhere in the artifact specification or
   # worked-example sections of the skill.
@@ -298,7 +298,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # TE-4: Worked Example — Good shows Wave-grouped sub-sections
 # ---------------------------------------------------------------------------
-@test "[T4-shape] Worked Example — Good contains ### Wave N sub-sections matching updated spec shape" {
+@test "Worked Example — Good contains ### Wave N sub-sections matching updated spec shape" {
   # Test expectation: The "Good" worked example in the skill shows
   # Wave-grouped sub-sections and matches the updated specification shape.
   local extract
@@ -322,7 +322,7 @@ setup_file() {
 # TE-5: Worked Example — Bad illustrates flat layout (or anti-pattern) WITHOUT
 # Wave sub-sections
 # ---------------------------------------------------------------------------
-@test "[T4-shape] Worked Example — Bad does not contain ### Wave N sub-sections (preserves anti-pattern)" {
+@test "Worked Example — Bad does not contain ### Wave N sub-sections (preserves anti-pattern)" {
   # Test expectation: The "Bad" worked example in the skill illustrates the
   # old flat layout (or another anti-pattern) without Wave sub-sections.
   local extract
@@ -341,7 +341,7 @@ setup_file() {
 # (Load-bearing RED gate: this assertion must fail until the implementer adds
 # the rule to agents/qrspi-parallelize-reviewer.md.)
 # ---------------------------------------------------------------------------
-@test "[T4-shape] reviewer Parallelize-specific quality checks require ### Wave N Branch Map grouping rule" {
+@test "reviewer Parallelize-specific quality checks require ### Wave N Branch Map grouping rule" {
   # Test expectation: agents/qrspi-parallelize-reviewer.md contains a
   # structural rule that requires Branch Map content to be organized under
   # `### Wave N` sub-section headings. The assertion passes when the rule is
@@ -362,7 +362,7 @@ setup_file() {
 # same section, guarding against drift where the rule is named but its
 # grouping semantic is lost.
 # ---------------------------------------------------------------------------
-@test "[T4-shape] reviewer ### Wave N rule mentions sub-section grouping semantic" {
+@test "reviewer ### Wave N rule mentions sub-section grouping semantic" {
   # Test expectation: the reviewer rule must establish the SUB-SECTION grouping
   # contract (not merely mention the word "Wave"). The reviewer section must
   # contain "sub-section" (case-insensitive) so future drift can't reduce the

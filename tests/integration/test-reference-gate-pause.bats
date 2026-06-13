@@ -106,27 +106,27 @@ teardown() {
 # T26: Parallelize wave-termination rule + canonical note
 # =============================================================================
 
-@test "[T30-rg-pause] Parallelize documents reference_gate wave-termination rule" {
+@test "Parallelize documents reference_gate wave-termination rule" {
   extract_and_grep "$PARALLELIZE_SKILL" H2 "Branch Model (Symbolic — Resolved by Implement)" \
     "[Rr]eference-gate wave termination"
 }
 
-@test "[T30-rg-pause] Parallelize names dependents land in next Wave at the earliest" {
+@test "Parallelize names dependents land in next Wave at the earliest" {
   extract_and_grep "$PARALLELIZE_SKILL" H2 "Branch Model (Symbolic — Resolved by Implement)" \
     "next Wave"
 }
 
-@test "[T30-rg-pause] Parallelize template documents canonical Reference-gate note shape" {
+@test "Parallelize template documents canonical Reference-gate note shape" {
   extract_and_grep "$PARALLELIZE_SKILL" H2 "Artifact" \
     "Reference gate: task-NN"
 }
 
-@test "[T30-rg-pause] Parallelize Red Flags catches missing canonical note" {
+@test "Parallelize Red Flags catches missing canonical note" {
   extract_and_grep "$PARALLELIZE_SKILL" H2 "Red Flags — STOP" \
     "reference_gate: true.*Reference gate: task-NN"
 }
 
-@test "[T30-rg-pause] Parallelize Red Flags catches dependent in same Wave as gate" {
+@test "Parallelize Red Flags catches dependent in same Wave as gate" {
   extract_and_grep "$PARALLELIZE_SKILL" H2 "Red Flags — STOP" \
     "same [Ww]ave"
 }
@@ -135,12 +135,12 @@ teardown() {
 # Fixture plan carries canonical note for the gated task
 # =============================================================================
 
-@test "[T30-rg-pause] Fixture parallelization.md emits canonical Reference-gate note for task-03" {
+@test "Fixture parallelization.md emits canonical Reference-gate note for task-03" {
   grep -E "^Reference gate: task-03 \(Adapter contract doc\) — dependents waiting: task-04$" \
     "$FIXTURE_DIR/parallelization.md"
 }
 
-@test "[T30-rg-pause] Fixture task-03 carries reference_gate + reference_artifact pair" {
+@test "Fixture task-03 carries reference_gate + reference_artifact pair" {
   grep -E "^reference_gate: true$" "$FIXTURE_DIR/tasks/task-03.md"
   grep -E "^reference_artifact: " "$FIXTURE_DIR/tasks/task-03.md"
 }
@@ -149,27 +149,27 @@ teardown() {
 # T27: Implement reference-gate pause names approval-file path + bypass diagnostic
 # =============================================================================
 
-@test "[T30-rg-pause] Implement names canonical approval file path reviews/tasks/task-NN/reference-gate.md" {
+@test "Implement names canonical approval file path reviews/tasks/task-NN/reference-gate.md" {
   extract_and_grep "$IMPLEMENT_SKILL" H3 "Reference-Gate Human Pause (per-task DONE handling)" \
     "reviews/tasks/task-NN/reference-gate.md"
 }
 
-@test "[T30-rg-pause] Implement requires explicit reference approved confirmation" {
+@test "Implement requires explicit reference approved confirmation" {
   extract_and_grep "$IMPLEMENT_SKILL" H3 "Reference-Gate Human Pause (per-task DONE handling)" \
     "reference approved"
 }
 
-@test "[T30-rg-pause] Implement names reference-gate-bypass diagnostic on bypass attempt" {
+@test "Implement names reference-gate-bypass diagnostic on bypass attempt" {
   extract_and_grep "$IMPLEMENT_SKILL" H3 "Reference-Gate Human Pause (per-task DONE handling)" \
     "reference-gate-bypass"
 }
 
-@test "[T30-rg-pause] Implement bypass diagnostic names blocked-dependent field" {
+@test "Implement bypass diagnostic names blocked-dependent field" {
   extract_and_grep "$IMPLEMENT_SKILL" H3 "Reference-Gate Human Pause (per-task DONE handling)" \
     "blocked-dependent=task-MM"
 }
 
-@test "[T30-rg-pause] Implement records approval with timestamp, run_slug, task_id, reference_artifact" {
+@test "Implement records approval with timestamp, run_slug, task_id, reference_artifact" {
   extract_and_grep "$IMPLEMENT_SKILL" H3 "Reference-Gate Human Pause (per-task DONE handling)" \
     "timestamp"
   extract_and_grep "$IMPLEMENT_SKILL" H3 "Reference-Gate Human Pause (per-task DONE handling)" \
@@ -191,11 +191,11 @@ teardown() {
 # state: the approval file does not exist, and the documented Implement-skill
 # diagnostic names the precondition (`approval-file-absent`).
 
-@test "[T30-rg-pause] Bypass simulation: approval file is absent in fixture state" {
+@test "Bypass simulation: approval file is absent in fixture state" {
   [ ! -e "$FIXTURE_DIR/reviews/tasks/task-03/reference-gate.md" ]
 }
 
-@test "[T30-rg-pause] Implement diagnostic names approval-file-absent as bypass reason" {
+@test "Implement diagnostic names approval-file-absent as bypass reason" {
   extract_and_grep "$IMPLEMENT_SKILL" H3 "Reference-Gate Human Pause (per-task DONE handling)" \
     "approval-file-absent"
 }
@@ -204,7 +204,7 @@ teardown() {
 # Approval simulation: writing the approval file releases the pause
 # =============================================================================
 
-@test "[T30-rg-pause] Approval simulation: writing reference-gate.md satisfies path-existence precondition" {
+@test "Approval simulation: writing reference-gate.md satisfies path-existence precondition" {
   cat > "$FIXTURE_DIR/reviews/tasks/task-03/reference-gate.md" <<'EOF'
 timestamp: 2026-05-19T00:00:00Z
 run_slug: t30-fixture
@@ -223,7 +223,7 @@ EOF
 # UI tasks in later waves) is dispatched.
 # =============================================================================
 
-@test "[T30-rg-pause] Implement coordinates reference-gate with ui:true visual-fidelity dispatch" {
+@test "Implement coordinates reference-gate with ui:true visual-fidelity dispatch" {
   extract_and_grep "$IMPLEMENT_SKILL" H3 "Reference-Gate Human Pause (per-task DONE handling)" \
     "ui: true"
 }

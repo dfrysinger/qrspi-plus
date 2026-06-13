@@ -134,7 +134,7 @@ _scan_diff_line() {
 # ---------------------------------------------------------------------------
 # Fixture 1: internal-ID token on skills/foo/SKILL.md → hit
 # ---------------------------------------------------------------------------
-@test "[T18] fixture-1: internal-ID on skills/foo/SKILL.md triggers hit naming file and family" {
+@test "fixture-1: internal-ID on skills/foo/SKILL.md triggers hit naming file and family" {
   local line="This was found in round-2 finding-05 and needs attention."
   local path="skills/foo/SKILL.md"
 
@@ -147,7 +147,7 @@ _scan_diff_line() {
 # ---------------------------------------------------------------------------
 # Fixture 2: same internal-ID token under docs/qrspi/** → no hit (path carve-out)
 # ---------------------------------------------------------------------------
-@test "[T18] fixture-2: internal-ID under docs/qrspi/** path carve-out — no hit" {
+@test "fixture-2: internal-ID under docs/qrspi/** path carve-out — no hit" {
   local line="This was found in round-2 finding-05 and needs attention."
   local path="docs/qrspi/2026-05-17-v07-release/reviews/goals/round-01.md"
 
@@ -159,7 +159,7 @@ _scan_diff_line() {
 # ---------------------------------------------------------------------------
 # Fixture 3: evergreen token on non-exempt .md file → hit
 # ---------------------------------------------------------------------------
-@test "[T18] fixture-3: evergreen token on non-exempt .md triggers hit naming file and family" {
+@test "fixture-3: evergreen token on non-exempt .md triggers hit naming file and family" {
   local line="This feature ships in v0.7+ as the new default."
   local path="skills/implementer-protocol/SKILL.md"
 
@@ -172,7 +172,7 @@ _scan_diff_line() {
 # ---------------------------------------------------------------------------
 # Fixture 4: evergreen token on .sh file → no hit (markdown-only rule)
 # ---------------------------------------------------------------------------
-@test "[T18] fixture-4: evergreen token on .sh file — no hit (markdown-only rule)" {
+@test "fixture-4: evergreen token on .sh file — no hit (markdown-only rule)" {
   local line="echo 'Ships in v0.7'"
   local path="scripts/my-deploy.sh"
 
@@ -185,7 +185,7 @@ _scan_diff_line() {
 # Fixture 5: retained hit + explicit DONE-report acknowledgment → acknowledged
 # The acknowledgment is preserved in the DONE report for reviewer visibility.
 # ---------------------------------------------------------------------------
-@test "[T18] fixture-5: hit with DONE-report acknowledgment — acknowledged, preserved in report" {
+@test "fixture-5: hit with DONE-report acknowledgment — acknowledged, preserved in report" {
   # Simulate a DONE report file with acknowledgment
   local done_report="$FIXTURE_DIR/done-report.md"
   printf '# DONE Report\n\n## Pre-DONE Self-Check Hits\n\n**Acknowledged hit:** skills/foo/SKILL.md line 7 [internal-ID: round-2 finding-05]\nRationale: This line documents the finding schema itself and is the work product.\n' > "$done_report"
@@ -207,7 +207,7 @@ _scan_diff_line() {
 # Fixture 6: retained hit + NO acknowledgment → advisory proceed; hit surfaced
 # via DONE-report companion channel
 # ---------------------------------------------------------------------------
-@test "[T18] fixture-6: unacknowledged hit still proceeds (advisory) and is surfaced to reviewer" {
+@test "fixture-6: unacknowledged hit still proceeds (advisory) and is surfaced to reviewer" {
   # Simulate a DONE report with an unacknowledged hit
   local done_report="$FIXTURE_DIR/done-report-unack.md"
   printf '# DONE Report\n\n## Pre-DONE Self-Check Hits\n\n**Unacknowledged hit:** skills/bar/SKILL.md line 42 [evergreen-markdown: v0.7]\nNo rationale provided.\n' > "$done_report"
@@ -229,7 +229,7 @@ _scan_diff_line() {
 # ---------------------------------------------------------------------------
 # Hygiene contract section exists in implementer-protocol SKILL.md
 # ---------------------------------------------------------------------------
-@test "[T18] hygiene contract H2 section exists in implementer-protocol SKILL.md" {
+@test "hygiene contract H2 section exists in implementer-protocol SKILL.md" {
   require_repo_root
   local skill_file="$REPO_ROOT/skills/implementer-protocol/SKILL.md"
   extract_section "$skill_file" H2 "Hygiene contract"
@@ -238,7 +238,7 @@ _scan_diff_line() {
 # ---------------------------------------------------------------------------
 # Internal-ID forbidden tokens H3 exists under Hygiene contract
 # ---------------------------------------------------------------------------
-@test "[T18] Internal-ID forbidden tokens H3 section present in hygiene contract" {
+@test "Internal-ID forbidden tokens H3 section present in hygiene contract" {
   require_repo_root
   local skill_file="$REPO_ROOT/skills/implementer-protocol/SKILL.md"
   extract_and_grep "$skill_file" H3 "Internal-ID forbidden tokens" "round"
@@ -247,7 +247,7 @@ _scan_diff_line() {
 # ---------------------------------------------------------------------------
 # Evergreen-markdown forbidden tokens H3 exists under Hygiene contract
 # ---------------------------------------------------------------------------
-@test "[T18] Evergreen-markdown forbidden tokens H3 section present in hygiene contract" {
+@test "Evergreen-markdown forbidden tokens H3 section present in hygiene contract" {
   require_repo_root
   local skill_file="$REPO_ROOT/skills/implementer-protocol/SKILL.md"
   extract_and_grep "$skill_file" H3 "Evergreen-markdown forbidden tokens" "v\\\\d"
@@ -256,7 +256,7 @@ _scan_diff_line() {
 # ---------------------------------------------------------------------------
 # Pre-DONE self-check H3 exists and names advisory nature
 # ---------------------------------------------------------------------------
-@test "[T18] pre-DONE self-check H3 section names advisory contract" {
+@test "pre-DONE self-check H3 section names advisory contract" {
   require_repo_root
   local skill_file="$REPO_ROOT/skills/implementer-protocol/SKILL.md"
   extract_and_grep "$skill_file" H3 "Pre-DONE self-check (combined hygiene scan)" "advisory"
@@ -265,7 +265,7 @@ _scan_diff_line() {
 # ---------------------------------------------------------------------------
 # Pre-DONE self-check mentions reviewer visibility channel
 # ---------------------------------------------------------------------------
-@test "[T18] pre-DONE self-check H3 section names reviewer visibility channel" {
+@test "pre-DONE self-check H3 section names reviewer visibility channel" {
   require_repo_root
   local skill_file="$REPO_ROOT/skills/implementer-protocol/SKILL.md"
   extract_and_grep "$skill_file" H3 "Pre-DONE self-check (combined hygiene scan)" "[Rr]eviewer"
@@ -274,7 +274,7 @@ _scan_diff_line() {
 # ---------------------------------------------------------------------------
 # Shared helper loads and REPO_ROOT resolves.
 # ---------------------------------------------------------------------------
-@test "[T18] shared helper loads and require_repo_root resolves REPO_ROOT" {
+@test "shared helper loads and require_repo_root resolves REPO_ROOT" {
   require_repo_root
   [ -n "$REPO_ROOT" ]
   [ -d "$REPO_ROOT" ]

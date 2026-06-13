@@ -482,7 +482,7 @@ _t7_require_trusted_gh() {
 # T7 / TE1: SKILL prose names both transports
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE1] using-qrspi SKILL Codex detection section names BOTH Copilot CLI task-tool and Claude Code shell-pipeline transports" {
+@test "using-qrspi SKILL Codex detection section names BOTH Copilot CLI task-tool and Claude Code shell-pipeline transports" {
   # Test expectation: skills/using-qrspi/SKILL.md Codex detection section
   # contains conditional prose that explicitly names both the Copilot CLI
   # task-tool transport and the Claude Code shell-pipeline transport.
@@ -518,7 +518,7 @@ _t7_require_trusted_gh() {
 # T7 / TE2: SKILL prose names agent_type: code-review and model: gpt-5.3-codex
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE2] using-qrspi SKILL prose specifies agent_type: code-review and model: gpt-5.3-codex for Copilot CLI Codex dispatch" {
+@test "using-qrspi SKILL prose specifies agent_type: code-review and model: gpt-5.3-codex for Copilot CLI Codex dispatch" {
   # Test expectation: the SKILL prose specifies `agent_type: code-review`
   # and `model: gpt-5.3-codex` as the parameters for Copilot CLI Codex
   # dispatch.  Both literal tokens must be present (the model identifier
@@ -534,7 +534,7 @@ _t7_require_trusted_gh() {
 # Codex dispatch mechanism.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE3] using-qrspi SKILL prose names scripts/dispatch-agent.sh as the Claude Code Codex dispatch mechanism" {
+@test "using-qrspi SKILL prose names scripts/dispatch-agent.sh as the Claude Code Codex dispatch mechanism" {
   # Test expectation: the SKILL prose names `scripts/dispatch-agent.sh`
   # as the Claude Code Codex dispatch mechanism.  The token must appear
   # in the Codex-related prose slice (not just incidentally elsewhere).
@@ -556,7 +556,7 @@ _t7_require_trusted_gh() {
 # T7 / TE4: SKILL prose documents the mismatch warning-vs-gating policy.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE4] using-qrspi SKILL prose documents that mismatch emits single-line stderr diagnostic and continues with configured policy (mismatch does NOT gate dispatch)" {
+@test "using-qrspi SKILL prose documents that mismatch emits single-line stderr diagnostic and continues with configured policy (mismatch does NOT gate dispatch)" {
   # Test expectation: skills/using-qrspi/SKILL.md contains prose documenting
   # that when the detected host disagrees with the codex_reviews config
   # value, the dispatch surface emits a single-line diagnostic to stderr
@@ -589,7 +589,7 @@ _t7_require_trusted_gh() {
 # wrapper.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE5] dispatch surface: COPILOT_CLI=1 path emits [transport: task-tool] exactly once and never [transport: shell-pipeline]" {
+@test "dispatch surface: COPILOT_CLI=1 path emits [transport: task-tool] exactly once and never [transport: shell-pipeline]" {
   # Test expectation: with COPILOT_CLI=1 set, the dispatch surface emits
   # the `[transport: task-tool]` marker to stderr exactly once and does
   # not emit the `[transport: shell-pipeline]` marker (exercising a
@@ -634,7 +634,7 @@ _t7_require_trusted_gh() {
 # no [transport: task-tool].  Mocked scripts/dispatch-agent.sh path.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE6] dispatch surface: COPILOT_CLI-unset path emits [transport: shell-pipeline] exactly once and never [transport: task-tool]" {
+@test "dispatch surface: COPILOT_CLI-unset path emits [transport: shell-pipeline] exactly once and never [transport: task-tool]" {
   # Test expectation: with COPILOT_CLI unset and the shell pipeline via
   # `scripts/dispatch-agent.sh` mocked, the dispatch surface emits the
   # `[transport: shell-pipeline]` marker to stderr exactly once and does
@@ -672,7 +672,7 @@ _t7_require_trusted_gh() {
 # + propagates non-zero exit (NO log-and-continue).
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE7] dispatch surface: check_codex_available non-zero short-circuits with single-line stderr diagnostic and propagates non-zero exit (no log-and-continue)" {
+@test "dispatch surface: check_codex_available non-zero short-circuits with single-line stderr diagnostic and propagates non-zero exit (no log-and-continue)" {
   # Test expectation: when check_codex_available returns non-zero for the
   # detected host, the dispatch surface emits a single-line diagnostic to
   # stderr and propagates non-zero exit (no log-and-continue).
@@ -720,7 +720,7 @@ _t7_require_trusted_gh() {
 # T7 / TE8a (positive): Copilot CLI assertion passes when COPILOT_CLI=1 set.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE8a] dispatch surface: Copilot CLI assertion PASSES (task-tool marker present) when COPILOT_CLI=1 is set" {
+@test "dispatch surface: Copilot CLI assertion PASSES (task-tool marker present) when COPILOT_CLI=1 is set" {
   # Test expectation: the acceptance test assertion for the Copilot CLI
   # path passes when COPILOT_CLI=1 is set (positive case of TE8's
   # discriminating-power assertion).
@@ -758,7 +758,7 @@ _t7_require_trusted_gh() {
 # claude-code branch.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE8b] dispatch surface: Copilot CLI assertion FAILS (task-tool marker ABSENT) when COPILOT_CLI is unset (discriminating-power negative)" {
+@test "dispatch surface: Copilot CLI assertion FAILS (task-tool marker ABSENT) when COPILOT_CLI is unset (discriminating-power negative)" {
   # Test expectation: the acceptance test assertion for the Copilot CLI
   # path fails (RED) when COPILOT_CLI is absent.  This is the inverted-
   # environment negative case proving the assertion has discriminating
@@ -794,7 +794,7 @@ _t7_require_trusted_gh() {
 # T7 / TE9a (positive): Claude Code assertion passes when COPILOT_CLI unset.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE9a] dispatch surface: Claude Code assertion PASSES (shell-pipeline marker present) when COPILOT_CLI is unset" {
+@test "dispatch surface: Claude Code assertion PASSES (shell-pipeline marker present) when COPILOT_CLI is unset" {
   # Test expectation: the acceptance test assertion for the Claude Code
   # path passes when COPILOT_CLI is unset (positive case of TE9).
   local tmp
@@ -827,7 +827,7 @@ _t7_require_trusted_gh() {
 # copilot-cli branch.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE9b] dispatch surface: Claude Code assertion FAILS (shell-pipeline marker ABSENT) when COPILOT_CLI=1 is active (discriminating-power negative)" {
+@test "dispatch surface: Claude Code assertion FAILS (shell-pipeline marker ABSENT) when COPILOT_CLI=1 is active (discriminating-power negative)" {
   # Test expectation: the acceptance test assertion for the Claude Code
   # path fails (RED) when the Copilot CLI signal is active.  The
   # shell-pipeline marker MUST NOT fire when COPILOT_CLI=1 selects the
@@ -866,7 +866,7 @@ _t7_require_trusted_gh() {
 # the stdout DISPATCH_FILE= value.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE10] dispatch surface: Copilot CLI path — first-party dispatch exits 0, stdout carries DISPATCH_FILE= reference, and manifest records first_party entry" {
+@test "dispatch surface: Copilot CLI path — first-party dispatch exits 0, stdout carries DISPATCH_FILE= reference, and manifest records first_party entry" {
   # Test expectation: for the Copilot CLI path, the first-party dispatch
   # mechanism writes the assembled prompt to a .dispatch/<tag>.prompt file,
   # emits a DISPATCH_FILE= reference on stdout (so the orchestrator passes
@@ -919,7 +919,7 @@ _t7_require_trusted_gh() {
 # the mock.  Exit-code-0-alone is insufficient proof.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE11] dispatch surface: Claude Code path — mocked shell-pipeline dispatch exits 0 AND stdout carries a distinguishable mock-emitted marker (exit 0 alone insufficient)" {
+@test "dispatch surface: Claude Code path — mocked shell-pipeline dispatch exits 0 AND stdout carries a distinguishable mock-emitted marker (exit 0 alone insufficient)" {
   # Test expectation: for the Claude Code path, the mocked
   # `scripts/dispatch-agent.sh` dispatch exits with code 0 and captured
   # stdout contains a distinguishable marker string emitted by the mock
@@ -961,7 +961,7 @@ _t7_require_trusted_gh() {
 # propagates unchanged.  No suppression, no log-and-continue.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE12] dispatch surface: non-zero transport exit propagates unchanged on the correctly-routed Codex-available path (no suppression)" {
+@test "dispatch surface: non-zero transport exit propagates unchanged on the correctly-routed Codex-available path (no suppression)" {
   # Test expectation: when the mocked transport command (correctly-routed,
   # Codex available) exits with a non-zero exit code, the dispatch surface
   # propagates that same non-zero exit code to the caller — no
@@ -1014,7 +1014,7 @@ _t7_require_trusted_gh() {
 # unchanged.  The mismatch warning does not suppress dispatch failures.
 # ---------------------------------------------------------------------------
 
-@test "[T7 / TE13] dispatch surface: mismatch-warning path does not suppress first-party dispatch (mismatch emitted, first-party ran, exits 0)" {
+@test "dispatch surface: mismatch-warning path does not suppress first-party dispatch (mismatch emitted, first-party ran, exits 0)" {
   # Test expectation: when the dispatch-surface detects a mismatch
   # (copilot-cli detected but codex_reviews=false), the mismatch warning is
   # emitted to stderr but the first-party dispatch path still runs.
@@ -1108,7 +1108,7 @@ _t7_require_trusted_gh() {
 # T8 / TC1: verifier Step 3.5 Cite Check prose present in agent file
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TC1] verifier agent file contains Step 3.5 Cite Check between referenced-files read and lazy-upstream-read steps" {
+@test "verifier agent file contains Step 3.5 Cite Check between referenced-files read and lazy-upstream-read steps" {
   # cite-check: this assertion is RED until the verifier gains the Step 3.5
   # Cite Check paragraph between current step 3 (read referenced_files) and
   # current step 4 (lazy-Read upstreams).
@@ -1122,7 +1122,7 @@ _t7_require_trusted_gh() {
 # T8 / TC2: verifier rubric contains 0 / HALLUCINATED top-anchor tier
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TC2] verifier rubric contains 0 / HALLUCINATED top-anchor tier above the existing confidence anchors" {
+@test "verifier rubric contains 0 / HALLUCINATED top-anchor tier above the existing confidence anchors" {
   # cite-check: RED until the rubric gains the new 0 / HALLUCINATED anchor
   # prepended above the existing a-e (0/25/50/75/100) anchors.
   grep -q "0 / HALLUCINATED" "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
@@ -1134,7 +1134,7 @@ _t7_require_trusted_gh() {
 #           reason-prefix convention
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TC3] verifier sidecar write step (step 6) documents literal HALLUCINATED: reason-prefix convention for cite-check halts" {
+@test "verifier sidecar write step (step 6) documents literal HALLUCINATED: reason-prefix convention for cite-check halts" {
   # cite-check: RED until step 6 gains the sentence documenting that score:0
   # Cite Check sidecars begin reason: with the literal prefix "HALLUCINATED: ".
   grep -qF "HALLUCINATED: " "$REPO_ROOT/agents/qrspi-finding-verifier.md" \
@@ -1182,7 +1182,7 @@ _t8_write_finding_pair() {
 #           reason, finding absent from kept-findings.txt (correctness drop)
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TC4] cite-check file-existence failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
+@test "cite-check file-existence failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
   local tmp
   tmp="$(mktemp -d)"
   local stem="quality-claude.finding-F01"
@@ -1225,7 +1225,7 @@ _t8_write_finding_pair() {
 #           finding absent from kept-findings.txt (correctness drop)
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TC5] cite-check line-range failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
+@test "cite-check line-range failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
   local tmp
   tmp="$(mktemp -d)"
   local stem="quality-claude.finding-F02"
@@ -1263,7 +1263,7 @@ _t8_write_finding_pair() {
 #           reason, finding absent from kept-findings.txt (style drop)
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TC6] cite-check quoted-content failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
+@test "cite-check quoted-content failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
   local tmp
   tmp="$(mktemp -d)"
   local stem="quality-claude.finding-F03"
@@ -1301,7 +1301,7 @@ _t8_write_finding_pair() {
 #           finding absent from kept-findings.txt (clarity drop)
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TC7] cite-check named-anchor failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
+@test "cite-check named-anchor failure: sidecar carries score 0 and HALLUCINATED: reason; fan-in drops finding from kept-findings.txt" {
   local tmp
   tmp="$(mktemp -d)"
   local stem="quality-claude.finding-F04"
@@ -1339,7 +1339,7 @@ _t8_write_finding_pair() {
 #           is a no-op; fan-in keeps the finding (score 72 ≥ correctness 70)
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TC8] advisory finding with no specific factual citation: cite-check is a no-op; fan-in keeps finding when score meets threshold" {
+@test "advisory finding with no specific factual citation: cite-check is a no-op; fan-in keeps finding when score meets threshold" {
   local tmp
   tmp="$(mktemp -d)"
   local stem="quality-claude.finding-F05"
@@ -1368,7 +1368,7 @@ _t8_write_finding_pair() {
 #           findings, bypassing the score:0 / HALLUCINATED gate.)
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TC9] HALLUCINATED score-0 scope finding is dropped by fan-in (universal HALLUCINATED gate precedes change_type arm)" {
+@test "HALLUCINATED score-0 scope finding is dropped by fan-in (universal HALLUCINATED gate precedes change_type arm)" {
   local tmp
   tmp="$(mktemp -d)"
   local stem="quality-claude.finding-F09"
@@ -3124,13 +3124,13 @@ JQ_EOF
 #     and demonstrate fail-loud diagnostics.
 # ===========================================================================
 
-@test "[T39/G32 acceptance] build/ exists at the repo root with the expanded plugin tree" {
+@test "build/ exists at the repo root with the expanded plugin tree" {
   [ -d "$REPO_ROOT/build" ]
   [ -d "$REPO_ROOT/build/skills" ]
   [ -d "$REPO_ROOT/build/.claude-plugin" ]
 }
 
-@test "[T39/G32 acceptance] .claude-plugin/marketplace.json qrspi plugin source points at ./build" {
+@test ".claude-plugin/marketplace.json qrspi plugin source points at ./build" {
   local mkt="$REPO_ROOT/.claude-plugin/marketplace.json"
   [ -f "$mkt" ]
   # Tolerate object-form or string-form; require the value `./build` to
@@ -3139,20 +3139,20 @@ JQ_EOF
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32 acceptance] .claude-plugin/marketplace.json qrspi plugin carries v0.7.2 release metadata" {
+@test ".claude-plugin/marketplace.json qrspi plugin carries v0.7.2 release metadata" {
   local mkt="$REPO_ROOT/.claude-plugin/marketplace.json"
   [ -f "$mkt" ]
   run bash -c "node -e 'const m=JSON.parse(require(\"fs\").readFileSync(\"$mkt\",\"utf8\"));const q=(m.plugins||[]).find(p=>p.name===\"qrspi\");if(!q)process.exit(2);process.exit(q.version===\"0.7.2\"?0:3);'"
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32 acceptance] CONTRIBUTING.md documents the local rebuild workflow (node tools/build-plugin.mjs)" {
+@test "CONTRIBUTING.md documents the local rebuild workflow (node tools/build-plugin.mjs)" {
   [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
   run grep -F 'node tools/build-plugin.mjs' "$REPO_ROOT/CONTRIBUTING.md"
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32 acceptance] CONTRIBUTING.md documents the committed-build rationale" {
+@test "CONTRIBUTING.md documents the committed-build rationale" {
   [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
   # Either the rationale heading or load-bearing tokens (atomic source/build
   # diffs, one-revert release rollback, git blame across the seam).
@@ -3160,7 +3160,7 @@ JQ_EOF
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32 acceptance] CONTRIBUTING.md documents the two PR-blocking build-sync failure modes" {
+@test "CONTRIBUTING.md documents the two PR-blocking build-sync failure modes" {
   [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
   # Failure mode A: build script exits non-zero (any D3 fail-loud condition).
   run grep -E -i 'fail.?loud|non-zero|malformed.*!cat|missing target|cycle' "$REPO_ROOT/CONTRIBUTING.md"
@@ -3170,13 +3170,13 @@ JQ_EOF
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32 acceptance] CONTRIBUTING.md anchors the scripts/ (runtime) vs tools/ (dev-time) distinction" {
+@test "CONTRIBUTING.md anchors the scripts/ (runtime) vs tools/ (dev-time) distinction" {
   [ -f "$REPO_ROOT/CONTRIBUTING.md" ]
   run grep -E -i 'scripts/.*runtime|tools/.*dev|runtime.*scripts|dev-?(time|only).*tools' "$REPO_ROOT/CONTRIBUTING.md"
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32 acceptance] resolver acceptance fixture exists for legacy \${CLAUDE_SKILL_DIR} failure" {
+@test "resolver acceptance fixture exists for legacy \${CLAUDE_SKILL_DIR} failure" {
   # Fixture lives under tests/fixtures/ so it does not pollute the real
   # !cat resolution surface (per structure.md "Fixture authoring").
   run bash -c "find '$REPO_ROOT/tests/fixtures' -type d -name 'build-resolver*' -print -quit"
@@ -3187,7 +3187,7 @@ JQ_EOF
   [ -n "$output" ]
 }
 
-@test "[T39/G32 acceptance] resolver acceptance fixture exists for include-cycle failure" {
+@test "resolver acceptance fixture exists for include-cycle failure" {
   run bash -c "find '$REPO_ROOT/tests/fixtures' -type d -name 'build-resolver*' -print -quit"
   [ -n "$output" ]
   # A cycle fixture must contain at least two files that include each other
@@ -3218,7 +3218,7 @@ JQ_EOF
 # surface against fixture-sourced bytes.
 # ---------------------------------------------------------------------------
 
-@test "[T39/G32 acceptance] resolver fails non-zero with \${CLAUDE_SKILL_DIR} diagnostic when invoked against legacy-claude-skill-dir fixture content" {
+@test "resolver fails non-zero with \${CLAUDE_SKILL_DIR} diagnostic when invoked against legacy-claude-skill-dir fixture content" {
   local fixture="$REPO_ROOT/tests/fixtures/build-resolver/legacy-claude-skill-dir/README.md"
   [ -f "$fixture" ]
   local root="$BATS_TEST_TMPDIR/legacy-fixture-root"
@@ -3255,7 +3255,7 @@ JSON
   echo "$output" | grep -E -i 'legacy|shipped|forbidden|occurrence'
 }
 
-@test "[T39/G32 acceptance] resolver fails non-zero with cycle diagnostic (full chain) when invoked against include-cycle fixture content" {
+@test "resolver fails non-zero with cycle diagnostic (full chain) when invoked against include-cycle fixture content" {
   local fa="$REPO_ROOT/tests/fixtures/build-resolver/include-cycle/a.md"
   local fb="$REPO_ROOT/tests/fixtures/build-resolver/include-cycle/b.md"
   [ -f "$fa" ]

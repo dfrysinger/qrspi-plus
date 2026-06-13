@@ -103,7 +103,7 @@ _detect_summary_shim() {
 # Repo-wide scan: every skill body must be summary-shim-free
 # =============================================================================
 
-@test "[T37-no-shim] skills/**/SKILL.md contain no summary-shim dispatch shapes" {
+@test "skills/**/SKILL.md contain no summary-shim dispatch shapes" {
   local hit=0
   local file
   local match
@@ -122,7 +122,7 @@ _detect_summary_shim() {
 # Repo-wide scan: every QRSPI agent body must be summary-shim-free
 # =============================================================================
 
-@test "[T37-no-shim] agents/qrspi-*.md contain no summary-shim dispatch shapes" {
+@test "agents/qrspi-*.md contain no summary-shim dispatch shapes" {
   local hit=0
   local file
   local match
@@ -140,7 +140,7 @@ _detect_summary_shim() {
 # Positive fixture: synthesized summary-shim site MUST trigger detection
 # =============================================================================
 
-@test "[T37-no-shim] Positive fixture: summary-shim placeholder triggers detection" {
+@test "Positive fixture: summary-shim placeholder triggers detection" {
   cat > "$FIXTURE_DIR/shim-placeholder.md" <<'EOF'
 ## Dispatching the Reviewer
 
@@ -155,7 +155,7 @@ EOF
   [ -n "$match" ]
 }
 
-@test "[T37-no-shim] Positive fixture: summary-shim companion key triggers detection" {
+@test "Positive fixture: summary-shim companion key triggers detection" {
   cat > "$FIXTURE_DIR/shim-companion.md" <<'EOF'
 ## Dispatch parameters
 
@@ -168,7 +168,7 @@ EOF
   [ -n "$match" ]
 }
 
-@test "[T37-no-shim] Positive fixture: summary-shim sentinel wrapper triggers detection" {
+@test "Positive fixture: summary-shim sentinel wrapper triggers detection" {
   cat > "$FIXTURE_DIR/shim-sentinel.md" <<'EOF'
 Pass the following companion on the dispatch:
 
@@ -185,7 +185,7 @@ EOF
 # Negative fixture: verbatim Read site MUST NOT trigger detection
 # =============================================================================
 
-@test "[T37-no-shim] Verbatim-Read fixture does NOT trigger detection" {
+@test "Verbatim-Read fixture does NOT trigger detection" {
   cat > "$FIXTURE_DIR/verbatim-read.md" <<'EOF'
 ## Dispatching the Reviewer
 
@@ -207,7 +207,7 @@ EOF
 # Negative fixture: Mechanism B narrow-Read site MUST NOT trigger detection
 # =============================================================================
 
-@test "[T37-no-shim] Mechanism B narrow-Read fixture does NOT trigger detection" {
+@test "Mechanism B narrow-Read fixture does NOT trigger detection" {
   cat > "$FIXTURE_DIR/narrow-read.md" <<'EOF'
 ## Dispatching the Reviewer
 
@@ -227,7 +227,7 @@ EOF
 # Negative fixture: human-facing `## Summary` heading is NOT a dispatch shim
 # =============================================================================
 
-@test "[T37-no-shim] Human-facing ## Summary heading does NOT trigger detection" {
+@test "Human-facing ## Summary heading does NOT trigger detection" {
   cat > "$FIXTURE_DIR/human-summary.md" <<'EOF'
 # Research Summary
 

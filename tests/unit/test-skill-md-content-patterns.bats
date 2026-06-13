@@ -158,7 +158,7 @@ setup() {
 #         requires every skill that reads config.md to invoke the Config
 #         Validation Procedure instead. Design must validate codex_reviews.
 
-@test "[T36-1] design SKILL Review Round Claude-reviewer checks no longer reference deprecated 'acceptance criteria' phrasing" {
+@test "design SKILL Review Round Claude-reviewer checks no longer reference deprecated 'acceptance criteria' phrasing" {
   # The Review Round subsection (under ### Review Round) authors the Claude
   # reviewer prompt's check list. Per T9's strip-from-goals contract,
   # acceptance criteria are owned by plan.md, not goals.md — so a design
@@ -179,7 +179,7 @@ setup() {
   fi
 }
 
-@test "[T36-1] design reviewer still asserts the design addresses all goals" {
+@test "design reviewer still asserts the design addresses all goals" {
   # CD-1 (Task 20): the per-skill Review Round reviewer-prompt bullets collapsed
   # into the shared reviewer-dispatch include; the "design addresses all goals"
   # traceability check (T9 keeps goals as the upstream anchor) now lives in the
@@ -191,7 +191,7 @@ setup() {
     || { echo "design-reviewer agent no longer asserts the design addresses all goals"; return 1; }
 }
 
-@test "[T36-2] design SKILL Artifact Gating no longer silently defaults codex_reviews to false" {
+@test "design SKILL Artifact Gating no longer silently defaults codex_reviews to false" {
   # The deprecated wording: "If `config.md` doesn't exist, default to
   # `codex_reviews: false`." This is forbidden by using-qrspi:438 ("No
   # silent defaults"). The Artifact Gating subsection must not contain it.
@@ -208,7 +208,7 @@ setup() {
   fi
 }
 
-@test "[T36-2] design SKILL Artifact Gating invokes the Config Validation Procedure for codex_reviews" {
+@test "design SKILL Artifact Gating invokes the Config Validation Procedure for codex_reviews" {
   # Per using-qrspi:411 ("Every skill that reads config.md applies this
   # procedure before using any field"), Design must invoke the procedure
   # by name. Canonical phrasing in peer skills (goals/plan/test/integrate):

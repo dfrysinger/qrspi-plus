@@ -21,7 +21,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # OWNS section: Worktree-Aware Setup Validation entry exists
 # ---------------------------------------------------------------------------
-@test "[T23-owns] OWNS section contains Worktree-Aware Setup Validation entry" {
+@test "OWNS section contains Worktree-Aware Setup Validation entry" {
   extract_and_grep "$OWNS_DEFERS" H3 "Parallelize OWNS" \
     "Worktree-Aware Setup Validation"
 }
@@ -29,12 +29,12 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # OWNS section: advisory-only scope (no auto-patch)
 # ---------------------------------------------------------------------------
-@test "[T23-owns] OWNS Worktree-Aware entry names advisory-only scope" {
+@test "OWNS Worktree-Aware entry names advisory-only scope" {
   extract_and_grep "$OWNS_DEFERS" H3 "Parallelize OWNS" \
     "advisory"
 }
 
-@test "[T23-owns] OWNS Worktree-Aware entry explicitly negates auto-patch responsibility" {
+@test "OWNS Worktree-Aware entry explicitly negates auto-patch responsibility" {
   # The entry must contain an explicit negation of auto-patch.
   # Canonical text: "Parallelize does NOT auto-patch ... perform the setup itself"
   extract_and_grep "$OWNS_DEFERS" H3 "Parallelize OWNS" "does NOT auto-patch"
@@ -43,22 +43,22 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # DEFERS section: worktree creation, branch creation, baseline-test, config edits
 # ---------------------------------------------------------------------------
-@test "[T23-owns] DEFERS section retains worktree creation as Implement-owned" {
+@test "DEFERS section retains worktree creation as Implement-owned" {
   extract_and_grep "$OWNS_DEFERS" H3 "Parallelize DEFERS" \
     "[Ww]orktree creation"
 }
 
-@test "[T23-owns] DEFERS section retains branch creation as Implement-owned" {
+@test "DEFERS section retains branch creation as Implement-owned" {
   extract_and_grep "$OWNS_DEFERS" H3 "Parallelize DEFERS" \
     "branch creation"
 }
 
-@test "[T23-owns] DEFERS section retains baseline-test execution as Implement-owned" {
+@test "DEFERS section retains baseline-test execution as Implement-owned" {
   extract_and_grep "$OWNS_DEFERS" H3 "Parallelize DEFERS" \
     "baseline.test"
 }
 
-@test "[T23-owns] DEFERS section retains config edits as Implement-owned" {
+@test "DEFERS section retains config edits as Implement-owned" {
   extract_and_grep "$OWNS_DEFERS" H3 "Parallelize DEFERS" \
     "config"
 }
@@ -66,7 +66,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Missing-anchor loud-failure: helper emits named diagnostic on bad heading
 # ---------------------------------------------------------------------------
-@test "[T23-owns] missing-anchor emits skill-markdown loud diagnostic" {
+@test "missing-anchor emits skill-markdown loud diagnostic" {
   run extract_and_grep "$OWNS_DEFERS" H3 "Nonexistent Section XXXX" "anything"
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep -q "skill-markdown:"
@@ -75,7 +75,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Shared helper loads and REPO_ROOT resolves.
 # ---------------------------------------------------------------------------
-@test "[T23-owns] shared helper loads and require_repo_root resolves REPO_ROOT" {
+@test "shared helper loads and require_repo_root resolves REPO_ROOT" {
   require_repo_root
   [ -n "$REPO_ROOT" ]
   [ -d "$REPO_ROOT" ]

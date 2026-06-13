@@ -60,16 +60,16 @@ teardown() {
 # Contract document existence + structural anchors
 # =============================================================================
 
-@test "[T32-split] Contract document exists at skills/plan/post-approval-split-contract.md" {
+@test "Contract document exists at skills/plan/post-approval-split-contract.md" {
   [ -r "$CONTRACT_DOC" ]
 }
 
-@test "[T32-split] Contract declares per-sub-subagent input payload section" {
+@test "Contract declares per-sub-subagent input payload section" {
   extract_and_grep "$CONTRACT_DOC" H2 "Per-Sub-Subagent Input Payload" \
     "Wrapped Task Section"
 }
 
-@test "[T32-split] Contract input payload includes canonical task-file template" {
+@test "Contract input payload includes canonical task-file template" {
   extract_and_grep "$CONTRACT_DOC" H3 "Canonical Task-File Template" \
     "reference_gate:"
   extract_and_grep "$CONTRACT_DOC" H3 "Canonical Task-File Template" \
@@ -80,19 +80,19 @@ teardown() {
     "lift_source:"
 }
 
-@test "[T32-split] Contract input payload includes T43 conditional dispatch fields" {
+@test "Contract input payload includes T43 conditional dispatch fields" {
   extract_and_grep "$CONTRACT_DOC" H3 "Canonical Task-File Template" \
     "conditional:"
   extract_and_grep "$CONTRACT_DOC" H3 "Canonical Task-File Template" \
     "conditional_precondition:"
 }
 
-@test "[T32-split] Contract declares G7 ID-hygiene contract" {
+@test "Contract declares G7 ID-hygiene contract" {
   extract_and_grep "$CONTRACT_DOC" H3 "G7 ID-Hygiene Contract" \
     "goal_ids:"
 }
 
-@test "[T32-split] Contract input payload includes output_path" {
+@test "Contract input payload includes output_path" {
   extract_and_grep "$CONTRACT_DOC" H3 "Output Path" \
     "<artifact_dir>/tasks/task-NN.md"
 }
@@ -101,17 +101,17 @@ teardown() {
 # Per-sub-subagent output contract
 # =============================================================================
 
-@test "[T32-split] Contract output declares exactly one file per dispatch" {
+@test "Contract output declares exactly one file per dispatch" {
   extract_and_grep "$CONTRACT_DOC" H3 "Exactly One File Per Dispatch" \
     "exactly one"
 }
 
-@test "[T32-split] Contract output prohibits sub-subagent plan.md edits" {
+@test "Contract output prohibits sub-subagent plan.md edits" {
   extract_and_grep "$CONTRACT_DOC" H3 "No \`plan.md\` Edits" \
     "MUST NOT edit"
 }
 
-@test "[T32-split] Contract output declares tasks/task-NN.md naming convention" {
+@test "Contract output declares tasks/task-NN.md naming convention" {
   extract_and_grep "$CONTRACT_DOC" H3 "Naming Convention" \
     "tasks/task-NN.md"
 }
@@ -120,19 +120,19 @@ teardown() {
 # Atomicity contract on partial returns
 # =============================================================================
 
-@test "[T32-split] Contract declares atomicity rollback removes ALL partial files" {
+@test "Contract declares atomicity rollback removes ALL partial files" {
   extract_and_grep "$CONTRACT_DOC" H2 "Atomicity Contract on Partial Returns" \
     "EVERY"
   extract_and_grep "$CONTRACT_DOC" H2 "Atomicity Contract on Partial Returns" \
     "not only the file from the failed dispatch"
 }
 
-@test "[T32-split] Contract atomicity covers phase_start_commit field" {
+@test "Contract atomicity covers phase_start_commit field" {
   extract_and_grep "$CONTRACT_DOC" H2 "Atomicity Contract on Partial Returns" \
     "phase_start_commit:"
 }
 
-@test "[T32-split] Contract atomicity surfaces loud diagnostic naming failed dispatch" {
+@test "Contract atomicity surfaces loud diagnostic naming failed dispatch" {
   extract_and_grep "$CONTRACT_DOC" H2 "Atomicity Contract on Partial Returns" \
     "Plan split aborted"
 }
@@ -141,22 +141,22 @@ teardown() {
 # Exact-set verification (not count-only)
 # =============================================================================
 
-@test "[T32-split] Contract exact-set verification rejects count-only check" {
+@test "Contract exact-set verification rejects count-only check" {
   extract_and_grep "$CONTRACT_DOC" H2 "Exact-Set Verification (Not Count-Only)" \
     "[Cc]ount-only verification.*insufficient"
 }
 
-@test "[T32-split] Contract exact-set verification names duplicate-ID condition" {
+@test "Contract exact-set verification names duplicate-ID condition" {
   extract_and_grep "$CONTRACT_DOC" H2 "Exact-Set Verification (Not Count-Only)" \
     "Duplicate-ID condition"
 }
 
-@test "[T32-split] Contract exact-set verification names missing-ID condition" {
+@test "Contract exact-set verification names missing-ID condition" {
   extract_and_grep "$CONTRACT_DOC" H2 "Exact-Set Verification (Not Count-Only)" \
     "Missing-ID condition"
 }
 
-@test "[T32-split] Contract exact-set verification surfaces both duplicate and missing in one pass" {
+@test "Contract exact-set verification surfaces both duplicate and missing in one pass" {
   extract_and_grep "$CONTRACT_DOC" H2 "Exact-Set Verification (Not Count-Only)" \
     "[Cc]ompound duplicate-and-missing"
 }
@@ -165,21 +165,21 @@ teardown() {
 # Plan SKILL references the contract + documents the N-threshold carve-out (T31)
 # =============================================================================
 
-@test "[T32-split] Plan SKILL references post-approval-split-contract.md" {
+@test "Plan SKILL references post-approval-split-contract.md" {
   grep -F "skills/plan/post-approval-split-contract.md" "$PLAN_SKILL"
 }
 
-@test "[T32-split] Plan SKILL Human Gate documents N>=3 fan-out path" {
+@test "Plan SKILL Human Gate documents N>=3 fan-out path" {
   extract_and_grep "$PLAN_SKILL" H3 "Human Gate" \
     "N >= 3"
 }
 
-@test "[T32-split] Plan SKILL Human Gate documents N<=2 inline split path" {
+@test "Plan SKILL Human Gate documents N<=2 inline split path" {
   extract_and_grep "$PLAN_SKILL" H3 "Human Gate" \
     "N <= 2"
 }
 
-@test "[T32-split] Plan SKILL Human Gate carries exact-set verification step" {
+@test "Plan SKILL Human Gate carries exact-set verification step" {
   extract_and_grep "$PLAN_SKILL" H3 "Human Gate" \
     "exact set"
 }
@@ -188,7 +188,7 @@ teardown() {
 # Behavioral fixtures: N=2 boundary (inline split produces 2 task files)
 # =============================================================================
 
-@test "[T32-split] N=2 boundary: inline split produces exactly two task files" {
+@test "N=2 boundary: inline split produces exactly two task files" {
   cat > "$FIXTURE_DIR/tasks/task-01.md" <<'EOF'
 ---
 task: 1
@@ -213,7 +213,7 @@ EOF
 # Behavioral fixtures: N=3 boundary (fan-out produces 3 task files)
 # =============================================================================
 
-@test "[T32-split] N=3 boundary: fan-out produces exactly three task files" {
+@test "N=3 boundary: fan-out produces exactly three task files" {
   cat > "$FIXTURE_DIR/tasks/task-01.md" <<'EOF'
 ---
 task: 1
@@ -244,7 +244,7 @@ EOF
 # Behavioral fixture: atomicity rollback (simulated partial-success failure)
 # =============================================================================
 
-@test "[T32-split] Atomicity: simulated failure leaves plan.md unapproved and removes partial files" {
+@test "Atomicity: simulated failure leaves plan.md unapproved and removes partial files" {
   # Seed plan.md as draft (pre-approval).
   cat > "$FIXTURE_DIR/plan.md" <<'EOF'
 ---
@@ -287,7 +287,7 @@ EOF
 # Behavioral fixture: duplicate-and-missing exact-set verification
 # =============================================================================
 
-@test "[T32-split] Exact-set verification detects compound duplicate-and-missing mismatch" {
+@test "Exact-set verification detects compound duplicate-and-missing mismatch" {
   # Simulate two sub-subagents both writing task-01.md (one overwrites the
   # other on a real filesystem; we approximate by writing both then leaving
   # one), and task-03.md missing as a result.
@@ -326,7 +326,7 @@ EOF
 # Behavioral fixture: conditional-field preservation (T43 fields verbatim)
 # =============================================================================
 
-@test "[T32-split] Conditional dispatch fields preserved verbatim in emitted task file" {
+@test "Conditional dispatch fields preserved verbatim in emitted task file" {
   # Simulate a sub-subagent emitting a task-43.md file with T43 conditional
   # fields carried verbatim from the wrapped task section.
   cat > "$FIXTURE_DIR/tasks/task-43.md" <<'EOF'
@@ -355,7 +355,7 @@ EOF
 # phase_start_commit present after successful approval
 # =============================================================================
 
-@test "[T32-split] Successful approval populates plan.md phase_start_commit frontmatter" {
+@test "Successful approval populates plan.md phase_start_commit frontmatter" {
   # Simulate a successful split + approval: a 40-char SHA written to
   # phase_start_commit alongside status: approved.
   cat > "$FIXTURE_DIR/plan.md" <<'EOF'
