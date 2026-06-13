@@ -834,23 +834,11 @@ This brevity is load-bearing for the optimization: the savings in cache-read acc
                           — the diff file emitted by Step 1's diff-handling
                           protocol. Omit the parameter when the artifact
                           directory is not inside a git repository.
-     - upstream_paths:    NEWLINE-separated list. Includes (a) the upstream
-                          artifacts the current step consumes per the QRSPI
-                          pipeline order, AND (b) the SKILL paths the
-                          verifier may lazy-Read for context (the dispatching
-                          skill's SKILL.md and skills/using-qrspi/SKILL.md).
-                          Per-step upstream-artifact lists:
-                            Goals:       (no upstream artifacts; SKILL paths only)
-                            Questions:   goals.md
-                            Research:    goals.md, questions.md
-                            Design:      goals.md, questions.md, research/summary.md
-                            Phasing:     goals.md, design.md
-                            Structure:   goals.md, design.md, phasing.md
-                            Parallelize: goals.md, design.md, structure.md
-                            Replan:      plan.md, replan-trigger-source
-                          SKILL paths appended on every step:
-                            skills/<step>/SKILL.md
-                            skills/using-qrspi/SKILL.md
+     - upstream_paths:    NEWLINE-separated list emitted by
+                          `scripts/upstream-paths.sh --step <step> [--artifact-dir <ABS>]`,
+                          which is the single source of truth for the per-step
+                          upstream-artifact set plus the always-appended SKILL
+                          paths (including the canonical ID-hygiene authority).
    ```
 
    Each Task subagent returns a brief `<reviewer_tag>.<finding_id>: <score>` line (or `: VERIFY_FAILED:<reason>` on failure); main chat ignores the return text (the sidecar on disk is the source of truth) but does inspect for the `VERIFY_FAILED:` prefix to route into the §3 menu. If any return is `VERIFY_FAILED:` OR any expected sidecar is missing on disk after dispatch, route to the §3 failure menu BEFORE assembly. Otherwise continue.
