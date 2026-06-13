@@ -1,0 +1,25 @@
+---
+status: approved
+task: 26
+phase: 1
+pipeline: full
+goal_ids: [G7]
+task_type: lightweight
+tier: medium
+---
+
+# Task 26: Replace HEAD~1 with anchor-file lookup in using-qrspi Apply-fix step 12, sweep inlining skills, and validate the anchor-file SHA
+
+- **Target files:** `skills/using-qrspi/SKILL.md` (Modify — the canonical Apply-fix step 12 definition), `skills/design/SKILL.md` (Modify), `skills/goals/SKILL.md` (Modify), `skills/implement/SKILL.md` (Modify), `skills/implementer-protocol/SKILL.md` (Modify), `skills/integrate/SKILL.md` (Modify), `skills/parallelize/SKILL.md` (Modify), `skills/phasing/SKILL.md` (Modify), `skills/plan/SKILL.md` (Modify), `skills/questions/SKILL.md` (Modify), `skills/replan/SKILL.md` (Modify), `skills/research/SKILL.md` (Modify), `skills/reviewer-protocol/SKILL.md` (Modify), `skills/structure/SKILL.md` (Modify)
+- **Dependencies:** none
+- **LOC estimate:** ~30
+- **cross_task_consumers:**
+  - `tests/unit/test-narrow-round-anchor-lookup.bats` (T27) — disposition: `pass-through` (T27 creates this bats file with full knowledge of the new anchor-file-lookup incantation and the new `sha-format-invalid:` / `anchor-file-missing:` named-diagnostic halt directions; T27 owns asserting on the new surface and T26 does not edit it).
+- **dependent_tests:**
+  - `tests/unit/test-cross-skill-contracts.bats` — currently asserts `HEAD~1` appears in skill bodies as the canonical narrow-ref incantation; that assertion breaks once T26 strips `HEAD~1` from the inlining sites — `co-edit` to update the assertion shape so it asserts the new anchor-file-lookup incantation appears at the canonical inlining sites and `HEAD~1` does NOT appear at those sites.
+  - `tests/unit/test-convergence-narrowing.bats` — three assertion sites reference the `HEAD~1` narrow-ref shape that T26 removes — `co-edit` to update each site so it asserts the anchor-file-lookup incantation against `reviews/<step>/round-<NN-1>-commit.txt` instead, plus the `sha-format-invalid:` and `anchor-file-missing:` named-diagnostic halt directions T26 adds.
+- **Description:** `skills/using-qrspi/SKILL.md` § Apply-fix protocol step 12 narrow-ref incantation is replaced with the anchor-file lookup `git diff "$(cat reviews/<step>/round-<NN-1>-commit.txt)" -- <artifact-path>`. Any other skill whose body inlines the step-12 `HEAD~1` shorthand (surfaced by `grep -rn 'HEAD~1' skills/`) is updated identically at the inlining site. The new incantation prose names a SHA-format validation step: the SHA read from `reviews/<step>/round-<NN-1>-commit.txt` is validated against the well-formed git object-name shape (lowercase hex, 7–64 characters) BEFORE being passed to the `git diff` invocation; a malformed anchor file triggers the named `sha-format-invalid:` diagnostic and halts non-zero. When the anchor file at `reviews/<step>/round-<NN-1>-commit.txt` does not exist or is unreadable, the orchestrator halts non-zero with the named `anchor-file-missing:` diagnostic — no silent fallback to `HEAD~1`. The existing divergence-sanity-check halt with the `narrow-round-empty-diff:` named diagnostic is preserved verbatim. R1 (anchor-phrase preservation for § Apply-fix protocol step 12 surrounding prose), R2 (the new incantation is self-contained — names the anchor file path, the SHA-format halt direction, and the missing-anchor-file halt direction inline), R3 (load-bearing incantation in its existing position), R7 (verbatim phrasing the T27 bats fixture asserts), and R8 (no tightening — the incantation is a literal command, not prose) shape the edits.
+- **Test expectations:**
+  - Implementer applies R1-R7 + cross-cutting principles from `skills/_shared/prompt-design-rules.md`; reviewer verifies via the same content-semantic rules application; specific findings to verify: R1 — anchor-phrase preservation for § Apply-fix protocol step 12's surrounding prose; R2 — the new incantation is self-contained, names the anchor file path, the SHA-format halt direction, and the missing-anchor-file halt direction inline; R3 — incantation in its existing load-bearing position; R7 — verbatim phrasing of `git diff "$(cat reviews/<step>/round-<NN-1>-commit.txt)" -- <artifact-path>` (the T27 bats fixtures grep for this literal substring); R8 — the incantation is a literal command, not prose subject to R8 tightening; the divergence-sanity-check halt with the `narrow-round-empty-diff:` named diagnostic is preserved verbatim; zero occurrences of `git diff HEAD~1 --` remain in step 12 (and at any inlining site surfaced by `grep -rn 'HEAD~1' skills/`).
+  - The anchor-file SHA read from `reviews/<step>/round-<NN-1>-commit.txt` is validated against the well-formed git object-name shape before the `git diff` invocation; a malformed anchor file triggers the `sha-format-invalid:` named diagnostic and a non-zero exit — no `git diff` runs against the malformed value.
+  - A missing or unreadable anchor file at `reviews/<step>/round-<NN-1>-commit.txt` triggers the `anchor-file-missing:` named diagnostic and a non-zero exit before any `git diff` runs — no silent fallback to `HEAD~1`.
