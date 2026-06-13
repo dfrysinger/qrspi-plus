@@ -1,0 +1,63 @@
+{
+  "awaited": 0,
+  "clean": 1,
+  "entries": [
+    {
+      "status": "complete-with-findings",
+      "tag": "quality-claude"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "spec-claude"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "security-claude"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "silent-failure-claude"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "goal-traceability-claude"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "test-coverage-claude"
+    },
+    {
+      "status": "failed",
+      "tag": "scope-claude"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "quality-codex"
+    },
+    {
+      "status": "complete",
+      "tag": "spec-codex"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "security-codex"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "silent-failure-codex"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "goal-traceability-codex"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "test-coverage-codex"
+    },
+    {
+      "status": "complete-with-findings",
+      "tag": "scope-codex"
+    }
+  ],
+  "with_findings": 12
+}
