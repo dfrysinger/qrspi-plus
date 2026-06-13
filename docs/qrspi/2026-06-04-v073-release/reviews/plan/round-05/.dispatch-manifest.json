@@ -1,0 +1,184 @@
+[
+  {
+    "tag": "quality-claude",
+    "agent": "qrspi-plan-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-reviewer",
+      "host": "copilot-cli",
+      "vendor": "claude",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/quality-claude.prompt"
+    }
+  },
+  {
+    "tag": "spec-claude",
+    "agent": "qrspi-plan-spec-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-spec-reviewer",
+      "host": "copilot-cli",
+      "vendor": "claude",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/spec-claude.prompt"
+    }
+  },
+  {
+    "tag": "security-claude",
+    "agent": "qrspi-plan-security-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-security-reviewer",
+      "host": "copilot-cli",
+      "vendor": "claude",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/security-claude.prompt"
+    }
+  },
+  {
+    "tag": "silent-failure-claude",
+    "agent": "qrspi-plan-silent-failure-hunter",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-silent-failure-hunter",
+      "host": "copilot-cli",
+      "vendor": "claude",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/silent-failure-claude.prompt"
+    }
+  },
+  {
+    "tag": "goal-traceability-claude",
+    "agent": "qrspi-plan-goal-traceability-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-goal-traceability-reviewer",
+      "host": "copilot-cli",
+      "vendor": "claude",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/goal-traceability-claude.prompt"
+    }
+  },
+  {
+    "tag": "test-coverage-claude",
+    "agent": "qrspi-plan-test-coverage-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-test-coverage-reviewer",
+      "host": "copilot-cli",
+      "vendor": "claude",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/test-coverage-claude.prompt"
+    }
+  },
+  {
+    "tag": "scope-claude",
+    "agent": "qrspi-plan-scope-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-scope-reviewer",
+      "host": "copilot-cli",
+      "vendor": "claude",
+      "model": "claude-sonnet-4.6",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/scope-claude.prompt"
+    }
+  },
+  {
+    "tag": "quality-codex",
+    "agent": "qrspi-plan-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-reviewer",
+      "host": "copilot-cli",
+      "vendor": "codex",
+      "model": "gpt-5.3-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/quality-codex.prompt"
+    }
+  },
+  {
+    "tag": "spec-codex",
+    "agent": "qrspi-plan-spec-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-spec-reviewer",
+      "host": "copilot-cli",
+      "vendor": "codex",
+      "model": "gpt-5.3-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/spec-codex.prompt"
+    }
+  },
+  {
+    "tag": "security-codex",
+    "agent": "qrspi-plan-security-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-security-reviewer",
+      "host": "copilot-cli",
+      "vendor": "codex",
+      "model": "gpt-5.3-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/security-codex.prompt"
+    }
+  },
+  {
+    "tag": "silent-failure-codex",
+    "agent": "qrspi-plan-silent-failure-hunter",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-silent-failure-hunter",
+      "host": "copilot-cli",
+      "vendor": "codex",
+      "model": "gpt-5.3-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/silent-failure-codex.prompt"
+    }
+  },
+  {
+    "tag": "goal-traceability-codex",
+    "agent": "qrspi-plan-goal-traceability-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-goal-traceability-reviewer",
+      "host": "copilot-cli",
+      "vendor": "codex",
+      "model": "gpt-5.3-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/goal-traceability-codex.prompt"
+    }
+  },
+  {
+    "tag": "test-coverage-codex",
+    "agent": "qrspi-plan-test-coverage-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-test-coverage-reviewer",
+      "host": "copilot-cli",
+      "vendor": "codex",
+      "model": "gpt-5.3-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/test-coverage-codex.prompt"
+    }
+  },
+  {
+    "tag": "scope-codex",
+    "agent": "qrspi-plan-scope-reviewer",
+    "mode": "first_party",
+    "status": "dispatched",
+    "dispatch_spec": {
+      "subagent_type": "qrspi-plan-scope-reviewer",
+      "host": "copilot-cli",
+      "vendor": "codex",
+      "model": "gpt-5.3-codex",
+      "prompt_file": "/Users/dfrysinger/code/qrspi-plus-v0.7.2/docs/qrspi/2026-06-04-v073-release/reviews/plan/round-05//.dispatch/scope-codex.prompt"
+    }
+  }
+]
