@@ -12,7 +12,7 @@ When to use this guide:
 
 ---
 
-## The seven rules
+## The eight rules
 
 Every rule has a short statement, an explicit test, and a precedence note where it interacts with other rules.
 
@@ -96,6 +96,36 @@ Use exact terms that appear in trigger output, frontmatter, or hook output. Miti
 **Better:** *"When `state.json` shows `current_step: implement` and `phase_start_commit` is set..."*
 **Worse:** *"When the state machine indicates the implement phase is active and the phase boundary has been recorded..."*
 
+### R8 — Prose density: short declarative sentences, full behavioral precision
+
+Tighten every sentence to its shortest declarative form that still carries full behavioral precision and any load-bearing rationale. Length without signal degrades adherence. Length with signal is the spec.
+
+**Reviewer test:** Could this sentence be shorter without losing behavioral precision OR load-bearing rationale?
+
+If the answer is yes, tighten. If the answer is no, leave the sentence alone.
+
+**Tightening patterns.**
+
+| Pattern in current prose | Tightened form | Why it works |
+|---|---|---|
+| "It is important to note that the orchestrator must read the artifact." | "Read the artifact." | Imperative voice; meta-emphasis cut. |
+| "In order to validate the diff, run the lint script." | "Run the lint script to validate the diff." | Subordinate-clause flip removes "in order to". |
+| "The reason this matters is that downstream consumers grep for the literal token." | "Downstream consumers grep for the literal token." | Filler opener removed; the fact carries the rationale. |
+| "There are several cases in which the dispatch may halt." | "Dispatch halts when:" followed by a bulleted list. | Existential opener replaced by a direct list. |
+| "We will now describe the procedure for handling failures." | Cut entirely; the procedure that follows speaks for itself. | Meta-announcement of the next paragraph adds zero signal. |
+| "This section provides guidance on how to author the rubric." | "Author the rubric as follows:" | Meta-prose about the document body collapsed into the imperative. |
+
+**What NOT to tighten.**
+
+- Anchor phrases preserved verbatim across edits. Paraphrase breaks the audit handle, even when shorter wording exists.
+- Verbatim contracts, named diagnostic strings, and exact frontmatter field values. These are audit handles, not prose.
+- One-line `Why:` rationale where the failure mode is non-obvious. Tighten only the surrounding sentence; keep the rationale.
+- Examples whose specificity carries the failure mode being illustrated. Tightening removes the evidence.
+- Imperative-voice rules already stated as "Do X. Do not do Y." These are already at the floor.
+- Lists whose items each name a distinct behavior. Merging items hides the named behaviors.
+
+**Guardrail — minimal does NOT mean short.** R8 tightens each sentence. R8 does not delete required behavior. The cross-cutting principles below state that the goal is the minimal set that fully specifies behavior, and that substantive prompts run two-hundred-plus lines. R8 is bounded by behavioral coverage. Shorten sentences. Preserve every load-bearing instruction, contract, anchor phrase, named diagnostic, and rationale the artifact requires.
+
 ---
 
 ## Cross-cutting prompt-engineering principles
@@ -125,7 +155,7 @@ Reviewers (both Claude and Codex) are evaluated against this gate. The gate exis
 | **architectural** | Structural defect: misplaced rule, broken cross-reference, ambiguous orchestration step, contradicts an existing rule in same skill or in `using-qrspi` |
 | **factual** | Claim contradicts the codebase, the frontmatter schema, the source research, or itself |
 | **contradiction** | Internal contradiction (e.g., new Red Flag conflicts with new Common Rationalization, new Iron Law conflicts with the section it summarizes, two restatements use inconsistent vocabulary) |
-| **rule-violation** | R1-R7 misapplied OR a pattern the rule explicitly says to cut/keep was missed. Reviewer must cite the rule ID and the line/section. |
+| **rule-violation** | R1-R8 misapplied OR a pattern the rule explicitly says to cut/keep was missed. Reviewer must cite the rule ID and the line/section. |
 
 ### Declined findings (note in summary, do NOT fix)
 
@@ -161,7 +191,7 @@ A reviewer prompt has six parts:
 
 1. **What is being reviewed** (file paths + diff path + concise change description)
 2. **Why the change exists** (the motivating problem; the empirical grounding if numerical claims are involved)
-3. **The rule set to apply** (R1-R7, the cross-cutting principles, link to this guide)
+3. **The rule set to apply** (R1-R8, the cross-cutting principles, link to this guide)
 4. **The finding-type gate** (blocking categories + declined categories)
 5. **Specific things to check** (concrete checks that derive from this particular change — e.g., "is the closed exception set stated identically in all 6 locations?")
 6. **Output format** (terse, blocking findings first, declined findings noted, status line)
@@ -172,7 +202,7 @@ Reviewer prompts should not duplicate the rule definitions — point to this gui
 
 ## Source research
 
-The seven rules are derived from:
+The rules are derived from:
 
 - **HumanLayer canonical sources** (Dex Horthy QRSPI talks, ACE-FCA essay, 12-factor agents repo) — for prompt structure, sharding, and the "<40 instructions per step" framing
 - **Anthropic prompt-engineering documentation** (effective context engineering for AI agents, multishot prompting, long-context prompting) — for XML tag usage, rationale-with-prohibitions, lost-in-the-middle, end-of-context placement
@@ -192,4 +222,4 @@ The QRSPI skill prompts will accumulate drift over time as features get added. S
 - When you notice a skill is failing to follow its own instructions
 - Before any significant pipeline restructuring
 
-The audit pass: for each skill file, ask "does it still satisfy R1-R7? Are there new patterns from real usage that should become rules?" If new evidence emerges, update this guide first, then re-apply across the skills.
+The audit pass: for each skill file, ask "does it still satisfy R1-R8? Are there new patterns from real usage that should become rules?" If new evidence emerges, update this guide first, then re-apply across the skills.
