@@ -612,7 +612,7 @@ reject_if_path_unsafe_for_emission() {
 _is_batch_mode=false
 for _arg in "$@"; do
   case "$_arg" in
-    --step|--agents) _is_batch_mode=true; break ;;
+    --step|--agents|--artifact-dir) _is_batch_mode=true; break ;;
   esac
 done
 
@@ -625,6 +625,17 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   BATCH_TIER_OVERRIDE=""
   BATCH_TASK_BRANCH=""
   BATCH_IMPL_COMMIT=""
+  # Task-04a / CD-2: new high-level entry mode and pre-computed-path low-level
+  # flags. BATCH_ARTIFACT_DIR triggers the high-level path (review-prep
+  # invocation + per-step diff/absorption-map threading). BATCH_DIFF_FILE /
+  # BATCH_ABSORPTION_MAP are the low-level pre-computed-path surface used by
+  # tests and non-standard callers; the high-level path populates the same
+  # variables internally so both modes emit a byte-identical Dispatch
+  # parameters block (CD-2 Acceptance bullet 2).
+  BATCH_ARTIFACT_DIR=""
+  BATCH_DIFF_FILE=""
+  BATCH_ABSORPTION_MAP=""
+  BATCH_BASE_REF=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -641,11 +652,53 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       --tier-override)     require_value "--tier-override" "$#";     BATCH_TIER_OVERRIDE="$2"; shift 2 ;;
       --task-branch)       require_value "--task-branch" "$#";       BATCH_TASK_BRANCH="$2"; shift 2 ;;
       --implementer-commit) require_value "--implementer-commit" "$#"; BATCH_IMPL_COMMIT="$2"; shift 2 ;;
+      --artifact-dir)      require_value "--artifact-dir" "$#";      BATCH_ARTIFACT_DIR="$2"; shift 2 ;;
+      --diff-file)         require_value "--diff-file" "$#";         BATCH_DIFF_FILE="$2"; shift 2 ;;
+      --absorption-map)    require_value "--absorption-map" "$#";    BATCH_ABSORPTION_MAP="$2"; shift 2 ;;
+      --base-ref)          require_value "--base-ref" "$#";          BATCH_BASE_REF="$2"; shift 2 ;;
       *)
         echo "error: unrecognized flag in batched dispatch: $1" >&2
         exit 1 ;;
     esac
   done
+
+  # ---------------------------------------------------------------------------
+  # Task-04a / CD-2: high-level vs low-level mode discrimination + partial
+  # high-level flag validation (B6 — caller-visible malformed-CLI behaviour).
+  #
+  # The high-level entry mode is keyed on `--step --round --artifact-dir`.
+  # If any TWO of the three are present, the third is REQUIRED — never
+  # silently fall through to the low-level batched mode, never emit an
+  # empty prompt. The diagnostic names the absent flag so the operator
+  # can fix the invocation.
+  #
+  # Disambiguation: an invocation with `--step --round` but neither
+  # `--artifact-dir` nor `--diff-file` clearly intended the high-level
+  # path; fail with `--artifact-dir`-named diagnostic. The presence of
+  # `--diff-file` (low-level pre-computed path) signals legacy/test
+  # intent and bypasses the high-level requirement.
+  # ---------------------------------------------------------------------------
+  _high_level_mode=false
+  if [[ -n "$BATCH_ARTIFACT_DIR" ]]; then
+    _high_level_mode=true
+    if [[ -z "$BATCH_ROUND" ]]; then
+      echo "error: --round required for high-level mode (--step + --round + --artifact-dir)" >&2
+      exit 1
+    fi
+    if [[ -z "$BATCH_STEP" ]]; then
+      echo "error: --step required for high-level mode (--step + --round + --artifact-dir)" >&2
+      exit 1
+    fi
+  else
+    # Artifact-dir absent. If --step + --round are both present without
+    # --diff-file (the legacy low-level pre-computed-path escape), the
+    # operator was reaching for high-level mode and forgot --artifact-dir.
+    # Fail loudly per B6: never silently fall through to low-level.
+    if [[ -n "$BATCH_STEP" && -n "$BATCH_ROUND" && -z "$BATCH_DIFF_FILE" ]]; then
+      echo "error: --artifact-dir required for high-level mode (--step + --round); pass --diff-file for low-level pre-computed-path mode" >&2
+      exit 1
+    fi
+  fi
 
   if [[ -z "$BATCH_STEP" ]];       then echo "error: --step required"        >&2; exit 1; fi
   if [[ -z "$BATCH_ROUND" ]];      then echo "error: --round required"       >&2; exit 1; fi
@@ -657,6 +710,59 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   _validate_output_dir "$BATCH_OUTPUT_DIR"
   reject_if_path_unsafe_for_emission "--output-dir" "$BATCH_OUTPUT_DIR"
   if [[ -z "$BATCH_AGENTS" ]];     then echo "error: --agents required"      >&2; exit 1; fi
+
+  # ---------------------------------------------------------------------------
+  # Task-04a / CD-2: high-level mode invokes scripts/review-prep.sh first
+  # and threads the produced paths into BATCH_DIFF_FILE / BATCH_ABSORPTION_MAP
+  # so the downstream prompt-assembly path is shared with the low-level
+  # pre-computed-path mode (byte-equality contract).
+  #
+  # review-prep failure propagates verbatim — its stderr is forwarded to our
+  # stderr and its exit code is propagated unchanged (CD-2 § Why this
+  # approach — single-exit-code shape; B4).
+  # ---------------------------------------------------------------------------
+  if [[ "$_high_level_mode" == "true" ]]; then
+    _review_prep_args=( --step "$BATCH_STEP" --round "$BATCH_ROUND" --artifact-dir "$BATCH_ARTIFACT_DIR" )
+    if [[ -n "$BATCH_BASE_REF" ]]; then
+      _review_prep_args+=( --base-ref "$BATCH_BASE_REF" )
+    else
+      # Default narrowing base for round-01 (review-prep requires it). Most
+      # callers run on `main`-derived integration branches; the round >= 2
+      # path reads the per-round anchor file and ignores --base-ref.
+      _review_prep_args+=( --base-ref main )
+    fi
+    if ! bash "$REPO_ROOT/scripts/review-prep.sh" "${_review_prep_args[@]}"; then
+      # review-prep already wrote its named diagnostic to stderr; propagate
+      # its non-zero exit (single-exit-code shape).
+      exit 1
+    fi
+    # Compute the per-step output paths review-prep would have written.
+    # Mirror review-prep's NN-padding and per-step output layout.
+    _hl_round_nn=$(printf '%02d' "$BATCH_ROUND")
+    _hl_diff_path="$BATCH_ARTIFACT_DIR/reviews/$BATCH_STEP/round-$_hl_round_nn.diff"
+    _hl_map_path="$BATCH_ARTIFACT_DIR/reviews/$BATCH_STEP/round-$_hl_round_nn.absorption-map.tsv"
+    # Only thread paths that review-prep actually produced (silent-on-no-
+    # input shape: implement-step and steps without absorption-map outputs).
+    if [[ -f "$_hl_diff_path" ]]; then
+      BATCH_DIFF_FILE="$_hl_diff_path"
+    fi
+    case "$BATCH_STEP" in
+      design|plan|replan)
+        if [[ -f "$_hl_map_path" ]]; then
+          BATCH_ABSORPTION_MAP="$_hl_map_path"
+        fi
+        ;;
+    esac
+  fi
+
+  # Marker-injection guards on the threaded paths (mirrors single-mode's
+  # --diff-file guard at the value-emission surface).
+  if [[ -n "$BATCH_DIFF_FILE" ]]; then
+    reject_if_path_unsafe_for_emission "--diff-file" "$BATCH_DIFF_FILE"
+  fi
+  if [[ -n "$BATCH_ABSORPTION_MAP" ]]; then
+    reject_if_path_unsafe_for_emission "--absorption-map" "$BATCH_ABSORPTION_MAP"
+  fi
 
   # Source the routing-resolution library for tier -> model + host x vendor
   # matrix lookups. QRSPI_SOURCE_ONLY keeps the source side-effect-free.
@@ -724,6 +830,29 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   set -- $BATCH_AGENTS
   set +f
   IFS="$_saved_ifs"
+
+  # ---------------------------------------------------------------------------
+  # Task-04a / CD-2 B1: dispatch order is test-writer first, implementer
+  # second (RED-verification gate between). The order is contract, not
+  # caller-controlled — for `--step implement` we partition the agents list
+  # so any tag containing `test-writer` is emitted before any other tag,
+  # regardless of the order in the caller's --agents string.
+  # ---------------------------------------------------------------------------
+  if [[ "$BATCH_STEP" == "implement" ]]; then
+    _tw_pairs=()
+    _other_pairs=()
+    for _pair in "$@"; do
+      [[ -z "$_pair" ]] && continue
+      _ptag="${_pair%%=*}"
+      case "$_ptag" in
+        *test-writer*) _tw_pairs+=("$_pair") ;;
+        *)             _other_pairs+=("$_pair") ;;
+      esac
+    done
+    set --
+    for _p in "${_tw_pairs[@]}"; do set -- "$@" "$_p"; done
+    for _p in "${_other_pairs[@]}"; do set -- "$@" "$_p"; done
+  fi
 
   _emitted_any=false
   for _pair in "$@"; do
@@ -831,9 +960,25 @@ if [[ "$_is_batch_mode" == "true" ]]; then
         cat "$BATCH_ARTIFACT_ABS"
         printf '\n<<<UNTRUSTED-ARTIFACT-END id=%s>>>\n' "$BATCH_ARTIFACT"
       fi
-      printf 'round_subdir: %s\n' "$BATCH_OUTPUT_DIR"
+      # round_subdir is the per-round directory under <artifact-dir>/reviews/
+      # (reviewer-protocol skill SKILL.md L43). In high-level mode it derives
+      # from --artifact-dir; in low-level mode it derives from the
+      # --diff-file path (strip `.diff` suffix). When neither is available
+      # (e.g., implement-step with no diff), fall back to --output-dir for
+      # the legacy emission shape.
+      _round_subdir="$BATCH_OUTPUT_DIR"
+      if [[ -n "$BATCH_DIFF_FILE" ]]; then
+        _round_subdir="${BATCH_DIFF_FILE%.diff}/"
+      fi
+      printf 'round_subdir: %s\n' "$_round_subdir"
       printf 'round: %s\n' "$BATCH_ROUND"
       printf 'reviewer_tag: %s\n' "$_tag"
+      if [[ -n "$BATCH_DIFF_FILE" ]]; then
+        printf 'diff_file_path: %s\n' "$BATCH_DIFF_FILE"
+      fi
+      if [[ -n "$BATCH_ABSORPTION_MAP" ]]; then
+        printf 'absorption_map_path: %s\n' "$BATCH_ABSORPTION_MAP"
+      fi
     } > "$_prompt_file" \
       || { echo "error: failed to assemble prompt for tag '$_tag'" >&2; exit 1; }
 
