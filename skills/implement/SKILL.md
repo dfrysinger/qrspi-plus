@@ -436,7 +436,16 @@ In full pipeline mode, dispatch tasks in the wave order Parallelize specified. F
 
 If a wave grows past ~3 concurrent tasks, prefer splitting it into smaller waves at Parallelize time rather than scaling main-chat tracking — the flat dispatch model trades a layer of subagent-level context isolation for parallelism, and that trade-off is bounded by what main chat can keep distinct without cross-contaminating tasks.
 5. Mark each wave's tasks `completed` in TodoWrite.
-6. If the next Wave depends on a stage commit (`stage-after-W{N}`), create it now from the just-completed Wave's tips.
+6. If the next Wave depends on a stage commit (`stage-after-W{N}`), create it now from the just-completed Wave's tips. Wrap `git merge --no-ff` with the stage-commit parent-validation fence — pre-merge `--capture`, the merge itself, post-merge `--validate`, in that order with nothing between:
+
+   ```
+   scripts/validate-stage-commit-parents.sh --capture --wave-id W{N} \
+       --task-branch qrspi/{slug}/task-AA --task-branch qrspi/{slug}/task-BB ...
+   git merge --no-ff qrspi/{slug}/task-AA qrspi/{slug}/task-BB ...
+   scripts/validate-stage-commit-parents.sh --validate --wave-id W{N}
+   ```
+
+   `--capture` records the integration-base SHA (`git rev-parse HEAD`) and each task-tip SHA to a runtime sidecar under `reviews/implement/wave-state/W{N}.sidecar`. `--validate` reads the sidecar plus the stage commit's actual parents (`git log --format='%P' -n 1 HEAD`) and asserts (a) `actual_parents[0] == captured integration-base SHA` (first-parent ordering is load-bearing for the integration spine) and (b) `set(actual_parents[1:]) == set(captured task-tip SHAs)` (full task-tip set match). On either-invariant failure the wrapper halts the wave non-zero with the `stage-commit-parent-mismatch:` named diagnostic — do not advance, do not record the wave as complete, do not let the orchestrator continue. The runtime sidecar is the only new artifact; `parallelization.md` stays symbolic-only (no resolved SHAs written back).
 7. Move to the next wave.
 
 In quick fix mode, there are no waves — Step 6 of Process Steps dispatches the entire batch concurrently (or sequentially if the user prefers; tasks are file-disjoint by quick-fix construction so concurrency is safe).
