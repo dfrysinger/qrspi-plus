@@ -466,6 +466,93 @@ function main() {
     process.stderr.write(`build-plugin: --root not found: ${args.root}\n`);
     process.exit(2);
   }
+
+  // -------------------------------------------------------------------------
+  // VERSION authoring path (T28 / G8). The repo-root `VERSION` file is the
+  // sole authoring source for the plugin version. Read it, validate the
+  // structural invariant (single non-empty line — ignoring at most one
+  // trailing newline), then stamp the value into the five consumer manifests
+  // before the build copy walks `.claude-plugin/`.
+  //
+  // Per design.md § Dependencies + edge cases bullet 1, this script does NOT
+  // parse or validate semver — it reads the line and writes it through.
+  // Stricter validation is deferred.
+  // -------------------------------------------------------------------------
+  const VERSION_DIAG_PREFIX =
+    'version-source-missing-or-malformed: VERSION at repo root must contain a single non-empty version string';
+  const versionPath = path.join(rootReal, 'VERSION');
+  let versionRaw;
+  try {
+    versionRaw = fs.readFileSync(versionPath, 'utf8');
+  } catch (e) {
+    process.stderr.write(`build-plugin: ${VERSION_DIAG_PREFIX} (read: ${e.code || e.message})\n`);
+    process.exit(1);
+  }
+  // Normalize CRLF and strip exactly one trailing newline. Anything left
+  // containing a newline is multi-line input — reject.
+  const versionNorm = versionRaw.replace(/\r/g, '').replace(/\n$/, '');
+  if (versionNorm.length === 0 || versionNorm.includes('\n') || versionNorm.trim().length === 0) {
+    process.stderr.write(`build-plugin: ${VERSION_DIAG_PREFIX}\n`);
+    process.exit(1);
+  }
+  const versionValue = versionNorm.trim();
+
+  // Stamp the four source manifests in-place. The fifth consumer
+  // (build/.claude-plugin/plugin.json) is produced by the manifest copy
+  // below, which inherits the just-stamped .claude-plugin/plugin.json.
+  // Each manifest declares its own JSON shape via a writer callback — the
+  // script does not assume a flat top-level `version` field.
+  const consumerStamps = [
+    {
+      rel: '.claude-plugin/plugin.json',
+      stamp: (obj) => { obj.version = versionValue; },
+    },
+    {
+      rel: '.claude-plugin/marketplace.json',
+      stamp: (obj) => {
+        if (Array.isArray(obj.plugins)) {
+          for (const p of obj.plugins) p.version = versionValue;
+        }
+      },
+    },
+    {
+      rel: '.github/plugin/plugin.json',
+      stamp: (obj) => { obj.version = versionValue; },
+    },
+    {
+      rel: '.github/plugin/marketplace.json',
+      stamp: (obj) => {
+        if (obj.metadata) obj.metadata.version = versionValue;
+        if (Array.isArray(obj.plugins)) {
+          for (const p of obj.plugins) p.version = versionValue;
+        }
+      },
+    },
+  ];
+  for (const { rel, stamp } of consumerStamps) {
+    const abs = path.join(rootReal, rel);
+    let raw;
+    try {
+      raw = fs.readFileSync(abs, 'utf8');
+    } catch (e) {
+      process.stderr.write(
+        `build-plugin: consumer manifest missing or unreadable: ${rel} (${e.code || e.message})\n`,
+      );
+      process.exit(1);
+    }
+    let obj;
+    try {
+      obj = JSON.parse(raw);
+    } catch (e) {
+      process.stderr.write(`build-plugin: consumer manifest malformed JSON: ${rel} (${e.message})\n`);
+      process.exit(1);
+    }
+    stamp(obj);
+    // Preserve 2-space indent + trailing newline (the canonical form of the
+    // four checked-in consumer files).
+    fs.writeFileSync(abs, JSON.stringify(obj, null, 2) + '\n');
+  }
+
   // Resolve --out lexically (target may not exist yet). Default is
   // <rootReal>/build. path.resolve here treats relative --out as relative to
   // rootReal, matching CLI conventions.

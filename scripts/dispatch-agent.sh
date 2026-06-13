@@ -494,6 +494,27 @@ emit_first_party_manifest_entry() {
   _append_manifest_entry "$entry"
 }
 
+# _validate_agent_name_charset <agent_name> — guards the `<agent>` interpolation
+# fed into the subagent author-marker GIT_AUTHOR_NAME wrap (G5). The valid
+# agent-name charset is `[a-z0-9-]+`: lowercase letters, digits, and hyphen,
+# with at least one character. Empty strings are rejected explicitly (the
+# `^[a-z0-9-]+$` regex already excludes them, but the explicit `-z` test
+# documents the intent — prevents the silent `GIT_AUTHOR_NAME=qrspi-` failure
+# mode where the marker would carry no discriminator). Any character outside
+# the charset (uppercase, underscore, whitespace, control bytes, path
+# separators, etc.) halts dispatch with the `agent-name-charset-invalid:`
+# named diagnostic and exits non-zero BEFORE any GIT_AUTHOR_NAME export and
+# before any subprocess (including the dispatch-companion) is invoked, so a
+# malformed agent-name value can never produce a silently-malformed subagent
+# commit author or reach a child git command.
+_validate_agent_name_charset() {
+  local agent_name="${1:-}"
+  if [[ -z "$agent_name" || ! "$agent_name" =~ ^[a-z0-9-]+$ ]]; then
+    echo "agent-name-charset-invalid: agent name '${agent_name}' does not match the valid charset [a-z0-9-]+ (would produce a silently-malformed subagent author marker); refusing to dispatch" >&2
+    exit 1
+  fi
+}
+
 # Source guard: when QRSPI_SOURCE_ONLY=1, return after loading function
 # definitions so that function-isolation tests can source this file and call
 # detect_host / check_codex_available directly without triggering argument
@@ -742,6 +763,15 @@ if [[ "$_is_batch_mode" == "true" ]]; then
     # strip_frontmatter_batch/resolve_tier read (spec line 19).
     assert_path_under_repo_root "--agents" "$_agent_file"
     _agent_name="$(basename "${_agent_file%.md}")"
+
+    # G5 subagent author-marker env wrap: validate the agent-name charset
+    # BEFORE composing GIT_AUTHOR_NAME so an out-of-charset value cannot
+    # produce a silently-malformed marker on dispatched subagent commits.
+    # The wrap is exported into the per-iteration environment so every
+    # subprocess this loop launches (the dispatch-companion below, plus any
+    # child git command in the subagent's session) inherits the marker.
+    _validate_agent_name_charset "$_agent_name"
+    export GIT_AUTHOR_NAME="qrspi-${_agent_name}"
 
     # Vendor is encoded in the tag suffix (e.g., quality-claude -> claude,
     # spec-codex -> codex). Default to claude when no recognised suffix.
@@ -1018,6 +1048,22 @@ resolve_path() {
 AGENT_FILE_ABS="$(resolve_path "$AGENT_FILE")"
 assert_file_exists "agent-file" "$AGENT_FILE_ABS"
 assert_path_under_repo_root "agent-file" "$AGENT_FILE_ABS"
+
+# G5 subagent author-marker env wrap (single-reviewer / low-level path).
+# Derive the agent-name from the agent-file basename (mirrors the manifest
+# helpers' `basename "${AGENT_FILE%.md}"` formula), validate it against the
+# agent-name charset, and export GIT_AUTHOR_NAME=qrspi-<agent> so every
+# subprocess this script launches downstream (the dispatch-companion shell
+# pipeline, plus the first-party copilot-cli prompt-file path) inherits the
+# subagent author marker. Validating here — after existence + repo-boundary
+# checks but before any compose_prompt or dispatcher invocation — guarantees
+# an invalid agent-name halts dispatch with the `agent-name-charset-invalid:`
+# named diagnostic before any subagent git command can run. The wrap is set
+# on EVERY dispatched git command in the subagent's session via env
+# inheritance, not just the first one.
+_AGENT_NAME_FOR_MARKER="$(basename "${AGENT_FILE_ABS%.md}")"
+_validate_agent_name_charset "$_AGENT_NAME_FOR_MARKER"
+export GIT_AUTHOR_NAME="qrspi-${_AGENT_NAME_FOR_MARKER}"
 
 REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
 assert_file_exists "reviewer-protocol/SKILL.md" "$REVIEWER_PROTOCOL_ABS"

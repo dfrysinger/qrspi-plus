@@ -3222,9 +3222,22 @@ JQ_EOF
   local fixture="$REPO_ROOT/tests/fixtures/build-resolver/legacy-claude-skill-dir/README.md"
   [ -f "$fixture" ]
   local root="$BATS_TEST_TMPDIR/legacy-fixture-root"
-  mkdir -p "$root/.claude-plugin" "$root/skills/legacy-fixture"
+  mkdir -p "$root/.claude-plugin" "$root/skills/legacy-fixture" "$root/.github/plugin"
+  # T28 / G8: build now reads VERSION + stamps four source consumer
+  # manifests before walking the manifest dirs. Provide them so the
+  # legacy-token gate under exercise here is reached.
+  printf '0.0.0\n' >"$root/VERSION"
   cat >"$root/.claude-plugin/plugin.json" <<JSON
 { "name": "qrspi-fixture", "version": "0.0.0", "skills": ["./skills"] }
+JSON
+  cat >"$root/.claude-plugin/marketplace.json" <<JSON
+{ "name": "fixture-local", "plugins": [ { "name": "qrspi-fixture", "version": "0.0.0", "source": "./build" } ] }
+JSON
+  cat >"$root/.github/plugin/plugin.json" <<JSON
+{ "name": "qrspi-fixture", "version": "0.0.0" }
+JSON
+  cat >"$root/.github/plugin/marketplace.json" <<JSON
+{ "name": "qrspi-fixture", "metadata": { "version": "0.0.0" }, "plugins": [ { "name": "qrspi-fixture", "version": "0.0.0" } ] }
 JSON
   : >"$root/LICENSE"
   : >"$root/README.md"
@@ -3248,14 +3261,26 @@ JSON
   [ -f "$fa" ]
   [ -f "$fb" ]
   local root="$BATS_TEST_TMPDIR/cycle-fixture-root"
-  mkdir -p "$root/.claude-plugin" "$root/skills/cycle-fixture"
+  mkdir -p "$root/.claude-plugin" "$root/skills/cycle-fixture" "$root/.github/plugin"
   # Replicate the fixture pair at paths the fixture's bare-relative !cat
   # directives expect (`tests/fixtures/build-resolver/include-cycle/{a,b}.md`).
   mkdir -p "$root/tests/fixtures/build-resolver/include-cycle"
   cp "$fa" "$root/tests/fixtures/build-resolver/include-cycle/a.md"
   cp "$fb" "$root/tests/fixtures/build-resolver/include-cycle/b.md"
+  # T28 / G8: see legacy-fixture sibling test for rationale on the five
+  # consumer scaffolds.
+  printf '0.0.0\n' >"$root/VERSION"
   cat >"$root/.claude-plugin/plugin.json" <<JSON
 { "name": "qrspi-fixture", "version": "0.0.0", "skills": ["./skills"] }
+JSON
+  cat >"$root/.claude-plugin/marketplace.json" <<JSON
+{ "name": "fixture-local", "plugins": [ { "name": "qrspi-fixture", "version": "0.0.0", "source": "./build" } ] }
+JSON
+  cat >"$root/.github/plugin/plugin.json" <<JSON
+{ "name": "qrspi-fixture", "version": "0.0.0" }
+JSON
+  cat >"$root/.github/plugin/marketplace.json" <<JSON
+{ "name": "qrspi-fixture", "metadata": { "version": "0.0.0" }, "plugins": [ { "name": "qrspi-fixture", "version": "0.0.0" } ] }
 JSON
   : >"$root/LICENSE"
   : >"$root/README.md"
