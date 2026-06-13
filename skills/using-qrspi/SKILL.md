@@ -268,7 +268,7 @@ The per-phase SKILL bodies carry the full HARD-RULE, the observability-check ste
 - **Integrate:** `skills/integrate/SKILL.md` § Orchestration Boundary
 - **Test:** `skills/test/SKILL.md` § Orchestration Boundary
 
-The primitive is `scripts/orchestration-boundary-check.sh --phase <directory-name>`, which reads a phase-base SHA from a per-phase anchor file and writes `reviews/<phase>/orchestration-boundary.md`. The script always exits 0 (fail-soft); a non-empty report is the signal, surfaced at the batch gate. To revert confirmed violations, use the implementer-protocol `revert-orchestration-drift` fix-task mode.
+The primitive is `scripts/orchestration-boundary-check.sh --phase <directory-name>`, which writes `reviews/<phase>/orchestration-boundary.md`. The script always exits 0 (fail-soft); a non-empty report is the signal at the batch gate. To revert confirmed violations, use the implementer-protocol `revert-orchestration-drift` fix-task mode.
 
 ## Rejection Behavior
 

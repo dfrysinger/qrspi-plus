@@ -17,6 +17,8 @@ d. **50:** Moderately confident. The agent was able to verify this is a real iss
 e. **75:** Highly confident. The agent double checked the issue, and verified that it is very likely it is a real issue that will be hit in practice. The existing approach in the PR is insufficient. The issue is very important and will directly impact the code's functionality, **or violates a documented "Iron Law", "Iron Rule", "MUST", or equivalent explicitly-load-bearing constraint in an upstream SKILL.md, agent file, or CLAUDE.md**, or it is an issue that is directly mentioned in the relevant CLAUDE.md.
 f. **100:** Absolutely certain. The agent double checked the issue, and confirmed that it is definitely a real issue, that will happen frequently in practice. The evidence directly confirms this.
 
+**Identifier-hygiene grounding.** For findings whose subject is an identifier-hygiene token (forbidden-token-table match, QRSPI-internal IDs such as `[Tnn]` or `R\d+-F\d+` appearing in test names, commit messages, or runtime prose), ground the verdict in `skills/implementer-protocol/SKILL.md` § Hygiene contract — that is the canonical authority for identifier hygiene across implementer and test contexts. Consult it via `<upstream_paths>` Read on the dispatch prompt; if the path is absent from `<upstream_paths>` for the current step, treat that as a dispatch defect (do not improvise an alternative source). The hygiene-contract tables (Internal-ID forbidden tokens, Evergreen-markdown forbidden tokens) are load-bearing — a finding that cites a token covered by either table is a real ID-hygiene rule, not a missing one.
+
 ## False-positive examples
 
 **Informational findings.** If the finding's

@@ -1,0 +1,31 @@
+name: build-then-diff
+
+# G8 CI gate: catches the entire "did the committed build/ tree match the
+# source?" regression class. Rebuilds the plugin from source, then runs
+# `git diff --exit-code` so any divergence — version drift, build-artifact
+# drift in build/, marketplace `source` field shifts — fails the PR.
+#
+# Runs on every PR (no branch filter) so the gate covers PRs targeting
+# main and any other branch. `git diff --exit-code` names diverging files
+# in its natural output, satisfying named-diagnostic discipline. Fix
+# locally with `node tools/build-plugin.mjs` then `git add -A` and amend
+# the PR commit.
+
+on:
+  pull_request:
+
+jobs:
+  build-then-diff:
+    name: Build-then-diff gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a  # v4.2.0
+        with:
+          node-version: '20'
+
+      - name: Build plugin then diff against committed tree
+        run: node tools/build-plugin.mjs && git diff --exit-code

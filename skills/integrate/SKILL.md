@@ -34,6 +34,19 @@ Common misreads to avoid:
 NO CI PUSH WITHOUT INTEGRATION REVIEW
 ```
 
+## Orchestration Boundary
+
+```
+MAIN CHAT ONLY ORCHESTRATES. ALL CODE EXECUTION, FILE CHANGES, AND GIT
+OPERATIONS ARE DELEGATED TO SUBAGENTS. MAIN CHAT NEVER RUNS THE WORK.
+```
+
+Main chat's responsibilities in Integrate are: dispatch the integration reviewer subagents, fix-task subagents, and CI-fix subagents per the phase's defined dispatch set; aggregate findings; gate transitions; write the small review-bookkeeping files under `reviews/integration/` (per-round commit anchors, scope-set captures, integration review logs).
+
+Main chat does NOT: edit target-project source files (`scripts/`, `tests/`, `skills/`, `agents/`, `docs/`, etc.), run tests / typecheck / lint, run `git add` / `git commit` / `git merge` / `git rebase`, invoke language toolchains, or perform "quick verification" between review rounds. Any of those activities are delegated to a fresh subagent (a fix-task dispatch for fix work; a re-run of the integration reviewer fan-out for re-verification). Integration-branch git operations (the merge itself, the integration commits) are executed by the dispatched subagents, not by main chat.
+
+**Why this rule matters in Integrate.** Integrate works on the merged integration branch without per-task worktree isolation, so there is no structural CWD separation between main chat and dispatched subagents — the discipline is the only thing keeping the boundary intact. Subagents fork into clean per-dispatch contexts and preserve the per-task quality gate (TDD discipline, per-task reviewer fan-out, finding-verifier scoring) that direct main-chat edits skip. Cumulative drift accumulates silently across the phase when the boundary is crossed.
+
 ## Reviewer Agents
 
 Two reviewer dispatches run in parallel during the integration review round (`qrspi-integration-reviewer` for cross-task correctness; `qrspi-security-integration-reviewer` for cross-task security). Both are agent-file subagents under `agents/`. Integrate has no scope-reviewer dispatch — integration is not artifact-shaped.
@@ -78,6 +91,18 @@ This applies regardless of how simple the fix appears.
 4. **Conflict-free invariant.** Because Wave members are file-disjoint by construction (Parallelize's analysis enforces no file overlap, and Implement re-verifies at runtime) and sequential dependencies are linear, the merge sequence above should be conflict-free. If it isn't, a parallelization-plan invariant was violated upstream — STOP and present the conflict to the user with file-level details rather than auto-resolving.
 
 After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/stage-after-W*`) since they have no further role; the feature branch tip now contains everything.
+
+## Phase Start
+
+**Write `reviews/integration/phase-base.txt` as the first orchestrator action of the integrate phase — performed before any subagent dispatch in the phase.** Main chat captures the integration branch's HEAD SHA at phase start and records it as `integration_base_sha=<HEAD-SHA>` so the Step N orchestration-boundary observability check below (which runs `scripts/orchestration-boundary-check.sh --phase integration`) can read the phase-base SHA to bound the non-subagent-commit detection range. If this file is missing or malformed when the OBC script runs, the script writes a dispatch-defect entry rather than emitting a vacuous "clean" report.
+
+```sh
+mkdir -p "<ABS_ARTIFACT_DIR>/reviews/integration"
+printf 'integration_base_sha=%s\n' "$(git -C "<repo>" rev-parse HEAD)" \
+  > "<ABS_ARTIFACT_DIR>/reviews/integration/phase-base.txt"
+```
+
+No subagent is dispatched until this file is on disk. Writing this small bookkeeping file is one of the bounded exceptions § Orchestration Boundary permits to main chat (see the responsibilities list above).
 
 ## Process Steps
 
@@ -157,6 +182,45 @@ The canonical CI signal for this gate is the workflow defined in `.github/workfl
 5. Write fix tasks to `fixes/ci-round-NN/`. Fix tasks include the **specific CI job and check that must pass** in the task spec. The implementer fixes the issue AND verifies the relevant check passes locally before returning. Reviewers also verify it passes.
 6. Fix tasks route through Implement → back to Integrate → re-run CI. If CI still fails, present to user again (no cycle counting — user is in the loop each time).
 7. If `.github/workflows/ci.yml` does not exist in the repository, skip this gate entirely and note the absence to the user.
+
+### Step N — Orchestration boundary observability check
+
+Before presenting the batch-gate menu for this phase, first verify the OBC script is present: if `scripts/orchestration-boundary-check.sh` is absent or not executable at invocation time, the orchestrator writes a `## Dispatch defects` section to `<ABS_ARTIFACT_DIR>/reviews/integration/orchestration-boundary.md` containing the entry `obc-script-absent: scripts/orchestration-boundary-check.sh not found or not executable` and halts per § Batch Gate without attempting invocation. Otherwise, run `scripts/orchestration-boundary-check.sh --phase integration --artifact-dir "<ABS_ARTIFACT_DIR>"`. The script:
+
+1. Runs `git status --porcelain` against the workspace and lists any modified/added/deleted files (catches uncommitted main-chat edits).
+2. Runs `git log <phase-base>..HEAD --format='%H %an' | awk '$2 !~ /^qrspi-/ {print $1}'` against the integration branch's phase range and lists any non-subagent-authored commits (catches main-chat-committed edits; subagent commits carry the `qrspi-<agent-name>` author marker injected by the dispatch chain). The `<phase-base>` SHA is read from `reviews/integration/phase-base.txt` (written at phase start per § Phase Start).
+
+Findings are written to `<ABS_ARTIFACT_DIR>/reviews/integration/orchestration-boundary.md` under up to two named sections: `## Boundary violations` (uncommitted-edit and non-subagent-commit entries from steps 1 and 2 above) and `## Dispatch defects` (script-absent at invocation site, phase-base file unreadable, git invocation crash, plus the named-diagnostic dispatch-defect classes enumerated in plan T19, or any other condition under which the OBC script cannot determine the boundary state). Each section header is emitted ONLY when that section has at least one entry; a clean run produces a byte-empty file. The OBC script exits 0 when `## Dispatch defects` is empty (regardless of `## Boundary violations` content) and exits non-zero when `## Dispatch defects` is non-empty. The two sections have different disposition semantics per § Batch Gate.
+
+Boundary violations are fail-soft: a populated `## Boundary violations` section does NOT halt phase advancement on its own — it surfaces the violations to the user via the batch-gate menu for the user's decision. Halting unconditionally would prevent the user from advancing a phase whose orchestration drift they have already accepted.
+
+Dispatch defects are fail-loud: a populated `## Dispatch defects` section halts phase advancement unconditionally (and the non-zero OBC exit code reinforces this at the script level). Interactive mode treats a populated `## Dispatch defects` section as an automatic halt (no acknowledge-and-continue branch is offered); autopilot mode's dispatch-defect halt branch is defined in § Batch Gate.
+
+## Batch Gate
+
+**Orchestration-boundary violations (when `reviews/integration/orchestration-boundary.md` is non-empty OR the OBC step wrote a dispatch-defect entry before invocation).** Prepend the following item to the batch-gate menu, before the standard advance/re-run options. When `## Dispatch defects` is non-empty, render only options (a) and (b); option (c) is suppressed (the boundary state is undeterminable and continue is not safe).
+
+> Phase integration completed with <V> boundary violations and <D> dispatch defects recorded in `reviews/integration/orchestration-boundary.md`:
+> - <K> uncommitted main-chat edits to project files
+> - <M> non-subagent commits in the phase range
+> - <D> dispatch-defect entries (boundary state undeterminable)
+>
+> Choose:
+>   (a) Review violations now (open the report and walk through each)
+>   (b) Escalate — pause this phase and dispatch a fix-task subagent to remediate (only when the edits should not have happened — e.g., main chat edited project code mid-phase to "quickly fix" a reviewer finding)
+>   (c) Acknowledge and continue (advance to next phase with violations noted; appropriate when the edits were legitimate mid-pipeline tooling/hotfix work that happens to fall in the phase range) — suppressed when `## Dispatch defects` is non-empty per the rendering rule above
+
+If the file is byte-empty (no sections written), omit this menu item entirely.
+
+**Autopilot mode.** When `scripts/detect-interaction-mode.sh` reports `autopilot` AND the orchestration-boundary report is non-empty, the orchestrator evaluates branches in the order listed; the first matching branch wins:
+
+- **Dispatch defects (`## Dispatch defects` section non-empty, with or without `## Boundary violations` entries) — evaluate this branch first.** Halt unconditionally: write a halt marker at `<ABS_ARTIFACT_DIR>/HALT-orchestration-boundary-undeterminable.md` listing the dispatch-defect entries (and any boundary-violation entries also present), emit "Halted at integration batch gate — orchestration-boundary check could not determine boundary state (dispatch defects: <D>); human triage required," and exit the autopilot loop. No auto-revert is attempted because the boundary state is undeterminable: an empty `## Boundary violations` section is not proof of clean discipline when the check itself could not run cleanly. This branch takes precedence over the two violation-class branches below.
+
+- **Non-subagent commits in the phase range (commit-based violations under `## Boundary violations`; dispatch-defects branch above did not match).** Auto-escalate: dispatch a fix-task subagent with mode `revert-orchestration-drift` that reverts the offending commits and writes the action to `<ABS_ARTIFACT_DIR>/reviews/integration/orchestration-boundary-revert.md`. Then re-run the phase-end check; if clean, advance. Cap auto-revert at 1 attempt per phase: if the re-run is still non-empty, do NOT revert again — fall through to halt-and-surface (write a halt marker at `<ABS_ARTIFACT_DIR>/HALT-orchestration-boundary-recurring.md` listing both the original violations and the post-revert violations, emit "Halted at integration batch gate — orchestration-boundary violations recurred after auto-revert," and exit the autopilot loop).
+
+- **Uncommitted workspace changes under `## Boundary violations` (`git status --porcelain` non-empty; dispatch-defects branch above did not match).** Halt: write a halt marker at `<ABS_ARTIFACT_DIR>/HALT-orchestration-boundary.md` listing the dirty paths and the workspace state, emit "Halted at integration batch gate — uncommitted main-chat edits require human decision," and exit the autopilot loop. Auto-reverting uncommitted state would destroy whatever the agent was mid-doing without anyone able to triage it first.
+
+Interactive mode is unaffected by this branching; the (a)/(b)/(c) menu applies as defined above (with option (c) suppressed when `## Dispatch defects` is non-empty per the interactive-menu render rule).
 
 ## Fix Task File Format
 

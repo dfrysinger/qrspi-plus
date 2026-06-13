@@ -19,6 +19,19 @@ Final acceptance testing for the current phase. Verify implementation meets goal
 NO PRODUCTION CODE FIXES IN THE TEST SKILL — ROUTE THROUGH THE PIPELINE
 ```
 
+## Orchestration Boundary
+
+```
+MAIN CHAT ONLY ORCHESTRATES. ALL CODE EXECUTION, FILE CHANGES, AND GIT
+OPERATIONS ARE DELEGATED TO SUBAGENTS. MAIN CHAT NEVER RUNS THE WORK.
+```
+
+Main chat's responsibilities in Test are: dispatch the test-writer subagents, test-execution subagents, and fix-task subagents per the phase's defined dispatch set; aggregate findings; gate transitions; write `reviews/test/round-NN-results.md` (the main-chat-authored summary of test execution results and acceptance coverage table — the only file main chat authors directly in this phase). The phase-start write of `reviews/test/phase-base.txt` (see Process Steps step 1) is performed by main chat as a small phase-boundary bookkeeping write under `reviews/test/` and is allowlisted on the same basis.
+
+Main chat does NOT: write or edit test files or target-project source files (`reviews/test/round-NN-results.md` is the sole exception), run the tests themselves, run `git add` / `git commit`, invoke language toolchains, or perform "quick verification" between review rounds. Any of those activities are delegated to a fresh subagent.
+
+**Why this rule matters in Test.** Test works on the merged integration branch without per-task worktree isolation, so there is no structural CWD separation between main chat and dispatched subagents — the discipline is the only thing keeping the boundary intact. Subagents fork into clean per-dispatch contexts and preserve the per-task quality gate (test-writer Iron Law constraint, reviewer fan-out, finding-verifier scoring); direct main-chat edits skip that gate entirely and accumulate drift no review surface catches. Test-writer subagents are particularly load-bearing because their Iron Law constrains them ("writes tests, does NOT fix code or run tests"); main chat editing test files directly bypasses that constraint at the source.
+
 ## Subagent Dispatches
 
 The Test phase dispatches one test-writer subagent and three per-task reviewers. There is NO scope-reviewer dispatch in this phase — generated test code is not artifact-shaped.
@@ -83,11 +96,12 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
 
 ## Process Steps
 
-1. **Run full existing test suite** — establish baseline. If tests fail, present failures to user (Pattern 3 — deterministic, don't re-run). User decides:
+1. **Phase-start: write `reviews/test/phase-base.txt`** — this is the **first orchestrator action of the Test phase**, performed before any subagent dispatch. Capture the current integration-branch HEAD SHA and write the single-line file `<ABS_ARTIFACT_DIR>/reviews/test/phase-base.txt` with content `integration_base_sha=<HEAD-SHA-at-phase-entry>`. This anchor is consumed by `scripts/orchestration-boundary-check.sh --phase test` at the end-of-phase OBC step (see step 8); the OBC read path requires a written phase-base before any subagent is dispatched in the phase, so this write MUST precede every other dispatch. The write is a small bookkeeping file under `reviews/test/` (allowlisted per § Orchestration Boundary). Suggested shell: `mkdir -p "<ABS_ARTIFACT_DIR>/reviews/test" && printf 'integration_base_sha=%s\n' "$(git rev-parse HEAD)" > "<ABS_ARTIFACT_DIR>/reviews/test/phase-base.txt"`.
+2. **Run full existing test suite** — establish baseline. If tests fail, present failures to user (Pattern 3 — deterministic, don't re-run). User decides:
    - **Dispatch fixes:** Write fix tasks for the baseline failures (same format as test fix tasks), route through the fix pipeline before writing new tests.
    - **Proceed anyway:** Log failures to `reviews/test/baseline-failures.md`. New acceptance tests will run alongside known failures.
    - **Stop:** Halt pipeline.
-2. **Write tests** — dispatch the test-writer subagent.
+3. **Write tests** — dispatch the test-writer subagent.
 
    The test-writer dispatch resolves its tier through `scripts/_resolve-lib.sh` — the Test-phase acceptance dispatch uses the qrspi-test-writer agent's `tier: medium` default unless the plan pins `test_writer_tier:`. Dispatch `Agent({ subagent_type: "qrspi-test-writer" })` (the dispatcher resolves vendor+model from the resolved tier) with a prompt containing only:
    - `companion_plan`: `plan.md` body wrapped between `<<<UNTRUSTED-ARTIFACT-START id=plan.md>>>` and `<<<UNTRUSTED-ARTIFACT-END id=plan.md>>>` markers (canonical acceptance-criteria source per the strip-from-goals contract)
@@ -99,7 +113,7 @@ Per-type rule sets (test structure, naming convention, anti-patterns) live in th
 
    The four-test-type rule sets (acceptance / integration / e2e / boundary), the coverage criteria, and the iron-law constraint (writes tests, does NOT fix code or run tests) arrive via the agent body auto-loaded by the runtime. Zero rules content in main chat. The test-writer maps each test to a specific acceptance criterion in `plan.md`; `goals.md` is consulted for traceability only.
 
-3. **Review test code** — follows **Review Pattern 1 (Inner Loop)** with 3 reviewers (reused per-task reviewers from Implement).
+4. **Review test code** — follows **Review Pattern 1 (Inner Loop)** with 3 reviewers (reused per-task reviewers from Implement).
 
    **Diff-file wiring opt-out.** Test-step reviewers analyze test quality (assertion meaningfulness, flake risk, plan-criterion traceability) — not "where in the diff." The orchestrator does NOT emit a `round-NN.diff` for the test step and does NOT pass `diff_file_path` to the dispatches below. This is an intentional opt-out from the per-round diff-file emission wiring applied to the other 12 in-scope steps; the per-applicability table marks the test step as out-of-scope for diff-file dispatch.
 
@@ -136,19 +150,19 @@ REVIEW_AGENTS="spec-claude=qrspi-spec-reviewer,code-quality-claude=qrspi-code-qu
 !cat skills/_shared/reviewer-dispatch-prose.md
 
    - First pass clean (across both Claude and Codex if enabled) → proceed to coverage gate. Issues found → converge, fix all, re-converge. Up to 3 fix cycles — if unresolved, present to user at coverage gate. Test code fixes stay inside the Test skill — not production code, so the HARD GATE doesn't apply.
-4. **Coverage approval gate** — present to user:
+5. **Coverage approval gate** — present to user:
    - Tests written (grouped by type: acceptance, integration, E2E, boundary)
    - Coverage reasoning: which acceptance criteria are covered, by which tests
    - Identified gaps: criteria or flows that are hard to test automatically, or where coverage is thin
-   - User decides: **approve** (proceed to run) or **add more tests** (user describes what's missing → back to step 2)
-5. **Run the approved test suite** — deterministic, run once.
-6. **Present results** — complete pass/fail list. User can always request more tests. User decides:
-   - **Add more tests:** User identifies missing test scenarios → back to step 2
+   - User decides: **approve** (proceed to run) or **add more tests** (user describes what's missing → back to step 3)
+6. **Run the approved test suite** — deterministic, run once.
+7. **Present results** — complete pass/fail list. User can always request more tests. User decides:
+   - **Add more tests:** User identifies missing test scenarios → back to step 3
    - **Dispatch fix tasks:** Send failing tests to the fix pipeline (only if failures)
    - **Accept/Approve:** Proceed to phase routing
    - **Stop:** Halt pipeline
 
-6a. **Update plan.md acceptance-criterion checkboxes** (runs only when user chooses "Approve" — not during fix-task dispatch):
+7a. **Update plan.md acceptance-criterion checkboxes** (runs only when user chooses "Approve" — not during fix-task dispatch):
    - For each criterion in the coverage table where Status=Written and ALL mapped tests passed:
      - Find the matching line in `plan.md` (per-task `## Test Expectations` block or the per-phase acceptance block — `plan.md` is the criterion-authoring source per the strip-from-goals contract)
      - Change `- [ ]` to `- [x]`
@@ -157,6 +171,44 @@ REVIEW_AGENTS="spec-claude=qrspi-spec-reviewer,code-quality-claude=qrspi-code-qu
    - Do NOT modify criteria marked as gaps
    - Do NOT modify `goals.md` — it carries problem framing only and does not author acceptance criteria
    - Display summary: "Updated N/M criteria checkboxes in plan.md"
+
+8. **Orchestration boundary observability check** — runs at phase end, before the Batch Gate menu and before any phase-routing handoff.
+
+   Before invoking the OBC script, first verify it is present: if `scripts/orchestration-boundary-check.sh` is absent or not executable at invocation time, the orchestrator writes a `## Dispatch defects` section to `<ABS_ARTIFACT_DIR>/reviews/test/orchestration-boundary.md` containing the entry `obc-script-absent: scripts/orchestration-boundary-check.sh not found or not executable` and halts per § Batch Gate without attempting invocation. Otherwise, run:
+
+   ```sh
+   scripts/orchestration-boundary-check.sh --phase test --artifact-dir "<ABS_ARTIFACT_DIR>"
+   ```
+
+   The script reads `<ABS_ARTIFACT_DIR>/reviews/test/phase-base.txt` (written at step 1) to compute the phase range, runs `git status --porcelain` against the workspace (excluding the `reviews/` path tree), and runs `git log <phase-base>..HEAD --format='%H %an' | awk '$2 !~ /^qrspi-/ {print $1}'` against the integration branch's phase range to list any non-subagent-authored commits. Findings land in `<ABS_ARTIFACT_DIR>/reviews/test/orchestration-boundary.md` under up to two named sections: `## Boundary violations` (uncommitted-edit and non-subagent-commit entries) and `## Dispatch defects` (missing/malformed `reviews/test/phase-base.txt`, script-absent at invocation site, phase-base file unreadable, git invocation crash, plus the named-diagnostic dispatch-defect classes — `sha-format-invalid`, `obc-unknown-phase`, `obc-author-name-malformed`, and any other condition under which the OBC script cannot determine the boundary state). Each section header is emitted ONLY when that section has at least one entry; a clean run produces a byte-empty file. The OBC script exits 0 when `## Dispatch defects` is empty regardless of `## Boundary violations` content, and exits non-zero when `## Dispatch defects` is non-empty.
+
+   Boundary violations are fail-soft: a populated `## Boundary violations` section does NOT halt phase advancement on its own — it surfaces via the Batch Gate menu for the user's decision. Dispatch defects are fail-loud: a populated `## Dispatch defects` section halts phase advancement unconditionally (the non-zero OBC exit reinforces this at the script level). When the OBC script cannot determine the boundary state, the absence of `## Boundary violations` entries is not proof of clean discipline.
+
+## Batch Gate
+
+**Orchestration-boundary violations (when `reviews/test/orchestration-boundary.md` is non-empty OR the OBC step wrote a dispatch-defect entry before invocation).** Prepend the following item to the phase-routing menu, before the standard advance/re-run options. When `## Dispatch defects` is non-empty, render only options (a) and (b); option (c) is suppressed (the boundary state is undeterminable and continue is not safe).
+
+> Phase test completed with <V> boundary violations and <D> dispatch defects recorded in `reviews/test/orchestration-boundary.md`:
+> - <K> uncommitted main-chat edits to project files
+> - <M> non-subagent commits in the phase range
+> - <D> dispatch-defect entries (boundary state undeterminable)
+>
+> Choose:
+>   (a) Review violations now (open the report and walk through each)
+>   (b) Escalate — pause this phase and dispatch a fix-task subagent to remediate (only when the edits should not have happened — e.g., main chat edited project code mid-phase to "quickly fix" a reviewer finding)
+>   (c) Acknowledge and continue (advance to next phase with violations noted; appropriate when the edits were legitimate mid-pipeline tooling/hotfix work that happens to fall in the phase range) — suppressed when `## Dispatch defects` is non-empty per the rendering rule above
+
+If the file is byte-empty (no sections written), omit this menu item entirely.
+
+**Autopilot mode.** When `scripts/detect-interaction-mode.sh` reports `autopilot` AND the orchestration-boundary report is non-empty, the orchestrator evaluates branches in the order listed; the first matching branch wins:
+
+- **Dispatch defects (`## Dispatch defects` section non-empty, with or without `## Boundary violations` entries) — evaluate this branch first.** Halt unconditionally: write a halt marker at `<ABS_ARTIFACT_DIR>/HALT-orchestration-boundary-undeterminable.md` listing the dispatch-defect entries (and any boundary-violation entries also present), emit "Halted at test batch gate — orchestration-boundary check could not determine boundary state (dispatch defects: <D>); human triage required," and exit the autopilot loop. No auto-revert is attempted because the boundary state is undeterminable. This branch takes precedence over the two violation-class branches below.
+
+- **Non-subagent commits in the phase range (commit-based violations under `## Boundary violations`; dispatch-defects branch above did not match).** Auto-escalate: dispatch a fix-task subagent with mode `revert-orchestration-drift` that reverts the offending commits and writes the action to `<ABS_ARTIFACT_DIR>/reviews/test/orchestration-boundary-revert.md`. Then re-run the phase-end check; if clean, advance. Cap auto-revert at 1 attempt per phase: if the re-run is still non-empty, do NOT revert again — fall through to halt-and-surface (write a halt marker at `<ABS_ARTIFACT_DIR>/HALT-orchestration-boundary-recurring.md` listing both the original violations and the post-revert violations, emit "Halted at test batch gate — orchestration-boundary violations recurred after auto-revert," and exit the autopilot loop).
+
+- **Uncommitted workspace changes under `## Boundary violations` (`git status --porcelain` non-empty; dispatch-defects branch above did not match).** Halt: write a halt marker at `<ABS_ARTIFACT_DIR>/HALT-orchestration-boundary.md` listing the dirty paths and the workspace state, emit "Halted at test batch gate — uncommitted main-chat edits require human decision," and exit the autopilot loop.
+
+Interactive mode is unaffected by this branching; the (a)/(b)/(c) menu applies as defined above (with option (c) suppressed when `## Dispatch defects` is non-empty).
 
 ## Test Fix Loop
 
@@ -291,14 +343,16 @@ Task complexity maps to a routing **tier**, not a literal model name; the dispat
 
 Sub-tasks for Test:
 
-1. Run existing test suite
-2. Write acceptance tests
-3. Review test code (Pattern 1)
-4. Present coverage for approval
-5. Run approved test suite
-6. Present results
-7. Dispatch fix tasks (if needed)
-8. Phase routing / PR creation
+1. Write phase-base.txt (phase-start anchor)
+2. Run existing test suite
+3. Write acceptance tests
+4. Review test code (Pattern 1)
+5. Present coverage for approval
+6. Run approved test suite
+7. Present results
+8. Orchestration-boundary observability check
+9. Dispatch fix tasks (if needed)
+10. Phase routing / PR creation
 
 ## Red Flags — STOP
 

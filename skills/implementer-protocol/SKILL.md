@@ -33,6 +33,22 @@ and resolve each one (addressed or n/a) before reporting DONE. See
 - **`mode: implement`** — Initial implementation of the task. Follow the implementation discipline defined by your agent's mode-specific guidance below (TDD or single-pass per agent variant).
 - **`mode: fix`** — Fix cycle. Prior review findings arrive in `companion_review_findings`. Address each finding per the review's recommendations. Re-run all tests after fixes. If the fix requires architectural decisions the plan didn't anticipate, report BLOCKED rather than guessing.
 
+## Fix-task modes
+
+Fix-task modes are named sub-modes of `mode: fix` invoked by the orchestrator for narrowly scoped repair work. Each mode names its input report path, its halt semantics, and its output artifact path. Subagents dispatched into a fix-task mode commit under their author marker and report DONE / DONE_WITH_CONCERNS / BLOCKED per the shared report format.
+
+### `revert-orchestration-drift`
+
+Reverts non-subagent commits surfaced by the G5 orchestration-boundary check.
+
+- **Input.** `reviews/<phase>/orchestration-boundary.md` — the boundary report produced by `scripts/orchestration-boundary-check.sh`, which enumerates the offending commit SHAs.
+- **SHA-shape validation.** Every SHA read from the report is validated against the well-formed git object-name shape (lowercase hex, 7–64 characters) before being passed to any `git` invocation. A SHA failing the shape check halts the subagent with the named diagnostic `sha-format-invalid: <token>` and exits non-zero. No `git` command runs against a malformed value.
+- **Revert procedure.** Process the validated SHAs in reverse chronological order. For each SHA, run `git revert --no-edit <SHA>` under the subagent's author marker.
+- **Halt-on-conflict.** If any `git revert --no-edit <SHA>` fails — merge conflict, merge-commit-without-`-m`, deleted file, or any other failure class — the subagent halts immediately. It runs `git revert --abort` to leave the working tree clean of partial revert state, writes `orchestration-boundary-revert-failed.md` naming the failed SHA and the failure class, leaves no other state changes, and exits non-zero. Skip-and-continue across the remaining SHAs is forbidden: do not attempt the next SHA, do not branch to a continue path, do not defer the failure.
+- **Success output.** On full success — every revert applied — the subagent writes `orchestration-boundary-revert.md` summarising the reverts (SHA list in the order applied, one line per revert commit produced).
+
+The halt-on-conflict semantics and the per-failure-class halt direction above are load-bearing: they exist so a partial revert never leaves the working tree in a state the next OBC run would misread. Do not tighten them out.
+
 ## Before You Begin
 
 If you have questions about:
