@@ -85,7 +85,7 @@ v0.7.3 lands four new bash scripts, one new repo-root data file (`VERSION`), one
 
 | File | Action | Responsibility | Goal IDs |
 |------|--------|---------------|----------|
-| `scripts/orchestration-boundary-check.sh` | Create | Accept `--phase <directory-name> --artifact-dir <path>`. Run `git status --porcelain` against the workspace (excluding the `reviews/` path tree). Run `git log <phase-base>..HEAD --format='%H %an' \| awk '$2 !~ /^qrspi-/ {print $1}'` against the integration branch's phase range to list non-subagent commits. Write findings to `<artifact-dir>/reviews/<phase>/orchestration-boundary.md`. Exit 0 on both clean and dirty (fail-soft; populated file is the signal). Phase-base SHA source by phase (Structure-owned path map): `--phase implement` reads `integration_base_sha=` from `<artifact-dir>/reviews/implement/wave-state/wave-W1-expected-parents.txt` (G6 sidecar, written by --capture at first wave's pre-merge moment); `--phase integration` reads `integration_base_sha=` from `<artifact-dir>/reviews/integration/phase-base.txt` (single-line file `integration_base_sha=<SHA>`); `--phase test` reads from `<artifact-dir>/reviews/test/phase-base.txt` (same format). Each phase's SKILL writes its own phase-base.txt at phase start (capture step); concrete call site within each SKILL is Plan's task-carving call. | G5 |
+| `scripts/orchestration-boundary-check.sh` | Create | Accept `--phase <directory-name> --artifact-dir <path>`. Run `git status --porcelain` against the workspace (excluding the `reviews/` path tree). Run `git log <phase-base>..HEAD --format='%H %an' \| awk '$2 !~ /^qrspi-/ {print $1}'` against the integration branch's phase range to list non-subagent commits. Write findings to `<artifact-dir>/reviews/<phase>/orchestration-boundary.md` under up to two named sections — `## Boundary violations` (uncommitted-edit and non-subagent-commit entries) and `## Dispatch defects` (`sha-format-invalid`, `obc-unknown-phase`, `obc-author-name-malformed`, `wave-1-sidecar-missing`/`malformed`, phase-base file unreadable, git invocation crash, or any other undeterminable-boundary condition). Each section header is emitted ONLY when that section has entries; a clean run produces a byte-empty file. Exit 0 when `## Dispatch defects` is empty, exit non-zero when `## Dispatch defects` is populated (fail-loud at the script level; section-level disposition is the consumer's responsibility per the per-phase batch-gate prose). Phase-base SHA source by phase (Structure-owned path map): `--phase implement` reads `integration_base_sha=` from `<artifact-dir>/reviews/implement/wave-state/wave-W1-expected-parents.txt` (G6 sidecar, written by --capture at first wave's pre-merge moment); `--phase integration` reads `integration_base_sha=` from `<artifact-dir>/reviews/integration/phase-base.txt` (single-line file `integration_base_sha=<SHA>`); `--phase test` reads from `<artifact-dir>/reviews/test/phase-base.txt` (same format). Each phase's SKILL writes its own phase-base.txt at phase start (capture step); concrete call site within each SKILL is Plan's task-carving call. | G5 |
 | `scripts/dispatch-agent.sh` | Modify | (Listed under CD-2.) Wrap dispatched subagent git commands with the `GIT_AUTHOR_NAME=qrspi-<agent>` / `GIT_AUTHOR_EMAIL=bot@qrspi.local` env so subagent commits carry the marker the boundary check filters on. | G5 |
 | `skills/implement/SKILL.md` | Modify | Insert verbatim `### Step N — Orchestration boundary observability check` before the batch-gate step. Insert the verbatim Batch Gate menu addition (interactive) and autopilot-branched-default block. | G5 |
 | `skills/integrate/SKILL.md` | Modify | Insert the verbatim § Orchestration Boundary section (HARD-RULE + Integrate-specific responsibility list + does-NOT list + rationale). Insert the verbatim Step-N observability-check block + Batch Gate additions (same as Implement). At phase start, write `reviews/integration/phase-base.txt` with `integration_base_sha=<HEAD-SHA-at-phase-entry>` (G5 phase-base anchor; consumed by `orchestration-boundary-check.sh --phase integration`). | G5 |
@@ -345,13 +345,29 @@ These blocks specify the module-boundary contracts (CLI surface, stdout shape, e
 #   step) is Plan's task-carving call.
 #
 # Output: <artifact-dir>/reviews/<phase>/orchestration-boundary.md
-#   Empty file ≡ clean discipline.
-#   Populated file ≡ violations; surfaced in the batch-gate menu by the
-#                    consuming phase's SKILL prose.
+#   The report carries up to two named sections:
+#     ## Boundary violations  — uncommitted-edit and non-subagent-commit
+#                               entries from steps 1 and 2 above.
+#     ## Dispatch defects     — sha-format-invalid, obc-unknown-phase,
+#                               obc-author-name-malformed, wave-1-sidecar-
+#                               missing/malformed, phase-base file unreadable,
+#                               git invocation crash, or any other condition
+#                               under which the OBC script cannot determine
+#                               the boundary state.
+#   Each section header is emitted ONLY when that section has at least one
+#   entry. A clean run produces a byte-empty file.
 #
 # Exit codes:
-#   0   always (fail-soft — populated report is the signal, not exit code).
-#       Argument failures exit non-zero with a named diagnostic.
+#   0     when ## Dispatch defects is empty (regardless of whether
+#         ## Boundary violations is empty or populated). Boundary
+#         violations are fail-soft at the script level — the populated
+#         section is the signal, surfaced by the consuming phase's SKILL
+#         prose via the batch-gate menu.
+#   non-0 when ## Dispatch defects is non-empty. The non-zero exit is the
+#         script-level fail-loud signal for undeterminable-boundary
+#         conditions; the consuming phase's SKILL prose must halt
+#         unconditionally (no acknowledge-and-continue branch). Argument
+#         failures also exit non-zero with a named diagnostic.
 ```
 
 ### `scripts/validate-stage-commit-parents.sh` — stage-commit parent fence (G6)
@@ -678,7 +694,7 @@ Per-script behavior, per-agent rubric grounding, per-skill anchor-phrase presenc
 - **G2 acceptance** — fail-direction case for `tests/lint/test-bats-test-name-id-hygiene.bats` (driven from a sibling bats); `skills/implementer-protocol/SKILL.md` § Pre-DONE blocking-anchor presence. (`tests/unit/test-id-hygiene-lint-fail-direction.bats`)
 - **G3 acceptance** — script-output table for 4 marker forms + marker-free design.md; synthetic plan-spec reviewer absorption finding; synthetic design-reviewer fidelity-mismatch finding; pre-fanout anchor-sentence grep on `skills/plan/SKILL.md`. (`tests/unit/test-design-absorption-markers.bats`, `tests/unit/test-plan-spec-reviewer-absorption.bats`, `tests/unit/test-design-reviewer-fidelity.bats`)
 - **G4 acceptance** — Plan-branch outputs of `upstream-paths.sh` for full + quick pipeline modes; halt diagnostic on missing/malformed `config.md`. (`tests/unit/test-upstream-paths.bats`)
-- **G5 acceptance** — orchestration-boundary-check fixtures: clean / one non-subagent commit / uncommitted-workspace / `reviews/` exclusion / `--phase` directory-name verbatim; **per-phase phase-base source coverage** (implement→G6 sidecar, integration→`reviews/integration/phase-base.txt`, test→`reviews/test/phase-base.txt`); implement multi-field sidecar tolerance; missing-phase-base-file negative case (integration/test); malformed phase-base.txt negative case (empty / wrong-key / multi-line); dispatch-agent author-marker fixture. (`tests/unit/test-orchestration-boundary-check.bats`, `tests/unit/test-dispatch-agent-author-marker.bats`)
+- **G5 acceptance** — orchestration-boundary-check fixtures: clean / one non-subagent commit / uncommitted-workspace / `reviews/` exclusion / `--phase` directory-name verbatim; **two-section report shape** (byte-empty on clean, `## Boundary violations` populated only when entries exist, `## Dispatch defects` populated only when entries exist); **exit-code coverage** (exit 0 when `## Dispatch defects` is empty regardless of `## Boundary violations` content; exit non-zero when `## Dispatch defects` is populated); **named-diagnostic dispatch-defect classes** (`sha-format-invalid`, `obc-unknown-phase`, `obc-author-name-malformed`, `wave-1-sidecar-missing`/`malformed`); **per-phase phase-base source coverage** (implement→G6 sidecar, integration→`reviews/integration/phase-base.txt`, test→`reviews/test/phase-base.txt`); implement multi-field sidecar tolerance; missing-phase-base-file negative case (integration/test); malformed phase-base.txt negative case (empty / wrong-key / multi-line); dispatch-agent author-marker fixture. (`tests/unit/test-orchestration-boundary-check.bats`, `tests/unit/test-dispatch-agent-author-marker.bats`)
 - **G6 acceptance** — five validate-stage-commit-parents fixtures (correct, wrong first-parent, missing tip, extra parent, single-task wave) + sidecar-write coverage proving `parallelization.md` is unchanged after the wave. (`tests/unit/test-validate-stage-commit-parents.bats`)
 - **G7 acceptance** — regression-guard fixture with an unrelated commit between rounds; missing-anchor-file fail-loud case; empty-narrowed-diff divergence-sanity-check case. (`tests/unit/test-narrow-round-anchor-lookup.bats`)
 - **G8 acceptance** — `VERSION` → all five consumer files round-trip; empty + missing `VERSION` halt diagnostic; hand-edit fail-direction. (`tests/unit/test-version-stamping.bats`)
