@@ -610,9 +610,16 @@ reject_if_path_unsafe_for_emission() {
 }
 
 _is_batch_mode=false
+# Batch-mode discriminator: --step is the unambiguous high-level marker
+# (it has no legitimate single-mode use). --artifact-dir is intentionally
+# NOT a trigger here — single-mode qrspi-* dispatches accept it as a
+# context/subject directory parameter, and treating it as a batch-mode
+# signal would render single-mode unreachable when --artifact-dir is
+# supplied. The CD-2 partial-flag guard below still catches partial
+# high-level invocations (--step + --round without --artifact-dir).
 for _arg in "$@"; do
   case "$_arg" in
-    --step|--agents|--artifact-dir) _is_batch_mode=true; break ;;
+    --step) _is_batch_mode=true; break ;;
   esac
 done
 
