@@ -178,9 +178,10 @@ setup_file() {
   # still contains the G6 host-detection acceptance assertions added by
   # Task 7 (specifically, the COPILOT_CLI=1 Copilot CLI path assertion)
   [ -f "$PHASE1_ACCEPTANCE" ]
-  # Anchored at the @test header for the T7 / TE5 block; matches the unique
-  # `T7 / TE5` tag + COPILOT_CLI=1 phrase from the test name.
-  run grep -nF '[T7 / TE5] dispatch surface: COPILOT_CLI=1 path emits [transport: task-tool]' "$PHASE1_ACCEPTANCE"
+  # Anchored at the @test header for the COPILOT_CLI=1 dispatch-surface block;
+  # matches the unique COPILOT_CLI=1 + [transport: task-tool] phrase from the
+  # test name (post-T11-sweep: bracketed Tnn tag no longer present).
+  run grep -nF 'dispatch surface: COPILOT_CLI=1 path emits [transport: task-tool]' "$PHASE1_ACCEPTANCE"
   [ "$status" -eq 0 ]
 }
 
@@ -189,7 +190,7 @@ setup_file() {
   # still contains the G6 host-detection acceptance assertions added by
   # Task 7 (specifically, the COPILOT_CLI unset Claude Code path assertion)
   [ -f "$PHASE1_ACCEPTANCE" ]
-  run grep -nF '[T7 / TE6] dispatch surface: COPILOT_CLI-unset path emits [transport: shell-pipeline]' "$PHASE1_ACCEPTANCE"
+  run grep -nF 'dispatch surface: COPILOT_CLI-unset path emits [transport: shell-pipeline]' "$PHASE1_ACCEPTANCE"
   [ "$status" -eq 0 ]
 }
 
