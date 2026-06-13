@@ -150,7 +150,7 @@ EOF
   [ "$score" -ge 0 ] || { echo "baseline score $score below 0"; return 1; }
 }
 
-@test "fixture token carries the # bats lint:no-id-hygiene carve-out marker" {
+@test "fixture token carries the id-hygiene carve-out marker" {
   # Test expectation: fixture forbidden token is carried via an inline
   # `# bats lint:no-id-hygiene` carve-out marker so T12's permanent lint
   # does not false-positive against this test's own fixture string.
