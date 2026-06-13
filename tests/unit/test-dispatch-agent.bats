@@ -1146,6 +1146,7 @@ EOF
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
+    --diff-file "$TMP_DIR/round-1.diff" \
     --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
   rm -rf "$round_dir"
   [[ "$output" =~ "MODE=first_party" ]]
@@ -1163,6 +1164,7 @@ EOF
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
+    --diff-file "$TMP_DIR/round-1.diff" \
     --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
   rm -rf "$round_dir"
   [[ "$output" =~ "MODE=first_party" ]]
@@ -1184,6 +1186,7 @@ EOF
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
+    --diff-file "$TMP_DIR/round-1.diff" \
     --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
   rm -rf "$round_dir"
   # Extract PROMPT_FILE= value; assert it's present and starts with /
@@ -1207,6 +1210,7 @@ EOF
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
+    --diff-file "$TMP_DIR/round-1.diff" \
     --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md" \
     2>/dev/null || true
   local manifest_exists=0
@@ -1261,6 +1265,7 @@ EOF
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
+    --diff-file "$TMP_DIR/round-1.diff" \
     --agents "spec-codex=$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
     >/dev/null 2>"$wrapper_stderr_file" || wrapper_rc=$?
   if [ "$wrapper_rc" -ne 0 ]; then
@@ -1345,6 +1350,7 @@ EOF
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
+    --diff-file "$TMP_DIR/round-1.diff" \
     --agents "spec-codex=$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
     >/dev/null 2>"$wrapper_stderr_file" || wrapper_rc=$?
   if [ "$wrapper_rc" -ne 0 ]; then
@@ -1470,6 +1476,7 @@ EOF
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
+    --diff-file "$TMP_DIR/round-1.diff" \
     --agents "quality-claude=$REPO_ROOT/agents/qrspi-code-quality-reviewer.md,spec-codex=$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
     >"$wrapper_stdout_file" 2>"$wrapper_stderr_file" || wrapper_rc=$?
   if [ "$wrapper_rc" -ne 0 ]; then
@@ -1836,6 +1843,7 @@ _path_guard_teardown_fixtures() {
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
+    --diff-file "$TMP_DIR/round-1.diff" \
     --agents "quality-claude=/etc/hosts"
   rm -rf "$round_dir"
   [ "$status" -ne 0 ]
@@ -1853,6 +1861,7 @@ _path_guard_teardown_fixtures() {
     --round 1 \
     --output-dir "$round_dir" \
     --artifact "$TMP_DIR/plan.md" \
+    --diff-file "$TMP_DIR/round-1.diff" \
     --agents "quality-claude=$REPO_LOCAL_TMP/symlink-oor-agent.md"
   rm -rf "$round_dir"
   _path_guard_teardown_fixtures
@@ -1877,6 +1886,7 @@ _path_guard_teardown_fixtures() {
     --step goals \
     --round 1 \
     --output-dir "$round_dir" \
+    --diff-file "$TMP_DIR/round-1.diff" \
     --agents "../../etc/cron=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
   rm -rf "$round_dir"
   [ "$status" -ne 0 ]
