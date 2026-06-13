@@ -100,7 +100,27 @@ setup() {
   if ! git rev-parse --verify "$SWEEP_BASE_REF" >/dev/null 2>&1; then
     skip "integration-base ref $SWEEP_BASE_REF not reachable in this worktree"
   fi
-  diff_input=$(git diff "$SWEEP_BASE_REF"..HEAD -- tests/)
+  # Scope the diff to the sweep's OWN commits only. At task-11 branch
+  # isolation, `$SWEEP_BASE_REF..HEAD` is exactly the sweep; at any
+  # downstream integration stage (e.g., stage-after-W3 after the W3
+  # octopus merge), the same range also contains other tasks' edits to
+  # files the sweep never touched. Conflating those non-sweep edits into
+  # "the sweep diff" produces false negatives here — the structural-lint
+  # script then sees body-line changes it correctly rejects, even though
+  # the sweep itself is mechanical-only. We identify the sweep's commits
+  # via author + commit-subject grep, enumerate the files they touched,
+  # and restrict the diff to that file set. (fix-r2.)
+  sweep_files=$(git log --author='qrspi-implementer' --grep='task-11' \
+                  "$SWEEP_BASE_REF"..HEAD --name-only --pretty=format: -- 'tests/*.bats' \
+                | sed '/^$/d' | sort -u)
+  if [ -z "$sweep_files" ]; then
+    # No sweep commits present — the sweep has not been applied (RED
+    # gate) or the commit-subject pattern has drifted. Fail loudly
+    # rather than passing vacuously.
+    return 1
+  fi
+  # shellcheck disable=SC2086 # word-splitting intentional — pathspecs
+  diff_input=$(git diff "$SWEEP_BASE_REF"..HEAD -- $sweep_files)
   # Non-empty diff is required — the sweep must have applied at least one
   # mechanical edit somewhere under tests/. The naive bash parameter
   # expansion `${var//[[:space:]]/}` is O(N²) on bash 3.2 (macOS
@@ -128,13 +148,24 @@ setup() {
     skip "integration-base ref $SWEEP_BASE_REF not reachable in this worktree"
   fi
   # Enumerate every modified .bats file under tests/ between the
-  # integration base and HEAD. Use a while-read loop (bash 3.2 compatible).
-  # --diff-filter=M restricts to Modified files only. Added files (such as
-  # this acceptance test file itself, which is new in the sweep PR) have
-  # no base-ref content and would spuriously fail the body-bytes equality
-  # check below (base_bodies="" ≠ head_bodies=<content>). The body-bytes
-  # invariant is meaningful only for files that existed on both sides.
-  modified_list=$(git diff --name-only --diff-filter=M "$SWEEP_BASE_REF"..HEAD -- tests/ | grep -E '\.bats$' || true)
+  # integration base and HEAD that the sweep ITSELF touched. Scoping to
+  # the sweep's own commits (via author + commit-subject grep) keeps this
+  # invariant meaningful at downstream integration stages: at
+  # stage-after-W3 the bare `SWEEP_BASE_REF..HEAD` range also contains
+  # other tasks' edits (e.g., fix-04a-r1's body-line additions to
+  # test-dispatch-agent.bats), which would spuriously trip the body-bytes
+  # equality check below despite the sweep being mechanical-only.
+  # --diff-filter=M restricts to Modified files only. Added files (such
+  # as this acceptance test file itself, which is new in the sweep PR)
+  # have no base-ref content and would spuriously fail the body-bytes
+  # equality check below (base_bodies="" ≠ head_bodies=<content>). The
+  # body-bytes invariant is meaningful only for files that existed on
+  # both sides AND that the sweep actually modified. (fix-r2.)
+  sweep_files=$(git log --author='qrspi-implementer' --grep='task-11' \
+                  "$SWEEP_BASE_REF"..HEAD --name-only --pretty=format: -- 'tests/*.bats' \
+                | sed '/^$/d' | sort -u)
+  # shellcheck disable=SC2086 # word-splitting intentional — pathspecs
+  modified_list=$(git diff --name-only --diff-filter=M "$SWEEP_BASE_REF"..HEAD -- $sweep_files | grep -E '\.bats$' || true)
   # The sweep MUST touch at least one bats file under tests/; an empty
   # modified-list means the sweep has not run (RED) or stripped nothing
   # (vacuous), both of which fail this assertion.
