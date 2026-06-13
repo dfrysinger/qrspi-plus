@@ -48,18 +48,22 @@ setup() {
   cd "$REPO_ROOT"
   # Use --include='*.bats' so the recursive walk matches the plan's
   # `tests/**/*.bats` semantics without depending on shell globstar.
-  run bash -c 'grep -rEn --include="*.bats" "@test \"[^\"]*\[T[0-9]+" tests/'
+  # Anchor to `^@test "` so the grep matches only real @test declaration
+  # lines, never literal `@test "..."` substrings appearing inside heredoc
+  # bodies or printf-string fixtures used by other tests in the corpus.
+  run bash -c 'grep -rEn --include="*.bats" "^@test \"[^\"]*\[T[0-9]+" tests/'
   # grep exits 1 on zero matches with empty stdout.
   [ "$status" -eq 1 ]
   [ -z "$output" ]
 }
 
-# Test expectation: After the sweep PR, `grep -rE '@test
+# Test expectation: After the sweep PR, `grep -rE '^@test
 # "[^"]*R[0-9]+-F[0-9]+' tests/**/*.bats` returns zero matches
-# (round-finding-ID token class).
+# (round-finding-ID token class). Anchored at start-of-line; see test
+# above for rationale.
 @test "task-11 acceptance: round-finding-ID token absent from every @test description in the bats corpus" {
   cd "$REPO_ROOT"
-  run bash -c 'grep -rEn --include="*.bats" "@test \"[^\"]*R[0-9]+-F[0-9]+" tests/'
+  run bash -c 'grep -rEn --include="*.bats" "^@test \"[^\"]*R[0-9]+-F[0-9]+" tests/'
   [ "$status" -eq 1 ]
   [ -z "$output" ]
 }
@@ -70,7 +74,7 @@ setup() {
 # valid only on fixture-construction body lines, never on @test names.)
 @test "task-11 acceptance: id-hygiene carve-out marker is never co-located on an @test description line" {
   cd "$REPO_ROOT"
-  run bash -c 'grep -rEn --include="*.bats" "@test \"[^\"]*bats lint:no-id-hygiene" tests/'
+  run bash -c 'grep -rEn --include="*.bats" "^@test \"[^\"]*bats lint:no-id-hygiene" tests/'
   [ "$status" -eq 1 ]
   [ -z "$output" ]
 }
@@ -98,8 +102,13 @@ setup() {
   fi
   diff_input=$(git diff "$SWEEP_BASE_REF"..HEAD -- tests/)
   # Non-empty diff is required — the sweep must have applied at least one
-  # mechanical edit somewhere under tests/.
-  [ -n "${diff_input//[[:space:]]/}" ]
+  # mechanical edit somewhere under tests/. The naive bash parameter
+  # expansion `${var//[[:space:]]/}` is O(N²) on bash 3.2 (macOS
+  # /bin/bash 3.2.57) and hangs on the ~192KB sweep diff; the external
+  # `tr | head -c 1` pipeline runs in constant memory and finishes
+  # instantly. Mirrors the perf fix landed in production code (commit
+  # 681f1c6) for the same bash-3.2 trap.
+  [ -n "$(printf '%s' "$diff_input" | tr -d '[:space:]' | head -c 1)" ]
   run bash -c 'printf "%s\n" "$1" | "$2"' _ "$diff_input" "$SCRIPT"
   [ "$status" -eq 0 ]
 }
@@ -120,7 +129,12 @@ setup() {
   fi
   # Enumerate every modified .bats file under tests/ between the
   # integration base and HEAD. Use a while-read loop (bash 3.2 compatible).
-  modified_list=$(git diff --name-only "$SWEEP_BASE_REF"..HEAD -- tests/ | grep -E '\.bats$' || true)
+  # --diff-filter=M restricts to Modified files only. Added files (such as
+  # this acceptance test file itself, which is new in the sweep PR) have
+  # no base-ref content and would spuriously fail the body-bytes equality
+  # check below (base_bodies="" ≠ head_bodies=<content>). The body-bytes
+  # invariant is meaningful only for files that existed on both sides.
+  modified_list=$(git diff --name-only --diff-filter=M "$SWEEP_BASE_REF"..HEAD -- tests/ | grep -E '\.bats$' || true)
   # The sweep MUST touch at least one bats file under tests/; an empty
   # modified-list means the sweep has not run (RED) or stripped nothing
   # (vacuous), both of which fail this assertion.
