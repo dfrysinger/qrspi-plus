@@ -362,6 +362,33 @@ REVIEW_AGENTS="quality-claude=qrspi-plan-reviewer,spec-claude=qrspi-plan-spec-re
 
 - The default-option-2 recommendation in the Standard Review Loop is especially important here because plan reviews catch cross-file consistency / forward dependencies / migration ordering across 10+ task specs that the human cannot feasibly verify by hand.
 
+### Apply-Fix Dispatch (Plan override of using-qrspi Apply-fix protocol step 8)
+
+Plan's apply-fix step overrides `skills/using-qrspi/SKILL.md` § Apply-fix protocol step 8 ("Survivors → `Edit` on the artifact"). Instead of inline `Edit` from main chat, the orchestrator dispatches `agents/qrspi-plan-apply-fix.md` via the universal dispatch chain:
+
+```
+scripts/dispatch-agent.sh \
+  --agent-file agents/qrspi-plan-apply-fix.md \
+  --reviewer-tag plan-apply-fix \
+  --output-dir <ABS_ARTIFACT_DIR>/reviews/plan/round-NN/ \
+  --round NN \
+  --model <tier-resolved-model-id> \
+  --output-file <ABS_ARTIFACT_DIR>/reviews/plan/round-NN/plan-apply-fix.raw \
+  --artifact-dir <ABS_ARTIFACT_DIR>/ \
+  --artifact-body <ABS_ARTIFACT_DIR>/plan.md \
+  --field artifact_path=<ABS_ARTIFACT_DIR>/plan.md \
+  --field findings_dir=<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/ \
+  --field route=<full|quick> \
+  [--field kept_findings_file=<ABS_ARTIFACT_DIR>/reviews/plan/round-NN/kept-findings.txt] \
+  [--companion companion_phasing=<ABS_ARTIFACT_DIR>/phasing.md] \
+  [--companion companion_design=<ABS_ARTIFACT_DIR>/design.md] \
+  [--companion companion_structure=<ABS_ARTIFACT_DIR>/structure.md]
+```
+
+`--model` resolves through the Tier Resolution Chain against the agent's `tier: high` frontmatter (per `config.md` `model_routing:`). `--output-file` receives the apply-fix's change-log summary (Step 5 of the agent body); the artifact edits land directly in `plan.md` via the agent's `Edit` tool calls. `--artifact-body <ABS_ARTIFACT_DIR>/plan.md` satisfies dispatch-agent's required-flag check (`--subject-code` OR `--artifact-body` mandatory).
+
+Include `companion_design` and `companion_structure` on full route; omit on quick route. Include `companion_phasing` on full route only (quick route has no phasing.md). Pass `kept_findings_file` whenever `scripts/verifier-fan-in.sh` has been run for the round and `kept-findings.txt` exists; the agent prefers it over scanning `findings_dir` so sub-threshold findings cannot leak into the apply-fix set (CD-4 single-source-of-truth rule). The override is justified because plan.md's 1000–2000-line aggregate body and per-task contract dependencies on approved upstream artifacts both exceed the safety envelope of inline `Edit` from main-chat context — the apply-fix agent body's Step 3 upstream-contract pre-flight is the load-bearing safety property the dispatch carries that inline `Edit` cannot.
+
 ### Human Gate
 
 Present merged `plan.md` to the user — overview for approval, task details for spot-checking. **Always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified."
@@ -655,6 +682,7 @@ Skipping the `cross_task_consumers:` field on a consumer-surface-touching task i
 - A per-task spec sub-subagent writes any file other than `tasks/task-NN.md` — pre-creating the script, the test file, the SKILL.md edit, or the agent body that the task describes. Implementation files are written in the Implement phase by the implementer dispatch, never at Plan time. Plan-time pre-creation short-circuits the TDD cycle and the per-task review loop.
 - The overview-pass `plan.md` contains a `## Task Specs` H2 heading. The overview owns Overview + Phase + dependency graph + acceptance criteria only; `## Task Specs` is the heading the post-fanout merge step creates when it appends the sub-subagent `tasks/task-NN.md` files. An overview that already carries `## Task Specs` collides with the merge and produces two same-named H2 sections — every plan reviewer flags this as a load-bearing duplicate.
 - A per-task sub-subagent emits algorithm pseudocode, regex grammar, hard-coded literal values (e.g. an email address), line-numbered citations, or exact `@test` block counts. These are Implement/Structure surfaces — Plan owns the behavioral claim. The fix is upstream: sub-subagent inputs must include `skills/plan/owns-defers.md` (see Sub-Subagent Dispatch above); without it the depth clamp is absent and every per-task spec drifts.
+- The plan fix-pass is dispatched without `agents/qrspi-plan-apply-fix.md` (e.g., as a freehand `general-purpose` subagent). Without the agent body's upstream-contract pre-flight (see `agents/qrspi-plan-apply-fix.md` § Step 3), the fix-pass will reverse design-approved contract directions in response to silent-failure / security / coverage findings whose proper home is a Design or Structure amendment.
 
 ### Visual-fidelity hard-gate (pre-fanout refusal condition)
 
