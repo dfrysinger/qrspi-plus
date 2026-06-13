@@ -72,6 +72,11 @@ EOF
     BASE_SHA=$(git rev-parse HEAD)
     echo "$BASE_SHA" > "$TEST_ROOT/base-sha"
 
+    # Move round-1 work to a separate branch so `main` continues to point at
+    # the base commit; otherwise `git diff main` resolves to empty after the
+    # second commit and the round-01 base-branch fallback has nothing to emit.
+    git checkout -q -b task
+
     # Modify each artifact to create diffs.
     printf '\nNew goals line.\n' >> goals.md
 
