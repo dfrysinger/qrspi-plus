@@ -187,11 +187,28 @@ fi
 # are safe but defense in depth is cheap.
 DIFF_OUT="$(git -C "$ARTIFACT_DIR" diff "$NARROW_REF" -- "$ARTIFACT_FILE" 2>/dev/null || true)"
 
-# Silent-on-no-input: empty diff (no hunks) -> exit 0 with no files written.
-# An empty new-file addition produces a diff header with no `@@` hunk
-# markers; we treat the absence of hunks as "nothing to produce" per design
-# § CD-2 Dependencies + edge cases.
+# Empty-diff handling (G7 divergence sanity check).
+#
+# On round 01 the narrowing base is --base-ref (e.g., `main`); an empty diff
+# legitimately means "step's artifact has no edits against the base branch"
+# and is the design § CD-2 Dependencies + edge-cases silent-on-no-input
+# shape — exit 0 with no files written.
+#
+# On round >= 2 the narrowing base is the prior per-round commit anchor.
+# A narrow round whose diff is structurally empty is the divergence
+# sanity-check failure case named in skills/using-qrspi/SKILL.md step 12:
+# "the round HAD findings, hence the scope-set, hence the narrow decision —
+# but the artifact shows zero delta against the prior per-round commit,
+# which means the prior commit did not capture the round's edits or the
+# anchor file points at the wrong commit". Halt non-zero with the named
+# `narrow-round-empty-diff:` diagnostic — no silent fallback to base-branch
+# (masking this divergence would let a broken anchor stay broken across
+# many rounds).
 if ! printf '%s' "$DIFF_OUT" | grep -q '^@@'; then
+  if [ "$ROUND_NUM" -ge 2 ]; then
+    echo "narrow-round-empty-diff: anchor-narrowed diff for step '$STEP' round $ROUND_NN against $NARROW_REF produced no hunks — anchor file may point at the wrong commit or the prior per-round commit did not capture the round's edits" >&2
+    exit 1
+  fi
   exit 0
 fi
 
