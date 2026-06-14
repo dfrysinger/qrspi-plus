@@ -69,6 +69,108 @@ bats_require_minimum_version 1.5.0
 load '../helpers/skill-markdown'
 
 # ---------------------------------------------------------------------------
+# qrspi_skill_trim_audit [--skill-base <DIR>]
+#
+# Implementation of the T38 / G9 skill-trim audit helper. Scans every active
+# SKILL.md file directly under <DIR>/*/SKILL.md (one level deep) for any of
+# the eight narrative-restatement patterns retired by tasks T32-T36:
+#
+#     jobId
+#     tmpfile
+#     HEAD~1
+#     narrow.broaden
+#     sidecar.*schema
+#     change_type:.*enum
+#     verifier.*threshold
+#     third-party.*splitter
+#
+# Default <DIR> is "$REPO_ROOT/skills".
+#
+# Allowed-exception scope: lines that contain a concrete script-name
+# call-site reference of shape `scripts/<name>.sh` are exempt from
+# flagging. These are load-bearing process-step Bash call sites
+# (e.g. `scripts/round-prepare.sh`, `scripts/verifier-fan-in.sh`,
+# `scripts/codex-companion-bg.sh await <jobId>`), not the retired
+# script-mechanic narrative the lint targets. The lint's scope is
+# narrative restatement only.
+#
+# On clean input: exit 0, no output. On any hit: exit non-zero and emit,
+# for every hit, one diagnostic of shape
+#
+#     <file>:<line>: skill-trim-audit: <pattern>: <matching line text>
+#
+# to stderr. The diagnostic names (a) the offending file path,
+# (b) the 1-based line number, (c) the offending pattern verbatim,
+# and (d) the matching line content. No silent non-zero exit.
+#
+# Bash 3.2 compatible (macOS /bin/bash 3.2): no associative arrays, no
+# mapfile, no ${var,,}, no coproc, no wait -n.
+# ---------------------------------------------------------------------------
+qrspi_skill_trim_audit() {
+  local skill_base=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --skill-base)
+        if [ "$#" -lt 2 ]; then
+          printf 'qrspi_skill_trim_audit: --skill-base requires an argument\n' >&2
+          return 2
+        fi
+        skill_base="$2"
+        shift 2
+        ;;
+      *)
+        printf 'qrspi_skill_trim_audit: unknown argument: %s\n' "$1" >&2
+        return 2
+        ;;
+    esac
+  done
+
+  if [ -z "$skill_base" ]; then
+    if [ -z "${REPO_ROOT:-}" ]; then
+      printf 'qrspi_skill_trim_audit: REPO_ROOT unset and no --skill-base given\n' >&2
+      return 2
+    fi
+    skill_base="$REPO_ROOT/skills"
+  fi
+
+  if [ ! -d "$skill_base" ]; then
+    printf 'qrspi_skill_trim_audit: skill base directory not found: %s\n' "$skill_base" >&2
+    return 2
+  fi
+
+  local rc=0
+  local file pattern hits
+  # The eight retired narrative-restatement patterns (positional list; do not
+  # reorder — the verbatim pattern strings are part of the diagnostic shape
+  # asserted by the test suite and the G9 acceptance contract).
+  local patterns="jobId tmpfile HEAD~1 narrow.broaden sidecar.*schema change_type:.*enum verifier.*threshold third-party.*splitter"
+
+  for file in "$skill_base"/*/SKILL.md; do
+    [ -r "$file" ] || continue
+    for pattern in $patterns; do
+      # awk single-pass: for each line matching `pattern`, skip if line carries
+      # an allowed-exception `scripts/<name>.sh` call-site reference; otherwise
+      # emit one diagnostic line. The script-name allowance is line-level: a
+      # narrative-restatement sentence that happens to also cite a real script
+      # by name is treated as an allowed call-site context per the spec's
+      # scope-discipline rule (concrete call-site references in process-step
+      # Bash calls are load-bearing and not retired narrative).
+      hits="$(awk -v f="$file" -v pat="$pattern" '
+        $0 ~ pat {
+          if ($0 ~ /scripts\/[A-Za-z0-9_.-]+\.sh/) next
+          printf "%s:%d: skill-trim-audit: %s: %s\n", f, NR, pat, $0
+        }
+      ' "$file")"
+      if [ -n "$hits" ]; then
+        printf '%s\n' "$hits" >&2
+        rc=1
+      fi
+    done
+  done
+  return $rc
+}
+
+# ---------------------------------------------------------------------------
 # _t38_assert_helper_defined
 # Defense-in-depth guard: assert `qrspi_skill_trim_audit` is defined in
 # this file. On the RED test-writer commit the helper is absent and this
