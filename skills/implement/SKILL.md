@@ -151,7 +151,9 @@ If tests fail, present failure summary with 3 options:
 
 ## Wave Dispatch (Full Pipeline)
 
-**Compaction checkpoint: pre-fanout.** Per-task wave fan-out dispatches an implementer subagent (>10K tokens of TDD transcript) plus reviewer subagents whose findings drive the fix loop; saturated context here silently swallows critical reviewer signal. See using-qrspi `## Compaction Checkpoints`. Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — implement", description: "pre-fanout: per-task wave fan-out (implementer + reviewers); large output and reviewer signal at risk. User decides whether to /compact." })`.
+**Compaction checkpoint: pre-fanout.** Per-task wave fan-out dispatches an implementer subagent (>10K tokens of TDD transcript) plus reviewer subagents whose findings drive the fix loop; saturated context here silently swallows critical reviewer signal. See using-qrspi `## Compaction Checkpoints`.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — implement", description: "pre-fanout: per-task wave fan-out (implementer + reviewers); large output and reviewer signal at risk. User decides whether to /compact." })`.
 
 Dispatch tasks in the wave order Parallelize specified — read from the Branch Map's `### Wave N` sub-sections. For each wave: (1) verify every task's `Base` is resolved (and any required stage commit created); (2) mark each task `in_progress` in TodoWrite; (3) fire all tasks concurrently — one `Agent` call per task in a single message, each with the worktree path in the prompt per § Per-Task Execution; as each implementer returns DONE / DONE_WITH_CONCERNS, dispatch its reviewer set in parallel against that task's worktree; (4) wait for every task to return terminal status; (5) mark each task `completed`; (6) if the next Wave depends on a `stage-after-W{N}` stage commit, create it now (see fence below); (7) move to the next wave.
 

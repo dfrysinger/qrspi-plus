@@ -2,7 +2,9 @@
 
 ## Terminal State
 
-**Compaction checkpoint: pre-handoff.** Implement batch complete; the next route step (typically Integrate in full pipeline; Test in quick fix) reads `parallelization.md` (or task specs) + every prior approved artifact + per-task reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints`. Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — implement", description: "pre-handoff: next route step reads parallelization.md + prior artifacts + per-task reviewer findings. User decides whether to /compact." })`.
+**Compaction checkpoint: pre-handoff.** Implement batch complete; the next route step (typically Integrate in full pipeline; Test in quick fix) reads `parallelization.md` (or task specs) + every prior approved artifact + per-task reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints`.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — implement", description: "pre-handoff: next route step reads parallelization.md + prior artifacts + per-task reviewer findings. User decides whether to /compact." })`.
 
 When the user chooses "continue" at the batch gate, find the index of `implement` in `config.md.route` and invoke `route[index+1]` (typically `integrate` in full pipeline; `test` in quick fix).
 
