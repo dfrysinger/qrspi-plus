@@ -60,6 +60,83 @@ bats_require_minimum_version 1.5.0
 load '../helpers/skill-markdown'
 
 # ---------------------------------------------------------------------------
+# qrspi_diff_redirect_audit [--skill-base <DIR>]
+#
+# Implementation of the T06 / CD-2 / G9 skill-body audit helper. Scans the
+# eight artifact-step SKILL.md files
+#
+#     <DIR>/{goals,questions,research,design,phasing,structure,parallelize,replan}/SKILL.md
+#
+# for any Bash diff-redirect block — any line containing both a `git ... diff`
+# invocation and a `> ... round-<N>.diff` stdout redirect into a round
+# artifact file. Default <DIR> is "$REPO_ROOT/skills".
+#
+# On clean input: exit 0, no output. On any hit: exit non-zero and emit, for
+# every hit, one diagnostic of shape
+#
+#     <file>:<line>: diff-redirect-prose: <matching line text>
+#
+# to stderr. Scope is strictly the eight named files — no other path under
+# <DIR> is opened, so a benign occurrence of the literal string elsewhere
+# never triggers a false positive.
+#
+# Bash 3.2 compatible (macOS /bin/bash 3.2): no associative arrays, no
+# mapfile, no ${var,,}, no coproc, no wait -n.
+# ---------------------------------------------------------------------------
+qrspi_diff_redirect_audit() {
+  local skill_base=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --skill-base)
+        if [ "$#" -lt 2 ]; then
+          printf 'qrspi_diff_redirect_audit: --skill-base requires an argument\n' >&2
+          return 2
+        fi
+        skill_base="$2"
+        shift 2
+        ;;
+      *)
+        printf 'qrspi_diff_redirect_audit: unknown argument: %s\n' "$1" >&2
+        return 2
+        ;;
+    esac
+  done
+
+  if [ -z "$skill_base" ]; then
+    if [ -z "${REPO_ROOT:-}" ]; then
+      printf 'qrspi_diff_redirect_audit: REPO_ROOT unset and no --skill-base given\n' >&2
+      return 2
+    fi
+    skill_base="$REPO_ROOT/skills"
+  fi
+
+  local rc=0
+  local s file
+  for s in goals questions research design phasing structure parallelize replan; do
+    file="$skill_base/$s/SKILL.md"
+    [ -r "$file" ] || continue
+    # A diff-redirect prose line: contains a `git ... diff` invocation whose
+    # stdout is redirected via a Bash redirect operator into a `round-<token>.diff`
+    # artifact target. The fingerprint of a real Bash redirect (vs. an incidental
+    # `>` character inside a path placeholder like `<ABS_ARTIFACT_DIR>/...`) is
+    # whitespace on both sides of `>`, optionally followed by a quote, then a
+    # path that ends in `round-<token>.diff`. The token may be a literal NN
+    # (round-01.diff) or a shell expansion (round-${ROUND}.diff).
+    local hits
+    hits="$(awk -v f="$file" '
+      /git/ && /diff/ && /[[:space:]]>[[:space:]]*"?[^[:space:]"\x27]*round-[^[:space:]"\x27]*\.diff/ {
+        printf "%s:%d: diff-redirect-prose: %s\n", f, NR, $0
+      }
+    ' "$file")"
+    if [ -n "$hits" ]; then
+      printf '%s\n' "$hits" >&2
+      rc=1
+    fi
+  done
+  return $rc
+}
+
+# ---------------------------------------------------------------------------
 # _t06_assert_helper_defined
 # Fail loudly (RED) when the implementer-supplied helper is missing.
 # ---------------------------------------------------------------------------
