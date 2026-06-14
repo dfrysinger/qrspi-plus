@@ -41,126 +41,130 @@
   },
   "State and Pipeline Ordering": {
     "line_start": 252,
-    "line_end": 261
+    "line_end": 272
+  },
+  "Orchestration Boundary applies to every phase": {
+    "line_start": 262,
+    "line_end": 272
   },
   "Rejection Behavior": {
-    "line_start": 262,
-    "line_end": 265
+    "line_start": 273,
+    "line_end": 276
   },
   "Backward Loops (New Learnings)": {
-    "line_start": 266,
-    "line_end": 285
+    "line_start": 277,
+    "line_end": 296
   },
   "Mid-Pipeline Entry": {
-    "line_start": 286,
-    "line_end": 309
+    "line_start": 297,
+    "line_end": 320
   },
   "Validation and Repair": {
-    "line_start": 290,
-    "line_end": 309
+    "line_start": 301,
+    "line_end": 320
   },
   "Pipeline Progress": {
-    "line_start": 310,
-    "line_end": 342
+    "line_start": 321,
+    "line_end": 353
   },
   "Artifact Gating Check (Standard Pattern)": {
-    "line_start": 343,
-    "line_end": 352
+    "line_start": 354,
+    "line_end": 363
   },
   "Config File (`config.md`)": {
-    "line_start": 353,
-    "line_end": 521
+    "line_start": 364,
+    "line_end": 532
   },
   "Dispatch routing blocks": {
-    "line_start": 425,
-    "line_end": 521
+    "line_start": 436,
+    "line_end": 532
   },
   "Config Validation Procedure": {
-    "line_start": 522,
-    "line_end": 645
+    "line_start": 533,
+    "line_end": 656
   },
   "When config.md is missing entirely": {
-    "line_start": 526,
-    "line_end": 534
+    "line_start": 537,
+    "line_end": 545
   },
   "When a required field is missing or has an invalid value": {
-    "line_start": 535,
-    "line_end": 591
+    "line_start": 546,
+    "line_end": 602
   },
   "No silent defaults": {
-    "line_start": 592,
-    "line_end": 599
+    "line_start": 603,
+    "line_end": 610
   },
   "Exceptions to the no-silent-defaults rule": {
-    "line_start": 600,
-    "line_end": 618
+    "line_start": 611,
+    "line_end": 629
   },
   "Fields that affect pipeline behavior (must be validated)": {
-    "line_start": 619,
-    "line_end": 639
+    "line_start": 630,
+    "line_end": 650
   },
   "Fields that do NOT require validation (informational only)": {
-    "line_start": 640,
-    "line_end": 645
+    "line_start": 651,
+    "line_end": 656
   },
   "Standard Review Loop": {
-    "line_start": 646,
-    "line_end": 693
+    "line_start": 657,
+    "line_end": 704
   },
   "Fix-altitude rule (F-5)": {
-    "line_start": 682,
-    "line_end": 689
+    "line_start": 693,
+    "line_end": 700
   },
-  "Sweep-task findings \u2014 backstop": {
-    "line_start": 690,
-    "line_end": 693
+  "Sweep-task findings — backstop": {
+    "line_start": 701,
+    "line_end": 704
   },
   "Review Output Handling": {
-    "line_start": 694,
-    "line_end": 1101
+    "line_start": 705,
+    "line_end": 1121
   },
   "Review-Loop Pause Gate": {
-    "line_start": 1102,
-    "line_end": 1149
+    "line_start": 1122,
+    "line_end": 1169
   },
   "BATCH-WITH-OVERRIDES UI contract": {
-    "line_start": 1106,
-    "line_end": 1113
+    "line_start": 1126,
+    "line_end": 1133
   },
   "3-option menu (per paused finding)": {
-    "line_start": 1114,
-    "line_end": 1131
+    "line_start": 1134,
+    "line_end": 1151
   },
   "Paused rounds do not decrement the cap": {
-    "line_start": 1132,
-    "line_end": 1137
-  },
-  "Pending-findings file": {
-    "line_start": 1138,
-    "line_end": 1149
-  },
-  "Review Time Allocation": {
-    "line_start": 1150,
+    "line_start": 1152,
     "line_end": 1157
   },
-  "Compaction Checkpoints": {
+  "Pending-findings file": {
     "line_start": 1158,
-    "line_end": 1189
+    "line_end": 1169
   },
-  "Feedback File Format": {
-    "line_start": 1190,
+  "Review Time Allocation": {
+    "line_start": 1170,
+    "line_end": 1177
+  },
+  "Compaction Checkpoints": {
+    "line_start": 1178,
     "line_end": 1209
   },
-  "Common Rationalizations \u2014 STOP": {
+  "Feedback File Format": {
     "line_start": 1210,
-    "line_end": 1224
+    "line_end": 1229
+  },
+  "Common Rationalizations — STOP": {
+    "line_start": 1230,
+    "line_end": 1244
   },
   "Skill Invocation": {
-    "line_start": 1225,
-    "line_end": 1230
+    "line_start": 1245,
+    "line_end": 1250
   },
-  "Pipeline Iron Laws \u2014 Final Reminder": {
-    "line_start": 1231,
-    "line_end": 1253
+  "Pipeline Iron Laws — Final Reminder": {
+    "line_start": 1251,
+    "line_end": 1273
   }
 }
