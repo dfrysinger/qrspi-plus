@@ -21,7 +21,14 @@ Break the structure into ordered, self-contained tasks following vertical slices
 
 Read `config.md` to determine pipeline mode. If `config.md` doesn't exist or has no `route` field, refuse to proceed and tell the user to re-run Goals. The `route` field is authoritative; `pipeline` is informational (see using-qrspi Config File).
 
-**Full pipeline (`pipeline: full`) — required inputs:** `goals.md`, `research/summary.md`, `design.md`, `structure.md`, `phasing.md` — each `status: approved`.
+**Full pipeline (`pipeline: full`) — required inputs:**
+
+- `goals.md` — `status: approved`
+- `research/summary.md` — `status: approved`
+- `design.md` — `status: approved`
+- `structure.md` — `status: approved`
+- `phasing.md` — `status: approved`
+
 **Quick fix (`pipeline: quick`) — required inputs:** `goals.md`, `research/summary.md` — each `status: approved`. Design and Structure don't exist on quick.
 
 If any required artifact is missing or not approved, refuse to run and name the missing artifact. Read `config.md` to determine whether Codex reviews are enabled.
@@ -112,12 +119,12 @@ Each sub-subagent writes `tasks/task-NN.md` — **and ONLY that file**. Sub-suba
 Every task spec sets `task_type` and `tier` in frontmatter (the per-task `model:` field is retired by G22 / design.md CD-1). `task_type` selects the TDD or lightweight implementer dispatch chain; `tier` is consumed by the Tier Resolution Chain (`scripts/_resolve-lib.sh`), which maps the tier to a `(vendor, model)` pair via `config.md`'s `model_routing:` block — NOT a per-invocation override.
 
 **`task_type` dispatch:**
-- **Absent or `code`** — TDD path: test-writer → RED-verification gate → implementer.
-- **`lightweight`** — no test-writer, no RED gate. Implement dispatches `qrspi-implementer-lightweight` directly.
+- **Absent or `code`** — TDD path: when `task_type: code` (or absent), the test-writer dispatches first, then the implementer, with the RED-verification gate between them. Absent `task_type:` defaults to the TDD path identically. **Dispatch order: test-writer → RED-verification gate → implementer.**
+- **`lightweight`** — when `task_type: lightweight`, the lightweight-only dispatch fires: no test-writer, no RED gate. **Dispatch order: implementer only.** Implement dispatches `qrspi-implementer-lightweight` directly.
 
 TDD-task specs must carry an explicit dispatch-ordering note in `## Description` or atop `## Test Expectations`:
 
-> Dispatch order: test-writer first, implementer second (RED-verification gate between).
+> Dispatch order: test-writer → RED-verification gate → implementer.
 
 Lightweight tasks omit this note.
 
@@ -313,12 +320,21 @@ A per-task spec authored in `plan.md` (or split `tasks/task-NN.md`) is the autho
 
 The Plan orchestrator refuses to write (or post-approval materialize) a task spec when either paired-field invariant is violated. Multiple violations in one plan are reported together before any task spec is written. Refusal applies to both initial authoring and sub-subagent materialization.
 
-- **Pair 1 — Reference-gate (`reference_gate: true` ↔ `reference_artifact:`).** Either present without the other → refuse: `"Plan refuse-to-write: task NN carries reference_gate: true without reference_artifact — add reference_artifact: <path> or remove reference_gate."` (symmetric diagnostic for the reverse).
+- **Pair 1 — Reference-gate (`reference_gate: true` ↔ `reference_artifact:`).** Either present without the other → refuse. Forward diagnostic: `"Plan refuse-to-write: task NN carries reference_gate: true without reference_artifact — add reference_artifact: <path> or remove reference_gate."` Symmetric reverse diagnostic: `"Plan refuse-to-write: task NN carries reference_artifact without reference_gate — add reference_gate: true or remove reference_artifact."`
 - **Pair 2 — UI+lift-source (`ui: true` + `lift_source: <path>` ↔ `SPEC OVERRIDES SOURCE` body section).** Both fields present without the section → refuse: `"Plan refuse-to-write: task NN carries ui: true and lift_source: <path> without a SPEC OVERRIDES SOURCE body section — add the section listing behaviors not to copy and required target behavior."`
 
 Task specs with **none** of `reference_gate:`, `reference_artifact:`, `ui:`, or `lift_source:` write and process without error — no paired-field diagnostic, no reference-gate pause, no visual-fidelity reviewer dispatch (identical to a pre-Slice-5 spec).
 
 **Pre-Slice-5 migration.** Specs carrying `visual_fidelity_check.ui_producing` are migrated to top-level `ui:` at review or post-approval split time; full steps in `references/visual-fidelity-ui-producing-migration.md`.
+
+### Migration: `visual_fidelity_check.ui_producing` → top-level `ui:`
+
+When Plan encounters a pre-Slice-5 task spec carrying `visual_fidelity_check.ui_producing: true`:
+
+1. Promote the value to a top-level `ui: true` field in the task frontmatter.
+2. Remove the `ui_producing` field from inside the `visual_fidelity_check:` block.
+3. Preserve all other `visual_fidelity_check:` sub-fields (e.g., `wireframe_refs:`) unchanged.
+4. Log the migration in the DONE report as a one-line note per affected task.
 
 ### Pipeline + Fix-Task Fields
 
@@ -349,6 +365,23 @@ Each per-task spec carries a `**Test expectations:**` bullet list naming observa
 
 A **sweep task** removes, replaces, or enforces an invariant across many files at once (e.g., "strip `model:` from all agent frontmatter," "rename `qrspi-foo` to `qrspi-bar` across all skills"). It systematically invalidates test files that assert on the swept property's previous values, even when those tests are not in `files_in_scope`. A sweep-task plan-spec MUST include a `dependent_tests:` field in its Test Expectations (either an explicit list of test file paths the per-task gate must additionally run, or the literal `none` followed by a grep-confirmable command demonstrating zero hits). Skipping it on a sweep-shaped task is a plan-spec defect detected by the Plan reviewer's Sweep-task detection (heuristic: >5 same-extension files in `files_in_scope` plus a sweep keyword in title/description). Full eligibility, field shape, defect conditions, and worked examples (A, B) live in `references/sweep-task-contract.md`.
 
+The canonical zero-match proof command shape is `grep -rn -- '<pattern>' tests/` — the `--` argument separator neutralizes flag-shaped patterns, and the `tests/` root is the rerun target the plan reviewer uses verbatim.
+
+**Worked example A — explicit `dependent_tests:` path list.** A sweep stripping `model:` from all agent frontmatter lists every test that asserts on the previous values:
+
+```markdown
+- `dependent_tests:`
+  - `tests/unit/test-scope-tagger-dispatch.bats` — currently asserts `model: opus` on line 38; update to assert `model:` is absent post-sweep.
+  - `tests/unit/test-verifier-agent-file.bats` — currently asserts `model: sonnet` on line 7; update to assert `model:` is absent post-sweep.
+```
+
+**Worked example B — `none` plus grep-confirmed zero-match proof.** A sweep removing a property no test currently pins cites the rerunnable command:
+
+```markdown
+- `dependent_tests: none`
+  - `grep -rn -- '^model:' tests/` returns zero matches as of plan-authoring time; the reviewer's re-run surfaces any new hit and demands the field be re-shaped to a path list.
+```
+
 ### Cross-Task Consumer Surface
 
 A task is **consumer-surface-touching** when its description or `files_in_scope` indicates ANY of: (a) adding/renaming/removing a function, method, class, interface, exported symbol, or other named declaration; (b) adding/renaming/removing/moving a file in `files_in_scope`; (c) changing the public signature (parameter list, return type, exceptions, side effects, visibility) of any callable in `files_in_scope`; (d) changing the schema or structure of any structured document (JSON, YAML, frontmatter, TOML, XML) in `files_in_scope` whose keys/anchors/top-level identifiers are referenced by name from other files; (e) adding/renaming/removing a documented contract (config key, env var, CLI flag, URL route, RPC method, subcommand, schema field, anchor heading, or other named extension point). A task that only modifies the body of an existing callable, edits prose without changing referenced anchor names, or fixes formatting is NOT consumer-surface-touching. The trigger fires on changes other code/documents could plausibly couple to *by name*.
@@ -360,7 +393,18 @@ When the trigger fires, the plan-spec MUST include `cross_task_consumers:` with 
 
 Skipping `cross_task_consumers:` on a consumer-surface-touching task is a plan-spec defect. The Plan reviewer (`agents/qrspi-plan-reviewer.md` § Cross-task consumer surface detection) emits `severity: high, change_type: correctness` when the field is missing, malformed, claims `none` against a non-zero hit, names an invalid disposition, or cites a `break-and-fix-task` follow-up that doesn't exist in the plan.
 
-**Sweep + consumer composition.** A task satisfying BOTH triggers carries `dependent_tests:` AND `cross_task_consumers:` as separate fields — they ask different questions (test files asserting on swept values vs. consumer files referencing the changed contract by name) and evaluate independently. Worked examples (C — public-symbol rename with three consumers; D — body-only bug fix where the trigger does not fire) live in `references/worked-examples.md`.
+**Sweep + consumer composition.** A task satisfying BOTH triggers carries `dependent_tests:` AND `cross_task_consumers:` as separate fields — they ask different questions (test files asserting on swept values vs. consumer files referencing the changed contract by name) and evaluate independently.
+
+**Worked example C — public-symbol rename with three consumers (trigger fires).** A task renames the public function `check_codex_available` to `check_second_reviewer_available` and lists three consumer files outside `files_in_scope`:
+
+```markdown
+- `cross_task_consumers:`
+  - `skills/goals/SKILL.md` — references the old helper name in its inline availability probe; `co-edit` to rename the call site inside this task.
+  - `skills/implement/SKILL.md` — references the old helper name in the second-reviewer dispatch block; `co-edit` to rename the call site inside this task.
+  - `tests/unit/test-codex-host-vendor-matrix.bats` — asserts on the helper-name surface as documentation, not as an executable reference; `no change` because the test was rewritten to target the host×vendor matrix and no longer pins the helper name.
+```
+
+**Worked example D — body-only bug fix (trigger does not fire).** A task fixes an off-by-one inside an existing function's body in one file. No public-signature change, no rename, no schema change. The `cross_task_consumers:` field is NOT required because the trigger does not fire on a body-only bug fix.
 
 ## Red Flags — STOP
 
