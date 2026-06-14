@@ -47,13 +47,18 @@ Main chat does NOT: edit target-project source files, run tests/typecheck/lint, 
 | Integration | `qrspi-integration-reviewer` | Cross-task interface match, data flow, integration test coverage, dependency ordering |
 | Security Integration | `qrspi-security-integration-reviewer` | Cross-task security: auth boundary integrity, data-flow secrets handling, fail-closed under composition |
 
-No scope-reviewer dispatch — integration is not artifact-shaped.## Artifact Gating
+No scope-reviewer dispatch — integration is not artifact-shaped.
+
+## Artifact Gating
 
 Required inputs:
 
 - All current-phase task review files in `reviews/tasks/`
 - Task branches (and any Implement-created stage commits) ready to merge
-- `design.md`, `structure.md`, `phasing.md`, `parallelization.md` — all `status: approved`
+- `design.md` — `status: approved`
+- `structure.md` — `status: approved`
+- `phasing.md` — `status: approved`
+- `parallelization.md` — `status: approved`
 - `config.md` (for `route` and `codex_reviews`)
 
 If any required artifact is missing or not approved, refuse to run and tell the user which is needed.
@@ -130,7 +135,7 @@ REVIEW_AGENTS="integration-claude=qrspi-integration-reviewer,security-claude=qrs
 
    **Per-round commit anchor.** After each round's integration commit, main chat captures the feature-branch HEAD SHA into `reviews/integration/round-NN-commit.txt` (one line, 40-char SHA, trailing newline) via `git -C "<repo>" rev-parse HEAD > "<ABS_ARTIFACT_DIR>/reviews/integration/round-NN-commit.txt"`. Step 12 (ref selection) reads this anchor for narrow decisions. **Fail-loud:** if `git rev-parse HEAD` fails or the write returns non-zero, abort the round with `"Per-round commit anchor capture failed for integration round NN: <stderr>"` — step 12's anchor-file lookup halts on a missing or malformed file (named diagnostics `anchor-file-missing:` / `sha-format-invalid:`).
 
-   **Step 6 (scope-tagger dispatch) — Integrate.** After per-round reviewer fan-in (Claude returned, Codex `await` redirects done, optional verifier filter applied), main chat dispatches one `qrspi-scope-tagger` Task subagent against the kept finding-files. The dispatch shape mirrors using-qrspi step 6 with these Integrate-side substitutions:
+   **Step 6 (scope-tagger dispatch) — Integrate.** After per-round reviewer fan-in (Claude returned, Codex `await` redirects done, optional verifier filter applied), main chat dispatches one `qrspi-scope-tagger` Task subagent against the kept finding-files. The dispatch shape mirrors using-qrspi step 6 (scope-tagger dispatch) with these Integrate-side substitutions:
 
    - `round_subdir`: `<ABS_ARTIFACT_DIR>/reviews/integration/round-NN/`
    - `output_path`:  `<ABS_ARTIFACT_DIR>/reviews/integration/round-NN-scope-set.txt`

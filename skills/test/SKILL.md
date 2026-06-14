@@ -39,11 +39,18 @@ Main chat in Test: dispatches test-writer / test-execution / fix-task subagents;
 
 No scope-reviewer dispatch — generated test code isn't artifact-shaped.
 
-**Test-phase reuse contract.** The three per-task reviewers are the SAME agents Implement dispatches per-task; in Test-phase mode they review **generated test code** (NOT production). Dispatch signals reuse via the **absence of `task_definition`** — that absence routes each reviewer to its Test-phase branch. Four-test-type rule sets (acceptance/integration/e2e/boundary) live inline in `qrspi-test-writer`; the dispatch prompt does NOT carry them.
+**Test-phase reuse contract.** The three per-task reviewers are the SAME agents Implement dispatches per-task; in Test-phase mode they review **generated test code** (NOT production). Dispatch signals reuse via the **absence of `task_definition`** — that absence routes each reviewer to its Test-phase branch. **Do NOT pass `task_definition` on Test-step reviewer dispatches** (no `--task-def` flag, no bulleted `task_definition:` parameter); `task_definition` MUST be absent or the agent's Pre-Flight refuses with `PHASE-ROUTING-VIOLATION:`. Four-test-type rule sets (acceptance/integration/e2e/boundary) live inline in `qrspi-test-writer`; the dispatch prompt does NOT carry them.
 
 ## Artifact Gating
 
-Required inputs: `goals.md` (`status: approved`), `design.md` (`status: approved`, full pipeline), `phasing.md` (`status: approved`, full pipeline), `research/summary.md` (`status: approved`, quick fix), `fixes/` (regression coverage; may be empty), codebase with implementation merged.
+Required inputs:
+
+- `goals.md` — `status: approved`
+- `design.md` — `status: approved` (full pipeline)
+- `phasing.md` — `status: approved` (full pipeline)
+- `research/summary.md` — `status: approved` (quick fix)
+- `fixes/` (regression coverage; may be empty)
+- codebase with implementation merged
 
 Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Test validates `codex_reviews`.
 
