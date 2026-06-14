@@ -239,129 +239,18 @@ Track sub-tasks per Replan invocation, mirroring the analyze → classify → re
 
 ## Clarifying Amendments
 
-Clarifying amendments are changes to approved artifacts that refine wording, fix ambiguity, or add detail without changing intent. They are distinct from Replan proposals because they don't arise from phase learnings — they arise from noticing that an artifact could be clearer.
+Clarifying amendments refine wording or add detail to approved artifacts without changing intent. Three classifications: **Clarifying** and **Additive** route via `pipeline_cascade_reset <step> <artifact_dir> --skip-cascade` (no downstream reset); **Architectural** is NOT an amendment — route through Replan as Major. **Goals, per-task `## Test Expectations`, and per-phase acceptance criteria are never amendments** — they route to Goals or Plan as Replan Major per the strip-from-goals contract. Before applying any amendment, present diff + classification + rationale and require explicit user approval; after approval, apply the change, run the `--skip-cascade` reset, and log the amendment in the artifact frontmatter (`amendments: [{date, type, summary}]`). Architectural changes are never logged — they produce feedback files via Replan.
 
-### Amendment Classification
+**Full classification table, rationale presentation steps, application sequence, and amendment-log YAML shape:** see `skills/replan/references/clarifying-amendments.md`.
 
-| Type | Description | Cascade behavior | Example |
-|---|---|---|---|
-| **Clarifying** | Refines wording or fixes ambiguity without changing intent | `--skip-cascade` — no downstream reset | "Change 'handle errors' to 'return HTTP 4xx on validation failure'" |
-| **Additive** | Adds new detail that doesn't contradict existing content and doesn't touch goals, per-task test expectations, or per-phase acceptance criteria | `--skip-cascade` — no downstream reset | "Add a note to a `structure.md` interface explaining the timeout default" |
-| **Architectural** | Changes intent, structure, or approach | Full cascade — treat as Replan Major | "Change 'REST API' to 'GraphQL'" — this is NOT an amendment, route through Replan |
+## Worked Examples
 
-**Goals, per-task test expectations, and per-phase acceptance criteria are never amendments.** Changes to `goals.md` (purpose, constraints, problem framing, out-of-scope) route to Goals as a Replan Major; changes to per-task `## Test Expectations` or to a `plan.md` per-phase acceptance block route to Plan as a Replan Major (per the strip-from-goals contract — Plan owns acceptance criteria) — see Severity Classification above. The Clarifying/Additive shortcut applies only to non-goal, non-acceptance artifacts.
+Three worked-example artifacts live at `skills/replan/references/worked-examples.md` — read that file when authoring or reviewing a Replan Analysis; the patterns there are the canonical per-change shape (What / Why / Severity / Action or Loop-back target):
 
-### Rationale Presentation
+- **Good (Minor)** — three minor changes (extra edge case test, LOC estimate update, task split); all applied in place; pipeline restarts at Goals for the next phase.
+- **Good (Major)** — one major change (polling → WebSockets) plus a minor change; loop-back target is Design; feedback file written; cascade re-runs Design → Structure → Plan → Parallelize → Implement.
+- **Bad** — counterexample (no per-change severity classifications, unclassified Major, changes applied without approval, no feedback file).
 
-Before applying any amendment, present to the user:
-
-1. **Diff:** Show the exact text change (old vs new)
-2. **Classification:** Clarifying, Additive, or Architectural
-3. **Rationale:** Why this amendment improves the artifact
-4. **Confirm/Reject:** User must explicitly approve before application
-
-If the user classifies an amendment as Architectural, stop and route through the normal Replan process instead.
-
-### Application
-
-After user approval:
-
-1. Apply the text change to the artifact file
-2. Call `pipeline_cascade_reset <step> <artifact_dir> --skip-cascade` — this resets only the amended artifact's state to draft, leaving downstream artifacts untouched
-3. Log the amendment in the artifact's frontmatter or a dedicated amendment log
-
-### Amendment Log Format
-
-Append to the artifact file, inside the frontmatter:
-
-```yaml
-amendments:
-  - date: YYYY-MM-DD
-    type: clarifying|additive
-    summary: "Brief description of what changed"
-```
-
-This log provides an audit trail of refinements without polluting the main content. Architectural changes are never logged here — they go through Replan and produce feedback files.
-
-## Worked Example — Good (Minor)
-
-Phase 1 completed. Replan subagent analyzes the phase:
-
-```markdown
-## Replan Analysis — Phase 1 Complete
-
-### Change 1: Extra edge case test for Task 7
-- **What:** Task 7 (notification delivery) needs a test for empty notification body
-- **Why:** Phase 1 revealed that the notification renderer crashes on empty body — edge case not in original spec
-- **Severity:** Minor — task spec wording update, no structural changes
-- **Action:** Add test expectation to tasks/task-07.md
-
-### Change 2: LOC estimate update for Task 8
-- **What:** Task 8 LOC estimate should be ~400 not ~250
-- **Why:** The auth middleware discovered in Phase 1 requires more boilerplate than estimated
-- **Severity:** Minor — LOC estimate adjustment only
-- **Action:** Update LOC estimate in tasks/task-08.md
-
-### Change 3: Split Task 9 into 9a and 9b
-- **What:** Task 9 (user profile CRUD) should split into 9a (read/list) and 9b (create/update/delete)
-- **Why:** Phase 1 showed the validation layer is more complex than expected — splitting keeps tasks under 300 LOC
-- **Severity:** Minor — task split within existing slice, no structural changes
-- **Action:** Split tasks/task-09.md into tasks/task-09a.md and tasks/task-09b.md, update plan.md task list
-```
-
-**Result:** All changes are minor. Update `tasks/*.md` and `plan.md` in place, set `status: replan-draft`, present diffs to user. User re-approves, set `status: approved`, commit. Snapshot Phase 1 and promote (which deletes `structure.md`/`plan.md`/`tasks/` and resets goals/research/design to draft). Delete `replan-pending.md`. Invoke Goals to restart the pipeline for Phase 2.
-
-## Worked Example — Good (Major)
-
-Phase 1 completed. Replan subagent analyzes the phase:
-
-```markdown
-## Replan Analysis — Phase 1 Complete
-
-### Change 1: Switch from polling to WebSockets for real-time updates
-- **What:** The notification system uses polling (design.md specifies 5-second interval), but Phase 1 revealed this causes unacceptable latency for the chat feature in Phase 2
-- **Why:** Chat messages delivered with 0-5 second delay breaks the UX. WebSockets provide sub-100ms delivery.
-- **Severity:** Major — technology choice change affects architecture
-- **Loop-back target:** Design (architecture change)
-
-### Change 2: Extra edge case test for Task 7
-- **What:** Task 7 needs a test for empty notification body
-- **Why:** Phase 1 revealed the renderer crashes on empty body
-- **Severity:** Minor — task spec wording update
-```
-
-**Result:** One major change present. Loop-back target is Design (earliest affected artifact).
-
-Write feedback file:
-
-```markdown
-# feedback/replan-phase-01-round-01.md
-
-## Phase 1 Learnings
-
-### WebSocket requirement
-- Polling at 5-second intervals causes 0-5s latency for chat messages
-- Chat UX requires sub-100ms delivery
-- Proposed change: replace polling with WebSocket connections for real-time features
-- Affects: design.md (architecture), structure.md (new WebSocket server file), plan.md (task dependencies)
-
-### Minor changes (incorporated by Plan during cascade)
-- Task 7: add empty body edge case test
-```
-
-Reset `design.md`, `structure.md`, `plan.md`, all `tasks/task-NN.md`, and `parallelization.md` to `status: draft`. Delete `replan-pending.md`. Recommend compaction. Invoke `qrspi:design` with normal inputs + `feedback/replan-phase-01-round-01.md`. Replan exits.
-
-Normal pipeline takes over: Design re-reviews (incorporating WebSocket requirement + minor Task 7 change from feedback) → Structure → Plan (incorporates the Task 7 edge case test when re-producing task specs) → Parallelize → Implement → Phase 2 begins.
-
-## Worked Example — Bad
-
-```markdown
-## Replan Analysis — Phase 1 Complete
-
-Some things need to change for Phase 2. The notification system should probably use WebSockets instead of polling. Also Task 8 might need splitting. Updated tasks/task-08.md and plan.md with the changes.
-```
-
-**Why this fails:** missing per-change severity classifications; an unclassified Major change ("WebSockets") with no loop-back target identified; changes applied to artifacts without user approval (HARD-GATE violation); no feedback file for the Major change; lumped narrative instead of per-change structure.
 
 ## Boundary with Goals
 
@@ -369,7 +258,7 @@ This section codifies the Replan ↔ Goals boundary contract for `future-goals.m
 
 ### Formal-vs-Idea promotion gate
 
-Replan promotes **ONLY fully-Formal entries** from `future-goals.md` into the next phase's `goals.md`. A fully-Formal entry is an entry that satisfies ALL of the following:
+Replan promotes **ONLY fully-Formal entries** from `future-goals.md` into the next phase's `goals.md`. A fully-Formal entry satisfies ALL of the following:
 
 **Frontmatter requirements:**
 - Has a frontmatter `id:` field (e.g., `id: G5`)
@@ -380,19 +269,16 @@ Replan promotes **ONLY fully-Formal entries** from `future-goals.md` into the ne
 - Contains `## Why we care` subsection
 - Contains `## What we know so far` subsection
 
-An entry that satisfies all five requirements above is promoted to the next phase's `goals.md`.
-
 ### Skip conditions
 
 The following entry types are **SKIPPED** (not promoted to `goals.md`):
 
-**Partial-Formal entries** — entries that carry a frontmatter `id:` but are missing any of the following: `type:` field, `## Problem` subsection, `## Why we care` subsection, or `## What we know so far` subsection. These entries have been started but not completed to the Formal shape. Replan skips them and records the specific missing field or subsection in the hand-off report.
-
-**Prose-only Idea entries** — entries that carry no frontmatter `id:` field. These are informal ideas captured without commitment to a goal ID. Replan skips them and records "prose-only Idea" as the skip reason in the hand-off report.
+- **Partial-Formal entries** — carry a frontmatter `id:` but are missing any of: `type:` field, `## Problem`, `## Why we care`, or `## What we know so far`. Replan skips them and records the specific missing field or subsection in the hand-off report.
+- **Prose-only Idea entries** — carry no frontmatter `id:` field. Replan skips them and records "prose-only Idea" as the skip reason.
 
 ### Replan does NOT
 
-Replan enforces the promotion gate but does NOT perform any of the following:
+Replan enforces the promotion gate but does NOT:
 - Mint new `id:` values for Idea entries
 - Assign `type:` fields to entries missing them
 - Author `## Problem`, `## Why we care`, or `## What we know so far` subsections
@@ -405,16 +291,11 @@ All of the above belong to a subsequent user-invoked Goals run.
 
 After applying the promotion gate, Replan emits a per-run hand-off report enumerating both promoted and skipped entries:
 
-**Promoted Formal entries:** listed by `id:` and `title:` (one line per entry). Example:
-```
-Promoted: id=G5 title="Add support for async task queues"
-```
+- **Promoted Formal entries** — listed by `id:` and `title:` (one line per entry). Example: `Promoted: id=G5 title="Add support for async task queues"`
+- **Skipped (partial-Formal)** — example: `Skipped (partial-Formal): id=G6 missing: type:, ## Why we care`
+- **Skipped (prose-only Idea)** — example: `Skipped (prose-only Idea): "Improve onboarding flow" (no id:)`
 
-**Skipped entries:** listed with the explicit reason for the skip:
-- Partial-Formal: `Skipped (partial-Formal): id=G6 missing: type:, ## Why we care`
-- Prose-only Idea: `Skipped (prose-only Idea): "Improve onboarding flow" (no id:)`
-
-The hand-off report is presented to the user before the next Goals run begins, so users can manually formalize skipped entries via a subsequent Goals invocation if desired.
+The hand-off report is presented to the user before the next Goals run begins. See `skills/replan/references/boundary-with-goals.md` for the long-form contract.
 
 ## Iron Laws — Final Reminder
 

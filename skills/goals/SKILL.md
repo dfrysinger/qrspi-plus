@@ -9,17 +9,15 @@ description: Use when starting a new QRSPI pipeline run — captures user intent
 
 **Announce at start:** "I'm using the QRSPI Goals skill to capture what you want to build."
 
-**If auto-mode is detected** (presence of `## Auto Mode Active` system-reminder in current context), surface to the user before the first interactive step: "This skill is collaborative — turn-by-turn dialogue produces better Goals quality than autonomous execution. Recommend exiting auto-mode (`Shift+Tab` to cycle modes) for this phase. I'll proceed in either mode if you prefer."
-
-Do not force the user out of auto-mode; respect their choice. Surface the recommendation explicitly at start.
+**If auto-mode is detected** (presence of `## Auto Mode Active` system-reminder), surface before the first interactive step: "This skill is collaborative — turn-by-turn dialogue produces better Goals quality than autonomous execution. Recommend exiting auto-mode (`Shift+Tab` to cycle modes). I'll proceed in either mode if you prefer." Do not force the user out; respect their choice.
 
 ## Overview
 
-Capture what the user wants — purpose, environmental constraints, and the per-goal problem frames that downstream skills will work against. Runs as an interactive conversation in the main session, then launches a subagent to synthesize the artifact.
+Capture purpose, environmental constraints, and the per-goal problem frames that downstream skills work against. Runs as an interactive conversation in the main session, then launches a subagent to synthesize the artifact.
 
-Goals is **problem-framed**, not solution-prescribing. Each goal entry states a problem, why it matters, and what is currently known. Solution candidates may surface in "What we know so far" as **possibilities for Design to weigh** — they are NOT commitments.
+Goals is **problem-framed**, not solution-prescribing. Each goal states a problem, why it matters, and what is known. Solution candidates surface in "What we know so far" as **possibilities for Design to weigh** — NOT commitments.
 
-**Prohibition.** Goals does NOT author file maps, phasing decisions, or detailed solution definitions; those concerns are owned by downstream artifacts (see "Goals OWNS / Goals DEFERS" below for the locked scope contract).
+**Prohibition.** Goals does NOT author file maps, phasing decisions, or detailed solution definitions; those are owned by downstream artifacts.
 
 ## Goals OWNS / Goals DEFERS
 
@@ -27,12 +25,12 @@ Goals is **problem-framed**, not solution-prescribing. Each goal entry states a 
 
 ## Goal Type Field
 
-Every goal entry MUST carry a `type` field with value `known-fix` or `exploratory`. The field is grounded in **Knight risk-vs-uncertainty**:
+Every goal MUST carry a `type` field with value `known-fix` or `exploratory`, grounded in **Knight risk-vs-uncertainty**:
 
-- **`known-fix`** — *risk*. The problem is well-characterized and the solution space is bounded. A reasonable engineer could enumerate the candidate fixes. Cost-benefit reasoning applies normally.
-- **`exploratory`** — *uncertainty*. The problem itself is partly uncharted; success criteria emerge through investigation. Exploratory goals are explicitly **protected from cost-benefit reasoning that would defer them** — their value comes from learning that hasn't happened yet, so naive ROI math under-weights them. Do NOT drop or down-rank an exploratory goal because it "isn't shovel-ready" or "has unclear payoff."
+- **`known-fix`** — *risk*. Well-characterized problem; bounded solution space. Cost-benefit reasoning applies normally.
+- **`exploratory`** — *uncertainty*. The problem is partly uncharted; success criteria emerge through investigation. Exploratory goals are **protected from cost-benefit reasoning that would defer them** — value comes from learning that hasn't happened yet. Do NOT drop or down-rank because it "isn't shovel-ready" or "has unclear payoff."
 
-If neither value fits cleanly, default to `exploratory` and flag the ambiguity in the goal's "What we know so far" section. Do NOT invent a third value.
+If neither fits, default to `exploratory` and flag the ambiguity under "What we know so far". Do NOT invent a third value.
 
 ## Artifact Gating
 
@@ -46,31 +44,31 @@ If neither value fits cleanly, default to `exploratory` and flag the ambiguity i
 
 ### Next-Phase Restart Mode
 
-Goals is invoked in three distinct contexts:
+Goals runs in three contexts:
 
-- **Fresh run** — first invocation for a project. No artifact directory, no `config.md`, no `goals.md`. Run the full Interactive Dialogue + Pipeline Mode Selection.
-- **Mid-run resume** — user re-enters a paused run. Artifact directory exists; `goals.md` may already be `approved`. Validate `config.md` (Config Validation Procedure below) and either continue or restart from where the user left off.
-- **Next-phase restart (invoked by Replan's minor path)** — a prior phase has completed. Per the cascade, **the draft `goals.md` is auto-populated by Replan from `roadmap.md` + `future-goals.md`**: Replan reads `roadmap.md` to identify the next phase's goal IDs, extracts the matching entries from `future-goals.md`, and writes them as the new draft `goals.md` with `status: draft`. `artifact_promote_next_phase` has reset goals/research/design frontmatter to `draft` and deleted phase-scoped files (`structure.md`, `plan.md`, `tasks/`). The `phases/phase-NN/` snapshot from the completed phase exists; `config.md` exists with the original route and pipeline mode.
+- **Fresh run** — no artifact directory, no `config.md`, no `goals.md`. Run the full Interactive Dialogue + Pipeline Mode Selection.
+- **Mid-run resume** — artifact directory exists; `goals.md` may already be `approved`. Validate `config.md` and continue from where the user left off.
+- **Next-phase restart (invoked by Replan's minor path)** — a prior phase completed. **Replan auto-populates the draft `goals.md` from `roadmap.md` + `future-goals.md`**: Replan reads `roadmap.md` for the next phase's goal IDs, extracts matching entries from `future-goals.md`, and writes them as the new draft `goals.md` (`status: draft`). `artifact_promote_next_phase` has reset goals/research/design frontmatter to `draft` and deleted phase-scoped files (`structure.md`, `plan.md`, `tasks/`). The `phases/phase-NN/` snapshot exists; `config.md` carries the original route and pipeline.
 
-**Detecting next-phase restart:** All three of these conditions hold:
-- `phases/phase-*/` snapshot directory exists (one or more completed phases)
+**Detecting next-phase restart:** all three hold:
+- `phases/phase-*/` snapshot directory exists
 - `goals.md` exists with `status: draft`
-- `config.md` exists with valid `route` and `pipeline` fields
+- `config.md` exists with valid `route` and `pipeline`
 
 **Behavior on next-phase restart:**
 
-0. **Fail-closed precondition (assert before dialogue).** Before running the focused dialogue, assert ALL of the following. On any failure, STOP and surface the failure to the user — do NOT silently dialogue against an empty or partial draft (silent goal loss is the failure mode this guards against):
+0. **Fail-closed precondition.** STOP on any failure — do NOT silently dialogue against an empty/partial draft (silent goal loss is the failure mode this guards):
    1. `roadmap.md` exists in the artifact directory.
-   2. `future-goals.md` exists in the artifact directory.
-   3. The auto-populated draft `goals.md` is non-empty and well-formed (parses as the goals.md template above).
+   2. `future-goals.md` exists.
+   3. The auto-populated draft `goals.md` is non-empty and well-formed.
    4. The draft contains ≥1 goal whose ID matches an entry in `roadmap.md`'s next-phase row.
 
-   If any condition fails, surface a concrete diagnostic (which file is missing, or which IDs failed to match) and ask the user how to proceed (re-run Replan, hand-fix the draft, or abort) before any further work.
-1. Skip artifact-directory creation (it exists).
-2. Skip the Pipeline Mode Selection *questions* (use the existing `config.md`'s `pipeline` and `route` — these are locked at run start and do not change between phases). Still run the standard Config Validation Procedure on the existing `config.md` to catch hand-edits that may have invalidated it between phases.
-3. Run a focused Interactive Dialogue against the auto-populated draft: confirm the promoted goals (Replan-populated from `roadmap.md` + `future-goals.md`) match the user's expectation for this next phase, capture any phase-specific constraints discovered during the prior phase (the Replan feedback file at `feedback/replan-phase-NN-round-MM.md` is one input; ask the user whether they want anything in addition).
-4. Re-synthesize `goals.md` (subagent) with the auto-populated content + any new constraints. Preserve goal IDs from `roadmap.md` so downstream artifact references remain valid.
-5. Run the standard Review Round + Human Gate; on approval, write `status: approved` and let the standard pipeline cascade (Questions → Research → ... → Parallelize → Implement).
+   On failure, surface a concrete diagnostic and ask the user how to proceed (re-run Replan, hand-fix, abort).
+1. Skip artifact-directory creation.
+2. Skip the Pipeline Mode Selection questions (the existing `config.md` carries `pipeline` and `route`). Still run Config Validation to catch hand-edits.
+3. Run a focused Interactive Dialogue against the auto-populated draft: confirm promoted goals match the user's next-phase expectation; capture new constraints (the Replan feedback file `feedback/replan-phase-NN-round-MM.md` is one input).
+4. Re-synthesize `goals.md` (subagent) with the auto-populated content + new constraints. Preserve goal IDs from `roadmap.md` so downstream references stay valid.
+5. Run the standard Review Round + Human Gate; on approval, write `status: approved` and let the pipeline cascade.
 
 <HARD-GATE>
 Do NOT synthesize goals.md until the pipeline mode is selected and config.md is written.
@@ -85,98 +83,76 @@ If `config.md` already exists (resuming a run), apply the **Config Validation Pr
 
 ### Interactive Dialogue
 
-- **One question at a time** — don't overwhelm with multiple questions
-- **Prefer multiple choice** when possible, open-ended is fine too
-- Focus on understanding: purpose, constraints, the per-goal problem frames
+- **One question at a time** — don't overwhelm
+- **Prefer multiple choice** when possible
+- Focus on purpose, constraints, the per-goal problem frames
 - **Scope check:** If the request describes multiple independent subsystems, flag immediately. Help decompose into sub-projects — each gets its own QRSPI run.
 
-Questions to cover (not necessarily in order — follow the conversation):
-1. **What are you building?** What is the core purpose / problem space?
+Questions to cover (order follows the conversation):
+1. **What are you building?** Core purpose / problem space.
 2. **Who is it for?** End users, internal team, API consumers?
 3. **What constraints exist?** Tech stack, timeline, compatibility, performance.
 4. **What problems are in play, and why do they matter?** Probe each goal's **Problem** and **Why we care** — capture the pain, not the proposed fix.
-5. **What is currently known?** Prior attempts, partial diagnoses, candidate solutions to weigh — these populate "What we know so far" as **possibilities Design will evaluate**, not commitments.
-6. **For each goal, is the problem a `known-fix` (risk — solution space bounded) or `exploratory` (uncertainty — investigation reveals success)?** Default `exploratory` when uncertain; flag the ambiguity in "What we know so far".
-7. **Is this greenfield or modifying existing code?**
+5. **What is currently known?** Prior attempts, partial diagnoses, candidate solutions — populated under "What we know so far" as **possibilities Design will evaluate**, not commitments.
+6. **For each goal, `known-fix` (risk — solution space bounded) or `exploratory` (uncertainty)?** Default `exploratory` when uncertain; flag the ambiguity.
+7. **Greenfield or modifying existing code?**
 
-Do NOT ask the user for per-goal acceptance criteria, file maps, phasing, or "what's out of scope" at this step — those concerns are owned by downstream artifacts (see "Goals OWNS / Goals DEFERS").
+Do NOT ask for per-goal acceptance criteria, file maps, phasing, or "what's out of scope" — those are owned by downstream artifacts.
 
 ### Dialogue Conduct
 
-When working a goal with the user, follow these rules. The numbering mirrors the Design SKILL's Dialogue Conduct rules verbatim except: Rule 3 is adjusted to drop the research-summary tier (Goals runs before Research, so no research artifacts exist yet), and Rule 5 — Design's dialog-clarity directive — is intentionally absent from Goals per the current scope.
+When working a goal with the user, follow these rules.
 
-1. **Open with questions.** Surface your list of open questions for the goal in chat. Work
-   through them with the user one decision at a time.
+1. **Open with questions.** Surface your list of open questions for the goal in chat. Work through them with the user one decision at a time.
 
-2. **One question at a time, with a recommended answer.** Each question carries your proposed
-   answer; the user confirms, amends, or rejects.
+2. **One question at a time, with a recommended answer.** Each question carries your proposed answer; the user confirms, amends, or rejects.
 
-3. **Ground first, ask second.** Before asking the user any question — your own or one the
-   user has asked back — consult, in order: the codebase, then the web. When a question
-   touches industry best practice, conventions, or external patterns, search the web liberally
-   for cited evidence rather than speculating or punting the question back. Only escalate to
-   the user when no source surfaces a defensible answer.
+3. **Ground first, ask second.** Before asking the user any question — your own or one the user has asked back — consult the codebase, then the web. When a question touches industry best practice or external patterns, search the web for cited evidence rather than speculating or punting back. Escalate to the user only when no source surfaces a defensible answer.
 
-4. **When the user asks for your call, provide one.** When the user solicits your opinion,
-   asks which option is best, or asks what you would recommend, give a grounded recommendation
-   (sources per Rule 3) with named tradeoffs. Do not deflect with more questions or punt the
-   choice back. If grounding genuinely leaves the call indeterminate, say so explicitly and
-   name what additional evidence would resolve it.
+4. **When the user asks for your call, provide one.** Give a grounded recommendation (sources per Rule 3) with named tradeoffs. Do not deflect with more questions. If grounding leaves the call indeterminate, say so and name what additional evidence would resolve it.
 
-6. **Sharpen fuzzy language.** When the user uses imprecise vocabulary, propose the canonical
-   term and ask for confirmation before moving on.
+6. **Sharpen fuzzy language.** When the user uses imprecise vocabulary, propose the canonical term and ask for confirmation before moving on.
 
-7. **Walk every branch of the decision tree, including flow gaps.** For each goal, resolve
-   dependencies between decisions one-by-one. Do not move to the next goal until every branch
-   surfaced for the current one is either decided, explicitly deferred with a written reason,
-   or split out as a separate goal. Branch completeness explicitly includes the end-to-end
-   flow between any multi-actor decisions — actors named, operations sequenced, per-step
-   inputs/outputs traced to producer and consumer, loud-failure paths named, context-cost
-   call-out present. A flow with implicit hand-offs is an open branch; close it before moving
-   on.
+7. **Walk every branch of the decision tree, including flow gaps.** For each goal, resolve dependencies one-by-one. Do not move to the next goal until every branch surfaced is decided, explicitly deferred with a written reason, or split out as a separate goal. Branch completeness includes the end-to-end flow between any multi-actor decisions — actors named, operations sequenced, per-step inputs/outputs traced to producer and consumer, loud-failure paths named, context-cost call-out present. A flow with implicit hand-offs is an open branch; close it before moving on.
 
-8. **Lock decisions as they settle.** Write each decision into the goal block under
-   `status: draft` as it is confirmed. Do not accumulate decisions in chat across multiple
-   goals before persisting.
+8. **Lock decisions as they settle.** Write each decision into the goal block under `status: draft` as it is confirmed. Do not accumulate decisions in chat across multiple goals before persisting.
 
 ### Incremental Persistence (Direct-to-Artifact Drafting)
 
-Per Rule 8 above, write each locked goal **directly to `goals.md`** with `status: draft` in the frontmatter as it is confirmed during dialogue — no separate staging file, no end-of-phase synthesis-from-scratch. The draft `goals.md` on disk is the durable record of locked decisions; the chat transcript is not.
+Per Rule 8, write each locked goal **directly to `goals.md`** with `status: draft` as confirmed. The draft on disk is the durable record; the chat transcript is not.
 
-**Presence ≡ locked.** The draft `goals.md` is a keyed map of locked goals. A goal is locked if and only if its block appears in the file. Tentative bodies, placeholder bodies, `to be filled` markers, TODO markers, and any other not-yet-formed content NEVER enter the draft artifact. If a goal is not fully formed (Problem, Why we care, What we know so far all populated; concrete `type` value), it does not appear in the file. This is the Evergreen-Output Rule applied to incremental persistence — dialogue exhaust never enters the artifact.
+**Presence ≡ locked.** The draft is a keyed map. A goal is locked iff its block appears. Tentative bodies, placeholder bodies, `to be filled` markers, TODO markers NEVER enter the draft. If a goal is not fully formed (Problem, Why we care, What we know so far all populated; concrete `type` value), it does not appear. This is the Evergreen-Output Rule applied to incremental persistence.
 
-**Keyed in-place overwrite on re-lock.** Per-goal blocks are keyed by goal ID (`### G1 — ...`). If the user re-opens a previously-locked goal, overwrite that goal's block in place — do NOT append a duplicate. The artifact is a keyed map persisted as ordered markdown, not an append-only log.
+**Keyed in-place overwrite on re-lock.** Per-goal blocks are keyed by ID (`### G1 — ...`). On re-lock, overwrite in place — do NOT append a duplicate.
 
 **Resume after compaction.** If `/compact` fires mid-phase, on resume:
 
-1. Read the draft `goals.md` from disk and enumerate the goals already locked.
-2. Compute remaining work by **asking the user** whether all desired goals have been articulated. Goals runs before Research and has no upstream inventory, so there is no file to diff against — the user is the only authority on what remains.
-3. Surface the recovery diagnostic to the user, verbatim:
+1. Read the draft `goals.md` from disk and enumerate locked goals.
+2. Ask the user whether all desired goals have been articulated. Goals runs before Research and has no upstream inventory to diff against — the user is the only authority on what work remains (the remaining-work computation is a user-driven question at Goals stage, not an inventory diff).
+3. Surface the recovery diagnostic verbatim:
 
    `"Resumed after compaction — last locked decision: GNN (M decisions locked, K remaining). Continuing from G(NN+1)."`
 
-4. Continue dialogue from the next unlocked goal.
+4. Continue from the next unlocked goal.
+
+**End-of-phase finalize pass.** After the walkthrough completes:
+
+- Validate that every locked goal carries the three subsections and a concrete `type` value.
+- Optionally append a Purpose section if absent.
+- **Only flip status if all validations pass.** On failure, halt, surface, re-enter dialogue.
+- Flip frontmatter `status: draft` to `status: approved`. Only the finalize pass writes `approved`; hand-edits mid-phase are forbidden. When the user picks "Approve, skip review", the finalize pass still runs and the reviewer round is skipped.
 
 **Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
 
-**End-of-phase finalize pass.** After the per-goal walkthrough completes, run a lightweight finalize pass:
-
-- Validate that every locked goal carries the three required subsections (Problem, Why we care, What we know so far) and a concrete `type` value.
-- Optionally append a Purpose section if absent.
-- **Only flip status if all validations pass.** If any validation step fails, halt immediately before the status flip, surface the specific failure to the user, and re-enter dialogue to resolve the invariant violation before re-attempting the finalize pass. Do NOT advance the gate with a failing artifact.
-- Flip frontmatter `status: draft` to `status: approved`.
-
-Hand-edits that flip `status: draft` to `status: approved` mid-phase (before the finalize pass) are forbidden — only the finalize pass writes `approved`. When the user picks "Approve, skip review" at the human gate, the finalize pass still runs (it is mechanical validation, not synthesis) and the reviewer round is skipped.
-
 ### Pipeline Mode Selection
 
-After intent capture (the interactive dialogue above) but before synthesizing `goals.md`, determine the pipeline configuration. Ask these questions — one at a time, using numbered choices:
+After intent capture but before synthesizing `goals.md`, ask these questions one at a time:
 
 **Pipeline mode:**
 1. Quick fix (goals → questions → research → plan → implement → test)
 2. Full pipeline (goals → questions → research → design → structure → plan → parallelize → implement → integrate → test)
 
-**UX step** (only ask if `qrspi:ux` skill exists — glob for `~/.claude/plugins/cache/*/qrspi/*/skills/ux/` — skip silently if not found):
+**UX step** (only ask if `qrspi:ux` skill exists — glob `~/.claude/plugins/cache/*/qrspi/*/skills/ux/`; skip silently if not found):
 1. No UX step
 2. Include UX/wireframing step after Design
 
@@ -184,11 +160,11 @@ After intent capture (the interactive dialogue above) but before synthesizing `g
 1. Quick (4 correctness reviewers)
 2. Deep (correctness + thoroughness, all 8 reviewers)
 
-**Second-model review** (only ask if a second-reviewer vendor is available — run `bash scripts/second-reviewer-available.sh` and check its exit status; on a non-zero exit, skip this question silently and write `second_reviewer: false`):
+**Second-model review** (only ask if a second-reviewer vendor is available — run `bash scripts/second-reviewer-available.sh`; on non-zero exit, skip silently and write `second_reviewer: false`):
 1. No second-model reviews
 2. Use a second model for second reviews this run
 
-Once you have answers, write `config.md` in the artifact directory. The fence below shows the **quick-pipeline** writer output (the `pipeline: quick` route is the example). For a `pipeline: full` run, use the same fence shape but (a) substitute the full route from the Route Templates section, (b) substitute `pipeline: full`, and (c) **omit the `question_budget` line entirely** — that field is written ONLY when `pipeline: quick` (it caps Research specialist dispatch in the autonomous quick-pipeline cascade; full pipelines have no such cap).
+Write `config.md`. The fence below is the **quick-pipeline** writer output. For `pipeline: full`, use the same shape but (a) substitute the full route, (b) substitute `pipeline: full`, and (c) **omit `question_budget` entirely** — that field is `pipeline: quick`-only (caps Research specialist dispatch). Route templates live in `using-qrspi/SKILL.md` → "Route Templates"; UX does not apply to quick-fix. After writing, rewrite the Level 1 pipeline tasks to match.
 
 ```yaml
 ---
@@ -202,112 +178,45 @@ route:
   - plan  # quick stops here before implement
   - implement
   - test
-verifier_enabled: true  # set at run creation; edit directly between rounds to disable for the whole run
-scope_tagger_enabled: true  # set at run creation; edit directly between rounds to disable convergence narrowing for the whole run
-visual_fidelity_required: false  # set at run creation; default false unless the user opted into the visual-fidelity binding chain
+verifier_enabled: true  # edit between rounds to disable for the whole run
+scope_tagger_enabled: true  # edit between rounds to disable convergence narrowing
+visual_fidelity_required: false  # default false unless opted into visual-fidelity binding chain
 question_budget: 5
 ---
 ```
 
-Route templates live in `using-qrspi/SKILL.md` → "Route Templates" (Quick / Full / Full + UX). Use the template that matches the user's selection. UX is not applicable to quick-fix routes.
-
-After writing `config.md`, rewrite the Level 1 pipeline tasks to match the route (add or remove steps as needed).
-
 ### Artifact Synthesis
 
-Once the conversation settles, launch a **subagent** to synthesize `goals.md`:
+Launch a **subagent** to synthesize `goals.md`.
 
 **Subagent inputs:**
-- The existing incremental draft `goals.md` on disk (REQUIRED — the draft is the source of truth for pre-compaction locked decisions; the subagent MUST merge this draft with new conversation content rather than re-synthesizing from conversation alone)
-- The conversation content (user's answers to the dialogue questions)
-- This skill's "Goals OWNS / Goals DEFERS" section (the locked scope contract)
+- The existing incremental draft `goals.md` on disk (REQUIRED — source of truth for pre-compaction locked decisions; the subagent MUST merge this draft with new conversation content rather than re-synthesize from conversation alone)
+- The conversation content
+- This skill's "Goals OWNS / Goals DEFERS" section
 
-**Subagent task:**
-Produce `goals.md` with this structure. The template is the **conformance contract** for goals.md: required sections and per-goal subsections are enumerated here, claim-before-evidence ordering is mandated, scannable bullets are required, and "be concise" instructions are forbidden (synthesize the substance, do not truncate it).
+**Subagent task:** Produce `goals.md` per the conformance template in `skills/goals/references/goals-md-template.md` (required sections and per-goal subsections, claim-before-evidence ordering, scannable bullets, no "be concise"). Pass the template path to the subagent and instruct it to read the file before drafting.
 
 !cat skills/_shared/evergreen-output-rule.md
 
-```markdown
----
-status: draft
----
+**Iron Rule (template).** No top-level `Out of Scope`, `Success Criteria`, or `Acceptance Criteria` section. What isn't a goal isn't in scope; acceptance is owned by Design's Test Strategy and Plan's per-task expectations. Capture user-volunteered exclusions as constraints (when they shape the solution space) or omit them.
 
-# Goals: {Project/Feature Name}
+**Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Omitting one is a synthesis defect. If the user did not articulate one during dialogue, re-enter dialogue to obtain it — do NOT write a placeholder, partial, or tentative body (presence ≡ locked). Do NOT add a fourth subsection — additional content belongs in `What we know so far` or in a Constraint.
 
-## Purpose
+**Iron Rule (type field — concrete value).** Emit ONE concrete value for each goal's `type` — either `known-fix` OR `exploratory`. NEVER emit the alternation literal `known-fix | exploratory` (template placeholder, not valid output). If uncertain, default to `exploratory` and explain under `What we know so far`.
 
-{1-2 sentences leading with the claim — what is being built and the problem space it addresses. First sentence ≤250 chars, ends with a period.}
-
-## Constraints
-
-- {Environmental constraint 1 — tech stack, compatibility, performance budget, deployment, timeline}
-- {Environmental constraint 2}
-- ...
-
-## Goals
-
-### G1 — {Short goal name}
-
-- **type:** `known-fix` | `exploratory`
-
-#### Problem
-
-{The problem this goal addresses, framed as a problem (not a solution). One paragraph; lead with the claim. ≤150 words, ≤8 rendered lines per paragraph.}
-
-#### Why we care
-
-{Why this problem matters now — impact, blast radius, who is affected, what breaks if it stays. One paragraph.}
-
-#### What we know so far
-
-{Prior attempts, partial diagnoses, observed signals, and any solution **candidates Design should weigh** (framed as possibilities, not commitments). Use bullets when enumerating candidates so Design can see them at a glance.}
-
-- {Candidate A — Design should weigh}
-- {Candidate B — Design should weigh}
-- ...
-
-### G2 — {Short goal name}
-
-- **type:** `known-fix` | `exploratory`
-
-#### Problem
-
-{...}
-
-#### Why we care
-
-{...}
-
-#### What we know so far
-
-{...}
-
-{Repeat per goal. Each goal has exactly these three subsections — Problem / Why we care / What we know so far — no others. No per-goal `Acceptance Criteria` subsection. No per-goal `Out of Scope` subsection. No per-goal solution-definition subsection.}
-
-## Cross-Cutting Notes
-
-{OPTIONAL — include only when relationships between goals genuinely cross-cut. Omit the entire section otherwise. Do NOT use this section as a back door for acceptance criteria, file maps, or phasing.}
-```
-
-**Iron Rule (template):** the goals.md output has NO top-level `Out of Scope` section and NO top-level `Success Criteria` / `Acceptance Criteria` section. What isn't a goal isn't in scope; acceptance is owned by Design's Test Strategy and Plan's per-task expectations. If the user volunteers exclusions during dialogue, capture them as constraints (when they shape the solution space) or simply omit them — do NOT reintroduce an `Out of Scope` heading.
-
-**Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Emitting only some of them (e.g. omitting `Why we care` because the answer feels obvious) is a synthesis defect, not a permitted shortcut. If the user did not articulate one of the three during dialogue, re-enter dialogue to obtain the missing content before persisting the goal block — do NOT write a placeholder, partial, or tentative body (presence ≡ locked; a goal block in the artifact asserts the goal is fully settled). Likewise, do NOT add a fourth subsection under any goal — additional content belongs in `What we know so far` or in a Constraint, not a new heading.
-
-**Iron Rule (type field — concrete value).** Emit ONE concrete value for each goal's `type` field — either `known-fix` OR `exploratory`. NEVER emit the alternation literal `known-fix | exploratory` (that string appears in the template as a placeholder showing the allowed values; it is not a valid output). If uncertain which applies, default to `exploratory` and explain the uncertainty under that goal's `What we know so far` subsection.
-
-**Solutions-as-possibilities framing.** When the user mentions a candidate fix, transcribe it under "What we know so far" with explicit framing such as "candidate Design should weigh" or "possibility for Design to evaluate." Do NOT promote the candidate to a Purpose-line commitment, do NOT enumerate it under Constraints, and do NOT add a `Solution` subsection.
+**Solutions-as-possibilities framing.** When the user mentions a candidate fix, transcribe it under "What we know so far" with explicit framing ("candidate Design should weigh" / "possibility for Design to evaluate"). Do NOT promote it to Purpose, Constraints, or a `Solution` subsection.
 
 ### Review Round
 
-**Compaction checkpoint: pre-fanout.** Parallel reviewer dispatch (up to four) reads `goals.md` + the agent-embedded reviewer protocol; saturated context multiplies bloat across the parallel set. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+**Compaction checkpoint: pre-fanout.** Parallel reviewer dispatch (up to four) reads `goals.md` + the agent-embedded reviewer protocol; saturated context multiplies bloat across the parallel set. See using-qrspi `## Compaction Checkpoints`.
 
 Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — goals", description: "pre-fanout: parallel reviewer dispatch (up to four) reads goals.md. User decides whether to /compact." })`.
 
-Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer dispatches run in parallel on Goals (two Claude + two Codex when `second_reviewer: true`; two Claude when the second reviewer is disabled).
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer dispatches run in parallel on Goals (two Claude + two Codex when `second_reviewer: true`; two Claude when disabled).
 
-**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step goals --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/goals/round-${ROUND}.diff` and threads `diff_file_path:` into each reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips the diff emission and `diff_file_path:` is omitted — reviewers fall back to the wrapped artifact body. When using-qrspi step 12 (ref selection) narrows the base ref for this round, pass `--base-ref "$(cat reviews/goals/round-$((ROUND-1))-commit.txt)"` so review-prep narrows against the prior round's per-round commit SHA (using-qrspi step 12 owns the SHA-format validation and the `anchor-file-missing:`/`sha-format-invalid:` halt directions before the SHA reaches `git diff`); otherwise the dispatch-agent default applies. Scope-tag narrowing (when active) reaches reviewers as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
+**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step goals --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/goals/round-${ROUND}.diff` and threads `diff_file_path:` into each reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted — reviewers fall back to the wrapped artifact body. When using-qrspi step 12 (ref selection) narrows the base ref, pass `--base-ref "$(cat reviews/goals/round-$((ROUND-1))-commit.txt)"` so review-prep narrows against the prior round's per-round commit SHA (using-qrspi step 12 owns the SHA-format validation and the `anchor-file-missing:`/`sha-format-invalid:` halt directions before the SHA reaches `git diff`); otherwise the dispatch-agent default applies. Scope-tag narrowing (when active) reaches reviewers as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
 
-The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → Task fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
+Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`.
 
 ```sh
 REVIEW_STEP="goals"
@@ -321,11 +230,11 @@ REVIEW_AGENTS="quality-claude=qrspi-goals-reviewer,scope-claude=qrspi-goals-scop
 
 ### Human Gate
 
-Present the synthesized `goals.md` to the user. **Always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified."
+Present the synthesized `goals.md` to the user. **Always state the review status:** "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified."
 
 They can:
 - **Approve** → if reviews have not passed clean, note this and ask if they'd like a review loop before finalizing. Then write `status: approved` in frontmatter.
-- **Request changes** → write the user's feedback to `feedback/goals-round-{NN}.md` (see using-qrspi Feedback File Format), then continue the conversation and re-synthesize with a new subagent that receives the original inputs + **all** prior feedback files (not just the latest round). After re-generation and the review cycle completes, present:
+- **Request changes** → write feedback to `feedback/goals-round-{NN}.md` (see using-qrspi Feedback File Format), continue the conversation, and re-synthesize with a new subagent that receives the original inputs + **all** prior feedback files. After re-generation and the review cycle, present:
 
   > Feedback applied. How would you like to proceed?
   > 1. More feedback (I have additional changes)
@@ -335,17 +244,17 @@ They can:
   >
   > Before responding, consider running `/compact` — context may be saturated.
 
-  Omit option 2 if Codex is disabled in config.md. Omit the "fix issues" options (options 2 and 3) if there are no issues to fix.
+  Omit option 2 if Codex is disabled in config.md. Omit the "fix issues" options (2 and 3) if there are no issues to fix.
 
 ### Terminal State
 
-If the artifact directory is inside a git repository, commit the approved `goals.md`, `config.md`, and the `reviews/goals/` directory (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)" for the detection rule). Otherwise, skip the commit — the approved frontmatter on disk is the durable record.
+If the artifact directory is inside a git repository, commit the approved `goals.md`, `config.md`, and `reviews/goals/` (per-round per-reviewer files; see `using-qrspi` → "Commit after approval (when applicable)"). Otherwise skip — the approved frontmatter on disk is the durable record.
 
-**Compaction checkpoint: pre-handoff.** Goals approved; the dialogue transcript and review-loop context are no longer load-bearing — the next skill (typically Questions) reads `goals.md` on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+**Compaction checkpoint: pre-handoff.** Goals approved; the dialogue transcript and review-loop context are no longer load-bearing — the next skill reads `goals.md` on a fresh context. See using-qrspi `## Compaction Checkpoints`.
 
 Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — goals", description: "pre-handoff: next skill reads goals.md on a fresh context; dialogue transcript no longer load-bearing. User decides whether to /compact." })`.
 
-**IRON RULE — REQUIRED:** Invoke the next skill in the `config.md` route after `goals` (typically `qrspi:questions`). Do NOT skip the route handoff or invoke a different skill out of order. The route is locked at run start and the cross-skill transition is the salience point where downstream isolation begins (Questions must not see this conversation's content beyond `goals.md`).
+**IRON RULE — REQUIRED:** Invoke the next skill in the `config.md` route after `goals` (typically `qrspi:questions`). Do NOT skip the handoff or invoke out of order. The route is locked at run start and the cross-skill transition is where downstream isolation begins (Questions must not see this conversation beyond `goals.md`).
 
 ## Red Flags — STOP
 
@@ -373,127 +282,20 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — goals", descri
 
 ## Goal Specificity
 
-**Goal specificity rule:** Each goal must be independently scopeable — it can be moved between phases without surgery on other goals. A goal that bundles multiple distinct deliverables should be split into separate goals with their own IDs.
-
-**Late splitting:** When a goal proves too coarse during downstream work (Design, Structure, Plan), it can be split. Classify per the standard amendment severity classes (Minor / Major / Scope Unknown) — see `replan/SKILL.md` for the canonical classification. Present each split as a before/after diff; the skill recommends a class, the user decides. After the split, update `roadmap.md` with new goal IDs.
-
-**Red flag:** A goal whose **Problem** statement bundles 3+ distinct problems that could be independently phased. (Goals does NOT enumerate acceptance criteria — boundary-detection runs against the Problem statement.)
-
-**Common rationalization:** "These items are related so they should be one goal" — Related ≠ coupled. If they can be independently scoped and phased, they should be separate goals.
+**Rule:** Each goal must be independently scopeable — moveable between phases without surgery. Bundled goals must be split with their own IDs. **Red flag:** a goal whose **Problem** bundles 3+ distinct problems that could be independently phased. **Late splitting:** classify per amendment severity (Minor / Major / Scope Unknown) — see `replan/SKILL.md`. Present each split as a before/after diff; user decides; update `roadmap.md` with new IDs. **Common rationalization:** "These items are related so they should be one goal" — Related ≠ coupled.
 
 ## Worked Example
 
-### Good goals.md — "Rate Limiter for Public API"
-
-```markdown
----
-status: draft
----
-
-# Goals: Rate Limiter for Public API
-
-## Purpose
-
-The public REST API has no per-client rate limiting; abusive callers are degrading service for legitimate consumers. This run captures the problem space and known signals so Design can propose a fair-resource-usage architecture.
-
-## Constraints
-
-- Redis is already in the stack and is the only shared-state store available
-- Rate-limited paths cannot exceed 5ms p99 overhead (existing latency budget)
-- Clients sit behind proxies — X-Forwarded-For must be respected
-- Must be deployable without downtime (rolling deploy)
-- Timeline: complete within current sprint (5 days)
-
-## Goals
-
-### G1 — Per-client request limiting
-
-- **type:** `known-fix`
-
-#### Problem
-
-A small number of clients are issuing burst traffic that crowds out other consumers. The API has no mechanism to throttle a single client's request rate; every request is served until downstream resources saturate.
-
-#### Why we care
-
-Service quality for legitimate consumers degrades during abuse events. Support load increases as customers report intermittent failures. Without enforcement, a single misbehaving client can effectively DoS the public API.
-
-#### What we know so far
-
-- The abuse pattern is per-API-key; clients without an API key fall back to source IP.
-- Industry pattern is token-bucket or sliding-window counters — both are **candidates Design should weigh**.
-- Redis-backed counters are a **possibility for Design to evaluate** given the existing Redis dependency; in-memory per-node counters are an alternative Design may also weigh.
-
-### G2 — Rate-limit response headers
-
-- **type:** `known-fix`
-
-#### Problem
-
-When a client is rate-limited it has no way to know when to retry, and even un-throttled clients have no visibility into how close they are to a limit.
-
-#### Why we care
-
-Without retry-guidance headers, polite clients cannot back off correctly and become indistinguishable from abusive ones. SDK authors have requested limit-introspection headers repeatedly.
-
-#### What we know so far
-
-- Common-practice headers include `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` — **candidates Design should weigh** for the response contract.
-- IETF `RateLimit-*` draft headers exist as an alternative Design may also weigh.
-```
-
-Note what is NOT in this example: no `Success Criteria` or `Acceptance Criteria` section (Design's Test Strategy + Plan's per-task expectations own that), no `Out of Scope` section (what isn't a goal isn't in scope), no per-goal solution definition (candidates are framed as possibilities for Design to weigh).
-
-### Bad goals.md — "Rate Limiting"
-
-```markdown
----
-status: draft
----
-
-# Goals: Rate Limiting
-
-## Purpose
-
-Add rate limiting so the API doesn't get abused.
-
-## Constraints
-
-- Use existing tech stack
-
-## Goals
-
-### G1 — Rate limiting
-
-#### Problem
-
-Rate limiting needed.
-
-#### What we ship
-
-- 429 responses
-- An admin UI to configure limits
-- Implementation in Redis with a token bucket
-```
-
-### Why the bad one fails
-
-- **No `type` field** on G1 — required.
-- **"Rate limiting needed"** is not a problem statement; it's a solution-shaped placeholder. The Problem subsection should describe what is failing and for whom.
-- **Missing "Why we care" subsection** entirely — and the goal carries a `What we ship` subsection that is NOT one of the three permitted (Problem / Why we care / What we know so far).
-- **Solution commitments leaked** — "Implementation in Redis with a token bucket" pre-commits Design. Such candidates belong in "What we know so far" framed as possibilities Design should weigh.
-- **Admin UI smuggled in** — that's a separate goal, not a sub-bullet of "rate limiting." Bundled goals break Replan's per-phase promotion (Goal Specificity rule).
-- **"Use existing tech stack"** as a constraint doesn't tell a downstream agent which technology applies — Redis? In-memory? A third-party service? Constraints must be concrete environmental conditions.
-- The bad goals.md will cause Questions to ask vague questions, Research to gather irrelevant material, and Design to inherit pre-committed solutions instead of weighing alternatives.
+See `references/worked-example.md` for a good `goals.md` (Rate Limiter for Public API) and a contrastive bad `goals.md` with failure-mode analysis.
 
 ## Iron Laws — Final Reminder
 
 The override-critical rules for Goals, restated at end:
 
-1. **Do NOT synthesize `goals.md` until pipeline mode is selected and `config.md` is written.** The user must explicitly choose `quick` or `full`. Synthesis without an explicit choice locks the run into a default the user never agreed to.
+1. **Do NOT synthesize `goals.md` until pipeline mode is selected and `config.md` is written.** The user must explicitly choose `quick` or `full`. Synthesis without explicit choice locks the run into a default the user never agreed to.
 
-2. **Each goal must be independently scopeable.** A goal that bundles multiple distinct deliverables must be split into separate goals with their own IDs (see "Goal Specificity"). Bundled goals cannot be moved between phases without surgery on adjacent goals — they break Replan's roadmap-driven phase promotion.
+2. **Each goal must be independently scopeable.** Bundled goals must be split into separate goals with their own IDs — they break Replan's roadmap-driven phase promotion.
 
-3. **Goals is problem-framed, not solution-prescribing.** Each goal carries the `type` field (`known-fix | exploratory`) and exactly the three subsections — Problem, Why we care, What we know so far. No top-level `Out of Scope` or acceptance-criteria sections exist. Solution candidates are framed as **possibilities for Design to weigh**, never as commitments. The "Goals OWNS / Goals DEFERS" section is the locked scope contract; the scope-reviewer dispatches against it.
+3. **Goals is problem-framed, not solution-prescribing.** Each goal carries `type` (`known-fix | exploratory`) and exactly the three subsections — Problem, Why we care, What we know so far. No top-level `Out of Scope` or acceptance-criteria sections. Solution candidates are framed as **possibilities for Design to weigh**. The "Goals OWNS / Goals DEFERS" section is the locked scope contract.
 
 Behavioral directives D1-D4 (encourage reviews after changes, no shortcuts for speed, no time-pressure skips, jargon-free user-facing text) apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
