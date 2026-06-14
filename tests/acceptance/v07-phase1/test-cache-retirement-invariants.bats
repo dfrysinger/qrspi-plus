@@ -48,25 +48,25 @@ setup_file() {
 # TE1–TE4: Filesystem absence of the four deleted artifacts.
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TE1] scripts/g4-cache-probe.sh is absent from the repository" {
+@test "scripts/g4-cache-probe.sh is absent from the repository" {
   # Test expectation: scripts/g4-cache-probe.sh does not exist in the
   # repository after the task completes (filesystem absence)
   [ ! -e "$REPO_ROOT/scripts/g4-cache-probe.sh" ]
 }
 
-@test "[T8 / TE2] docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md is absent from the repository" {
+@test "docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md is absent from the repository" {
   # Test expectation: docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md
   # does not exist in the repository after the task completes (filesystem absence)
   [ ! -e "$REPO_ROOT/docs/qrspi/2026-05-17-v07-release/spikes/g4-cache-probe.md" ]
 }
 
-@test "[T8 / TE3] tests/unit/test-cache-control-capability-gate.bats is absent from the repository" {
+@test "tests/unit/test-cache-control-capability-gate.bats is absent from the repository" {
   # Test expectation: tests/unit/test-cache-control-capability-gate.bats does
   # not exist in the repository after the task completes (filesystem absence)
   [ ! -e "$REPO_ROOT/tests/unit/test-cache-control-capability-gate.bats" ]
 }
 
-@test "[T8 / TE4] tests/unit/test-cache-hit-rate.bats is absent from the repository" {
+@test "tests/unit/test-cache-hit-rate.bats is absent from the repository" {
   # Test expectation: tests/unit/test-cache-hit-rate.bats does not exist in
   # the repository after the task completes (filesystem absence)
   [ ! -e "$REPO_ROOT/tests/unit/test-cache-hit-rate.bats" ]
@@ -80,7 +80,7 @@ setup_file() {
 # assertion sharp and avoids partial collisions with adjacent identifiers.
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TE5] skills/using-qrspi/SKILL.md contains no cache_control literal" {
+@test "skills/using-qrspi/SKILL.md contains no cache_control literal" {
   # Test expectation: skills/using-qrspi/SKILL.md contains no references to
   # cache_control [...] after modification
   [ -f "$USING_QRSPI_SKILL" ]
@@ -88,7 +88,7 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE5] skills/using-qrspi/SKILL.md contains no supports_prompt_cache literal" {
+@test "skills/using-qrspi/SKILL.md contains no supports_prompt_cache literal" {
   # Test expectation: skills/using-qrspi/SKILL.md contains no references to
   # [...] supports_prompt_cache [...] after modification
   [ -f "$USING_QRSPI_SKILL" ]
@@ -96,7 +96,7 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE5] skills/using-qrspi/SKILL.md contains no emit_cache_control_markers literal" {
+@test "skills/using-qrspi/SKILL.md contains no emit_cache_control_markers literal" {
   # Test expectation: skills/using-qrspi/SKILL.md contains no references to
   # [...] emit_cache_control_markers after modification
   [ -f "$USING_QRSPI_SKILL" ]
@@ -114,7 +114,7 @@ setup_file() {
 # helper bodies or commit-message scratch lines.
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TE8] tests/unit/test-run-third-party-llm.bats contains no '@test \"cache_control gate' truth-table blocks" {
+@test "tests/unit/test-run-third-party-llm.bats contains no '@test \"cache_control gate' truth-table blocks" {
   # Test expectation: tests/unit/test-run-third-party-llm.bats contains no
   # cache-control truth-table test blocks after modification
   [ -f "$DISPATCHER_PIN" ]
@@ -133,7 +133,7 @@ setup_file() {
 # itself contained the forbidden token).
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TE9a] tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no SPIKE export referencing the deleted spike report" {
+@test "tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no SPIKE export referencing the deleted spike report" {
   # Test expectation: test-phase1-acceptance.bats contains no SPIKE variable
   # export referencing the deleted spike file after modification
   [ -f "$PHASE1_ACCEPTANCE" ]
@@ -144,7 +144,7 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE9b] tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no run_pin invocations referencing the deleted capability-gate suite" {
+@test "tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no run_pin invocations referencing the deleted capability-gate suite" {
   # Test expectation: no run_pin invocations referencing the deleted suite
   # files after modification (test-cache-control-capability-gate.bats)
   [ -f "$PHASE1_ACCEPTANCE" ]
@@ -152,7 +152,7 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE9c] tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no run_pin invocations referencing the deleted cache-hit-rate suite" {
+@test "tests/acceptance/v07-phase1/test-phase1-acceptance.bats contains no run_pin invocations referencing the deleted cache-hit-rate suite" {
   # Test expectation: no run_pin invocations referencing the deleted suite
   # files after modification (test-cache-hit-rate.bats)
   [ -f "$PHASE1_ACCEPTANCE" ]
@@ -173,23 +173,24 @@ setup_file() {
 #     `[transport: shell-pipeline]` exactly once.
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TE10a] tests/acceptance/v07-phase1/test-phase1-acceptance.bats still contains the G6 COPILOT_CLI=1 host-detection assertion (T7 / TE5 preserved)" {
+@test "tests/acceptance/v07-phase1/test-phase1-acceptance.bats still contains the G6 COPILOT_CLI=1 host-detection assertion (T7 / TE5 preserved)" {
   # Test expectation: After Task 8 modifications, test-phase1-acceptance.bats
   # still contains the G6 host-detection acceptance assertions added by
   # Task 7 (specifically, the COPILOT_CLI=1 Copilot CLI path assertion)
   [ -f "$PHASE1_ACCEPTANCE" ]
-  # Anchored at the @test header for the T7 / TE5 block; matches the unique
-  # `T7 / TE5` tag + COPILOT_CLI=1 phrase from the test name.
-  run grep -nF '[T7 / TE5] dispatch surface: COPILOT_CLI=1 path emits [transport: task-tool]' "$PHASE1_ACCEPTANCE"
+  # Anchored at the @test header for the COPILOT_CLI=1 dispatch-surface block;
+  # matches the unique COPILOT_CLI=1 + [transport: task-tool] phrase from the
+  # test name (post-T11-sweep: bracketed Tnn tag no longer present).
+  run grep -nF 'dispatch surface: COPILOT_CLI=1 path emits [transport: task-tool]' "$PHASE1_ACCEPTANCE"
   [ "$status" -eq 0 ]
 }
 
-@test "[T8 / TE10b] tests/acceptance/v07-phase1/test-phase1-acceptance.bats still contains the G6 COPILOT_CLI-unset host-detection assertion (T7 / TE6 preserved)" {
+@test "tests/acceptance/v07-phase1/test-phase1-acceptance.bats still contains the G6 COPILOT_CLI-unset host-detection assertion (T7 / TE6 preserved)" {
   # Test expectation: After Task 8 modifications, test-phase1-acceptance.bats
   # still contains the G6 host-detection acceptance assertions added by
   # Task 7 (specifically, the COPILOT_CLI unset Claude Code path assertion)
   [ -f "$PHASE1_ACCEPTANCE" ]
-  run grep -nF '[T7 / TE6] dispatch surface: COPILOT_CLI-unset path emits [transport: shell-pipeline]' "$PHASE1_ACCEPTANCE"
+  run grep -nF 'dispatch surface: COPILOT_CLI-unset path emits [transport: shell-pipeline]' "$PHASE1_ACCEPTANCE"
   [ "$status" -eq 0 ]
 }
 
@@ -211,11 +212,11 @@ setup_file() {
 #     scripts/render-skill.sh and scripts/g4-section-anchor-refresh.sh gone.
 # ===========================================================================
 
-@test "[T39/G32] build/ tree exists at the repo root" {
+@test "build/ tree exists at the repo root" {
   [ -d "$REPO_ROOT/build" ]
 }
 
-@test "[T39/G32] build/skills/goals/SKILL.md exists and contains inlined owns-defers.md content" {
+@test "build/skills/goals/SKILL.md exists and contains inlined owns-defers.md content" {
   local built="$REPO_ROOT/build/skills/goals/SKILL.md"
   local source="$REPO_ROOT/skills/goals/owns-defers.md"
   [ -f "$built" ]
@@ -228,14 +229,14 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32] build/skills/goals/SKILL.md retains NO !cat directive for owns-defers.md" {
+@test "build/skills/goals/SKILL.md retains NO !cat directive for owns-defers.md" {
   local built="$REPO_ROOT/build/skills/goals/SKILL.md"
   [ -f "$built" ]
   run grep -F '!cat skills/goals/owns-defers.md' "$built"
   [ "$status" -ne 0 ]
 }
 
-@test "[T39/G32] build/skills/goals/SKILL.md retains NO !cat directives at all (full transitive expansion)" {
+@test "build/skills/goals/SKILL.md retains NO !cat directives at all (full transitive expansion)" {
   local built="$REPO_ROOT/build/skills/goals/SKILL.md"
   [ -f "$built" ]
   # Strict whole-line bare-relative grammar: `^\s*!cat <relpath>\s*$`.
@@ -243,70 +244,70 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T39/G32] build/skills/_shared/prompt-prose-detection.md exists (defensive shared-snippet copy)" {
+@test "build/skills/_shared/prompt-prose-detection.md exists (defensive shared-snippet copy)" {
   [ -f "$REPO_ROOT/build/skills/_shared/prompt-prose-detection.md" ]
 }
 
-@test "[T39/G32] build/docs/ does NOT exist (dev-only path stripped)" {
+@test "build/docs/ does NOT exist (dev-only path stripped)" {
   [ ! -e "$REPO_ROOT/build/docs" ]
 }
 
-@test "[T39/G32] build/tools/ does NOT exist (dev-only path stripped)" {
+@test "build/tools/ does NOT exist (dev-only path stripped)" {
   [ ! -e "$REPO_ROOT/build/tools" ]
 }
 
-@test "[T39/G32] build/tests/ does NOT exist (dev-only path stripped)" {
+@test "build/tests/ does NOT exist (dev-only path stripped)" {
   [ ! -e "$REPO_ROOT/build/tests" ]
 }
 
-@test "[T39/G32] build/scripts/ exists (scripts/ ships in full as runtime)" {
+@test "build/scripts/ exists (scripts/ ships in full as runtime)" {
   [ -d "$REPO_ROOT/build/scripts" ]
 }
 
-@test "[T39/G32] build/templates/ exists (fixed include list)" {
+@test "build/templates/ exists (fixed include list)" {
   [ -d "$REPO_ROOT/build/templates" ]
 }
 
-@test "[T39/G32] build/.claude-plugin/ exists (manifest ships)" {
+@test "build/.claude-plugin/ exists (manifest ships)" {
   [ -d "$REPO_ROOT/build/.claude-plugin" ]
   [ -f "$REPO_ROOT/build/.claude-plugin/plugin.json" ]
 }
 
-@test "[T39/G32] build/LICENSE and build/README.md exist (fixed include list)" {
+@test "build/LICENSE and build/README.md exist (fixed include list)" {
   [ -f "$REPO_ROOT/build/LICENSE" ]
   [ -f "$REPO_ROOT/build/README.md" ]
 }
 
-@test "[T39/G32] zero \${CLAUDE_SKILL_DIR} occurrences in shipped files under build/" {
+@test "zero \${CLAUDE_SKILL_DIR} occurrences in shipped files under build/" {
   [ -d "$REPO_ROOT/build" ]
   # Search across the entire build/ tree; any hit is a regression.
   run bash -c "grep -RF '\${CLAUDE_SKILL_DIR}' '$REPO_ROOT/build' || true"
   [ -z "$output" ]
 }
 
-@test "[T39/G32] zero \${CLAUDE_SKILL_DIR} occurrences in source skills/ either (legacy sites converted)" {
+@test "zero \${CLAUDE_SKILL_DIR} occurrences in source skills/ either (legacy sites converted)" {
   # Source-side cleanup invariant — every legacy site converted to bare form.
   run bash -c "grep -RF '\${CLAUDE_SKILL_DIR}' '$REPO_ROOT/skills' || true"
   [ -z "$output" ]
 }
 
-@test "[T39/G32] tools/render-skill.sh exists at the new path" {
+@test "tools/render-skill.sh exists at the new path" {
   [ -f "$REPO_ROOT/tools/render-skill.sh" ]
 }
 
-@test "[T39/G32] tools/g4-section-anchor-refresh.sh exists at the new path" {
+@test "tools/g4-section-anchor-refresh.sh exists at the new path" {
   [ -f "$REPO_ROOT/tools/g4-section-anchor-refresh.sh" ]
 }
 
-@test "[T39/G32] scripts/render-skill.sh has been removed from the old path" {
+@test "scripts/render-skill.sh has been removed from the old path" {
   [ ! -e "$REPO_ROOT/scripts/render-skill.sh" ]
 }
 
-@test "[T39/G32] scripts/g4-section-anchor-refresh.sh has been removed from the old path" {
+@test "scripts/g4-section-anchor-refresh.sh has been removed from the old path" {
   [ ! -e "$REPO_ROOT/scripts/g4-section-anchor-refresh.sh" ]
 }
 
-@test "[T39/G32] no remaining caller references to scripts/render-skill.sh in source tree" {
+@test "no remaining caller references to scripts/render-skill.sh in source tree" {
   # Tightened pattern (R3 fix tc-F02): match invocation forms only — `bash
   # scripts/render-skill.sh` or `./scripts/render-skill.sh`. Bare path
   # strings in historical narrative no longer false-positive, but actual
@@ -320,7 +321,7 @@ setup_file() {
   [ -z "$output" ]
 }
 
-@test "[T39/G32] no remaining caller references to scripts/g4-section-anchor-refresh.sh in source tree" {
+@test "no remaining caller references to scripts/g4-section-anchor-refresh.sh in source tree" {
   # Tightened pattern (R3 fix tc-F02): see neighbor render-skill.sh test.
   run bash -c "grep -RnE --exclude-dir=build --exclude-dir=reviews --exclude-dir=.git --exclude-dir=fixtures --exclude-dir=tests '(bash[[:space:]]+|\\./)scripts/g4-section-anchor-refresh\\.sh' '$REPO_ROOT' || true"
   [ -z "$output" ]

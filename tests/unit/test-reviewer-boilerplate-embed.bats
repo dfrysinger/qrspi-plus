@@ -597,7 +597,7 @@ extract_h2_section() {
 # reader of the agent prompt sees the delimiter contract inline.
 # =============================================================================
 
-@test "[T32-wrapper] reviewer-protocol SKILL.md ## Untrusted Data Handling section instructs the UNTRUSTED-ARTIFACT delimiter wrapper" {
+@test "reviewer-protocol SKILL.md ## Untrusted Data Handling section instructs the UNTRUSTED-ARTIFACT delimiter wrapper" {
   # Post-migration consolidation: the wrapper rule lives in one place
   # (reviewer-protocol SKILL.md), and reviewer agents load it via
   # skills: [reviewer-protocol]. This assertion locks the contract on the
@@ -608,7 +608,7 @@ extract_h2_section() {
   grep -q "UNTRUSTED-ARTIFACT-END" "$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
 }
 
-@test "[T32-wrapper] reviewer-boilerplate.md preface or Untrusted Data Handling references the delimiter contract by name" {
+@test "reviewer-boilerplate.md preface or Untrusted Data Handling references the delimiter contract by name" {
   # Anchor: the boilerplate file itself must name the delimiter token at
   # least once outside the section heading so a reader scanning the file
   # encounters the contract. Two occurrences expected: once each in the

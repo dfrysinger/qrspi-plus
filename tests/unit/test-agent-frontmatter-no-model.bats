@@ -513,7 +513,7 @@ _markdown_section() {
   ' "$file"
 }
 
-@test "[T10/TE1] config.md model_routing: haiku tier resolves to claude-haiku-4.5 for both hosts" {
+@test "config.md model_routing: haiku tier resolves to claude-haiku-4.5 for both hosts" {
   # Test expectation: docs/qrspi/2026-05-27-v071-hardening/config.md contains
   # `claude-haiku-4.5` as the haiku-tier entry in the model_routing table for
   # both the `claude-code` and `copilot-cli` host columns.
@@ -545,7 +545,7 @@ _markdown_section() {
   }
 }
 
-@test "[T10/TE2] config.md model_routing: sonnet tier resolves to claude-sonnet-4.6 for both hosts" {
+@test "config.md model_routing: sonnet tier resolves to claude-sonnet-4.6 for both hosts" {
   # Test expectation: docs/qrspi/2026-05-27-v071-hardening/config.md contains
   # `claude-sonnet-4.6` as the sonnet-tier entry in the model_routing table
   # for both the `claude-code` and `copilot-cli` host columns.
@@ -577,7 +577,7 @@ _markdown_section() {
   }
 }
 
-@test "[T10/TE3] config.md model_routing: opus tier resolves to claude-opus-4.7-high for both hosts" {
+@test "config.md model_routing: opus tier resolves to claude-opus-4.7-high for both hosts" {
   # Test expectation: docs/qrspi/2026-05-27-v071-hardening/config.md contains
   # `claude-opus-4.7-high` as the opus-tier entry in the model_routing table
   # for both the `claude-code` and `copilot-cli` host columns.
@@ -609,7 +609,7 @@ _markdown_section() {
   }
 }
 
-@test "[T10/TE4] config.md model_routing: inherit tier resolves to claude-sonnet-4.6 for both hosts" {
+@test "config.md model_routing: inherit tier resolves to claude-sonnet-4.6 for both hosts" {
   # Test expectation: docs/qrspi/2026-05-27-v071-hardening/config.md contains
   # `claude-sonnet-4.6` as the inherit-tier entry in the model_routing table
   # for both the `claude-code` and `copilot-cli` host columns. This matches
@@ -643,7 +643,7 @@ _markdown_section() {
   }
 }
 
-@test "[T10/TE5] config.md model_routing: copilot-cli column contains no bare tier short-forms" {
+@test "config.md model_routing: copilot-cli column contains no bare tier short-forms" {
   # Test expectation: no entry in the copilot-cli column of the
   # `model_routing:` table is a bare Claude tier short-form (the strings
   # `haiku`, `sonnet`, or `opus` alone) that would trigger a Copilot CLI
@@ -675,7 +675,7 @@ _markdown_section() {
   fi
 }
 
-@test "[T10/TE6] using-qrspi SKILL.md no longer carries the retired host-column Model Routing section (G22/T16)" {
+@test "using-qrspi SKILL.md no longer carries the retired host-column Model Routing section (G22/T16)" {
   # G22 / T16 migration (design.md CD-1): the retired `#### Model Routing`
   # section documented a two-step host-column indexing flow — `detect_host`
   # output picked a `claude-code` / `copilot-cli` column, then a tier row
@@ -696,7 +696,7 @@ _markdown_section() {
   [ "$c" -eq 0 ]
 }
 
-@test "[T10/TE7] lint helper accepts a synthetic complete model_routing fixture (GREEN path)" {
+@test "lint helper accepts a synthetic complete model_routing fixture (GREEN path)" {
   # Test expectation (TE7 positive): the extended structural lint passes when
   # all required host/tier entries are present. This pins the helper's
   # contract: a well-formed YAML model_routing block with both hosts and
@@ -757,7 +757,7 @@ EOF
   }
 }
 
-@test "[T10/TE7] lint helper rejects fixtures with absent or incomplete model_routing block (RED path)" {
+@test "lint helper rejects fixtures with absent or incomplete model_routing block (RED path)" {
   # Test expectation (TE7 negative): the extended structural lint fails when
   # the model_routing block is absent OR when a required host/tier entry
   # is missing. Three scenarios:

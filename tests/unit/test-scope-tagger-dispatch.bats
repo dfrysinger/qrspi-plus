@@ -503,13 +503,13 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
 # accidental migration of first-party Task-tool dispatch into bash.
 # -----------------------------------------------------------------------------
 
-@test "[T13] implement/SKILL.md per-task fan-out has 'Between rounds — required sequence' checklist" {
+@test "implement/SKILL.md per-task fan-out has 'Between rounds — required sequence' checklist" {
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
   grep -qF 'Between rounds — required sequence' "$impl" \
     || { echo "implement/SKILL.md missing 'Between rounds — required sequence' checklist heading"; return 1; }
 }
 
-@test "[T13] checklist references qrspi-scope-tagger Task subagent dispatch" {
+@test "checklist references qrspi-scope-tagger Task subagent dispatch" {
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
   # Must appear inside the between-rounds checklist block (after the heading,
   # before the next ### heading).
@@ -518,21 +518,21 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "checklist missing qrspi-scope-tagger Task subagent dispatch step"; return 1; }
 }
 
-@test "[T13] checklist references implementer commit_sha extraction from Task return" {
+@test "checklist references implementer commit_sha extraction from Task return" {
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
   awk '/Between rounds — required sequence/{flag=1; print; next} flag && /^### /{exit} flag{print}' "$impl" \
     | grep -qE 'commit_sha.*Task tool return|read.*commit_sha:' \
     || { echo "checklist missing 'read commit_sha: from Task tool return' step"; return 1; }
 }
 
-@test "[T13] checklist references dispatch-agent.sh --implementer-commit invocation" {
+@test "checklist references dispatch-agent.sh --implementer-commit invocation" {
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
   awk '/Between rounds — required sequence/{flag=1; print; next} flag && /^### /{exit} flag{print}' "$impl" \
     | grep -qF 'dispatch-agent.sh --implementer-commit' \
     || { echo "checklist missing 'dispatch-agent.sh --implementer-commit' invocation step"; return 1; }
 }
 
-@test "[T13] checklist enumerates exit-code branches 0/10/11/12" {
+@test "checklist enumerates exit-code branches 0/10/11/12" {
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
   local block
   block="$(awk '/Between rounds — required sequence/{flag=1; print; next} flag && /^### /{exit} flag{print}' "$impl")"
@@ -546,7 +546,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "checklist missing exit-code 12 branch (re-dispatch implementer)"; return 1; }
 }
 
-@test "[T13] per-task review section contains zero 'rev-parse HEAD' main-chat instructions" {
+@test "per-task review section contains zero 'rev-parse HEAD' main-chat instructions" {
   # Per design.md §G9 companion lint: the per-task review section (Per-Task
   # Convergence Narrowing — line range from "### Per-Task Convergence Narrowing"
   # to the next "### " heading) MUST have zero `rev-parse HEAD` matches. Those
@@ -561,7 +561,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   fi
 }
 
-@test "[T13] round-prepare.sh task-branch mode writes round-NN-commit.txt with passed SHA + newline" {
+@test "round-prepare.sh task-branch mode writes round-NN-commit.txt with passed SHA + newline" {
   # End-to-end: stage a tiny git repo, invoke round-prepare.sh in per-task
   # happy-path mode (round 1, base ref pinned), and assert the commit-anchor
   # file contains exactly the passed SHA + LF.
@@ -590,7 +590,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   rm -rf "$tmp"
 }
 
-@test "[T13] round-prepare.sh task-branch mode emits round-NN.diff (G4 inheritance preserved)" {
+@test "round-prepare.sh task-branch mode emits round-NN.diff (G4 inheritance preserved)" {
   local repo="$REPO_ROOT"
   local tmp; tmp="$(mktemp -d)"
   cd "$tmp"
@@ -614,7 +614,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   rm -rf "$tmp"
 }
 
-@test "[T13] round-prepare.sh exits 10 when --task-branch set without --implementer-commit (orchestrator bug)" {
+@test "round-prepare.sh exits 10 when --task-branch set without --implementer-commit (orchestrator bug)" {
   local tmp; tmp="$(mktemp -d)"
   cd "$tmp"
   git init -q
@@ -627,7 +627,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "missing recovery diagnostic: $output"; return 1; }
 }
 
-@test "[T13] round-prepare.sh exits 11 when implementer-commit != worktree HEAD (integrity break)" {
+@test "round-prepare.sh exits 11 when implementer-commit != worktree HEAD (integrity break)" {
   local tmp; tmp="$(mktemp -d)"
   cd "$tmp"
   git init -q
@@ -646,7 +646,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "missing integrity-break diagnostic: $output"; return 1; }
 }
 
-@test "[T13] round-prepare.sh exits 12 round-1 with task-base diagnostic (not 'prior round anchor')" {
+@test "round-prepare.sh exits 12 round-1 with task-base diagnostic (not 'prior round anchor')" {
   local tmp; tmp="$(mktemp -d)"
   cd "$tmp"
   git init -q
@@ -667,7 +667,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   fi
 }
 
-@test "[T13] round-prepare.sh exits 12 later-round when SHA equals prior-round anchor (re-dispatch implementer)" {
+@test "round-prepare.sh exits 12 later-round when SHA equals prior-round anchor (re-dispatch implementer)" {
   local tmp; tmp="$(mktemp -d)"
   cd "$tmp"
   git init -q
@@ -688,7 +688,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "later-round diagnostic missing prior-round-anchor language: $output"; return 1; }
 }
 
-@test "[T13] round-prepare.sh fails loudly when prior-round commit anchor is missing" {
+@test "round-prepare.sh fails loudly when prior-round commit anchor is missing" {
   local tmp; tmp="$(mktemp -d)"
   cd "$tmp"
   git init -q
@@ -710,7 +710,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "diagnostic must name the missing prior-round commit anchor: $output"; return 1; }
 }
 
-@test "[T13] round-prepare.sh fails loudly when prior-round commit anchor is malformed" {
+@test "round-prepare.sh fails loudly when prior-round commit anchor is malformed" {
   local tmp; tmp="$(mktemp -d)"
   cd "$tmp"
   git init -q
@@ -740,7 +740,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "stray current-round anchor task/round-02-commit.txt was written despite malformed-anchor exit $status (anchor write must be deferred until AFTER Step 10 assertions)"; return 1; }
 }
 
-@test "[T13] round-prepare.sh leaves NO stray current-round anchor when prior-round anchor missing (fail-closed)" {
+@test "round-prepare.sh leaves NO stray current-round anchor when prior-round anchor missing (fail-closed)" {
   # Pins the §G9 invariant: a round NN>=2 invocation that exits non-zero due
   # to a MISSING prior-round anchor MUST NOT have already written round-NN-commit.txt
   # to disk. Before Fix A, the anchor was written in Step 1 (HEAD checks) BEFORE
@@ -770,7 +770,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "stray current-round anchor task/round-02-commit.txt was written despite exit $status (Fix A regression — anchor write must be deferred until AFTER Step 10 prior-artifact presence assertions)"; return 1; }
 }
 
-@test "[T13] round-prepare.sh fails loudly on missing scope-set when narrowing-eligible + tagger enabled" {
+@test "round-prepare.sh fails loudly on missing scope-set when narrowing-eligible + tagger enabled" {
   local tmp; tmp="$(mktemp -d)"
   cd "$tmp"
   git init -q
@@ -803,7 +803,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "stray current-round anchor task/round-03-commit.txt was written despite missing-scope-set exit $status (anchor write must be deferred until AFTER Step 10 assertions)"; return 1; }
 }
 
-@test "[T13] round-prepare.sh fails loudly on empty scope-set when narrowing-eligible + tagger enabled" {
+@test "round-prepare.sh fails loudly on empty scope-set when narrowing-eligible + tagger enabled" {
   local tmp; tmp="$(mktemp -d)"
   cd "$tmp"
   git init -q
@@ -839,7 +839,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
     || { echo "stray current-round anchor task/round-03-commit.txt was written despite empty-scope-set exit $status (anchor write must be deferred until AFTER Step 10 assertions)"; return 1; }
 }
 
-@test "[T13] scripts/ contain NO first-party Task-tool subagent dispatch or Task-tool return capture" {
+@test "scripts/ contain NO first-party Task-tool subagent dispatch or Task-tool return capture" {
   # Architectural boundary (design.md §G9 acceptance criterion):
   # bash scripts dispatch third-party CLIs only; first-party Task-tool
   # subagents are dispatched from main chat. This guard catches any
@@ -863,7 +863,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   fi
 }
 
-@test "[T13] round-prepare.sh later-round (round 2) happy path writes round-NN-commit.txt and exits 0 (Finding 1)" {
+@test "round-prepare.sh later-round (round 2) happy path writes round-NN-commit.txt and exits 0 (Finding 1)" {
   # End-to-end happy path for a round NN>=2 invocation: a valid prior-round
   # anchor exists, HEAD advanced past it, Step 10 passes, and the deferred
   # anchor write for the CURRENT round succeeds. Round 1 trivially skips Step
@@ -899,7 +899,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   rm -rf "$tmp"
 }
 
-@test "[T13] round-prepare.sh scope-set gate OFF (round 3, tagger disabled) does NOT fire on missing scope-set (Finding 2a)" {
+@test "round-prepare.sh scope-set gate OFF (round 3, tagger disabled) does NOT fire on missing scope-set (Finding 2a)" {
   # Gate predicate is (NN>=3 AND tagger enabled). With the tagger disabled the
   # missing scope-set must NOT cause an exit 1 — the run should reach exit 0.
   local tmp; tmp="$(mktemp -d)"
@@ -929,7 +929,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   fi
 }
 
-@test "[T13] round-prepare.sh scope-set gate (round 2 boundary, tagger enabled) does NOT fire below NN>=3 floor (Finding 2b)" {
+@test "round-prepare.sh scope-set gate (round 2 boundary, tagger enabled) does NOT fire below NN>=3 floor (Finding 2b)" {
   # The scope-set gate floor is NN>=3. On round 2 with the tagger enabled and a
   # missing scope-set, the gate must NOT fire — the run should reach exit 0.
   local tmp; tmp="$(mktemp -d)"
@@ -956,7 +956,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   fi
 }
 
-@test "[T13] round-prepare.sh scope-set gate PASS (round 3, enabled, present non-empty scope-set) exits 0 (Finding 2c)" {
+@test "round-prepare.sh scope-set gate PASS (round 3, enabled, present non-empty scope-set) exits 0 (Finding 2c)" {
   # The should-fire corner is already covered (missing/empty). This is the
   # gate-pass side: a present non-empty prior scope-set passes the gate and the
   # run reaches exit 0.
@@ -989,7 +989,7 @@ SCOPED_SKILLS_LIST=(goals questions research design phasing structure paralleliz
   rm -rf "$tmp"
 }
 
-@test "[T13] round-prepare.sh treats a valid 40-hex SHA WITHOUT trailing newline as malformed (Finding 4)" {
+@test "round-prepare.sh treats a valid 40-hex SHA WITHOUT trailing newline as malformed (Finding 4)" {
   # The existing malformed fixture ('not-a-sha\n') fails charset AND length, so
   # a regression loosening only the trailing-\n requirement would still be
   # caught by neither. This fixture is a genuine 40-char lowercase-hex SHA with

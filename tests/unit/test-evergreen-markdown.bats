@@ -142,7 +142,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Fixture: a markdown file with no forbidden tokens passes.
 # ---------------------------------------------------------------------------
-@test "[T17] clean markdown file (no forbidden tokens) passes" {
+@test "clean markdown file (no forbidden tokens) passes" {
   local fixture
   fixture="$(mktemp /tmp/evergreen-clean-XXXXXX.md)"
   printf '# My Feature\n\nThis documents the contract surface. No version tokens here.\n' > "$fixture"
@@ -155,7 +155,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Fixture: a markdown file with a release-version token fails with diagnostic.
 # ---------------------------------------------------------------------------
-@test "[T17] markdown file with release-version token (in v0.6) outside carve-out fails" {
+@test "markdown file with release-version token (in v0.6) outside carve-out fails" {
   local fixture
   fixture="$(mktemp /tmp/evergreen-hit-XXXXXX.md)"
   printf '# Feature\n\nThis was introduced in v0.6 as the canonical approach.\n' > "$fixture"
@@ -173,7 +173,7 @@ setup_file() {
 # directly between the keyword and `#`, so any "issue" infix slipped past.
 # This fixture pins the broadened detection.
 # ---------------------------------------------------------------------------
-@test "[T17] pr-issue-ref with 'issue' infix (see issue #NNN) is caught" {
+@test "pr-issue-ref with 'issue' infix (see issue #NNN) is caught" {
   local fixture
   fixture="$(mktemp /tmp/evergreen-issue-infix-XXXXXX.md)"
   printf '# Feature\n\nThe rubric was tuned later — see issue #225 for context.\n' > "$fixture"
@@ -183,7 +183,7 @@ setup_file() {
   printf '%s\n' "$output" | grep -q "pr-issue-ref"
 }
 
-@test "[T17] pr-issue-ref bare prefix (issue #NNN inline) is caught" {
+@test "pr-issue-ref bare prefix (issue #NNN inline) is caught" {
   local fixture
   fixture="$(mktemp /tmp/evergreen-issue-bare-XXXXXX.md)"
   printf '# Feature\n\nThe threshold split (rationale captured in issue #225) ships now.\n' > "$fixture"
@@ -193,7 +193,7 @@ setup_file() {
   printf '%s\n' "$output" | grep -q "pr-issue-ref"
 }
 
-@test "[T17] pr-issue-ref with PR infix (see PR #NNN) is caught" {
+@test "pr-issue-ref with PR infix (see PR #NNN) is caught" {
   local fixture
   fixture="$(mktemp /tmp/evergreen-pr-infix-XXXXXX.md)"
   printf '# Feature\n\nMerged via PR #234.\n' > "$fixture"
@@ -206,7 +206,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Fixture: a line with <!-- evergreen-exempt --> is skipped even with a hit.
 # ---------------------------------------------------------------------------
-@test "[T17] line with evergreen-exempt inline comment is skipped" {
+@test "line with evergreen-exempt inline comment is skipped" {
   local fixture
   fixture="$(mktemp /tmp/evergreen-exempt-XXXXXX.md)"
   printf '# Feature\n\nReleased in v0.7 <!-- evergreen-exempt -->\n' > "$fixture"
@@ -219,12 +219,12 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Path carve-out: docs/qrspi/YYYY-MM-DD-*/** is exempt.
 # ---------------------------------------------------------------------------
-@test "[T17] file under docs/qrspi/YYYY-MM-DD-* carve-out path is exempt" {
+@test "file under docs/qrspi/YYYY-MM-DD-* carve-out path is exempt" {
   run _is_path_exempt "docs/qrspi/2026-05-17-v07-release/tasks/task-01.md"
   [ "$status" -eq 0 ]
 }
 
-@test "[T17] file outside carve-out path is not exempt" {
+@test "file outside carve-out path is not exempt" {
   run _is_path_exempt "skills/implement/SKILL.md"
   [ "$status" -ne 0 ]
 }
@@ -232,7 +232,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Path carve-out: CHANGELOG.md is exempt.
 # ---------------------------------------------------------------------------
-@test "[T17] CHANGELOG.md is exempt from path-shaped carve-out check" {
+@test "CHANGELOG.md is exempt from path-shaped carve-out check" {
   run _is_path_exempt "CHANGELOG.md"
   [ "$status" -eq 0 ]
 }
@@ -240,7 +240,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Path carve-out: tests/fixtures/** is exempt.
 # ---------------------------------------------------------------------------
-@test "[T17] file under tests/fixtures/ is exempt" {
+@test "file under tests/fixtures/ is exempt" {
   run _is_path_exempt "tests/fixtures/some-fixture.md"
   [ "$status" -eq 0 ]
 }
@@ -249,7 +249,7 @@ setup_file() {
 # Non-markdown file: a .sh file with release-version token has no effect
 # (the scan only checks .md files — tested via the repo-wide scan logic).
 # ---------------------------------------------------------------------------
-@test "[T17] non-markdown file path is not exempt (but scan skips non-.md)" {
+@test "non-markdown file path is not exempt (but scan skips non-.md)" {
   # The repo-wide scan filters for *.md; a .sh file would not be fed to
   # _check_file_for_evergreen. Path-exemption logic is only for .md paths.
   run _is_path_exempt "scripts/my-script.sh"
@@ -261,7 +261,7 @@ setup_file() {
 # Repo-wide scan: iterate every git-tracked *.md file and apply the hygiene
 # contract. Failures are accumulated; the test reports all hits at once.
 # ---------------------------------------------------------------------------
-@test "[T17] repo-wide evergreen-markdown scan — no hits outside carve-outs" {
+@test "repo-wide evergreen-markdown scan — no hits outside carve-outs" {
   require_repo_root
   local all_hits=""
   local tmp_list
@@ -301,7 +301,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Helper loads correctly via the shared helper convention.
 # ---------------------------------------------------------------------------
-@test "[T17] shared helper loads and require_repo_root resolves REPO_ROOT" {
+@test "shared helper loads and require_repo_root resolves REPO_ROOT" {
   require_repo_root
   [ -n "$REPO_ROOT" ]
   [ -d "$REPO_ROOT" ]

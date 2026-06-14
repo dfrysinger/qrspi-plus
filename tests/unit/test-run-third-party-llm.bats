@@ -1089,7 +1089,7 @@ _extract_ctrl_check_fn() {
 # (literal, file) pair regresses if the retirement is partial.
 # ---------------------------------------------------------------------------
 
-@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no cache_control literal (absence assertion)" {
+@test "skills/using-qrspi/SKILL.md contains no cache_control literal (absence assertion)" {
   # Test expectation (TE6): A new automated assertion in
   # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
   # for cache_control [...] and fails if the literal string is found.
@@ -1099,7 +1099,7 @@ _extract_ctrl_check_fn() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no supports_prompt_cache literal (absence assertion)" {
+@test "skills/using-qrspi/SKILL.md contains no supports_prompt_cache literal (absence assertion)" {
   # Test expectation (TE6): A new automated assertion in
   # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
   # for [...] supports_prompt_cache [...] and fails if the literal string is found.
@@ -1109,7 +1109,7 @@ _extract_ctrl_check_fn() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE6] skills/using-qrspi/SKILL.md contains no emit_cache_control_markers literal (absence assertion)" {
+@test "skills/using-qrspi/SKILL.md contains no emit_cache_control_markers literal (absence assertion)" {
   # Test expectation (TE6): A new automated assertion in
   # tests/unit/test-run-third-party-llm.bats greps skills/using-qrspi/SKILL.md
   # for [...] emit_cache_control_markers and fails if the literal string is found.
@@ -1119,7 +1119,7 @@ _extract_ctrl_check_fn() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE7] scripts/dispatch-companion.sh contains no cache_control literal (absence assertion)" {
+@test "scripts/dispatch-companion.sh contains no cache_control literal (absence assertion)" {
   # Test expectation (TE7): a grep-based absence assertion in
   # tests/unit/test-run-third-party-llm.bats verifies that the literal string
   # cache_control [...] is absent from scripts/dispatch-companion.sh.
@@ -1128,7 +1128,7 @@ _extract_ctrl_check_fn() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE7] scripts/dispatch-companion.sh contains no supports_prompt_cache literal (absence assertion)" {
+@test "scripts/dispatch-companion.sh contains no supports_prompt_cache literal (absence assertion)" {
   # Test expectation (TE7): a grep-based absence assertion in
   # tests/unit/test-run-third-party-llm.bats verifies that the literal string
   # [...] supports_prompt_cache [...] is absent from scripts/dispatch-companion.sh.
@@ -1137,7 +1137,7 @@ _extract_ctrl_check_fn() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T8 / TE7] scripts/dispatch-companion.sh contains no emit_cache_control_markers literal (absence assertion)" {
+@test "scripts/dispatch-companion.sh contains no emit_cache_control_markers literal (absence assertion)" {
   # Test expectation (TE7): a grep-based absence assertion in
   # tests/unit/test-run-third-party-llm.bats verifies that the literal string
   # [...] emit_cache_control_markers is absent from scripts/dispatch-companion.sh.

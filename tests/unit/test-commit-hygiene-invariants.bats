@@ -65,27 +65,27 @@ teardown() {
 # Implement SKILL documents the worktree-setup append (full pipeline + quick fix)
 # =============================================================================
 
-@test "[T39-hygiene] Implement SKILL appends .qrspi-commit-msg.txt to .git/info/exclude in full-pipeline worktree setup" {
+@test "Implement SKILL appends .qrspi-commit-msg.txt to .git/info/exclude in full-pipeline worktree setup" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Process Steps" \
     "\\.git/info/exclude"
 }
 
-@test "[T39-hygiene] Implement SKILL append names the .qrspi-commit-msg.txt entry" {
+@test "Implement SKILL append names the .qrspi-commit-msg.txt entry" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Process Steps" \
     "\\.qrspi-commit-msg\\.txt"
 }
 
-@test "[T39-hygiene] Implement SKILL append fires immediately after git worktree add and before implementer dispatch" {
+@test "Implement SKILL append fires immediately after git worktree add and before implementer dispatch" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Process Steps" \
     "after .git worktree add. succeeds and before dispatching the implementer"
 }
 
-@test "[T39-hygiene] Implement SKILL append references T38 worktree-local-exclude invariant" {
+@test "Implement SKILL append references T38 worktree-local-exclude invariant" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Process Steps" \
     "worktree-local-exclude invariant"
 }
 
-@test "[T39-hygiene] Implementer-protocol Commit hygiene invariants section exists (T38)" {
+@test "Implementer-protocol Commit hygiene invariants section exists (T38)" {
   extract_and_grep "$IMPLEMENTER_PROTOCOL" H2 "Commit hygiene invariants" \
     "(staging-before-scratch|cleanup-after-commit|worktree-local-exclude)"
 }
@@ -95,7 +95,7 @@ teardown() {
 #                immediately after worktree setup.
 # =============================================================================
 
-@test "[T39-hygiene] worktree-local-exclude invariant holds immediately after worktree setup" {
+@test "worktree-local-exclude invariant holds immediately after worktree setup" {
   grep -E "^\\.qrspi-commit-msg\\.txt$" "$FIXTURE_DIR/.git/info/exclude"
 }
 
@@ -104,7 +104,7 @@ teardown() {
 # Asserts invariants 1 (staging-before-scratch) and 2 (cleanup-after-commit).
 # =============================================================================
 
-@test "[T39-hygiene] Implementer commit cycle: scratch file absent from committed tree" {
+@test "Implementer commit cycle: scratch file absent from committed tree" {
   # Step 1: implementer makes a code change.
   printf 'new line\n' > "$FIXTURE_DIR/work.txt"
   # Step 2: staging-before-scratch — git add runs BEFORE the scratch file
@@ -134,7 +134,7 @@ teardown() {
 # File-based commit-message convention preserved (no heredoc).
 # =============================================================================
 
-@test "[T39-hygiene] File-based commit-message convention used (no heredoc)" {
+@test "File-based commit-message convention used (no heredoc)" {
   # Re-exercise the cycle and assert the commit message body matches the
   # scratch file content (proving `-F <scratch>` was used, not heredoc).
   printf 'second\n' > "$FIXTURE_DIR/work2.txt"
@@ -159,7 +159,7 @@ teardown() {
 # write and removal (no untracked entries reported).
 # =============================================================================
 
-@test "[T39-hygiene] git status reports clean when scratch file exists with exclude in effect" {
+@test "git status reports clean when scratch file exists with exclude in effect" {
   printf 'third\n' > "$FIXTURE_DIR/work3.txt"
   git -C "$FIXTURE_DIR" add work3.txt
   printf 'feat: third\n' > "$FIXTURE_DIR/.qrspi-commit-msg.txt"
@@ -175,7 +175,7 @@ teardown() {
 # worktree-local exclude is artificially emptied between cycles.
 # =============================================================================
 
-@test "[T39-hygiene] cleanup-after-commit invariant holds standalone when exclude is emptied" {
+@test "cleanup-after-commit invariant holds standalone when exclude is emptied" {
   # First cycle (exclude in effect).
   printf 'fourth\n' > "$FIXTURE_DIR/work4.txt"
   git -C "$FIXTURE_DIR" add work4.txt

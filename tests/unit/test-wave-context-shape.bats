@@ -33,17 +33,17 @@ setup_file() {
 # Per-task companion entry shape (task ID, name, allowed_files, findings)
 # =============================================================================
 
-@test "[T30-wave-ctx] wave_context entries carry task ID and task name" {
+@test "wave_context entries carry task ID and task name" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "Task ID, task name"
 }
 
-@test "[T30-wave-ctx] wave_context entries carry allowed_files glob" {
+@test "wave_context entries carry allowed_files glob" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "allowed_files"
 }
 
-@test "[T30-wave-ctx] wave_context entries carry per-finding category/severity/summary" {
+@test "wave_context entries carry per-finding category/severity/summary" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "(change_type|category)"
 }
@@ -52,12 +52,12 @@ setup_file() {
 # Canonical untrusted-artifact sentinel wrapping
 # =============================================================================
 
-@test "[T30-wave-ctx] wave_context body wrapped in canonical START sentinel" {
+@test "wave_context body wrapped in canonical START sentinel" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "<<<UNTRUSTED-ARTIFACT-START id=wave_context>>>"
 }
 
-@test "[T30-wave-ctx] wave_context body wrapped in canonical END sentinel" {
+@test "wave_context body wrapped in canonical END sentinel" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "<<<UNTRUSTED-ARTIFACT-END id=wave_context>>>"
 }
@@ -66,17 +66,17 @@ setup_file() {
 # Sentinel injection guard (sanitize-or-exclude on collision)
 # =============================================================================
 
-@test "[T30-wave-ctx] Sentinel injection guard checks sibling finding bodies" {
+@test "Sentinel injection guard checks sibling finding bodies" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "[Ss]entinel injection guard"
 }
 
-@test "[T30-wave-ctx] Sentinel-collision path documents strip OR exclude action" {
+@test "Sentinel-collision path documents strip OR exclude action" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "[Ss]trip"
 }
 
-@test "[T30-wave-ctx] Sentinel-collision path documents exclude action" {
+@test "Sentinel-collision path documents exclude action" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "[Ee]xclude"
 }
@@ -85,22 +85,22 @@ setup_file() {
 # REDACTION-NOTICE entry when sibling findings were stripped or excluded
 # =============================================================================
 
-@test "[T30-wave-ctx] Redaction path emits REDACTION-NOTICE entry on companion body" {
+@test "Redaction path emits REDACTION-NOTICE entry on companion body" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "REDACTION-NOTICE"
 }
 
-@test "[T30-wave-ctx] REDACTION-NOTICE names source task ID" {
+@test "REDACTION-NOTICE names source task ID" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "source task ID"
 }
 
-@test "[T30-wave-ctx] REDACTION-NOTICE names redaction action (strip or exclude)" {
+@test "REDACTION-NOTICE names redaction action (strip or exclude)" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "redaction action"
 }
 
-@test "[T30-wave-ctx] REDACTION-NOTICE names count of redacted findings" {
+@test "REDACTION-NOTICE names count of redacted findings" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "count of redacted findings"
 }
@@ -109,7 +109,7 @@ setup_file() {
 # Absence-of-companion contract (first-wave / single-UI-task)
 # =============================================================================
 
-@test "[T30-wave-ctx] First-wave or single-UI-task dispatches omit wave_context legally" {
+@test "First-wave or single-UI-task dispatches omit wave_context legally" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "absence is legal"
 }
@@ -118,12 +118,12 @@ setup_file() {
 # wave_number: companion parameter — load-bearing on every dispatch
 # =============================================================================
 
-@test "[T30-wave-ctx] wave_number companion parameter required on every dispatch" {
+@test "wave_number companion parameter required on every dispatch" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "wave_number:"
 }
 
-@test "[T30-wave-ctx] wave_number>1 + multi-UI plan treats missing wave_context as load-bearing diagnostic" {
+@test "wave_number>1 + multi-UI plan treats missing wave_context as load-bearing diagnostic" {
   extract_and_grep "$IMPLEMENT_SKILL" H2 "Dispatch parameters" \
     "load-bearing diagnostic"
 }

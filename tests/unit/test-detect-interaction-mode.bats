@@ -55,7 +55,7 @@ setup_file() {
 # COPILOT_CLI=1 branch
 # ===========================================================================
 
-@test "[T24] COPILOT_CLI=1 branch emits PLATFORM=copilot-cli" {
+@test "COPILOT_CLI=1 branch emits PLATFORM=copilot-cli" {
   run bash -c "
     unset CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     export COPILOT_CLI=1
@@ -65,7 +65,7 @@ setup_file() {
   echo "$output" | grep -q '^PLATFORM=copilot-cli$'
 }
 
-@test "[T24] COPILOT_CLI=1 branch emits DETECTION_TYPE=llm-context" {
+@test "COPILOT_CLI=1 branch emits DETECTION_TYPE=llm-context" {
   run bash -c "
     unset CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     export COPILOT_CLI=1
@@ -75,7 +75,7 @@ setup_file() {
   echo "$output" | grep -q '^DETECTION_TYPE=llm-context$'
 }
 
-@test "[T24] COPILOT_CLI=1 branch emits autopilot context-inspection INSTRUCTION" {
+@test "COPILOT_CLI=1 branch emits autopilot context-inspection INSTRUCTION" {
   # The INSTRUCTION must tell the orchestrator to inspect for the
   # <autopilot_mode> block and the sentinel sentence.
   run bash -c "
@@ -94,7 +94,7 @@ setup_file() {
 # Claude Code branch
 # ===========================================================================
 
-@test "[T24] Claude Code branch emits PLATFORM=claude-code" {
+@test "Claude Code branch emits PLATFORM=claude-code" {
   run bash -c "
     unset COPILOT_CLI QRSPI_INTERACTION_MODE
     export CLAUDE_PROJECT_DIR='/some/project'
@@ -104,7 +104,7 @@ setup_file() {
   echo "$output" | grep -q '^PLATFORM=claude-code$'
 }
 
-@test "[T24] Claude Code branch emits DETECTION_TYPE=llm-context" {
+@test "Claude Code branch emits DETECTION_TYPE=llm-context" {
   run bash -c "
     unset COPILOT_CLI QRSPI_INTERACTION_MODE
     export CLAUDE_PROJECT_DIR='/some/project'
@@ -114,7 +114,7 @@ setup_file() {
   echo "$output" | grep -q '^DETECTION_TYPE=llm-context$'
 }
 
-@test "[T24] Claude Code branch emits auto-mode context-inspection INSTRUCTION" {
+@test "Claude Code branch emits auto-mode context-inspection INSTRUCTION" {
   # The INSTRUCTION must tell the orchestrator to inspect for ## Auto Mode Active.
   run bash -c "
     unset COPILOT_CLI QRSPI_INTERACTION_MODE
@@ -129,7 +129,7 @@ setup_file() {
 # Unknown host / no override
 # ===========================================================================
 
-@test "[T24] Unknown host (no COPILOT_CLI, no CLAUDE_PROJECT_DIR) emits PLATFORM=unknown" {
+@test "Unknown host (no COPILOT_CLI, no CLAUDE_PROJECT_DIR) emits PLATFORM=unknown" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     bash \"$SCRIPT\"
@@ -138,7 +138,7 @@ setup_file() {
   echo "$output" | grep -q '^PLATFORM=unknown$'
 }
 
-@test "[T24] Unknown host emits DETECTION_TYPE=user-override-only" {
+@test "Unknown host emits DETECTION_TYPE=user-override-only" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     bash \"$SCRIPT\"
@@ -147,7 +147,7 @@ setup_file() {
   echo "$output" | grep -q '^DETECTION_TYPE=user-override-only$'
 }
 
-@test "[T24] Unknown host emits VERDICT=interactive (safe default)" {
+@test "Unknown host emits VERDICT=interactive (safe default)" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     bash \"$SCRIPT\"
@@ -156,7 +156,7 @@ setup_file() {
   echo "$output" | grep -q '^VERDICT=interactive$'
 }
 
-@test "[T24] Unknown host emits EVIDENCE naming the safe default" {
+@test "Unknown host emits EVIDENCE naming the safe default" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     bash \"$SCRIPT\"
@@ -170,7 +170,7 @@ setup_file() {
 # QRSPI_INTERACTION_MODE override
 # ===========================================================================
 
-@test "[T24] QRSPI_INTERACTION_MODE=auto override: VERDICT=auto emitted" {
+@test "QRSPI_INTERACTION_MODE=auto override: VERDICT=auto emitted" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=auto
@@ -180,7 +180,7 @@ setup_file() {
   echo "$output" | grep -q '^VERDICT=auto$'
 }
 
-@test "[T24] QRSPI_INTERACTION_MODE=auto override: EVIDENCE names the override value" {
+@test "QRSPI_INTERACTION_MODE=auto override: EVIDENCE names the override value" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=auto
@@ -190,7 +190,7 @@ setup_file() {
   echo "$output" | grep -q '^EVIDENCE=.*QRSPI_INTERACTION_MODE.*auto'
 }
 
-@test "[T24] QRSPI_INTERACTION_MODE=interactive override: VERDICT=interactive emitted" {
+@test "QRSPI_INTERACTION_MODE=interactive override: VERDICT=interactive emitted" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=interactive
@@ -200,7 +200,7 @@ setup_file() {
   echo "$output" | grep -q '^VERDICT=interactive$'
 }
 
-@test "[T24] QRSPI_INTERACTION_MODE=interactive override: EVIDENCE names the override value" {
+@test "QRSPI_INTERACTION_MODE=interactive override: EVIDENCE names the override value" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=interactive
@@ -211,7 +211,7 @@ setup_file() {
 }
 
 # override path must emit DETECTION_TYPE=user-override-only
-@test "[T24] QRSPI_INTERACTION_MODE=auto override (unknown host): emits DETECTION_TYPE=user-override-only" {
+@test "QRSPI_INTERACTION_MODE=auto override (unknown host): emits DETECTION_TYPE=user-override-only" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=auto
@@ -221,7 +221,7 @@ setup_file() {
   echo "$output" | grep -q '^DETECTION_TYPE=user-override-only$'
 }
 
-@test "[T24] QRSPI_INTERACTION_MODE=interactive override (unknown host): emits DETECTION_TYPE=user-override-only" {
+@test "QRSPI_INTERACTION_MODE=interactive override (unknown host): emits DETECTION_TYPE=user-override-only" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=interactive
@@ -232,7 +232,7 @@ setup_file() {
 }
 
 # override path must emit PLATFORM line with expected host token
-@test "[T24] QRSPI_INTERACTION_MODE=auto override (Copilot CLI host): emits PLATFORM=copilot-cli" {
+@test "QRSPI_INTERACTION_MODE=auto override (Copilot CLI host): emits PLATFORM=copilot-cli" {
   run bash -c "
     export COPILOT_CLI=1
     unset CLAUDE_PROJECT_DIR
@@ -243,7 +243,7 @@ setup_file() {
   echo "$output" | grep -q '^PLATFORM=copilot-cli$'
 }
 
-@test "[T24] QRSPI_INTERACTION_MODE=auto override (unknown host): emits PLATFORM=unknown" {
+@test "QRSPI_INTERACTION_MODE=auto override (unknown host): emits PLATFORM=unknown" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=auto
@@ -253,7 +253,7 @@ setup_file() {
   echo "$output" | grep -q '^PLATFORM=unknown$'
 }
 
-@test "[T24] QRSPI_INTERACTION_MODE=auto override (Claude Code host): emits PLATFORM=claude-code" {
+@test "QRSPI_INTERACTION_MODE=auto override (Claude Code host): emits PLATFORM=claude-code" {
   run bash -c "
     unset COPILOT_CLI
     export CLAUDE_PROJECT_DIR='/some/project'
@@ -269,7 +269,7 @@ setup_file() {
 }
 
 # output-shape test covering the override branch
-@test "[T24] Output-shape: every stdout line from override branch (unknown host) is KEY=VALUE" {
+@test "Output-shape: every stdout line from override branch (unknown host) is KEY=VALUE" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=auto
@@ -281,7 +281,7 @@ setup_file() {
   done <<< "$output"
 }
 
-@test "[T24] Output-shape: DETECTION_TYPE from override branch is in allowed enum" {
+@test "Output-shape: DETECTION_TYPE from override branch is in allowed enum" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=auto
@@ -294,7 +294,7 @@ setup_file() {
 }
 
 # Override must win even on a recognized host (COPILOT_CLI=1)
-@test "[T24] QRSPI_INTERACTION_MODE=auto override wins even on COPILOT_CLI=1 host" {
+@test "QRSPI_INTERACTION_MODE=auto override wins even on COPILOT_CLI=1 host" {
   run bash -c "
     export COPILOT_CLI=1
     export QRSPI_INTERACTION_MODE=auto
@@ -345,7 +345,7 @@ setup_file() {
 # Failure paths
 # ===========================================================================
 
-@test "[T24] Invalid QRSPI_INTERACTION_MODE exits non-zero" {
+@test "Invalid QRSPI_INTERACTION_MODE exits non-zero" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=yolo
@@ -354,7 +354,7 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T24] Invalid QRSPI_INTERACTION_MODE emits diagnostics naming allowed values" {
+@test "Invalid QRSPI_INTERACTION_MODE emits diagnostics naming allowed values" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR
     export QRSPI_INTERACTION_MODE=yolo
@@ -366,7 +366,7 @@ setup_file() {
   echo "$output" | grep -qi 'interactive'
 }
 
-@test "[T24] Positional argument supplied: exits non-zero" {
+@test "Positional argument supplied: exits non-zero" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     bash \"$SCRIPT\" somearg
@@ -374,7 +374,7 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T24] Positional argument supplied: emits usage diagnostics" {
+@test "Positional argument supplied: emits usage diagnostics" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     bash \"$SCRIPT\" somearg 2>&1
@@ -388,7 +388,7 @@ setup_file() {
 # stdout/stderr-only — no files created
 # ===========================================================================
 
-@test "[T24] Copilot CLI branch creates no .interaction-mode-audit.json" {
+@test "Copilot CLI branch creates no .interaction-mode-audit.json" {
   local tmpdir="$BATS_TEST_TMPDIR"
   run bash -c "
     export COPILOT_CLI=1
@@ -404,7 +404,7 @@ setup_file() {
   [ "$n_files" -eq 0 ]
 }
 
-@test "[T24] Unknown host branch creates no files at all" {
+@test "Unknown host branch creates no files at all" {
   local tmpdir="$BATS_TEST_TMPDIR"
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
@@ -421,28 +421,28 @@ setup_file() {
 # Script header content
 # ===========================================================================
 
-@test "[T24] Header: locked platform directory table present" {
+@test "Header: locked platform directory table present" {
   # The header must contain the platform discriminator table per design.md I.7
   run grep -c 'Platform discriminator' "$SCRIPT"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
 }
 
-@test "[T24] Header: override chain documented" {
+@test "Header: override chain documented" {
   # The header must contain the OVERRIDE CHAIN section anchor — unique to the header
   run grep -c 'OVERRIDE CHAIN' "$SCRIPT"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
 }
 
-@test "[T24] Header: encapsulation rule present" {
+@test "Header: encapsulation rule present" {
   # The header must state the encapsulation rule per design.md I.7 L679
   run grep -c 'Encapsulation rule' "$SCRIPT"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
 }
 
-@test "[T24] Header: implementation-start verification citation block present" {
+@test "Header: implementation-start verification citation block present" {
   # The header must contain the verification citation block per design.md I.7
   # citing: host CLI version, observation method, observation date
   run grep -c 'Implementation-start verification\|verification citation\|observation method' "$SCRIPT"
@@ -450,7 +450,7 @@ setup_file() {
   [ "$output" -ge 1 ]
 }
 
-@test "[T24] Header: COPILOT_CLI_BINARY_VERSION or host version documented in citation" {
+@test "Header: COPILOT_CLI_BINARY_VERSION or host version documented in citation" {
   # The citation block must name the verified CLI version (Iron Law)
   run grep -cE 'v1\.0\.57|COPILOT_CLI_BINARY_VERSION|1\.0\.57-1' "$SCRIPT"
   [ "$status" -eq 0 ]
@@ -461,7 +461,7 @@ setup_file() {
 # Grep regression: host-specific literals only in allowed files
 # ===========================================================================
 
-@test "[T24] Grep regression: <autopilot_mode> literal absent from skills/ dir" {
+@test "Grep regression: <autopilot_mode> literal absent from skills/ dir" {
   # autopilot_mode is a Copilot-CLI-specific signal injected by the CLI at runtime.
   # It must NOT appear in any skills/ file — only in scripts/detect-interaction-mode.sh
   # and its test fixture.
@@ -471,19 +471,19 @@ setup_file() {
   [ "$status" -eq 1 ]
 }
 
-@test "[T24] Grep regression: <autopilot_mode> literal absent from agents/ dir" {
+@test "Grep regression: <autopilot_mode> literal absent from agents/ dir" {
   [ -d "$REPO_ROOT/agents" ]
   run grep -rl 'autopilot_mode' "$REPO_ROOT/agents"
   [ "$status" -eq 1 ]
 }
 
-@test "[T24] Grep regression: 'Autopilot mode is currently active' sentence absent from skills/" {
+@test "Grep regression: 'Autopilot mode is currently active' sentence absent from skills/" {
   [ -d "$REPO_ROOT/skills" ]
   run grep -rl 'Autopilot mode is currently active' "$REPO_ROOT/skills"
   [ "$status" -eq 1 ]
 }
 
-@test "[T24] Grep regression: 'Autopilot mode is currently active' sentence absent from agents/" {
+@test "Grep regression: 'Autopilot mode is currently active' sentence absent from agents/" {
   [ -d "$REPO_ROOT/agents" ]
   run grep -rl 'Autopilot mode is currently active' "$REPO_ROOT/agents"
   [ "$status" -eq 1 ]
@@ -493,7 +493,7 @@ setup_file() {
 # Output-shape: every stdout line is KEY=VALUE; DETECTION_TYPE in enum
 # ===========================================================================
 
-@test "[T24] Output-shape: every stdout line from COPILOT_CLI=1 branch is KEY=VALUE" {
+@test "Output-shape: every stdout line from COPILOT_CLI=1 branch is KEY=VALUE" {
   run bash -c "
     unset CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     export COPILOT_CLI=1
@@ -506,7 +506,7 @@ setup_file() {
   done <<< "$output"
 }
 
-@test "[T24] Output-shape: every stdout line from unknown branch is KEY=VALUE" {
+@test "Output-shape: every stdout line from unknown branch is KEY=VALUE" {
   run bash -c "
     unset COPILOT_CLI CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     bash \"$SCRIPT\"
@@ -517,7 +517,7 @@ setup_file() {
   done <<< "$output"
 }
 
-@test "[T24] Output-shape: DETECTION_TYPE value is in allowed enum (llm-context or user-override-only)" {
+@test "Output-shape: DETECTION_TYPE value is in allowed enum (llm-context or user-override-only)" {
   # Test both recognized branches; both must emit a valid DETECTION_TYPE
   # Copilot CLI → llm-context
   run bash -c "
@@ -540,7 +540,7 @@ setup_file() {
   [[ "$dt" == "shell-verdict" || "$dt" == "llm-context" || "$dt" == "user-override-only" ]]
 }
 
-@test "[T24] Output-shape: no placeholder values in stdout (no bare <name> sentinel or TODO tokens)" {
+@test "Output-shape: no placeholder values in stdout (no bare <name> sentinel or TODO tokens)" {
   run bash -c "
     unset CLAUDE_PROJECT_DIR QRSPI_INTERACTION_MODE
     export COPILOT_CLI=1

@@ -22,7 +22,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Parse: ci.yml must parse as valid YAML (yq exits 0 on valid YAML)
 # ---------------------------------------------------------------------------
-@test "[T19-shape] ci.yml parses as valid YAML via yq" {
+@test "ci.yml parses as valid YAML via yq" {
   require_repo_root
   [ -f "$CI_YML" ]
   run yq '.' "$CI_YML"
@@ -32,7 +32,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Job count: exactly two jobs (lint and bash32)
 # ---------------------------------------------------------------------------
-@test "[T19-shape] ci.yml declares exactly two jobs" {
+@test "ci.yml declares exactly two jobs" {
   require_repo_root
   [ -f "$CI_YML" ]
   run yq '.jobs | keys | length' "$CI_YML"
@@ -40,7 +40,7 @@ setup_file() {
   [ "$output" = "2" ]
 }
 
-@test "[T19-shape] ci.yml has a job named 'lint'" {
+@test "ci.yml has a job named 'lint'" {
   require_repo_root
   [ -f "$CI_YML" ]
   run yq '.jobs.lint | tag' "$CI_YML"
@@ -48,7 +48,7 @@ setup_file() {
   [ "$output" != "null" ]
 }
 
-@test "[T19-shape] ci.yml has a job named 'bash32'" {
+@test "ci.yml has a job named 'bash32'" {
   require_repo_root
   [ -f "$CI_YML" ]
   run yq '.jobs.bash32 | tag' "$CI_YML"
@@ -59,7 +59,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Both jobs run on ubuntu-latest
 # ---------------------------------------------------------------------------
-@test "[T19-shape] lint job runs on ubuntu-latest" {
+@test "lint job runs on ubuntu-latest" {
   require_repo_root
   [ -f "$CI_YML" ]
   run yq '.jobs.lint["runs-on"]' "$CI_YML"
@@ -67,7 +67,7 @@ setup_file() {
   [ "$output" = "ubuntu-latest" ]
 }
 
-@test "[T19-shape] bash32 job runs on ubuntu-latest" {
+@test "bash32 job runs on ubuntu-latest" {
   require_repo_root
   [ -f "$CI_YML" ]
   run yq '.jobs.bash32["runs-on"]' "$CI_YML"
@@ -78,7 +78,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # lint job: carries shellcheck step and Option B ban-list step
 # ---------------------------------------------------------------------------
-@test "[T19-shape] lint job has a shellcheck step" {
+@test "lint job has a shellcheck step" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -c "shellcheck" "$CI_YML"
@@ -86,7 +86,7 @@ setup_file() {
   [ "$output" -ge 1 ]
 }
 
-@test "[T19-shape] lint job has the Option B ban-list grep step" {
+@test "lint job has the Option B ban-list grep step" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -c "Option B ban-list" "$CI_YML"
@@ -97,7 +97,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # bash32 job: launches bash:3.2 Docker image pinned by sha256 digest
 # ---------------------------------------------------------------------------
-@test "[T19-shape] bash32 job container image is bash:3.2 pinned by sha256 digest" {
+@test "bash32 job container image is bash:3.2 pinned by sha256 digest" {
   require_repo_root
   [ -f "$CI_YML" ]
   local image
@@ -113,7 +113,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # bash32 job: runs both unit and acceptance BATS suites
 # ---------------------------------------------------------------------------
-@test "[T19-shape] bash32 job runs unit BATS suite" {
+@test "bash32 job runs unit BATS suite" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -c "tests/unit" "$CI_YML"
@@ -121,7 +121,7 @@ setup_file() {
   [ "$output" -ge 1 ]
 }
 
-@test "[T19-shape] bash32 job runs acceptance BATS suite" {
+@test "bash32 job runs acceptance BATS suite" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -c "tests/acceptance" "$CI_YML"
@@ -132,7 +132,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # on: trigger block — push to main, qrspi/**, */issue-*, PR to main
 # ---------------------------------------------------------------------------
-@test "[T19-shape] on: trigger covers push to main" {
+@test "on: trigger covers push to main" {
   require_repo_root
   [ -f "$CI_YML" ]
   # Branches list under push must include main
@@ -140,21 +140,21 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "[T19-shape] on: trigger covers push to qrspi/**" {
+@test "on: trigger covers push to qrspi/**" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -F "qrspi/**" "$CI_YML"
   [ "$status" -eq 0 ]
 }
 
-@test "[T19-shape] on: trigger covers push to */issue-*" {
+@test "on: trigger covers push to */issue-*" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -F "*/issue-*" "$CI_YML"
   [ "$status" -eq 0 ]
 }
 
-@test "[T19-shape] on: trigger covers pull_request to main" {
+@test "on: trigger covers pull_request to main" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -E "pull_request:" "$CI_YML"
@@ -164,14 +164,14 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # concurrency block: keyed on github.ref with cancel-in-progress: true
 # ---------------------------------------------------------------------------
-@test "[T19-shape] concurrency block is keyed on github.ref" {
+@test "concurrency block is keyed on github.ref" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -E "github\.ref" "$CI_YML"
   [ "$status" -eq 0 ]
 }
 
-@test "[T19-shape] concurrency block has cancel-in-progress: true" {
+@test "concurrency block has cancel-in-progress: true" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -E "cancel-in-progress:\s+true" "$CI_YML"
@@ -182,7 +182,7 @@ setup_file() {
 # Every third-party action is pinned to a commit SHA (no floating tags).
 # Scan `uses:` lines for non-SHA pins.
 # ---------------------------------------------------------------------------
-@test "[T19-shape] every action uses: reference is pinned to a commit SHA" {
+@test "every action uses: reference is pinned to a commit SHA" {
   require_repo_root
   [ -f "$CI_YML" ]
   # Collect all `uses:` action references
@@ -203,7 +203,7 @@ setup_file() {
 # interpolation inside run: steps (injection vector).
 # The concurrency.group field is exempt (string field, not shell command).
 # ---------------------------------------------------------------------------
-@test "[T19-shape] no run: step contains direct github.event. context interpolation" {
+@test "no run: step contains direct github.event. context interpolation" {
   require_repo_root
   [ -f "$CI_YML" ]
   # Extract only run: block content (lines after `run: |` or `run: >`) and
@@ -216,7 +216,7 @@ setup_file() {
   fi
 }
 
-@test "[T19-shape] no run: step contains direct github.head_ref context interpolation" {
+@test "no run: step contains direct github.head_ref context interpolation" {
   require_repo_root
   [ -f "$CI_YML" ]
   local hits
@@ -227,7 +227,7 @@ setup_file() {
   fi
 }
 
-@test "[T19-shape] no run: step contains direct github.ref context interpolation (outside concurrency block)" {
+@test "no run: step contains direct github.ref context interpolation (outside concurrency block)" {
   require_repo_root
   [ -f "$CI_YML" ]
   # The concurrency.group field is a string field (not a shell command), so
@@ -246,7 +246,7 @@ setup_file() {
 # ---------------------------------------------------------------------------
 # Shared helper loads and REPO_ROOT resolves.
 # ---------------------------------------------------------------------------
-@test "[T19-shape] shared helper loads and require_repo_root resolves REPO_ROOT" {
+@test "shared helper loads and require_repo_root resolves REPO_ROOT" {
   require_repo_root
   [ -n "$REPO_ROOT" ]
   [ -d "$REPO_ROOT" ]
@@ -268,14 +268,14 @@ setup_file() {
 #   - No Actions auto-commit step in v0.7.2.
 # ===========================================================================
 
-@test "[T39/G32] CI runs node tools/build-plugin.mjs as the build-sync gate step" {
+@test "CI runs node tools/build-plugin.mjs as the build-sync gate step" {
   require_repo_root
   [ -f "$CI_YML" ]
   run grep -F 'node tools/build-plugin.mjs' "$CI_YML"
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32] CI runs git diff --exit-code build/ .claude-plugin/marketplace.json after build" {
+@test "CI runs git diff --exit-code build/ .claude-plugin/marketplace.json after build" {
   require_repo_root
   [ -f "$CI_YML" ]
   # marketplace.json must be included in the diff gate (per design.md G32 §D5).
@@ -283,7 +283,7 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32] build-sync gate ordering: node tools/build-plugin.mjs precedes git diff --exit-code in ci.yml" {
+@test "build-sync gate ordering: node tools/build-plugin.mjs precedes git diff --exit-code in ci.yml" {
   require_repo_root
   [ -f "$CI_YML" ]
   local build_line diff_line
@@ -294,7 +294,7 @@ setup_file() {
   [ "$build_line" -lt "$diff_line" ]
 }
 
-@test "[T39/G32] BATS test job runs tests/ recursively (not just unit/ + acceptance/)" {
+@test "BATS test job runs tests/ recursively (not just unit/ + acceptance/)" {
   require_repo_root
   [ -f "$CI_YML" ]
   # Recursive coverage: either `bats -r tests` (or `tests/`) or an equivalent
@@ -305,7 +305,7 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32] lint job has recursive lint coverage that picks up tests-lint subtree" {
+@test "lint job has recursive lint coverage that picks up tests-lint subtree" {
   require_repo_root
   [ -f "$CI_YML" ]
   # The lint job must reference tests/lint OR run tests/ recursively in a
@@ -315,7 +315,7 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "[T39/G32] CI keeps a single workflow file (no sibling workflow added by G32)" {
+@test "CI keeps a single workflow file (no sibling workflow added by G32)" {
   require_repo_root
   # Exactly one .yml/.yaml workflow file under .github/workflows/.
   local count
@@ -323,7 +323,7 @@ setup_file() {
   [ "$count" = "1" ]
 }
 
-@test "[T39/G32] CI has NO Actions auto-commit step (no git commit from a workflow run step)" {
+@test "CI has NO Actions auto-commit step (no git commit from a workflow run step)" {
   require_repo_root
   [ -f "$CI_YML" ]
   # Auto-commit-from-Actions is explicitly out of scope for v0.7.2 (design.md
@@ -336,7 +336,7 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
-@test "[T39/G32] CI marketplace.json is part of the build-sync diff gate (not just build/)" {
+@test "CI marketplace.json is part of the build-sync diff gate (not just build/)" {
   require_repo_root
   [ -f "$CI_YML" ]
   # The diff gate must include .claude-plugin/marketplace.json explicitly so
@@ -359,14 +359,14 @@ setup_file() {
 #   - No pre-commit hook or shellcheck rule is added for G21/G26.
 # ===========================================================================
 
-@test "[T40/G21] tests/lint/test-bats-body-assertion-guard.bats exists" {
+@test "tests/lint/test-bats-body-assertion-guard.bats exists" {
   require_repo_root
   # The G21 lint file must be present so the recursive bats run picks it up.
   # This pin is RED until the lint file is created.
   [ -f "$REPO_ROOT/tests/lint/test-bats-body-assertion-guard.bats" ]
 }
 
-@test "[T40/G21] bash32 BATS job covers tests/lint/ via recursive tests/ run (G21 + G26 BW02 lint on blocking path)" {
+@test "bash32 BATS job covers tests/lint/ via recursive tests/ run (G21 + G26 BW02 lint on blocking path)" {
   require_repo_root
   [ -f "$CI_YML" ]
   # tests/lint/test-bats-body-assertion-guard.bats reaches the blocking CI path
@@ -377,7 +377,7 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "[T40/G21] no tracked hook script wires body-guard or bats-body-assertion (C1 enforcement)" {
+@test "no tracked hook script wires body-guard or bats-body-assertion (C1 enforcement)" {
   require_repo_root
   # G21 sub-decision C1: CI gate only; no pre-commit hook.
   # Assert no tracked file under scripts/, .husky/, .githooks/, lefthook.*, .pre-commit-config.*, or .pre-commit-hooks.*
