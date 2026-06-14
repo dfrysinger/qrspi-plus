@@ -337,7 +337,7 @@ All reviewer and fix work is dispatched via subagents; main chat only aggregates
 
    For every kept finding, assert that ONE of these holds on disk before dispatching the implementer-fix subagent:
 
-   **(a)** A matching `<reviewer_tag>.finding-FNN.score.md` sidecar exists in `reviews/tasks/task-NN/round-NN/` AND is non-zero-byte AND parses as valid YAML AND carries the score record per the `qrspi-finding-verifier` schema. A zero-byte, missing-frontmatter, or unrecognized-score sidecar is treated as absent for (a); proceed to evaluate (b) and (c). The malformed-sidecar event is logged as `verifier-write-failure` in `reviews/tasks/task-NN-review.md` (Write success confirmation required). HARD-GATE halts only when NONE of (a)/(b)/(c) hold.
+   **(a)** A matching `<reviewer_tag>.finding-FNN.score.md` sidecar exists in `reviews/tasks/task-NN/round-NN/` AND is non-zero-byte AND parses as valid YAML AND carries the score record per the verifier's schema (see `agents/qrspi-finding-verifier.md`). A zero-byte, missing-frontmatter, or unrecognized-score sidecar is treated as absent for (a); proceed to evaluate (b) and (c). The malformed-sidecar event is logged as `verifier-write-failure` in `reviews/tasks/task-NN-review.md` (Write success confirmation required). HARD-GATE halts only when NONE of (a)/(b)/(c) hold.
 
    **(b)** A `round-NN-verifier-disabled.md` marker exists. The orchestrator is the EXCLUSIVE writer. This marker is schema-validated before acceptance: accepted only when all three frontmatter fields are present and valid:
    - `reason:` — non-empty, non-whitespace-only string after trim. Null/empty/whitespace-only is treated as absent.
