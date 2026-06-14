@@ -108,7 +108,8 @@ When `config.md` has `pipeline: quick`: the plan subagent receives `goals.md` + 
 
 ### Sub-Subagent Dispatch (Large Plans Only)
 
-**Compaction checkpoint: pre-fanout.** Per-task spec-generation fan-out — one subagent per task. The orchestrator's post-fanout merge re-aggregates output into `plan.md`; that re-aggregation is where context saturation bites. Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — plan", description: "per-task spec fan-out merges into plan.md; user decides /compact." })`. See using-qrspi `## Compaction Checkpoints`.
+**Compaction checkpoint: pre-fanout.** Per-task spec-generation fan-out — one subagent per task. The orchestrator's post-fanout merge re-aggregates output into `plan.md`; that re-aggregation is where context saturation bites. See using-qrspi `## Compaction Checkpoints`.
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — plan", description: "per-task spec fan-out merges into plan.md; user decides /compact." })`.
 
 **Sub-subagent inputs:** `plan.md` overview; relevant `structure.md` sections; `design.md` (for test strategy + vertical-slice context); `skills/plan/owns-defers.md` (the layer-depth clamp — without it, sub-subagents drift into Implement/Structure scope: algorithm pseudocode, regex grammar, literal-value hard-coding, line-numbered citations, exact `@test` counts, shebang/file-mode specifics); the three `skills/_shared/prompt-prose-*` shared files included at Plan Overview Subagent above (re-checked at dispatch; same PRECONDITION).
 
@@ -215,7 +216,8 @@ Seven reviewer dispatches run in parallel as the review round (one unified plan-
 
 ### Review Round
 
-**Compaction checkpoint: pre-fanout.** Reviewer fan-out reads merged `plan.md` + `goals.md` + `research/summary.md` + `design.md` + `structure.md`; up to seven parallel Claude dispatches plus seven non-blocking Codex parallels when `codex_reviews: true`. Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — plan", description: "pre-fanout: reviewer fan-out (7 Claude + up to 7 Codex) reads merged plan.md + 4 prior artifacts. User decides whether to /compact." })`. See using-qrspi `## Compaction Checkpoints`.
+**Compaction checkpoint: pre-fanout.** Reviewer fan-out reads merged `plan.md` + `goals.md` + `research/summary.md` + `design.md` + `structure.md`; up to seven parallel Claude dispatches plus seven non-blocking Codex parallels when `codex_reviews: true`. See using-qrspi `## Compaction Checkpoints`.
+Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — plan", description: "pre-fanout: reviewer fan-out (7 Claude + up to 7 Codex) reads merged plan.md + 4 prior artifacts. User decides whether to /compact." })`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`.
 
@@ -353,7 +355,8 @@ When Plan encounters a pre-Slice-5 task spec carrying `visual_fidelity_check.ui_
 
 **Commit.** If inside a git repository, commit the approved `plan.md`, all `tasks/task-NN.md`, and `reviews/plan/` (per `using-qrspi` → "Commit after approval (when applicable)").
 
-**Compaction checkpoint: pre-handoff.** Plan has split tasks and committed approved artifacts; synthesis + review history is no longer load-bearing. Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — plan", description: "pre-handoff: next skill reads plan.md + tasks/*.md on fresh context. User decides /compact." })`. See using-qrspi `## Compaction Checkpoints`.
+**Compaction checkpoint: pre-handoff.** Plan has split tasks and committed approved artifacts; synthesis + review history is no longer load-bearing. See using-qrspi `## Compaction Checkpoints`.
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — plan", description: "pre-handoff: next skill reads plan.md + tasks/*.md on fresh context. User decides /compact." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `plan`. If compaction wasn't done before splitting, recommend it now.
 
@@ -426,7 +429,7 @@ Skipping `cross_task_consumers:` on a consumer-surface-touching task is a plan-s
 
 ### Visual-fidelity hard-gate (pre-fanout refusal condition)
 
-When `config.md` carries `visual_fidelity_required: true`, the Plan orchestrator runs a pre-fanout gate over merged `plan.md` and refuses reviewer dispatch when any task with `visual_fidelity_check.ui_producing: true` lacks a non-empty `visual_fidelity_check.wireframe_refs` list. The full contract — gate trigger, failure-mode diagnostics (absent-key vs empty-list vs null distinction), exemption rules for `ui_producing: false` and whole-block omission, and the present-block parse-error rule — lives in `references/visual-fidelity-hard-gate.md`. Runs with the flag unset, absent, or `false` are exempt; no gate fires.
+When `config.md` carries `visual_fidelity_required: true`, the Plan orchestrator runs a pre-fanout gate over merged `plan.md` and refuses reviewer dispatch when any task with `visual_fidelity_check.ui_producing: true` lacks a non-empty `visual_fidelity_check.wireframe_refs` list. The full contract — gate trigger, failure-mode diagnostics (absent-key vs empty-list vs null distinction), exemption rules for `ui_producing: false` and whole-block omission, and the present-block rule (a `visual_fidelity_check:` block that is present but malformed or missing `ui_producing:` is a **HARD parse error**, not a silent skip) — lives in `references/visual-fidelity-hard-gate.md`. Runs with the flag unset, absent, or `false` are exempt; no gate fires.
 
 ## Common Rationalizations — STOP
 
