@@ -9,11 +9,12 @@ bats_require_minimum_version 1.5.0
 #
 # Contract under test
 # -------------------
-# The implementer-supplied helper
+# The helper
 #
 #     qrspi_diff_redirect_audit [--skill-base <DIR>]
 #
-# scans the eight artifact-step SKILL.md files
+# (defined inline below in this same file — see the `qrspi_diff_redirect_audit`
+# function definition further down) scans the eight artifact-step SKILL.md files
 #
 #     <DIR>/{goals,questions,research,design,phasing,structure,parallelize,replan}/SKILL.md
 #
@@ -45,14 +46,21 @@ bats_require_minimum_version 1.5.0
 # named SKILL.md files. The `--skill-base <DIR>` flag exists so this test
 # can swap in a fixture tree without touching the real skills/ directory.
 #
-# RED-gate verification
-# ---------------------
-# Every @test below first asserts that the implementer has defined
-# `qrspi_diff_redirect_audit` in this file (via `declare -F`). On the bare
-# branch the helper does not exist, so each test fails loudly with a
-# `helper-missing:` diagnostic — assertion-failure path, not exit-code 127
-# command-not-found infrastructure breakage. The paired implement-phase
-# commit adds the helper inline and the tests transition to GREEN.
+# RED→GREEN history
+# -----------------
+# The paired RED commit (test-writer) introduced this file WITHOUT the helper
+# body — every @test below first calls `_t06_assert_helper_defined`, which
+# uses `declare -F` to assert the helper exists; on the bare RED branch that
+# assertion failed loudly with a `helper-missing:` diagnostic (assertion-path
+# failure, not exit-code 127 command-not-found infrastructure breakage). The
+# paired implementer commit then added `qrspi_diff_redirect_audit` inline
+# below in this same file (see the function definition further down), at
+# which point the tests transitioned to GREEN. In the current GREEN state
+# the helper is co-located with its tests by design (sibling pattern: the
+# T12 skill-body lint follows the same single-file layout); the
+# `_t06_assert_helper_defined` guard remains as defense-in-depth so a future
+# accidental deletion of the helper would still surface as a named
+# assertion-path failure rather than a silent 127.
 #
 # Bash 3.2 compatible (macOS /bin/bash 3.2): no associative arrays, no
 # `mapfile`, no `${var,,}`, no `coproc`, no `wait -n`. mktemp + printf only.
@@ -138,7 +146,14 @@ qrspi_diff_redirect_audit() {
 
 # ---------------------------------------------------------------------------
 # _t06_assert_helper_defined
-# Fail loudly (RED) when the implementer-supplied helper is missing.
+# Defense-in-depth guard: assert `qrspi_diff_redirect_audit` is defined in
+# this file. In the current GREEN state the helper is defined inline above,
+# so this assertion passes; it remains as a guard so a future accidental
+# deletion of the helper would surface as a named `helper-missing:`
+# assertion-path failure on stderr rather than a silent exit-code 127
+# command-not-found breakage. (It also documented the original RED gate:
+# on the test-writer commit before the helper was added, this assertion
+# was the failure path that drove the implementer commit.)
 # ---------------------------------------------------------------------------
 _t06_assert_helper_defined() {
   if ! declare -F qrspi_diff_redirect_audit >/dev/null 2>&1; then
