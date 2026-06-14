@@ -1,5 +1,5 @@
 ---
-tier: high
+tier: medium
 name: qrspi-plan-apply-fix
 description: Apply the round's accepted reviewer findings to plan.md and per-task spec files. Reads skills/plan/owns-defers.md, design.md, and structure.md, applies the upstream-contract pre-flight before each finding, and surfaces design/structure-amendment-required findings as Author Notes instead of self-applying contradictory contracts.
 tools: Read, Write, Edit
