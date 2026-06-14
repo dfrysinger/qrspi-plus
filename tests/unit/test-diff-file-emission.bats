@@ -160,7 +160,15 @@ setup() {
 # -----------------------------------------------------------------------------
 
 @test "[112-PR1] every in-scope per-step SKILL.md references round-NN.diff" {
-  local in_scope=(
+  # T05 (CD-2): the eight artifact-step SKILLs (goals..replan) replaced
+  # their orchestrator-side `git diff > round-NN.diff` Bash redirect with
+  # a `dispatch-agent.sh --step ... --round ... --artifact-dir ...`
+  # high-level invocation; review-prep now owns diff emission. For those
+  # eight, assert ABSENCE of the literal `round-NN.diff` token AND
+  # PRESENCE of the high-level dispatch literal. For the remaining
+  # three in-scope steps (plan, integrate, implement) the original
+  # `round-NN.diff` reference still applies.
+  local highlevel_steps=(
     goals
     questions
     research
@@ -169,14 +177,29 @@ setup() {
     structure
     parallelize
     replan
+  )
+  local legacy_steps=(
     plan
     integrate
     implement
   )
   local missing=()
-  local skill
-  for skill in "${in_scope[@]}"; do
-    local f="$REPO_ROOT/skills/${skill}/SKILL.md"
+  local skill f
+  for skill in "${highlevel_steps[@]}"; do
+    f="$REPO_ROOT/skills/${skill}/SKILL.md"
+    if [ ! -f "$f" ]; then
+      missing+=("$f (file missing)")
+      continue
+    fi
+    if grep -qF "round-NN.diff" "$f"; then
+      missing+=("$f (still references round-NN.diff after T05 high-level dispatch migration)")
+    fi
+    if ! grep -qF "dispatch-agent.sh --step ${skill}" "$f"; then
+      missing+=("$f (missing high-level dispatch invocation: dispatch-agent.sh --step ${skill})")
+    fi
+  done
+  for skill in "${legacy_steps[@]}"; do
+    f="$REPO_ROOT/skills/${skill}/SKILL.md"
     if [ ! -f "$f" ]; then
       missing+=("$f (file missing)")
       continue
@@ -186,7 +209,7 @@ setup() {
     fi
   done
   if [ "${#missing[@]}" -gt 0 ]; then
-    printf 'FAIL: per-step SKILL.md missing round-NN.diff reference:\n%s\n' "${missing[@]}" >&2
+    printf 'FAIL: per-step SKILL.md missing expected diff-emission reference:\n%s\n' "${missing[@]}" >&2
     return 1
   fi
 }
