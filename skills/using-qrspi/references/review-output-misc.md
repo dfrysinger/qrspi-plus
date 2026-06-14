@@ -1,0 +1,3 @@
+**Subagent guardrail compatibility.** The per-finding filename pattern `<reviewer_tag>.finding-F<NN>.md` does not match the Claude Code 2.1.x subagent-write blocklist (`^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$`, case-insensitive at filename stem start). Subagents can `Write` these files directly without hitting the guardrail. (The research-step `summary.md` DOES match the blocklist, which is why that file goes through orchestrator-write — see `research/SKILL.md`.)
+
+**Codex output handling.** Codex reviews run as bash-launched background jobs via `scripts/codex-companion-bg.sh`. The `await` step's stdout is redirected directly into the per-round directory per the reviewer-protocol disk-write contract — main chat never paste-backs Codex stdout into its own conversation.

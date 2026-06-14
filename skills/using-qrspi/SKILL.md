@@ -136,12 +136,9 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 > 1) No second-model reviews
 > 2) Use a second model for second reviews
 
-**Codex detection (per-host second-reviewer dispatch transport).** The dispatch surface routes per detected host (`detect_host` at dispatch time):
+**Codex detection (per-host second-reviewer dispatch transport).** Copilot CLI hosts use the task-tool transport (`agent_type: code-review`, `model: gpt-5.3-codex`); Claude Code hosts use the shell-pipeline transport via `scripts/dispatch-agent.sh`. On host/config mismatch the dispatch surface emits a single-line stderr diagnostic and continues with the configured policy. Full per-host branches, `[transport: ...]` trace marker, vendor-missing short-circuit:
 
-- **Copilot CLI hosts** use the native task-tool transport, dispatching Codex with `agent_type: code-review` and `model: gpt-5.3-codex`.
-- **Claude Code hosts** use the shell-pipeline transport via `scripts/dispatch-agent.sh` (with `scripts/dispatch-companion.sh` for the background-companion path).
-
-Each branch emits a one-line `[transport: ...]` trace marker to stderr at the selecting call site. When the detected host's second-reviewer availability disagrees with `config.md`, the dispatch surface emits a warning-only single-line stderr diagnostic and continues with the configured policy — the mismatch does NOT gate dispatch. A separate short-circuit fires when an availability check reports the vendor missing while config requested it; that path propagates the non-zero exit unchanged.
+!cat skills/using-qrspi/references/codex-host-detection.md
 
 **No silent fallback.** All skills read `config.md` for route and second-reviewer config. Missing or invalid fields go through the **Config Validation Procedure**; no field is silently defaulted, and route is never derived from `pipeline`.
 
@@ -384,37 +381,17 @@ After the first review round completes and fixes are applied, ask ONCE:
 
 **At the human gate, always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified." If the user approves but reviews have not passed clean, ask if they'd like a review loop before finalizing — this is strongly recommended.
 
+**Sweep-task findings ride the existing Plan re-spec loop** (no new implementation gate, no new test-runner behavior).
+
 !cat skills/using-qrspi/references/fix-altitude-rule.md
 ## Review Output Handling
 
-**Disk-write contract (artifact-level reviews).** Each artifact-level reviewer subagent writes its findings directly to disk and returns only a brief structured summary to main chat. Main chat never receives finding text in subagent return values. This keeps reviewer output out of main chat's conversation history (where it would re-bill as cache reads on every subsequent turn) until main chat explicitly reads the file to apply fixes — at which point the standard `/compact` after fix-apply (see "Compaction at Step Transitions" + per-skill apply-fix recommendations) sheds it.
+!cat skills/using-qrspi/references/disk-write-and-finding-paths.md
 
-**Per-finding file paths.** Each reviewer writes one file per finding into a per-round directory under `reviews/{step}/`:
 
-- Claude reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (one file per finding; `<reviewer_tag>` is e.g. `quality-claude`, `scope-claude`)
-- Claude scope-reviewer subagent → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (same shape; dedicated `qrspi-{name}-scope-reviewer` agents)
-- Second-model reviewer (async) → `reviews/{step}/round-NN/<reviewer_tag>.finding-F<NN>.md` (filled per the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill; transport mechanics owned by `scripts/await-round.sh` and `scripts/codex-companion-bg.sh`)
-- Clean-round sentinel → `reviews/{step}/round-NN/<reviewer_tag>.clean.md` (one file per reviewer when zero findings)
-- Main chat fix-apply summary → `reviews/{step}/round-NN-dispositions.md`
+!cat skills/using-qrspi/references/subagent-return-value.md
 
-`{step}` is the canonical step name (e.g. `goals`, `design`, `plan`, `replan`). `NN` is the zero-padded round number. Per-reviewer parallelism is preserved: each reviewer writes its own files into the shared round directory, and per-finding filenames are unique by reviewer tag + finding number so concurrent reviewers never race on the same file.
-
-**Per-finding file format.** Each finding file conforms to the 5-field schema defined in the `## Per-Finding Disk-Write Contract` from the reviewer-protocol skill. The finding-file format, clean-file format, and sidecar (`.score.md`) format are specified there; this skill defers to that contract rather than re-enumerating.
-
-**Subagent return value (brief).** After writing per-finding files, the reviewer subagent returns a single brief summary string to main chat. The summary MUST NOT include the finding text — main chat reads the files when it needs the details. Required summary form:
-
-```
-Round NN {reviewer-tag} review complete.
-Findings: N (high=X, medium=Y, low=Z)
-Auto-apply: A | Paused: P
-Written to: reviews/{step}/round-NN/
-```
-
-This brevity is load-bearing: cache-read savings across subsequent main-chat turns depend on the return text being ~30 tokens, not 3K-30K.
-
-**Subagent guardrail compatibility.** The per-finding filename pattern `<reviewer_tag>.finding-F<NN>.md` does not match the Claude Code 2.1.x subagent-write blocklist (`^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$`, case-insensitive at filename stem start). Subagents can `Write` these files directly without hitting the guardrail. (The research-step `summary.md` DOES match the blocklist, which is why that file goes through orchestrator-write — see `research/SKILL.md`.)
-
-**Codex output handling.** Codex reviews run as bash-launched background jobs via `scripts/codex-companion-bg.sh`. The `await` step's stdout is redirected directly into the per-round directory per the reviewer-protocol disk-write contract — main chat never paste-backs Codex stdout into its own conversation.
+!cat skills/using-qrspi/references/review-output-misc.md
 
 **Apply-fix protocol.** When main chat applies fixes after a round:
 
@@ -629,15 +606,6 @@ QRSPI skills mark transition points where main-chat context bloat degrades downs
 ## Feedback File Format
 
 !cat skills/using-qrspi/references/feedback-file-format.md
-
-## User Feedback
-{The user's rejection feedback, verbatim}
-
-## Previous Artifact
-{The full content of the rejected artifact}
-```
-
-The new subagent receives the original inputs + this feedback file.
 
 ## Common Rationalizations — STOP
 
