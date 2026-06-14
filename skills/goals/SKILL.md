@@ -128,7 +128,7 @@ Per Rule 8, write each locked goal **directly to `goals.md`** with `status: draf
 **Resume after compaction.** If `/compact` fires mid-phase, on resume:
 
 1. Read the draft `goals.md` from disk and enumerate locked goals.
-2. Ask the user whether all desired goals have been articulated. Goals runs before Research and has no upstream inventory to diff against — the user is the only authority on what remains.
+2. Ask the user whether all desired goals have been articulated. Goals runs before Research and has no upstream inventory to diff against — the user is the only authority on what work remains (the remaining-work computation is a user-driven question at Goals stage, not an inventory diff).
 3. Surface the recovery diagnostic verbatim:
 
    `"Resumed after compaction — last locked decision: GNN (M decisions locked, K remaining). Continuing from G(NN+1)."`
@@ -137,10 +137,12 @@ Per Rule 8, write each locked goal **directly to `goals.md`** with `status: draf
 
 **End-of-phase finalize pass.** After the walkthrough completes:
 
-- Validate every locked goal carries the three subsections and a concrete `type` value.
+- Validate that every locked goal carries the three subsections and a concrete `type` value.
 - Optionally append a Purpose section if absent.
 - **Only flip status if all validations pass.** On failure, halt, surface, re-enter dialogue.
 - Flip frontmatter `status: draft` to `status: approved`. Only the finalize pass writes `approved`; hand-edits mid-phase are forbidden. When the user picks "Approve, skip review", the finalize pass still runs and the reviewer round is skipped.
+
+**Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
 
 ### Pipeline Mode Selection
 

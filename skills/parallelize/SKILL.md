@@ -242,12 +242,79 @@ Mark each task in_progress when starting, completed when done.
 
 ## Worked Examples
 
-Four worked-example artifacts live at `skills/parallelize/references/worked-examples.md` — read that file when authoring or reviewing a Parallelization Plan; the patterns there are the canonical shape for Dependency Analysis, Branch Map, and Stage Commits:
+Two canonical worked examples are inlined below (Good and Bad). Two additional examples — **Multi-Stage Suffix** (the `stage-after-W{N}{suffix}` grammar for disjoint downstream groups) and **Reference-Gate Wave Termination** (`reference_gate: true` plus the canonical `Reference gate:` note placement) — live at `skills/parallelize/references/worked-examples.md`.
 
-- **Good** — three-wave Hybrid with multi-parent and single-parent downstream forks.
-- **Multi-Stage Suffix** — the `stage-after-W{N}{suffix}` grammar for disjoint downstream groups.
-- **Reference-Gate Wave Termination** — `reference_gate: true` plus the canonical `Reference gate:` note placement.
-- **Bad** — counterexample (no dependency analysis, no file-overlap check, no Base column).
+## Worked Example — Good
+
+```markdown
+---
+status: draft
+---
+
+# Parallelization Plan
+
+## Execution Mode: Hybrid
+
+Rationale: Tasks 1 and 2 are independent (file-disjoint) so they share Wave 1. Task 3 depends on both → stage-after-W1. Task 4 depends only on Task 1 → forks directly from task-01.
+
+## Dependency Analysis
+
+| Task | Dependencies | Files | Wave |
+|------|-------------|-------|------|
+| Task 1: Auth types + DB schema | none | `src/types/auth.ts`, `prisma/schema.prisma` | Wave 1 (base: feature branch tip) |
+| Task 2: API middleware | none | `src/middleware/auth.ts`, `src/middleware/rate-limit.ts` | Wave 1 (base: feature branch tip) |
+| Task 3: Auth endpoints | Task 1, Task 2 | `src/routes/auth.ts`, `src/routes/auth.test.ts` | Wave 2 (base: stage-after-W1, multi-parent) |
+| Task 4: Profile endpoints | Task 1 | `src/routes/profile.ts`, `src/routes/profile.test.ts` | Wave 3 (base: task-01 tip, single-parent) |
+
+## Branch Map
+
+### Wave 1
+
+| Task | Branch | Base |
+|------|--------|------|
+| task-01 | qrspi/user-auth/task-01 | feature branch tip |
+| task-02 | qrspi/user-auth/task-02 | feature branch tip |
+
+### Wave 2
+
+| Task | Branch | Base |
+|------|--------|------|
+| task-03 | qrspi/user-auth/task-03 | stage-after-W1 |
+
+### Wave 3
+
+| Task | Branch | Base |
+|------|--------|------|
+| task-04 | qrspi/user-auth/task-04 | task-01 tip |
+
+## Stage Commits
+
+| Stage branch | Composition | Created before |
+|--------------|-------------|----------------|
+| qrspi/user-auth/stage-after-W1 | merge(task-01, task-02) | task-03 worktree creation |
+```
+
+## Worked Example — Bad
+
+```markdown
+---
+status: draft
+---
+
+# Parallelization Plan
+
+## Execution Mode: Parallel
+
+All tasks run in parallel.
+
+| Task | Branch |
+|------|--------|
+| task-01 | qrspi/user-auth/task-01 |
+| task-02 | qrspi/user-auth/task-02 |
+| task-03 | qrspi/user-auth/task-03 |
+```
+
+**Why this fails:** missing dependency analysis (Task 3 needs 1+2 but shown parallel); no file-overlap check (Tasks 1 and 3 both modify `src/routes/auth.ts`); no execution-mode rationale; missing Branch Map `Base` column so Implement has no way to know how to fork. Note: this anti-pattern intentionally has no `### Wave N` sub-sections — the flat single-table layout is exactly the shape Parallelize replaced.
 
 
 ## Iron Laws — Final Reminder

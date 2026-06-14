@@ -254,9 +254,48 @@ Three worked-example artifacts live at `skills/replan/references/worked-examples
 
 ## Boundary with Goals
 
-Replan ↔ Goals boundary contract for `future-goals.md` promotion at phase boundaries: Replan promotes ONLY fully-Formal entries (frontmatter `id:` + `type: known-fix | exploratory` + `## Problem` + `## Why we care` + `## What we know so far`). Partial-Formal entries (with `id:` but missing fields/subsections) and prose-only Ideas (no `id:`) are SKIPPED — Replan does NOT mint IDs, assign types, author subsections, convert Ideas, or author acceptance criteria; all of that belongs to a subsequent user-invoked Goals run. Each Replan run emits a hand-off report enumerating promoted entries (by `id:` and `title:`) and skipped entries (with explicit skip reason), presented to the user before the next Goals run.
+This section codifies the Replan ↔ Goals boundary contract for `future-goals.md` promotion at phase boundaries. Replan consumes `future-goals.md` entries and promotes a subset to the next phase's `goals.md`; Goals retains sole authority to formalize entries Replan must skip.
 
-**Full promotion-gate criteria, skip conditions, "Replan does NOT" list, and hand-off report shape:** see `skills/replan/references/boundary-with-goals.md`.
+### Formal-vs-Idea promotion gate
+
+Replan promotes **ONLY fully-Formal entries** from `future-goals.md` into the next phase's `goals.md`. A fully-Formal entry satisfies ALL of the following:
+
+**Frontmatter requirements:**
+- Has a frontmatter `id:` field (e.g., `id: G5`)
+- Has a frontmatter `type:` field with a valid Goals type value (`known-fix` or `exploratory`)
+
+**Required body subsections:**
+- Contains `## Problem` subsection
+- Contains `## Why we care` subsection
+- Contains `## What we know so far` subsection
+
+### Skip conditions
+
+The following entry types are **SKIPPED** (not promoted to `goals.md`):
+
+- **Partial-Formal entries** — carry a frontmatter `id:` but are missing any of: `type:` field, `## Problem`, `## Why we care`, or `## What we know so far`. Replan skips them and records the specific missing field or subsection in the hand-off report.
+- **Prose-only Idea entries** — carry no frontmatter `id:` field. Replan skips them and records "prose-only Idea" as the skip reason.
+
+### Replan does NOT
+
+Replan enforces the promotion gate but does NOT:
+- Mint new `id:` values for Idea entries
+- Assign `type:` fields to entries missing them
+- Author `## Problem`, `## Why we care`, or `## What we know so far` subsections
+- Convert Ideas into Formal goals
+- Author acceptance criteria for promoted or skipped entries
+
+All of the above belong to a subsequent user-invoked Goals run.
+
+### Hand-off report shape
+
+After applying the promotion gate, Replan emits a per-run hand-off report enumerating both promoted and skipped entries:
+
+- **Promoted Formal entries** — listed by `id:` and `title:` (one line per entry). Example: `Promoted: id=G5 title="Add support for async task queues"`
+- **Skipped (partial-Formal)** — example: `Skipped (partial-Formal): id=G6 missing: type:, ## Why we care`
+- **Skipped (prose-only Idea)** — example: `Skipped (prose-only Idea): "Improve onboarding flow" (no id:)`
+
+The hand-off report is presented to the user before the next Goals run begins. See `skills/replan/references/boundary-with-goals.md` for the long-form contract.
 
 ## Iron Laws — Final Reminder
 

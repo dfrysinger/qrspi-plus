@@ -5,6 +5,8 @@ description: Use when research/summary.md is approved and the QRSPI pipeline nee
 
 # Design (QRSPI Step 4)
 
+<!-- Soft length target: 200–400 lines for this SKILL.md. The marker is a guidance signal — long enough to carry per-section template guidance + OWNS/DEFERS contract + reviewer wiring, short enough to keep the prompt scannable in a single context window. -->
+
 **PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
 
 **Announce at start:** "I'm using the QRSPI Design skill to explore approaches and define the architecture."
@@ -142,11 +144,13 @@ Per-goal blocks use the five-field template (Outcome, Solution, Why this approac
 
 **End-of-phase finalize pass.** After walkthrough:
 
-- Validate every goal in `goals.md` has a per-goal block in `design.md` with all five fields populated.
-- Validate `## Cross-Goal Decisions` is well-formed (each entry keyed by ID, carrying rationale + scope).
+- Validate that every goal in `goals.md` has a corresponding per-goal block in `design.md` with all five fields populated (Outcome, Solution, Why this approach, Dependencies + edge cases, Acceptance).
+- Validate the `## Cross-Goal Decisions` section is well-formed (each entry keyed by ID, each entry carries rationale + scope).
 - Optionally append a top-level summary if absent.
 - **Only flip status if all validations pass.** On failure, halt, surface, re-enter dialogue.
 - Flip frontmatter `status: draft` to `status: approved-pending-review`. Hand-edits flipping status mid-phase (before the finalize pass) are forbidden — only the finalize pass writes the next-gate status.
+
+**Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
 
 ## Design OWNS / Design DEFERS
 
@@ -208,7 +212,13 @@ Once the discussion settles, launch a **subagent** to synthesize `design.md`.
 
 !cat skills/_shared/prompt-prose-writer-addition.md
 
-**Output format for `design.md`:** the synthesis subagent produces `design.md` per the conformance template in `skills/design/references/design-md-template.md` (template + per-section guidance + conformance reminder). Pass the template path to the subagent.
+**Output format for `design.md`:** the synthesis subagent produces `design.md` per the conformance template in `skills/design/references/design-md-template.md` (template + per-section guidance + conformance reminder). Pass the template path to the subagent. The three per-section guidance markers (one per H2 inside the template) are:
+
+<!-- Per-section guidance — Approach: one claim sentence first ("Chosen approach: {X}"), then 1–2 short paragraphs of rationale grounded in research findings. Claim-before-evidence; length-target ≤8 lines per paragraph. NO DDL, NO full function signatures, NO assertion text — those are DEFERS. -->
+
+<!-- Per-section guidance — Key Decisions: bulleted list of major decisions, each with one-line decision + one-line reasoning. Decisions are at the architecture-boundary level (data-flow, transport, persistence model, security posture) — NOT line-by-line logic, NOT column-level DDL. Bullets for scannability; lead each bullet with the decision noun. -->
+
+<!-- Per-section guidance — Trade-offs Considered: the 2–3 rejected alternatives, each with what it traded off and why it lost. Claim-before-evidence — lead each subsection with the alternative name; rationale follows. Keep at the approach level — do NOT enumerate per-column trade-offs (DEFERS). -->
 
 !cat skills/_shared/evergreen-output-rule.md
 
