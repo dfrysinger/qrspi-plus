@@ -113,14 +113,26 @@ setup() {
   sweep_files=$(git log --author='qrspi-implementer' --grep='task-11' \
                   "$SWEEP_BASE_REF"..HEAD --name-only --pretty=format: -- 'tests/*.bats' \
                 | sed '/^$/d' | sort -u)
-  if [ -z "$sweep_files" ]; then
+  # Tip of the sweep's own commit chain — the most recent commit authored
+  # by the sweep implementer with `task-11` in its subject. We diff the
+  # base ref against THIS commit (not HEAD) so that any downstream task's
+  # subsequent edits to files the sweep also touched (e.g., fix-08's
+  # non-@test grep-pattern updates in test-cache-retirement-invariants.bats
+  # at stage-after-W3) do not contaminate the sweep's structural-lint
+  # input. The invariant under test is "the sweep's own diff is
+  # mechanical-only", not "all post-W2 changes to swept files are
+  # mechanical-only" — the latter is unenforceable from within task-11.
+  # (fix-r3.)
+  T11_TIP_REF=$(git log --author='qrspi-implementer' --grep='task-11' \
+                  "$SWEEP_BASE_REF"..HEAD --format='%H' -- 'tests/*.bats' | head -1)
+  if [ -z "$sweep_files" ] || [ -z "$T11_TIP_REF" ]; then
     # No sweep commits present — the sweep has not been applied (RED
     # gate) or the commit-subject pattern has drifted. Fail loudly
     # rather than passing vacuously.
     return 1
   fi
   # shellcheck disable=SC2086 # word-splitting intentional — pathspecs
-  diff_input=$(git diff "$SWEEP_BASE_REF"..HEAD -- $sweep_files)
+  diff_input=$(git diff "$SWEEP_BASE_REF" "$T11_TIP_REF" -- $sweep_files)
   # Non-empty diff is required — the sweep must have applied at least one
   # mechanical edit somewhere under tests/. The naive bash parameter
   # expansion `${var//[[:space:]]/}` is O(N²) on bash 3.2 (macOS
@@ -164,8 +176,20 @@ setup() {
   sweep_files=$(git log --author='qrspi-implementer' --grep='task-11' \
                   "$SWEEP_BASE_REF"..HEAD --name-only --pretty=format: -- 'tests/*.bats' \
                 | sed '/^$/d' | sort -u)
+  # Tip of the sweep's own commit chain — see the matching block in the
+  # structural-lint test above for the full rationale. We snapshot file
+  # bodies at THIS commit (not HEAD) so downstream tasks' subsequent
+  # non-@test edits to swept files do not spuriously trip the
+  # body-bytes equality check. (fix-r3.)
+  T11_TIP_REF=$(git log --author='qrspi-implementer' --grep='task-11' \
+                  "$SWEEP_BASE_REF"..HEAD --format='%H' -- 'tests/*.bats' | head -1)
+  if [ -z "$T11_TIP_REF" ]; then
+    # No sweep commits present — the sweep has not been applied (RED
+    # gate). Fail loudly rather than passing vacuously.
+    return 1
+  fi
   # shellcheck disable=SC2086 # word-splitting intentional — pathspecs
-  modified_list=$(git diff --name-only --diff-filter=M "$SWEEP_BASE_REF"..HEAD -- $sweep_files | grep -E '\.bats$' || true)
+  modified_list=$(git diff --name-only --diff-filter=M "$SWEEP_BASE_REF" "$T11_TIP_REF" -- $sweep_files | grep -E '\.bats$' || true)
   # The sweep MUST touch at least one bats file under tests/; an empty
   # modified-list means the sweep has not run (RED) or stripped nothing
   # (vacuous), both of which fail this assertion.
@@ -175,7 +199,7 @@ setup() {
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     base_bodies=$(git show "$SWEEP_BASE_REF:$f" 2>/dev/null | awk '/^@test "/ {next} {print}')
-    head_bodies=$(git show "HEAD:$f"            2>/dev/null | awk '/^@test "/ {next} {print}')
+    head_bodies=$(git show "$T11_TIP_REF:$f"   2>/dev/null | awk '/^@test "/ {next} {print}')
     if [ "$base_bodies" != "$head_bodies" ]; then
       failed_files="${failed_files}${f}\n"
     fi
