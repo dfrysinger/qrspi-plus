@@ -100,7 +100,9 @@ printf 'integration_base_sha=%s\n' "$(git -C "<repo>" rev-parse HEAD)" \
 1. **Merge task branches** into the feature branch using `parallelization.md` branch map and the Merge Strategy above (leaf-only for chains; each leaf for Waves; never merge stage branches directly). **STOP if merge conflicts** — present conflicts to user with file-level details. Do not attempt auto-resolution.
 2. **Integration reviews** — follows **Review Pattern 2 (Outer Loop)**.
 
-   **Compaction checkpoint: pre-fanout.** The reviewer fan-out reads merged code + `design.md` + `structure.md` + companion task-review findings; saturated context produces shallow findings. Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — integrate", description: "pre-fanout: reviewer fan-out reads merged code + design + structure + task findings." })`. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+   **Compaction checkpoint: pre-fanout.** The reviewer fan-out reads merged code + `design.md` + `structure.md` + companion task-review findings; saturated context produces shallow findings. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+   Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — integrate", description: "pre-fanout: reviewer fan-out reads merged code + design + structure + task findings." })`.
 
    **Pre-dispatch diff-file emission.** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<ref>" > "<ABS_ARTIFACT_DIR>/reviews/integration/round-NN.diff"` as a Bash redirect (Integrate's diff covers the entire merged feature branch against `<ref>`, not a single artifact file; the content never enters main-chat context). `<ref>` is `<base-branch>` by default; it becomes the SHA read from `reviews/integration/round-(NN-1)-commit.txt` (via using-qrspi step 12's anchor-file lookup, which validates SHA shape and halts with `anchor-file-missing:` / `sha-format-invalid:` before any `git diff` runs) only when the convergence rule narrowed this round (see § Integrate Convergence Narrowing). Each reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/integration/round-NN.diff` per the `## Reviewer Dispatch Contract` in reviewer-protocol; `scope_hint:` is the comma-separated tag list when narrowed, empty when broadened (Codex emits the line unconditionally with empty value; Claude omits it on broaden — reviewers treat empty-value as semantically identical to absence). Omit the diff redirect and the parameter when the artifact directory is not inside a git repository. Follow the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1; skip the artifact-tracked-in-git precondition (step 1.1) — Integrate has no single `<artifact_path>` — the other 5 preconditions apply.
 
@@ -254,7 +256,9 @@ Future ideas append as bullets under `## Ideas` in `future-goals.md` (create if 
 
 ## Terminal State
 
-**Compaction checkpoint: pre-handoff.** The next skill (typically Test) reads the merged feature branch + every prior approved artifact + integration reviewer findings on a fresh context. Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — integrate", description: "pre-handoff: next skill reads merged branch + prior artifacts + integration findings." })`. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+**Compaction checkpoint: pre-handoff.** The next skill (typically Test) reads the merged feature branch + every prior approved artifact + integration reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
+
+Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — integrate", description: "pre-handoff: next skill reads merged branch + prior artifacts + integration findings." })`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `integrate`.
 
