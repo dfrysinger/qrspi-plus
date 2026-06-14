@@ -86,13 +86,39 @@ load '../helpers/skill-markdown'
 #
 # Default <DIR> is "$REPO_ROOT/skills".
 #
-# Allowed-exception scope: lines that contain a concrete script-name
-# call-site reference of shape `scripts/<name>.sh` are exempt from
-# flagging. These are load-bearing process-step Bash call sites
-# (e.g. `scripts/round-prepare.sh`, `scripts/verifier-fan-in.sh`,
-# `scripts/codex-companion-bg.sh await <jobId>`), not the retired
-# script-mechanic narrative the lint targets. The lint's scope is
-# narrative restatement only.
+# Allowed-exception scope (line-level): the lint's scope is narrative
+# restatement only, so the following load-bearing line shapes are exempt
+# from flagging when they happen to contain one of the eight patterns:
+#
+#   (1) Concrete script-name call-site references of shape
+#       `scripts/<name>.sh` (e.g., `scripts/round-prepare.sh`,
+#       `scripts/verifier-fan-in.sh`, `scripts/codex-companion-bg.sh
+#       await <jobId>`) — process-step Bash call sites, not retired
+#       script-mechanic narrative.
+#
+#   (2) Bare `<name>.sh` path-shaped references without the `scripts/`
+#       prefix (e.g., `round-prepare.sh` cited mid-sentence) — same
+#       call-site rationale as (1), broader citation form.
+#
+#   (3) In-fence active commands: the matched pattern lies inside
+#       backticks on that line (e.g., `git -C <worktree> diff HEAD~1
+#       --unified=0`) — load-bearing command shown verbatim to the
+#       implementer, not narrative restatement of the mechanic.
+#
+#   (4) Negative guards: the line carries a negation token (`No `,
+#       `no `, `not `, `Not `, `Never`, `never`, `without`, `Without`,
+#       `MUST NOT`, `does not`, `do not`) preceding the pattern match
+#       (anywhere earlier on the line). These are load-bearing safety
+#       assertions that the retired mechanic is NOT used — e.g.,
+#       "No `HEAD~1` shorthand is used and no silent fallback fires".
+#
+#   (5) Delegation pointers: the line contains one of the canonical
+#       delegation phrases (`'s contract`, `per the loud-failure rule`,
+#       `per the canonical`, `delegates to`, `'s schema`,
+#       `the verifier's`, `is a contract violation`). These route the
+#       reader to the canonical owner of the mechanic rather than
+#       restating it — e.g., "Full sidecar schema validation is the
+#       verifier's contract (see `agents/qrspi-finding-verifier.md`)".
 #
 # On clean input: exit 0, no output. On any hit: exit non-zero and emit,
 # for every hit, one diagnostic of shape
@@ -148,16 +174,46 @@ qrspi_skill_trim_audit() {
   for file in "$skill_base"/*/SKILL.md; do
     [ -r "$file" ] || continue
     for pattern in $patterns; do
-      # awk single-pass: for each line matching `pattern`, skip if line carries
-      # an allowed-exception `scripts/<name>.sh` call-site reference; otherwise
-      # emit one diagnostic line. The script-name allowance is line-level: a
-      # narrative-restatement sentence that happens to also cite a real script
-      # by name is treated as an allowed call-site context per the spec's
-      # scope-discipline rule (concrete call-site references in process-step
-      # Bash calls are load-bearing and not retired narrative).
+      # awk single-pass: for each line matching `pattern`, skip if any of the
+      # five line-level exemptions from the header doc apply (script-call,
+      # bare *.sh, in-fence command, negative-guard, delegation pointer);
+      # otherwise emit one diagnostic line. The exemptions are line-level by
+      # design — a narrative-restatement sentence that legitimately carries
+      # one of these load-bearing shapes is treated as in-scope context, not
+      # retired mechanic narrative.
       hits="$(awk -v f="$file" -v pat="$pattern" '
-        $0 ~ pat {
-          if ($0 ~ /scripts\/[A-Za-z0-9_.-]+\.sh/) next
+        function is_exempt(line, p, mlen,    pre, parts, btcount, mtxt) {
+          # (1) scripts/<name>.sh call-site
+          if (line ~ /scripts\/[A-Za-z0-9_.-]+\.sh/) return 1
+          # (2) bare <name>.sh path-shaped citation
+          if (line ~ /(^|[^A-Za-z0-9_\/-])[A-Za-z0-9_-]+\.sh([^A-Za-z0-9]|$)/) return 1
+          # (5) delegation pointers (anywhere on line)
+          if (line ~ /'\''s contract/) return 1
+          if (line ~ /'\''s schema/) return 1
+          if (line ~ /per the loud-failure rule/) return 1
+          if (line ~ /per the canonical/) return 1
+          if (line ~ /delegates to/) return 1
+          if (line ~ /the verifier'\''s/) return 1
+          if (line ~ /is a contract violation/) return 1
+          # Compute pre = substring of line preceding first pattern match,
+          # and mtxt = the matched span itself.
+          pre = substr(line, 1, p - 1)
+          mtxt = substr(line, p, mlen)
+          # (3) in-fence: odd number of backticks before pattern AND the
+          # matched span itself contains no backticks → entirely inside
+          # one inline-code fence. A matched span that crosses backticks
+          # spans prose, so the fence rule does NOT apply.
+          btcount = split(pre, parts, "`") - 1
+          if (btcount % 2 == 1 && mtxt !~ /`/) return 1
+          # (4) negative-guard tokens preceding the pattern
+          if (pre ~ /(^|[^A-Za-z])(No|no|Not|not|Never|never|Without|without)([^A-Za-z]|$)/) return 1
+          if (pre ~ /(MUST NOT|does not|do not)/) return 1
+          return 0
+        }
+        {
+          p = match($0, pat)
+          if (p == 0) next
+          if (is_exempt($0, p, RLENGTH)) next
           printf "%s:%d: skill-trim-audit: %s: %s\n", f, NR, pat, $0
         }
       ' "$file")"
@@ -307,13 +363,16 @@ _t38_inject_jobid_narrative_into() {
 # ===========================================================================
 # @test 3 — no-false-positive guard:
 #
-# A fixture skill body that legitimately references concrete script names
-# in process-step Bash calls (e.g., `scripts/round-prepare.sh`,
-# `scripts/verifier-fan-in.sh`) does NOT trigger the lint. The scope is
-# narrative restatement only; call-site script references are load-bearing
-# and allowed.
+# A fixture skill body that legitimately uses the five allowed line-level
+# exemption shapes — (1) `scripts/<name>.sh` call-site references,
+# (2) bare `<name>.sh` path-shaped citations, (3) in-fence active commands
+# containing one of the patterns, (4) negative-guard sentences asserting
+# the retired mechanic is NOT used, and (5) delegation pointers routing
+# to the canonical owner — does NOT trigger the lint. The scope is
+# narrative restatement only; load-bearing call-sites, commands, guards,
+# and delegations are allowed.
 # ===========================================================================
-@test "qrspi_skill_trim_audit: fixture skill body referencing concrete script names (scripts/round-prepare.sh, scripts/verifier-fan-in.sh) does not trigger the lint" {
+@test "qrspi_skill_trim_audit: fixture skill body using all five allowed exemption shapes (script call-site, bare *.sh, in-fence command, negative guard, delegation pointer) does not trigger the lint" {
   require_repo_root
   _t38_assert_helper_defined
 
@@ -321,9 +380,7 @@ _t38_inject_jobid_narrative_into() {
   fixture_base="$(mktemp -d "${TMPDIR:-/tmp}/t38-trim-allow-XXXXXXXX")"
   _t38_make_clean_fixture_base "$fixture_base"
 
-  # Plant concrete script-name call-site references in a skill body. These
-  # are the allowed-exception case: they are not narrative restatement of
-  # the retired script mechanic, they are the script being called.
+  # (1) scripts/<name>.sh call-site references and (2) bare *.sh citations.
   cat >> "$fixture_base/phasing/SKILL.md" <<'EOF'
 
 Run the round preparation step:
@@ -333,6 +390,34 @@ Run the round preparation step:
 After all reviewers complete, fan in the verifier sidecars:
 
     scripts/verifier-fan-in.sh "$ROUND" "$STEP"
+
+The companion script (codex-companion-bg.sh) awaits a jobId before
+proceeding; round-prepare.sh handles convergence per its own contract.
+EOF
+
+  # (3) In-fence active command containing HEAD~1 (load-bearing command,
+  # not narrative restatement of the mechanic).
+  cat >> "$fixture_base/implement/SKILL.md" <<'EOF'
+
+Obtain the added lines for the trim audit:
+
+    `git -C <worktree> diff HEAD~1 --unified=0 | grep '^+'`
+EOF
+
+  # (4) Negative-guard sentences (assert the retired mechanic is NOT used).
+  cat >> "$fixture_base/integrate/SKILL.md" <<'EOF'
+
+No HEAD~1 shorthand is used here — the anchor file is the source of truth.
+Do not fall back silently to HEAD~1 or base-branch on a missing anchor.
+The per-round commit is not a candidate to be cross-checked against HEAD~1.
+EOF
+
+  # (5) Delegation pointers (route to canonical owner; do not restate).
+  cat >> "$fixture_base/questions/SKILL.md" <<'EOF'
+
+Full sidecar schema validation is the verifier's contract; this skill
+assumes well-formed sidecars. Out-of-enum change_type: values are a
+contract violation per the loud-failure rule enforced by the fan-in script.
 EOF
 
   run qrspi_skill_trim_audit --skill-base "$fixture_base"
@@ -341,7 +426,7 @@ EOF
   rm -rf "$fixture_base"
 
   if [ "$rc" -ne 0 ]; then
-    printf 'false-positive: lint flagged a fixture containing only allowed concrete script-name call-site references (exit %d). Output:\n%s\n' \
+    printf 'false-positive: lint flagged a fixture containing only allowed line-level exemption shapes (exit %d). Output:\n%s\n' \
       "$rc" "$out" >&2
     return 1
   fi
