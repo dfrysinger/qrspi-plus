@@ -386,3 +386,50 @@ require_repo_root() {
   _skill_md_die "require_repo_root: could not resolve REPO_ROOT from BATS_TEST_DIRNAME or git rev-parse --show-toplevel"
   return 1
 }
+
+# ---------------------------------------------------------------------------
+# resolve_skill_md <file>
+# Print the fully-resolved body of a SKILL.md to stdout, expanding every
+# `!cat <relpath>` build-directive line in place (path resolved relative to
+# REPO_ROOT, matching tools/build-plugin.mjs and extract_section above).
+# H2 headings inside included content are demoted to H3 so they do not
+# terminate H2 boundary detection (mirrors extract_section semantics).
+# Returns 1 with a loud diagnostic on unreadable file or unreadable include.
+# Bash 3.2 portable; no associative arrays, no mapfile.
+# ---------------------------------------------------------------------------
+resolve_skill_md() {
+  if [ "$#" -ne 1 ]; then
+    _skill_md_die "resolve_skill_md: expected 1 arg (file); got $#"
+    return 1
+  fi
+  local file="$1"
+  if [ ! -r "$file" ]; then
+    _skill_md_die "resolve_skill_md: file unreadable: $file"
+    return 1
+  fi
+  local repo_root="${REPO_ROOT:-}"
+  if [ -z "$repo_root" ] && command -v require_repo_root >/dev/null 2>&1; then
+    require_repo_root >/dev/null 2>&1 || true
+    repo_root="${REPO_ROOT:-}"
+  fi
+  awk -v root="$repo_root" '
+    /^[ \t]*!cat[ \t]+/ {
+      line = $0
+      sub(/^[ \t]*!cat[ \t]+/, "", line)
+      sub(/[ \t]+$/, "", line)
+      path = line
+      if (root != "" && substr(path, 1, 1) != "/") {
+        path = root "/" path
+      }
+      while ((getline incl < path) > 0) {
+        if (substr(incl, 1, 3) == "## " && substr(incl, 4, 1) != "#") {
+          incl = "#" incl
+        }
+        print incl
+      }
+      close(path)
+      next
+    }
+    { print }
+  ' "$file"
+}
