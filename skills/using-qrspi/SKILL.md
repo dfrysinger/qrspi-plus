@@ -384,18 +384,7 @@ After the first review round completes and fixes are applied, ask ONCE:
 
 **At the human gate, always state the review status** when presenting: either "Reviews passed clean in round N" or "Reviews found issues in round N which were fixed but not re-verified." If the user approves but reviews have not passed clean, ask if they'd like a review loop before finalizing — this is strongly recommended.
 
-### Fix-altitude rule (F-5)
-
-When fixing an "X is under-specified" finding, prefer minimal additions that stay at the artifact's altitude. If the natural fix pulls content from the next pipeline step (Design content into Goals; Plan content into Design; Implementation choices into Plan), that's a signal to defer specification rather than over-specify here. Add a one-line "[X] pinned in <next step>" note instead of pinning X exhaustively now. Reviewers who flag missing detail at the next-step altitude are misapplying their review brief — decline the finding with a one-line explanation in the round notes.
-
-Why: pulling next-step detail upward inflates the artifact, introduces internal contradictions (the natural-language detail at this altitude often contradicts the structured detail at the next altitude), and produces R7-R10-style self-induced review churn — reviewers in subsequent rounds correctly flag the over-specification, the fix removes it, the cycle repeats. Minimal additions converge in 1–2 rounds; maximal additions can take 5+.
-
-Mirrors the skill-refactor design's "decline scope-extension findings" rule, applied to artifact-level reviews.
-
-### Sweep-task findings — backstop
-
-Sweep-task findings (`agents/qrspi-plan-reviewer.md` § Sweep-task detection, per `skills/plan/SKILL.md` § Sweep Task Contract) are ordinary Plan-review correctness findings. When the reviewer surfaces a missing or malformed `dependent_tests:` field on a sweep-shaped task, the orchestrator routes it through the standard Plan re-spec loop documented above — no new implementation gate, no new test-runner behavior, no per-task pause: the producing task spec is updated to carry a well-formed `dependent_tests:` field, the next Plan review round re-verifies, and the loop terminates clean per the standard convergence rule.
-
+!cat skills/using-qrspi/references/fix-altitude-rule.md
 ## Review Output Handling
 
 **Disk-write contract (artifact-level reviews).** Each artifact-level reviewer subagent writes its findings directly to disk and returns only a brief structured summary to main chat. Main chat never receives finding text in subagent return values. This keeps reviewer output out of main chat's conversation history (where it would re-bill as cache reads on every subsequent turn) until main chat explicitly reads the file to apply fixes — at which point the standard `/compact` after fix-apply (see "Compaction at Step Transitions" + per-skill apply-fix recommendations) sheds it.

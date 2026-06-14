@@ -97,58 +97,50 @@
   },
   "Standard Review Loop": {
     "line_start": 353,
-    "line_end": 398
-  },
-  "Fix-altitude rule (F-5)": {
-    "line_start": 387,
-    "line_end": 394
-  },
-  "Sweep-task findings — backstop": {
-    "line_start": 395,
-    "line_end": 398
+    "line_end": 387
   },
   "Review Output Handling": {
-    "line_start": 399,
-    "line_end": 621
+    "line_start": 388,
+    "line_end": 610
   },
   "Review-Loop Pause Gate": {
-    "line_start": 622,
-    "line_end": 669
+    "line_start": 611,
+    "line_end": 658
   },
   "BATCH-WITH-OVERRIDES UI contract": {
-    "line_start": 626,
-    "line_end": 633
+    "line_start": 615,
+    "line_end": 622
   },
   "3-option menu (per paused finding)": {
-    "line_start": 634,
-    "line_end": 651
+    "line_start": 623,
+    "line_end": 640
   },
   "Paused rounds do not decrement the cap": {
-    "line_start": 652,
-    "line_end": 657
+    "line_start": 641,
+    "line_end": 646
   },
   "Pending-findings file": {
-    "line_start": 658,
-    "line_end": 669
+    "line_start": 647,
+    "line_end": 658
   },
   "Review Time Allocation": {
-    "line_start": 670,
-    "line_end": 673
+    "line_start": 659,
+    "line_end": 662
   },
   "Compaction Checkpoints": {
-    "line_start": 674,
-    "line_end": 681
+    "line_start": 663,
+    "line_end": 670
   },
   "Feedback File Format": {
-    "line_start": 682,
-    "line_end": 685
+    "line_start": 671,
+    "line_end": 674
   },
   "User Feedback": {
-    "line_start": 686,
-    "line_end": 688
+    "line_start": 675,
+    "line_end": 677
   },
   "Previous Artifact": {
-    "line_start": 689,
-    "line_end": 717
+    "line_start": 678,
+    "line_end": 706
   }
 }
