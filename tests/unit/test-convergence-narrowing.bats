@@ -220,9 +220,21 @@ setup() {
 # 18b. Literal-token diagnostic pinning (anchor mismatch, I10 distinguish, backward-loop delete-fail)
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] anchor-mismatch broaden-fallback pins literal diagnostic" {
-  echo "$PROTOCOL" | grep -qF 'is not the prior per-round commit' \
-    || { echo "step 12 missing anchor-mismatch literal diagnostic"; return 1; }
+@test "[112-PR2] anchor-file failure halts with named diagnostic (no silent fallback)" {
+  # Post-T26: a missing/unreadable anchor file or malformed SHA halts step 12
+  # non-zero with a NAMED diagnostic — there is no silent fallback to HEAD~1
+  # or to base-branch. Pin both named diagnostics so phrasing drift is caught.
+  echo "$PROTOCOL" | grep -qF 'anchor-file-missing:' \
+    || { echo "step 12 missing anchor-file-missing: named diagnostic"; return 1; }
+  echo "$PROTOCOL" | grep -qF 'sha-format-invalid:' \
+    || { echo "step 12 missing sha-format-invalid: named diagnostic"; return 1; }
+  # And the empty-diff divergence sanity-check halt (narrow-round-empty-diff)
+  # is preserved verbatim by T26.
+  echo "$PROTOCOL" | grep -qF 'narrow-round-empty-diff:' \
+    || { echo "step 12 missing narrow-round-empty-diff: named diagnostic"; return 1; }
+  # No-silent-fallback prose must remain pinned.
+  echo "$PROTOCOL" | grep -qiE 'no silent fallback to (HEAD~1|base-branch)' \
+    || { echo "step 12 missing 'no silent fallback' prose"; return 1; }
 }
 
 @test "[112-PR2] I10 distinguishability emits a 'no earlier scope-tagger output?' diagnostic" {
@@ -337,9 +349,11 @@ setup() {
 # 9. <ref> selection is dynamic
 # -----------------------------------------------------------------------------
 
-@test "[112-PR2] narrow decision selects <ref>=HEAD~1" {
-  echo "$PROTOCOL" | grep -qE '<ref>=HEAD~1' \
-    || { echo "narrow decision does not select <ref>=HEAD~1"; return 1; }
+@test "[112-PR2] narrow decision selects <ref>=<sha-from-anchor-file>" {
+  # Post-T26: narrow ref is the SHA read from the anchor file, not the HEAD~1
+  # shorthand. The anchor-file form is the source of truth.
+  echo "$PROTOCOL" | grep -qF '<ref>=<sha-from-anchor-file>' \
+    || { echo "narrow decision does not select <ref>=<sha-from-anchor-file>"; return 1; }
 }
 
 @test "[112-PR2] broaden decision selects <ref>=<base-branch>" {
@@ -390,10 +404,12 @@ setup() {
     || { echo "implement/SKILL.md does not document <task-base-commit> as the per-task default <ref>"; return 1; }
 }
 
-@test "[140] per-task Implement narrow decision selects <ref>=HEAD~1" {
+@test "[140] per-task Implement narrow decision invokes anchor-file lookup form" {
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
-  grep -qF '<ref>=HEAD~1' "$impl" \
-    || { echo "implement/SKILL.md narrow decision does not select literal <ref>=HEAD~1"; return 1; }
+  # Post-T26: narrow uses verbatim `git diff "$(cat reviews/tasks/task-NN/round-<NN-1>-commit.txt)" -- <artifact-path>`
+  # in place of the HEAD~1 shorthand.
+  grep -qF 'cat reviews/tasks/task-NN/round-<NN-1>-commit.txt' "$impl" \
+    || { echo "implement/SKILL.md narrow decision does not invoke per-task anchor-file lookup form"; return 1; }
 }
 
 @test "[140] per-task Implement anchor file path is reviews/tasks/task-NN/round-NN-commit.txt" {
@@ -413,13 +429,19 @@ setup() {
     || { echo "implement/SKILL.md narrow decision missing prior-round commit file reference"; return 1; }
 }
 
-@test "[140] per-task Implement broaden fallback fires on anchor mismatch" {
+@test "[140] per-task Implement anchor failure halts with named diagnostics" {
   local impl="$REPO_ROOT/skills/implement/SKILL.md"
-  # When HEAD~1 mismatches the anchor, the narrow decision falls through to
-  # broaden with a one-line diagnostic. Pin to the literal phrase emitted in
-  # both SKILL.md files so the assertion catches phrasing drift.
-  grep -qF 'is not the prior per-round commit' "$impl" \
-    || { echo "implement/SKILL.md missing anchor-mismatch broaden fallback diagnostic"; return 1; }
+  # Post-T26: per-task narrow no longer broadens silently on anchor mismatch —
+  # the script halts non-zero with the named diagnostics (anchor-file-missing,
+  # sha-format-invalid before git diff; narrow-round-empty-diff after).
+  grep -qF 'anchor-file-missing:' "$impl" \
+    || { echo "implement/SKILL.md missing anchor-file-missing: named diagnostic"; return 1; }
+  grep -qF 'sha-format-invalid:' "$impl" \
+    || { echo "implement/SKILL.md missing sha-format-invalid: named diagnostic"; return 1; }
+  grep -qF 'narrow-round-empty-diff:' "$impl" \
+    || { echo "implement/SKILL.md missing narrow-round-empty-diff: named diagnostic"; return 1; }
+  grep -qiE 'no silent fallback to base-branch|no .*HEAD~1.* shorthand' "$impl" \
+    || { echo "implement/SKILL.md missing no-silent-fallback prose"; return 1; }
 }
 
 @test "[140] per-task Implement backward-loop flag path is reviews/tasks/task-NN/round-NN-backward-loop.flag" {
@@ -496,10 +518,12 @@ setup() {
     || { echo "integrate/SKILL.md does not document <base-branch> as the default <ref>"; return 1; }
 }
 
-@test "[140] Integrate narrow decision selects <ref>=HEAD~1" {
+@test "[140] Integrate narrow decision invokes anchor-file lookup form" {
   local intg="$REPO_ROOT/skills/integrate/SKILL.md"
-  grep -qF '<ref>=HEAD~1' "$intg" \
-    || { echo "integrate/SKILL.md narrow decision does not select literal <ref>=HEAD~1"; return 1; }
+  # Post-T26: narrow uses verbatim `git diff "$(cat reviews/integration/round-<NN-1>-commit.txt)" -- <artifact-path>`
+  # in place of the HEAD~1 shorthand.
+  grep -qF 'cat reviews/integration/round-<NN-1>-commit.txt' "$intg" \
+    || { echo "integrate/SKILL.md narrow decision does not invoke anchor-file lookup form"; return 1; }
 }
 
 @test "[140] Integrate anchor file path is reviews/integration/round-NN-commit.txt" {
@@ -516,10 +540,19 @@ setup() {
     || { echo "integrate/SKILL.md narrow decision missing prior-round commit file reference"; return 1; }
 }
 
-@test "[140] Integrate broaden fallback fires on anchor mismatch" {
+@test "[140] Integrate anchor failure halts with named diagnostics" {
   local intg="$REPO_ROOT/skills/integrate/SKILL.md"
-  grep -qF 'is not the prior per-round commit' "$intg" \
-    || { echo "integrate/SKILL.md missing anchor-mismatch broaden fallback diagnostic"; return 1; }
+  # Post-T26: Integrate narrow no longer broadens silently on anchor mismatch
+  # — the anchor file IS the source of truth. Missing/malformed halts with
+  # named diagnostics; empty narrow-round diff halts after git diff.
+  grep -qF 'anchor-file-missing:' "$intg" \
+    || { echo "integrate/SKILL.md missing anchor-file-missing: named diagnostic"; return 1; }
+  grep -qF 'sha-format-invalid:' "$intg" \
+    || { echo "integrate/SKILL.md missing sha-format-invalid: named diagnostic"; return 1; }
+  grep -qF 'narrow-round-empty-diff:' "$intg" \
+    || { echo "integrate/SKILL.md missing narrow-round-empty-diff: named diagnostic"; return 1; }
+  grep -qiE 'no silent fallback|no .*HEAD~1.* shorthand' "$intg" \
+    || { echo "integrate/SKILL.md missing no-silent-fallback prose"; return 1; }
 }
 
 @test "[140] Integrate backward-loop flag path is reviews/integration/round-NN-backward-loop.flag" {

@@ -1,0 +1,21 @@
+#!/usr/bin/env bats
+# ----------------------------------------------------------------------------
+# Generated fixture for tests/unit/test-id-hygiene-lint-fail-direction.bats.
+#
+# This file is INTENTIONALLY carrying a forbidden bracketed-internal-ID token
+# inside an `@test "..."` description string. It exists solely as the input
+# to a fail-direction proof for the T12 id-hygiene lint helper.
+#
+# It lives under tests/fixtures/ (not tests/**/*.bats) AND uses the
+# `.bats.fixture` extension precisely so the permanent CI corpus-invariant
+# grep — which is restricted with `--include="*.bats"` — never sees this
+# file as a real test. The basename ends in `.fixture`, so the `*.bats`
+# glob filter does not match it, and the file is silently skipped by the
+# corpus sweep.
+#
+# Do not rename, move, or "fix" this file. Its forbidden token is the
+# load-bearing input to the fail-direction test.
+# ----------------------------------------------------------------------------
+@test "[T99] forbidden bracketed-internal-id token in description string" {
+  :
+}

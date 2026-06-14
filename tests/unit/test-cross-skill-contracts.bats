@@ -148,10 +148,11 @@ setup_file() {
   # Producer side — integrate
   run grep -F "round-NN-commit.txt" "$REPO_ROOT/skills/integrate/SKILL.md"
   [ "$status" -eq 0 ]
-  # Consumer side — using-qrspi step 12 reads the anchor
+  # Consumer side — using-qrspi step 12 reads the anchor via cat (post-T26
+  # anchor-file lookup form replaces the prior HEAD~1 shorthand).
   run grep -F "round-NN-commit.txt" "$REPO_ROOT/skills/using-qrspi/SKILL.md"
   [ "$status" -eq 0 ]
-  run grep -F "rev-parse HEAD~1" "$REPO_ROOT/skills/using-qrspi/SKILL.md"
+  run grep -F 'cat reviews/<step>/round-<NN-1>-commit.txt' "$REPO_ROOT/skills/using-qrspi/SKILL.md"
   [ "$status" -eq 0 ]
 }
 
