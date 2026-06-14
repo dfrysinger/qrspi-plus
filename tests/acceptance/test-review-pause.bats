@@ -44,14 +44,36 @@ setup() {
 }
 
 # extract_section <file> <heading-line>
+#
+# Resolves `!cat <relpath>` includes (per the same semantics as the shared
+# tests/helpers/skill-markdown.bash resolver) BEFORE the heading-scoped slice
+# so an H2 body that lives in references/*.md still matches when the
+# heading line itself stays inline. This keeps the G9 footprint-unlock
+# refactor invisible to this test's pin shape.
 extract_section() {
   local file="$1"
   local heading="$2"
-  awk -v h="$heading" '
+  local root="${REPO_ROOT:-}"
+  awk -v root="$root" '
+    /^[ \t]*!cat[ \t]+/ {
+      line = $0
+      sub(/^[ \t]*!cat[ \t]+/, "", line)
+      sub(/[ \t]+$/, "", line)
+      path = line
+      if (root != "" && substr(path, 1, 1) != "/") { path = root "/" path }
+      while ((getline incl < path) > 0) {
+        if (substr(incl, 1, 3) == "## " && substr(incl, 4, 1) != "#") { incl = "#" incl }
+        print incl
+      }
+      close(path)
+      next
+    }
+    { print }
+  ' "$file" | awk -v h="$heading" '
     $0 == h { in_section = 1; print; next }
     in_section && /^## / { in_section = 0 }
     in_section { print }
-  ' "$file"
+  '
 }
 
 # escalate_if_feedback / classify_route / cap_counter_after_round —

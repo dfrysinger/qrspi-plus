@@ -105,42 +105,26 @@
   },
   "Review-Loop Pause Gate": {
     "line_start": 611,
-    "line_end": 658
-  },
-  "BATCH-WITH-OVERRIDES UI contract": {
-    "line_start": 615,
-    "line_end": 622
-  },
-  "3-option menu (per paused finding)": {
-    "line_start": 623,
-    "line_end": 640
-  },
-  "Paused rounds do not decrement the cap": {
-    "line_start": 641,
-    "line_end": 646
-  },
-  "Pending-findings file": {
-    "line_start": 647,
-    "line_end": 658
+    "line_end": 616
   },
   "Review Time Allocation": {
-    "line_start": 659,
-    "line_end": 662
+    "line_start": 617,
+    "line_end": 620
   },
   "Compaction Checkpoints": {
-    "line_start": 663,
-    "line_end": 670
+    "line_start": 621,
+    "line_end": 628
   },
   "Feedback File Format": {
-    "line_start": 671,
-    "line_end": 674
+    "line_start": 629,
+    "line_end": 632
   },
   "User Feedback": {
-    "line_start": 675,
-    "line_end": 677
+    "line_start": 633,
+    "line_end": 635
   },
   "Previous Artifact": {
-    "line_start": 678,
-    "line_end": 696
+    "line_start": 636,
+    "line_end": 654
   }
 }
