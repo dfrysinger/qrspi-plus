@@ -2266,11 +2266,13 @@ _t9_simulate_verifier_sidecar_write() {
 
 @test "[AC4] sub-threshold findings cannot reach kept-findings.txt + SKILL.md forbids override" {
   # Behavior half: clarity-60 + correctness-65 are dropped end-to-end.
-  local tmp
-  tmp="$(mktemp -d)"
-  # Trap-based cleanup: fires on every exit path (success, return 1, abort)
-  # so partial-failure runs do not leak temp directories.
-  trap 'rm -rf "$tmp"' EXIT
+  # Use BATS_TEST_TMPDIR (auto-cleaned by bats) instead of installing our own
+  # EXIT trap — a user-installed EXIT trap clobbers bats's own EXIT handler in
+  # bats 1.x, causing the test result to be silently dropped (bats reports it
+  # in the plan but never emits ok/not ok for it, producing an
+  # "Executed N-1 instead of expected N" warning that fails CI under exit-1).
+  local tmp="$BATS_TEST_TMPDIR/ac4"
+  mkdir -p "$tmp"
 
   # clarity at 60 (well below 80 floor) — sub-threshold drop
   _t8_write_finding_pair "$tmp" "spec-claude.finding-F01" clarity 60 "" "[]" "Sub-threshold clarity finding."

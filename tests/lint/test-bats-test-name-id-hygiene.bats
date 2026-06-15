@@ -173,12 +173,18 @@ teardown() {
   # emission. The lint MUST treat this fixture as clean (status 0), because
   # (i) the @test description carries no forbidden token and (ii) the body
   # line carries the carve-out marker.
-  cat > "$fixture" <<'FIXTURE_EOF'
-#!/usr/bin/env bats
-@test "test body emits forbidden token to a generated fixture file" {
-  printf '@test "%s" { :; }\n' '[T99] x' > tests/fixtures/generated.bats  # bats lint:no-id-hygiene
-}
-FIXTURE_EOF
+  # NOTE: we construct the fixture with printf instead of a heredoc so that
+  # the literal `@test ...` declaration NEVER appears at the start of a line
+  # in THIS script source. Bats's per-file pre-scan counts `^@test` lines
+  # regardless of heredoc context, so a heredoc-embedded `@test` would
+  # inflate this file's declared count and produce a spurious
+  # "Executed N-1 instead of expected N" warning that fails CI under exit-1.
+  printf '%s\n' \
+    '#!/usr/bin/env bats' \
+    '@test "test body emits forbidden token to a generated fixture file" {' \
+    "  printf '@test \"%s\" { :; }\\n' '[T99] x' > tests/fixtures/generated.bats  # bats lint:no-id-hygiene" \
+    '}' \
+    > "$fixture"
   declare -F qrspi_id_hygiene_lint_check_file >/dev/null
   run qrspi_id_hygiene_lint_check_file "$fixture"
   [ "$status" -eq 0 ]

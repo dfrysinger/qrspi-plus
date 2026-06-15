@@ -449,7 +449,7 @@ After the first review round completes and fixes are applied, ask ONCE:
 
 9. **Write `round-NN-dispositions.md`** (main-chat-authored, ≤30 lines) listing what was changed and why.
 
-   **Sub-threshold findings: NO orchestrator override.** Findings dropped by `scripts/verifier-fan-in.sh` per the `change_type` thresholds (`style|clarity` < 80, `correctness` < 70) MUST NOT be kept via orchestrator override. The script is the single source of truth for `kept-findings.txt` per CD-4's iron rule. Standalone human-driven edits outside the apply-fix protocol are unaffected.
+   **Sub-threshold findings: NO orchestrator override.** Findings dropped by `scripts/verifier-fan-in.sh` per the `change_type` thresholds (`style|clarity` < 80, `correctness` < 70) MUST NOT be kept via orchestrator override. The script is the single source of truth for `kept-findings.txt` per CD-4's iron rule — there is no path from a dropped finding into the kept set, and the orchestrator MUST NOT apply patches addressing dropped findings under the guise of the round's apply-fix work. Standalone human-driven edits outside the apply-fix protocol are unaffected.
 
    **Optional `## Sub-Threshold Observations` section (informational only).** When the orchestrator notices a pattern in dropped findings — e.g., multiple sub-threshold findings sharing a `defect_class` tag — it MAY append a `## Sub-Threshold Observations` H2 section to `round-NN-dispositions.md` as evidence-collection signal for future calibration. It is purely informational, consumed by no current script. `finding_paths[]` values MUST be relative paths within the current `round-NN/` directory (no `../`, no absolute paths). Canonical YAML template:
 
