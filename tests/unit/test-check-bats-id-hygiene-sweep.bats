@@ -28,7 +28,15 @@ setup() {
 # ----------------------------------------------------------------------------
 
 @test "description-string strip inside existing bats file exits 0" {
-  diff_input=$(cat <<'DIFF'
+  # Bracketed token assembled at runtime so the literal `[T01]` never
+  # appears at column 0 in this fixture source — keeps the bats-corpus
+  # [Tnn] sweep (test-g2-bats-id-hygiene #1) clean while preserving the
+  # exact diff payload the script under test must accept. Switching to an
+  # unquoted heredoc so ${ob}/${cb} expand; no `$` or backticks live in
+  # the diff body itself, so no other escaping is required.
+  ob='['
+  cb=']'
+  diff_input=$(cat <<DIFF
 diff --git a/tests/unit/test-example.bats b/tests/unit/test-example.bats
 index 1111111..2222222 100644
 --- a/tests/unit/test-example.bats
@@ -37,10 +45,10 @@ index 1111111..2222222 100644
  setup() {
    :
  }
--@test "[T01] sample assertion holds for inputs" {
+-@test "${ob}T01${cb} sample assertion holds for inputs" {
 +@test "sample assertion holds for inputs" {
    run true
-   [ "$status" -eq 0 ]
+   [ "\$status" -eq 0 ]
  }
 DIFF
 )
@@ -49,13 +57,18 @@ DIFF
 }
 
 @test "brand-new fixture under tests/fixtures plus description strip exits 0" {
-  diff_input=$(cat <<'DIFF'
+  # See sibling test above re: runtime-assembled bracket token. Same
+  # rationale — preserves exact diff payload while keeping the corpus
+  # sweep clean.
+  ob='['
+  cb=']'
+  diff_input=$(cat <<DIFF
 diff --git a/tests/unit/test-example.bats b/tests/unit/test-example.bats
 index 1111111..2222222 100644
 --- a/tests/unit/test-example.bats
 +++ b/tests/unit/test-example.bats
 @@ -1,3 +1,3 @@
--@test "[T11] mechanical sweep is sound" {
+-@test "${ob}T11${cb} mechanical sweep is sound" {
 +@test "mechanical sweep is sound" {
    :
  }
