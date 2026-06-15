@@ -315,12 +315,13 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "CI keeps a single workflow file (no sibling workflow added by G32)" {
+@test "CI carries the two planned workflow files (ci.yml + build-then-diff.yml per T29)" {
   require_repo_root
-  # Exactly one .yml/.yaml workflow file under .github/workflows/.
+  # Exactly two .yml/.yaml workflow files under .github/workflows/.
   local count
   count="$(find "$REPO_ROOT/.github/workflows" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | wc -l | tr -d ' ')"
-  [ "$count" = "1" ]
+  [ "$count" = "2" ]
+  [ -f "$REPO_ROOT/.github/workflows/ci.yml" ] && [ -f "$REPO_ROOT/.github/workflows/build-then-diff.yml" ]
 }
 
 @test "CI has NO Actions auto-commit step (no git commit from a workflow run step)" {

@@ -46,7 +46,7 @@ _frontmatter() {
   ' "$1"
 }
 
-@test "[agent-frontmatter-no-model] sweep matches the expected 41 qrspi agent files" {
+@test "[agent-frontmatter-no-model] sweep matches the expected 42 qrspi agent files" {
   # Sanity check: glob expansion finds every qrspi-* agent file. If this
   # count drifts, the agent surface changed and the lint scope below needs
   # a deliberate re-review (not silent under-coverage).
@@ -56,8 +56,8 @@ _frontmatter() {
     [ -f "$f" ] || continue
     count=$((count + 1))
   done
-  [ "$count" -eq 41 ] || {
-    echo "expected 41 agents/qrspi-*.md files, found $count"
+  [ "$count" -eq 42 ] || {
+    echo "expected 42 agents/qrspi-*.md files, found $count"
     return 1
   }
 }

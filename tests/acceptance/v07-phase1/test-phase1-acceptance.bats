@@ -3139,10 +3139,10 @@ JQ_EOF
   [ "$status" -eq 0 ]
 }
 
-@test ".claude-plugin/marketplace.json qrspi plugin carries v0.7.2 release metadata" {
+@test ".claude-plugin/marketplace.json qrspi plugin carries v0.7.3 release metadata" {
   local mkt="$REPO_ROOT/.claude-plugin/marketplace.json"
   [ -f "$mkt" ]
-  run bash -c "node -e 'const m=JSON.parse(require(\"fs\").readFileSync(\"$mkt\",\"utf8\"));const q=(m.plugins||[]).find(p=>p.name===\"qrspi\");if(!q)process.exit(2);process.exit(q.version===\"0.7.2\"?0:3);'"
+  run bash -c "node -e 'const m=JSON.parse(require(\"fs\").readFileSync(\"$mkt\",\"utf8\"));const q=(m.plugins||[]).find(p=>p.name===\"qrspi\");if(!q)process.exit(2);process.exit(q.version===\"0.7.3\"?0:3);'"
   [ "$status" -eq 0 ]
 }
 
