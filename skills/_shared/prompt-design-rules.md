@@ -115,14 +115,21 @@ If the answer is yes, tighten. If the answer is no, leave the sentence alone.
 | "We will now describe the procedure for handling failures." | Cut entirely; the procedure that follows speaks for itself. | Meta-announcement of the next paragraph adds zero signal. |
 | "This section provides guidance on how to author the rubric." | "Author the rubric as follows:" | Meta-prose about the document body collapsed into the imperative. |
 
-**What NOT to tighten.**
+### What NOT to tighten
 
-- Anchor phrases preserved verbatim across edits. Paraphrase breaks the audit handle, even when shorter wording exists.
-- Verbatim contracts, named diagnostic strings, and exact frontmatter field values. These are audit handles, not prose.
-- One-line `Why:` rationale where the failure mode is non-obvious. Tighten only the surrounding sentence; keep the rationale.
-- Examples whose specificity carries the failure mode being illustrated. Tightening removes the evidence.
-- Imperative-voice rules already stated as "Do X. Do not do Y." These are already at the floor.
-- Lists whose items each name a distinct behavior. Merging items hides the named behaviors.
+The following categories carry behavioral or audit weight that paraphrase destroys. Leave them at their current wording even when a shorter form exists:
+
+- **Load-bearing repetition.** A phrase intentionally restated for emphasis or clarity across sections. The repetition IS the signal; collapsing it removes the emphasis the author put there on purpose.
+- **Verbatim test-pinned strings.** Anchor phrases that `tests/**/*.bats` files match literally via `grep -F`, `grep -qxF`, or equivalent. Any string reachable from a bats test as a literal match is a contract — tightening it turns the test red.
+- **Iron-law clauses.** Sentences whose verbatim form is the load-bearing assertion (e.g., contracts, named invariants, "MUST"/"NEVER" rules). The exact wording is the spec; paraphrase weakens the assertion.
+- **Anchor phrases preserved verbatim across edits.** Paraphrase breaks the audit handle, even when shorter wording exists.
+- **Verbatim contracts, named diagnostic strings, and exact frontmatter field values.** These are audit handles, not prose.
+- **One-line `Why:` rationale where the failure mode is non-obvious.** Tighten only the surrounding sentence; keep the rationale.
+- **Examples whose specificity carries the failure mode being illustrated.** Tightening removes the evidence.
+- **Imperative-voice rules already stated as "Do X. Do not do Y."** These are already at the floor.
+- **Lists whose items each name a distinct behavior.** Merging items hides the named behaviors.
+
+Rule of thumb: before tightening any sentence, `grep -rF "<the sentence>" tests/` — if anything matches, the sentence is test-pinned and you must leave it alone.
 
 **Guardrail — minimal does NOT mean short.** R8 tightens each sentence. R8 does not delete required behavior. The cross-cutting principles below state that the goal is the minimal set that fully specifies behavior, and that substantive prompts run two-hundred-plus lines. R8 is bounded by behavioral coverage. Shorten sentences. Preserve every load-bearing instruction, contract, anchor phrase, named diagnostic, and rationale the artifact requires.
 
