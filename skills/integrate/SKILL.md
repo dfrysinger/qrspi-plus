@@ -87,11 +87,11 @@ After all task-branch merges complete, delete the stage branches (`qrspi/{slug}/
 
 ## Phase Start
 
-**Write `reviews/integration/phase-base.txt` as the first orchestrator action of the integrate phase, before any subagent dispatch.** Capture the integration branch's HEAD SHA as `integration_base_sha=<HEAD-SHA>` so the Step N OBC check (`scripts/orchestration-boundary-check.sh --phase integration`) can bound the non-subagent-commit detection range. A missing or malformed file causes the OBC script to write a dispatch-defect entry rather than emit a vacuous "clean" report. This small bookkeeping write is one of the bounded § Orchestration Boundary exceptions.
+**Write `reviews/integration/phase-base.txt` as the first orchestrator action of the integrate phase, before any subagent dispatch.** Capture the integration branch's HEAD SHA and write it as the single-line bare-SHA file contents (no key=value prefix, no trailing structure — just the SHA + newline) so the Step N OBC check (`scripts/orchestration-boundary-check.sh --phase integration`) can bound the non-subagent-commit detection range. A missing or malformed file causes the OBC script to write a dispatch-defect entry rather than emit a vacuous "clean" report. This small bookkeeping write is one of the bounded § Orchestration Boundary exceptions.
 
 ```sh
 mkdir -p "<ABS_ARTIFACT_DIR>/reviews/integration"
-printf 'integration_base_sha=%s\n' "$(git -C "<repo>" rev-parse HEAD)" \
+printf '%s\n' "$(git -C "<repo>" rev-parse HEAD)" \
   > "<ABS_ARTIFACT_DIR>/reviews/integration/phase-base.txt"
 ```
 

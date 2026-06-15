@@ -87,7 +87,7 @@ Per-type rules live in `agents/qrspi-test-writer.md` § TEST TYPE TEMPLATES. One
 
 ## Process Steps
 
-1. **Phase-start: write `reviews/test/phase-base.txt`** — **first orchestrator action of the Test phase**, before any subagent dispatch. Capture the integration-branch HEAD SHA and write `<ABS_ARTIFACT_DIR>/reviews/test/phase-base.txt` with content `integration_base_sha=<HEAD-SHA-at-phase-entry>`. Consumed by `scripts/orchestration-boundary-check.sh --phase test` at step 8. Allowlisted per § Orchestration Boundary. Shell: `mkdir -p "<ABS_ARTIFACT_DIR>/reviews/test" && printf 'integration_base_sha=%s\n' "$(git rev-parse HEAD)" > "<ABS_ARTIFACT_DIR>/reviews/test/phase-base.txt"`.
+1. **Phase-start: write `reviews/test/phase-base.txt`** — **first orchestrator action of the Test phase**, before any subagent dispatch. Capture the integration-branch HEAD SHA and write `<ABS_ARTIFACT_DIR>/reviews/test/phase-base.txt` with single-line bare-SHA contents (no key=value prefix — just the SHA + newline). Consumed by `scripts/orchestration-boundary-check.sh --phase test` at step 8. Allowlisted per § Orchestration Boundary. Shell: `mkdir -p "<ABS_ARTIFACT_DIR>/reviews/test" && printf '%s\n' "$(git rev-parse HEAD)" > "<ABS_ARTIFACT_DIR>/reviews/test/phase-base.txt"`.
 
 2. **Run full existing test suite** — baseline. If failures, present (Pattern 3, deterministic, no re-run). User: dispatch fixes (route through fix pipeline) / proceed anyway (log to `reviews/test/baseline-failures.md`) / stop.
 
