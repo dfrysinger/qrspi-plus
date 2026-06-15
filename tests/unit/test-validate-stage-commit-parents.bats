@@ -340,3 +340,59 @@ run_script() {
   echo "$output" | grep -q "capture-sidecar-write-error:"
   [ ! -f "$WAVE_DIR/W1.sidecar" ]
 }
+
+# ── F02: Wave-1 sidecar bridge to OBC contract ─────────────────────────────
+# Pins the dual-write + seed-mode bridge that produces the OBC-expected
+# `wave-1.txt` (YAML colon, `integration_base: <SHA>\ntask_tips:\n`)
+# alongside the existing `W{N}.sidecar` parent-validation schema.
+
+@test "capture --wave-id W1 dual-writes OBC-shaped wave-1.txt alongside W1.sidecar" {
+  make_task_branch task-aa
+  base=$(sha_of HEAD)
+  run run_script --capture --wave-id W1 --task-branch task-aa
+  [ "$status" -eq 0 ]
+
+  # Existing sidecar unchanged.
+  [ -f "$WAVE_DIR/W1.sidecar" ]
+  grep -q "^integration_base=$base$" "$WAVE_DIR/W1.sidecar"
+
+  # New OBC-shaped companion: YAML colon, integration_base, task_tips: empty.
+  [ -f "$WAVE_DIR/wave-1.txt" ]
+  body=$(cat "$WAVE_DIR/wave-1.txt")
+  expected=$(printf 'integration_base: %s\ntask_tips:\n' "$base")
+  [ "$body" = "$expected" ]
+}
+
+@test "capture --wave-id W2 does NOT write wave-1.txt (dual-write is W1-only)" {
+  make_task_branch task-aa
+  run run_script --capture --wave-id W2 --task-branch task-aa
+  [ "$status" -eq 0 ]
+  [ -f "$WAVE_DIR/W2.sidecar" ]
+  [ ! -f "$WAVE_DIR/wave-1.txt" ]
+}
+
+@test "--seed-wave-1-obc writes wave-1.txt with exact OBC body and no W{N}.sidecar side-effect" {
+  base=$(sha_of HEAD)
+  run run_script --seed-wave-1-obc --integration-base "$base" --artifact-dir "$FIX"
+  [ "$status" -eq 0 ]
+
+  [ -f "$FIX/reviews/implement/wave-state/wave-1.txt" ]
+  body=$(cat "$FIX/reviews/implement/wave-state/wave-1.txt")
+  expected=$(printf 'integration_base: %s\ntask_tips:\n' "$base")
+  [ "$body" = "$expected" ]
+
+  # Seed-mode is fan-out only — no W{N}.sidecar written.
+  ! ls "$FIX/reviews/implement/wave-state/" | grep -q '\.sidecar$'
+}
+
+@test "--seed-wave-1-obc requires --integration-base" {
+  run run_script --seed-wave-1-obc --artifact-dir "$FIX"
+  [ "$status" -ne 0 ]
+}
+
+@test "--seed-wave-1-obc rejects malformed integration-base SHA with sha-format-invalid" {
+  run run_script --seed-wave-1-obc --integration-base "ZZZZZZZ" --artifact-dir "$FIX"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -q "sha-format-invalid:"
+  [ ! -f "$FIX/reviews/implement/wave-state/wave-1.txt" ]
+}

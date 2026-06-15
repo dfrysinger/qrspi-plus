@@ -18,6 +18,19 @@
 #         (b) set(actual_parents[1:]) == set(captured task-tip SHAs)
 #             (task-tip set equality).
 #
+#   --seed-wave-1-obc (called by Implement skill at Wave 1 fan-out, when
+#       Wave 1 has no stage commit): writes the OBC-shaped wave-1.txt
+#       companion (YAML colon form: `integration_base: <SHA>\ntask_tips:\n`)
+#       under <artifact-dir>/reviews/implement/wave-state/ from the
+#       --integration-base SHA. No stage-commit parent validation runs;
+#       no W{N}.sidecar is written. Bridges the schema gap between
+#       T19c's per-wave .sidecar and the OBC's pinned wave-1.txt contract.
+#
+# Wave-1 dual-write: in --capture mode with --wave-id W1, the script
+# ALSO writes wave-1.txt alongside W1.sidecar so the orchestration-
+# boundary-check implement-phase batch gate has the integration_base it
+# reads. The existing W{N}.sidecar schema is unchanged.
+#
 # Usage:
 #   validate-stage-commit-parents.sh --capture  --wave-id <id> \
 #       --task-branch <name> [--task-branch <name> ...] \
@@ -25,6 +38,10 @@
 #
 #   validate-stage-commit-parents.sh --validate --wave-id <id> \
 #       [--wave-state-dir <abs-dir>]
+#
+#   validate-stage-commit-parents.sh --seed-wave-1-obc \
+#       --integration-base <SHA> \
+#       (--artifact-dir <abs-dir> | --wave-state-dir <abs-dir>)
 #
 # Default --wave-state-dir is <repo-root>/reviews/implement/wave-state where
 # <repo-root> is `git rev-parse --show-toplevel` from the current working
@@ -72,41 +89,50 @@ set -euo pipefail
 mode=""
 wave_id=""
 wave_state_dir=""
+artifact_dir=""
+integration_base_arg=""
 task_branches=()
 
 usage() {
-  sed -n '2,40p' "$0" >&2
+  sed -n '2,55p' "$0" >&2
   exit 2
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --capture)         mode=capture ;;
-    --validate)        mode=validate ;;
-    --wave-id)         shift; wave_id=${1:-} ;;
-    --wave-state-dir)  shift; wave_state_dir=${1:-} ;;
-    --task-branch)     shift; task_branches+=("${1:-}") ;;
-    -h|--help)         usage ;;
-    *)                 echo "unknown argument: $1" >&2; exit 2 ;;
+    --capture)            mode=capture ;;
+    --validate)           mode=validate ;;
+    --seed-wave-1-obc)    mode=seed-wave-1-obc ;;
+    --wave-id)            shift; wave_id=${1:-} ;;
+    --wave-state-dir)     shift; wave_state_dir=${1:-} ;;
+    --artifact-dir)       shift; artifact_dir=${1:-} ;;
+    --integration-base)   shift; integration_base_arg=${1:-} ;;
+    --task-branch)        shift; task_branches+=("${1:-}") ;;
+    -h|--help)            usage ;;
+    *)                    echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
 done
 
 if [ -z "$mode" ]; then
-  echo "one of --capture or --validate is required" >&2
+  echo "one of --capture, --validate, or --seed-wave-1-obc is required" >&2
   exit 2
 fi
-if [ -z "$wave_id" ]; then
+if [ -z "$wave_id" ] && [ "$mode" != "seed-wave-1-obc" ]; then
   echo "--wave-id is required" >&2
   exit 2
 fi
 
 if [ -z "$wave_state_dir" ]; then
-  if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
-    echo "not in a git repository (cannot resolve --wave-state-dir default)" >&2
-    exit 2
+  if [ -n "$artifact_dir" ]; then
+    wave_state_dir="$artifact_dir/reviews/implement/wave-state"
+  else
+    if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+      echo "not in a git repository (cannot resolve --wave-state-dir default)" >&2
+      exit 2
+    fi
+    wave_state_dir="$repo_root/reviews/implement/wave-state"
   fi
-  wave_state_dir="$repo_root/reviews/implement/wave-state"
 fi
 sidecar="$wave_state_dir/$wave_id.sidecar"
 
@@ -122,6 +148,60 @@ validate_sha() {
     exit 1
   fi
 }
+
+# ── OBC-bridge writer ──────────────────────────────────────────────────────
+# Writes the OBC-shaped wave-1.txt companion (YAML colon form) the
+# orchestration-boundary-check.sh script reads at the implement-phase batch
+# gate. Body is exactly:
+#
+#   integration_base: <SHA>
+#   task_tips:
+#
+# (Trailing `task_tips:` line matches the pinned OBC test fixture; OBC
+# only reads integration_base.) Used by both --capture (when wave_id=W1,
+# as a dual-write alongside W{N}.sidecar) and --seed-wave-1-obc (as the
+# sole output for fan-out-only Wave 1 with no stage commit).
+write_wave_1_obc() {
+  local base=$1 dir=$2 tmp
+  if ! mkdir -p "$dir" 2>/dev/null; then
+    echo "capture-sidecar-write-error: cannot create wave-state directory: $dir" >&2
+    exit 1
+  fi
+  if ! tmp=$(mktemp "$dir/.wave-1.XXXXXX" 2>/dev/null); then
+    echo "capture-sidecar-write-error: cannot create temp file under wave-state directory: $dir" >&2
+    exit 1
+  fi
+  if ! {
+        printf 'integration_base: %s\n' "$base"
+        printf 'task_tips:\n'
+      } > "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    echo "capture-sidecar-write-error: cannot write wave-1.txt contents to: $tmp" >&2
+    exit 1
+  fi
+  if ! mv "$tmp" "$dir/wave-1.txt" 2>/dev/null; then
+    rm -f "$tmp"
+    echo "capture-sidecar-write-error: cannot rename wave-1.txt to: $dir/wave-1.txt" >&2
+    exit 1
+  fi
+}
+
+# ── --seed-wave-1-obc mode ─────────────────────────────────────────────────
+# Fan-out-only Wave 1: no stage commit happens, so --capture --wave-id W1
+# is never invoked. The Implement-skill orchestrator calls this mode as
+# the first action of Wave 1 dispatch to seed wave-1.txt from HEAD so the
+# downstream OBC implement-phase batch gate has the integration-base SHA
+# it expects. No parent validation runs; no W{N}.sidecar is written.
+
+if [ "$mode" = seed-wave-1-obc ]; then
+  if [ -z "$integration_base_arg" ]; then
+    echo "--seed-wave-1-obc requires --integration-base <SHA>" >&2
+    exit 2
+  fi
+  validate_sha "$integration_base_arg" "--integration-base argument"
+  write_wave_1_obc "$integration_base_arg" "$wave_state_dir"
+  exit 0
+fi
 
 # ── --capture mode ─────────────────────────────────────────────────────────
 
@@ -171,6 +251,18 @@ if [ "$mode" = capture ]; then
     rm -f "$tmp"
     echo "capture-sidecar-write-error: cannot rename sidecar to: $sidecar" >&2
     exit 1
+  fi
+
+  # OBC bridge: when capturing Wave 1, ALSO write the OBC-shaped wave-1.txt
+  # companion alongside W1.sidecar so the orchestration-boundary-check
+  # implement-phase batch gate can read integration_base from its expected
+  # path/shape. W{N}.sidecar's schema (integration_base=<SHA>,
+  # task_tip_shas=...) is unchanged. For waves where Wave 1 is fan-out only
+  # (no stage commit, so --capture --wave-id W1 is never invoked), the
+  # Implement skill invokes --seed-wave-1-obc instead; see the seed-mode
+  # block above.
+  if [ "$wave_id" = "W1" ]; then
+    write_wave_1_obc "$base" "$wave_state_dir"
   fi
   exit 0
 fi

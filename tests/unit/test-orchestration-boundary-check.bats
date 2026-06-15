@@ -274,6 +274,45 @@ valid_phases_helper() {
 }
 
 # -----------------------------------------------------------------------------
+# F02: End-to-end bridge from validate-stage-commit-parents.sh capture/seed
+# into OBC's implement-phase wave-1 read. Closes the F02 detection gap.
+# -----------------------------------------------------------------------------
+
+@test "F02 end-to-end: capture --wave-id W1 satisfies OBC implement-phase (Dispatch defects empty)" {
+  bridge="$REPO_ROOT/scripts/validate-stage-commit-parents.sh"
+  # --capture with no task branches still resolves the integration-base SHA
+  # from HEAD and (via the F02 dual-write bridge) emits wave-1.txt.
+  run "$bridge" --capture --wave-id W1 --wave-state-dir "$TMP_DIR/reviews/implement/wave-state"
+  [ "$status" -eq 0 ]
+  [ -f "$TMP_DIR/reviews/implement/wave-state/wave-1.txt" ]
+
+  run "$SCRIPT" --phase implement --artifact-dir "$TMP_DIR"
+  [ "$status" -eq 0 ]
+  report="$(cat "$TMP_DIR/reviews/implement/orchestration-boundary.md")"
+  defects_section="$(echo "$report" | awk '/^## Dispatch defects/{flag=1;next} /^## /{flag=0} flag')"
+  # No named defect should appear; the wave-1-sidecar/sha diagnostics must
+  # NOT fire under the bridge.
+  ! echo "$defects_section" | grep -q 'wave-1-sidecar-missing:'
+  ! echo "$defects_section" | grep -q 'wave-1-sidecar-malformed:'
+  ! echo "$defects_section" | grep -q 'sha-format-invalid:'
+}
+
+@test "F02 end-to-end: --seed-wave-1-obc satisfies OBC implement-phase (fan-out-only Wave 1)" {
+  bridge="$REPO_ROOT/scripts/validate-stage-commit-parents.sh"
+  run "$bridge" --seed-wave-1-obc --integration-base "$PHASE_BASE_SHA" --artifact-dir "$TMP_DIR"
+  [ "$status" -eq 0 ]
+  [ -f "$TMP_DIR/reviews/implement/wave-state/wave-1.txt" ]
+
+  run "$SCRIPT" --phase implement --artifact-dir "$TMP_DIR"
+  [ "$status" -eq 0 ]
+  report="$(cat "$TMP_DIR/reviews/implement/orchestration-boundary.md")"
+  defects_section="$(echo "$report" | awk '/^## Dispatch defects/{flag=1;next} /^## /{flag=0} flag')"
+  ! echo "$defects_section" | grep -q 'wave-1-sidecar-missing:'
+  ! echo "$defects_section" | grep -q 'wave-1-sidecar-malformed:'
+  ! echo "$defects_section" | grep -q 'sha-format-invalid:'
+}
+
+# -----------------------------------------------------------------------------
 # Author-name fail-loud
 # -----------------------------------------------------------------------------
 
