@@ -2,6 +2,39 @@
 
 Reverse-chronological list of notable changes to the QRSPI pipeline (skills, agents, scripts, configuration, and pipeline contracts). Newest entry on top. Entries cite the issue number and the spec/plan paths under `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 
+## 2026-06-15 — v0.7.3: pipeline-correctness fixes + active-skill footprint reduction
+
+Closes the eight P0 defects surfaced by the v0.7.2 self-host run plus a release-wide active-skill-prompt footprint reduction, shipped in a single phase with a single end-to-end slice. 45 tasks across 1 phase / 7 waves; 192 commits.
+
+**Goals shipped (G1–G9):**
+- **G1** — verifier sidecar grounding: pre-existing anchor disambiguates work-unit-external vs prior-round code; rubric band 72–78 hardening-relevant correctness fixes now reach the keep set.
+- **G2** — bats `@test` description hygiene: `[Tnn]` and `R\d+-F\d+` tokens swept from the corpus + permanent CI lint (`tests/lint/test-bats-test-name-id-hygiene.bats`).
+- **G3** — design absorption marker pipeline: explicit `## G<n> — <name>: absorbed by CD-<n>` headings in design.md drive `scripts/design-absorption-markers.sh` → `scripts/review-prep.sh` plan-step TSV, eliminating implicit traceability gaps.
+- **G4** — plan-step upstream-paths: new `scripts/upstream-paths.sh` resolves the design absorption map to plan-task upstream pointers (closes silent-fan-out class).
+- **G5** — orchestration boundary observability: new `scripts/orchestration-boundary-check.sh` runs at phase end, writes byte-empty on clean / two named sections (`## Boundary violations`, `## Dispatch defects`) when populated; non-zero exit on dispatch defects is the script-level fail-loud.
+- **G6** — stage-commit-parents validator: new `scripts/validate-stage-commit-parents.sh` with `--capture --wave-id W<n>` dual-write (key=value sidecar + OBC-shaped `wave-<n>.txt`) closes the Implement batch-gate bridge.
+- **G7** — anchor file lookup: `SKILL.anchors.json` schema + resolver harden the reference-gate pause + reference-extraction round-trip.
+- **G8** — version source unification: repo-root `VERSION` file is the single source of truth for `.claude-plugin/marketplace.json`, `.claude-plugin/plugin.json`, `.github/plugin/*`, and `build/` outputs.
+- **G9** — active-skill prompt footprint <30,000 tokens (cl100k_base): 14 SKILLs trimmed via 4-pass (three-tier placement → script-mechanic deletion → R8 tightening → regression-guard execution) against six new `_shared/` snippets `!cat`-resolved at skill-load. Heaviest active skill (using-qrspi) measured at 29,913 tokens.
+
+**Cross-goal decisions:**
+- **CD-1** — vendor-neutral dispatch rename (`scripts/dispatch-agent.sh`, was `scripts/review-prep.sh` for review-only).
+- **CD-2** — implementer Pre-DONE self-check promoted from advisory to blocking.
+- **CD-3** — R8 prose-density rule landed in `skills/_shared/prompt-design-rules.md` with explicit `### What NOT to tighten` carve-outs (load-bearing repetition, verbatim test-pinned strings, iron-law clauses, anchor phrases).
+
+**In-pipeline fixes captured (Integrate + Test rounds):**
+- **FX-Integrate-F01** — SKILL `printf %sn "$SHA"` write shape for `reviews/integrate/phase-base.txt` aligned with OBC consumer (bare-SHA, no key=value).
+- **FX-Integrate-F02** — `validate-stage-commit-parents.sh` `--capture --wave-id W1` + `--seed-wave-1-obc` mode dual-writes the OBC-shaped wave-1.txt bridge.
+- **FX-Integrate-CI** — release pin updates (agents 42, workflows 2, marketplace 0.7.3); bats off-by-one CI failures (user-trap-EXIT vs bats EXIT handler collision in `test-phase1-acceptance.bats [AC4]`; heredoc-embedded `@test` count inflation in `test-bats-test-name-id-hygiene.bats`).
+- **FX-Test-FX1** — OBC report shape brought into compliance with design.md §G5(b) (byte-empty clean, two-section schema).
+- **FX-Test-FX2** — `[Tnn]` token violations in two unit fixtures runtime-assembled.
+- **FX-Test-FX3** — `### What NOT to tighten` H3 subheading added to `prompt-design-rules.md` per CD-3.
+
+Test posture: 89/89 plan-level acceptance tests GREEN; 2,566/2,566 full suite GREEN locally; CI BATS-under-bash-3.2 carries 9 pre-existing environmental baselines (root-uid permission tests + missing-tiktoken footprint tests) inherited from v0.7.2.
+
+Reviews: Implement per-task reviews + 2-round Integration review + Test 3-reviewer fan-out + dual-review (Claude Opus 4.7 high + GPT-5.5) all clean.
+
+
 ## 2026-05-30 — v0.7.1 hardening: close G7b silent-fallback class + per-host model_routing
 
 Closes the silent-fallback class tracked under G7 / G7a / G7b at all three reachable dispatch paths in `skills/using-qrspi/SKILL.md`: the `trusted_path:` short-circuit, the `validators:` trusted-model re-run, and the missing `model_routing:` backfill path. Each path now halts and reports rather than silently degrading to the agent-bundled default. Anti-pattern vocab pins in `tests/unit/test-using-qrspi-vocab.bats` forbid the literal "silently fall back" / "silently degrade" wording the class was filed against.
