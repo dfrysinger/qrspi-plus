@@ -168,7 +168,17 @@ git merge --no-ff qrspi/{slug}/task-AA qrspi/{slug}/task-BB ...
 scripts/validate-stage-commit-parents.sh --validate --wave-id W{N}
 ```
 
-`--capture` writes the integration-base SHA and each task-tip SHA to `reviews/implement/wave-state/W{N}.sidecar`. `--validate` asserts `actual_parents[0] == captured integration-base SHA` (first-parent ordering is load-bearing for the integration spine) and `set(actual_parents[1:]) == set(captured task-tip SHAs)`. On either-invariant failure the wrapper halts non-zero with `stage-commit-parent-mismatch:` — do not advance, do not record the wave as complete. `parallelization.md` stays symbolic-only.
+`--capture` writes the integration-base SHA and each task-tip SHA to `reviews/implement/wave-state/W{N}.sidecar`. When `--wave-id W1`, `--capture` ALSO dual-writes `reviews/implement/wave-state/wave-1.txt` (OBC-shaped YAML colon, `integration_base: <SHA>\ntask_tips:\n`) so the implement-phase OBC batch gate sees the integration-base. `--validate` asserts `actual_parents[0] == captured integration-base SHA` (first-parent ordering is load-bearing for the integration spine) and `set(actual_parents[1:]) == set(captured task-tip SHAs)`. On either-invariant failure the wrapper halts non-zero with `stage-commit-parent-mismatch:` — do not advance, do not record the wave as complete. `parallelization.md` stays symbolic-only.
+
+**Wave 1 OBC seed (fan-out-only Wave 1).** When Wave 1 has NO stage commit (fan-out only, no `--capture --wave-id W1` invocation), the dual-write above never fires and the OBC implement-phase gate would halt with `wave-1-sidecar-missing:`. Before dispatching Wave 1 in this case, seed `wave-1.txt` from the current HEAD as a one-shot:
+
+```
+scripts/validate-stage-commit-parents.sh --seed-wave-1-obc \
+    --integration-base "$(git rev-parse HEAD)" \
+    --artifact-dir "<ABS_ARTIFACT_DIR>"
+```
+
+This writes `wave-1.txt` only — no `W{N}.sidecar`, no parent validation. When a stage commit IS planned for Wave 1, skip the seed and let the `--capture --wave-id W1` dual-write handle it.
 
 In quick fix mode, there are no waves — Process Step 6 dispatches the entire batch concurrently (or sequentially per user preference; tasks are file-disjoint by quick-fix construction).
 
