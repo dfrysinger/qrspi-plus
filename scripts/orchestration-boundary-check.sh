@@ -1,22 +1,28 @@
 #!/usr/bin/env bash
 # orchestration-boundary-check.sh
 #
-# Phase-end orchestration-boundary check (OBC). Surfaces three classes of
-# orchestration drift in a single per-phase report:
+# Phase-end orchestration-boundary check (OBC). Surfaces two classes of
+# orchestration drift in a single per-phase report per design.md §G5(b):
 #
-#   1. Dispatch defects   — missing/malformed phase-base inputs, malformed
-#                           SHAs, malformed author-name records. Fail-loud:
-#                           any entry under this section produces a
-#                           non-zero exit so the autopilot's unconditional
-#                           dispatch-defect halt branch fires.
-#   2. Commit violations  — commits in <phase-base>..HEAD whose author name
-#                           does NOT carry the qrspi-<agent> subagent
-#                           author marker. Fail-soft: surfaced in the
-#                           report; exit code unaffected by entries here
-#                           (the batch gate inspects the report directly).
-#   3. Workspace violations — paths reported by `git status --porcelain`
-#                           that fall outside the allowlisted `reviews/`
-#                           bookkeeping tree. Fail-soft, same as above.
+#   1. Boundary violations — combined surface for fail-soft drift:
+#                            (a) commits in <phase-base>..HEAD whose
+#                                author name does NOT carry the
+#                                qrspi-<agent> subagent author marker
+#                                (entries prefixed `non-subagent-commit:`),
+#                            (b) paths reported by `git status --porcelain`
+#                                that fall outside the allowlisted
+#                                `reviews/` bookkeeping tree (entries
+#                                prefixed `uncommitted-edit:`).
+#                            Exit code unaffected by entries here; the
+#                            batch gate inspects the report directly.
+#   2. Dispatch defects    — missing/malformed phase-base inputs, malformed
+#                            SHAs, malformed author-name records. Fail-loud:
+#                            any entry under this section produces a
+#                            non-zero exit so the autopilot's unconditional
+#                            dispatch-defect halt branch fires.
+#
+# Each section header is emitted ONLY when that section has at least one
+# entry; a clean run produces a byte-empty report file.
 #
 # Phase-base resolution is per-phase:
 #   --phase implement      reads <artifact-dir>/reviews/implement/wave-state/wave-1.txt
@@ -64,8 +70,9 @@ usage() {
 Usage: $(basename -- "${BASH_SOURCE[0]}") --phase <implement|integration|test> --artifact-dir <path>
 
 Writes <artifact-dir>/reviews/<phase>/orchestration-boundary.md.
-Exits 0 when ## Dispatch defects is empty (commit / workspace entries are fail-soft);
+Exits 0 when ## Dispatch defects is empty (boundary-violation entries are fail-soft);
 exits non-zero when any dispatch-defect entry is present.
+A clean run produces a byte-empty report file (no section headers emitted).
 EOF
 }
 
@@ -131,12 +138,10 @@ tmp_report="$(mktemp "$report_dir/.orchestration-boundary.XXXXXX.tmp")"
 # ---------------------------------------------------------------------------
 
 dispatch_defects=()
-commit_violations=()
-workspace_violations=()
+boundary_violations=()
 
 add_defect()    { dispatch_defects[${#dispatch_defects[@]}]="$1"; }
-add_commit()    { commit_violations[${#commit_violations[@]}]="$1"; }
-add_workspace() { workspace_violations[${#workspace_violations[@]}]="$1"; }
+add_boundary()  { boundary_violations[${#boundary_violations[@]}]="$1"; }
 
 # ---------------------------------------------------------------------------
 # SHA-shape validation — gate ALL on-disk SHAs before any git invocation
@@ -256,7 +261,7 @@ if [ -n "$phase_base" ]; then
     esac
 
     subject="$(git log -n 1 --format='%s' "$sha" 2>/dev/null || printf '%s' '<subject-unavailable>')"
-    add_commit "$sha — $author — $subject"
+    add_boundary "non-subagent-commit: $sha — $author — $subject"
   done < <(git log "$phase_base"..HEAD -z --format='%H %an' 2>/dev/null || true)
 
   # Workspace status (porcelain v1: 2 status chars + space + path).
@@ -275,7 +280,7 @@ if [ -n "$phase_base" ]; then
         continue
         ;;
     esac
-    add_workspace "$status_line"
+    add_boundary "uncommitted-edit: $status_line"
   done < <(git status --porcelain 2>/dev/null || true)
 fi
 
@@ -288,29 +293,26 @@ emit_section() {
   shift
   local -a entries
   entries=("$@")
-  printf '## %s\n\n' "$heading"
+  # Section header is emitted ONLY when the section has at least one entry
+  # (design.md §G5(b) acceptance). A clean run thus produces a byte-empty
+  # report file: no header, no "Phase:" metadata, no `_None._` placeholder.
   if [ "${#entries[@]}" -eq 0 ]; then
-    printf '_None._\n\n'
-  else
-    local entry
-    for entry in "${entries[@]}"; do
-      printf -- '- %s\n' "$entry"
-    done
-    printf '\n'
+    return 0
   fi
+  printf '## %s\n\n' "$heading"
+  local entry
+  for entry in "${entries[@]}"; do
+    printf -- '- %s\n' "$entry"
+  done
+  printf '\n'
 }
 
 {
-  printf '# Orchestration boundary report\n\n'
-  printf 'Phase: %s\n' "$phase"
-  if [ -n "$phase_base" ]; then
-    printf 'Phase-base: %s\n' "$phase_base"
-  fi
-  printf '\n'
-
-  emit_section "Dispatch defects"   "${dispatch_defects[@]+"${dispatch_defects[@]}"}"
-  emit_section "Commit violations"  "${commit_violations[@]+"${commit_violations[@]}"}"
-  emit_section "Workspace violations" "${workspace_violations[@]+"${workspace_violations[@]}"}"
+  # Ordering matches design.md §G5(b): Boundary violations first, then
+  # Dispatch defects. Either or both may be absent (byte-empty report on
+  # a clean run).
+  emit_section "Boundary violations" "${boundary_violations[@]+"${boundary_violations[@]}"}"
+  emit_section "Dispatch defects"    "${dispatch_defects[@]+"${dispatch_defects[@]}"}"
 } > "$tmp_report"
 
 # Atomic rename. POSIX rename(2) supplies the "all-or-nothing" guarantee on
@@ -338,7 +340,7 @@ fi
 # Exit code direction
 # ---------------------------------------------------------------------------
 #
-# Fail-loud only on dispatch-defects; commit and workspace entries are
+# Fail-loud only on dispatch-defects; boundary-violation entries are
 # fail-soft because the batch gate inspects the report directly.
 
 if [ "${#dispatch_defects[@]}" -gt 0 ]; then

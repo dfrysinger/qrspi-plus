@@ -17,14 +17,17 @@ bats_require_minimum_version 1.5.0
 #     wave-1-sidecar-malformed: under ## Dispatch defects (implement).
 #   - Author-marker filter excludes commits whose author starts with the
 #     subagent prefix qrspi-; non-marker commits surface under
-#     ## Commit violations.
+#     ## Boundary violations (prefixed `non-subagent-commit:`).
 #   - Author-name records carrying newline, multiple consecutive whitespace,
 #     or control bytes trigger obc-author-name-malformed: under
 #     ## Dispatch defects (fail-loud, never silently excluded).
-#   - reviews/ tree is excluded from workspace violations (allowlisted
-#     bookkeeping).
-#   - Exit 0 fail-soft when only commit/workspace entries are present;
+#   - reviews/ tree is excluded from boundary violations (allowlisted
+#     bookkeeping); uncommitted edits outside reviews/ surface under
+#     ## Boundary violations (prefixed `uncommitted-edit:`).
+#   - Exit 0 fail-soft when only boundary-violation entries are present;
 #     non-zero when ## Dispatch defects is non-empty.
+#   - Clean run (no boundary violations, no dispatch defects) produces a
+#     byte-empty report file per design.md §G5(b).
 #   - Atomic report write: structural grep asserts the script body contains
 #     a temp-file mv into the final report path.
 #   - Failed rename produces report-write-failed: named diagnostic and
@@ -106,24 +109,21 @@ valid_phases_helper() {
 # Clean tree (integration phase) — empty report, exit 0
 # -----------------------------------------------------------------------------
 
-@test "clean integration tree produces an empty report and exits 0" {
+@test "clean integration tree produces a byte-empty report and exits 0" {
   valid_phases_helper
   run "$SCRIPT" --phase integration --artifact-dir "$TMP_DIR"
   [ "$status" -eq 0 ]
   [ -r "$TMP_DIR/reviews/integration/orchestration-boundary.md" ]
-  report="$(cat "$TMP_DIR/reviews/integration/orchestration-boundary.md")"
-  echo "$report" | grep -q '## Dispatch defects'
-  echo "$report" | grep -q '## Commit violations'
-  echo "$report" | grep -q '## Workspace violations'
-  # No defect / commit / workspace entries.
-  ! echo "$report" | grep -E '^- ' | grep -v '^_None_'
+  # design.md §G5(b): clean run produces a byte-empty file (no section
+  # headers emitted when both sections are empty).
+  [ ! -s "$TMP_DIR/reviews/integration/orchestration-boundary.md" ]
 }
 
 # -----------------------------------------------------------------------------
-# Commit violations — non-subagent commit named under commit section
+# Boundary violations — non-subagent commit named under boundary section
 # -----------------------------------------------------------------------------
 
-@test "non-subagent commit appears under commit-violations section, fail-soft exit 0" {
+@test "non-subagent commit appears under boundary-violations section, fail-soft exit 0" {
   valid_phases_helper
   echo "drift" > drift.txt
   git add drift.txt
@@ -132,6 +132,8 @@ valid_phases_helper() {
   run "$SCRIPT" --phase integration --artifact-dir "$TMP_DIR"
   [ "$status" -eq 0 ]
   report="$(cat "$TMP_DIR/reviews/integration/orchestration-boundary.md")"
+  echo "$report" | grep -q '^## Boundary violations$'
+  echo "$report" | grep -q "non-subagent-commit:"
   echo "$report" | grep -q "$drift_sha"
   echo "$report" | grep -q "Human Author"
   echo "$report" | grep -q "drift commit"
@@ -150,15 +152,17 @@ valid_phases_helper() {
 }
 
 # -----------------------------------------------------------------------------
-# Workspace violations
+# Boundary violations — uncommitted workspace edits
 # -----------------------------------------------------------------------------
 
-@test "uncommitted edit outside reviews tree appears under workspace section, exit 0" {
+@test "uncommitted edit outside reviews tree appears under boundary section, exit 0" {
   valid_phases_helper
   echo "untracked" > stray.txt
   run "$SCRIPT" --phase integration --artifact-dir "$TMP_DIR"
   [ "$status" -eq 0 ]
   report="$(cat "$TMP_DIR/reviews/integration/orchestration-boundary.md")"
+  echo "$report" | grep -q '^## Boundary violations$'
+  echo "$report" | grep -q "uncommitted-edit:"
   echo "$report" | grep -q "stray.txt"
 }
 
