@@ -1910,7 +1910,7 @@ _path_guard_teardown_fixtures() {
            "$fake_root/skills/reviewer-protocol" \
            "$fake_root/src"
   echo "# reviewer protocol stub" > "$fake_root/skills/reviewer-protocol/SKILL.md"
-  echo "# emission override stub" > "$fake_root/skills/reviewer-protocol/stdout-fallback-emission.md"
+  echo "# emission override stub" > "$fake_root/skills/reviewer-protocol/emission.md"
   printf -- '---\nskills: [%s]\n---\n# test agent\n' "$rel_skill_name" \
     > "$fake_root/agents/test-skill-agent.md"
   echo "export const x = 1;" > "$fake_root/src/foo.ts"
@@ -1974,9 +1974,9 @@ _path_guard_teardown_fixtures() {
   touch "$fake_root/scripts/lib/path-guard.sh"
   cp "$REPO_ROOT/skills/reviewer-protocol/SKILL.md" \
      "$fake_root/skills/reviewer-protocol/"
-  cp "$REPO_ROOT/skills/reviewer-protocol/stdout-fallback-emission.md" \
+  cp "$REPO_ROOT/skills/reviewer-protocol/emission.md" \
      "$fake_root/skills/reviewer-protocol/" 2>/dev/null || \
-     touch "$fake_root/skills/reviewer-protocol/stdout-fallback-emission.md"
+     touch "$fake_root/skills/reviewer-protocol/emission.md"
   cp "$REPO_ROOT/agents/qrspi-spec-reviewer.md" "$fake_root/agents/"
   echo "export const x = 1;" > "$fake_root/src/foo.ts"
 

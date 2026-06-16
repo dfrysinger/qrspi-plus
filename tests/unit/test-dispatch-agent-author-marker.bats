@@ -57,7 +57,7 @@ setup() {
   printf '## Reviewer Dispatch Contract\nReviewer protocol stub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nCodex emission override stub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
 
   # Minimal valid agent fixture.
   mkdir -p "$TMP_DIR/agents"

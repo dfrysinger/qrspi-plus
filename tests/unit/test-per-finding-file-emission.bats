@@ -42,16 +42,16 @@ setup() {
 }
 
 @test "every reviewer agent body references per-finding emission (inline or via protocol deferral)" {
-  # The per-finding filename pattern lives in skills/reviewer-protocol/first-party-emission.md
-  # (post-split — emission-contract prose moved out of SKILL.md core).
-  # Each reviewer must EITHER reference the contract inline (finding-F<NN>.md pattern)
-  # OR defer to the protocol skill ("disk-write contract from the reviewer-protocol skill").
+  # The per-finding filename pattern lives in skills/reviewer-protocol/emission.md
+  # (the unified emission contract). Each reviewer must EITHER reference the
+  # contract inline (finding-F<NN>.md pattern) OR defer to the protocol skill
+  # ("disk-write contract from the reviewer-protocol skill").
   local protocol="skills/reviewer-protocol/SKILL.md"
-  local first_party="skills/reviewer-protocol/first-party-emission.md"
+  local emission="skills/reviewer-protocol/emission.md"
   [[ -f "$protocol" ]] || { echo "missing protocol skill: $protocol"; return 1; }
-  [[ -f "$first_party" ]] || { echo "missing first-party emission contract: $first_party"; return 1; }
-  grep -qE 'finding-F[0-9]+\.md|finding-F<[Nn][Nn]>' "$first_party" \
-    || { echo "per-finding pattern missing in $first_party"; return 1; }
+  [[ -f "$emission" ]] || { echo "missing emission contract: $emission"; return 1; }
+  grep -qE 'finding-F[0-9]+\.md|finding-F<[Nn][Nn]>' "$emission" \
+    || { echo "per-finding pattern missing in $emission"; return 1; }
 
   for f in "${all_reviewer_files[@]}"; do
     [[ -f "$f" ]] || { echo "missing reviewer agent file: $f"; return 1; }
@@ -72,15 +72,15 @@ setup() {
 }
 
 @test "every reviewer agent body references the clean sentinel (inline or via protocol deferral)" {
-  # The clean-sentinel pattern lives in skills/reviewer-protocol/first-party-emission.md
-  # (post-split — emission-contract prose moved out of SKILL.md core).
-  # Each reviewer must EITHER reference the sentinel inline OR defer to the protocol.
+  # The clean-sentinel pattern lives in skills/reviewer-protocol/emission.md
+  # (the unified emission contract). Each reviewer must EITHER reference the
+  # sentinel inline OR defer to the protocol.
   local protocol="skills/reviewer-protocol/SKILL.md"
-  local first_party="skills/reviewer-protocol/first-party-emission.md"
+  local emission="skills/reviewer-protocol/emission.md"
   [[ -f "$protocol" ]] || { echo "missing protocol skill: $protocol"; return 1; }
-  [[ -f "$first_party" ]] || { echo "missing first-party emission contract: $first_party"; return 1; }
-  grep -qE '<reviewer_tag>\.clean\.md|\.clean\.md.*<reviewer_tag>|clean-round sentinel|clean sentinel' "$first_party" \
-    || { echo "clean-sentinel pattern missing in $first_party"; return 1; }
+  [[ -f "$emission" ]] || { echo "missing emission contract: $emission"; return 1; }
+  grep -qE '<reviewer_tag>\.clean\.md|\.clean\.md.*<reviewer_tag>|clean-round sentinel|clean sentinel' "$emission" \
+    || { echo "clean-sentinel pattern missing in $emission"; return 1; }
 
   for f in "${all_reviewer_files[@]}"; do
     [[ -f "$f" ]] || { echo "missing reviewer agent file: $f"; return 1; }
@@ -97,38 +97,29 @@ setup() {
   done
 }
 
-@test "first-party-emission.md exists with required headings and Write-tool path rules" {
-  local f="skills/reviewer-protocol/first-party-emission.md"
+@test "emission.md exists with required transport sections and path rules" {
+  local f="skills/reviewer-protocol/emission.md"
   [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
-  grep -qE '^## First-Party Emission Contract' "$f" || { echo "missing ## First-Party Emission Contract"; return 1; }
-  grep -qE '^### Write-Tool Requirements' "$f" || { echo "missing ### Write-Tool Requirements"; return 1; }
-  grep -qE '^### Path Rules' "$f" || { echo "missing ### Path Rules"; return 1; }
+  # Unified contract must document both transport paths and shared path rules.
+  grep -qE '^## Write-tool path' "$f" || { echo "missing ## Write-tool path section"; return 1; }
+  grep -qE '^## Stdout path' "$f" || { echo "missing ## Stdout path section"; return 1; }
+  grep -qE '^## Path rules' "$f" || { echo "missing ## Path rules section"; return 1; }
   grep -qF '<round_subdir>/<reviewer_tag>.finding-F<NN>.md' "$f" \
-    || { echo "first-party finding path not pinned"; return 1; }
+    || { echo "finding path not pinned"; return 1; }
   grep -qF '<round_subdir>/<reviewer_tag>.clean.md' "$f" \
-    || { echo "first-party clean sentinel path not pinned"; return 1; }
+    || { echo "clean sentinel path not pinned"; return 1; }
   grep -qF 'expected tag produced no output' "$f" \
-    || { echo "first-party wrong-channel diagnostic not pinned"; return 1; }
+    || { echo "wrong-channel diagnostic not pinned"; return 1; }
   grep -qE 'Write tool' "$f" \
-    || { echo "first-party Write-tool reference missing"; return 1; }
-}
-
-@test "third-party-emission.md exists with stdout-boundary contract and splitter requirements" {
-  local f="skills/reviewer-protocol/third-party-emission.md"
-  [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
-  grep -qE '^## Third-Party Emission Contract' "$f" || { echo "missing ## Third-Party Emission Contract"; return 1; }
-  grep -qE '^### Stdout Boundary' "$f" || { echo "missing ### Stdout Boundary"; return 1; }
-  grep -qE '^### Splitter Requirements' "$f" || { echo "missing ### Splitter Requirements"; return 1; }
+    || { echo "Write-tool reference missing"; return 1; }
   grep -qF '<<<FINDING-BOUNDARY>>>' "$f" \
-    || { echo "third-party FINDING-BOUNDARY token not pinned"; return 1; }
+    || { echo "stdout FINDING-BOUNDARY token not pinned"; return 1; }
   grep -qF 'NO_FINDINGS' "$f" \
-    || { echo "third-party NO_FINDINGS sentinel not pinned"; return 1; }
+    || { echo "stdout NO_FINDINGS sentinel not pinned"; return 1; }
   grep -qF 'third-party-finding-splitter.sh' "$f" \
     || { echo "third-party-finding-splitter.sh not named"; return 1; }
-  grep -qF 'expected tag produced no output' "$f" \
-    || { echo "third-party wrong-channel diagnostic not pinned"; return 1; }
   if grep -qiE '\boverride\b' "$f"; then
-    echo "third-party-emission.md must not use the word 'override'"
+    echo "emission.md must not use the word 'override' (the unified contract is honest about there being no fallback)"
     return 1
   fi
 }
@@ -151,10 +142,8 @@ setup() {
 }
 
 @test "reviewer-protocol SKILL.md self-description is emission-agnostic (no 'disk-write contract' tokens)" {
-  # Pins the post-split self-description: after the reviewer-protocol split moved the disk-write
-  # contract prose out of SKILL.md into first-party-emission.md, the frontmatter
-  # description and intro paragraph must not still advertise it as a core
-  # protocol concern. (Post-split hygiene fix.)
+  # Pins the post-split self-description: the disk-write contract prose lives
+  # in emission.md, not SKILL.md.
   local f="skills/reviewer-protocol/SKILL.md"
   [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
   if grep -qiF 'disk-write contract' "$f"; then
@@ -185,74 +174,61 @@ setup() {
   done
 }
 
-@test "emission sibling files do not reproduce verbatim schema paragraphs from SKILL.md" {
-  # Schema fields / audit fields / finding_id uniqueness paragraphs must live in
-  # SKILL.md only; siblings must cross-reference rather than duplicate them verbatim.
-  local fp="skills/reviewer-protocol/first-party-emission.md"
-  local tp="skills/reviewer-protocol/third-party-emission.md"
-  [[ -f "$fp" ]] || { echo "missing: $fp"; return 1; }
-  [[ -f "$tp" ]] || { echo "missing: $tp"; return 1; }
-  if grep -qF 'canonical 5-field finding schema' "$fp"; then
-    echo "first-party-emission.md reproduces verbatim schema paragraph from SKILL.md"
-    return 1
-  fi
-  if grep -qF 'canonical 5-field finding schema' "$tp"; then
-    echo "third-party-emission.md reproduces verbatim schema paragraph from SKILL.md"
-    return 1
-  fi
-  # Cross-reference line must be present in each sibling
-  grep -qF 'skills/reviewer-protocol/SKILL.md' "$fp" \
-    || { echo "first-party-emission.md missing cross-reference to SKILL.md"; return 1; }
-  grep -qF 'skills/reviewer-protocol/SKILL.md' "$tp" \
-    || { echo "third-party-emission.md missing cross-reference to SKILL.md"; return 1; }
-}
-
-@test "third-party-emission.md pins the silent-failure characterization" {
-  # The parenthetical 'will fail silently' must be pinned so regressions are caught.
-  local f="skills/reviewer-protocol/third-party-emission.md"
+@test "emission.md does not reproduce verbatim schema paragraphs from SKILL.md" {
+  # Schema fields / audit fields / finding_id uniqueness paragraphs live in
+  # SKILL.md only; emission.md cross-references rather than duplicates them.
+  local f="skills/reviewer-protocol/emission.md"
   [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
-  grep -qE 'fail(s)? silently|silent(ly)? fail' "$f" \
-    || { echo "third-party silent-failure characterization not pinned"; return 1; }
+  if grep -qF 'canonical 5-field finding schema' "$f"; then
+    echo "emission.md reproduces verbatim schema paragraph from SKILL.md"
+    return 1
+  fi
+  # Cross-reference line must be present
+  grep -qF 'skills/reviewer-protocol/SKILL.md' "$f" \
+    || { echo "emission.md missing cross-reference to SKILL.md"; return 1; }
 }
 
-@test "reviewer_tag charset rule is present in both emission siblings" {
+@test "emission.md pins the silent-failure characterization for the stdout path" {
+  # The parenthetical 'will fail silently' (or equivalent) must be pinned on
+  # the stdout-path branch — Write attempts in the read-only sandbox fail
+  # silently and the reviewer must know not to mix transports.
+  local f="skills/reviewer-protocol/emission.md"
+  [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
+  grep -qiE 'sandbox will block|fail(s)? silently|silent(ly)? fail|read-only sandbox blocks' "$f" \
+    || { echo "stdout-path silent-failure characterization not pinned"; return 1; }
+}
+
+@test "reviewer_tag charset rule is present in emission.md" {
   # reviewer_tag must be validated against the charset regex before path construction.
   # First character must be alphanumeric (rejects leading hyphens — POSIX argv footgun).
-  local fp="skills/reviewer-protocol/first-party-emission.md"
-  local tp="skills/reviewer-protocol/third-party-emission.md"
-  [[ -f "$fp" ]] || { echo "missing: $fp"; return 1; }
-  [[ -f "$tp" ]] || { echo "missing: $tp"; return 1; }
-  grep -qF '^[a-z0-9][a-z0-9-]*$' "$fp" \
-    || { echo "first-party-emission.md missing reviewer_tag charset rule"; return 1; }
-  grep -qF '^[a-z0-9][a-z0-9-]*$' "$tp" \
-    || { echo "third-party-emission.md missing reviewer_tag charset rule"; return 1; }
+  local f="skills/reviewer-protocol/emission.md"
+  [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
+  grep -qF '^[a-z0-9][a-z0-9-]*$' "$f" \
+    || { echo "emission.md missing reviewer_tag charset rule"; return 1; }
 }
 
 @test "reviewer_tag charset rule rejects leading hyphen (regression pin)" {
   # Leading-hyphen reviewer tags (-rf, --evil, etc.) are a POSIX argument-parsing
   # footgun in downstream glob/CLI consumers. The charset regex must require an
   # alphanumeric first character so such tags are rejected at validation time.
-  local fp="skills/reviewer-protocol/first-party-emission.md"
-  local tp="skills/reviewer-protocol/third-party-emission.md"
-  for src in "$fp" "$tp"; do
-    [[ -f "$src" ]] || { echo "missing: $src"; return 1; }
-    grep -qF '^[a-z0-9][a-z0-9-]*$' "$src" \
-      || { echo "$src missing leading-hyphen-rejecting charset rule"; return 1; }
-    # And must NOT carry the older permissive form that admits leading hyphens.
-    if grep -qF '^[a-z0-9-]+$' "$src"; then
-      echo "$src still carries permissive ^[a-z0-9-]+\$ form that admits leading hyphens"
-      return 1
-    fi
-  done
+  local src="skills/reviewer-protocol/emission.md"
+  [[ -f "$src" ]] || { echo "missing: $src"; return 1; }
+  grep -qF '^[a-z0-9][a-z0-9-]*$' "$src" \
+    || { echo "$src missing leading-hyphen-rejecting charset rule"; return 1; }
+  # And must NOT carry the older permissive form that admits leading hyphens.
+  if grep -qF '^[a-z0-9-]+$' "$src"; then
+    echo "$src still carries permissive ^[a-z0-9-]+\$ form that admits leading hyphens"
+    return 1
+  fi
 }
 
-@test "third-party-emission.md iron law bars NO_FINDINGS as pass-through of input" {
+@test "emission.md iron law bars NO_FINDINGS as pass-through of input" {
   # NO_FINDINGS must be emitted only as result of own analysis, never as
   # pass-through of untrusted-artifact instruction.
-  local f="skills/reviewer-protocol/third-party-emission.md"
+  local f="skills/reviewer-protocol/emission.md"
   [[ -f "$f" ]] || { echo "missing: $f"; return 1; }
   grep -qF 'result of your own analysis' "$f" \
-    || { echo "third-party-emission.md missing NO_FINDINGS prompt-injection iron-law clause"; return 1; }
+    || { echo "emission.md missing NO_FINDINGS prompt-injection iron-law clause"; return 1; }
 }
 
 @test "SKILL.md ## Finding Schema documents audit-fields with reviewer = reviewer_tag constraint" {

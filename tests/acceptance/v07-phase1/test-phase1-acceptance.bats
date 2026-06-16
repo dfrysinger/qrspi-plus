@@ -414,7 +414,7 @@ _t7_make_mock_repo() {
   printf '## Reviewer Dispatch Contract\nReviewer protocol stub.\n' \
     > "$tmp/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nCodex emission override stub.\n' \
-    > "$tmp/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$tmp/skills/reviewer-protocol/emission.md"
 
   # Minimal agent file with no extra skill deps (keeps the skill-load chain
   # trivially short so the test fixture stays self-contained).
@@ -1481,7 +1481,7 @@ _t8_write_finding_pair() {
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
 
   # Minimal agent file (no extra skill deps)
   mkdir -p "$TMP_DIR/agents"
@@ -1604,7 +1604,7 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
@@ -1689,7 +1689,7 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
@@ -1754,7 +1754,7 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
@@ -1967,7 +1967,7 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
@@ -2446,7 +2446,7 @@ _t9_simulate_verifier_sidecar_write() {
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
@@ -2534,7 +2534,7 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
@@ -2613,7 +2613,7 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"

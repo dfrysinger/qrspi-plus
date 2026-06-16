@@ -1,13 +1,13 @@
 #!/usr/bin/env bats
 
 @test "reviewer-protocol defines <reviewer_tag>.clean.md sentinel format" {
-  # Post-split: the clean-round sentinel format moved out of SKILL.md and into
-  # first-party-emission.md (Codex parallel: third-party-emission.md). Either
-  # file may carry the canonical definition, so accept a hit in either path.
+  # The clean-round sentinel format is defined in the unified emission
+  # contract (emission.md). SKILL.md may also reference it; either file
+  # carrying a recognizable definition counts.
   local hits=0
-  if grep -qE '<reviewer_tag>\.clean\.md' skills/reviewer-protocol/first-party-emission.md \
+  if grep -qE '<reviewer_tag>\.clean\.md' skills/reviewer-protocol/emission.md \
      && grep -qE 'frontmatter-only|reviewer:.*round:.*findings: 0|findings: 0' \
-          skills/reviewer-protocol/first-party-emission.md; then
+          skills/reviewer-protocol/emission.md; then
     hits=$((hits+1))
   fi
   if grep -qE '<reviewer_tag>\.clean\.md' skills/reviewer-protocol/SKILL.md \

@@ -816,7 +816,7 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   fi
 
   REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
-  EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/stdout-fallback-emission.md"
+  EMISSION_CONTRACT_ABS="$REPO_ROOT/skills/reviewer-protocol/emission.md"
 
   # Per-vendor fallback model — used only when config.md model_routing cannot be
   # consulted (e.g., ad-hoc invocation without a run config). A loud warning is
@@ -958,7 +958,7 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       printf '\n\n---\n\n'
       strip_frontmatter_batch "$_agent_file"
       printf '\n\n---\n\n'
-      [[ -f "$EMISSION_OVERRIDE_ABS" ]] && cat "$EMISSION_OVERRIDE_ABS"
+      [[ -f "$EMISSION_CONTRACT_ABS" ]] && cat "$EMISSION_CONTRACT_ABS"
       printf '\n\n<<<AGENT-BODY-END>>>\n'
       printf '\n## Dispatch parameters\n\n'
       if [[ -n "$BATCH_ARTIFACT_ABS" ]]; then
@@ -1220,8 +1220,8 @@ export GIT_AUTHOR_NAME="qrspi-${_AGENT_NAME_FOR_MARKER}"
 REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
 assert_file_exists "reviewer-protocol/SKILL.md" "$REVIEWER_PROTOCOL_ABS"
 
-EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/stdout-fallback-emission.md"
-assert_file_exists "stdout-fallback-emission.md" "$EMISSION_OVERRIDE_ABS"
+EMISSION_CONTRACT_ABS="$REPO_ROOT/skills/reviewer-protocol/emission.md"
+assert_file_exists "emission.md" "$EMISSION_CONTRACT_ABS"
 
 # Parse the agent's `skills:` frontmatter field to discover additional
 # shared skills the agent depends on (load chain unchanged from earlier shim refactor).
@@ -1408,7 +1408,7 @@ compose_prompt() {
   fi
   strip_frontmatter "$AGENT_FILE_ABS"
   printf '\n\n---\n\n'
-  cat "$EMISSION_OVERRIDE_ABS"
+  cat "$EMISSION_CONTRACT_ABS"
   printf '\n\n<<<AGENT-BODY-END>>>\n'
   emit_dispatch_parameters
 }
