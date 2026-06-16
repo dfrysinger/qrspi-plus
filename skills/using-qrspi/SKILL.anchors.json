@@ -61,74 +61,74 @@
   },
   "Config File (`config.md`)": {
     "line_start": 76,
-    "line_end": 241
+    "line_end": 243
   },
   "Dispatch routing blocks": {
-    "line_start": 145,
-    "line_end": 241
+    "line_start": 147,
+    "line_end": 243
   },
   "Config Validation Procedure": {
-    "line_start": 242,
-    "line_end": 349
+    "line_start": 244,
+    "line_end": 354
   },
   "When config.md is missing entirely": {
-    "line_start": 246,
-    "line_end": 254
+    "line_start": 248,
+    "line_end": 256
   },
   "When a required field is missing or has an invalid value": {
-    "line_start": 255,
-    "line_end": 295
+    "line_start": 257,
+    "line_end": 297
   },
   "No silent defaults": {
-    "line_start": 296,
-    "line_end": 303
+    "line_start": 298,
+    "line_end": 305
   },
   "Exceptions to the no-silent-defaults rule": {
-    "line_start": 304,
-    "line_end": 322
+    "line_start": 306,
+    "line_end": 326
   },
   "Fields that affect pipeline behavior (must be validated)": {
-    "line_start": 323,
-    "line_end": 343
+    "line_start": 327,
+    "line_end": 348
   },
   "Fields that do NOT require validation (informational only)": {
-    "line_start": 344,
-    "line_end": 349
+    "line_start": 349,
+    "line_end": 354
   },
   "Standard Review Loop": {
-    "line_start": 350,
-    "line_end": 386
+    "line_start": 355,
+    "line_end": 391
   },
   "Review Output Handling": {
-    "line_start": 387,
-    "line_end": 587
+    "line_start": 392,
+    "line_end": 592
   },
   "Review-Loop Pause Gate": {
-    "line_start": 588,
-    "line_end": 593
+    "line_start": 593,
+    "line_end": 598
   },
   "Review Time Allocation": {
-    "line_start": 594,
-    "line_end": 597
+    "line_start": 599,
+    "line_end": 602
   },
   "Compaction Checkpoints": {
-    "line_start": 598,
-    "line_end": 605
+    "line_start": 603,
+    "line_end": 610
   },
   "Feedback File Format": {
-    "line_start": 606,
-    "line_end": 609
+    "line_start": 611,
+    "line_end": 614
   },
   "Common Rationalizations — STOP": {
-    "line_start": 610,
-    "line_end": 613
+    "line_start": 615,
+    "line_end": 618
   },
   "Skill Invocation": {
-    "line_start": 614,
-    "line_end": 617
+    "line_start": 619,
+    "line_end": 622
   },
   "Pipeline Iron Laws — Final Reminder": {
-    "line_start": 618,
-    "line_end": 622
+    "line_start": 623,
+    "line_end": 627
   }
 }

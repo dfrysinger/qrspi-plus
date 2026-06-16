@@ -404,6 +404,7 @@ verifier_enabled: true  # set at run creation; edit directly between rounds to d
 scope_tagger_enabled: true  # set at run creation; edit directly between rounds to disable convergence narrowing for the whole run
 visual_fidelity_required: false  # set at run creation; when true, activates the visual-fidelity binding chain (design → phasing → plan → implement reviewer)
 question_budget: 5  # integer; written only when pipeline: quick (caps Research specialist dispatch count for the run)
+phase: 1  # integer ≥ 1; runtime-backfilled by Implement
 ---
 ```
 
@@ -419,6 +420,7 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
 - `scope_tagger_enabled`: boolean, default `true`. When `true`, the Apply-fix protocol dispatches one `qrspi-scope-tagger` per round; the resulting scope-set drives narrow-vs-broaden convergence comparisons. When `false`, no tagger dispatch fires and reviewer dispatch falls through to full-base-diff behavior. Set at run creation; edit `config.md` directly between rounds to disable convergence narrowing.
 - `visual_fidelity_required`: boolean, default `false`. When `true`, the run opts into the visual-fidelity binding chain (Design's top-level `## Visual-Fidelity Binding` H2, Phasing wireframe citations per UI phase, Plan `visual_fidelity_check` on UI-producing tasks, Implement dispatches the visual-fidelity reviewer). When `false`, the chain is silent.
 - `question_budget`: integer, default `5`, valid range 1–50 inclusive. Caps Research specialist dispatch under `pipeline: quick`. Written to `config.md` ONLY when `pipeline: quick`; on full-pipeline runs the field is omitted entirely (no cap applies). The upper cap of 50 exists because fan-out wider than 50 exhausts orchestrator subagent slots and produces diminishing-returns coverage; `tests/fixtures/validate-config-field.sh` enforces both bounds.
+- `phase`: integer ≥ 1, runtime-backfilled by Implement.
 
 **Writing `config.md`:** After the user selects a pipeline mode and answers the second-reviewer question, write `created`, `pipeline`, `second_reviewer`, and `route` to `config.md` atomically. Goals also writes `verifier_enabled: true`, `scope_tagger_enabled: true`, and `visual_fidelity_required: false` (or `true` if the user opted into the visual-fidelity binding chain) at run creation. When `pipeline: quick`, Goals additionally writes `question_budget: 5`; on `pipeline: full` the field is omitted entirely. `review_depth` and `review_mode` are added later by Implement.
 
@@ -429,7 +431,7 @@ question_budget: 5  # integer; written only when pipeline: quick (caps Research 
    **Trust model.** The cascade trigger reads the orchestrator's in-session "kept findings" count after fan-in; it does NOT read any on-disk `<reviewer-tag>.clean.md` sentinel. The on-disk sentinel is audit-trail, NOT trigger. The orchestrator is the EXCLUSIVE writer of the cascade clean sentinel (and of `path-filtered.md` and `bypass-attempt-NN.md` records); reviewer subagents MUST NOT write or emit the cascade clean sentinel. Pinning the trigger to the in-session count closes the clean-sentinel forgery surface.
 
    **Cascade audit log.** Every cascade auto-approval event MUST append-only a `cascade-auto-approve` JSON Lines entry to `<artifact_dir>/cascade-audit.log` BEFORE writing `status: approved`. The entry records the artifact name, ISO-8601 UTC timestamp, trigger round, contributing reviewer tags + sentinel file paths, and rationale (`initial-clean` or `first-fix-clean`). On audit-log write failure, HALT the cascade — same hard-stop pattern as the runtime-backfill write-back failures.
-2. **Two mandatory human gates: Goals and Design (excluded from the cascade).** Goals captures user intent; Design captures the option-selection decision. The canonical Quick-Fix route omits Design — quick-fix runs that elect Design must use a Full route variant; the exclusion-from-cascade contract applies whenever Design runs.
+2. **Two mandatory human gates: Goals and Design (excluded from the cascade).** Goals captures user intent; Design captures the option-selection decision. The canonical Quick-Fix route omits Design; runs that elect Design always exclude it from the cascade.
 3. **Test phase: binary ship/fix gate.** Test under `pipeline: quick` presents a binary ship-or-fix decision rather than the multi-option per-failure menu. "ship" terminates; "fix" routes back to **Plan** (Goals and Design are already approved) and the fix round resumes from Plan onward.
 
 **Second-model-reviewer detection:** Run `bash scripts/second-reviewer-available.sh`. On non-zero exit, skip the second-reviewer question and write `second_reviewer: false`. `second_reviewer: true` dispatch reuses the resolved agent `tier:` for both primary and second reviewer (no separate tier knob). If the probe exits 0, ask:
@@ -614,7 +616,9 @@ Skills must not:
 
 - **`scope_tagger_enabled` runtime backfill.** Same shape: missing on first scope-tagger-aware Apply-fix invocation → treat as `true`, emit one-line stderr warning (`scope_tagger_enabled missing from config.md — backfilling default 'true' for this run`), write the field back to `config.md`.
 
-- **`visual_fidelity_required` runtime backfill.** Same shape: missing on first visual-fidelity-aware skill invocation → treat as `false` (binding chain stays silent when not visual-fidelity-bound), emit one-line stderr warning (`visual_fidelity_required missing from config.md — backfilling default 'false' for this run`), write the field back to `config.md`. These three are the only carve-outs from the no-silent-defaults rule above.
+- **`visual_fidelity_required` runtime backfill.** Same shape: missing on first visual-fidelity-aware skill invocation → treat as `false` (binding chain stays silent when not visual-fidelity-bound), emit one-line stderr warning (`visual_fidelity_required missing from config.md — backfilling default 'false' for this run`), write the field back to `config.md`.
+
+- **`phase` runtime backfill (Implement-owned).** Implement derives the next-phase ordinal at smoke-check time and writes `phase: NN`; see Implement § Implement-Entry Smoke Check. These four are the only carve-outs from the no-silent-defaults rule above.
 
 - **Hard-stop on write-back failure (applies to all three backfills above).** The write-back is part of the carve-out contract, not a best-effort side effect. If the write fails (read-only filesystem, permission, lock contention, disk full), the runtime MUST stop issuing tool calls and present the following to the user (same "Stop and present" pattern as the validation menus above — message in main chat, then wait for selection):
 
@@ -641,6 +645,7 @@ Skills must not:
 | `scope_tagger_enabled` | Goals, Implement | `true` or `false` — set at run creation; gates per-round scope-tagger dispatch and convergence narrowing |
 | `visual_fidelity_required` | Goals, Design, Phasing, Plan, Implement | `true` or `false` — set at run creation; gates the visual-fidelity binding chain |
 | `question_budget` | Goals, Plan, Parallelize (validators); Research (runtime consumer — see note below) | positive integer between 1 and 50 inclusive (e.g. `5`, `12`) — present required when `pipeline: quick`, absent when `pipeline: full`; caps Research specialist dispatch count (cap of 50 exists because dispatch fan-out beyond 50 exhausts orchestrator subagent slots and yields diminishing-returns coverage) |
+| `phase` | Implement | positive integer ≥ 1 — runtime-backfilled at smoke-check |
 
 - **`verifier_enabled`** (boolean, default `true`) — when `true`, the artifact-level Apply-fix protocol dispatches one `qrspi-finding-verifier` (Haiku) per finding-file in parallel and filters findings by `change_type` per the thresholds enforced by `scripts/verifier-fan-in.sh` (single source of truth). When `false`, the protocol skips verifier dispatch entirely (no sidecars) and keeps all findings via the "no sidecar → keep" branch in step 8. Durable across `/compact`, pause, resume, and re-entry. Fresh runs start with `verifier_enabled: true`. The §3 menu's `skip` option disables the verifier for the CURRENT round only (does NOT mutate `config.md`); to disable across the run, edit `config.md` directly between rounds. CLI-flag opt-out at `/qrspi` invocation is deferred.
 
