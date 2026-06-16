@@ -277,13 +277,12 @@ teardown() {
   # the regex was fixed to expand references/ inlines, the honest footprint
   # surfaced at ~51.5K tokens.
   #
-  # We deliberately keep this gate red-but-relaxed at 55K rather than green
-  # at 30K-with-a-broken-regex: the gate is now an honest ceiling preventing
-  # further regression while issue #330's references/ relocation work brings
-  # us back down toward the original 30K target.
-  #
-  # When #330 lands, ratchet this threshold down per the design.
-  [ "$total_value" -lt 55000 ]
+  # Issue #330 slice 2 references-relocation landed: dispatch/review/config
+  # blocks moved to scripts + Read-on-demand pointers, footprint ratcheted
+  # 55K → 28K (measured 26,282 at slice 2 land). Ceiling preserves a small
+  # ~2K headroom; further slices (#328 item-5 centralize, #329 item-7 trim)
+  # may ratchet it lower.
+  [ "$total_value" -lt 28000 ]
   # Sanity: must be positive (catches a stub that emits zero).
   [ "$total_value" -gt 0 ]
 }
@@ -431,7 +430,7 @@ teardown() {
   [ -n "$total_line" ]
   total_value=${total_line#total_tokens=}
   [ "$total_value" -gt 0 ]
-  # See neighbor "trimmed-tree heaviest-skill footprint" test for the 55K
-  # rationale (issue #330 honest-measurement ratchet).
-  [ "$total_value" -lt 55000 ]
+  # See neighbor "trimmed-tree heaviest-skill footprint" test for the 32K
+  # rationale (issue #330 slice 2 references-relocation ratchet).
+  [ "$total_value" -lt 28000 ]
 }

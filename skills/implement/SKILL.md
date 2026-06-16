@@ -269,7 +269,35 @@ Required fields:
 
 #### Per-Task Reviewer Dispatch: DONE-Report Companion Wiring
 
-!cat skills/implement/references/per-task-procedures.md
+Per the T15 implementer-protocol hygiene contract, every per-task reviewer dispatch (correctness AND thoroughness, every round) MUST include `companion_done_report` (wrapped body of this round's implementer DONE report between `<<<UNTRUSTED-ARTIFACT-START id=done-report>>>` and END markers) and `done_report_path` (absolute path). Omitting either is a hygiene-contract violation; the reviewer's pre-flight fails loud per `skills/implementer-protocol/SKILL.md` § Unacknowledged Hygiene Hits.
+
+#### Conditional-Dispatch Precondition Evaluation (T43)
+
+Before any per-task dispatch fires — pre-implementer test-writer, RED-gate, implementer — main chat reads `conditional:` and `conditional_precondition:` from the task's frontmatter. `conditional:` absent or `false` → unconditionally dispatched. `conditional: true` → evaluate `conditional_precondition:` (self-describing predicate verifiable against on-disk artifacts + git state without a subagent). Met → proceed. Not met → short-circuit (no test-writer, no RED gate, no implementer); orchestrator synthesizes a terminal DONE report with `status: skipped` and the precondition-evaluation result as `rationale:`. Batch-gate accounting treats `skipped` as terminal, distinct from `clean` and `accepted-with-issues`. Log the resolved decision to the round's audit trail.
+
+#### Implementer Status Reporting
+
+The implementer subagent returns one of these statuses. Every action involves dispatching another subagent — never main-chat execution.
+
+| Status | Main chat action |
+|--------|------------------|
+| **DONE** | Dispatch reviewer subagents (correctness; then thoroughness if `review_depth_effective == "deep"` AND `task_type: code`) |
+| **DONE_WITH_CONCERNS** | Read concerns; if correctness/scope, note in review log; dispatch reviewers (concerns do not skip review) |
+| **NEEDS_CONTEXT** | Gather missing info, re-dispatch implementer with augmented prompt |
+| **BLOCKED** | Re-dispatch with more context, switch to more capable model, decompose, or escalate to user |
+
+#### Review Groups
+
+| Group | Reviewer | Quick | Deep | Execution |
+|-------|----------|-------|------|-----------|
+| Correctness | spec-reviewer | ✓ | ✓ | First (gate for the rest) |
+| Correctness | code-quality-reviewer | ✓ | ✓ | Parallel after spec passes |
+| Correctness | silent-failure-hunter | ✓ | ✓ | Parallel after spec passes |
+| Correctness | security-reviewer | ✓ | ✓ | Parallel after spec passes |
+| Thoroughness | goal-traceability-reviewer | — | ✓ | Parallel after correctness passes |
+| Thoroughness | test-coverage-reviewer | — | ✓ | Parallel after correctness passes |
+| Thoroughness | type-design-analyzer (only when new types) | — | ✓ | Parallel after correctness passes |
+| Thoroughness | code-simplifier | — | ✓ | Parallel after correctness passes |
 
 ### Pre-Implementer Test-Writer Dispatch + RED-Verification Gate
 
@@ -381,7 +409,7 @@ Per-task reviewers are agent-file subagents — `Agent({ subagent_type: "qrspi-{
 
 ## Dispatch parameters
 
-!cat skills/implement/references/dispatch-parameters.md
+Per-task dispatch parameters (diff-file emission, companion wrapping, Claude reviewer set, visual-fidelity activation paths, `wave_context:` companion) are owned by `scripts/dispatch-agent.sh` + `skills/_shared/reviewer-dispatch-prose.md`. Read on demand: `skills/implement/references/dispatch-parameters.md` for the prose contract (orchestrator does not construct these by hand — invoke `dispatch-agent.sh` per the between-rounds checklist below).
 
 **Reviewer dispatch preamble (pinned canonical shape).** Every per-task reviewer dispatch sets the thin `REVIEW_*` preamble variables and then includes the shared per-step dispatch prose. The full preamble + parameter set lives in `references/dispatch-parameters.md`; the canonical shape is:
 
@@ -451,7 +479,7 @@ Main chat does NOT present a per-task gate, recommend compaction per task, or in
 
 ### Reference-Gate Human Pause (per-task DONE handling)
 
-!cat skills/implement/references/reference-gate-pause.md
+When a task reaches DONE and its frontmatter carries `reference_gate: true`, HALT before any dependent dispatch and run the reference-gate pause procedure. Read on demand: `skills/implement/references/reference-gate-pause.md` for the full path-validation (artifact-tree + sibling-allowed-paths bounds, traversal/symlink rejection), render, user confirmation, and approval-record steps.
 
 ### Per-Task Red Flags — STOP
 
@@ -504,7 +532,7 @@ Full menu rendering, batch summary, advance menus, and gate-level reviewer dispa
 
 ## Worked Examples
 
-!cat skills/implement/references/worked-examples.md
+Read on demand: `skills/implement/references/worked-examples.md` — illustrative wave-execution and quick-fix walkthroughs (not load-bearing).
 
 ## Terminal State, Model Selection, Task Tracking, Red Flags
 
