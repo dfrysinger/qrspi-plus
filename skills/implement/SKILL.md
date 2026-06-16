@@ -68,7 +68,7 @@ For each task in the batch, the per-task dispatch reads the task file's `pipelin
 
 ### Config Validation
 
-Same procedure as Parallelize. See `using-qrspi/SKILL.md` § Config Validation Procedure. Implement validates `route`, `codex_reviews`, and (after Phase-Level Configuration) `review_depth` and `review_mode`. Implement does not validate `pipeline` — mode derives from `route`.
+Same procedure as Parallelize. See `using-qrspi/SKILL.md` § Config Validation Procedure. Implement validates `route`, `second_reviewer`, and (after Phase-Level Configuration) `review_depth` and `review_mode`. Implement does not validate `pipeline` — mode derives from `route`.
 
 <HARD-GATE>
 Do NOT dispatch implementer subagents without the mode-appropriate approved inputs. Do NOT dispatch parallel tasks (full pipeline) that touch overlapping files — re-verify against the Branch Map at runtime (`tasks/*.md` may have been edited after Parallelize approval). Do NOT create worktrees on main/master without a feature branch. Do NOT advance to the next route step until every task is in one of the three terminal states (clean / accepted-with-issues / skipped-by-user). Do NOT skip the formal reviewer dispatch on the assumption that the implementer's self-review covers it (or vice versa: do NOT have a reviewer modify code) — each role is a separate subagent dispatch.

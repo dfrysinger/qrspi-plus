@@ -1433,21 +1433,22 @@ fi
 #
 # Host detection and transport routing (added in v0.7.1 task-06):
 # detect_host probes COPILOT_CLI to select the transport.  check_codex_available
-# verifies availability.  A mismatch between availability and the codex_reviews
+# verifies availability.  A mismatch between availability and the second_reviewer
 # config value emits a single-line warning to stderr (warning-only - does not
 # block dispatch or override exit code).  The transport marker ([transport: ...])
 # is emitted once to stderr at the call site that selects the transport path.
 
 _detected_host="$(detect_host)"
 
-# Read codex_reviews from the artifact-dir config.md frontmatter.
+# Read second_reviewer from the artifact-dir config.md frontmatter.
 # Default to empty (treated as false) if the file is absent or the field is missing.
-_codex_reviews=""
+_second_reviewer=""
 if [[ -f "$ARTIFACT_DIR/config.md" ]]; then
-  _codex_reviews="$(awk '
+  _second_reviewer="$(awk '
     /^---$/ { n++; if (n == 2) exit; next }
-    n == 1 && /^codex_reviews:/ {
-      sub(/^codex_reviews:[[:space:]]*/, "")
+    n == 1 && /^second_reviewer:/ {
+      sub(/^second_reviewer:[[:space:]]*/, "")
+      sub(/[[:space:]]*#.*$/, "")
       sub(/[[:space:]]*$/, "")
       print
       exit
@@ -1455,12 +1456,12 @@ if [[ -f "$ARTIFACT_DIR/config.md" ]]; then
   ' "$ARTIFACT_DIR/config.md")"
 fi
 
-# Normalise codex_reviews to exactly "true" or "false" before any use.  An
+# Normalise second_reviewer to exactly "true" or "false" before any use.  An
 # unexpected value (which could carry terminal control sequences from a
 # crafted config.md) is treated as "false" and never echoed verbatim.
-case "$_codex_reviews" in
+case "$_second_reviewer" in
   true|false) ;;
-  *) _codex_reviews="false" ;;
+  *) _second_reviewer="false" ;;
 esac
 
 # Probe Codex availability for the detected host.  Capture the exit code so we
@@ -1476,22 +1477,22 @@ else
 fi
 
 # Mismatch warning: detected-host Codex availability disagrees with the
-# codex_reviews config value.  Decoupled from the short-circuit below (T7):
+# second_reviewer config value.  Decoupled from the short-circuit below (T7):
 # the warning fires on ANY availability-vs-config disagreement, including the
-# copilot-cli + codex_reviews=false case where check_codex_available trivially
+# copilot-cli + second_reviewer=false case where check_codex_available trivially
 # succeeds.  Warning-only — does not gate dispatch and does not override the
 # transport's exit code.  Fires at most once per dispatch (single >&2 emission).
-if [[ "$_codex_available" != "$_codex_reviews" ]]; then
-  echo "[mismatch] detected host=${_detected_host} (codex available=${_codex_available}), codex_reviews config=${_codex_reviews}" >&2
+if [[ "$_codex_available" != "$_second_reviewer" ]]; then
+  echo "[mismatch] detected host=${_detected_host} (codex available=${_codex_available}), second_reviewer config=${_second_reviewer}" >&2
 fi
 
 # check_codex_available short-circuit (T7): when Codex is unavailable but the
-# run config requested Codex reviews, abort before invoking the transport.
+# run config requested second-model reviews, abort before invoking the transport.
 # Emit a single-line stderr diagnostic and propagate the EXACT non-zero exit
 # code returned by check_codex_available (no remapping, no log-and-continue).
-# When codex_reviews=false the wrapper falls through to dispatch unchanged so
+# When second_reviewer=false the wrapper falls through to dispatch unchanged so
 # callers that exercise the dispatch surface in isolation are not affected.
-if [[ "$_codex_available" == "false" && "$_codex_reviews" == "true" ]]; then
+if [[ "$_codex_available" == "false" && "$_second_reviewer" == "true" ]]; then
   echo "[codex-unavailable] check_codex_available exit=${_check_exit} for host=${_detected_host} — aborting Codex dispatch" >&2
   exit "$_check_exit"
 fi

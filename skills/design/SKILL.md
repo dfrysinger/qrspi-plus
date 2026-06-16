@@ -166,7 +166,7 @@ If either artifact is missing or not approved, refuse to run and tell the user w
 
 **On-demand inputs — research read-on-demand:** the per-question research files at `research/q*.md` are available to Design as **on-demand reads**, not required inputs. `research/summary.md` carries each question's structured `## Summary` block (TL;DR / Key findings / Surprises / Caveats) verbatim and is the primary input; reach for the corresponding `research/q*.md` when an architectural decision depends on detail the summary block deliberately compressed away (specific `file:line` references, full source URLs, methodology notes, alternatives the researcher considered but did not surface). Cite the file you reached for in the design discussion (e.g., "per `research/q07-codebase.md`") so the rationale chain stays auditable. Do NOT load `research/q*.md` files prophylactically — they exist behind `summary.md` precisely to keep the default input set lean.
 
-Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Design validates `codex_reviews`.
+Read `config.md` from the artifact directory to determine whether second-model reviews are enabled. Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Design validates `second_reviewer`.
 
 <HARD-GATE>
 Do NOT synthesize design.md without approved goals.md AND research/summary.md.

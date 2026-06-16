@@ -684,8 +684,8 @@ _exec_lookup_default_second_reviewer() {
 # field that enables same-tier secondary dispatch (vendor-neutral canonical field).
 @test "using-qrspi: second_reviewer: true documented as the canonical field for enabling second-reviewer dispatch" {
   # Test expectation: using-qrspi/SKILL.md carries the canonical second_reviewer: field
-  # documentation (not the legacy codex_reviews: field).
-  # RED: using-qrspi still uses codex_reviews: today.
+  # documentation (not the legacy second_reviewer: field).
+  # RED: using-qrspi still uses second_reviewer: today.
   run grep -qE 'second_reviewer:[[:space:]]*(true|false)' "$USING_SKILL"
   [ "$status" -eq 0 ]
 }
@@ -694,9 +694,8 @@ _exec_lookup_default_second_reviewer() {
 # valid config field — the clean-break canonical-field rename means only second_reviewer: is valid.
 @test "using-qrspi: no live codex_reviews: field documentation remains after the canonical-field rename" {
   # Test expectation: after the canonical-field rename, using-qrspi treats codex_reviews: as an
-  # unknown field (error) and does NOT document it as a valid schema key.
-  # We check that the template/schema section no longer uses it as a valid field name.
-  # RED: using-qrspi still documents codex_reviews: as a valid field today.
+  # unknown field (error) and does NOT document it as a valid schema key. We check that the
+  # template/schema section no longer uses it as a valid field name.
   c=$(grep -cE '^codex_reviews:' "$USING_SKILL" || true)
   [ "$c" -eq 0 ]
 }

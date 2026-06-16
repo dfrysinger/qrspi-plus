@@ -22,7 +22,7 @@ Generate targeted research questions — query planning before any code is read.
 
 If `goals.md` doesn't exist or isn't approved, refuse to run and tell the user to complete the Goals step first.
 
-Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. If `config.md` doesn't exist, default to `codex_reviews: false`.
+Read `config.md` from the artifact directory to determine whether second-model reviews are enabled. If `config.md` doesn't exist, default to `second_reviewer: false`.
 
 <HARD-GATE>
 Do NOT generate questions without an approved goals.md.

@@ -59,7 +59,7 @@ docs/qrspi/YYYY-MM-DD-{slug}/
     │   │   ├── integration-codex.finding-F01.md
     │   │   ├── security-codex.clean.md
     │   │   ├── implement-gate-claude.finding-F01.md   (when "Re-run all reviews" at Implement batch gate)
-    │   │   └── implement-gate-codex.finding-F01.md    (same condition; only when codex_reviews: true)
+    │   │   └── implement-gate-codex.finding-F01.md    (same condition; only when second_reviewer: true)
     │   └── round-NN-dispositions.md
     ├── ci/
     │   └── round-NN-review.md

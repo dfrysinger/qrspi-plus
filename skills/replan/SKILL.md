@@ -41,7 +41,7 @@ If any required artifact is missing or not approved, refuse to run and tell the 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Replan validates `codex_reviews`.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Replan validates `second_reviewer`.
 
 <HARD-GATE>
 Do NOT update approved artifacts without user approval of the proposed changes.

@@ -290,7 +290,7 @@ teardown() {
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
   - questions
@@ -315,7 +315,7 @@ EOF
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
   - questions
@@ -339,7 +339,7 @@ EOF
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
 question_budget: $variant
@@ -356,7 +356,7 @@ EOF
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
 question_budget: 1e2
@@ -372,7 +372,7 @@ EOF
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
 question_budget: +5
@@ -388,7 +388,7 @@ EOF
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
 question_budget: 05
@@ -404,7 +404,7 @@ EOF
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
 question_budget: 0x5
@@ -424,7 +424,7 @@ EOF
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
 question_budget: 5.0
@@ -443,7 +443,7 @@ EOF
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
 question_budget: 5  # inline comment that breaks the value
@@ -533,7 +533,7 @@ EOF
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
   - questions
@@ -593,13 +593,13 @@ EOF
   # The length check before the arithmetic catches any value > 3 digits before
   # bash arithmetic can overflow.
   tmpdir="$(mktemp -d)"
-  printf '%s\n' '---' 'created: 2026-05-15' 'pipeline: quick' 'codex_reviews: false' 'route:' '  - goals' '  - questions' 'question_budget: 9223372036854775808' '---' > "$tmpdir/config.md"
+  printf '%s\n' '---' 'created: 2026-05-15' 'pipeline: quick' 'second_reviewer: false' 'route:' '  - goals' '  - questions' 'question_budget: 9223372036854775808' '---' > "$tmpdir/config.md"
   run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
   [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=9223372036854775808 (INT64_MAX+1 overflow bypass), got 0"; return 1; }
   echo "$stderr" | grep -qiE 'too many digits|invalid value.*question_budget|cap|upper bound|exceeds|out of range|50' \
     || { echo "expected rejection error for INT64_MAX+1 overflow value, got stdout=$output stderr=$stderr"; return 1; }
 
-  printf '%s\n' '---' 'created: 2026-05-15' 'pipeline: quick' 'codex_reviews: false' 'route:' '  - goals' '  - questions' 'question_budget: 99999999999999999999' '---' > "$tmpdir/config.md"
+  printf '%s\n' '---' 'created: 2026-05-15' 'pipeline: quick' 'second_reviewer: false' 'route:' '  - goals' '  - questions' 'question_budget: 99999999999999999999' '---' > "$tmpdir/config.md"
   run --separate-stderr bash "$VALIDATOR" question_budget "$tmpdir"
   [ "$status" -ne 0 ] || { echo "expected non-zero exit for question_budget=99999999999999999999 (20-digit overflow value), got 0"; return 1; }
   echo "$stderr" | grep -qiE 'too many digits|invalid value.*question_budget|cap|upper bound|exceeds|out of range|50' \
@@ -612,7 +612,7 @@ EOF
 ---
 created: 2026-05-15
 pipeline: quick
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
   - questions

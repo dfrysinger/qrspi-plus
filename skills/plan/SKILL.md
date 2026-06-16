@@ -35,7 +35,7 @@ If any required artifact is missing or not approved, refuse to run and name the 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Plan validates `pipeline`, `route`, `codex_reviews`, and (when `pipeline: quick`) `question_budget`.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Plan validates `pipeline`, `route`, `second_reviewer`, and (when `pipeline: quick`) `question_budget`.
 
 <HARD-GATE>
 Do NOT produce plan.md without all required artifacts approved (full: goals + research + design + structure; quick: goals + research).
@@ -216,7 +216,7 @@ Seven reviewer dispatches run in parallel as the review round (one unified plan-
 
 ### Review Round
 
-**Compaction checkpoint: pre-fanout.** Reviewer fan-out reads merged `plan.md` + `goals.md` + `research/summary.md` + `design.md` + `structure.md`; up to seven parallel Claude dispatches plus seven non-blocking Codex parallels when `codex_reviews: true`. See using-qrspi `## Compaction Checkpoints`.
+**Compaction checkpoint: pre-fanout.** Reviewer fan-out reads merged `plan.md` + `goals.md` + `research/summary.md` + `design.md` + `structure.md`; up to seven parallel Claude dispatches plus seven non-blocking Codex parallels when `second_reviewer: true`. See using-qrspi `## Compaction Checkpoints`.
 Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — plan", description: "pre-fanout: reviewer fan-out (7 Claude + up to 7 Codex) reads merged plan.md + 4 prior artifacts. User decides whether to /compact." })`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`.
@@ -225,7 +225,7 @@ Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`.
 
 **Route detection + companion preparation.** Read `config.md` for `route` (`full`|`quick`). Pass `route: full|quick` as an explicit dispatch param to every quality + plan-artifact dispatch (scope-reviewer takes no `route`). Construct wrapped companion bodies once and reuse across all six dispatches — each named artifact wrapped between `<<<UNTRUSTED-ARTIFACT-START id=<name>>>>` / `<<<UNTRUSTED-ARTIFACT-END id=<name>>>>` markers: `companion_goals` (`goals.md`), `companion_research` (`research/summary.md`), `companion_phasing` (`phasing.md`), `companion_design` (`design.md`, **full only**), `companion_structure` (`structure.md`, **full only**).
 
-Reviewers dispatch through the universal chain (`scripts/dispatch-agent.sh --agents` → Task fan-out → `scripts/await-round.sh`). `*-claude` tags route first-party; `*-codex` route third-party. Include `*-codex` peer tags in `REVIEW_AGENTS` only when `codex_reviews: true`; on quick-fix routes the dispatcher omits `companion_design`/`companion_structure` automatically.
+Reviewers dispatch through the universal chain (`scripts/dispatch-agent.sh --agents` → Task fan-out → `scripts/await-round.sh`). `*-claude` tags route first-party; `*-codex` route third-party. Include `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; on quick-fix routes the dispatcher omits `companion_design`/`companion_structure` automatically.
 
 ```sh
 REVIEW_STEP="plan"

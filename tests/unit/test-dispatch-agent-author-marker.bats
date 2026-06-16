@@ -69,9 +69,9 @@ setup() {
   printf -- '---\nmodel: sonnet\nskills: []\n---\n\nBad-name agent.\n' \
     > "$TMP_DIR/agents/Bad_Agent.md"
 
-  # Artifact directory with a default config (codex_reviews: false).
+  # Artifact directory with a default config (second_reviewer: false).
   mkdir -p "$TMP_DIR/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   # Output directory for dispatch invocations.
   mkdir -p "$TMP_DIR/out"

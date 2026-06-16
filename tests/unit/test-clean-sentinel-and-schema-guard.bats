@@ -55,7 +55,7 @@
   # Spec §5 test #10: "Negative fixtures assert the failure path." The
   # missing-tag fixture has zero quality-codex.* and zero scope-codex.* files.
   # Per the Expected-Reviewer Matrix for the Goals/Design step under
-  # codex_reviews:true, both tags are required. A simulated schema-guard
+  # second_reviewer:true, both tags are required. A simulated schema-guard
   # invocation against this fixture must detect at least one missing expected
   # tag (the actual guard is implemented in skills/using-qrspi/SKILL.md and
   # validated in test #4 — this fixture-backed assertion verifies the negative

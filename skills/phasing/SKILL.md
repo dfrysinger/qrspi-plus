@@ -28,7 +28,7 @@ If any required artifact is missing or not approved, refuse to run and tell the 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Phasing validates `codex_reviews` (expected `true` or `false`). If `config.md` is missing or `codex_reviews` is missing/invalid, halt and present the field-specific menu from the Procedure — do NOT silently default `codex_reviews` to false.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Phasing validates `second_reviewer` (expected `true` or `false`). If `config.md` is missing or `second_reviewer` is missing/invalid, halt and present the field-specific menu from the Procedure — do NOT silently default `second_reviewer` to false.
 
 <HARD-GATE>
 Do NOT synthesize phasing.md, roadmap.md, or any future-* artifact without all five required inputs approved.

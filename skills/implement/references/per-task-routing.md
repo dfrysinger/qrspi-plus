@@ -8,11 +8,11 @@ task_type ∈ {code, lightweight}              # from tasks/task-NN.md frontmatt
 if task_type == "lightweight":
     implementer_subagent = "qrspi-implementer-lightweight"
     review_depth_effective = "quick"         # forced — overrides config.review_depth
-    codex_enabled_per_task = false           # forced — overrides config.codex_reviews
+    codex_enabled_per_task = false           # forced — overrides config.second_reviewer
 else:
     implementer_subagent = "qrspi-implementer"
     review_depth_effective = config.review_depth
-    codex_enabled_per_task = config.codex_reviews
+    codex_enabled_per_task = config.second_reviewer
 
 dispatch: Agent({ subagent_type: implementer_subagent })   # (vendor, model) resolved by the Tier Resolution Chain below
 ```
@@ -23,4 +23,4 @@ Tasks that omit `task_type:` default to `code` and proceed through the standard 
 
 **Inherited unchanged across both `task_type` values:** fix-loop round count (3 cycles), accepted-with-issues batch-gate behavior, BLOCKED escape hatch, SendMessage continuity, reviewer parallelism. Lightweight only flips the three flags above.
 
-**Gate-level reviewer (cross-task).** The Batch Gate's `qrspi-implement-gate-reviewer` is gated by `config.codex_reviews` (config-level), not per-task `task_type`. A wave mixing `code` and `lightweight` tasks still gets the gate-level Codex parallel if config enables it.
+**Gate-level reviewer (cross-task).** The Batch Gate's `qrspi-implement-gate-reviewer` is gated by `config.second_reviewer` (config-level), not per-task `task_type`. A wave mixing `code` and `lightweight` tasks still gets the gate-level Codex parallel if config enables it.

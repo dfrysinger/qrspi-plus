@@ -20,7 +20,7 @@ Objective exploration driven by the research questions. Gathers facts, not opini
 
 If `questions.md` doesn't exist or isn't approved, refuse to run and tell the user to complete the Questions step first.
 
-Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. If `config.md` doesn't exist, default to `codex_reviews: false`.
+Read `config.md` from the artifact directory to determine whether second-model reviews are enabled. If `config.md` doesn't exist, default to `second_reviewer: false`.
 
 <HARD-GATE>
 Do NOT pass goals.md to ANY research subagent, including the collation subagent.
@@ -132,7 +132,7 @@ All three research subagents (specialist, collator, reviewer) run a **Pre-Flight
 
 Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — research", description: "pre-fanout: reviewer dispatch reads research/summary.md + all q*.md files. User decides whether to /compact." })`.
 
-Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **no scope-reviewer** per canonical artifact-tree topology — only the quality reviewer runs (one Claude dispatch + one Codex dispatch when `codex_reviews: true`).
+Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **no scope-reviewer** per canonical artifact-tree topology — only the quality reviewer runs (one Claude dispatch + one Codex dispatch when `second_reviewer: true`).
 
 **Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step research --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/research/round-${ROUND}.diff` and threads `diff_file_path:` into the reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted. When using-qrspi step 12 narrows the base ref, pass `--base-ref "$(cat reviews/research/round-$((ROUND-1))-commit.txt)"` so review-prep narrows against the prior round's per-round commit SHA (using-qrspi step 12 owns the SHA-format validation and the `anchor-file-missing:`/`sha-format-invalid:` halt directions before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches the reviewer as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
 

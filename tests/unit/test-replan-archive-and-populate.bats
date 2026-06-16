@@ -369,19 +369,19 @@ extract_step() {
   echo "$section" | grep -F "phasing.md" | grep -q "status: approved"
 }
 
-# ── Task 34: codex_reviews uses Config Validation Procedure (R2 I-N5) ──────
+# ── Task 34: second_reviewer uses Config Validation Procedure (R2 I-N5) ──────
 
-@test "Artifact Gating does NOT contain the silent codex_reviews default fallback" {
+@test "Artifact Gating does NOT contain the silent second_reviewer default fallback" {
   # R2 I-N5: prior text said "If config.md doesn't exist, default to
-  # codex_reviews: false" — this is the silent default forbidden by
+  # second_reviewer: false" — this is the silent default forbidden by
   # using-qrspi's "No silent defaults" contract. Must be removed.
   local section
   section="$(extract_section "$REPLAN_FILE" "## Artifact Gating")"
   [ -n "$section" ]
-  ! echo "$section" | grep -qiE "default to .*codex_reviews|codex_reviews.* false.*default|If .*config.md.*doesn't exist.*codex_reviews"
+  ! echo "$section" | grep -qiE "default to .*second_reviewer|second_reviewer.* false.*default|If .*config.md.*doesn't exist.*second_reviewer"
 }
 
-@test "Artifact Gating invokes the Config Validation Procedure for codex_reviews" {
+@test "Artifact Gating invokes the Config Validation Procedure for second_reviewer" {
   # Replacement for the silent default: invoke the Config Validation
   # Procedure (per using-qrspi:411). Mirrors the pattern used by
   # Integrate/Test ("Apply the Config Validation Procedure in
@@ -391,8 +391,8 @@ extract_step() {
   [ -n "$section" ]
   echo "$section" | grep -q "Config Validation Procedure"
   echo "$section" | grep -qE "using-qrspi/SKILL.md|using-qrspi"
-  # Must name codex_reviews as a field Replan validates.
-  echo "$section" | grep -i "Replan" | grep -q "codex_reviews"
+  # Must name second_reviewer as a field Replan validates.
+  echo "$section" | grep -i "Replan" | grep -q "second_reviewer"
 }
 
 # ── Task 40: Step 2 reads roadmap from snapshot path, not deleted live path ─

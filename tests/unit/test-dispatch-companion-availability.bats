@@ -178,10 +178,10 @@ teardown() {
 # Test expectation: grep -nE 'codex_reviews' skills/reviewer-protocol/SKILL.md returns
 # no matches after the Expected-Reviewer Matrix column-header sweep.
 @test "grep-audit: skills/reviewer-protocol/SKILL.md contains no codex_reviews field references" {
-  # Test expectation: the Expected-Reviewer Matrix column-header sweep renames all 'codex_reviews: true | false' column
-  # headers in the Expected-Reviewer Matrix to 'second_reviewer: true | false'.
-  # Any remaining codex_reviews occurrence is a miss from that sweep.
-  # RED: one match still present today at line 23.
+  # Asserts the v0.7.3 column-header sweep is complete: every legacy
+  # 'codex_reviews:' column header in the Expected-Reviewer Matrix was
+  # renamed to 'second_reviewer:'. Any remaining 'codex_reviews' occurrence
+  # is a miss from that sweep.
   local match_count
   match_count="$(grep -cE 'codex_reviews' "$REVIEWER_PROTOCOL" 2>/dev/null || true)"
   [ "$match_count" -eq 0 ]
@@ -201,7 +201,7 @@ teardown() {
 # ===========================================================================
 
 # Test expectation: skills/using-qrspi/SKILL.md documents second_reviewer: as the
-# canonical config field (not codex_reviews:).
+# canonical config field (not the legacy codex_reviews:).
 @test "config-field-naming: skills/using-qrspi/SKILL.md documents second_reviewer: as the canonical field" {
   # Test expectation: the config schema documentation in using-qrspi shows
   # 'second_reviewer:' as the field name (vendor-neutral).
@@ -210,15 +210,14 @@ teardown() {
 }
 
 # Test expectation: skills/using-qrspi/SKILL.md Config Validation Procedure rejects
-# a stray codex_reviews: field loudly with a rename-naming diagnostic.  It must NOT
+# a stray codex_reviews: field loudly with a rename-naming diagnostic. It must NOT
 # silently alias codex_reviews: to second_reviewer:.
 @test "config-field-naming: using-qrspi config-validation prose rejects legacy codex_reviews: with rename-naming error" {
   # Test expectation: the Config Validation Procedure (inside using-qrspi) documents
-  # that an unknown 'codex_reviews:' field is a hard validation error with a message
+  # that a legacy 'codex_reviews:' field is a hard validation error with a message
   # that names the rename — e.g., 'renamed to second_reviewer:' or 'use second_reviewer:'.
   # A silent alias would violate CD-1's no-silent-fallback rule and the clean-break canonical-field rename design.
-  # RED: using-qrspi still treats codex_reviews: as a known valid field today.
-  run grep -qE "renamed.*second_reviewer|second_reviewer.*renamed|rename.*codex_reviews|codex_reviews.*rename" \
+  run grep -qE "renamed.*second_reviewer|second_reviewer.*renamed|rename.*second_reviewer|second_reviewer.*rename" \
     "$USING_SKILL"
   [ "$status" -eq 0 ]
 }
