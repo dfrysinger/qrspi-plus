@@ -1,8 +1,3 @@
----
-name: notifications
-description: Sibling-notification protocol — how cross-task contract changes surface to dependent tasks
----
-
 # Sibling notifications
 
 Tasks running in parallel QRSPI worktrees can drift apart when one task's

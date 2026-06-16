@@ -9,7 +9,7 @@ This skill is the single consolidated implementer-shared content asset for the Q
 
 **Delivery.** Implementer subagents load this skill via the `skills: [implementer-protocol]` frontmatter field on every `agents/qrspi-implementer*.md` agent file. Claude Code preloads the body of this SKILL.md at agent activation, so dispatches need not embed it in their prompts.
 
-This file is **designed to grow**. Future implementer-shared content (allowed-files contract, additional dispatch fields, etc.) is added as **additional sections** to this same file rather than as new files. The path is stable across edits so the `skills:` preload field never needs to change.
+Future implementer-shared content (allowed-files contract, additional dispatch fields, etc.) belongs in this file as additional sections.
 
 ## Dispatch Parameters
 

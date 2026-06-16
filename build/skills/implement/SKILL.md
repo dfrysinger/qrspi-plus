@@ -566,15 +566,10 @@ All reviewer and fix work is dispatched via subagents; main chat only aggregates
 3. Issues → main chat re-dispatches reviewers on the same code to build a complete list (up to 3 convergence rounds).
 4. **Verifier dispatch (executes once per fix iteration — once per pass through the steps 1–3 convergence loop, NOT once at the end of all convergence rounds; after reviewers emit per-finding files).** When `config.md: verifier_enabled: true`, after the reviewer fan-out for that iteration completes and per-finding files are present under `reviews/tasks/task-NN/round-NN/`, dispatch `qrspi-finding-verifier` in parallel — one dispatch per `<reviewer_tag>.finding-FNN.md` file in the round directory. Each dispatch writes its sidecar to `reviews/tasks/task-NN/round-NN/<reviewer_tag>.finding-FNN.score.md`. `qrspi-finding-verifier` is the EXCLUSIVE writer of `<reviewer_tag>.finding-FNN.score.md`; reviewer, implementer, and orchestrator do NOT create or modify sidecars. All verifier dispatches fire concurrently; wait for all to complete. If a dispatch crashes, times out, or returns without writing the sidecar, the orchestrator halts the round before the HARD-GATE. When `config.md: verifier_enabled: false`, this step is skipped entirely.
 
-<!-- skills/_shared/verifier-dispatch-prose.md
-     Shared verifier-dispatch snippet, `!cat`-included into:
-       - skills/using-qrspi/SKILL.md   (artifact-level Apply-fix protocol)
-       - skills/implement/SKILL.md     (task-level Apply-fix protocol)
-     Source of truth: design.md CD-4 §H + structure.md Slice 1.1.
-     Mirrors skills/_shared/reviewer-dispatch-prose.md (CD-1 §11). The two
-     snippets are deliberately separate because each names a different
-     `dispatch-agent.sh` mode flag at the call site (the load-bearing
-     difference) — see design.md CD-4 §H rationale (L494). -->
+<!-- Shared verifier-dispatch snippet, !cat-included into using-qrspi/SKILL.md
+     (artifact-level Apply-fix) and implement/SKILL.md (task-level Apply-fix).
+     Mirrors reviewer-dispatch-prose.md; the two are separate because each
+     names a different dispatch-agent.sh mode flag at the call site. -->
 
 ## Verifier Dispatch
 

@@ -1,7 +1,6 @@
 # QRSPI Prompt Design Rules
 
 **Status:** Active rule set for skill prompt authoring and review.
-**Last applied:** 2026-06-02 (rules-file relocation + eight updates A-H). <!-- evergreen-exempt -->
 
 This document is the canonical rule set for designing and reviewing the prompt content of QRSPI skill files (`SKILL.md`, reviewer templates, hook prompts). It exists so future skill changes — and future skill rewrites when we learn more — apply a consistent, evidence-backed standard rather than re-deriving it each time.
 
@@ -59,7 +58,7 @@ Use `"Do X. Do not do Y."` for hot-path rules. Add a one-line `Why:` only where 
 
 ### R3 — Load-bearing rules at the END
 
-Anthropic measured ~30% improvement when critical instructions sit at the end of long context. The "lost in the middle" effect (Liu et al. 2024) is flatter on Opus 4.6 / GPT-5 but not gone, and instruction-following degrades with length faster than retrieval does (LIFBench). May 2026 status: confirmed on Opus 4.7-high and GPT-5.5 (end-of-context placement still yields measurable improvement; the magnitude is reduced at shorter context lengths but the ordering principle holds). GPT-5.3-Codex: confirmed (instruction-following at end of context window measurably stronger than mid-context). Sonnet 4.6: confirmed (consistent with Opus 4.6 pattern).
+Anthropic measured ~30% improvement when critical instructions sit at the end of long context. The "lost in the middle" effect (Liu et al. 2024) is flatter on current frontier models but not gone, and instruction-following degrades with length faster than retrieval does (LIFBench). End-of-context placement still yields measurable improvement across the model families this project has validated against; the magnitude is reduced at shorter context lengths but the ordering principle holds.
 
 - Repeat the most override-critical rules (Iron Laws) at start AND end of each skill.
 - Place Red Flags / Common Rationalizations sections toward the end.
