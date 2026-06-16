@@ -48,7 +48,7 @@ Goals runs in three contexts:
 
 - **Fresh run** — no artifact directory, no `config.md`, no `goals.md`. Run the full Interactive Dialogue + Pipeline Mode Selection.
 - **Mid-run resume** — artifact directory exists; `goals.md` may already be `approved`. Validate `config.md` and continue from where the user left off.
-- **Next-phase restart (invoked by Replan's minor path)** — a prior phase completed. **Replan auto-populates the draft `goals.md` from `roadmap.md` + `future-goals.md`**: Replan reads `roadmap.md` for the next phase's goal IDs, extracts matching entries from `future-goals.md`, and writes them as the new draft `goals.md` (`status: draft`). `artifact_promote_next_phase` has reset goals/research/design frontmatter to `draft` and deleted phase-scoped files (`structure.md`, `plan.md`, `tasks/`). The `phases/phase-NN/` snapshot exists; `config.md` carries the original route and pipeline.
+- **Next-phase restart (invoked by Replan's minor path)** — a prior phase completed. **Replan auto-populates four next-phase drafts** (`goals.md`, `questions.md`, `research/summary.md`, `design.md`) from the corresponding `future-*.md` artifacts using `roadmap.md` to identify the next-phase goal-ID set. Each draft is written with `status: draft` so the Goals → Questions → Research → Design cascade re-reviews every one. Full sequence: `replan/SKILL.md` § Archive-and-Populate Sequence (Minor Path). `artifact_promote_next_phase` has reset goals/research/design frontmatter to `draft` and deleted phase-scoped files (`structure.md`, `plan.md`, `tasks/`). The `phases/phase-NN/` snapshot exists; `config.md` carries the original route and pipeline.
 
 **Detecting next-phase restart:** all three hold:
 - `phases/phase-*/` snapshot directory exists
@@ -140,7 +140,7 @@ Per Rule 8, write each locked goal **directly to `goals.md`** with `status: draf
 - Validate that every locked goal carries the three subsections and a concrete `type` value.
 - Optionally append a Purpose section if absent.
 - **Only flip status if all validations pass.** On failure, halt, surface, re-enter dialogue.
-- Flip frontmatter `status: draft` to `status: approved`. Only the finalize pass writes `approved`; hand-edits mid-phase are forbidden. When the user picks "Approve, skip review", the finalize pass still runs and the reviewer round is skipped.
+- Flip frontmatter `status: draft` to `status: approved`. Only the finalize pass writes `approved`; hand-edits mid-phase are forbidden. When the user picks "Approve, skip review", the finalize pass still runs and the reviewer round is skipped. **Phasing re-flip carve-out:** when Phasing's pruning step modifies `goals.md` (splits current-phase content from deferred content), Phasing re-writes `status: approved` to the pruned `goals.md` as part of its phasing-approval flow per `skills/phasing/SKILL.md` § Human Gate. This is the only other writer of `goals.md`'s `status:` field; both writers operate under explicit user approval.
 
 **Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
 

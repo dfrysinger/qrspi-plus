@@ -48,6 +48,7 @@ This is the locked rule set the scope-reviewer dispatch loads at review time (Re
 - **Current-phase pruning of four synthesizing artifacts** — split goals.md, questions.md, research/summary.md, and design.md into current-phase content (kept in place) and deferred content (moved to `future-goals.md`, `future-questions.md`, `future-research-summary.md`, `future-design.md`). Individual `research/q*.md` files are NOT split — they remain as full-corpus reference so the summary's Q-attribution links continue to resolve.
 - **Future-* artifact maintenance** — `future-goals.md`, `future-questions.md`, `future-research-summary.md`, `future-design.md` are created and updated each Phasing run; consumed by Replan during between-phase transitions.
 - **Goal-ID consistency validation** — every goal ID appearing in any of the nine target files (goals.md, questions.md, research/summary.md, design.md, future-goals.md, future-questions.md, future-research-summary.md, future-design.md, roadmap.md) must trace to the canonical roadmap.md set. Orphan IDs flagged for user review.
+- **`phasing.md` `## Goal-ID Consistency` and `## Orphan IDs` H2 sections** — both H2 headings are required emissions of every `phasing.md` synthesis (per SKILL.md § Goal-ID Consistency Validation). The `## Orphan IDs` heading is required even when the content reads "No orphan IDs." — the section header itself is the validation-procedure-ran sentinel. Reviewers MUST reject emissions that omit either heading.
 
 ### Phasing DEFERS
 

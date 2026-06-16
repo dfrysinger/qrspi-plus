@@ -148,7 +148,7 @@ Per-goal blocks use the five-field template (Outcome, Solution, Why this approac
 - Validate the `## Cross-Goal Decisions` section is well-formed (each entry keyed by ID, each entry carries rationale + scope).
 - Optionally append a top-level summary if absent.
 - **Only flip status if all validations pass.** On failure, halt, surface, re-enter dialogue.
-- Flip frontmatter `status: draft` to `status: approved-pending-review`. Hand-edits flipping status mid-phase (before the finalize pass) are forbidden — only the finalize pass writes the next-gate status.
+- Flip frontmatter `status: draft` to `status: approved-pending-review`. Hand-edits flipping status mid-phase (before the finalize pass) are forbidden — only the finalize pass writes the next-gate status. **Phasing re-flip carve-out:** when Phasing's pruning step modifies `design.md` (splits current-phase content from deferred content into `future-design.md`), Phasing re-writes `status: approved` to the pruned `design.md` as part of its phasing-approval flow per `skills/phasing/SKILL.md` § Human Gate. This is the only other writer of `design.md`'s `status:` field; both writers operate under explicit user approval.
 
 **Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
 
