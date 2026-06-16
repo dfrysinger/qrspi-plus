@@ -7,6 +7,11 @@
 #                                            transitively before tokenization)
 # using a pinned deterministic tokenizer (default `tiktoken:cl100k_base`).
 #
+# `!cat` resolution covers BOTH `skills/_shared/*.md` (cross-skill snippets)
+# AND `skills/<skill>/references/*.md` (per-skill references). This matches
+# what `tools/build-plugin.mjs` ships at runtime — see issue #330 for the
+# v0.7.4 honest-measurement fix.
+#
 # CLI surface, stdout shape, named diagnostics, and exit codes are contracted
 # in docs/qrspi/2026-06-04-v073-release/structure.md § Interfaces —
 # `scripts/measure-active-footprint.sh`.
@@ -152,11 +157,12 @@ tokenizer_id   = sys.argv[7]
 import tiktoken
 enc = tiktoken.get_encoding(encoding_name)
 
-CAT_RE = re.compile(r'^!cat[ \t]+(skills/_shared/[^\s]+\.md)[ \t]*$')
+CAT_RE = re.compile(r'^!cat[ \t]+(skills/(?:_shared|[^/\s]+/references)/[^\s]+\.md)[ \t]*$')
 
 def resolve_bytes(skill_or_snippet_path, visited_stack):
     """Read the file at `path` and return its resolved bytes (str) with
-    every `!cat skills/_shared/...md` line replaced transitively by the
+    every `!cat skills/_shared/...md` and `!cat skills/<skill>/references/...md`
+    line replaced transitively by the
     referenced file's resolved content. `visited_stack` is the active-
     descent list of absolute paths (for cycle detection)."""
     try:
