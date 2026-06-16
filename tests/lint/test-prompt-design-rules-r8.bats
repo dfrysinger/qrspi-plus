@@ -10,7 +10,8 @@ bats_require_minimum_version 1.5.0
 #   3. The `What NOT to tighten` subheading is present verbatim. (sub-3)
 #   4. The reviewer-test sentence is present exact. (sub-4)
 #   5. The `rule-violation` row of the finding-type gate cites the literal
-#      substring `R1-R8`. (CD-3 Acceptance bullet 2)
+#      generically (e.g., "An R-rule defined in this file") instead of
+#      pinning a hard rule-range substring. (CD-3 Acceptance bullet 2)
 #   6. No R-rule heading is duplicated, and every R-ID cited in the
 #      finding-type gate exists as a section heading. (CD-3 Acceptance bullet 4)
 #   7. Fail-direction guard: a fixture file with a duplicated R3 heading
@@ -95,15 +96,27 @@ _duplicated_r_headings() {
 }
 
 # ---------------------------------------------------------------------------
-# Test expectation: The `rule-violation` row of the finding-type gate cites
-# the literal substring `R1-R8`.
+# Test expectation: The `rule-violation` row of the finding-type gate
+# references the rule set generically (e.g., "An R-rule defined in this
+# file") rather than pinning a hard rule-range substring like "R1-R8".
+# A hard range silently drops any rule added after the snippet was
+# written (the original brittleness this lint replaces).
 # ---------------------------------------------------------------------------
-@test "finding-type gate rule-violation row cites the literal 'R1-R8' range" {
-  # Find a table row that mentions both 'rule-violation' (the row label) and
-  # the literal 'R1-R8' substring.
-  if ! grep -E -- '\| *\*\*rule-violation\*\* *\|' "${RULES_FILE}" | grep -qF -- 'R1-R8'; then
-    echo "finding-type gate 'rule-violation' row does not cite the literal 'R1-R8' range in ${RULES_FILE}" >&2
-    grep -nE -- '\| *\*\*rule-violation\*\* *\|' "${RULES_FILE}" >&2 || true
+@test "finding-type gate rule-violation row references the rule set generically (no hard rule range)" {
+  local row
+  row="$(grep -E -- '\| *\*\*rule-violation\*\* *\|' "${RULES_FILE}" | head -n1)"
+  if [ -z "${row}" ]; then
+    echo "could not locate the finding-type gate 'rule-violation' row in ${RULES_FILE}" >&2
+    return 1
+  fi
+  if printf '%s\n' "${row}" | grep -qE 'R[0-9]+-R[0-9]+'; then
+    echo "finding-type gate 'rule-violation' row pins a hard rule range (R<n>-R<m>); use rangeless framing instead" >&2
+    printf '  row: %s\n' "${row}" >&2
+    return 1
+  fi
+  if ! printf '%s\n' "${row}" | grep -qiE 'R-rule|rule defined'; then
+    echo "finding-type gate 'rule-violation' row does not reference 'R-rule' or 'rule defined' generically in ${RULES_FILE}" >&2
+    printf '  row: %s\n' "${row}" >&2
     return 1
   fi
 }
@@ -137,12 +150,12 @@ _duplicated_r_headings() {
 }
 
 # ---------------------------------------------------------------------------
-# Test expectation: Every R-ID cited in the finding-type gate exists as a
-# section heading. The gate cites the literal range 'R1-R8' — every ID in
-# that range must have a ### heading.
+# Test expectation: Any R-ID mentioned in the finding-type gate (e.g., as
+# an inline example like "R3") resolves to an actual ### heading in the
+# rules file. Post the rangeless-framing scrub the row no longer cites a
+# hard range; this guard catches example-ID typos.
 # ---------------------------------------------------------------------------
-@test "every R-ID cited in the finding-type gate has a corresponding ### heading" {
-  # Extract the rule-violation row.
+@test "every R-ID mentioned in the finding-type gate resolves to a ### heading" {
   local row
   row="$(grep -E -- '\| *\*\*rule-violation\*\* *\|' "${RULES_FILE}" | head -n1)"
   if [ -z "${row}" ]; then
@@ -150,31 +163,16 @@ _duplicated_r_headings() {
     return 1
   fi
 
-  # Collect cited R-IDs. Handle both individual mentions (Rn) and the literal
-  # range form (Rn-Rm), expanding the range to every R-ID it contains.
   local -a cited=()
   local token
-  # Individual Rn tokens.
   for token in $(printf '%s\n' "${row}" | grep -oE 'R[0-9]+' | sort -u); do
     cited+=("${token}")
   done
-  # Range tokens of the form Rn-Rm — expand inclusively.
-  local range
-  for range in $(printf '%s\n' "${row}" | grep -oE 'R[0-9]+-R[0-9]+' | sort -u); do
-    local lo hi i
-    lo="${range%-*}"; lo="${lo#R}"
-    hi="${range#*-}"; hi="${hi#R}"
-    i="${lo}"
-    while [ "${i}" -le "${hi}" ]; do
-      cited+=("R${i}")
-      i=$((i + 1))
-    done
-  done
 
+  # Zero R-IDs cited is acceptable under rangeless framing — the row may
+  # describe the rule set without naming any specific ID.
   if [ "${#cited[@]}" -eq 0 ]; then
-    echo "rule-violation row contains no R-ID citations in ${RULES_FILE}" >&2
-    echo "  row: ${row}" >&2
-    return 1
+    return 0
   fi
 
   local missing="" id
@@ -184,7 +182,7 @@ _duplicated_r_headings() {
     fi
   done
   if [ -n "${missing}" ]; then
-    echo "finding-type gate cites R-IDs with no matching ### heading in ${RULES_FILE}:${missing}" >&2
+    echo "finding-type gate mentions R-ID(s) with no matching ### heading in ${RULES_FILE}:${missing}" >&2
     return 1
   fi
 }

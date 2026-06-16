@@ -5,7 +5,7 @@
 #
 # Maps to design.md § CD-3 Acceptance and plan.md Phase 1 Acceptance
 # Criteria bullet 5 (prompt-design-rules.md carries R8 verbatim; the
-# rule-violation finding-type gate row cites R1-R8).
+# rule-violation finding-type gate row references the rule set generically).
 
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")"/../../.. && pwd)"
@@ -33,9 +33,15 @@ setup_file() {
   grep -qF 'Could this sentence be shorter without losing behavioral precision OR load-bearing rationale?' "$RULES"
 }
 
-@test "acceptance: rule-violation finding-type gate cites R1-R8 (literal substring)" {
-  # plan.md Phase 1 Acceptance bullet 5 explicit clause.
-  grep -qF 'R1-R8' "$RULES"
+@test "acceptance: rule-violation finding-type gate references the rule set generically (no hard rule range)" {
+  # v0.7.4 audit item #3: replaced the brittle "R1-R8" hard-range pin
+  # with rangeless framing — the gate row must reference the rule set
+  # as a whole (e.g., "an R-rule defined in this file"), not pin a
+  # specific count.
+  row=$(grep -E -- '\| *\*\*rule-violation\*\* *\|' "$RULES" | head -n1)
+  [ -n "$row" ]
+  ! printf '%s\n' "$row" | grep -qE 'R[0-9]+-R[0-9]+'
+  printf '%s\n' "$row" | grep -qiE 'R-rule|rule defined'
 }
 
 @test "acceptance: every cited R-ID (R1..R8) exists as a heading and none are duplicated" {
