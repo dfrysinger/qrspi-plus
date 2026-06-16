@@ -9,11 +9,6 @@ If you were dispatched as a subagent to execute a specific task, skip this skill
 
 # Using QRSPI
 
-## Overview
-
-
-QRSPI is a pipeline for agentic software development with two route variants (quick fix and full). Each step produces a reviewable artifact, gets human approval, then invokes the next step. Most steps run as subagents for guaranteed clean context. Goals and Design run interactively in the main conversation with subagent synthesis.
-
 ## Recommended Workspace Layout
 
 
@@ -129,7 +124,6 @@ After Plan is approved, the route is locked. Route changes after that point requ
 
 ## When to Trigger
 
-
 Any time the user wants to build something — a feature, a fix, a project. If there's intent to write code, QRSPI applies. Default is always start with Goals and proceed through every step.
 
 ## Artifact Directory
@@ -232,11 +226,6 @@ Each skill checks that its required input artifacts exist on disk before proceed
 
 If a required artifact is missing, the skill refuses to run and tells the user which artifact is needed.
 
-## Artifact Quality
-
-
-Every artifact-producing skill in this pipeline applies the cross-cutting Evergreen-Output Rule to the artifact it emits. See `skills/_shared/evergreen-output-rule.md` for the canonical rule (litmus test, named antagonist patterns, permitted substantive content); the rule is `!cat`-included by every artifact-producing SKILL.md at its artifact-output contract section, and reviewer subagents enforce it via the antagonist-pattern clause in `skills/reviewer-protocol/SKILL.md`.
-
 ## Approval Markers
 
 
@@ -271,19 +260,7 @@ The single piece of derived state worth persisting is `phase_start_commit`, whic
 
 **The Implement batch trap to avoid:** "one task done" does NOT mean "advance to integrate." Implement runs once per phase and fires per-task subagents in a wave; the batch is only done when every task in `parallelization.md` has cleared its review/fix cycles. Verify against `parallelization.md` before routing forward.
 
-### Orchestration Boundary applies to every phase
-
-During Implement, Integrate, and Test, the pipeline enforces an **orchestration boundary**: only subagent commits whose `git log --format='%an'` matches `qrspi-<agent>` may land in the integration branch. Main-chat commits and any commit without the `qrspi-` author prefix are boundary violations.
-
-The per-phase SKILL bodies carry the full HARD-RULE, the observability-check step, and the batch-gate menu additions:
-- **Implement:** `skills/implement/SKILL.md` § Step N — Orchestration boundary observability check
-- **Integrate:** `skills/integrate/SKILL.md` § Orchestration Boundary
-- **Test:** `skills/test/SKILL.md` § Orchestration Boundary
-
-The primitive is `scripts/orchestration-boundary-check.sh --phase <directory-name>`, which writes `reviews/<phase>/orchestration-boundary.md`. The script always exits 0 (fail-soft); a non-empty report is the signal at the batch gate. To revert confirmed violations, use the implementer-protocol `revert-orchestration-drift` fix-task mode.
-
 ## Rejection Behavior
-
 
 When the user rejects an artifact at any human gate, they provide feedback. A new subagent round is launched with the original inputs + a feedback file containing the rejected artifact and the user's feedback. Rejection never skips steps or moves backward — it re-runs the current step with feedback until approved.
 

@@ -1,134 +1,126 @@
 {
-  "Overview": {
+  "Recommended Workspace Layout": {
     "line_start": 12,
     "line_end": 15
   },
-  "Recommended Workspace Layout": {
+  "The Pipeline": {
     "line_start": 16,
     "line_end": 19
   },
-  "The Pipeline": {
+  "Route Templates": {
     "line_start": 20,
     "line_end": 23
   },
-  "Route Templates": {
+  "When to Trigger": {
     "line_start": 24,
     "line_end": 27
   },
-  "When to Trigger": {
+  "Artifact Directory": {
     "line_start": 28,
     "line_end": 31
   },
-  "Artifact Directory": {
+  "Artifact Gating": {
     "line_start": 32,
     "line_end": 35
   },
-  "Artifact Gating": {
+  "Approval Markers": {
     "line_start": 36,
     "line_end": 39
   },
-  "Artifact Quality": {
-    "line_start": 40,
-    "line_end": 43
-  },
-  "Approval Markers": {
-    "line_start": 44,
-    "line_end": 47
-  },
   "State and Pipeline Ordering": {
-    "line_start": 48,
-    "line_end": 53
+    "line_start": 40,
+    "line_end": 45
   },
   "Rejection Behavior": {
-    "line_start": 54,
-    "line_end": 57
+    "line_start": 46,
+    "line_end": 49
   },
   "Backward Loops (New Learnings)": {
-    "line_start": 58,
-    "line_end": 61
+    "line_start": 50,
+    "line_end": 53
   },
   "Mid-Pipeline Entry": {
-    "line_start": 62,
-    "line_end": 67
+    "line_start": 54,
+    "line_end": 59
   },
   "Pipeline Progress": {
-    "line_start": 68,
-    "line_end": 71
+    "line_start": 60,
+    "line_end": 63
   },
   "Artifact Gating Check (Standard Pattern)": {
-    "line_start": 72,
-    "line_end": 75
+    "line_start": 64,
+    "line_end": 67
   },
   "Config File (`config.md`)": {
-    "line_start": 76,
-    "line_end": 241
+    "line_start": 68,
+    "line_end": 233
   },
   "Dispatch routing blocks": {
-    "line_start": 145,
-    "line_end": 241
+    "line_start": 137,
+    "line_end": 233
   },
   "Config Validation Procedure": {
-    "line_start": 242,
-    "line_end": 349
+    "line_start": 234,
+    "line_end": 341
   },
   "When config.md is missing entirely": {
-    "line_start": 246,
-    "line_end": 254
+    "line_start": 238,
+    "line_end": 246
   },
   "When a required field is missing or has an invalid value": {
-    "line_start": 255,
-    "line_end": 295
+    "line_start": 247,
+    "line_end": 287
   },
   "No silent defaults": {
-    "line_start": 296,
-    "line_end": 303
+    "line_start": 288,
+    "line_end": 295
   },
   "Exceptions to the no-silent-defaults rule": {
-    "line_start": 304,
-    "line_end": 322
+    "line_start": 296,
+    "line_end": 314
   },
   "Fields that affect pipeline behavior (must be validated)": {
-    "line_start": 323,
-    "line_end": 343
+    "line_start": 315,
+    "line_end": 335
   },
   "Fields that do NOT require validation (informational only)": {
-    "line_start": 344,
-    "line_end": 349
+    "line_start": 336,
+    "line_end": 341
   },
   "Standard Review Loop": {
-    "line_start": 350,
-    "line_end": 386
+    "line_start": 342,
+    "line_end": 378
   },
   "Review Output Handling": {
-    "line_start": 387,
-    "line_end": 587
+    "line_start": 379,
+    "line_end": 579
   },
   "Review-Loop Pause Gate": {
-    "line_start": 588,
-    "line_end": 593
+    "line_start": 580,
+    "line_end": 585
   },
   "Review Time Allocation": {
-    "line_start": 594,
-    "line_end": 597
+    "line_start": 586,
+    "line_end": 589
   },
   "Compaction Checkpoints": {
-    "line_start": 598,
-    "line_end": 605
+    "line_start": 590,
+    "line_end": 597
   },
   "Feedback File Format": {
+    "line_start": 598,
+    "line_end": 601
+  },
+  "Common Rationalizations — STOP": {
+    "line_start": 602,
+    "line_end": 605
+  },
+  "Skill Invocation": {
     "line_start": 606,
     "line_end": 609
   },
-  "Common Rationalizations — STOP": {
-    "line_start": 610,
-    "line_end": 613
-  },
-  "Skill Invocation": {
-    "line_start": 614,
-    "line_end": 617
-  },
   "Pipeline Iron Laws — Final Reminder": {
-    "line_start": 618,
-    "line_end": 622
+    "line_start": 610,
+    "line_end": 614
   }
 }

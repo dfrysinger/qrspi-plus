@@ -9,10 +9,6 @@ If you were dispatched as a subagent to execute a specific task, skip this skill
 
 # Using QRSPI
 
-## Overview
-
-!cat skills/using-qrspi/references/overview.md
-
 ## Recommended Workspace Layout
 
 !cat skills/using-qrspi/references/workspace-layout.md
@@ -27,7 +23,7 @@ If you were dispatched as a subagent to execute a specific task, skip this skill
 
 ## When to Trigger
 
-!cat skills/using-qrspi/references/when-to-trigger.md
+Any time the user wants to build something — a feature, a fix, a project. If there's intent to write code, QRSPI applies. Default is always start with Goals and proceed through every step.
 
 ## Artifact Directory
 
@@ -36,10 +32,6 @@ If you were dispatched as a subagent to execute a specific task, skip this skill
 ## Artifact Gating
 
 !cat skills/using-qrspi/references/artifact-gating.md
-
-## Artifact Quality
-
-!cat skills/using-qrspi/references/artifact-quality.md
 
 ## Approval Markers
 
@@ -53,7 +45,7 @@ Pipeline state is derived from artifact frontmatter; the only piece of derived s
 
 ## Rejection Behavior
 
-!cat skills/using-qrspi/references/rejection-behavior.md
+When the user rejects an artifact at any human gate, they provide feedback. A new subagent round is launched with the original inputs + a feedback file containing the rejected artifact and the user's feedback. Rejection never skips steps or moves backward — it re-runs the current step with feedback until approved.
 
 ## Backward Loops (New Learnings)
 
