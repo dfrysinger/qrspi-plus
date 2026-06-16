@@ -43,15 +43,46 @@ setup_file() {
   }
 }
 
-@test "acceptance: required skills/_shared/ snippets exist (T31 populated SSoT)" {
-  # design.md § G9 Acceptance bullet 3 — _shared/ populated.
-  for snippet in reviewer-dispatch.md review-loop.md config-validation.md \
-                 compaction-checkpoint.md pause-gate.md feedback-format.md; do
-    [ -f "$SHARED/$snippet" ] || {
-      echo "missing required _shared snippet: $snippet" >&2
-      false
-    }
-  done
+@test "acceptance: every skills/_shared/ snippet is consumed via !cat OR explicitly allow-listed (G9 + v0.7.4 audit item #6)" {
+  # Replaces the v0.7.3-era existence-only assertion. The old test claimed
+  # snippets like reviewer-dispatch.md, review-loop.md, etc. were
+  # 'populated SSoT' merely by existing — masking that nothing actually
+  # !cat-included them. v0.7.4 audit item #6 deleted those orphans.
+  #
+  # New invariant: every .md under skills/_shared/ (recursive) must have at
+  # least one '!cat <relative-path>' match somewhere under skills/ or
+  # agents/, OR be on the allow-list below (files intentionally consumed
+  # via the Read tool, not !cat).
+  local -a allow_list=(
+    "skills/_shared/prompt-design-rules.md"             # Read on demand by prompt-prose-{reviewer,writer}.
+    "skills/_shared/design-altitude-boundary.md"        # Read on demand by design / phasing / structure / plan altitude reviewers.
+    "skills/_shared/config-validation-procedure.md"     # Read at runtime by orchestrator/dispatcher per using-qrspi config-load step.
+    "skills/_shared/tsc-probe-helper.md"                # Read on demand by code-quality reviewer + test-writer when probing tsconfig.
+  )
+  _allowlisted() {
+    local target="$1" entry
+    for entry in "${allow_list[@]}"; do
+      [ "$entry" = "$target" ] && return 0
+    done
+    return 1
+  }
+
+  local snippet rel violations=""
+  while IFS= read -r snippet; do
+    rel="${snippet#$REPO_ROOT/}"
+    if _allowlisted "$rel"; then
+      continue
+    fi
+    if ! grep -rqF "!cat $rel" "$REPO_ROOT/skills" "$REPO_ROOT/agents" 2>/dev/null; then
+      violations="${violations}\n  $rel"
+    fi
+  done < <(find "$REPO_ROOT/skills/_shared" -type f -name '*.md' | sort)
+
+  if [ -n "$violations" ]; then
+    printf 'skills/_shared/ snippet(s) with zero !cat consumers and not on the allow-list:%b\n' "$violations" >&2
+    printf '\nFix options: (a) add at least one !cat consumer, (b) add to allow-list with a justification comment, or (c) delete the snippet.\n' >&2
+    return 1
+  fi
 }
 
 @test "acceptance: v0.7.2 phase-1 acceptance suite still exists (regression-guard precondition)" {
