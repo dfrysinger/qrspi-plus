@@ -52,7 +52,7 @@ Required inputs:
 - `fixes/` (regression coverage; may be empty)
 - codebase with implementation merged
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Test validates `codex_reviews`.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Test validates `second_reviewer`.
 
 In quick fix mode, Test receives `goals.md` + `research/summary.md` instead of `design.md`; phase routing is skipped (always single-phase). Acceptance criteria come from `plan.md`'s per-task `## Test Expectations` (plus per-phase acceptance block when present); `goals.md` is upstream traceability only — per the strip-from-goals contract, it does NOT author criteria.
 
@@ -109,7 +109,7 @@ Per-type rules live in `agents/qrspi-test-writer.md` § TEST TYPE TEMPLATES. One
 
    **Phase-routing fail-loud.** Per `reviewer-protocol/SKILL.md` § Phase Routing, each reviewer carries a Pre-Flight check refusing dispatch when `task_definition` is supplied AND `output`/`round_subdir` contains `/reviews/test/`, returning a single-line `PHASE-ROUTING-VIOLATION:` instead of writing findings. **Orchestrator handling:** scan the first line of any text-instead-of-findings response; on a `PHASE-ROUTING-VIOLATION:` hit, STOP — do not silently retry. Repair by stripping `task_definition`. Re-dispatch only after repair. Bats guard: `tests/unit/test-task-definition-absence-fail-loud.bats`.
 
-   Per-task reviewers (Claude + Codex when `codex_reviews: true`) dispatch via the universal chain — `dispatch-agent.sh` without `--task-def`. Set per-skill parameters, then include the shared reviewer-dispatch prose:
+   Per-task reviewers (Claude + Codex when `second_reviewer: true`) dispatch via the universal chain — `dispatch-agent.sh` without `--task-def`. Set per-skill parameters, then include the shared reviewer-dispatch prose:
 
 ```sh
 REVIEW_STEP="test"

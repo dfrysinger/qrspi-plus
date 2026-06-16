@@ -45,9 +45,9 @@
 #     Invoke dispatch-agent.sh in full dispatch mode (no --dry-run) with
 #     QRSPI_REPO_ROOT pointing at a per-test mock directory containing:
 #       scripts/dispatch-companion.sh  (mock dispatcher, exits MOCK_TRANSPORT_EXIT)
-#       skills/reviewer-protocol/SKILL.md + stdout-fallback-emission.md  (stubs)
+#       skills/reviewer-protocol/SKILL.md + emission.md  (stubs)
 #       agents/qrspi-spec-reviewer.md  (minimal, no extra skill deps)
-#       artifact-dir/config.md  (codex_reviews: value per test)
+#       artifact-dir/config.md  (second_reviewer: value per test)
 #     Stderr from the full invocation is captured to a temp file so transport-marker
 #     and mismatch-diagnostic assertions can examine it directly.
 #
@@ -91,7 +91,7 @@ setup() {
   printf '## Reviewer Dispatch Contract\nReviewer protocol stub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nCodex emission override stub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
 
   # Minimal agent file with no extra skill: dependencies so the skill-load
   # chain stays trivially short and the test fixture stays self-contained.
@@ -99,10 +99,10 @@ setup() {
   printf -- '---\nmodel: sonnet\nskills: []\n---\n\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
 
-  # Artifact directory with a default config (codex_reviews: false).
+  # Artifact directory with a default config (second_reviewer: false).
   # Individual tests write a different config.md when they need a specific value.
   mkdir -p "$TMP_DIR/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   # Mock dispatcher: drains stdin, optionally emits MOCK_TRANSPORT_STDERR to stderr,
   # exits with MOCK_TRANSPORT_EXIT (default 0).  Lives at the path the wrapper expects
@@ -498,7 +498,7 @@ teardown() {
   # Test expectation: TE14 — when dispatch surface selects the Copilot CLI task-tool
   # path (detected host = copilot-cli, COPILOT_CLI=1), the marker
   # '[transport: task-tool]' appears exactly once on stderr.
-  # config.md set to codex_reviews: true so the copilot-cli dispatch is not skipped
+  # config.md set to second_reviewer: true so the copilot-cli dispatch is not skipped
   # by an availability gate before the marker can be emitted.
   # The actual task-tool invocation may fail in a non-copilot test environment;
   # this test asserts only on the transport marker, not the final exit code.
@@ -518,7 +518,7 @@ teardown() {
     *) skip "gh ($_trusted_gh) not in trusted prefix on this host" ;;
   esac
 
-  printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   TMP_STDERR="$TMP_DIR/t14-stderr.txt"
   QRSPI_REPO_ROOT="$TMP_DIR" \
@@ -557,7 +557,7 @@ teardown() {
     *) skip "gh ($_trusted_gh) not in trusted prefix on this host" ;;
   esac
 
-  printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   TMP_STDERR="$TMP_DIR/t14b-stderr.txt"
   QRSPI_REPO_ROOT="$TMP_DIR" \
@@ -576,15 +576,15 @@ teardown() {
   ! grep -q '\[transport: shell-pipeline\]' "$TMP_STDERR"
 }
 
-@test "[dispatch-surface] mismatch warning names both the detected host and the codex_reviews config value" {
-  # Test expectation: TE12 — when detect_host output disagrees with the codex_reviews
+@test "[dispatch-surface] mismatch warning names both the detected host and the second_reviewer config value" {
+  # Test expectation: TE12 — when detect_host output disagrees with the second_reviewer
   # config value, the dispatch surface emits a single line to stderr that names BOTH
   # the detected host value AND the config value so an operator can act on it.
   #
   # Mismatch scenario from the spec example: detected host = 'claude-code' (COPILOT_CLI
-  # unset), config codex_reviews = true.  MOCK_HOME has no companion file, so
-  # check_codex_available(claude-code) returns non-zero → mismatch with codex_reviews: true.
-  printf -- '---\ncodex_reviews: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  # unset), config second_reviewer = true.  MOCK_HOME has no companion file, so
+  # check_codex_available(claude-code) returns non-zero → mismatch with second_reviewer: true.
+  printf -- '---\nsecond_reviewer: true\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   TMP_STDERR="$TMP_DIR/t12-stderr.txt"
   QRSPI_REPO_ROOT="$TMP_DIR" \
@@ -616,16 +616,16 @@ teardown() {
   # The grep on 'claude-code' proves the new dispatch surface ran (mismatch path active).
   # If it were missing, the test would fail at the grep line, not at the exit-code check.
   #
-  # T7 update: the original scenario (no companion + codex_reviews=true) now triggers
+  # T7 update: the original scenario (no companion + second_reviewer=true) now triggers
   # the T7 codex-unavailable short-circuit (avail=false AND config=true → exit non-zero
   # before dispatch).  Switch to the avail=true + config=false mismatch scenario so we
   # still exercise warning-only-with-dispatch-continuing: populate the companion path
-  # (avail=true via the glob) and set codex_reviews=false → mismatch fires, no
+  # (avail=true via the glob) and set second_reviewer=false → mismatch fires, no
   # short-circuit, transport runs to completion.
   mkdir -p "$MOCK_HOME/.claude/plugins/cache/openai-codex/codex/v1.0.55/scripts"
   printf '// mock codex-companion stub\n' \
     > "$MOCK_HOME/.claude/plugins/cache/openai-codex/codex/v1.0.55/scripts/codex-companion.mjs"
-  printf -- '---\ncodex_reviews: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   TMP_STDERR="$TMP_DIR/t12b-stderr.txt"
   QRSPI_REPO_ROOT="$TMP_DIR" \
@@ -689,17 +689,17 @@ teardown() {
   # The mismatch warning path must not swallow failures.
   #
   # Mismatch scenario: COPILOT_CLI unset (claude-code), companion present so
-  # avail=true, codex_reviews: false → mismatch (avail≠config) without triggering
+  # avail=true, second_reviewer: false → mismatch (avail≠config) without triggering
   # the T7 codex-unavailable short-circuit.  Mock transport exits 7.
   #
-  # T7 update: the original scenario (no companion + codex_reviews=true) now triggers
+  # T7 update: the original scenario (no companion + second_reviewer=true) now triggers
   # the codex-unavailable short-circuit, so the transport never runs and there's no
   # transport exit code to suppress.  The avail=true + config=false scenario still
   # exercises the "mismatch warning does not suppress transport failure" contract.
   mkdir -p "$MOCK_HOME/.claude/plugins/cache/openai-codex/codex/v1.0.55/scripts"
   printf '// mock codex-companion stub\n' \
     > "$MOCK_HOME/.claude/plugins/cache/openai-codex/codex/v1.0.55/scripts/codex-companion.mjs"
-  printf -- '---\ncodex_reviews: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   TMP_STDERR="$TMP_DIR/t17-stderr.txt"
   # Use && ... || dispatch_status=$? to capture non-zero exits in bats (same
@@ -779,11 +779,11 @@ teardown() {
   grep -qi "unsafe" "$TMP_STDERR"
 }
 
-@test "[r3-sec.F03] codex_reviews value is validated to a safe literal before echoing in mismatch diagnostic" {
-  # sec.F03: the _codex_reviews value extracted from config.md is echoed
+@test "[r3-sec.F03] second_reviewer value is validated to a safe literal before echoing in mismatch diagnostic" {
+  # sec.F03: the _second_reviewer value extracted from config.md is echoed
   # verbatim to stderr without sanitisation.  A crafted config.md value that
   # passes a loose future comparison could inject terminal control sequences.
-  # After the fix, _codex_reviews is normalised to exactly "true" or "false"
+  # After the fix, _second_reviewer is normalised to exactly "true" or "false"
   # before any use; an out-of-range value is set to "false".
   #
   # The fix must introduce a `true|false` case statement (or equivalent) that
@@ -793,7 +793,7 @@ teardown() {
   # `== "true"` guard in the current code prevents.
   #
   # RED state: the script does not contain a `true|false` case pattern for
-  # _codex_reviews sanitisation.  `grep -qF 'true|false' "$WRAPPER"` FAILS. ✓
+  # _second_reviewer sanitisation.  `grep -qF 'true|false' "$WRAPPER"` FAILS. ✓
   grep -qF 'true|false' "$WRAPPER"
 }
 
@@ -835,21 +835,21 @@ teardown() {
 }
 
 # ===========================================================================
-# SECTION 6: tc.F04 (R12) — _codex_reviews sanitization injection test
+# SECTION 6: tc.F04 (R12) — _second_reviewer sanitization injection test
 #
-# sec.F03 (R3) introduced a `case "$_codex_reviews" in true|false)` normalisation
-# that sanitizes any crafted _codex_reviews value to "true" or "false" before use.
+# sec.F03 (R3) introduced a `case "$_second_reviewer" in true|false)` normalisation
+# that sanitizes any crafted _second_reviewer value to "true" or "false" before use.
 # This section adds a runtime assertion proving that a shell-metacharacter-laden
 # config value does NOT execute as shell code, complementing the structural
 # assertion in [r3-sec.F03] above.
 # ===========================================================================
 
-@test "[r12-tc.F04] crafted codex_reviews value with shell metacharacters does not execute injection" {
-  # Scenario: config.md contains `codex_reviews: true; echo INJECTED` — a value
+@test "[r12-tc.F04] crafted second_reviewer value with shell metacharacters does not execute injection" {
+  # Scenario: config.md contains `second_reviewer: true; echo INJECTED` — a value
   # designed to execute a side-effect command if the extracted value is ever
   # interpolated unsafely into a shell expression.
   #
-  # The sec.F03 sanitization normalises _codex_reviews to "true" or "false"
+  # The sec.F03 sanitization normalises _second_reviewer to "true" or "false"
   # via a case statement; values that do not match exactly are replaced with
   # "false".  The injected `; echo INJECTED` suffix makes the raw extracted
   # string `true; echo INJECTED`, which does not match `true` or `false` exactly
@@ -857,10 +857,10 @@ teardown() {
   #
   # Assertions:
   #   1. Neither stdout nor stderr contains "INJECTED".
-  #   2. The _codex_reviews value was normalised — either to "true" (if the
+  #   2. The _second_reviewer value was normalised — either to "true" (if the
   #      awk extraction stops at whitespace/semicolon) or to "false" (full
   #      injected string doesn't match), evidenced by no injection side-effect.
-  printf -- '---\ncodex_reviews: true; echo INJECTED\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: true; echo INJECTED\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   TMP_STDOUT="$TMP_DIR/t-f04-stdout.txt"
   TMP_STDERR="$TMP_DIR/t-f04-stderr.txt"

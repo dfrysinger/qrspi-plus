@@ -142,22 +142,22 @@ case "$FIELD" in
     fi
     ;;
 
-  codex_reviews)
-    if ! field_present "codex_reviews"; then
-      echo "config.md has no \`codex_reviews\` field."
+  second_reviewer)
+    if ! field_present "second_reviewer"; then
+      echo "config.md has no \`second_reviewer\` field."
       echo ""
-      echo "  1) Add \`codex_reviews: true\` to config.md (Codex second reviews enabled)"
-      echo "  2) Add \`codex_reviews: false\` to config.md (Codex second reviews disabled)"
+      echo "  1) Add \`second_reviewer: true\` to config.md (Codex second reviews enabled)"
+      echo "  2) Add \`second_reviewer: false\` to config.md (Codex second reviews disabled)"
       echo "  3) Re-run Goals to regenerate config.md"
       echo "  4) Abort"
       exit 1
     fi
-    VALUE="$(extract_field codex_reviews)"
+    VALUE="$(extract_field second_reviewer)"
     if [[ "$VALUE" != "true" && "$VALUE" != "false" ]]; then
-      echo "config.md has an invalid value for \`codex_reviews\`: $VALUE"
+      echo "config.md has an invalid value for \`second_reviewer\`: $VALUE"
       echo "Expected: \`true\` or \`false\`"
       echo ""
-      echo "  1) Edit config.md and set \`codex_reviews: true\` or \`codex_reviews: false\`"
+      echo "  1) Edit config.md and set \`second_reviewer: true\` or \`second_reviewer: false\`"
       echo "  2) Re-run Goals to regenerate config.md"
       echo "  3) Abort"
       exit 1
@@ -165,7 +165,7 @@ case "$FIELD" in
     ;;
 
   visual_fidelity_required)
-    # Same shape as the codex_reviews branch above: boolean field, accepts
+    # Same shape as the second_reviewer branch above: boolean field, accepts
     # true|false, prints the standard invalid-value menu on anything else.
     # The runtime-backfill carve-out for resumed runs lives in
     # `using-qrspi/SKILL.md` § Exceptions and is handled at read time by the

@@ -9,7 +9,7 @@ This skill is the single consolidated implementer-shared content asset for the Q
 
 **Delivery.** Implementer subagents load this skill via the `skills: [implementer-protocol]` frontmatter field on every `agents/qrspi-implementer*.md` agent file. Claude Code preloads the body of this SKILL.md at agent activation, so dispatches need not embed it in their prompts.
 
-This file is **designed to grow**. Future implementer-shared content (allowed-files contract, additional dispatch fields, etc.) is added as **additional sections** to this same file rather than as new files. The path is stable across edits so the `skills:` preload field never needs to change.
+Future implementer-shared content (allowed-files contract, additional dispatch fields, etc.) belongs in this file as additional sections.
 
 ## Dispatch Parameters
 
@@ -32,6 +32,22 @@ and resolve each one (addressed or n/a) before reporting DONE. See
 
 - **`mode: implement`** — Initial implementation of the task. Follow the implementation discipline defined by your agent's mode-specific guidance below (TDD or single-pass per agent variant).
 - **`mode: fix`** — Fix cycle. Prior review findings arrive in `companion_review_findings`. Address each finding per the review's recommendations. Re-run all tests after fixes. If the fix requires architectural decisions the plan didn't anticipate, report BLOCKED rather than guessing.
+
+## Fix-task modes
+
+Fix-task modes are named sub-modes of `mode: fix` invoked by the orchestrator for narrowly scoped repair work. Each mode names its input report path, its halt semantics, and its output artifact path. Subagents dispatched into a fix-task mode commit under their author marker and report DONE / DONE_WITH_CONCERNS / BLOCKED per the shared report format.
+
+### `revert-orchestration-drift`
+
+Reverts non-subagent commits surfaced by the G5 orchestration-boundary check.
+
+- **Input.** `reviews/<phase>/orchestration-boundary.md` — the boundary report produced by `scripts/orchestration-boundary-check.sh`, which enumerates the offending commit SHAs.
+- **SHA-shape validation.** Every SHA read from the report is validated against the well-formed git object-name shape (lowercase hex, 7–64 characters) before being passed to any `git` invocation. A SHA failing the shape check halts the subagent with the named diagnostic `sha-format-invalid: <token>` and exits non-zero. No `git` command runs against a malformed value.
+- **Revert procedure.** Process the validated SHAs in reverse chronological order. For each SHA, run `git revert --no-edit <SHA>` under the subagent's author marker.
+- **Halt-on-conflict.** If any `git revert --no-edit <SHA>` fails — merge conflict, merge-commit-without-`-m`, deleted file, or any other failure class — the subagent halts immediately. It runs `git revert --abort` to leave the working tree clean of partial revert state, writes `orchestration-boundary-revert-failed.md` naming the failed SHA and the failure class, leaves no other state changes, and exits non-zero. Skip-and-continue across the remaining SHAs is forbidden: do not attempt the next SHA, do not branch to a continue path, do not defer the failure.
+- **Success output.** On full success — every revert applied — the subagent writes `orchestration-boundary-revert.md` summarising the reverts (SHA list in the order applied, one line per revert commit produced).
+
+The halt-on-conflict semantics and the per-failure-class halt direction above are load-bearing: they exist so a partial revert never leaves the working tree in a state the next OBC run would misread. Do not tighten them out.
 
 ## Before You Begin
 
@@ -158,6 +174,8 @@ Before reporting DONE or DONE_WITH_CONCERNS, run one combined scan over the comm
 - **Any retained hit MUST be explicitly acknowledged in the DONE report** with the line content, the regex that fired, and a brief rationale for why the hit is a false positive or intentional exception.
 - **Reviewer visibility is structurally enforced via two channels:** (a) the DONE-report file is passed as a companion parameter on every per-task reviewer dispatch, so the reviewer's pre-flight reads the DONE-report alongside the artifact under review; (b) the per-task reviewer dispatch site explicitly lists the DONE-report file path so reviewers can re-Read it directly. Both channels carry the unacknowledged-hit data, ensuring reviewer visibility is not nominal.
 - A reviewer that finds an unacknowledged hit in the artifact is expected to raise it as a finding. An acknowledged hit with stated rationale is resolved at the implementer's discretion.
+
+**Halt-DONE exception for `@test "..."` description strings:** any internal-ID-rule hit inside an added or modified `@test "..."` description string halts the DONE signal — the implementer MUST fix the violation before reporting DONE or DONE_WITH_CONCERNS, and the acknowledgement-with-rationale escape route does not apply to this scope.
 
 ## Commit hygiene invariants
 

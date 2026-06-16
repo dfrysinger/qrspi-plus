@@ -147,14 +147,13 @@ _test_mirror_partition_finding() {
 }
 
 @test "audit: no valid finding-frontmatter example uses category: in touched files" {
-  # Scope: the reviewer-protocol skill (SKILL.md and emission siblings) and
-  # this test's fixtures. Historical artifacts under docs/qrspi/ are out of
-  # scope for this audit per the task's touched-file framing.
+  # Scope: the reviewer-protocol skill (SKILL.md and the unified emission
+  # contract) and this test's fixtures. Historical artifacts under
+  # docs/qrspi/ are out of scope for this audit per the task's
+  # touched-file framing.
   local scope=(
     skills/reviewer-protocol/SKILL.md
-    skills/reviewer-protocol/first-party-emission.md
-    skills/reviewer-protocol/third-party-emission.md
-    skills/reviewer-protocol/stdout-fallback-emission.md
+    skills/reviewer-protocol/emission.md
     tests/unit/test-change-type-partition.bats
     tests/fixtures/change-type-required/round-01/well-formed-claude.finding-F02.md
   )

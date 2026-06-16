@@ -59,13 +59,13 @@
 @test "fresh-run config init writes verifier_enabled: true to config.md" {
   # Spec §1: "Fresh run directories start with verifier_enabled: true (set by
   # the using-qrspi run-init code at run creation)." Shape-agnostic check —
-  # the run-init prose lists at least the legacy fields (codex_reviews, route)
+  # the run-init prose lists at least the legacy fields (second_reviewer, route)
   # and must now also include verifier_enabled: true somewhere in the same
   # SKILL.md file. The three field names appear together nowhere else in
-  # using-qrspi/SKILL.md (codex_reviews / route / verifier_enabled), so a
+  # using-qrspi/SKILL.md (second_reviewer / route / verifier_enabled), so a
   # whole-file presence triple is sufficient and shape-independent.
-  grep -qE '^[[:space:]]*[-*][[:space:]]*`?codex_reviews`?:|codex_reviews:[[:space:]]+(true|false)' skills/using-qrspi/SKILL.md \
-    || { echo "codex_reviews not present in using-qrspi/SKILL.md"; return 1; }
+  grep -qE '^[[:space:]]*[-*][[:space:]]*`?second_reviewer`?:|second_reviewer:[[:space:]]+(true|false)' skills/using-qrspi/SKILL.md \
+    || { echo "second_reviewer not present in using-qrspi/SKILL.md"; return 1; }
   grep -qE '^[[:space:]]*[-*][[:space:]]*`?route`?:|route:[[:space:]]+' skills/using-qrspi/SKILL.md \
     || { echo "route not present in using-qrspi/SKILL.md"; return 1; }
   # The new field must appear with a literal `true` default in a run-init

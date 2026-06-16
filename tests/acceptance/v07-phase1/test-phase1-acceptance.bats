@@ -365,7 +365,7 @@ run_pin() {
 #             added here for traceability to the acceptance gate, per spec.
 #   TE7       RED: current run-codex-review.sh does NOT short-circuit when
 #             check_codex_available returns non-zero — it only emits a
-#             [mismatch] warning when codex_reviews=true and continues
+#             [mismatch] warning when second_reviewer=true and continues
 #             dispatch.  Task 7's bullet 7 requires a hard short-circuit with
 #             single-line stderr diagnostic and non-zero exit propagation.
 #   TE8..TE9  Discriminating-power tests; passes when env matches branch,
@@ -378,7 +378,7 @@ run_pin() {
 #             ONLY when check_codex_available fails (lines 607-611 of
 #             run-codex-review.sh).  Task 7's bullet 13 scenario requires
 #             mismatch to be detectable from host-vs-config disagreement
-#             alone (e.g., detected copilot-cli + codex_reviews: false),
+#             alone (e.g., detected copilot-cli + second_reviewer: false),
 #             where check_codex_available succeeds and dispatch reaches the
 #             transport.  Under current code, no [mismatch] line fires for
 #             this scenario, so the warning-emitted assertion is RED.
@@ -414,7 +414,7 @@ _t7_make_mock_repo() {
   printf '## Reviewer Dispatch Contract\nReviewer protocol stub.\n' \
     > "$tmp/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nCodex emission override stub.\n' \
-    > "$tmp/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$tmp/skills/reviewer-protocol/emission.md"
 
   # Minimal agent file with no extra skill deps (keeps the skill-load chain
   # trivially short so the test fixture stays self-contained).
@@ -422,10 +422,10 @@ _t7_make_mock_repo() {
   printf -- '---\nmodel: sonnet\nskills: []\n---\n\nStub agent body.\n' \
     > "$tmp/agents/qrspi-spec-reviewer.md"
 
-  # Artifact directory with a default config (codex_reviews: false).
+  # Artifact directory with a default config (second_reviewer: false).
   # Individual tests override this when they need a specific value.
   mkdir -p "$tmp/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' > "$tmp/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: false\n---\n' > "$tmp/artifact-dir/config.md"
 
   # Mock dispatcher.  Drains stdin so the upstream pipe never blocks.
   # If MOCK_TRANSPORT_JOB_ID is set, emits a JOB_ID= line to stdout first
@@ -558,7 +558,7 @@ _t7_require_trusted_gh() {
 
 @test "using-qrspi SKILL prose documents that mismatch emits single-line stderr diagnostic and continues with configured policy (mismatch does NOT gate dispatch)" {
   # Test expectation: skills/using-qrspi/SKILL.md contains prose documenting
-  # that when the detected host disagrees with the codex_reviews config
+  # that when the detected host disagrees with the second_reviewer config
   # value, the dispatch surface emits a single-line diagnostic to stderr
   # identifying the disagreement and continues with the configured policy;
   # the mismatch diagnostic does NOT gate dispatch.
@@ -599,9 +599,9 @@ _t7_require_trusted_gh() {
   local tmp
   tmp="$(mktemp -d)"
   _t7_make_mock_repo "$tmp"
-  # codex_reviews: true so the copilot-cli dispatch is not skipped by an
+  # second_reviewer: true so the copilot-cli dispatch is not skipped by an
   # availability gate before the marker can be emitted.
-  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: true\n---\n' > "$tmp/artifact-dir/config.md"
 
   local stderr_log="$tmp/te5-stderr.log"
   QRSPI_REPO_ROOT="$tmp" \
@@ -683,12 +683,12 @@ _t7_require_trusted_gh() {
   # invoking the transport mock (which would otherwise exit 0).
   #
   # RED state under Task-6 code: current run-codex-review.sh only emits a
-  # `[mismatch]` warning when codex_reviews=true and continues to dispatch
+  # `[mismatch]` warning when second_reviewer=true and continues to dispatch
   # the transport, which exits 0 → dispatch exits 0 → this test fails.
   local tmp
   tmp="$(mktemp -d)"
   _t7_make_mock_repo "$tmp"
-  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: true\n---\n' > "$tmp/artifact-dir/config.md"
 
   local stderr_log="$tmp/te7-stderr.log"
   local dispatch_status=0
@@ -729,7 +729,7 @@ _t7_require_trusted_gh() {
   local tmp
   tmp="$(mktemp -d)"
   _t7_make_mock_repo "$tmp"
-  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: true\n---\n' > "$tmp/artifact-dir/config.md"
 
   local stderr_log="$tmp/te8a-stderr.log"
   QRSPI_REPO_ROOT="$tmp" \
@@ -837,7 +837,7 @@ _t7_require_trusted_gh() {
   local tmp
   tmp="$(mktemp -d)"
   _t7_make_mock_repo "$tmp"
-  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: true\n---\n' > "$tmp/artifact-dir/config.md"
 
   local stderr_log="$tmp/te9b-stderr.log"
   QRSPI_REPO_ROOT="$tmp" \
@@ -878,7 +878,7 @@ _t7_require_trusted_gh() {
   local tmp
   tmp="$(mktemp -d)"
   _t7_make_mock_repo "$tmp"
-  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: true\n---\n' > "$tmp/artifact-dir/config.md"
 
   local stdout_log="$tmp/te10-stdout.log"
   local stderr_log="$tmp/te10-stderr.log"
@@ -1016,13 +1016,13 @@ _t7_require_trusted_gh() {
 
 @test "dispatch surface: mismatch-warning path does not suppress first-party dispatch (mismatch emitted, first-party ran, exits 0)" {
   # Test expectation: when the dispatch-surface detects a mismatch
-  # (copilot-cli detected but codex_reviews=false), the mismatch warning is
+  # (copilot-cli detected but second_reviewer=false), the mismatch warning is
   # emitted to stderr but the first-party dispatch path still runs.
   # Stdout carries a DISPATCH_FILE= reference and the script exits 0 —
   # the mismatch warning does not abort or suppress the dispatch.
   #
   # Scenario: detected_host=copilot-cli (COPILOT_CLI=1, trusted gh),
-  # config codex_reviews=false → host-vs-config mismatch warning fires.
+  # config second_reviewer=false → host-vs-config mismatch warning fires.
   # check_codex_available(copilot-cli) returns 0 trivially, so dispatch is
   # not short-circuited.  First-party path writes prompt file and emits
   # DISPATCH_FILE= to stdout; exits 0.
@@ -1032,7 +1032,7 @@ _t7_require_trusted_gh() {
   tmp="$(mktemp -d)"
   _t7_make_mock_repo "$tmp"
   # Explicit mismatch: detected copilot-cli but config says no Codex.
-  printf -- '---\ncodex_reviews: false\n---\n' > "$tmp/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: false\n---\n' > "$tmp/artifact-dir/config.md"
 
   local stdout_log="$tmp/te13-stdout.log"
   local stderr_log="$tmp/te13-stderr.log"
@@ -1481,7 +1481,7 @@ _t8_write_finding_pair() {
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
 
   # Minimal agent file (no extra skill deps)
   mkdir -p "$TMP_DIR/agents"
@@ -1490,7 +1490,7 @@ _t8_write_finding_pair() {
 
   # Artifact dir + config
   mkdir -p "$TMP_DIR/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' \
+  printf -- '---\nsecond_reviewer: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
 
   # Mock dispatcher: drains stdin, emits JOB_ID to stdout, exits 0
@@ -1604,12 +1604,12 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
   mkdir -p "$TMP_DIR/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' \
+  printf -- '---\nsecond_reviewer: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
   mkdir -p "$TMP_DIR/scripts"
   cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
@@ -1689,12 +1689,12 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
   mkdir -p "$TMP_DIR/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' \
+  printf -- '---\nsecond_reviewer: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
   mkdir -p "$TMP_DIR/scripts"
   cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
@@ -1754,12 +1754,12 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
   mkdir -p "$TMP_DIR/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' \
+  printf -- '---\nsecond_reviewer: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
   mkdir -p "$TMP_DIR/scripts"
   cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
@@ -1854,9 +1854,9 @@ MOCK_EOF
   TMP_DIR="$(mktemp -d)"
   _t7_make_mock_repo "$TMP_DIR"
 
-  # codex_reviews: false so the third-party dispatcher runs (check_codex_available
-  # would abort early when codex_reviews=true but codex is unavailable in test env).
-  # The default _t7_make_mock_repo config already sets codex_reviews: false.
+  # second_reviewer: false so the third-party dispatcher runs (check_codex_available
+  # would abort early when second_reviewer=true but codex is unavailable in test env).
+  # The default _t7_make_mock_repo config already sets second_reviewer: false.
 
   # Override the mock dispatcher to emit a JOB_ID with a double-quote.
   cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
@@ -1967,12 +1967,12 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
   mkdir -p "$TMP_DIR/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' \
+  printf -- '---\nsecond_reviewer: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
   mkdir -p "$TMP_DIR/scripts"
   cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
@@ -2446,12 +2446,12 @@ _t9_simulate_verifier_sidecar_write() {
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
   mkdir -p "$TMP_DIR/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' \
+  printf -- '---\nsecond_reviewer: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
 
   # Mock dispatcher: drains stdin, emits JOB_ID to stdout, exits 0.
@@ -2534,7 +2534,7 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
@@ -2613,12 +2613,12 @@ MOCK_EOF
   printf '## Reviewer Dispatch Contract\nStub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nStub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
   mkdir -p "$TMP_DIR/agents"
   printf -- '---\nmodel: sonnet\nskills: []\n---\nStub agent body.\n' \
     > "$TMP_DIR/agents/qrspi-spec-reviewer.md"
   mkdir -p "$TMP_DIR/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' \
+  printf -- '---\nsecond_reviewer: false\n---\n' \
     > "$TMP_DIR/artifact-dir/config.md"
   mkdir -p "$TMP_DIR/scripts"
   cat > "$TMP_DIR/scripts/dispatch-companion.sh" <<'MOCK_EOF'
@@ -2797,9 +2797,9 @@ MOCK_EOF
   local tmp
   tmp="$(mktemp -d)"
   _t7_make_mock_repo "$tmp"
-  # codex_reviews: true — copilot-cli + codex available (trivially) → no
+  # second_reviewer: true — copilot-cli + codex available (trivially) → no
   # mismatch warning, dispatch proceeds cleanly to the first-party path.
-  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: true\n---\n' > "$tmp/artifact-dir/config.md"
 
   local stdout_log="$tmp/ac5-stdout.log"
   local dispatch_status=0
@@ -2917,7 +2917,7 @@ MOCK_EOF
   # at module-init scope rather than inside the third-party branch.
   rm -f "$tmp/scripts/dispatch-companion.sh"
 
-  printf -- '---\ncodex_reviews: true\n---\n' > "$tmp/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: true\n---\n' > "$tmp/artifact-dir/config.md"
 
   local exit_code=0
   QRSPI_REPO_ROOT="$tmp" \

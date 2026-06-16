@@ -14,7 +14,7 @@
 # Per-task implementer dispatch shim: this script no longer drives the Codex broker
 # directly. It preserves its existing caller-facing flag surface (assembling
 # the reviewer prompt from the reviewer-protocol body, the named agent body
-# with frontmatter stripped, the codex-emission override, and a Dispatch
+# with frontmatter stripped, the stdout-fallback emission override, and a Dispatch
 # parameters block), and then forwards the assembled prompt over stdin to
 # `scripts/dispatch-companion.sh` with `--provider codex --model <id>
 # --output-file <path> --artifact-dir <dir>`. Transport selection
@@ -494,6 +494,27 @@ emit_first_party_manifest_entry() {
   _append_manifest_entry "$entry"
 }
 
+# _validate_agent_name_charset <agent_name> — guards the `<agent>` interpolation
+# fed into the subagent author-marker GIT_AUTHOR_NAME wrap (G5). The valid
+# agent-name charset is `[a-z0-9-]+`: lowercase letters, digits, and hyphen,
+# with at least one character. Empty strings are rejected explicitly (the
+# `^[a-z0-9-]+$` regex already excludes them, but the explicit `-z` test
+# documents the intent — prevents the silent `GIT_AUTHOR_NAME=qrspi-` failure
+# mode where the marker would carry no discriminator). Any character outside
+# the charset (uppercase, underscore, whitespace, control bytes, path
+# separators, etc.) halts dispatch with the `agent-name-charset-invalid:`
+# named diagnostic and exits non-zero BEFORE any GIT_AUTHOR_NAME export and
+# before any subprocess (including the dispatch-companion) is invoked, so a
+# malformed agent-name value can never produce a silently-malformed subagent
+# commit author or reach a child git command.
+_validate_agent_name_charset() {
+  local agent_name="${1:-}"
+  if [[ -z "$agent_name" || ! "$agent_name" =~ ^[a-z0-9-]+$ ]]; then
+    echo "agent-name-charset-invalid: agent name '${agent_name}' does not match the valid charset [a-z0-9-]+ (would produce a silently-malformed subagent author marker); refusing to dispatch" >&2
+    exit 1
+  fi
+}
+
 # Source guard: when QRSPI_SOURCE_ONLY=1, return after loading function
 # definitions so that function-isolation tests can source this file and call
 # detect_host / check_codex_available directly without triggering argument
@@ -589,9 +610,16 @@ reject_if_path_unsafe_for_emission() {
 }
 
 _is_batch_mode=false
+# Batch-mode discriminator: --step is the unambiguous high-level marker
+# (it has no legitimate single-mode use). --artifact-dir is intentionally
+# NOT a trigger here — single-mode qrspi-* dispatches accept it as a
+# context/subject directory parameter, and treating it as a batch-mode
+# signal would render single-mode unreachable when --artifact-dir is
+# supplied. The CD-2 partial-flag guard below still catches partial
+# high-level invocations (--step + --round without --artifact-dir).
 for _arg in "$@"; do
   case "$_arg" in
-    --step|--agents) _is_batch_mode=true; break ;;
+    --step) _is_batch_mode=true; break ;;
   esac
 done
 
@@ -604,6 +632,17 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   BATCH_TIER_OVERRIDE=""
   BATCH_TASK_BRANCH=""
   BATCH_IMPL_COMMIT=""
+  # Task-04a / CD-2: new high-level entry mode and pre-computed-path low-level
+  # flags. BATCH_ARTIFACT_DIR triggers the high-level path (review-prep
+  # invocation + per-step diff/absorption-map threading). BATCH_DIFF_FILE /
+  # BATCH_ABSORPTION_MAP are the low-level pre-computed-path surface used by
+  # tests and non-standard callers; the high-level path populates the same
+  # variables internally so both modes emit a byte-identical Dispatch
+  # parameters block (CD-2 Acceptance bullet 2).
+  BATCH_ARTIFACT_DIR=""
+  BATCH_DIFF_FILE=""
+  BATCH_ABSORPTION_MAP=""
+  BATCH_BASE_REF=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -620,11 +659,53 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       --tier-override)     require_value "--tier-override" "$#";     BATCH_TIER_OVERRIDE="$2"; shift 2 ;;
       --task-branch)       require_value "--task-branch" "$#";       BATCH_TASK_BRANCH="$2"; shift 2 ;;
       --implementer-commit) require_value "--implementer-commit" "$#"; BATCH_IMPL_COMMIT="$2"; shift 2 ;;
+      --artifact-dir)      require_value "--artifact-dir" "$#";      BATCH_ARTIFACT_DIR="$2"; shift 2 ;;
+      --diff-file)         require_value "--diff-file" "$#";         BATCH_DIFF_FILE="$2"; shift 2 ;;
+      --absorption-map)    require_value "--absorption-map" "$#";    BATCH_ABSORPTION_MAP="$2"; shift 2 ;;
+      --base-ref)          require_value "--base-ref" "$#";          BATCH_BASE_REF="$2"; shift 2 ;;
       *)
         echo "error: unrecognized flag in batched dispatch: $1" >&2
         exit 1 ;;
     esac
   done
+
+  # ---------------------------------------------------------------------------
+  # Task-04a / CD-2: high-level vs low-level mode discrimination + partial
+  # high-level flag validation (B6 — caller-visible malformed-CLI behaviour).
+  #
+  # The high-level entry mode is keyed on `--step --round --artifact-dir`.
+  # If any TWO of the three are present, the third is REQUIRED — never
+  # silently fall through to the low-level batched mode, never emit an
+  # empty prompt. The diagnostic names the absent flag so the operator
+  # can fix the invocation.
+  #
+  # Disambiguation: an invocation with `--step --round` but neither
+  # `--artifact-dir` nor `--diff-file` clearly intended the high-level
+  # path; fail with `--artifact-dir`-named diagnostic. The presence of
+  # `--diff-file` (low-level pre-computed path) signals legacy/test
+  # intent and bypasses the high-level requirement.
+  # ---------------------------------------------------------------------------
+  _high_level_mode=false
+  if [[ -n "$BATCH_ARTIFACT_DIR" ]]; then
+    _high_level_mode=true
+    if [[ -z "$BATCH_ROUND" ]]; then
+      echo "error: --round required for high-level mode (--step + --round + --artifact-dir)" >&2
+      exit 1
+    fi
+    if [[ -z "$BATCH_STEP" ]]; then
+      echo "error: --step required for high-level mode (--step + --round + --artifact-dir)" >&2
+      exit 1
+    fi
+  else
+    # Artifact-dir absent. If --step + --round are both present without
+    # --diff-file (the legacy low-level pre-computed-path escape), the
+    # operator was reaching for high-level mode and forgot --artifact-dir.
+    # Fail loudly per B6: never silently fall through to low-level.
+    if [[ -n "$BATCH_STEP" && -n "$BATCH_ROUND" && -z "$BATCH_DIFF_FILE" ]]; then
+      echo "error: --artifact-dir required for high-level mode (--step + --round); pass --diff-file for low-level pre-computed-path mode" >&2
+      exit 1
+    fi
+  fi
 
   if [[ -z "$BATCH_STEP" ]];       then echo "error: --step required"        >&2; exit 1; fi
   if [[ -z "$BATCH_ROUND" ]];      then echo "error: --round required"       >&2; exit 1; fi
@@ -636,6 +717,59 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   _validate_output_dir "$BATCH_OUTPUT_DIR"
   reject_if_path_unsafe_for_emission "--output-dir" "$BATCH_OUTPUT_DIR"
   if [[ -z "$BATCH_AGENTS" ]];     then echo "error: --agents required"      >&2; exit 1; fi
+
+  # ---------------------------------------------------------------------------
+  # Task-04a / CD-2: high-level mode invokes scripts/review-prep.sh first
+  # and threads the produced paths into BATCH_DIFF_FILE / BATCH_ABSORPTION_MAP
+  # so the downstream prompt-assembly path is shared with the low-level
+  # pre-computed-path mode (byte-equality contract).
+  #
+  # review-prep failure propagates verbatim — its stderr is forwarded to our
+  # stderr and its exit code is propagated unchanged (CD-2 § Why this
+  # approach — single-exit-code shape; B4).
+  # ---------------------------------------------------------------------------
+  if [[ "$_high_level_mode" == "true" ]]; then
+    _review_prep_args=( --step "$BATCH_STEP" --round "$BATCH_ROUND" --artifact-dir "$BATCH_ARTIFACT_DIR" )
+    if [[ -n "$BATCH_BASE_REF" ]]; then
+      _review_prep_args+=( --base-ref "$BATCH_BASE_REF" )
+    else
+      # Default narrowing base for round-01 (review-prep requires it). Most
+      # callers run on `main`-derived integration branches; the round >= 2
+      # path reads the per-round anchor file and ignores --base-ref.
+      _review_prep_args+=( --base-ref main )
+    fi
+    if ! bash "$REPO_ROOT/scripts/review-prep.sh" "${_review_prep_args[@]}"; then
+      # review-prep already wrote its named diagnostic to stderr; propagate
+      # its non-zero exit (single-exit-code shape).
+      exit 1
+    fi
+    # Compute the per-step output paths review-prep would have written.
+    # Mirror review-prep's NN-padding and per-step output layout.
+    _hl_round_nn=$(printf '%02d' "$BATCH_ROUND")
+    _hl_diff_path="$BATCH_ARTIFACT_DIR/reviews/$BATCH_STEP/round-$_hl_round_nn.diff"
+    _hl_map_path="$BATCH_ARTIFACT_DIR/reviews/$BATCH_STEP/round-$_hl_round_nn.absorption-map.tsv"
+    # Only thread paths that review-prep actually produced (silent-on-no-
+    # input shape: implement-step and steps without absorption-map outputs).
+    if [[ -f "$_hl_diff_path" ]]; then
+      BATCH_DIFF_FILE="$_hl_diff_path"
+    fi
+    case "$BATCH_STEP" in
+      design|plan|replan)
+        if [[ -f "$_hl_map_path" ]]; then
+          BATCH_ABSORPTION_MAP="$_hl_map_path"
+        fi
+        ;;
+    esac
+  fi
+
+  # Marker-injection guards on the threaded paths (mirrors single-mode's
+  # --diff-file guard at the value-emission surface).
+  if [[ -n "$BATCH_DIFF_FILE" ]]; then
+    reject_if_path_unsafe_for_emission "--diff-file" "$BATCH_DIFF_FILE"
+  fi
+  if [[ -n "$BATCH_ABSORPTION_MAP" ]]; then
+    reject_if_path_unsafe_for_emission "--absorption-map" "$BATCH_ABSORPTION_MAP"
+  fi
 
   # Source the routing-resolution library for tier -> model + host x vendor
   # matrix lookups. QRSPI_SOURCE_ONLY keeps the source side-effect-free.
@@ -682,14 +816,14 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   fi
 
   REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
-  EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md"
+  EMISSION_CONTRACT_ABS="$REPO_ROOT/skills/reviewer-protocol/emission.md"
 
   # Per-vendor fallback model — used only when config.md model_routing cannot be
   # consulted (e.g., ad-hoc invocation without a run config). A loud warning is
   # emitted so the operator knows resolution degraded to a default.
   _fallback_model_for_vendor() {
     case "$1" in
-      codex) printf 'gpt-5-codex\n' ;;
+      codex) printf 'gpt-5.3-codex\n' ;;
       *)     printf 'claude-sonnet-4.6\n' ;;
     esac
   }
@@ -703,6 +837,29 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   set -- $BATCH_AGENTS
   set +f
   IFS="$_saved_ifs"
+
+  # ---------------------------------------------------------------------------
+  # Task-04a / CD-2 B1: dispatch order is test-writer first, implementer
+  # second (RED-verification gate between). The order is contract, not
+  # caller-controlled — for `--step implement` we partition the agents list
+  # so any tag containing `test-writer` is emitted before any other tag,
+  # regardless of the order in the caller's --agents string.
+  # ---------------------------------------------------------------------------
+  if [[ "$BATCH_STEP" == "implement" ]]; then
+    _tw_pairs=()
+    _other_pairs=()
+    for _pair in "$@"; do
+      [[ -z "$_pair" ]] && continue
+      _ptag="${_pair%%=*}"
+      case "$_ptag" in
+        *test-writer*) _tw_pairs+=("$_pair") ;;
+        *)             _other_pairs+=("$_pair") ;;
+      esac
+    done
+    set --
+    for _p in "${_tw_pairs[@]}"; do set -- "$@" "$_p"; done
+    for _p in "${_other_pairs[@]}"; do set -- "$@" "$_p"; done
+  fi
 
   _emitted_any=false
   for _pair in "$@"; do
@@ -742,6 +899,15 @@ if [[ "$_is_batch_mode" == "true" ]]; then
     # strip_frontmatter_batch/resolve_tier read (spec line 19).
     assert_path_under_repo_root "--agents" "$_agent_file"
     _agent_name="$(basename "${_agent_file%.md}")"
+
+    # G5 subagent author-marker env wrap: validate the agent-name charset
+    # BEFORE composing GIT_AUTHOR_NAME so an out-of-charset value cannot
+    # produce a silently-malformed marker on dispatched subagent commits.
+    # The wrap is exported into the per-iteration environment so every
+    # subprocess this loop launches (the dispatch-companion below, plus any
+    # child git command in the subagent's session) inherits the marker.
+    _validate_agent_name_charset "$_agent_name"
+    export GIT_AUTHOR_NAME="qrspi-${_agent_name}"
 
     # Vendor is encoded in the tag suffix (e.g., quality-claude -> claude,
     # spec-codex -> codex). Default to claude when no recognised suffix.
@@ -792,7 +958,7 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       printf '\n\n---\n\n'
       strip_frontmatter_batch "$_agent_file"
       printf '\n\n---\n\n'
-      [[ -f "$EMISSION_OVERRIDE_ABS" ]] && cat "$EMISSION_OVERRIDE_ABS"
+      [[ -f "$EMISSION_CONTRACT_ABS" ]] && cat "$EMISSION_CONTRACT_ABS"
       printf '\n\n<<<AGENT-BODY-END>>>\n'
       printf '\n## Dispatch parameters\n\n'
       if [[ -n "$BATCH_ARTIFACT_ABS" ]]; then
@@ -801,9 +967,25 @@ if [[ "$_is_batch_mode" == "true" ]]; then
         cat "$BATCH_ARTIFACT_ABS"
         printf '\n<<<UNTRUSTED-ARTIFACT-END id=%s>>>\n' "$BATCH_ARTIFACT"
       fi
-      printf 'round_subdir: %s\n' "$BATCH_OUTPUT_DIR"
+      # round_subdir is the per-round directory under <artifact-dir>/reviews/
+      # (reviewer-protocol skill SKILL.md L43). In high-level mode it derives
+      # from --artifact-dir; in low-level mode it derives from the
+      # --diff-file path (strip `.diff` suffix). When neither is available
+      # (e.g., implement-step with no diff), fall back to --output-dir for
+      # the legacy emission shape.
+      _round_subdir="$BATCH_OUTPUT_DIR"
+      if [[ -n "$BATCH_DIFF_FILE" ]]; then
+        _round_subdir="${BATCH_DIFF_FILE%.diff}/"
+      fi
+      printf 'round_subdir: %s\n' "$_round_subdir"
       printf 'round: %s\n' "$BATCH_ROUND"
       printf 'reviewer_tag: %s\n' "$_tag"
+      if [[ -n "$BATCH_DIFF_FILE" ]]; then
+        printf 'diff_file_path: %s\n' "$BATCH_DIFF_FILE"
+      fi
+      if [[ -n "$BATCH_ABSORPTION_MAP" ]]; then
+        printf 'absorption_map_path: %s\n' "$BATCH_ABSORPTION_MAP"
+      fi
     } > "$_prompt_file" \
       || { echo "error: failed to assemble prompt for tag '$_tag'" >&2; exit 1; }
 
@@ -1019,11 +1201,27 @@ AGENT_FILE_ABS="$(resolve_path "$AGENT_FILE")"
 assert_file_exists "agent-file" "$AGENT_FILE_ABS"
 assert_path_under_repo_root "agent-file" "$AGENT_FILE_ABS"
 
+# G5 subagent author-marker env wrap (single-reviewer / low-level path).
+# Derive the agent-name from the agent-file basename (mirrors the manifest
+# helpers' `basename "${AGENT_FILE%.md}"` formula), validate it against the
+# agent-name charset, and export GIT_AUTHOR_NAME=qrspi-<agent> so every
+# subprocess this script launches downstream (the dispatch-companion shell
+# pipeline, plus the first-party copilot-cli prompt-file path) inherits the
+# subagent author marker. Validating here — after existence + repo-boundary
+# checks but before any compose_prompt or dispatcher invocation — guarantees
+# an invalid agent-name halts dispatch with the `agent-name-charset-invalid:`
+# named diagnostic before any subagent git command can run. The wrap is set
+# on EVERY dispatched git command in the subagent's session via env
+# inheritance, not just the first one.
+_AGENT_NAME_FOR_MARKER="$(basename "${AGENT_FILE_ABS%.md}")"
+_validate_agent_name_charset "$_AGENT_NAME_FOR_MARKER"
+export GIT_AUTHOR_NAME="qrspi-${_AGENT_NAME_FOR_MARKER}"
+
 REVIEWER_PROTOCOL_ABS="$REPO_ROOT/skills/reviewer-protocol/SKILL.md"
 assert_file_exists "reviewer-protocol/SKILL.md" "$REVIEWER_PROTOCOL_ABS"
 
-EMISSION_OVERRIDE_ABS="$REPO_ROOT/skills/reviewer-protocol/codex-emission-override.md"
-assert_file_exists "codex-emission-override.md" "$EMISSION_OVERRIDE_ABS"
+EMISSION_CONTRACT_ABS="$REPO_ROOT/skills/reviewer-protocol/emission.md"
+assert_file_exists "emission.md" "$EMISSION_CONTRACT_ABS"
 
 # Parse the agent's `skills:` frontmatter field to discover additional
 # shared skills the agent depends on (load chain unchanged from earlier shim refactor).
@@ -1210,7 +1408,7 @@ compose_prompt() {
   fi
   strip_frontmatter "$AGENT_FILE_ABS"
   printf '\n\n---\n\n'
-  cat "$EMISSION_OVERRIDE_ABS"
+  cat "$EMISSION_CONTRACT_ABS"
   printf '\n\n<<<AGENT-BODY-END>>>\n'
   emit_dispatch_parameters
 }
@@ -1235,21 +1433,22 @@ fi
 #
 # Host detection and transport routing (added in v0.7.1 task-06):
 # detect_host probes COPILOT_CLI to select the transport.  check_codex_available
-# verifies availability.  A mismatch between availability and the codex_reviews
+# verifies availability.  A mismatch between availability and the second_reviewer
 # config value emits a single-line warning to stderr (warning-only - does not
 # block dispatch or override exit code).  The transport marker ([transport: ...])
 # is emitted once to stderr at the call site that selects the transport path.
 
 _detected_host="$(detect_host)"
 
-# Read codex_reviews from the artifact-dir config.md frontmatter.
+# Read second_reviewer from the artifact-dir config.md frontmatter.
 # Default to empty (treated as false) if the file is absent or the field is missing.
-_codex_reviews=""
+_second_reviewer=""
 if [[ -f "$ARTIFACT_DIR/config.md" ]]; then
-  _codex_reviews="$(awk '
+  _second_reviewer="$(awk '
     /^---$/ { n++; if (n == 2) exit; next }
-    n == 1 && /^codex_reviews:/ {
-      sub(/^codex_reviews:[[:space:]]*/, "")
+    n == 1 && /^second_reviewer:/ {
+      sub(/^second_reviewer:[[:space:]]*/, "")
+      sub(/[[:space:]]*#.*$/, "")
       sub(/[[:space:]]*$/, "")
       print
       exit
@@ -1257,12 +1456,12 @@ if [[ -f "$ARTIFACT_DIR/config.md" ]]; then
   ' "$ARTIFACT_DIR/config.md")"
 fi
 
-# Normalise codex_reviews to exactly "true" or "false" before any use.  An
+# Normalise second_reviewer to exactly "true" or "false" before any use.  An
 # unexpected value (which could carry terminal control sequences from a
 # crafted config.md) is treated as "false" and never echoed verbatim.
-case "$_codex_reviews" in
+case "$_second_reviewer" in
   true|false) ;;
-  *) _codex_reviews="false" ;;
+  *) _second_reviewer="false" ;;
 esac
 
 # Probe Codex availability for the detected host.  Capture the exit code so we
@@ -1278,22 +1477,22 @@ else
 fi
 
 # Mismatch warning: detected-host Codex availability disagrees with the
-# codex_reviews config value.  Decoupled from the short-circuit below (T7):
+# second_reviewer config value.  Decoupled from the short-circuit below (T7):
 # the warning fires on ANY availability-vs-config disagreement, including the
-# copilot-cli + codex_reviews=false case where check_codex_available trivially
+# copilot-cli + second_reviewer=false case where check_codex_available trivially
 # succeeds.  Warning-only — does not gate dispatch and does not override the
 # transport's exit code.  Fires at most once per dispatch (single >&2 emission).
-if [[ "$_codex_available" != "$_codex_reviews" ]]; then
-  echo "[mismatch] detected host=${_detected_host} (codex available=${_codex_available}), codex_reviews config=${_codex_reviews}" >&2
+if [[ "$_codex_available" != "$_second_reviewer" ]]; then
+  echo "[mismatch] detected host=${_detected_host} (codex available=${_codex_available}), second_reviewer config=${_second_reviewer}" >&2
 fi
 
 # check_codex_available short-circuit (T7): when Codex is unavailable but the
-# run config requested Codex reviews, abort before invoking the transport.
+# run config requested second-model reviews, abort before invoking the transport.
 # Emit a single-line stderr diagnostic and propagate the EXACT non-zero exit
 # code returned by check_codex_available (no remapping, no log-and-continue).
-# When codex_reviews=false the wrapper falls through to dispatch unchanged so
+# When second_reviewer=false the wrapper falls through to dispatch unchanged so
 # callers that exercise the dispatch surface in isolation are not affected.
-if [[ "$_codex_available" == "false" && "$_codex_reviews" == "true" ]]; then
+if [[ "$_codex_available" == "false" && "$_second_reviewer" == "true" ]]; then
   echo "[codex-unavailable] check_codex_available exit=${_check_exit} for host=${_detected_host} — aborting Codex dispatch" >&2
   exit "$_check_exit"
 fi

@@ -120,7 +120,7 @@ teardown() {
 ---
 created: 2026-05-14
 pipeline: full
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
   - questions
@@ -173,7 +173,7 @@ EOF
 ---
 created: 2026-05-14
 pipeline: full
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
   - questions
@@ -196,7 +196,7 @@ EOF
 ---
 created: 2026-05-14
 pipeline: full
-codex_reviews: false
+second_reviewer: false
 route:
   - goals
   - questions
@@ -214,7 +214,7 @@ EOF
   # extraction-fn change broke that invariant, the field would silently
   # extract as e.g. " " and slip past into the invalid-value branch instead
   # of being surfaced as a malformed-frontmatter anomaly.
-  printf -- '---\ncreated: 2026-05-14\npipeline: full\ncodex_reviews: false\nroute:\n  - goals\n  - questions\nvisual_fidelity_required:   \n---\n' > "$tmpdir/config.md"
+  printf -- '---\ncreated: 2026-05-14\npipeline: full\nsecond_reviewer: false\nroute:\n  - goals\n  - questions\nvisual_fidelity_required:   \n---\n' > "$tmpdir/config.md"
   run --separate-stderr bash "$VALIDATOR" visual_fidelity_required "$tmpdir"
   [ "$status" -ne 0 ] || { echo "expected non-zero exit for whitespace-only visual_fidelity_required value, got 0: stdout=$output stderr=$stderr"; return 1; }
   # Pin the empty-extraction branch (not the invalid-value branch): the

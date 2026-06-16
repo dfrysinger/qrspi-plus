@@ -28,7 +28,7 @@ If any required artifact is missing or not approved, refuse to run and tell the 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Phasing validates `codex_reviews` (expected `true` or `false`). If `config.md` is missing or `codex_reviews` is missing/invalid, halt and present the field-specific menu from the Procedure — do NOT silently default `codex_reviews` to false.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Phasing validates `second_reviewer` (expected `true` or `false`). If `config.md` is missing or `second_reviewer` is missing/invalid, halt and present the field-specific menu from the Procedure — do NOT silently default `second_reviewer` to false.
 
 <HARD-GATE>
 Do NOT synthesize phasing.md, roadmap.md, or any future-* artifact without all five required inputs approved.
@@ -133,7 +133,7 @@ On rejection, write the user's feedback to `feedback/phasing-round-{NN}.md` (usi
 
 ### Visual-Fidelity Precondition Assertion
 
-The visual-fidelity precondition assertion runs **after the user has indicated approval at the Human Gate and immediately before the orchestrator writes `status: approved`** to any phasing artifact. It fires only when `config.md` carries `visual_fidelity_required: true`; otherwise it is inert. Every UI-producing phase must cite at least one wireframe artifact (named in `design.md` `## Test Strategy`'s visual-fidelity binding subsection) in its replan gate criteria; halts produce diagnostic-bearing fail-closed approval refusal. This assertion is enforced as part of the orchestrator's approval control flow — it is NOT delegated to a reviewer, downstream skill, or subagent.
+The visual-fidelity precondition assertion runs **after the user has indicated approval at the Human Gate and immediately before the orchestrator writes `status: approved`** to any phasing artifact. It fires only when `config.md` carries `visual_fidelity_required: true`; otherwise it is inert. Every UI-producing phase must cite at least one wireframe artifact (named in `design.md`'s top-level `## Visual-Fidelity Binding` H2) in its replan gate criteria; halts produce diagnostic-bearing fail-closed approval refusal. This assertion is enforced as part of the orchestrator's approval control flow — it is NOT delegated to a reviewer, downstream skill, or subagent.
 
 **Full procedure, scope rules, UI-classification vocabulary, halt diagnostics, and pass-sentinel contract:** see `skills/phasing/references/visual-fidelity-precondition.md`.
 
@@ -260,8 +260,8 @@ When `roadmap.md` already exists at Phasing entry — i.e., this is not the firs
 - `## Phasing OWNS / Phasing DEFERS` section malformed/missing — scope-reviewer fail-closed (emits `severity: high` per the schema).
 - Pasting Mermaid diagram syntax directly into terminal output (user cannot read it).
 - `visual_fidelity_required: true` is set but the visual-fidelity precondition assertion was not run before writing `status: approved` — approval of a phasing artifact without the per-phase wireframe citation check when the flag is active is a precondition violation, not a reviewer-finding-level concern.
-- A UI-producing phase's replan gate criteria (the section labeled `**Replan gate criteria.**` in the phasing.md template, i.e. the phase's acceptance criteria) do not cite any wireframe artifact from the design's binding subsection when `visual_fidelity_required: true` — pushing this finding into a reviewer instead of enforcing it as an orchestrator-side precondition assertion is a boundary violation; the assertion must halt approval, not surface as a suggestion.
-- Phasing approval written (`status: approved`) despite the visual-fidelity precondition assertion halting — the assertion's halt is a hard stop on the approval flow; approval must not proceed while offending phases remain unresolved or while the design's binding subsection is missing or empty.
+- A UI-producing phase's replan gate criteria (the section labeled `**Replan gate criteria.**` in the phasing.md template, i.e. the phase's acceptance criteria) do not cite any wireframe artifact from design's top-level `## Visual-Fidelity Binding` H2 when `visual_fidelity_required: true` — pushing this finding into a reviewer instead of enforcing it as an orchestrator-side precondition assertion is a boundary violation; the assertion must halt approval, not surface as a suggestion.
+- Phasing approval written (`status: approved`) despite the visual-fidelity precondition assertion halting — the assertion's halt is a hard stop on the approval flow; approval must not proceed while offending phases remain unresolved or while design's top-level `## Visual-Fidelity Binding` H2 is missing or empty.
 
 ## Common Rationalizations — STOP
 

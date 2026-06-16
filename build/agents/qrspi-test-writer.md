@@ -3,6 +3,8 @@ tier: medium
 name: qrspi-test-writer
 description: "Dual-mode test-writing agent. In Implement-phase mode (task_definition present): writes per-task failing tests against the un-implemented spec. In Test-phase mode (task_definition absent): writes plan-level acceptance tests that verify the implementation meets the original goals. Does NOT modify production code."
 tools: Read, Write, Edit, Bash, Grep, Glob
+allowed-tools: read, write, edit, create, bash, grep, glob
+skills: [implementer-protocol, prompt-prose-writer]
 ---
 
 ## Purpose
@@ -89,7 +91,7 @@ The empty-task-definition failure path is loud and explicit: the agent (or the d
 
 1. `companion_plan` — Approved plan.md whose per-task `## Test Expectations` blocks (and per-phase acceptance block, if present) are the canonical acceptance criteria to verify. Per the strip-from-goals contract, plan.md authors acceptance criteria; goals.md does not.
 2. `companion_goals` — Approved goals.md, used as the upstream traceability anchor (problem statements, intent, constraints) so each plan-level criterion can be traced back to the goal it serves. NOT the criterion-authoring source.
-3. `companion_design_or_research` — Full pipeline: design.md (phase definitions, test strategy). Quick fix: research/summary.md (context). The dispatcher picks one based on `route` and passes a single key.
+3. `companion_design_or_research` — Full pipeline: design.md (phase definitions, per-goal `Acceptance` blocks). Quick fix: research/summary.md (context). The dispatcher picks one based on `route` and passes a single key.
 4. `companion_fix_history` — Contents of fixes/ directory (for regression tests). Empty payload (`<<<UNTRUSTED-ARTIFACT-START id=fix-history>>>NONE<<<UNTRUSTED-ARTIFACT-END id=fix-history>>>`) when no prior fixes exist.
 5. `companion_codebase_context` — Concatenated wrapped bodies of the key source files the test-writer needs for setup (the dispatcher selects these per phase from structure.md's file map; the dispatcher is the source of truth for which files are "key").
 6. `output_dir` — Absolute directory for written test files.

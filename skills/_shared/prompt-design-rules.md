@@ -1,7 +1,6 @@
 # QRSPI Prompt Design Rules
 
 **Status:** Active rule set for skill prompt authoring and review.
-**Last applied:** 2026-06-02 (rules-file relocation + eight updates A-H). <!-- evergreen-exempt -->
 
 This document is the canonical rule set for designing and reviewing the prompt content of QRSPI skill files (`SKILL.md`, reviewer templates, hook prompts). It exists so future skill changes — and future skill rewrites when we learn more — apply a consistent, evidence-backed standard rather than re-deriving it each time.
 
@@ -59,7 +58,7 @@ Use `"Do X. Do not do Y."` for hot-path rules. Add a one-line `Why:` only where 
 
 ### R3 — Load-bearing rules at the END
 
-Anthropic measured ~30% improvement when critical instructions sit at the end of long context. The "lost in the middle" effect (Liu et al. 2024) is flatter on Opus 4.6 / GPT-5 but not gone, and instruction-following degrades with length faster than retrieval does (LIFBench). May 2026 status: confirmed on Opus 4.7-high and GPT-5.5 (end-of-context placement still yields measurable improvement; the magnitude is reduced at shorter context lengths but the ordering principle holds). GPT-5.3-Codex: confirmed (instruction-following at end of context window measurably stronger than mid-context). Sonnet 4.6: confirmed (consistent with Opus 4.6 pattern).
+Anthropic measured ~30% improvement when critical instructions sit at the end of long context. The "lost in the middle" effect (Liu et al. 2024) is flatter on current frontier models but not gone, and instruction-following degrades with length faster than retrieval does (LIFBench). End-of-context placement still yields measurable improvement across the model families this project has validated against; the magnitude is reduced at shorter context lengths but the ordering principle holds.
 
 - Repeat the most override-critical rules (Iron Laws) at start AND end of each skill.
 - Place Red Flags / Common Rationalizations sections toward the end.
@@ -162,7 +161,7 @@ Reviewers (both Claude and Codex) are evaluated against this gate. The gate exis
 | **architectural** | Structural defect: misplaced rule, broken cross-reference, ambiguous orchestration step, contradicts an existing rule in same skill or in `using-qrspi` |
 | **factual** | Claim contradicts the codebase, the frontmatter schema, the source research, or itself |
 | **contradiction** | Internal contradiction (e.g., new Red Flag conflicts with new Common Rationalization, new Iron Law conflicts with the section it summarizes, two restatements use inconsistent vocabulary) |
-| **rule-violation** | R1-R8 misapplied OR a pattern the rule explicitly says to cut/keep was missed. Reviewer must cite the rule ID and the line/section. |
+| **rule-violation** | An R-rule defined in this file misapplied OR a pattern an R-rule explicitly says to cut/keep was missed. Reviewer must cite the specific rule ID (e.g., R3) and the line/section. |
 
 ### Declined findings (note in summary, do NOT fix)
 
@@ -198,7 +197,7 @@ A reviewer prompt has six parts:
 
 1. **What is being reviewed** (file paths + diff path + concise change description)
 2. **Why the change exists** (the motivating problem; the empirical grounding if numerical claims are involved)
-3. **The rule set to apply** (R1-R8, the cross-cutting principles, link to this guide)
+3. **The rule set to apply** (every R-rule defined in this file, the cross-cutting principles, link to this guide)
 4. **The finding-type gate** (blocking categories + declined categories)
 5. **Specific things to check** (concrete checks that derive from this particular change — e.g., "is the closed exception set stated identically in all 6 locations?")
 6. **Output format** (terse, blocking findings first, declined findings noted, status line)
@@ -229,4 +228,4 @@ The QRSPI skill prompts will accumulate drift over time as features get added. S
 - When you notice a skill is failing to follow its own instructions
 - Before any significant pipeline restructuring
 
-The audit pass: for each skill file, ask "does it still satisfy R1-R8? Are there new patterns from real usage that should become rules?" If new evidence emerges, update this guide first, then re-apply across the skills.
+The audit pass: for each skill file, ask "does it still satisfy every R-rule defined in this file? Are there new patterns from real usage that should become rules?" If new evidence emerges, update this guide first, then re-apply across the skills.

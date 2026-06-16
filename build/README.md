@@ -123,7 +123,7 @@ flowchart TD
 
 ### Step 4: Design
 
-Interactive design discussion in the main conversation. The agent proposes 2-3 approaches with trade-offs and a recommendation. The user and agent converge on an approach, then a subagent synthesizes the artifact. Design owns approach selection, key architectural decisions with rationale, design-level test strategy, and a high-level Mermaid system diagram. Vertical-slice authoring, phase boundaries, and roadmap composition are owned by Phasing (Step 5), not Design.
+Interactive design discussion in the main conversation. The agent proposes 2-3 approaches with trade-offs and a recommendation. The user and agent converge on an approach, then a subagent synthesizes the artifact. Design owns approach selection, key architectural decisions with rationale, per-goal `Acceptance` blocks, and a high-level Mermaid system diagram. Vertical-slice authoring, phase boundaries, and roadmap composition are owned by Phasing (Step 5), not Design.
 
 `design.md` may carry per-phase content keyed by `### {GOAL_ID} -- {name}`; future-phase entries live in `future-design.md` and are pulled in when goals are promoted via Replan.
 
@@ -794,7 +794,7 @@ qrspi-plus/
 │   ├── research/
 │   │   └── SKILL.md                # Step 3: Parallel specialist research (no scope-reviewer per topology)
 │   ├── design/
-│   │   ├── SKILL.md                # Step 4: Architecture + key decisions + design-level test strategy
+│   │   ├── SKILL.md                # Step 4: Architecture + key decisions + per-goal Acceptance
 │   │   └── owns-defers.md          # Design OWNS/DEFERS
 │   ├── phasing/
 │   │   ├── SKILL.md                # Step 5: Vertical slices + phase boundaries + roadmap.md + current-phase pruning
@@ -927,7 +927,7 @@ The base QRSPI methodology defines 7-or-8 stages (Questions, Research, Design, S
 
 | Step | What qrspi-plus adds beyond the original |
 |------|------------------------------------------|
-| **Design** | Approach selection with rationale, key architectural decisions, trade-offs considered, design-level test strategy, Mermaid system diagrams. Vertical slicing and phase boundaries are owned by Phasing. |
+| **Design** | Approach selection with rationale, key architectural decisions, trade-offs considered, per-goal `Acceptance` blocks, Mermaid system diagrams. Vertical slicing and phase boundaries are owned by Phasing. |
 | **Structure** | Interface definitions (function/class signatures), create vs modify tracking, CI pipeline structure for greenfield projects, phase-scoped file maps |
 | **Plan** | Sub-subagent dispatch for large plans, merge/split lifecycle, quick-fix single-task mode, `pipeline` field on task files, 7 parallel reviewer subagents (1 unified plan-quality + 5 plan-artifact + dedicated `qrspi-plan-scope-reviewer`) |
 | **Parallelize + Implement (split from original Worktree)** | Plan-time dependency graph analysis with parallel/sequential/hybrid execution modes and a symbolic Branch Map (Parallelize); runtime branch resolution, single baseline worktree at `.worktrees/{slug}/baseline/`, baseline tests with auto-fix, per-task worktrees, per-task implementer dispatch, and batch gate (Implement). Splitting plan-time and runtime restores QRSPI's "one skill = one artifact + one human gate" symmetry. |

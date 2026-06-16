@@ -1,6 +1,6 @@
 ---
 name: design
-description: Use when research/summary.md is approved and the QRSPI pipeline needs an architecture — proposes approaches, surfaces key architectural decisions with rationale, and defines a design-level test strategy through interactive design discussion
+description: Use when research/summary.md is approved and the QRSPI pipeline needs an architecture — proposes approaches, surfaces key architectural decisions with rationale, and defines per-goal acceptance through interactive design discussion
 ---
 
 # Design (QRSPI Step 4)
@@ -148,7 +148,7 @@ Per-goal blocks use the five-field template (Outcome, Solution, Why this approac
 - Validate the `## Cross-Goal Decisions` section is well-formed (each entry keyed by ID, each entry carries rationale + scope).
 - Optionally append a top-level summary if absent.
 - **Only flip status if all validations pass.** On failure, halt, surface, re-enter dialogue.
-- Flip frontmatter `status: draft` to `status: approved-pending-review`. Hand-edits flipping status mid-phase (before the finalize pass) are forbidden — only the finalize pass writes the next-gate status.
+- Flip frontmatter `status: draft` to `status: approved-pending-review`. Hand-edits flipping status mid-phase (before the finalize pass) are forbidden — only the finalize pass writes the next-gate status. **Phasing re-flip carve-out:** when Phasing's pruning step modifies `design.md` (splits current-phase content from deferred content into `future-design.md`), Phasing re-writes `status: approved` to the pruned `design.md` as part of its phasing-approval flow per `skills/phasing/SKILL.md` § Human Gate. This is the only other writer of `design.md`'s `status:` field; both writers operate under explicit user approval.
 
 **Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
 
@@ -166,7 +166,7 @@ If either artifact is missing or not approved, refuse to run and tell the user w
 
 **On-demand inputs — research read-on-demand:** the per-question research files at `research/q*.md` are available to Design as **on-demand reads**, not required inputs. `research/summary.md` carries each question's structured `## Summary` block (TL;DR / Key findings / Surprises / Caveats) verbatim and is the primary input; reach for the corresponding `research/q*.md` when an architectural decision depends on detail the summary block deliberately compressed away (specific `file:line` references, full source URLs, methodology notes, alternatives the researcher considered but did not surface). Cite the file you reached for in the design discussion (e.g., "per `research/q07-codebase.md`") so the rationale chain stays auditable. Do NOT load `research/q*.md` files prophylactically — they exist behind `summary.md` precisely to keep the default input set lean.
 
-Read `config.md` from the artifact directory to determine whether Codex reviews are enabled. Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Design validates `codex_reviews`.
+Read `config.md` from the artifact directory to determine whether second-model reviews are enabled. Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Design validates `second_reviewer`.
 
 <HARD-GATE>
 Do NOT synthesize design.md without approved goals.md AND research/summary.md.
@@ -203,6 +203,7 @@ Once the discussion settles, launch a **subagent** to synthesize `design.md`.
 - `goals.md`
 - `research/summary.md`
 - A summary of the design discussion (key decisions, user preferences, chosen approach)
+- The resolved value of `visual_fidelity_required` from `config.md` (REQUIRED — when true, the subagent MUST author a top-level `## Visual-Fidelity Binding` H2 listing at least one concrete wireframe artifact; when false or absent, the subagent MUST NOT author that H2)
 - Any prior feedback files
 - **On-demand:** `research/q*.md` files per the read-on-demand permission in `## Artifact Gating` (single source of truth for the trigger condition, citation requirement, and anti-prophylactic guard — not restated here). The orchestrator surfaces available `q*.md` filenames in the subagent prompt; the subagent decides which (if any) to load.
 
@@ -228,10 +229,10 @@ Run AFTER the synthesis subagent emits `design.md` and BEFORE `### Review Round`
 
 **Visual-fidelity binding precondition.** When `config.md` carries `visual_fidelity_required: true`, verify both:
 
-1. `## Test Strategy` contains a `### Visual-Fidelity Binding` subsection.
-2. The subsection names at least one concrete wireframe artifact — a Figma URL, an embedded PNG path under the run-local artifact directory, or both. An empty / whitespace-only / comment-only / placeholder-only body (e.g., `{Wireframe artifacts}`) FAILS the gate — structural presence without concrete content fails the same way absence does.
+1. A top-level `## Visual-Fidelity Binding` H2 is present in `design.md`.
+2. The H2 body names at least one concrete wireframe artifact — a Figma URL, an embedded PNG path under the run-local artifact directory, or both. An empty / whitespace-only / comment-only / placeholder-only body (e.g., `{Wireframe artifacts}`) FAILS the gate — structural presence without concrete content fails the same way absence does.
 
-On failure: do NOT emit the reviewer diff file, run the pre-fanout compaction checkpoint, or dispatch reviewers. Surface: "design.md is missing the required `### Visual-Fidelity Binding` subsection under `## Test Strategy` (or the subsection is present but names zero concrete wireframe artifacts). Add at least one Figma URL or embedded PNG path before approval." Loop back to re-synthesis; do not proceed until the gate passes. When `visual_fidelity_required: false` (or absent), skipped entirely.
+On failure: do NOT emit the reviewer diff file, run the pre-fanout compaction checkpoint, or dispatch reviewers. Surface: "design.md is missing the required `## Visual-Fidelity Binding` H2 (or the H2 is present but names zero concrete wireframe artifacts). Add at least one Figma URL or embedded PNG path before approval." Loop back to re-synthesis; do not proceed until the gate passes. When `visual_fidelity_required: false` (or absent), skipped entirely.
 
 **Reference-gate checklist item.** When the design introduces a reviewer whose verdict depends on an external reference artifact (prototype screenshot, golden output, contract fixture, lifted prototype), confirm before `### Review Round`:
 

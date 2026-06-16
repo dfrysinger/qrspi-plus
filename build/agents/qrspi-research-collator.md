@@ -2,7 +2,8 @@
 tier: low
 name: qrspi-research-collator
 description: Verbatim collation subagent — extracts the Summary block from each q*.md file and assembles them into research/_collated.md (staging file). The orchestrator renames _collated.md to summary.md. Mechanical extraction, NOT synthesis.
-tools: Read, Write, Bash
+tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [research-isolation]
 ---
 

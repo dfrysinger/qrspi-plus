@@ -154,9 +154,9 @@ setup() {
 #         them now). The Review Round subsection's Claude reviewer checks
 #         must drop the deprecated phrasing.
 #   T36-2 (R2 I-N5) — design's Artifact Gating subsection silently defaults
-#         codex_reviews to false when config.md is missing; using-qrspi:411
+#         second_reviewer to false when config.md is missing; using-qrspi:411
 #         requires every skill that reads config.md to invoke the Config
-#         Validation Procedure instead. Design must validate codex_reviews.
+#         Validation Procedure instead. Design must validate second_reviewer.
 
 @test "design SKILL Review Round Claude-reviewer checks no longer reference deprecated 'acceptance criteria' phrasing" {
   # The Review Round subsection (under ### Review Round) authors the Claude
@@ -191,9 +191,9 @@ setup() {
     || { echo "design-reviewer agent no longer asserts the design addresses all goals"; return 1; }
 }
 
-@test "design SKILL Artifact Gating no longer silently defaults codex_reviews to false" {
+@test "design SKILL Artifact Gating no longer silently defaults second_reviewer to false" {
   # The deprecated wording: "If `config.md` doesn't exist, default to
-  # `codex_reviews: false`." This is forbidden by using-qrspi:438 ("No
+  # `second_reviewer: false`." This is forbidden by using-qrspi:438 ("No
   # silent defaults"). The Artifact Gating subsection must not contain it.
   local section
   section=$(extract_section "$DESIGN_FILE" H2 "Artifact Gating")
@@ -201,19 +201,19 @@ setup() {
     echo "Could not extract '## Artifact Gating' section from design SKILL.md" >&2
     return 1
   fi
-  if echo "$section" | grep -Eiq "default to .*codex_reviews: false"; then
-    echo "Silent codex_reviews default still present in ## Artifact Gating:" >&2
-    echo "$section" | grep -Ei "default to .*codex_reviews: false" >&2
+  if echo "$section" | grep -Eiq "default to .*second_reviewer: false"; then
+    echo "Silent second_reviewer default still present in ## Artifact Gating:" >&2
+    echo "$section" | grep -Ei "default to .*second_reviewer: false" >&2
     return 1
   fi
 }
 
-@test "design SKILL Artifact Gating invokes the Config Validation Procedure for codex_reviews" {
+@test "design SKILL Artifact Gating invokes the Config Validation Procedure for second_reviewer" {
   # Per using-qrspi:411 ("Every skill that reads config.md applies this
   # procedure before using any field"), Design must invoke the procedure
   # by name. Canonical phrasing in peer skills (goals/plan/test/integrate):
   #   "Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`.
-  #    {Skill} validates `codex_reviews`."
+  #    {Skill} validates `second_reviewer`."
   local section
   section=$(extract_section "$DESIGN_FILE" H2 "Artifact Gating")
   if [ -z "$section" ]; then
@@ -222,8 +222,8 @@ setup() {
   fi
   # Must mention the Config Validation Procedure inside Artifact Gating.
   echo "$section" | grep -q "Config Validation Procedure"
-  # Must name codex_reviews as one of the validated fields.
-  echo "$section" | grep -q "codex_reviews"
+  # Must name second_reviewer as one of the validated fields.
+  echo "$section" | grep -q "second_reviewer"
 }
 
 # ── M51: skills/structure/SKILL.md content patterns ─────────────────────────

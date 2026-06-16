@@ -1,8 +1,3 @@
----
-name: tsc-probe-helper
-description: Self-isolating tsc-probe pattern for type-level fixture tests. Replaces the project-tsconfig-glob pattern that races across parallel worktrees.
----
-
 # Self-isolating tsc-probe helper
 
 Tasks that need to verify "this fixture should fail to type-check" historically

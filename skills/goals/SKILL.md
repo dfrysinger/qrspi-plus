@@ -5,7 +5,7 @@ description: Use when starting a new QRSPI pipeline run — captures user intent
 
 # Goals (QRSPI Step 1)
 
-!cat skills/_shared/precondition-block.md
+**PRECONDITION:** Invoke `qrspi:using-qrspi` skill to ensure global pipeline rules are in context. (Idempotent on session re-entry. Subagents are exempt — SUBAGENT-STOP in using-qrspi handles that.)
 
 **Announce at start:** "I'm using the QRSPI Goals skill to capture what you want to build."
 
@@ -48,7 +48,7 @@ Goals runs in three contexts:
 
 - **Fresh run** — no artifact directory, no `config.md`, no `goals.md`. Run the full Interactive Dialogue + Pipeline Mode Selection.
 - **Mid-run resume** — artifact directory exists; `goals.md` may already be `approved`. Validate `config.md` and continue from where the user left off.
-- **Next-phase restart (invoked by Replan's minor path)** — a prior phase completed. **Replan auto-populates the draft `goals.md` from `roadmap.md` + `future-goals.md`**: Replan reads `roadmap.md` for the next phase's goal IDs, extracts matching entries from `future-goals.md`, and writes them as the new draft `goals.md` (`status: draft`). `artifact_promote_next_phase` has reset goals/research/design frontmatter to `draft` and deleted phase-scoped files (`structure.md`, `plan.md`, `tasks/`). The `phases/phase-NN/` snapshot exists; `config.md` carries the original route and pipeline.
+- **Next-phase restart (invoked by Replan's minor path)** — a prior phase completed. **Replan auto-populates four next-phase drafts** (`goals.md`, `questions.md`, `research/summary.md`, `design.md`) from the corresponding `future-*.md` artifacts using `roadmap.md` to identify the next-phase goal-ID set. Each draft is written with `status: draft` so the Goals → Questions → Research → Design cascade re-reviews every one. Full sequence: `replan/SKILL.md` § Archive-and-Populate Sequence (Minor Path). `artifact_promote_next_phase` has reset goals/research/design frontmatter to `draft` and deleted phase-scoped files (`structure.md`, `plan.md`, `tasks/`). The `phases/phase-NN/` snapshot exists; `config.md` carries the original route and pipeline.
 
 **Detecting next-phase restart:** all three hold:
 - `phases/phase-*/` snapshot directory exists
@@ -140,7 +140,7 @@ Per Rule 8, write each locked goal **directly to `goals.md`** with `status: draf
 - Validate that every locked goal carries the three subsections and a concrete `type` value.
 - Optionally append a Purpose section if absent.
 - **Only flip status if all validations pass.** On failure, halt, surface, re-enter dialogue.
-- Flip frontmatter `status: draft` to `status: approved`. Only the finalize pass writes `approved`; hand-edits mid-phase are forbidden. When the user picks "Approve, skip review", the finalize pass still runs and the reviewer round is skipped.
+- Flip frontmatter `status: draft` to `status: approved`. Only the finalize pass writes `approved`; hand-edits mid-phase are forbidden. When the user picks "Approve, skip review", the finalize pass still runs and the reviewer round is skipped. **Phasing re-flip carve-out:** when Phasing's pruning step modifies `goals.md` (splits current-phase content from deferred content), Phasing re-writes `status: approved` to the pruned `goals.md` as part of its phasing-approval flow per `skills/phasing/SKILL.md` § Human Gate. This is the only other writer of `goals.md`'s `status:` field; both writers operate under explicit user approval.
 
 **Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
 
@@ -198,7 +198,7 @@ Launch a **subagent** to synthesize `goals.md`.
 
 !cat skills/_shared/evergreen-output-rule.md
 
-**Iron Rule (template).** No top-level `Out of Scope`, `Success Criteria`, or `Acceptance Criteria` section. What isn't a goal isn't in scope; acceptance is owned by Design's Test Strategy and Plan's per-task expectations. Capture user-volunteered exclusions as constraints (when they shape the solution space) or omit them.
+**Iron Rule (template).** No top-level `Out of Scope`, `Success Criteria`, or `Acceptance Criteria` section. What isn't a goal isn't in scope; acceptance is owned by Design's per-goal `Acceptance` blocks and Plan's per-task expectations. Capture user-volunteered exclusions as constraints (when they shape the solution space) or omit them.
 
 **Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Omitting one is a synthesis defect. If the user did not articulate one during dialogue, re-enter dialogue to obtain it — do NOT write a placeholder, partial, or tentative body (presence ≡ locked). Do NOT add a fourth subsection — additional content belongs in `What we know so far` or in a Constraint.
 
@@ -274,7 +274,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — goals", descri
 |----------------|---------|
 | "The user already described what they want clearly" | Clear description ≠ complete goals. The per-goal Problem / Why we care / What we know so far frames still need explicit capture. |
 | "This is a quick fix, goals are overkill" | Quick-fix mode exists — use it. Even quick fixes need a captured Problem and Why we care. |
-| "I should add acceptance criteria so downstream knows when it's done" | Goals does NOT own acceptance criteria — Design's Test Strategy and Plan's per-task expectations do. Adding them here pre-commits Design. |
+| "I should add acceptance criteria so downstream knows when it's done" | Goals does NOT own acceptance criteria — Design's per-goal `Acceptance` blocks and Plan's per-task expectations do. Adding them here pre-commits Design. |
 | "I should add an Out of Scope section to prevent creep" | Goals does NOT own out-of-scope decisions. What isn't a goal isn't in scope; project-level scope clarifications belong in Design's Approach. |
 | "The scope is obvious" | Obvious scope is where scope creep hides. Write the per-goal Problem clearly so Design can scope its solution against it. |
 | "This goal feels exploratory but I can't justify the cost so I'll mark it known-fix" | Cost-benefit reasoning is exactly what the `exploratory` tag protects against. Mark it `exploratory` honestly. |

@@ -45,7 +45,7 @@ Ownership boundaries — what MUST be present, what MUST be absent, and altitude
 - If the block's text reads as LLM-consumable directive prose (role+task+constraints, Iron Laws, `<HARD-GATE>` blocks, verbatim rule statements destined for an orchestrator or subagent prompt), apply the rules to that block.
 - If the block's text reads as something else (e.g., a shell-script snippet identified by a marker like `<!-- prose-design: scripts/example.sh -->`), skip rules application for that block.
 
-The marker scopes attention to specific sub-blocks; the surrounding design-decision prose is itself NOT prompt prose and is reviewed by ordinary design-quality criteria, not R1-R7.
+The marker scopes attention to specific sub-blocks; the surrounding design-decision prose is itself NOT prompt prose and is reviewed by ordinary design-quality criteria, not the R-rules in `skills/_shared/prompt-design-rules.md`.
 
 Note: scope-dimension checks for prompt-prose marker accuracy (marker-absent prompt prose blocks, altitude mismatches inside marked blocks, mis-targeted `target` attributes) are out of scope for the quality dimension and are addressed by `qrspi-design-scope-reviewer`.
 

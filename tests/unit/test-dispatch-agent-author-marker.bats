@@ -57,7 +57,7 @@ setup() {
   printf '## Reviewer Dispatch Contract\nReviewer protocol stub.\n' \
     > "$TMP_DIR/skills/reviewer-protocol/SKILL.md"
   printf '<<<FINDING-BOUNDARY>>>\nCodex emission override stub.\n' \
-    > "$TMP_DIR/skills/reviewer-protocol/stdout-fallback-emission.md"
+    > "$TMP_DIR/skills/reviewer-protocol/emission.md"
 
   # Minimal valid agent fixture.
   mkdir -p "$TMP_DIR/agents"
@@ -69,9 +69,9 @@ setup() {
   printf -- '---\nmodel: sonnet\nskills: []\n---\n\nBad-name agent.\n' \
     > "$TMP_DIR/agents/Bad_Agent.md"
 
-  # Artifact directory with a default config (codex_reviews: false).
+  # Artifact directory with a default config (second_reviewer: false).
   mkdir -p "$TMP_DIR/artifact-dir"
-  printf -- '---\ncodex_reviews: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
+  printf -- '---\nsecond_reviewer: false\n---\n' > "$TMP_DIR/artifact-dir/config.md"
 
   # Output directory for dispatch invocations.
   mkdir -p "$TMP_DIR/out"

@@ -292,32 +292,32 @@ extract_h3_direct() {
 }
 
 # =============================================================================
-# Config Validation — codex_reviews must invoke the procedure, not silent default
-# (R2 I-N5: Phasing silently defaults codex_reviews: false)
+# Config Validation — second_reviewer must invoke the procedure, not silent default
+# (R2 I-N5: Phasing silently defaults second_reviewer: false)
 # using-qrspi:411 says "Every skill that reads config.md applies this procedure
 # before using any field." The "No silent defaults" subsection forbids assuming
-# `codex_reviews: false` when missing.
+# `second_reviewer: false` when missing.
 # =============================================================================
 
 @test "phasing/SKILL.md invokes the Config Validation Procedure" {
   # The skill must reference the Config Validation Procedure from using-qrspi
-  # and name codex_reviews as a validated field — mirroring the pattern used
+  # and name second_reviewer as a validated field — mirroring the pattern used
   # by Plan/Implement/Integrate/Test.
   grep -qE "Config Validation Procedure" "$SKILL_FILE"
-  grep -qiE "validates.*codex_reviews|codex_reviews.*validation" "$SKILL_FILE"
+  grep -qiE "validates.*second_reviewer|second_reviewer.*validation" "$SKILL_FILE"
 }
 
-@test "phasing/SKILL.md does NOT silently default codex_reviews to false" {
-  # The Required-inputs line previously said: "default codex_reviews: false if
+@test "phasing/SKILL.md does NOT silently default second_reviewer to false" {
+  # The Required-inputs line previously said: "default second_reviewer: false if
   # absent". This silent default violates using-qrspi's "No silent defaults"
   # contract. After the fix the silent-default phrase must be gone.
-  if grep -niE "default[[:space:]]+(to[[:space:]]+)?(\`)?codex_reviews:[[:space:]]*false(\`)?[[:space:]]+if[[:space:]]+absent" "$SKILL_FILE"; then
-    echo "phasing/SKILL.md still contains a silent codex_reviews:false default" >&2
+  if grep -niE "default[[:space:]]+(to[[:space:]]+)?(\`)?second_reviewer:[[:space:]]*false(\`)?[[:space:]]+if[[:space:]]+absent" "$SKILL_FILE"; then
+    echo "phasing/SKILL.md still contains a silent second_reviewer:false default" >&2
     return 1
   fi
-  # Also reject the looser variant "default codex_reviews: false"
-  if grep -niE "default[[:space:]]+(to[[:space:]]+)?(\`)?codex_reviews:[[:space:]]*false" "$SKILL_FILE"; then
-    echo "phasing/SKILL.md still contains a silent codex_reviews:false default" >&2
+  # Also reject the looser variant "default second_reviewer: false"
+  if grep -niE "default[[:space:]]+(to[[:space:]]+)?(\`)?second_reviewer:[[:space:]]*false" "$SKILL_FILE"; then
+    echo "phasing/SKILL.md still contains a silent second_reviewer:false default" >&2
     return 1
   fi
 }

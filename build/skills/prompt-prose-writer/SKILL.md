@@ -1,5 +1,5 @@
 ---
-description: Apply prompt-design rules when authoring or planning prompt-prose deliverables. Detects whether a deliverable IS prompt prose, and only then Reads the rules and applies R1-R7 before drafting. Preloaded by agent files that may author prompt prose.
+description: Apply prompt-design rules when authoring or planning prompt-prose deliverables. Detects whether a deliverable IS prompt prose, and only then Reads the rules and applies every R-rule defined in `skills/_shared/prompt-design-rules.md` before drafting. Preloaded by agent files that may author prompt prose.
 ---
 
 # Prompt Prose Writer
@@ -38,7 +38,7 @@ Files outside these globs require the content-semantic test above. Other project
 <!-- INCLUDE-END: prompt-prose-detection -->
 
 <!-- INCLUDE-BEGIN: prompt-prose-writer-addition -->
-**Writer-side application.** When authoring or planning a deliverable, apply the detection above to the planned target content (or sub-block, for blocks within larger documents like `design.md`). If the target IS prompt prose, Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply R1-R7 + cross-cutting principles BEFORE drafting, not as post-write polish. The rules shape what to write; patching after the fact is a known anti-pattern. If the Read fails, do NOT proceed with authoring. Surface the error and stop.
+**Writer-side application.** When authoring or planning a deliverable, apply the detection above to the planned target content (or sub-block, for blocks within larger documents like `design.md`). If the target IS prompt prose, Read `skills/_shared/prompt-design-rules.md` (resolved from the installed plugin path per host convention) and apply every R-rule defined in that file + cross-cutting principles BEFORE drafting, not as post-write polish. The rules shape what to write; patching after the fact is a known anti-pattern. If the Read fails, do NOT proceed with authoring. Surface the error and stop.
 
 **If the target is NOT prompt prose** (ordinary documentation, configuration, code, non-prompt prose), do NOT Read the rules file. Reading-without-applying is the verbosity-bias anti-pattern the rules themselves warn against — loading them into context for a deliverable they don't apply to wastes context and risks misapplication.
 <!-- INCLUDE-END: prompt-prose-writer-addition -->

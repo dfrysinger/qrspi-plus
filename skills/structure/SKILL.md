@@ -35,7 +35,7 @@ Read `config.md` from the artifact directory to determine whether Codex reviews 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Structure validates `codex_reviews`.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Structure validates `second_reviewer`.
 
 <HARD-GATE>
 Do NOT produce structure.md without approved goals.md, research/summary.md, design.md, AND phasing.md.

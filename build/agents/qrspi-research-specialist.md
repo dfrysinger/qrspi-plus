@@ -3,6 +3,7 @@ tier: low
 name: qrspi-research-specialist
 description: Per-question parallel researcher. Answers an assigned research question with objective, factual findings and writes the report directly to disk. Research-isolation invariant binding — never receives goals.md or other-question content.
 tools: Read, Write, Bash, WebFetch, Grep, Glob
+allowed-tools: read, write, edit, create, bash, webfetch, grep, glob
 skills: [research-isolation]
 ---
 

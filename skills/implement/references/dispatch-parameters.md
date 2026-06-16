@@ -152,7 +152,7 @@ When `wave_number == 1`, or when the plan contains only one UI task, omit the `w
 
 ## Codex parallels (when `codex_enabled_per_task: true`)
 
-Codex reviewers are NOT launched through a separate per-reviewer wrapper. They dispatch through the SAME universal `scripts/dispatch-agent.sh --agents` batched call as the Claude reviewers: every `*-codex` tag in `REVIEW_AGENTS` routes to the third-party companion path, every `*-claude` tag to the first-party Task path. Lightweight tasks omit every `*-codex` tag regardless of `config.codex_reviews`.
+Codex reviewers are NOT launched through a separate per-reviewer wrapper. They dispatch through the SAME universal `scripts/dispatch-agent.sh --agents` batched call as the Claude reviewers: every `*-codex` tag in `REVIEW_AGENTS` routes to the third-party companion path, every `*-claude` tag to the first-party Task path. Lightweight tasks omit every `*-codex` tag regardless of `config.second_reviewer`.
 
 Set per-task dispatch parameters, then include the shared reviewer-dispatch prose:
 

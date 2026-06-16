@@ -1,12 +1,7 @@
-<!-- skills/_shared/verifier-dispatch-prose.md
-     Shared verifier-dispatch snippet, `!cat`-included into:
-       - skills/using-qrspi/SKILL.md   (artifact-level Apply-fix protocol)
-       - skills/implement/SKILL.md     (task-level Apply-fix protocol)
-     Source of truth: design.md CD-4 §H + structure.md Slice 1.1.
-     Mirrors skills/_shared/reviewer-dispatch-prose.md (CD-1 §11). The two
-     snippets are deliberately separate because each names a different
-     `dispatch-agent.sh` mode flag at the call site (the load-bearing
-     difference) — see design.md CD-4 §H rationale (L494). -->
+<!-- Shared verifier-dispatch snippet, !cat-included into using-qrspi/SKILL.md
+     (artifact-level Apply-fix) and implement/SKILL.md (task-level Apply-fix).
+     Mirrors reviewer-dispatch-prose.md; the two are separate because each
+     names a different dispatch-agent.sh mode flag at the call site. -->
 
 ## Verifier Dispatch
 
