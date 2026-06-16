@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-plan-silent-failure-hunter
 description: Identifies planned behaviors that would swallow errors, silently fall back, leave partial state, or log-and-continue when they should fail loudly. Reviews the plan artifact, not task implementations. Runs always (quick + full pipeline).
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 

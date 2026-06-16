@@ -168,6 +168,60 @@ def _under_root(resolved_path, root):
     sep = os.sep
     return resolved_path.startswith(root + sep)
 
+def _has_finding_artifacts(rdir, t):
+    """True if per-finding files OR a clean sentinel exist on disk for this tag.
+    Used by the universal stdout-fallback (Bug 3, v0.7.2.5) to decide whether
+    to splitter-fallback on a raw capture."""
+    if glob.glob(os.path.join(rdir, "%s.finding-F*.md" % t)):
+        return True
+    if os.path.isfile(os.path.join(rdir, "%s.clean.md" % t)):
+        return True
+    if os.path.exists(os.path.join(rdir, "%s.NO_FINDINGS" % t)):
+        return True
+    return False
+
+def _try_stdout_fallback(rdir, t, errs_list):
+    """Universal stdout-fallback (Bug 3, v0.7.2.5): if the subagent emitted its
+    findings to stdout (FINDING-BOUNDARY format) rather than writing per-finding
+    files via the Write tool, the orchestrator captured the Task return value to
+    <round-dir>/.dispatch/<tag>.raw. Run the splitter on that capture so per-
+    finding files materialize on disk regardless of which emission path the
+    subagent took. Returns True on successful split, False if no fallback was
+    possible (no raw capture present) or the splitter failed.
+
+    Triggered universally — not gated on mode (first_party vs background) or on
+    any vendor field — because the underlying invariant is "did the artifact
+    land on disk", not "which dispatch path was used"."""
+    raw_path = os.path.join(rdir, ".dispatch", "%s.raw" % t)
+    if not os.path.isfile(raw_path):
+        return None  # no raw to split; no-op (not a failure)
+    # Resolve the splitter under the repo's scripts/ root (already a permitted
+    # exec root in EXEC_ROOTS) so we don't reintroduce the manifest-exec trust
+    # boundary for an internally-invoked helper.
+    splitter = None
+    for root in EXEC_ROOTS:
+        candidate = os.path.join(root, "third-party-finding-splitter.sh")
+        if os.path.isfile(candidate):
+            splitter = candidate
+            break
+    if splitter is None:
+        errs_list.append("await-round: stdout-fallback splitter not found under exec roots for %r" % t)
+        return False
+    try:
+        r = subprocess.run(
+            [splitter, "--round-dir", rdir, "--tag", t],
+            shell=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        errs_list.append("await-round: stdout-fallback splitter exec error for %r: %s" % (t, type(e).__name__))
+        return False
+    if r.returncode != 0:
+        errs_list.append("await-round: stdout-fallback splitter failed for %r (rc=%d)" % (t, r.returncode))
+        return False
+    return True
+
 def parse_and_validate(cmdstr, kind, tag):
     """Return (argv, err_or_None). kind ∈ {"await_cmd","split_cmd"}."""
     try:
@@ -238,95 +292,141 @@ for entry in manifest:
     mode = entry.get("mode")
     status = entry.get("status")
     tag = entry.get("tag", "<no-tag>")
-    if mode != "background":
-        # First-party entries are already drained at dispatch time; nothing
-        # to do here. We still count them in the summary as "clean" if their
-        # status is not "pending".
-        continue
-    if status != "pending":
-        continue
 
-    awaited += 1
-    await_cmd = entry.get("await_cmd")
-    split_cmd = entry.get("split_cmd")
-    if not await_cmd:
-        errs.append("await-round: entry %r missing await_cmd" % tag)
-        entry["status"] = "failed"
-        final_rc = 1
-        continue
+    # Background pending entries: execute await_cmd + split_cmd before the
+    # universal fallback + finding-detection below. Other entries (first_party,
+    # or background entries with a non-pending status) skip this block — they
+    # either drained at dispatch time (first_party Task return) or were drained
+    # by a prior await-round invocation. They still pass through the universal
+    # stdout-fallback + finding-detection below (Bug 3, v0.7.2.5).
+    if mode == "background" and status == "pending":
+        awaited += 1
+        await_cmd = entry.get("await_cmd")
+        split_cmd = entry.get("split_cmd")
+        if not await_cmd:
+            errs.append("await-round: entry %r missing await_cmd" % tag)
+            entry["status"] = "failed"
+            final_rc = 1
+            continue
 
-    # Execute await_cmd. shell=False + parsed argv. Captured stdout/stderr
-    # remain DEVNULL — they may carry raw third-party payload fragments that
-    # must not surface (CD-1 #4).
-    argv, perr = parse_and_validate(await_cmd, "await_cmd", tag)
-    if argv is None:
-        errs.append(perr)
-        entry["status"] = "failed"
-        final_rc = 1
-        continue
-    # Ensure the confinement directory exists so cwd= doesn't blow up on
-    # already-cleaned rounds; any prior `rm -rf .dispatch` leaves a clean
-    # slate, and we want await_cmd's relative writes to land here. Failing
-    # to create the dir is recorded explicitly so a downstream FileNotFound /
-    # NotADirectory is not misattributed to a missing await_cmd binary.
-    try:
-        os.makedirs(DISPATCH_CWD, exist_ok=True)
-    except Exception as e:
-        errs.append("await-round: failed to create dispatch cwd %r for %r: %s: %s"
-                    % (DISPATCH_CWD, tag, type(e).__name__, e))
-        entry["status"] = "failed"
-        final_rc = 1
-        continue
-    try:
-        r = subprocess.run(
-            argv, shell=False,
-            cwd=DISPATCH_CWD,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-    except Exception as e:
-        errs.append("await-round: await_cmd execution error for %r: %s" % (tag, type(e).__name__))
-        entry["status"] = "failed"
-        final_rc = 1
-        continue
-    if r.returncode != 0:
-        errs.append("await-round: await_cmd failed for %r (rc=%d)" % (tag, r.returncode))
-        entry["status"] = "failed"
-        final_rc = 1
-        continue
-
-    # Execute split_cmd if present (shell=False + parsed argv).
-    if split_cmd:
-        argv_s, perr_s = parse_and_validate(split_cmd, "split_cmd", tag)
-        if argv_s is None:
-            errs.append(perr_s)
+        # Execute await_cmd. shell=False + parsed argv. Captured stdout/stderr
+        # remain DEVNULL — they may carry raw third-party payload fragments that
+        # must not surface (CD-1 #4).
+        argv, perr = parse_and_validate(await_cmd, "await_cmd", tag)
+        if argv is None:
+            errs.append(perr)
+            entry["status"] = "failed"
+            final_rc = 1
+            continue
+        # Ensure the confinement directory exists so cwd= doesn't blow up on
+        # already-cleaned rounds; any prior `rm -rf .dispatch` leaves a clean
+        # slate, and we want await_cmd's relative writes to land here. Failing
+        # to create the dir is recorded explicitly so a downstream FileNotFound /
+        # NotADirectory is not misattributed to a missing await_cmd binary.
+        try:
+            os.makedirs(DISPATCH_CWD, exist_ok=True)
+        except Exception as e:
+            errs.append("await-round: failed to create dispatch cwd %r for %r: %s: %s"
+                        % (DISPATCH_CWD, tag, type(e).__name__, e))
             entry["status"] = "failed"
             final_rc = 1
             continue
         try:
-            rs = subprocess.run(
-                argv_s, shell=False,
+            r = subprocess.run(
+                argv, shell=False,
                 cwd=DISPATCH_CWD,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
         except Exception as e:
-            errs.append("await-round: split_cmd execution error for %r: %s" % (tag, type(e).__name__))
+            errs.append("await-round: await_cmd execution error for %r: %s" % (tag, type(e).__name__))
             entry["status"] = "failed"
             final_rc = 1
             continue
-        if rs.returncode != 0:
-            errs.append("await-round: split_cmd failed for %r (rc=%d)" % (tag, rs.returncode))
+        if r.returncode != 0:
+            errs.append("await-round: await_cmd failed for %r (rc=%d)" % (tag, r.returncode))
             entry["status"] = "failed"
             final_rc = 1
             continue
 
+        # Execute split_cmd if present (shell=False + parsed argv).
+        if split_cmd:
+            argv_s, perr_s = parse_and_validate(split_cmd, "split_cmd", tag)
+            if argv_s is None:
+                errs.append(perr_s)
+                entry["status"] = "failed"
+                final_rc = 1
+                continue
+            try:
+                rs = subprocess.run(
+                    argv_s, shell=False,
+                    cwd=DISPATCH_CWD,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+            except Exception as e:
+                errs.append("await-round: split_cmd execution error for %r: %s" % (tag, type(e).__name__))
+                entry["status"] = "failed"
+                final_rc = 1
+                continue
+            if rs.returncode != 0:
+                errs.append("await-round: split_cmd failed for %r (rc=%d)" % (tag, rs.returncode))
+                entry["status"] = "failed"
+                final_rc = 1
+                continue
+
+    # Universal stdout-fallback (Bug 3, v0.7.2.5): if per-finding files do
+    # NOT exist on disk for this tag but the orchestrator captured a raw
+    # stdout payload to <round-dir>/.dispatch/<tag>.raw, run the splitter
+    # on it so per-finding files materialize regardless of which emission
+    # path the subagent took. The invariant is "did the artifact land on
+    # disk", not "which dispatch path was used", so this runs for both
+    # first_party and background entries.
+    #
+    # Tri-state return from _try_stdout_fallback:
+    #   None  → no raw present; nothing to do (NOT a failure on its own —
+    #           a downstream apply-fix step's "expected tag produced no
+    #           output" diagnostic will surface a truly missing reviewer).
+    #   True  → splitter ran ok; per-finding files / clean sentinel
+    #           materialized (success).
+    #   False → splitter was attempted (raw present) but FAILED (missing
+    #           splitter, exec error, non-zero rc). This is a real failure
+    #           and must not silently flow to clean — even if the raw was
+    #           garbage, it represents a reviewer that emitted output and
+    #           the orchestrator must surface it.
+    fallback_failed = False
+    if not _has_finding_artifacts(round_dir, tag):
+        fb = _try_stdout_fallback(round_dir, tag, errs)
+        if fb is False:
+            fallback_failed = True
+
     # Detect findings: any <round-dir>/<tag>.finding-F*.md file (and not a
     # NO_FINDINGS sentinel). The splitter is the authority here; we just
-    # count files for the summary.
+    # count files for the summary. Preserve any pre-existing "failed" status
+    # (set upstream by dispatch-agent.sh when a background launch failed, or
+    # set above by the await/split error paths) UNLESS the stdout-fallback
+    # recovered finding artifacts from a captured raw payload — in which
+    # case the failure was transport-level and the recovered output stands.
+    # Likewise, a stdout-fallback that was ATTEMPTED but FAILED (raw payload
+    # present, splitter could not produce artifacts) must surface as failed
+    # rather than silently flowing to clean — the reviewer emitted something
+    # the orchestrator must not discard.
     findings = glob.glob(os.path.join(round_dir, "%s.finding-F*.md" % tag))
     sentinel = os.path.exists(os.path.join(round_dir, "%s.NO_FINDINGS" % tag))
+    was_failed = (entry.get("status") == "failed")
     if findings:
         with_findings += 1
         entry["status"] = "complete-with-findings"
+    elif was_failed:
+        # No recoverable artifacts on a previously-failed entry. Keep the
+        # failure visible in the manifest + summary so the orchestrator
+        # diagnostic surfaces it instead of silently counting it clean.
+        errs.append("await-round: entry %r remained failed with no recovered findings" % tag)
+        final_rc = 1
+    elif fallback_failed:
+        # Stdout-fallback was attempted (.dispatch/<tag>.raw existed) but
+        # the splitter could not produce per-finding files. Mark failed so
+        # the round does not silently look clean while losing reviewer output.
+        entry["status"] = "failed"
+        final_rc = 1
     else:
         clean += 1
         entry["status"] = "complete-clean" if sentinel else "complete"

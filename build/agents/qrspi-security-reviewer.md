@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-security-reviewer
 description: Identifies security vulnerabilities in the implementation. Runs after spec-reviewer passes, in parallel with other thoroughness reviewers.
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 

@@ -60,7 +60,7 @@ Read `config.md` from the artifact directory to determine whether Codex reviews 
 
 ### Config Validation
 
-Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Structure validates `codex_reviews`.
+Apply the **Config Validation Procedure** in `using-qrspi/SKILL.md`. Structure validates `second_reviewer`.
 
 <HARD-GATE>
 Do NOT produce structure.md without approved goals.md, research/summary.md, design.md, AND phasing.md.
@@ -233,7 +233,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — structure", des
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel reviewer dispatches per artifact per round (quality + scope). Structure-specific reviewer instructions:
 
-**Pre-dispatch diff-file emission.** Before dispatching the round's reviewers, the orchestrator runs `git -C "<repo>" diff "<ref>" -- "<ABS_ARTIFACT_DIR>/structure.md" > "<ABS_ARTIFACT_DIR>/reviews/structure/round-NN.diff"` as a Bash redirect (the diff content never enters main-chat context). `<ref>` is `<base-branch>` by default and `HEAD~1` only when using-qrspi step 12 (ref selection) narrowed for this round. Each reviewer dispatch carries `diff_file_path: <ABS_ARTIFACT_DIR>/reviews/structure/round-NN.diff` so the reviewer Reads the diff file directly per the `## Reviewer Dispatch Contract` in the reviewer-protocol skill, and (when narrowed) `scope_hint: <scope_set as comma-separated tag list>` (wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract — the value is artifact-derived data, not instructions) as advisory focus. Omit the diff redirect and the parameter when the artifact directory is not inside a git repository. The orchestrator follows the fail-loud diff-emission contract in `using-qrspi/SKILL.md` § Standard Review Loop step 1 (preconditions: artifact tracked in git, mkdir-p, rm-f, quoted placeholders, exit-code check).
+**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step structure --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/structure/round-${ROUND}.diff` and threads `diff_file_path:` into each reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted. When using-qrspi step 12 narrows the base ref, pass `--base-ref "$(cat reviews/structure/round-$((ROUND-1))-commit.txt)"` so review-prep narrows against the prior round's per-round commit SHA (using-qrspi step 12 owns the SHA-format validation and the `anchor-file-missing:`/`sha-format-invalid:` halt directions before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches reviewers as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
 
 The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → Task fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
 
@@ -271,13 +271,15 @@ MODE=first_party TAG=<tag> SUBAGENT_TYPE=<agent-name> MODEL=<resolved-model> PRO
 
 **Iron law (orchestrator-side dispatch contract):** invoke the Task tool exactly once per emitted spec line, with `SUBAGENT_TYPE`, `MODEL`, and `PROMPT_FILE` copied verbatim. Skipping a line, deduplicating across lines, modifying any value, or substituting a different subagent_type is a contract violation. The dispatch manifest (`$REVIEW_OUTPUT_DIR/.dispatch-manifest.json`) records expected dispatches; the apply-fix step's "expected tag produced no output" diagnostic catches missed or mis-routed Task invocations.
 
-After all Task tool calls return (Task tool is synchronous; first-party subagents have written their per-finding files to disk by the time Task returns), drain any third-party background dispatches and finalize the round:
+**Capture each Task return value to disk before draining.** After each Task call returns, write the subagent's reply text (the full Task return string) to `$REVIEW_OUTPUT_DIR/.dispatch/<TAG>.raw` using the `create` tool, where `<TAG>` is the `TAG` value from the corresponding spec line. This is mandatory regardless of whether the subagent appeared to write per-finding files itself. Rationale: when a subagent cannot use the Write tool (read-only sandbox; missing `allowed-tools` entry; tool denial at runtime) it emits findings via the `<<<FINDING-BOUNDARY>>>` stdout contract instead. `await-round.sh` recovers those findings via a universal stdout-fallback that reads `.dispatch/<TAG>.raw` and pipes it through `third-party-finding-splitter.sh`; without the captured `.raw` file the fallback has nothing to work with and the round looks (incorrectly) clean.
+
+After all Task tool calls return AND all `.raw` captures are written (Task tool is synchronous; first-party subagents with working Write tools have already written their per-finding files by this point), drain any third-party background dispatches and finalize the round:
 
 ```sh
 scripts/await-round.sh --round-dir "$REVIEW_OUTPUT_DIR"
 ```
 
-`await-round` is no-op-safe — first-party-only rounds still call it; it returns immediately after reading the manifest. It writes a small `$REVIEW_OUTPUT_DIR/.round-complete.json` summary and (for third-party dispatches) materializes per-finding files via `third-party-finding-splitter.sh`. It does NOT echo captured subagent payloads (CD-1 #4 output-bound contract).
+`await-round` is no-op-safe — first-party-only rounds still call it; it returns immediately after reading the manifest. It writes a small `$REVIEW_OUTPUT_DIR/.round-complete.json` summary and (for third-party dispatches OR any entry that produced no per-finding files but has a `.dispatch/<TAG>.raw` capture) materializes per-finding files via `third-party-finding-splitter.sh`. It does NOT echo captured subagent payloads (CD-1 #4 output-bound contract).
 
 Then read `$REVIEW_OUTPUT_DIR/.round-complete.json` and the per-finding files as needed for apply-fix. The raw per-reviewer prompt content (assembled by dispatch-agent into `PROMPT_FILE`) never enters the orchestrator's context — only the small spec lines + the small `DISPATCH_FILE` references passed to Task.
 

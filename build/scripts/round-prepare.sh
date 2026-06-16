@@ -43,6 +43,23 @@ if [ "$#" -lt 2 ]; then
   exit 1
 fi
 
+# Reject any positional that starts with '-' — these are always a misuse
+# (typo'd flag silently consumed as <round-NN> or <output-dir>). Closes the
+# class-of-bug v0.7.2.4 hotfix fixes elsewhere; see
+# tests/unit/test-round-prepare.bats § "argument hardening".
+case "$1" in
+  -*)
+    echo "round-prepare: positional <round-NN> must not begin with '-' (got: $1)" >&2
+    exit 1
+    ;;
+esac
+case "$2" in
+  -*)
+    echo "round-prepare: positional <output-dir> must not begin with '-' (got: $2)" >&2
+    exit 1
+    ;;
+esac
+
 ROUND="$1"; shift
 OUTPUT_DIR="$1"; shift
 

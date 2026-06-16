@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-plan-test-coverage-reviewer
 description: Verifies that task test expectations cover all behaviors, edge cases, and error conditions, and that each expectation is specific enough to be verifiable. Reviews the plan artifact, not task implementations. Runs always (quick + full pipeline).
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 
@@ -96,10 +97,10 @@ Flag any expectation that is vague, untestable, or unfalsifiable:
 - "Similar to Task N behavior" — not a test expectation
 
 ### 5. Missing Scenarios from Design (full pipeline only — skip if design.md absent)
-Compare design.md's test strategy against the plan's test expectations:
-- Does the design specify a testing approach (unit, integration, contract)?
-- Are there test scenarios in design.md that no task covers?
-- Does the design require specific test doubles, fixtures, or environments
+Compare design.md's per-goal `Acceptance` blocks against the plan's test expectations:
+- Does each goal's `Acceptance` block name a testing approach (unit, integration, contract)?
+- Are there acceptance scenarios in design.md that no plan task covers?
+- Does any `Acceptance` block require specific test doubles, fixtures, or environments
   that the plan tasks don't account for?
 
 Flag any test scenario the design requires that the plan omits.

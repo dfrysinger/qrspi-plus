@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-plan-goal-traceability-reviewer
 description: Verifies bidirectional traceability between goals and plan tasks — every goal traces forward to plan-authored test expectations, and every task traces back to a goal or research finding. Reviews the plan artifact, not task implementations. Runs always (quick + full pipeline).
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 

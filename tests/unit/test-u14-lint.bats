@@ -210,7 +210,7 @@ lint_required_section() {
   local required=()
   case "$type" in
     goals)     required=("## Purpose" "## Constraints" "## Goals") ;;
-    design)    required=("## Approach" "## Key Decisions" "## Trade-offs Considered" "## Test Strategy" "## System Diagram") ;;
+    design)    required=("## Approach" "## Key Decisions" "## Trade-offs Considered" "## System Diagram") ;;
     structure) required=("## File Map" "## Interfaces" "## Architectural Diagram") ;;
     plan)      required=("## Phase" "## Target files" "## Description") ;;
     phasing)   required=("## Slices" "## Phases") ;;
@@ -400,18 +400,20 @@ lint_no_brevity() {
 # Lint 4 — required-section conformance
 # =============================================================================
 
-@test "[U14-lint:required-section] fires on seeded violation fixture (design type, missing 2 headings)" {
+@test "[U14-lint:required-section] fires on seeded violation fixture (design type, missing 1 heading)" {
   run lint_required_section "$FIXTURE_DIR/seeded-u14-violation-required-heading.md" design
   # CodexF5 fix-cycle 1: exit-status check is now the primary contract.
   [ "$status" -ne 0 ]
   [[ "$output" == *"LINT: required-section:"* ]]
-  [[ "$output" == *"missing-heading=## Test Strategy"* ]]
+  # `## Test Strategy` was retired from the design required-headings list
+  # in v0.7.4 audit item #2; the seeded fixture now triggers only on
+  # `## System Diagram` missing.
   [[ "$output" == *"missing-heading=## System Diagram"* ]]
 }
 
 @test "[U14-lint:required-section] passes on a correctly-headed fixture" {
   local fixture; fixture="$BATS_TMPDIR/required-heading-clean.md"
-  printf '## Approach\n\nx\n\n## Key Decisions\n\nx\n\n## Trade-offs Considered\n\nx\n\n## Test Strategy\n\nx\n\n## System Diagram\n\nx\n' > "$fixture"
+  printf '## Approach\n\nx\n\n## Key Decisions\n\nx\n\n## Trade-offs Considered\n\nx\n\n## System Diagram\n\nx\n' > "$fixture"
   run lint_required_section "$fixture" design
   [ "$status" -eq 0 ]
   [ -z "$output" ]

@@ -32,3 +32,19 @@ The following lexical patterns in plan.md indicate boundary drift from a later p
 - **`if/else`, `for`, `while`, line-numbered logic walkthroughs** — Implement-layer leak.
 - **"trade-off", "we considered", "alternative approach"** in task description — Design-layer leak.
 - **"phase 2 will...", "future phases", roadmap-style forward references** — Phasing-layer leak.
+
+### Upstream-contract deferrals (apply-fix discipline)
+
+A reviewer finding (most often from silent-failure, security, or coverage reviewers) can ask plan.md to add a contract direction — fail-loud, validate, halt-on-X — that **contradicts an approved upstream deferral** in `design.md` or `structure.md`. The plan apply-fix MUST NOT self-apply such a finding. Two valid responses:
+
+1. **Defer.** Record an Author Note on the affected task naming the reviewer finding ID, the upstream artifact + clause that owns the opposite-direction contract, and that re-opening the decision is a Design/Structure-phase amendment, not a plan-side workaround.
+2. **Block.** Mark the task `status: BLOCKED-on-design-amendment` and surface the upstream amendment as a separate fix-pass before plan can converge.
+
+Signal phrases in upstream that flag a deferral fall into two grep-discipline classes:
+
+- **Narrow direction phrases** (single match anywhere): "exits 0", "does not validate", "silent on no input", "fail-soft", "swallow", "log and continue", "warning only", "best-effort", "graceful fallback", "no-op on", "silently ignore", "non-fatal", "continues past".
+- **Broad deferral phrases** (require clause proximity to the cited contract surface): "edge case", "can land later if it matters", "defer", "TBD", "stricter validation can land later". A match elsewhere in the artifact is noise; a match in the same paragraph/bullet/named-clause as the contract surface the finding cites is signal.
+
+Apply-fix greps these in design.md/structure.md before applying any contract-direction change.
+
+**Default on grep-miss: DEFER, not apply.** When the upstream grep finds nothing matching either the opposite direction or a clause-proximal deferral phrase, the upstream is ambiguous. The asymmetric blast radius — self-applied contract reversal silently corrupts approved design; a deferred direct-fix produces one extra round — makes DEFER the safe default. Never apply a contract-direction change on a first-round grep-miss.

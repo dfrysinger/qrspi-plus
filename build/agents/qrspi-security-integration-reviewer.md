@@ -3,6 +3,7 @@ tier: medium
 name: qrspi-security-integration-reviewer
 description: Reviews merged code from multiple implementation tasks for cross-task security vulnerabilities. Individual task security was reviewed during Implement — this agent looks for issues that ONLY emerge when tasks are combined. Dispatched from the Integrate phase.
 tools: Read, Write
+allowed-tools: read, write, edit, create
 skills: [reviewer-protocol]
 ---
 

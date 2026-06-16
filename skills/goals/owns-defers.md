@@ -15,7 +15,7 @@ This section is the **single source of truth** for goals.md scope boundaries. It
 
 - **Out-of-scope decisions** → eliminated. What isn't a goal isn't in scope. Project-level scope clarifications (if any) belong to Design's Approach where solution scope is decided.
 - **Detailed solution definitions** → Design.
-- **Acceptance criteria** → Design's Test Strategy + Plan's per-task expectations. Goals does NOT enumerate per-goal acceptance criteria.
+- **Acceptance criteria** → Design's per-goal `Acceptance` blocks + Plan's per-task expectations. Goals does NOT enumerate per-goal acceptance criteria.
 - **File / component / interface mapping** → Structure.
 - **Task specs, LOC estimates, dependencies** → Plan.
 - **Phasing decisions, vertical slice authoring, roadmap** → Phasing.

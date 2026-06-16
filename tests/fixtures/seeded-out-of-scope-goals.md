@@ -26,7 +26,7 @@ Rate limiting needed.
 
 #### Acceptance Criteria
 
-- 429 returned within 5ms p99 — DEFERS violation: acceptance criteria belong to Design Test Strategy / Plan per-task expectations.
+- 429 returned within 5ms p99 — DEFERS violation: acceptance criteria belong to Design's per-goal `Acceptance` blocks / Plan per-task expectations.
 - Token bucket capacity = 100 — DEFERS violation: solution-prescribing.
 
 #### Out of Scope

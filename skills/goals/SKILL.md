@@ -198,7 +198,7 @@ Launch a **subagent** to synthesize `goals.md`.
 
 !cat skills/_shared/evergreen-output-rule.md
 
-**Iron Rule (template).** No top-level `Out of Scope`, `Success Criteria`, or `Acceptance Criteria` section. What isn't a goal isn't in scope; acceptance is owned by Design's Test Strategy and Plan's per-task expectations. Capture user-volunteered exclusions as constraints (when they shape the solution space) or omit them.
+**Iron Rule (template).** No top-level `Out of Scope`, `Success Criteria`, or `Acceptance Criteria` section. What isn't a goal isn't in scope; acceptance is owned by Design's per-goal `Acceptance` blocks and Plan's per-task expectations. Capture user-volunteered exclusions as constraints (when they shape the solution space) or omit them.
 
 **Iron Rule (three subsections — emit all three).** Every goal MUST carry exactly the three subsections `Problem`, `Why we care`, `What we know so far`. Omitting one is a synthesis defect. If the user did not articulate one during dialogue, re-enter dialogue to obtain it — do NOT write a placeholder, partial, or tentative body (presence ≡ locked). Do NOT add a fourth subsection — additional content belongs in `What we know so far` or in a Constraint.
 
@@ -274,7 +274,7 @@ Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — goals", descri
 |----------------|---------|
 | "The user already described what they want clearly" | Clear description ≠ complete goals. The per-goal Problem / Why we care / What we know so far frames still need explicit capture. |
 | "This is a quick fix, goals are overkill" | Quick-fix mode exists — use it. Even quick fixes need a captured Problem and Why we care. |
-| "I should add acceptance criteria so downstream knows when it's done" | Goals does NOT own acceptance criteria — Design's Test Strategy and Plan's per-task expectations do. Adding them here pre-commits Design. |
+| "I should add acceptance criteria so downstream knows when it's done" | Goals does NOT own acceptance criteria — Design's per-goal `Acceptance` blocks and Plan's per-task expectations do. Adding them here pre-commits Design. |
 | "I should add an Out of Scope section to prevent creep" | Goals does NOT own out-of-scope decisions. What isn't a goal isn't in scope; project-level scope clarifications belong in Design's Approach. |
 | "The scope is obvious" | Obvious scope is where scope creep hides. Write the per-goal Problem clearly so Design can scope its solution against it. |
 | "This goal feels exploratory but I can't justify the cost so I'll mark it known-fix" | Cost-benefit reasoning is exactly what the `exploratory` tag protects against. Mark it `exploratory` honestly. |

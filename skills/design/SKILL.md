@@ -1,6 +1,6 @@
 ---
 name: design
-description: Use when research/summary.md is approved and the QRSPI pipeline needs an architecture — proposes approaches, surfaces key architectural decisions with rationale, and defines a design-level test strategy through interactive design discussion
+description: Use when research/summary.md is approved and the QRSPI pipeline needs an architecture — proposes approaches, surfaces key architectural decisions with rationale, and defines per-goal acceptance through interactive design discussion
 ---
 
 # Design (QRSPI Step 4)
@@ -203,6 +203,7 @@ Once the discussion settles, launch a **subagent** to synthesize `design.md`.
 - `goals.md`
 - `research/summary.md`
 - A summary of the design discussion (key decisions, user preferences, chosen approach)
+- The resolved value of `visual_fidelity_required` from `config.md` (REQUIRED — when true, the subagent MUST author a top-level `## Visual-Fidelity Binding` H2 listing at least one concrete wireframe artifact; when false or absent, the subagent MUST NOT author that H2)
 - Any prior feedback files
 - **On-demand:** `research/q*.md` files per the read-on-demand permission in `## Artifact Gating` (single source of truth for the trigger condition, citation requirement, and anti-prophylactic guard — not restated here). The orchestrator surfaces available `q*.md` filenames in the subagent prompt; the subagent decides which (if any) to load.
 
@@ -228,10 +229,10 @@ Run AFTER the synthesis subagent emits `design.md` and BEFORE `### Review Round`
 
 **Visual-fidelity binding precondition.** When `config.md` carries `visual_fidelity_required: true`, verify both:
 
-1. `## Test Strategy` contains a `### Visual-Fidelity Binding` subsection.
-2. The subsection names at least one concrete wireframe artifact — a Figma URL, an embedded PNG path under the run-local artifact directory, or both. An empty / whitespace-only / comment-only / placeholder-only body (e.g., `{Wireframe artifacts}`) FAILS the gate — structural presence without concrete content fails the same way absence does.
+1. A top-level `## Visual-Fidelity Binding` H2 is present in `design.md`.
+2. The H2 body names at least one concrete wireframe artifact — a Figma URL, an embedded PNG path under the run-local artifact directory, or both. An empty / whitespace-only / comment-only / placeholder-only body (e.g., `{Wireframe artifacts}`) FAILS the gate — structural presence without concrete content fails the same way absence does.
 
-On failure: do NOT emit the reviewer diff file, run the pre-fanout compaction checkpoint, or dispatch reviewers. Surface: "design.md is missing the required `### Visual-Fidelity Binding` subsection under `## Test Strategy` (or the subsection is present but names zero concrete wireframe artifacts). Add at least one Figma URL or embedded PNG path before approval." Loop back to re-synthesis; do not proceed until the gate passes. When `visual_fidelity_required: false` (or absent), skipped entirely.
+On failure: do NOT emit the reviewer diff file, run the pre-fanout compaction checkpoint, or dispatch reviewers. Surface: "design.md is missing the required `## Visual-Fidelity Binding` H2 (or the H2 is present but names zero concrete wireframe artifacts). Add at least one Figma URL or embedded PNG path before approval." Loop back to re-synthesis; do not proceed until the gate passes. When `visual_fidelity_required: false` (or absent), skipped entirely.
 
 **Reference-gate checklist item.** When the design introduces a reviewer whose verdict depends on an external reference artifact (prototype screenshot, golden output, contract fixture, lifted prototype), confirm before `### Review Round`:
 
