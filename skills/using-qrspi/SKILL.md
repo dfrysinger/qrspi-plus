@@ -25,6 +25,19 @@ Read `skills/using-qrspi/references/route-templates.md` when Goals is seeding `c
 
 Read `skills/using-qrspi/references/artifact-directory.md` when creating the artifact directory for a new run, or when resolving the slug for an existing run — full per-run on-disk tree (`docs/qrspi/YYYY-MM-DD-{slug}/...`) and slug-generation rule.
 
+## Topology Contract (Plugin Root vs Artifact Root)
+
+QRSPI dispatch scripts operate under a **two-root topology contract**: plugin assets and user artifacts live in different trees and must be configurable independently.
+
+- **`PLUGIN_ROOT`** — immutable plugin assets (`skills/`, `agents/`, `scripts/`, `scripts/lib/`). Derived from the dispatch wrapper's own location (`scripts/..`). Override via `QRSPI_REPO_ROOT` for tests. `REPO_ROOT` is a back-compat alias.
+- **`ARTIFACT_ROOT`** — the user repo where artifacts live and `git diff` runs. Resolved by precedence: (1) `QRSPI_ARTIFACT_ROOT` env var, (2) `--artifact-repo-root <path>` flag on `dispatch-agent.sh`, (3) `git rev-parse --show-toplevel` discovered from `--output-dir`, (4) fall back to `PLUGIN_ROOT`.
+
+The two roots may **coincide** (vendored-submodule install, where the artifact directory lives inside the QRSPI repo itself) or **diverge** (Copilot CLI plugin install, where `~/.copilot/installed-plugins/qrspi-plus/` carries the assets and the user repo carries the artifacts). Skills and scripts MUST NOT assume a single shared root.
+
+Path-guard wiring inside dispatch scripts:
+- **Plugin-asset paths** (`--agent-file`, `--skill[*]`, `--companion` for plugin assets) use `assert_path_under_plugin_root` (or the legacy `assert_path_under_repo_root` alias).
+- **Artifact-class paths** (`--artifact`, `--diff-file`, `--task-def`, `--subject-code`, `--artifact-body`, `--output-dir`, companion-launch `--round-dir` / `--prompt-file`) use `assert_path_under_artifact_root`.
+
 ## Approval Markers
 
 Read `skills/using-qrspi/references/approval-markers.md` when transitioning a step to `status: approved` (or `replan-draft`), or before the post-approval git commit — semantics and commit rule.

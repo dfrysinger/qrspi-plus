@@ -1535,7 +1535,7 @@ EOF
 # These tests pin the fail-closed canonical-$REPO_ROOT/ boundary check that
 # every prompt-ingested path argument must traverse before its bytes can be
 # read with `cat` or otherwise enter a sanctioned LLM channel. The diagnostic
-# string `resolves outside repository` is the contract.
+# string `resolves outside` is the contract.
 #
 # Fixture conventions for this section:
 #   - $REPO_LOCAL_TMP is a per-test mktemp directory created UNDER $REPO_ROOT
@@ -1570,7 +1570,7 @@ _path_guard_teardown_fixtures() {
 
 # --- Rejection cases: out-of-repo absolute paths ---------------------------
 
-@test "--subject-code outside repo root rejected with 'resolves outside repository'" {
+@test "--subject-code outside repo root rejected with 'resolves outside'" {
   _path_guard_setup_fixtures
   run "$WRAPPER" \
     --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
@@ -1580,7 +1580,7 @@ _path_guard_teardown_fixtures() {
     --dry-run
   _path_guard_teardown_fixtures
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 @test "--subject-code /etc/hosts rejected (readable system file outside repo)" {
@@ -1591,7 +1591,7 @@ _path_guard_teardown_fixtures() {
     --subject-code /etc/hosts \
     --dry-run
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 @test "--artifact-body outside repo root rejected" {
@@ -1604,7 +1604,7 @@ _path_guard_teardown_fixtures() {
     --dry-run
   _path_guard_teardown_fixtures
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 @test "--companion outside repo root rejected (boundary, not missing-file)" {
@@ -1621,7 +1621,7 @@ _path_guard_teardown_fixtures() {
     --dry-run
   _path_guard_teardown_fixtures
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 @test "--diff-file outside repo root rejected" {
@@ -1635,7 +1635,7 @@ _path_guard_teardown_fixtures() {
     --dry-run
   _path_guard_teardown_fixtures
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 # --- Rejection cases: symlink whose canonical target is outside repo -------
@@ -1654,7 +1654,7 @@ _path_guard_teardown_fixtures() {
     --dry-run
   _path_guard_teardown_fixtures
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
   # Spec line 50: rejection MUST happen BEFORE any prompt file is emitted.
   # If the guard fired after emission the markers below would appear; they must
   # not appear in stdout+stderr when early rejection fires correctly.
@@ -1682,7 +1682,7 @@ _path_guard_teardown_fixtures() {
     --dry-run
   rm -rf "$sibling"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 # --- Canonicalization-failure case (fail-closed) ---------------------------
@@ -1705,7 +1705,7 @@ _path_guard_teardown_fixtures() {
   [ "$status" -ne 0 ]
   # Diagnostic clearly identifies the canonicalization failure (does not echo
   # the input file's bytes — only the failing root path appears).
-  [[ "$output" =~ "canonicalize" ]] || [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "canonicalize" ]] || [[ "$output" =~ "resolves outside" ]]
   # Spec line 54: sentinel must be absent — proves no read happened before
   # the guard rejected.
   [[ ! "$output" =~ "$sentinel" ]]
@@ -1811,7 +1811,7 @@ _path_guard_teardown_fixtures() {
     --agents "quality-claude=$REPO_ROOT/agents/qrspi-goals-reviewer.md"
   rm -rf "$round_dir"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
   # Before-emission check: artifact bytes must not have been cat'd into the prompt.
   [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
 }
@@ -1831,7 +1831,7 @@ _path_guard_teardown_fixtures() {
   rm -rf "$round_dir"
   _path_guard_teardown_fixtures
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
   [[ ! "$output" =~ "<<<UNTRUSTED-ARTIFACT-START" ]]
 }
 
@@ -1847,7 +1847,7 @@ _path_guard_teardown_fixtures() {
     --agents "quality-claude=/etc/hosts"
   rm -rf "$round_dir"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 @test "batch --agents symlink-to-outside rejected" {
@@ -1866,7 +1866,7 @@ _path_guard_teardown_fixtures() {
   rm -rf "$round_dir"
   _path_guard_teardown_fixtures
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 # ===========================================================================
@@ -1927,7 +1927,7 @@ _path_guard_teardown_fixtures() {
   rm -rf "$fake_root" "$oor_skill_dir"
 
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 @test "batch --artifact missing file fails at existence check before boundary guard" {
@@ -2008,7 +2008,7 @@ _path_guard_teardown_fixtures() {
 
 COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
 
-@test "companion launch: --round-dir outside repo rejected with 'resolves outside repository'" {
+@test "companion launch: --round-dir outside repo rejected with 'resolves outside'" {
   # launch mode asserts assert_path_under_repo_root on --round-dir so a
   # caller cannot point job-record writes to /tmp or any out-of-tree path.
   local oor_dir
@@ -2026,7 +2026,7 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
     --tag mytest
   rm -rf "$oor_dir"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 @test "companion launch: out-of-repo --round-dir rejected without creating filesystem state" {
@@ -2048,7 +2048,7 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
     --round-dir "$oor_leaf" \
     --tag mytest
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
   # Critical assertion: launch must NOT have materialized the leaf or its
   # .dispatch/.jobs subtree before rejecting the boundary violation.
   [ ! -e "$oor_leaf" ]
@@ -2080,7 +2080,7 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
     --round-dir "$leaf_via_link" \
     --tag mytest
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
   # Critical: must NOT have materialized any filesystem state through the link.
   [ ! -e "$oor_root/notyet" ]
   [ ! -e "$oor_root/notyet/payload" ]
@@ -2088,7 +2088,7 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
   rm -rf "$oor_root"
 }
 
-@test "companion launch: out-of-repo --prompt-file rejected with 'resolves outside repository'" {
+@test "companion launch: out-of-repo --prompt-file rejected with 'resolves outside'" {
   # Pins behavioral enforcement of the --prompt-file boundary check
   # in dispatch-companion.sh launch mode (mirror of the --round-dir
   # rejection test). The audit test above is structural; this is the
@@ -2111,7 +2111,7 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
     --tag mytest
   rm -rf "$oor_root"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 @test "companion launch: --vendor with embedded newline rejected before job-record write" {
@@ -2161,7 +2161,7 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
   [[ "$output" =~ "invalid tag" ]]
 }
 
-@test "companion await: job record with out-of-repo round_dir rejected with 'resolves outside repository'" {
+@test "companion await: job record with out-of-repo round_dir rejected with 'resolves outside'" {
   # await mode must assert_path_under_repo_root on _job_round_dir extracted
   # from the job record, preventing raw LLM output from being written to /etc
   # or any out-of-tree path.
@@ -2178,7 +2178,7 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
   run bash -c "cd '$dispatch_dir' && '$COMPANION' await '$bad_job_id'"
   rm -rf "$oor_dir"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside repository" ]]
+  [[ "$output" =~ "resolves outside" ]]
 }
 
 @test "companion launch: relative --round-dir at launch resolves to canonical path stored in record" {
@@ -2241,4 +2241,87 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
   [[ "$output" =~ "JOB_ID=" ]]
   # The jobs directory must have been created as a side-effect of launch.
   [ -d "$new_round_dir/.dispatch/.jobs" ]
+}
+
+# ---------------------------------------------------------------------------
+# Two-root topology (#340): plugin-install scenarios where PLUGIN_ROOT and
+# ARTIFACT_ROOT diverge. Pre-fix, dispatch-agent.sh enforced a single
+# $REPO_ROOT invariant on --artifact / --diff-file / --task-def / etc.,
+# rejecting any artifact path that lived outside the plugin tree. Plugin
+# installs (Copilot CLI `/plugin install`) place the wrapper under
+# ~/.copilot/installed-plugins/qrspi-plus/ while user artifacts live in
+# an unrelated user repo — making reviewer dispatch structurally
+# impossible. The two-root API splits the boundary so plugin-asset paths
+# (agent-file, skill[*]) stay anchored to PLUGIN_ROOT while artifact-class
+# paths (--artifact, --diff-file, --task-def, --companion, --subject-code)
+# are bounded by ARTIFACT_ROOT — derived from QRSPI_ARTIFACT_ROOT,
+# --artifact-repo-root, or git-toplevel discovery from --output-dir.
+# ---------------------------------------------------------------------------
+
+@test "[#340] plugin-install topology: --artifact in separate user repo accepted via QRSPI_ARTIFACT_ROOT" {
+  # Simulate the foxtrot scenario: WRAPPER lives under a "plugin tree"
+  # ($PLUGIN_FAKE) while the artifact ($ARTIFACT_FAKE) lives in an
+  # unrelated "user repo". Pre-fix this combination produced
+  # `resolves outside repository` because the path-guard used a single
+  # $REPO_ROOT anchored to the plugin tree.
+  local plugin_fake="$BATS_TEST_TMPDIR/plugin-tree-$$"
+  local artifact_fake="$BATS_TEST_TMPDIR/user-repo-$$"
+  mkdir -p "$plugin_fake/scripts/lib" "$plugin_fake/agents" "$plugin_fake/skills/reviewer-protocol"
+  mkdir -p "$artifact_fake/docs/qrspi/run-1/reviews/questions/round-1"
+  cp "$REPO_ROOT/scripts/dispatch-agent.sh" "$plugin_fake/scripts/"
+  cp "$REPO_ROOT/scripts/dispatch-companion.sh" "$plugin_fake/scripts/" 2>/dev/null || true
+  cp "$REPO_ROOT/scripts/lib/path-guard.sh" "$plugin_fake/scripts/lib/"
+  cp "$REPO_ROOT/agents/qrspi-questions-reviewer.md" "$plugin_fake/agents/" 2>/dev/null \
+    || echo "---"$'\n'"name: qrspi-questions-reviewer"$'\n'"tier: trusted"$'\n'"tools: [Read]"$'\n'"---"$'\n'"stub" > "$plugin_fake/agents/qrspi-questions-reviewer.md"
+  cp "$REPO_ROOT/skills/reviewer-protocol/SKILL.md" "$plugin_fake/skills/reviewer-protocol/" 2>/dev/null \
+    || echo "stub" > "$plugin_fake/skills/reviewer-protocol/SKILL.md"
+  echo "stub artifact" > "$artifact_fake/docs/qrspi/run-1/questions.md"
+
+  # No git toplevel inside artifact_fake; rely on the explicit env override.
+  run env QRSPI_REPO_ROOT="$plugin_fake" \
+          QRSPI_ARTIFACT_ROOT="$artifact_fake" \
+      "$plugin_fake/scripts/dispatch-agent.sh" \
+      --step questions --round 1 \
+      --output-dir "$artifact_fake/docs/qrspi/run-1/reviews/questions/round-1" \
+      --artifact  "$artifact_fake/docs/qrspi/run-1/questions.md" \
+      --agents    "quality-claude=qrspi-questions-reviewer" \
+      --diff-file /dev/null
+  # Pre-fix: status != 0 with "resolves outside repository".
+  # Post-fix: the artifact path-guard accepts paths under $ARTIFACT_ROOT.
+  # The dispatch may still fail downstream for unrelated reasons (model
+  # routing, etc.) — what matters here is that we do NOT see the
+  # `resolves outside artifact root` (or legacy "resolves outside repository")
+  # diagnostic on the --artifact flag.
+  if [[ "$output" =~ "--artifact: path"[[:space:]]+[^[:space:]]+[[:space:]]+"resolves outside" ]]; then
+    echo "BUG-340 regression: --artifact rejected as out-of-bounds with plugin-install topology" >&2
+    echo "$output" >&2
+    return 1
+  fi
+}
+
+@test "[#340] plugin-install topology: --artifact-repo-root flag accepted as override" {
+  local plugin_fake="$BATS_TEST_TMPDIR/plugin-tree-flag-$$"
+  local artifact_fake="$BATS_TEST_TMPDIR/user-repo-flag-$$"
+  mkdir -p "$plugin_fake/scripts/lib" "$artifact_fake/docs"
+  cp "$REPO_ROOT/scripts/dispatch-agent.sh" "$plugin_fake/scripts/"
+  cp "$REPO_ROOT/scripts/lib/path-guard.sh" "$plugin_fake/scripts/lib/"
+
+  # Smoke-only: just confirm the flag is parsed without complaint when
+  # supplied. Pass --help-equivalent invocation by reaching argument
+  # validation; an unrecognized-flag error would manifest as
+  # "unrecognized flag in batched dispatch: --artifact-repo-root".
+  run env QRSPI_REPO_ROOT="$plugin_fake" \
+      "$plugin_fake/scripts/dispatch-agent.sh" \
+      --step questions \
+      --artifact-repo-root "$artifact_fake"
+  if [[ "$output" =~ "unrecognized flag"[[:space:]]+"in batched dispatch:"[[:space:]]+"--artifact-repo-root" ]]; then
+    echo "--artifact-repo-root not parsed in batch mode" >&2
+    echo "$output" >&2
+    return 1
+  fi
+  if [[ "$output" =~ "unrecognized flag: --artifact-repo-root" ]]; then
+    echo "--artifact-repo-root not parsed in single mode" >&2
+    echo "$output" >&2
+    return 1
+  fi
 }

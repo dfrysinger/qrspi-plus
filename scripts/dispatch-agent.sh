@@ -64,12 +64,27 @@ set -u
 # Argument parsing
 # ---------------------------------------------------------------------------
 
-# Derive REPO_ROOT from the wrapper's own location (scripts/ is one level
-# below repo root). Override via QRSPI_REPO_ROOT for tests.
+# Two-root topology (plugin assets vs artifact tree). When qrspi-plus is
+# installed as a Copilot CLI plugin, this wrapper lives under the immutable
+# plugin tree while user artifacts live in an unrelated user repo. A single
+# $REPO_ROOT cannot accommodate both — see skills/using-qrspi/SKILL.md.
+#
+# PLUGIN_ROOT  — derived from the wrapper's own location (scripts/ is one
+#                level below the plugin root). Used for skill / agent /
+#                script / lib asset resolution and the plugin-asset
+#                path-guards. Override via QRSPI_REPO_ROOT for tests.
+# REPO_ROOT    — alias of PLUGIN_ROOT (back-compat: existing callers and
+#                tests use it for asset paths and for the test override).
+# ARTIFACT_ROOT — derived below, after argument parsing, in this order:
+#                  1. $QRSPI_ARTIFACT_ROOT env (explicit override)
+#                  2. --artifact-repo-root flag (per-invocation)
+#                  3. git rev-parse --show-toplevel from --output-dir
+#                  4. fall back to $PLUGIN_ROOT (vendored-submodule install)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT_DEFAULT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 REPO_ROOT="${QRSPI_REPO_ROOT:-$REPO_ROOT_DEFAULT}"
-export REPO_ROOT
+PLUGIN_ROOT="$REPO_ROOT"
+export REPO_ROOT PLUGIN_ROOT
 
 # Repo-boundary guard for every prompt-ingested path argument. Sourced
 # from a shared lib so dispatch-companion.sh's launch-mode `--prompt-file`
@@ -78,6 +93,57 @@ export REPO_ROOT
 . "$SCRIPT_DIR/lib/path-guard.sh"
 command -v assert_path_under_repo_root >/dev/null 2>&1 \
   || { echo "error: assert_path_under_repo_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+command -v assert_path_under_artifact_root >/dev/null 2>&1 \
+  || { echo "error: assert_path_under_artifact_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# _derive_artifact_root <output_or_artifact_dir> <flag_value>
+#
+# Resolves ARTIFACT_ROOT by precedence:
+#   1. $QRSPI_ARTIFACT_ROOT env var (explicit override; tests + power users)
+#   2. --artifact-repo-root flag (per-invocation override)
+#   3. git rev-parse --show-toplevel from the supplied output/artifact dir,
+#      walking up to the first existing ancestor first so paths that don't
+#      yet exist on disk still resolve.
+#   4. fall back to $PLUGIN_ROOT (vendored-submodule install where plugin
+#      and artifact tree coincide; preserves pre-two-root behavior).
+#
+# Prints the resolved root on stdout. Caller is responsible for exporting.
+_derive_artifact_root() {
+  local out_dir="$1"
+  local from_flag="$2"
+
+  if [[ -n "${QRSPI_ARTIFACT_ROOT:-}" ]]; then
+    printf '%s\n' "$QRSPI_ARTIFACT_ROOT"
+    return
+  fi
+  if [[ -n "$from_flag" ]]; then
+    printf '%s\n' "$from_flag"
+    return
+  fi
+  if [[ -n "$out_dir" ]]; then
+    local probe="$out_dir"
+    while [[ ! -e "$probe" ]]; do
+      local _parent
+      _parent="$(dirname "$probe")"
+      if [[ "$_parent" == "$probe" || "$_parent" == "/" || "$_parent" == "." ]]; then
+        probe=""; break
+      fi
+      probe="$_parent"
+    done
+    if [[ -n "$probe" ]]; then
+      local toplevel
+      toplevel="$(git -C "$probe" rev-parse --show-toplevel 2>/dev/null || true)"
+      if [[ -n "$toplevel" ]]; then
+        printf '%s\n' "$toplevel"
+        return
+      fi
+    fi
+  fi
+  printf '%s\n' "$PLUGIN_ROOT"
+}
+
+ARTIFACT_REPO_ROOT_FLAG=""
 
 AGENT_FILE=""
 REVIEWER_TAG=""
@@ -663,6 +729,8 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       --diff-file)         require_value "--diff-file" "$#";         BATCH_DIFF_FILE="$2"; shift 2 ;;
       --absorption-map)    require_value "--absorption-map" "$#";    BATCH_ABSORPTION_MAP="$2"; shift 2 ;;
       --base-ref)          require_value "--base-ref" "$#";          BATCH_BASE_REF="$2"; shift 2 ;;
+      --artifact-repo-root)
+        require_value "--artifact-repo-root" "$#"; ARTIFACT_REPO_ROOT_FLAG="$2"; shift 2 ;;
       *)
         echo "error: unrecognized flag in batched dispatch: $1" >&2
         exit 1 ;;
@@ -717,6 +785,9 @@ if [[ "$_is_batch_mode" == "true" ]]; then
   _validate_output_dir "$BATCH_OUTPUT_DIR"
   reject_if_path_unsafe_for_emission "--output-dir" "$BATCH_OUTPUT_DIR"
   if [[ -z "$BATCH_AGENTS" ]];     then echo "error: --agents required"      >&2; exit 1; fi
+
+  ARTIFACT_ROOT="$(_derive_artifact_root "$BATCH_OUTPUT_DIR" "$ARTIFACT_REPO_ROOT_FLAG")"
+  export ARTIFACT_ROOT
 
   # ---------------------------------------------------------------------------
   # Task-04a / CD-2: high-level mode invokes scripts/review-prep.sh first
@@ -792,21 +863,22 @@ if [[ "$_is_batch_mode" == "true" ]]; then
     awk '/^---$/ && n<2 {n++; next} n>=2 {print}' "$1"
   }
 
-  # Resolve the absolute artifact path (relative paths resolve under REPO_ROOT).
+  # Resolve the absolute artifact path. Relative paths resolve under
+  # $ARTIFACT_ROOT (the user-repo artifact tree, NOT the plugin tree).
   BATCH_ARTIFACT_ABS=""
   if [[ -n "$BATCH_ARTIFACT" ]]; then
     if [[ "$BATCH_ARTIFACT" == /* ]]; then
       BATCH_ARTIFACT_ABS="$BATCH_ARTIFACT"
     else
-      BATCH_ARTIFACT_ABS="$REPO_ROOT/$BATCH_ARTIFACT"
+      BATCH_ARTIFACT_ABS="$ARTIFACT_ROOT/$BATCH_ARTIFACT"
     fi
   fi
-  # Apply repo-boundary guard AFTER existence check and BEFORE any cat/read.
+  # Apply artifact-tree boundary guard AFTER existence check and BEFORE any cat/read.
   # Two-step pattern mirrors single-mode: existence fails with a clear diagnostic,
   # then the boundary check rejects traversal before any prompt emission.
   if [[ -n "$BATCH_ARTIFACT_ABS" ]]; then
     assert_file_exists "--artifact" "$BATCH_ARTIFACT_ABS"
-    assert_path_under_repo_root "--artifact" "$BATCH_ARTIFACT_ABS"
+    assert_path_under_artifact_root "--artifact" "$BATCH_ARTIFACT_ABS"
     # The raw --artifact value is later substituted into the prompt
     # skeleton via `<<<UNTRUSTED-ARTIFACT-START id=%s>>>`; protect against
     # newline/marker injection symmetrically with the single-mode path
@@ -1135,6 +1207,8 @@ while [[ $# -gt 0 ]]; do
       ;;
     --diff-file)      require_value "--diff-file"  "$#"; DIFF_FILE="$2"; shift 2 ;;
     --scope-hint)     require_value "--scope-hint" "$#"; SCOPE_HINT="$2"; SCOPE_HINT_SET="true"; shift 2 ;;
+    --artifact-repo-root)
+      require_value "--artifact-repo-root" "$#"; ARTIFACT_REPO_ROOT_FLAG="$2"; shift 2 ;;
     --dry-run)        DRY_RUN="true"; shift ;;
     *)
       echo "error: unrecognized flag: $1" >&2
@@ -1160,6 +1234,12 @@ require_flag "agent-file"   "$AGENT_FILE"
 require_flag "reviewer-tag" "$REVIEWER_TAG"
 require_flag "output-dir"   "$OUTPUT_DIR"
 require_flag "round"        "$ROUND"
+
+# Two-root derivation (single mode). Same precedence as batch mode.
+# Use OUTPUT_DIR (or ARTIFACT_DIR fallback) as the anchor for git-toplevel
+# discovery; ARTIFACT_DIR is set in dispatch-only flows.
+ARTIFACT_ROOT="$(_derive_artifact_root "${OUTPUT_DIR:-$ARTIFACT_DIR}" "$ARTIFACT_REPO_ROOT_FLAG")"
+export ARTIFACT_ROOT
 
 # New required flags for the dispatcher hand-off. Without --artifact-dir
 # the dispatcher would exit 1 per T03's required-flag contract — surface
@@ -1194,6 +1274,21 @@ resolve_path() {
     echo "$p"
   else
     echo "$REPO_ROOT/$p"
+  fi
+}
+
+# Sibling of resolve_path for artifact-class paths. Relative paths resolve
+# under $ARTIFACT_ROOT instead of $REPO_ROOT — required for plugin-install
+# topology where the two roots diverge. In production, callers pass
+# absolute paths for artifact inputs; this helper exists so a relative
+# value (e.g. test fixtures) resolves to the artifact tree rather than
+# silently landing under the plugin root.
+resolve_artifact_path() {
+  local p="$1"
+  if [[ "$p" == /* ]]; then
+    echo "$p"
+  else
+    echo "$ARTIFACT_ROOT/$p"
   fi
 }
 
@@ -1263,36 +1358,36 @@ done <<< "$SKILL_NAMES_OUTPUT"
 
 PRIMARY_ABS=()
 for sc in "${PRIMARY_PATHS[@]}"; do
-  abs="$(resolve_path "$sc")"
+  abs="$(resolve_artifact_path "$sc")"
   assert_file_exists "$PRIMARY_FIELD" "$abs"
-  assert_path_under_repo_root "$PRIMARY_FIELD" "$abs"
+  assert_path_under_artifact_root "$PRIMARY_FIELD" "$abs"
   PRIMARY_ABS+=("$abs")
 done
 
 TASK_DEF_ABS=""
 if [[ -n "$TASK_DEF" ]]; then
-  TASK_DEF_ABS="$(resolve_path "$TASK_DEF")"
+  TASK_DEF_ABS="$(resolve_artifact_path "$TASK_DEF")"
   assert_file_exists "task-def" "$TASK_DEF_ABS"
-  assert_path_under_repo_root "task-def" "$TASK_DEF_ABS"
+  assert_path_under_artifact_root "task-def" "$TASK_DEF_ABS"
 fi
 
 COMPANION_ABS=()
 for i in "${!COMPANION_PATHS[@]}"; do
   cpath="${COMPANION_PATHS[$i]}"
   cname="${COMPANION_NAMES[$i]}"
-  abs="$(resolve_path "$cpath")"
+  abs="$(resolve_artifact_path "$cpath")"
   assert_file_exists "companion[$cname]" "$abs"
-  assert_path_under_repo_root "companion[$cname]" "$abs"
+  assert_path_under_artifact_root "companion[$cname]" "$abs"
   COMPANION_ABS+=("$abs")
 done
 
 if [[ -n "$DIFF_FILE" ]]; then
-  DIFF_FILE="$(resolve_path "$DIFF_FILE")"
+  DIFF_FILE="$(resolve_artifact_path "$DIFF_FILE")"
   if [[ ! -f "$DIFF_FILE" ]]; then
     echo "error: diff-file not found: $DIFF_FILE" >&2
     exit 1
   fi
-  assert_path_under_repo_root "diff-file" "$DIFF_FILE"
+  assert_path_under_artifact_root "diff-file" "$DIFF_FILE"
 fi
 
 # ---------------------------------------------------------------------------

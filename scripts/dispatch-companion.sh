@@ -59,14 +59,56 @@ _SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 #
 # REPO_ROOT defaults to this script's parent directory (one level above
 # scripts/), with a `QRSPI_REPO_ROOT` env override for tests.
+# Two-root topology — see scripts/dispatch-agent.sh and
+# skills/using-qrspi/SKILL.md § Topology Contract. PLUGIN_ROOT carries
+# script-asset paths; ARTIFACT_ROOT carries user-supplied paths
+# (round-dir, prompt-file). Both default to the same place for vendored-
+# submodule installs; they diverge under plugin-install topology.
 REPO_ROOT="${QRSPI_REPO_ROOT:-$(cd "$_SCRIPT_DIR/.." && pwd -P)}"
-export REPO_ROOT
+PLUGIN_ROOT="$REPO_ROOT"
+export REPO_ROOT PLUGIN_ROOT
 # shellcheck source=scripts/lib/path-guard.sh
 . "$_SCRIPT_DIR/lib/path-guard.sh"
 command -v assert_path_under_repo_root >/dev/null 2>&1 \
   || { echo "error: assert_path_under_repo_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
 command -v assert_ancestor_under_repo_root >/dev/null 2>&1 \
   || { echo "error: assert_ancestor_under_repo_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+command -v assert_path_under_artifact_root >/dev/null 2>&1 \
+  || { echo "error: assert_path_under_artifact_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+command -v assert_ancestor_under_artifact_root >/dev/null 2>&1 \
+  || { echo "error: assert_ancestor_under_artifact_root not defined after sourcing path-guard.sh; aborting (fail-closed)" >&2; exit 1; }
+
+# Derive ARTIFACT_ROOT lazily inside the launch/await subcommands once the
+# user-supplied path (round-dir, prompt-file) is known. Precedence mirrors
+# dispatch-agent.sh: $QRSPI_ARTIFACT_ROOT env > git toplevel from supplied
+# path > fall back to $PLUGIN_ROOT (preserves vendored-submodule behavior).
+_derive_artifact_root_companion() {
+  local probe_dir="$1"
+  if [[ -n "${QRSPI_ARTIFACT_ROOT:-}" ]]; then
+    printf '%s\n' "$QRSPI_ARTIFACT_ROOT"
+    return
+  fi
+  if [[ -n "$probe_dir" ]]; then
+    local probe="$probe_dir"
+    while [[ ! -e "$probe" ]]; do
+      local _parent
+      _parent="$(dirname "$probe")"
+      if [[ "$_parent" == "$probe" || "$_parent" == "/" || "$_parent" == "." ]]; then
+        probe=""; break
+      fi
+      probe="$_parent"
+    done
+    if [[ -n "$probe" ]]; then
+      local toplevel
+      toplevel="$(git -C "$probe" rev-parse --show-toplevel 2>/dev/null || true)"
+      if [[ -n "$toplevel" ]]; then
+        printf '%s\n' "$toplevel"
+        return
+      fi
+    fi
+  fi
+  printf '%s\n' "$PLUGIN_ROOT"
+}
 
 # ---------------------------------------------------------------------------
 # die <message>  — write message to stderr and exit 1
@@ -558,7 +600,9 @@ if [ "$#" -gt 0 ] && [ "$1" = "await" ]; then
   # Re-validate round_dir from job record: a crafted job record with
   # round_dir=/tmp/... or any out-of-repo path would write raw LLM output
   # outside the repo tree. Reject before constructing _raw_dir.
-  assert_path_under_repo_root "await:round_dir" "$_job_round_dir"
+  ARTIFACT_ROOT="$(_derive_artifact_root_companion "$_job_round_dir")"
+  export ARTIFACT_ROOT
+  assert_path_under_artifact_root "await:round_dir" "$_job_round_dir"
 
   _raw_dir="$_job_round_dir/.dispatch"
   mkdir -p "$_raw_dir" || {
@@ -643,29 +687,33 @@ if [ "$_has_vendor_flag" = "true" ]; then
     die "launch: --tag must match [a-z][a-z0-9_-]* (got: $L_TAG)"
   fi
   [ -f "$L_PROMPT_FILE" ] || die "launch: --prompt-file not found: $L_PROMPT_FILE"
+  # Derive ARTIFACT_ROOT from --round-dir for the launch-mode boundary
+  # checks below. Falls back to PLUGIN_ROOT for vendored-submodule installs.
+  ARTIFACT_ROOT="$(_derive_artifact_root_companion "$L_ROUND_DIR")"
+  export ARTIFACT_ROOT
   # Boundary guard: the prompt-file path is a raw user-supplied file
   # surface that is later piped to the upstream transport. Reject any path
-  # whose canonical target falls outside $REPO_ROOT/.
-  assert_path_under_repo_root "launch:--prompt-file" "$L_PROMPT_FILE"
+  # whose canonical target falls outside the artifact tree.
+  assert_path_under_artifact_root "launch:--prompt-file" "$L_PROMPT_FILE"
   # Boundary guard for --round-dir, in two stages to avoid creating
   # filesystem state outside the repo on rejected inputs:
   #   (1) Pre-mkdir: walk --round-dir upward to its deepest existing
-  #       ancestor and assert that ancestor is under $REPO_ROOT. This
-  #       prevents `mkdir -p` from materializing directories outside the
-  #       repo when the leaf path would later be rejected.
+  #       ancestor and assert that ancestor is under the artifact tree.
+  #       This prevents `mkdir -p` from materializing directories outside
+  #       the repo when the leaf path would later be rejected.
   #   (2) Post-mkdir: run the full canonical (realpath-resolved) boundary
   #       check on the now-existing leaf to catch symlink-resolution
   #       attacks where a freshly created path's canonical target points
   #       outside the repo.
-  assert_ancestor_under_repo_root "launch:--round-dir" "$L_ROUND_DIR"
+  assert_ancestor_under_artifact_root "launch:--round-dir" "$L_ROUND_DIR"
   _jobs_dir="$L_ROUND_DIR/.dispatch/.jobs"
   mkdir -p "$_jobs_dir" || die "launch: cannot create jobs dir: $_jobs_dir"
-  assert_path_under_repo_root "launch:--round-dir" "$L_ROUND_DIR"
+  assert_path_under_artifact_root "launch:--round-dir" "$L_ROUND_DIR"
   # Canonicalize once after the boundary check so the stored round_dir value
   # is always an absolute path regardless of how the caller supplied
   # --round-dir. Using the same _qrspi_canonicalize helper that
-  # assert_path_under_repo_root uses internally ensures the stored form
-  # matches what await re-validates even when the cwd differs at await time.
+  # the boundary check uses internally ensures the stored form matches
+  # what await re-validates even when the cwd differs at await time.
   _canon_round_dir="$(_qrspi_canonicalize "$L_ROUND_DIR")" \
     || die "launch: cannot canonicalize --round-dir after boundary check: $L_ROUND_DIR"
   # The newline/CR check above validated the raw --round-dir arg, but the
