@@ -80,15 +80,27 @@ command -v assert_ancestor_under_artifact_root >/dev/null 2>&1 \
 
 # Derive ARTIFACT_ROOT lazily inside the launch/await subcommands once the
 # user-supplied path (round-dir, prompt-file) is known. Precedence mirrors
-# dispatch-agent.sh: $QRSPI_ARTIFACT_ROOT env > git toplevel from supplied
-# path > fall back to $PLUGIN_ROOT (preserves vendored-submodule behavior).
+# dispatch-agent.sh's 4-step ladder:
+#   1. $QRSPI_ARTIFACT_ROOT env override
+#   2. --artifact-repo-root <path> flag (2nd arg, optional)
+#   3. git toplevel from the supplied probe_dir
+#   4. fall back to $PLUGIN_ROOT (preserves vendored-submodule behavior)
 _derive_artifact_root_companion() {
   local probe_dir="$1"
+  local flag_value="${2:-}"
   if [[ -n "${QRSPI_ARTIFACT_ROOT:-}" ]]; then
     printf '%s\n' "$QRSPI_ARTIFACT_ROOT"
     return
   fi
-  if [[ -n "$probe_dir" ]]; then
+  if [[ -n "$flag_value" ]]; then
+    printf '%s\n' "$flag_value"
+    return
+  fi
+  if [[ -n "$probe_dir" && "$probe_dir" == /* ]]; then
+    # See _derive_artifact_root in dispatch-agent.sh for rationale: only
+    # absolute probe_dir gets git-toplevel discovery; relative paths fall
+    # straight through to $PLUGIN_ROOT to avoid returning $PWD's git
+    # toplevel as the artifact root.
     local probe="$probe_dir"
     while [[ ! -e "$probe" ]]; do
       local _parent
@@ -678,6 +690,7 @@ if [ "$_has_vendor_flag" = "true" ]; then
   L_PROMPT_FILE=""
   L_ROUND_DIR=""
   L_TAG=""
+  L_ARTIFACT_REPO_ROOT=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --vendor)      [ "$#" -ge 2 ] || die "launch: missing value for --vendor";      L_VENDOR="$2"; shift 2 ;;
@@ -685,6 +698,9 @@ if [ "$_has_vendor_flag" = "true" ]; then
       --prompt-file) [ "$#" -ge 2 ] || die "launch: missing value for --prompt-file"; L_PROMPT_FILE="$2"; shift 2 ;;
       --round-dir)   [ "$#" -ge 2 ] || die "launch: missing value for --round-dir";   L_ROUND_DIR="$2"; shift 2 ;;
       --tag)         [ "$#" -ge 2 ] || die "launch: missing value for --tag";         L_TAG="$2"; shift 2 ;;
+      --artifact-repo-root)
+                     [ "$#" -ge 2 ] || die "launch: missing value for --artifact-repo-root"
+                     L_ARTIFACT_REPO_ROOT="$2"; shift 2 ;;
       *) die "launch: unrecognised flag: $1" ;;
     esac
   done
@@ -713,8 +729,10 @@ if [ "$_has_vendor_flag" = "true" ]; then
   fi
   [ -f "$L_PROMPT_FILE" ] || die "launch: --prompt-file not found: $L_PROMPT_FILE"
   # Derive ARTIFACT_ROOT from --round-dir for the launch-mode boundary
-  # checks below. Falls back to PLUGIN_ROOT for vendored-submodule installs.
-  ARTIFACT_ROOT="$(_derive_artifact_root_companion "$L_ROUND_DIR")"
+  # checks below. 4-step precedence: $QRSPI_ARTIFACT_ROOT >
+  # --artifact-repo-root > git toplevel from --round-dir > $PLUGIN_ROOT
+  # (vendored-submodule back-compat).
+  ARTIFACT_ROOT="$(_derive_artifact_root_companion "$L_ROUND_DIR" "$L_ARTIFACT_REPO_ROOT")"
   export ARTIFACT_ROOT
   # Boundary guard: the prompt-file path is a raw user-supplied file
   # surface that is later piped to the upstream transport. Reject any path

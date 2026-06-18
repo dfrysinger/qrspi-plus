@@ -121,7 +121,13 @@ _derive_artifact_root() {
     printf '%s\n' "$from_flag"
     return
   fi
-  if [[ -n "$out_dir" ]]; then
+  if [[ -n "$out_dir" && "$out_dir" == /* ]]; then
+    # Only attempt git-toplevel discovery on absolute paths. A relative
+    # out_dir would resolve against $PWD, which is not necessarily the
+    # caller's intended artifact root. Production callers run out_dir
+    # through _validate_output_dir which rejects non-absolute paths, but
+    # this helper guards itself so a future caller skipping that path
+    # cannot accidentally return $PWD's git toplevel.
     local probe="$out_dir"
     while [[ ! -e "$probe" ]]; do
       local _parent

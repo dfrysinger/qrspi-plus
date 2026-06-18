@@ -2412,3 +2412,23 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
   [[ "$output" =~ "artifact root" ]]
   [ ! -d "$oor_output/.dispatch" ]
 }
+
+@test "[#340 P2(b)] companion launch: --artifact-repo-root accepted (parity with dispatch-agent)" {
+  # Symmetry with dispatch-agent.sh: companion launch accepts
+  # --artifact-repo-root so callers using a non-git artifact root can
+  # supply it explicitly (without QRSPI_ARTIFACT_ROOT env).
+  local artifact_fake="$BATS_TEST_TMPDIR/companion-flag-root-$$"
+  mkdir -p "$artifact_fake/round-01"
+  local prompt_file="$artifact_fake/prompt.txt"
+  echo "test prompt" > "$prompt_file"
+
+  run "$COMPANION" \
+    --vendor claude \
+    --model claude-3-opus \
+    --prompt-file "$prompt_file" \
+    --round-dir "$artifact_fake/round-01" \
+    --tag flagtest \
+    --artifact-repo-root "$artifact_fake"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "JOB_ID=" ]]
+}

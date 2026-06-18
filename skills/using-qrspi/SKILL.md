@@ -30,7 +30,7 @@ Read `skills/using-qrspi/references/artifact-directory.md` when creating the art
 QRSPI dispatch scripts operate under a **two-root topology contract**: plugin assets and user artifacts live in different trees and must be configurable independently.
 
 - **`PLUGIN_ROOT`** — immutable plugin assets (`skills/`, `agents/`, `scripts/`, `scripts/lib/`). Derived from the dispatch wrapper's own location (`scripts/..`). Override via `QRSPI_REPO_ROOT` for tests. `REPO_ROOT` is a back-compat alias.
-- **`ARTIFACT_ROOT`** — the user repo where artifacts live and `git diff` runs. Resolved by precedence: (1) `QRSPI_ARTIFACT_ROOT` env var, (2) `--artifact-repo-root <path>` flag on `dispatch-agent.sh`, (3) `git rev-parse --show-toplevel` discovered from `--output-dir`, (4) fall back to `PLUGIN_ROOT`.
+- **`ARTIFACT_ROOT`** — the user repo where artifacts live and `git diff` runs. Resolved by precedence (same 4-step ladder on both `dispatch-agent.sh` and `dispatch-companion.sh launch`): (1) `QRSPI_ARTIFACT_ROOT` env var, (2) `--artifact-repo-root <path>` flag, (3) `git rev-parse --show-toplevel` discovered from `--output-dir` (or `--round-dir` on companion launch), (4) fall back to `PLUGIN_ROOT`. `dispatch-companion.sh await` derives its trust anchor from `$PWD/..` (the `await-round.sh` cwd contract) and ignores any flag/env override for the boundary check.
 
 The two roots may **coincide** (vendored-submodule install, where the artifact directory lives inside the QRSPI repo itself) or **diverge** (Copilot CLI plugin install, where `~/.copilot/installed-plugins/qrspi-plus/` carries the assets and the user repo carries the artifacts). Skills and scripts MUST NOT assume a single shared root.
 
