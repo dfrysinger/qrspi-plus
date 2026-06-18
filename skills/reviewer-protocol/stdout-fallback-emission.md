@@ -1,6 +1,6 @@
 # Stdout-Fallback Emission Contract
 
-**This section overrides the upstream "Per-Finding Disk-Write Contract" and any "use the Write tool" instruction in the agent body above — WHEN THE WRITE TOOL IS UNAVAILABLE OR UNAUTHORIZED.** A reviewer subagent that cannot write per-finding files to disk (Codex read-only sandbox; a Copilot CLI Task subagent whose allowed-tools allowlist denies disk writes; or any future host that withholds the Write capability) must still emit findings — via stdout, in the format below — so the orchestrator can materialize them via the stdout-fallback path in `scripts/await-round.sh`.
+**This section overrides the upstream "Per-Finding Disk-Write Contract" and any "use the Write tool" instruction in the agent body above — WHEN THE WRITE TOOL IS UNAVAILABLE OR UNAUTHORIZED.** A reviewer subagent that cannot write per-finding files to disk (Codex read-only sandbox; a first-party subagent whose allowed-tools allowlist denies disk writes; or any future host that withholds the Write capability) must still emit findings — via stdout, in the format below — so the orchestrator can materialize them via the stdout-fallback path in `scripts/await-round.sh`.
 
 Reviewers that DO have a working Write tool should follow the upstream disk-write contract instead. The stdout-fallback path is a safety net, not a default: writing per-finding files directly is more efficient and avoids round-tripping the payload through the orchestrator's context.
 
@@ -9,7 +9,7 @@ Reviewers that DO have a working Write tool should follow the upstream disk-writ
 Use the stdout-fallback emission contract when ANY of the following applies:
 
 - You are running as a Codex reviewer (read-only filesystem sandbox blocks every Write).
-- The Write/Create/Edit tools are absent from your allowed-tools (Copilot CLI Task subagents inherit only the tools their `allowed-tools` frontmatter declares).
+- The Write/Create/Edit tools are absent from your allowed-tools (first-party subagents inherit only the tools their `allowed-tools` frontmatter declares).
 - Your first attempt to Write a finding fails with a permission or sandbox error.
 
 If your Write tool works, follow the upstream Per-Finding Disk-Write Contract instead and do NOT emit to stdout.

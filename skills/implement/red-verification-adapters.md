@@ -1,8 +1,8 @@
 # RED-Verification Adapter Contract
 
 This document is the authoritative contract consumed by:
-- The four per-framework adapter scripts (T10): `scripts/red-verify/bats-adapter.sh`, `scripts/red-verify/vitest-adapter.sh`, `scripts/red-verify/jest-adapter.sh`, `scripts/red-verify/pytest-adapter.sh`
-- The Implement-skill RED-verification gate (T11) that invokes adapters after `qrspi-test-writer` completes in Implement-phase mode
+- The four per-framework adapter scripts: `scripts/red-verify/bats-adapter.sh`, `scripts/red-verify/vitest-adapter.sh`, `scripts/red-verify/jest-adapter.sh`, `scripts/red-verify/pytest-adapter.sh`
+- The Implement-skill RED-verification gate that invokes adapters after `qrspi-test-writer` completes in Implement-phase mode
 
 Adapter scripts implement; this document owns their interface. The orchestrator gate consumes; this document owns the classification semantics it acts on.
 

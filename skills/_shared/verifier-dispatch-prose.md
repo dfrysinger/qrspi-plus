@@ -2,11 +2,10 @@
      Shared verifier-dispatch snippet, `!cat`-included into:
        - skills/using-qrspi/SKILL.md   (artifact-level Apply-fix protocol)
        - skills/implement/SKILL.md     (task-level Apply-fix protocol)
-     Source of truth: design.md CD-4 §H + structure.md Slice 1.1.
-     Mirrors skills/_shared/reviewer-dispatch-prose.md (CD-1 §11). The two
+     Mirrors skills/_shared/reviewer-dispatch-prose.md. The two
      snippets are deliberately separate because each names a different
      `dispatch-agent.sh` mode flag at the call site (the load-bearing
-     difference) — see design.md CD-4 §H rationale (L494). -->
+     difference). -->
 
 ## Verifier Dispatch
 
@@ -14,10 +13,10 @@ The verifier round dispatches one verifier per reviewer finding through the
 universal `dispatch-agent.sh` entry point and consumes scored sidecars
 through `scripts/verifier-fan-in.sh`. The orchestrator NEVER loops per
 finding and NEVER chat-parses verifier output to compute the kept set —
-the script is the only path (CD-4 iron rule).
+the script is the only path (iron rule).
 
 The orchestrator-side flow is exactly four Bash invocations plus one
-parallel `Task` batch:
+parallel subagent-dispatch batch:
 
 1. **Dispatch.** ONE Bash call that enumerates findings under
    `<round-dir>` and prepares per-finding `PROMPT_FILE`s:
@@ -38,12 +37,12 @@ parallel `Task` batch:
    verifier on stdout (background-dispatching any third-party
    verifiers).
 
-2. **Iterate spec lines (one Task call per line).** ONE parallel `Task`
-   batch — invoke the `Task` tool exactly once per emitted spec line,
+2. **Iterate spec lines (one subagent dispatch per line).** ONE parallel
+   batch — issue exactly one subagent dispatch per emitted spec line,
    copying `SUBAGENT_TYPE`, `MODEL`, and `PROMPT_FILE` verbatim from the
    spec line. The prompt argument is literally the string
    `"DISPATCH_FILE=<absolute-path-from-PROMPT_FILE>"` and nothing else.
-   Same iron law as reviewer dispatch: one Task call per emitted spec
+   Same iron law as reviewer dispatch: one dispatch per emitted spec
    line, verbatim values, no inline reasoning, no per-finding loop in
    orchestrator prose. Verifier reasoning prose lives only in the
    on-disk `<reviewer-tag>.finding-F<NN>.score.md` sidecars; the

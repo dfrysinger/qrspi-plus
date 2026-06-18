@@ -71,7 +71,7 @@ The Implement skill's per-task flow may run a pre-implementer `qrspi-test-writer
 
 **When `prewritten_red_tests:` is absent** (lightweight tasks never run this agent, but fix-mode dispatches, pre-T11 dispatch paths, and any future dispatch path that omits the gate fall here), follow the native TDD cycle below verbatim including Step 1 (RED — author the failing test) and Step 2 (Verify RED).
 
-The split-mode signal is dispatch-time only — it flips the RED-authoring control flow once at dispatch entry. Subsequent fix-cycle re-entries via SendMessage retain the agent's conversation context (the prewritten tests are by then established RED input), and fresh fix-mode dispatches omit the signal (fix-mode does not run the pre-implementer gate).
+The split-mode signal is dispatch-time only — it flips the RED-authoring control flow once at dispatch entry. Subsequent fix-cycle re-entries via subagent continuation retain the agent's conversation context (the prewritten tests are by then established RED input), and fresh fix-mode dispatches omit the signal (fix-mode does not run the pre-implementer gate).
 
 ## TDD Process
 

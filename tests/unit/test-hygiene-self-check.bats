@@ -45,8 +45,8 @@ _contains_internal_id() {
   local line="$1"
   # Reviewer finding ID: round-N finding-N or RN-FN
   printf '%s\n' "$line" | grep -qE 'round-[0-9]+ finding-[0-9]+|R[0-9]+-F[0-9]+'  && return 0
-  # Task ID: T\d\d (two digits)
-  printf '%s\n' "$line" | grep -qE '\bT[0-9]{2}\b'                                  && return 0
+  # Task ID: T\d\d (two digits, optional letter suffix)
+  printf '%s\n' "$line" | grep -qE '\bT[0-9]{2}[a-z]?\b'                           && return 0
   # Goal ID: G\d+
   printf '%s\n' "$line" | grep -qE '\bG[0-9]+\b'                                    && return 0
   # Question ID: Q\d+
@@ -55,6 +55,8 @@ _contains_internal_id() {
   printf '%s\n' "$line" | grep -qE '\bF-[0-9]+\b'                                   && return 0
   # Design decision ID: D\d+
   printf '%s\n' "$line" | grep -qE '\bD[0-9]+\b'                                    && return 0
+  # Cross-cutting design-decision ID: CD-\d+
+  printf '%s\n' "$line" | grep -qE '\bCD-[0-9]+\b'                                  && return 0
   return 1
 }
 

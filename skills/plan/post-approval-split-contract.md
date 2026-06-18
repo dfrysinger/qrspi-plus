@@ -1,6 +1,6 @@
 # Plan Post-Approval Split — Sub-Subagent Dispatch Contract
 
-This document is the formal per-sub-subagent input/output contract for the Plan-skill post-approval split fan-out introduced by T31. It is the single source of truth for the dispatch shape; `skills/plan/SKILL.md` § Human Gate Step 3 (N-threshold carve-out) references this document rather than re-declaring the contract inline.
+This document is the formal per-sub-subagent input/output contract for the Plan-skill post-approval split fan-out. It is the single source of truth for the dispatch shape; `skills/plan/SKILL.md` § Human Gate Step 3 (N-threshold carve-out) references this document rather than re-declaring the contract inline.
 
 The contract applies to the `N >= 3` sub-subagent fan-out path. The `N <= 2` inline main-chat split path is governed by the same per-task-file output shape but is performed directly in main chat without sub-subagent dispatch.
 
@@ -21,21 +21,21 @@ The single `### Task NN: {name}` block extracted from the approved `plan.md`, wr
 
 ### Canonical Task-File Template
 
-The `tasks/task-NN.md` format documented in `skills/plan/SKILL.md` § Merge/Split Mechanics → Split task file format. The template carries every Slice-5 spec frontmatter field established by T24:
+The `tasks/task-NN.md` format documented in `skills/plan/SKILL.md` § Merge/Split Mechanics → Split task file format. The template carries every spec frontmatter field:
 
 - `reference_gate: <bool>` — when `true`, requires paired `reference_artifact:`
 - `reference_artifact: <path>` — required when `reference_gate: true`
 - `ui: <bool>` — UI-emitting task flag
 - `lift_source: <path>` — optional source-reference path; when present, the task body MUST contain a `SPEC OVERRIDES SOURCE` section
 
-The template ALSO carries the T43 conditional-dispatch fields:
+The template ALSO carries the conditional-dispatch fields:
 
 - `conditional: <bool>` — task is conditionally dispatched
 - `conditional_precondition: <string>` — the exact precondition expression the Implement orchestrator evaluates at dispatch time
 
 The sub-subagent MUST carry every field present on the wrapped task section verbatim into the emitted `tasks/task-NN.md` frontmatter — no field reformatting, no string substitution, no value coercion.
 
-### G7 ID-Hygiene Contract
+### ID-Hygiene Contract
 
 The QRSPI-internal `goal_ids:` field is metadata. The sub-subagent MUST NOT echo goal IDs into the task body prose (Description, Test expectations, or supporting bullets). The body must read as a standalone work specification grounded in observable behavior. The metadata block is read by the implementer subagent but is NOT echoed into the work product. See `skills/plan/SKILL.md` § ID-Hygiene Contract for the full surface list.
 
@@ -169,39 +169,33 @@ Before dispatching any sub-subagent (or performing the inline write for N=1), th
 
 ## HALT Diagnostic
 
-When Case 3 (hash mismatch) is detected, the orchestrator emits the following diagnostic verbatim, with `NN` replaced by the zero-padded task ID:
+The orchestrator emits one of two HALT diagnostics, each with `NN` replaced by the zero-padded task ID.
+
+**Hash mismatch (Case 3).** The stored `# block-hash:` does not equal the re-computed hash:
 
 > `task-NN.md exists but its source block in plan.md has changed since the last split. To regenerate from the current plan.md, delete tasks/task-NN.md and re-run. To preserve the existing file, revert your plan.md edit.`
 
-The orchestrator does NOT:
+**Missing or malformed header.** The `# block-hash:` line is absent, or present but not a 64-character lowercase hex string (extra fields, wrong prefix, trailing whitespace, etc.):
+
+> `task-NN.md has invalid '# block-hash:' header (<missing | malformed>). Delete tasks/task-NN.md and re-run.`
+
+In both cases the orchestrator does NOT:
 - Write `status: approved` to `plan.md`.
 - Rewrite or touch the existing `tasks/task-NN.md`.
 - Dispatch any sub-subagent for any task in the set.
 - Write a `.split-conflict-NN.md` sidecar file.
 
-The user resolves the mismatch by one of two paths: delete `tasks/task-NN.md` and re-run (causes a fresh dispatch that overwrites with current `plan.md` content), or revert the `plan.md` edit (restores the block to match the stored hash, enabling a safe-skip on the next run).
-
-## Pre-G5 Migration Diagnostic
-
-Existing `tasks/task-NN.md` files written before the G5 idempotent-split contract lack the `# block-hash:` header line. The orchestrator detects this condition separately from the hash-mismatch case and emits a distinct diagnostic.
-
-**Missing-header condition.** The `# block-hash:` line is absent from an existing `tasks/task-NN.md`. The orchestrator treats this as an audit failure and halts with:
-
-> `task-NN.md is present but carries no '# block-hash:' header. This file predates the idempotent-split contract. To regenerate under the current contract, delete tasks/task-NN.md and re-run.`
-
-No automatic backfill. Migration is a one-time per-file regeneration: the user deletes the pre-G5 file and re-runs.
-
-**Malformed-header condition.** A `# block-hash:` line is present but does not match the required syntax (e.g., not a 64-character lowercase hex string, extra fields, wrong prefix). The orchestrator treats this as a malformed block-hash header audit failure and halts with a diagnostic that names `malformed block-hash header` specifically. The existing file is not rewritten. The same user-controlled resolution applies: delete and re-run.
+The user resolves a hash mismatch by one of two paths: delete `tasks/task-NN.md` and re-run (causes a fresh dispatch that overwrites with current `plan.md` content), or revert the `plan.md` edit (restores the block to match the stored hash, enabling a safe-skip on the next run). Missing or malformed headers resolve to delete-and-re-run.
 
 ## Sub-Subagent Dispatch Contract
 
-The sub-subagent dispatch payload for the post-approval split gains one new field in the G5 release:
+The sub-subagent dispatch payload for the post-approval split carries one block-hash field:
 
 ```yaml
 block_hash: <sha256-hex>
 ```
 
-The orchestrator computes the normalized hash for each `### Task N` block before the fan-out loop begins and passes `block_hash:` as a dispatch field alongside the wrapped task section, canonical task-file template, G7 ID-hygiene contract, and output path (see `## Per-Sub-Subagent Input Payload` above).
+The orchestrator computes the normalized hash for each `### Task N` block before the fan-out loop begins and passes `block_hash:` as a dispatch field alongside the wrapped task section, canonical task-file template, ID-hygiene contract, and output path (see `## Per-Sub-Subagent Input Payload` above).
 
 **Sub-subagent obligation.** The sub-subagent MUST emit the `# block-hash:` line verbatim immediately after the closing frontmatter `---` and before the first body content line of the `tasks/task-NN.md` file it writes. The value is the `block_hash:` field value from the dispatch payload — the sub-subagent MUST NOT recompute it. The format is exactly:
 
@@ -209,7 +203,7 @@ The orchestrator computes the normalized hash for each `### Task N` block before
 # block-hash: <sha256-hex>
 ```
 
-A sub-subagent that omits this line, places it elsewhere, or uses a different syntax is in contract violation; the orchestrator will detect the missing or malformed header on the next re-run and surface the Pre-G5 Migration Diagnostic.
+A sub-subagent that omits this line, places it elsewhere, or uses a different syntax is in contract violation; the orchestrator will detect the missing or malformed header on the next re-run and HALT per `## HALT Diagnostic`.
 
 ## Quick-Fix N=1 Path
 
@@ -221,8 +215,4 @@ The quick-fix inline write path (single-task plan, no sub-subagent dispatch, per
 
 **On re-run (file present, hash matches).** Same as Case 2: safe-skip without rewrite. Any hand-edits to the body are preserved.
 
-**On re-run (file present, hash mismatches).** Same as Case 3: HALT with the named mismatch diagnostic (see `## HALT Diagnostic`). The existing file is untouched.
-
-**On re-run (file present, missing block-hash header).** HALT with the pre-G5 migration diagnostic (see `## Pre-G5 Migration Diagnostic`).
-
-**On re-run (file present, malformed block-hash header).** HALT with the malformed block-hash header diagnostic (see `## Pre-G5 Migration Diagnostic`).
+**On re-run (file present, hash mismatches, or header missing/malformed).** HALT per `## HALT Diagnostic`. The existing file is untouched.

@@ -76,13 +76,13 @@ status: draft
 
 **Compaction checkpoint: pre-fanout.** Reviewer dispatch reads `questions.md` + `goals.md` + the agent-embedded reviewer protocol; saturated context produces shallow findings. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — questions", description: "pre-fanout: reviewer dispatch reads questions.md + goals.md. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-fanout) — questions`, description `pre-fanout: reviewer dispatch reads questions.md + goals.md. User decides whether to /compact.`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Questions has no scope-reviewer (canonical artifact-tree contract — Questions is not in the scope-reviewer topology). Only the quality reviewer runs.
 
-**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step questions --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/questions/round-${ROUND}.diff` and threads `diff_file_path:` into the reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted. When using-qrspi step 12 narrows the base ref, pass `--base-ref "$(cat reviews/questions/round-$((ROUND-1))-commit.txt)"` so review-prep narrows against the prior round's per-round commit SHA (using-qrspi step 12 owns the SHA-format validation and the `anchor-file-missing:`/`sha-format-invalid:` halt directions before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches the reviewer as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
+**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step questions --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/questions/round-${ROUND}.diff` and threads `diff_file_path:` into the reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted. For round 01 pass `--base-ref <base-branch>`; on round >= 2 review-prep auto-narrows by reading `reviews/questions/round-$((ROUND-1))-commit.txt` (named diagnostics `anchor-file-missing:` / `sha-format-invalid:` halt before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches the reviewer as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
 
-The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → Task fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
+The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → subagent fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
 
 ```sh
 REVIEW_STEP="questions"
@@ -126,7 +126,7 @@ If the artifact directory is inside a git repository, commit the approved `quest
 
 **Compaction checkpoint: pre-handoff.** Questions approved; the next skill (typically Research) reads `questions.md` + every prior approved artifact + reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — questions", description: "pre-handoff: next skill reads questions.md + prior artifacts + reviewer findings. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-handoff) — questions`, description `pre-handoff: next skill reads questions.md + prior artifacts + reviewer findings. User decides whether to /compact.`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `questions`.
 
@@ -181,4 +181,4 @@ The two override-critical rules for Questions, restated at end:
 
 2. **Questions are exploratory, not prescriptive.** "How does X work?" is allowed; "How should we change X?" is not. Prescriptive questions presuppose conclusions that Design — not Research — should determine.
 
-Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+!cat skills/_shared/behavioral-directives.md

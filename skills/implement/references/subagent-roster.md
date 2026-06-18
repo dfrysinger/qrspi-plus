@@ -1,6 +1,6 @@
 # Subagent Roster + Routing
 
-The per-task flow dispatches subagents defined under `agents/`. Each agent file carries its full prompt body, tool list, and dispatch-parameter contract; main chat invokes them via `Agent({ subagent_type: "<agent-name>" })`.
+The per-task flow dispatches subagents defined under `agents/`. Each agent file carries its full prompt body, tool list, and dispatch-parameter contract; main chat invokes them via `dispatch(subagent_type: <agent-name>)`.
 
 ```
 agents/

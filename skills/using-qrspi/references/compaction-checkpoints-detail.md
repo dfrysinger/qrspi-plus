@@ -2,17 +2,15 @@
 
 **Two named checkpoints + a piggyback rule.**
 
-| Mechanism | Trigger | TaskCreate? |
+| Mechanism | Trigger | Surface as todo? |
 |---|---|---|
 | `pre-fanout` checkpoint | Before any parallel subagent dispatch. | **Yes.** |
 | `pre-handoff` checkpoint | At end-of-skill, after artifact committed, before invoking the next skill. | **Yes.** |
 | Piggyback rule | At every existing user-input pause (review pause-gate menus, verifier-uncertain prompts, max-rounds-reached prompts, artifact-approval gates, replan-gate decisions, any other "wait for user response" moment). Surface the compact recommendation **alongside** whatever the SKILL is already asking. Do **not** introduce new pauses. | No. |
 
-**TaskCreate at named checkpoints.** When the orchestrator reaches either named checkpoint (`pre-fanout` or `pre-handoff`), in addition to surfacing the imperative pause, call:
+**Todo-surfaced recommendation at named checkpoints.** When the orchestrator reaches either named checkpoint (`pre-fanout` or `pre-handoff`), in addition to surfacing the imperative pause, add a todo entry with title `"Recommend /compact ({checkpoint-type}) — {current-skill-name}"` and description `"{checkpoint-type}: {one-line stage-specific reason}. User decides whether to /compact."`.
 
-`TaskCreate({ subject: "Recommend /compact ({checkpoint-type}) — {current-skill-name}", description: "{checkpoint-type}: {one-line stage-specific reason}. User decides whether to /compact." })`
-
-Mark the task `completed` once the user responds either way. The TaskCreate makes the recommendation visible in the user's task list. Piggyback pauses do **not** call TaskCreate — the existing user-input prompt at that site is itself the visibility surface, and a task entry would double-surface the same recommendation.
+Mark the todo `completed` once the user responds either way. The todo entry makes the recommendation visible in the user's task list. Piggyback pauses do **not** surface a todo — the existing user-input prompt at that site is itself the visibility surface, and a todo entry would double-surface the same recommendation.
 
 **Per-checkpoint label format.** Every named checkpoint (`pre-fanout` / `pre-handoff`) in any SKILL.md uses this one-line shape:
 

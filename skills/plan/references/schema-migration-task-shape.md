@@ -19,7 +19,7 @@ Do not use this exception for multi-feature bundles that happen to touch many fi
 When `sizing_exception: schema-migration` is declared, the task spec MUST carry all three of the following fields. Omitting any one is a plan-spec defect:
 
 - `sizing_exception: schema-migration` — declares the exception; must be exactly this value.
-- `sizing_rationale: <human-readable reason>` — one sentence explaining why this specific change is a mechanical same-shape migration (e.g., "removes the deprecated `model:` key added uniformly by T40 from all 41 agent frontmatter files").
+- `sizing_rationale: <human-readable reason>` — one sentence explaining why this specific change is a mechanical same-shape migration (e.g., "removes a deprecated frontmatter key uniformly from all 41 agent files").
 - `structural_lint: <script-path>` — a repo-relative path to a checked-in script under `scripts/structural-lints/`. The value must be a single token matching the ERE `^scripts/structural-lints/[A-Za-z0-9_.-]+\.sh$`; whitespace, tab, newline, and any character outside that token class are rejected. The script must exist as a regular readable file at that path. It receives no spec-controlled arguments; it is invoked as `bash -- <path>` from the repository root with the path passed as a single argv element (never interpolated into a `bash -c` string) against the proposed diff. The script must exit 0 when the diff is mechanical-only and non-empty, and exit non-zero when non-structural content is present or the diff is empty. Inline bash commands are not accepted as the field value.
 
 ## Effect on sizing limits

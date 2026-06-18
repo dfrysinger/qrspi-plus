@@ -1,32 +1,39 @@
 # Compaction Checkpoints (shared)
 
-Single source of truth for the compaction checkpoint contract. QRSPI skills mark transition points where main-chat context bloat degrades downstream quality. At every checkpoint and at every user-input pause, the orchestrator follows the Iron Rule below — regardless of perceived utilization, regardless of auto-mode. Self-contained: every rule the orchestrator must apply at a checkpoint is here.
+Single source of truth for the compaction checkpoint contract. QRSPI skills mark transition points where main-chat context bloat degrades downstream quality. At every checkpoint and every user-input pause, the orchestrator follows the Iron Rule below — regardless of perceived utilization. The wait-for-user behavior is interactive-mode-only (see Iron Rule). Self-contained: every rule the orchestrator must apply at a checkpoint is here.
 
 ## Iron Rule
 
-Pause and recommend `/compact` to the user before continuing. The user can decline; do not skip the recommendation.
+Always recommend `/compact` to the user before continuing — at every checkpoint and every user-input pause, regardless of perceived utilization.
 
-## Auto-mode interaction
+**Interactive mode:** pause after surfacing the recommendation so the user can `/compact` (or decline) before responding. Do not skip the recommendation.
 
-Compaction recommendations are exempt from the auto-mode "minimize interruptions, prefer action" guidance. They exist precisely because mid-flight context bloat is the failure mode auto-mode runs into; honoring the recommendation is honoring the user's broader intent (deep, coherent execution), not interrupting it.
+**Auto mode:** emit the recommendation as a one-line surface and continue immediately. Do not wait — there is no interactive user to decide. The recommendation remains visible in the session log for later audit.
+
+Detect mode via `bash scripts/detect-interaction-mode.sh` (`VERDICT=auto` or `DETECTION_TYPE=llm-context` with an active autopilot signal → auto mode; otherwise interactive).
+
+## Auto-mode rationale
+
+The recommendation itself is exempt from the auto-mode "minimize interruptions, prefer action" guidance — it exists precisely because mid-flight context bloat is the failure mode auto-mode runs into. Emitting the line costs nothing and preserves audit signal. Waiting in auto mode, however, would deadlock the pipeline (no one to respond), so the wait is interactive-only.
 
 ## Two named checkpoints + a piggyback rule
 
-| Mechanism | Trigger | TaskCreate? |
+| Mechanism | Trigger | Surface as todo? |
 |---|---|---|
 | `pre-fanout` checkpoint | Before any parallel subagent dispatch. | **Yes.** |
 | `pre-handoff` checkpoint | At end-of-skill, after artifact committed, before invoking the next skill. | **Yes.** |
 | Piggyback rule | At every existing user-input pause (review pause-gate menus, verifier-uncertain prompts, max-rounds-reached prompts, artifact-approval gates, replan-gate decisions, any other "wait for user response" moment). Surface the compact recommendation **alongside** whatever the SKILL is already asking. Do **not** introduce new pauses. | No. |
 
-## TaskCreate at named checkpoints
+## Todo-surfaced recommendation at named checkpoints
 
-When the orchestrator reaches either named checkpoint (`pre-fanout` or `pre-handoff`), in addition to surfacing the imperative pause, call:
+When the orchestrator reaches either named checkpoint (`pre-fanout` or `pre-handoff`), in addition to surfacing the imperative pause, add a todo entry:
 
 ```
-TaskCreate({ subject: "Recommend /compact ({checkpoint-type}) — {current-skill-name}", description: "{checkpoint-type}: {one-line stage-specific reason}. User decides whether to /compact." })
+title:       "Recommend /compact ({checkpoint-type}) — {current-skill-name}"
+description: "{checkpoint-type}: {one-line stage-specific reason}. User decides whether to /compact."
 ```
 
-Mark the task `completed` once the user responds either way. The TaskCreate makes the recommendation visible in the user's task list. Piggyback pauses do **not** call TaskCreate — the existing user-input prompt at that site is itself the visibility surface, and a task entry would double-surface the same recommendation.
+Mark the todo `completed` once the user responds either way. The todo entry makes the recommendation visible in the user's task list. Piggyback pauses do **not** surface a todo — the existing user-input prompt at that site is itself the visibility surface, and a todo entry would double-surface the same recommendation.
 
 ## Per-checkpoint label format
 

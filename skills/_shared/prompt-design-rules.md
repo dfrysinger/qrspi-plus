@@ -33,7 +33,7 @@ The skill prompt is read by an orchestrator LLM that acts on instructions: what 
 - Explanatory padding around imperative rules
 - Mermaid diagrams that duplicate Process Steps (see R6)
 
-**Named antagonist patterns (CD-2).** Six categories of prose that fail the R1 test and must be cut from any LLM-consumable artifact (substitute pattern in parentheses):
+**Named antagonist patterns.** Six categories of prose that fail the R1 test and must be cut from any LLM-consumable artifact (substitute pattern in parentheses):
 
 - **Dialogue exhaust** — back-and-forth negotiation text, prior-round findings, "we agreed that…" summaries. (Substitute: the locked decision itself, stated as present-tense fact.)
 - **Session/drafting notes** — "I initially wrote X but then realized Y," "as a first pass…," "TODO: revisit." (Substitute: the final decision only; if genuinely undecided, mark with `status: draft` on the artifact, not inline.)
@@ -75,15 +75,32 @@ The 2025 Few-Shot Dilemma research shows that past 2-3 examples, frontier models
 - Contrastive (good/bad) pairs only for failure modes you've actually observed
 - Stop adding examples once two consecutive additions don't move the needle
 
-### R5 — `references/` only when reads are genuinely optional
+### R5 — Content placement: inline, reference, shared skill, or inclusion snippet
 
-For agent platforms that pre-load skill text (Claude Code, Codex CLI, Copilot CLI, and equivalent hosts): spine + references saves zero tokens if the spine always instructs the read. Move content to `references/X.md` only when:
+Four placement options for any chunk of prompt prose. Pick the one that matches (a) how often the orchestrator must read it and (b) how many skills share the same prose.
 
-- (a) Most invocations of the skill won't need it (recovery procedures, rare error paths)
-- (b) It's for human review, not LLM execution
-- (c) A subagent reads it and returns a summary (subagent isolation = real savings)
+| Placement | When to use | Mechanism |
+|---|---|---|
+| **Inline** | Orchestrator must read every turn the skill is active; load-bearing for the primary loop. | Plain prose in the SKILL.md body. |
+| **Reference (Read-on-demand)** | Optional read — most invocations of the skill don't need it (recovery procedures, rare error paths); a subagent reads it and returns a summary (subagent isolation = real savings); or the content is for human review, not LLM execution. | Prose moved to a separate file (typically under `references/`); SKILL.md replaces the body with a trigger-first pointer (see below). On agent platforms that pre-load skill text, this only saves tokens when the spine does NOT always instruct the read. |
+| **Shared skill (cross-skill SSoT)** | Prose that applies broadly across many skills AND is general enough to be the single source of truth for the whole pipeline. | A standalone skill file other skills reference by name; consumers point to it without duplicating. |
+| **Shared snippet via inclusion** | Prose that must appear inline in multiple operator-facing skills (orchestrator reads it every turn for each of those skills) but isn't general enough to live as a cross-skill shared skill. | A separate snippet file pulled into each including skill at build time (e.g., `!cat path/to/snippet.md`); single edit propagates to every including skill. |
 
-HumanLayer explicitly warns against over-sharding: *"Do not shard into separate files that require the agent to make tool calls to discover, unless the extra context is incredibly verbose."*
+**Decision order.** Ask "must the orchestrator read this every turn the skill is active?" first.
+
+- **No** → reference (Read-on-demand).
+- **Yes**, and the prose lives in one skill only → inline.
+- **Yes**, and identical wording is needed in multiple skills → inclusion snippet.
+- **Yes**, and the prose applies broadly across the pipeline at the same level of generality → shared skill.
+
+**Read-on-demand pointers must lead with the trigger condition.** A pointer's job is to tell the orchestrator WHEN to load the file, not just WHAT is in it. Phrase as `Read X when {trigger condition} — {1-line what it gives you}.`. Trigger is load-bearing; description is secondary.
+
+- **Better:** `Read X when validating any config.md field, dispatching an agent, or resolving a model-routing tier — dispatch routing blocks, validation procedure, runtime backfill, field-validation table.`
+- **Worse:** `Read on demand: X — dispatch routing blocks, validation procedure, runtime backfill, field-validation table.` (No trigger. Orchestrator has to guess when this applies and tends to skip the read.)
+
+**Same anti-pattern at the inclusion site.** Don't introduce an inclusion snippet with meta-prose ("this section provides...") or by restating the snippet's own intro. The H2 header plus the snippet body is the spec.
+
+HumanLayer warns against over-sharding: *"Do not shard into separate files that require the agent to make tool calls to discover, unless the extra context is incredibly verbose."* Inclusion and shared skills do not trigger this warning (no tool call needed — the content is already inline at load time). Only the reference (Read-on-demand) pattern does, which is why trigger-first phrasing matters: it's the only signal the orchestrator has for deciding whether to spend a tool call.
 
 ### R6 — Drop Mermaid from skill prompts
 
@@ -145,8 +162,8 @@ These come from the Phase 2 prompt-best-practices research and apply across all 
 - **Reduce aggressive MUST/CRITICAL language for Claude 4.x.** Opus 4.5+/4.6 are more responsive to system prompts than older models; aggressive phrasing causes overtriggering.
 - **Negation works in modern LLMs (Claude 4+, GPT-4+) when paired with (1) a positive substitute, (2) a named antagonist label, and (3) a decision rule.** Bare "do not X" without a substitute is the GPT-3-era anti-pattern — it leaves the model without a replacement behavior and degrades under paraphrase. The Iron Laws, Red Flags, and Common Rationalizations sections in QRSPI skills demonstrate the paired pattern in practice (named antagonist + substitute + "if you find yourself doing X, do Y instead").
 - **Wrap examples in `<example>` tags.** Untagged examples can be misinterpreted as directives.
-- **Evergreen Litmus Test — before writing any paragraph in an artifact governed by `status: draft → approved`, apply the two-question filter:** (1) does this paragraph read true if every prior draft were deleted? (2) is the subject the WHAT being designed, or the dialogue that produced it? If either filter fails, the paragraph is dialogue exhaust — strip it. (Source: CD-2 Evergreen-Output Rule.)
-- **Anchor phrases — verbatim audit handles.** When a phrase must be preserved verbatim across edits (e.g., a verbatim Sub-Rule B prose-design block, the locked text in CD-2's Evergreen-Output Rule), call it an "anchor phrase" in the surrounding prose. Anchor phrases are the audit handles reviewers and authors use to detect silent drift.
+- **Evergreen Litmus Test — before writing any paragraph in an artifact governed by `status: draft → approved`, apply the two-question filter:** (1) does this paragraph read true if every prior draft were deleted? (2) is the subject the WHAT being designed, or the dialogue that produced it? If either filter fails, the paragraph is dialogue exhaust — strip it. (Source: the Evergreen-Output Rule.)
+- **Anchor phrases — verbatim audit handles.** When a phrase must be preserved verbatim across edits (e.g., a verbatim Sub-Rule B prose-design block, the locked text in the Evergreen-Output Rule), call it an "anchor phrase" in the surrounding prose. Anchor phrases are the audit handles reviewers and authors use to detect silent drift.
 - **Compaction-resilient prompt design — when an orchestrator-driven skill spans enough decisions to risk mid-phase `/compact` firing (Goals, Design at scale), the SKILL.md prose must (1) instruct incremental persistence to the final artifact under `status: draft`, (2) instruct a recovery diagnostic on resume, and (3) instruct the orchestrator to re-read the in-progress artifact to enumerate locked decisions before continuing.** Presence ≡ locked; no placeholder bodies.
 
 ---
@@ -183,7 +200,7 @@ A round is "clean" when both reviewers find no blocking findings. Declined detai
 For any skill change — including small amendments — apply this workflow:
 
 1. **Draft** the change against the seven rules. Write a self-review pass before dispatching reviewers.
-2. **Round 1: Dispatch both reviewers in parallel.** Claude (via the Agent tool) and Codex (via codex-companion). Both receive the same prompt: the diff, the rule set, the gate, and the specific things to check. Run in parallel — neither blocks the other.
+2. **Round 1: Dispatch both reviewers in parallel.** Claude (via first-party subagent dispatch) and Codex (via codex-companion). Both receive the same prompt: the diff, the rule set, the gate, and the specific things to check. Run in parallel — neither blocks the other.
 3. **Apply the gate** to all returned findings. Fix blocking findings; note declined findings in a summary.
 4. **Round N+1: Dispatch both reviewers again** against the updated artifact. Continue until a round closes clean (no blocking findings from either reviewer) or 5 rounds have run.
 5. **Present to user.** Always state the review status: "Reviews passed clean in round N" OR "Reviews found issues in round N which were fixed but not re-verified" OR "Hit 5-round cap — N blocking findings remain, here they are."

@@ -6,7 +6,7 @@ The gate's classification semantics are defined in `skills/implement/red-verific
 
 #### Step 1 — Test-writer dispatch (Implement-phase mode)
 
-Dispatch `Agent({ subagent_type: "qrspi-test-writer" })` — the concrete `(vendor, model)` pair is resolved at the dispatch boundary by the Tier Resolution Chain (the test-writer's `tier:`, co-escalated to the task's tier for high-tier tasks):
+`dispatch(subagent_type: qrspi-test-writer)` — the concrete `(vendor, model)` pair is resolved at the dispatch boundary by the Tier Resolution Chain (the test-writer's `tier:`, co-escalated to the task's tier for high-tier tasks):
 
 - `task_definition` — wrapped body of `tasks/task-NN.md` between `<<<UNTRUSTED-ARTIFACT-START id=tasks/task-NN.md>>>` and END markers. Presence of a non-empty `task_definition` selects Implement-phase mode per `agents/qrspi-test-writer.md`.
 - `output_dir` — absolute path to the per-task test output directory inside the task's worktree.

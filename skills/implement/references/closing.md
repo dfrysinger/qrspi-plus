@@ -4,7 +4,7 @@
 
 **Compaction checkpoint: pre-handoff.** Implement batch complete; the next route step (typically Integrate in full pipeline; Test in quick fix) reads `parallelization.md` (or task specs) + every prior approved artifact + per-task reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints`.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — implement", description: "pre-handoff: next route step reads parallelization.md + prior artifacts + per-task reviewer findings. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-handoff) — implement`, description `pre-handoff: next route step reads parallelization.md + prior artifacts + per-task reviewer findings. User decides whether to /compact.`.
 
 When the user chooses "continue" at the batch gate, find the index of `implement` in `config.md.route` and invoke `route[index+1]` (typically `integrate` in full pipeline; `test` in quick fix).
 
@@ -20,11 +20,11 @@ Task complexity maps to a routing **tier**, not a literal model name. The dispat
 | Integration (multi-file, pattern matching) | `medium` |
 | Architecture / design / review | `high` |
 
-## Task Tracking (TodoWrite)
+## Task Tracking (todo list)
 
-Granular TodoWrite items for the user-visible Process Steps (Step 1 is preliminary reading, no item):
+Granular todo items for the user-visible Process Steps (Step 1 is preliminary reading, no item):
 
-1. Ask phase config (Step 2). 2. Create / verify feature branch (Step 3). 3. Run baseline tests in throwaway worktree (Step 4). 4. [conditional] Dispatch task-00 in isolation when auto-fix chosen (Step 5). 5. Dispatch tasks (Step 6) — full pipeline: one TodoWrite per Wave; quick fix: one per per-task dispatch; mark `in_progress` at dispatch, `completed` when every task is terminal. 6. Present batch gate (Step 8) — OBC (Step 7) runs immediately before, no separate item (populated `## Dispatch defects` halts unconditionally). 7. Invoke next route step (Step 9).
+1. Ask phase config (Step 2). 2. Create / verify feature branch (Step 3). 3. Run baseline tests in throwaway worktree (Step 4). 4. [conditional] Dispatch task-00 in isolation when auto-fix chosen (Step 5). 5. Dispatch tasks (Step 6) — full pipeline: one todo per Wave; quick fix: one per per-task dispatch; mark `in_progress` at dispatch, `completed` when every task is terminal. 6. Present batch gate (Step 8) — OBC (Step 7) runs immediately before, no separate item (populated `## Dispatch defects` halts unconditionally). 7. Invoke next route step (Step 9).
 
 Mark each task `in_progress` when starting, `completed` when done.
 

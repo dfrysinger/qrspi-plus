@@ -123,7 +123,7 @@ Per Rule 8, write each locked goal **directly to `goals.md`** with `status: draf
 
 **Presence ≡ locked.** The draft is a keyed map. A goal is locked iff its block appears. Tentative bodies, placeholder bodies, `to be filled` markers, TODO markers NEVER enter the draft. If a goal is not fully formed (Problem, Why we care, What we know so far all populated; concrete `type` value), it does not appear. This is the Evergreen-Output Rule applied to incremental persistence.
 
-**Keyed in-place overwrite on re-lock.** Per-goal blocks are keyed by ID (`### G1 — ...`). On re-lock, overwrite in place — do NOT append a duplicate.
+**Keyed in-place overwrite on re-lock.** Per-goal blocks are keyed by ID (`### G1 — ...`). On re-lock, overwrite in place — do NOT append a duplicate. <!-- id-hygiene-exempt -->
 
 **Resume after compaction.** If `/compact` fires mid-phase, on resume:
 
@@ -142,9 +142,11 @@ Per Rule 8, write each locked goal **directly to `goals.md`** with `status: draf
 - **Only flip status if all validations pass.** On failure, halt, surface, re-enter dialogue.
 - Flip frontmatter `status: draft` to `status: approved`. Only the finalize pass writes `approved`; hand-edits mid-phase are forbidden. When the user picks "Approve, skip review", the finalize pass still runs and the reviewer round is skipped.
 
-**Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary.
+**Simulated-compaction durability contract.** A simulated compaction at a mid-phase decision (e.g., G15) followed by resume MUST produce a final artifact identical to a no-compaction run. The on-disk draft is the single source of truth for locked decisions; nothing about the chat transcript or in-session working memory is load-bearing across the compaction boundary. <!-- id-hygiene-exempt -->
 
 ### Pipeline Mode Selection
+
+!cat skills/goals/references/config-md-authoring.md
 
 After intent capture but before synthesizing `goals.md`, ask these questions one at a time:
 
@@ -210,11 +212,11 @@ Launch a **subagent** to synthesize `goals.md`.
 
 **Compaction checkpoint: pre-fanout.** Parallel reviewer dispatch (up to four) reads `goals.md` + the agent-embedded reviewer protocol; saturated context multiplies bloat across the parallel set. See using-qrspi `## Compaction Checkpoints`.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — goals", description: "pre-fanout: parallel reviewer dispatch (up to four) reads goals.md. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-fanout) — goals`, description `pre-fanout: parallel reviewer dispatch (up to four) reads goals.md. User decides whether to /compact.`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Four reviewer dispatches run in parallel on Goals (two Claude + two Codex when `second_reviewer: true`; two Claude when disabled).
 
-**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step goals --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/goals/round-${ROUND}.diff` and threads `diff_file_path:` into each reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted — reviewers fall back to the wrapped artifact body. When using-qrspi step 12 (ref selection) narrows the base ref, pass `--base-ref "$(cat reviews/goals/round-$((ROUND-1))-commit.txt)"` so review-prep narrows against the prior round's per-round commit SHA (using-qrspi step 12 owns the SHA-format validation and the `anchor-file-missing:`/`sha-format-invalid:` halt directions before the SHA reaches `git diff`); otherwise the dispatch-agent default applies. Scope-tag narrowing (when active) reaches reviewers as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
+**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step goals --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/goals/round-${ROUND}.diff` and threads `diff_file_path:` into each reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted — reviewers fall back to the wrapped artifact body. For round 01 pass `--base-ref <base-branch>`; on round >= 2 review-prep auto-narrows by reading `reviews/goals/round-$((ROUND-1))-commit.txt` (named diagnostics `anchor-file-missing:` / `sha-format-invalid:` halt before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches reviewers as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
 
 Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`.
 
@@ -252,7 +254,7 @@ If the artifact directory is inside a git repository, commit the approved `goals
 
 **Compaction checkpoint: pre-handoff.** Goals approved; the dialogue transcript and review-loop context are no longer load-bearing — the next skill reads `goals.md` on a fresh context. See using-qrspi `## Compaction Checkpoints`.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — goals", description: "pre-handoff: next skill reads goals.md on a fresh context; dialogue transcript no longer load-bearing. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-handoff) — goals`, description `pre-handoff: next skill reads goals.md on a fresh context; dialogue transcript no longer load-bearing. User decides whether to /compact.`.
 
 **IRON RULE — REQUIRED:** Invoke the next skill in the `config.md` route after `goals` (typically `qrspi:questions`). Do NOT skip the handoff or invoke out of order. The route is locked at run start and the cross-skill transition is where downstream isolation begins (Questions must not see this conversation beyond `goals.md`).
 
@@ -298,4 +300,4 @@ The override-critical rules for Goals, restated at end:
 
 3. **Goals is problem-framed, not solution-prescribing.** Each goal carries `type` (`known-fix | exploratory`) and exactly the three subsections — Problem, Why we care, What we know so far. No top-level `Out of Scope` or acceptance-criteria sections. Solution candidates are framed as **possibilities for Design to weigh**. The "Goals OWNS / Goals DEFERS" section is the locked scope contract.
 
-Behavioral directives D1-D4 (encourage reviews after changes, no shortcuts for speed, no time-pressure skips, jargon-free user-facing text) apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+!cat skills/_shared/behavioral-directives.md

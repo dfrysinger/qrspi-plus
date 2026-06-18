@@ -136,7 +136,7 @@ interface FooService {
      1. Sibling reference repo — path, pinned commit, or scratch directory where the coded prototype lives.
      2. Lift-codemod transformation — token import codemod or mechanical lift recipe that translates source tokens into the target's design-system vocabulary.
      3. Image-asset pipeline — where reference PNG/SVG/PDF artifacts live and how they reach the target tree.
-     Consumer contract: T28's visual-fidelity reviewer Reads this section to ground lift-verbatim-vs-re-derive judgments. -->
+     Consumer contract: the visual-fidelity reviewer Reads this section to ground lift-verbatim-vs-re-derive judgments. -->
 
 ### Sibling Reference Repo
 {Path to the sibling repo, scratch directory, or pinned upstream commit that serves as the coded-prototype source for lift tasks}
@@ -152,13 +152,13 @@ interface FooService {
 
 **Compaction checkpoint: pre-fanout.** Quality + scope reviewer fan-out reads `structure.md` + `goals.md` + `research/summary.md` + `design.md` + `phasing.md` + the agent-embedded reviewer protocol; saturated context produces shallow findings. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — structure", description: "pre-fanout: parallel reviewer dispatch reads structure.md + 4 prior artifacts. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-fanout) — structure`, description `pre-fanout: parallel reviewer dispatch reads structure.md + 4 prior artifacts. User decides whether to /compact.`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel reviewer dispatches per artifact per round (quality + scope). Structure-specific reviewer instructions:
 
-**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step structure --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/structure/round-${ROUND}.diff` and threads `diff_file_path:` into each reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted. When using-qrspi step 12 narrows the base ref, pass `--base-ref "$(cat reviews/structure/round-$((ROUND-1))-commit.txt)"` so review-prep narrows against the prior round's per-round commit SHA (using-qrspi step 12 owns the SHA-format validation and the `anchor-file-missing:`/`sha-format-invalid:` halt directions before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches reviewers as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
+**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step structure --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/structure/round-${ROUND}.diff` and threads `diff_file_path:` into each reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted. For round 01 pass `--base-ref <base-branch>`; on round >= 2 review-prep auto-narrows by reading `reviews/structure/round-$((ROUND-1))-commit.txt` (named diagnostics `anchor-file-missing:` / `sha-format-invalid:` halt before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches reviewers as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
 
-The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → Task fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
+The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → subagent fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
 
 ```sh
 REVIEW_STEP="structure"
@@ -182,7 +182,7 @@ On approval, if reviews have not passed clean, note this and ask if they'd like 
 
 > `structure: approval refused — plan contains a task with lift_source: but structure.md is missing the ## UI Reference Affordances section. Add the section (sibling reference repo, lift-codemod transformation, image-asset pipeline) before approving.`
 
-This refusal is non-negotiable. The Structure skill cannot mark `structure.md` approved while a `lift_source:` task exists without the affordances section that T28's visual-fidelity reviewer requires.
+This refusal is non-negotiable. The Structure skill cannot mark `structure.md` approved while a `lift_source:` task exists without the affordances section that the visual-fidelity reviewer requires.
 
 Then write `status: approved` in frontmatter.
 
@@ -198,7 +198,7 @@ If the artifact directory is inside a git repository, commit the approved `struc
 
 **Compaction checkpoint: pre-handoff.** Structure approved; the next skill (typically Plan) reads `structure.md` + every prior approved artifact + reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — structure", description: "pre-handoff: next skill reads structure.md + prior artifacts + reviewer findings. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-handoff) — structure`, description `pre-handoff: next skill reads structure.md + prior artifacts + reviewer findings. User decides whether to /compact.`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `structure`.
 
@@ -217,7 +217,7 @@ Structure's role in this section: name the test taxonomy, enumerate cross-cuttin
 
 ## Section-Anchor Index
 
-The Section-Anchor Index is the G4 scope-tagger narrowing contract — narrow, byte-identical reads of named H2 / H3 sections inside large SKILL.md artifacts. scope-tagger narrowing ships unconditionally and is consumed by skill authors who need a stable section slice (e.g., a reviewer that wants the `## Dispatch Contract` section of `skills/reviewer-protocol/SKILL.md` without rescanning the file for headings every dispatch).
+The Section-Anchor Index is the scope-tagger narrowing contract — narrow, byte-identical reads of named H2 / H3 sections inside large SKILL.md artifacts. scope-tagger narrowing ships unconditionally and is consumed by skill authors who need a stable section slice (e.g., a reviewer that wants the `## Dispatch Contract` section of `skills/reviewer-protocol/SKILL.md` without rescanning the file for headings every dispatch).
 
 - **Colocation convention.** Every indexed source artifact ships its index file colocated next to the source — `skills/<name>/SKILL.anchors.json` sits next to `skills/<name>/SKILL.md`. Future indexed artifacts MUST follow this convention so consumers can resolve the index path mechanically from the source path (`<source>.anchors.json`).
 - **Manifest as the single registry.** The file `tools/g4-section-anchor-manifest.json` is the single registry that gates which artifacts receive a maintained index. The refresh script (`tools/g4-section-anchor-refresh.sh`) only regenerates the indexes named in the manifest; an artifact that wants an index MUST be added to the manifest. Indexes for artifacts NOT in the manifest are not maintained and MUST NOT be relied on by consumers — they can drift silently from their source.
@@ -225,7 +225,7 @@ The Section-Anchor Index is the G4 scope-tagger narrowing contract — narrow, b
 - **Consumer contract (index lookup + `Read(offset, limit)`).** An agent that wants section X of artifact Y consults `Y.anchors.json`, looks up the `{line_start, line_end}` range for the heading text matching X, then issues `Read(offset=line_start, limit=line_end - line_start + 1)` to retrieve the slice verbatim. Consumers MUST NOT re-scan the source for headings (that defeats the entire scope-tagger narrowing contract — re-scans cost the same as the original read). The byte-identical slice the index resolves to is the load-bearing property: a section's content is identical across consumers because everyone reads through the same `{line_start, line_end}` range.
 - **Duplicate-heading-text invariant.** A source artifact MUST NOT contain two H2 or H3 headings whose text is identical — duplicates make `{heading_text → range}` lookups ambiguous and the refresh script exits non-zero with a loud diagnostic naming the offending artifact, the duplicate text, and the colliding line numbers. Resolution: rename one of the duplicate headings to disambiguate.
 
-Pin for the consumer contract: T36's `test-section-anchor-refresh.bats` asserts that the regenerated index reflects the source's current heading layout after a source heading is added, removed, or renamed.
+Pin for the consumer contract: `test-section-anchor-refresh.bats` asserts that the regenerated index reflects the source's current heading layout after a source heading is added, removed, or renamed.
 
 ## Red Flags — STOP
 
@@ -280,4 +280,4 @@ The two override-critical rules for Structure, restated at end:
 
 2. **Interfaces are explicit, with concrete types.** No `any`, no `object`, no placeholder types. Plan uses interface signatures to define task boundaries; vague interfaces produce vague tasks.
 
-Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+!cat skills/_shared/behavioral-directives.md

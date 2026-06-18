@@ -28,27 +28,27 @@ scripts/dispatch-agent.sh --step "$REVIEW_STEP" --round "$REVIEW_ROUND" \
 MODE=first_party TAG=<tag> SUBAGENT_TYPE=<agent-name> MODEL=<resolved-model> PROMPT_FILE=<absolute-path>
 ```
 
-## Task-tool fan-out
+## Subagent-dispatch fan-out
 
-For every emitted spec line, invoke the Task tool once. Parse the line as space-separated `KEY=VALUE` pairs; values contain no spaces. Pass:
+For every emitted spec line, issue one subagent dispatch. Parse the line as space-separated `KEY=VALUE` pairs; values contain no spaces. Pass:
 
 - `subagent_type` = the `SUBAGENT_TYPE` value, verbatim.
 - `model` = the `MODEL` value, verbatim.
 - `prompt` = the literal string `"DISPATCH_FILE=<PROMPT_FILE-value>"` — a single-line env-var-style reference. The prompt argument has no other content.
 
-**Invoke all M Task tool calls in parallel in one orchestrator response.** One Task call per spec line. The reviewer agent body's first instruction is to `Read` its `DISPATCH_FILE`. Do not pre-Read the file yourself; the dispatch context belongs in the subagent's window, not the orchestrator's.
+**Issue all M subagent dispatches in parallel in one orchestrator response.** One dispatch per spec line. The reviewer agent body's first instruction is to `Read` its `DISPATCH_FILE`. Do not pre-Read the file yourself; the dispatch context belongs in the subagent's window, not the orchestrator's.
 
-**Iron law (orchestrator-side dispatch contract).** Invoke the Task tool exactly once per emitted spec line, with `SUBAGENT_TYPE`, `MODEL`, and `PROMPT_FILE` copied verbatim. Skipping a line, deduplicating across lines, modifying any value, or substituting a different subagent_type is a contract violation. The dispatch manifest at `$REVIEW_OUTPUT_DIR/.dispatch-manifest.json` records expected dispatches; the apply-fix step's "expected tag produced no output" diagnostic catches missed or mis-routed Task invocations.
+**Iron law (orchestrator-side dispatch contract).** Issue exactly one subagent dispatch per emitted spec line, with `SUBAGENT_TYPE`, `MODEL`, and `PROMPT_FILE` copied verbatim. Skipping a line, deduplicating across lines, modifying any value, or substituting a different subagent_type is a contract violation. The dispatch manifest at `$REVIEW_OUTPUT_DIR/.dispatch-manifest.json` records expected dispatches; the apply-fix step's "expected tag produced no output" diagnostic catches missed or mis-routed dispatches.
 
-## Capture each Task return value
+## Capture first-party reply text to disk before draining
 
-Capture each Task return value to disk before draining. After each Task call returns, write the subagent's reply text (the full Task return string) to `$REVIEW_OUTPUT_DIR/.dispatch/<TAG>.raw` using the `create` tool. `<TAG>` is the `TAG` value from the corresponding spec line. This is mandatory regardless of whether the subagent appeared to write per-finding files itself.
+Each first-party subagent's reply lives only in main-chat context — no script can recover it later. After each dispatch returns, write the full reply text to `$REVIEW_OUTPUT_DIR/.dispatch/<TAG>.raw` with the `create` tool, where `<TAG>` is the `TAG` from the corresponding spec line — even when the subagent appears to have written per-finding files itself.
 
-Rationale: a subagent without working Write tools (read-only sandbox; missing `allowed-tools` entry; tool denial at runtime) emits findings via the `<<<FINDING-BOUNDARY>>>` stdout contract instead. `await-round.sh` recovers those findings via a universal stdout-fallback that reads `.dispatch/<TAG>.raw` and pipes it through `third-party-finding-splitter.sh`. Without the captured `.raw` file the fallback has nothing to work with and the round looks falsely clean.
+When a subagent can't use the Write tool (read-only sandbox; missing `allowed-tools` entry; runtime tool denial) it emits findings via the `<<<FINDING-BOUNDARY>>>` stdout contract instead, and `await-round.sh`'s universal stdout-fallback recovers them by piping `.dispatch/<TAG>.raw` through `third-party-finding-splitter.sh`. Without the `.raw` capture the fallback has nothing to work with and the round looks falsely clean. Third-party dispatches skip this step — `dispatch-companion.sh` already captures their stdout to disk.
 
 ## Drain and finalize
 
-After all Task tool calls return AND all `.raw` captures are written, drain any third-party background dispatches and finalize the round:
+After all subagent dispatches return AND all `.raw` captures are written, drain any third-party background dispatches and finalize the round:
 
 ```sh
 scripts/await-round.sh --round-dir "$REVIEW_OUTPUT_DIR"

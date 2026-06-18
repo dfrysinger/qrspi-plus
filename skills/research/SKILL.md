@@ -48,7 +48,7 @@ If a subagent prompt contains goals.md content, the isolation invariant is broke
 | `[web]` | Web search, web fetch | Search competitors, libraries, best practices, docs. Report URLs and sources. |
 | `[hybrid]` | All tools | Compare local implementation against external standards/alternatives. |
 
-4. Independent questions run in **parallel** subagents (use the Agent tool with multiple concurrent calls)
+4. Independent questions run in **parallel** subagents (use concurrent dispatches in a single orchestrator response)
 5. Each subagent writes its own report directly to `{ABS_RESEARCH_DIR}/q{NN}-{type}.md` using the `Write` tool. The orchestrator passes the absolute path into the subagent prompt; subagents do NOT return findings as text. The `q*.md` filename pattern is intentionally outside the Claude Code 2.1.x subagent-guardrail blocklist (filenames whose stem starts (case-insensitive) with `report`, `summary`, `findings`, or `analysis`), so direct write succeeds.
 
 ### Per-Researcher Subagent
@@ -57,7 +57,7 @@ If a subagent prompt contains goals.md content, the isolation invariant is broke
 
 **Inputs:** Only the assigned question(s) from `questions.md`. NO `goals.md`. NO raw `feedback/research-round-*.md` files (raw feedback may carry user goals/intent — forwarding it to a research subagent breaks the research-isolation invariant). The orchestrator also passes the absolute output path (`{ABS_RESEARCH_DIR}/q{NN}-{type}.md`) and, for grouped questions, the full set of question IDs the report should cover. On re-dispatch via Rejection path 2, the orchestrator passes a **sanitized defect summary** it authors itself from the user's feedback — defect-only bullet points (e.g., "missed the auth module", "TL;DR is missing", "broken file:line citation"). Goal-bearing or intent-bearing language is stripped before the summary reaches the subagent.
 
-**Dispatch** — for each question (or grouped set of related questions), dispatch `Agent({ subagent_type: "qrspi-research-specialist", model: "sonnet" })` in parallel via concurrent Agent tool calls. The agent body (loaded by the runtime) carries the full research-agent rules, output-format template, and contract; the dispatch prompt carries only the parameters below.
+**Dispatch** — for each question (or grouped set of related questions), `dispatch(subagent_type: qrspi-research-specialist, model: sonnet)` in parallel via concurrent dispatches in a single orchestrator response. The agent body (loaded by the runtime) carries the full research-agent rules, output-format template, and contract; the dispatch prompt carries only the parameters below.
 
 Dispatch parameters (per specialist):
 
@@ -72,13 +72,13 @@ Dispatch parameters (per specialist):
 
 **Research-isolation invariant** — the specialist dispatch carries NO `companion_goals`, NO other-question content, and NO `feedback/research-round-*.md` files. This is structurally enforced — the agent body refuses goals.md / cross-question content if it ever appears in the dispatch prompt. Research isolation prevents confirmation bias.
 
-### Citation-Density Post-Validation Hook (G5; trusted-model re-run path)
+### Citation-Density Post-Validation Hook (trusted-model re-run path)
 
-Every `qrspi-research-specialist` dispatch is observed at the dispatch boundary by a post-output citation-density validator. The validator runs AFTER the specialist's `q*.md` report is written and BEFORE the report is read by the collation subagent or any downstream consumer. The floor that the validator measures against is the `validators.citation_density_floor:` key in `config.md` (default `0.05` — see the schema documentation in `skills/using-qrspi/SKILL.md` (T01) for the key's full semantics, the citation-counting rule, and the rationale for the default value).
+Every `qrspi-research-specialist` dispatch is observed at the dispatch boundary by a post-output citation-density validator. The validator runs AFTER the specialist's `q*.md` report is written and BEFORE the report is read by the collation subagent or any downstream consumer. The floor that the validator measures against is the `validators.citation_density_floor:` key in `config.md` (default `0.05` — see the schema documentation in `skills/using-qrspi/SKILL.md` for the key's full semantics, the citation-counting rule, and the rationale for the default value).
 
 **Above-floor result.** The report proceeds unchanged. The collation subagent reads it on the same schedule as any other specialist output. No re-run, no diagnostic, no telemetry rerun-count increment.
 
-**Below-floor result (first occurrence).** The dispatch re-runs the specialist EXACTLY ONCE on the trusted model (the role's `trusted_path:` route from `config.md`'s `model_routing:` table, OR the trusted-tier default from the routing matrix in `skills/implement/SKILL.md` § G5 Initial Routing Matrix). The re-run carries identical `question_body` and `question_ids` parameters as the original dispatch — only the `(provider, model)` pair changes. The orchestrator increments the per-task `citation_density_rerun_count` field in this task's telemetry record (see `skills/implement/SKILL.md` § Per-Task Telemetry Emission).
+**Below-floor result (first occurrence).** The dispatch re-runs the specialist EXACTLY ONCE on the trusted model (the role's `trusted_path:` route from `config.md`'s `model_routing:` table, OR the trusted-tier default from the routing matrix in `skills/implement/SKILL.md` § Default routing reference). The re-run carries identical `question_body` and `question_ids` parameters as the original dispatch — only the `(provider, model)` pair changes. The orchestrator increments the per-task `citation_density_rerun_count` field in this task's telemetry record (see `skills/implement/SKILL.md` § Per-Task Telemetry Emission).
 
 **Below-floor result (re-run also below floor).** The validator emits a loud diagnostic naming the below-floor density value, exits non-zero (propagating the failure signal to the Implement orchestrator), and does NOT silently forward the below-floor output to downstream consumers. The non-zero exit is observably distinct from the success path — it is NOT a zero-exit-with-empty-body. The Implement orchestrator treats the non-zero exit as a specialist-dispatch failure and may retry on a different topic angle, escalate to opus, or proceed with degraded output per its BLOCKED escape hatch; the validator never silently degrades.
 
@@ -96,7 +96,7 @@ After all per-question research completes, dispatch a **lightweight collation su
 
 **Inputs to the collation subagent:** All `research/q*.md` files. NO `goals.md`. NO `questions.md`. NO raw `feedback/research-round-*.md` files (raw feedback may carry user goals/intent — forwarding it breaks research isolation). On re-dispatch via Rejection path 1, the orchestrator passes a **sanitized defect summary** it authors itself from the user's feedback — bullet points covering collation-output defects in either dimension collation owns: extraction fidelity (e.g., "Q5 TL;DR was misquoted in the prior `_collated.md`") OR Cross-References authoring (e.g., "missing link between Q3 and Q7 findings"). Goal/intent-bearing language is stripped. The verbatim-extraction contract still binds — extraction-fidelity defects are fixed by re-extracting per the Procedure, NOT by paraphrasing.
 
-**Dispatch** — `Agent({ subagent_type: "qrspi-research-collator", model: "sonnet" })`. The agent body (loaded by the runtime) carries the verbatim-extraction rules, the procedure, the output-file shape, and the contract-violation list. The dispatch prompt carries only the parameters below.
+**Dispatch** — `dispatch(subagent_type: qrspi-research-collator, model: sonnet)`. The agent body (loaded by the runtime) carries the verbatim-extraction rules, the procedure, the output-file shape, and the contract-violation list. The dispatch prompt carries only the parameters below.
 
 Dispatch parameters:
 
@@ -130,13 +130,13 @@ All three research subagents (specialist, collator, reviewer) run a **Pre-Flight
 
 **Compaction checkpoint: pre-fanout.** Reviewer dispatch reads `research/summary.md` + every `research/q*.md` file + the agent-embedded reviewer protocol; saturated context produces shallow findings. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — research", description: "pre-fanout: reviewer dispatch reads research/summary.md + all q*.md files. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-fanout) — research`, description `pre-fanout: reviewer dispatch reads research/summary.md + all q*.md files. User decides whether to /compact.`.
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Research has **no scope-reviewer** per canonical artifact-tree topology — only the quality reviewer runs (one Claude dispatch + one Codex dispatch when `second_reviewer: true`).
 
-**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step research --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/research/round-${ROUND}.diff` and threads `diff_file_path:` into the reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted. When using-qrspi step 12 narrows the base ref, pass `--base-ref "$(cat reviews/research/round-$((ROUND-1))-commit.txt)"` so review-prep narrows against the prior round's per-round commit SHA (using-qrspi step 12 owns the SHA-format validation and the `anchor-file-missing:`/`sha-format-invalid:` halt directions before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches the reviewer as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
+**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step research --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/research/round-${ROUND}.diff` and threads `diff_file_path:` into the reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted. For round 01 pass `--base-ref <base-branch>`; on round >= 2 review-prep auto-narrows by reading `reviews/research/round-$((ROUND-1))-commit.txt` (named diagnostics `anchor-file-missing:` / `sha-format-invalid:` halt before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches the reviewer as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
 
-The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → Task fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
+The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → subagent fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
 
 ```sh
 REVIEW_STEP="research"
@@ -195,7 +195,7 @@ If the artifact directory is inside a git repository, commit the approved `resea
 
 **Compaction checkpoint: pre-handoff.** Research approved; the next skill (typically Design) reads `research/summary.md` + every prior approved artifact + reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — research", description: "pre-handoff: next skill reads research/summary.md + prior artifacts + reviewer findings. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-handoff) — research`, description `pre-handoff: next skill reads research/summary.md + prior artifacts + reviewer findings. User decides whether to /compact.`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `research`.
 
@@ -249,4 +249,4 @@ The two override-critical rules for Research, restated at end:
 
 2. **Facts only — no opinions, no recommendations, no value judgments.** Codebase findings cite specific `file:line` references; web findings cite URLs. "Should", "best", "better than" are forbidden in research output — those interpretations belong in Design.
 
-Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+!cat skills/_shared/behavioral-directives.md

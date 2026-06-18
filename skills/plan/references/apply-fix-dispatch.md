@@ -23,6 +23,6 @@ scripts/dispatch-agent.sh \
   [--companion companion_structure=<ABS_ARTIFACT_DIR>/structure.md]
 ```
 
-`--model` resolves via the Tier Resolution Chain against the agent's `tier: high` frontmatter. `--output-file` receives the apply-fix change-log; edits land directly in `plan.md` via the agent's `Edit` calls. Include `companion_design` / `companion_structure` / `companion_phasing` on full route; omit on quick. Pass `kept_findings_file` whenever `scripts/verifier-fan-in.sh` has run and `kept-findings.txt` exists — the agent prefers it over scanning `findings_dir` so sub-threshold findings cannot leak (CD-4 single-source-of-truth).
+`--model` resolves via the Tier Resolution Chain against the agent's `tier: high` frontmatter. `--output-file` receives the apply-fix change-log; edits land directly in `plan.md` via the agent's `Edit` calls. Include `companion_design` / `companion_structure` / `companion_phasing` on full route; omit on quick. Pass `kept_findings_file` whenever `scripts/verifier-fan-in.sh` has run and `kept-findings.txt` exists — the agent prefers it over scanning `findings_dir` so sub-threshold findings cannot leak (single-source-of-truth).
 
 The override (vs inline `Edit`) is justified because plan.md's 1000–2000-line aggregate body and per-task contract dependencies on approved upstream artifacts exceed the safety envelope of main-chat `Edit`; the agent body's Step 3 upstream-contract pre-flight is the load-bearing safety property the dispatch carries.

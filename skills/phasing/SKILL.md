@@ -103,13 +103,13 @@ For each of `goals.md`, `questions.md`, `research/summary.md`, `design.md`:
 
 Apply the **Standard Review Loop** from `using-qrspi/SKILL.md`. Two parallel reviewer dispatches per artifact per round (quality + scope). Phasing-specific reviewer instructions:
 
-**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step phasing --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/phasing/round-${ROUND}.diff` and threads `diff_file_path:` into each reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted. When using-qrspi step 12 narrows the base ref, pass `--base-ref "$(cat reviews/phasing/round-$((ROUND-1))-commit.txt)"` so review-prep narrows against the prior round's per-round commit SHA (using-qrspi step 12 owns the SHA-format validation and the `anchor-file-missing:`/`sha-format-invalid:` halt directions before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches reviewers as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
+**Dispatch the round through dispatch-agent's high-level entry.** Run `scripts/dispatch-agent.sh --step phasing --round ${ROUND} --artifact-dir <ABS_ARTIFACT_DIR>` (plus the per-skill `--output-dir`/`--artifact`/`--agents` flags below). High-level mode invokes `scripts/review-prep.sh` to emit `<ABS_ARTIFACT_DIR>/reviews/phasing/round-${ROUND}.diff` and threads `diff_file_path:` into each reviewer prompt; the orchestrator runs no `git diff` Bash redirect of its own. When the artifact directory is not inside a git repository, review-prep skips diff emission and `diff_file_path:` is omitted. For round 01 pass `--base-ref <base-branch>`; on round >= 2 review-prep auto-narrows by reading `reviews/phasing/round-$((ROUND-1))-commit.txt` (named diagnostics `anchor-file-missing:` / `sha-format-invalid:` halt before the SHA reaches `git diff`). Scope-tag narrowing (when active) reaches reviewers as `scope_hint:` wrapped between `<<<UNTRUSTED-SCOPE-HINT-START id=scope_hint>>>` / `<<<UNTRUSTED-SCOPE-HINT-END id=scope_hint>>>` markers per the reviewer-protocol Reviewer Dispatch Contract.
 
 **Compaction checkpoint: pre-fanout.** Parallel reviewer dispatch reads the full ten-artifact set (phasing.md + roadmap + 4 pruned + 4 future-* + snapshots); saturated context produces shallow findings on this large input set. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-fanout) — phasing", description: "pre-fanout: parallel reviewer dispatch reads ten-artifact set. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-fanout) — phasing`, description `pre-fanout: parallel reviewer dispatch reads ten-artifact set. User decides whether to /compact.`.
 
-The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → Task fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
+The round's reviewers dispatch through the universal dispatch chain (`scripts/dispatch-agent.sh` → subagent fan-out → `scripts/await-round.sh`). Set the per-skill dispatch parameters below, then include the shared reviewer-dispatch prose. Include the `*-codex` peer tags in `REVIEW_AGENTS` only when `second_reviewer: true`; otherwise list only the `*-claude` tags.
 
 ```sh
 REVIEW_STEP="phasing"
@@ -143,7 +143,7 @@ Commit the approved `phasing.md`, `roadmap.md`, the four pruned artifacts, the f
 
 **Compaction checkpoint: pre-handoff.** Phasing approval is a high-water mark for context size — the conversation has carried Goals + Questions + Research + Design + Phasing artifacts; the next skill (typically Structure) reads phasing.md + roadmap.md + pruned design.md on a fresh context. See using-qrspi `## Compaction Checkpoints` for the iron-rule contract.
 
-Call `TaskCreate({ subject: "Recommend /compact (pre-handoff) — phasing", description: "pre-handoff: next skill reads phasing.md + roadmap.md + pruned design.md after a 5-artifact build-up. User decides whether to /compact." })`.
+Surface a todo: title `Recommend /compact (pre-handoff) — phasing`, description `pre-handoff: next skill reads phasing.md + roadmap.md + pruned design.md after a 5-artifact build-up. User decides whether to /compact.`.
 
 **REQUIRED:** Invoke the next skill in the `config.md` route after `phasing` (typically `structure`).
 
@@ -282,4 +282,4 @@ The override-critical rule plus the strong recommendation for Phasing, restated 
 
 2. **Phase 1 PoC guideline — prove the full stack end-to-end when possible.** Phase 1 is the PoC; it should exercise every layer the project touches whenever practical. Backend-only Phase 1 tends to hide cross-layer issues until Phase 2+, where they are more expensive to surface — so the default is full-stack. Departures are fine when the phasing discussion names a real reason; the goal is deliberate scoping, not horizontal layering by accident. Phasing owns phase boundaries.
 
-Behavioral directives D1-D4 apply — see `using-qrspi/SKILL.md` → "BEHAVIORAL-DIRECTIVES".
+!cat skills/_shared/behavioral-directives.md

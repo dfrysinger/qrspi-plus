@@ -39,7 +39,7 @@ Fix-task modes are named sub-modes of `mode: fix` invoked by the orchestrator fo
 
 ### `revert-orchestration-drift`
 
-Reverts non-subagent commits surfaced by the G5 orchestration-boundary check.
+Reverts non-subagent commits surfaced by the orchestration-boundary check.
 
 - **Input.** `reviews/<phase>/orchestration-boundary.md` — the boundary report produced by `scripts/orchestration-boundary-check.sh`, which enumerates the offending commit SHAs.
 - **SHA-shape validation.** Every SHA read from the report is validated against the well-formed git object-name shape (lowercase hex, 7–64 characters) before being passed to any `git` invocation. A SHA failing the shape check halts the subagent with the named diagnostic `sha-format-invalid: <token>` and exits non-zero. No `git` command runs against a malformed value.
@@ -114,15 +114,18 @@ The following QRSPI-internal ID families MUST NOT appear in any added line of th
 | Family | Regex shape | Examples |
 |--------|-------------|---------|
 | Reviewer finding ID | `round-\d+\s+finding-\d+` or `R\d+-F\d+` | `R3-F01`, `round-2 finding-05` |
-| Task ID | `\bT\d{2}\b` | `T01`, `T14` |
+| Task ID | `\bT\d{2}[a-z]?\b` | `T01`, `T14`, `T20a` |
 | Goal ID | `\bG\d+\b` (single capital G + digits, not in file path context) | `G1`, `G18` |
 | Question ID | `\bQ\d+\b` | `Q3`, `Q12` |
 | Future-goal ID | `\bF-\d+\b` | `F-1`, `F-23` |
 | Design decision ID | `\bD\d+\b` (single capital D + digits, not in file path context) | `D2`, `D15` |
+| Cross-cutting design-decision ID | `\bCD-\d+\b` | `CD-1`, `CD-4` |
 
 These IDs are routing and traceability metadata for the QRSPI run. They must not leak into the work product (code identifiers, runtime strings, prompt templates, comments, test names, fixture names, or anywhere outside `docs/qrspi/`).
 
 ### Evergreen-markdown forbidden tokens
+
+*This is the **token-pattern** evergreen rule (mechanical, enforced by `tests/unit/test-evergreen-markdown.bats`). For the companion **prose-pattern** rule (qualitative antagonist patterns like dialogue exhaust and version-history narration, enforced by reviewer subagents), see `skills/_shared/evergreen-output-rule.md`.*
 
 The following token families MUST NOT appear in any added line of the commit diff **in edited markdown files only** (`.md` files):
 

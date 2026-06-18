@@ -1,6 +1,6 @@
 # Config validation procedure — `model_routing:`
 
-Shared validation procedure consumed by the dispatch chain (`scripts/_resolve-lib.sh`, `scripts/dispatch-agent.sh`) and `!cat`-included by skill prose that reads routing config. It fails loudly with repair-or-abort guidance whenever the `model_routing:` configuration in `config.md` is missing or malformed (G22 / design.md CD-1).
+Shared validation procedure consumed by the dispatch chain (`scripts/_resolve-lib.sh`, `scripts/dispatch-agent.sh`) and `!cat`-included by skill prose that reads routing config. It fails loudly with repair-or-abort guidance whenever the `model_routing:` configuration in `config.md` is missing or malformed.
 
 ## When this procedure runs
 

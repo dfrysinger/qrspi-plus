@@ -6,17 +6,23 @@ After each review round, the orchestrator runs two scripts:
 
 - **`scripts/review-prep.sh --step <step> --round <NN> --artifact-dir <abs> [--base-ref <ref>]`** — owns per-round diff emission. Validates each `<artifact_path>` is tracked in git, computes the narrow-ref SHA from `reviews/<step>/round-(NN-1)-commit.txt` on rounds ≥2 (halts with `anchor-file-missing:` / `sha-format-invalid:` on failure — never falls back to `HEAD~1`), atomic temp+rename, silent-on-no-input. Also writes the absorption-map for design/plan. See `scripts/review-prep.sh` header for full I/O contract.
 
-- **`scripts/verifier-fan-in.sh`** — single source of truth for verifier dispatch, sidecar handling, `change_type`-keyed filter floors (style/clarity ≥ 80; correctness ≥ 70 — lower bar so hardening-relevant gaps in the 72-78 rubric band survive), and `round-NN-verified.md` assembly. Honors `config.md.verifier_enabled` (with the runtime-backfill contract from § Config Validation Procedure). When the field is `false`, dispatch is skipped and all findings flow via the "no sidecar → keep" branch.
+- **`scripts/verifier-fan-in.sh`** — single source of truth for verifier dispatch, sidecar handling, the `change_type`-keyed score-filter rule, the `kept-findings.txt` survivor list, and `round-NN-verified.md` assembly. Threshold floors (style/clarity ≥ 80; correctness ≥ 70; `scope`/`intent` carry no floor — always kept) are script-owned constants; the orchestrator does NOT re-score or re-threshold. Honors `config.md.verifier_enabled` (with the runtime-backfill contract from § Config Validation Procedure). When the field is `false`, dispatch is skipped and all findings flow via the "no sidecar → keep" branch.
 
-After fan-in writes `round-NN-verified.md`, the orchestrator:
+After fan-in writes `kept-findings.txt` + `round-NN-verified.md`, the orchestrator:
 
-1. **Partitions findings by `change_type`.** `scope` and `intent` bypass the score filter and flow directly to the pause gate. `style`/`clarity` survivors at score ≥ 80 (or keep-all when verifier disabled / sidecar absent / `VERIFY_FAILED`) → `Edit` on the artifact. `correctness` survivors at score ≥ 70 (same fallback) → `Edit`. Out-of-enum `change_type` is a loud schema failure from the script.
+1. **Reads `<round-dir>/kept-findings.txt`** — the script's authoritative list of finding-file paths to apply (one absolute path per line). The orchestrator MUST NOT re-score, re-threshold, or override the survivor set; the script already filtered by `change_type` and per-floor threshold. `scope` and `intent` findings appear in the kept list regardless of score and flow to the pause gate alongside other survivors. Out-of-enum `change_type` would have already halted the script with a loud schema failure; if the orchestrator reaches this step, every kept finding is well-formed.
 
 2. **Dispatches `qrspi-scope-tagger` (when `config.md.scope_tagger_enabled: true`).** One Task per round. Writes `reviews/<step>/round-NN-scope-set.txt` for the convergence comparison below. Parameters: `round_subdir`, `step`, `output_path`, `artifact_path`/`artifact_body` (or literal `null` for multi-file artifacts: integrate, implement-per-task, plan+tasks, research), `kept_findings`. Main chat MUST validate the file shape: every non-comment line is a file path, an `^## ` H2 heading, or the literal `<full>` token. On malformed output, surface the verifier-round failure menu — do NOT silently broaden.
 
 3. **Writes `round-NN-dispositions.md`** (main-chat-authored, ≤30 lines) listing what changed and why.
 
-   **Sub-threshold findings: NO orchestrator override.** Findings dropped by `verifier-fan-in.sh` MUST NOT be re-introduced into the apply-fix work; the script's `kept-findings.txt` is the single source of truth per CD-4. Standalone human-driven edits outside the protocol are unaffected.
+   **Important sub-threshold findings: surface, don't silently override.** The orchestrator MUST NOT re-introduce dropped findings into `kept-findings.txt` or apply edits for them silently — that breaks the single-source-of-truth contract and the resume-across-`/compact` determinism. **But** when the orchestrator's round-level context indicates a dropped finding is materially important (rubric mis-calibration, cross-finding pattern, scope-set drift), surface it at the **Review-Loop Pause Gate** with a one-line rationale:
+
+   ```
+   Sub-threshold rescue requested: <reviewer_tag>.F<NN> (score=<N>, change_type=<ct>) — <reason>
+   ```
+
+   The user decides at the gate whether to approve a one-off `Edit` outside the protocol. Approved rescues are recorded under the `## Sub-Threshold Observations` H2 below for the audit trail (treat the approved rescue as a single-entry observation; `representative_score` and `threshold` reflect the rescued finding). Standalone human-driven edits outside the protocol remain unaffected.
 
    Optional `## Sub-Threshold Observations` H2 section MAY be appended when a pattern emerges in dropped findings (e.g., multiple sub-threshold findings sharing a `defect_class` tag). Informational only — no script consumes it. `finding_paths[]` values MUST be relative paths within the current `round-NN/` directory:
 
@@ -31,7 +37,7 @@ After fan-in writes `round-NN-verified.md`, the orchestrator:
          - round-01/quality-secondary.finding-F01.md
    ```
 
-4. **`/compact`** to shed the verified-file Read content from main chat's transcript.
+4. **Recommend `/compact`** to shed the verified-file Read content from main chat's transcript. Surface a one-line recommendation (e.g., `"Round NN verified — consider /compact before fix application"`). In interactive mode, wait for the user to decide; in auto mode, continue immediately to step 5 without waiting. The orchestrator cannot invoke `/compact` itself. See `skills/_shared/compaction-checkpoint.md` Iron Rule for the unified wait-vs-no-wait contract.
 
 5. **Per-round commit** covers the artifact, the entire `round-NN/` subdir (sidecars included), `round-NN-scope-set.txt`, `round-NN-verified.md`, and `round-NN-dispositions.md`. Capture the commit SHA into `reviews/<step>/round-NN-commit.txt` immediately — step 6 (next round's narrow ref) and `review-prep.sh` read it directly.
 
@@ -64,7 +70,7 @@ QRSPI verifier round failure
 {one-line diagnostic summary, e.g.:
   - "Verifier returned VERIFY_FAILED for 2 findings"
   - "Reviewer quality-secondary produced no output (await exit 12)"
-  - "Sidecar missing for finding quality-primary.R3-F02"
+  - "Sidecar missing for finding quality-primary.R3-F02" <!-- id-hygiene-exempt -->
   - "Scope-tagger emitted malformed scope-set for round NN: <reason>"}
 
 What would you like to do?
