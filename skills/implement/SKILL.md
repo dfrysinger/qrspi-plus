@@ -28,6 +28,15 @@ NO TASK DISPATCH WITHOUT APPROVED INPUTS
 
 Mode-conditional "approved inputs": **full pipeline** — `parallelization.md` must exist with `status: approved` (the Branch Map is the dispatch contract); **quick fix** — every `tasks/*.md` (or `fixes/{type}-round-NN/*.md`) targeted by this run must have `status: approved`. Refuse to run if missing and name the artifact.
 
+## Once-Per-Implement-Entry Reference Files (Read on Trigger)
+
+Two read-on-demand reference files cover every one-shot concern. Read each on its trigger; do NOT re-read mid-loop. **"Implement entry"** = first activation of Implement (per phase in full pipeline; per quick-fix batch in quick mode). **"Batch end"** = every task in the current batch has reached terminal status and the gate is about to render.
+
+- **On Implement entry, before any per-task dispatch.** Read `references/implement-entry.md` — sections fire in order: (1) Smoke check (halt gate: verifier-agent readability, sidecar write path + `phase:` ordinal backfill, `verifier_enabled` snapshot); (2) Task-count read (skip-decision gate: `N=0` halts, `N=1` skips Parallelize+Integrate, `N>1` runs full pipeline; filesystem-error handling and `reviews/implement-entry-decisions.md` audit fields in-file); (3) Run-entry artifact preconditions, config validation, Phase-Level Configuration prompt (`review_depth`, `review_mode`), Subagent Permissions, Baseline Tests handling. Fix-task dispatches reuse `config.md` and do not re-read.
+- **At batch end, before the batch gate.** Read `references/batch-end.md` — OBC script invocation, `reviews/implement/orchestration-boundary.md` section schema (`## Boundary violations` vs `## Dispatch defects`), fail-soft vs fail-loud semantics, autopilot precedence ladder, `## Dispatch defects` suppression of option (c), and Batch Gate Red Flags STOP list.
+
+The per-topic H2s further down (Branch Model, Process Steps, OBC) are anchors for mid-loop cross-references; they do NOT duplicate the once-per-entry content above.
+
 ## Batch Gate
 
 The batch gate is the only point where Implement hands control back. A **batch** is the set of tasks Implement dispatched together for the current phase or fix dispatch — distinct from a **wave**, which is the concurrency grouping inside a batch (full pipeline only; defined by `parallelization.md` `### Wave N`). A batch contains one or more waves; the gate is per-batch.
@@ -38,33 +47,7 @@ The batch composition is mode-specific: **full pipeline** — every task in `par
 
 The isolated baseline-fix dispatch (singleton `task-00.md` / `task-00b.md`) that runs BEFORE the main dispatch when baseline auto-fix triggers is NOT its own batch — it auto-continues into the main dispatch, and only the main dispatch's gate fires. The baseline-fix task still must satisfy input-approval gating.
 
-Read `references/batch-gate-autopilot.md` when actually rendering the gate (interactive menu rendering or autopilot branch evaluation) — full menu rendering, batch summary, advance menus, and gate-level reviewer dispatch detail. Batch-end mechanics (OBC invocation, autopilot precedence ladder, `## Dispatch defects` suppression of option (c)) live in `references/batch-end.md` per § Once-Per-Implement-Entry Reference Files below.
-
-## Per-Task Input Routing (Prompt Composition)
-
-Each per-task dispatch reads the task file's `pipeline` field (the per-task source of truth — independent of the run-level mode) and embeds:
-
-| Input | `pipeline: quick` | `pipeline: full` |
-|-------|-------------------|-------------------|
-| `task-NN.md` (full text) | Yes | Yes |
-| `goals.md` (approved) | Yes | Yes |
-| `research/summary.md` (approved) | Yes | No |
-| `design.md` (approved) | No | Yes |
-| `structure.md` (approved) | No | Yes |
-| `parallelization.md` (approved) | No | Yes |
-
-<HARD-GATE>
-Do NOT dispatch implementer subagents without the mode-appropriate approved inputs. Do NOT dispatch parallel tasks (full pipeline) that touch overlapping files — re-verify against the Branch Map at runtime (`tasks/*.md` may have been edited after Parallelize approval). Do NOT create worktrees on main/master without a feature branch. Do NOT advance to the next route step until every task is in one of the three terminal states (clean / accepted-with-issues / skipped-by-user). Do NOT skip the formal reviewer dispatch on the assumption that the implementer's self-review covers it (or vice versa: do NOT have a reviewer modify code) — each role is a separate subagent dispatch.
-</HARD-GATE>
-
-## Once-Per-Implement-Entry Reference Files (Read on Trigger)
-
-Two read-on-demand reference files cover every one-shot concern. Read each on its trigger; do NOT re-read mid-loop. **"Implement entry"** = first activation of Implement (per phase in full pipeline; per quick-fix batch in quick mode). **"Batch end"** = every task in the current batch has reached terminal status and the gate is about to render.
-
-- **On Implement entry, before any per-task dispatch.** Read `references/implement-entry.md` — sections fire in order: (1) Smoke check (halt gate: verifier-agent readability, sidecar write path + `phase:` ordinal backfill, `verifier_enabled` snapshot); (2) Task-count read (skip-decision gate: `N=0` halts, `N=1` skips Parallelize+Integrate, `N>1` runs full pipeline; filesystem-error handling and `reviews/implement-entry-decisions.md` audit fields in-file); (3) Run-entry artifact preconditions, config validation, Phase-Level Configuration prompt (`review_depth`, `review_mode`), Subagent Permissions, Baseline Tests handling. Fix-task dispatches reuse `config.md` and do not re-read.
-- **At batch end, before the batch gate.** Read `references/batch-end.md` — OBC script invocation, `reviews/implement/orchestration-boundary.md` section schema (`## Boundary violations` vs `## Dispatch defects`), fail-soft vs fail-loud semantics, autopilot precedence ladder, `## Dispatch defects` suppression of option (c), and Batch Gate Red Flags STOP list.
-
-The per-topic H2s further down (Branch Model, Process Steps, OBC) are anchors for mid-loop cross-references; they do NOT duplicate the once-per-entry content above.
+Read `references/batch-gate-autopilot.md` when actually rendering the gate (interactive menu rendering or autopilot branch evaluation) — full menu rendering, batch summary, advance menus, and gate-level reviewer dispatch detail. Batch-end mechanics (OBC invocation, autopilot precedence ladder, `## Dispatch defects` suppression of option (c)) live in `references/batch-end.md` per § Once-Per-Implement-Entry Reference Files above.
 
 ## Branch Model — Runtime Resolution (Full Pipeline)
 
@@ -114,6 +97,23 @@ In quick fix mode, there are no waves — Process Step 6 dispatches the entire b
 ## Per-Task Execution
 
 Same TDD + review flow per task across full-pipeline waves and quick-fix dispatches. Main chat orchestrates; all code execution, file changes, and git operations are delegated to subagents.
+
+### Per-Task Input Routing (Prompt Composition)
+
+Each per-task dispatch reads the task file's `pipeline` field (the per-task source of truth — independent of the run-level mode) and embeds:
+
+| Input | `pipeline: quick` | `pipeline: full` |
+|-------|-------------------|-------------------|
+| `task-NN.md` (full text) | Yes | Yes |
+| `goals.md` (approved) | Yes | Yes |
+| `research/summary.md` (approved) | Yes | No |
+| `design.md` (approved) | No | Yes |
+| `structure.md` (approved) | No | Yes |
+| `parallelization.md` (approved) | No | Yes |
+
+<HARD-GATE>
+Do NOT dispatch implementer subagents without the mode-appropriate approved inputs. Do NOT dispatch parallel tasks (full pipeline) that touch overlapping files — re-verify against the Branch Map at runtime (`tasks/*.md` may have been edited after Parallelize approval). Do NOT create worktrees on main/master without a feature branch. Do NOT advance to the next route step until every task is in one of the three terminal states (clean / accepted-with-issues / skipped-by-user). Do NOT skip the formal reviewer dispatch on the assumption that the implementer's self-review covers it (or vice versa: do NOT have a reviewer modify code) — each role is a separate subagent dispatch.
+</HARD-GATE>
 
 ### Iron Law (per task)
 
@@ -169,11 +169,7 @@ A tier configured as `none` HALTS LOUDLY with a diagnostic naming the unconfigur
 
 **Dispatch-site forwarding.** First-party dispatches pass the resolved model into the host's subagent dispatch primitive; third-party dispatches pipe their prompt to `scripts/dispatch-companion.sh` with `--vendor <resolved-vendor> --model <resolved-model>`.
 
-!cat skills/_shared/model-routing-defaults.md
-
-#### Specialist citation-density wrap (cross-skill pointer)
-
-The `qrspi-research-specialist` cheap-tier eligibility above is conditional on a post-output citation-density check that may force a one-shot trusted-model re-run. Full hook contract — when the wrap fires, above/below-floor branching, exit-code semantics, and BLOCKED escape hatch — lives in `skills/research/SKILL.md` § Citation-Density Post-Validation Hook. Implement consumes that contract: a non-zero exit from the wrap is a specialist-dispatch failure (NOT zero-exit-with-empty-body) and the rerun count flows into this task's telemetry record (see § Per-Task Telemetry Emission below).
+**Default routing matrix.** Agent-class → tier-band defaults (cheap / trusted) for every QRSPI agent class live in `skills/_shared/model-routing-defaults.md`. Implement consumes the matrix at every dispatch through the chain above; operators override per-run by editing `config.md`'s `model_routing:` block.
 
 #### Per-Task Telemetry Emission (`reviews/telemetry/round-NN/task-NN.json`)
 
@@ -427,8 +423,6 @@ Read `references/batch-end.md` per § Once-Per-Implement-Entry Reference Files t
 ## Worked Examples
 
 Read `skills/implement/references/worked-examples.md` when a human reader needs to see wave-execution or quick-fix walkthroughs concretely — illustrative only, not load-bearing; the orchestrator does not need to read this to run the loop.
-
-## Terminal State, Model Selection, Task Tracking, Red Flags
 
 !cat skills/implement/references/closing.md
 

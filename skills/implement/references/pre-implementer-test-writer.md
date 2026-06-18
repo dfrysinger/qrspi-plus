@@ -1,5 +1,3 @@
-# Pre-Implementer Test-Writer Dispatch + RED-Verification Gate
-
 Read this file when running the two-step pre-implementer flow for `task_type: code` (or absent `task_type:`) tasks BEFORE the implementer dispatch. Lightweight tasks bypass this gate entirely; proceed directly to § Dispatching the Implementer.
 
 The gate's classification semantics are defined in `skills/implement/red-verification-adapters.md`; this file defines the orchestrator-side dispatch steps.

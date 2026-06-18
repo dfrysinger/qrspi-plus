@@ -1,5 +1,3 @@
-# Per-Task Routing (`task_type`)
-
 Before dispatching the implementer for a task, main chat reads `task_type` from the task's `tasks/task-NN.md` frontmatter and resolves three per-task flags:
 
 ```

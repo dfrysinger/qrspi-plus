@@ -1,5 +1,3 @@
-## Multi-Actor Flow Check
-
 Before authoring any deliverable that operationalizes a design decision involving two or more actors — where "actor" means anything that performs an operation and hands off to another: scripts, subagents, orchestrators, tools, services, protocol participants, object-call participants, workflow steps, queue producers/consumers, function callers/callees — verify that the design specifies all six choreography elements:
 
 1. **Actor inventory** — every participant named, with its role.

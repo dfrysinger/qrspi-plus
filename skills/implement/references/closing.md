@@ -1,5 +1,3 @@
-# Closing: Terminal state, model selection, task tracking, red flags
-
 ## Terminal State
 
 **Compaction checkpoint: pre-handoff.** Implement batch complete; the next route step (typically Integrate in full pipeline; Test in quick fix) reads `parallelization.md` (or task specs) + every prior approved artifact + per-task reviewer findings on a fresh context. See using-qrspi `## Compaction Checkpoints`.

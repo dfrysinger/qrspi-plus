@@ -1,5 +1,3 @@
-# Branch Model — Runtime Resolution (Full Pipeline)
-
 In full pipeline mode, Implement consumes the symbolic Branch Map from `parallelization.md` (see `parallelize/SKILL.md` § Branch Model). At runtime, Implement resolves each `Base` as follows:
 
 | Symbolic base | Runtime resolution |

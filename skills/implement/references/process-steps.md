@@ -1,5 +1,3 @@
-# Process Steps — full per-step procedure (full pipeline + quick fix)
-
 This file is `!cat`-included under the `## Process Steps` H2 in `skills/implement/SKILL.md`. The order matters: baseline tests run **before** per-task worktree creation so that a baseline failure can inject `task-00` (full pipeline) or be classified as the first quick-fix task without violating the re-fork prohibition.
 
 Branch on mode (derived from `config.md.route` per § Overview) at the start. Both modes share Steps 1–5 with mode-conditional details; Step 6 onward differs.
