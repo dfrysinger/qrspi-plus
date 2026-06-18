@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "QRSPI workflow plugin for agentic software development — Goals, Questions, Research, Design, Phasing, Structure, Plan, Parallelize, Implement, Integrate, Test, Replan",
-    "version": "0.7.3"
+    "version": "0.7.4"
   },
   "plugins": [
     {
       "name": "qrspi",
       "description": "QRSPI workflow plugin for agentic software development. 16 skills + 41 specialized reviewer/implementer agents implementing a phased pipeline with TDD enforcement, multi-tier review, and per-phase replan gates.",
-      "version": "0.7.3",
+      "version": "0.7.4",
       "source": "./build"
     }
   ]
