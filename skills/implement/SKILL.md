@@ -28,15 +28,17 @@ NO TASK DISPATCH WITHOUT APPROVED INPUTS
 
 Mode-conditional "approved inputs": **full pipeline** — `parallelization.md` must exist with `status: approved` (the Branch Map is the dispatch contract); **quick fix** — every `tasks/*.md` (or `fixes/{type}-round-NN/*.md`) targeted by this run must have `status: approved`. Refuse to run if missing and name the artifact.
 
-## Batch Gate (the only point where Implement hands control back)
+## Batch Gate
 
-A **batch** is the set of tasks Implement dispatched together for the current phase or fix dispatch — distinct from a **wave**, which is the concurrency grouping inside a batch (full pipeline only; defined by `parallelization.md` `### Wave N`). A batch contains one or more waves; the gate is per-batch.
+The batch gate is the only point where Implement hands control back. A **batch** is the set of tasks Implement dispatched together for the current phase or fix dispatch — distinct from a **wave**, which is the concurrency grouping inside a batch (full pipeline only; defined by `parallelization.md` `### Wave N`). A batch contains one or more waves; the gate is per-batch.
 
 The **batch gate** is the human gate Implement presents after every task in the batch reaches one of: (a) **Clean** — TDD + review with no unresolved findings; (b) **Accepted-with-issues** — findings the user explicitly accepted (logged, non-blocking); (c) **Skipped-by-user**. Until every task is in (a)/(b)/(c), Implement keeps driving the per-task loop and does NOT route to the next step. Without this gate, the model rationalizes "this one task is done, just integrate it" and per-task integration breaks the cross-task review's premise.
 
 The batch composition is mode-specific: **full pipeline** — every task in `parallelization.md` for the current phase; **quick fix** — tasks targeted by the main dispatch event (originally-requested `tasks/*.md` excluding runtime-generated `tasks/task-00*.md` singletons), or every `fixes/{type}-round-NN/*.md` for fix-task dispatch.
 
 The isolated baseline-fix dispatch (singleton `task-00.md` / `task-00b.md`) that runs BEFORE the main dispatch when baseline auto-fix triggers is NOT its own batch — it auto-continues into the main dispatch, and only the main dispatch's gate fires. The baseline-fix task still must satisfy input-approval gating.
+
+Read `references/batch-gate-autopilot.md` when actually rendering the gate (interactive menu rendering or autopilot branch evaluation) — full menu rendering, batch summary, advance menus, and gate-level reviewer dispatch detail. Batch-end mechanics (OBC invocation, autopilot precedence ladder, `## Dispatch defects` suppression of option (c)) live in `references/batch-end.md` per § Once-Per-Implement-Entry Reference Files below.
 
 ## Per-Task Input Routing (Prompt Composition)
 
@@ -55,54 +57,22 @@ Each per-task dispatch reads the task file's `pipeline` field (the per-task sour
 Do NOT dispatch implementer subagents without the mode-appropriate approved inputs. Do NOT dispatch parallel tasks (full pipeline) that touch overlapping files — re-verify against the Branch Map at runtime (`tasks/*.md` may have been edited after Parallelize approval). Do NOT create worktrees on main/master without a feature branch. Do NOT advance to the next route step until every task is in one of the three terminal states (clean / accepted-with-issues / skipped-by-user). Do NOT skip the formal reviewer dispatch on the assumption that the implementer's self-review covers it (or vice versa: do NOT have a reviewer modify code) — each role is a separate subagent dispatch.
 </HARD-GATE>
 
-## Once-Per-Phase Reference Files (Read on Trigger)
+## Once-Per-Implement-Entry Reference Files (Read on Trigger)
 
-Two read-on-demand reference files bundle every one-shot per-phase concern. Read each on its trigger; do NOT re-read mid-loop.
+Two read-on-demand reference files cover every one-shot concern. Read each on its trigger; do NOT re-read mid-loop. **"Implement entry"** = first activation of Implement (per phase in full pipeline; per quick-fix batch in quick mode). **"Batch end"** = every task in the current batch has reached terminal status and the gate is about to render.
 
-- **Phase entry — read first on activation.** Trigger: first activation of Implement in a phase (full pipeline) or quick-fix batch (quick mode). Read `references/phase-entry.md` — bundles run-entry artifact preconditions, config validation, Phase-Level Configuration prompt (`review_depth`, `review_mode`), Subagent Permissions, and Baseline Tests handling. Fix-task dispatches reuse `config.md` and do not re-read.
-- **Phase end — read before the batch gate.** Trigger: every task in the current batch has reached terminal status (clean / accepted-with-issues / skipped-by-user) and the orchestrator is about to invoke OBC + render the batch gate. Read `references/phase-end.md` — bundles OBC script invocation, `reviews/implement/orchestration-boundary.md` section schema, fail-soft vs fail-loud semantics, autopilot precedence ladder, `## Dispatch defects` suppression of option (c), and Batch Gate Red Flags STOP list.
+- **On Implement entry, before any per-task dispatch.** Read `references/implement-entry.md` — sections fire in order: (1) Smoke check (halt gate: verifier-agent readability, sidecar write path + `phase:` ordinal backfill, `verifier_enabled` snapshot); (2) Task-count read (skip-decision gate: `N=0` halts, `N=1` skips Parallelize+Integrate, `N>1` runs full pipeline; filesystem-error handling and `reviews/implement-entry-decisions.md` audit fields in-file); (3) Run-entry artifact preconditions, config validation, Phase-Level Configuration prompt (`review_depth`, `review_mode`), Subagent Permissions, Baseline Tests handling. Fix-task dispatches reuse `config.md` and do not re-read.
+- **At batch end, before the batch gate.** Read `references/batch-end.md` — OBC script invocation, `reviews/implement/orchestration-boundary.md` section schema (`## Boundary violations` vs `## Dispatch defects`), fail-soft vs fail-loud semantics, autopilot precedence ladder, `## Dispatch defects` suppression of option (c), and Batch Gate Red Flags STOP list.
 
-The per-topic H2s further down (Phase-Level Configuration, Subagent Permissions, Baseline Tests, OBC, Batch Gate) are anchors for mid-loop cross-references; they point back into the same two bundles.
-
-## Phase-Level Configuration (Runtime)
-
-See § Once-Per-Phase Reference Files → Phase entry above. Full content in `references/phase-entry.md`.
-
-### Round Counting (Definition)
-
-1. **Round = one review→fix iteration.** Orchestrator emits the round-NN diff (HEAD-advanced — see § Per-Task Convergence Narrowing), dispatches the round's reviewer fan-out, fans in findings + notifications, dispatches the fix-cycle implementer (if findings), concludes when that implementer reports DONE.
-2. **Per-round artifacts share the round number.** One `reviews/tasks/task-NN/round-NN/` directory and one `reviews/tasks/task-NN/round-NN.diff` per round.
-3. **Fix-loop cap counts rounds, not dispatches.** `review_mode: loop_until_clean` caps at **3 rounds**. After round-3's fix-cycle, dispatch a round-4 review pass; clean → clean-after-3-fixes; still-issues → escalate (no 4th fix-cycle).
-
-**Notification-driven dispatches do NOT advance the round counter.** When a task's fix triggers a sibling-impact notification on another in-batch task, that sibling gets its own fix-cycle dispatch at the SAME round number — same `round-NN/` directory, ZERO consumption of the 3-round budget. The cap counts review→fix iterations on the originating task, not bookkeeping ripple. Full mechanics in `references/per-task-routing.md` § Round-Level Notification Sweep.
-
-**Verify the round counter against `reviews/tasks/task-NN/round-*/` directories on disk** — do not infer from chat history.
-
-## Implement-Entry Smoke Check
-
-Read `references/entry-smoke-check.md` before dispatching the first per-task wave each phase — one-shot gate covering verifier-agent readability, sidecar write path + `phase:` ordinal backfill, and `verifier_enabled` snapshot.
-
-## Implement-Entry Task-Count Read and Dynamic Skip
-
-Runs immediately after the smoke check, before any per-task / Parallelize / Integrate dispatch. One-shot per Implement entry. Count files matching `tasks/task-[0-9][0-9].md` (or `tasks/task-[0-9][0-9][a-z].md` for letter-suffix splits) with `status: approved`, excluding `tasks/task-00*.md`. Bind to `N`; `N=0` halts, `N=1` skips Parallelize+Integrate, `N>1` runs full pipeline.
-
-Read `references/task-count-dynamic-skip.md` when running this count-read step — full branch table (N=0 / N=1 / N>1) with audit-write requirements, filesystem error handling, security-tradeoff rationale, and `reviews/implement-entry-decisions.md` schema.
+The per-topic H2s further down (Branch Model, Process Steps, OBC) are anchors for mid-loop cross-references; they do NOT duplicate the once-per-entry content above.
 
 ## Branch Model — Runtime Resolution (Full Pipeline)
 
 !cat skills/implement/references/branch-model.md
 
-## Subagent Permissions
-
-See § Once-Per-Phase Reference Files → Phase entry above. Full content in `references/phase-entry.md` § Subagent Permissions.
-
 ## Process Steps
 
 !cat skills/implement/references/process-steps.md
-
-## Baseline Tests
-
-See § Once-Per-Phase Reference Files → Phase entry above. Full content in `references/phase-entry.md` § Baseline Tests (used by Process Step 4 — throwaway worktree at `.worktrees/{slug}/baseline/`, 3-options menu, full-pipeline vs quick-fix `task-00` handling, baseline-worktree-deleted-before-per-task-worktree invariant).
 
 ## Multi-Actor Flow Check
 
@@ -164,6 +134,16 @@ Main chat dispatches implementer + reviewer + fix-round subagents, aggregates fi
 
 Implementer self-review (the `qrspi-implementer` body's "Before Reporting Back: Self-Review" section) is encouraged. What is banned is main chat substituting that self-review for the formal reviewer dispatch: every per-task flow runs the configured reviewer set as separate subagent dispatches, regardless of how clean the implementer's self-review looked. Reviewer subagents never modify code; findings go back to main chat, which dispatches an implementer-fix subagent.
 
+### Round Counting (Definition)
+
+1. **Round = one review→fix iteration.** Orchestrator emits the round-NN diff (HEAD-advanced — see § Per-Task Convergence Narrowing), dispatches the round's reviewer fan-out, fans in findings + notifications, dispatches the fix-cycle implementer (if findings), concludes when that implementer reports DONE.
+2. **Per-round artifacts share the round number.** One `reviews/tasks/task-NN/round-NN/` directory and one `reviews/tasks/task-NN/round-NN.diff` per round.
+3. **Fix-loop cap counts rounds, not dispatches.** `review_mode: loop_until_clean` caps at **3 rounds**. After round-3's fix-cycle, dispatch a round-4 review pass; clean → clean-after-3-fixes; still-issues → escalate (no 4th fix-cycle).
+
+**Notification-driven dispatches do NOT advance the round counter.** When a task's fix triggers a sibling-impact notification on another in-batch task, that sibling gets its own fix-cycle dispatch at the SAME round number — same `round-NN/` directory, ZERO consumption of the 3-round budget. The cap counts review→fix iterations on the originating task, not bookkeeping ripple. Full mechanics in `references/per-task-routing.md` § Round-Level Notification Sweep.
+
+**Verify the round counter against `reviews/tasks/task-NN/round-*/` directories on disk** — do not infer from chat history.
+
 ### Subagent Roster
 
 !cat skills/implement/references/subagent-roster.md
@@ -189,29 +169,11 @@ A tier configured as `none` HALTS LOUDLY with a diagnostic naming the unconfigur
 
 **Dispatch-site forwarding.** First-party dispatches pass the resolved model into the host's subagent dispatch primitive; third-party dispatches pipe their prompt to `scripts/dispatch-companion.sh` with `--vendor <resolved-vendor> --model <resolved-model>`.
 
-#### Default routing reference (default `model_routing:` table)
+!cat skills/_shared/model-routing-defaults.md
 
-The agent-class-to-`(provider, model)` mapping that ships as the default `model_routing:` block in `config.md`. Operators may edit `config.md` to deviate per-run.
+#### Specialist citation-density wrap (cross-skill pointer)
 
-| Agent class                         | Default route                       | Default-tier band                | Rationale |
-|-------------------------------------|-------------------------------------|----------------------------------|----------------------------------------|
-| `qrspi-research-collator`           | DeepSeek V3 (or current cheap tier) | cheap-model eligible             | Mechanical verbatim extraction; no synthesis. Cheap model is sufficient — the cost-per-collation dominates Wave fan-out at scale. |
-| `qrspi-implementer-lightweight`     | DeepSeek V3 (or current cheap tier) | cheap-model eligible             | Single-pass execution of well-specified lightweight tasks. Reviewer fan-out catches drift; routing the implementer to cheap saves dominant Wave token cost. |
-| `qrspi-research-specialist`         | DeepSeek V3, citation-density gated | cheap-model eligible (conditional) | Question-scoped research with structured output. Cheap model is sufficient WHEN citation density meets the floor; below-floor output triggers one re-run on the trusted model (see § Specialist Citation-Density Validator). |
-| general-purpose / Explore agent     | Sonnet (Claude)                     | trusted                          | General-purpose exploration that may surface ambiguous findings; cheap-model misreads here propagate through every downstream consumer. Stay trusted. |
-| `qrspi-test-writer`                 | Sonnet (Claude)                     | trusted                          | Test authoring is high-leverage — a bad test pins a wrong contract. Stay trusted; cost is dominated by reviewer fan-out, not test-writer dispatches. |
-
-The matrix is observable via `test-routing-matrix-application.bats`. Implement consumes the matrix at every dispatch through the Tier Resolution Chain; operator-edited `model_routing:` entries override the defaults without code changes.
-
-#### Specialist Citation-Density Validator (post-output, trusted-model re-run)
-
-Every `qrspi-research-specialist` dispatch is wrapped with a post-output validator that measures citation density of the returned `q*.md` report against `validators.citation_density_floor:` in `config.md` (default `0.05`). Runs at the per-dispatch boundary, AFTER the specialist's report is written and BEFORE the report enters downstream collation:
-
-1. **Above-floor:** report proceeds unchanged. No re-run, no rerun-count increment.
-2. **Below-floor:** re-runs the specialist EXACTLY ONCE on the trusted model (the role's `trusted_path:` route, or the trusted-tier default), with the same `question_body`/`question_ids`. The rerun count is incremented in this task's telemetry record.
-3. **Second below-floor (re-run also fails):** emit a loud diagnostic naming the below-floor density value and exit non-zero. The orchestrator treats non-zero as a specialist-dispatch FAILURE (NOT a zero-exit-with-empty-body) and may retry on a different topic angle, escalate to a higher tier, or proceed degraded per the BLOCKED escape hatch — the validator does NOT silently forward below-floor output to consumers.
-
-Hook details live in `skills/research/SKILL.md` § Citation-Density Post-Validation Hook.
+The `qrspi-research-specialist` cheap-tier eligibility above is conditional on a post-output citation-density check that may force a one-shot trusted-model re-run. Full hook contract — when the wrap fires, above/below-floor branching, exit-code semantics, and BLOCKED escape hatch — lives in `skills/research/SKILL.md` § Citation-Density Post-Validation Hook. Implement consumes that contract: a non-zero exit from the wrap is a specialist-dispatch failure (NOT zero-exit-with-empty-body) and the rerun count flows into this task's telemetry record (see § Per-Task Telemetry Emission below).
 
 #### Per-Task Telemetry Emission (`reviews/telemetry/round-NN/task-NN.json`)
 
@@ -454,19 +416,13 @@ When a task reaches DONE and its frontmatter carries `reference_gate: true`, HAL
 
 Read `references/fix-task-routing.md` when handling fix tasks from integration, CI, or test failures — routing rules for the fix dispatch.
 
-## Orchestration Boundary Observability Check (Phase-End)
+## Orchestration Boundary Observability Check (Batch-End)
 
-Process Step 7. Runs once per phase, at phase end after every task reaches a terminal state, immediately before the batch gate.
+Process Step 7. Runs once per batch, at batch end after every task reaches a terminal state, immediately before the batch gate.
 
 If `scripts/orchestration-boundary-check.sh` is absent or not executable at invocation time, the orchestrator writes `obc-script-absent: scripts/orchestration-boundary-check.sh not found or not executable` under `## Dispatch defects` in `<ABS_ARTIFACT_DIR>/reviews/implement/orchestration-boundary.md` and halts before invocation unconditionally.
 
-Read `references/phase-end.md` per § Once-Per-Phase Reference Files trigger — covers full OBC script invocation, the `reviews/implement/orchestration-boundary.md` section schema (`## Boundary violations` vs `## Dispatch defects`), fail-soft vs fail-loud semantics, and the autopilot precedence ladder for batch-gate branch evaluation.
-
-## Batch Gate (After All Tasks)
-
-See § Once-Per-Phase Reference Files → Phase end above. Full content in `references/phase-end.md` (covers `## Dispatch defects` suppression of option (c), the four-branch autopilot precedence order, the clean-OBC straight-through advance, and the Batch Gate Red Flags STOP list).
-
-Read `references/batch-gate-autopilot.md` when presenting the batch gate (interactive menu rendering or autopilot branch evaluation) — full menu rendering, batch summary, advance menus, and gate-level reviewer dispatch detail.
+Read `references/batch-end.md` per § Once-Per-Implement-Entry Reference Files trigger — covers full OBC script invocation, the `reviews/implement/orchestration-boundary.md` section schema (`## Boundary violations` vs `## Dispatch defects`), fail-soft vs fail-loud semantics, and the autopilot precedence ladder for batch-gate branch evaluation.
 
 ## Worked Examples
 

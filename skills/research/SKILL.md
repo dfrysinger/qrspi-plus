@@ -78,11 +78,11 @@ Every `qrspi-research-specialist` dispatch is observed at the dispatch boundary 
 
 **Above-floor result.** The report proceeds unchanged. The collation subagent reads it on the same schedule as any other specialist output. No re-run, no diagnostic, no telemetry rerun-count increment.
 
-**Below-floor result (first occurrence).** The dispatch re-runs the specialist EXACTLY ONCE on the trusted model (the role's `trusted_path:` route from `config.md`'s `model_routing:` table, OR the trusted-tier default from the routing matrix in `skills/implement/SKILL.md` § Default routing reference). The re-run carries identical `question_body` and `question_ids` parameters as the original dispatch — only the `(provider, model)` pair changes. The orchestrator increments the per-task `citation_density_rerun_count` field in this task's telemetry record (see `skills/implement/SKILL.md` § Per-Task Telemetry Emission).
+**Below-floor result (first occurrence).** The dispatch re-runs the specialist EXACTLY ONCE on the trusted model (the role's `trusted_path:` route from `config.md`'s `model_routing:` table, OR the trusted-tier default — see `skills/_shared/model-routing-defaults.md`). The re-run carries identical `question_body` and `question_ids` parameters as the original dispatch — only the `(provider, model)` pair changes. The orchestrator increments the per-task `citation_density_rerun_count` field in this task's telemetry record (see `skills/implement/SKILL.md` § Per-Task Telemetry Emission).
 
 **Below-floor result (re-run also below floor).** The validator emits a loud diagnostic naming the below-floor density value, exits non-zero (propagating the failure signal to the Implement orchestrator), and does NOT silently forward the below-floor output to downstream consumers. The non-zero exit is observably distinct from the success path — it is NOT a zero-exit-with-empty-body. The Implement orchestrator treats the non-zero exit as a specialist-dispatch failure and may retry on a different topic angle, escalate to opus, or proceed with degraded output per its BLOCKED escape hatch; the validator never silently degrades.
 
-The dispatch-wrapping contract that consumes this hook (when the wrap fires, how the telemetry rerun-count is incremented, what the orchestrator does with the non-zero exit) is authored in `skills/implement/SKILL.md` § Specialist Citation-Density Validator. This Research section documents the producer-side hook contract that Implement consumes.
+Implement's consumer-side wrap (telemetry rerun-count increment, non-zero-exit handling, BLOCKED escape) consumes this hook; pointer in `skills/implement/SKILL.md` § Specialist citation-density wrap.
 
 ### Collation Subagent (verbatim extraction, not synthesis)
 
