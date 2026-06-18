@@ -597,14 +597,39 @@ if [ "$#" -gt 0 ] && [ "$1" = "await" ]; then
       printf 'dispatch-companion: await: invalid tag in job record %s\n' "$_await_job" >&2
       exit 1 ;;
   esac
-  # Re-validate round_dir from job record: a crafted job record with
-  # round_dir=/tmp/... or any out-of-repo path would write raw LLM output
-  # outside the repo tree. Reject before constructing _raw_dir.
-  ARTIFACT_ROOT="$(_derive_artifact_root_companion "$_job_round_dir")"
+  # Re-validate round_dir from job record. A crafted record with
+  # round_dir=/tmp/... (or a path inside any other git worktree) would
+  # otherwise both (a) divert _raw_dir outside the artifact tree and
+  # (b) seed ARTIFACT_ROOT from the same crafted value — making the
+  # boundary check self-referential (issue #340 dual-review P1).
+  #
+  # The trust anchor at await time is NOT the record. It is this process's
+  # cwd: await-round.sh runs us with cwd=<round-dir>/.dispatch/ (see the
+  # comment block above at the _job_record lookup). Derive the trusted
+  # round dir from $PWD/.. and require the record value to canonically
+  # equal it; then derive ARTIFACT_ROOT from the trusted value and use
+  # the trusted value (NOT the record value) for _raw_dir.
+  case "${PWD##*/}" in
+    .dispatch) : ;;
+    *)
+      printf 'dispatch-companion: await: cwd basename must be .dispatch (got: %s); reject (await-round.sh cwd contract violation)\n' \
+        "${PWD##*/}" >&2
+      exit 13 ;;
+  esac
+  _trusted_round_dir="$(_qrspi_canonicalize "$PWD/..")" \
+    || { printf 'dispatch-companion: await: cannot canonicalize cwd parent as trusted round dir\n' >&2; exit 13; }
+  _canon_job_round_dir="$(_qrspi_canonicalize "$_job_round_dir")" \
+    || { printf 'dispatch-companion: await: cannot canonicalize round_dir from job record: %s\n' "$_job_round_dir" >&2; exit 13; }
+  if [ "$_canon_job_round_dir" != "$_trusted_round_dir" ]; then
+    printf 'dispatch-companion: await: job-record round_dir (%s) does not match cwd parent (%s); reject (job-record tampering or moved round dir)\n' \
+      "$_canon_job_round_dir" "$_trusted_round_dir" >&2
+    exit 13
+  fi
+  ARTIFACT_ROOT="$(_derive_artifact_root_companion "$_trusted_round_dir")"
   export ARTIFACT_ROOT
-  assert_path_under_artifact_root "await:round_dir" "$_job_round_dir"
+  assert_path_under_artifact_root "await:round_dir" "$_trusted_round_dir"
 
-  _raw_dir="$_job_round_dir/.dispatch"
+  _raw_dir="$_trusted_round_dir/.dispatch"
   mkdir -p "$_raw_dir" || {
     printf 'dispatch-companion: await: cannot create raw-capture dir: %s\n' "$_raw_dir" >&2
     exit 13

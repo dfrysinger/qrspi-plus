@@ -1140,7 +1140,7 @@ EOF
   # --artifact <file> --agents "quality-claude=<agent-file>" emits at least one
   # "MODE=first_party" line on stdout for the first-party agent.
   local round_dir
-  round_dir="$(mktemp -d)"
+  round_dir="$(mktemp -d "$TMP_DIR/round-XXXXXX")"
   run "$WRAPPER" \
     --step goals \
     --round 1 \
@@ -1158,7 +1158,7 @@ EOF
   # the orchestrator can parse verbatim values per the iron law (task-20.md §dispatch-agent
   # unit coverage; design.md CD-1 §3 spec-line format).
   local round_dir
-  round_dir="$(mktemp -d)"
+  round_dir="$(mktemp -d "$TMP_DIR/round-XXXXXX")"
   run "$WRAPPER" \
     --step goals \
     --round 1 \
@@ -1180,7 +1180,7 @@ EOF
   # session-scoped (design.md CD-1 #3 L82; structure.md §dispatch-agent.sh PROMPT_FILE
   # always-absolute emission).
   local round_dir
-  round_dir="$(mktemp -d)"
+  round_dir="$(mktemp -d "$TMP_DIR/round-XXXXXX")"
   run "$WRAPPER" \
     --step goals \
     --round 1 \
@@ -1204,7 +1204,7 @@ EOF
   # unit coverage bullet ".dispatch-manifest.json entries").
   # If dispatch-agent.sh doesn't exist, the manifest is not created → test fails RED.
   local round_dir
-  round_dir="$(mktemp -d)"
+  round_dir="$(mktemp -d "$TMP_DIR/round-XXXXXX")"
   "$WRAPPER" \
     --step goals \
     --round 1 \
@@ -1581,6 +1581,8 @@ _path_guard_teardown_fixtures() {
   _path_guard_teardown_fixtures
   [ "$status" -ne 0 ]
   [[ "$output" =~ "resolves outside" ]]
+  # #340 P2(a) class-pin: --subject-code is artifact-class.
+  [[ "$output" =~ "artifact root" ]]
 }
 
 @test "--subject-code /etc/hosts rejected (readable system file outside repo)" {
@@ -1636,6 +1638,8 @@ _path_guard_teardown_fixtures() {
   _path_guard_teardown_fixtures
   [ "$status" -ne 0 ]
   [[ "$output" =~ "resolves outside" ]]
+  # #340 P2(a) class-pin: --diff-file is artifact-class.
+  [[ "$output" =~ "artifact root" ]]
 }
 
 # --- Rejection cases: symlink whose canonical target is outside repo -------
@@ -1848,6 +1852,8 @@ _path_guard_teardown_fixtures() {
   rm -rf "$round_dir"
   [ "$status" -ne 0 ]
   [[ "$output" =~ "resolves outside" ]]
+  # #340 P2(a) class-pin: --agents (plugin asset path) is plugin-class.
+  [[ "$output" =~ "repository" ]]
 }
 
 @test "batch --agents symlink-to-outside rejected" {
@@ -2161,10 +2167,10 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
   [[ "$output" =~ "invalid tag" ]]
 }
 
-@test "companion await: job record with out-of-repo round_dir rejected with 'resolves outside'" {
-  # await mode must assert_path_under_repo_root on _job_round_dir extracted
-  # from the job record, preventing raw LLM output from being written to /etc
-  # or any out-of-tree path.
+@test "companion await: job record with out-of-repo round_dir rejected (cwd-mismatch trust anchor)" {
+  # await mode trusts $PWD/.. (await-round.sh cwd contract), NOT the record.
+  # A record carrying an out-of-repo round_dir is rejected at the cwd-mismatch
+  # check before any boundary check on the record value is even attempted.
   local oor_dir
   oor_dir="$(mktemp -d "${TMPDIR:-/tmp}/bats-companion-rdoor.XXXXXX")"
   local bad_job_id="testjob-rdoor-$$"
@@ -2178,7 +2184,48 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
   run bash -c "cd '$dispatch_dir' && '$COMPANION' await '$bad_job_id'"
   rm -rf "$oor_dir"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "resolves outside" ]]
+  [[ "$output" =~ "does not match cwd parent" ]]
+}
+
+@test "[#340 P1] companion await: tampered round_dir pointing at separate git worktree rejected" {
+  # Pre-fix regression: a tampered job record whose round_dir pointed at any
+  # git worktree would pass the boundary check, because ARTIFACT_ROOT was
+  # derived from that same round_dir (self-referential trust anchor). The
+  # fix uses $PWD/.. as the trust anchor and requires the record value to
+  # canonically equal it.
+  local attacker_repo
+  attacker_repo="$(mktemp -d "${TMPDIR:-/tmp}/bats-attacker-repo.XXXXXX")"
+  (cd "$attacker_repo" && git init -q)
+  mkdir -p "$attacker_repo/round-01"
+  local bad_job_id="testjob-tamper-$$"
+
+  local dispatch_dir="$TMP_DIR/.dispatch"
+  mkdir -p "$dispatch_dir/.jobs"
+  printf 'vendor=codex\nmodel=gpt-4\nprompt_file=%s/p.txt\nround_dir=%s/round-01\ntag=validtag\n' \
+    "$TMP_DIR" "$attacker_repo" > "$dispatch_dir/.jobs/$bad_job_id"
+
+  run bash -c "cd '$dispatch_dir' && '$COMPANION' await '$bad_job_id'"
+  rm -rf "$attacker_repo"
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "does not match cwd parent" ]]
+}
+
+@test "[#340 P1] companion await: cwd basename other than .dispatch rejected" {
+  # await-round.sh contract: cwd must be <round-dir>/.dispatch. Running
+  # await from any other cwd is a contract violation.
+  local good_job_id="testjob-cwd-$$"
+  local dispatch_dir="$TMP_DIR/.dispatch"
+  mkdir -p "$dispatch_dir/.jobs"
+  printf 'vendor=codex\nmodel=gpt-4\nprompt_file=%s/p.txt\nround_dir=%s\ntag=validtag\n' \
+    "$TMP_DIR" "$TMP_DIR" > "$dispatch_dir/.jobs/$good_job_id"
+
+  # Run from a sibling dir (not .dispatch).
+  local wrong_cwd="$TMP_DIR/not-dispatch"
+  mkdir -p "$wrong_cwd/.jobs"
+  cp "$dispatch_dir/.jobs/$good_job_id" "$wrong_cwd/.jobs/$good_job_id"
+  run bash -c "cd '$wrong_cwd' && '$COMPANION' await '$good_job_id'"
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "cwd basename must be .dispatch" ]]
 }
 
 @test "companion launch: relative --round-dir at launch resolves to canonical path stored in record" {
@@ -2324,4 +2371,44 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
     echo "$output" >&2
     return 1
   fi
+}
+
+@test "[#340 P1] batch --output-dir outside ARTIFACT_ROOT rejected before .dispatch/ creation" {
+  # Pre-fix: even with QRSPI_ARTIFACT_ROOT set, --output-dir pointing
+  # outside the artifact root was accepted and $OUTPUT_DIR/.dispatch was
+  # mkdir-p'd at the out-of-root path. The fix asserts --output-dir
+  # under ARTIFACT_ROOT (pre-mkdir ancestor + post-mkdir canonical).
+  local artifact_fake="$BATS_TEST_TMPDIR/user-repo-od-$$"
+  local oor_output="$BATS_TEST_TMPDIR/oor-output-$$"
+  mkdir -p "$artifact_fake"
+  run env QRSPI_ARTIFACT_ROOT="$artifact_fake" "$WRAPPER" \
+    --step questions --round 1 \
+    --output-dir "$oor_output" \
+    --artifact "$artifact_fake/q.md" \
+    --agents "quality-claude=qrspi-questions-reviewer"
+  # Must reject; must NOT have created the out-of-root .dispatch/ dir.
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "resolves outside" ]]
+  [[ "$output" =~ "artifact root" ]]
+  [ ! -d "$oor_output/.dispatch" ]
+}
+
+@test "[#340 P1] single-mode --output-dir outside ARTIFACT_ROOT rejected before .dispatch/ creation" {
+  local artifact_fake="$BATS_TEST_TMPDIR/user-repo-od-single-$$"
+  local oor_output="$BATS_TEST_TMPDIR/oor-output-single-$$"
+  mkdir -p "$artifact_fake"
+  _path_guard_setup_fixtures
+  run env QRSPI_ARTIFACT_ROOT="$artifact_fake" "$WRAPPER" \
+    --agent-file "$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --reviewer-tag spec-codex \
+    --output-dir "$oor_output" --round 1 \
+    --model gpt-5-mini \
+    --output-file "$artifact_fake/out.md" \
+    --artifact-dir "$artifact_fake" \
+    --subject-code "$REPO_LOCAL_TMP/src/foo.ts"
+  _path_guard_teardown_fixtures
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "resolves outside" ]]
+  [[ "$output" =~ "artifact root" ]]
+  [ ! -d "$oor_output/.dispatch" ]
 }

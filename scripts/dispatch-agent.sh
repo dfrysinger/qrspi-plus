@@ -850,8 +850,15 @@ if [[ "$_is_batch_mode" == "true" ]]; then
     QRSPI_SOURCE_ONLY=1 . "$_resolve_lib" || true
   fi
 
+  # #340 dual-review P1: --output-dir is artifact-class per the topology
+  # contract. Guard its .dispatch creation site against an out-of-root path.
+  # Two-stage pattern (mirrors launch:--round-dir): pre-mkdir walks OUTPUT_DIR
+  # to its deepest existing ancestor; post-mkdir runs the full canonical
+  # check on the now-existing leaf to catch symlink swaps.
+  assert_ancestor_under_artifact_root "--output-dir" "$BATCH_OUTPUT_DIR"
   mkdir -p "$BATCH_OUTPUT_DIR/.dispatch" \
     || { echo "error: cannot create dispatch dir $BATCH_OUTPUT_DIR/.dispatch" >&2; exit 1; }
+  assert_path_under_artifact_root "--output-dir" "$BATCH_OUTPUT_DIR"
 
   # If the batch references a config.md (model_routing source), expose it to the
   # resolve-lib functions via CONFIG_MD. Look beside the output-dir's artifact
@@ -1614,7 +1621,11 @@ if [[ "$_detected_host" == "copilot-cli" ]]; then
   # orchestrator can reference it via DISPATCH_FILE= without embedding the
   # prompt body in its tool-call arguments (per design.md CD-1 PATH A).
   _fp_dispatch_dir="$OUTPUT_DIR/.dispatch"
+  # #340 dual-review P1: --output-dir is artifact-class. Guard its .dispatch
+  # creation site (mirrors batch-mode site above).
+  assert_ancestor_under_artifact_root "--output-dir" "$OUTPUT_DIR"
   mkdir -p "$_fp_dispatch_dir" || { echo "error: cannot create dispatch dir $_fp_dispatch_dir" >&2; exit 1; }
+  assert_path_under_artifact_root "--output-dir" "$OUTPUT_DIR"
   _fp_prompt_file="$_fp_dispatch_dir/$REVIEWER_TAG.prompt"
   # Write prompt via mktemp + mv -f to avoid a TOCTOU symlink attack: the
   # rm-f then open(2)-for-redirect pair is not atomic.  mktemp uses O_EXCL
