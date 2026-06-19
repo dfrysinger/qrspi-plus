@@ -109,13 +109,17 @@ When working a goal with the user, follow these rules.
 
 3. **Ground first, ask second.** Before asking the user any question — your own or one the user has asked back — consult the codebase, then the web. When a question touches industry best practice or external patterns, search the web for cited evidence rather than speculating or punting back. Escalate to the user only when no source surfaces a defensible answer.
 
-4. **When the user asks for your call, provide one.** Give a grounded recommendation (sources per Rule 3) with named tradeoffs. Do not deflect with more questions. If grounding leaves the call indeterminate, say so and name what additional evidence would resolve it.
+4. **When the user asks for your call, provide one — at Goals altitude.** Give a grounded recommendation (sources per Rule 3) with named tradeoffs. Do not deflect with more questions. If grounding leaves the call indeterminate, say so and name what additional evidence would resolve it. If the question is solution-approach (methodology, algorithm, scoring rubric, architecture, "how to compute X"), the recommendation is *capture candidates in "What we know so far" and defer to Design* — not a pick between A/B/C/D. See Rule 5.
+
+5. **Altitude check before every question.** Before asking the user any question, classify it: is the answer a *goal-articulation* fact (what is the problem, who is affected, why does it matter, what is currently known) or a *solution-approach* decision (how to compute, how to measure, which methodology, which algorithm, which architecture, which scoring rubric)? Only goal-articulation questions belong in this dialogue. If a question is solution-approach, do NOT ask it — capture it as an open question Design will weigh, list any candidates the conversation has surfaced under "What we know so far," and move on. The dialogue's job is to surface the problem; Design's job is to choose how to solve it.
 
 6. **Sharpen fuzzy language.** When the user uses imprecise vocabulary, propose the canonical term and ask for confirmation before moving on.
 
-7. **Walk every branch of the decision tree, including flow gaps.** For each goal, resolve dependencies one-by-one. Do not move to the next goal until every branch surfaced is decided, explicitly deferred with a written reason, or split out as a separate goal. Branch completeness includes the end-to-end flow between any multi-actor decisions — actors named, operations sequenced, per-step inputs/outputs traced to producer and consumer, loud-failure paths named, context-cost call-out present. A flow with implicit hand-offs is an open branch; close it before moving on.
+7. **Walk every goal-articulation branch of the decision tree, including flow gaps.** For each goal, resolve dependencies one-by-one. Do not move to the next goal until every branch surfaced is decided, explicitly deferred with a written reason, or split out as a separate goal. "Branch" here means a goal-articulation branch (whose problem is this, what signal tells us it's a problem, what's the blast radius, who are the actors, what's the end-to-end flow between them) — NOT a solution-approach branch (which methodology, algorithm, architecture). Solution-approach branches are closed per Rule 5: list candidates in "What we know so far" for Design to weigh; do NOT force a user pick. Branch completeness includes the end-to-end flow between any multi-actor decisions — actors named, operations sequenced, per-step inputs/outputs traced to producer and consumer, loud-failure paths named, context-cost call-out present. A flow with implicit hand-offs is an open branch; close it before moving on.
 
 8. **Lock decisions as they settle.** Write each decision into the goal block under `status: draft` as it is confirmed. Do not accumulate decisions in chat across multiple goals before persisting.
+
+9. **Probe for unstated goals before declaring the set complete.** User-volunteered goals are a *starting set*, not the complete set. Before treating the goal list as final, drive 1–2 probing passes to surface omissions: "What else does success look like?", "What would make this fail even if every stated goal lands?", "Are there stakeholders whose needs we haven't named?", "What about ops / observability / rollback / security / non-functional concerns?" Domain-adjacent goal categories (ops, observability, rollback, migration, security, accessibility, performance, error UX) often surface only when explicitly asked. Run the adjacency sweep; capture any new goals the user confirms; only then proceed to synthesis.
 
 ### Incremental Persistence (Direct-to-Artifact Drafting)
 
@@ -269,6 +273,8 @@ Surface a todo: title `Recommend /compact (pre-handoff) — goals`, description 
 - "Similar to what we did before" without specifying what exactly
 - Pipeline mode selected without discussing the work's scope (quick fix for something that needs design, or full pipeline for a one-line change)
 - Synthesizing goals.md before capturing the per-goal Problem / Why we care / What we know so far frames
+- Asking the user to pick between solution-approach options during dialogue (measurement methodologies, computation approaches, scoring rubrics, ranking algorithms, architectural patterns, "how to compute X" framings) — that's solutioning-via-question. Capture candidates in "What we know so far" and move on (see Dialogue Conduct Rule 5).
+- Declaring the goal set complete after only capturing user-volunteered goals — no adjacency sweep run, no probing for ops / observability / rollback / security / non-functional concerns (see Dialogue Conduct Rule 9).
 
 ## Common Rationalizations — STOP
 
@@ -281,6 +287,8 @@ Surface a todo: title `Recommend /compact (pre-handoff) — goals`, description 
 | "The scope is obvious" | Obvious scope is where scope creep hides. Write the per-goal Problem clearly so Design can scope its solution against it. |
 | "This goal feels exploratory but I can't justify the cost so I'll mark it known-fix" | Cost-benefit reasoning is exactly what the `exploratory` tag protects against. Mark it `exploratory` honestly. |
 | "Let me just start the research first" | Research without approved goals means you don't know what you're looking for. |
+| "I'll let the user pick between methodology / measurement / approach options A/B/C/D" | Methodology choice is Design altitude. Capture all candidates in "What we know so far" and let Design weigh them with research. Forcing the choice now pre-commits Design and bypasses the research step. |
+| "The user gave me their goals; the list is complete" | User-volunteered goals are a starting set, not the complete set. Run the adjacency sweep (ops, observability, rollback, security, non-functional) before declaring complete — Goals' job is to surface what the user *hasn't* articulated yet, not just transcribe what they have. |
 
 ## Goal Specificity
 

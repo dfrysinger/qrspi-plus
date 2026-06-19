@@ -103,3 +103,21 @@ Rate limiting needed.
 - **Solution commitments leaked** — "Implementation in Redis with a token bucket" pre-commits Design.
 - **Admin UI smuggled in** — separate goal, not a sub-bullet.
 - **"Use existing tech stack"** as a constraint is not concrete.
+
+## Dialogue contrast: BAD vs GOOD question (anti-solutioning)
+
+The artifact above is the *output*; this contrast pair targets the *dialogue* an agent runs to produce it.
+
+**BAD question (solution-approach — Design altitude, do NOT ask):**
+
+> "How should we measure rate-limit fairness — fixed window, sliding window, or token bucket?"
+
+This forces the user to pick a methodology before Research has weighed memory budget, burst tolerance, or implementation cost. Pre-commits Design.
+
+**GOOD behavior (capture as Design candidate, move on):**
+
+Do not ask. Add to G1's "What we know so far":
+
+> "Fairness measurement is unresolved — candidates Design should weigh include fixed-window counters, sliding windows, and token-bucket schemes; choice depends on memory budget, burst tolerance, and per-client cost. Design will evaluate."
+
+The rule: methodology / algorithm / architecture / "how to compute X" questions are Design-altitude. Capture the candidates the conversation surfaces, frame them as possibilities for Design, and continue. See SKILL.md Dialogue Conduct Rule 5 (altitude check).
