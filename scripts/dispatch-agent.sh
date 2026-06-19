@@ -1094,12 +1094,23 @@ if [[ "$_is_batch_mode" == "true" ]]; then
       # job-id and await-round.sh could never drain the entry.
       _launch_out=""
       _launch_rc=0
+      # #340 round-2 (GPT-5.5): forward --artifact-repo-root to companion
+      # launch so callers relying on the flag (rather than env or git
+      # discovery) get the same ARTIFACT_ROOT in both dispatch-agent and
+      # the companion it spawns. Empty flag → omit the arg pair to keep
+      # the companion's existing arg-count discipline.
+      _companion_args=(
+        --vendor "$_vendor"
+        --model "$_model"
+        --prompt-file "$_prompt_file"
+        --round-dir "$BATCH_OUTPUT_DIR"
+        --tag "$_tag"
+      )
+      if [[ -n "$ARTIFACT_REPO_ROOT_FLAG" ]]; then
+        _companion_args+=( --artifact-repo-root "$ARTIFACT_REPO_ROOT_FLAG" )
+      fi
       _launch_out=$("$REPO_ROOT/scripts/dispatch-companion.sh" \
-        --vendor "$_vendor" \
-        --model "$_model" \
-        --prompt-file "$_prompt_file" \
-        --round-dir "$BATCH_OUTPUT_DIR" \
-        --tag "$_tag" 2>&1) || _launch_rc=$?
+        "${_companion_args[@]}" 2>&1) || _launch_rc=$?
       if [[ "$_launch_rc" -ne 0 ]]; then
         echo "[dispatch-agent] WARN: dispatch-companion launch failed for tag '$_tag' (rc=$_launch_rc): $_launch_out" >&2
         emit_dispatch_manifest_entry "" "failed"

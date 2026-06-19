@@ -2413,22 +2413,114 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
   [ ! -d "$oor_output/.dispatch" ]
 }
 
-@test "[#340 P2(b)] companion launch: --artifact-repo-root accepted (parity with dispatch-agent)" {
-  # Symmetry with dispatch-agent.sh: companion launch accepts
-  # --artifact-repo-root so callers using a non-git artifact root can
-  # supply it explicitly (without QRSPI_ARTIFACT_ROOT env).
+@test "[#340 P2(b)] companion launch: --artifact-repo-root takes precedence over git-toplevel discovery" {
+  # Strengthens the parse-only check: put --round-dir inside a real git
+  # repo whose toplevel is NOT the same as --artifact-repo-root, then
+  # verify the canonical round_dir stored in the job record matches the
+  # flag value's tree (i.e. flag won over git-discovery). A regression
+  # that drops the flag would silently fall through to git toplevel and
+  # this test would catch it.
   local artifact_fake="$BATS_TEST_TMPDIR/companion-flag-root-$$"
-  mkdir -p "$artifact_fake/round-01"
+  local git_root="$BATS_TEST_TMPDIR/companion-git-decoy-$$"
+  mkdir -p "$artifact_fake/round-01" "$git_root"
+  (cd "$git_root" && git init -q)
+  # Place round-dir inside BOTH trees by way of a symlink: round-dir
+  # lexically lives under git_root (so git-toplevel discovery would
+  # return git_root) but resolves to a path under artifact_fake.
+  mkdir -p "$artifact_fake/round-02"
+  ln -s "$artifact_fake/round-02" "$git_root/round-via-symlink"
   local prompt_file="$artifact_fake/prompt.txt"
   echo "test prompt" > "$prompt_file"
 
+  # Without the flag: git-toplevel discovery from --round-dir would pick
+  # git_root, and the boundary check would reject prompt_file (which is
+  # under artifact_fake, not git_root). Run WITH the flag set to
+  # artifact_fake; the flag's value should win and the check should pass.
   run "$COMPANION" \
     --vendor claude \
     --model claude-3-opus \
     --prompt-file "$prompt_file" \
-    --round-dir "$artifact_fake/round-01" \
-    --tag flagtest \
+    --round-dir "$git_root/round-via-symlink" \
+    --tag flagprec \
     --artifact-repo-root "$artifact_fake"
   [ "$status" -eq 0 ]
   [[ "$output" =~ "JOB_ID=" ]]
+
+  # Negative control: without the flag the SAME invocation must fail
+  # at the prompt-file boundary (because git-toplevel discovery picks
+  # git_root, which does not contain prompt_file).
+  run "$COMPANION" \
+    --vendor claude \
+    --model claude-3-opus \
+    --prompt-file "$prompt_file" \
+    --round-dir "$git_root/round-via-symlink" \
+    --tag flagprec2
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "resolves outside" ]]
+}
+
+@test "[#340 P2(b)] batch dispatch forwards --artifact-repo-root to companion launch" {
+  # GPT-5.5 round-2 finding: batch third-party dispatch must propagate
+  # --artifact-repo-root to the dispatch-companion launch argv. Approach:
+  # temporarily swap the real dispatch-companion.sh with a wrapper that
+  # appends its argv to a capture file then execs the real companion.
+  # Restore in cleanup. This exercises the actual third-party routing
+  # (claude-code:codex via _resolve-lib.sh) with the real CLI shape.
+  [ -f "$REPO_ROOT/tests/fixtures/stub-codex-companion.mjs" ] \
+    || skip "codex stub fixture missing"
+
+  local artifact_fake="$BATS_TEST_TMPDIR/batch-flag-fwd-$$"
+  local round_dir="$artifact_fake/reviews/round-01"
+  mkdir -p "$round_dir"
+  printf 'stub artifact\n' > "$artifact_fake/plan.md"
+  printf 'stub diff\n'     > "$artifact_fake/round-1.diff"
+  local capture="$BATS_TEST_TMPDIR/companion-argv-$$.txt"
+
+  # Swap real companion with a wrapper that captures argv then execs real.
+  local real_companion="$REPO_ROOT/scripts/dispatch-companion.sh"
+  local backup="$BATS_TEST_TMPDIR/dispatch-companion.real.$$"
+  cp "$real_companion" "$backup"
+  cat > "$real_companion" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" >> "\$CAPTURE_FILE"
+exec "$backup" "\$@"
+EOF
+  chmod +x "$real_companion"
+
+  # Wire codex broker stub so launch completes deterministically.
+  local wrapper_rc=0
+  CAPTURE_FILE="$capture" run env -u COPILOT_CLI \
+    CAPTURE_FILE="$capture" \
+    QRSPI_ARTIFACT_ROOT="$artifact_fake" \
+    CODEX_COMPANION="$REPO_ROOT/tests/fixtures/stub-codex-companion.mjs" \
+    STUB_STATE_FILE="$round_dir/stub-state.json" \
+    QRSPI_CODEX_POLL_INTERVAL_FAST=1 \
+    QRSPI_CODEX_POLL_INTERVAL_SLOW=1 \
+    QRSPI_CODEX_POLL_BACKOFF_AFTER=2 \
+    QRSPI_CODEX_CEILING_SECONDS=10 \
+    QRSPI_CODEX_LAUNCH_TIMEOUT_SECONDS=5 \
+    "$WRAPPER" \
+    --step spec --round 1 \
+    --output-dir "$round_dir" \
+    --artifact "$artifact_fake/plan.md" \
+    --diff-file "$artifact_fake/round-1.diff" \
+    --agents "spec-codex=$REPO_ROOT/agents/qrspi-spec-reviewer.md" \
+    --artifact-repo-root "$artifact_fake"
+
+  # Restore real companion BEFORE any assertion (so a failure doesn't leave
+  # the wrapper in place).
+  cp "$backup" "$real_companion"
+  chmod +x "$real_companion"
+
+  [ -f "$capture" ] || { echo "wrapper companion never invoked; output: $output" >&2; return 1; }
+  grep -q -- '--artifact-repo-root' "$capture" || {
+    echo "--artifact-repo-root NOT forwarded to companion launch; captured argv:" >&2
+    cat "$capture" >&2
+    return 1
+  }
+  grep -A1 -- '--artifact-repo-root' "$capture" | grep -qF "$artifact_fake" || {
+    echo "--artifact-repo-root value mismatch; captured argv:" >&2
+    cat "$capture" >&2
+    return 1
+  }
 }
