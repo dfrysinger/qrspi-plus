@@ -2414,46 +2414,42 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
 }
 
 @test "[#340 P2(b)] companion launch: --artifact-repo-root takes precedence over git-toplevel discovery" {
-  # Strengthens the parse-only check: put --round-dir inside a real git
-  # repo whose toplevel is NOT the same as --artifact-repo-root, then
-  # verify the canonical round_dir stored in the job record matches the
-  # flag value's tree (i.e. flag won over git-discovery). A regression
-  # that drops the flag would silently fall through to git toplevel and
-  # this test would catch it.
+  # Topology that exercises the precedence boundary:
+  #   $artifact_fake/                ← --artifact-repo-root value
+  #   $artifact_fake/prompt.txt      ← prompt-file (under artifact_fake only)
+  #   $artifact_fake/sub-git/        ← real git repo (toplevel)
+  #   $artifact_fake/sub-git/round-01/  ← --round-dir
+  # WITH the flag: ARTIFACT_ROOT = $artifact_fake → both round-dir and
+  # prompt-file resolve under it → boundary checks pass.
+  # WITHOUT the flag: git-toplevel from --round-dir picks
+  # $artifact_fake/sub-git → prompt-file (sibling of sub-git, NOT inside
+  # it) resolves outside → boundary check rejects.
   local artifact_fake="$BATS_TEST_TMPDIR/companion-flag-root-$$"
-  local git_root="$BATS_TEST_TMPDIR/companion-git-decoy-$$"
-  mkdir -p "$artifact_fake/round-01" "$git_root"
-  (cd "$git_root" && git init -q)
-  # Place round-dir inside BOTH trees by way of a symlink: round-dir
-  # lexically lives under git_root (so git-toplevel discovery would
-  # return git_root) but resolves to a path under artifact_fake.
-  mkdir -p "$artifact_fake/round-02"
-  ln -s "$artifact_fake/round-02" "$git_root/round-via-symlink"
+  mkdir -p "$artifact_fake/sub-git/round-01"
+  (cd "$artifact_fake/sub-git" && git init -q)
   local prompt_file="$artifact_fake/prompt.txt"
   echo "test prompt" > "$prompt_file"
 
-  # Without the flag: git-toplevel discovery from --round-dir would pick
-  # git_root, and the boundary check would reject prompt_file (which is
-  # under artifact_fake, not git_root). Run WITH the flag set to
-  # artifact_fake; the flag's value should win and the check should pass.
+  # WITH the flag: pass.
   run "$COMPANION" \
     --vendor claude \
     --model claude-3-opus \
     --prompt-file "$prompt_file" \
-    --round-dir "$git_root/round-via-symlink" \
+    --round-dir "$artifact_fake/sub-git/round-01" \
     --tag flagprec \
     --artifact-repo-root "$artifact_fake"
   [ "$status" -eq 0 ]
   [[ "$output" =~ "JOB_ID=" ]]
 
-  # Negative control: without the flag the SAME invocation must fail
-  # at the prompt-file boundary (because git-toplevel discovery picks
-  # git_root, which does not contain prompt_file).
+  # WITHOUT the flag: git-toplevel from --round-dir picks sub-git, so
+  # prompt-file (sibling of sub-git) is rejected. This is the negative
+  # control that proves the git-toplevel branch was the actual
+  # alternative the flag overrode.
   run "$COMPANION" \
     --vendor claude \
     --model claude-3-opus \
     --prompt-file "$prompt_file" \
-    --round-dir "$git_root/round-via-symlink" \
+    --round-dir "$artifact_fake/sub-git/round-01" \
     --tag flagprec2
   [ "$status" -ne 0 ]
   [[ "$output" =~ "resolves outside" ]]
@@ -2477,9 +2473,17 @@ COMPANION="$REPO_ROOT/scripts/dispatch-companion.sh"
   local capture="$BATS_TEST_TMPDIR/companion-argv-$$.txt"
 
   # Swap real companion with a wrapper that captures argv then execs real.
+  # Round-3 (both reviewers): the swap is not abort-safe by itself —
+  # SIGTERM/SIGKILL/Ctrl-C between the swap and restore would leave the
+  # wrapper in the working tree and break every subsequent test run.
+  # Register an EXIT/INT/TERM trap that restores from backup IMMEDIATELY
+  # after the backup copy succeeds, then clear it only after the
+  # explicit restore at the end of the test.
   local real_companion="$REPO_ROOT/scripts/dispatch-companion.sh"
   local backup="$BATS_TEST_TMPDIR/dispatch-companion.real.$$"
   cp "$real_companion" "$backup"
+  # shellcheck disable=SC2064  # intentional early expansion of $backup/$real_companion
+  trap "cp '$backup' '$real_companion' 2>/dev/null; chmod +x '$real_companion' 2>/dev/null" EXIT INT TERM
   cat > "$real_companion" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$@" >> "\$CAPTURE_FILE"
@@ -2508,9 +2512,10 @@ EOF
     --artifact-repo-root "$artifact_fake"
 
   # Restore real companion BEFORE any assertion (so a failure doesn't leave
-  # the wrapper in place).
+  # the wrapper in place) AND clear the abort-safety trap.
   cp "$backup" "$real_companion"
   chmod +x "$real_companion"
+  trap - EXIT INT TERM
 
   [ -f "$capture" ] || { echo "wrapper companion never invoked; output: $output" >&2; return 1; }
   grep -q -- '--artifact-repo-root' "$capture" || {
