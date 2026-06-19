@@ -1,6 +1,6 @@
 # Goals — `goals.md` template (conformance contract)
 
-The subagent invoked by the Goals skill's Artifact Synthesis step produces `goals.md` per the template below. The template is the **conformance contract**: required sections and per-goal subsections are enumerated; claim-before-evidence ordering is mandated; scannable bullets are required; "be concise" instructions are forbidden (synthesize the substance, do not truncate it).
+The Goals skill produces `goals.md` directly through the Defining Goals dialogue (incremental persistence — see SKILL.md § Incremental Persistence). The template below is the **conformance contract** that every locked block must match: required sections and per-goal subsections are enumerated; claim-before-evidence ordering is mandated; scannable bullets are required; "be concise" instructions are forbidden (capture the substance, do not truncate it).
 
 ```markdown
 ---
