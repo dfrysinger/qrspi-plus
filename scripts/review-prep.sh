@@ -91,7 +91,7 @@ artifact_for_step() {
   case "$1" in
     goals)       echo "goals.md" ;;
     questions)   echo "questions.md" ;;
-    research)    echo "research.md" ;;
+    research)    echo "research/summary.md" ;;
     design)      echo "design.md" ;;
     phasing)     echo "phasing.md" ;;
     plan)        echo "plan.md" ;;

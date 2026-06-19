@@ -361,3 +361,35 @@ teardown() {
   [ ! -e "$ART_DIR/reviews/goals/round-01.diff" ]
   [[ "$output" == *"review-prep-write-failed:"* ]]
 }
+
+# ── #341 regression: research step narrows to research/summary.md ──────────
+
+@test "[#341] --step research narrows diff to research/summary.md (not research.md)" {
+  # Test expectation: artifact_for_step('research') returns research/summary.md
+  # (the canonical artifact per upstream-paths.sh + skills/research/SKILL.md),
+  # NOT research.md. Pre-fix, --step research --round 01 emitted no diff because
+  # git diff filtered on the nonexistent research.md; post-fix it correctly
+  # narrows to research/summary.md and emits the expected unified diff.
+  (
+    cd "$ART_DIR"
+    mkdir -p research
+    cat > research/summary.md <<'EOF'
+# Research Summary
+
+Initial body.
+EOF
+    git add research/summary.md
+    git commit -q -m "add research/summary.md baseline"
+
+    printf '\nNew research line.\n' >> research/summary.md
+    git add research/summary.md
+    git commit -q -m "research round-1 work"
+  )
+  run "$SCRIPT" --step research --round 01 --artifact-dir "$ART_DIR" --base-ref main
+  [ "$status" -eq 0 ]
+  [ -f "$ART_DIR/reviews/research/round-01.diff" ]
+  # The emitted diff must reference the canonical path; the pre-fix bogus
+  # 'research.md' path must NOT appear.
+  grep -q "research/summary.md" "$ART_DIR/reviews/research/round-01.diff"
+  ! grep -qE "^diff --git a/research\.md " "$ART_DIR/reviews/research/round-01.diff"
+}
