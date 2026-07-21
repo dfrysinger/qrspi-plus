@@ -1,0 +1,295 @@
+name: GAW Nexus Runner
+run-name: gaw-nexus ${{ inputs.run_tag }}
+
+# Provisioned by the Nexus app so a governed run can be dispatched against this
+# repo. The governed chain runs IN this Actions run; the GAW engine is pulled
+# from an app-pinned trusted repository at an immutable commit and is never
+# committed here.
+# Hardening (fail-closed, least privilege): contents:read only,
+# persist-credentials:false, a per-run_tag concurrency group, a timeout, and
+# every action pinned to a full-length SHA. A governed ok:false (rc 1) still
+# SUCCEEDS the job and uploads the artifact; only an in-run refusal (rc >= 2) or
+# a missing contract fails the job (infra failure).
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_tag:
+        description: Correlation tag assigned by the Nexus client.
+        required: true
+      executor:
+        description: 'mock (deterministic, network-free) | sdk (real inference)'
+        required: false
+        default: mock
+      ows_body_b64:
+        description: Base64 of the RAW OWS workflow body (the script the user authored).
+        required: true
+      policy_b64:
+        description: Base64 JSON {org, repo, workflow_sha, overrides, operator}.
+        required: true
+      enterprise_policy_b64:
+        description: Optional base64 JSON enterprise ceiling (a committed trusted file wins).
+        required: false
+        default: ''
+      run_input_b64:
+        description: Base64 of the exact Contract-2 transport envelope.
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gaw-nexus-${{ inputs.run_tag }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: checkout target repo (for a committed trusted policy)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          path: target
+
+      - name: checkout GAW engine
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ghe-ai/governed-agentic-workflows
+          ref: 8bcfc4c3aba23d9c70a473bd61429a5d8b622206
+          github-server-url: https://github.ghe.com
+          token: ${{ secrets.GAW_CHECKOUT_TOKEN }}
+          persist-credentials: false
+          path: gaw
+
+      - name: record target workspace and baseline
+        id: target
+        run: |
+          set -euo pipefail
+          TARGET_ROOT="$GITHUB_WORKSPACE/target"
+          BASE_SHA=$(git -C "$TARGET_ROOT" rev-parse HEAD)
+          echo "root=$TARGET_ROOT" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: decode dispatch inputs
+        id: decode
+        env:
+          OWS_BODY_B64: ${{ inputs.ows_body_b64 }}
+          POLICY_B64: ${{ inputs.policy_b64 }}
+          ENTERPRISE_POLICY_B64: ${{ inputs.enterprise_policy_b64 }}
+          RUN_INPUT_B64: ${{ inputs.run_input_b64 }}
+          EXECUTOR: ${{ inputs.executor }}
+          TARGET_ROOT: ${{ steps.target.outputs.root }}
+          TARGET_BASE_SHA: ${{ steps.target.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, base64, json, pathlib
+          scratch = pathlib.Path("/tmp/gaw_nexus"); scratch.mkdir(parents=True, exist_ok=True)
+          # RAW OWS body -> a file the in-run entrypoint executes.
+          body = base64.b64decode(os.environ["OWS_BODY_B64"], validate=True)
+          body_path = scratch / "workflow.js"
+          body_path.write_bytes(body)
+          # Author/run policy params (client-supplied). Validated in-run by
+          # nexus_in_run; a malformed payload fails closed there.
+          policy = json.loads(base64.b64decode(os.environ["POLICY_B64"], validate=True))
+          if not isinstance(policy, dict):
+              raise SystemExit("policy_b64 must decode to a JSON object")
+          payload = {
+              "ows_body_path": str(body_path),
+              "policy": policy,
+              "executor": os.environ.get("EXECUTOR") or "mock",
+              "target_workspace": os.environ["TARGET_ROOT"],
+              "target_base_sha": os.environ["TARGET_BASE_SHA"],
+              "run_input_b64": os.environ["RUN_INPUT_B64"],
+          }
+          # Client-supplied enterprise ceiling (fallback only; a committed
+          # trusted file wins in-run). Empty input => omitted.
+          ep_b64 = os.environ.get("ENTERPRISE_POLICY_B64", "").strip()
+          if ep_b64:
+              payload["enterprise_policy"] = json.loads(base64.b64decode(ep_b64, validate=True))
+          pathlib.Path("/tmp/gaw_nexus_payload.json").write_text(json.dumps(payload))
+          print(f"executor={payload['executor']}")
+          PY
+          echo "executor=$(python3 -c 'import json;print(json.load(open("/tmp/gaw_nexus_payload.json"))["executor"])')" >> "$GITHUB_OUTPUT"
+
+      - name: point at a committed trusted enterprise policy (if present)
+        run: |
+          set -euo pipefail
+          # Server-side ceiling (design §2.2): if the target repo commits
+          # .gaw/enterprise-policy.json, it is the authoritative ceiling and the
+          # client-supplied enterprise input is ignored in-run.
+          POL="$GITHUB_WORKSPACE/target/.gaw/enterprise-policy.json"
+          if [ -f "$POL" ]; then
+            echo "GAW_ENTERPRISE_POLICY_FILE=$POL" >> "$GITHUB_ENV"
+            echo "found committed trusted enterprise policy: $POL"
+          else
+            echo "no committed trusted policy; using client-supplied ceiling (if any)"
+          fi
+
+      - name: install node deps for sdk executor
+        if: steps.decode.outputs.executor == 'sdk'
+        working-directory: gaw
+        run: npm ci
+
+      - name: run in-run entrypoint
+        working-directory: gaw
+        env:
+          GH_TOKEN: ${{ secrets.GAW_COPILOT_TOKEN }}
+          GAW_EVENT_LOG: ${{ github.workspace }}/gaw/out/events.ndjson
+          GAW_CAPTURE_AGENT_MESSAGES: "1"
+        run: |
+          set -uo pipefail
+          mkdir -p out
+          # Exactly one contract line on stdout; a governed ok:false exits 1 (a
+          # NORMAL outcome), so disable -e around the entrypoint and capture rc.
+          set +e
+          PYTHONPATH=. python3 -m src.backends.nexus_in_run /tmp/gaw_nexus_payload.json \
+            > /tmp/gaw_stdout.txt 2> /tmp/gaw_stderr.txt
+          RC=$?
+          set -e
+          echo "$RC" > out/rc.txt
+          python3 - <<'PY'
+          import pathlib
+          lines = [ln for ln in pathlib.Path("/tmp/gaw_stdout.txt").read_text().splitlines() if ln.strip()]
+          pathlib.Path("out/contract.json").write_text(lines[-1] if lines else "")
+          PY
+
+      - name: collect output candidates
+        id: collect
+        working-directory: gaw
+        env:
+          TARGET_ROOT: ${{ steps.target.outputs.root }}
+          TARGET_BASE_SHA: ${{ steps.target.outputs.base_sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, hashlib, os, pathlib, sys
+          sys.path.insert(0, ".")
+          from src.backends.output_stage import run_output_collection_stage
+
+          contract_text = pathlib.Path("out/contract.json").read_text().strip()
+          contract = json.loads(contract_text) if contract_text else {}
+          workflow_src = pathlib.Path("/tmp/gaw_nexus/workflow.js").read_bytes()
+          summary = run_output_collection_stage(
+              target_root=os.environ["TARGET_ROOT"],
+              base_sha=os.environ["TARGET_BASE_SHA"],
+              run_id=int(os.environ["RUN_ID"]),
+              run_attempt=int(os.environ["RUN_ATTEMPT"]),
+              workflow_sha256=hashlib.sha256(workflow_src).hexdigest(),
+              args_sha256=(contract.get("meta") or {}).get("argsSha256"),
+              script_path="/tmp/gaw_nexus/workflow.js",
+              contract=contract,
+              output_dir="/tmp/gaw_outputs",
+              summary_path="/tmp/gaw_output_summary.json",
+          )
+          print(f"has_artifact={str(summary['hasArtifact']).lower()}")
+          PY
+          HAS_ARTIFACT=$(python3 -c 'import json; print(str(json.load(open("/tmp/gaw_output_summary.json"))["hasArtifact"]).lower())')
+          echo "has_artifact=$HAS_ARTIFACT" >> "$GITHUB_OUTPUT"
+
+      - name: upload gaw-outputs artifact (GitHub Cloud)
+        id: upload_outputs_cloud
+        if: ${{ steps.collect.outputs.has_artifact == 'true' && (github.server_url == 'https://github.com' || endsWith(github.server_url, '.ghe.com')) }}
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gaw-outputs-${{ inputs.run_tag }}
+          path: /tmp/gaw_outputs/
+          if-no-files-found: error
+
+      - name: upload gaw-outputs artifact (GHES)
+        id: upload_outputs_ghes
+        if: ${{ steps.collect.outputs.has_artifact == 'true' && github.server_url != 'https://github.com' && !endsWith(github.server_url, '.ghe.com') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1
+        with:
+          name: gaw-outputs-${{ inputs.run_tag }}
+          path: /tmp/gaw_outputs/
+          if-no-files-found: error
+
+      - name: build manifest
+        if: always()
+        working-directory: gaw
+        env:
+          RUN_TAG: ${{ inputs.run_tag }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          OUTPUT_ARTIFACT_NAME: gaw-outputs-${{ inputs.run_tag }}
+          OUTPUTS_CLOUD_OUTCOME: ${{ steps.upload_outputs_cloud.outcome }}
+          OUTPUTS_GHES_OUTCOME: ${{ steps.upload_outputs_ghes.outcome }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, json, hashlib, pathlib, sys
+          sys.path.insert(0, ".")
+          from src.backends.events_manifest import compute_events_record
+          from src.backends.output_stage import finalize_outputs_record
+          rc = int(pathlib.Path("out/rc.txt").read_text().strip() or "3")
+          body = pathlib.Path("/tmp/gaw_nexus/workflow.js").read_bytes()
+          contract_text = pathlib.Path("out/contract.json").read_text().strip()
+          contract = json.loads(contract_text) if contract_text else {}
+          meta = contract.get("meta") if isinstance(contract, dict) else {}
+          meta = meta if isinstance(meta, dict) else {}
+          manifest = {
+              "schema_version": 2,
+              "run_tag": os.environ["RUN_TAG"],
+              "ows_body_sha256": hashlib.sha256(body).hexdigest(),
+              "args_sha256": meta.get("argsSha256"),
+              "input_contract_sha256": meta.get("inputContractSha256"),
+              "run_id": int(os.environ["RUN_ID"]),
+              "run_attempt": int(os.environ["RUN_ATTEMPT"]),
+              "entrypoint_rc": rc,
+          }
+          events_record = compute_events_record("out/events.ndjson")
+          if events_record is not None:
+              manifest["events"] = events_record
+          summary_path = pathlib.Path("/tmp/gaw_output_summary.json")
+          if summary_path.is_file():
+              upload_succeeded = (
+                  os.environ.get("OUTPUTS_CLOUD_OUTCOME") == "success"
+                  or os.environ.get("OUTPUTS_GHES_OUTCOME") == "success"
+              )
+              outputs_record = finalize_outputs_record(
+                  summary_path, upload_succeeded=upload_succeeded
+              )
+              if outputs_record is not None:
+                  if outputs_record["state"] == "captured":
+                      outputs_record["artifactName"] = os.environ["OUTPUT_ARTIFACT_NAME"]
+                  manifest["outputs"] = outputs_record
+          pathlib.Path("out/manifest.json").write_text(json.dumps(manifest))
+          PY
+
+      - name: upload result (GitHub Cloud)
+        if: ${{ always() && (github.server_url == 'https://github.com' || endsWith(github.server_url, '.ghe.com')) }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gaw-run
+          path: gaw/out/
+          if-no-files-found: error
+
+      - name: upload result (GHES)
+        if: ${{ always() && github.server_url != 'https://github.com' && !endsWith(github.server_url, '.ghe.com') }}
+        uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1
+        with:
+          name: gaw-run
+          path: gaw/out/
+          if-no-files-found: error
+
+      - name: gate job on refusal / missing contract
+        working-directory: gaw
+        run: |
+          set -euo pipefail
+          RC=$(cat out/rc.txt 2>/dev/null || echo 3)
+          if [ ! -s out/contract.json ]; then
+            echo "::error::no contract produced (rc=$RC) — infra failure" >&2
+            exit 1
+          fi
+          if [ "$RC" -ge 2 ]; then
+            echo "::error::in-run entrypoint refused/failed to start (rc=$RC) — infra/setup failure" >&2
+            exit 1
+          fi
+          echo "in-run entrypoint produced a contract (rc=$RC); governed outcome carried in artifact"
