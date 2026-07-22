@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ghe-ai/governed-agentic-workflows
-          ref: 8bcfc4c3aba23d9c70a473bd61429a5d8b622206
+          ref: d8c141a5f23e62292b0a75b3522bce8c7a283eca
           github-server-url: https://github.ghe.com
           token: ${{ secrets.GAW_CHECKOUT_TOKEN }}
           persist-credentials: false
