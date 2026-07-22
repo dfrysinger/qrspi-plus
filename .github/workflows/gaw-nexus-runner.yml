@@ -45,7 +45,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 360
     steps:
       - name: checkout target repo (for a committed trusted policy)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ghe-ai/governed-agentic-workflows
-          ref: d8c141a5f23e62292b0a75b3522bce8c7a283eca
+          ref: 0b5bc09df4e43ac2523aff07d6d5007598b6028f
           github-server-url: https://github.ghe.com
           token: ${{ secrets.GAW_CHECKOUT_TOKEN }}
           persist-credentials: false
