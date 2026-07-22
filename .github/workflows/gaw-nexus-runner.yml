@@ -137,6 +137,7 @@ jobs:
         working-directory: gaw
         env:
           GH_TOKEN: ${{ secrets.GAW_COPILOT_TOKEN }}
+          COPILOT_GH_HOST: github.ghe.com
           GAW_EVENT_LOG: ${{ github.workspace }}/gaw/out/events.ndjson
           GAW_CAPTURE_AGENT_MESSAGES: "1"
         run: |
