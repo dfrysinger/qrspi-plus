@@ -137,12 +137,23 @@ jobs:
         working-directory: gaw
         env:
           GH_TOKEN: ${{ secrets.GAW_COPILOT_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           COPILOT_GH_HOST: github.ghe.com
           GAW_EVENT_LOG: ${{ github.workspace }}/gaw/out/events.ndjson
           GAW_CAPTURE_AGENT_MESSAGES: "1"
         run: |
           set -uo pipefail
           mkdir -p out
+          REAL_GH="$(command -v gh)"
+          mkdir -p /tmp/gaw-target-bin
+          cat > /tmp/gaw-target-bin/gh <<SH
+          #!/usr/bin/env bash
+          set -euo pipefail
+          export GH_TOKEN="\${GITHUB_TOKEN:-}"
+          exec "$REAL_GH" "\$@"
+          SH
+          chmod 700 /tmp/gaw-target-bin/gh
+          export PATH="/tmp/gaw-target-bin:$PATH"
           # Exactly one contract line on stdout; a governed ok:false exits 1 (a
           # NORMAL outcome), so disable -e around the entrypoint and capture rc.
           set +e
