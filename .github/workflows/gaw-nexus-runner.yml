@@ -34,9 +34,18 @@ on:
       run_input_b64:
         description: Base64 of the exact Contract-2 transport envelope.
         required: true
+      live_stream_id:
+        description: Optional advisory live-event stream identifier.
+        required: false
+        default: ''
+      live_relay_url:
+        description: Optional advisory live-event relay base URL.
+        required: false
+        default: ''
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: gaw-nexus-${{ inputs.run_tag }}
@@ -57,7 +66,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ghe-ai/governed-agentic-workflows
-          ref: 7d45aabda98fc6e96e755ea85b366d8fe43f8bb2
+          ref: 5823628aecc42a58ceefe91c579e4d945bc15c33
           github-server-url: https://github.ghe.com
           token: ${{ secrets.GAW_CHECKOUT_TOKEN }}
           persist-credentials: false
@@ -133,6 +142,19 @@ jobs:
         working-directory: gaw
         run: npm ci
 
+      - name: start live-event publisher
+        if: ${{ inputs.live_stream_id != '' && inputs.live_relay_url != '' }}
+        working-directory: gaw
+        env:
+          GAW_LIVE_STREAM_ID: ${{ inputs.live_stream_id }}
+          GAW_LIVE_RELAY_URL: ${{ inputs.live_relay_url }}
+          GAW_EVENT_LOG: out/events.ndjson
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          nohup node src/relay/publisher.mjs > /tmp/gaw_live_publisher.log 2>&1 &
+          echo $! > /tmp/gaw_live_publisher.pid
+
       - name: run in-run entrypoint
         working-directory: gaw
         env:
@@ -155,6 +177,22 @@ jobs:
           lines = [ln for ln in pathlib.Path("/tmp/gaw_stdout.txt").read_text().splitlines() if ln.strip()]
           pathlib.Path("out/contract.json").write_text(lines[-1] if lines else "")
           PY
+
+      - name: stop live-event publisher
+        if: always()
+        working-directory: gaw
+        run: |
+          set +e
+          if [ -f /tmp/gaw_live_publisher.pid ]; then
+            PID=$(cat /tmp/gaw_live_publisher.pid)
+            kill -TERM "$PID" 2>/dev/null
+            for _ in 1 2 3 4 5; do
+              kill -0 "$PID" 2>/dev/null || break
+              sleep 1
+            done
+            kill -KILL "$PID" 2>/dev/null
+          fi
+          exit 0
 
       - name: collect output candidates
         id: collect
