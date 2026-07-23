@@ -191,21 +191,11 @@ jobs:
           HAS_ARTIFACT=$(python3 -c 'import json; print(str(json.load(open("/tmp/gaw_output_summary.json"))["hasArtifact"]).lower())')
           echo "has_artifact=$HAS_ARTIFACT" >> "$GITHUB_OUTPUT"
 
-      - name: upload gaw-outputs artifact (GitHub Cloud)
-        id: upload_outputs_cloud
-        if: ${{ steps.collect.outputs.has_artifact == 'true' && (github.server_url == 'https://github.com' || endsWith(github.server_url, '.ghe.com')) }}
+      - name: upload gaw-outputs artifact
+        id: upload_outputs
+        if: ${{ steps.collect.outputs.has_artifact == 'true' }}
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: gaw-outputs-${{ inputs.run_tag }}
-          path: /tmp/gaw_outputs/
-          if-no-files-found: error
-
-      - name: upload gaw-outputs artifact (GHES)
-        id: upload_outputs_ghes
-        if: ${{ steps.collect.outputs.has_artifact == 'true' && github.server_url != 'https://github.com' && !endsWith(github.server_url, '.ghe.com') }}
-        continue-on-error: true
-        uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1
         with:
           name: gaw-outputs-${{ inputs.run_tag }}
           path: /tmp/gaw_outputs/
@@ -219,8 +209,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           OUTPUT_ARTIFACT_NAME: gaw-outputs-${{ inputs.run_tag }}
-          OUTPUTS_CLOUD_OUTCOME: ${{ steps.upload_outputs_cloud.outcome }}
-          OUTPUTS_GHES_OUTCOME: ${{ steps.upload_outputs_ghes.outcome }}
+          OUTPUTS_UPLOAD_OUTCOME: ${{ steps.upload_outputs.outcome }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -249,10 +238,7 @@ jobs:
               manifest["events"] = events_record
           summary_path = pathlib.Path("/tmp/gaw_output_summary.json")
           if summary_path.is_file():
-              upload_succeeded = (
-                  os.environ.get("OUTPUTS_CLOUD_OUTCOME") == "success"
-                  or os.environ.get("OUTPUTS_GHES_OUTCOME") == "success"
-              )
+              upload_succeeded = os.environ.get("OUTPUTS_UPLOAD_OUTCOME") == "success"
               outputs_record = finalize_outputs_record(
                   summary_path, upload_succeeded=upload_succeeded
               )
@@ -263,17 +249,9 @@ jobs:
           pathlib.Path("out/manifest.json").write_text(json.dumps(manifest))
           PY
 
-      - name: upload result (GitHub Cloud)
-        if: ${{ always() && (github.server_url == 'https://github.com' || endsWith(github.server_url, '.ghe.com')) }}
+      - name: upload result
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: gaw-run
-          path: gaw/out/
-          if-no-files-found: error
-
-      - name: upload result (GHES)
-        if: ${{ always() && github.server_url != 'https://github.com' && !endsWith(github.server_url, '.ghe.com') }}
-        uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1
         with:
           name: gaw-run
           path: gaw/out/
