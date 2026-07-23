@@ -22,12 +22,8 @@ on:
         required: false
         default: mock
       ows_body_b64:
-        description: Base64 payload of the exact OWS workflow body.
+        description: Base64 of the RAW OWS workflow body (the script the user authored).
         required: true
-      ows_body_encoding:
-        description: 'OWS payload encoding: raw | gzip'
-        required: false
-        default: raw
       policy_b64:
         description: Base64 JSON {org, repo, workflow_sha, overrides, operator}.
         required: true
@@ -61,7 +57,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ghe-ai/governed-agentic-workflows
-          ref: 8bcfc4c3aba23d9c70a473bd61429a5d8b622206
+          ref: bf09c4b09a62d181a26c539fdecb41263d3121c1
           github-server-url: https://github.ghe.com
           token: ${{ secrets.GAW_CHECKOUT_TOKEN }}
           persist-credentials: false
@@ -80,7 +76,6 @@ jobs:
         id: decode
         env:
           OWS_BODY_B64: ${{ inputs.ows_body_b64 }}
-          OWS_BODY_ENCODING: ${{ inputs.ows_body_encoding }}
           POLICY_B64: ${{ inputs.policy_b64 }}
           ENTERPRISE_POLICY_B64: ${{ inputs.enterprise_policy_b64 }}
           RUN_INPUT_B64: ${{ inputs.run_input_b64 }}
@@ -90,68 +85,17 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import os, base64, binascii, hashlib, json, pathlib, zlib
-          MAX_OWS_BODY_BYTES = 1024 * 1024
-
-          def decode_ows_body(encoded, encoding):
-              try:
-                  payload = base64.b64decode(encoded, validate=True)
-              except (binascii.Error, ValueError) as exc:
-                  raise SystemExit(f"ows_body_b64 is not valid base64: {exc}") from exc
-
-              if encoding == "raw":
-                  body = payload
-              elif encoding == "gzip":
-                  decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
-                  try:
-                      body = decoder.decompress(payload, MAX_OWS_BODY_BYTES + 1)
-                  except zlib.error as exc:
-                      raise SystemExit(f"ows_body_b64 is not valid gzip: {exc}") from exc
-                  if len(body) > MAX_OWS_BODY_BYTES:
-                      raise SystemExit(
-                          f"OWS body exceeds {MAX_OWS_BODY_BYTES} decompressed bytes"
-                      )
-                  if decoder.unconsumed_tail:
-                      raise SystemExit(
-                          f"OWS body exceeds {MAX_OWS_BODY_BYTES} decompressed bytes"
-                      )
-                  if not decoder.eof:
-                      raise SystemExit("ows_body_b64 gzip stream is truncated or malformed")
-                  if decoder.unused_data:
-                      raise SystemExit("ows_body_b64 gzip stream has trailing data")
-              else:
-                  raise SystemExit(f"unsupported ows_body_encoding: {encoding!r}")
-
-              if len(body) > MAX_OWS_BODY_BYTES:
-                  raise SystemExit(f"OWS body exceeds {MAX_OWS_BODY_BYTES} bytes")
-              try:
-                  body.decode("utf-8")
-              except UnicodeDecodeError as exc:
-                  raise SystemExit(f"OWS body is not valid UTF-8: {exc}") from exc
-              return body
-
+          import os, base64, json, pathlib
           scratch = pathlib.Path("/tmp/gaw_nexus"); scratch.mkdir(parents=True, exist_ok=True)
+          # RAW OWS body -> a file the in-run entrypoint executes.
+          body = base64.b64decode(os.environ["OWS_BODY_B64"], validate=True)
+          body_path = scratch / "workflow.js"
+          body_path.write_bytes(body)
           # Author/run policy params (client-supplied). Validated in-run by
           # nexus_in_run; a malformed payload fails closed there.
           policy = json.loads(base64.b64decode(os.environ["POLICY_B64"], validate=True))
           if not isinstance(policy, dict):
               raise SystemExit("policy_b64 must decode to a JSON object")
-          workflow_sha = policy.get("workflow_sha")
-          if not isinstance(workflow_sha, str):
-              raise SystemExit("policy workflow_sha must be a string")
-          body = decode_ows_body(
-              os.environ["OWS_BODY_B64"],
-              os.environ["OWS_BODY_ENCODING"],
-          )
-          actual_workflow_sha = hashlib.sha256(body).hexdigest()
-          if actual_workflow_sha != workflow_sha:
-              raise SystemExit(
-                  "policy workflow_sha does not match the decoded OWS body "
-                  f"(expected {workflow_sha}, got {actual_workflow_sha})"
-              )
-          # Write only bytes whose encoding, size, UTF-8, and digest were verified.
-          body_path = scratch / "workflow.js"
-          body_path.write_bytes(body)
           payload = {
               "ows_body_path": str(body_path),
               "policy": policy,
@@ -247,9 +191,9 @@ jobs:
           HAS_ARTIFACT=$(python3 -c 'import json; print(str(json.load(open("/tmp/gaw_output_summary.json"))["hasArtifact"]).lower())')
           echo "has_artifact=$HAS_ARTIFACT" >> "$GITHUB_OUTPUT"
 
-      - name: upload gaw-outputs artifact (GitHub Cloud)
-        id: upload_outputs_cloud
-        if: ${{ steps.collect.outputs.has_artifact == 'true' && (github.server_url == 'https://github.com' || endsWith(github.server_url, '.ghe.com')) }}
+      - name: upload gaw-outputs artifact
+        id: upload_outputs
+        if: ${{ steps.collect.outputs.has_artifact == 'true' }}
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -265,8 +209,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           OUTPUT_ARTIFACT_NAME: gaw-outputs-${{ inputs.run_tag }}
-          OUTPUTS_CLOUD_OUTCOME: ${{ steps.upload_outputs_cloud.outcome }}
-          OUTPUTS_GHES_OUTCOME: skipped
+          OUTPUTS_UPLOAD_OUTCOME: ${{ steps.upload_outputs.outcome }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -295,10 +238,7 @@ jobs:
               manifest["events"] = events_record
           summary_path = pathlib.Path("/tmp/gaw_output_summary.json")
           if summary_path.is_file():
-              upload_succeeded = (
-                  os.environ.get("OUTPUTS_CLOUD_OUTCOME") == "success"
-                  or os.environ.get("OUTPUTS_GHES_OUTCOME") == "success"
-              )
+              upload_succeeded = os.environ.get("OUTPUTS_UPLOAD_OUTCOME") == "success"
               outputs_record = finalize_outputs_record(
                   summary_path, upload_succeeded=upload_succeeded
               )
@@ -309,8 +249,8 @@ jobs:
           pathlib.Path("out/manifest.json").write_text(json.dumps(manifest))
           PY
 
-      - name: upload result (GitHub Cloud)
-        if: ${{ always() && (github.server_url == 'https://github.com' || endsWith(github.server_url, '.ghe.com')) }}
+      - name: upload result
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gaw-run
