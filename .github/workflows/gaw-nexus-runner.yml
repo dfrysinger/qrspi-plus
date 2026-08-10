@@ -481,7 +481,7 @@ jobs:
         with:
           persist-credentials: false
           repository: ghe-ai/governed-agentic-workflows
-          ref: 4ad37e74a9b8ea82d60cd96e8d4369ff440acb2a
+          ref: de43652449189da3c695eab52dd21bcb6707ed23
           path: gaw
           token: ${{ secrets.GAW_CHECKOUT_TOKEN }}
       - name: Build checkout manifest for safe-outputs handlers
@@ -1560,7 +1560,7 @@ jobs:
         with:
           path: gaw-verifier
           persist-credentials: false
-          ref: 4ad37e74a9b8ea82d60cd96e8d4369ff440acb2a
+          ref: de43652449189da3c695eab52dd21bcb6707ed23
           repository: ghe-ai/governed-agentic-workflows
           token: ${{ secrets.GAW_CHECKOUT_TOKEN }}
       - name: Verify proposed SafeOutputs fail closed
@@ -1747,7 +1747,7 @@ jobs:
         with:
           persist-credentials: true
           repository: ghe-ai/governed-agentic-workflows
-          ref: 4ad37e74a9b8ea82d60cd96e8d4369ff440acb2a
+          ref: de43652449189da3c695eab52dd21bcb6707ed23
           path: gaw
           token: ${{ secrets.GAW_CHECKOUT_TOKEN }}
       - name: Configure Git credentials
@@ -1788,7 +1788,7 @@ jobs:
         with:
           path: gaw-write-gate
           persist-credentials: false
-          ref: 4ad37e74a9b8ea82d60cd96e8d4369ff440acb2a
+          ref: de43652449189da3c695eab52dd21bcb6707ed23
           repository: ghe-ai/governed-agentic-workflows
           token: ${{ secrets.GAW_CHECKOUT_TOKEN }}
       - name: Re-verify exact proposal for audit binding
@@ -1905,4 +1905,3 @@ jobs:
             /tmp/gh-aw/safe-output-items.jsonl
             /tmp/gh-aw/temporary-id-map.json
           if-no-files-found: ignore
-
