@@ -1,7 +1,7 @@
 export const meta = {
   name: 'GAW Actions end-to-end proof',
   description: 'Runs one governed no-tool inference through GitHub Actions.',
-  model: 'gpt-4o-mini',
+  model: 'claude-haiku-4.5',
   interface: {
     schemaVersion: 1,
     inputs: {
@@ -43,7 +43,7 @@ const response = await agent(
   {
     label: 'GAW Actions end-to-end proof',
     phase: 'Inference',
-    model: 'gpt-4o-mini',
+    model: 'claude-haiku-4.5',
     budget: { maxTokens: 20000 },
   },
 )
