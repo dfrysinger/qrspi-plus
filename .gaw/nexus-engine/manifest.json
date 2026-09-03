@@ -1,0 +1,10 @@
+{
+	"schemaVersion": 1,
+	"file": "gaw-engine.bundle",
+	"size": 10044912,
+	"sha256": "cbe6dbb912e7a6de261fb5af4ffac82089c87b70a958fd89e2dcdffbc2d64f39",
+	"gitBlobSha": "fbb378aafd6a8de100f449a4460a9829959e651a",
+	"containedRef": "refs/heads/lima/meta-deployment-intent",
+	"directRunRef": "c55faba6e7ebf53cc93de56ff3cf0cab9786e704",
+	"deploymentRef": "07e6a67091302586aa88630f32516e9d289df156"
+}
