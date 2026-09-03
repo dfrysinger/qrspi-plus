@@ -467,6 +467,9 @@ jobs:
         name: Issue trusted managed enterprise artifact
         run: |-
           set -euo pipefail
+          if [ -z "$GAW_ENTERPRISE_MANAGED" ]; then
+            GAW_ENTERPRISE_MANAGED=false
+          fi
           if [ "$GAW_ENTERPRISE_MANAGED" = "true" ]; then
             [ -n "$GAW_ENTERPRISE_POLICY_B64" ] || {
               echo "::error::Managed cloud mode requires GAW_ENTERPRISE_POLICY_B64"
