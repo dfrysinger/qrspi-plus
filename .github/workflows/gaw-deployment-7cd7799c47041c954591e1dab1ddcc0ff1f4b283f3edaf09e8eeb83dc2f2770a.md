@@ -31,7 +31,7 @@ network:
         required: true
         type: string
     secrets:
-      COPILOT_GITHUB_TOKEN:
+      GAW_COPILOT_TOKEN:
         required: true
   workflow_dispatch:
     inputs:
@@ -126,7 +126,7 @@ steps:
     AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
     COPILOT_GH_HOST: github.com
     ENTERPRISE_POLICY_B64: ${{ vars.GAW_ENTERPRISE_POLICY_B64 }}
-    GAW_COPILOT_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+    GAW_COPILOT_TOKEN: ${{ secrets.GAW_COPILOT_TOKEN }}
     GAW_FOUNDRY_ENDPOINT: ${{ vars.GAW_FOUNDRY_ENDPOINT }}
     GAW_FOUNDRY_MODEL_MAP: ${{ vars.GAW_FOUNDRY_MODEL_MAP }}
     GAW_FOUNDRY_PYTHON: ${{ runner.temp }}/gaw-deployment-venv/bin/python
