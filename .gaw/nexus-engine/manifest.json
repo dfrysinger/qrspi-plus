@@ -1,0 +1,10 @@
+{
+	"containedRef": "refs/heads/gaw-engine-alpha",
+	"deploymentRef": "cc30687eb56a4898d1811dcedf6db7b61edcbc45",
+	"directRunRef": "cc30687eb56a4898d1811dcedf6db7b61edcbc45",
+	"file": "gaw-engine.bundle",
+	"gitBlobSha": "17f3a8a6a189c9fd1627c29c7259984d869ba384",
+	"schemaVersion": 1,
+	"sha256": "c465b383028be411a9be6951f1e17e6324f6a8566b05289cb194112ee86676e0",
+	"size": 11364643
+}
