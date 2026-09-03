@@ -402,13 +402,13 @@ jobs:
         with: 
           path: .gaw/nexus-engine-seed-gaw
           persist-credentials: false
-          ref: refs/heads/gaw-nexus/engine/cbe6dbb912e7a6de261fb5af4ffac82089c87b70a958fd89e2dcdffbc2d64f39
+          ref: refs/heads/gaw-nexus/engine/c465b383028be411a9be6951f1e17e6324f6a8566b05289cb194112ee86676e0
           sparse-checkout: .gaw/nexus-engine/gaw-engine.bundle
           sparse-checkout-cone-mode: false
       - env: 
-          GAW_ENGINE_BUNDLE_SHA256: cbe6dbb912e7a6de261fb5af4ffac82089c87b70a958fd89e2dcdffbc2d64f39
+          GAW_ENGINE_BUNDLE_SHA256: c465b383028be411a9be6951f1e17e6324f6a8566b05289cb194112ee86676e0
           GAW_ENGINE_DESTINATION: gaw
-          GAW_ENGINE_REF: c55faba6e7ebf53cc93de56ff3cf0cab9786e704
+          GAW_ENGINE_REF: cc30687eb56a4898d1811dcedf6db7b61edcbc45
           GAW_ENGINE_SEED_PATH: .gaw/nexus-engine-seed-gaw
         name: Verify and clone embedded GAW into gaw
         run: |-
@@ -1427,13 +1427,13 @@ jobs:
         with: 
           path: .gaw/nexus-engine-seed-gaw-verifier
           persist-credentials: false
-          ref: refs/heads/gaw-nexus/engine/cbe6dbb912e7a6de261fb5af4ffac82089c87b70a958fd89e2dcdffbc2d64f39
+          ref: refs/heads/gaw-nexus/engine/c465b383028be411a9be6951f1e17e6324f6a8566b05289cb194112ee86676e0
           sparse-checkout: .gaw/nexus-engine/gaw-engine.bundle
           sparse-checkout-cone-mode: false
       - env: 
-          GAW_ENGINE_BUNDLE_SHA256: cbe6dbb912e7a6de261fb5af4ffac82089c87b70a958fd89e2dcdffbc2d64f39
+          GAW_ENGINE_BUNDLE_SHA256: c465b383028be411a9be6951f1e17e6324f6a8566b05289cb194112ee86676e0
           GAW_ENGINE_DESTINATION: gaw-verifier
-          GAW_ENGINE_REF: c55faba6e7ebf53cc93de56ff3cf0cab9786e704
+          GAW_ENGINE_REF: cc30687eb56a4898d1811dcedf6db7b61edcbc45
           GAW_ENGINE_SEED_PATH: .gaw/nexus-engine-seed-gaw-verifier
         if: always() && steps.detection_guard.outputs.run_detection == 'true' && needs.agent.outputs.has_patch == 'true'
         name: Verify and clone embedded GAW into gaw-verifier
@@ -1629,13 +1629,13 @@ jobs:
         with: 
           path: .gaw/nexus-engine-seed-gaw
           persist-credentials: false
-          ref: refs/heads/gaw-nexus/engine/cbe6dbb912e7a6de261fb5af4ffac82089c87b70a958fd89e2dcdffbc2d64f39
+          ref: refs/heads/gaw-nexus/engine/c465b383028be411a9be6951f1e17e6324f6a8566b05289cb194112ee86676e0
           sparse-checkout: .gaw/nexus-engine/gaw-engine.bundle
           sparse-checkout-cone-mode: false
       - env: 
-          GAW_ENGINE_BUNDLE_SHA256: cbe6dbb912e7a6de261fb5af4ffac82089c87b70a958fd89e2dcdffbc2d64f39
+          GAW_ENGINE_BUNDLE_SHA256: c465b383028be411a9be6951f1e17e6324f6a8566b05289cb194112ee86676e0
           GAW_ENGINE_DESTINATION: gaw
-          GAW_ENGINE_REF: c55faba6e7ebf53cc93de56ff3cf0cab9786e704
+          GAW_ENGINE_REF: cc30687eb56a4898d1811dcedf6db7b61edcbc45
           GAW_ENGINE_SEED_PATH: .gaw/nexus-engine-seed-gaw
         if: (!cancelled()) && needs.agent.result != 'skipped' && contains(needs.agent.outputs.output_types, 'create_pull_request')
         name: Verify and clone embedded GAW into gaw
@@ -1685,13 +1685,13 @@ jobs:
         with: 
           path: .gaw/nexus-engine-seed-gaw-write-gate
           persist-credentials: false
-          ref: refs/heads/gaw-nexus/engine/cbe6dbb912e7a6de261fb5af4ffac82089c87b70a958fd89e2dcdffbc2d64f39
+          ref: refs/heads/gaw-nexus/engine/c465b383028be411a9be6951f1e17e6324f6a8566b05289cb194112ee86676e0
           sparse-checkout: .gaw/nexus-engine/gaw-engine.bundle
           sparse-checkout-cone-mode: false
       - env: 
-          GAW_ENGINE_BUNDLE_SHA256: cbe6dbb912e7a6de261fb5af4ffac82089c87b70a958fd89e2dcdffbc2d64f39
+          GAW_ENGINE_BUNDLE_SHA256: c465b383028be411a9be6951f1e17e6324f6a8566b05289cb194112ee86676e0
           GAW_ENGINE_DESTINATION: gaw-write-gate
-          GAW_ENGINE_REF: c55faba6e7ebf53cc93de56ff3cf0cab9786e704
+          GAW_ENGINE_REF: cc30687eb56a4898d1811dcedf6db7b61edcbc45
           GAW_ENGINE_SEED_PATH: .gaw/nexus-engine-seed-gaw-write-gate
         if: (!cancelled()) && needs.agent.result != 'skipped' && contains(needs.agent.outputs.output_types, 'create_pull_request')
         name: Verify and clone embedded GAW into gaw-write-gate
