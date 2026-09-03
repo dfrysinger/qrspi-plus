@@ -54,9 +54,6 @@ safe-outputs:
     report-as-issue: false
   report-failure-as-issue: false
   report-incomplete: false
-sandbox:
-  agent:
-    sudo: false
 steps:
 - name: Checkout trusted target deployment source
   uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
