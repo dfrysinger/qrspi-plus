@@ -1983,6 +1983,7 @@ log(`Plan ready: ${plan.tasks.length} task(s), ${plan.tasks.reduce((sum, task) =
 
 phase('Tasks')
 const workflowBaseCommit = gitHead()
+log(`Task checkout base: ${workflowBaseCommit}`)
 const taskById = Object.fromEntries(plan.tasks.map(task => [task.id, task]))
 const completed = new Map()
 const pending = new Set(plan.tasks.map(task => task.id))
@@ -2025,6 +2026,7 @@ while (pending.size > 0) {
   }
 
   const escalated = taskResults.filter(result => result.status !== 'complete')
+  log(`Task wave ${wave} shared checkout HEAD: ${gitHead()}`)
   if (escalated.length > 0) {
     log(`Escalated before integration: ${escalated.map(result => `${result.task}:${result.stage}`).join(', ')}`)
     return {
