@@ -1536,6 +1536,15 @@ ${testProofProblems.length > 0 ? `THE PRIOR RESPONSE FAILED DETERMINISTIC GIT PR
         'Test writer',
       ),
     ]
+    if (testProofProblems.length > 0) {
+      const summary = String(testChange?.summary || '')
+      log(`Test writer report ${task.id} attempt ${attempt}: ${asJson({
+        status: testChange?.status ?? null,
+        redConfirmed: testChange?.redConfirmed ?? null,
+        summary: summary.slice(0, 1000),
+        summaryTruncated: summary.length > 1000,
+      })}`)
+    }
     if (testProofProblems.length === 0) break
   }
 
