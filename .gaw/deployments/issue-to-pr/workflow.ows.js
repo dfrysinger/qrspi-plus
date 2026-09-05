@@ -4,7 +4,7 @@ export const meta = {
   name: 'Issue to PR',
   description: 'Turns a GitHub issue into reviewed, tested repository changes and opens the reviewed pull request.',
   whenToUse: 'Use for a focused repository issue that can be delivered as a small set of testable code changes.',
-  model: 'claude-sonnet-4.5',
+  model: 'claude-sonnet-5',
   budget: {
     maxTokens: 1000000,
     maxTokensPerSubagent: 100000,
@@ -1080,7 +1080,7 @@ ${asJson(candidates)}`, {
       phase: stage === 'integration' ? 'Integrate' : stage === 'acceptance' ? 'Acceptance' : 'Tasks',
       isolation: 'worktree',
       schema: ADJUDICATION_SCHEMA,
-      model: 'claude-sonnet-4.5',
+      model: 'claude-sonnet-5',
     }),
     { label: `Finding adjudicator · ${stage} · round ${round}`, schema: ADJUDICATION_SCHEMA },
   )
@@ -1309,7 +1309,7 @@ Return pass only when the tests are an honest executable specification for this 
         phase: 'Tasks',
         isolation: 'worktree',
         schema: REVIEW_SCHEMA,
-        model: 'claude-sonnet-4.5',
+        model: 'claude-sonnet-5',
       }),
       { label: `Test reviewer · ${task.id} · ${subject.label} · round ${round}`, schema: REVIEW_SCHEMA },
     )
@@ -1421,7 +1421,7 @@ Return only high-confidence, actionable findings. Pass only when no material fin
         phase: 'Tasks',
         isolation: 'worktree',
         schema: REVIEW_SCHEMA,
-        model: 'claude-sonnet-4.5',
+        model: 'claude-sonnet-5',
       }),
       { label: `Implementation reviewer · ${task.id} · ${subject.label} · round ${round}`, schema: REVIEW_SCHEMA },
     )
@@ -1910,7 +1910,7 @@ Inspect the repository deeply enough to cite concrete file paths, symbols, comma
       phase: 'Research',
       isolation: 'none',
       schema: RESEARCH_SCHEMA,
-      model: 'claude-sonnet-4.5',
+      model: 'claude-sonnet-5',
     }),
       { label: `Repository researcher · ${role.role}`, schema: RESEARCH_SCHEMA },
     )]
@@ -2184,7 +2184,7 @@ Return pass only when no material cross-task finding remains.`, {
         phase: 'Integrate',
         isolation: 'worktree',
         schema: REVIEW_SCHEMA,
-        model: 'claude-sonnet-4.5',
+        model: 'claude-sonnet-5',
       }),
       { label: `Integration reviewer · ${index + 1} · round ${round}`, schema: REVIEW_SCHEMA },
     )
@@ -2463,7 +2463,7 @@ ${asJson(acceptance)}`, {
     phase: 'Acceptance',
     isolation: 'worktree',
     schema: REVIEW_SCHEMA,
-    model: 'claude-sonnet-4.5',
+    model: 'claude-sonnet-5',
   }),
   { label: 'Final sign-off reviewer', schema: REVIEW_SCHEMA },
 )
