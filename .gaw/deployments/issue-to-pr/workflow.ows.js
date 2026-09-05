@@ -1161,34 +1161,12 @@ function pathTokenEscapesRepository(token) {
   return false
 }
 
-function isSafeTestCommand(command) {
+function isTestCommandText(command) {
   if (!nonEmpty(command) || command.length > 500) return false
   if (!/^[A-Za-z0-9_@%+=:,./ -]+$/.test(command)) return false
   const tokens = command.trim().split(/\s+/)
   if (tokens.some(pathTokenEscapesRepository)) return false
-  const [executable, action, target] = tokens
-  if (['pnpm', 'npm', 'yarn', 'bun'].includes(executable)) {
-    if (action === 'test') return true
-    if (action === 'run') return /(?:^|[:_-])test(?:$|[:_-])|^(?:test|check)$/.test(target || '')
-    if (action === 'exec') {
-      return /^(?:vitest|jest|playwright|mocha|ava|tsc)$/.test(target || '')
-    }
-    return false
-  }
-  if (executable === 'cargo' || executable === 'go' || executable === 'dotnet') {
-    return action === 'test'
-  }
-  if (executable === 'pytest') return true
-  if (executable === 'python' || executable === 'python3') {
-    return action === '-m' && target === 'pytest'
-  }
-  if (['mvn', 'mvnw', './mvnw', 'gradle', './gradlew'].includes(executable)) {
-    return tokens.some(token => token === 'test' || token.endsWith(':test'))
-  }
-  if (executable === 'make' || executable === 'just') {
-    return /^(?:test|check)(?:[-_:].+)?$/.test(action || '')
-  }
-  return false
+  return true
 }
 
 function planProblems(plan, issue) {
@@ -1215,9 +1193,9 @@ function planProblems(plan, issue) {
     if (fileOverlap.length > 0) {
       problems.push(`${task.id || 'A task'} must keep production files and test files distinct: ${fileOverlap.join(', ')}`)
     }
-    if (!isSafeTestCommand(task.testCommand)) {
+    if (!isTestCommandText(task.testCommand)) {
       problems.push(
-        `${task.id || 'A task'} must provide a targeted test command using an approved test runner without shell metacharacters`,
+        `${task.id || 'A task'} must provide nonempty test command text of at most 500 characters, using only ASCII letters, digits, spaces and _@%+=:,./- with repository-relative paths`,
       )
     }
   }
@@ -1970,6 +1948,7 @@ Rules:
 - One task owns one observable behavior.
 - Every task must be a complete vertical slice that owns production behavior and the tests proving it. Never split implementation and tests into separate tasks.
 - Every task must define at least one exact likely production file, at least one distinct test file, a runnable targeted test command, and acceptance criteria.
+- Use the repository's existing test runner or test script. The test command must be nonempty, at most 500 characters, and use only ASCII letters, digits, spaces and _@%+=:,./- with repository-relative paths. Do not use quotes, shell operators, newlines, or paths outside the repository.
 - List every file the task will modify, update, generate, or stage, including documentation, in files or testFiles.
 - Dependencies must form a DAG. Every file has one task owner; merge tasks that share any production, test, generated, or documentation path.
 - Do not create separate goals, questions, design, phasing, documentation-only, or project-management tasks.
