@@ -507,6 +507,7 @@ function nonEmpty(value) {
 }
 
 function isStructuredResponseError(error) {
+  if (error?.code === 'invalid_model_output') return true
   const message = String(error?.message || error || '')
   return /Unterminated string|Unexpected (?:end|token)|Expected (?:property name|','|'}')|no JSON object in schema response|schema (?:response|field)/i.test(message)
 }
