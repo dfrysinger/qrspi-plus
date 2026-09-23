@@ -32,3 +32,8 @@ boundary, safe-output mediation, tool proxying, threat detection, or
 provenance checks.
 
 The workflow never merges the resulting pull request.
+
+## First test task
+
+This docs-only change verifies the direct
+Actions-to-Mission-Control-to-pull-request path.
