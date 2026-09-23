@@ -1,0 +1,62 @@
+name: Mission Control agent PoC
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: Bounded task for Copilot cloud agent
+        required: true
+        type: string
+      base_ref:
+        description: Base branch for the task and pull request
+        required: true
+        default: main
+        type: string
+      model:
+        description: Optional model ID; leave blank for automatic selection
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out dispatcher
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Build bounded task request
+        env:
+          INPUT_TASK: ${{ inputs.task }}
+          INPUT_BASE_REF: ${{ inputs.base_ref }}
+          INPUT_MODEL: ${{ inputs.model }}
+        run: node .github/scripts/build-mission-control-request.mjs > "$RUNNER_TEMP/agent-request.json"
+
+      - name: Start Copilot cloud agent task
+        id: dispatch
+        env:
+          COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN || secrets.GAW_COPILOT_TOKEN }}
+          REQUEST_PATH: ${{ runner.temp }}/agent-request.json
+        run: node .github/scripts/start-mission-control-task.mjs
+
+      - name: Publish Mission Control link
+        env:
+          TASK_ID: ${{ steps.dispatch.outputs.task_id }}
+          TASK_URL: ${{ steps.dispatch.outputs.task_url }}
+          TASK_STATE: ${{ steps.dispatch.outputs.task_state }}
+        run: |
+          {
+            echo "## Copilot cloud agent dispatched"
+            echo
+            echo "- **Task:** [\`${TASK_ID}\`](${TASK_URL})"
+            echo "- **Initial state:** \`${TASK_STATE}\`"
+            echo "- **Repository:** \`${GITHUB_REPOSITORY}\`"
+            echo
+            echo "Continue tracking and steering this task in Copilot Mission Control."
+          } >> "$GITHUB_STEP_SUMMARY"
